@@ -13,8 +13,8 @@ pub mod expand;
 pub mod scope;
 
 pub use body::{
-    build_slot_list, parse_alias_body, walk_slots, AliasBody, GlobalSlot, KeyDecl, KeyForm,
-    SideBinding, SlotKind,
+    build_slot_list, parse_alias_body, walk_slots, AliasBody, FieldDecl, GlobalSlot, KeyDecl,
+    KeyForm, SideBinding, SlotKind,
 };
 pub use expand::{
     apply_terminal_verb_override, expand_argv, expand_argv_no_alias, expand_stacked_flags,

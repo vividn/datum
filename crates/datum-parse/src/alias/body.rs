@@ -72,6 +72,16 @@ pub struct KeyDecl {
     pub is_identity: bool,
 }
 
+/// A single `-F field[=val]` declaration from a side's alias body. The
+/// trichotomy form (required / optional / defaulted) mirrors [`KeyDecl`]
+/// exactly — see [`KeyForm`]. Unlike `-k`/`-K`, `-F` resolves to the
+/// entry's field rather than a data key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldDecl {
+    pub name: String,
+    pub form: KeyForm,
+}
+
 /// Parsed view of one side's tokens. Produced by [`parse_alias_body`].
 ///
 /// The bound `field` / `bound_state` are recorded when the verb-derived
@@ -96,6 +106,9 @@ pub struct AliasBody {
     /// is appended for this side.
     pub bound_state: Option<String>,
     pub key_decls: Vec<KeyDecl>,
+    /// `-F field[=val]` declarations from the body, in declaration order.
+    /// Each becomes a [`SlotKind::Field`] in the global slot list.
+    pub field_decls: Vec<FieldDecl>,
     pub bound_keyed: Vec<(String, String)>,
     pub bound_positionals: Vec<String>,
     /// Any tokens we don't classify here (flags other than `-k`/`-K`,
@@ -229,6 +242,32 @@ pub fn parse_alias_body(tokens: &[String]) -> Result<AliasBody> {
             continue;
         }
 
+        if let Some(spec) = match_field_short(tok) {
+            // `-F <spec>` or `-F<spec>` — declares the entry's field as
+            // a slot with the trichotomy form. Consumes the next token
+            // when the spec wasn't glued.
+            let value = match spec {
+                Some(s) => s.to_string(),
+                None => {
+                    i += 1;
+                    tokens.get(i).cloned().ok_or_else(|| {
+                        ParseError::InvalidArg(format!(
+                            "alias body: `{tok}` requires a field spec but argv ended"
+                        ))
+                    })?
+                }
+            };
+            body.field_decls.push(parse_field_spec(&value));
+            i += 1;
+            continue;
+        }
+
+        if let Some(spec) = match_field_long(tok) {
+            body.field_decls.push(parse_field_spec(spec));
+            i += 1;
+            continue;
+        }
+
         // Bare `key=val` (not at position 0 of the token, i.e. proper
         // assignment). Bound keyed pre-fill of a slot.
         if let Some((k, v)) = bare_key_value(tok) {
@@ -295,6 +334,46 @@ fn match_key_long(tok: &str) -> Option<(bool, &str)> {
     None
 }
 
+/// `-F` short-form match. `Some(None)` for a separate spec token
+/// (`-F field`), `Some(Some(s))` for a glued form (`-Ffield`), `None`
+/// for non-match.
+fn match_field_short(tok: &str) -> Option<Option<&str>> {
+    if tok == "-F" {
+        return Some(None);
+    }
+    if let Some(rest) = tok.strip_prefix("-F") {
+        if !rest.is_empty() && !rest.starts_with('-') {
+            return Some(Some(rest));
+        }
+    }
+    None
+}
+
+/// `--field=spec` long-form match. Returns `Some(spec)` on match.
+fn match_field_long(tok: &str) -> Option<&str> {
+    tok.strip_prefix("--field=")
+}
+
+/// Parse one `-F` spec string into a [`FieldDecl`]. Mirrors
+/// [`parse_key_spec`] — empty default (`name=`) is Optional, present
+/// default (`name=val`) is WithDefault, no `=` is Required.
+fn parse_field_spec(spec: &str) -> FieldDecl {
+    match spec.split_once('=') {
+        None => FieldDecl {
+            name: spec.to_string(),
+            form: KeyForm::Required,
+        },
+        Some((name, "")) => FieldDecl {
+            name: name.to_string(),
+            form: KeyForm::Optional,
+        },
+        Some((name, default)) => FieldDecl {
+            name: name.to_string(),
+            form: KeyForm::WithDefault(default.to_string()),
+        },
+    }
+}
+
 /// Parse one `-k`/`-K` spec string (`"key"`, `"key="`, `"key=val"`)
 /// into a [`KeyDecl`]. Out-of-band `=`s in the value side stay intact:
 /// `equation=1+2=3` declares `equation` with default `1+2=3`.
@@ -355,6 +434,12 @@ pub enum SlotKind {
         form: KeyForm,
         is_identity: bool,
     },
+    /// `-F`-derived slot. `name` is the placeholder identifier the user
+    /// wrote (e.g. `-F field`). Same trichotomy as a key slot.
+    Field {
+        name: String,
+        form: KeyForm,
+    },
     State,
     Duration,
 }
@@ -364,6 +449,7 @@ impl SlotKind {
     pub fn name(&self) -> &str {
         match self {
             SlotKind::Key { name, .. } => name.as_str(),
+            SlotKind::Field { name, .. } => name.as_str(),
             SlotKind::State => "<state>",
             SlotKind::Duration => "<dur>",
         }
@@ -388,6 +474,35 @@ pub fn build_slot_list(sides: &[AliasBody]) -> Result<Vec<GlobalSlot>> {
     let mut slots: Vec<GlobalSlot> = Vec::new();
 
     for (side_idx, body) in sides.iter().enumerate() {
+        // Field slots first — `-F` declarations bind the entry's field,
+        // which sits structurally before any data key. Shared by name
+        // across sides (mirrors `-k`/`-K` Rule 1).
+        for decl in &body.field_decls {
+            if let Some(existing) = slots
+                .iter_mut()
+                .find(|s| matches!(&s.kind, SlotKind::Field { name, .. } if name == &decl.name))
+            {
+                if let SlotKind::Field {
+                    form: existing_form,
+                    ..
+                } = &mut existing.kind
+                {
+                    *existing_form = merge_forms(existing_form.clone(), decl.form.clone());
+                }
+                if !existing.sides.contains(&side_idx) {
+                    existing.sides.push(side_idx);
+                }
+                continue;
+            }
+            slots.push(GlobalSlot {
+                kind: SlotKind::Field {
+                    name: decl.name.clone(),
+                    form: decl.form.clone(),
+                },
+                sides: vec![side_idx],
+            });
+        }
+
         // Consolidate this side's repeated `-k` declarations the same
         // way `handleDataArgs` already does (last-seen form wins in
         // first-seen position). This keeps `-k foo -k foo=10` legal
@@ -488,6 +603,10 @@ fn merge_forms(a: KeyForm, b: KeyForm) -> KeyForm {
 pub struct SideBinding {
     pub state: Option<String>,
     pub dur: Option<String>,
+    /// `-F`-resolved field for this side. `None` when no `-F` slot was
+    /// filled and no default applied; callers fall back to the literal
+    /// [`AliasBody::field`] (the body-bound positional field).
+    pub field: Option<String>,
     /// `(key, value)` pairs in declaration order on this side. Includes
     /// values originally bound in the alias body (`bound_keyed`),
     /// values propagated from shared slots, defaults from `-k key=val`,
@@ -536,6 +655,7 @@ pub fn walk_slots(
         .map(|body| SideBinding {
             state: body.bound_state.clone(),
             dur: None,
+            field: None,
             data: body
                 .bound_keyed
                 .iter()
@@ -607,6 +727,17 @@ pub fn walk_slots(
                     }
                 }
             },
+            SlotKind::Field { name, form } => match form {
+                KeyForm::Required => {
+                    return Err(ParseError::MissingRequiredKey(name.clone()));
+                }
+                KeyForm::Optional => continue,
+                KeyForm::WithDefault(default) => {
+                    for &side_idx in &slot.sides {
+                        bindings[side_idx].field = Some(default.clone());
+                    }
+                }
+            },
             SlotKind::State | SlotKind::Duration => {
                 // No default for verb-derived slots; leaving unset is
                 // legal — the write layer decides what `state=null` /
@@ -631,6 +762,11 @@ fn assign_to_slot(bindings: &mut [SideBinding], slot: &GlobalSlot, value: &str) 
         SlotKind::Key { name, .. } => {
             for &side_idx in &slot.sides {
                 upsert_key(&mut bindings[side_idx].data, name, value);
+            }
+        }
+        SlotKind::Field { .. } => {
+            for &side_idx in &slot.sides {
+                bindings[side_idx].field = Some(value.to_string());
             }
         }
         SlotKind::State => {
@@ -750,6 +886,97 @@ mod tests {
             b.key_decls[2].form,
             KeyForm::WithDefault("value".to_string())
         );
+    }
+
+    // ── -F trichotomy (mirrors `-k`/`-K` semantics for the entry's field) ──
+
+    #[test]
+    fn f_bare_field_is_required_errors_if_unfilled() {
+        let b = body(&["occur", "-F", "field"]);
+        assert_eq!(b.field_decls.len(), 1);
+        assert_eq!(b.field_decls[0].name, "field");
+        assert_eq!(b.field_decls[0].form, KeyForm::Required);
+        let s = slots(std::slice::from_ref(&b));
+        let err = walk_slots(&[b], &s, &[]).unwrap_err();
+        assert!(matches!(err, ParseError::MissingRequiredKey(k) if k == "field"));
+    }
+
+    #[test]
+    fn f_field_with_equals_no_default_silently_skipped() {
+        let b = body(&["occur", "-F", "field="]);
+        assert_eq!(b.field_decls[0].form, KeyForm::Optional);
+        let bind = walk(&[b], &[]);
+        assert_eq!(bind[0].field, None);
+    }
+
+    #[test]
+    fn f_field_with_default_uses_it_when_unfilled() {
+        let b = body(&["occur", "-F", "field=coffee"]);
+        assert_eq!(
+            b.field_decls[0].form,
+            KeyForm::WithDefault("coffee".to_string())
+        );
+        let bind = walk(&[b], &[]);
+        assert_eq!(bind[0].field.as_deref(), Some("coffee"));
+    }
+
+    #[test]
+    fn f_field_with_default_overrideable_by_positional() {
+        let b = body(&["occur", "-F", "field=coffee"]);
+        let bind = walk(&[b], &["tea"]);
+        assert_eq!(bind[0].field.as_deref(), Some("tea"));
+    }
+
+    #[test]
+    fn f_three_forms_distinguishable_in_alias_body_parser() {
+        let b = body(&["occur", "-F", "req", "-F", "opt=", "-F", "def=value"]);
+        assert_eq!(b.field_decls[0].form, KeyForm::Required);
+        assert_eq!(b.field_decls[1].form, KeyForm::Optional);
+        assert_eq!(
+            b.field_decls[2].form,
+            KeyForm::WithDefault("value".to_string())
+        );
+    }
+
+    #[test]
+    fn f_glued_short_form_parses() {
+        let b = body(&["occur", "-Ffoo=bar"]);
+        assert_eq!(b.field_decls[0].name, "foo");
+        assert_eq!(
+            b.field_decls[0].form,
+            KeyForm::WithDefault("bar".to_string())
+        );
+    }
+
+    #[test]
+    fn f_long_form_field_equals_spec_parses() {
+        let b = body(&["occur", "--field=foo=bar"]);
+        assert_eq!(b.field_decls[0].name, "foo");
+        assert_eq!(
+            b.field_decls[0].form,
+            KeyForm::WithDefault("bar".to_string())
+        );
+    }
+
+    #[test]
+    fn f_without_spec_errors() {
+        let err = parse_alias_body(&t(&["occur", "-F"])).unwrap_err();
+        assert!(matches!(err, ParseError::InvalidArg(_)));
+    }
+
+    #[test]
+    fn f_shared_field_propagates_across_sides() {
+        // Both sides declare `-F field` → shared slot, value goes to both.
+        let sides = vec![
+            body(&["occur", "-F", "field"]),
+            body(&["occur", "-F", "field"]),
+        ];
+        let s = slots(&sides);
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].sides, vec![0, 1]);
+        let bind = walk_slots(&sides, &s, &t(&["coffee"])).unwrap();
+        assert_eq!(bind[0].field.as_deref(), Some("coffee"));
+        assert_eq!(bind[1].field.as_deref(), Some("coffee"));
     }
 
     // ── Section L: verb-derived slots ────────────────────────────────────

@@ -259,6 +259,15 @@ fn alias_help_documents_k_trichotomy() {
 }
 
 #[test]
+fn alias_help_documents_f_trichotomy() {
+    let s = command_help("alias");
+    assert!(s.contains("FIELD SLOT FORMS (-F)"));
+    assert!(s.contains("-F field       required"));
+    assert!(s.contains("-F field=      optional"));
+    assert!(s.contains("-F field=val   defaulted"));
+}
+
+#[test]
 fn alias_help_documents_double_dash_semantics() {
     let s = command_help("alias");
     assert!(
