@@ -336,14 +336,23 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     let mut reserved = extract_reserved_columns(&mut extra_data)?;
 
     // da-5ns.3 strict positional gate (Action::Add only): the v=20 model
-    // expects `state=<v>` for the primary state. A bare unkeyed
-    // positional with no `-K` slot binding has nowhere to land — the
-    // legacy primary-value column is gone. Reject so a stale `dm add
-    // field 80` doesn't silently lose data.
+    // has no implicit `value` column, so a bare unkeyed positional with
+    // no `-K` slot binding has nowhere to land. Reject with a generic
+    // extra-args error naming the offending tokens — `state=<v>` is just
+    // one of several ways to attach data and should not be presented as a
+    // hard requirement (da-obmm).
     if matches!(action, Action::Add) && value.is_some() && args.slug_keys.is_empty() {
+        let extras: Vec<&str> = args
+            .rest
+            .iter()
+            .filter(|t| !t.contains('='))
+            .map(String::as_str)
+            .collect();
+        let joined = extras.join(" ");
         anyhow::bail!(
-            "unbound positional value: `dm add` requires `state=<v>` (or a `-K` slot \
-             binding) — the v=20 schema dropped the implicit `value` column"
+            "unexpected positional argument(s) for `dm add`: {joined}. \
+             Use `KEY=VALUE` to assign data (e.g. `state=...`, `foo=bar`), declare a \
+             `-K key=` slug slot, or route them with `-R <bucket>` / `-C`."
         );
     }
 

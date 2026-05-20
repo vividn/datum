@@ -766,3 +766,41 @@ fn note_verb_removed_but_alias_works() {
         "identical payloads ⇒ identical content_hash across add/note",
     );
 }
+
+/// da-obmm: extra positional args on `dm add` produce a generic extra-args
+/// error that names the offending tokens. The legacy message demanded
+/// `state=<v>`, which misled users who'd accidentally passed extras
+/// unrelated to state.
+#[test]
+fn add_extra_positionals_produce_generic_error() {
+    let db = fresh_db();
+
+    // Multiple extras: must enumerate them and must NOT demand state=<v>.
+    let err = run_cli(&["add", "field", "extra", "arg"], &db)
+        .expect_err("multi-positional add must error");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("unexpected positional argument"),
+        "expected generic extras error, got: {msg}"
+    );
+    assert!(
+        msg.contains("extra") && msg.contains("arg"),
+        "error must name the offending tokens, got: {msg}"
+    );
+    assert!(
+        !msg.contains("requires `state=<v>`"),
+        "error must not demand state=<v>, got: {msg}"
+    );
+
+    // Single extra: same generic shape, names the token.
+    let err = run_cli(&["add", "field", "80"], &db).expect_err("single-positional add must error");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("unexpected positional argument") && msg.contains("80"),
+        "expected generic extras error naming `80`, got: {msg}"
+    );
+    assert!(
+        !msg.contains("requires `state=<v>`"),
+        "error must not demand state=<v>, got: {msg}"
+    );
+}
