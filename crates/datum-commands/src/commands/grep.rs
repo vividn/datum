@@ -237,4 +237,43 @@ mod tests {
         )
         .unwrap();
     }
+
+    // Locks in: `grep --field <name>` must exclude tombstoned entries.
+    // The filter relies on `Db::entries_for_field`'s `deleted_at IS NULL`
+    // clause — if a refactor reroutes grep through a path that returns
+    // soft-deleted rows, this test catches the regression.
+    #[test]
+    fn grep_field_excludes_tombstoned_entries() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        // Two coffee entries: one will be tombstoned, one stays live.
+        let doomed = make_grep_entry("coffee", 100, serde_json::json!("decaf"), None);
+        let live = make_grep_entry("coffee", 200, serde_json::json!("espresso"), None);
+        db.insert_entry(&doomed).unwrap();
+        db.insert_entry(&live).unwrap();
+
+        db.soft_delete_entry(&doomed.slug).unwrap();
+
+        // Match-all regex with the field filter — only the live entry returns.
+        let got = run_grep(&db, &[""], Some("coffee"));
+        assert_eq!(got.len(), 1, "tombstoned entry must not appear");
+        assert_eq!(got[0].slug, live.slug);
+        assert!(got.iter().all(|e| e.slug != doomed.slug));
+
+        // Pattern that only matched the tombstoned entry returns nothing.
+        let got = run_grep(&db, &["decaf"], Some("coffee"));
+        assert!(got.is_empty(), "tombstoned content must not match");
+
+        // Dispatch path mirrors the same exclusion.
+        grep(
+            GrepArgs {
+                patterns: vec!["decaf".to_string()],
+                field: Some("coffee".to_string()),
+                output: Default::default(),
+            },
+            &db,
+        )
+        .unwrap();
+    }
 }
