@@ -84,3 +84,20 @@ jobs:
 
       - name: cargo clippy --workspace --all-targets -- -D warnings
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+  wasm-check:
+    name: WASM check (datum-sync-client)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo check datum-sync-client (wasm32, --no-default-features --features wasm)
+        run: cargo check -p datum-sync-client --target wasm32-unknown-unknown --no-default-features --features wasm
