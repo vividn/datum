@@ -105,39 +105,6 @@ impl Db {
     }
 
     fn migrate(&self) -> Result<()> {
-        // Pre-a0 aliases table only carried (name, alias_json); add the
-        // `kit_id` column before schema.sql tries to index it. Missing-table
-        // errors on a fresh DB are ignored, as are duplicate-column errors
-        // when the column already exists. (The historical companion ALTER
-        // for `derived_from_field` was removed at da-8y2q.5 / v=21 when the
-        // materialized derived-alias scheme was dropped.)
-        let _ = self
-            .conn
-            .execute("ALTER TABLE aliases ADD COLUMN kit_id TEXT", []);
-
-        // da-9u9.1: schema.sql's `CREATE INDEX … ON field_specs(kit_id)` and
-        // `field_specs.tags` / `field_specs.render_json` references blow up
-        // on a legacy v12-shape DB whose field_specs predates those columns.
-        // The proper fix is the migration runner — but schema.sql executes
-        // first and would error before `migrate_to_current` ever sees the
-        // DB. Mirror the aliases-table escape hatch: idempotently add the
-        // columns up front so schema.sql can compile. The migration steps
-        // (m12_to_13 / m17_to_18 / m18_to_19) still run and remain the
-        // version-stamping authority — these ALTERs are a parser unblock,
-        // not a substitute for migrations. Errors are swallowed: a missing
-        // table on a fresh DB and a duplicate column on an already-current
-        // DB are both expected outcomes here.
-        let _ = self
-            .conn
-            .execute("ALTER TABLE field_specs ADD COLUMN kit_id TEXT", []);
-        let _ = self.conn.execute(
-            "ALTER TABLE field_specs ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'",
-            [],
-        );
-        let _ = self
-            .conn
-            .execute("ALTER TABLE field_specs ADD COLUMN render_json TEXT", []);
-
         // Reject pre-refactor entries tables (which have an `id` column):
         // this refactor drops ULID entirely and slug is now PK. Silent
         // migration would lose or re-key data unpredictably; the user must
@@ -164,14 +131,17 @@ impl Db {
             }
         }
 
-        self.conn.execute_batch(include_str!("../schema.sql"))?;
-        // Stamp / advance the schema version. Forward-compat migrations
-        // apply silently; incompatible versions return an error here.
+        // Stamp / advance the schema version. `infer_legacy_version`
+        // short-circuits a fresh DB (no datum tables yet) to
+        // CURRENT_SCHEMA_VERSION; legacy DBs walk their column-add probes
+        // forward. Migrations add or rebuild the tables they need, so we
+        // run them BEFORE schema.sql — no pre-flight ALTER hacks required.
         crate::migrations::migrate_to_current(&self.conn)?;
-        // Migrations may drop tables destructively (e.g. v2→v3 replaces the
-        // entries table). Re-run schema.sql so any dropped tables come back
-        // in their latest shape. IF NOT EXISTS keeps this idempotent on
-        // fresh databases.
+        // schema.sql lands the final shape: any indexes / tables the
+        // migration registry doesn't create (because they were always part
+        // of schema.sql since they were introduced) are filled in here.
+        // CREATE … IF NOT EXISTS keeps the pass idempotent on already-current
+        // databases.
         self.conn.execute_batch(include_str!("../schema.sql"))?;
         Ok(())
     }

@@ -1950,21 +1950,46 @@ pub fn set_schema_version(conn: &Connection, version: u32) -> Result<()> {
 /// longer seeds `_meta`; this function does the stamping after walking the
 /// real shape.
 ///
-/// **Floor at v3.** `Db::migrate` runs `schema.sql` *before* this function,
-/// so any missing tables already exist in their latest shape. Pre-v3 entries
-/// (ULID `id` PK) are rejected upstream in `Db::migrate`. The destructive
-/// migrations are v1→v2 (DROP/CREATE `sync_state`) and v2→v3 (DROP `entries`)
-/// — re-running them on a real-data DB would wipe live rows. Returning >= 3
-/// guarantees they're skipped.
+/// **Floor at v3.** Pre-v3 entries (ULID `id` PK) are rejected upstream in
+/// `Db::migrate`. A fresh DB (no datum tables yet) short-circuits to
+/// [`CURRENT_SCHEMA_VERSION`] before any column probe can return low, so
+/// the destructive migrations v1→v2 (DROP/CREATE `sync_state`) and v2→v3
+/// (DROP `entries`) are unreachable via infer — both would wipe live rows
+/// if they ran against a real-data DB. Real-data DBs always have at least
+/// one datum table present, fall through past the short-circuit, and the
+/// column probes return ≥ 6 (or [`CURRENT_SCHEMA_VERSION`] when fully
+/// current).
 ///
-/// **How we detect.** Walk the column-add migrations in order. Adding a
-/// column to a pre-existing table is the one operation `CREATE TABLE IF
-/// NOT EXISTS` (run by schema.sql moments earlier) cannot mask: if a
-/// legacy DB is at v12 shape, `field_specs.kit_id` is genuinely absent
-/// post-schema.sql, and we can prove it. The first missing column fixes
+/// **How we detect.** First a fresh-DB short-circuit: if no non-`_meta`
+/// datum table exists, the DB was just created and schema.sql will lay
+/// down the current shape — stamp current and skip the registry walk.
+/// Otherwise walk the column-add migrations in order. Adding a column to
+/// a pre-existing table is the one operation `CREATE TABLE IF NOT EXISTS`
+/// cannot mask: if a legacy DB is at v12 shape, `field_specs.kit_id` is
+/// genuinely absent, and we can prove it. The first missing column fixes
 /// the resume point at the version *immediately before* the migration
 /// that adds it.
 pub fn infer_legacy_version(conn: &Connection) -> Result<u32> {
+    // Fresh-DB short-circuit. `Db::migrate` no longer runs schema.sql
+    // before this function, so a brand-new file has zero datum tables.
+    // Stamp at CURRENT_SCHEMA_VERSION so schema.sql can lay down the
+    // latest shape directly — and so the destructive v1→v2 / v2→v3
+    // migrations (which assume legacy `sync_state` / `entries` tables to
+    // drop) are unreachable. `_meta` is excluded: `read_schema_version`
+    // creates it as a side-effect via `ensure_meta_table`, so its presence
+    // is not evidence of pre-existing user data.
+    let datum_tables: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_meta'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    if datum_tables == 0 {
+        return Ok(CURRENT_SCHEMA_VERSION);
+    }
+
     // m6_to_7: sync_state.my_push_seq.
     if !has_column(conn, "sync_state", "my_push_seq")? {
         return Ok(6);
@@ -2174,6 +2199,79 @@ mod tests {
             read_schema_version(db.conn()).unwrap(),
             Some(CURRENT_SCHEMA_VERSION)
         );
+    }
+
+    /// da-bq31: fresh `Db::open_in_memory` must materialize exactly the
+    /// shape declared in `schema.sql` — no extra indexes from migration
+    /// rebuilds, no missing tables. Locks down the new migrate() flow
+    /// (schema.sql runs once, at the end) so any drift between the
+    /// migration registry and schema.sql is caught at test time.
+    #[test]
+    fn fresh_db_matches_schema_sql_shape() {
+        let db = Db::open_in_memory().unwrap();
+
+        let mut tables: Vec<String> = db
+            .conn()
+            .prepare(
+                "SELECT name FROM sqlite_master \
+                 WHERE type='table' AND name NOT LIKE 'sqlite_%' \
+                 ORDER BY name",
+            )
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        tables.sort();
+        let expected_tables = vec![
+            "_meta",
+            "aliases",
+            "entries",
+            "entry_history",
+            "field_specs",
+            "kit_commands",
+            "kit_indices",
+            "last_docs",
+            "sync_conflicts",
+            "sync_state",
+            "views",
+        ];
+        assert_eq!(tables, expected_tables);
+
+        let mut indexes: Vec<String> = db
+            .conn()
+            .prepare(
+                "SELECT name FROM sqlite_master \
+                 WHERE type='index' AND name NOT LIKE 'sqlite_%' \
+                 ORDER BY name",
+            )
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        indexes.sort();
+        let expected_indexes = vec![
+            "entries_content_hash",
+            "entries_field_occur",
+            "entries_field_occurtime",
+            "entries_field_structure",
+            "entries_id_structure",
+            "entries_live_field_occur",
+            "entries_occur_time",
+            "entries_slug",
+            "entries_verb",
+            "entry_history_change_kind",
+            "entry_history_entry",
+            "idx_aliases_kit_id",
+            "idx_field_specs_kit_id",
+            "idx_kit_commands_kit_id",
+            "idx_views_kit_id",
+            "sync_conflicts_hid",
+            "sync_conflicts_pending",
+            "sync_conflicts_slug",
+        ];
+        assert_eq!(indexes, expected_indexes);
     }
 
     #[test]
