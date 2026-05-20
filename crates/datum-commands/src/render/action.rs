@@ -18,9 +18,12 @@
 //! examples encoded as fixtures.
 
 use chrono::{FixedOffset, Local, Timelike, Utc};
+#[cfg(test)]
+use datum_core::entry::Verb;
 use datum_core::{
-    entry::{Entry, EntryShape, Verb},
+    entry::{Entry, EntryShape},
     field_spec::{FieldSpec, SpecRegistry},
+    shape::has_state_badge,
     time::DatumTime,
 };
 use serde_json::Value as JsonValue;
@@ -111,18 +114,20 @@ pub fn format_state_group(
     spec: Option<&FieldSpec>,
     ctx: &RenderContext,
 ) -> Option<String> {
-    match entry.verb {
-        // Timeless points (legacy `add` rows with no occur_time) keep the
-        // NON_OCCUR glyph; everything else with `Verb::Point` goes through
-        // the dot renderer. da-8y2q.2 collapsed the legacy `Add` storage
-        // verb into Point so we discriminate on `occur_time` instead.
-        Verb::Point if entry.occur_time.is_none() => {
-            Some(paint(&field_rgb(&entry.field, spec).fg(), NON_OCCUR))
-        }
-        Verb::Point => Some(render_occur(entry, spec, ctx)),
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => {
-            Some(render_state_transition_group(entry, spec, ctx))
-        }
+    // Timeless rows (legacy `add` rows with no occur_time) keep the
+    // NON_OCCUR glyph. The dispatch table in `datum_core::shape` doesn't
+    // distinguish timeless points; we gate it here before consulting the
+    // verb-keyed renderer split.
+    if entry.occur_time.is_none() && !has_state_badge(entry.verb) {
+        return Some(paint(&field_rgb(&entry.field, spec).fg(), NON_OCCUR));
+    }
+    // State-bearing verbs render the `[LEAD][cell][TRAIL]` group; the
+    // lone non-stateful verb (`Verb::Point`) renders a bare dot. Adding
+    // a new verb only updates `has_state_badge` in `shape.rs`.
+    if has_state_badge(entry.verb) {
+        Some(render_state_transition_group(entry, spec, ctx))
+    } else {
+        Some(render_occur(entry, spec, ctx))
     }
 }
 
@@ -202,18 +207,19 @@ fn render_state_transition_group(
 /// state label itself, with no inline whitespace padding. The LEAD/TRAIL
 /// slots provide the visual separation around it.
 fn render_state_cell(entry: &Entry, spec: Option<&FieldSpec>) -> String {
-    match entry.verb {
-        // da-8y2q.2: legacy `Start`/`Stop` collapsed into `Switch` (with
-        // canonicalized `state=true`/`state=false`). `render_switch_badge`
-        // already maps `Bool(true)` → painted "start" and `Bool(false)` →
-        // "end", so the visual treatment is preserved without an explicit
-        // intent arm.
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => {
-            render_switch_badge(entry.value.as_ref(), &entry.field, spec)
-        }
-        // `Verb::Point` is handled by other branches of `format_state_group`
-        // and never reaches this function.
-        Verb::Point => String::new(),
+    // da-8y2q.2: legacy `Start`/`Stop` collapsed into `Switch` (with
+    // canonicalized `state=true`/`state=false`). `render_switch_badge`
+    // already maps `Bool(true)` → painted "start" and `Bool(false)` →
+    // "end", so the visual treatment is preserved without an explicit
+    // intent arm.
+    //
+    // Verbs without a state badge (`Verb::Point`) never reach this
+    // function — `format_state_group` short-circuits them to the dot
+    // renderer.
+    if has_state_badge(entry.verb) {
+        render_switch_badge(entry.value.as_ref(), &entry.field, spec)
+    } else {
+        String::new()
     }
 }
 
@@ -287,13 +293,15 @@ pub fn entry_self_trail_state(entry: &Entry) -> Option<JsonValue> {
     if matches!(entry.entry_shape, EntryShape::Block) {
         return None;
     }
-    match entry.verb {
-        // da-8y2q.2: legacy `Start`/`Stop` are now `Switch` rows with
-        // canonicalized `state=true`/`state=false`. `entry.value.clone()`
-        // returns the same `Some(Bool(true|false))` the legacy arms
-        // produced explicitly.
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => entry.value.clone(),
-        Verb::Point => None,
+    // da-8y2q.2: legacy `Start`/`Stop` are now `Switch` rows with
+    // canonicalized `state=true`/`state=false`. `entry.value.clone()`
+    // returns the same `Some(Bool(true|false))` the legacy arms
+    // produced explicitly. Non-state-bearing verbs (Verb::Point) yield
+    // no trail state.
+    if has_state_badge(entry.verb) {
+        entry.value.clone()
+    } else {
+        None
     }
 }
 

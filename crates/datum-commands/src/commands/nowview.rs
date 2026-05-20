@@ -22,7 +22,10 @@ use chrono::{DateTime, Local, TimeZone, Timelike, Utc};
 use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
-use datum_core::shape::{is_switching_verb, is_unrendered_switch_value, render_shape, RenderShape};
+use datum_core::shape::{
+    dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
+    is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
+};
 use datum_layout::dayview::{
     compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput, DayviewFieldInput,
     DayviewPoint, Orientation,
@@ -696,13 +699,14 @@ fn render_field_visuals(
         let occur_ms = occur_dt.utc.timestamp_millis();
 
         let verb = canonical_verb(entry);
-        // Centralized Hidden gate (datum_core::shape::render_shape).
-        if render_shape(verb, entry.entry_shape, &entry.state) == RenderShape::Hidden {
-            continue;
-        }
-
-        match verb {
-            Verb::Block => {
+        // Primary visual dispatch flows from the shape table; verb-specific
+        // data sourcing (block fill vs switch region, dot fg/bg origin) is
+        // resolved via verb-keyed predicate helpers in `datum_core::shape`.
+        // Adding a new verb requires updating the helpers, not this match.
+        let shape = render_shape(verb, entry.entry_shape, &entry.state);
+        match shape {
+            RenderShape::Hidden | RenderShape::Marker => {}
+            RenderShape::Region if is_block_verb(verb) => {
                 push_block_window(
                     &mut blocks,
                     entry,
@@ -713,58 +717,8 @@ fn render_field_visuals(
                     day_end_ms,
                 );
             }
-            Verb::BlockSwitch => {
-                push_block_window(
-                    &mut blocks,
-                    entry,
-                    occur_ms,
-                    field,
-                    spec,
-                    day_start_ms,
-                    day_end_ms,
-                );
-                push_switch_region(
-                    &mut blocks,
-                    entry.following_state.as_ref(),
-                    occur_ms,
-                    switch_region_ends[idx],
-                    field,
-                    spec,
-                    day_start_ms,
-                    day_end_ms,
-                );
-            }
-            Verb::PointSwitch => {
-                if occur_ms >= day_start_ms && occur_ms <= day_end_ms {
-                    let fg_rgb = entry
-                        .state
-                        .as_ref()
-                        .and_then(|v| state_value_rgb(v, field, spec))
-                        .unwrap_or_else(|| field_rgb(field, spec));
-                    let bg_rgb = entry
-                        .following_state
-                        .as_ref()
-                        .and_then(|v| state_value_rgb(v, field, spec))
-                        .unwrap_or_else(|| field_rgb(field, spec));
-                    points.push(DayviewPoint {
-                        time_ms: occur_ms,
-                        fg_color: rgb_to_hex(fg_rgb),
-                        bg_color: rgb_to_hex(bg_rgb),
-                        state_label: state_label(entry.state.as_ref()),
-                    });
-                }
-                push_switch_region(
-                    &mut blocks,
-                    entry.following_state.as_ref(),
-                    occur_ms,
-                    switch_region_ends[idx],
-                    field,
-                    spec,
-                    day_start_ms,
-                    day_end_ms,
-                );
-            }
-            Verb::Switch => {
+            RenderShape::Region => {
+                // Primary switch region (Verb::Switch).
                 push_switch_region(
                     &mut blocks,
                     entry.state.as_ref(),
@@ -776,22 +730,52 @@ fn render_field_visuals(
                     day_end_ms,
                 );
             }
-            Verb::Point => {
-                if occur_ms < day_start_ms || occur_ms > day_end_ms {
-                    continue;
+            RenderShape::Dot => {
+                if occur_ms >= day_start_ms && occur_ms <= day_end_ms {
+                    let fg = if dot_fg_uses_state(verb) {
+                        entry
+                            .state
+                            .as_ref()
+                            .and_then(|v| state_value_rgb(v, field, spec))
+                            .unwrap_or_else(|| field_rgb(field, spec))
+                    } else {
+                        field_rgb(field, spec)
+                    };
+                    let bg = if dot_bg_uses_following_state(verb) {
+                        entry
+                            .following_state
+                            .as_ref()
+                            .and_then(|v| state_value_rgb(v, field, spec))
+                            .unwrap_or_else(|| field_rgb(field, spec))
+                    } else {
+                        match db.state_at(field, occur_dt.utc).unwrap_or(None) {
+                            Some(v) => state_value_rgb(&v, field, spec).unwrap_or(Rgb::BLACK),
+                            None => Rgb::BLACK,
+                        }
+                    };
+                    points.push(DayviewPoint {
+                        time_ms: occur_ms,
+                        fg_color: rgb_to_hex(fg),
+                        bg_color: rgb_to_hex(bg),
+                        state_label: state_label(entry.state.as_ref()),
+                    });
                 }
-                let fg = field_rgb(field, spec);
-                let bg = match db.state_at(field, occur_dt.utc).unwrap_or(None) {
-                    Some(v) => state_value_rgb(&v, field, spec).unwrap_or(Rgb::BLACK),
-                    None => Rgb::BLACK,
-                };
-                points.push(DayviewPoint {
-                    time_ms: occur_ms,
-                    fg_color: rgb_to_hex(fg),
-                    bg_color: rgb_to_hex(bg),
-                    state_label: state_label(entry.state.as_ref()),
-                });
             }
+        }
+        // Secondary trailing switch region for compound switching verbs
+        // (BlockSwitch, PointSwitch): a band from `occur_time` colored by
+        // `following_state`.
+        if opens_secondary_switch_region(verb) {
+            push_switch_region(
+                &mut blocks,
+                entry.following_state.as_ref(),
+                occur_ms,
+                switch_region_ends[idx],
+                field,
+                spec,
+                day_start_ms,
+                day_end_ms,
+            );
         }
     }
     (blocks, points)
@@ -874,53 +858,16 @@ fn render_field_visuals_terminal(
         let occur_ms = occur_dt.utc.timestamp_millis();
 
         let verb = canonical_verb(entry);
-        // Centralized Hidden gate (datum_core::shape::render_shape).
-        if render_shape(verb, entry.entry_shape, &entry.state) == RenderShape::Hidden {
-            continue;
-        }
-
-        match verb {
-            Verb::Block => {
+        // Same dispatch shape as the SVG path. The terminal `Verb::Point` fg
+        // differs (md5_rgb fallback when state lookup yields nothing, rather
+        // than the field rgb) — preserved via the `else` branch below.
+        let shape = render_shape(verb, entry.entry_shape, &entry.state);
+        match shape {
+            RenderShape::Hidden | RenderShape::Marker => {}
+            RenderShape::Region if is_block_verb(verb) => {
                 push_block_terminal(&mut blocks, entry, occur_ms, field, spec);
             }
-            Verb::BlockSwitch => {
-                push_block_terminal(&mut blocks, entry, occur_ms, field, spec);
-                push_switch_region_terminal(
-                    &mut blocks,
-                    entry.following_state.as_ref(),
-                    occur_ms,
-                    switch_region_ends[idx],
-                    field,
-                    spec,
-                );
-            }
-            Verb::PointSwitch => {
-                let fg_rgb = entry
-                    .state
-                    .as_ref()
-                    .and_then(|v| state_value_rgb(v, field, spec))
-                    .unwrap_or_else(|| field_rgb(field, spec));
-                let bg_rgb = entry
-                    .following_state
-                    .as_ref()
-                    .and_then(|v| state_value_rgb(v, field, spec))
-                    .unwrap_or_else(|| field_rgb(field, spec));
-                points.push(NowviewPoint {
-                    time_ms: occur_ms,
-                    fg_color: rgb_to_hex(fg_rgb),
-                    bg_color: rgb_to_hex(bg_rgb),
-                    state_label: state_label(entry.state.as_ref()),
-                });
-                push_switch_region_terminal(
-                    &mut blocks,
-                    entry.following_state.as_ref(),
-                    occur_ms,
-                    switch_region_ends[idx],
-                    field,
-                    spec,
-                );
-            }
-            Verb::Switch => {
+            RenderShape::Region => {
                 push_switch_region_terminal(
                     &mut blocks,
                     entry.state.as_ref(),
@@ -930,16 +877,32 @@ fn render_field_visuals_terminal(
                     spec,
                 );
             }
-            Verb::Point => {
-                let fg = state_value_rgb(
-                    entry.state.as_ref().unwrap_or(&JsonValue::Null),
-                    field,
-                    spec,
-                )
-                .unwrap_or_else(|| md5_rgb(field));
-                let bg = match db.state_at(field, occur_dt.utc).unwrap_or(None) {
-                    Some(v) => state_value_rgb(&v, field, spec).unwrap_or(Rgb::BLACK),
-                    None => Rgb::BLACK,
+            RenderShape::Dot => {
+                let fg = if dot_fg_uses_state(verb) {
+                    entry
+                        .state
+                        .as_ref()
+                        .and_then(|v| state_value_rgb(v, field, spec))
+                        .unwrap_or_else(|| field_rgb(field, spec))
+                } else {
+                    state_value_rgb(
+                        entry.state.as_ref().unwrap_or(&JsonValue::Null),
+                        field,
+                        spec,
+                    )
+                    .unwrap_or_else(|| md5_rgb(field))
+                };
+                let bg = if dot_bg_uses_following_state(verb) {
+                    entry
+                        .following_state
+                        .as_ref()
+                        .and_then(|v| state_value_rgb(v, field, spec))
+                        .unwrap_or_else(|| field_rgb(field, spec))
+                } else {
+                    match db.state_at(field, occur_dt.utc).unwrap_or(None) {
+                        Some(v) => state_value_rgb(&v, field, spec).unwrap_or(Rgb::BLACK),
+                        None => Rgb::BLACK,
+                    }
                 };
                 points.push(NowviewPoint {
                     time_ms: occur_ms,
@@ -948,6 +911,16 @@ fn render_field_visuals_terminal(
                     state_label: state_label(entry.state.as_ref()),
                 });
             }
+        }
+        if opens_secondary_switch_region(verb) {
+            push_switch_region_terminal(
+                &mut blocks,
+                entry.following_state.as_ref(),
+                occur_ms,
+                switch_region_ends[idx],
+                field,
+                spec,
+            );
         }
     }
     (blocks, points)

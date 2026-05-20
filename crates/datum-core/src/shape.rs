@@ -85,10 +85,90 @@ pub fn render_shape(verb: Verb, entry_shape: EntryShape, value: &Option<JsonValu
     }
 }
 
+// The six predicate helpers below are deliberately written as exhaustive
+// `match`es rather than `matches!(...)` macros so the compiler forces a
+// decision in *every* helper whenever a new `Verb` is introduced. Together
+// with the exhaustive `render_shape` table above, this is the "single
+// source of truth" for verb → visual dispatch: adding `Verb::Uncertain`
+// would trigger compile errors here and only here — every renderer
+// consumes these predicates and never matches on `Verb` directly.
+
 /// True for verbs whose `occur_time` updates the field's prevailing state.
 /// These are the verbs that may open a switch region.
 pub fn is_switching_verb(verb: Verb) -> bool {
-    matches!(verb, Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch)
+    match verb {
+        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch => true,
+        Verb::Block | Verb::Point => false,
+    }
+}
+
+/// True for verbs whose primary visual is a dur-derived colored block over
+/// `[occur - dur, occur]`, with `entry.state` as the fill. [`Verb::Block`]
+/// and [`Verb::BlockSwitch`] fall here; [`Verb::BlockSwitch`]'s trailing
+/// switch region is secondary and detected separately via
+/// [`opens_secondary_switch_region`].
+pub fn is_block_verb(verb: Verb) -> bool {
+    match verb {
+        Verb::Block | Verb::BlockSwitch => true,
+        Verb::Switch | Verb::Point | Verb::PointSwitch => false,
+    }
+}
+
+/// True for verbs whose *primary* visual is a switch region (a
+/// state-prevailing band from `occur_time` to the next switching event,
+/// colored by `entry.state`). Only [`Verb::Switch`] qualifies — the
+/// compound switching verbs render their switch region as the *secondary*
+/// element keyed off `following_state`.
+pub fn is_primary_switch_region_verb(verb: Verb) -> bool {
+    match verb {
+        Verb::Switch => true,
+        Verb::Block | Verb::BlockSwitch | Verb::Point | Verb::PointSwitch => false,
+    }
+}
+
+/// True for verbs that open a *secondary* switch region from
+/// `following_state` at `occur_time`. These are the compound switching
+/// verbs ([`Verb::BlockSwitch`], [`Verb::PointSwitch`]) — their primary
+/// visual (block or dot) is paired with a trailing region colored by
+/// `entry.following_state`.
+pub fn opens_secondary_switch_region(verb: Verb) -> bool {
+    match verb {
+        Verb::BlockSwitch | Verb::PointSwitch => true,
+        Verb::Switch | Verb::Block | Verb::Point => false,
+    }
+}
+
+/// True for verbs whose primary-dot bg color is sourced from
+/// `entry.following_state` (the post-occur state). [`Verb::PointSwitch`]
+/// uses this; plain [`Verb::Point`] falls back to ambient state at
+/// occur_time via the field's prior-row lookup.
+pub fn dot_bg_uses_following_state(verb: Verb) -> bool {
+    match verb {
+        Verb::PointSwitch => true,
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::Point => false,
+    }
+}
+
+/// True for verbs whose primary-dot fg color is sourced from
+/// `entry.state` (the dot itself carries the state color). Only
+/// [`Verb::PointSwitch`] qualifies — plain [`Verb::Point`] paints its
+/// dot in the field color so a stateless occur reads as the field.
+pub fn dot_fg_uses_state(verb: Verb) -> bool {
+    match verb {
+        Verb::PointSwitch => true,
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::Point => false,
+    }
+}
+
+/// True for verbs whose action-line rendering shows a state badge
+/// (`[LEAD][state cell][TRAIL]`). All state-bearing verbs qualify
+/// (switching family + [`Verb::Block`]); [`Verb::Point`] is the lone
+/// exception — its action surface is a bare dot at `occur_time`.
+pub fn has_state_badge(verb: Verb) -> bool {
+    match verb {
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => true,
+        Verb::Point => false,
+    }
 }
 
 /// True if a switch value terminates a state without opening a new region.
@@ -239,6 +319,58 @@ mod tests {
         assert!(is_switching_verb(Verb::PointSwitch));
         assert!(!is_switching_verb(Verb::Block));
         assert!(!is_switching_verb(Verb::Point));
+    }
+
+    // ─── verb-keyed render helpers ───────────────────────────────────
+
+    #[test]
+    fn block_verbs_set() {
+        assert!(is_block_verb(Verb::Block));
+        assert!(is_block_verb(Verb::BlockSwitch));
+        assert!(!is_block_verb(Verb::Switch));
+        assert!(!is_block_verb(Verb::Point));
+        assert!(!is_block_verb(Verb::PointSwitch));
+    }
+
+    #[test]
+    fn primary_switch_region_verb_is_plain_switch_only() {
+        assert!(is_primary_switch_region_verb(Verb::Switch));
+        assert!(!is_primary_switch_region_verb(Verb::BlockSwitch));
+        assert!(!is_primary_switch_region_verb(Verb::PointSwitch));
+        assert!(!is_primary_switch_region_verb(Verb::Block));
+        assert!(!is_primary_switch_region_verb(Verb::Point));
+    }
+
+    #[test]
+    fn secondary_switch_region_is_compound_switching_only() {
+        assert!(opens_secondary_switch_region(Verb::BlockSwitch));
+        assert!(opens_secondary_switch_region(Verb::PointSwitch));
+        assert!(!opens_secondary_switch_region(Verb::Switch));
+        assert!(!opens_secondary_switch_region(Verb::Block));
+        assert!(!opens_secondary_switch_region(Verb::Point));
+    }
+
+    #[test]
+    fn dot_color_helpers_only_for_point_switch() {
+        assert!(dot_bg_uses_following_state(Verb::PointSwitch));
+        assert!(dot_fg_uses_state(Verb::PointSwitch));
+        for v in [Verb::Point, Verb::Switch, Verb::Block, Verb::BlockSwitch] {
+            assert!(!dot_bg_uses_following_state(v));
+            assert!(!dot_fg_uses_state(v));
+        }
+    }
+
+    #[test]
+    fn state_badge_excludes_only_point() {
+        for v in [
+            Verb::Switch,
+            Verb::Block,
+            Verb::BlockSwitch,
+            Verb::PointSwitch,
+        ] {
+            assert!(has_state_badge(v), "expected badge for {v}");
+        }
+        assert!(!has_state_badge(Verb::Point));
     }
 
     // ─── is_unrendered_switch_value ──────────────────────────────────
