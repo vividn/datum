@@ -54,11 +54,41 @@ pub(super) fn infer_typed_value(
         return Ok(Some(Value::Null));
     }
 
-    // Time-like key → parse as time.
+    // Time-like key → parse as time. Relative forms (`+30`, `-1h`) resolve
+    // against `compat.base_local` (the entry's effective occur-time in its
+    // local zone) when supplied — `wake_time=+30` with `-t 10:00` becomes
+    // `10:30:00`. With no base anchor (reparse / update payload) the
+    // relative branches fall through to raw-string passthrough.
     if path_is_time(path) {
         if let Ok(t) = parse_time_arg(value) {
             if let Some(abs) = t.absolute {
                 return Ok(Some(Value::String(abs.format("%H:%M:%S").to_string())));
+            }
+            // ISO datetimes (`2026-05-03T00:00:00Z`, naive `2026-05-20T08:15:00`)
+            // on a `*_time` key pass through as-is — the chores kit and similar
+            // plugins store full-instant due-dates on `next_time`-style keys
+            // and would be broken by truncating to time-of-day. Users who want
+            // just the time-of-day write `wake_time=08:15`.
+            if let (Some(mins), Some(base)) = (t.minutes_offset, compat.base_local) {
+                let resolved = base + chrono::Duration::minutes(mins);
+                return Ok(Some(Value::String(
+                    resolved.time().format("%H:%M:%S").to_string(),
+                )));
+            }
+        }
+        // Signed-duration token on a `*_time` key: `+1h`, `-30m`, `+90m`.
+        // Gated to leading `+`/`-` (and non-pure-integer to avoid shadowing
+        // the `minutes_offset` branch above) so bare `1h` keeps falling
+        // through to the unit-annotation extension.
+        if let Some(base) = compat.base_local {
+            if (value.starts_with('+') || value.starts_with('-')) && !is_pure_signed_integer(value)
+            {
+                if let Ok(dur) = parse_duration(value) {
+                    let resolved = base + dur;
+                    return Ok(Some(Value::String(
+                        resolved.time().format("%H:%M:%S").to_string(),
+                    )));
+                }
             }
         }
         // Fallthrough: if we couldn't parse as time, leave as inferType's
@@ -66,11 +96,18 @@ pub(super) fn infer_typed_value(
         // so users can still record free-form time fields.
     }
 
-    // Date-like key → parse as date.
+    // Date-like key → parse as date. Relative day offsets (`nextDate=+3`)
+    // resolve against `compat.base_local.date()` when supplied.
     if path_is_date(path) {
         if let Ok(d) = parse_date_arg(value) {
             if let Some(abs) = d.absolute {
                 return Ok(Some(Value::String(abs.format("%Y-%m-%d").to_string())));
+            }
+            // Relative day-offset: `+3`, `-7`, `0`. parse_date_arg succeeds
+            // for these with `absolute=None`; resolve against base date.
+            if let Some(base) = compat.base_local {
+                let resolved = base.date() + chrono::Duration::days(d.days_offset);
+                return Ok(Some(Value::String(resolved.format("%Y-%m-%d").to_string())));
             }
         }
     }
@@ -105,6 +142,17 @@ pub fn unit_annotated_value(value: &str) -> Option<Value> {
     obj.insert("v".to_string(), n_value);
     obj.insert("u".to_string(), Value::String(unit.to_string()));
     Some(Value::Object(obj))
+}
+
+/// `+30` / `-8` / `7` style — leading sign optional, all-digits tail.
+/// Used to guard the time-key signed-duration branch from shadowing the
+/// `minutes_offset` branch above.
+fn is_pure_signed_integer(s: &str) -> bool {
+    let rest = s
+        .strip_prefix('+')
+        .or_else(|| s.strip_prefix('-'))
+        .unwrap_or(s);
+    !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Split `"75.2kg"` → `Some(("75.2", "kg"))`, `"hello"` → `None`. The

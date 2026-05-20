@@ -36,6 +36,7 @@ mod accumulate;
 mod classify;
 mod coerce;
 
+use chrono::NaiveDateTime;
 use serde_json::{Map, Value};
 
 use crate::error::{ParseError, Result};
@@ -158,6 +159,12 @@ pub struct DataArgs {
     /// `extract_add_temporal_keys` already accepts the `"null"` string
     /// alongside `Value::Null`.
     pub preserve_null_strings: bool,
+    /// Local-time anchor used to resolve relative-offset values on
+    /// `*_time` / `*_date` keys (`wake_time=+30`, `nextDate=+3`,
+    /// `bedTime=-1h`). When `None`, relative offsets fall through as
+    /// raw strings — callers without a clean occur-time anchor (reparse,
+    /// update payload) leave this unset to preserve existing behavior.
+    pub base_local: Option<NaiveDateTime>,
 }
 
 impl FlexibleTarget for DataArgs {
@@ -186,6 +193,8 @@ impl DataArgs {
 pub(crate) struct Compat {
     /// See [`DataArgs::preserve_null_strings`].
     pub(crate) preserve_null_strings: bool,
+    /// See [`DataArgs::base_local`].
+    pub(crate) base_local: Option<NaiveDateTime>,
 }
 
 /// Resolve `DataArgs` into the final `DatumData` object.
@@ -196,6 +205,7 @@ pub(crate) struct Compat {
 pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     let compat = Compat {
         preserve_null_strings: args.preserve_null_strings,
+        base_local: args.base_local,
     };
 
     // Clone the bits we mutate; the input bag is treated as read-only.
@@ -1003,6 +1013,123 @@ mod tests {
         assert_eq!(out["state"]["subtask"], json!("mop"));
         assert!(out.get(".subtask").is_none());
         assert_eq!(out["wake_time"], json!("08:00:00"));
+    }
+
+    // ── suffix coercion with relative offsets (da-l9ie) ──────────────────
+
+    fn base_at(year: i32, month: u32, day: u32, hour: u32, min: u32) -> chrono::NaiveDateTime {
+        chrono::NaiveDate::from_ymd_opt(year, month, day)
+            .unwrap()
+            .and_hms_opt(hour, min, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn relative_date_offset_resolves_against_base_local() {
+        let mut a = args();
+        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.data = vec![
+            "nextDate=+3".into(),
+            "prev_date=-7".into(),
+            "today_date=0".into(),
+        ];
+        assert_eq!(
+            run(a),
+            *json!({
+                "nextDate": "2026-05-23",
+                "prev_date": "2026-05-13",
+                "today_date": "2026-05-20",
+            })
+            .as_object()
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn relative_date_offset_without_base_local_passes_through() {
+        // No base anchor → relative day offsets cannot resolve, fall through
+        // to raw-string passthrough rather than silently picking "now".
+        let mut a = args();
+        a.data = vec!["nextDate=+3".into()];
+        assert_eq!(run(a), *json!({"nextDate": "+3"}).as_object().unwrap());
+    }
+
+    #[test]
+    fn absolute_date_does_not_need_base_local() {
+        let mut a = args();
+        a.data = vec!["nextDate=2026-06-01".into()];
+        assert_eq!(
+            run(a),
+            *json!({"nextDate": "2026-06-01"}).as_object().unwrap()
+        );
+    }
+
+    #[test]
+    fn relative_time_minute_offset_resolves_against_base_local() {
+        let mut a = args();
+        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.data = vec!["wake_time=+30".into()];
+        assert_eq!(
+            run(a),
+            *json!({"wake_time": "10:30:00"}).as_object().unwrap()
+        );
+
+        let mut a = args();
+        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.data = vec!["snooze_time=-15".into()];
+        assert_eq!(
+            run(a),
+            *json!({"snooze_time": "09:45:00"}).as_object().unwrap()
+        );
+    }
+
+    #[test]
+    fn relative_time_duration_offset_resolves_against_base_local() {
+        let mut a = args();
+        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.data = vec!["wake_time=-1h".into(), "bedTime=+90m".into()];
+        assert_eq!(
+            run(a),
+            *json!({
+                "wake_time": "09:00:00",
+                "bedTime": "11:30:00",
+            })
+            .as_object()
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn duration_signed_token_passthrough_independent_of_base() {
+        // Durations don't anchor — `+30m` / `-15m` on a `*_dur` key parses
+        // as a signed ISO duration with no need for `base_local`.
+        let mut a = args();
+        a.data = vec!["nap_dur=+30m".into(), "pause_duration=-15m".into()];
+        assert_eq!(
+            run(a),
+            *json!({
+                "nap_dur": "PT30M",
+                "pause_duration": "-PT15M",
+            })
+            .as_object()
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn iso_instant_on_time_key_passes_through() {
+        // Full-instant timestamps on `*_time` keys (e.g. chores-kit
+        // `next_time=2026-05-03T00:00:00Z` due-dates) must not be
+        // truncated to time-of-day — they carry calendar information
+        // that callers depend on.
+        let mut a = args();
+        a.data = vec!["next_time=2026-05-03T00:00:00Z".into()];
+        assert_eq!(
+            run(a),
+            *json!({"next_time": "2026-05-03T00:00:00Z"})
+                .as_object()
+                .unwrap()
+        );
     }
 
     #[test]

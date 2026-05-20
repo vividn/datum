@@ -135,7 +135,10 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         }
     }
 
-    let parsed = parse_log_args(&log_args, action)?;
+    // No clean occur-time anchor for reparse — relative-offset values on
+    // `*_time` / `*_date` keys fall through as raw strings rather than
+    // being re-resolved against whatever "now" happens to be.
+    let parsed = parse_log_args(&log_args, action, None)?;
     let mut extra_data = parsed.extra_data;
     let reserved = extract_reserved_columns(&mut extra_data)?;
 

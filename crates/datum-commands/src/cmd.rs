@@ -322,7 +322,23 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
 
-    let parsed = parse_log_args(&args, action)?;
+    // Resolve the entry's effective local time once up front so relative
+    // offset values on `*_time` / `*_date` extra-data keys (e.g.
+    // `wake_time=+30`, `nextDate=+3`) can anchor against it inside
+    // `handle_data_args`. We deliberately swallow build errors here —
+    // an invalid `-t`/`-d` flag surfaces from the downstream
+    // `build_time_with_precision` call below (line ~410) with its full
+    // error message intact; here we only want a clean base when the
+    // flags parse, so `-T` and the undo early-return path keep their
+    // current "no timestamp" semantics.
+    let base_local = if args.time.omit_timestamp {
+        None
+    } else {
+        build_time_with_precision(&args)
+            .ok()
+            .map(|(dt, _)| dt.local_time().naive_local())
+    };
+    let parsed = parse_log_args(&args, action, base_local)?;
     let ParsedLogArgs {
         field,
         value,
@@ -866,7 +882,11 @@ const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 /// here owns the daydumb-specific concerns: peeling the state positional
 /// for state-bearing verbs (Switch/Start/Stop) so it doesn't compete with
 /// `-k` slots, and pulling slug values out of the resolved [`DatumData`].
-pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
+pub(crate) fn parse_log_args(
+    args: &LogArgs,
+    action: Action,
+    base_local: Option<chrono::NaiveDateTime>,
+) -> Result<ParsedLogArgs> {
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
     use datum_parse::input::flexible_positional::flexible_positional;
 
@@ -892,6 +912,7 @@ pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLog
     // state-bearing verbs is handled below.
     let mut data_args = DataArgs {
         preserve_null_strings: true,
+        base_local,
         ..DataArgs::default()
     };
     let mut slug_paths: Vec<String> = Vec::new();
