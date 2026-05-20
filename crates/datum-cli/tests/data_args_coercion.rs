@@ -125,6 +125,26 @@ fn dash_c_joins_remainder_into_comment_string() {
     assert_eq!(extra["comment"], json!("ate too many tacos"));
 }
 
+/// `-SR <bucket> <words…>` (da-gq3x): the bundled short form for
+/// `-S -R` must split in the pre-pass so `-R` claims the bucket name
+/// and the trailing positionals join into a single string. Regression
+/// of da-4t5f's "rest of args → single string" behaviour.
+#[test]
+fn dash_sr_bundle_joins_remainder_into_named_bucket() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "occur", "log", "-SR", "notes", "all", "the", "rest", "is", "one", "string",
+        ],
+        &db,
+    )
+    .expect("occur log -SR notes all the rest is one string");
+
+    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let extra = entry.data.as_ref().expect("extra_data populated");
+    assert_eq!(extra["notes"], json!("all the rest is one string"));
+}
+
 /// `-S` without `-R`/`-C` (da-k5o6): the historical "join remainder into
 /// the primary value column" behaviour was a side-effect of the buggy
 /// PRIMARY_VALUE_KEY remainder leak. Under the v=20 contract no verb has

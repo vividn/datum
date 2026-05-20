@@ -504,10 +504,17 @@ pub fn maybe_swap_field_verb(mut argv: Vec<String>) -> Vec<String> {
     argv
 }
 
-/// Expand stacked short flags. Same-letter runs (`-yy`, `-qqq`) and
-/// stackable-prefix-plus-terminal forms (`-yyt`, `-qqqd`, `-yt`) both
-/// split into their constituent single-letter flags. The terminal char
-/// can be any short flag — the parser validates it downstream.
+/// Expand stacked short flags. Same-letter runs (`-yy`, `-qqq`),
+/// switch-prefix-plus-terminal forms (`-yyt`, `-qqqd`, `-yt`, `-SR`, `-CR`)
+/// and all-switch runs (`-SC`, `-Cl`) all split into their constituent
+/// single-letter flags. The terminal char can be any short flag — the
+/// parser validates it downstream.
+///
+/// The prefix predicate spans every value-less short flag across the
+/// concern modules (the count-stackable `y`/`q`, plus the boolean
+/// switches `S`/`C`/`l`/`m`/`F`/`A`/`D`/`T`). Mixing is fine: `-yS`,
+/// `-Sy`, `-CR` all expand. Value-taking shorts (`c`/`k`/`K`/`R`/`o`/
+/// `d`/`t`/`z`) can only appear as the terminal char.
 ///
 /// Also handles datum's `-t<t|q>+` recent-past shorthand: a leading
 /// `-t` followed by `t` (1 min) and/or `q` (5 min) characters sums the
@@ -543,16 +550,21 @@ fn expand_stacked(s: &str) -> Option<Vec<String>> {
         return Some(vec!["-t".to_string(), format!("-{minutes}")]);
     }
 
-    let stackable = |c: char| matches!(c, 'y' | 'q');
-    let prefix_len = chars.iter().take_while(|c| stackable(**c)).count();
+    // Switch shorts: every value-less flag across the concern modules.
+    // Value-taking shorts (c/k/K/R/o/d/t/z) are intentionally excluded —
+    // they can only appear as the terminal char in a bundle.
+    let is_switch =
+        |c: char| matches!(c, 'y' | 'q' | 'S' | 'C' | 'l' | 'm' | 'F' | 'A' | 'D' | 'T');
+    let prefix_len = chars.iter().take_while(|c| is_switch(**c)).count();
 
-    // All-stackable run (e.g. `-yy`, `-qqq`).
+    // All-switch run (e.g. `-yy`, `-qqq`, `-SC`, `-Cl`).
     if prefix_len == chars.len() {
         return Some(chars.iter().map(|c| format!("-{c}")).collect());
     }
 
-    // Stackable prefix followed by exactly one terminal char
-    // (e.g. `-yyt` → `-y -y -t`, `-qqqd` → `-q -q -q -d`, `-yt` → `-y -t`).
+    // Switch prefix followed by exactly one terminal char (e.g. `-yyt` →
+    // `-y -y -t`, `-qqqd` → `-q -q -q -d`, `-yt` → `-y -t`, `-SR` →
+    // `-S -R`, `-CR` → `-C -R`).
     if prefix_len >= 1 && prefix_len == chars.len() - 1 {
         return Some(chars.iter().map(|c| format!("-{c}")).collect());
     }
@@ -923,9 +935,53 @@ mod tests {
         let (argv, _) = expand_argv(v(&["datum", "occur", "x", "--help"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "x", "--help"]));
 
-        // Non-stackable cluster left alone (parser handles).
+        // Non-stackable cluster left alone (parser handles): `-tD` starts
+        // with a value-taking short, so it stays put and the parser reads
+        // it as `-t` with attached value `D`.
         let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-tD"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "x", "-tD"]));
+    }
+
+    #[test]
+    fn switch_bundle_with_value_terminal_expands() {
+        // da-gq3x: `-SR key rest...` should split so `-R` consumes `key`
+        // and the remaining positionals fall through to the parser. The
+        // pre-pass only does the split; the data_args layer routes the
+        // remainder.
+        let (argv, _) = expand_argv(
+            v(&["datum", "occur", "x", "-SR", "notes", "rest", "args"]),
+            &NoResolver,
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            v(&["datum", "occur", "x", "-S", "-R", "notes", "rest", "args"])
+        );
+
+        // `-CR field rest...` — `-C` is a switch, `-R` is the terminal.
+        let (argv, _) = expand_argv(
+            v(&["datum", "occur", "x", "-CR", "notes", "rest"]),
+            &NoResolver,
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            v(&["datum", "occur", "x", "-C", "-R", "notes", "rest"])
+        );
+    }
+
+    #[test]
+    fn all_switch_bundle_expands() {
+        // `-SC` → `-S -C`, `-Sl` → `-S -l`, `-yS` → `-y -S`. Mixing the
+        // existing count-stackable shorts with new boolean switches works.
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-SC"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-S", "-C"]));
+
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-Sl"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-S", "-l"]));
+
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-yS"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-y", "-S"]));
     }
 
     #[test]

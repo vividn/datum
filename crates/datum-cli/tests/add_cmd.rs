@@ -804,3 +804,27 @@ fn add_extra_positionals_produce_generic_error() {
         "error must not demand state=<v>, got: {msg}"
     );
 }
+
+/// da-gq3x: the bead's canonical example — `dm add <field> -SR key <rest…>`
+/// must bundle-split `-SR` into `-S -R`, route remainder positionals into
+/// `extra_data.key` joined as one string. Regression of da-4t5f covering
+/// the `add` verb path (sibling `data_args_coercion` covers `occur`).
+#[test]
+fn add_dash_sr_bundle_joins_remainder_into_named_bucket() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "add", "field", "-SR", "key", "all", "the", "rest", "of", "the", "args", "should",
+            "be", "parsed", "as", "a", "string", "and", "put", "into", "key",
+        ],
+        &db,
+    )
+    .expect("dm add field -SR key <rest...>");
+
+    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    let extra = entry.data.as_ref().expect("extra_data populated");
+    assert_eq!(
+        extra["key"],
+        json!("all the rest of the args should be parsed as a string and put into key")
+    );
+}
