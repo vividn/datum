@@ -375,6 +375,15 @@ pub struct TailArgs {
     /// `show_update`. Auto-enabled when `--column` or a non-hybrid `--metric`
     /// is set — those are tabular concerns.
     pub table: bool,
+    /// `field:state` form (da-plbb): when set, `tail` renders state-blocks
+    /// (start/end/dur) for periods where `fields[0]` was in the matching
+    /// state. Parsed from the positional by splitting on the first `:`
+    /// and then on `,` to form the parallel-state array. Mutually
+    /// exclusive with the comma-separated multi-field form — when the
+    /// positional contains `:`, the whole token is treated as a
+    /// state-filter, not as a field list. Stored as raw strings;
+    /// normalization happens in the command layer at compare time.
+    pub state_filter: Option<Vec<String>>,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }
@@ -383,6 +392,7 @@ impl TailArgs {
     pub fn fresh() -> Self {
         Self {
             fields: Vec::new(),
+            state_filter: None,
             count: None,
             metric: "hybrid".to_string(),
             reverse: false,

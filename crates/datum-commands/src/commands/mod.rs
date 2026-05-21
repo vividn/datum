@@ -44,6 +44,7 @@ pub mod start;
 pub mod switch;
 pub mod sync;
 pub mod tail;
+pub mod tail_state;
 pub mod track;
 pub mod undo;
 pub mod update;

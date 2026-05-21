@@ -693,22 +693,20 @@ fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
         }
         Ok(None)
     })?;
-    // Single positional may be a comma-separated list of fields:
-    // `datum tail mood,project` → ["mood", "project"]. Trailing positionals
-    // (rare; we don't surface them to users) are dropped — tail has never
-    // accepted more than one positional, and a comma list now covers the
-    // multi-field case without changing argv shape.
-    let fields = pos
-        .first()
-        .map(|s| {
-            s.split(',')
-                .map(|f| f.trim().to_string())
-                .filter(|f| !f.is_empty())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    // Single positional may be:
+    // * `field` — bare field.
+    // * `field,project` — comma-separated multi-field list (da-hrnp).
+    // * `field:state` — state-block filter (da-plbb); state may itself
+    //   carry commas (`field:s1,s2`) for parallel-state shapes.
+    // The presence of `:` flips the comma's meaning from field-separator
+    // to state-element-separator, so the two forms can't be combined.
+    let (fields, state_filter) = match pos.first() {
+        None => (Vec::new(), None),
+        Some(s) => split_field_state(s),
+    };
     Ok(TailArgs {
         fields,
+        state_filter,
         count: composed.extras.count,
         metric: composed
             .extras
@@ -722,6 +720,36 @@ fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
         table: composed.extras.table,
         output: composed.output,
     })
+}
+
+/// Split a tail positional into `(fields, state_filter)`.
+///
+/// * Plain `field` or `f1,f2` → comma-split list of fields, no state filter.
+/// * `field:state` → single field plus state filter. The `:` flips the
+///   comma's role from field-separator to parallel-state-separator.
+/// * `field:` (trailing colon, empty state) → bare field, no filter.
+fn split_field_state(raw: &str) -> (Vec<String>, Option<Vec<String>>) {
+    match raw.split_once(':') {
+        None => {
+            let fields = raw
+                .split(',')
+                .map(|f| f.trim().to_string())
+                .filter(|f| !f.is_empty())
+                .collect::<Vec<_>>();
+            (fields, None)
+        }
+        Some((field, "")) => {
+            let f = field.trim().to_string();
+            let fields = if f.is_empty() { Vec::new() } else { vec![f] };
+            (fields, None)
+        }
+        Some((field, rest)) => {
+            let f = field.trim().to_string();
+            let fields = if f.is_empty() { Vec::new() } else { vec![f] };
+            let parts: Vec<String> = rest.split(',').map(|s| s.to_string()).collect();
+            (fields, Some(parts))
+        }
+    }
 }
 
 fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
@@ -2585,6 +2613,78 @@ mod tests {
         let cli = parse_argv(&argv(&["tail", "-w", "5"])).unwrap();
         match cli.command {
             Command::Tail(a) => assert_eq!(a.watch, Some(5.0)),
+            _ => panic!("expected Tail"),
+        }
+    }
+
+    #[test]
+    fn tail_bare_field_carries_no_state_filter() {
+        // da-plbb: a bare field positional leaves state_filter unset and
+        // tail renders in entry mode.
+        let cli = parse_argv(&argv(&["tail", "mood"])).unwrap();
+        match cli.command {
+            Command::Tail(a) => {
+                assert_eq!(a.fields, vec!["mood".to_string()]);
+                assert_eq!(a.state_filter, None);
+            }
+            _ => panic!("expected Tail"),
+        }
+    }
+
+    #[test]
+    fn tail_comma_fields_carry_no_state_filter() {
+        // da-hrnp: multi-field positional stays in entry mode (no `:`).
+        let cli = parse_argv(&argv(&["tail", "mood,project"])).unwrap();
+        match cli.command {
+            Command::Tail(a) => {
+                assert_eq!(a.fields, vec!["mood".to_string(), "project".to_string()]);
+                assert_eq!(a.state_filter, None);
+            }
+            _ => panic!("expected Tail"),
+        }
+    }
+
+    #[test]
+    fn tail_field_colon_state_splits_into_filter() {
+        // da-plbb: `tail mood:happy` → fields=["mood"], state_filter=["happy"].
+        let cli = parse_argv(&argv(&["tail", "mood:happy"])).unwrap();
+        match cli.command {
+            Command::Tail(a) => {
+                assert_eq!(a.fields, vec!["mood".to_string()]);
+                assert_eq!(a.state_filter.as_deref(), Some(&["happy".to_string()][..]));
+            }
+            _ => panic!("expected Tail"),
+        }
+    }
+
+    #[test]
+    fn tail_field_colon_comma_state_splits_into_parallel_filter() {
+        // da-plbb: `tail body:vertical,sit` → parallel-state filter. The
+        // presence of `:` flips the comma from field-separator to
+        // state-element-separator, so `body` is the only field.
+        let cli = parse_argv(&argv(&["tail", "body:vertical,sit"])).unwrap();
+        match cli.command {
+            Command::Tail(a) => {
+                assert_eq!(a.fields, vec!["body".to_string()]);
+                assert_eq!(
+                    a.state_filter.as_deref(),
+                    Some(&["vertical".to_string(), "sit".to_string()][..])
+                );
+            }
+            _ => panic!("expected Tail"),
+        }
+    }
+
+    #[test]
+    fn tail_trailing_colon_is_bare_field() {
+        // da-plbb: `tail mood:` (empty state spec) treats the colon as a
+        // no-op — there's nothing to filter against.
+        let cli = parse_argv(&argv(&["tail", "mood:"])).unwrap();
+        match cli.command {
+            Command::Tail(a) => {
+                assert_eq!(a.fields, vec!["mood".to_string()]);
+                assert_eq!(a.state_filter, None);
+            }
             _ => panic!("expected Tail"),
         }
     }

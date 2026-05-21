@@ -15,6 +15,21 @@ use crate::render::term_layout::{detect_cols, detect_rows, is_stdout_tty};
 use crate::render::{print_table_with, TableArgs, TimeMetricCol};
 
 pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
+    // `field:state` form (da-plbb): block-mode rendering replaces the
+    // per-entry table entirely. The state-block path doesn't share any
+    // of the column/metric/watch plumbing below — bail early. The parser
+    // guarantees `state_filter` is only set alongside exactly one field.
+    if let Some(state) = args.state_filter.as_deref() {
+        if let Some(field) = args.fields.first() {
+            return crate::commands::tail_state::tail_state(
+                field,
+                state,
+                args.count,
+                args.oldest_first,
+                db,
+            );
+        }
+    }
     let columns = split_columns(&args.columns);
     let metric: TimeMetricCol = args
         .metric
