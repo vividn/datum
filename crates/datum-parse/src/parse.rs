@@ -691,8 +691,22 @@ fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
         }
         Ok(None)
     })?;
+    // Single positional may be a comma-separated list of fields:
+    // `datum tail mood,project` → ["mood", "project"]. Trailing positionals
+    // (rare; we don't surface them to users) are dropped — tail has never
+    // accepted more than one positional, and a comma list now covers the
+    // multi-field case without changing argv shape.
+    let fields = pos
+        .first()
+        .map(|s| {
+            s.split(',')
+                .map(|f| f.trim().to_string())
+                .filter(|f| !f.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     Ok(TailArgs {
-        field: pos.first().map(|s| s.to_string()),
+        fields,
         count: composed.extras.count,
         metric: composed
             .extras

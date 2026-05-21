@@ -925,8 +925,18 @@ pub fn render_human(report: &Report) -> String {
         // Falls back to the legacy `example` block when no per-entry list
         // was populated.
         if !issue.entries.is_empty() {
-            let field_w = issue.entries.iter().map(|e| e.field.len()).max().unwrap_or(0);
-            let state_w = issue.entries.iter().map(|e| e.state.len()).max().unwrap_or(0);
+            let field_w = issue
+                .entries
+                .iter()
+                .map(|e| e.field.len())
+                .max()
+                .unwrap_or(0);
+            let state_w = issue
+                .entries
+                .iter()
+                .map(|e| e.state.len())
+                .max()
+                .unwrap_or(0);
             for fe in &issue.entries {
                 out.push_str(&format!(
                     "    {hid:<5}  {field:<field_w$}  {state:<state_w$}\n",

@@ -59,14 +59,14 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
             .map(|e| e.create_time)
             .max()
             .unwrap_or_else(chrono::Utc::now);
-        let field = args.field.as_deref();
+        let field_refs: Vec<&str> = args.fields.iter().map(|s| s.as_str()).collect();
         let tick_tbl = TableArgs {
             suppress_header: true,
             ..tbl.clone()
         };
         loop {
             std::thread::sleep(interval);
-            let new_rows = db.list_entries_created_after(field, since)?;
+            let new_rows = db.list_entries_created_after(&field_refs, since)?;
             if let Some(latest) = new_rows.iter().map(|e| e.create_time).max() {
                 since = latest;
             }
@@ -168,7 +168,7 @@ pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
     let limit = args.count.or(if is_date_only { None } else { Some(10) });
 
     Ok(ListParams {
-        field: args.field.clone(),
+        fields: args.fields.clone(),
         metric,
         start_utc,
         end_utc,

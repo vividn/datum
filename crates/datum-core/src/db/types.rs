@@ -131,8 +131,11 @@ pub(super) fn filtered_where(
 /// `reverse` is set), so callers can treat the output as a time-ordered slice.
 #[derive(Debug, Clone, Default)]
 pub struct ListParams {
-    /// Restrict to entries with `field == <name>` when Some.
-    pub field: Option<String>,
+    /// Restrict to entries whose `field` is in this list. Empty = no filter.
+    /// One name → equality; multiple → SQL `IN (?, ?, …)` with one index lookup
+    /// per name. Multi-field tail interleaves rows ordered by the chosen
+    /// metric.
+    pub fields: Vec<String>,
     /// Which timestamp governs ordering and the bound checks.
     pub metric: TimeMetric,
     /// Inclusive lower bound on the metric timestamp.

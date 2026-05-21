@@ -754,7 +754,7 @@ mod tests {
     /// Used by head regression tests to exercise the shared tail codepath.
     fn head_args(field: Option<&str>, count: Option<usize>) -> TailArgs {
         TailArgs {
-            field: field.map(String::from),
+            fields: field.into_iter().map(String::from).collect(),
             count,
             oldest_first: true,
             ..TailArgs::fresh()

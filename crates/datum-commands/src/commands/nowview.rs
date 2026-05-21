@@ -390,7 +390,7 @@ pub(crate) fn build_dayview_fields(
     // through `day_end_ms` would truncate nanoseconds and exclude them.
     let buffer = chrono::Duration::seconds((history_minutes.max(1.0) * 60.0 * 4.0) as i64);
     let params = ListParams {
-        field: None,
+        fields: Vec::new(),
         metric: TimeMetric::Hybrid,
         start_utc: Some(day_start_utc - buffer),
         end_utc: Some(end),
@@ -484,7 +484,7 @@ pub(crate) fn build_fields(
     let window_start =
         end - chrono::Duration::seconds((history_minutes.max(1.0) * 60.0 * 4.0) as i64);
     let params = ListParams {
-        field: None,
+        fields: Vec::new(),
         metric: TimeMetric::Hybrid,
         start_utc: Some(window_start),
         end_utc: None,

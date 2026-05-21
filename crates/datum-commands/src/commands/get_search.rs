@@ -58,7 +58,7 @@ fn resolve_key(entry: &Entry, key: &str) -> Option<JsonValue> {
             .dur
             .as_ref()
             .and_then(|d| d.as_seconds())
-            .map(|s| JsonValue::from(s)),
+            .map(JsonValue::from),
         "start_time" => entry
             .start_time
             .as_ref()

@@ -283,7 +283,7 @@ fn t05_field_filter() {
     let db = fresh_db();
     sample_morning(&db); // 4 stretch entries
     let mut args = tail_args();
-    args.field = Some("stretch".to_string());
+    args.fields = vec!["stretch".to_string()];
     let got = tail_entries(&args, &db).unwrap();
     assert_eq!(got.len(), 4);
     assert!(got.iter().all(|e| e.field == "stretch"));
@@ -300,6 +300,68 @@ fn t05_field_filter() {
     let got2 = tail_entries(&args, &db).unwrap();
     assert_eq!(got2.len(), 8);
     assert!(got2.iter().all(|e| e.field == "stretch"));
+}
+
+#[test]
+fn t05b_multi_field_filter_interleaves_by_occur_time() {
+    // da-hrnp: comma-separated field list returns the union of entries from
+    // each named field, ordered by the chosen metric (default oldest-first).
+    let db = fresh_db();
+    sample_morning(&db);
+    let mut args = tail_args();
+    args.fields = vec!["stretch".to_string(), "project".to_string()];
+    let got = tail_entries(&args, &db).unwrap();
+
+    // stretch: 4 (07:30, 08:00, 10:15, 10:30); project: 3 (11:01, 11:30, 11:45).
+    assert_eq!(got.len(), 7);
+    // All rows are from one of the requested fields, and both are present.
+    assert!(got
+        .iter()
+        .all(|e| e.field == "stretch" || e.field == "project"));
+    assert!(got.iter().any(|e| e.field == "stretch"));
+    assert!(got.iter().any(|e| e.field == "project"));
+    // Interleaved by occur_time, oldest-first: stretch rows come before
+    // project rows because they all occur earlier in the morning.
+    let times: Vec<_> = got
+        .iter()
+        .map(|e| e.occur_time.as_ref().unwrap().utc)
+        .collect();
+    let mut sorted = times.clone();
+    sorted.sort();
+    assert_eq!(times, sorted, "rows are ordered by occur_time ascending");
+
+    // -n bounds the merged result, taking the last N across both fields.
+    args.count = Some(3);
+    let limited = tail_entries(&args, &db).unwrap();
+    assert_eq!(limited.len(), 3);
+    // Last three by occur_time across {stretch, project} = the three project rows.
+    assert!(limited.iter().all(|e| e.field == "project"));
+}
+
+#[test]
+fn t05c_multi_field_parse_splits_comma_list() {
+    // da-hrnp: `datum tail mood,project,activity` parses to
+    // TailArgs.fields == ["mood", "project", "activity"].
+    use datum_cli::args::{Cli, CliExt, Command};
+    let cli = Cli::try_parse_argv(["datum", "tail", "mood,project,activity"]).unwrap();
+    match cli.command {
+        Command::Tail(a) => {
+            assert_eq!(a.fields, vec!["mood", "project", "activity"]);
+        }
+        _ => panic!("expected Tail"),
+    }
+    // Single field remains a one-element vec (unchanged user surface).
+    let single = Cli::try_parse_argv(["datum", "tail", "mood"]).unwrap();
+    match single.command {
+        Command::Tail(a) => assert_eq!(a.fields, vec!["mood"]),
+        _ => panic!("expected Tail"),
+    }
+    // No positional → empty list (no filter).
+    let bare = Cli::try_parse_argv(["datum", "tail"]).unwrap();
+    match bare.command {
+        Command::Tail(a) => assert!(a.fields.is_empty()),
+        _ => panic!("expected Tail"),
+    }
 }
 
 #[test]
@@ -622,7 +684,7 @@ fn t19_watch_live_updates() {
     let since = initial.iter().map(|e| e.create_time).max().unwrap();
 
     // Nothing new yet → empty tick.
-    let tick0 = db.list_entries_created_after(None, since).unwrap();
+    let tick0 = db.list_entries_created_after(&[], since).unwrap();
     assert!(tick0.is_empty(), "no new rows → empty poll");
 
     // A new insert surfaces on the next tick; unrelated-field insert is
@@ -632,7 +694,7 @@ fn t19_watch_live_updates() {
     std::thread::sleep(std::time::Duration::from_millis(5));
     let caffeine = insert(&db, "caffeine", Verb::Point, 11 * 60);
 
-    let tick_all = db.list_entries_created_after(None, since).unwrap();
+    let tick_all = db.list_entries_created_after(&[], since).unwrap();
     let new_ids: Vec<_> = tick_all.iter().map(|e| e.slug.clone()).collect();
     assert_eq!(
         new_ids,
@@ -640,15 +702,13 @@ fn t19_watch_live_updates() {
         "new rows appear in create_time order"
     );
 
-    let tick_caffeine = db
-        .list_entries_created_after(Some("caffeine"), since)
-        .unwrap();
+    let tick_caffeine = db.list_entries_created_after(&["caffeine"], since).unwrap();
     assert_eq!(tick_caffeine.len(), 1);
     assert_eq!(tick_caffeine[0].slug, caffeine.slug);
 
     // Advance the pivot past the latest row — next tick is empty again.
     let next_since = tick_all.iter().map(|e| e.create_time).max().unwrap();
-    let tick_after = db.list_entries_created_after(None, next_since).unwrap();
+    let tick_after = db.list_entries_created_after(&[], next_since).unwrap();
     assert!(tick_after.is_empty(), "pivot advance clears the queue");
 }
 

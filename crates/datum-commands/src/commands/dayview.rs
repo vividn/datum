@@ -449,7 +449,7 @@ fn build_day_fields(
     // starts can render. The layout clips to the visible window.
     let buffer = chrono::Duration::days(2);
     let params = ListParams {
-        field: None,
+        fields: Vec::new(),
         metric: TimeMetric::Hybrid,
         start_utc: Some(day_start_utc - buffer),
         end_utc: Some(day_end_utc),

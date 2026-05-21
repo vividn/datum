@@ -347,7 +347,10 @@ pub enum ConflictStrategyArg {
 
 #[derive(Debug)]
 pub struct TailArgs {
-    pub field: Option<String>,
+    /// Zero, one, or many field names. Comma-separated on the CLI:
+    /// `datum tail mood,project` parses to `["mood", "project"]`. Empty = no
+    /// filter. Multi-field rows interleave by occur_time in render.
+    pub fields: Vec<String>,
     pub count: Option<usize>,
     pub metric: String,
     pub reverse: bool,
@@ -372,7 +375,7 @@ pub struct TailArgs {
 impl TailArgs {
     pub fn fresh() -> Self {
         Self {
-            field: None,
+            fields: Vec::new(),
             count: None,
             metric: "hybrid".to_string(),
             reverse: false,

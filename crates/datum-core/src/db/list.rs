@@ -60,9 +60,17 @@ impl Db {
         if params.metric == TimeMetric::Occur {
             sql.push_str(" AND slug NOT LIKE '%:unset'");
         }
-        if let Some(field) = &params.field {
-            sql.push_str(" AND field = ?");
-            bindings.push(field.clone());
+        if !params.fields.is_empty() {
+            // One name → `= ?` (equivalent, slightly tighter plan); two or
+            // more → `IN (?, ?, …)` so a multi-field tail merges via the
+            // `entries_field_occur` index instead of scanning.
+            if params.fields.len() == 1 {
+                sql.push_str(" AND field = ?");
+            } else {
+                let qs = vec!["?"; params.fields.len()].join(", ");
+                sql.push_str(&format!(" AND field IN ({qs})"));
+            }
+            bindings.extend(params.fields.iter().cloned());
         }
         if let Some(start) = &params.start_utc {
             sql.push_str(&format!(" AND {metric_expr} >= ?"));
@@ -106,15 +114,20 @@ impl Db {
     /// can append rows as they arrive.
     pub fn list_entries_created_after(
         &self,
-        field: Option<&str>,
+        fields: &[&str],
         since: DateTime<Utc>,
     ) -> Result<Vec<Entry>> {
         let mut sql =
             String::from("SELECT * FROM entries WHERE deleted_at IS NULL AND create_time > ?");
         let mut bindings: Vec<String> = vec![since.to_rfc3339()];
-        if let Some(f) = field {
-            sql.push_str(" AND field = ?");
-            bindings.push(f.to_string());
+        if !fields.is_empty() {
+            if fields.len() == 1 {
+                sql.push_str(" AND field = ?");
+            } else {
+                let qs = vec!["?"; fields.len()].join(", ");
+                sql.push_str(&format!(" AND field IN ({qs})"));
+            }
+            bindings.extend(fields.iter().map(|f| f.to_string()));
         }
         sql.push_str(" ORDER BY create_time ASC, slug ASC");
 
