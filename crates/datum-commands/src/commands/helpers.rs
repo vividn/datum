@@ -8,8 +8,10 @@ use anyhow::Result;
 use datum_core::{
     db::Db,
     entry::Entry,
+    field_spec::SpecRegistry,
     ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
 };
+use serde_json::Value as JsonValue;
 
 fn load_registry(db: &Db) -> Result<datum_core::field_spec::SpecRegistry> {
     Ok(db.load_registry()?)
@@ -20,6 +22,63 @@ fn load_registry(db: &Db) -> Result<datum_core::field_spec::SpecRegistry> {
 /// in `commands/` that don't want to import the private `load_registry`.
 pub(crate) fn load_registry_opt(db: &Db) -> Option<datum_core::field_spec::SpecRegistry> {
     load_registry(db).ok()
+}
+
+/// Insert-time enforcement of `spec.strict` for `entry.data` (da-rcoi).
+///
+/// When the entry's field carries a FieldSpec with `strict = true`, every
+/// top-level key in `entry.data` must be declared in `spec.subfields`. Any
+/// undeclared key fails the write up-front with a message naming the field,
+/// the offending key(s), and the remediation. Non-strict specs and rows
+/// with no spec / no extra_data are no-ops, preserving the existing
+/// permissive default.
+///
+/// Loads the registry on demand (`None` = no specs configured → no-op) so
+/// callers can use the same line at any insert site.
+pub(crate) fn enforce_strict_extra_data(entry: &Entry, db: &Db) -> Result<()> {
+    let Some(registry) = load_registry_opt(db) else {
+        return Ok(());
+    };
+    enforce_strict_extra_data_against(entry, &registry)
+}
+
+/// Variant of [`enforce_strict_extra_data`] that takes an already-loaded
+/// registry. Lets callers reuse a registry they loaded for rendering.
+pub(crate) fn enforce_strict_extra_data_against(
+    entry: &Entry,
+    registry: &SpecRegistry,
+) -> Result<()> {
+    let Some(spec) = registry.field_spec(&entry.field) else {
+        return Ok(());
+    };
+    if !spec.strict {
+        return Ok(());
+    }
+    let Some(JsonValue::Object(map)) = entry.data.as_ref() else {
+        return Ok(());
+    };
+    let mut undeclared: Vec<&str> = map
+        .keys()
+        .filter(|k| !spec.subfields.contains_key(k.as_str()))
+        .map(String::as_str)
+        .collect();
+    if undeclared.is_empty() {
+        return Ok(());
+    }
+    undeclared.sort();
+    let rendered = undeclared
+        .iter()
+        .map(|k| format!("'{k}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let plural = if undeclared.len() == 1 { "" } else { "s" };
+    anyhow::bail!(
+        "field '{field}' is strict: undeclared extra_data key{plural}: {rendered} \
+         (declare {them} in the field spec via `datum spec set {field} key:<type>`, \
+          or remove `--strict` from the spec)",
+        field = entry.field,
+        them = if undeclared.len() == 1 { "it" } else { "them" },
+    );
 }
 
 /// Resolve `input` to an entry via quickId matching, preserving the
@@ -137,4 +196,125 @@ pub(crate) fn resolve_batch(
         }
     }
     (entries, errors)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use datum_core::{
+        action::Action,
+        entry::Verb,
+        field_spec::{FieldSpec, SubfieldSpec, SubfieldType},
+        time::DatumTime,
+    };
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    fn spec_with_intensity(strict: bool) -> FieldSpec {
+        let mut subfields = HashMap::new();
+        subfields.insert(
+            "intensity".to_string(),
+            SubfieldSpec {
+                required: false,
+                value_type: SubfieldType::Number,
+                in_slug: false,
+                default: None,
+                unit: None,
+            },
+        );
+        let mut spec = FieldSpec::new("mood", Action::Switch);
+        spec.subfields = subfields;
+        spec.strict = strict;
+        spec
+    }
+
+    fn mood_entry(data: serde_json::Value) -> Entry {
+        Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(json!("happy")),
+            Some(data),
+            Some(DatumTime::now()),
+            None,
+            "d1",
+        )
+    }
+
+    fn registry_with(spec: FieldSpec) -> SpecRegistry {
+        let db = Db::open_in_memory().unwrap();
+        db.save_field_spec(&spec).unwrap();
+        db.load_registry().unwrap()
+    }
+
+    #[test]
+    fn strict_spec_rejects_undeclared_key() {
+        let registry = registry_with(spec_with_intensity(true));
+        let entry = mood_entry(json!({"weather": "sunny"}));
+        let err = enforce_strict_extra_data_against(&entry, &registry)
+            .expect_err("undeclared key must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("strict"), "error mentions strict: {msg}");
+        assert!(msg.contains("'weather'"), "error names the bad key: {msg}");
+        assert!(msg.contains("mood"), "error names the field: {msg}");
+    }
+
+    #[test]
+    fn strict_spec_accepts_declared_key() {
+        let registry = registry_with(spec_with_intensity(true));
+        let entry = mood_entry(json!({"intensity": 7}));
+        enforce_strict_extra_data_against(&entry, &registry).expect("declared key must pass");
+    }
+
+    #[test]
+    fn nonstrict_spec_accepts_undeclared_key() {
+        let registry = registry_with(spec_with_intensity(false));
+        let entry = mood_entry(json!({"weather": "sunny"}));
+        enforce_strict_extra_data_against(&entry, &registry)
+            .expect("non-strict spec must silently accept undeclared keys");
+    }
+
+    #[test]
+    fn missing_spec_is_a_noop() {
+        // No spec saved → registry returns None → enforcement skips.
+        let registry = registry_with(spec_with_intensity(true));
+        let entry = Entry::new_legacy(
+            "other",
+            Verb::Switch,
+            Some(json!("v")),
+            Some(json!({"any_key": 1})),
+            Some(DatumTime::now()),
+            None,
+            "d1",
+        );
+        enforce_strict_extra_data_against(&entry, &registry)
+            .expect("fields without a spec are unaffected");
+    }
+
+    #[test]
+    fn strict_spec_lists_all_undeclared_keys_sorted() {
+        let registry = registry_with(spec_with_intensity(true));
+        let entry = mood_entry(json!({"weather": "sunny", "altitude": 100}));
+        let err = enforce_strict_extra_data_against(&entry, &registry).unwrap_err();
+        let msg = err.to_string();
+        let alt_pos = msg.find("'altitude'").expect("lists altitude");
+        let weather_pos = msg.find("'weather'").expect("lists weather");
+        assert!(alt_pos < weather_pos, "keys reported sorted: {msg}");
+        assert!(msg.contains("key"), "plural marker present: {msg}");
+    }
+
+    #[test]
+    fn strict_spec_with_no_extra_data_is_a_noop() {
+        let registry = registry_with(spec_with_intensity(true));
+        let entry = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(json!("happy")),
+            None,
+            Some(DatumTime::now()),
+            None,
+            "d1",
+        );
+        enforce_strict_extra_data_against(&entry, &registry)
+            .expect("strict spec accepts rows with no extra_data");
+    }
 }

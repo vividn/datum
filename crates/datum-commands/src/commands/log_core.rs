@@ -462,6 +462,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.verb = derived_verb;
     }
 
+    // da-rcoi: when the field's spec is strict, reject undeclared
+    // extra_data keys before the write lands. Runs ahead of the dry-run
+    // and multi-collector branches so the failure surfaces uniformly —
+    // strict-mode protection shouldn't depend on which insert path the
+    // CLI chose.
+    crate::commands::helpers::enforce_strict_extra_data(&entry, db)?;
+
     // --dry-run: preview the would-be entry — including slug derivation,
     // reserved-column routing, and state canonicalization — without
     // touching the DB or the multi-collector. Skips `_LAST` pointer

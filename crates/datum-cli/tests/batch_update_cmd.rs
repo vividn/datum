@@ -265,3 +265,88 @@ fn compound_update_tolerates_trailing_comma() {
         assert_eq!(row.data.as_ref().unwrap()["reps"], json!(20));
     }
 }
+
+// ─── da-rcoi: strict-spec enforcement on update/merge/rekey ──────────────
+
+/// `datum update` against a strict-spec entry must reject a payload that
+/// introduces an undeclared key, leaving the existing row unchanged.
+#[test]
+fn strict_spec_blocks_update_introducing_undeclared_key() {
+    let db = fresh_db();
+
+    let row = entry_builder("mood")
+        .value(json!("happy"))
+        .extra_data(json!({"intensity": 7}))
+        .insert(&db);
+
+    let mut spec =
+        datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
+    let mut subfields = std::collections::HashMap::new();
+    subfields.insert(
+        "intensity".to_string(),
+        datum_core::field_spec::SubfieldSpec {
+            required: false,
+            value_type: datum_core::field_spec::SubfieldType::Number,
+            in_slug: false,
+            default: None,
+            unit: None,
+        },
+    );
+    spec.subfields = subfields;
+    spec.strict = true;
+    db.save_field_spec(&spec).unwrap();
+
+    let err = run_cli(&["update", row.slug.as_str(), "weather=sunny"], &db)
+        .expect_err("update introducing undeclared key under strict spec must fail");
+    let msg = err.to_string();
+    assert!(msg.contains("strict"), "error mentions strict mode: {msg}");
+    assert!(msg.contains("'weather'"), "error names the bad key: {msg}");
+
+    let fresh = db.get_entry(&row.slug).unwrap();
+    let data = fresh.data.as_ref().expect("extra_data preserved");
+    assert_eq!(data["intensity"], json!(7), "existing field untouched");
+    assert!(data.get("weather").is_none(), "rejected key never landed");
+}
+
+/// `datum rekey` to a name not declared in the strict spec must also fail,
+/// since rekey can otherwise smuggle in unowned keys past the log gate.
+#[test]
+fn strict_spec_blocks_rekey_into_undeclared_name() {
+    let db = fresh_db();
+
+    let row = entry_builder("mood")
+        .value(json!("happy"))
+        .extra_data(json!({"intensity": 7}))
+        .insert(&db);
+
+    let mut spec =
+        datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
+    let mut subfields = std::collections::HashMap::new();
+    subfields.insert(
+        "intensity".to_string(),
+        datum_core::field_spec::SubfieldSpec {
+            required: false,
+            value_type: datum_core::field_spec::SubfieldType::Number,
+            in_slug: false,
+            default: None,
+            unit: None,
+        },
+    );
+    spec.subfields = subfields;
+    spec.strict = true;
+    db.save_field_spec(&spec).unwrap();
+
+    let err = run_cli(&["rekey", row.slug.as_str(), "intensity=vibe"], &db)
+        .expect_err("rekey to undeclared name under strict spec must fail");
+    let msg = err.to_string();
+    assert!(msg.contains("strict"), "error mentions strict mode: {msg}");
+    assert!(
+        msg.contains("'vibe'"),
+        "error names the new (bad) key: {msg}"
+    );
+
+    let fresh = db.get_entry(&row.slug).unwrap();
+    let data = fresh.data.as_ref().expect("extra_data preserved");
+    assert_eq!(data["intensity"], json!(7));
+    assert!(data.get("vibe").is_none());
+}

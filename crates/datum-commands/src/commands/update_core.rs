@@ -423,6 +423,10 @@ fn persist_with_auto_reinterp(
     slug_delimiter: &str,
     db: &Db,
 ) -> Result<UpdateOutcome> {
+    // da-rcoi: strict-spec enforcement also runs on the update / merge /
+    // rekey paths — a key renamed into an undeclared slot or merged in
+    // from a payload would otherwise slip past the log-time check.
+    crate::commands::helpers::enforce_strict_extra_data(&updated, db)?;
     let (entry, old_slug) =
         db.save_existing_entry_with_auto_reinterp(&existing.slug, updated, slug_delimiter)?;
     Ok(UpdateOutcome { entry, old_slug })

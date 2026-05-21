@@ -819,3 +819,100 @@ fn switch_field_non_reserved_state_remains_literal() {
     let e = &entries[0];
     assert_entry_matches!(e, field: "project", verb: "switch", value: "ai");
 }
+
+// ─── da-rcoi: strict-spec extra_data rejection at insert time ────────────
+
+/// When a field's spec is `strict = true`, the log path must refuse a write
+/// that carries an extra_data key not declared in `spec.subfields`. The
+/// error message names the field and the offending key so the user can fix
+/// either the spec or the invocation.
+#[test]
+fn strict_spec_rejects_undeclared_extra_data_key_at_insert() {
+    let db = fresh_db();
+
+    spec_builder("mood").default_verb(Action::Switch).save(&db);
+    let mut spec = db.load_spec("mood").unwrap().unwrap();
+    spec.strict = true;
+    let mut subfields = std::collections::HashMap::new();
+    subfields.insert(
+        "intensity".to_string(),
+        datum_core::field_spec::SubfieldSpec {
+            required: false,
+            value_type: datum_core::field_spec::SubfieldType::Number,
+            in_slug: false,
+            default: None,
+            unit: None,
+        },
+    );
+    spec.subfields = subfields;
+    db.save_field_spec(&spec).unwrap();
+
+    let err = run_cli(&["switch", "mood", "happy", "-k", "weather=sunny"], &db)
+        .expect_err("undeclared key under strict spec must fail the write");
+    let msg = err.to_string();
+    assert!(msg.contains("strict"), "error mentions strict mode: {msg}");
+    assert!(msg.contains("'weather'"), "error names the bad key: {msg}");
+    assert!(msg.contains("mood"), "error names the field: {msg}");
+
+    // Critically: nothing was written.
+    assert_count!(db, "mood", 0);
+}
+
+/// Same setup as the rejection test, but the entry carries only the
+/// declared `intensity` key — strict mode accepts it.
+#[test]
+fn strict_spec_accepts_declared_extra_data_key_at_insert() {
+    let db = fresh_db();
+
+    spec_builder("mood").default_verb(Action::Switch).save(&db);
+    let mut spec = db.load_spec("mood").unwrap().unwrap();
+    spec.strict = true;
+    let mut subfields = std::collections::HashMap::new();
+    subfields.insert(
+        "intensity".to_string(),
+        datum_core::field_spec::SubfieldSpec {
+            required: false,
+            value_type: datum_core::field_spec::SubfieldType::Number,
+            in_slug: false,
+            default: None,
+            unit: None,
+        },
+    );
+    spec.subfields = subfields;
+    db.save_field_spec(&spec).unwrap();
+
+    run_cli(&["switch", "mood", "happy", "-k", "intensity=7"], &db)
+        .expect("declared key passes strict-mode gate");
+
+    let entry = &db.entries_for_field("mood", None).unwrap()[0];
+    assert_eq!(entry.data.as_ref().unwrap()["intensity"], json!(7));
+}
+
+/// Default behaviour (no `strict` flag on the spec) must remain permissive —
+/// undeclared keys keep landing silently so freeform fields evolve naturally.
+#[test]
+fn nonstrict_spec_silently_accepts_undeclared_extra_data_key_at_insert() {
+    let db = fresh_db();
+
+    spec_builder("mood").default_verb(Action::Switch).save(&db);
+    let mut spec = db.load_spec("mood").unwrap().unwrap();
+    let mut subfields = std::collections::HashMap::new();
+    subfields.insert(
+        "intensity".to_string(),
+        datum_core::field_spec::SubfieldSpec {
+            required: false,
+            value_type: datum_core::field_spec::SubfieldType::Number,
+            in_slug: false,
+            default: None,
+            unit: None,
+        },
+    );
+    spec.subfields = subfields;
+    db.save_field_spec(&spec).unwrap();
+
+    run_cli(&["switch", "mood", "happy", "-k", "weather=sunny"], &db)
+        .expect("non-strict spec accepts any extra_data key");
+
+    let entry = &db.entries_for_field("mood", None).unwrap()[0];
+    assert_eq!(entry.data.as_ref().unwrap()["weather"], json!("sunny"));
+}
