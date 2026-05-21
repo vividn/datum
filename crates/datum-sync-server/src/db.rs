@@ -50,7 +50,109 @@ pub fn init_db(conn: &Connection) -> Result<()> {
     ",
     )
     .context("init_db")?;
+
+    migrate_to_clusters(conn).context("migrate_to_clusters")?;
     Ok(())
+}
+
+/// da-og24 (sub-2 of multi-DB epic da-u6lm): introduce the `clusters`
+/// concept so a single user can hold multiple logical sync clusters
+/// (multi-DB). Idempotent; safe to call on a fresh or populated relay.
+///
+/// Backfill rule (transitional): every existing user gets a default
+/// cluster with `cluster_id = user_id`, `generation = 0`. Existing
+/// wrapped-key and changeset rows are pinned to that default. Sub-3+
+/// surfaces real cluster creation; until then every server-side path
+/// silently maps `cluster_id := user_id`.
+fn migrate_to_clusters(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS clusters (
+            cluster_id TEXT PRIMARY KEY,
+            user_id    TEXT NOT NULL,
+            generation INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
+    )
+    .context("create clusters")?;
+
+    // ALTER ADD COLUMN is idempotent only via the `IF NOT EXISTS` shape
+    // (SQLite 3.35+) — older builds error. PRAGMA table_info is the
+    // portable way to gate the migration.
+    if !column_exists(conn, "changesets", "cluster_id")? {
+        conn.execute("ALTER TABLE changesets ADD COLUMN cluster_id TEXT", [])
+            .context("add changesets.cluster_id")?;
+        // Backfill from devices: each changeset's cluster is the
+        // changeset device's owning user (transitional 1:1).
+        conn.execute(
+            "UPDATE changesets
+             SET cluster_id = (
+                 SELECT user_id FROM devices WHERE devices.id = changesets.device_id
+             )
+             WHERE cluster_id IS NULL",
+            [],
+        )
+        .context("backfill changesets.cluster_id")?;
+    }
+    if !column_exists(conn, "changesets", "generation")? {
+        conn.execute(
+            "ALTER TABLE changesets ADD COLUMN generation INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .context("add changesets.generation")?;
+    }
+
+    // `wrapped_keys` keys on user_id today; multi-DB means (user_id,
+    // cluster_id) pair. SQLite doesn't let us rewrite a primary key in
+    // place — recreate the table, copy rows with cluster_id = user_id,
+    // swap names. Only runs once because the post-migration table
+    // already carries cluster_id.
+    if !column_exists(conn, "wrapped_keys", "cluster_id")? {
+        conn.execute_batch(
+            "CREATE TABLE wrapped_keys_new (
+                user_id    TEXT NOT NULL,
+                cluster_id TEXT NOT NULL,
+                blob       TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (user_id, cluster_id)
+            );
+            INSERT INTO wrapped_keys_new (user_id, cluster_id, blob, updated_at)
+                SELECT user_id, user_id, blob, updated_at FROM wrapped_keys;
+            DROP TABLE wrapped_keys;
+            ALTER TABLE wrapped_keys_new RENAME TO wrapped_keys;",
+        )
+        .context("recreate wrapped_keys with composite key")?;
+    }
+
+    // Default-cluster backfill. Runs every init — `INSERT OR IGNORE`
+    // means already-seeded users stay untouched, but a user inserted
+    // before this migration ran still gets their default cluster row
+    // the first time the server boots after the upgrade.
+    conn.execute(
+        "INSERT OR IGNORE INTO clusters (cluster_id, user_id, generation)
+         SELECT id, id, 0 FROM users",
+        [],
+    )
+    .context("backfill default clusters")?;
+
+    Ok(())
+}
+
+/// PRAGMA-based column lookup. Lets the migration stay idempotent
+/// against any SQLite version (no reliance on `ALTER TABLE ... IF NOT
+/// EXISTS COLUMN`, which is 3.35+).
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    // `PRAGMA table_info` doesn't take bind parameters; the table name
+    // is interpolated. Caller passes hard-coded literals so SQL
+    // injection isn't a concern here.
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Persist a refresh token by its SHA-256 hash. Storing the hash means
@@ -142,6 +244,10 @@ pub fn get_passkeys(conn: &Connection, user_id: &Uuid) -> Result<Vec<Passkey>> {
 }
 
 /// Insert a changeset for a device. Returns (global_id, per_device_seq).
+///
+/// `cluster_id` (da-og24) is resolved from the device's owning user
+/// (transitional 1:1 mapping). `generation` defaults to 0; sub-3+
+/// threads the real value through from the wire `PushRequest`.
 pub fn insert_changeset(conn: &Connection, device_id: &str, payload: &str) -> Result<(i64, i64)> {
     let seq: i64 = conn
         .query_row(
@@ -151,8 +257,15 @@ pub fn insert_changeset(conn: &Connection, device_id: &str, payload: &str) -> Re
         )
         .context("compute next seq")?;
 
+    // Subquery on devices keeps the call signature stable for sub-3:
+    // callers still pass (device_id, payload); the schema does the join.
     conn.execute(
-        "INSERT INTO changesets (device_id, seq, payload) VALUES (?1, ?2, ?3)",
+        "INSERT INTO changesets (device_id, seq, payload, cluster_id, generation)
+         VALUES (
+             ?1, ?2, ?3,
+             (SELECT user_id FROM devices WHERE id = ?1),
+             0
+         )",
         params![device_id, seq, payload],
     )
     .context("insert_changeset")?;
@@ -198,21 +311,33 @@ pub fn pull_changesets(
 
 /// Upsert the wrapped master key blob for a user. Body is opaque JSON
 /// (the relay is content-blind about the inner shape per spec §Wrapped key exchange).
+///
+/// da-og24 (sub-2 of multi-DB epic): `wrapped_keys` now keys on
+/// (user_id, cluster_id). This function targets the user's default
+/// cluster (`cluster_id = user_id`) as the transitional shape; sub-3+
+/// adds explicit per-cluster wrap APIs.
 pub fn upsert_wrapped_key(conn: &Connection, user_id: &Uuid, blob: &str) -> Result<()> {
+    let uid = user_id.to_string();
     conn.execute(
-        "INSERT INTO wrapped_keys (user_id, blob, updated_at)
-         VALUES (?1, ?2, datetime('now'))
-         ON CONFLICT(user_id) DO UPDATE SET blob = excluded.blob, updated_at = excluded.updated_at",
-        params![user_id.to_string(), blob],
+        "INSERT INTO wrapped_keys (user_id, cluster_id, blob, updated_at)
+         VALUES (?1, ?2, ?3, datetime('now'))
+         ON CONFLICT(user_id, cluster_id)
+         DO UPDATE SET blob = excluded.blob, updated_at = excluded.updated_at",
+        params![uid, uid, blob],
     )
     .context("upsert_wrapped_key")?;
     Ok(())
 }
 
 /// Get the wrapped master key blob for a user, or None if unset.
+///
+/// da-og24: scoped to the user's default cluster. Sub-3+ adds a
+/// cluster-aware variant.
 pub fn get_wrapped_key(conn: &Connection, user_id: &Uuid) -> Result<Option<String>> {
-    let mut stmt = conn.prepare("SELECT blob FROM wrapped_keys WHERE user_id = ?1")?;
-    let mut rows = stmt.query(params![user_id.to_string()])?;
+    let uid = user_id.to_string();
+    let mut stmt =
+        conn.prepare("SELECT blob FROM wrapped_keys WHERE user_id = ?1 AND cluster_id = ?2")?;
+    let mut rows = stmt.query(params![uid, uid])?;
     if let Some(row) = rows.next()? {
         Ok(Some(row.get(0)?))
     } else {
@@ -328,5 +453,191 @@ mod tests {
         let (_, seq2) = insert_changeset(&conn, "device-2", "b2").unwrap();
         assert_eq!(seq1, 1);
         assert_eq!(seq2, 2);
+    }
+
+    // ─── da-og24: clusters schema migration ─────────────────────────────────
+
+    /// Brand-new init produces a `clusters` table and the cluster
+    /// columns on the dependent tables. Pins the post-migration
+    /// surface so future schema changes don't silently lose it.
+    #[test]
+    fn migration_creates_clusters_table_and_columns() {
+        let conn = setup();
+        assert!(column_exists(&conn, "clusters", "cluster_id").unwrap());
+        assert!(column_exists(&conn, "clusters", "user_id").unwrap());
+        assert!(column_exists(&conn, "clusters", "generation").unwrap());
+        assert!(column_exists(&conn, "changesets", "cluster_id").unwrap());
+        assert!(column_exists(&conn, "changesets", "generation").unwrap());
+        assert!(column_exists(&conn, "wrapped_keys", "cluster_id").unwrap());
+    }
+
+    /// New inserts route through the migration: the changeset's
+    /// cluster_id is derived from the device's owning user, and the
+    /// generation defaults to 0. Locks the transitional 1:1 mapping.
+    #[test]
+    fn insert_changeset_populates_cluster_from_device_owner() {
+        let conn = setup();
+        let user_id = Uuid::new_v4();
+        ensure_device(&conn, "device-1", &user_id).unwrap();
+        insert_changeset(&conn, "device-1", "payload").unwrap();
+
+        let (cluster_id, generation): (String, i64) = conn
+            .query_row(
+                "SELECT cluster_id, generation FROM changesets WHERE device_id = ?1",
+                params!["device-1"],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(cluster_id, user_id.to_string());
+        assert_eq!(generation, 0);
+    }
+
+    /// Wrapped-key writes target (user_id, cluster_id = user_id) as
+    /// the transitional default. Round-trip continues to work through
+    /// the unchanged public API.
+    #[test]
+    fn wrapped_key_round_trips_under_composite_key() {
+        let conn = setup();
+        let user_id = Uuid::new_v4();
+        upsert_wrapped_key(&conn, &user_id, "{\"k\":\"v\"}").unwrap();
+        assert_eq!(
+            get_wrapped_key(&conn, &user_id).unwrap().as_deref(),
+            Some("{\"k\":\"v\"}")
+        );
+
+        // Direct query confirms cluster_id = user_id was persisted.
+        let cluster_id: String = conn
+            .query_row(
+                "SELECT cluster_id FROM wrapped_keys WHERE user_id = ?1",
+                params![user_id.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cluster_id, user_id.to_string());
+    }
+
+    /// Migration must preserve rows in a v1-shaped DB and backfill
+    /// cluster_id / generation. Simulates a relay upgraded in place:
+    /// build the pre-migration schema by hand, populate it, then run
+    /// `init_db` and assert every old row survives with the
+    /// transitional cluster assignment.
+    #[test]
+    fn migration_preserves_existing_rows_and_backfills_clusters() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Build the v1 schema exactly as it was pre-da-og24.
+        conn.execute_batch(
+            "CREATE TABLE users (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE devices (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                label TEXT,
+                registered_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE changesets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                payload TEXT NOT NULL,
+                uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(device_id, seq)
+            );
+            CREATE TABLE wrapped_keys (
+                user_id TEXT PRIMARY KEY,
+                blob TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+
+        let user_id = Uuid::new_v4();
+        conn.execute(
+            "INSERT INTO users (id, username) VALUES (?1, ?2)",
+            params![user_id.to_string(), "alice"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO devices (id, user_id) VALUES (?1, ?2)",
+            params!["dev-A", user_id.to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO changesets (device_id, seq, payload) VALUES (?1, ?2, ?3)",
+            params!["dev-A", 1_i64, "legacy-payload"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO wrapped_keys (user_id, blob) VALUES (?1, ?2)",
+            params![user_id.to_string(), "legacy-blob"],
+        )
+        .unwrap();
+
+        // The in-place upgrade.
+        init_db(&conn).unwrap();
+
+        // Legacy changeset row is preserved AND has its cluster_id /
+        // generation populated from the device's owner.
+        let (payload, cluster_id, generation): (String, String, i64) = conn
+            .query_row(
+                "SELECT payload, cluster_id, generation FROM changesets WHERE device_id = ?1",
+                params!["dev-A"],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(payload, "legacy-payload");
+        assert_eq!(cluster_id, user_id.to_string());
+        assert_eq!(generation, 0);
+
+        // Legacy wrapped_key survives the table recreate; cluster_id
+        // = user_id is the transitional default.
+        let (blob, cluster_id): (String, String) = conn
+            .query_row(
+                "SELECT blob, cluster_id FROM wrapped_keys WHERE user_id = ?1",
+                params![user_id.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(blob, "legacy-blob");
+        assert_eq!(cluster_id, user_id.to_string());
+
+        // The default cluster row got backfilled.
+        let (gen_, owner): (i64, String) = conn
+            .query_row(
+                "SELECT generation, user_id FROM clusters WHERE cluster_id = ?1",
+                params![user_id.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(gen_, 0);
+        assert_eq!(owner, user_id.to_string());
+    }
+
+    /// Migration is idempotent — running init_db twice on a populated
+    /// DB must not duplicate cluster rows or fail with "duplicate
+    /// column".
+    #[test]
+    fn migration_is_idempotent() {
+        let conn = setup();
+        let user_id = Uuid::new_v4();
+        conn.execute(
+            "INSERT INTO users (id, username) VALUES (?1, ?2)",
+            params![user_id.to_string(), "bob"],
+        )
+        .unwrap();
+
+        init_db(&conn).unwrap();
+        init_db(&conn).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clusters WHERE user_id = ?1",
+                params![user_id.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "default cluster must not duplicate");
     }
 }
