@@ -207,6 +207,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Kit(sub) => commands::kit::kit(sub, db),
         Command::Track(args) => commands::track::track(args, db),
         Command::Ignore(args) => commands::ignore::ignore(args, db),
+        Command::Meta(sub) => commands::meta::meta(sub, db),
         Command::Grep(args) => commands::grep::grep(args, db),
         Command::Check(args) => commands::check::check(args, db),
         Command::Count(args) => commands::count::count(args, db),

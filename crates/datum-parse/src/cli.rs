@@ -58,6 +58,13 @@ pub enum Command {
     Track(TrackArgs),
     Ignore(IgnoreArgs),
 
+    /// `datum meta <field> <text>` — record an out-of-band protocol
+    /// note about how a field is being classified or interpreted.
+    /// `datum meta show <field>` lists every note for a field in
+    /// `create_time` order. Notes are stored as timeless entries on
+    /// the field with `extra_metadata.meta = true`.
+    Meta(MetaCommand),
+
     Grep(GrepArgs),
     Check(CheckArgs),
 
@@ -709,6 +716,20 @@ pub struct TrackArgs {
 #[derive(Debug)]
 pub struct IgnoreArgs {
     pub field: String,
+}
+
+// ─── Meta (da-xn8j) ───────────────────────────────────────────────────────
+
+/// `datum meta` subcommand surface — either add a new note or list
+/// the notes already attached to a field.
+#[derive(Debug)]
+pub enum MetaCommand {
+    /// `datum meta <field> <text...>` — append a protocol-change note
+    /// to `<field>`. Positional tail joins on spaces.
+    Add { field: String, text: String },
+    /// `datum meta show <field>` — list every note attached to
+    /// `<field>` in `create_time` order.
+    Show { field: String },
 }
 
 // ─── Grep / Count / Ids / Dayview / Check ────────────────────────────────

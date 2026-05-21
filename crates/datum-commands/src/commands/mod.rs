@@ -27,6 +27,7 @@ pub mod kit;
 pub mod kit_command;
 pub mod log_core;
 pub mod merge;
+pub mod meta;
 pub mod migrate;
 pub mod now;
 pub mod nowview;

@@ -236,6 +236,8 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
         "track" => Command::Track(parse_track_args(rest)?),
         "ignore" => Command::Ignore(parse_ignore_args(rest)?),
 
+        "meta" => Command::Meta(parse_meta_cmd(rest)?),
+
         "grep" => Command::Grep(parse_grep_args(rest)?),
         "check" => Command::Check(parse_check_args(rest)?),
 
@@ -1421,6 +1423,47 @@ fn parse_ignore_args(tail: &[&str]) -> Result<IgnoreArgs> {
     })
 }
 
+fn parse_meta_cmd(tail: &[&str]) -> Result<MetaCommand> {
+    // No flag-level knobs — purely positional. Two forms:
+    //   `meta show <field>`  → MetaCommand::Show
+    //   `meta <field> <text...>` → MetaCommand::Add (text joined on space)
+    let mut pos: Vec<&str> = Vec::new();
+    for tok in tail {
+        match split_flag(tok) {
+            FlagSplit::Positional(s) => pos.push(s),
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    if pos.first().copied() == Some("show") {
+        let field = pos
+            .get(1)
+            .copied()
+            .ok_or_else(|| ParseError::InvalidArg("`datum meta show` requires <FIELD>".into()))?;
+        if pos.len() > 2 {
+            return Err(ParseError::InvalidArg(format!(
+                "`datum meta show {field}` takes no further positionals (got {} extra)",
+                pos.len() - 2
+            )));
+        }
+        return Ok(MetaCommand::Show {
+            field: field.to_string(),
+        });
+    }
+    let field = pos
+        .first()
+        .copied()
+        .ok_or_else(|| ParseError::InvalidArg("`datum meta` requires <FIELD>".into()))?;
+    if pos.len() < 2 {
+        return Err(ParseError::InvalidArg(format!(
+            "`datum meta {field}` requires a note (e.g. `datum meta {field} \"renaming X as Y\"`)"
+        )));
+    }
+    Ok(MetaCommand::Add {
+        field: field.to_string(),
+        text: pos[1..].join(" "),
+    })
+}
+
 fn parse_migrate_cmd(tail: &[&str]) -> Result<MigrateCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
@@ -2560,5 +2603,66 @@ mod tests {
             Command::Check(a) => assert!(a.list),
             _ => panic!(),
         }
+    }
+
+    /// da-xn8j: bare `datum meta <field> <text>` lands as a MetaCommand::Add
+    /// with the text joined on spaces. Required form for the iterative
+    /// classification-decision journal.
+    #[test]
+    fn meta_add_joins_tail_into_text() {
+        let cli = parse_argv(&argv(&[
+            "meta",
+            "body",
+            "Split",
+            "sit",
+            "into",
+            "sit_office",
+        ]))
+        .unwrap();
+        match cli.command {
+            Command::Meta(MetaCommand::Add { field, text }) => {
+                assert_eq!(field, "body");
+                assert_eq!(text, "Split sit into sit_office");
+            }
+            other => panic!("expected MetaCommand::Add, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn meta_show_with_field() {
+        let cli = parse_argv(&argv(&["meta", "show", "mood"])).unwrap();
+        match cli.command {
+            Command::Meta(MetaCommand::Show { field }) => assert_eq!(field, "mood"),
+            other => panic!("expected MetaCommand::Show, got {other:?}"),
+        }
+    }
+
+    /// `datum meta` with no positional must error — silently dispatching
+    /// nothing would mask a user typo.
+    #[test]
+    fn meta_without_field_errors() {
+        let err = parse_argv(&argv(&["meta"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("<FIELD>") || msg.contains("FIELD"),
+            "got: {msg}"
+        );
+    }
+
+    /// `datum meta <field>` without a note must error — an empty note
+    /// is not a journal entry.
+    #[test]
+    fn meta_without_note_errors() {
+        let err = parse_argv(&argv(&["meta", "body"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("requires a note"), "got: {msg}");
+    }
+
+    /// `datum meta show` without a field is an error.
+    #[test]
+    fn meta_show_without_field_errors() {
+        let err = parse_argv(&argv(&["meta", "show"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("<FIELD>"), "got: {msg}");
     }
 }
