@@ -1228,6 +1228,14 @@ fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.no_autoalias = true;
                 i += 1;
             }
+            FlagSplit::Long("strict") => {
+                out.strict = Some(true);
+                i += 1;
+            }
+            FlagSplit::Long("no-strict") => {
+                out.strict = Some(false);
+                i += 1;
+            }
             FlagSplit::Long("y") => {
                 let (v, ni) = take_value(tail, i, None, "--y")?;
                 out.y = Some(parse_position_f64(v, "--y")?);

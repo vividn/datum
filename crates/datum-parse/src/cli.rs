@@ -600,6 +600,10 @@ pub struct SpecSetArgs {
     /// Replace the spec's `tags` list with this. Empty (`Vec::is_empty`) is
     /// treated as "leave as-is" — to clear tags, pass `--json '...tags=[]'`.
     pub tags: Vec<String>,
+    /// `--strict` / `--no-strict`. `Some(true)` locks the spec down (the
+    /// `orphaned_extra_data_key` check fires for undeclared keys);
+    /// `Some(false)` clears strictness; `None` leaves the existing value.
+    pub strict: Option<bool>,
 }
 
 impl SpecSetArgs {
@@ -623,6 +627,7 @@ impl SpecSetArgs {
             height: None,
             z_index: None,
             tags: Vec::new(),
+            strict: None,
         }
     }
 }

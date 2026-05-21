@@ -130,6 +130,9 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if args.no_autoalias {
         spec.no_autoalias = true;
     }
+    if let Some(s) = args.strict {
+        spec.strict = s;
+    }
     if args.y.is_some() {
         spec.presentation.y = args.y;
     }
@@ -199,6 +202,7 @@ mod tests {
             height: None,
             z_index: None,
             tags: vec![],
+            strict: None,
         };
         spec_set(args, &db).unwrap();
 
@@ -239,6 +243,7 @@ mod tests {
             height: None,
             z_index: None,
             tags: vec![],
+            strict: None,
         };
         spec_set(args2, &db).unwrap();
         assert!(db.lookup_alias("sad").unwrap().is_none());

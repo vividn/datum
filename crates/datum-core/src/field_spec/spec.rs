@@ -101,6 +101,15 @@ pub struct FieldSpec {
     #[serde(default)]
     pub no_autoalias: bool,
 
+    /// When true, `datum check` flags undeclared extra_data keys on entries
+    /// for this field (the `orphaned_extra_data_key` warning). When false
+    /// (the default), undeclared keys are accepted silently — most fields
+    /// are freeform and their data shape evolves; flagging by default is
+    /// over-aggressive. Strict mode lets the user lock down a spec once
+    /// the shape stabilizes.
+    #[serde(default)]
+    pub strict: bool,
+
     /// Free-form tags. Used by views and kit commands to group fields by a
     /// schema-level marker (e.g. `["chore"]`). Mirrored into the
     /// `field_specs.tags` column at save time so SQL filters
@@ -138,6 +147,7 @@ impl FieldSpec {
             id_keys: Vec::new(),
             data_keys: Vec::new(),
             no_autoalias: false,
+            strict: false,
             tags: Vec::new(),
             presentation: PresentationSpec::default(),
         }

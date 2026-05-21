@@ -108,6 +108,18 @@ pub struct IssueExample {
     pub detail: Option<String>,
 }
 
+/// One flagged entry, rendered inline under its issue in human output.
+/// Carries enough to identify the row without re-querying the DB.
+#[derive(Debug, Clone, Serialize)]
+pub struct FlaggedEntry {
+    /// Short 5-char hid prefix.
+    pub hid: String,
+    pub field: String,
+    /// Pre-rendered state value (`!`-prefixed for `repeated_state` rows so
+    /// the marker matches the renderer's repeated-state convention).
+    pub state: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Issue {
     pub severity: Severity,
@@ -116,6 +128,10 @@ pub struct Issue {
     pub count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub example: Option<IssueExample>,
+    /// All entries the issue applies to (one line each in human output).
+    /// Empty for non-per-entry issues (e.g. summary categories).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entries: Vec<FlaggedEntry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -244,6 +260,7 @@ fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
             ),
             count: drift_count,
             example: drift_example,
+            entries: Vec::new(),
         });
     }
     if corrupt_count > 0 {
@@ -258,6 +275,7 @@ fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
             ),
             count: corrupt_count,
             example: corrupt_example,
+            entries: Vec::new(),
         });
     }
 
@@ -378,6 +396,7 @@ fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
             ),
             count: drift_count,
             example: drift_example,
+            entries: Vec::new(),
         });
     }
 
@@ -418,22 +437,24 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
         return Ok(Vec::new());
     }
 
-    let mut by_kind: std::collections::BTreeMap<&'static str, (usize, &IntegrityWarning)> =
+    // Group pending warnings by kind; preserve insertion order within each
+    // group so per-entry render output matches the queue order.
+    let mut by_kind: std::collections::BTreeMap<&'static str, Vec<&IntegrityWarning>> =
         std::collections::BTreeMap::new();
     for w in &pending {
-        by_kind
-            .entry(w.kind.as_str())
-            .and_modify(|(n, _)| *n += 1)
-            .or_insert((1, w));
+        by_kind.entry(w.kind.as_str()).or_default().push(w);
     }
 
     let mut issues = Vec::new();
-    for (_, (count, first)) in by_kind {
+    for (_, group) in by_kind {
+        let first = group[0];
+        let count = group.len();
         let kind = first.kind;
         let message = match kind {
             IntegrityKind::SameStateRepeat => format!(
-                "{count} entr{y} repeat the prior state without an intermediate transition \
-                 (likely a missing event — backfill with `datum switch <field> <state> -t -<n>`)",
+                "{count} entr{y} repeat the prior state on their field. \
+                 Look at the surrounding data; the right fix is usually a backfill (missing transition) \
+                 or a delete (true duplicate).",
                 y = if count == 1 { "y" } else { "ies" },
             ),
             IntegrityKind::DoubleOpen => format!(
@@ -454,12 +475,36 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
             ),
         };
         let category: &'static str = match kind {
-            IntegrityKind::SameStateRepeat => "integrity_same_state_repeat",
+            IntegrityKind::SameStateRepeat => "repeated_state",
             IntegrityKind::DoubleOpen => "integrity_double_open",
             IntegrityKind::OrphanEnd => "integrity_orphan_end",
             IntegrityKind::Overlap => "integrity_overlap",
             IntegrityKind::LastStateMismatch => "integrity_last_state_mismatch",
         };
+        // da-mkes: collect one FlaggedEntry per warning. The state column
+        // gets a leading `!` for `repeated_state` rows so the human render
+        // shares the same marker the live renderer uses for repeated
+        // switches (qfv0).
+        let mark_repeat = matches!(kind, IntegrityKind::SameStateRepeat);
+        let entries: Vec<FlaggedEntry> = group
+            .iter()
+            .map(|w| {
+                let state_str = match w.local_entry.value.as_ref() {
+                    Some(v) => render_state_for_flag(v),
+                    None => String::new(),
+                };
+                let state = if mark_repeat {
+                    format!("!{state_str}")
+                } else {
+                    state_str
+                };
+                FlaggedEntry {
+                    hid: w.hid.clone(),
+                    field: w.local_entry.field.clone(),
+                    state,
+                }
+            })
+            .collect();
         issues.push(Issue {
             severity: Severity::Warning,
             category,
@@ -474,9 +519,24 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                     detected = first.detected_at.to_rfc3339(),
                 )),
             }),
+            entries,
         });
     }
     Ok(issues)
+}
+
+/// Render a state JSON value into the short string used in flagged-entry
+/// lines: scalar bool/number/string unwrapped, anything structured
+/// serialized compactly. The shape mirrors what the live renderer prints
+/// in the state column.
+fn render_state_for_flag(v: &JsonValue) -> String {
+    match v {
+        JsonValue::String(s) => s.clone(),
+        JsonValue::Bool(b) => b.to_string(),
+        JsonValue::Number(n) => n.to_string(),
+        JsonValue::Null => "null".to_string(),
+        other => other.to_string(),
+    }
 }
 
 #[derive(Debug, Default)]
@@ -546,6 +606,7 @@ fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<AliasReport> {
                 field: Some(first.loser.clone()),
                 detail: Some(detail),
             }),
+            entries: Vec::new(),
         });
     }
 
@@ -598,6 +659,7 @@ fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<AliasReport> {
             ),
             count: orphan_count,
             example: orphan_example,
+            entries: Vec::new(),
         });
     }
     if cycle_count > 0 {
@@ -611,6 +673,7 @@ fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<AliasReport> {
             ),
             count: cycle_count,
             example: cycle_example,
+            entries: Vec::new(),
         });
     }
 
@@ -701,6 +764,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                     first.start_time, first.end_time
                 )),
             }),
+            entries: Vec::new(),
         });
     }
 
@@ -738,6 +802,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                     &expected[..expected.len().min(12)],
                 )),
             }),
+            entries: Vec::new(),
         });
     }
 
@@ -766,17 +831,26 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                 field: Some(unknown[0].clone()),
                 detail: Some(unknown.join(", ")),
             }),
+            entries: Vec::new(),
         });
     }
 
     // 4. orphaned extra_data keys — field has a spec but extra_data contains
-    //    keys that aren't declared in the spec's subfields (WARNING)
+    //    keys that aren't declared in the spec's subfields (WARNING).
+    //
+    // Only fires for specs explicitly marked `strict = true`. Most fields are
+    // freeform and their data shape evolves; flagging every undeclared key by
+    // default would be over-aggressive. Strict mode lets the user lock down a
+    // spec once the shape stabilizes.
     let mut orphan_detail: Option<(String, String, String)> = None; // (id, field, key)
     let mut orphan_count = 0usize;
     for e in &entries {
         let Some(spec) = registry.field_spec(&e.field) else {
             continue;
         };
+        if !spec.strict {
+            continue;
+        }
         let Some(extra) = e.data.as_ref() else {
             continue;
         };
@@ -807,26 +881,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                 field: Some(field),
                 detail: Some(format!("key={key}")),
             }),
-        });
-    }
-
-    // 5. tombstones — rows with deleted_at set (WARNING)
-    let tombstones = db.tombstone_ids()?;
-    if !tombstones.is_empty() {
-        issues.push(Issue {
-            severity: Severity::Warning,
-            category: "tombstone_without_live_row",
-            message: format!(
-                "{} tombstone{} present (deleted rows with no surviving live counterpart)",
-                tombstones.len(),
-                if tombstones.len() == 1 { "" } else { "s" },
-            ),
-            count: tombstones.len(),
-            example: Some(IssueExample {
-                id: Some(tombstones[0].clone()),
-                field: None,
-                detail: None,
-            }),
+            entries: Vec::new(),
         });
     }
 
@@ -865,7 +920,22 @@ pub fn render_human(report: &Report) -> String {
             count = issue.count,
             msg = issue.message,
         ));
-        if let Some(ex) = &issue.example {
+        // da-mkes: when the issue carries per-entry rows, list each one
+        // (hid, field, state) instead of collapsing to a single example.
+        // Falls back to the legacy `example` block when no per-entry list
+        // was populated.
+        if !issue.entries.is_empty() {
+            let field_w = issue.entries.iter().map(|e| e.field.len()).max().unwrap_or(0);
+            let state_w = issue.entries.iter().map(|e| e.state.len()).max().unwrap_or(0);
+            for fe in &issue.entries {
+                out.push_str(&format!(
+                    "    {hid:<5}  {field:<field_w$}  {state:<state_w$}\n",
+                    hid = fe.hid,
+                    field = fe.field,
+                    state = fe.state,
+                ));
+            }
+        } else if let Some(ex) = &issue.example {
             if let Some(id) = &ex.id {
                 out.push_str(&format!("    example: {id}\n"));
             }
@@ -1076,6 +1146,8 @@ mod tests {
         );
         let mut spec = FieldSpec::new("mood", Action::Switch);
         spec.subfields = subfields;
+        // da-mkes: the orphan check only fires for strict specs.
+        spec.strict = true;
         db.save_field_spec(&spec).unwrap();
 
         // Entry carries an *undeclared* extra_data key "weather".
@@ -1102,6 +1174,49 @@ mod tests {
             .expect("orphaned_extra_data_key warning must be reported");
         assert_eq!(issue.severity, Severity::Warning);
         assert_eq!(issue.count, 1);
+    }
+
+    /// da-mkes: non-strict specs (the default) silently accept undeclared
+    /// extra_data keys — no warning fires.
+    #[test]
+    fn check_skips_orphaned_extra_data_key_when_spec_not_strict() {
+        let db = Db::open_in_memory().unwrap();
+        let mut subfields = HashMap::new();
+        subfields.insert(
+            "intensity".to_string(),
+            SubfieldSpec {
+                required: false,
+                value_type: SubfieldType::Number,
+                in_slug: false,
+                default: None,
+                unit: None,
+            },
+        );
+        let mut spec = FieldSpec::new("mood", Action::Switch);
+        spec.subfields = subfields;
+        // strict defaults to false — flag should not fire.
+        db.save_field_spec(&spec).unwrap();
+
+        let entry = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            Some(serde_json::json!({"weather": "sunny"})),
+            Some(DatumTime::now()),
+            None,
+            "d1",
+        );
+        db.insert_entry(&entry).unwrap();
+
+        let report = collect_issues(&db).unwrap();
+        assert!(
+            !report
+                .issues
+                .iter()
+                .any(|i| i.category == "orphaned_extra_data_key"),
+            "orphaned_extra_data_key must not fire for non-strict specs, got: {:?}",
+            report.issues,
+        );
     }
 
     // ─── da-5ns sub-bead 7: verb drift detection + --fix ────────────────
@@ -1750,13 +1865,23 @@ mod tests {
         let issues = collect_integrity_warnings(&db).unwrap();
         let issue = issues
             .iter()
-            .find(|i| i.category == "integrity_same_state_repeat")
-            .expect("integrity_same_state_repeat must be reported");
+            .find(|i| i.category == "repeated_state")
+            .expect("repeated_state must be reported");
         assert_eq!(issue.severity, Severity::Warning);
         assert_eq!(issue.count, 1);
         assert_eq!(
             issue.example.as_ref().and_then(|e| e.field.as_deref()),
             Some("mood")
+        );
+        // da-mkes: per-entry rendering — the flagged entry list is populated
+        // with the triggering row, and the state column carries the leading
+        // `!` marker that mirrors the live renderer's repeated-state cue.
+        assert_eq!(issue.entries.len(), 1);
+        assert_eq!(issue.entries[0].field, "mood");
+        assert!(
+            issue.entries[0].state.starts_with('!'),
+            "repeated_state entry must carry leading `!`, got: {}",
+            issue.entries[0].state
         );
     }
 
@@ -1815,9 +1940,11 @@ mod tests {
         );
     }
 
-    /// The integrity-only helper emits exclusively `integrity_*`
-    /// categories — it must not leak unrelated default-battery findings
-    /// (e.g. `unknown_field`).
+    /// The integrity-only helper emits only categories sourced from the
+    /// integrity_warnings table — it must not leak unrelated default-battery
+    /// findings (e.g. `unknown_field`). da-mkes renamed `same_state_repeat`
+    /// to the prefix-free `repeated_state`; the assertion accepts both
+    /// surface forms.
     #[test]
     fn integrity_check_narrows_to_integrity_categories() {
         let db = Db::open_in_memory().unwrap();
@@ -1846,7 +1973,7 @@ mod tests {
         assert!(!issues.is_empty(), "expected at least one integrity issue");
         for issue in &issues {
             assert!(
-                issue.category.starts_with("integrity_"),
+                issue.category.starts_with("integrity_") || issue.category == "repeated_state",
                 "unexpected category in integrity-only run: {}",
                 issue.category,
             );
