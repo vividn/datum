@@ -5,7 +5,10 @@ use datum_core::{db::Db, ids::Hid, time::DatumTime};
 
 use crate::{
     args::{DeleteArgs, OutputFlagsExt},
-    cmd::{build_render_contexts, load_registry_opt, resolve_batch, BatchMode},
+    commands::{
+        helpers::{load_registry_opt, resolve_batch, BatchMode},
+        render_helpers::build_render_contexts,
+    },
     render::{print_entry, show_delete},
 };
 

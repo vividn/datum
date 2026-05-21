@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use datum_core::db::Db;
 
 use crate::args::WhyArgs;
-use crate::cmd::resolve_prefix_or_tombstone;
+use crate::commands::helpers::resolve_prefix_or_tombstone;
 
 pub fn why(args: WhyArgs, db: &Db) -> Result<()> {
     let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)

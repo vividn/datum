@@ -9,7 +9,8 @@ use datum_core::{
 };
 
 use crate::args::{OutputFlagsExt, TailArgs};
-use crate::cmd::{build_render_contexts, load_registry_opt};
+use crate::commands::helpers::load_registry_opt;
+use crate::commands::render_helpers::build_render_contexts;
 use crate::render::{print_table_with, TableArgs, TimeMetricCol};
 
 pub fn tail(args: TailArgs, db: &Db) -> Result<()> {

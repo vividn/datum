@@ -1,17 +1,16 @@
 //! Command dispatch and argument → Entry conversion.
 
 use anyhow::Result;
-use chrono::Utc;
 use datum_core::{
     db::Db,
-    entry::{Entry, Verb},
+    entry::Entry,
     field_spec::{self, InterpolationContext},
-    ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
 };
 
 use crate::{
     args::{Cli, Command, LogArgs},
-    render::{show_create_with_context, OutputArgs, RenderContext},
+    commands::{helpers::load_registry_opt, render_helpers::build_render_contexts},
+    render::{show_create_with_context, OutputArgs},
 };
 
 /// Drive a raw argv through the unified comma-split-first pipeline
@@ -126,7 +125,7 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
     if hids.is_empty() {
         return;
     }
-    let registry = load_registry(db).ok();
+    let registry = load_registry_opt(db);
     let entries: Vec<Entry> = hids
         .iter()
         .filter_map(|hid| db.get_entry(hid.as_str()).ok())
@@ -243,206 +242,6 @@ fn run_log_with_alias(args: LogArgs, db: &Db, inner: fn(LogArgs, &Db) -> Result<
     crate::commands::alias::record_inline_alias(alias_name, alias_overwrite, &raw_argv, db)
 }
 
-fn load_registry(db: &Db) -> Result<datum_core::field_spec::SpecRegistry> {
-    Ok(db.load_registry()?)
-}
-
-/// Convenience wrapper that swallows registry-load errors (the renderer
-/// treats `None` as "no registry available"). Exposed for sibling modules
-/// in `commands/` that don't want to import the private `load_registry`.
-pub(crate) fn load_registry_opt(db: &Db) -> Option<datum_core::field_spec::SpecRegistry> {
-    load_registry(db).ok()
-}
-
-// ─── Tail / Now ──────────────────────────────────────────────────────────────
-
-/// Vector form of `build_render_context_cached` — one context per entry, in
-/// the same order. Used by the table path so the canonical state-cell
-/// renderer can emit transition arrows for tail rows.
-///
-/// Per da-uuu: builds a per-field [`FieldStateEvents`] cache up front so the
-/// lead / trail / ongoing state probes run in memory instead of issuing one
-/// (multi-row, all-columns) `last_state_at` query per entry. The previous
-/// implementation re-fetched the same field's state history once per output
-/// row, which dominated `dm tail` wall-clock — especially with `-yt`/`-d`
-/// filters where the probe time is far enough from `now` to defeat the OS
-/// page cache. The cache is scoped to this batch.
-pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
-    use std::collections::HashMap;
-    // Bound the per-field load by the latest probe time we'll issue. Block
-    // trail probes go to `end_time`; everything else to `start_time` (or
-    // `create_time` for the rare state-affecting row that lacks a start).
-    // Events strictly later than this max never affect any probe, so passing
-    // it to the loader prunes the WHERE clause and skips work for histories
-    // that extend far past this batch (`tail -yt 15` on a DB written to all
-    // morning will skip every today-event).
-    let max_probe: Option<chrono::DateTime<Utc>> = entries
-        .iter()
-        .filter(|e| needs_state_probe(e))
-        .filter_map(probe_upper_bound)
-        .max();
-    let mut cache: HashMap<String, datum_core::state::FieldStateEvents> = HashMap::new();
-    for e in entries {
-        if !cache.contains_key(&e.field) && needs_state_probe(e) {
-            let events = datum_core::state::FieldStateEvents::load_for_field_up_to(
-                db.conn(),
-                &e.field,
-                max_probe,
-            )
-            .unwrap_or_default();
-            cache.insert(e.field.clone(), events);
-        }
-    }
-    entries
-        .iter()
-        .map(|e| RenderContext::from_events(cache.get(&e.field), e, db))
-        .collect()
-}
-
-/// Whether this entry's `RenderContext` needs any state-history probe at
-/// all. `Add`/`Note` rows skip the cache load entirely.
-fn needs_state_probe(entry: &Entry) -> bool {
-    matches!(
-        entry.verb,
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch | Verb::Point
-    )
-}
-
-/// The latest probe time the batch will issue for this entry. Block rows
-/// probe at `end_time`; everything else at `start_time`, falling back to
-/// `create_time` for state-affecting rows that lack a start.
-fn probe_upper_bound(entry: &Entry) -> Option<chrono::DateTime<Utc>> {
-    if matches!(entry.entry_shape, datum_core::entry::EntryShape::Block) {
-        if let Some(end) = entry.end_time.as_ref() {
-            return Some(end.utc);
-        }
-    }
-    entry
-        .start_time
-        .as_ref()
-        .map(|t| t.utc)
-        .or(Some(entry.create_time))
-}
-
-// ─── Get / Delete ─────────────────────────────────────────────────────────────
-
-/// Resolve `input` to an entry via quickId matching, preserving the
-/// "Tombstoned" signal so update/edit can produce their tailored error.
-///
-/// The live-entry path goes through [`resolve_quickid_single`], which adds
-/// `_` / `<field>:_` shorthands and slug wildcards on top of the existing
-/// C3 prefix behaviour. It excludes soft-deleted rows, so a prefix of a
-/// tombstone comes back as `NotFound`. When that happens we retry with an
-/// exact id/slug lookup that includes tombstones, then one more attempt
-/// that scans tombstones by hid/slug prefix — so the undo / history / why
-/// commands still work on a soft-deleted row's short hid (e.g. `5arfa`).
-pub(crate) fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry> {
-    match resolve_quickid_single(db, input) {
-        Ok(e) => Ok(e),
-        Err(datum_core::error::DatumError::NotFound(_)) => {
-            // Exact match first, then fall through to a tombstone-prefix scan.
-            if let Ok(exact) = db.get_entry_including_deleted(input) {
-                return Ok(exact);
-            }
-            let conn = db.conn();
-            let pattern = {
-                let mut s = String::with_capacity(input.len() + 1);
-                for ch in input.chars() {
-                    if ch == '\\' || ch == '%' || ch == '_' {
-                        s.push('\\');
-                    }
-                    s.push(ch);
-                }
-                s.push('%');
-                s
-            };
-            let mut stmt = conn.prepare(
-                "SELECT slug FROM entries
-                 WHERE (slug LIKE ?1 ESCAPE '\\' OR hid LIKE ?1 ESCAPE '\\')
-                   AND deleted_at IS NOT NULL
-                 ORDER BY slug",
-            )?;
-            let matches: Vec<String> = stmt
-                .query_map([pattern.as_str()], |row| row.get::<_, String>(0))?
-                .collect::<std::result::Result<_, _>>()?;
-            match matches.len() {
-                0 => Err(datum_core::error::DatumError::NotFound(input.to_string()).into()),
-                1 => Ok(db.get_entry_including_deleted(&matches[0])?),
-                _ => Err(anyhow::anyhow!(
-                    "ambiguous tombstone prefix '{input}' matches {} entries",
-                    matches.len()
-                )),
-            }
-        }
-        Err(e) => Err(e.into()),
-    }
-}
-
-/// Batch-resolution surface for S3: how "only a tombstone matches" should
-/// be reported.
-#[derive(Clone, Copy)]
-pub(crate) enum BatchMode {
-    /// Live only. A literal token hitting a soft-deleted row surfaces as
-    /// `NotFound` — delete won't re-delete a tombstone.
-    Live,
-    /// Live preferred; a literal token matching only a tombstone surfaces
-    /// the tombstoned entry so update/merge/rekey can emit their tailored
-    /// "Cannot X tombstoned entry" error. Wildcards still only match live.
-    LiveOrTombstone,
-}
-
-/// Split a comma-separated id argument, resolve each token, and return a
-/// deduplicated entry list plus the tokens that failed to resolve. Wildcards
-/// (`*` / `?`) expand to every live match; literals go through the quickId
-/// resolver (underscore shorthands, exact slug/hid, hid prefix). Empty
-/// tokens (`","` / trailing comma) are silently dropped so datum-style
-/// `"abc,def,ghi,"` works without special casing. Duplicates (two tokens
-/// reaching the same slug) collapse in first-seen order.
-pub(crate) fn resolve_batch(
-    db: &Db,
-    input: &str,
-    mode: BatchMode,
-) -> (Vec<Entry>, Vec<(String, anyhow::Error)>) {
-    let mut entries: Vec<Entry> = Vec::new();
-    let mut seen: std::collections::HashSet<datum_core::ids::Slug> =
-        std::collections::HashSet::new();
-    let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
-    for raw in input.split(',') {
-        let token = raw.trim();
-        if token.is_empty() {
-            continue;
-        }
-        match resolve_quickid(db, token) {
-            Ok(matches) if matches.is_empty() => {
-                // Literal (non-wildcard) tokens may refer to a tombstone —
-                // surface it in LiveOrTombstone mode so update/rekey can
-                // emit their tailored error. Wildcards stay strictly live.
-                if matches!(mode, BatchMode::LiveOrTombstone) && !contains_wildcard(token) {
-                    if let Ok(tomb) = db.get_entry_including_deleted(token) {
-                        if seen.insert(tomb.slug.clone()) {
-                            entries.push(tomb);
-                        }
-                        continue;
-                    }
-                }
-                errors.push((
-                    token.to_string(),
-                    anyhow::Error::from(datum_core::error::DatumError::NotFound(token.to_string())),
-                ));
-            }
-            Ok(matches) => {
-                for entry in matches {
-                    if seen.insert(entry.slug.clone()) {
-                        entries.push(entry);
-                    }
-                }
-            }
-            Err(e) => errors.push((token.to_string(), anyhow::Error::from(e))),
-        }
-    }
-    (entries, errors)
-}
-
 // ─── Edit ────────────────────────────────────────────────────────────────────
 
 // Open an entry in `$EDITOR` as pretty JSON; on save, re-parse and persist.
@@ -471,6 +270,7 @@ mod tests {
     use crate::commands::tail::tail_entries;
     use crate::commands::update_core::{update_from_args, UpdateStrategy};
     use datum_core::action::Action;
+    use datum_core::entry::Verb;
     use serde_json::Value as JsonValue;
 
     #[test]

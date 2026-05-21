@@ -6,7 +6,7 @@ use regex_lite::Regex;
 
 use crate::{
     args::{GrepArgs, OutputFlagsExt},
-    cmd::{build_render_contexts, load_registry_opt},
+    commands::{helpers::load_registry_opt, render_helpers::build_render_contexts},
     render::{print_table_with, TableArgs, TimeMetricCol},
 };
 

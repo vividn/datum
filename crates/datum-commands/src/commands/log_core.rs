@@ -170,7 +170,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         let target = db
             .find_latest_for_undo(&field, undo_state)?
             .ok_or_else(|| anyhow::anyhow!("no matching entry to undo for field '{field}'"))?;
-        let registry = crate::cmd::load_registry_opt(db);
+        let registry = crate::commands::helpers::load_registry_opt(db);
         let output = args.output()?;
         if args.dry_run {
             crate::render::print_entry(&target, None, None, registry.as_ref());
@@ -468,7 +468,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // updates so a dry-run never moves the last-accessed cursor. Exits 0
     // so `dm <verb> --dry-run` is safe to chain.
     if args.dry_run {
-        let registry = crate::cmd::load_registry_opt(db);
+        let registry = crate::commands::helpers::load_registry_opt(db);
         let ctx = RenderContext::for_entry(db, &entry, Surface::Action, None)?;
         let output = args.output()?;
         crate::render::print_entry(&entry, Some(&ctx), None, registry.as_ref());
@@ -493,7 +493,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
     let strategy = args.conflict_strategy();
     let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
-    let registry = crate::cmd::load_registry_opt(db);
+    let registry = crate::commands::helpers::load_registry_opt(db);
     let output = args.output()?;
     // Per da-9p2u: all four context fields (lead/trail/ongoing/first) are
     // derived from a single Action-surface probe so write-path and table-path

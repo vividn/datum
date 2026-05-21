@@ -6,7 +6,7 @@ use datum_core::{db::Db, time::parse_duration};
 
 use crate::{
     args::{OutputFlagsExt, UndoArgs},
-    cmd::{load_registry_opt, resolve_prefix_or_tombstone},
+    commands::helpers::{load_registry_opt, resolve_prefix_or_tombstone},
     render::{show_create, OutputArgs},
 };
 

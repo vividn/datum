@@ -42,9 +42,9 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
         ));
     }
 
-    let registry = crate::cmd::load_registry_opt(db);
+    let registry = crate::commands::helpers::load_registry_opt(db);
     let output = args.output()?;
-    let ctxs = crate::cmd::build_render_contexts(&entries, db);
+    let ctxs = crate::commands::render_helpers::build_render_contexts(&entries, db);
     for (i, entry) in entries.iter().enumerate() {
         if args.pretty {
             print_entry_pretty(entry)?;

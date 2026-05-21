@@ -5,7 +5,7 @@ use datum_core::{db::Db, entry::Entry};
 use serde_json::Value as JsonValue;
 
 use crate::args::HistoryArgs;
-use crate::cmd::resolve_prefix_or_tombstone;
+use crate::commands::helpers::resolve_prefix_or_tombstone;
 
 pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
     let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)

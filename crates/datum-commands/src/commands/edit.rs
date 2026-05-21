@@ -129,7 +129,7 @@ impl UserEditableEntry {
 }
 
 pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
-    let existing = crate::cmd::resolve_prefix_or_tombstone(db, &args.id_or_slug)?;
+    let existing = crate::commands::helpers::resolve_prefix_or_tombstone(db, &args.id_or_slug)?;
     if existing.deleted_at.is_some() {
         anyhow::bail!(
             "Cannot edit tombstoned entry {} — restore it first with `datum undo`",
@@ -201,7 +201,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
     db.save_existing_entry(&updated)?;
 
     let fresh = db.get_entry(&updated.slug)?;
-    let registry = crate::cmd::load_registry_opt(db);
+    let registry = crate::commands::helpers::load_registry_opt(db);
     show_update(&fresh, registry.as_ref(), &args.output()?);
     Ok(())
 }

@@ -77,7 +77,7 @@ pub struct UpdateRequest<'a> {
 /// Does not print — callers that need the CLI confirmation line should
 /// use [`update_from_args`] or call [`render_outcome`] themselves.
 pub fn update_with_strategy(req: UpdateRequest<'_>, db: &Db) -> Result<UpdateOutcome> {
-    let existing = crate::cmd::resolve_prefix_or_tombstone(db, req.id_or_slug)?;
+    let existing = crate::commands::helpers::resolve_prefix_or_tombstone(db, req.id_or_slug)?;
     if existing.deleted_at.is_some() {
         anyhow::bail!(
             "Cannot {} tombstoned entry {} — restore it first with `datum undelete`",
@@ -168,8 +168,11 @@ pub fn update_batch_from_args(
         .unwrap_or(default_strategy);
 
     let (pattern, payload_value, payload_extra) = parse_update_payload(&args)?;
-    let (entries, token_errors) =
-        crate::cmd::resolve_batch(db, &pattern, crate::cmd::BatchMode::LiveOrTombstone);
+    let (entries, token_errors) = crate::commands::helpers::resolve_batch(
+        db,
+        &pattern,
+        crate::commands::helpers::BatchMode::LiveOrTombstone,
+    );
 
     if entries.is_empty() {
         if let Some((_, err)) = token_errors.into_iter().next() {
@@ -201,7 +204,7 @@ pub fn update_batch_from_args(
     if args.dry_run {
         let registry = db.load_registry().ok();
         let now = DatumTime::now();
-        let ctxs = crate::cmd::build_render_contexts(&entries, db);
+        let ctxs = crate::commands::render_helpers::build_render_contexts(&entries, db);
         for (i, entry) in entries.iter().enumerate() {
             if entry.deleted_at.is_some() {
                 eprintln!(
