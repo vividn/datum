@@ -1358,8 +1358,14 @@ pub(crate) fn parse_reserved_occur_time(v: &JsonValue, base: &DatumTime) -> Resu
 /// Parse a `start_time=…` or `end_time=…` value token against a base time.
 /// Accepts:
 ///  * "now" → `base_time`
-///  * signed duration offsets like `-5m`, `+1h`, `-30s` → base ± offset
 ///  * RFC3339 timestamps → absolute
+///  * clock-time forms (`11:00`, `1:32`, `8`, `5pm`, `9:15am`): parsed via
+///    the same grammar as the global `-t` flag and anchored on `base`'s
+///    date in its timezone. Per da-2jty, `infer_typed_value` already
+///    pre-normalizes `*_time`/`*Time` keys to `HH:MM:SS`, so when the
+///    user types `end_time=11:00` we land in this branch — not in the
+///    duration fall-through.
+///  * signed duration offsets like `-5m`, `+1h`, `-30s` → base ± offset
 fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
     let raw = json_to_raw_token(v);
     let s = raw.trim();
@@ -1373,7 +1379,25 @@ fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
             ..base.clone()
         });
     }
-    // Otherwise treat as a signed duration offset.
+    // Clock-time path: reuse the `-t` grammar via `TimeArgs::build` so a
+    // bare `11:00` / `11:00:00` / `8` / `5pm` interprets the same way the
+    // global `-t` flag does. We only take this branch when the token
+    // doesn't look like a signed duration (which TimeArgs would otherwise
+    // greedily eat — e.g. `-5` is "5 minutes ago" to TimeArgs but `-5m`
+    // is duration here). A leading `+`/`-` followed by a digit-then-unit
+    // pattern stays on the duration path below.
+    if !looks_like_signed_duration(s) {
+        let ta = datum_parse::input::TimeArgs {
+            time: Some(s.to_string()),
+            ..Default::default()
+        };
+        if let Ok(out) = ta.build(base) {
+            if let Some(t) = out.time {
+                return Ok(t);
+            }
+        }
+    }
+    // Otherwise treat as a signed duration offset (`-5m`, `+1h`, `-30s`).
     let (sign, body) = if let Some(rest) = s.strip_prefix('-') {
         (-1i64, rest)
     } else if let Some(rest) = s.strip_prefix('+') {
@@ -1388,6 +1412,26 @@ fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
         utc,
         ..base.clone()
     })
+}
+
+/// `±N<unit>` — a signed token with a trailing duration unit letter (`m`,
+/// `s`, `h`, `d`, etc.). `+5m`, `-1h30m`, `-30s` qualify; `+30`, `11:00`,
+/// `5pm` do not. Used to keep the clock-time path from greedily eating
+/// signed-duration tokens that have always had duration semantics here.
+fn looks_like_signed_duration(s: &str) -> bool {
+    let body = match s.strip_prefix(['-', '+']) {
+        Some(rest) => rest,
+        None => return false,
+    };
+    let mut chars = body.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_digit() {
+        return false;
+    }
+    body.chars()
+        .any(|c| c.is_ascii_alphabetic() && c != 'e' && c != 'E')
 }
 
 /// Build the log entry's base time together with its effective precision
@@ -1514,5 +1558,60 @@ mod tests {
         let e = &entries[0];
         let diff_secs = e.duration_seconds().unwrap();
         assert_eq!(diff_secs, 8 * 3600);
+    }
+
+    /// da-2jty: `end_time=HH:MM` (or the post-infer `HH:MM:SS` form) must
+    /// be read as a clock time and anchored to base's date, not as 11
+    /// hours of duration. Regression for the reported `add sleep
+    /// end_time=11:00` producing dur=11h.
+    #[test]
+    fn parse_add_time_value_clock_time_anchors_to_base_date() {
+        use chrono::{TimeZone, Utc};
+        let base = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 5, 21, 13, 31, 12).unwrap(),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        // Post-infer normalized form.
+        let got = parse_add_time_value(&JsonValue::String("11:00:00".into()), &base).unwrap();
+        let want = Utc.with_ymd_and_hms(2026, 5, 21, 11, 0, 0).unwrap();
+        assert_eq!(got.utc, want, "expected 11:00 today, got {got:?}");
+
+        // Pre-infer raw form lands here too.
+        let got = parse_add_time_value(&JsonValue::String("11:00".into()), &base).unwrap();
+        assert_eq!(got.utc, want);
+
+        // Plain integer → hour.
+        let got = parse_add_time_value(&JsonValue::String("8".into()), &base).unwrap();
+        assert_eq!(got.utc, Utc.with_ymd_and_hms(2026, 5, 21, 8, 0, 0).unwrap());
+    }
+
+    /// da-2jty: signed duration offsets keep their "shift base by this
+    /// duration" semantics — the clock-time path must not regress them.
+    #[test]
+    fn parse_add_time_value_signed_duration_still_shifts_base() {
+        use chrono::{TimeZone, Utc};
+        let base = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 5, 21, 13, 31, 12).unwrap(),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        let got = parse_add_time_value(&JsonValue::String("-5m".into()), &base).unwrap();
+        assert_eq!(
+            got.utc,
+            Utc.with_ymd_and_hms(2026, 5, 21, 13, 26, 12).unwrap()
+        );
+
+        let got = parse_add_time_value(&JsonValue::String("+1h".into()), &base).unwrap();
+        assert_eq!(
+            got.utc,
+            Utc.with_ymd_and_hms(2026, 5, 21, 14, 31, 12).unwrap()
+        );
+
+        let got = parse_add_time_value(&JsonValue::String("-30s".into()), &base).unwrap();
+        assert_eq!(
+            got.utc,
+            Utc.with_ymd_and_hms(2026, 5, 21, 13, 30, 42).unwrap()
+        );
     }
 }
