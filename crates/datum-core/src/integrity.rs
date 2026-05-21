@@ -375,7 +375,10 @@ fn find_overlapping_block(conn: &Connection, trigger: &Entry) -> Result<Option<E
 /// sets of their elements. Elements compare via [`StateValue`] structural
 /// equality, so a `Structured({id: "car", role: "driver"})` matches another
 /// `Structured` only when every field agrees — `.id` alone is not enough.
-fn states_share_element(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+///
+/// Exported so the renderer can flag a repeated-state switch (`da-qfv0`)
+/// using the same predicate that drives `SameStateRepeat` warning records.
+pub fn states_share_element(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     let sa = state_as_set(a);
     let sb = state_as_set(b);
     sa.iter().any(|x| sb.iter().any(|y| x == y))

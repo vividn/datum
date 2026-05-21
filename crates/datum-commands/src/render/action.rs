@@ -95,12 +95,19 @@ pub(crate) fn now_local() -> DatumTime {
 ///   excluding the row itself. Drives the bg of an occur dot per
 ///   `da-k5z`. State-transition verbs (switch / start / stop / block) use
 ///   `lead_state` and `trail_state` instead.
+/// * `is_state_repeat` — set when the row's emitted state shares an
+///   element with `lead_state` (per `integrity::states_share_element`).
+///   Drives the LEAD `!` warning marker (`da-qfv0`): the visual signal
+///   that a switch left the field's compiled state unchanged, which most
+///   often means an intermediate transition was forgotten and the user
+///   should backfill it via `-t` while it's still in working memory.
 #[derive(Clone, Debug, Default)]
 pub struct RenderContext {
     pub lead_state: Option<JsonValue>,
     pub trail_state: Option<JsonValue>,
     pub is_first_occurrence: bool,
     pub ongoing_state: Option<JsonValue>,
+    pub is_state_repeat: bool,
 }
 
 /// Which renderer is asking for the context. Per da-9p2u: pick the
@@ -172,13 +179,35 @@ impl RenderContext {
             .map(|t| t.utc)
             .unwrap_or(entry.create_time);
         let is_first_occurrence = db.count_entries_before(&entry.field, probe).unwrap_or(1) == 0;
+        let is_state_repeat = compute_is_state_repeat(lead_state.as_ref(), entry);
         RenderContext {
             lead_state,
             trail_state,
             is_first_occurrence,
             ongoing_state,
+            is_state_repeat,
         }
     }
+}
+
+/// True when the trigger's emitted state shares an element with `prior`
+/// (per [`datum_core::integrity::states_share_element`]). Mirrors the
+/// `SameStateRepeat` detector at `integrity.rs:243` so the visual `!`
+/// marker fires on exactly the same shape as the warning record.
+///
+/// Non-state-bearing verbs (`Point`, `Note`, `Add`) always return `false`
+/// — they don't drive a state cell to mark. A `None` prior or a missing
+/// row state likewise can't form a repeat.
+pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) -> bool {
+    if !has_state_badge(row.verb) {
+        return false;
+    }
+    let (Some(prior), Some(row_state)) = (prior, row.value.as_ref()) else {
+        return false;
+    };
+    let prior_norm = datum_core::state::normalize_state(prior).to_json();
+    let row_norm = datum_core::state::normalize_state(row_state).to_json();
+    datum_core::integrity::states_share_element(&row_norm, &prior_norm)
 }
 
 fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
@@ -310,10 +339,43 @@ fn render_state_transition_group(
     ctx: &RenderContext,
 ) -> String {
     let mut out = String::new();
-    out.push_str(&render_slot(ctx.lead_state.as_ref(), &entry.field, spec));
+    out.push_str(&render_lead_slot(ctx, &entry.field, spec));
     out.push_str(&render_state_cell(entry, spec));
     out.push_str(&render_slot(ctx.trail_state.as_ref(), &entry.field, spec));
     out
+}
+
+/// Render the LEAD slot, optionally substituting the `!` warning marker
+/// (per da-qfv0) when [`RenderContext::is_state_repeat`] is set. The marker
+/// only attaches to a slot with a concrete state colour — `Ignored` /
+/// `FieldEnded` slots have no "prior block" to paint the glyph over, so
+/// they fall through to the default slot rendering.
+pub(crate) fn render_lead_slot(
+    ctx: &RenderContext,
+    field: &str,
+    spec: Option<&FieldSpec>,
+) -> String {
+    if !ctx.is_state_repeat {
+        return render_slot(ctx.lead_state.as_ref(), field, spec);
+    }
+    match resolve_slot(ctx.lead_state.as_ref(), field, spec) {
+        SlotKind::State(rgb) => paint_warning(rgb, WARNING_GLYPH),
+        SlotKind::Parallel(bg, _) => paint_warning(bg, WARNING_GLYPH),
+        SlotKind::Ignored | SlotKind::FieldEnded => {
+            render_slot(ctx.lead_state.as_ref(), field, spec)
+        }
+    }
+}
+
+/// Paint `body` in bold warning-yellow over `bg`. With color disabled the
+/// raw glyph is still emitted so non-TTY consumers (pipes, tests, log
+/// scrapes) can detect the marker by substring rather than by ANSI escape.
+fn paint_warning(bg: Rgb, body: &str) -> String {
+    if !color_enabled() {
+        return body.to_string();
+    }
+    let fg = warning_fg(bg);
+    format!("{}{}{}{}{}", BOLD, bg.bg(), fg.fg(), body, RESET)
 }
 
 /// Render the central state cell — a bg-coloured badge whose body is the
@@ -975,4 +1037,76 @@ mod tests {
         let (_, bg_null) = compute_occur_dot_colors(&row, None, Some(&null));
         assert_eq!(bg_null, Some(Rgb::IGNORED), "null state → grey bg");
     }
+
+    // ─── compute_is_state_repeat / `!` LEAD marker (da-qfv0) ─────────────
+
+    fn switch_row(field: &str, state: JsonValue) -> Entry {
+        let ts = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 0, 0).unwrap(),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        Entry::new(
+            field.to_string(),
+            Verb::Switch,
+            Some(state),
+            None,
+            Some(ts),
+            None,
+            "test-device".to_string(),
+        )
+    }
+
+    /// A switch whose value matches the prior state must flag the repeat.
+    #[test]
+    fn state_repeat_flagged_when_value_matches_prior() {
+        let row = switch_row("body", JsonValue::String("vertical".into()));
+        let prior = JsonValue::String("vertical".into());
+        assert!(compute_is_state_repeat(Some(&prior), &row));
+    }
+
+    /// Different states must not flag — that's a normal transition.
+    #[test]
+    fn state_repeat_not_flagged_when_values_differ() {
+        let row = switch_row("body", JsonValue::String("vertical".into()));
+        let prior = JsonValue::String("sit".into());
+        assert!(!compute_is_state_repeat(Some(&prior), &row));
+    }
+
+    /// `start` (canonicalized to `Bool(true)`) on a field with no history
+    /// must not flag — first-time transitions can't be a repeat.
+    #[test]
+    fn state_repeat_not_flagged_with_no_prior_state() {
+        let row = switch_row("body", JsonValue::Bool(true));
+        assert!(!compute_is_state_repeat(None, &row));
+    }
+
+    /// Element-share equality (matches the conflict detector): a switch
+    /// to one member of a parallel prior still counts as a repeat since
+    /// the field's state set already contained it.
+    #[test]
+    fn state_repeat_flagged_when_value_shares_parallel_member() {
+        let row = switch_row("body", JsonValue::String("vertical".into()));
+        let prior = JsonValue::Array(vec![
+            JsonValue::String("vertical".into()),
+            JsonValue::String("sit".into()),
+        ]);
+        assert!(compute_is_state_repeat(Some(&prior), &row));
+    }
+
+    /// Non-state-bearing verbs (`occur`/`point`) must never trigger the
+    /// marker regardless of prior state.
+    #[test]
+    fn state_repeat_skipped_for_non_state_verbs() {
+        let mut row = occur_row("coffee");
+        row.value = Some(JsonValue::String("vertical".into()));
+        let prior = JsonValue::String("vertical".into());
+        assert!(!compute_is_state_repeat(Some(&prior), &row));
+    }
+
+    // The rendered-output tests for `render_lead_slot` (warning glyph,
+    // FieldEnded fallback, NO_COLOR survival) live in
+    // `tests/render_warning_marker.rs` so they can share the integration
+    // tests' `ENV_LOCK` — env mutation in src/ unit tests races with the
+    // unprotected color-env tests in render::mod tests.
 }

@@ -20,6 +20,7 @@ use super::characters::IGNORED_STATE;
 // ─── ANSI primitives ─────────────────────────────────────────────────────────
 
 pub(crate) const RESET: &str = "\x1b[0m";
+pub(crate) const BOLD: &str = "\x1b[1m";
 pub(crate) const UNDERLINE: &str = "\x1b[4m";
 pub(crate) const GRAY_FG: &str = "\x1b[90m";
 
@@ -75,6 +76,26 @@ pub(crate) fn contrast_fg(bg: Rgb) -> Rgb {
         Rgb::BLACK
     } else {
         Rgb::WHITE
+    }
+}
+
+/// Warning-yellow foreground over `bg`, mirroring v2's
+/// `getContrastTextColor(bg, "warning")` (utils/colorUtils.ts:38-43): bright
+/// `#ffd700` over normal bgs, darker `#bb8000` when the bg is already
+/// yellow-ish (both R and G above 200) to keep the glyph legible.
+pub(crate) fn warning_fg(bg: Rgb) -> Rgb {
+    if bg.r > 200 && bg.g > 200 {
+        Rgb {
+            r: 0xbb,
+            g: 0x80,
+            b: 0x00,
+        }
+    } else {
+        Rgb {
+            r: 0xff,
+            g: 0xd7,
+            b: 0x00,
+        }
     }
 }
 
@@ -362,6 +383,40 @@ mod tests {
     fn contrast_flips_on_yiq_boundary() {
         assert_eq!(contrast_fg(Rgb::WHITE), Rgb::BLACK);
         assert_eq!(contrast_fg(Rgb::BLACK), Rgb::WHITE);
+    }
+
+    /// `warning_fg` matches v2's `getContrastTextColor(bg, "warning")` —
+    /// bright `#ffd700` over normal bgs, the dimmer `#bb8000` orange when
+    /// the bg is already yellowish (R and G both > 200) to keep the glyph
+    /// from washing out.
+    #[test]
+    fn warning_fg_picks_bright_yellow_on_normal_bg() {
+        let bg = Rgb { r: 0, g: 0, b: 0 };
+        assert_eq!(
+            warning_fg(bg),
+            Rgb {
+                r: 0xff,
+                g: 0xd7,
+                b: 0x00
+            }
+        );
+    }
+
+    #[test]
+    fn warning_fg_picks_dim_yellow_on_yellowish_bg() {
+        let bg = Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0x00,
+        };
+        assert_eq!(
+            warning_fg(bg),
+            Rgb {
+                r: 0xbb,
+                g: 0x80,
+                b: 0x00
+            }
+        );
     }
 
     #[test]

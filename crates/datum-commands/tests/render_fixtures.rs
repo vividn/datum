@@ -127,7 +127,7 @@ fn ctx_with(
         lead_state: lead,
         trail_state: trail,
         is_first_occurrence: is_first,
-        ongoing_state: None,
+        ..Default::default()
     }
 }
 

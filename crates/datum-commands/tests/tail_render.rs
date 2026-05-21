@@ -170,7 +170,7 @@ fn tail_state_cell_uses_lead_state_trail_group() {
         lead_state: Some(json!("tired")),
         trail_state: Some(json!("happy")),
         is_first_occurrence: false,
-        ongoing_state: None,
+        ..Default::default()
     };
     let group = format_state_group(&e, None, &ctx).expect("state group");
     let stripped = strip_ansi(&group);
@@ -272,5 +272,85 @@ fn tail_row_without_occur_time_uses_create_time_with_gray_c_prefix() {
     assert!(
         line.contains(":"),
         "stamp digits follow the 'c' prefix: {line:?}"
+    );
+}
+
+// ─── da-qfv0: repeated-state `!` warning marker ─────────────────────────────
+
+/// A switch whose state matches the prior state (most often the user forgot
+/// to log an intermediate transition) paints a literal `!` in the LEAD slot
+/// so the no-op is visible at a glance.
+#[test]
+fn tail_state_repeat_emits_warning_glyph_in_lead_slot() {
+    let _g = no_color_scope();
+    let e = entry_at(
+        "body",
+        Verb::Switch,
+        Some(json!("vertical")),
+        dt(2026, 4, 22, 14, 30),
+    );
+    let ctx = RenderContext {
+        lead_state: Some(json!("vertical")),
+        trail_state: Some(json!("vertical")),
+        is_state_repeat: true,
+        ..Default::default()
+    };
+    let stripped = strip_ansi(&format_state_group(&e, None, &ctx).expect("state group"));
+    assert!(
+        stripped.starts_with('!'),
+        "LEAD slot must carry the `!` marker: {stripped:?}"
+    );
+    assert!(
+        stripped.contains("vertical"),
+        "state cell still renders the value: {stripped:?}"
+    );
+}
+
+/// A normal transition (different prior state) leaves the LEAD slot alone —
+/// no `!`, just the prior-state coloured space.
+#[test]
+fn tail_normal_transition_has_no_warning_glyph() {
+    let _g = no_color_scope();
+    let e = entry_at(
+        "body",
+        Verb::Switch,
+        Some(json!("vertical")),
+        dt(2026, 4, 22, 14, 30),
+    );
+    let ctx = RenderContext {
+        lead_state: Some(json!("sit")),
+        trail_state: Some(json!("vertical")),
+        is_state_repeat: false,
+        ..Default::default()
+    };
+    let stripped = strip_ansi(&format_state_group(&e, None, &ctx).expect("state group"));
+    assert!(
+        !stripped.contains('!'),
+        "no `!` on a state change: {stripped:?}"
+    );
+}
+
+/// When the prior slot has no concrete colour (e.g. the field has been
+/// closed — `Bool(false)`), the repeat flag falls through to the default
+/// blank slot rather than painting `!` onto a non-existent prior block.
+#[test]
+fn tail_state_repeat_no_marker_when_prior_field_ended() {
+    let _g = no_color_scope();
+    let e = entry_at(
+        "workout",
+        Verb::Switch,
+        Some(serde_json::json!(false)),
+        dt(2026, 4, 22, 14, 30),
+    );
+    let ctx = RenderContext {
+        lead_state: Some(serde_json::json!(false)),
+        trail_state: Some(serde_json::json!(false)),
+        is_state_repeat: true,
+        ..Default::default()
+    };
+    let stripped = strip_ansi(&format_state_group(&e, None, &ctx).expect("state group"));
+    assert!(
+        !stripped.contains('!'),
+        "FieldEnded slot suppresses the marker: {stripped:?}"
     );
 }
