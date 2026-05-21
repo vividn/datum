@@ -15,6 +15,7 @@ pub mod db;
 pub mod del;
 pub mod edit;
 pub mod end;
+pub mod flag;
 pub mod get;
 pub mod get_search;
 pub mod grep;

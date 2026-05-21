@@ -65,6 +65,13 @@ pub enum Command {
     /// the field with `extra_metadata.meta = true`.
     Meta(MetaCommand),
 
+    /// `datum flag <field> [comment] [-t/-d/-y/-q]` — drop a manual
+    /// review-later marker on a field at a time point. Stored as a
+    /// regular entry carrying `extra_metadata.flag = true` so it
+    /// surfaces in `datum check`'s pending-review sweep while
+    /// staying out of tail / dayview / now (per da-dnnn Option A).
+    Flag(FlagArgs),
+
     Grep(GrepArgs),
     Check(CheckArgs),
 
@@ -745,6 +752,35 @@ pub enum MetaCommand {
     /// `datum meta show <field>` — list every note attached to
     /// `<field>` in `create_time` order.
     Show { field: String },
+}
+
+// ─── Flag (da-dnnn) ───────────────────────────────────────────────────────
+
+/// `datum flag <field> [comment]` — drop a review-later marker. The
+/// standard time-flag group (`-t`/`-d`/`-y`/`-q`/`-z`) places the
+/// flag at a specific moment, including back-dated. The optional
+/// comment becomes the flag's payload.
+#[derive(Debug)]
+pub struct FlagArgs {
+    pub field: String,
+    /// Optional payload — what the user wants to review. Empty
+    /// string when the bare `datum flag <field>` form is used (the
+    /// "just look here later" marker).
+    pub comment: String,
+    /// `-y/-q/-d/-t/-z` — the timing concern. `-T` and `-D` are
+    /// intentionally not exposed (a flag without a moment loses its
+    /// point).
+    pub time: TimeArgs,
+}
+
+impl FlagArgs {
+    pub fn fresh(field: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            comment: String::new(),
+            time: TimeArgs::default(),
+        }
+    }
 }
 
 // ─── Grep / Count / Ids / Dayview / Check ────────────────────────────────

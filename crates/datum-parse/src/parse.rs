@@ -238,6 +238,8 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
 
         "meta" => Command::Meta(parse_meta_cmd(rest)?),
 
+        "flag" => Command::Flag(parse_flag_cmd(rest)?),
+
         "grep" => Command::Grep(parse_grep_args(rest)?),
         "check" => Command::Check(parse_check_args(rest)?),
 
@@ -1511,6 +1513,50 @@ fn parse_meta_cmd(tail: &[&str]) -> Result<MetaCommand> {
     })
 }
 
+/// `datum flag <field> [comment]` — field positional + optional
+/// comment positionals joined on space + standard timing flags
+/// (`-y/-q/-d/-t/-z`). Honors back-dated time so a flag can be placed
+/// at a specific past moment.
+#[derive(Default)]
+struct FlagParsing {
+    time: TimeArgs,
+}
+
+fn flag_args_registry() -> Vec<LiftedSpec<FlagParsing>> {
+    let mut r: Vec<LiftedSpec<FlagParsing>> = Vec::new();
+    // Mirror TailParsing: expose -y/-q/-d/-t/-z; suppress -T/-D
+    // (a flag without a moment loses its meaning).
+    for spec in input::time_args::FLAG_SPECS {
+        match (spec.short, spec.long) {
+            (Some('y'), _) | (Some('q'), _) | (Some('d'), _) | (Some('t'), _) | (Some('z'), _) => {
+                r.push(lift(|p: &mut FlagParsing| &mut p.time, spec));
+            }
+            _ => {}
+        }
+    }
+    r
+}
+
+fn parse_flag_cmd(tail: &[&str]) -> Result<FlagArgs> {
+    let registry = flag_args_registry();
+    let mut composed = FlagParsing::default();
+    let pos = fold_args(tail, &mut composed, &registry)?;
+    let field = pos
+        .first()
+        .copied()
+        .ok_or_else(|| ParseError::InvalidArg("`datum flag` requires <FIELD>".into()))?;
+    let comment = if pos.len() > 1 {
+        pos[1..].join(" ")
+    } else {
+        String::new()
+    };
+    Ok(FlagArgs {
+        field: field.to_string(),
+        comment,
+        time: composed.time,
+    })
+}
+
 fn parse_migrate_cmd(tail: &[&str]) -> Result<MigrateCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
@@ -2770,5 +2816,60 @@ mod tests {
         let err = parse_argv(&argv(&["get", "sleep", "happy"])).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not a matcher"), "got: {msg}");
+    }
+
+    // ─── da-dnnn: `datum flag` ─────────────────────────────────────────
+
+    #[test]
+    fn flag_bare_field_has_empty_comment() {
+        let cli = parse_argv(&argv(&["flag", "body"])).unwrap();
+        match cli.command {
+            Command::Flag(a) => {
+                assert_eq!(a.field, "body");
+                assert_eq!(a.comment, "");
+                assert!(a.time.time.is_none());
+            }
+            _ => panic!("expected Flag"),
+        }
+    }
+
+    #[test]
+    fn flag_joins_comment_positionals_on_space() {
+        let cli = parse_argv(&argv(&[
+            "flag",
+            "mood",
+            "double-check",
+            "yesterday's",
+            "data",
+        ]))
+        .unwrap();
+        match cli.command {
+            Command::Flag(a) => {
+                assert_eq!(a.field, "mood");
+                assert_eq!(a.comment, "double-check yesterday's data");
+            }
+            _ => panic!("expected Flag"),
+        }
+    }
+
+    #[test]
+    fn flag_accepts_time_flags_for_backdating() {
+        let cli = parse_argv(&argv(&["flag", "mood", "double-check", "-t", "9:00", "-y"])).unwrap();
+        match cli.command {
+            Command::Flag(a) => {
+                assert_eq!(a.field, "mood");
+                assert_eq!(a.comment, "double-check");
+                assert_eq!(a.time.time.as_deref(), Some("9:00"));
+                assert_eq!(a.time.yesterday, 1);
+            }
+            _ => panic!("expected Flag"),
+        }
+    }
+
+    #[test]
+    fn flag_without_field_errors() {
+        let err = parse_argv(&argv(&["flag"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("<FIELD>"), "got: {msg}");
     }
 }
