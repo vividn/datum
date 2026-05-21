@@ -226,12 +226,18 @@ impl CliExt for Cli {
 /// skips the comma-split — the multi-row feature can't be bypassed
 /// at the binary level.
 pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
+    // Honor a global `--db <value>` / `--db=<value>` in argv before alias
+    // resolution: derived aliases are stored per-db, so we must look them
+    // up in the db the user is actually addressing. Falling back to the
+    // default db (the pre-fix behaviour) made bare-field invocation
+    // silently fail for anyone using `--db`.  (da-5hqu)
+    let cli_db = crate::config::pre_scan_db_flag(&argv);
     let maybe_db = (|| -> Option<datum_core::db::Db> {
-        let db_path = crate::config::db_path().ok()?;
-        if !std::path::Path::new(&db_path).exists() {
+        let resolved = crate::config::resolve_db(cli_db.as_deref()).ok()?;
+        if !resolved.path.exists() {
             return None;
         }
-        datum_core::db::Db::open(&db_path).ok()
+        datum_core::db::Db::open(resolved.path.to_str()?).ok()
     })();
 
     match maybe_db {
@@ -257,7 +263,13 @@ fn parse_invocation_inner(
     let raw_input = raw_argv.join(" ");
     let argv0 = argv.first().cloned().unwrap_or_default();
 
-    let expanded = palias::expand_into_sides(argv, resolver)?;
+    // Strip the global `--db <X>` / `--db=X` flag before alias expansion
+    // so the alias name isn't shadowed by `--db` at argv[1]. The flag is
+    // re-prepended onto every side's argv below so clap still sees it
+    // as a global option. (da-5hqu)
+    let (argv_no_db, db_flag) = crate::config::split_off_global_db_flag(argv);
+
+    let expanded = palias::expand_into_sides(argv_no_db, resolver)?;
 
     set_intent_context(IntentContext {
         raw_input,
@@ -272,9 +284,11 @@ fn parse_invocation_inner(
     }
 
     if expanded.sides.len() == 1 {
-        let mut side_argv = Vec::with_capacity(expanded.sides[0].len() + 1);
+        let side = expanded.sides.into_iter().next().unwrap();
+        let mut side_argv = Vec::with_capacity(side.len() + 1 + db_flag.len());
         side_argv.push(argv0);
-        side_argv.extend(expanded.sides.into_iter().next().unwrap());
+        side_argv.extend(db_flag.iter().cloned());
+        side_argv.extend(side);
         let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
         return Ok(Invocation::Single(cli));
     }
@@ -282,8 +296,9 @@ fn parse_invocation_inner(
     let mut sides: Vec<Cli> = Vec::with_capacity(expanded.sides.len());
     let mut side_argvs: Vec<Vec<String>> = Vec::with_capacity(expanded.sides.len());
     for side in expanded.sides {
-        let mut side_argv = Vec::with_capacity(side.len() + 1);
+        let mut side_argv = Vec::with_capacity(side.len() + 1 + db_flag.len());
         side_argv.push(argv0.clone());
+        side_argv.extend(db_flag.iter().cloned());
         side_argv.extend(side);
         let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
         sides.push(cli);

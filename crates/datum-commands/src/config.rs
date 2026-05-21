@@ -126,6 +126,63 @@ pub fn looks_like_path(s: &str) -> bool {
     s.contains('/') || s.starts_with('.') || s.ends_with(".db")
 }
 
+/// Cheap pre-scan of argv for the global `--db <value>` / `--db=<value>`
+/// flag, without invoking the full parser. Used by the alias-resolution
+/// pre-pass so it can route to the user-selected db before the parser
+/// has even seen argv. Stops at a `--` separator: anything after is
+/// positional and never carries the global db flag.
+pub fn pre_scan_db_flag(argv: &[String]) -> Option<String> {
+    extract_global_db_flag(argv).map(|(_, _, value)| value)
+}
+
+/// Like [`pre_scan_db_flag`] but also returns the slice of argv that
+/// makes up the flag (one token for `--db=X`, two for `--db X`). The
+/// alias pre-pass uses this to strip the flag out of argv before
+/// alias-expansion runs, so the alias name isn't shadowed by `--db`
+/// at argv[1]. Returns `(start_index, end_index_exclusive, value)`.
+/// `None` when no `--db` is present before `--`.
+pub fn extract_global_db_flag(argv: &[String]) -> Option<(usize, usize, String)> {
+    let mut i = 1; // skip argv[0] (binary name)
+    while i < argv.len() {
+        let tok = &argv[i];
+        if tok == "--" {
+            return None;
+        }
+        if let Some(v) = tok.strip_prefix("--db=") {
+            return Some((i, i + 1, v.to_string()));
+        }
+        if tok == "--db" {
+            if i + 1 >= argv.len() {
+                return None;
+            }
+            return Some((i, i + 2, argv[i + 1].clone()));
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Split argv into (argv-without-`--db`-tokens, `--db`-tokens). Used by
+/// the alias-expansion pre-pass: the global `--db <X>` flag must not
+/// occupy argv[1] or it shadows the alias name. Strip it for expansion,
+/// re-prepend it before the parser sees the final argv so the global
+/// flag still routes downstream.
+pub fn split_off_global_db_flag(argv: Vec<String>) -> (Vec<String>, Vec<String>) {
+    let Some((start, end, _)) = extract_global_db_flag(&argv) else {
+        return (argv, Vec::new());
+    };
+    let mut without: Vec<String> = Vec::with_capacity(argv.len() - (end - start));
+    let mut flag: Vec<String> = Vec::with_capacity(end - start);
+    for (i, tok) in argv.into_iter().enumerate() {
+        if i >= start && i < end {
+            flag.push(tok);
+        } else {
+            without.push(tok);
+        }
+    }
+    (without, flag)
+}
+
 /// Load the DB registry from `~/.config/datum/dbs.toml` (or via
 /// `DATUM_CONFIG_HOME` override). Missing file → empty registry. Parse
 /// errors surface as `Err` so callers can show the user what's wrong.
@@ -638,5 +695,49 @@ mod tests {
         assert!(looks_like_path("name.db"));
         assert!(!looks_like_path("fitness"));
         assert!(!looks_like_path("my-db"));
+    }
+
+    fn argv(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn pre_scan_db_flag_finds_separated_form() {
+        assert_eq!(
+            pre_scan_db_flag(&argv(&["datum", "--db", "fitness", "occur", "msg"])),
+            Some("fitness".to_string())
+        );
+    }
+
+    #[test]
+    fn pre_scan_db_flag_finds_equals_form() {
+        assert_eq!(
+            pre_scan_db_flag(&argv(&["datum", "--db=/tmp/x.db", "msg"])),
+            Some("/tmp/x.db".to_string())
+        );
+    }
+
+    #[test]
+    fn pre_scan_db_flag_returns_none_when_absent() {
+        assert_eq!(pre_scan_db_flag(&argv(&["datum", "occur", "msg"])), None);
+        assert_eq!(pre_scan_db_flag(&argv(&[])), None);
+        assert_eq!(pre_scan_db_flag(&argv(&["datum"])), None);
+    }
+
+    #[test]
+    fn pre_scan_db_flag_stops_at_separator() {
+        // Anything after `--` is positional and never a global flag, so
+        // a `--db <X>` token after the separator must not be picked up.
+        assert_eq!(
+            pre_scan_db_flag(&argv(&["datum", "note", "--", "--db", "x"])),
+            None
+        );
+    }
+
+    #[test]
+    fn pre_scan_db_flag_skips_argv0() {
+        // argv[0] is the binary name; a literal `--db` there shouldn't
+        // confuse the scan.
+        assert_eq!(pre_scan_db_flag(&argv(&["--db", "occur", "msg"])), None);
     }
 }
