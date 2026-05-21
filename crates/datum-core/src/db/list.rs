@@ -60,6 +60,18 @@ impl Db {
         if params.metric == TimeMetric::Occur {
             sql.push_str(" AND slug NOT LIKE '%:unset'");
         }
+        // da-ghlx: default-filter review markers (`extra_metadata.flag =
+        // true`, da-dnnn) and protocol notes (`extra_metadata.meta =
+        // true`, da-xn8j). `json_extract` returns 1 for JSON true,
+        // 0 for JSON false, NULL when the path or column is absent —
+        // `IS NOT 1` covers all three "not-set" cases without
+        // dereferencing a NULL column.
+        if !params.include_meta {
+            sql.push_str(
+                " AND json_extract(extra_metadata, '$.flag') IS NOT 1 \
+                  AND json_extract(extra_metadata, '$.meta') IS NOT 1",
+            );
+        }
         if !params.fields.is_empty() {
             // One name → `= ?` (equivalent, slightly tighter plan); two or
             // more → `IN (?, ?, …)` so a multi-field tail merges via the

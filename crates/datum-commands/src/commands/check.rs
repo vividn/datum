@@ -4,7 +4,7 @@
 //! grouped report. Errors set the process exit code to 1; warnings do not.
 
 use anyhow::Result;
-use datum_core::db::Db;
+use datum_core::db::{Db, ListParams};
 use datum_core::derive_verb;
 use datum_core::entry::Entry;
 use datum_core::field_spec::{self, InterpolationContext};
@@ -47,6 +47,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_aliases = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "aliases");
     let run_slugs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "slugs");
     let run_integrity = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "integrity");
+    let run_flags = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "flags");
     let run_default_battery = args.checkers.is_empty();
 
     let mut issues: Vec<Issue> = Vec::new();
@@ -74,6 +75,9 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     }
     if run_integrity {
         issues.extend(collect_integrity_warnings(db)?);
+    }
+    if run_flags {
+        issues.extend(collect_pending_flags(db)?);
     }
     let report = Report {
         issues,
@@ -559,6 +563,90 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
         });
     }
     Ok(issues)
+}
+
+/// da-ghlx: surface every live row whose `extra_metadata.flag` is JSON
+/// `true` as a `flagged_entry` warning. These rows are the `datum flag
+/// <field> [comment]` review markers (da-dnnn) — they live in the DB
+/// alongside tracked data but are hidden from the default tail /
+/// dayview / nowview surface, so `datum check flags` is the canonical
+/// way to remind the user that pending reviews exist.
+///
+/// A single roll-up issue is emitted (one `flagged_entry` row, count =
+/// #flagged), with the rendered block carrying one line per flagged
+/// entry through the real tail formatter so column alignment matches
+/// the live view (da-cr4n).
+fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
+    // Pull the full set of flagged rows in one go. `include_meta = true`
+    // bypasses the default-hide filter (da-ghlx) so this query actually
+    // returns flagged rows; we still post-filter to `extra_metadata.flag
+    // = true` because `include_meta = true` *also* exposes
+    // `extra_metadata.meta = true` rows (those belong to the parallel
+    // `meta` notes surface — da-xn8j — not to the flag-review queue).
+    let params = ListParams {
+        metric: datum_core::db::TimeMetric::Hybrid,
+        include_meta: true,
+        ..Default::default()
+    };
+    let flagged: Vec<Entry> = db
+        .list_entries(&params)?
+        .into_iter()
+        .filter(|e| {
+            e.extra_metadata
+                .as_ref()
+                .and_then(|m| m.get("flag"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+        .collect();
+    if flagged.is_empty() {
+        return Ok(Vec::new());
+    }
+    let count = flagged.len();
+    let message = format!(
+        "{count} entr{y} flagged for review. Inspect with `datum check flags`; \
+         clear by deleting or updating the row.",
+        y = if count == 1 { "y" } else { "ies" },
+    );
+    let first = &flagged[0];
+    let example = Some(IssueExample {
+        id: Some(first.slug.to_string()),
+        field: Some(first.field.clone()),
+        detail: first
+            .extra_metadata
+            .as_ref()
+            .and_then(|m| m.get("comment"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+    });
+    // FlaggedEntry triplet for the JSON output — same shape as the
+    // integrity-warning rows so consumers don't branch on category.
+    let entries: Vec<FlaggedEntry> = flagged
+        .iter()
+        .map(|e| FlaggedEntry {
+            hid: e.short_uid(),
+            field: e.field.clone(),
+            // Surface the comment if present, otherwise leave empty.
+            // Render-block (below) carries the canonical row layout.
+            state: e
+                .extra_metadata
+                .as_ref()
+                .and_then(|m| m.get("comment"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        })
+        .collect();
+    let rendered_block = render_flagged_block(db, &flagged);
+    Ok(vec![Issue {
+        severity: Severity::Warning,
+        category: "flagged_entry",
+        message,
+        count,
+        example,
+        entries,
+        rendered_block,
+    }])
 }
 
 /// Format flagged entries through the live tail table formatter. Returns the
@@ -2081,5 +2169,205 @@ mod tests {
                 issue.category,
             );
         }
+    }
+
+    // ─── da-ghlx: flagged-entry checker + default meta filter ───────────
+
+    /// One row tagged via `datum flag mood "review later"` shows up in
+    /// `collect_pending_flags` as a single `flagged_entry` warning with
+    /// count=1, the field name in the example, and the comment threaded
+    /// through `IssueExample::detail`.
+    #[test]
+    fn flagged_entries_surface_as_pending_review_warning() {
+        let db = Db::open_in_memory().unwrap();
+        // Build a flagged entry the same way `datum flag` does: occur on
+        // the field with `extra_metadata = { flag: true, comment: "..." }`.
+        let mut e = Entry::new_legacy(
+            "mood",
+            Verb::Point,
+            None,
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        e.extra_metadata = Some(serde_json::json!({
+            "flag": true,
+            "comment": "review later"
+        }));
+        db.insert_entry(&e).unwrap();
+
+        let issues = collect_pending_flags(&db).unwrap();
+        assert_eq!(issues.len(), 1, "exactly one rolled-up flag issue");
+        let issue = &issues[0];
+        assert_eq!(issue.category, "flagged_entry");
+        assert_eq!(issue.severity, Severity::Warning);
+        assert_eq!(issue.count, 1);
+        assert_eq!(
+            issue.example.as_ref().and_then(|ex| ex.field.as_deref()),
+            Some("mood")
+        );
+        assert_eq!(
+            issue.example.as_ref().and_then(|ex| ex.detail.as_deref()),
+            Some("review later"),
+        );
+        // FlaggedEntry list mirrors the rendered rows.
+        assert_eq!(issue.entries.len(), 1);
+        assert_eq!(issue.entries[0].field, "mood");
+    }
+
+    /// Clean DB → no flag issues, no panic.
+    #[test]
+    fn flagged_entries_clean_db_returns_empty() {
+        let db = Db::open_in_memory().unwrap();
+        let issues = collect_pending_flags(&db).unwrap();
+        assert!(issues.is_empty(), "no flagged rows → no issue: {issues:?}");
+
+        // An ordinary (non-flagged) row must not surface as a flag review.
+        let e = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e).unwrap();
+        let issues = collect_pending_flags(&db).unwrap();
+        assert!(
+            issues.is_empty(),
+            "non-flagged rows must not surface: {issues:?}"
+        );
+    }
+
+    /// `extra_metadata.meta = true` rows (da-xn8j protocol notes) are
+    /// NOT pulled into the flag-review queue — they live in their own
+    /// surface (`datum meta show`). The flag checker must filter on
+    /// the `flag` key, not on the broader "meta-like" presence.
+    #[test]
+    fn meta_notes_do_not_appear_in_flag_review() {
+        let db = Db::open_in_memory().unwrap();
+        let mut e = Entry::new_legacy(
+            "mood",
+            Verb::Point,
+            None,
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        e.extra_metadata = Some(serde_json::json!({
+            "meta": true,
+            "text": "switch happy ⇒ unhappy means low energy",
+        }));
+        db.insert_entry(&e).unwrap();
+        let issues = collect_pending_flags(&db).unwrap();
+        assert!(issues.is_empty(), "meta notes must not surface as flags");
+    }
+
+    // ─── da-ghlx: default-hide filter on Db::list_entries ──────────────
+
+    /// By default, `Db::list_entries` (the query that backs tail / head /
+    /// dayview / nowview) must exclude rows whose `extra_metadata.flag`
+    /// or `extra_metadata.meta` is JSON `true`. Set
+    /// `ListParams::include_meta = true` to bypass.
+    #[test]
+    fn list_entries_hides_flag_and_meta_rows_by_default() {
+        let db = Db::open_in_memory().unwrap();
+        // Plain tracked row — should always appear.
+        let plain = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&plain).unwrap();
+        // Flagged row.
+        let mut flagged = Entry::new_legacy(
+            "mood",
+            Verb::Point,
+            None,
+            None,
+            Some(t_at("2024-01-01T11:00:00+00:00")),
+            None,
+            "d1",
+        );
+        flagged.extra_metadata = Some(serde_json::json!({"flag": true}));
+        db.insert_entry(&flagged).unwrap();
+        // Meta-note row.
+        let mut meta = Entry::new_legacy(
+            "mood",
+            Verb::Point,
+            None,
+            None,
+            Some(t_at("2024-01-01T12:00:00+00:00")),
+            None,
+            "d1",
+        );
+        meta.extra_metadata = Some(serde_json::json!({"meta": true, "text": "x"}));
+        db.insert_entry(&meta).unwrap();
+
+        // Default: only the plain row survives.
+        let default_rows = db
+            .list_entries(&ListParams {
+                metric: datum_core::db::TimeMetric::Hybrid,
+                ..Default::default()
+            })
+            .unwrap();
+        let default_slugs: Vec<_> = default_rows.iter().map(|e| e.slug.to_string()).collect();
+        assert_eq!(
+            default_rows.len(),
+            1,
+            "default include_meta=false hides flag+meta rows; got {default_slugs:?}",
+        );
+        assert_eq!(default_rows[0].slug, plain.slug);
+
+        // include_meta=true: every row is visible.
+        let all_rows = db
+            .list_entries(&ListParams {
+                metric: datum_core::db::TimeMetric::Hybrid,
+                include_meta: true,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(
+            all_rows.len(),
+            3,
+            "include_meta=true must surface flag + meta rows",
+        );
+    }
+
+    /// A row whose `extra_metadata.flag` is JSON `false` is tracked
+    /// data, not a review marker — it must still appear in the default
+    /// list. Guards against an `IS NULL` / `IS NOT NULL` regression.
+    #[test]
+    fn list_entries_keeps_rows_with_flag_explicitly_false() {
+        let db = Db::open_in_memory().unwrap();
+        let mut e = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        e.extra_metadata = Some(serde_json::json!({"flag": false}));
+        db.insert_entry(&e).unwrap();
+        let rows = db
+            .list_entries(&ListParams {
+                metric: datum_core::db::TimeMetric::Hybrid,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(
+            rows.len(),
+            1,
+            "flag=false rows are tracked data, must remain"
+        );
     }
 }

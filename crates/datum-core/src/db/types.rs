@@ -149,6 +149,13 @@ pub struct ListParams {
     pub head: bool,
     /// Invert the final output ordering (newest-first).
     pub reverse: bool,
+    /// da-ghlx: when false (default), rows whose `extra_metadata.flag` or
+    /// `extra_metadata.meta` is JSON `true` are excluded — they are
+    /// review markers / out-of-band notes (da-dnnn, da-xn8j) and should
+    /// not pollute the live tail / dayview / nowview surface. Set true
+    /// when the caller wants the full row set (e.g. via `datum tail
+    /// --show-meta`, or `datum check flags`).
+    pub include_meta: bool,
 }
 
 /// Selection filter for [`super::Db::update_times`]. Every non-None field narrows

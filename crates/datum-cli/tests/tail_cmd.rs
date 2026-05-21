@@ -744,6 +744,58 @@ fn tail_watch_flag_parses_with_and_without_interval() {
     }
 }
 
+#[test]
+fn tail_show_meta_flag_parses_short_and_long_forms() {
+    // da-ghlx: `--show-meta` (and the longer `--show-all-metadata`
+    // alias) toggle the default-hide filter on review-marker and
+    // protocol-note rows. The flag must round-trip through the CLI so
+    // dispatcher logic can thread it onto `ListParams.include_meta`.
+    use datum_cli::args::{Cli, CliExt, Command};
+    let cli = Cli::try_parse_argv(["datum", "tail", "--show-meta"]).unwrap();
+    match cli.command {
+        Command::Tail(a) => assert!(a.show_meta),
+        _ => panic!("expected Tail"),
+    }
+    let cli = Cli::try_parse_argv(["datum", "tail", "--show-all-metadata"]).unwrap();
+    match cli.command {
+        Command::Tail(a) => assert!(a.show_meta),
+        _ => panic!("expected Tail"),
+    }
+    // Default off.
+    let cli = Cli::try_parse_argv(["datum", "tail"]).unwrap();
+    match cli.command {
+        Command::Tail(a) => assert!(!a.show_meta),
+        _ => panic!("expected Tail"),
+    }
+}
+
+#[test]
+fn tail_hides_flag_and_meta_rows_by_default_and_shows_with_flag() {
+    // da-ghlx: end-to-end through tail_entries: a flagged row is
+    // hidden by default; `--show-meta` brings it back into the tail.
+    let db = fresh_db();
+    insert(&db, "mood", Verb::Switch, 60); // plain tracked row
+                                           // Flagged row via `datum flag`-shaped extra_metadata.
+    let mut flagged = Entry::new("mood", Verb::Point, None, None, Some(t_at(120)), None, "d1");
+    flagged.extra_metadata = Some(json!({"flag": true, "comment": "review later"}));
+    db.insert_entry(&flagged).unwrap();
+
+    // Default tail (show_meta=false): plain row only.
+    let default_rows = tail_entries(&tail_args(), &db).unwrap();
+    assert_eq!(
+        default_rows.len(),
+        1,
+        "default tail hides flagged rows; got slugs: {:?}",
+        default_rows.iter().map(|e| &e.slug).collect::<Vec<_>>(),
+    );
+
+    // --show-meta surfaces both rows.
+    let mut args = tail_args();
+    args.show_meta = true;
+    let all_rows = tail_entries(&args, &db).unwrap();
+    assert_eq!(all_rows.len(), 2, "--show-meta must surface flagged rows");
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn v_as_i64(e: &Entry) -> i64 {

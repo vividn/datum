@@ -621,6 +621,7 @@ struct TailExtras {
     oldest_first: bool,
     table: bool,
     watch: Option<f64>,
+    show_meta: bool,
 }
 
 fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
@@ -661,6 +662,17 @@ fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
     }));
     r.push(local_switch(None, Some("table"), |p| {
         p.extras.table = true;
+        Ok(())
+    }));
+    // da-ghlx: `--show-meta` (alias `--show-all-metadata`) opts into
+    // the review-marker / protocol-note rows that the live tail
+    // surface hides by default.
+    r.push(local_switch(None, Some("show-meta"), |p| {
+        p.extras.show_meta = true;
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("show-all-metadata"), |p| {
+        p.extras.show_meta = true;
         Ok(())
     }));
     // `-w/--watch` is special — bare or attached or detached non-flag value.
@@ -718,6 +730,7 @@ fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
         oldest_first: composed.extras.oldest_first,
         watch: composed.extras.watch,
         table: composed.extras.table,
+        show_meta: composed.extras.show_meta,
         output: composed.output,
     })
 }

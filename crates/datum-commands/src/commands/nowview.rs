@@ -397,6 +397,9 @@ pub(crate) fn build_dayview_fields(
         limit: None,
         head: false,
         reverse: false,
+        // da-ghlx: nowview is a live-data surface; review markers /
+        // protocol notes don't belong in the band stack.
+        include_meta: false,
     };
     let entries = db.list_entries(&params)?;
 
@@ -491,6 +494,9 @@ pub(crate) fn build_fields(
         limit: None,
         head: false,
         reverse: false,
+        // da-ghlx: nowview is a live-data surface; review markers /
+        // protocol notes don't belong in the band stack.
+        include_meta: false,
     };
     let entries = db.list_entries(&params)?;
 

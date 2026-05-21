@@ -456,6 +456,9 @@ fn build_day_fields(
         limit: None,
         head: false,
         reverse: false,
+        // da-ghlx: dayview is a live-data surface; review markers /
+        // protocol notes don't belong in the timeline render.
+        include_meta: false,
     };
     let entries = db.list_entries(&params)?;
 

@@ -241,6 +241,13 @@ pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
         limit,
         head: args.oldest_first,
         reverse: args.reverse,
+        // da-ghlx: `--show-meta` (alias `--show-all-metadata`) flips
+        // the default-hide filter on `extra_metadata.flag = true`
+        // (da-dnnn review markers) and `extra_metadata.meta = true`
+        // (da-xn8j protocol notes). Default off — those rows live
+        // off the live tail surface and are surfaced via
+        // `datum check flags` / `datum meta show <field>` instead.
+        include_meta: args.show_meta,
     })
 }
 

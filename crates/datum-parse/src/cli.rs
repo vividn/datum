@@ -384,6 +384,11 @@ pub struct TailArgs {
     /// state-filter, not as a field list. Stored as raw strings;
     /// normalization happens in the command layer at compare time.
     pub state_filter: Option<Vec<String>>,
+    /// `--show-meta`: include `extra_metadata.flag = true` (da-dnnn) and
+    /// `extra_metadata.meta = true` (da-xn8j) rows. Default is to hide
+    /// them — they're review markers / out-of-band notes, not tracked
+    /// data. See da-ghlx.
+    pub show_meta: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }
@@ -401,6 +406,7 @@ impl TailArgs {
             oldest_first: false,
             watch: None,
             table: false,
+            show_meta: false,
             output: OutputArgs::default(),
         }
     }
@@ -862,7 +868,7 @@ pub struct CheckArgs {
 /// Checker names accepted as `dm check <NAME>...` positionals. Kept in the
 /// parse crate so both the parser (typo validation) and the command
 /// dispatcher (which-categories-to-run) read from the same source.
-pub const KNOWN_CHECKERS: &[&str] = &["verbs", "aliases", "slugs", "integrity"];
+pub const KNOWN_CHECKERS: &[&str] = &["verbs", "aliases", "slugs", "integrity", "flags"];
 
 /// Render orientation for `datum dayview`, named by time-axis direction.
 /// Mirrors [`datum_layout::dayview::Orientation`] so callers don't need a
