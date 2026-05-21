@@ -26,6 +26,7 @@ mod kit_command;
 mod list;
 mod lookup;
 mod multi;
+mod now;
 mod query;
 mod row_mapper;
 mod spec;
@@ -46,6 +47,10 @@ pub use alias::{InstallAliasesReport, KitAliasOutcome};
 pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
 pub use kit_command::{
     validate_command, InstallCommandsReport, InstalledKitCommand, KitCommandOutcome,
+};
+pub use now::{
+    NowFieldActive, NowFieldIgnored, NowFieldTrackedFalse, NowFilter, NowSnapshot,
+    SCHEMA_ID as NOW_SCHEMA_ID,
 };
 pub use row_mapper::row_to_entry_public;
 pub use types::{

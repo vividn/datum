@@ -2,13 +2,28 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use datum_core::db::Db;
+use datum_core::db::{Db, NowFilter};
 
 use crate::args::NowArgs;
 use crate::config;
 use crate::render::{print_now_view, render_pending_integrity_warning};
 
 pub fn now(args: NowArgs, db: &Db) -> Result<()> {
+    // da-84cg: `--json` short-circuits to the wire-schema emission path.
+    // Bypasses sync banners / integrity warnings / nowview band so the
+    // output is a single stable JSON document. `--tracked` and `--all`
+    // extend the snapshot's concentric scopes.
+    if args.json {
+        let filter = NowFilter {
+            include_tracked_false: args.show_tracked || args.show_all,
+            include_ignored: args.show_all,
+        };
+        let snapshot = db.current_now(&filter)?;
+        let rendered = serde_json::to_string_pretty(&snapshot)?;
+        println!("{rendered}");
+        return Ok(());
+    }
+
     emit_stale_sync_warning(db);
 
     // C4e: surface a top-line banner when there are unresolved integrity

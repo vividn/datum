@@ -715,7 +715,18 @@ pub struct KitUninstallArgs {
 
 #[derive(Debug, Default)]
 pub struct NowArgs {
+    /// `-A/--show-all` — include ignored fields. Layer 3 in the
+    /// disclosure ladder (da-84cg): everything that exists.
     pub show_all: bool,
+    /// `-t/--tracked` — also surface tracked fields whose current state
+    /// is falsy. Layer 2 in the disclosure ladder; default is layer 1
+    /// (active-only).
+    pub show_tracked: bool,
+    /// `--json` — emit the [`NowSnapshot`](datum_core::db::NowSnapshot)
+    /// wire schema instead of the terminal view. Other surfaces (web,
+    /// wear, voice) consume this; the schema is versioned via
+    /// `datum_core::db::NOW_SCHEMA_ID`.
+    pub json: bool,
     /// `--bare` — suppress the trailing terminal nowview band; only show
     /// the active-state list. Useful for piping or scripting.
     pub bare: bool,

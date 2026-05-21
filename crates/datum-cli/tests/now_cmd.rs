@@ -360,6 +360,79 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
     );
 }
 
+// ─── da-84cg: `--json` wire schema ───────────────────────────────────────────
+
+/// `datum now --json` emits a stable, versioned snapshot consumable by other
+/// surfaces (web/mobile/wear/voice). Locks the v1 schema shape so future
+/// changes are deliberate; bumps to `datum_now_v2` accompany incompatible
+/// renames.
+#[test]
+fn now_json_emits_versioned_snapshot() {
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    let mut db = std::env::temp_dir();
+    let pid = std::process::id();
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    db.push(format!("datum-now-json-{pid}-{nonce}.db"));
+    let _ = std::fs::remove_file(&db);
+    let db_arg: PathBuf = db.clone();
+
+    let bin = env!("CARGO_BIN_EXE_datum");
+    Command::new(bin)
+        .env("DATUM_DB", &db_arg)
+        .env("DATUM_COLOR", "0")
+        .args(["switch", "activity", "writing"])
+        .output()
+        .expect("seed switch");
+
+    let out = Command::new(bin)
+        .env("DATUM_DB", &db_arg)
+        .env("DATUM_COLOR", "0")
+        .args(["now", "--json"])
+        .output()
+        .expect("run datum now --json");
+    assert!(
+        out.status.success(),
+        "datum now --json failed: stderr={}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let stdout = String::from_utf8(out.stdout).expect("utf8 stdout");
+    let parsed: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("not valid JSON: {e}; stdout was:\n{stdout}"));
+
+    // Versioned schema marker — locked at v1; downstream consumers gate on this.
+    assert_eq!(parsed["schema"], json!("datum_now_v1"));
+    // The three concentric scopes are always present as arrays (empty
+    // when unfiltered), so consumers can iterate without optional checks.
+    assert!(parsed["active"].is_array(), "missing `active` array");
+    assert!(
+        parsed["tracked_false"].is_array(),
+        "missing `tracked_false` array",
+    );
+    assert!(parsed["ignored"].is_array(), "missing `ignored` array");
+    assert!(parsed["now"].is_string(), "missing `now` timestamp");
+
+    // Active row carries the field, state, and verb. `since` is the
+    // event time — present here because the seed used `switch`.
+    let active = parsed["active"].as_array().expect("active array");
+    assert_eq!(
+        active.len(),
+        1,
+        "expected one active field, got: {active:?}"
+    );
+    let row = &active[0];
+    assert_eq!(row["field"], json!("activity"));
+    assert_eq!(row["state"], json!("writing"));
+    assert_eq!(row["verb"], json!("switch"));
+
+    let _ = std::fs::remove_file(&db);
+}
+
 // ─── Gated on A0: per-field spec color ───────────────────────────────────────
 
 #[test]

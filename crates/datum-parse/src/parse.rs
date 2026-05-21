@@ -715,6 +715,8 @@ fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
     #[derive(Default)]
     struct NowParsing {
         output: OutputArgs,
+        show_tracked: bool,
+        json: bool,
         bare: bool,
         no_color: bool,
         cols: Option<u16>,
@@ -724,6 +726,14 @@ fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
         .filter(|s| s.short == Some('A'))
         .map(|s| lift(|p: &mut NowParsing| &mut p.output, s))
         .collect();
+    registry.push(local_switch(Some('t'), Some("tracked"), |p| {
+        p.show_tracked = true;
+        Ok(())
+    }));
+    registry.push(local_switch(None, Some("json"), |p| {
+        p.json = true;
+        Ok(())
+    }));
     registry.push(local_switch(None, Some("bare"), |p| {
         p.bare = true;
         Ok(())
@@ -744,6 +754,8 @@ fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
     }
     Ok(NowArgs {
         show_all: composed.output.show_all,
+        show_tracked: composed.show_tracked,
+        json: composed.json,
         bare: composed.bare,
         no_color: composed.no_color,
         cols: composed.cols,
