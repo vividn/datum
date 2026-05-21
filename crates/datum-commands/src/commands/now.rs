@@ -6,18 +6,22 @@ use datum_core::db::{Db, NowFilter};
 
 use crate::args::NowArgs;
 use crate::config;
-use crate::render::{print_now_view, render_pending_integrity_warning};
+use crate::render::{render_pending_integrity_warning, render_snapshot};
 
 pub fn now(args: NowArgs, db: &Db) -> Result<()> {
-    // da-84cg: `--json` short-circuits to the wire-schema emission path.
-    // Bypasses sync banners / integrity warnings / nowview band so the
-    // output is a single stable JSON document. `--tracked` and `--all`
-    // extend the snapshot's concentric scopes.
+    // da-84cg + da-mpod: the snapshot is the single source of truth for
+    // both the JSON wire path and the terminal renderer. Layered
+    // disclosure is encoded in the `NowFilter` passed to
+    // `db.current_now` — the JSON branch and the terminal branch
+    // share the same construction so the two surfaces never drift.
+    let filter = NowFilter {
+        include_tracked_false: args.show_tracked || args.show_all,
+        include_ignored: args.show_all,
+    };
+
     if args.json {
-        let filter = NowFilter {
-            include_tracked_false: args.show_tracked || args.show_all,
-            include_ignored: args.show_all,
-        };
+        // `--json` bypasses sync banners / integrity warnings / nowview
+        // band so the output is a single stable JSON document.
         let snapshot = db.current_now(&filter)?;
         let rendered = serde_json::to_string_pretty(&snapshot)?;
         println!("{rendered}");
@@ -36,35 +40,43 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
         }
     }
 
-    let tracked = db.get_tracked_fields()?;
-    if tracked.is_empty() {
-        println!("No tracked fields. Use `datum track <field>` or log with `occur`/`start`.");
-        return Ok(());
+    let snapshot = db.current_now(&filter)?;
+    if snapshot.active.is_empty()
+        && snapshot.tracked_false.is_empty()
+        && snapshot.ignored.is_empty()
+    {
+        // Discriminate "nothing tracked at all" from "tracked but
+        // filter-hidden" — the former is the legacy onboarding hint;
+        // the latter falls through to `render_snapshot`'s sentinel.
+        if db.get_tracked_fields()?.is_empty() {
+            println!("No tracked fields. Use `datum track <field>` or log with `occur`/`start`.");
+            return Ok(());
+        }
     }
 
     let state_colors = db.get_all_state_colors()?;
 
-    let mut latest_per_field = std::collections::HashMap::new();
+    // Overlap-count map is still computed per-field outside the
+    // snapshot — `current_now` doesn't carry overlap state. Compute
+    // only for the fields actually visible (active + tracked_false +
+    // ignored) so the query cost scales with what we'll render.
     let mut overlap_counts = std::collections::HashMap::new();
-    for tf in &tracked {
-        if tf.ignored && !args.show_all {
-            continue;
-        }
-        if let Some(entry) = db.latest_entry_for_now(&tf.field)? {
-            latest_per_field.insert(tf.field.clone(), entry);
-        }
-        let open = db.open_count_for_field(&tf.field)?;
+    for a in &snapshot.active {
+        let open = db.open_count_for_field(&a.field)?;
         if open >= 2 {
-            overlap_counts.insert(tf.field.clone(), open);
+            overlap_counts.insert(a.field.clone(), open);
+        }
+    }
+    for f in &snapshot.tracked_false {
+        let open = db.open_count_for_field(&f.field)?;
+        if open >= 2 {
+            overlap_counts.insert(f.field.clone(), open);
         }
     }
 
-    print_now_view(
-        &tracked,
-        &latest_per_field,
-        &state_colors,
-        &overlap_counts,
-        args.show_all,
+    print!(
+        "{}",
+        render_snapshot(&snapshot, &state_colors, &overlap_counts)
     );
 
     // da-raz: `datum now` also renders a terminal nowview band beneath the

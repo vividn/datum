@@ -16,8 +16,10 @@ use std::collections::HashMap;
 
 use chrono::Duration;
 use common::run_cli;
-use datum_cli::output::{render_now_view, strip_ansi};
-use datum_core::db::TrackedField;
+use datum_cli::output::{render_now_view, render_snapshot, strip_ansi};
+use datum_core::db::{
+    NowFieldActive, NowFieldIgnored, NowFieldTrackedFalse, NowSnapshot, TrackedField, NOW_SCHEMA_ID,
+};
 use datum_core::entry::{Entry, Verb};
 use datum_core::test_util::{entry_builder, fresh_db};
 use datum_core::time::DatumTime;
@@ -455,5 +457,151 @@ fn render_honors_spec_color_on_tracked_field() {
     assert!(
         out.contains("\x1b[38;2;255;102;0m"),
         "expected 24-bit color escape for ff6600 in output:\n{out:?}"
+    );
+}
+
+// ─── da-mpod: snapshot-driven renderer + layered disclosure ──────────────────
+
+fn empty_snapshot() -> NowSnapshot {
+    NowSnapshot {
+        schema: NOW_SCHEMA_ID,
+        now: chrono::Utc::now(),
+        active: Vec::new(),
+        tracked_false: Vec::new(),
+        ignored: Vec::new(),
+    }
+}
+
+fn active_row(field: &str, state: &str) -> NowFieldActive {
+    let e = switch_entry(field, state);
+    let since = e.start_time.as_ref().map(|t| t.utc);
+    NowFieldActive {
+        field: field.to_string(),
+        state: json!(state),
+        since,
+        verb: "switch".to_string(),
+        color: None,
+        entry: e,
+    }
+}
+
+/// da-mpod default disclosure: a snapshot with no `tracked_false` and
+/// no `ignored` rows renders only active rows — nothing dim, no
+/// separator, no "(off)" markers.
+#[test]
+fn snapshot_render_default_shows_only_active() {
+    let mut snap = empty_snapshot();
+    snap.active.push(active_row("mood", "happy"));
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let plain = strip_ansi(&out);
+    assert!(plain.contains("mood"), "active field must appear:\n{plain}");
+    assert!(
+        plain.contains("happy"),
+        "active state must appear:\n{plain}"
+    );
+    assert!(
+        !plain.contains("(off)"),
+        "no tracked_false section:\n{plain}"
+    );
+    assert!(
+        !plain.contains('─'),
+        "no separator with active-only:\n{plain}"
+    );
+}
+
+/// da-mpod --tracked layer: tracked-but-false rows render in a dim
+/// block beneath the active rows, separated by a horizontal line.
+/// The dim ANSI escape `\x1b[2m` must be present.
+#[test]
+fn snapshot_render_tracked_false_uses_dim_block() {
+    let mut snap = empty_snapshot();
+    snap.active.push(active_row("mood", "happy"));
+    let last_event = chrono::Utc::now() - chrono::Duration::minutes(15);
+    snap.tracked_false.push(NowFieldTrackedFalse {
+        field: "screens".to_string(),
+        since: Some(last_event),
+        last_event: Some(last_event),
+        color: None,
+        entry: None,
+    });
+
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let plain = strip_ansi(&out);
+
+    assert!(plain.contains("mood"), "active row present:\n{plain}");
+    assert!(
+        plain.contains("screens"),
+        "tracked_false row present:\n{plain}"
+    );
+    assert!(
+        plain.contains("(off)"),
+        "tracked_false renders (off):\n{plain}"
+    );
+    assert!(plain.contains('─'), "separator divides sections:\n{plain}");
+    assert!(
+        out.contains("\x1b[2m"),
+        "tracked_false row must use DIM:\n{out:?}"
+    );
+
+    // Ordering: active before separator before tracked_false.
+    let active_at = plain.find("mood").expect("mood missing");
+    let sep_at = plain.find('─').expect("separator missing");
+    let off_at = plain.find("screens").expect("screens missing");
+    assert!(
+        active_at < sep_at && sep_at < off_at,
+        "expected active → separator → tracked_false; positions {active_at} < {sep_at} < {off_at}"
+    );
+}
+
+/// da-mpod --all layer: ignored rows render below tracked_false (or
+/// below active when tracked_false is empty) with the existing dim
+/// no-state treatment.
+#[test]
+fn snapshot_render_ignored_block_renders_dim() {
+    let mut snap = empty_snapshot();
+    snap.active.push(active_row("mood", "happy"));
+    snap.ignored.push(NowFieldIgnored {
+        field: "youtube".to_string(),
+        since: None,
+        color: None,
+    });
+
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let plain = strip_ansi(&out);
+
+    assert!(plain.contains("mood"));
+    assert!(plain.contains("youtube"));
+    assert!(plain.contains('─'), "separator divides sections:\n{plain}");
+    assert!(
+        out.contains("\x1b[2m"),
+        "ignored row must use DIM:\n{out:?}"
+    );
+}
+
+/// Empty snapshot (every section empty) emits the legacy sentinel —
+/// the user is in a brand-new DB or has filter-hidden everything.
+#[test]
+fn snapshot_render_empty_emits_sentinel() {
+    let out = render_snapshot(&empty_snapshot(), &HashMap::new(), &HashMap::new());
+    let plain = strip_ansi(&out);
+    assert!(
+        plain.contains("No tracked"),
+        "expected onboarding sentinel:\n{plain}"
+    );
+}
+
+/// Overlap counts apply to snapshot rows by field name — a row with
+/// `n >= 2` gets the prefixed warning line.
+#[test]
+fn snapshot_render_overlap_warning_prepends_active_row() {
+    let mut snap = empty_snapshot();
+    snap.active.push(active_row("mood", "happy"));
+    let mut overlaps = HashMap::new();
+    overlaps.insert("mood".to_string(), 3u32);
+    let out = render_snapshot(&snap, &HashMap::new(), &overlaps);
+    let plain = strip_ansi(&out);
+    assert!(
+        plain.contains("3 overlapping opens on 'mood'"),
+        "got:\n{plain}"
     );
 }

@@ -1166,6 +1166,217 @@ pub fn render_now_view(
     out
 }
 
+// ─── Snapshot-driven Now view (da-mpod) ──────────────────────────────────────
+
+/// Render a [`NowSnapshot`] as the terminal `datum now` view. Single
+/// source of truth with the JSON path: `now.rs` builds the snapshot
+/// from `db.current_now(&filter)` and the snapshot's contents alone
+/// determine which sections appear:
+///
+/// * `snapshot.active`        — always rendered (currently-truthy
+///   tracked fields).
+/// * `snapshot.tracked_false` — surfaces tracked-but-currently-false
+///   fields in a dim block when the caller's `NowFilter` opted in
+///   (`--tracked` / `--all`). Per da-mpod's "tracked-but-false: dim
+///   dot + (off) + last-event time" treatment.
+/// * `snapshot.ignored`       — surfaces ignored fields in a dim
+///   block when the caller's filter opted in (`--all`).
+///
+/// Layered disclosure happens entirely in the snapshot construction
+/// (now.rs), so the renderer is a straight dump of what's there.
+///
+/// `state_colors` and `overlap_counts` carry the same semantics as
+/// the legacy [`render_now_view`] — the snapshot doesn't (yet) own
+/// per-state colour overrides or the overlap-count map, so callers
+/// supply them.
+pub fn render_snapshot(
+    snapshot: &datum_core::db::NowSnapshot,
+    state_colors: &HashMap<(String, String), String>,
+    overlap_counts: &HashMap<String, u32>,
+) -> String {
+    use std::fmt::Write;
+    let now = chrono::Utc::now();
+    let now_dt = DatumTime::now();
+
+    let mut active: Vec<NowRow> = Vec::new();
+    let mut tracked_false: Vec<NowRow> = Vec::new();
+    let mut ignored_rows: Vec<NowRow> = Vec::new();
+
+    for a in &snapshot.active {
+        let tf_color = a.color.clone();
+        let fansi = colors::resolve_rgb(tf_color.as_deref(), &a.field).fg();
+        let (state_rendered, state_vw) =
+            render_now_state(Some(&a.state), &a.field, &tf_color, state_colors);
+        let entry_time = a.entry.start_time.as_ref().or(a.entry.end_time.as_ref());
+        let time_str = match entry_time {
+            None => String::new(),
+            Some(t) => format_now_time(
+                t,
+                &now_dt,
+                now,
+                true,
+                &a.entry.verb,
+                a.entry.occur_time_precision.as_deref(),
+            ),
+        };
+        active.push(NowRow {
+            bullet: "●",
+            field: a.field.clone(),
+            state_rendered,
+            state_vw,
+            time_str,
+            field_ansi: fansi,
+            is_dim: false,
+        });
+    }
+
+    for f in &snapshot.tracked_false {
+        // da-mpod: tracked-but-false rows render dim with a small dot
+        // and the `(off)` label, plus the field's last-event time so
+        // the user can tell at a glance when the state was last
+        // toggled. The `since` and `last_event` fields are equal for
+        // this snapshot variant — pick `last_event` for the wall
+        // clock and fall back to `since`.
+        let fansi = colors::resolve_rgb(f.color.as_deref(), &f.field).fg();
+        let state_rendered = "(off)".to_string();
+        let state_vw = "(off)".len();
+        let time_str = match f.last_event.or(f.since) {
+            None => "(no entries)".to_string(),
+            Some(t) => format_now_time_utc(t, &now_dt, now),
+        };
+        tracked_false.push(NowRow {
+            bullet: "·",
+            field: f.field.clone(),
+            state_rendered,
+            state_vw,
+            time_str,
+            field_ansi: fansi,
+            is_dim: true,
+        });
+    }
+
+    for i in &snapshot.ignored {
+        let fansi = colors::resolve_rgb(i.color.as_deref(), &i.field).fg();
+        ignored_rows.push(NowRow {
+            bullet: " ",
+            field: i.field.clone(),
+            state_rendered: String::new(),
+            state_vw: 0,
+            time_str: String::new(),
+            field_ansi: fansi,
+            is_dim: true,
+        });
+    }
+
+    let all_visible = active
+        .iter()
+        .chain(tracked_false.iter())
+        .chain(ignored_rows.iter());
+    let field_w = all_visible
+        .clone()
+        .map(|r| r.field.len())
+        .max()
+        .unwrap_or(0)
+        .max(1);
+    let state_w = all_visible.map(|r| r.state_vw).max().unwrap_or(0);
+
+    let sep_len = 1 + 1 + field_w + 2 + state_w.max(1) + 2 + 10;
+    let sep: String = "─".repeat(sep_len);
+
+    let mut out = String::new();
+    let write_row = |out: &mut String, row: &NowRow| {
+        if let Some(&n) = overlap_counts.get(&row.field) {
+            if n >= 2 {
+                writeln!(
+                    out,
+                    "⚠ {n} overlapping opens on '{field}' — datum check",
+                    field = row.field,
+                )
+                .unwrap();
+            }
+        }
+        let fc = &row.field_ansi;
+        if row.is_dim && row.state_rendered.is_empty() {
+            // Ignored row — no state column, just the field name dim.
+            write!(out, "{DIM}{fc}  {field}{RESET}", field = row.field).unwrap();
+        } else if row.is_dim {
+            // Tracked-but-false row — dim throughout, but keep field
+            // colour visible so visually it still belongs to the
+            // tracked-set.
+            let pad = state_w.saturating_sub(row.state_vw);
+            let padding: String = " ".repeat(pad);
+            write!(
+                out,
+                "{DIM}{bullet} {field:<field_w$}  {state}{padding}  {time}{RESET}",
+                bullet = row.bullet,
+                field = row.field,
+                state = row.state_rendered,
+                time = row.time_str,
+            )
+            .unwrap();
+        } else {
+            let pad = state_w.saturating_sub(row.state_vw);
+            let padding: String = " ".repeat(pad);
+            write!(
+                out,
+                "{fc}{bullet}{RESET} {fc}{field:<field_w$}{RESET}  {state}{padding}  {time}",
+                bullet = row.bullet,
+                field = row.field,
+                state = row.state_rendered,
+                time = row.time_str,
+            )
+            .unwrap();
+        }
+        out.push('\n');
+    };
+
+    for row in &active {
+        write_row(&mut out, row);
+    }
+    if !active.is_empty() && !tracked_false.is_empty() {
+        writeln!(out, "{sep}").unwrap();
+    }
+    for row in &tracked_false {
+        write_row(&mut out, row);
+    }
+    if !ignored_rows.is_empty() && (!active.is_empty() || !tracked_false.is_empty()) {
+        writeln!(out, "{sep}").unwrap();
+    }
+    for row in &ignored_rows {
+        write_row(&mut out, row);
+    }
+
+    if active.is_empty() && tracked_false.is_empty() && ignored_rows.is_empty() {
+        writeln!(
+            out,
+            "No tracked (non-ignored) fields. Use `datum track <field>`."
+        )
+        .unwrap();
+    }
+    out
+}
+
+/// Format an absolute UTC instant for the now-view time column using
+/// the same rules as [`format_now_time`]. Used by the
+/// `tracked_false` / `ignored` snapshot variants where we only have
+/// the bare timestamp, not the originating `Entry`.
+fn format_now_time_utc(
+    utc: chrono::DateTime<chrono::Utc>,
+    now_dt: &DatumTime,
+    now_utc: chrono::DateTime<chrono::Utc>,
+) -> String {
+    let t = DatumTime {
+        utc,
+        offset_minutes: now_dt.offset_minutes,
+        timezone: now_dt.timezone.clone(),
+    };
+    if let Some(prefix) = self::action::format_relative_day_prefix(&t, now_dt) {
+        let local = t.local_time();
+        return format!("{prefix} {}", local.format("%H:%M"));
+    }
+    format_ago((now_utc - utc).num_seconds())
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 fn format_ago(secs: i64) -> String {
