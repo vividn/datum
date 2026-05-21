@@ -90,7 +90,7 @@ impl Direction {
 pub struct SyncOutcome {
     pub pushed: usize,
     pub pulled: usize,
-    pub conflicts_queued: usize,
+    pub integrity_warnings_queued: usize,
     pub dry_run: bool,
 }
 
@@ -100,13 +100,13 @@ fn run_sync(args: SyncArgs, db: &Db) -> Result<()> {
 
     let prefix = if outcome.dry_run { "[dry-run] " } else { "" };
     if dir.does_pull() {
-        if outcome.conflicts_queued > 0 {
+        if outcome.integrity_warnings_queued > 0 {
             println!(
-                "{prefix}↓ pulled {} change{} ({} conflict{} queued)",
+                "{prefix}↓ pulled {} change{} ({} integrity warning{} queued)",
                 outcome.pulled,
                 plural(outcome.pulled),
-                outcome.conflicts_queued,
-                plural(outcome.conflicts_queued),
+                outcome.integrity_warnings_queued,
+                plural(outcome.integrity_warnings_queued),
             );
         } else {
             println!(
@@ -174,7 +174,7 @@ pub fn run_sync_inner(
     Ok(SyncOutcome {
         pushed: report.push.pushed,
         pulled: report.pull.applied,
-        conflicts_queued: report.pull.conflicts_queued,
+        integrity_warnings_queued: report.pull.integrity_warnings_queued,
         dry_run,
     })
 }

@@ -54,7 +54,7 @@ fn switch_to_same_state_files_same_state_repeat_conflict() {
     // S6 supersedes the old dedup-error behavior: a switch whose value
     // equals the field's current active state still lands, and a
     // `same_state_repeat` conflict is filed for later review.
-    use datum_core::conflicts::{ConflictKind, ListFilter};
+    use datum_core::integrity::{IntegrityKind, ListFilter};
     let db = fresh_db();
 
     // Space the two switches so their timestamps (and content hashes) differ.
@@ -65,8 +65,8 @@ fn switch_to_same_state_files_same_state_repeat_conflict() {
     assert_eq!(entries.len(), 2, "both switches landed");
 
     let conflicts = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::SameStateRepeat),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::SameStateRepeat),
             pending: Some(true),
         })
         .unwrap();
@@ -79,15 +79,15 @@ fn switch_to_same_state_files_same_state_repeat_conflict() {
 
 #[test]
 fn switch_to_different_state_does_not_file_conflict() {
-    use datum_core::conflicts::{ConflictKind, ListFilter};
+    use datum_core::integrity::{IntegrityKind, ListFilter};
     let db = fresh_db();
 
     run_cli(&["switch", "mood", "happy", "-t=-1"], &db).expect("first switch");
     run_cli(&["switch", "mood", "sad"], &db).expect("switch to sad");
 
     let conflicts = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::SameStateRepeat),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::SameStateRepeat),
             pending: Some(true),
         })
         .unwrap();
@@ -101,15 +101,15 @@ fn switch_to_different_state_does_not_file_conflict() {
 fn switch_last_state_assertion_match_files_no_conflict() {
     // S6: `-L=<v>` is an assertion. When it matches the computed prior state,
     // no mismatch is filed.
-    use datum_core::conflicts::{ConflictKind, ListFilter};
+    use datum_core::integrity::{IntegrityKind, ListFilter};
     let db = fresh_db();
 
     run_cli(&["switch", "mood", "happy", "-t=-2"], &db).expect("seed happy");
     run_cli(&["switch", "mood", "sad", "-L=happy"], &db).expect("assertion matches");
 
     let conflicts = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::LastStateMismatch),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::LastStateMismatch),
             pending: Some(true),
         })
         .unwrap();
@@ -132,7 +132,7 @@ fn switch_last_state_assertion_match_files_no_conflict() {
 fn switch_last_state_assertion_mismatch_files_conflict() {
     // S6: `-L=<v>` asserts something that disagrees with history → file a
     // `last_state_mismatch` conflict, but still land the entry.
-    use datum_core::conflicts::{ConflictKind, ListFilter};
+    use datum_core::integrity::{IntegrityKind, ListFilter};
     let db = fresh_db();
 
     run_cli(&["switch", "mood", "happy", "-t=-2"], &db).expect("seed happy");
@@ -143,8 +143,8 @@ fn switch_last_state_assertion_mismatch_files_conflict() {
     assert_eq!(entries.len(), 2, "grumpy entry still lands");
 
     let conflicts = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::LastStateMismatch),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::LastStateMismatch),
             pending: Some(true),
         })
         .unwrap();

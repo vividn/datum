@@ -219,7 +219,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Db(sub) => commands::db::dispatch(sub, db),
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
         Command::Sync(args) => commands::sync::dispatch(args, db),
-        Command::Conflicts(sub) => commands::conflicts::conflicts(sub, db),
+        Command::Integrity(sub) => commands::integrity::integrity(sub, db),
         Command::Reparse(args) => commands::reparse::reparse(args, db),
     }
 }

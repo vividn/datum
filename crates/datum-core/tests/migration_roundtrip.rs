@@ -141,6 +141,7 @@ fn every_pair_has_a_roundtrip_test() {
         (22, 23),
         (23, 24),
         (24, 25),
+        (25, 26),
     ];
     assert_eq!(
         covered.len(),
@@ -1076,4 +1077,63 @@ fn roundtrip_v18_to_v19_field_specs_render_json() {
         )
         .unwrap();
     assert_eq!(n, 1);
+}
+
+/// da-u2do: v25→v26 renames the `sync_conflicts` table (and its
+/// `conflict_kind` column) to `integrity_warnings` / `kind`. Existing
+/// pending rows survive the rename. The down step puts the legacy names
+/// back so the migration chain is reversible.
+#[test]
+fn roundtrip_v25_to_v26_rename_integrity_warnings() {
+    let db = fresh_at(25);
+    let conn = db.conn();
+    assert!(table_exists(conn, "sync_conflicts"));
+    assert!(!table_exists(conn, "integrity_warnings"));
+
+    // Seed a row at v=25 with the legacy column name so we can verify the
+    // rename preserves data and the new `kind` column is populated.
+    conn.execute(
+        "INSERT INTO sync_conflicts
+            (id, hid, entry_slug, local_entry, remote_entry, detected_at,
+             resolution, resolved_at, detected_by, conflict_kind)
+         VALUES
+            ('aaaaaaaaaaaa', 'aaaaa', 'mood:2026-05-21T10:00Z',
+             '{\"hid\":\"h\"}', NULL, '2026-05-21T10:00:00Z',
+             NULL, NULL, 'local_validator', 'orphan_end')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 25);
+
+    assert!(!table_exists(conn, "sync_conflicts"));
+    assert!(table_exists(conn, "integrity_warnings"));
+    assert!(index_exists(conn, "integrity_warnings_hid"));
+    assert!(index_exists(conn, "integrity_warnings_slug"));
+    assert!(index_exists(conn, "integrity_warnings_pending"));
+    assert!(column_exists(conn, "integrity_warnings", "kind"));
+    assert!(!column_exists(conn, "integrity_warnings", "conflict_kind"));
+    let kind: String = conn
+        .query_row(
+            "SELECT kind FROM integrity_warnings WHERE id = 'aaaaaaaaaaaa'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(kind, "orphan_end");
+
+    apply_one_down(conn, 26);
+
+    assert!(table_exists(conn, "sync_conflicts"));
+    assert!(!table_exists(conn, "integrity_warnings"));
+    assert!(index_exists(conn, "sync_conflicts_hid"));
+    assert!(column_exists(conn, "sync_conflicts", "conflict_kind"));
+    let kind: String = conn
+        .query_row(
+            "SELECT conflict_kind FROM sync_conflicts WHERE id = 'aaaaaaaaaaaa'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(kind, "orphan_end");
 }

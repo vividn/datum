@@ -242,14 +242,14 @@ async fn run_worker(
                         info!(
                             db = %target.name,
                             applied = out.applied,
-                            queued = out.conflicts_queued,
+                            queued = out.integrity_warnings_queued,
                             "pull ok"
                         );
-                        // C4e: announce newly-queued conflicts.
-                        agent_notify::announce_new_conflicts(
+                        // C4e: announce newly-queued integrity warnings.
+                        agent_notify::announce_new_warnings(
                             notifier.as_ref(),
                             &target.name,
-                            out.conflicts_queued,
+                            out.integrity_warnings_queued,
                         );
                     }
                     Ok(Err(e)) => {
@@ -342,7 +342,7 @@ fn do_push(target: &SyncTarget) -> Result<usize> {
 /// Execute a pull for `target`. Blocks; runs inside `spawn_blocking`.
 /// Returns the full [`PullOutcome`] so the caller can both log
 /// `applied` and decide whether to fire a desktop notification on
-/// `conflicts_queued > 0`.
+/// `integrity_warnings_queued > 0`.
 fn do_pull(target: &SyncTarget) -> Result<datum_sync_client::sync_once::PullOutcome> {
     use datum_commands::commands::sync::{build_session, preflight_checks};
     use datum_core::db::Db;

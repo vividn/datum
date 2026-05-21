@@ -27,9 +27,9 @@
 //! See `docs/sync-protocol.md` §Sequence semantics.
 
 use anyhow::Result;
-use datum_core::conflicts::{self, DetectedBy};
 use datum_core::db::Db;
 use datum_core::entry::Entry;
+use datum_core::integrity::{self, DetectedBy};
 use reqwest::blocking::Client;
 
 use crate::crypto::changeset::{decrypt_changeset, encrypt_changeset, Changeset, EncryptedBlob};
@@ -82,9 +82,9 @@ pub struct PushOutcome {
 pub struct PullOutcome {
     /// Entries applied to the local DB (including LWW no-ops).
     pub applied: usize,
-    /// Rows filed into the `sync_conflicts` queue with
+    /// Rows filed into the `integrity_warnings` queue with
     /// `detected_by='sync_pull'`.
-    pub conflicts_queued: usize,
+    pub integrity_warnings_queued: usize,
 }
 
 /// Tally of a full [`sync_once`] cycle.
@@ -208,7 +208,7 @@ pub fn pull_once(
                 .iter()
                 .map(|r| incoming_entry_count(r, master_key))
                 .sum(),
-            conflicts_queued: 0,
+            integrity_warnings_queued: 0,
         });
     }
 
@@ -235,7 +235,7 @@ pub fn pull_once(
         apply_changeset(db, &cs)?;
         outcome.applied += incoming.len();
 
-        outcome.conflicts_queued += file_conflicts_for_incoming(db, &incoming)?;
+        outcome.integrity_warnings_queued += file_warnings_for_incoming(db, &incoming)?;
 
         if (row.id as u64) > max_seq {
             max_seq = row.id as u64;
@@ -290,16 +290,16 @@ fn entries_array(cs: &Changeset) -> Option<Vec<serde_json::Value>> {
 
 /// After applying incoming entries via LWW, run the same non-blocking
 /// overlap/double-open/orphan-end detector D5 uses for local writes — but
-/// tag each detected row as `detected_by='sync_pull'` so the conflict-
-/// resolution UX (C4e) can distinguish the two sources.
-fn file_conflicts_for_incoming(db: &Db, incoming: &[Entry]) -> Result<usize> {
+/// tag each detected row as `detected_by='sync_pull'` so the integrity-
+/// warning UX (C4e) can distinguish the two sources.
+fn file_warnings_for_incoming(db: &Db, incoming: &[Entry]) -> Result<usize> {
     if incoming.is_empty() {
         return Ok(0);
     }
     let tx = db.conn().unchecked_transaction()?;
     let mut filed = 0usize;
     for entry in incoming {
-        let found = conflicts::detect_for_entry(&tx, entry, DetectedBy::SyncPull)?;
+        let found = integrity::detect_for_entry(&tx, entry, DetectedBy::SyncPull)?;
         filed += found.len();
     }
     tx.commit()?;

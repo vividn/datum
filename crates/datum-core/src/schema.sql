@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS entries (
     -- S6: when the user passed `-L/--last-state=<v>`, the normalized assertion
     -- value is stored here (JSON). NULL for the common case (no assertion).
     -- Cross-checked against computed last-state at insert; mismatches file a
-    -- `last_state_mismatch` row in sync_conflicts rather than blocking the write.
+    -- `last_state_mismatch` row in integrity_warnings rather than blocking the write.
     user_asserted_last_state TEXT,
 
     -- da-tsw: system-managed provenance, strictly disjoint from `data` (the
@@ -302,11 +302,17 @@ CREATE INDEX IF NOT EXISTS entry_history_entry
 CREATE INDEX IF NOT EXISTS entry_history_change_kind
     ON entry_history(change_kind);
 
--- Overlap / double-open / orphan-end bookkeeping. Rows are created by the
--- local validator (D5) on insert and by sync-pull reconciliation (C4e);
--- the `detected_by` column distinguishes them. Rows start with
--- `resolution=NULL` and are filled in by `datum conflicts resolve` or the
--- auto-resolver once they're old enough.
+-- Data-integrity warnings: overlap / double-open / orphan-end / same-state
+-- bookkeeping. Rows are created by the local validator (D5) on insert and
+-- by sync-pull reconciliation (C4e); the `detected_by` column distinguishes
+-- them. Rows start with `resolution=NULL` and are filled in by
+-- `datum integrity resolve` or the auto-resolver once they're old enough.
+--
+-- These are local data-consistency findings — NOT cross-device sync
+-- conflicts. They surface patterns like "you logged a stop on a field that
+-- was never opened" or "two switches to the same state in a row." A real
+-- sync-conflict queue (same entry edited differently on two devices) will
+-- be a separate table when sync conflicts arrive.
 --
 -- `id` is a random 12-char base36 token (full precision); `hid` is the
 -- short prefix used at the CLI. `entry_slug` is the slug of the newer
@@ -314,7 +320,7 @@ CREATE INDEX IF NOT EXISTS entry_history_change_kind
 -- `remote_entry` holds the conflicting counterpart — the older local entry
 -- for `local_validator` rows, the incoming remote entry for `sync_pull`
 -- rows. May be NULL for orphan_end detection (no counterpart).
-CREATE TABLE IF NOT EXISTS sync_conflicts (
+CREATE TABLE IF NOT EXISTS integrity_warnings (
     id              TEXT NOT NULL PRIMARY KEY,
     hid             TEXT NOT NULL,
     entry_slug      TEXT NOT NULL,
@@ -324,13 +330,13 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
     resolution      TEXT,
     resolved_at     TEXT,
     detected_by     TEXT NOT NULL,
-    conflict_kind   TEXT NOT NULL
+    kind            TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS sync_conflicts_hid ON sync_conflicts(hid);
-CREATE INDEX IF NOT EXISTS sync_conflicts_slug ON sync_conflicts(entry_slug);
-CREATE INDEX IF NOT EXISTS sync_conflicts_pending
-    ON sync_conflicts(detected_at) WHERE resolution IS NULL;
+CREATE INDEX IF NOT EXISTS integrity_warnings_hid ON integrity_warnings(hid);
+CREATE INDEX IF NOT EXISTS integrity_warnings_slug ON integrity_warnings(entry_slug);
+CREATE INDEX IF NOT EXISTS integrity_warnings_pending
+    ON integrity_warnings(detected_at) WHERE resolution IS NULL;
 
 -- Singleton pointer to the hids of the most-recently-accessed batch.
 -- Backs the `_LAST` / `_LAST_WITH_PROTECTION` quickId tokens. See

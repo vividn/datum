@@ -32,14 +32,14 @@ use crate::render::{OutputArgs, Show};
 
 pub use pcli::{
     AliasCommand, BackupArgs, CheckArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
-    ConflictStrategyArg, ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs,
-    ConflictsResolveArgs, ConflictsShowArgs, CountArgs, DayviewArgs, DbCommand, DbImportArgs,
-    DbPurgeArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs,
-    InfoArgs, KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand,
-    NowArgs, NowviewArgs, ReparseArgs, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand,
-    SpecSetArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand,
-    SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat,
-    WhyArgs,
+    ConflictStrategyArg, CountArgs, DayviewArgs, DbCommand, DbImportArgs, DbPurgeArgs, DeleteArgs,
+    EditArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs,
+    IntegrityAutoResolveArgs, IntegrityCommand, IntegrityListArgs, IntegrityResolveArgs,
+    IntegrityShowArgs, KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs,
+    MigrateCommand, NowArgs, NowviewArgs, ReparseArgs, RestoreArgs, RetimeArgs, SetupArgs,
+    SpecCommand, SpecSetArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs,
+    SyncKeyCommand, SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs,
+    ViewArgs, ViewFormat, WhyArgs,
 };
 
 // ─── Intent context (provenance for the current invocation) ──────────────

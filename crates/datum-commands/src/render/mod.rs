@@ -947,7 +947,7 @@ pub fn print_now_view(
 /// used by integration tests that need to inspect output.
 ///
 /// `overlap_counts` maps field → number of live ongoing entries. A count
-/// ≥ 2 prepends an `⚠ N overlapping opens — datum conflicts list` line
+/// ≥ 2 prepends an `⚠ N overlapping opens — datum integrity list` line
 /// above the field's row.
 pub fn render_now_view(
     tracked: &[TrackedField],
@@ -1064,7 +1064,7 @@ pub fn render_now_view(
             if n >= 2 {
                 writeln!(
                     out,
-                    "⚠ {n} overlapping opens on '{field}' — datum conflicts list",
+                    "⚠ {n} overlapping opens on '{field}' — datum integrity list",
                     field = row.field,
                 )
                 .unwrap();
@@ -1170,46 +1170,45 @@ fn format_now_time(
     }
 }
 
-/// Strip all ANSI escape sequences from a string. Handy for snapshot tests.
-/// One-line warning to print at the top of `datum now` when there are
-/// unresolved conflicts. Empty string for `n == 0` so callers can append
-/// unconditionally.
-pub fn render_pending_conflict_warning(n: u32) -> String {
+/// One-line banner to print at the top of `datum now` when there are
+/// unresolved integrity warnings. Empty string for `n == 0` so callers
+/// can append unconditionally.
+pub fn render_pending_integrity_warning(n: u32) -> String {
     if n == 0 {
         return String::new();
     }
-    let noun = if n == 1 { "conflict" } else { "conflicts" };
-    format!("⚠ {n} unresolved {noun} — run 'datum conflicts list'\n")
+    let noun = if n == 1 { "warning" } else { "warnings" };
+    format!("⚠ {n} unresolved integrity {noun} — run 'datum integrity list'\n")
 }
 
-/// `datum conflicts show <hid>` rendering: header + side-by-side compare
+/// `datum integrity show <hid>` rendering: header + side-by-side compare
 /// of the local snapshot vs the remote snapshot. The display is plain
 /// text so it composes cleanly with `less`/pipes; we deliberately don't
 /// reuse the colorised entry renderer (which assumes a live entry).
-pub fn render_conflict_show(c: &datum_core::conflicts::Conflict) -> String {
+pub fn render_integrity_warning_show(w: &datum_core::integrity::IntegrityWarning) -> String {
     use std::fmt::Write;
 
     let mut out = String::new();
-    let status = match &c.resolution {
+    let status = match &w.resolution {
         None => "pending".to_string(),
         Some(r) => format!("resolved:{r}"),
     };
     let _ = writeln!(
         out,
-        "conflict {hid}  kind={kind}  detected_by={by}  [{status}]",
-        hid = c.hid,
-        kind = c.conflict_kind.as_str(),
-        by = c.detected_by.as_str(),
+        "integrity {hid}  kind={kind}  detected_by={by}  [{status}]",
+        hid = w.hid,
+        kind = w.kind.as_str(),
+        by = w.detected_by.as_str(),
     );
-    let _ = writeln!(out, "  slug:        {}", c.entry_slug);
-    let _ = writeln!(out, "  detected_at: {}", c.detected_at.to_rfc3339());
-    if let Some(t) = c.resolved_at {
+    let _ = writeln!(out, "  slug:        {}", w.entry_slug);
+    let _ = writeln!(out, "  detected_at: {}", w.detected_at.to_rfc3339());
+    if let Some(t) = w.resolved_at {
         let _ = writeln!(out, "  resolved_at: {}", t.to_rfc3339());
     }
     let _ = writeln!(out);
 
-    let local_lines = entry_summary_lines(&c.local_entry);
-    let remote_lines = match &c.remote_entry {
+    let local_lines = entry_summary_lines(&w.local_entry);
+    let remote_lines = match &w.remote_entry {
         Some(e) => entry_summary_lines(e),
         None => vec!["(no counterpart)".to_string()],
     };
@@ -1237,8 +1236,8 @@ pub fn render_conflict_show(c: &datum_core::conflicts::Conflict) -> String {
     let _ = writeln!(out);
     let _ = writeln!(
         out,
-        "  resolve with: datum conflicts resolve {} --take local|remote | --edit | --skip",
-        c.hid,
+        "  resolve with: datum integrity resolve {} --take local|remote | --edit | --skip",
+        w.hid,
     );
     out
 }

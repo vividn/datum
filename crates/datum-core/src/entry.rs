@@ -465,13 +465,7 @@ impl Entry {
     }
 }
 
-pub(crate) fn compute_hash(
-    field: &str,
-    occur: &str,
-    dur: &str,
-    state: &str,
-    extra: &str,
-) -> String {
+fn compute_hash(field: &str, occur: &str, dur: &str, state: &str, extra: &str) -> String {
     let mut h = Sha256::new();
     h.update(field.as_bytes());
     h.update(b"\x00");

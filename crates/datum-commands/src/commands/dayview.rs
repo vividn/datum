@@ -5,7 +5,7 @@
 //! Layout math + SVG emit live in `datum_layout::dayview` so the SvelteKit
 //! PWA can render the same view client-side via WASM. This file is the
 //! thin CLI wrapper: it resolves date windows, pulls entries from SQLite,
-//! resolves colors through `crate::render::colors`, queries the conflicts
+//! resolves colors through `crate::render::colors`, queries the integrity warnings
 //! queue for per-day error overlays, and writes the chosen output format.
 //!
 //! TODO (timezone bifurcation): v1 renders in the host's local time. A day
@@ -17,10 +17,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
-use datum_core::conflicts::ListFilter;
 use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
+use datum_core::integrity::ListFilter;
 use datum_core::shape::{
     dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
     is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
@@ -158,10 +158,10 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         .map(|i| end_date - chrono::Duration::days((n_days - 1 - i) as i64))
         .collect();
 
-    // 3. Pull conflicts (one global query, then bucket by day window).
+    // 3. Pull integrity warnings (one global query, then bucket by day window).
     //    Empty result is fine; just no error icons.
-    let conflicts = db
-        .list_conflicts(&ListFilter {
+    let warnings = db
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: Some(true),
         })
@@ -176,10 +176,10 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         let (day_start_ms, day_end_ms) = local_day_bounds_ms(*date)?;
         let label_lines = format_day_label(*date);
 
-        // Bucket pending conflicts whose detected_at falls in this day's
-        // local window.
-        let has_error = conflicts.iter().any(|c| {
-            let t = c.detected_at.timestamp_millis();
+        // Bucket pending integrity warnings whose detected_at falls in this
+        // day's local window.
+        let has_error = warnings.iter().any(|w| {
+            let t = w.detected_at.timestamp_millis();
             t >= day_start_ms && t < day_end_ms
         });
 

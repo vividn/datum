@@ -304,11 +304,8 @@ mod tests {
         let mut older = make_entry("coffee", 0);
         let mut newer = make_entry("coffee", 0);
         newer.modify_time = older.modify_time + Duration::seconds(60);
-        // Distinguish older vs newer by real content — the storage layer
-        // canonicalizes content_hash (da-r569), so a synthetic label on
-        // `entry.content_hash` no longer survives the insert.
-        newer.state = Some(serde_json::json!("newer"));
-        older.state = Some(serde_json::json!("older"));
+        newer.content_hash = "deadbeef".to_string();
+        older.content_hash = "cafebabe".to_string();
 
         db_a.insert_entry(&newer).unwrap();
 
@@ -323,8 +320,15 @@ mod tests {
         apply_changeset(&db_b, &newer_cs).unwrap();
         apply_changeset(&db_b, &older_cs).unwrap();
 
-        let landed = db_b.get_entry(&newer.slug).unwrap();
-        assert_eq!(landed.state, Some(serde_json::json!("newer")));
+        let hash: String = db_b
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM entries WHERE slug = ?1",
+                params![newer.slug],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(hash, "deadbeef");
     }
 
     /// A second apply of the exact same payload is a LWW no-op: no new
@@ -363,10 +367,8 @@ mod tests {
         let mut older = make_entry("coffee", 0);
         let mut newer = make_entry("coffee", 0);
         newer.modify_time = older.modify_time + Duration::seconds(60);
-        // Distinguish older vs newer by real content; see
-        // `apply_changeset_lww_skips_older_incoming` for the rationale.
-        older.state = Some(serde_json::json!("older"));
-        newer.state = Some(serde_json::json!("newer"));
+        older.content_hash = "cafebabe".to_string();
+        newer.content_hash = "deadbeef".to_string();
         let hid = older.hid.clone();
 
         db.insert_entry(&older).unwrap();
@@ -386,12 +388,16 @@ mod tests {
             versions_after[1].change_kind,
             history::ChangeKind::SyncMerge
         );
-        assert_eq!(
-            versions_after[1].snapshot.state,
-            Some(serde_json::json!("older")),
-        );
+        assert_eq!(versions_after[1].snapshot.content_hash, "cafebabe");
 
-        let landed = db.get_entry(&newer.slug).unwrap();
-        assert_eq!(landed.state, Some(serde_json::json!("newer")));
+        let stored_hash: String = db
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM entries WHERE slug = ?1",
+                params![newer.slug],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_hash, "deadbeef");
     }
 }

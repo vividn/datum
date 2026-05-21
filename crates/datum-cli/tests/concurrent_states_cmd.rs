@@ -12,7 +12,7 @@
 mod common;
 
 use common::run_cli;
-use datum_core::conflicts::{ConflictKind, ListFilter};
+use datum_core::integrity::{IntegrityKind, ListFilter};
 use datum_core::test_util::fresh_db;
 use serde_json::json;
 
@@ -160,8 +160,8 @@ fn array_to_scalar_with_overlap_flagged_as_same_state_repeat() {
     run_cli(&["switch", "project", "datum"], &db).expect("switch back to single member");
 
     let conflicts = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::SameStateRepeat),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::SameStateRepeat),
             pending: Some(true),
         })
         .unwrap();
@@ -183,8 +183,8 @@ fn scalar_to_array_with_overlap_flagged_as_same_state_repeat() {
         .expect("switch to array containing same member");
 
     let conflicts = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::SameStateRepeat),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::SameStateRepeat),
             pending: Some(true),
         })
         .unwrap();
@@ -200,8 +200,8 @@ fn array_to_array_with_overlap_flagged_as_same_state_repeat() {
     run_cli(&["switch", "project", "datum,gastown"], &db).expect("switch to overlapping array");
 
     let conflicts = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::SameStateRepeat),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::SameStateRepeat),
             pending: Some(true),
         })
         .unwrap();
@@ -221,8 +221,8 @@ fn array_to_array_disjoint_is_not_same_state_repeat() {
     run_cli(&["switch", "project", "gastown,beads"], &db).expect("switch to disjoint array");
 
     let conflicts = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::SameStateRepeat),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::SameStateRepeat),
             pending: Some(true),
         })
         .unwrap();
@@ -246,8 +246,8 @@ fn last_state_assertion_matches_array_regardless_of_order() {
         .expect("switch with -L assertion (reordered)");
 
     let mismatches = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::LastStateMismatch),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::LastStateMismatch),
             pending: Some(true),
         })
         .unwrap();
@@ -267,8 +267,8 @@ fn last_state_assertion_flags_element_mismatch() {
     run_cli(&["switch", "project", "d", "-L=a,b"], &db).expect("switch with wrong -L assertion");
 
     let mismatches = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::LastStateMismatch),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::LastStateMismatch),
             pending: Some(true),
         })
         .unwrap();

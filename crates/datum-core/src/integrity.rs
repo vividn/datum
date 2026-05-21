@@ -1,19 +1,24 @@
-//! Non-blocking conflict queue (`sync_conflicts` table).
+//! Non-blocking data-integrity warnings queue (`integrity_warnings` table).
 //!
 //! D5 principle: the system never refuses data entry. When a user logs
-//! something inconsistent — a `start` on a field that's already open, a
-//! `stop` for a field with no open block, two overlapping `block`s —
-//! both entries land in the `entries` table and a pending row is filed
-//! here for later review.
+//! something inconsistent on this device — a `start` on a field that's
+//! already open, a `stop` for a field with no open block, two overlapping
+//! `block`s — both entries land in the `entries` table and a pending row
+//! is filed here for later review.
+//!
+//! These are *local data-integrity* findings, NOT cross-device sync
+//! conflicts. A real sync-conflict (same entry edited differently on two
+//! devices) will live in a separate table when that surface lands.
 //!
 //! Detection runs post-insert (see [`detect_for_entry`]); resolution is
-//! either explicit via `datum conflicts resolve` or applied automatically
+//! either explicit via `datum integrity resolve` or applied automatically
 //! by [`auto_resolve_pending`] once enough time has passed that the user
 //! hasn't self-corrected.
 //!
-//! This module is also the backing store for C4e's sync-pull conflict
-//! detection — the `detected_by` and `conflict_kind` columns are how the
-//! two detection sources share the same queue.
+//! This module is also the backing store for C4e's sync-pull integrity
+//! detection — incoming remote entries are walked through the same
+//! `detect_for_entry` and any inconsistencies file rows with
+//! `detected_by = sync_pull`.
 //!
 //! # Column meaning
 //! - `id`: full 12-char base36 token.
@@ -26,7 +31,7 @@
 //! - `detected_at` / `resolved_at`: ISO 8601.
 //! - `resolution`: NULL while pending; filled on resolve (auto or manual).
 //! - `detected_by`: `local_validator` | `sync_pull`.
-//! - `conflict_kind`: `double_open` | `orphan_end` | `overlap`
+//! - `kind`: `double_open` | `orphan_end` | `overlap`
 //!   | `same_state_repeat` | `last_state_mismatch`.
 
 use chrono::{DateTime, Utc};
@@ -68,7 +73,7 @@ impl std::str::FromStr for DetectedBy {
 
 /// Shape of the inconsistency a conflict row describes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConflictKind {
+pub enum IntegrityKind {
     /// A second `start` for a field that already has a live ongoing entry.
     /// Special case of [`Self::SameStateRepeat`] where the new state is `true`;
     /// retained as a distinct kind for the auto-resolver's close-older rule.
@@ -88,39 +93,39 @@ pub enum ConflictKind {
     LastStateMismatch,
 }
 
-impl ConflictKind {
+impl IntegrityKind {
     pub fn as_str(&self) -> &'static str {
         match self {
-            ConflictKind::DoubleOpen => "double_open",
-            ConflictKind::OrphanEnd => "orphan_end",
-            ConflictKind::Overlap => "overlap",
-            ConflictKind::SameStateRepeat => "same_state_repeat",
-            ConflictKind::LastStateMismatch => "last_state_mismatch",
+            IntegrityKind::DoubleOpen => "double_open",
+            IntegrityKind::OrphanEnd => "orphan_end",
+            IntegrityKind::Overlap => "overlap",
+            IntegrityKind::SameStateRepeat => "same_state_repeat",
+            IntegrityKind::LastStateMismatch => "last_state_mismatch",
         }
     }
 }
 
-impl std::fmt::Display for ConflictKind {
+impl std::fmt::Display for IntegrityKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for ConflictKind {
+impl std::str::FromStr for IntegrityKind {
     type Err = String;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "double_open" => Ok(ConflictKind::DoubleOpen),
-            "orphan_end" => Ok(ConflictKind::OrphanEnd),
-            "overlap" => Ok(ConflictKind::Overlap),
-            "same_state_repeat" => Ok(ConflictKind::SameStateRepeat),
-            "last_state_mismatch" => Ok(ConflictKind::LastStateMismatch),
-            other => Err(format!("unknown conflict_kind: '{other}'")),
+            "double_open" => Ok(IntegrityKind::DoubleOpen),
+            "orphan_end" => Ok(IntegrityKind::OrphanEnd),
+            "overlap" => Ok(IntegrityKind::Overlap),
+            "same_state_repeat" => Ok(IntegrityKind::SameStateRepeat),
+            "last_state_mismatch" => Ok(IntegrityKind::LastStateMismatch),
+            other => Err(format!("unknown kind: '{other}'")),
         }
     }
 }
 
-/// Resolution labels written to `sync_conflicts.resolution` when a row is
+/// Resolution labels written to `integrity_warnings.resolution` when a row is
 /// closed. These strings are user-visible through `datum conflicts list`
 /// so keep them stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,9 +167,9 @@ impl std::fmt::Display for Resolution {
     }
 }
 
-/// One row from `sync_conflicts` rehydrated for callers.
+/// One row from `integrity_warnings` rehydrated for callers.
 #[derive(Debug, Clone)]
-pub struct Conflict {
+pub struct IntegrityWarning {
     pub id: String,
     pub hid: String,
     pub entry_slug: Slug,
@@ -174,10 +179,10 @@ pub struct Conflict {
     pub resolution: Option<String>,
     pub resolved_at: Option<DateTime<Utc>>,
     pub detected_by: DetectedBy,
-    pub conflict_kind: ConflictKind,
+    pub kind: IntegrityKind,
 }
 
-impl Conflict {
+impl IntegrityWarning {
     /// True when `resolution IS NULL` — the row still needs attention.
     pub fn is_pending(&self) -> bool {
         self.resolution.is_none()
@@ -196,7 +201,7 @@ pub fn detect_for_entry(
     conn: &Connection,
     trigger: &Entry,
     detected_by: DetectedBy,
-) -> Result<Vec<Conflict>> {
+) -> Result<Vec<IntegrityWarning>> {
     // da-nm5b: detection under v3 verbs.
     // - Switch with state=Bool(true) on a field whose pre-trigger state is
     //   also Bool(true) → DoubleOpen.
@@ -227,22 +232,22 @@ pub fn detect_for_entry(
         // never been opened. Mutually exclusive with SameStateRepeat —
         // there's no prior state to share with.
         if is_close_state(&new_norm) && prior_at_probe.is_none() {
-            filed.push(file_conflict(
+            filed.push(file_warning(
                 conn,
                 trigger,
                 None,
                 detected_by,
-                ConflictKind::OrphanEnd,
+                IntegrityKind::OrphanEnd,
             )?);
         } else if let Some(prior) = prior_at_probe.as_ref() {
             if states_share_element(&new_norm, prior) {
                 let kind = if is_open_state(&new_norm) && is_open_state(prior) {
-                    ConflictKind::DoubleOpen
+                    IntegrityKind::DoubleOpen
                 } else {
-                    ConflictKind::SameStateRepeat
+                    IntegrityKind::SameStateRepeat
                 };
                 if let Some(hit) = find_recent_state_setter(conn, trigger)? {
-                    filed.push(file_conflict(conn, trigger, Some(&hit), detected_by, kind)?);
+                    filed.push(file_warning(conn, trigger, Some(&hit), detected_by, kind)?);
                 }
             }
         }
@@ -250,23 +255,23 @@ pub fn detect_for_entry(
 
     if matches!(trigger.verb, Verb::Block | Verb::BlockSwitch) {
         if let Some(other) = find_overlapping_block(conn, trigger)? {
-            filed.push(file_conflict(
+            filed.push(file_warning(
                 conn,
                 trigger,
                 Some(&other),
                 detected_by,
-                ConflictKind::Overlap,
+                IntegrityKind::Overlap,
             )?);
         }
     }
 
     if let Some(mismatch) = detect_last_state_mismatch(conn, trigger)? {
-        filed.push(file_conflict(
+        filed.push(file_warning(
             conn,
             trigger,
             mismatch.as_ref(),
             detected_by,
-            ConflictKind::LastStateMismatch,
+            IntegrityKind::LastStateMismatch,
         )?);
     }
 
@@ -464,13 +469,13 @@ fn detect_last_state_mismatch(conn: &Connection, trigger: &Entry) -> Result<Opti
     Ok(Some(counterpart))
 }
 
-fn file_conflict(
+fn file_warning(
     conn: &Connection,
     trigger: &Entry,
     counterpart: Option<&Entry>,
     detected_by: DetectedBy,
-    kind: ConflictKind,
-) -> Result<Conflict> {
+    kind: IntegrityKind,
+) -> Result<IntegrityWarning> {
     let id: String = new_hid().into_string();
     let hid: String = id.chars().take(SHORT_HID_LEN).collect();
     let local_json = serde_json::to_string(trigger)?;
@@ -481,9 +486,9 @@ fn file_conflict(
     let now = Utc::now();
     let now_str = now.to_rfc3339();
     conn.execute(
-        r#"INSERT INTO sync_conflicts (
+        r#"INSERT INTO integrity_warnings (
             id, hid, entry_slug, local_entry, remote_entry,
-            detected_at, resolution, resolved_at, detected_by, conflict_kind
+            detected_at, resolution, resolved_at, detected_by, kind
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?8)"#,
         params![
             id,
@@ -496,7 +501,7 @@ fn file_conflict(
             kind.as_str(),
         ],
     )?;
-    Ok(Conflict {
+    Ok(IntegrityWarning {
         id,
         hid,
         entry_slug: trigger.slug.clone(),
@@ -506,7 +511,7 @@ fn file_conflict(
         resolution: None,
         resolved_at: None,
         detected_by,
-        conflict_kind: kind,
+        kind,
     })
 }
 
@@ -514,24 +519,24 @@ fn file_conflict(
 #[derive(Debug, Clone, Default)]
 pub struct ListFilter {
     /// Only rows of this conflict kind.
-    pub kind: Option<ConflictKind>,
+    pub kind: Option<IntegrityKind>,
     /// `Some(true)` → pending only (resolution IS NULL).
     /// `Some(false)` → resolved only.
     /// `None` → both.
     pub pending: Option<bool>,
 }
 
-/// Read rows from `sync_conflicts`, newest first.
-pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<Conflict>> {
+/// Read rows from `integrity_warnings`, newest first.
+pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<IntegrityWarning>> {
     let mut sql = String::from(
         "SELECT id, hid, entry_slug, local_entry, remote_entry, detected_at,
-                resolution, resolved_at, detected_by, conflict_kind
-         FROM sync_conflicts",
+                resolution, resolved_at, detected_by, kind
+         FROM integrity_warnings",
     );
     let mut clauses: Vec<String> = Vec::new();
     let mut binds: Vec<String> = Vec::new();
     if let Some(kind) = filter.kind {
-        clauses.push(format!("conflict_kind = ?{}", binds.len() + 1));
+        clauses.push(format!("kind = ?{}", binds.len() + 1));
         binds.push(kind.as_str().to_string());
     }
     match filter.pending {
@@ -548,21 +553,21 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<Conflict>> {
     let mut stmt = conn.prepare(&sql)?;
     let params_slice: Vec<&dyn rusqlite::ToSql> =
         binds.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-    let rows = stmt.query_map(params_slice.as_slice(), row_to_conflict)?;
+    let rows = stmt.query_map(params_slice.as_slice(), row_to_warning)?;
     rows.map(|r| r.map_err(DatumError::Db)).collect()
 }
 
 /// Fetch a single conflict by its hid or full id. Prefix match on `hid`
 /// so the user can type the 5-char form.
-pub fn get_by_hid_or_id(conn: &Connection, token: &str) -> Result<Option<Conflict>> {
+pub fn get_by_hid_or_id(conn: &Connection, token: &str) -> Result<Option<IntegrityWarning>> {
     conn.query_row(
         "SELECT id, hid, entry_slug, local_entry, remote_entry, detected_at,
-                resolution, resolved_at, detected_by, conflict_kind
-         FROM sync_conflicts
+                resolution, resolved_at, detected_by, kind
+         FROM integrity_warnings
          WHERE id = ?1 OR hid = ?1
          LIMIT 1",
         params![token],
-        row_to_conflict,
+        row_to_warning,
     )
     .optional()
     .map_err(DatumError::Db)
@@ -577,7 +582,7 @@ pub fn mark_resolved(
     when: DateTime<Utc>,
 ) -> Result<()> {
     let changed = conn.execute(
-        r#"UPDATE sync_conflicts
+        r#"UPDATE integrity_warnings
            SET resolution = ?2, resolved_at = ?3
            WHERE id = ?1 AND resolution IS NULL"#,
         params![id, resolution.as_str(), when.to_rfc3339()],
@@ -590,7 +595,7 @@ pub fn mark_resolved(
     Ok(())
 }
 
-fn row_to_conflict(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conflict> {
+fn row_to_warning(row: &rusqlite::Row<'_>) -> rusqlite::Result<IntegrityWarning> {
     let local_json: String = row.get("local_entry")?;
     let local_entry: Entry = serde_json::from_str(&local_json).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
@@ -619,11 +624,11 @@ fn row_to_conflict(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conflict> {
     let detected_by: DetectedBy = detected_by_str.parse().map_err(|e: String| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
     })?;
-    let kind_str: String = row.get("conflict_kind")?;
-    let conflict_kind: ConflictKind = kind_str.parse().map_err(|e: String| {
+    let kind_str: String = row.get("kind")?;
+    let kind: IntegrityKind = kind_str.parse().map_err(|e: String| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
     })?;
-    Ok(Conflict {
+    Ok(IntegrityWarning {
         id: row.get("id")?,
         hid: row.get("hid")?,
         entry_slug: row.get("entry_slug")?,
@@ -633,7 +638,7 @@ fn row_to_conflict(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conflict> {
         resolution: row.get("resolution")?,
         resolved_at,
         detected_by,
-        conflict_kind,
+        kind,
     })
 }
 
@@ -657,12 +662,12 @@ pub fn auto_resolve_pending(
     conn: &Connection,
     now: DateTime<Utc>,
     min_age_secs: i64,
-) -> Result<Vec<Conflict>> {
+) -> Result<Vec<IntegrityWarning>> {
     let cutoff = now - chrono::Duration::seconds(min_age_secs.max(0));
     let pending = list(
         conn,
         &ListFilter {
-            kind: Some(ConflictKind::DoubleOpen),
+            kind: Some(IntegrityKind::DoubleOpen),
             pending: Some(true),
         },
     )?;
@@ -846,14 +851,14 @@ mod tests {
             .insert(&db);
 
         let rows = db
-            .list_conflicts(&ListFilter {
-                kind: Some(ConflictKind::Overlap),
+            .list_integrity_warnings(&ListFilter {
+                kind: Some(IntegrityKind::Overlap),
                 pending: Some(true),
             })
             .unwrap();
         assert_eq!(rows.len(), 1, "exactly one overlap conflict filed");
         let c = &rows[0];
-        assert_eq!(c.conflict_kind, ConflictKind::Overlap);
+        assert_eq!(c.kind, IntegrityKind::Overlap);
         assert_eq!(c.detected_by, DetectedBy::LocalValidator);
         assert!(
             c.remote_entry.is_some(),

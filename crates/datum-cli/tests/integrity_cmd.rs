@@ -9,10 +9,10 @@ use std::collections::HashMap;
 
 use common::run_cli;
 use datum_cli::output::{
-    render_conflict_show, render_now_view, render_pending_conflict_warning, strip_ansi,
+    render_integrity_warning_show, render_now_view, render_pending_integrity_warning, strip_ansi,
 };
-use datum_core::conflicts::{ConflictKind, ListFilter, Resolution};
 use datum_core::db::TrackedField;
+use datum_core::integrity::{IntegrityKind, ListFilter, Resolution};
 use datum_core::test_util::fresh_db;
 
 fn tracked(field: &str) -> TrackedField {
@@ -48,8 +48,8 @@ fn double_start_creates_conflict_row() {
     run_cli(&["start", "workout"], &db).expect("second start");
 
     let conflicts = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::DoubleOpen),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::DoubleOpen),
             pending: Some(true),
         })
         .unwrap();
@@ -60,7 +60,7 @@ fn double_start_creates_conflict_row() {
         conflicts.len()
     );
     let c = &conflicts[0];
-    assert_eq!(c.conflict_kind, ConflictKind::DoubleOpen);
+    assert_eq!(c.kind, IntegrityKind::DoubleOpen);
     assert!(
         c.remote_entry.is_some(),
         "double_open carries the older counterpart"
@@ -89,8 +89,8 @@ fn orphan_end_creates_conflict_row() {
     run_cli(&["stop", "workout"], &db).expect("orphan stop");
 
     let conflicts = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::OrphanEnd),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::OrphanEnd),
             pending: Some(true),
         })
         .unwrap();
@@ -123,17 +123,17 @@ fn auto_resolver_closes_older_open_after_delay() {
 
     // Sanity: one conflict pending.
     let pending = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::DoubleOpen),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::DoubleOpen),
             pending: Some(true),
         })
         .unwrap();
     assert_eq!(pending.len(), 1, "pre-resolve: one pending conflict");
 
     // min_age_secs = 0 — conflict is eligible immediately.
-    let applied = db.auto_resolve_conflicts(chrono::Utc::now(), 0).unwrap();
+    let applied = db.auto_resolve_integrity(chrono::Utc::now(), 0).unwrap();
     assert_eq!(applied.len(), 1, "auto-resolver applied once");
-    assert_eq!(applied[0].conflict_kind, ConflictKind::DoubleOpen);
+    assert_eq!(applied[0].kind, IntegrityKind::DoubleOpen);
 
     // The older ongoing is now a block (has dur). The query order
     // isn't guaranteed, so identify newer/older by occur_time.
@@ -172,7 +172,7 @@ fn auto_resolver_closes_older_open_after_delay() {
 
     // Pending set should be empty now.
     let pending = db
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: Some(true),
         })
@@ -192,8 +192,8 @@ fn auto_resolver_skips_if_kept_both() {
     run_cli(&["start", "workout"], &db).expect("newer start");
 
     let pending = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::DoubleOpen),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::DoubleOpen),
             pending: Some(true),
         })
         .unwrap();
@@ -201,11 +201,12 @@ fn auto_resolver_skips_if_kept_both() {
     let hid = pending[0].hid.clone();
 
     // User explicitly keeps both.
-    db.resolve_conflict(&hid, Resolution::KeepBoth).unwrap();
+    db.resolve_integrity_warning(&hid, Resolution::KeepBoth)
+        .unwrap();
 
     // Auto-resolver runs — should find nothing eligible (resolution is
     // no longer NULL).
-    let applied = db.auto_resolve_conflicts(chrono::Utc::now(), 0).unwrap();
+    let applied = db.auto_resolve_integrity(chrono::Utc::now(), 0).unwrap();
     assert!(applied.is_empty(), "resolved conflict must not be reopened");
 
     // And the older entry should STILL be ongoing (no end_time was
@@ -248,7 +249,7 @@ fn now_view_shows_overlap_warning() {
         "expected overlap warning in now view:\n{plain}"
     );
     assert!(
-        plain.contains("datum conflicts list"),
+        plain.contains("datum integrity list"),
         "warning must point user to the conflicts CLI:\n{plain}"
     );
 }
@@ -266,7 +267,7 @@ fn conflicts_list_shows_only_unresolved_by_default() {
     run_cli(&["start", "shower"], &db).expect("shower newer");
 
     let all = db
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: None,
         })
@@ -279,11 +280,11 @@ fn conflicts_list_shows_only_unresolved_by_default() {
         .find(|c| c.local_entry.field == "workout")
         .expect("workout conflict")
         .clone();
-    db.resolve_conflict(&target.hid, Resolution::KeepBoth)
+    db.resolve_integrity_warning(&target.hid, Resolution::KeepBoth)
         .unwrap();
 
     let pending = db
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: Some(true),
         })
@@ -303,17 +304,17 @@ fn conflicts_list_all_includes_resolved() {
     run_cli(&["start", "shower"], &db).expect("shower newer");
 
     let all = db
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: None,
         })
         .unwrap();
     let target = all[0].clone();
-    db.resolve_conflict(&target.hid, Resolution::KeepBoth)
+    db.resolve_integrity_warning(&target.hid, Resolution::KeepBoth)
         .unwrap();
 
     let after = db
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: None,
         })
@@ -339,8 +340,8 @@ fn conflicts_resolve_take_local_updates_entry_and_marks_resolved() {
     run_cli(&["start", "workout"], &db).expect("newer start");
 
     let pending = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::DoubleOpen),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::DoubleOpen),
             pending: Some(true),
         })
         .unwrap();
@@ -348,7 +349,9 @@ fn conflicts_resolve_take_local_updates_entry_and_marks_resolved() {
     let hid = pending[0].hid.clone();
     let local_slug = pending[0].local_entry.slug.clone();
 
-    let resolved = db.resolve_conflict(&hid, Resolution::TakeLocal).unwrap();
+    let resolved = db
+        .resolve_integrity_warning(&hid, Resolution::TakeLocal)
+        .unwrap();
     assert_eq!(resolved.resolution.as_deref(), Some("take_local"));
     assert!(
         resolved.resolved_at.is_some(),
@@ -376,8 +379,8 @@ fn conflicts_resolve_take_remote_updates_entry_and_marks_resolved() {
     run_cli(&["start", "workout"], &db).expect("newer start");
 
     let pending = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::DoubleOpen),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::DoubleOpen),
             pending: Some(true),
         })
         .unwrap();
@@ -389,7 +392,9 @@ fn conflicts_resolve_take_remote_updates_entry_and_marks_resolved() {
         .slug
         .clone();
 
-    let resolved = db.resolve_conflict(&hid, Resolution::TakeRemote).unwrap();
+    let resolved = db
+        .resolve_integrity_warning(&hid, Resolution::TakeRemote)
+        .unwrap();
     assert_eq!(resolved.resolution.as_deref(), Some("take_remote"));
 
     let entries = db.entries_for_field("workout", None).unwrap();
@@ -403,7 +408,7 @@ fn conflicts_resolve_take_remote_updates_entry_and_marks_resolved() {
 
 #[test]
 fn conflicts_resolve_edit_uses_saved_content() {
-    // The `--edit` flow ultimately calls `db.resolve_conflict_with_edited`
+    // The `--edit` flow ultimately calls `db.resolve_integrity_warning_with_edited`
     // with the (possibly mutated) Entry parsed from the editor's saved
     // file. This test exercises that data path directly: build a
     // modified Entry, hand it to the API, and verify the live row was
@@ -415,8 +420,8 @@ fn conflicts_resolve_edit_uses_saved_content() {
     run_cli(&["start", "workout"], &db).expect("newer start");
 
     let pending = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::DoubleOpen),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::DoubleOpen),
             pending: Some(true),
         })
         .unwrap();
@@ -428,7 +433,7 @@ fn conflicts_resolve_edit_uses_saved_content() {
     edited.data = Some(serde_json::json!({"edited_marker": "c4e"}));
 
     let resolved = db
-        .resolve_conflict_with_edited(&conflict.hid, &edited)
+        .resolve_integrity_warning_with_edited(&conflict.hid, &edited)
         .unwrap();
     assert_eq!(resolved.resolution.as_deref(), Some("edit"));
 
@@ -460,14 +465,14 @@ fn conflicts_show_renders_diff() {
     run_cli(&["start", "workout"], &db).expect("newer start");
 
     let pending = db
-        .list_conflicts(&ListFilter {
-            kind: Some(ConflictKind::DoubleOpen),
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::DoubleOpen),
             pending: Some(true),
         })
         .unwrap();
     let conflict = pending[0].clone();
 
-    let out = render_conflict_show(&conflict);
+    let out = render_integrity_warning_show(&conflict);
     assert!(
         out.contains("LOCAL"),
         "header must label LOCAL column:\n{out}"
@@ -493,49 +498,49 @@ fn conflicts_show_renders_diff() {
 fn now_view_shows_conflict_warning_when_pending() {
     // The header helper renders a warning line for non-zero counts and
     // a blank for zero; both forms must satisfy callers that always
-    // print `render_pending_conflict_warning(n)`.
-    assert_eq!(render_pending_conflict_warning(0), "");
+    // print `render_pending_integrity_warning(n)`.
+    assert_eq!(render_pending_integrity_warning(0), "");
 
-    let one = render_pending_conflict_warning(1);
-    assert!(one.contains("1 unresolved conflict"));
+    let one = render_pending_integrity_warning(1);
+    assert!(one.contains("1 unresolved integrity warning"));
     // The pluralized noun "conflicts" must NOT appear in the count
-    // phrase — but the CLI hint at the end ("'datum conflicts list'")
+    // phrase — but the CLI hint at the end ("'datum integrity list'")
     // legitimately uses the plural form. Anchor the singular check on
     // the count-prefix substring.
     assert!(
-        !one.contains("1 unresolved conflicts"),
+        !one.contains("1 unresolved integrity warnings"),
         "singular form for n=1, got: {one:?}"
     );
-    assert!(one.contains("datum conflicts list"));
+    assert!(one.contains("datum integrity list"));
 
-    let many = render_pending_conflict_warning(3);
-    assert!(many.contains("3 unresolved conflicts"));
-    assert!(many.contains("datum conflicts list"));
+    let many = render_pending_integrity_warning(3);
+    assert!(many.contains("3 unresolved integrity warnings"));
+    assert!(many.contains("datum integrity list"));
 }
 
-// ─── C4e: pending_conflict_count ─────────────────────────────────────────────
+// ─── C4e: pending_integrity_count ─────────────────────────────────────────────
 
 #[test]
-fn pending_conflict_count_excludes_resolved() {
-    // The `now` view calls `db.pending_conflict_count` to decide whether
+fn pending_integrity_count_excludes_resolved() {
+    // The `now` view calls `db.pending_integrity_count` to decide whether
     // to print the header. Make sure resolved rows don't count.
     let db = fresh_db();
-    assert_eq!(db.pending_conflict_count().unwrap(), 0);
+    assert_eq!(db.pending_integrity_count().unwrap(), 0);
 
     run_cli(&["start", "workout", "-t=-5"], &db).expect("older");
     run_cli(&["start", "workout"], &db).expect("newer");
-    assert_eq!(db.pending_conflict_count().unwrap(), 1);
+    assert_eq!(db.pending_integrity_count().unwrap(), 1);
 
     // Resolve it; count drops to 0.
     let pending = db
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: Some(true),
         })
         .unwrap();
-    db.resolve_conflict(&pending[0].hid, Resolution::KeepBoth)
+    db.resolve_integrity_warning(&pending[0].hid, Resolution::KeepBoth)
         .unwrap();
-    assert_eq!(db.pending_conflict_count().unwrap(), 0);
+    assert_eq!(db.pending_integrity_count().unwrap(), 0);
 }
 
 // ─── C4e: parser flag plumbing ───────────────────────────────────────────────
@@ -543,7 +548,7 @@ fn pending_conflict_count_excludes_resolved() {
 #[test]
 fn conflicts_show_subcommand_dispatches_via_cli() {
     // End-to-end smoke: the parser routes `conflicts show <hid>`
-    // through to render_conflict_show. We can't capture stdout here
+    // through to render_integrity_warning_show. We can't capture stdout here
     // (run_cli writes to the test process's stdout), but the absence
     // of a parse error is the gate the previous code was missing.
     let db = fresh_db();
@@ -551,13 +556,13 @@ fn conflicts_show_subcommand_dispatches_via_cli() {
     run_cli(&["start", "workout"], &db).expect("newer");
 
     let pending = db
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: Some(true),
         })
         .unwrap();
     let hid = pending[0].hid.clone();
-    run_cli(&["conflicts", "show", &hid], &db).expect("show dispatch");
+    run_cli(&["integrity", "show", &hid], &db).expect("show dispatch");
 }
 
 #[test]
@@ -569,16 +574,19 @@ fn conflicts_resolve_take_flag_dispatches_via_cli() {
     run_cli(&["start", "workout"], &db).expect("newer");
 
     let pending = db
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: Some(true),
         })
         .unwrap();
     let hid = pending[0].hid.clone();
-    run_cli(&["conflicts", "resolve", &hid, "--take", "local"], &db)
+    run_cli(&["integrity", "resolve", &hid, "--take", "local"], &db)
         .expect("resolve --take local dispatch");
 
-    let after = db.get_conflict(&hid).unwrap().expect("hid still queryable");
+    let after = db
+        .get_integrity_warning(&hid)
+        .unwrap()
+        .expect("hid still queryable");
     assert_eq!(after.resolution.as_deref(), Some("take_local"));
 }
 
@@ -591,15 +599,18 @@ fn conflicts_resolve_skip_leaves_pending() {
     run_cli(&["start", "workout"], &db).expect("newer");
 
     let pending = db
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: Some(true),
         })
         .unwrap();
     let hid = pending[0].hid.clone();
-    run_cli(&["conflicts", "resolve", &hid, "--skip"], &db).expect("resolve --skip dispatch");
+    run_cli(&["integrity", "resolve", &hid, "--skip"], &db).expect("resolve --skip dispatch");
 
-    let after = db.get_conflict(&hid).unwrap().expect("hid still queryable");
+    let after = db
+        .get_integrity_warning(&hid)
+        .unwrap()
+        .expect("hid still queryable");
     assert!(
         after.resolution.is_none(),
         "--skip must leave conflict pending; got {:?}",

@@ -80,7 +80,7 @@ pub enum Command {
 
     Sync(SyncArgs),
 
-    Conflicts(ConflictsCommand),
+    Integrity(IntegrityCommand),
 
     /// `dm reparse` — replay each entry's stored `raw_input` through the
     /// current parser, reporting (or fixing with `--fix`) drift between
@@ -88,33 +88,33 @@ pub enum Command {
     Reparse(ReparseArgs),
 }
 
-// ─── Conflicts ────────────────────────────────────────────────────────────
+// ─── Integrity warnings ───────────────────────────────────────────────────
 
 #[derive(Debug)]
-pub enum ConflictsCommand {
-    List(ConflictsListArgs),
-    Show(ConflictsShowArgs),
-    Resolve(ConflictsResolveArgs),
-    AutoResolve(ConflictsAutoResolveArgs),
+pub enum IntegrityCommand {
+    List(IntegrityListArgs),
+    Show(IntegrityShowArgs),
+    Resolve(IntegrityResolveArgs),
+    AutoResolve(IntegrityAutoResolveArgs),
 }
 
 #[derive(Debug, Default)]
-pub struct ConflictsListArgs {
+pub struct IntegrityListArgs {
     pub kind: Option<String>,
     pub all: bool,
 }
 
 #[derive(Debug)]
-pub struct ConflictsShowArgs {
+pub struct IntegrityShowArgs {
     pub hid: String,
 }
 
 /// A single resolve invocation may carry exactly one of: `--keep both`
 /// (legacy), `--close-older` (legacy), `--take local|remote`, `--edit`,
 /// `--skip`. The parser enforces mutual exclusion; the dispatcher maps
-/// them to [`datum_core::conflicts::Resolution`].
+/// them to [`datum_core::integrity::Resolution`].
 #[derive(Debug)]
-pub struct ConflictsResolveArgs {
+pub struct IntegrityResolveArgs {
     pub hid: String,
     pub keep: Option<String>,
     pub close_older: bool,
@@ -124,7 +124,7 @@ pub struct ConflictsResolveArgs {
 }
 
 #[derive(Debug, Default)]
-pub struct ConflictsAutoResolveArgs {
+pub struct IntegrityAutoResolveArgs {
     pub min_age: i64,
 }
 

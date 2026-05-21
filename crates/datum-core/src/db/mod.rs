@@ -19,8 +19,8 @@
 //! historical paths.
 
 mod alias;
-mod conflict;
 mod insert;
+mod integrity;
 mod kit;
 mod kit_command;
 mod list;

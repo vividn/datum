@@ -105,11 +105,11 @@ fn render_db_row(label: &str, server: Option<&str>) -> Result<(String, bool)> {
 
     let last_push = sync_state::get_last_push_at(&db)?;
     let last_pull = sync_state::get_last_pull_at(&db)?;
-    let pending = pending_conflicts(&db)?;
+    let pending = pending_integrity_warnings(&db)?;
 
     let flag = match pending {
         0 => "✓".to_string(),
-        n => format!("⚠ {n} conflict{}", if n == 1 { "" } else { "s" }),
+        n => format!("⚠ {n} integrity warning{}", if n == 1 { "" } else { "s" }),
     };
     Ok((
         format!(
@@ -152,9 +152,9 @@ fn time_ago(past: DateTime<Utc>) -> String {
     format!("{days}d ago")
 }
 
-fn pending_conflicts(db: &Db) -> Result<usize> {
+fn pending_integrity_warnings(db: &Db) -> Result<usize> {
     let n: i64 = db.conn().query_row(
-        "SELECT COUNT(*) FROM sync_conflicts WHERE resolution IS NULL",
+        "SELECT COUNT(*) FROM integrity_warnings WHERE resolution IS NULL",
         [],
         |row| row.get(0),
     )?;

@@ -253,7 +253,7 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
 
         "sync" => Command::Sync(parse_sync_args(rest)?),
 
-        "conflicts" => Command::Conflicts(parse_conflicts_cmd(rest)?),
+        "integrity" => Command::Integrity(parse_integrity_cmd(rest)?),
 
         "reparse" => Command::Reparse(parse_reparse_args(rest)?),
 
@@ -2313,26 +2313,26 @@ fn take_server_only(tail: &[&str]) -> Result<Option<String>> {
     Ok(server)
 }
 
-fn parse_conflicts_cmd(tail: &[&str]) -> Result<ConflictsCommand> {
+fn parse_integrity_cmd(tail: &[&str]) -> Result<IntegrityCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing conflicts subcommand (list|show|resolve|auto-resolve)".into(),
+            "missing integrity subcommand (list|show|resolve|auto-resolve)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
     match *sub {
-        "list" => Ok(ConflictsCommand::List(parse_conflicts_list(rest)?)),
-        "show" => Ok(ConflictsCommand::Show(parse_conflicts_show(rest)?)),
-        "resolve" => Ok(ConflictsCommand::Resolve(parse_conflicts_resolve(rest)?)),
-        "auto-resolve" => Ok(ConflictsCommand::AutoResolve(parse_conflicts_auto(rest)?)),
+        "list" => Ok(IntegrityCommand::List(parse_integrity_list(rest)?)),
+        "show" => Ok(IntegrityCommand::Show(parse_integrity_show(rest)?)),
+        "resolve" => Ok(IntegrityCommand::Resolve(parse_integrity_resolve(rest)?)),
+        "auto-resolve" => Ok(IntegrityCommand::AutoResolve(parse_integrity_auto(rest)?)),
         other => Err(ParseError::InvalidArg(format!(
             "unknown conflicts subcommand: '{other}'"
         ))),
     }
 }
 
-fn parse_conflicts_list(tail: &[&str]) -> Result<ConflictsListArgs> {
-    let mut out = ConflictsListArgs::default();
+fn parse_integrity_list(tail: &[&str]) -> Result<IntegrityListArgs> {
+    let mut out = IntegrityListArgs::default();
     let mut i = 0;
     while i < tail.len() {
         match split_flag(tail[i]) {
@@ -2355,7 +2355,7 @@ fn parse_conflicts_list(tail: &[&str]) -> Result<ConflictsListArgs> {
     Ok(out)
 }
 
-fn parse_conflicts_show(tail: &[&str]) -> Result<ConflictsShowArgs> {
+fn parse_integrity_show(tail: &[&str]) -> Result<IntegrityShowArgs> {
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
@@ -2368,10 +2368,10 @@ fn parse_conflicts_show(tail: &[&str]) -> Result<ConflictsShowArgs> {
         }
     }
     let hid = require_first_pos(&pos, "<HID>")?;
-    Ok(ConflictsShowArgs { hid })
+    Ok(IntegrityShowArgs { hid })
 }
 
-fn parse_conflicts_resolve(tail: &[&str]) -> Result<ConflictsResolveArgs> {
+fn parse_integrity_resolve(tail: &[&str]) -> Result<IntegrityResolveArgs> {
     let mut pos: Vec<&str> = Vec::new();
     let mut keep: Option<String> = None;
     let mut close_older = false;
@@ -2435,7 +2435,7 @@ fn parse_conflicts_resolve(tail: &[&str]) -> Result<ConflictsResolveArgs> {
             )));
         }
     }
-    Ok(ConflictsResolveArgs {
+    Ok(IntegrityResolveArgs {
         hid,
         keep,
         close_older,
@@ -2445,17 +2445,17 @@ fn parse_conflicts_resolve(tail: &[&str]) -> Result<ConflictsResolveArgs> {
     })
 }
 
-fn parse_conflicts_auto(tail: &[&str]) -> Result<ConflictsAutoResolveArgs> {
+fn parse_integrity_auto(tail: &[&str]) -> Result<IntegrityAutoResolveArgs> {
     // Default lives in datum_core; we accept it as an override only.
     // The callsite that dispatches this fills in the hard-coded default
     // when `min_age == 0` … but 0 is also a valid user choice. To keep
     // the surface stable, we pull the default into the intent here via
-    // `datum-core::conflicts::AUTO_RESOLVE_MIN_AGE_SECS` — but that
+    // `datum-core::integrity::AUTO_RESOLVE_MIN_AGE_SECS` — but that
     // would tie datum-parse to datum-core. Instead, we leave min_age
     // defaulted to 0 here and let the caller `.max(default)` if needed
     // (matching the original behaviour, which also passed the default
     // through).
-    let mut out = ConflictsAutoResolveArgs {
+    let mut out = IntegrityAutoResolveArgs {
         min_age: DEFAULT_AUTO_RESOLVE_MIN_AGE,
     };
     let mut i = 0;
@@ -2481,7 +2481,7 @@ fn parse_conflicts_auto(tail: &[&str]) -> Result<ConflictsAutoResolveArgs> {
     Ok(out)
 }
 
-/// Mirror of `datum_core::conflicts::AUTO_RESOLVE_MIN_AGE_SECS`. Kept
+/// Mirror of `datum_core::integrity::AUTO_RESOLVE_MIN_AGE_SECS`. Kept
 /// here so the parse crate stays `datum-core`-free; if the datum-core
 /// constant changes, update this. Tested for parity in
 /// `datum-commands/src/cmd.rs`.

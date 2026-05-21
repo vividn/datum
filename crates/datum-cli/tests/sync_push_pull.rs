@@ -399,16 +399,16 @@ fn pull_with_conflict_queues_to_conflict_table() {
 
     assert_eq!(outcome.pulled, 1);
     assert!(
-        outcome.conflicts_queued >= 1,
+        outcome.integrity_warnings_queued >= 1,
         "expected at least one conflict queued, got {}",
-        outcome.conflicts_queued,
+        outcome.integrity_warnings_queued,
     );
 
-    // Row is in sync_conflicts with detected_by='sync_pull'.
+    // Row is in integrity_warnings with detected_by='sync_pull'.
     let n: i64 = db
         .conn()
         .query_row(
-            "SELECT COUNT(*) FROM sync_conflicts WHERE detected_by = 'sync_pull'",
+            "SELECT COUNT(*) FROM integrity_warnings WHERE detected_by = 'sync_pull'",
             [],
             |row| row.get(0),
         )
@@ -535,7 +535,7 @@ fn run_sync_inner_for_device(
             datum_cli::sync::pull::run(server, client, &session, device_id, master_key, db, false)
                 .unwrap();
         outcome.pulled = pulled.applied;
-        outcome.conflicts_queued = pulled.conflicts_queued;
+        outcome.integrity_warnings_queued = pulled.integrity_warnings_queued;
     }
     if direction.does_push() {
         let pushed =

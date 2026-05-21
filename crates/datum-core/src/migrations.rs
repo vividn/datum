@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 25;
+pub const CURRENT_SCHEMA_VERSION: u32 = 26;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -209,6 +209,13 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries: partial UNIQUE on (field, occur_time) WHERE occur_time IS NOT NULL AND deleted_at IS NULL — block same-instant state-changes (da-ga8b)",
         apply: m24_to_25_field_occurtime_unique,
         down: down_25_to_24_field_occurtime_unique,
+    },
+    Migration {
+        from: 25,
+        to: 26,
+        summary: "rename sync_conflicts → integrity_warnings (table, indexes, conflict_kind column → kind); these are local data-integrity findings, not cross-device sync conflicts (da-u2do)",
+        apply: m25_to_26_rename_integrity_warnings,
+        down: down_26_to_25_rename_integrity_warnings,
     },
 ];
 
@@ -544,6 +551,63 @@ fn m24_to_25_field_occurtime_unique(conn: &Connection) -> Result<()> {
 /// is touched.
 fn down_25_to_24_field_occurtime_unique(conn: &Connection) -> Result<()> {
     conn.execute_batch("DROP INDEX IF EXISTS entries_field_occurtime;")?;
+    Ok(())
+}
+
+/// da-u2do: rename `sync_conflicts` → `integrity_warnings`. These rows
+/// describe local data-integrity findings (double-open, orphan-end,
+/// overlap, same-state-repeat, last-state-mismatch) — they are NOT
+/// cross-device sync conflicts. The legacy name conflated the two
+/// concepts; the rename gives integrity warnings their own surface and
+/// frees the `sync_conflicts` name for a future true-sync-conflict table.
+///
+/// Side effects:
+/// - rename the table
+/// - rename `conflict_kind` column → `kind`
+/// - drop old indexes, create new indexes with the new prefix
+fn m25_to_26_rename_integrity_warnings(conn: &Connection) -> Result<()> {
+    // Some upgrade-path tests stamp the schema forward without creating the
+    // earlier `sync_conflicts` table. Treat its absence as "nothing to
+    // rename" rather than aborting — the v5 step is what owns table
+    // existence, not this rename.
+    let has_legacy: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sync_conflicts'",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if !has_legacy {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS sync_conflicts_hid;
+         DROP INDEX IF EXISTS sync_conflicts_slug;
+         DROP INDEX IF EXISTS sync_conflicts_pending;
+         ALTER TABLE sync_conflicts RENAME TO integrity_warnings;
+         ALTER TABLE integrity_warnings RENAME COLUMN conflict_kind TO kind;
+         CREATE INDEX IF NOT EXISTS integrity_warnings_hid ON integrity_warnings(hid);
+         CREATE INDEX IF NOT EXISTS integrity_warnings_slug ON integrity_warnings(entry_slug);
+         CREATE INDEX IF NOT EXISTS integrity_warnings_pending
+             ON integrity_warnings(detected_at) WHERE resolution IS NULL;",
+    )?;
+    Ok(())
+}
+
+/// Reverse of [`m25_to_26_rename_integrity_warnings`]. Renames back to
+/// the legacy `sync_conflicts` shape so the migration is round-trippable.
+fn down_26_to_25_rename_integrity_warnings(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS integrity_warnings_hid;
+         DROP INDEX IF EXISTS integrity_warnings_slug;
+         DROP INDEX IF EXISTS integrity_warnings_pending;
+         ALTER TABLE integrity_warnings RENAME COLUMN kind TO conflict_kind;
+         ALTER TABLE integrity_warnings RENAME TO sync_conflicts;
+         CREATE INDEX IF NOT EXISTS sync_conflicts_hid ON sync_conflicts(hid);
+         CREATE INDEX IF NOT EXISTS sync_conflicts_slug ON sync_conflicts(entry_slug);
+         CREATE INDEX IF NOT EXISTS sync_conflicts_pending
+             ON sync_conflicts(detected_at) WHERE resolution IS NULL;",
+    )?;
     Ok(())
 }
 
@@ -2229,10 +2293,10 @@ mod tests {
             "entries",
             "entry_history",
             "field_specs",
+            "integrity_warnings",
             "kit_commands",
             "kit_indices",
             "last_docs",
-            "sync_conflicts",
             "sync_state",
             "views",
         ];
@@ -2267,9 +2331,9 @@ mod tests {
             "idx_field_specs_kit_id",
             "idx_kit_commands_kit_id",
             "idx_views_kit_id",
-            "sync_conflicts_hid",
-            "sync_conflicts_pending",
-            "sync_conflicts_slug",
+            "integrity_warnings_hid",
+            "integrity_warnings_pending",
+            "integrity_warnings_slug",
         ];
         assert_eq!(indexes, expected_indexes);
     }

@@ -21,9 +21,9 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{Duration, TimeZone, Utc};
 use datum_cli::config::{auth_token_path, master_key_path, server_host_from_url};
 use datum_cli::sync::{key, pull, push, run_sync_with_client, AuthToken, Direction, TestPrompter};
-use datum_core::conflicts::{ListFilter, Resolution};
 use datum_core::db::Db;
 use datum_core::entry::{Entry, Verb};
+use datum_core::integrity::{ListFilter, Resolution};
 use datum_core::time::DatumTime;
 use datum_sync_client::crypto::changeset::{decrypt_changeset, EncryptedBlob};
 use datum_sync_client::crypto::key_wrap::unwrap_master_key;
@@ -492,8 +492,12 @@ fn s3_bidirectional_convergence() {
     assert_eq!(entry_hash_set(&db_a), entry_hash_set(&db_b));
 
     // No spurious conflicts queued — disjoint fields can't conflict.
-    let conflicts_a = db_a.list_conflicts(&ListFilter::default()).unwrap();
-    let conflicts_b = db_b.list_conflicts(&ListFilter::default()).unwrap();
+    let conflicts_a = db_a
+        .list_integrity_warnings(&ListFilter::default())
+        .unwrap();
+    let conflicts_b = db_b
+        .list_integrity_warnings(&ListFilter::default())
+        .unwrap();
     assert!(
         conflicts_a.is_empty(),
         "A unexpected conflicts: {conflicts_a:?}"
@@ -878,7 +882,7 @@ fn s7_server_restart_mid_sync() {
 
 /// A and B both `start` the same field while disconnected. After both
 /// converge online, the local detector files a `double_open` row in the
-/// conflict queue. `resolve_conflict(.., TakeLocal)` clears it.
+/// conflict queue. `resolve_integrity_warning(.., TakeLocal)` clears it.
 #[test]
 #[ignore = "depends on DoubleOpen-style sync-pull detection (deferred under v3); see da-nm5b"]
 fn s8_conflict_surface_and_resolve() {
@@ -953,13 +957,13 @@ fn s8_conflict_surface_and_resolve() {
     )
     .unwrap();
     assert!(
-        pulled.conflicts_queued >= 1,
+        pulled.integrity_warnings_queued >= 1,
         "expected a queued sync_pull conflict on B"
     );
 
     // A pending row exists with detected_by = sync_pull.
     let pending = db_b
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: Some(true),
         })
@@ -968,10 +972,10 @@ fn s8_conflict_surface_and_resolve() {
     let c = &pending[0];
 
     // resolve --take local clears it.
-    db_b.resolve_conflict(&c.hid, Resolution::TakeLocal)
+    db_b.resolve_integrity_warning(&c.hid, Resolution::TakeLocal)
         .expect("resolve");
     let remaining = db_b
-        .list_conflicts(&ListFilter {
+        .list_integrity_warnings(&ListFilter {
             kind: None,
             pending: Some(true),
         })

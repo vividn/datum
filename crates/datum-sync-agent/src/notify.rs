@@ -1,12 +1,12 @@
 //! Desktop notifications fired when a pull lands a NEW row in
-//! `sync_conflicts`. Platform-aware:
+//! `integrity_warnings`. Platform-aware:
 //!
 //! - Linux: shells out to `notify-send`. We avoid `libnotify` so we
 //!   don't pull a C dependency into the daemon.
 //! - macOS: shells out to `osascript -e 'display notification ...'`.
 //! - Other / disabled: [`Notifier::noop()`] swallows everything.
 //!
-//! The trait + the [`spawn_for_conflicts`] helper exist so unit tests
+//! The trait + the [`announce_new_warnings`] helper exist so unit tests
 //! can substitute a [`MockNotifier`] without forking a real process.
 
 use std::sync::{Arc, Mutex};
@@ -123,18 +123,18 @@ pub fn from_config(enabled_default: bool) -> Arc<dyn Notifier> {
     }
 }
 
-/// Fire one notification per newly-queued conflict batch. Called by the
-/// daemon after a successful pull whose `PullOutcome.conflicts_queued
-/// > 0`. The per-conflict detail (which entry, which kind) is left to
-/// the user to inspect via `datum conflicts list`; the notification
-/// > just nudges them to look.
-pub fn announce_new_conflicts(notifier: &dyn Notifier, db_name: &str, queued: usize) {
+/// Fire one notification per newly-queued integrity warning batch.
+/// Called by the daemon after a successful pull whose
+/// `PullOutcome.integrity_warnings_queued > 0`. The per-warning detail
+/// (which entry, which kind) is left to the user to inspect via
+/// `datum integrity list`; the notification just nudges them to look.
+pub fn announce_new_warnings(notifier: &dyn Notifier, db_name: &str, queued: usize) {
     if queued == 0 {
         return;
     }
-    let title = "Daydumb conflict";
-    let noun = if queued == 1 { "conflict" } else { "conflicts" };
-    let body = format!("{queued} new {noun} on {db_name}: run 'datum conflicts list'");
+    let title = "Daydumb integrity warning";
+    let noun = if queued == 1 { "warning" } else { "warnings" };
+    let body = format!("{queued} new integrity {noun} on {db_name}: run 'datum integrity list'");
     notifier.notify(title, &body);
 }
 
@@ -162,27 +162,27 @@ mod tests {
     #[test]
     fn announce_skips_zero() {
         let n = MockNotifier::new();
-        announce_new_conflicts(&n, "default", 0);
+        announce_new_warnings(&n, "default", 0);
         assert!(n.calls().is_empty(), "no calls when queued == 0");
     }
 
     #[test]
     fn announce_singular_message_for_one() {
         let n = MockNotifier::new();
-        announce_new_conflicts(&n, "default", 1);
+        announce_new_warnings(&n, "default", 1);
         let calls = n.calls();
         assert_eq!(calls.len(), 1);
         assert!(
-            calls[0].1.contains("1 new conflict"),
+            calls[0].1.contains("1 new integrity warning"),
             "expected singular form: {:?}",
             calls[0]
         );
         // The count phrase itself must use the singular noun. The
-        // tail of the message ("'datum conflicts list'") legitimately
+        // tail of the message ("'datum integrity list'") legitimately
         // uses the plural CLI command name; the assertion is anchored
         // on the count prefix instead of a bare substring.
         assert!(
-            !calls[0].1.contains("1 new conflicts"),
+            !calls[0].1.contains("1 new integrity warnings"),
             "expected singular noun after the count: {:?}",
             calls[0]
         );
@@ -191,24 +191,24 @@ mod tests {
     #[test]
     fn announce_plural_message_for_many() {
         let n = MockNotifier::new();
-        announce_new_conflicts(&n, "default", 3);
+        announce_new_warnings(&n, "default", 3);
         let calls = n.calls();
         assert_eq!(calls.len(), 1);
-        assert!(calls[0].1.contains("3 new conflicts"));
+        assert!(calls[0].1.contains("3 new integrity warnings"));
     }
 
     #[test]
-    fn daemon_fires_notification_on_new_conflict() {
+    fn daemon_fires_notification_on_new_warning() {
         // Minimal end-to-end check: the helper invokes the notifier
         // exactly once per non-zero pull, with a body that names the
         // db and points the user at the CLI. This is the
         // acceptance-test name from the bead — keep it stable.
         let n = MockNotifier::new();
-        announce_new_conflicts(&n, "work", 2);
+        announce_new_warnings(&n, "work", 2);
         let calls = n.calls();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0, "Daydumb conflict");
+        assert_eq!(calls[0].0, "Daydumb integrity warning");
         assert!(calls[0].1.contains("work"));
-        assert!(calls[0].1.contains("datum conflicts list"));
+        assert!(calls[0].1.contains("datum integrity list"));
     }
 }

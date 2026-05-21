@@ -1,7 +1,6 @@
 #![doc = include_str!("../README.md")]
 
 pub mod action;
-pub mod conflicts;
 pub mod db;
 pub mod doc_ref;
 pub mod dur;
@@ -10,6 +9,7 @@ pub mod error;
 pub mod field_spec;
 pub mod history;
 pub mod ids;
+pub mod integrity;
 pub mod kit;
 pub mod kit_color;
 pub mod kit_color_rule;

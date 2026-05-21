@@ -917,15 +917,6 @@ mod tests {
             "d1",
         );
         db.insert_entry(&bad).unwrap();
-        // Force a content_hash_mismatch error by stamping a known-bad hash
-        // directly into the column. (Live writes can no longer produce this
-        // drift — da-r569 — so the test seeds it explicitly.)
-        db.conn()
-            .execute(
-                "UPDATE entries SET content_hash = 'deadbeef' WHERE field = 'work'",
-                [],
-            )
-            .unwrap();
         // Unknown-field warning on another field.
         let unknown = Entry::new_legacy(
             "mystery",

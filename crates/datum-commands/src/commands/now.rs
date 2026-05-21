@@ -6,18 +6,18 @@ use datum_core::db::Db;
 
 use crate::args::NowArgs;
 use crate::config;
-use crate::render::{print_now_view, render_pending_conflict_warning};
+use crate::render::{print_now_view, render_pending_integrity_warning};
 
 pub fn now(args: NowArgs, db: &Db) -> Result<()> {
     emit_stale_sync_warning(db);
 
-    // C4e: surface a top-line warning when there are unresolved conflicts.
-    // We swallow read errors silently — the now view is still useful even
-    // if the conflict-count query trips (e.g., a future schema migration
-    // hasn't run yet on this DB).
-    if let Ok(n) = db.pending_conflict_count() {
+    // C4e: surface a top-line banner when there are unresolved integrity
+    // warnings. Swallow read errors silently — the now view is still
+    // useful even if the warning-count query trips (e.g., a future schema
+    // migration hasn't run yet on this DB).
+    if let Ok(n) = db.pending_integrity_count() {
         if n > 0 {
-            print!("{}", render_pending_conflict_warning(n));
+            print!("{}", render_pending_integrity_warning(n));
         }
     }
 
