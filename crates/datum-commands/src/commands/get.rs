@@ -1,4 +1,6 @@
-//! `datum get <id_or_slug>` — print a single entry.
+//! `datum get <id_or_slug>` — print a single entry, or, in search
+//! mode (da-yhh1), every entry on a field matching the supplied
+//! matchers.
 
 use anyhow::Result;
 use datum_core::{db::Db, ids::resolve_quickid};
@@ -7,6 +9,18 @@ use crate::args::{GetArgs, OutputFlagsExt};
 use crate::render::{print_entry_pretty, show_action_with_context, Action};
 
 pub fn get(args: GetArgs, db: &Db) -> Result<()> {
+    // da-yhh1: any matchers on the command line route to the search
+    // path. The first positional is the field; no positional is a
+    // user error (we can't search across every field on a whim).
+    if !args.matchers.is_empty() {
+        let field = args.id_or_slug.clone().ok_or_else(|| {
+            anyhow::anyhow!(
+                "`datum get` with matchers requires a <FIELD> positional, e.g. `datum get sleep state=true`"
+            )
+        })?;
+        return search(&field, args, db);
+    }
+
     // Bare `datum get` (no positional) defaults to `_LAST` — resolve
     // against the last-accessed pointer with no time guard. The pointer
     // may name multiple hids when the previous command was a batch
@@ -62,6 +76,47 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
     // Stamp the pointer at the resolved hids so a follow-up bare command
     // sees the same set. Read-only browsing commands (tail, head, grep)
     // do NOT touch the pointer.
+    let hids: Vec<datum_core::ids::Hid> = entries.iter().map(|e| e.hid.clone()).collect();
+    let _ = datum_core::last_docs::set_last_docs(db, &hids);
+    Ok(())
+}
+
+/// da-yhh1: load every live entry on `field`, filter by `args.matchers`
+/// (AND semantics), and render the survivors in the same most-recent-
+/// first order [`Db::entries_for_field`] already produces. The
+/// `_LAST` pointer is updated to the resulting set so a follow-up
+/// bare command sees the matched cohort.
+fn search(field: &str, args: GetArgs, db: &Db) -> Result<()> {
+    let candidates = db
+        .entries_for_field(field, None)
+        .map_err(anyhow::Error::from)?;
+    let entries = super::get_search::filter(candidates, &args.matchers);
+
+    if entries.is_empty() {
+        return Err(anyhow::Error::from(
+            datum_core::error::DatumError::NotFound(format!(
+                "no entries on field '{field}' matching the supplied matchers"
+            )),
+        ));
+    }
+
+    let registry = crate::commands::helpers::load_registry_opt(db);
+    let output = args.output()?;
+    let ctxs = crate::commands::render_helpers::build_render_contexts(&entries, db);
+    for (i, entry) in entries.iter().enumerate() {
+        if args.pretty {
+            print_entry_pretty(entry)?;
+        } else {
+            show_action_with_context(
+                entry,
+                Action::Exists,
+                registry.as_ref(),
+                ctxs.get(i),
+                &output,
+            );
+        }
+    }
+
     let hids: Vec<datum_core::ids::Hid> = entries.iter().map(|e| e.hid.clone()).collect();
     let _ = datum_core::last_docs::set_last_docs(db, &hids);
     Ok(())

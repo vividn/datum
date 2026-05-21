@@ -10,7 +10,7 @@
 //! `OutputArgs`, `ConflictStrategy`) live in `datum-commands::args`
 //! alongside the re-exports.
 
-use crate::input::{DurationArgs, OutputArgs, TimeArgs};
+use crate::input::{DurationArgs, Matcher, OutputArgs, TimeArgs};
 
 #[derive(Debug)]
 pub struct Cli {
@@ -389,11 +389,16 @@ impl TailArgs {
 #[derive(Debug)]
 pub struct GetArgs {
     /// Optional. When omitted, callers default to the `_LAST` quickId
-    /// token (resolves against the last-accessed pointer).
+    /// token (resolves against the last-accessed pointer). Repurposed
+    /// as the `<field>` positional in search mode (`matchers` non-empty).
     pub id_or_slug: Option<String>,
     pub pretty: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
+    /// da-yhh1: matcher tokens (`k=v`, `k>v`, `k=gte=v`, …) supplied
+    /// after the positional. When non-empty the dispatcher routes to
+    /// the search path; when empty the existing quickId resolve runs.
+    pub matchers: Vec<Matcher>,
 }
 
 impl GetArgs {
@@ -402,6 +407,7 @@ impl GetArgs {
             id_or_slug: Some(id_or_slug.into()),
             pretty: false,
             output: OutputArgs::default(),
+            matchers: Vec::new(),
         }
     }
 
@@ -411,6 +417,7 @@ impl GetArgs {
             id_or_slug: None,
             pretty: false,
             output: OutputArgs::default(),
+            matchers: Vec::new(),
         }
     }
 }

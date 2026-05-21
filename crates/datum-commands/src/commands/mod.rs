@@ -16,6 +16,7 @@ pub mod del;
 pub mod edit;
 pub mod end;
 pub mod get;
+pub mod get_search;
 pub mod grep;
 pub mod head;
 pub mod helpers;

@@ -785,10 +785,35 @@ fn parse_get_args(tail: &[&str]) -> Result<GetArgs> {
     let registry = get_args_registry();
     let mut composed = GetParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
+
+    // da-yhh1: split positionals into the leading quickId/field plus a
+    // tail of `k OP v` matcher tokens. The first positional is always
+    // the entry/field target; every later positional must parse as a
+    // matcher token. A bare later positional with no operator is a
+    // user error — `datum get sleep happy` is meaningless (did they
+    // mean `state=happy`?).
+    let mut id_or_slug = None;
+    let mut matchers: Vec<crate::input::Matcher> = Vec::new();
+    for (i, tok) in pos.iter().enumerate() {
+        if i == 0 {
+            id_or_slug = Some((*tok).to_string());
+            continue;
+        }
+        match crate::input::parse_matcher_token(tok).map_err(ParseError::InvalidArg)? {
+            Some(m) => matchers.push(m),
+            None => {
+                return Err(ParseError::InvalidArg(format!(
+                    "`datum get` positional '{tok}' is not a matcher (expected k=v, k>v, k~v, or named forms like k=gt=v)"
+                )));
+            }
+        }
+    }
+
     Ok(GetArgs {
-        id_or_slug: pos.first().map(|s| s.to_string()),
+        id_or_slug,
         pretty: composed.pretty,
         output: composed.output,
+        matchers,
     })
 }
 
@@ -2672,5 +2697,64 @@ mod tests {
         let err = parse_argv(&argv(&["meta", "show"])).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("<FIELD>"), "got: {msg}");
+    }
+
+    // ─── da-yhh1: `datum get` matcher token detection ────────────────────
+
+    /// Bare `datum get` quickId — no matchers, no change to existing
+    /// behavior.
+    #[test]
+    fn get_bare_quickid_has_no_matchers() {
+        let cli = parse_argv(&argv(&["get", "u1hrr"])).unwrap();
+        match cli.command {
+            Command::Get(a) => {
+                assert_eq!(a.id_or_slug.as_deref(), Some("u1hrr"));
+                assert!(a.matchers.is_empty());
+            }
+            _ => panic!("expected Get"),
+        }
+    }
+
+    #[test]
+    fn get_field_with_symbol_matchers() {
+        let cli = parse_argv(&argv(&["get", "sleep", "state=happy", "dur>PT4H"])).unwrap();
+        match cli.command {
+            Command::Get(a) => {
+                assert_eq!(a.id_or_slug.as_deref(), Some("sleep"));
+                assert_eq!(a.matchers.len(), 2);
+                assert_eq!(a.matchers[0].key, "state");
+                assert_eq!(a.matchers[1].key, "dur");
+            }
+            _ => panic!("expected Get"),
+        }
+    }
+
+    #[test]
+    fn get_field_with_named_form_matchers() {
+        let cli = parse_argv(&argv(&[
+            "get",
+            "weight",
+            "weight=gt=75",
+            "state=ne=ignored",
+        ]))
+        .unwrap();
+        match cli.command {
+            Command::Get(a) => {
+                use crate::input::MatcherOp;
+                assert_eq!(a.matchers[0].op, MatcherOp::Gt);
+                assert_eq!(a.matchers[1].op, MatcherOp::Ne);
+                assert_eq!(a.matchers[1].value, "ignored");
+            }
+            _ => panic!("expected Get"),
+        }
+    }
+
+    /// A bare positional after the field is a user error — we won't
+    /// silently treat `datum get sleep happy` as anything.
+    #[test]
+    fn get_bare_positional_after_field_errors() {
+        let err = parse_argv(&argv(&["get", "sleep", "happy"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("not a matcher"), "got: {msg}");
     }
 }
