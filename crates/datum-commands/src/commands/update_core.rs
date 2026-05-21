@@ -125,7 +125,7 @@ pub fn update_from_args(
         .transpose()?
         .unwrap_or(default_strategy);
 
-    let (pattern, payload_value, payload_extra) = crate::cmd::parse_update_payload(&args)?;
+    let (pattern, payload_value, payload_extra) = parse_update_payload(&args)?;
     let output = args.output();
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
 
@@ -167,7 +167,7 @@ pub fn update_batch_from_args(
         .transpose()?
         .unwrap_or(default_strategy);
 
-    let (pattern, payload_value, payload_extra) = crate::cmd::parse_update_payload(&args)?;
+    let (pattern, payload_value, payload_extra) = parse_update_payload(&args)?;
     let (entries, token_errors) =
         crate::cmd::resolve_batch(db, &pattern, crate::cmd::BatchMode::LiveOrTombstone);
 
@@ -333,7 +333,7 @@ fn apply_mutation(
     // `derive_verb` call recomputes the verb on the resulting (state,
     // dur, fs) triple.
     let mut payload_extra = payload_extra;
-    let reserved = crate::cmd::extract_reserved_columns(&mut payload_extra)?;
+    let reserved = crate::commands::log_core::extract_reserved_columns(&mut payload_extra)?;
 
     let mut updated = existing.clone();
     updated.data = combine_extra(updated.data, payload_extra, mode);
@@ -358,7 +358,9 @@ fn apply_mutation(
         // Base any relative offset (`-5m`, `now`) against the existing
         // occur_time when present, falling back to wall-clock now.
         let base = updated.occur_time.clone().unwrap_or_else(DatumTime::now);
-        updated.occur_time = Some(crate::cmd::parse_reserved_occur_time(&t, &base)?);
+        updated.occur_time = Some(crate::commands::log_core::parse_reserved_occur_time(
+            &t, &base,
+        )?);
     }
     persist_with_auto_reinterp(existing, updated, slug_delimiter, db)
 }
@@ -479,6 +481,127 @@ fn deep_merge(existing: JsonValue, incoming: JsonValue) -> JsonValue {
         }
         (_, incoming) => incoming,
     }
+}
+
+/// Sentinel remainder-bucket key (mirrors `commands::log_core::PRIMARY_VALUE_KEY`).
+/// Kept local so update_core doesn't depend on a log_core private const.
+const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
+
+pub(crate) fn parse_update_payload(
+    args: &UpdateArgs,
+) -> Result<(String, Option<JsonValue>, Option<JsonValue>)> {
+    use datum_parse::input::data_args::{handle_data_args, DataArgs};
+
+    // da-sk5c: rewire the leading positional through the same slot-fill
+    // discipline datum's updateCmd.ts gets from `flexiblePositional`.
+    // Whatever argparse caught as the first positional joins the rest of
+    // the stream and the FIRST bare (non-`KEY=VALUE`) token wins the id
+    // slot — so `dm update <quickId> some=data` and `dm update some=data
+    // <quickId>` are interchangeable. KEY=VALUE tokens flow through to
+    // the payload regardless of position; if no bare positional is
+    // supplied, `_LAST_WITH_PROTECTION` is the default.
+    //
+    // The id is split off *before* the rest enters `handle_data_args` so
+    // its raw string survives intact (the data pipeline's `infer_type`
+    // would otherwise rewrite e.g. `gym:a,gym:b,` into a JSON array,
+    // collapsing daydumb's compound-id comma syntax — datum's TS form
+    // never had a compound-id path, so the TS rewiring never had to care).
+    let mut resolved_id: Option<String> = None;
+    let mut positionals: Vec<String> = Vec::with_capacity(1 + args.rest.len());
+    let mut consider = |tok: String| {
+        if resolved_id.is_none() && !tok.contains('=') {
+            resolved_id = Some(tok);
+        } else {
+            positionals.push(tok);
+        }
+    };
+    if let Some(id) = &args.id_or_slug {
+        consider(id.clone());
+    }
+    for r in &args.rest {
+        consider(r.clone());
+    }
+    let resolved_id = resolved_id
+        .unwrap_or_else(|| datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN.to_string());
+
+    // Same composition shape as `parse_log_args` — the only difference is
+    // there are no `-K` slug-keys in update (slug stays put) and no `-K`
+    // slot fill, so every `-k KEY=VALUE` is an immediate that bypasses
+    // the data queue. `-k KEY` (no `=`) and `-k KEY=` stay as declared
+    // slots so positionals can fill them.
+    // Same daydumb compat as the log path — see `parse_log_args`. The
+    // `flat_paths` compat shim is gone (da-ju71.4); leading-dot keys
+    // now fold into `state.*`.
+    let mut data_args = DataArgs {
+        preserve_null_strings: true,
+        ..DataArgs::default()
+    };
+    let mut injected_immediates: Vec<String> = Vec::new();
+    for spec in &args.keys {
+        let (name, rhs) = spec
+            .split_once('=')
+            .map(|(n, v)| (n, Some(v)))
+            .unwrap_or((spec.as_str(), None));
+        if name.is_empty() {
+            anyhow::bail!("empty key name in spec '{spec}'");
+        }
+        match rhs {
+            Some(v) if !v.is_empty() => injected_immediates.push(format!("{name}={v}")),
+            _ => data_args.keys.push(spec.clone()),
+        }
+    }
+
+    for c in &args.comment {
+        data_args.comment.push(c.clone());
+    }
+
+    data_args
+        .data
+        .reserve(injected_immediates.len() + positionals.len());
+    data_args.data.extend(injected_immediates);
+    data_args.data.extend(positionals);
+    data_args.remainder = Some(PRIMARY_VALUE_KEY.to_string());
+
+    let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
+
+    // da-ju71.4: same trivial-state collapse as `parse_log_args` — a bare
+    // `state=v` should round-trip as a scalar, not as `{id: v}`.
+    if let Some(JsonValue::Object(state_obj)) = datum_data.get_mut("state") {
+        if state_obj.len() == 1 {
+            if let Some(id) = state_obj.remove("id") {
+                datum_data.insert("state".to_string(), id);
+            }
+        }
+    }
+
+    let value = datum_data.remove(PRIMARY_VALUE_KEY);
+
+    // Preserve update's empty-string drop sentinel: `KEY=` (or `-k KEY=`)
+    // drops the key from the existing entry in `combine_extra`. handle_data_args
+    // turns an empty value into "remove from payload"; on the update path that
+    // erases the signal, so we re-introduce a String("") for each such token
+    // so `is_empty_string` downstream still fires. The id_or_slug positional
+    // joins the chain here because the flex rewiring above means argparse's
+    // "first positional" can itself be a `key=` drop sentinel.
+    for token in args
+        .id_or_slug
+        .iter()
+        .chain(args.rest.iter())
+        .chain(args.keys.iter())
+    {
+        if let Some((k, v)) = token.split_once('=') {
+            if v.is_empty() && !k.is_empty() {
+                datum_data.insert(k.to_string(), JsonValue::String(String::new()));
+            }
+        }
+    }
+
+    let extra_data = if datum_data.is_empty() {
+        None
+    } else {
+        Some(JsonValue::Object(datum_data))
+    };
+    Ok((resolved_id, value, extra_data))
 }
 
 #[cfg(test)]

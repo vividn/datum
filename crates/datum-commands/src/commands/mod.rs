@@ -25,6 +25,7 @@ pub mod ignore;
 pub mod info;
 pub mod kit;
 pub mod kit_command;
+pub mod log_core;
 pub mod merge;
 pub mod migrate;
 pub mod now;

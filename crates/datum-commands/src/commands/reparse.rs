@@ -34,7 +34,7 @@ use datum_parse::parse_argv;
 use serde_json::Value as JsonValue;
 
 use crate::args::{Command, ReparseArgs};
-use crate::cmd::{
+use crate::commands::log_core::{
     expand_array_states, extract_reserved_columns, extract_switch_trailing_reserved,
     parse_log_args, validate_switch_state_token,
 };
