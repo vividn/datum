@@ -19,7 +19,7 @@ use crate::{
     config::device_id,
     render::{
         show_create_with_context, show_delete, show_exists, show_rename, show_update_with_context,
-        OutputArgs, RenderContext,
+        OutputArgs, RenderContext, Surface,
     },
 };
 
@@ -146,12 +146,7 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
     let contexts = build_render_contexts(&entries, db);
     for (idx, entry) in entries.iter().enumerate() {
         let output = group_outputs.get(idx).cloned().unwrap_or_default();
-        let ctx = contexts.get(idx).cloned().unwrap_or(RenderContext {
-            lead_state: None,
-            trail_state: None,
-            is_first_occurrence: false,
-            ongoing_state: None,
-        });
+        let ctx = contexts.get(idx).cloned().unwrap_or_default();
         show_create_with_context(entry, registry.as_ref(), &ctx, &output);
     }
 }
@@ -710,16 +705,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // so `dm <verb> --dry-run` is safe to chain.
     if args.dry_run {
         let registry = load_registry(db).ok();
-        let lead_state = capture_lead_state(db, &entry);
-        let ongoing_state = capture_ongoing_state(db, &entry);
-        let trail_state = capture_trail_state(db, &entry);
-        let is_first_occurrence = db.count_entries_filtered(Some(&entry.field), None)? == 0;
-        let ctx = RenderContext {
-            lead_state,
-            trail_state,
-            is_first_occurrence,
-            ongoing_state,
-        };
+        let ctx = RenderContext::for_entry(db, &entry, Surface::Action, None)?;
         let output = args.output();
         crate::render::print_entry(&entry, Some(&ctx), None, registry.as_ref());
         if !output.silent() {
@@ -741,28 +727,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         return Ok(());
     }
 
-    // Capture render hints *before* the insert:
-    //   1. first-time: no live entries exist for this field yet. Drives both
-    //      the `∅` left-char and the field-badge sparkle in the renderer.
-    //   2. prior_state: for state-changing verbs, fetch the active state at
-    //      `time_start` minus one microsecond. That's the "before" half of
-    //      the transition indicator. A no-op prior (Null/False) means there
-    //      was nothing active; the renderer skips the indicator in that case.
-    let is_first_occurrence = db.count_entries_filtered(Some(&entry.field), None)? == 0;
-    let lead_state = capture_lead_state(db, &entry);
-
     let strategy = args.conflict_strategy();
     let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
     let registry = load_registry(db).ok();
     let output = args.output();
-    let ongoing_state = capture_ongoing_state(db, &entry);
-    let trail_state = capture_trail_state(db, &entry);
-    let ctx = RenderContext {
-        lead_state,
-        trail_state,
-        is_first_occurrence,
-        ongoing_state,
-    };
+    // Per da-9p2u: all four context fields (lead/trail/ongoing/first) are
+    // derived from a single Action-surface probe so write-path and table-path
+    // renders agree on transition history. The `last_state_at` helpers used
+    // inside `for_entry` exclude this row by hid, so calling post-insert is
+    // safe even though the row is now in the DB.
+    let ctx = RenderContext::for_entry(db, &entry, Surface::Action, None)?;
     match &outcome {
         InsertOutcome::Inserted { slug, .. } => {
             let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
@@ -809,51 +783,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
 
     Ok(())
-}
-
-/// Per da-fck: capture the field's compiled state at `entry.start_time -
-/// ε` for the LEAD slot of the state-transition group. Returns the raw
-/// `last_state_at` output — including `Bool(false)` and the IGNORED
-/// sentinels — so the renderer can decide between painting a state colour
-/// and falling back to the empty-slot grey.
-///
-/// Restricted to state-changing verbs (switch / start / stop / block).
-/// Other verbs ignore the LEAD slot and this returns `None`.
-fn capture_lead_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
-    if !matches!(
-        entry.verb,
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
-    ) {
-        return None;
-    }
-    let at = entry.start_time.as_ref()?.utc;
-    let probe = at - chrono::Duration::microseconds(1);
-    datum_core::state::last_state_at(db.conn(), &entry.field, probe, Some(&entry.hid))
-        .ok()
-        .flatten()
-}
-
-/// Per da-fck: capture the trail-state for the TRAIL slot.
-///
-/// * `Block` shapes → `last_state_at(end_time, exclude=row)` — the state
-///   that resumes after the block closes.
-/// * `Point`/`Ongoing` → derive from the entry alone (no DB hit) via
-///   [`render::action::entry_self_trail_state`]; the row's own emitted
-///   state continues forward.
-fn capture_trail_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
-    if !matches!(
-        entry.verb,
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
-    ) {
-        return None;
-    }
-    if matches!(entry.entry_shape, datum_core::entry::EntryShape::Block) {
-        let end = entry.end_time.as_ref()?.utc;
-        return datum_core::state::last_state_at(db.conn(), &entry.field, end, Some(&entry.hid))
-            .ok()
-            .flatten();
-    }
-    crate::render::action::entry_self_trail_state(entry)
 }
 
 /// Parsed LogArgs — distinguishes the slug-contributing id-key values from
@@ -1801,7 +1730,7 @@ pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCon
     }
     entries
         .iter()
-        .map(|e| build_render_context_cached(e, db, &cache))
+        .map(|e| RenderContext::from_events(cache.get(&e.field), e, db))
         .collect()
 }
 
@@ -1814,9 +1743,9 @@ fn needs_state_probe(entry: &Entry) -> bool {
     )
 }
 
-/// The latest probe time `build_render_context_cached` will issue for this
-/// entry. Block rows probe at `end_time`; everything else at `start_time`,
-/// falling back to `create_time` for state-affecting rows that lack a start.
+/// The latest probe time the batch will issue for this entry. Block rows
+/// probe at `end_time`; everything else at `start_time`, falling back to
+/// `create_time` for state-affecting rows that lack a start.
 fn probe_upper_bound(entry: &Entry) -> Option<chrono::DateTime<Utc>> {
     if matches!(entry.entry_shape, datum_core::entry::EntryShape::Block) {
         if let Some(end) = entry.end_time.as_ref() {
@@ -1828,90 +1757,6 @@ fn probe_upper_bound(entry: &Entry) -> Option<chrono::DateTime<Utc>> {
         .as_ref()
         .map(|t| t.utc)
         .or(Some(entry.create_time))
-}
-
-/// Cached variant of the per-row render context build. Lead/trail/ongoing
-/// probes hit the per-field event vector instead of re-querying the DB;
-/// `is_first_occurrence` still goes to the DB but does so via a cheap count
-/// against the field index — small relative to the state probes we replaced.
-fn build_render_context_cached(
-    entry: &Entry,
-    db: &Db,
-    cache: &std::collections::HashMap<String, datum_core::state::FieldStateEvents>,
-) -> RenderContext {
-    let events = cache.get(&entry.field);
-    let lead_state = capture_lead_state_cached(events, entry);
-    let trail_state = capture_trail_state_cached(events, entry);
-    let probe = entry
-        .start_time
-        .as_ref()
-        .map(|t| t.utc)
-        .unwrap_or(entry.create_time);
-    let is_first_occurrence = db.count_entries_before(&entry.field, probe).unwrap_or(1) == 0;
-    let ongoing_state = capture_ongoing_state_cached(events, entry);
-    RenderContext {
-        lead_state,
-        trail_state,
-        is_first_occurrence,
-        ongoing_state,
-    }
-}
-
-fn capture_lead_state_cached(
-    events: Option<&datum_core::state::FieldStateEvents>,
-    entry: &Entry,
-) -> Option<JsonValue> {
-    if !matches!(
-        entry.verb,
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
-    ) {
-        return None;
-    }
-    let at = entry.start_time.as_ref()?.utc;
-    let probe = at - chrono::Duration::microseconds(1);
-    events?.at(probe, Some(&entry.hid))
-}
-
-fn capture_trail_state_cached(
-    events: Option<&datum_core::state::FieldStateEvents>,
-    entry: &Entry,
-) -> Option<JsonValue> {
-    if !matches!(
-        entry.verb,
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
-    ) {
-        return None;
-    }
-    if matches!(entry.entry_shape, datum_core::entry::EntryShape::Block) {
-        let end = entry.end_time.as_ref()?.utc;
-        return events?.at(end, Some(&entry.hid));
-    }
-    crate::render::action::entry_self_trail_state(entry)
-}
-
-fn capture_ongoing_state_cached(
-    events: Option<&datum_core::state::FieldStateEvents>,
-    entry: &Entry,
-) -> Option<JsonValue> {
-    if !matches!(entry.verb, Verb::Point) {
-        return None;
-    }
-    let at = entry.start_time.as_ref()?.utc;
-    events?.at(at, Some(&entry.hid))
-}
-
-/// Per da-k5z: for occur rows, look up the field's compiled state at the
-/// row's start_time excluding the row itself, so the dot's bg can encode
-/// "is this point happening inside an ongoing block?". Returns `None` for
-/// non-occur verbs and on any DB error (degrade to default-bg dot).
-fn capture_ongoing_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
-    if !matches!(entry.verb, Verb::Point) {
-        return None;
-    }
-    let at = entry.start_time.as_ref()?.utc;
-    datum_core::state::last_state_at(db.conn(), &entry.field, at, Some(&entry.hid))
-        .ok()
-        .flatten()
 }
 
 // ─── Get / Delete ─────────────────────────────────────────────────────────────

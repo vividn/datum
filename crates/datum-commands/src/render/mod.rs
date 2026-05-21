@@ -18,7 +18,7 @@ pub mod show_all;
 
 pub use self::action::{
     format_info_line, format_info_line_at, format_relative_day_prefix, format_state_group,
-    render_entry_line, RenderContext,
+    render_entry_line, RenderContext, Surface,
 };
 pub use self::colors::{strip_ansi, visible_width};
 

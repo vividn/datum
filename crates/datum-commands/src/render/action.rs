@@ -18,12 +18,13 @@
 //! examples encoded as fixtures.
 
 use chrono::{FixedOffset, Local, Timelike, Utc};
-#[cfg(test)]
 use datum_core::entry::Verb;
 use datum_core::{
+    db::Db,
     entry::{Entry, EntryShape},
     field_spec::{FieldSpec, SpecRegistry},
     shape::has_state_badge,
+    state::FieldStateEvents,
     time::DatumTime,
 };
 use serde_json::Value as JsonValue;
@@ -100,6 +101,118 @@ pub struct RenderContext {
     pub trail_state: Option<JsonValue>,
     pub is_first_occurrence: bool,
     pub ongoing_state: Option<JsonValue>,
+}
+
+/// Which renderer is asking for the context. Per da-9p2u: pick the
+/// per-surface lead/trail/first-occurrence semantics in exactly one place
+/// instead of letting every call site re-derive them ad-hoc.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Surface {
+    /// Write-action two-line header (`CREATE`/`UPDATE`/…) printed by
+    /// `cmd::log_entry` and friends.
+    Action,
+    /// Tail/grep/head table row.
+    Table,
+    /// Bare `format_info_line_at` consumers that don't supply their own
+    /// transition history — renders the entry without a state-transition
+    /// group.
+    InfoLine,
+    /// `datum now` overview rows. State-only display; no lead/trail or
+    /// first-occurrence marker.
+    NowView,
+}
+
+impl RenderContext {
+    /// Canonical [`RenderContext`] constructor — the single entry point all
+    /// renderer surfaces route through. Picks the right lead/trail/ongoing
+    /// probes and `is_first_occurrence` semantics from `surface`.
+    ///
+    /// `now` is reserved for surface arms that need "is this row in the
+    /// future relative to now" semantics (none today). It's accepted so
+    /// callers don't have to retrofit when an arm starts using it.
+    ///
+    /// Batched callers (table renderer, `datum tail`) load the field's
+    /// state-event history once per field and call
+    /// [`RenderContext::from_events`] directly, which shares the same
+    /// per-row logic as the `Action`/`Table` arms here.
+    pub fn for_entry(
+        db: &Db,
+        entry: &Entry,
+        surface: Surface,
+        _now: Option<&DatumTime>,
+    ) -> anyhow::Result<RenderContext> {
+        Ok(match surface {
+            Surface::InfoLine | Surface::NowView => RenderContext::default(),
+            Surface::Action | Surface::Table => {
+                let events =
+                    FieldStateEvents::load_for_field(db.conn(), &entry.field).unwrap_or_default();
+                Self::from_events(Some(&events), entry, db)
+            }
+        })
+    }
+
+    /// Cached variant of [`RenderContext::for_entry`] for batched render
+    /// paths. Reuses a pre-loaded per-field events vector so a `tail` over
+    /// N rows of the same field issues one state probe instead of N.
+    ///
+    /// Pass `None` for `events` when the entry's verb doesn't need a
+    /// state-history probe (`Add`/`Note`); the helpers degrade to a
+    /// default-context build.
+    pub(crate) fn from_events(
+        events: Option<&FieldStateEvents>,
+        entry: &Entry,
+        db: &Db,
+    ) -> RenderContext {
+        let lead_state = compute_lead_state(events, entry);
+        let trail_state = compute_trail_state(events, entry);
+        let ongoing_state = compute_ongoing_state(events, entry);
+        let probe = entry
+            .start_time
+            .as_ref()
+            .map(|t| t.utc)
+            .unwrap_or(entry.create_time);
+        let is_first_occurrence = db.count_entries_before(&entry.field, probe).unwrap_or(1) == 0;
+        RenderContext {
+            lead_state,
+            trail_state,
+            is_first_occurrence,
+            ongoing_state,
+        }
+    }
+}
+
+fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
+    if !matches!(
+        entry.verb,
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
+    ) {
+        return None;
+    }
+    let at = entry.start_time.as_ref()?.utc;
+    let probe = at - chrono::Duration::microseconds(1);
+    events?.at(probe, Some(&entry.hid))
+}
+
+fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
+    if !matches!(
+        entry.verb,
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
+    ) {
+        return None;
+    }
+    if matches!(entry.entry_shape, EntryShape::Block) {
+        let end = entry.end_time.as_ref()?.utc;
+        return events?.at(end, Some(&entry.hid));
+    }
+    entry_self_trail_state(entry)
+}
+
+fn compute_ongoing_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
+    if !matches!(entry.verb, Verb::Point) {
+        return None;
+    }
+    let at = entry.start_time.as_ref()?.utc;
+    events?.at(at, Some(&entry.hid))
 }
 
 // ─── State-transition group (§6 / §7) ────────────────────────────────────────
