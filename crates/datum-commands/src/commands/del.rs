@@ -11,7 +11,7 @@ use crate::{
 
 pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
     let registry = load_registry_opt(db);
-    let output = args.output();
+    let output = args.output()?;
     // Bare `datum delete` defaults to `_LAST_WITH_PROTECTION` —
     // refuses if the last-accessed pointer is > 15 minutes stale.
     let pattern = args

@@ -38,7 +38,7 @@ pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
 
     let registry = load_registry_opt(db);
     let tbl = TableArgs {
-        output: args.output(),
+        output: args.output()?,
         metric: TimeMetricCol::Hybrid,
         columns: vec![],
         suppress_header: false,

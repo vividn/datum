@@ -362,6 +362,42 @@ fn get_renders_lead_trail_with_state_context() {
     let _ = std::fs::remove_file(&db);
 }
 
+/// da-9q9r: `--show format` without `-o <format>` previously fell through to
+/// the renderer's `if let Some(fmt)` guard and exited 0 with empty stdout.
+/// Resolution now errors at the OutputArgs boundary so every command surfaces
+/// the same diagnostic instead of silently producing nothing.
+#[test]
+fn show_format_without_output_string_errors() {
+    let db = tmp_db_path();
+    let _ = std::fs::remove_file(&db);
+
+    run_binary(&db, &["occur", "coffee"]);
+
+    let bin = env!("CARGO_BIN_EXE_datum");
+    let out = Command::new(bin)
+        .env("DATUM_DB", &db)
+        .env("DATUM_COLOR", "0")
+        .args(["get", "--show", "format", "_LAST"])
+        .output()
+        .expect("run datum");
+    assert!(
+        !out.status.success(),
+        "`get --show format` without `-o` must exit non-zero, got success",
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--show format requires -o"),
+        "expected diagnostic naming `-o` requirement, got: {stderr:?}",
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "expected no stdout on error, got: {:?}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+
+    let _ = std::fs::remove_file(&db);
+}
+
 /// MD5-derived ANSI bg escape — mirrors the renderer's `md5_rgb` derivation
 /// so the test asserts on absolute byte values without depending on the
 /// renderer crate's internals. Duplicated from `render_state_group.rs`

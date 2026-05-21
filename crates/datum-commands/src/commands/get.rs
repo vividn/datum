@@ -43,7 +43,7 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
     }
 
     let registry = crate::cmd::load_registry_opt(db);
-    let output = args.output();
+    let output = args.output()?;
     let ctxs = crate::cmd::build_render_contexts(&entries, db);
     for (i, entry) in entries.iter().enumerate() {
         if args.pretty {

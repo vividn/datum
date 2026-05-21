@@ -20,7 +20,7 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
         .map_err(|e: String| anyhow::anyhow!(e))?;
     let entries = tail_entries(&args, db)?;
     let registry = load_registry_opt(db);
-    let output = args.output();
+    let output = args.output()?;
 
     // Per da-6t0: tail/head always render through the tabular path so the
     // header row, column alignment, and `hid` column are on by default. The

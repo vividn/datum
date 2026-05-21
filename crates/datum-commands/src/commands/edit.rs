@@ -202,7 +202,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
 
     let fresh = db.get_entry(&updated.slug)?;
     let registry = crate::cmd::load_registry_opt(db);
-    show_update(&fresh, registry.as_ref(), &args.output());
+    show_update(&fresh, registry.as_ref(), &args.output()?);
     Ok(())
 }
 

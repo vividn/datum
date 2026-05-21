@@ -22,19 +22,20 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
         let latest = datum_core::history::latest_version(db.conn(), &current.hid)
             .map_err(anyhow::Error::from)?;
 
+        let output = args.output()?;
         match (args.to_version, latest) {
             (Some(v), _) => {
                 let restored = db
                     .revert_entry_to(&current.hid, v)
                     .map_err(anyhow::Error::from)?;
-                show_create(&restored, registry.as_ref(), &args.output());
+                show_create(&restored, registry.as_ref(), &output);
                 Ok(())
             }
             (None, Some(n)) if n >= 2 => {
                 let restored = db
                     .revert_entry_to(&current.hid, n - 1)
                     .map_err(anyhow::Error::from)?;
-                show_create(&restored, registry.as_ref(), &args.output());
+                show_create(&restored, registry.as_ref(), &output);
                 Ok(())
             }
             _ => {
@@ -43,7 +44,7 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
                 // the resolved full slug/hid so prefixes keep working here too.
                 db.undelete(&current.slug).map_err(anyhow::Error::from)?;
                 if let Ok(entry) = db.get_entry(&current.slug) {
-                    show_create(&entry, registry.as_ref(), &args.output());
+                    show_create(&entry, registry.as_ref(), &output);
                 }
                 Ok(())
             }
@@ -66,7 +67,7 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
                         Utc::now(),
                     ) =>
                 {
-                    return undo_via_last_docs(db, &reference.hids, &registry, &args.output());
+                    return undo_via_last_docs(db, &reference.hids, &registry, &args.output()?);
                 }
                 Ok(Some(_)) => {
                     // Pointer exists but is stale — fall through to the
@@ -94,17 +95,18 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
                 // entry's trail; fall back to undelete for legacy tombstones.
                 let latest = datum_core::history::latest_version(db.conn(), &entry.hid)
                     .map_err(anyhow::Error::from)?;
+                let output = args.output()?;
                 match latest {
                     Some(n) if n >= 2 => {
                         let restored = db
                             .revert_entry_to(&entry.hid, n - 1)
                             .map_err(anyhow::Error::from)?;
-                        show_create(&restored, registry.as_ref(), &args.output());
+                        show_create(&restored, registry.as_ref(), &output);
                     }
                     _ => {
                         db.undelete(&entry.slug).map_err(anyhow::Error::from)?;
                         let restored = db.get_entry(&entry.slug).unwrap_or(entry);
-                        show_create(&restored, registry.as_ref(), &args.output());
+                        show_create(&restored, registry.as_ref(), &output);
                     }
                 }
                 Ok(())

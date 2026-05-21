@@ -126,7 +126,7 @@ pub fn update_from_args(
         .unwrap_or(default_strategy);
 
     let (pattern, payload_value, payload_extra) = parse_update_payload(&args)?;
-    let output = args.output();
+    let output = args.output()?;
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
 
     let outcome = update_with_strategy(
@@ -195,7 +195,7 @@ pub fn update_batch_from_args(
         }
     }
 
-    let output = args.output();
+    let output = args.output()?;
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
 
     if args.dry_run {
