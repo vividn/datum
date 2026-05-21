@@ -1,10 +1,10 @@
 //! Command dispatch and argument → Entry conversion.
 
 use anyhow::Result;
-use chrono::{Local, TimeZone, Utc};
+use chrono::Utc;
 use datum_core::{
     action::Action,
-    db::{Db, InsertOutcome, ListParams, TimeMetric},
+    db::{Db, InsertOutcome},
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
     ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
@@ -15,7 +15,7 @@ use datum_core::{
 use serde_json::Value as JsonValue;
 
 use crate::{
-    args::{Cli, Command, LogArgs, LogArgsExt, TailArgs, UpdateArgs},
+    args::{Cli, Command, LogArgs, LogArgsExt, UpdateArgs},
     config::device_id,
     render::{
         show_create_with_context, show_delete, show_exists, show_rename, show_update_with_context,
@@ -1914,111 +1914,6 @@ fn capture_ongoing_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
         .flatten()
 }
 
-/// Run the tail query as the verb does, but return the entries instead of
-/// printing. Used by integration tests and by `head` when it routes through
-/// the shared tail path.
-pub fn tail_entries(args: &TailArgs, db: &Db) -> Result<Vec<Entry>> {
-    let params = tail_params(args)?;
-    Ok(db.list_entries(&params)?)
-}
-
-/// Split `--column` args (comma-splittable, repeatable) into a flat list.
-pub fn split_columns(raw: &[String]) -> Vec<String> {
-    raw.iter()
-        .flat_map(|s| s.split(','))
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-/// Translate [`TailArgs`] into [`ListParams`] for [`Db::list_entries`].
-///
-/// Window semantics (matching datum):
-/// * No time args → unbounded (future entries included).
-/// * `-d`/`-y` with no `-t`/`-q` → full local-day window centred on the
-///   computed date, with a ±1-day pad to absorb timezone offsets; no default
-///   limit (unless `-n` is set).
-/// * `-t` (alone or with `-d`/`-y`) → upper-bound only (classic tail).
-pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
-    let metric: TimeMetric = args
-        .metric
-        .parse()
-        .map_err(|e: String| anyhow::anyhow!(e))?;
-
-    let has_date = args.time.date.is_some() || args.time.yesterday > 0;
-    let has_time = args.time.time.is_some() || args.time.quick > 0;
-    let is_date_only = has_date && !has_time;
-
-    let (start_utc, end_utc) = if !has_date && !has_time {
-        (None, None)
-    } else {
-        let window = build_window(args)?;
-        if is_date_only {
-            // Pad by ±1 day so timezone skew doesn't drop border rows; caller
-            // can further refine if needed, but for tail the pad is harmless
-            // since `-n` still bounds the result.
-            (Some(window.day_start_utc), Some(window.day_end_utc))
-        } else {
-            (None, Some(window.point_utc))
-        }
-    };
-
-    // Default limit: 10 for "tail", unlimited when date-only (matches datum).
-    let limit = args.count.or(if is_date_only { None } else { Some(10) });
-
-    Ok(ListParams {
-        field: args.field.clone(),
-        metric,
-        start_utc,
-        end_utc,
-        limit,
-        head: args.oldest_first,
-        reverse: args.reverse,
-    })
-}
-
-struct TailWindow {
-    point_utc: chrono::DateTime<Utc>,
-    day_start_utc: chrono::DateTime<Utc>,
-    day_end_utc: chrono::DateTime<Utc>,
-}
-
-fn build_window(args: &TailArgs) -> Result<TailWindow> {
-    let mut builder = TimeBuilder::now()
-        .with_yesterday_count(args.time.yesterday as i64)
-        .with_quick_count(args.time.quick as i64);
-    if let Some(d) = &args.time.date {
-        builder = builder.with_date_arg(parse_date_arg(d)?);
-    }
-    if let Some(t) = &args.time.time {
-        builder = builder.with_time_arg(parse_time_arg(t)?);
-    }
-    let point = builder.build();
-    let local = point.utc.with_timezone(&Local);
-    let day = local.date_naive();
-    let day_start = Local
-        .from_local_datetime(
-            &(day - chrono::Duration::days(1))
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-        )
-        .single()
-        .unwrap();
-    let day_end = Local
-        .from_local_datetime(
-            &(day + chrono::Duration::days(1))
-                .and_hms_opt(23, 59, 59)
-                .unwrap(),
-        )
-        .single()
-        .unwrap();
-    Ok(TailWindow {
-        point_utc: point.utc,
-        day_start_utc: day_start.with_timezone(&Utc),
-        day_end_utc: day_end.with_timezone(&Utc),
-    })
-}
-
 // ─── Get / Delete ─────────────────────────────────────────────────────────────
 
 /// Resolve `input` to an entry via quickId matching, preserving the
@@ -2278,7 +2173,8 @@ pub(crate) fn parse_update_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::args::{DeleteArgs, GetArgs, RetimeArgs, UndoArgs};
+    use crate::args::{DeleteArgs, GetArgs, RetimeArgs, TailArgs, UndoArgs};
+    use crate::commands::tail::tail_entries;
     use crate::commands::update_core::{update_from_args, UpdateStrategy};
 
     #[test]

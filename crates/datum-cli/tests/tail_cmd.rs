@@ -8,7 +8,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 use datum_cli::args::TailArgs;
-use datum_cli::cmd::{split_columns, tail_entries, tail_params};
+use datum_commands::commands::tail::{split_columns, tail_entries, tail_params};
 use datum_core::db::{Db, ListParams, TimeMetric};
 use datum_core::entry::{Entry, Verb};
 use datum_core::test_util::fresh_db;
