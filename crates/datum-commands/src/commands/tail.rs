@@ -5,7 +5,7 @@ use chrono::{Local, TimeZone, Utc};
 use datum_core::{
     db::{Db, ListParams, TimeMetric},
     entry::Entry,
-    time::{parse_date_arg, parse_time_arg, DatumTime, TimeBuilder},
+    time::{parse_date_arg, parse_time_arg, resolve_timezone, DatumTime, TimeBuilder},
 };
 
 use crate::args::{OutputFlagsExt, TailArgs};
@@ -258,9 +258,24 @@ struct TailWindow {
 }
 
 fn build_window(args: &TailArgs) -> Result<TailWindow> {
+    // da-nxm6: `-z`/`--timezone` resolves to an IANA name (or the host
+    // locale's name when omitted) and feeds two surfaces: the
+    // `TimeBuilder` that anchors the reference moment, and the day-
+    // boundary computation below. Both must agree — building the
+    // moment in tz A while computing day edges in `Local` would drop
+    // border rows whenever the two zones disagree on what date "now"
+    // falls on.
+    let tz_name = match args.time.timezone.as_deref() {
+        Some(spec) => Some(
+            resolve_timezone(spec)
+                .map_err(|e| anyhow::anyhow!("Invalid -z/--timezone value '{spec}': {e}"))?,
+        ),
+        None => None,
+    };
     let mut builder = TimeBuilder::now()
         .with_yesterday_count(args.time.yesterday as i64)
-        .with_quick_count(args.time.quick as i64);
+        .with_quick_count(args.time.quick as i64)
+        .with_timezone(tz_name.clone());
     if let Some(d) = &args.time.date {
         builder = builder.with_date_arg(parse_date_arg(d)?);
     }
@@ -268,27 +283,65 @@ fn build_window(args: &TailArgs) -> Result<TailWindow> {
         builder = builder.with_time_arg(parse_time_arg(t)?);
     }
     let point = builder.build();
-    let local = point.utc.with_timezone(&Local);
-    let day = local.date_naive();
-    let day_start = Local
-        .from_local_datetime(
-            &(day - chrono::Duration::days(1))
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-        )
-        .single()
-        .unwrap();
-    let day_end = Local
-        .from_local_datetime(
-            &(day + chrono::Duration::days(1))
-                .and_hms_opt(23, 59, 59)
-                .unwrap(),
-        )
-        .single()
-        .unwrap();
+    let (day_start_utc, day_end_utc) = day_bounds_utc(point.utc, tz_name.as_deref())?;
     Ok(TailWindow {
         point_utc: point.utc,
-        day_start_utc: day_start.with_timezone(&Utc),
-        day_end_utc: day_end.with_timezone(&Utc),
+        day_start_utc,
+        day_end_utc,
     })
+}
+
+/// Compute the ±1-day-padded local-day bounds for `utc` in the user-
+/// supplied IANA zone, or fall back to the host's `Local` zone when the
+/// flag is absent. Returns `(start_utc, end_utc)`. Errors only when the
+/// IANA name fails to parse — `resolve_timezone` already validates the
+/// spec upstream, so this is a defence-in-depth bail.
+fn day_bounds_utc(
+    utc: chrono::DateTime<Utc>,
+    tz_name: Option<&str>,
+) -> Result<(chrono::DateTime<Utc>, chrono::DateTime<Utc>)> {
+    if let Some(name) = tz_name {
+        let tz: chrono_tz::Tz = name
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Unknown timezone: {name}"))?;
+        let local = utc.with_timezone(&tz);
+        let day = local.date_naive();
+        let start = tz
+            .from_local_datetime(
+                &(day - chrono::Duration::days(1))
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap(),
+            )
+            .single()
+            .ok_or_else(|| anyhow::anyhow!("ambiguous local time in zone {name}"))?;
+        let end = tz
+            .from_local_datetime(
+                &(day + chrono::Duration::days(1))
+                    .and_hms_opt(23, 59, 59)
+                    .unwrap(),
+            )
+            .single()
+            .ok_or_else(|| anyhow::anyhow!("ambiguous local time in zone {name}"))?;
+        Ok((start.with_timezone(&Utc), end.with_timezone(&Utc)))
+    } else {
+        let local = utc.with_timezone(&Local);
+        let day = local.date_naive();
+        let start = Local
+            .from_local_datetime(
+                &(day - chrono::Duration::days(1))
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap(),
+            )
+            .single()
+            .unwrap();
+        let end = Local
+            .from_local_datetime(
+                &(day + chrono::Duration::days(1))
+                    .and_hms_opt(23, 59, 59)
+                    .unwrap(),
+            )
+            .single()
+            .unwrap();
+        Ok((start.with_timezone(&Utc), end.with_timezone(&Utc)))
+    }
 }

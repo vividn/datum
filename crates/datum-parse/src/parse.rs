@@ -626,10 +626,14 @@ struct TailExtras {
 
 fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
     let mut r: Vec<LiftedSpec<TailParsing>> = Vec::new();
-    // Time (-y/-q/-d/-t). `-z`, `-T`, `-D` not exposed by tail.
+    // Time (-y/-q/-d/-t/-z). `-T`/`-D` aren't exposed — tail is a read
+    // surface and "no-timestamp" / "full-day" only apply at write time.
+    // da-nxm6: `-z`/`--timezone` is now admitted so the day-window
+    // builder downstream can compute boundaries in the user's zone
+    // rather than the host's `Local`.
     for spec in input::time_args::FLAG_SPECS {
         match (spec.short, spec.long) {
-            (Some('y'), _) | (Some('q'), _) | (Some('d'), _) | (Some('t'), _) => {
+            (Some('y'), _) | (Some('q'), _) | (Some('d'), _) | (Some('t'), _) | (Some('z'), _) => {
                 r.push(lift(|p: &mut TailParsing| &mut p.time, spec));
             }
             _ => {}

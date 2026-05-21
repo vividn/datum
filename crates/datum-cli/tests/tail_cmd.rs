@@ -744,6 +744,68 @@ fn tail_watch_flag_parses_with_and_without_interval() {
     }
 }
 
+/// da-nxm6: `-z` / `--timezone` is admitted by the tail registry and
+/// round-trips onto `TailArgs::time::timezone`. Before this bead, the
+/// flag was stripped at the registry seam and produced "unknown flag".
+#[test]
+fn tail_timezone_flag_parses_short_and_long_forms() {
+    use datum_cli::args::{Cli, CliExt, Command};
+    let cli = Cli::try_parse_argv(["datum", "tail", "-z", "America/Chicago"]).unwrap();
+    match cli.command {
+        Command::Tail(a) => assert_eq!(a.time.timezone.as_deref(), Some("America/Chicago")),
+        _ => panic!("expected Tail"),
+    }
+    let cli = Cli::try_parse_argv(["datum", "tail", "--timezone", "America/Chicago"]).unwrap();
+    match cli.command {
+        Command::Tail(a) => assert_eq!(a.time.timezone.as_deref(), Some("America/Chicago")),
+        _ => panic!("expected Tail"),
+    }
+    // Attached `=` form is also accepted (parser-level registry handles it).
+    let cli = Cli::try_parse_argv(["datum", "tail", "--timezone=America/Chicago"]).unwrap();
+    match cli.command {
+        Command::Tail(a) => assert_eq!(a.time.timezone.as_deref(), Some("America/Chicago")),
+        _ => panic!("expected Tail"),
+    }
+    // Default off.
+    let cli = Cli::try_parse_argv(["datum", "tail"]).unwrap();
+    match cli.command {
+        Command::Tail(a) => assert!(a.time.timezone.is_none()),
+        _ => panic!("expected Tail"),
+    }
+}
+
+/// da-nxm6: `-d 2024-03-16 -z` builds the day window in the supplied
+/// zone, not the host's local time. Pacific/Auckland (UTC+13) puts the
+/// "10:00 UTC on 2024-03-15" entry on 2024-03-16 — verifying that
+/// `build_window` honoured the flag rather than falling through to
+/// `Local`.
+#[test]
+fn tail_z_flag_shifts_day_window_to_supplied_zone() {
+    use datum_commands::commands::tail::tail_params;
+    // Place an entry at 22:00 UTC on 2024-03-15. In Pacific/Auckland
+    // (UTC+13 in March, post-DST-end) that lands on 2024-03-16 at 11:00.
+    let db = fresh_db();
+    let t = DatumTime {
+        utc: "2024-03-15T22:00:00Z".parse().unwrap(),
+        offset_minutes: 13 * 60,
+        timezone: "Pacific/Auckland".to_string(),
+    };
+    let e = Entry::new("a", Verb::Point, Some(json!(1)), None, Some(t), None, "d1");
+    db.insert_entry(&e).unwrap();
+
+    let mut args = tail_args();
+    args.time.date = Some("2024-03-16".to_string());
+    args.time.timezone = Some("Pacific/Auckland".to_string());
+    let params = tail_params(&args).unwrap();
+    let got = db.list_entries(&params).unwrap();
+    assert_eq!(
+        got.len(),
+        1,
+        "row at 22:00Z 2024-03-15 must be visible under -d 2024-03-16 -z Pacific/Auckland",
+    );
+    assert_eq!(got[0].slug, e.slug);
+}
+
 #[test]
 fn tail_show_meta_flag_parses_short_and_long_forms() {
     // da-ghlx: `--show-meta` (and the longer `--show-all-metadata`
