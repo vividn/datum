@@ -47,6 +47,14 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // whitespace. Pull any trailing duration positional into args.duration
     // before handle_data_args sees it.
     if matches!(action, Action::Switch) {
+        // da-a2o8: peel a standalone-comma "then" chain (`switch f
+        // vertical 5 , sit`) into `following_state=…` before the
+        // trailing-duration pass. The alias layer's
+        // `maybe_collapse_switch_chain` already ensured the dur-bearing
+        // side is on the left of the comma; here we just split, rewrite
+        // the tail as a reserved-column key, and let the existing
+        // pipeline route it onto `args.following_state`.
+        extract_switch_then_chain(&mut args)?;
         extract_switch_trailing_reserved(&mut args)?;
     }
 
@@ -869,6 +877,75 @@ fn datum_value_to_slug_string(v: Option<&JsonValue>) -> String {
     }
 }
 
+/// da-a2o8: peel the BlockSwitch / PointSwitch "then" chain out of a
+/// `switch`'s positionals.
+///
+/// A standalone bare-comma token (`","` — produced when the user types
+/// `switch body vertical 5 , sit` and the shell tokenises around
+/// whitespace) marks the boundary between the leading
+/// state-and-duration positionals and the trailing `following_state`
+/// value. We rewrite the tail as `following_state=<value>` so the
+/// reserved-column extractor downstream populates the column.
+///
+/// Concurrent-state form (`a,b` with no whitespace around the comma) is
+/// a single positional containing a comma — never a standalone `","`
+/// token — so this preprocessor leaves it untouched. The alias layer's
+/// `maybe_collapse_switch_chain` is what decides whether a standalone
+/// comma in this position should even reach `args.rest`: it bypasses
+/// the multi-entry split (and swaps left/right when needed) only when
+/// at least one side carries a dur signal. Otherwise the comma goes
+/// through `split_argv_at_commas` and `args.rest` never sees a `,`.
+///
+/// Constraints:
+/// * Exactly one bare-comma token is supported. Multi-step chains
+///   (`a 5 , b 30 , c`) are out of scope for the MVP.
+/// * Post-comma must be exactly one bare positional. KEY=VALUE pairs
+///   after the comma are rejected since they don't belong to either
+///   side of the chain.
+/// * The pre-comma side keeps its existing semantics — a bare
+///   positional is the state, a trailing bare positional is the
+///   duration. That work is left to
+///   [`extract_switch_trailing_reserved`].
+pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
+    let comma_idx = match args.rest.iter().position(|t| t == ",") {
+        Some(i) => i,
+        None => return Ok(()),
+    };
+    // Reject a second standalone comma — multi-step chains are a
+    // follow-up. Without this guard the second comma would silently
+    // get folded into following_state and look like an alias for `a,b`
+    // concurrent state — wrong.
+    if args.rest.iter().skip(comma_idx + 1).any(|t| t == ",") {
+        anyhow::bail!("switch: multi-step `,` chains aren't supported yet — use one bare comma");
+    }
+    let post: Vec<String> = args.rest.split_off(comma_idx + 1);
+    // Drop the comma token itself.
+    args.rest.pop();
+    let mut post_bare: Vec<String> = Vec::with_capacity(post.len());
+    for token in post {
+        if token.contains('=') {
+            anyhow::bail!(
+                "switch: only a bare state value may follow the `,` chain marker (got `{token}`)"
+            );
+        }
+        post_bare.push(token);
+    }
+    if post_bare.is_empty() {
+        anyhow::bail!(
+            "switch: `,` chain marker requires a trailing state (e.g. `switch body vertical 5 , sit`)"
+        );
+    }
+    if post_bare.len() > 1 {
+        anyhow::bail!(
+            "switch: `,` chain marker accepts exactly one trailing state (got {n})",
+            n = post_bare.len()
+        );
+    }
+    let following_state = post_bare.into_iter().next().unwrap();
+    args.rest.push(format!("following_state={following_state}"));
+    Ok(())
+}
+
 /// da-ffp6: For `Verb::Switch`, partition `args.rest` so only the first
 /// bare (non-`KEY=VALUE`) positional contributes to the state value.
 /// Subsequent bare positionals are reserved tokens — currently any
@@ -1620,5 +1697,147 @@ mod tests {
             got.utc,
             Utc.with_ymd_and_hms(2026, 5, 21, 13, 30, 42).unwrap()
         );
+    }
+
+    // ─── da-a2o8: extract_switch_then_chain ──────────────────────────────
+
+    fn switch_args(rest: &[&str]) -> LogArgs {
+        let mut a = LogArgs::fresh("body");
+        a.rest = rest.iter().map(|s| s.to_string()).collect();
+        a
+    }
+
+    /// `switch body vertical 5 , sit` reaches log_core with the chain
+    /// already swapped-if-needed by `maybe_collapse_switch_chain`, so
+    /// `args.rest` is `["vertical", "5", ",", "sit"]`. Rewrite the tail
+    /// as `following_state=sit` and let extract_switch_trailing_reserved
+    /// peel `5` into the duration arg.
+    #[test]
+    fn then_chain_rewrites_tail_as_following_state() {
+        let mut args = switch_args(&["vertical", "5", ",", "sit"]);
+        extract_switch_then_chain(&mut args).unwrap();
+        assert_eq!(
+            args.rest,
+            vec![
+                "vertical".to_string(),
+                "5".to_string(),
+                "following_state=sit".to_string(),
+            ]
+        );
+    }
+
+    /// Bare-positional-only chain (`vertical , sit`) is unreachable in
+    /// practice — the alias layer only routes through here when a dur
+    /// signal is present — but the helper still rewrites the comma
+    /// correctly so the trail isn't fragile if the caller changes.
+    #[test]
+    fn then_chain_works_without_duration_positional() {
+        let mut args = switch_args(&["vertical", ",", "sit"]);
+        extract_switch_then_chain(&mut args).unwrap();
+        assert_eq!(
+            args.rest,
+            vec!["vertical".to_string(), "following_state=sit".to_string()]
+        );
+    }
+
+    /// Concurrent-state form (`vertical,sit` glued) arrives as a single
+    /// positional, never as a standalone `,` token. The helper must
+    /// leave it untouched so the existing array-state path runs.
+    #[test]
+    fn concurrent_state_form_is_untouched() {
+        let mut args = switch_args(&["vertical,sit"]);
+        let before = args.rest.clone();
+        extract_switch_then_chain(&mut args).unwrap();
+        assert_eq!(args.rest, before);
+    }
+
+    /// Multi-step chains are deferred — second bare comma is a hard
+    /// error so the helper doesn't silently consume only the last leg.
+    #[test]
+    fn multi_step_chain_is_rejected() {
+        let mut args = switch_args(&["vertical", "5", ",", "sit", "30", ",", "sofa"]);
+        let err = extract_switch_then_chain(&mut args).unwrap_err();
+        assert!(err.to_string().contains("multi-step"), "got: {err}");
+    }
+
+    /// Trailing-state slot is required — `switch f X ,` (nothing after
+    /// the comma) is malformed.
+    #[test]
+    fn missing_trailing_state_errors() {
+        let mut args = switch_args(&["vertical", ","]);
+        let err = extract_switch_then_chain(&mut args).unwrap_err();
+        assert!(
+            err.to_string().contains("requires a trailing state"),
+            "got: {err}"
+        );
+    }
+
+    /// Post-comma KEY=VALUE pairs are rejected — `vertical , sit
+    /// hours=8` would be confusing (does `hours=8` belong to `sit` or
+    /// to the row?). Force the user to clarify rather than silently
+    /// dropping or misrouting the key.
+    #[test]
+    fn post_chain_key_value_is_rejected() {
+        let mut args = switch_args(&["vertical", "5", ",", "sit", "hours=8"]);
+        let err = extract_switch_then_chain(&mut args).unwrap_err();
+        assert!(
+            err.to_string().contains("only a bare state value"),
+            "got: {err}"
+        );
+    }
+
+    /// End-to-end through `log_entry`: `switch body vertical 5 , sit`
+    /// lands a single row with `state=vertical`, `dur=5m`,
+    /// `following_state=sit`.
+    #[test]
+    fn block_switch_e2e_writes_one_row_with_following_state() {
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::fresh("body");
+        args.rest = vec![
+            "vertical".to_string(),
+            "5".to_string(),
+            ",".to_string(),
+            "sit".to_string(),
+        ];
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("body", None).unwrap();
+        assert_eq!(entries.len(), 1, "exactly one row");
+        let e = &entries[0];
+        assert_eq!(
+            e.value,
+            Some(serde_json::json!("vertical")),
+            "state = vertical"
+        );
+        assert_eq!(
+            e.following_state,
+            Some(serde_json::json!("sit")),
+            "following_state = sit"
+        );
+        assert_eq!(
+            e.duration_seconds(),
+            Some(5 * 60),
+            "dur = 5 minutes (300 seconds)"
+        );
+    }
+
+    /// End-to-end PointSwitch: `switch body vertical -m , sit` lands a
+    /// zero-duration row with `state=vertical`,
+    /// `following_state=sit`. The `-m` flag is consumed by
+    /// `DurationArgs` before `extract_switch_then_chain` runs, so
+    /// `args.duration.moment` carries the signal here.
+    #[test]
+    fn point_switch_e2e_writes_zero_duration_row() {
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::fresh("body");
+        args.duration.moment = true;
+        args.rest = vec!["vertical".to_string(), ",".to_string(), "sit".to_string()];
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("body", None).unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert_eq!(e.value, Some(serde_json::json!("vertical")));
+        assert_eq!(e.following_state, Some(serde_json::json!("sit")));
+        // Moment → dur=PT0S (zero seconds).
+        assert_eq!(e.duration_seconds(), Some(0));
     }
 }

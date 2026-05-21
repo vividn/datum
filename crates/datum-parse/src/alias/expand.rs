@@ -744,12 +744,238 @@ pub fn split_argv_at_commas(argv: Vec<String>) -> crate::Result<Vec<Vec<String>>
     Ok(sides)
 }
 
+/// da-a2o8: detect whether one of `sides` carries a dur signal for the
+/// BlockSwitch/PointSwitch sugar. Returns the rearranged sides when the
+/// chain should collapse to a single invocation; returns the original
+/// sides untouched otherwise.
+///
+/// Triggers when:
+/// * there are exactly two sides (one bare-comma chain — multi-step
+///   `a, b, c` chains are out of scope per the bead),
+/// * side 0 is a `switch` invocation (verb at index 0; field at index
+///   1 — explicit-field form),
+/// * exactly one side carries a duration signal: a `-m` / `--moment`
+///   flag, a `dur=<value>` key, or a second bare positional (the
+///   trailing-duration form `switch f vertical 5`).
+///
+/// When the dur side is the right one, the sides are swapped so the dur
+/// side becomes side 0 — `extract_switch_then_chain` downstream rewrites
+/// the tail-of-rest as `following_state=...`, which assumes the chain's
+/// "then" is in trailing position. Returning the rearranged sides
+/// flattens them into a single side `[verb, field, …dur_side…, ",", …other…]`
+/// so `parse_invocation` doesn't dispatch them as independent invocations.
+///
+/// Without a dur signal the existing multi-entry semantics are preserved
+/// (concurrent state form `switch f vertical , sit` stays as two atomic
+/// writes, matching da-gh0).
+pub fn maybe_collapse_switch_chain(sides: Vec<Vec<String>>) -> Vec<Vec<String>> {
+    if sides.len() != 2 {
+        return sides;
+    }
+    // Side 0 must start with `switch`. Aliases were resolved upstream so
+    // a bare-string compare is sufficient; field/verb swap (per side)
+    // already promoted any field-first form to verb-first.
+    if sides[0].first().map(|s| s.as_str()) != Some("switch") {
+        return sides;
+    }
+    // Need at least `[verb, field]`. Without an explicit field there is
+    // no unambiguous way to know which trailing positional is state vs
+    // duration, so the sugar requires the explicit form.
+    if sides[0].len() < 2 {
+        return sides;
+    }
+    // Side 1 starting with a known subcommand means it's its own
+    // invocation (`switch f X , switch g Y`), not a chain continuation.
+    // Multi-entry semantics own that shape — pass through untouched.
+    if sides[1]
+        .first()
+        .is_some_and(|t| KNOWN_SUBCOMMANDS.contains(&t.as_str()))
+    {
+        return sides;
+    }
+    let left_state_part = &sides[0][2..];
+    let right = &sides[1];
+    let left_has = side_has_dur_signal(left_state_part);
+    let right_has = side_has_dur_signal(right);
+    // `==` covers (false, false) — keep existing concurrent / multi-entry
+    // behaviour — and (true, true) which the bead reserves for a
+    // follow-up (concurrent dur arrays).
+    if left_has == right_has {
+        return sides;
+    }
+    let prefix: Vec<String> = sides[0][..2].to_vec();
+    let left_state_vec: Vec<String> = left_state_part.to_vec();
+    let right_vec: Vec<String> = right.clone();
+    let mut merged = prefix;
+    let (first, second) = if left_has {
+        (left_state_vec, right_vec)
+    } else {
+        (right_vec, left_state_vec)
+    };
+    merged.extend(first);
+    merged.push(MULTI_COMMA.to_string());
+    merged.extend(second);
+    vec![merged]
+}
+
+/// True when `tokens` (one side's argv) carries a duration signal —
+/// either an explicit `-m`/`--moment` flag, a `dur=<value>` key, or two
+/// or more bare positionals (the trailing-duration form).
+///
+/// `-m` and `--moment` survive in raw argv here because flag parsing
+/// happens downstream in `parse_log_args` / `DurationArgs::extract` — at
+/// this layer every flag is just a token.
+fn side_has_dur_signal(tokens: &[String]) -> bool {
+    if tokens.iter().any(|t| t == "-m" || t == "--moment") {
+        return true;
+    }
+    if tokens
+        .iter()
+        .any(|t| t.strip_prefix("dur=").is_some_and(|v| !v.is_empty()))
+    {
+        return true;
+    }
+    let bare = tokens
+        .iter()
+        .filter(|t| !t.starts_with('-') && !t.contains('='))
+        .count();
+    bare >= 2
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn v(s: &[&str]) -> Vec<String> {
         s.iter().map(|x| x.to_string()).collect()
+    }
+
+    // ─── da-a2o8 switch-chain collapse ───────────────────────────────────
+
+    #[test]
+    fn switch_chain_left_dur_collapses() {
+        // `switch body vertical 5 , sit` → side 0 has the trailing-duration
+        // positional, so the chain collapses to a single side ready for
+        // `extract_switch_then_chain` downstream.
+        let sides = vec![v(&["switch", "body", "vertical", "5"]), v(&["sit"])];
+        let out = maybe_collapse_switch_chain(sides);
+        assert_eq!(
+            out,
+            vec![v(&["switch", "body", "vertical", "5", ",", "sit"])]
+        );
+    }
+
+    #[test]
+    fn switch_chain_right_dur_swaps_to_left() {
+        // `switch body vertical , sit 5` — right side carries the
+        // duration. Collapse + swap so the dur side is left-anchored.
+        let sides = vec![v(&["switch", "body", "vertical"]), v(&["sit", "5"])];
+        let out = maybe_collapse_switch_chain(sides);
+        assert_eq!(
+            out,
+            vec![v(&["switch", "body", "sit", "5", ",", "vertical"])]
+        );
+    }
+
+    #[test]
+    fn switch_chain_left_moment_flag_collapses() {
+        let sides = vec![v(&["switch", "body", "vertical", "-m"]), v(&["sit"])];
+        let out = maybe_collapse_switch_chain(sides);
+        assert_eq!(
+            out,
+            vec![v(&["switch", "body", "vertical", "-m", ",", "sit"])]
+        );
+    }
+
+    #[test]
+    fn switch_chain_right_moment_flag_swaps() {
+        let sides = vec![v(&["switch", "body", "vertical"]), v(&["sit", "-m"])];
+        let out = maybe_collapse_switch_chain(sides);
+        assert_eq!(
+            out,
+            vec![v(&["switch", "body", "sit", "-m", ",", "vertical"])]
+        );
+    }
+
+    #[test]
+    fn switch_chain_dur_key_collapses() {
+        let sides = vec![v(&["switch", "body", "vertical", "dur=PT5M"]), v(&["sit"])];
+        let out = maybe_collapse_switch_chain(sides);
+        assert_eq!(
+            out,
+            vec![v(&["switch", "body", "vertical", "dur=PT5M", ",", "sit"])]
+        );
+    }
+
+    #[test]
+    fn no_dur_signal_preserves_multi_entry() {
+        // `switch body vertical , sit` — neither side has dur/-m/dur=.
+        // Existing concurrent / multi-entry behaviour wins: the splitter's
+        // output passes through untouched.
+        let sides = vec![v(&["switch", "body", "vertical"]), v(&["sit"])];
+        let out = maybe_collapse_switch_chain(sides.clone());
+        assert_eq!(out, sides);
+    }
+
+    #[test]
+    fn numeric_state_pair_is_not_a_dur_signal() {
+        // `switch counter 5 , 6` — one bare positional per side after
+        // verb+field. No trailing-duration form, no -m, no dur=. Must
+        // stay as a multi-entry concurrent invocation.
+        let sides = vec![v(&["switch", "counter", "5"]), v(&["6"])];
+        let out = maybe_collapse_switch_chain(sides.clone());
+        assert_eq!(out, sides);
+    }
+
+    #[test]
+    fn both_sides_carry_dur_signal_defers_to_followup() {
+        // Multi-side concurrent dur arrays are out of MVP scope (vividn:
+        // "Multiple sides with dur → collapse into one BlockSwitch
+        // array state … all durs must match"). For now, keep the sides
+        // untouched so the existing multi-entry path handles them
+        // — a follow-up bead can wire in the array form.
+        let sides = vec![v(&["switch", "body", "vertical", "5"]), v(&["sit", "5"])];
+        let out = maybe_collapse_switch_chain(sides.clone());
+        assert_eq!(out, sides);
+    }
+
+    #[test]
+    fn side_1_starts_with_known_verb_is_untouched() {
+        // `switch env outside , switch body vertical` — two complete
+        // switch invocations. Even though side 1 has 3 bare positionals
+        // (verb+field+state), it must NOT be treated as a dur signal —
+        // it's an independent invocation, not a chain continuation.
+        // Multi-alias-body shapes (`oov = switch env outside , switch
+        // body vertical`) depend on this passthrough.
+        let sides = vec![
+            v(&["switch", "environment", "outside"]),
+            v(&["switch", "body", "vertical"]),
+        ];
+        let out = maybe_collapse_switch_chain(sides.clone());
+        assert_eq!(out, sides);
+    }
+
+    #[test]
+    fn non_switch_verb_is_untouched() {
+        // The sugar is switch-only. `occur` (or any other verb) with a
+        // bare-comma chain passes through.
+        let sides = vec![v(&["occur", "field", "vertical", "5"]), v(&["sit"])];
+        let out = maybe_collapse_switch_chain(sides.clone());
+        assert_eq!(out, sides);
+    }
+
+    #[test]
+    fn three_sides_are_out_of_scope() {
+        // Multi-step chains (`a, b, c`) are deferred. Even with dur
+        // signals present, the 3-side shape must pass through so the
+        // existing multi-entry semantics apply (or fail loudly).
+        let sides = vec![
+            v(&["switch", "body", "vertical", "5"]),
+            v(&["sit"]),
+            v(&["sofa"]),
+        ];
+        let out = maybe_collapse_switch_chain(sides.clone());
+        assert_eq!(out, sides);
     }
 
     // ─── da-gh0 comma trigger (Rules 6, 7, 14; Section A; Section M-empty) ──

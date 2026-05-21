@@ -276,8 +276,7 @@ fn parse_invocation_inner(
     // position. (The pre-scan that picked the resolver in
     // `parse_invocation` already used the same flag value, so the
     // alias DB and the dispatch DB stay aligned.)
-    let (argv_for_expand, db_flag_tokens) =
-        crate::config::split_off_global_db_flag(argv);
+    let (argv_for_expand, db_flag_tokens) = crate::config::split_off_global_db_flag(argv);
 
     let expanded = palias::expand_into_sides(argv_for_expand, resolver)?;
 
@@ -287,37 +286,46 @@ fn parse_invocation_inner(
         alias_chain: expanded.chain.into_iter().map(Into::into).collect(),
     });
 
-    if expanded.sides.is_empty() {
+    // da-a2o8: collapse a two-sided `switch f X , Y` chain back into a
+    // single invocation when one side carries a dur signal (`-m`,
+    // `dur=`, or a trailing duration positional). The chain becomes a
+    // BlockSwitch / PointSwitch with the dur side as `state` and the
+    // other side promoted to `following_state` downstream in
+    // `extract_switch_then_chain`. Concurrent / multi-entry semantics
+    // (`switch f a , b` with no dur signal) are unchanged.
+    let sides = palias::maybe_collapse_switch_chain(expanded.sides);
+
+    if sides.is_empty() {
         // Shouldn't happen — split_argv_at_commas always returns >=1
         // side or errors. Treat as a malformed invocation.
         return Err(anyhow::anyhow!("empty argv after expansion"));
     }
 
-    if expanded.sides.len() == 1 {
-        let mut side_argv = Vec::with_capacity(expanded.sides[0].len() + 1 + db_flag_tokens.len());
+    if sides.len() == 1 {
+        let mut side_argv = Vec::with_capacity(sides[0].len() + 1 + db_flag_tokens.len());
         side_argv.push(argv0);
         // da-hfi3: re-prepend the stripped `--db` flag so the downstream
         // parser still sees it at its canonical post-argv0 position.
         side_argv.extend(db_flag_tokens.iter().cloned());
-        side_argv.extend(expanded.sides.into_iter().next().unwrap());
+        side_argv.extend(sides.into_iter().next().unwrap());
         let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
         return Ok(Invocation::Single(cli));
     }
 
-    let mut sides: Vec<Cli> = Vec::with_capacity(expanded.sides.len());
-    let mut side_argvs: Vec<Vec<String>> = Vec::with_capacity(expanded.sides.len());
-    for side in expanded.sides {
+    let mut clis: Vec<Cli> = Vec::with_capacity(sides.len());
+    let mut side_argvs: Vec<Vec<String>> = Vec::with_capacity(sides.len());
+    for side in sides {
         let mut side_argv = Vec::with_capacity(side.len() + 1 + db_flag_tokens.len());
         side_argv.push(argv0.clone());
         // da-hfi3: same re-prepend as the single-side branch above.
         side_argv.extend(db_flag_tokens.iter().cloned());
         side_argv.extend(side);
         let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
-        sides.push(cli);
+        clis.push(cli);
         side_argvs.push(side_argv);
     }
     Ok(Invocation::Multi {
-        sides,
+        sides: clis,
         side_argvs,
         argv0,
     })
