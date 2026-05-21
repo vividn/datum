@@ -493,22 +493,42 @@ pub fn print_table_with(
     registry: Option<&SpecRegistry>,
     args: &TableArgs,
 ) {
-    if args.output.silent() {
-        return;
+    if let Some(text) = format_table_with(entries, contexts, now, registry, args) {
+        print!("{text}");
     }
+}
+
+/// As [`print_table_with`] but returns the rendered text instead of writing
+/// it to stdout. `None` is returned when the table is silenced (`--show
+/// none`); every other path returns `Some` even when the body is empty
+/// (`[No data]` and `Show::Format` still produce a string). Used by
+/// `datum check`'s human renderer to embed the real tail formatter under
+/// each flagged-issue block.
+pub fn format_table_with(
+    entries: &[Entry],
+    contexts: Option<&[RenderContext]>,
+    now: Option<&DatumTime>,
+    registry: Option<&SpecRegistry>,
+    args: &TableArgs,
+) -> Option<String> {
+    if args.output.silent() {
+        return None;
+    }
+    let mut out = String::new();
     if entries.is_empty() && args.output.show != Show::Format {
-        println!("[No data]");
-        return;
+        out.push_str("[No data]\n");
+        return Some(out);
     }
 
     // Custom format short-circuits the table.
     if args.output.show == Show::Format {
         if let Some(fmt) = &args.output.format_string {
             for e in entries {
-                println!("{}", interpolate(fmt, e));
+                out.push_str(&interpolate(fmt, e));
+                out.push('\n');
             }
         }
-        return;
+        return Some(out);
     }
 
     // Build per-row cells.
@@ -688,7 +708,8 @@ pub fn print_table_with(
         for (i, col) in args.columns.iter().enumerate() {
             push_cell(&mut header, col, extras_w[i], false);
         }
-        println!("{}", header.trim_end());
+        out.push_str(header.trim_end());
+        out.push('\n');
     }
 
     // Data rows.
@@ -734,8 +755,10 @@ pub fn print_table_with(
         for (i, extra) in r.extras.iter().enumerate() {
             push_cell(&mut line, extra, extras_w[i], false);
         }
-        println!("{}", line.trim_end());
+        out.push_str(line.trim_end());
+        out.push('\n');
     }
+    Some(out)
 }
 
 /// Push a left- or right-padded cell (ANSI-aware) with a 2-space gap.

@@ -6,14 +6,19 @@
 use anyhow::Result;
 use datum_core::db::Db;
 use datum_core::derive_verb;
+use datum_core::entry::Entry;
 use datum_core::field_spec::{self, InterpolationContext};
 use datum_core::ids::Slug;
+use datum_core::time::DatumTime;
 use datum_parse::alias::{shell_split, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS};
 use datum_parse::cli::KNOWN_CHECKERS;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
 use crate::args::CheckArgs;
+use crate::commands::helpers::load_registry_opt;
+use crate::commands::render_helpers::build_render_contexts;
+use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
 
 /// Typed API for `datum check`. Exits the process with status 1 when the
 /// report contains any [`Severity::Error`] items.
@@ -132,6 +137,15 @@ pub struct Issue {
     /// Empty for non-per-entry issues (e.g. summary categories).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entries: Vec<FlaggedEntry>,
+    /// Pre-rendered tail-formatter block for the flagged entries (da-cr4n).
+    /// Populated at collect time when [`entries`] is non-empty so the human
+    /// renderer can embed the real `datum tail` columns (time / field /
+    /// state / dur / hid, plus the `!` repeated-state marker) without
+    /// re-querying the DB at render time. Skipped from JSON — programmatic
+    /// consumers read [`entries`].
+    #[serde(skip)]
+    #[serde(default)]
+    pub rendered_block: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -261,6 +275,7 @@ fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
             count: drift_count,
             example: drift_example,
             entries: Vec::new(),
+            rendered_block: String::new(),
         });
     }
     if corrupt_count > 0 {
@@ -276,6 +291,7 @@ fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
             count: corrupt_count,
             example: corrupt_example,
             entries: Vec::new(),
+            rendered_block: String::new(),
         });
     }
 
@@ -397,6 +413,7 @@ fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
             count: drift_count,
             example: drift_example,
             entries: Vec::new(),
+            rendered_block: String::new(),
         });
     }
 
@@ -505,6 +522,24 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                 }
             })
             .collect();
+        // da-cr4n: pre-render the flagged entries through the same table
+        // formatter `datum tail` uses, so column alignment, state-cell
+        // background colour, and the `!` repeated-state marker render
+        // identically. Re-fetch each trigger by slug so the entry carries
+        // the canonical post-pivot columns (occur_time, dur, etc.) —
+        // `IntegrityWarning::local_entry` was reconstructed from the
+        // table-stored JSON which `#[serde(skip)]`s the compat shims
+        // (`start_time`, `entry_shape`, …) the renderer's extract path
+        // still reads. `build_render_contexts` populates each row's
+        // RenderContext from the field's state-event history, so
+        // `is_state_repeat` fires on exactly the same shape as the
+        // SameStateRepeat detector. Header suppressed — issue rows live
+        // inside an already-introduced "[WARN]" block.
+        let full_entries: Vec<Entry> = group
+            .iter()
+            .filter_map(|w| db.get_entry(w.entry_slug.as_str()).ok())
+            .collect();
+        let rendered_block = render_flagged_block(db, &full_entries);
         issues.push(Issue {
             severity: Severity::Warning,
             category,
@@ -520,9 +555,31 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                 )),
             }),
             entries,
+            rendered_block,
         });
     }
     Ok(issues)
+}
+
+/// Format flagged entries through the live tail table formatter. Returns the
+/// fully rendered text block (one line per entry, no header). Empty input
+/// yields an empty string so callers can `if !block.is_empty()` to decide
+/// whether to emit a sub-section.
+fn render_flagged_block(db: &Db, entries: &[Entry]) -> String {
+    if entries.is_empty() {
+        return String::new();
+    }
+    let ctxs = build_render_contexts(entries, db);
+    let registry = load_registry_opt(db);
+    let now = DatumTime::now();
+    let tbl = TableArgs {
+        output: OutputArgs::default(),
+        metric: TimeMetricCol::Hybrid,
+        columns: Vec::new(),
+        suppress_header: true,
+        max_total_width: None,
+    };
+    format_table_with(entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl).unwrap_or_default()
 }
 
 /// Render a state JSON value into the short string used in flagged-entry
@@ -607,6 +664,7 @@ fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<AliasReport> {
                 detail: Some(detail),
             }),
             entries: Vec::new(),
+            rendered_block: String::new(),
         });
     }
 
@@ -660,6 +718,7 @@ fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<AliasReport> {
             count: orphan_count,
             example: orphan_example,
             entries: Vec::new(),
+            rendered_block: String::new(),
         });
     }
     if cycle_count > 0 {
@@ -674,6 +733,7 @@ fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<AliasReport> {
             count: cycle_count,
             example: cycle_example,
             entries: Vec::new(),
+            rendered_block: String::new(),
         });
     }
 
@@ -765,6 +825,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                 )),
             }),
             entries: Vec::new(),
+            rendered_block: String::new(),
         });
     }
 
@@ -803,6 +864,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                 )),
             }),
             entries: Vec::new(),
+            rendered_block: String::new(),
         });
     }
 
@@ -832,6 +894,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                 detail: Some(unknown.join(", ")),
             }),
             entries: Vec::new(),
+            rendered_block: String::new(),
         });
     }
 
@@ -882,6 +945,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                 detail: Some(format!("key={key}")),
             }),
             entries: Vec::new(),
+            rendered_block: String::new(),
         });
     }
 
@@ -920,30 +984,18 @@ pub fn render_human(report: &Report) -> String {
             count = issue.count,
             msg = issue.message,
         ));
-        // da-mkes: when the issue carries per-entry rows, list each one
-        // (hid, field, state) instead of collapsing to a single example.
-        // Falls back to the legacy `example` block when no per-entry list
-        // was populated.
-        if !issue.entries.is_empty() {
-            let field_w = issue
-                .entries
-                .iter()
-                .map(|e| e.field.len())
-                .max()
-                .unwrap_or(0);
-            let state_w = issue
-                .entries
-                .iter()
-                .map(|e| e.state.len())
-                .max()
-                .unwrap_or(0);
-            for fe in &issue.entries {
-                out.push_str(&format!(
-                    "    {hid:<5}  {field:<field_w$}  {state:<state_w$}\n",
-                    hid = fe.hid,
-                    field = fe.field,
-                    state = fe.state,
-                ));
+        // da-cr4n: when collect-time populated `rendered_block` (integrity
+        // warnings, today), emit it verbatim — it came from the same
+        // table formatter `datum tail` uses, so columns, colour, time
+        // stamps, and the `!` repeated-state marker match the live view.
+        // Indent each line by 4 to nest visually under the [WARN]/[ERROR]
+        // header. The block already ends in `\n`, so `lines()` strips it
+        // and the per-line push re-adds the newline.
+        if !issue.rendered_block.is_empty() {
+            for line in issue.rendered_block.lines() {
+                out.push_str("    ");
+                out.push_str(line);
+                out.push('\n');
             }
         } else if let Some(ex) = &issue.example {
             if let Some(id) = &ex.id {
@@ -1893,6 +1945,47 @@ mod tests {
             "repeated_state entry must carry leading `!`, got: {}",
             issue.entries[0].state
         );
+        // da-cr4n: the rendered_block is built through the real tail table
+        // formatter at collect time. Strip ANSI before asserting so the
+        // assertion survives colour drift (the renderer paints `!` and the
+        // state-cell background; we only care that the row is in there).
+        let block = strip_ansi(&issue.rendered_block);
+        assert!(!block.is_empty(), "rendered_block must be populated");
+        assert!(
+            block.contains("mood"),
+            "rendered block missing field name 'mood': {block:?}"
+        );
+        assert!(
+            block.contains("happy"),
+            "rendered block missing state 'happy': {block:?}"
+        );
+        assert!(
+            block.contains('!'),
+            "rendered block must carry the `!` repeated-state marker: {block:?}"
+        );
+    }
+
+    /// Strip ANSI CSI escape sequences (`\x1b[...m`) from a rendered block
+    /// so golden assertions don't depend on the renderer's colour palette.
+    /// Scoped to `tests` because no production caller needs ANSI-free
+    /// output — colours are part of the artifact `datum check` prints.
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let bytes = s.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == 0x1b && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
+                i += 2;
+                while i < bytes.len() && !bytes[i].is_ascii_alphabetic() {
+                    i += 1;
+                }
+                i += 1; // consume the final letter
+            } else {
+                out.push(bytes[i] as char);
+                i += 1;
+            }
+        }
+        out
     }
 
     /// Resolved integrity rows (`resolution IS NOT NULL`) are excluded —
