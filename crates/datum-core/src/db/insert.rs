@@ -34,7 +34,9 @@ use super::Db;
 /// canonicalization (`Action::Stop` → `false`, `Action::Start` → `true`)
 /// happens in `log_entry` before the entry reaches storage — see
 /// `da-8y2q.2`.
-fn derive_verb_for_storage(entry: &Entry) -> Result<(String, Option<String>)> {
+fn derive_verb_for_storage(
+    entry: &Entry,
+) -> Result<(String, Option<String>, Option<serde_json::Value>)> {
     let state_in = match (entry.state.clone(), &entry.verb) {
         (None, Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch) => {
             Some(serde_json::Value::Bool(true))
@@ -45,7 +47,28 @@ fn derive_verb_for_storage(entry: &Entry) -> Result<(String, Option<String>)> {
         derive_verb(state_in, entry.dur.as_ref(), entry.following_state.clone())?;
     let verb_str = verb.to_string();
     let state_str = canonical_state.as_ref().map(|v| v.to_string());
-    Ok((verb_str, state_str))
+    Ok((verb_str, state_str, canonical_state))
+}
+
+/// Recompute the content_hash from the columns about to be persisted so
+/// the stored value always agrees with `Entry::expected_content_hash`
+/// applied to the row after load. da-r569: callers like `log_entry` mutate
+/// the entry post-`Entry::new` (`Dur::Moment` for `occur`, state
+/// canonicalization for switch family); without this, the precomputed
+/// `entry.content_hash` is stale by the time the row reaches the bind.
+fn storage_content_hash(
+    field: &str,
+    occur_str: &str,
+    dur: Option<&crate::dur::Dur>,
+    canonical_state: Option<&serde_json::Value>,
+    data: Option<&JsonValue>,
+) -> String {
+    let dur_str = dur
+        .map(crate::dur::Dur::to_storage_string)
+        .unwrap_or_default();
+    let state_str = canonical_state.map(|v| v.to_string()).unwrap_or_default();
+    let data_str = data.map(|v| v.to_string()).unwrap_or_default();
+    crate::entry::compute_hash(field, occur_str, &dur_str, &state_str, &data_str)
 }
 
 impl Db {
@@ -479,12 +502,33 @@ fn insert_entry_in_tx(
     entry: &Entry,
     strategy: ConflictStrategy,
 ) -> Result<InsertOutcome> {
+    // da-r569: canonicalize content_hash so the dedup lookup uses the same
+    // value `try_insert` / `raw_overwrite_mutables` will persist. Live
+    // writes mutate the entry post-`Entry::new` (`Dur::Moment` for occur,
+    // state canonicalization for switch family); without this the in-memory
+    // `entry.content_hash` is stale and the dedup misses a true content
+    // duplicate, routing the write into a slug-UNIQUE collision rather than
+    // through Update/Merge.
+    let (_, _, canonical_state) = derive_verb_for_storage(entry)?;
+    let occur_str = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.utc.to_rfc3339())
+        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    let dedup_hash = storage_content_hash(
+        &entry.field,
+        &occur_str,
+        entry.dur.as_ref(),
+        canonical_state.as_ref(),
+        entry.data.as_ref(),
+    );
+
     let existing: Option<(Slug, Option<String>)> = conn
         .query_row(
             "SELECT slug, data FROM entries
              WHERE content_hash = ?1 AND deleted_at IS NULL
              LIMIT 1",
-            params![entry.content_hash],
+            params![dedup_hash],
             |row| Ok((row.get::<_, Slug>(0)?, row.get::<_, Option<String>>(1)?)),
         )
         .optional()?;
@@ -584,13 +628,28 @@ fn insert_entry_in_tx(
 /// prepared statement rather than re-parsing SQL per row. The INSERT side
 /// (`try_insert`) is also cached.
 fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOutcome> {
+    // da-r569: dedup against the canonical storage hash, matching the value
+    // `try_insert` will persist (see `insert_entry_in_tx` for the rationale).
+    let (_, _, canonical_state) = derive_verb_for_storage(entry)?;
+    let occur_str = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.utc.to_rfc3339())
+        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    let dedup_hash = storage_content_hash(
+        &entry.field,
+        &occur_str,
+        entry.dur.as_ref(),
+        canonical_state.as_ref(),
+        entry.data.as_ref(),
+    );
     let existing_slug: Option<Slug> = {
         let mut stmt = conn.prepare_cached(
             "SELECT slug FROM entries
              WHERE content_hash = ?1 AND deleted_at IS NULL
              LIMIT 1",
         )?;
-        stmt.query_row(params![entry.content_hash], |row| row.get::<_, Slug>(0))
+        stmt.query_row(params![dedup_hash], |row| row.get::<_, Slug>(0))
             .optional()?
     };
     match existing_slug {
@@ -695,7 +754,14 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         .occur_time
         .as_ref()
         .map(|t| t.timezone.as_str().to_string());
-    let (verb_str, state_str) = derive_verb_for_storage(entry)?;
+    let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
+    let content_hash = storage_content_hash(
+        &entry.field,
+        &occur_str,
+        entry.dur.as_ref(),
+        canonical_state.as_ref(),
+        entry.data.as_ref(),
+    );
 
     let mut stmt = conn.prepare_cached(
         r#"INSERT INTO entries (
@@ -723,7 +789,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
     stmt.execute(params![
         hid,
         slug,
-        entry.content_hash,
+        content_hash,
         entry.field,
         verb_str,
         state_str,
@@ -809,7 +875,14 @@ fn raw_overwrite_mutables(
         .occur_time
         .as_ref()
         .map(|t| t.timezone.as_str().to_string());
-    let (verb_str, state_str) = derive_verb_for_storage(entry)?;
+    let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
+    let content_hash = storage_content_hash(
+        &entry.field,
+        &occur_str,
+        entry.dur.as_ref(),
+        canonical_state.as_ref(),
+        data_value,
+    );
 
     conn.execute(
         r#"UPDATE entries SET
@@ -839,7 +912,7 @@ fn raw_overwrite_mutables(
            WHERE slug = ?1"#,
         params![
             slug,
-            entry.content_hash,
+            content_hash,
             entry.field,
             verb_str,
             state_str,
@@ -890,7 +963,14 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         .occur_time
         .as_ref()
         .map(|t| t.timezone.as_str().to_string());
-    let (verb_str, state_str) = derive_verb_for_storage(entry)?;
+    let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
+    let content_hash = storage_content_hash(
+        &entry.field,
+        &occur_str,
+        entry.dur.as_ref(),
+        canonical_state.as_ref(),
+        entry.data.as_ref(),
+    );
 
     let mut stmt = conn.prepare_cached(
         r#"UPDATE entries SET
@@ -923,7 +1003,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
     let affected = stmt.execute(params![
         entry.hid,
         entry.slug,
-        entry.content_hash,
+        content_hash,
         entry.field,
         verb_str,
         state_str,
@@ -973,7 +1053,14 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
         .occur_time
         .as_ref()
         .map(|t| t.timezone.as_str().to_string());
-    let (verb_str, state_str) = derive_verb_for_storage(entry)?;
+    let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
+    let content_hash = storage_content_hash(
+        &entry.field,
+        &occur_str,
+        entry.dur.as_ref(),
+        canonical_state.as_ref(),
+        entry.data.as_ref(),
+    );
 
     let affected = conn.execute(
         r#"UPDATE entries SET
@@ -1005,7 +1092,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
            WHERE hid = ?1"#,
         params![
             entry.hid,
-            entry.content_hash,
+            content_hash,
             entry.field,
             verb_str,
             state_str,
@@ -1039,4 +1126,58 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
         return Err(DatumError::NotFound(entry.hid.to_string()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dur::Dur;
+    use crate::entry::Verb;
+    use crate::test_util::{entry_builder, fresh_db};
+
+    /// da-r569 regression: an insert that mutates the entry post-`Entry::new`
+    /// (here: stamping `Dur::Moment` after construction, the pattern
+    /// `log_entry` uses for `Action::Occur`) must store a content_hash that
+    /// agrees with `Entry::expected_content_hash` applied to the row after
+    /// load. Otherwise `datum check` flags every fresh occur entry.
+    #[test]
+    fn post_construction_dur_moment_does_not_drift_content_hash() {
+        let db = fresh_db();
+        let mut entry = entry_builder("testhash").verb(Verb::Point).build();
+        // Replicate the `log_entry` post-construction mutation. The hash
+        // computed by `Entry::new` was for `dur=None`; `Dur::Moment` here
+        // would silently invalidate it pre-fix.
+        entry.dur = Some(Dur::Moment);
+        db.insert_entry(&entry).unwrap();
+
+        let stored = db.get_entry(&entry.slug).unwrap();
+        assert_eq!(
+            stored.content_hash,
+            stored.expected_content_hash(),
+            "stored content_hash must equal expected_content_hash on load"
+        );
+    }
+
+    /// da-r569 regression: the dedup path inside `insert_entry_in_tx` must
+    /// also use the canonical hash, otherwise a second identical-content
+    /// write under `ConflictStrategy::Update` misses the dedup match and
+    /// hits the `(field, occur_time)` UNIQUE collision instead of routing
+    /// through Update.
+    #[test]
+    fn dedup_matches_after_post_construction_mutation() {
+        let db = fresh_db();
+        let mut first = entry_builder("testhash").verb(Verb::Point).build();
+        first.dur = Some(Dur::Moment);
+        db.insert_entry(&first).unwrap();
+
+        let mut second = first.clone();
+        second.hid = crate::entry::new_hid();
+        let outcome = db
+            .insert_entry_with_strategy(&second, ConflictStrategy::Update)
+            .unwrap();
+        assert!(
+            matches!(outcome, InsertOutcome::Updated { .. }),
+            "identical content must route through Update, got {outcome:?}"
+        );
+    }
 }

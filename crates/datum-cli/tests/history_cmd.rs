@@ -4,7 +4,6 @@
 mod common;
 
 use common::run_cli;
-use datum_core::db::ConflictStrategy;
 use datum_core::test_util::{entry_builder, fresh_db};
 
 #[test]
@@ -25,8 +24,10 @@ fn history_command_lists_versions_newest_first() {
     // so direct EntryBuilder edits round-trip through the v=20 schema.
     v2.state = Some(serde_json::json!("sad"));
     v2.value = Some(serde_json::json!("sad"));
-    db.insert_entry_with_strategy(&v2, ConflictStrategy::Update)
-        .expect("v2 user_edit");
+    // Record a user_edit via the slug-keyed save path. (The Update
+    // strategy is content-hash-based and is the wrong shape here: v1 and
+    // v2 carry different state and so have distinct hashes.)
+    db.save_existing_entry(&v2).expect("v2 user_edit");
 
     // The command succeeds end-to-end (exercises args parsing + dispatch).
     run_cli(&["history", &v1.hid], &db).expect("history dispatch");
@@ -60,8 +61,10 @@ fn history_diff_between_versions() {
     // so direct EntryBuilder edits round-trip through the v=20 schema.
     v2.state = Some(serde_json::json!("sad"));
     v2.value = Some(serde_json::json!("sad"));
-    db.insert_entry_with_strategy(&v2, ConflictStrategy::Update)
-        .expect("v2 user_edit");
+    // Record a user_edit via the slug-keyed save path. (The Update
+    // strategy is content-hash-based and is the wrong shape here: v1 and
+    // v2 carry different state and so have distinct hashes.)
+    db.save_existing_entry(&v2).expect("v2 user_edit");
 
     // `--diff 1 2` must dispatch without error.
     run_cli(&["history", &v1.hid, "--diff", "1", "2"], &db).expect("history --diff dispatch");
@@ -97,8 +100,10 @@ fn undo_restores_entry_state() {
     // so direct EntryBuilder edits round-trip through the v=20 schema.
     v2.state = Some(serde_json::json!("sad"));
     v2.value = Some(serde_json::json!("sad"));
-    db.insert_entry_with_strategy(&v2, ConflictStrategy::Update)
-        .expect("v2 user_edit");
+    // Record a user_edit via the slug-keyed save path. (The Update
+    // strategy is content-hash-based and is the wrong shape here: v1 and
+    // v2 carry different state and so have distinct hashes.)
+    db.save_existing_entry(&v2).expect("v2 user_edit");
 
     let current = db.get_entry(&v1.slug).unwrap();
     assert_eq!(current.value, Some(serde_json::json!("sad")));
@@ -133,8 +138,10 @@ fn why_full_traces_through_history() {
     // so direct EntryBuilder edits round-trip through the v=20 schema.
     v2.state = Some(serde_json::json!("sad"));
     v2.value = Some(serde_json::json!("sad"));
-    db.insert_entry_with_strategy(&v2, ConflictStrategy::Update)
-        .expect("v2 user_edit");
+    // Record a user_edit via the slug-keyed save path. (The Update
+    // strategy is content-hash-based and is the wrong shape here: v1 and
+    // v2 carry different state and so have distinct hashes.)
+    db.save_existing_entry(&v2).expect("v2 user_edit");
 
     // The command must dispatch cleanly; its output goes to stdout, which
     // we don't capture here — we assert the plumbing (library view) is in
