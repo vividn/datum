@@ -202,16 +202,29 @@ impl StubRelay {
         let conn = self.state.db.lock().unwrap();
         // Bypass insert_changeset's auto-seq computation so the test can
         // pin the exact seq used as AAD by the encrypting peer.
+        // da-tat1: the production push path stamps cluster_id +
+        // generation; pull filters on cluster_id, so the inject helper
+        // must mirror that or the row is invisible. Default to the test
+        // user's user_id (the transitional cluster_id, matching the
+        // da-og24 backfill rule) and generation = 0.
+        let user_id_str = self.user_id.to_string();
         conn.execute(
-            "INSERT INTO changesets (device_id, seq, payload) VALUES (?1, ?2, ?3)",
-            rusqlite::params![device_id, seq, payload_b64],
+            "INSERT INTO changesets (device_id, seq, payload, cluster_id, generation)
+             VALUES (?1, ?2, ?3, ?4, 0)",
+            rusqlite::params![device_id, seq, payload_b64, user_id_str],
         )
         .expect("inject changeset");
         // Mirror the production server's auto-device-registration so
         // peer devices appear in the devices table too.
         let _ = conn.execute(
             "INSERT OR IGNORE INTO devices (id, user_id) VALUES (?1, ?2)",
-            rusqlite::params![device_id, self.user_id.to_string()],
+            rusqlite::params![device_id, user_id_str],
+        );
+        // The user's default cluster must exist for the pull endpoint's
+        // ensure_cluster lookup to pin to the right generation.
+        let _ = conn.execute(
+            "INSERT OR IGNORE INTO clusters (cluster_id, user_id, generation) VALUES (?1, ?2, 0)",
+            rusqlite::params![user_id_str, user_id_str],
         );
     }
 

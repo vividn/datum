@@ -244,11 +244,27 @@ pub fn get_passkeys(conn: &Connection, user_id: &Uuid) -> Result<Vec<Passkey>> {
 }
 
 /// Insert a changeset for a device. Returns (global_id, per_device_seq).
-///
-/// `cluster_id` (da-og24) is resolved from the device's owning user
-/// (transitional 1:1 mapping). `generation` defaults to 0; sub-3+
-/// threads the real value through from the wire `PushRequest`.
+/// Defaults `cluster_id` to the device's owning user and `generation`
+/// to 0 — the transitional v1 shape from da-og24. Callers that have
+/// resolved the cluster + generation explicitly use
+/// [`insert_changeset_into_cluster`].
 pub fn insert_changeset(conn: &Connection, device_id: &str, payload: &str) -> Result<(i64, i64)> {
+    insert_changeset_into_cluster(conn, device_id, payload, None, 0)
+}
+
+/// da-tat1: cluster-aware insert. `cluster_id = None` falls back to the
+/// transitional 1:1 mapping (`devices.user_id`) so v1 clients (no
+/// cluster_id on the wire) keep working unchanged. `generation` is
+/// stamped from the server's authoritative value at write time so a
+/// later pull can confirm the row was accepted into the expected
+/// generation.
+pub fn insert_changeset_into_cluster(
+    conn: &Connection,
+    device_id: &str,
+    payload: &str,
+    cluster_id: Option<&str>,
+    generation: i64,
+) -> Result<(i64, i64)> {
     let seq: i64 = conn
         .query_row(
             "SELECT COALESCE(MAX(seq), 0) + 1 FROM changesets WHERE device_id = ?1",
@@ -257,16 +273,27 @@ pub fn insert_changeset(conn: &Connection, device_id: &str, payload: &str) -> Re
         )
         .context("compute next seq")?;
 
-    // Subquery on devices keeps the call signature stable for sub-3:
-    // callers still pass (device_id, payload); the schema does the join.
+    // When the caller doesn't supply a cluster_id, fall back to the
+    // device's owning user — the da-og24 transitional default. If
+    // there's no device row (legacy / test fixtures bypassing
+    // `ensure_device`), the SQL subquery returns NULL and the row
+    // stays cluster-less; the wire contract still accepts that since
+    // `cluster_id` is `Option<String>` on the protocol type.
+    let resolved_cluster: Option<String> = match cluster_id {
+        Some(c) => Some(c.to_string()),
+        None => conn
+            .query_row(
+                "SELECT user_id FROM devices WHERE id = ?1",
+                params![device_id],
+                |row| row.get::<_, String>(0),
+            )
+            .ok(),
+    };
+
     conn.execute(
         "INSERT INTO changesets (device_id, seq, payload, cluster_id, generation)
-         VALUES (
-             ?1, ?2, ?3,
-             (SELECT user_id FROM devices WHERE id = ?1),
-             0
-         )",
-        params![device_id, seq, payload],
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![device_id, seq, payload, resolved_cluster, generation],
     )
     .context("insert_changeset")?;
 
@@ -299,6 +326,43 @@ pub fn pull_changesets(
             row.get::<_, i64>(2)?,
             row.get::<_, String>(3)?,
             row.get::<_, String>(4)?,
+        ))
+    })?;
+
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row?);
+    }
+    Ok(results)
+}
+
+/// da-tat1: cluster-scoped pull. Projects cluster_id + generation
+/// alongside the base columns so the wire response can carry them.
+/// Filters rows to the requested cluster — multi-DB isolation guarantee.
+pub type ClusterChangesetRow = (i64, String, i64, String, String, String, i64);
+
+pub fn pull_changesets_for_cluster(
+    conn: &Connection,
+    since: i64,
+    excluding_device: &str,
+    cluster_id: &str,
+) -> Result<Vec<ClusterChangesetRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, device_id, seq, payload, uploaded_at, cluster_id, generation
+         FROM changesets
+         WHERE id > ?1 AND device_id != ?2 AND cluster_id = ?3
+         ORDER BY id",
+    )?;
+
+    let rows = stmt.query_map(params![since, excluding_device, cluster_id], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, i64>(6)?,
         ))
     })?;
 

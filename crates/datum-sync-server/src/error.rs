@@ -3,6 +3,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use datum_sync_protocol::SyncProtocolError;
 use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
@@ -30,6 +31,13 @@ pub enum AppError {
 
     #[error("internal error: {0}")]
     Internal(String),
+
+    /// da-tat1: client's view of the cluster generation disagrees with
+    /// the server's. Surfaces as HTTP 409 with the tagged-enum payload
+    /// so clients route on `kind` (per [`SyncProtocolError`]'s
+    /// serde tag).
+    #[error(transparent)]
+    GenerationMismatch(SyncProtocolError),
 }
 
 impl From<anyhow::Error> for AppError {
@@ -40,10 +48,19 @@ impl From<anyhow::Error> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        // GenerationMismatch is the only variant that emits a
+        // structured wire-error body (the protocol crate's
+        // SyncProtocolError serialization) so clients can route on
+        // `kind`. Other variants stay on the legacy `{ "error": "..." }`
+        // shape until they grow protocol-crate counterparts.
+        if let AppError::GenerationMismatch(ref err) = self {
+            return (StatusCode::CONFLICT, Json(err)).into_response();
+        }
         let (status, message) = match &self {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::GenerationMismatch(_) => unreachable!("handled above"),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
 

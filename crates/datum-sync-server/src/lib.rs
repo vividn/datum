@@ -12,6 +12,7 @@
 //! real server in-process instead of stubbing it out.
 
 pub mod auth;
+pub mod cluster;
 pub mod db;
 pub mod device_code;
 pub mod error;
@@ -116,12 +117,20 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/device-code/authorize", post(device_code::authorize));
 
     // Bearer-authenticated under /v1: changeset push/pull + wrapped key.
+    // `/clusters/{id}/bump-generation` lives here too (da-tat1): a client
+    // signals a purge / restore / rewind and the relay increments the
+    // cluster's generation counter so old-generation pushes start
+    // bouncing with GenerationMismatchError.
     let authed_routes = Router::new()
         .route("/push", post(sync::push))
         .route("/pull", get(sync::pull))
         .route(
             "/keys/wrapped",
             post(keys::upload_wrapped).get(keys::fetch_wrapped),
+        )
+        .route(
+            "/clusters/:cluster_id/bump-generation",
+            post(cluster::bump_generation_endpoint),
         )
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -740,5 +749,229 @@ mod tests {
         let got = json_body(resp).await;
         assert_eq!(got["wrapped_key_b64"], "abc");
         assert_eq!(got["wrap_alg"], "aes-256-gcm");
+    }
+
+    // ─── da-tat1: cluster ops + generation gating ───────────────────────────
+
+    /// First push for an unseen cluster auto-registers it at generation
+    /// 0 and stamps the response with the resolved cluster_id +
+    /// generation so the client can confirm what it landed on.
+    #[tokio::test]
+    async fn push_auto_registers_cluster() {
+        let state = test_state();
+        let (user_id, token) = make_test_jwt(&state);
+
+        let body = serde_json::json!({
+            "device_id": "dev-A",
+            "payload_b64": "AA",
+            "cluster_id": "cluster-X"
+        });
+        let resp = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/push")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let json = json_body(resp).await;
+        assert_eq!(json["cluster_id"], "cluster-X");
+        assert_eq!(json["generation"], 0);
+
+        // Cluster row exists, scoped to the calling user.
+        let conn = state.db.lock().unwrap();
+        let gen = cluster::get_generation_for_owner(&conn, "cluster-X", &user_id).unwrap();
+        assert_eq!(gen, Some(0));
+    }
+
+    /// `POST /v1/clusters/{id}/bump-generation` increments the
+    /// counter and returns the new value. Locks the response shape so
+    /// the client (sub-4) can parse a stable JSON.
+    #[tokio::test]
+    async fn bump_generation_endpoint_increments() {
+        let state = test_state();
+        let (_, token) = make_test_jwt(&state);
+        // First push registers the cluster at gen=0.
+        let _ = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/push")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "device_id": "dev-A",
+                            "payload_b64": "AA",
+                            "cluster_id": "cluster-Y",
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let resp = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/clusters/cluster-Y/bump-generation")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let json = json_body(resp).await;
+        assert_eq!(json["cluster_id"], "cluster-Y");
+        assert_eq!(json["generation"], 1);
+
+        // A second bump goes to 2 — proves the counter is the cluster
+        // row's monotonic field, not a constant.
+        let resp = build_app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/clusters/cluster-Y/bump-generation")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let json = json_body(resp).await;
+        assert_eq!(json["generation"], 2);
+    }
+
+    /// Bumping a cluster owned by another user 404s. Stays
+    /// indistinguishable from "doesn't exist" so the relay doesn't
+    /// leak cluster existence across users.
+    #[tokio::test]
+    async fn bump_generation_isolated_across_users() {
+        let state = test_state();
+        let (alice_uid, alice_token) = make_test_jwt(&state);
+        let (_, bob_token) = make_test_jwt(&state);
+
+        // Alice creates cluster-Z by pushing.
+        let _ = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/push")
+                    .header("Authorization", format!("Bearer {}", alice_token))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "device_id": "alice-dev",
+                            "payload_b64": "AA",
+                            "cluster_id": "cluster-Z",
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Bob can't bump it.
+        let resp = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/clusters/cluster-Z/bump-generation")
+                    .header("Authorization", format!("Bearer {}", bob_token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+        // Alice's generation stays at 0 — Bob's attempt was a no-op.
+        let conn = state.db.lock().unwrap();
+        assert_eq!(
+            cluster::get_generation_for_owner(&conn, "cluster-Z", &alice_uid).unwrap(),
+            Some(0)
+        );
+    }
+
+    /// End-to-end mismatch flow per the bead's acceptance: push at
+    /// gen=0, bump → server is now at gen=1, push with stale gen=0
+    /// must reject with a 409 carrying the tagged
+    /// `SyncProtocolError::GenerationMismatch` payload.
+    #[tokio::test]
+    async fn push_rejects_stale_generation_with_typed_mismatch() {
+        let state = test_state();
+        let (_, token) = make_test_jwt(&state);
+
+        // Establish the cluster at gen=0 with an initial push.
+        let _ = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/push")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "device_id": "dev-A",
+                            "payload_b64": "AA",
+                            "cluster_id": "cluster-G",
+                            "generation": 0,
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Bump → server's authoritative generation is now 1.
+        let _ = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/clusters/cluster-G/bump-generation")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Stale push (generation=0) — must reject 409 with the typed
+        // `kind`. Clients route on `kind`, not status text.
+        let resp = build_app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/push")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "device_id": "dev-A",
+                            "payload_b64": "BB",
+                            "cluster_id": "cluster-G",
+                            "generation": 0,
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let json = json_body(resp).await;
+        assert_eq!(json["kind"], "generation_mismatch");
+        assert_eq!(json["expected"], 1);
+        assert_eq!(json["found"], 0);
     }
 }
