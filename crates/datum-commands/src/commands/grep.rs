@@ -42,6 +42,7 @@ pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
         metric: TimeMetricCol::Hybrid,
         columns: vec![],
         suppress_header: false,
+        max_total_width: None,
     };
     let now = DatumTime::now();
     let ctxs = build_render_contexts(&matches, db);

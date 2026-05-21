@@ -11,6 +11,7 @@ use datum_core::{
 use crate::args::{OutputFlagsExt, TailArgs};
 use crate::commands::helpers::load_registry_opt;
 use crate::commands::render_helpers::build_render_contexts;
+use crate::render::term_layout::{detect_cols, detect_rows, is_stdout_tty};
 use crate::render::{print_table_with, TableArgs, TimeMetricCol};
 
 pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
@@ -19,7 +20,20 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
         .metric
         .parse()
         .map_err(|e: String| anyhow::anyhow!(e))?;
-    let entries = tail_entries(&args, db)?;
+    // da-5025: when stdout is a real terminal AND the user didn't pin
+    // `-n`, expand the query to fill the visible window so the default
+    // tail actually uses the screen. Piped / redirected output stays on
+    // the legacy `Some(10)` so scripts get the stable behaviour they
+    // expect.
+    let tty = is_stdout_tty();
+    let max_total_width = if tty { Some(detect_cols()) } else { None };
+    // -1 reserves a row for the header. Below 5 stays unhelpful; clamp.
+    let auto_count = if tty && args.count.is_none() {
+        Some(detect_rows().saturating_sub(1).max(1))
+    } else {
+        None
+    };
+    let entries = tail_entries_with_default_count(&args, auto_count, db)?;
     let registry = load_registry_opt(db);
     let output = args.output()?;
 
@@ -32,6 +46,7 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
         metric,
         columns,
         suppress_header: false,
+        max_total_width,
     };
     let now = DatumTime::now();
     let ctxs = build_render_contexts(&entries, db);
@@ -87,7 +102,24 @@ fn watch_interval(secs: f64) -> std::time::Duration {
 /// printing. Used by integration tests and by `head` when it routes through
 /// the shared tail path.
 pub fn tail_entries(args: &TailArgs, db: &Db) -> Result<Vec<Entry>> {
-    let params = tail_params(args)?;
+    tail_entries_with_default_count(args, None, db)
+}
+
+/// Variant of [`tail_entries`] that lets the caller override the hard-coded
+/// `Some(10)` default when `args.count` is `None`. Used by the live tail
+/// path to swap in a screen-filling row count from `$LINES` (da-5025);
+/// existing callers preserve the legacy default by passing `None`.
+pub fn tail_entries_with_default_count(
+    args: &TailArgs,
+    default_count: Option<usize>,
+    db: &Db,
+) -> Result<Vec<Entry>> {
+    let mut params = tail_params(args)?;
+    if args.count.is_none() {
+        if let Some(n) = default_count {
+            params.limit = Some(n);
+        }
+    }
     Ok(db.list_entries(&params)?)
 }
 

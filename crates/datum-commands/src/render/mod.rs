@@ -15,6 +15,7 @@ pub(crate) mod blocks;
 pub mod characters;
 pub mod colors;
 pub mod show_all;
+pub mod term_layout;
 
 pub use self::action::{
     format_info_line, format_info_line_at, format_relative_day_prefix, format_state_group,
@@ -465,6 +466,12 @@ pub struct TableArgs {
     /// Skip the header row. Used by `tail --watch` so tick-appended batches
     /// don't reprint headers.
     pub suppress_header: bool,
+    /// da-5025: total visible columns the rendered table must fit inside.
+    /// When `Some(n)` and the natural column widths would exceed `n`, the
+    /// state column is truncated with `…` so no row wraps. `None` keeps
+    /// the legacy unbounded layout (used by piped / non-tty callers and
+    /// every non-tail surface).
+    pub max_total_width: Option<usize>,
 }
 
 /// Render entries as a table with `time | field | state | dur | hid` columns
@@ -628,6 +635,38 @@ pub fn print_table_with(
         })
         .collect();
 
+    // da-5025: when a terminal-width budget is set and the natural
+    // layout would overflow, squeeze the state column down to fit. The
+    // gap between cells is 2 spaces in `push_cell`; account for one
+    // gap per shown column. The state column is the only squeezable
+    // one — every other column is either a fixed-width identifier
+    // (time, hid, dur) or a label users need verbatim (field, extras).
+    let state_w = if let Some(budget) = args.max_total_width {
+        let gap = 2usize;
+        let fixed: usize = [
+            show_time.then_some(time_w),
+            show_field.then_some(field_w),
+            show_dur.then_some(dur_w),
+            show_hid.then_some(hid_w),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|w| w + gap)
+        .sum::<usize>()
+            + extras_w.iter().map(|w| w + gap).sum::<usize>();
+        if show_state {
+            let remaining = budget.saturating_sub(fixed + gap);
+            // Don't expand past natural width; only squeeze. Below 3
+            // there's no room for "x…" so just hide the column body
+            // (header still renders, padded to its own width).
+            state_w.min(remaining.max(state_header.len()))
+        } else {
+            state_w
+        }
+    } else {
+        state_w
+    };
+
     // Header row.
     if !args.suppress_header {
         let mut header = String::new();
@@ -675,7 +714,16 @@ pub fn print_table_with(
             push_cell(&mut line, &r.field, field_w, false);
         }
         if show_state {
-            push_cell(&mut line, &r.state, state_w, false);
+            // da-5025: state is the only squeezable column. When a width
+            // budget shrunk it below the natural cell width, ANSI-aware
+            // truncate keeps colour escapes intact and emits a trailing
+            // reset so the pad doesn't inherit a background.
+            let state_cell = if vw(&r.state) > state_w {
+                term_layout::truncate_visible(&r.state, state_w)
+            } else {
+                r.state.clone()
+            };
+            push_cell(&mut line, &state_cell, state_w, false);
         }
         if show_dur {
             push_cell(&mut line, &r.dur, dur_w, false);
@@ -730,6 +778,7 @@ pub fn print_entry(
         metric: TimeMetricCol::Hybrid,
         columns: vec![],
         suppress_header: false,
+        max_total_width: None,
     };
     let ctx_slice = ctx.map(std::slice::from_ref);
     print_table_with(std::slice::from_ref(entry), ctx_slice, now, registry, &args);
