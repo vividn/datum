@@ -10,10 +10,12 @@
 //! conflicts. A real sync-conflict (same entry edited differently on two
 //! devices) will live in a separate table when that surface lands.
 //!
-//! Detection runs post-insert (see [`detect_for_entry`]); resolution is
-//! either explicit via `datum integrity resolve` or applied automatically
-//! by [`auto_resolve_pending`] once enough time has passed that the user
-//! hasn't self-corrected.
+//! Detection runs post-insert (see [`detect_for_entry`]) and the queue
+//! is reported by `datum check`. Warnings clear naturally when the user
+//! fixes the underlying data — the check re-runs against current state,
+//! and a now-resolved warning no longer fires. [`auto_resolve_pending`]
+//! remains as an internal helper for callers that need to clear obvious
+//! cases (e.g. tests, future surfaces) once enough time has passed.
 //!
 //! This module is also the backing store for C4e's sync-pull integrity
 //! detection — incoming remote entries are walked through the same

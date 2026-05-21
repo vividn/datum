@@ -947,8 +947,8 @@ pub fn print_now_view(
 /// used by integration tests that need to inspect output.
 ///
 /// `overlap_counts` maps field → number of live ongoing entries. A count
-/// ≥ 2 prepends an `⚠ N overlapping opens — datum integrity list` line
-/// above the field's row.
+/// ≥ 2 prepends an `⚠ N overlapping opens — datum check` line above the
+/// field's row.
 pub fn render_now_view(
     tracked: &[TrackedField],
     latest_per_field: &HashMap<String, Entry>,
@@ -1064,7 +1064,7 @@ pub fn render_now_view(
             if n >= 2 {
                 writeln!(
                     out,
-                    "⚠ {n} overlapping opens on '{field}' — datum integrity list",
+                    "⚠ {n} overlapping opens on '{field}' — datum check",
                     field = row.field,
                 )
                 .unwrap();
@@ -1178,94 +1178,7 @@ pub fn render_pending_integrity_warning(n: u32) -> String {
         return String::new();
     }
     let noun = if n == 1 { "warning" } else { "warnings" };
-    format!("⚠ {n} unresolved integrity {noun} — run 'datum integrity list'\n")
-}
-
-/// `datum integrity show <hid>` rendering: header + side-by-side compare
-/// of the local snapshot vs the remote snapshot. The display is plain
-/// text so it composes cleanly with `less`/pipes; we deliberately don't
-/// reuse the colorised entry renderer (which assumes a live entry).
-pub fn render_integrity_warning_show(w: &datum_core::integrity::IntegrityWarning) -> String {
-    use std::fmt::Write;
-
-    let mut out = String::new();
-    let status = match &w.resolution {
-        None => "pending".to_string(),
-        Some(r) => format!("resolved:{r}"),
-    };
-    let _ = writeln!(
-        out,
-        "integrity {hid}  kind={kind}  detected_by={by}  [{status}]",
-        hid = w.hid,
-        kind = w.kind.as_str(),
-        by = w.detected_by.as_str(),
-    );
-    let _ = writeln!(out, "  slug:        {}", w.entry_slug);
-    let _ = writeln!(out, "  detected_at: {}", w.detected_at.to_rfc3339());
-    if let Some(t) = w.resolved_at {
-        let _ = writeln!(out, "  resolved_at: {}", t.to_rfc3339());
-    }
-    let _ = writeln!(out);
-
-    let local_lines = entry_summary_lines(&w.local_entry);
-    let remote_lines = match &w.remote_entry {
-        Some(e) => entry_summary_lines(e),
-        None => vec!["(no counterpart)".to_string()],
-    };
-
-    let lwidth = local_lines
-        .iter()
-        .map(|s| s.len())
-        .max()
-        .unwrap_or(0)
-        .max(5);
-    let _ = writeln!(out, "  {:<lw$}    REMOTE", "LOCAL", lw = lwidth);
-    let _ = writeln!(
-        out,
-        "  {:<lw$}    {}",
-        "-".repeat(lwidth.min(40)),
-        "-".repeat(40),
-        lw = lwidth
-    );
-    let n = local_lines.len().max(remote_lines.len());
-    for i in 0..n {
-        let l = local_lines.get(i).map(String::as_str).unwrap_or("");
-        let r = remote_lines.get(i).map(String::as_str).unwrap_or("");
-        let _ = writeln!(out, "  {:<lw$}    {}", l, r, lw = lwidth);
-    }
-    let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "  resolve with: datum integrity resolve {} --take local|remote | --edit | --skip",
-        w.hid,
-    );
-    out
-}
-
-/// One summary line per non-trivial Entry field. Stable order so the
-/// side-by-side display lines up across the local/remote columns.
-fn entry_summary_lines(e: &Entry) -> Vec<String> {
-    let mut lines = Vec::new();
-    lines.push(format!("hid={}", e.hid));
-    lines.push(format!("slug={}", e.slug));
-    lines.push(format!("field={}", e.field));
-    lines.push(format!("verb={:?}", e.verb));
-    lines.push(format!("shape={:?}", e.entry_shape));
-    if let Some(v) = &e.value {
-        lines.push(format!("value={v}"));
-    }
-    if let Some(d) = &e.data {
-        lines.push(format!("data={d}"));
-    }
-    if let Some(t) = &e.start_time {
-        lines.push(format!("start={}", t.utc.to_rfc3339()));
-    }
-    if let Some(t) = &e.end_time {
-        lines.push(format!("end={}", t.utc.to_rfc3339()));
-    }
-    lines.push(format!("device={}", e.device_id));
-    lines.push(format!("modified={}", e.modify_time.to_rfc3339()));
-    lines
+    format!("⚠ {n} unresolved integrity {noun} — run 'datum check'\n")
 }
 
 #[cfg(test)]

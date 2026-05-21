@@ -402,7 +402,7 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<()> {
 /// conflicts. The canonical scenario is a repeated state where the user
 /// forgot to log an intermediate transition; the fix is usually
 /// `datum switch <field> <state> -t -<n>` to backfill the missing
-/// entry, not `datum integrity resolve`.
+/// entry.
 ///
 /// Resolved rows (`resolution IS NOT NULL`) are excluded — the user
 /// already triaged them. The detection cost is already paid in the

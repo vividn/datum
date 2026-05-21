@@ -305,8 +305,10 @@ CREATE INDEX IF NOT EXISTS entry_history_change_kind
 -- Data-integrity warnings: overlap / double-open / orphan-end / same-state
 -- bookkeeping. Rows are created by the local validator (D5) on insert and
 -- by sync-pull reconciliation (C4e); the `detected_by` column distinguishes
--- them. Rows start with `resolution=NULL` and are filled in by
--- `datum integrity resolve` or the auto-resolver once they're old enough.
+-- them. Rows start with `resolution=NULL` and clear naturally when the
+-- user fixes the underlying data and detection re-runs against current
+-- state; `auto_resolve_pending` remains an internal helper for callers
+-- that need to clear obvious cases (tests, future surfaces).
 --
 -- These are local data-consistency findings — NOT cross-device sync
 -- conflicts. They surface patterns like "you logged a stop on a field that

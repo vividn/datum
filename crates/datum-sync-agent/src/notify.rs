@@ -127,14 +127,14 @@ pub fn from_config(enabled_default: bool) -> Arc<dyn Notifier> {
 /// Called by the daemon after a successful pull whose
 /// `PullOutcome.integrity_warnings_queued > 0`. The per-warning detail
 /// (which entry, which kind) is left to the user to inspect via
-/// `datum integrity list`; the notification just nudges them to look.
+/// `datum check`; the notification just nudges them to look.
 pub fn announce_new_warnings(notifier: &dyn Notifier, db_name: &str, queued: usize) {
     if queued == 0 {
         return;
     }
     let title = "Daydumb integrity warning";
     let noun = if queued == 1 { "warning" } else { "warnings" };
-    let body = format!("{queued} new integrity {noun} on {db_name}: run 'datum integrity list'");
+    let body = format!("{queued} new integrity {noun} on {db_name}: run 'datum check'");
     notifier.notify(title, &body);
 }
 
@@ -177,10 +177,7 @@ mod tests {
             "expected singular form: {:?}",
             calls[0]
         );
-        // The count phrase itself must use the singular noun. The
-        // tail of the message ("'datum integrity list'") legitimately
-        // uses the plural CLI command name; the assertion is anchored
-        // on the count prefix instead of a bare substring.
+        // The count phrase itself must use the singular noun.
         assert!(
             !calls[0].1.contains("1 new integrity warnings"),
             "expected singular noun after the count: {:?}",
@@ -209,6 +206,6 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "Daydumb integrity warning");
         assert!(calls[0].1.contains("work"));
-        assert!(calls[0].1.contains("datum integrity list"));
+        assert!(calls[0].1.contains("datum check"));
     }
 }

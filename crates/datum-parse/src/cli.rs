@@ -80,52 +80,10 @@ pub enum Command {
 
     Sync(SyncArgs),
 
-    Integrity(IntegrityCommand),
-
     /// `dm reparse` — replay each entry's stored `raw_input` through the
     /// current parser, reporting (or fixing with `--fix`) drift between
     /// what the parser produces today vs. the persisted columns.
     Reparse(ReparseArgs),
-}
-
-// ─── Integrity warnings ───────────────────────────────────────────────────
-
-#[derive(Debug)]
-pub enum IntegrityCommand {
-    List(IntegrityListArgs),
-    Show(IntegrityShowArgs),
-    Resolve(IntegrityResolveArgs),
-    AutoResolve(IntegrityAutoResolveArgs),
-}
-
-#[derive(Debug, Default)]
-pub struct IntegrityListArgs {
-    pub kind: Option<String>,
-    pub all: bool,
-}
-
-#[derive(Debug)]
-pub struct IntegrityShowArgs {
-    pub hid: String,
-}
-
-/// A single resolve invocation may carry exactly one of: `--keep both`
-/// (legacy), `--close-older` (legacy), `--take local|remote`, `--edit`,
-/// `--skip`. The parser enforces mutual exclusion; the dispatcher maps
-/// them to [`datum_core::integrity::Resolution`].
-#[derive(Debug)]
-pub struct IntegrityResolveArgs {
-    pub hid: String,
-    pub keep: Option<String>,
-    pub close_older: bool,
-    pub take: Option<String>,
-    pub edit: bool,
-    pub skip: bool,
-}
-
-#[derive(Debug, Default)]
-pub struct IntegrityAutoResolveArgs {
-    pub min_age: i64,
 }
 
 // ─── Sync ─────────────────────────────────────────────────────────────────

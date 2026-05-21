@@ -253,8 +253,6 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
 
         "sync" => Command::Sync(parse_sync_args(rest)?),
 
-        "integrity" => Command::Integrity(parse_integrity_cmd(rest)?),
-
         "reparse" => Command::Reparse(parse_reparse_args(rest)?),
 
         "help" => {
@@ -2325,180 +2323,6 @@ fn take_server_only(tail: &[&str]) -> Result<Option<String>> {
     Ok(server)
 }
 
-fn parse_integrity_cmd(tail: &[&str]) -> Result<IntegrityCommand> {
-    let Some(sub) = tail.first() else {
-        return Err(ParseError::InvalidArg(
-            "missing integrity subcommand (list|show|resolve|auto-resolve)".into(),
-        ));
-    };
-    let rest: &[&str] = &tail[1..];
-    match *sub {
-        "list" => Ok(IntegrityCommand::List(parse_integrity_list(rest)?)),
-        "show" => Ok(IntegrityCommand::Show(parse_integrity_show(rest)?)),
-        "resolve" => Ok(IntegrityCommand::Resolve(parse_integrity_resolve(rest)?)),
-        "auto-resolve" => Ok(IntegrityCommand::AutoResolve(parse_integrity_auto(rest)?)),
-        other => Err(ParseError::InvalidArg(format!(
-            "unknown conflicts subcommand: '{other}'"
-        ))),
-    }
-}
-
-fn parse_integrity_list(tail: &[&str]) -> Result<IntegrityListArgs> {
-    let mut out = IntegrityListArgs::default();
-    let mut i = 0;
-    while i < tail.len() {
-        match split_flag(tail[i]) {
-            FlagSplit::Long("kind") => {
-                let (v, ni) = take_value(tail, i, None, "--kind")?;
-                out.kind = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("kind", v) => {
-                out.kind = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("all") => {
-                out.all = true;
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
-    Ok(out)
-}
-
-fn parse_integrity_show(tail: &[&str]) -> Result<IntegrityShowArgs> {
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
-    let hid = require_first_pos(&pos, "<HID>")?;
-    Ok(IntegrityShowArgs { hid })
-}
-
-fn parse_integrity_resolve(tail: &[&str]) -> Result<IntegrityResolveArgs> {
-    let mut pos: Vec<&str> = Vec::new();
-    let mut keep: Option<String> = None;
-    let mut close_older = false;
-    let mut take: Option<String> = None;
-    let mut edit = false;
-    let mut skip = false;
-    let mut i = 0;
-    while i < tail.len() {
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            FlagSplit::Long("keep") => {
-                let (v, ni) = take_value(tail, i, None, "--keep")?;
-                keep = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("keep", v) => {
-                keep = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("close-older") => {
-                close_older = true;
-                i += 1;
-            }
-            FlagSplit::Long("take") => {
-                let (v, ni) = take_value(tail, i, None, "--take")?;
-                take = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("take", v) => {
-                take = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("edit") => {
-                edit = true;
-                i += 1;
-            }
-            FlagSplit::Long("skip") => {
-                skip = true;
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
-    let hid = require_first_pos(&pos, "<HID>")?;
-    let chosen = [keep.is_some(), close_older, take.is_some(), edit, skip]
-        .iter()
-        .filter(|b| **b)
-        .count();
-    if chosen > 1 {
-        return Err(ParseError::InvalidArg(
-            "--keep, --close-older, --take, --edit, --skip are mutually exclusive".into(),
-        ));
-    }
-    if let Some(t) = take.as_deref() {
-        if t != "local" && t != "remote" {
-            return Err(ParseError::InvalidArg(format!(
-                "--take only accepts 'local' or 'remote' (got '{t}')"
-            )));
-        }
-    }
-    Ok(IntegrityResolveArgs {
-        hid,
-        keep,
-        close_older,
-        take,
-        edit,
-        skip,
-    })
-}
-
-fn parse_integrity_auto(tail: &[&str]) -> Result<IntegrityAutoResolveArgs> {
-    // Default lives in datum_core; we accept it as an override only.
-    // The callsite that dispatches this fills in the hard-coded default
-    // when `min_age == 0` … but 0 is also a valid user choice. To keep
-    // the surface stable, we pull the default into the intent here via
-    // `datum-core::integrity::AUTO_RESOLVE_MIN_AGE_SECS` — but that
-    // would tie datum-parse to datum-core. Instead, we leave min_age
-    // defaulted to 0 here and let the caller `.max(default)` if needed
-    // (matching the original behaviour, which also passed the default
-    // through).
-    let mut out = IntegrityAutoResolveArgs {
-        min_age: DEFAULT_AUTO_RESOLVE_MIN_AGE,
-    };
-    let mut i = 0;
-    let mut got_min_age = false;
-    while i < tail.len() {
-        match split_flag(tail[i]) {
-            FlagSplit::Long("min-age") => {
-                let (v, ni) = take_value(tail, i, None, "--min-age")?;
-                out.min_age = parse_i64(v, "--min-age")?;
-                got_min_age = true;
-                i = ni;
-            }
-            FlagSplit::LongAttached("min-age", v) => {
-                out.min_age = parse_i64(v, "--min-age")?;
-                got_min_age = true;
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
-    // Touch to silence unused var in the !got_min_age branch.
-    let _ = got_min_age;
-    Ok(out)
-}
-
-/// Mirror of `datum_core::integrity::AUTO_RESOLVE_MIN_AGE_SECS`. Kept
-/// here so the parse crate stays `datum-core`-free; if the datum-core
-/// constant changes, update this. Tested for parity in
-/// `datum-commands/src/cmd.rs`.
-const DEFAULT_AUTO_RESOLVE_MIN_AGE: i64 = 86_400;
-
 // ─── Small helpers ───────────────────────────────────────────────────────
 
 fn looks_like_flag(tok: &str) -> bool {
@@ -2532,11 +2356,6 @@ fn parse_usize(s: &str, label: &str) -> Result<usize> {
 
 fn parse_u32(s: &str, label: &str) -> Result<u32> {
     s.parse::<u32>()
-        .map_err(|_| ParseError::InvalidArg(format!("invalid number for {label}: '{s}'")))
-}
-
-fn parse_i64(s: &str, label: &str) -> Result<i64> {
-    s.parse::<i64>()
         .map_err(|_| ParseError::InvalidArg(format!("invalid number for {label}: '{s}'")))
 }
 

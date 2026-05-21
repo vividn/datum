@@ -1,16 +1,16 @@
 //! D5 + C4e acceptance tests — no double-start error; overlaps route to
-//! the conflict queue; auto-resolver closes obvious cases; the C4e
-//! conflict CLI surface (list filtering, take_local/take_remote/edit
-//! resolution paths, and the `now` warning) behaves as documented.
+//! the integrity-warnings queue; auto-resolver closes obvious cases; the
+//! `now` overlap banner and the pending-warning header behave as
+//! documented. The `datum integrity` CLI surface was removed in da-z46t;
+//! the remaining DB-level tests cover the detection and (internal)
+//! resolution paths that still back `datum check`.
 
 mod common;
 
 use std::collections::HashMap;
 
 use common::run_cli;
-use datum_cli::output::{
-    render_integrity_warning_show, render_now_view, render_pending_integrity_warning, strip_ansi,
-};
+use datum_cli::output::{render_now_view, render_pending_integrity_warning, strip_ansi};
 use datum_core::db::TrackedField;
 use datum_core::integrity::{IntegrityKind, ListFilter, Resolution};
 use datum_core::test_util::fresh_db;
@@ -249,8 +249,8 @@ fn now_view_shows_overlap_warning() {
         "expected overlap warning in now view:\n{plain}"
     );
     assert!(
-        plain.contains("datum integrity list"),
-        "warning must point user to the conflicts CLI:\n{plain}"
+        plain.contains("datum check"),
+        "warning must point user to `datum check`:\n{plain}"
     );
 }
 
@@ -453,45 +453,6 @@ fn conflicts_resolve_edit_uses_saved_content() {
     assert_eq!(row.verb, Verb::Switch);
 }
 
-// ─── C4e: show ───────────────────────────────────────────────────────────────
-
-#[test]
-fn conflicts_show_renders_diff() {
-    // `datum conflicts show <hid>` renders a side-by-side LOCAL/REMOTE
-    // diff of the two snapshots, plus a footer pointing at the
-    // resolution flags.
-    let db = fresh_db();
-    run_cli(&["start", "workout", "-t=-5"], &db).expect("older start");
-    run_cli(&["start", "workout"], &db).expect("newer start");
-
-    let pending = db
-        .list_integrity_warnings(&ListFilter {
-            kind: Some(IntegrityKind::DoubleOpen),
-            pending: Some(true),
-        })
-        .unwrap();
-    let conflict = pending[0].clone();
-
-    let out = render_integrity_warning_show(&conflict);
-    assert!(
-        out.contains("LOCAL"),
-        "header must label LOCAL column:\n{out}"
-    );
-    assert!(
-        out.contains("REMOTE"),
-        "header must label REMOTE column:\n{out}"
-    );
-    assert!(out.contains("workout"), "field name must appear:\n{out}");
-    assert!(
-        out.contains("--take local|remote"),
-        "footer must hint at resolution flags:\n{out}"
-    );
-    assert!(
-        out.contains(&conflict.hid),
-        "footer must include the hid for copy/paste:\n{out}"
-    );
-}
-
 // ─── C4e: now warning ────────────────────────────────────────────────────────
 
 #[test]
@@ -503,19 +464,15 @@ fn now_view_shows_conflict_warning_when_pending() {
 
     let one = render_pending_integrity_warning(1);
     assert!(one.contains("1 unresolved integrity warning"));
-    // The pluralized noun "conflicts" must NOT appear in the count
-    // phrase — but the CLI hint at the end ("'datum integrity list'")
-    // legitimately uses the plural form. Anchor the singular check on
-    // the count-prefix substring.
     assert!(
         !one.contains("1 unresolved integrity warnings"),
         "singular form for n=1, got: {one:?}"
     );
-    assert!(one.contains("datum integrity list"));
+    assert!(one.contains("datum check"));
 
     let many = render_pending_integrity_warning(3);
     assert!(many.contains("3 unresolved integrity warnings"));
-    assert!(many.contains("datum integrity list"));
+    assert!(many.contains("datum check"));
 }
 
 // ─── C4e: pending_integrity_count ─────────────────────────────────────────────
@@ -541,79 +498,4 @@ fn pending_integrity_count_excludes_resolved() {
     db.resolve_integrity_warning(&pending[0].hid, Resolution::KeepBoth)
         .unwrap();
     assert_eq!(db.pending_integrity_count().unwrap(), 0);
-}
-
-// ─── C4e: parser flag plumbing ───────────────────────────────────────────────
-
-#[test]
-fn conflicts_show_subcommand_dispatches_via_cli() {
-    // End-to-end smoke: the parser routes `conflicts show <hid>`
-    // through to render_integrity_warning_show. We can't capture stdout here
-    // (run_cli writes to the test process's stdout), but the absence
-    // of a parse error is the gate the previous code was missing.
-    let db = fresh_db();
-    run_cli(&["start", "workout", "-t=-5"], &db).expect("older");
-    run_cli(&["start", "workout"], &db).expect("newer");
-
-    let pending = db
-        .list_integrity_warnings(&ListFilter {
-            kind: None,
-            pending: Some(true),
-        })
-        .unwrap();
-    let hid = pending[0].hid.clone();
-    run_cli(&["integrity", "show", &hid], &db).expect("show dispatch");
-}
-
-#[test]
-fn conflicts_resolve_take_flag_dispatches_via_cli() {
-    // `--take local` round-trips through the parser, dispatcher, and
-    // db; we verify the resolution string was written.
-    let db = fresh_db();
-    run_cli(&["start", "workout", "-t=-5"], &db).expect("older");
-    run_cli(&["start", "workout"], &db).expect("newer");
-
-    let pending = db
-        .list_integrity_warnings(&ListFilter {
-            kind: None,
-            pending: Some(true),
-        })
-        .unwrap();
-    let hid = pending[0].hid.clone();
-    run_cli(&["integrity", "resolve", &hid, "--take", "local"], &db)
-        .expect("resolve --take local dispatch");
-
-    let after = db
-        .get_integrity_warning(&hid)
-        .unwrap()
-        .expect("hid still queryable");
-    assert_eq!(after.resolution.as_deref(), Some("take_local"));
-}
-
-#[test]
-fn conflicts_resolve_skip_leaves_pending() {
-    // `--skip` is an explicit acknowledgement that the user is leaving
-    // the conflict pending. The row must NOT be marked resolved.
-    let db = fresh_db();
-    run_cli(&["start", "workout", "-t=-5"], &db).expect("older");
-    run_cli(&["start", "workout"], &db).expect("newer");
-
-    let pending = db
-        .list_integrity_warnings(&ListFilter {
-            kind: None,
-            pending: Some(true),
-        })
-        .unwrap();
-    let hid = pending[0].hid.clone();
-    run_cli(&["integrity", "resolve", &hid, "--skip"], &db).expect("resolve --skip dispatch");
-
-    let after = db
-        .get_integrity_warning(&hid)
-        .unwrap()
-        .expect("hid still queryable");
-    assert!(
-        after.resolution.is_none(),
-        "--skip must leave conflict pending; got {:?}",
-        after.resolution
-    );
 }
