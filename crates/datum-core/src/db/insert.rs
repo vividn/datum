@@ -502,6 +502,7 @@ fn insert_entry_in_tx(
     entry: &Entry,
     strategy: ConflictStrategy,
 ) -> Result<InsertOutcome> {
+    crate::slug::validate_field_name(&entry.field)?;
     // da-r569: canonicalize content_hash so the dedup lookup uses the same
     // value `try_insert` / `raw_overwrite_mutables` will persist. Live
     // writes mutate the entry post-`Entry::new` (`Dur::Moment` for occur,
@@ -628,6 +629,7 @@ fn insert_entry_in_tx(
 /// prepared statement rather than re-parsing SQL per row. The INSERT side
 /// (`try_insert`) is also cached.
 fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOutcome> {
+    crate::slug::validate_field_name(&entry.field)?;
     // da-r569: dedup against the canonical storage hash, matching the value
     // `try_insert` will persist (see `insert_entry_in_tx` for the rationale).
     let (_, _, canonical_state) = derive_verb_for_storage(entry)?;
@@ -1179,5 +1181,35 @@ mod tests {
             matches!(outcome, InsertOutcome::Updated { .. }),
             "identical content must route through Update, got {outcome:?}"
         );
+    }
+
+    /// da-tlk2: storage boundary rejects field names with a `:`. The slug
+    /// format is `<field>:<id>` and [`crate::doc_ref`] splits on the first
+    /// colon — a colon in the field name leaves the boundary ambiguous.
+    #[test]
+    fn insert_rejects_field_name_with_colon() {
+        let db = fresh_db();
+        let mut entry = entry_builder("weird:field").verb(Verb::Point).build();
+        // Builder built the slug already; force the field column to keep
+        // the colon so we exercise the storage check rather than the
+        // slug-derivation path.
+        entry.field = "weird:field".into();
+        let err = db.insert_entry(&entry).unwrap_err();
+        assert!(
+            matches!(err, DatumError::InvalidFieldSpec(_)),
+            "expected InvalidFieldSpec, got {err:?}",
+        );
+        assert!(err.to_string().contains("':'"), "msg = {err}");
+    }
+
+    #[test]
+    fn bulk_insert_rejects_field_name_with_colon() {
+        let db = fresh_db();
+        let mut entry = entry_builder("weird:field").verb(Verb::Point).build();
+        entry.field = "weird:field".into();
+        let err = db
+            .insert_entries_bulk(&[entry], ConflictStrategy::Ignore)
+            .unwrap_err();
+        assert!(matches!(err, DatumError::InvalidFieldSpec(_)));
     }
 }

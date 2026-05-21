@@ -75,6 +75,7 @@ impl Db {
     /// user/kit alias row or by another spec's earlier registration in
     /// the [`super::types::SpecAliasIndex`].
     pub fn save_field_spec_with_report(&self, spec: &FieldSpec) -> Result<SaveSpecReport> {
+        crate::slug::validate_field_name(&spec.field)?;
         let json = serde_json::to_string(spec)?;
         let tags_json = serde_json::to_string(&spec.tags)?;
         // da-2zd: NULL when the spec leaves render unset (i.e. visible
@@ -348,6 +349,21 @@ mod tag_tests {
         let back = db.load_spec("stretch_routine").unwrap().unwrap();
         assert!(!back.presentation.renders_on("dayview"));
         assert!(back.presentation.renders_on("nowview"));
+    }
+
+    /// da-tlk2: a spec whose field name contains `:` is rejected at save
+    /// time so it never reaches storage. The slug format `<field>:<id>`
+    /// would otherwise become ambiguous when the doc_ref splitter walks it.
+    #[test]
+    fn save_field_spec_rejects_colon_in_field_name() {
+        use crate::error::DatumError;
+        let db = Db::open_in_memory().unwrap();
+        let spec = FieldSpec::new("weird:field", Action::Occur);
+        let err = db.save_field_spec(&spec).unwrap_err();
+        assert!(
+            matches!(err, DatumError::InvalidFieldSpec(_)),
+            "expected InvalidFieldSpec, got {err:?}",
+        );
     }
 
     #[test]

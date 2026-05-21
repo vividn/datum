@@ -6,8 +6,29 @@
 //! the caller has no id-keys; the `-K` flag lets callers chain explicit
 //! values joined by `__`.
 
+use crate::error::{DatumError, Result};
 use crate::ids::Slug;
 use crate::time::DatumTime;
+
+/// Reject field names that would break slug parsing.
+///
+/// Slugs are `<field>:<id>` and [`crate::doc_ref`] splits on the first `:`,
+/// so a colon in `field` makes the boundary ambiguous. Empty field names
+/// are also rejected — they collapse the slug to `:id` and are never a
+/// user intent.
+pub fn validate_field_name(field: &str) -> Result<()> {
+    if field.is_empty() {
+        return Err(DatumError::InvalidFieldSpec(
+            "field name cannot be empty".to_string(),
+        ));
+    }
+    if field.contains(':') {
+        return Err(DatumError::InvalidFieldSpec(format!(
+            "field name cannot contain ':' (got {field:?})"
+        )));
+    }
+    Ok(())
+}
 
 /// Build the slug for an entry.
 ///
@@ -97,5 +118,29 @@ mod tests {
         let values = vec!["morning".to_string()];
         let got = derive("journal", &values, Some(&fixed_time()));
         assert_eq!(got, "journal:morning");
+    }
+
+    #[test]
+    fn validate_field_name_accepts_normal_names() {
+        validate_field_name("coffee").unwrap();
+        validate_field_name("mood").unwrap();
+        validate_field_name("word").unwrap();
+        validate_field_name("a-b_c.0").unwrap();
+    }
+
+    #[test]
+    fn validate_field_name_rejects_colon() {
+        let err = validate_field_name("weird:field").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("':'"), "got: {msg}");
+        // Just a leading or trailing colon also rejected.
+        assert!(validate_field_name(":x").is_err());
+        assert!(validate_field_name("x:").is_err());
+    }
+
+    #[test]
+    fn validate_field_name_rejects_empty() {
+        let err = validate_field_name("").unwrap_err();
+        assert!(err.to_string().contains("empty"));
     }
 }
