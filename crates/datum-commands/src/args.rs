@@ -224,12 +224,24 @@ impl CliExt for Cli {
 /// skips the comma-split — the multi-row feature can't be bypassed
 /// at the binary level.
 pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
+    // da-hfi3: honour the global `--db <value>` / `--db=<value>` flag
+    // when picking which DB to open for alias resolution. The bug this
+    // fixes: a user with `--db /tmp/x.db` who'd defined `vbp` only in
+    // that target saw "unknown subcommand: 'vbp'" because the resolver
+    // opened the default db and the alias chain stayed empty. Now the
+    // pre-scan routes the same db the dispatcher will use into the
+    // alias resolver, so the two surfaces agree on which alias table
+    // is canonical for this invocation.
+    let cli_db = crate::config::pre_scan_db_flag(&argv);
     let maybe_db = (|| -> Option<datum_core::db::Db> {
-        let db_path = crate::config::db_path().ok()?;
-        if !std::path::Path::new(&db_path).exists() {
+        let db_path = match crate::config::resolve_db(cli_db.as_deref()) {
+            Ok(r) => r.path,
+            Err(_) => return None,
+        };
+        if !db_path.exists() {
             return None;
         }
-        datum_core::db::Db::open(&db_path).ok()
+        datum_core::db::Db::open(db_path.to_str()?).ok()
     })();
 
     match maybe_db {
@@ -255,7 +267,19 @@ fn parse_invocation_inner(
     let raw_input = raw_argv.join(" ");
     let argv0 = argv.first().cloned().unwrap_or_default();
 
-    let expanded = palias::expand_into_sides(argv, resolver)?;
+    // da-hfi3: strip the global `--db <value>` / `--db=<value>` flag
+    // before alias expansion. The alias resolver looks at argv[1] for
+    // the candidate name — if `--db` sits there, the alias never gets
+    // a chance and the user sees "unknown subcommand: <alias>". Split
+    // the flag off, run expansion, then re-prepend it so the
+    // downstream parser still sees the global flag at its usual
+    // position. (The pre-scan that picked the resolver in
+    // `parse_invocation` already used the same flag value, so the
+    // alias DB and the dispatch DB stay aligned.)
+    let (argv_for_expand, db_flag_tokens) =
+        crate::config::split_off_global_db_flag(argv);
+
+    let expanded = palias::expand_into_sides(argv_for_expand, resolver)?;
 
     set_intent_context(IntentContext {
         raw_input,
@@ -270,8 +294,11 @@ fn parse_invocation_inner(
     }
 
     if expanded.sides.len() == 1 {
-        let mut side_argv = Vec::with_capacity(expanded.sides[0].len() + 1);
+        let mut side_argv = Vec::with_capacity(expanded.sides[0].len() + 1 + db_flag_tokens.len());
         side_argv.push(argv0);
+        // da-hfi3: re-prepend the stripped `--db` flag so the downstream
+        // parser still sees it at its canonical post-argv0 position.
+        side_argv.extend(db_flag_tokens.iter().cloned());
         side_argv.extend(expanded.sides.into_iter().next().unwrap());
         let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
         return Ok(Invocation::Single(cli));
@@ -280,8 +307,10 @@ fn parse_invocation_inner(
     let mut sides: Vec<Cli> = Vec::with_capacity(expanded.sides.len());
     let mut side_argvs: Vec<Vec<String>> = Vec::with_capacity(expanded.sides.len());
     for side in expanded.sides {
-        let mut side_argv = Vec::with_capacity(side.len() + 1);
+        let mut side_argv = Vec::with_capacity(side.len() + 1 + db_flag_tokens.len());
         side_argv.push(argv0.clone());
+        // da-hfi3: same re-prepend as the single-side branch above.
+        side_argv.extend(db_flag_tokens.iter().cloned());
         side_argv.extend(side);
         let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
         sides.push(cli);
