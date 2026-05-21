@@ -10,10 +10,11 @@ mod common;
 use std::collections::HashMap;
 
 use common::run_cli;
-use datum_cli::output::{render_now_view, render_pending_integrity_warning, strip_ansi};
-use datum_core::db::TrackedField;
+use datum_cli::output::{render_pending_integrity_warning, render_snapshot, strip_ansi};
+use datum_core::db::{NowFieldActive, NowSnapshot, TrackedField, NOW_SCHEMA_ID};
 use datum_core::integrity::{IntegrityKind, ListFilter, Resolution};
 use datum_core::test_util::fresh_db;
+use serde_json::Value as JsonValue;
 
 fn tracked(field: &str) -> TrackedField {
     TrackedField {
@@ -231,18 +232,38 @@ fn now_view_shows_overlap_warning() {
     run_cli(&["start", "workout", "-t=-5"], &db).expect("older start");
     run_cli(&["start", "workout"], &db).expect("newer start");
 
-    // Pull the overlap counts the way cmd_now does.
-    let tf = [tracked("workout")];
-    let mut latest = HashMap::new();
+    // Pull the overlap counts the way cmd_now does, then build a
+    // NowSnapshot directly — bypassing the (retired in da-adoi)
+    // `render_now_view(tracked, latest_map, …)` legacy signature.
     let entry = db.latest_entry_for_now("workout").unwrap().unwrap();
-    latest.insert("workout".to_string(), entry);
+    let since = entry
+        .start_time
+        .as_ref()
+        .or(entry.end_time.as_ref())
+        .map(|t| t.utc);
+    let state = entry.value.clone().unwrap_or(JsonValue::Null);
+    let snap = NowSnapshot {
+        schema: NOW_SCHEMA_ID,
+        now: chrono::Utc::now(),
+        active: vec![NowFieldActive {
+            field: "workout".to_string(),
+            state,
+            since,
+            verb: entry.verb.to_string(),
+            color: None,
+            entry,
+        }],
+        tracked_false: Vec::new(),
+        ignored: Vec::new(),
+    };
     let mut overlap = HashMap::new();
     overlap.insert(
         "workout".to_string(),
         db.open_count_for_field("workout").unwrap(),
     );
+    let _ = tracked; // unused helper now; kept for symmetry across the file.
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), &overlap, false);
+    let out = render_snapshot(&snap, &HashMap::new(), &overlap);
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("overlapping opens"),

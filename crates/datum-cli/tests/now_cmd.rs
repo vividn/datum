@@ -16,14 +16,98 @@ use std::collections::HashMap;
 
 use chrono::Duration;
 use common::run_cli;
-use datum_cli::output::{render_now_view, render_snapshot, strip_ansi};
+use datum_cli::output::{render_snapshot, strip_ansi};
 use datum_core::db::{
     NowFieldActive, NowFieldIgnored, NowFieldTrackedFalse, NowSnapshot, TrackedField, NOW_SCHEMA_ID,
 };
 use datum_core::entry::{Entry, Verb};
 use datum_core::test_util::{entry_builder, fresh_db};
 use datum_core::time::DatumTime;
-use serde_json::json;
+use serde_json::{json, Value as JsonValue};
+
+// ─── da-adoi: test-side snapshot builder ─────────────────────────────────────
+//
+// The legacy `render_now_view(tracked, latest, state_colors, overlap,
+// show_ignored)` retired in this bead. Tests that used to build a
+// (TrackedField list, latest-entry map) tuple now build a NowSnapshot
+// the same way `Db::current_now` does and render through
+// `render_snapshot`. This helper does the conversion so the test
+// fixtures stay readable.
+fn build_snapshot(
+    tracked: &[TrackedField],
+    latest: &HashMap<String, Entry>,
+    show_ignored: bool,
+) -> NowSnapshot {
+    let mut snap = NowSnapshot {
+        schema: NOW_SCHEMA_ID,
+        now: chrono::Utc::now(),
+        active: Vec::new(),
+        tracked_false: Vec::new(),
+        ignored: Vec::new(),
+    };
+    for tf in tracked {
+        if tf.ignored {
+            if show_ignored {
+                let entry = latest.get(&tf.field);
+                let since = entry
+                    .and_then(|e| e.start_time.as_ref().or(e.end_time.as_ref()))
+                    .map(|t| t.utc);
+                snap.ignored.push(NowFieldIgnored {
+                    field: tf.field.clone(),
+                    since,
+                    color: tf.color.clone(),
+                });
+            }
+            continue;
+        }
+        match latest.get(&tf.field) {
+            None => snap.tracked_false.push(NowFieldTrackedFalse {
+                field: tf.field.clone(),
+                since: None,
+                last_event: None,
+                color: tf.color.clone(),
+                entry: None,
+            }),
+            Some(e) => {
+                let state = e.value.clone().unwrap_or(JsonValue::Null);
+                let since = e.start_time.as_ref().or(e.end_time.as_ref()).map(|t| t.utc);
+                if is_truthy(&state) {
+                    snap.active.push(NowFieldActive {
+                        field: tf.field.clone(),
+                        state,
+                        since,
+                        verb: e.verb.to_string(),
+                        color: tf.color.clone(),
+                        entry: e.clone(),
+                    });
+                } else {
+                    snap.tracked_false.push(NowFieldTrackedFalse {
+                        field: tf.field.clone(),
+                        since,
+                        last_event: since,
+                        color: tf.color.clone(),
+                        entry: Some(e.clone()),
+                    });
+                }
+            }
+        }
+    }
+    snap
+}
+
+/// Truthiness in the `datum now` sense — mirrors `db::now::is_truthy`,
+/// which is private. Kept tight; the only callers are this file's
+/// `build_snapshot` and `render_snapshot`'s active/tracked_false
+/// classification (already handled inside `Db::current_now`).
+fn is_truthy(v: &JsonValue) -> bool {
+    match v {
+        JsonValue::Null => false,
+        JsonValue::Bool(b) => *b,
+        JsonValue::String(s) if s == "IGNORED" => false,
+        JsonValue::Array(items) => items.iter().any(is_truthy),
+        _ => true,
+    }
+}
 
 // ─── Small helpers ───────────────────────────────────────────────────────────
 
@@ -58,13 +142,8 @@ fn switch_entry(field: &str, state: &str) -> Entry {
 fn render_empty_tracked_shows_sentinel() {
     // No tracked fields at all (e.g. brand-new db) → the view prints its
     // terminal sentinel rather than silently producing nothing.
-    let out = render_now_view(
-        &[],
-        &HashMap::new(),
-        &HashMap::new(),
-        &HashMap::new(),
-        false,
-    );
+    let snap = build_snapshot(&[], &HashMap::new(), false);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("No tracked (non-ignored) fields"),
@@ -78,13 +157,8 @@ fn render_tracked_field_with_no_entries_shows_no_entries_marker() {
     // still appear so the user sees the field exists — with a "(no entries)"
     // marker in the time column — rather than being silently hidden.
     let tf = [tracked("mood")];
-    let out = render_now_view(
-        &tf,
-        &HashMap::new(),
-        &HashMap::new(),
-        &HashMap::new(),
-        false,
-    );
+    let snap = build_snapshot(&tf, &HashMap::new(), false);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
     let plain = strip_ansi(&out);
     assert!(plain.contains("mood"), "field must appear:\n{plain}");
     assert!(
@@ -101,7 +175,8 @@ fn render_switch_entry_appears_as_active_row_with_bullet_and_state() {
     let mut latest = HashMap::new();
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
+    let snap = build_snapshot(&tf, &latest, false);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("●"),
@@ -127,7 +202,8 @@ fn render_array_state_shows_comma_joined_members() {
             .build(),
     );
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
+    let snap = build_snapshot(&tf, &latest, false);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
     let plain = strip_ansi(&out);
     assert!(plain.contains("datum"), "first state must appear:\n{plain}");
     assert!(
@@ -150,13 +226,8 @@ fn render_ignored_field_hidden_by_default() {
     // `ignored=true` specs must NOT appear when `show_ignored=false`, and the
     // "no (non-ignored)" sentinel should fire because nothing else is tracked.
     let tf = [ignored("youtube")];
-    let out = render_now_view(
-        &tf,
-        &HashMap::new(),
-        &HashMap::new(),
-        &HashMap::new(),
-        false,
-    );
+    let snap = build_snapshot(&tf, &HashMap::new(), false);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
     let plain = strip_ansi(&out);
     assert!(
         !plain.contains("youtube"),
@@ -176,7 +247,8 @@ fn render_ignored_field_shown_dim_after_separator_with_show_all() {
     let mut latest = HashMap::new();
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), true);
+    let snap = build_snapshot(&tf, &latest, true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
     let plain = strip_ansi(&out);
 
     assert!(
@@ -218,7 +290,8 @@ fn render_separator_divides_active_from_stopped() {
             .build(),
     );
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
+    let snap = build_snapshot(&tf, &latest, false);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
     let plain = strip_ansi(&out);
 
     let mood_at = plain.find("mood").expect("active mood row missing");
@@ -292,7 +365,8 @@ fn render_old_stopped_field_uses_iso_date_prefix() {
             .build(),
     );
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
+    let snap = build_snapshot(&tf, &latest, false);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
     let plain = strip_ansi(&out);
 
     // The rendered date prefix must match the local-calendar date of the
@@ -348,7 +422,8 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
     e.occur_time_precision = Some("P1D".to_string());
     latest.insert("birthday".to_string(), e);
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
+    let snap = build_snapshot(&tf, &latest, false);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
     let plain = strip_ansi(&out);
 
     let expected = local_today.format("%Y-%m-%d").to_string();
@@ -451,7 +526,8 @@ fn render_honors_spec_color_on_tracked_field() {
     let mut latest = HashMap::new();
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
+    let snap = build_snapshot(&tf, &latest, false);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
 
     // True-color escape for #ff6600: `\x1b[38;2;255;102;0m`.
     assert!(

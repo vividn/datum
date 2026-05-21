@@ -24,7 +24,6 @@ pub use self::action::{
 pub use self::colors::{strip_ansi, visible_width};
 
 use datum_core::{
-    db::TrackedField,
     entry::{Entry, Verb},
     field_spec::SpecRegistry,
     time::DatumTime,
@@ -920,10 +919,6 @@ struct NowRow {
     is_dim: bool,
 }
 
-fn field_ansi(tf: &TrackedField) -> String {
-    colors::resolve_rgb(tf.color.as_deref(), &tf.field).fg()
-}
-
 fn state_ansi(
     field: &str,
     state: &str,
@@ -991,203 +986,11 @@ fn render_now_state_scalar(
     format!("{ansi}{text}{RESET}")
 }
 
-/// Print the redesigned `datum now` view.
-///
-/// `overlap_counts` maps field → number of live ongoing entries. Fields
-/// with a count ≥ 2 get an overlap-warning line prepended by
-/// [`render_now_view`]; fields missing from the map are treated as 0.
-pub fn print_now_view(
-    tracked: &[TrackedField],
-    latest_per_field: &HashMap<String, Entry>,
-    state_colors: &HashMap<(String, String), String>,
-    overlap_counts: &HashMap<String, u32>,
-    show_ignored: bool,
-) {
-    print!(
-        "{}",
-        render_now_view(
-            tracked,
-            latest_per_field,
-            state_colors,
-            overlap_counts,
-            show_ignored,
-        )
-    );
-}
-
-/// Render the `datum now` view as a string. Thin sibling of [`print_now_view`]
-/// used by integration tests that need to inspect output.
-///
-/// `overlap_counts` maps field → number of live ongoing entries. A count
-/// ≥ 2 prepends an `⚠ N overlapping opens — datum check` line above the
-/// field's row.
-pub fn render_now_view(
-    tracked: &[TrackedField],
-    latest_per_field: &HashMap<String, Entry>,
-    state_colors: &HashMap<(String, String), String>,
-    overlap_counts: &HashMap<String, u32>,
-    show_ignored: bool,
-) -> String {
-    use std::fmt::Write;
-    let now = chrono::Utc::now();
-    let now_dt = DatumTime::now();
-
-    let mut active: Vec<NowRow> = Vec::new();
-    let mut stopped: Vec<NowRow> = Vec::new();
-    let mut ignored_rows: Vec<NowRow> = Vec::new();
-
-    for tf in tracked {
-        let fansi = field_ansi(tf);
-
-        if tf.ignored {
-            if show_ignored {
-                ignored_rows.push(NowRow {
-                    bullet: " ",
-                    field: tf.field.clone(),
-                    state_rendered: String::new(),
-                    state_vw: 0,
-                    time_str: String::new(),
-                    field_ansi: fansi,
-                    is_dim: true,
-                });
-            }
-            continue;
-        }
-
-        match latest_per_field.get(&tf.field) {
-            None => {
-                stopped.push(NowRow {
-                    bullet: " ",
-                    field: tf.field.clone(),
-                    state_rendered: String::new(),
-                    state_vw: 0,
-                    time_str: "(no entries)".to_string(),
-                    field_ansi: fansi,
-                    is_dim: false,
-                });
-            }
-            Some(entry) => {
-                // da-8y2q.2: legacy `Verb::Switch` collapses into
-                // `Verb::Switch` with state=true; the Switch arm already
-                // covers it (Bool(true) ≠ Bool(false)).
-                let is_active = match &entry.verb {
-                    Verb::Switch => entry
-                        .value
-                        .as_ref()
-                        .map(|v| v != &JsonValue::Bool(false))
-                        .unwrap_or(true),
-                    _ => false,
-                };
-
-                let (state_rendered, state_vw) =
-                    render_now_state(entry.value.as_ref(), &tf.field, &tf.color, state_colors);
-
-                let entry_time = entry.start_time.as_ref().or(entry.end_time.as_ref());
-                let time_str = match entry_time {
-                    None => String::new(),
-                    Some(t) => format_now_time(
-                        t,
-                        &now_dt,
-                        now,
-                        is_active,
-                        &entry.verb,
-                        entry.occur_time_precision.as_deref(),
-                    ),
-                };
-
-                let row = NowRow {
-                    bullet: if is_active { "●" } else { " " },
-                    field: tf.field.clone(),
-                    state_rendered,
-                    state_vw,
-                    time_str,
-                    field_ansi: fansi,
-                    is_dim: false,
-                };
-
-                if is_active {
-                    active.push(row);
-                } else {
-                    stopped.push(row);
-                }
-            }
-        }
-    }
-
-    active.sort_by(|a, b| a.field.cmp(&b.field));
-    stopped.sort_by(|a, b| a.field.cmp(&b.field));
-    ignored_rows.sort_by(|a, b| a.field.cmp(&b.field));
-
-    let all_visible = active.iter().chain(stopped.iter());
-    let field_w = all_visible
-        .clone()
-        .map(|r| r.field.len())
-        .max()
-        .unwrap_or(0)
-        .max(1);
-    let state_w = all_visible.map(|r| r.state_vw).max().unwrap_or(0);
-
-    let sep_len = 1 + 1 + field_w + 2 + state_w.max(1) + 2 + 10;
-    let sep: String = "─".repeat(sep_len);
-
-    let mut out = String::new();
-    let write_row = |out: &mut String, row: &NowRow| {
-        if let Some(&n) = overlap_counts.get(&row.field) {
-            if n >= 2 {
-                writeln!(
-                    out,
-                    "⚠ {n} overlapping opens on '{field}' — datum check",
-                    field = row.field,
-                )
-                .unwrap();
-            }
-        }
-        let fc = &row.field_ansi;
-        if row.is_dim {
-            write!(out, "{DIM}{fc}  {field}{RESET}", field = row.field).unwrap();
-        } else {
-            let pad = state_w.saturating_sub(row.state_vw);
-            let padding: String = " ".repeat(pad);
-            write!(
-                out,
-                "{fc}{bullet}{RESET} {fc}{field:<field_w$}{RESET}  {state}{padding}  {time}",
-                bullet = row.bullet,
-                field = row.field,
-                state = row.state_rendered,
-                time = row.time_str,
-            )
-            .unwrap();
-        }
-        out.push('\n');
-    };
-
-    for row in &active {
-        write_row(&mut out, row);
-    }
-    if !active.is_empty() && !stopped.is_empty() {
-        writeln!(out, "{sep}").unwrap();
-    }
-    for row in &stopped {
-        write_row(&mut out, row);
-    }
-    if show_ignored && !ignored_rows.is_empty() {
-        if !active.is_empty() || !stopped.is_empty() {
-            writeln!(out, "{sep}").unwrap();
-        }
-        for row in &ignored_rows {
-            write_row(&mut out, row);
-        }
-    }
-
-    if active.is_empty() && stopped.is_empty() && (!show_ignored || ignored_rows.is_empty()) {
-        writeln!(
-            out,
-            "No tracked (non-ignored) fields. Use `datum track <field>`."
-        )
-        .unwrap();
-    }
-    out
-}
+// da-adoi: `render_now_view` / `print_now_view` retired. Their last
+// caller was the test corpus in `now_cmd.rs` + `integrity_cmd.rs`;
+// both migrated to `render_snapshot` against a `NowSnapshot` built
+// the same way `Db::current_now` does. Production already used
+// `render_snapshot` since da-mpod.
 
 // ─── Snapshot-driven Now view (da-mpod) ──────────────────────────────────────
 
@@ -1265,7 +1068,28 @@ pub fn render_snapshot(
         let state_vw = "(off)".len();
         let time_str = match f.last_event.or(f.since) {
             None => "(no entries)".to_string(),
-            Some(t) => format_now_time_utc(t, &now_dt, now),
+            Some(t) => match f.entry.as_ref() {
+                // Reuse the entry-aware formatter so P1D rows surface
+                // their bare date and Point rows get the `@HH:MM`
+                // treatment — same time-column rules legacy
+                // render_now_view applied to its `stopped` bucket.
+                Some(e) => {
+                    let local_t = DatumTime {
+                        utc: t,
+                        offset_minutes: now_dt.offset_minutes,
+                        timezone: now_dt.timezone.clone(),
+                    };
+                    format_now_time(
+                        &local_t,
+                        &now_dt,
+                        now,
+                        false,
+                        &e.verb,
+                        e.occur_time_precision.as_deref(),
+                    )
+                }
+                None => format_now_time_utc(t, &now_dt, now),
+            },
         };
         tracked_false.push(NowRow {
             bullet: "·",
