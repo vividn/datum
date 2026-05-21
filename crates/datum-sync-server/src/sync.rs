@@ -23,7 +23,11 @@ pub async fn push(
 
     // Server is content-blind: stores payload_b64 string opaquely (per spec §Goals).
     let (_, seq) = db::insert_changeset(&conn, &req.device_id, &req.payload_b64)?;
-    Ok(Json(PushResponse { seq }))
+    Ok(Json(PushResponse {
+        seq,
+        cluster_id: None,
+        generation: None,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -48,6 +52,8 @@ pub async fn pull(
             seq,
             payload_b64,
             uploaded_at,
+            cluster_id: None,
+            generation: None,
         })
         .collect();
 

@@ -19,3 +19,8 @@ path = "src/lib.rs"
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
+
+# Test-only: round-trip pins for new wire shapes (da-soeu) need a JSON
+# serializer. Stays out of the WASM-safe runtime deps above.
+[dev-dependencies]
+serde_json = { workspace = true }

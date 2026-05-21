@@ -40,6 +40,12 @@ pub struct AuthToken {
     /// mismatches before firing a request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server: Option<String>,
+    /// Default cluster the user is bound to at issuance time. Absent on
+    /// v1 tokens. Lets the client default cluster-scoped requests
+    /// without a separate `/clusters` round-trip (da-soeu, sub-1 of
+    /// multi-DB epic da-u6lm).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cluster_id: Option<String>,
 }
 
 /// Body for `POST /v1/auth/refresh`. Trades a single-use refresh token
@@ -116,4 +122,9 @@ pub struct PollResponse {
     pub error: Option<String>,
     #[serde(default)]
     pub detail: Option<String>,
+    /// Default cluster bound to the user at completion of the
+    /// device-code grant. Populated on the success branch only; absent
+    /// on v1 responses so old relays still parse.
+    #[serde(default)]
+    pub cluster_id: Option<String>,
 }

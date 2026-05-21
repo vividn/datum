@@ -106,6 +106,7 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
                     refreshed_at: Some(chrono::Utc::now().to_rfc3339()),
                     server: Some(server.to_string()),
                     user_id,
+                    cluster_id: None,
                 };
                 let label = token.user_id.as_deref().unwrap_or("user");
                 prompter.status(&format!("✓ Authorized as {label}"));

@@ -162,6 +162,7 @@ pub async fn poll(
                     refresh_token: Some(refresh_token),
                     refreshed_at: None,
                     server: None,
+                    cluster_id: None,
                 };
                 (StatusCode::OK, Json(body)).into_response()
             }

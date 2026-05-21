@@ -14,6 +14,7 @@
 //! | [`messages::auth`] | `AuthToken`, device-code request/response/poll |
 //! | [`messages::sync`] | `PushRequest`, `PushResponse`, `Changeset`, `WrappedKey`, `KdfParams` |
 //! | [`crypto`]         | `CryptoError`, wire-locked constants (`NONCE_LEN`, `CHANGESET_MAGIC_V1`) |
+//! | [`errors`]         | `SyncProtocolError` — control-plane wire errors (`GenerationMismatch`) |
 //! | [`version`]        | Protocol version constants (`PROTOCOL_VERSION`) |
 //!
 //! WebAuthn (register/login) types remain in `datum-sync-server::models`
@@ -21,10 +22,12 @@
 //! `webauthn-rs` into a WASM-safe crate would defeat its purpose.
 
 pub mod crypto;
+pub mod errors;
 pub mod messages;
 pub mod version;
 
 pub use crypto::CryptoError;
+pub use errors::SyncProtocolError;
 pub use messages::auth::{
     AuthToken, DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeRequest,
     DeviceCodeResponse, PollResponse, RefreshTokenRequest,

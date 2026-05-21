@@ -80,6 +80,7 @@ fn write_token_for(server: &str, token: &str) {
         refreshed_at: Some(chrono::Utc::now().to_rfc3339()),
         server: Some(server.to_string()),
         user_id: Some("vividn@vividn.dev".to_string()),
+        cluster_id: None,
     };
     std::fs::write(path, serde_json::to_vec_pretty(&t).unwrap()).unwrap();
 }

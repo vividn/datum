@@ -79,6 +79,7 @@ pub async fn register_finish(
         refresh_token: Some(refresh_token),
         refreshed_at: None,
         server: None,
+        cluster_id: None,
     }))
 }
 
@@ -156,6 +157,7 @@ pub async fn login_finish(
         refresh_token: Some(refresh_token),
         refreshed_at: None,
         server: None,
+        cluster_id: None,
     }))
 }
 
@@ -204,5 +206,6 @@ pub async fn refresh(
         refresh_token: Some(new_refresh),
         refreshed_at: None,
         server: None,
+        cluster_id: None,
     }))
 }

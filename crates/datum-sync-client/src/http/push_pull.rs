@@ -59,6 +59,8 @@ pub fn push_blob(
     let body = PushRequest {
         device_id: device_id.to_string(),
         payload_b64: URL_SAFE_NO_PAD.encode(payload),
+        cluster_id: None,
+        generation: None,
     };
     let resp = client
         .post(format!("{server}/v1/push"))

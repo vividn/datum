@@ -162,6 +162,7 @@ fn sync_auto_refreshes_on_401_and_persists_new_token() {
             refreshed_at: Some(Utc::now().to_rfc3339()),
             server: Some(relay.base_url.clone()),
             user_id: Some(relay.user_id.to_string()),
+            cluster_id: None,
         },
     );
     write_master_key(&relay.base_url, &[0xA1u8; 32]);
@@ -204,6 +205,7 @@ fn sync_with_bogus_refresh_fails_with_actionable_error() {
             refreshed_at: Some(Utc::now().to_rfc3339()),
             server: Some(relay.base_url.clone()),
             user_id: Some(relay.user_id.to_string()),
+            cluster_id: None,
         },
     );
     write_master_key(&relay.base_url, &[0xA2u8; 32]);
@@ -241,6 +243,7 @@ fn sync_without_refresh_token_fails_gracefully_on_401() {
             refreshed_at: Some(Utc::now().to_rfc3339()),
             server: Some(relay.base_url.clone()),
             user_id: Some(relay.user_id.to_string()),
+            cluster_id: None,
         },
     );
     write_master_key(&relay.base_url, &[0xA3u8; 32]);
@@ -277,6 +280,7 @@ fn session_does_not_refresh_on_success() {
         refreshed_at: None,
         server: Some(relay.base_url.clone()),
         user_id: Some(relay.user_id.to_string()),
+        cluster_id: None,
     };
     let session = Session::new(&relay.base_url, &token, None);
     let client = reqwest::blocking::Client::builder().build().unwrap();
@@ -305,6 +309,7 @@ fn session_refreshes_once_on_401_then_retries() {
         refreshed_at: None,
         server: Some(relay.base_url.clone()),
         user_id: Some(relay.user_id.to_string()),
+        cluster_id: None,
     };
     let session = Session::new(&relay.base_url, &token, None);
     let client = reqwest::blocking::Client::builder().build().unwrap();
