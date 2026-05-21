@@ -345,8 +345,17 @@ fn now_dispatches_end_to_end_via_run_cli() {
 /// readable. We construct an entry whose start_time is well over 3 days
 /// in the past; the rendered "last seen" must include the ISO-date prefix
 /// rather than an hours-only ago string.
+/// da-07l3: the test used to compute its expected date via
+/// `stale_utc.with_timezone(&chrono::Local)`, which is DST-aware. The
+/// renderer goes through `DatumTime::local_time()`, which uses
+/// `FixedOffset::east_opt(offset_minutes * 60)` — the offset captured
+/// at "now" with no DST awareness. On a 60-day stale entry crossing
+/// the spring/fall DST cutover, the two computations disagree by one
+/// hour and (when that hour straddles midnight) by one day, flaking
+/// the assertion. Now `expected` runs through the exact same
+/// `FixedOffset` the renderer uses so the date strings can never
+/// drift apart.
 #[test]
-#[ignore = "DST/timezone flake: test computes expected via chrono::Local but render uses now.offset_minutes for stale entry, mismatching across the spring/fall DST cutover (60-day stale entry can cross CET↔CEST). Tracked separately for a fixed-clock fix."]
 fn render_old_stopped_field_uses_iso_date_prefix() {
     let now = DatumTime::now();
     let stale_utc = now.utc - Duration::days(60);
@@ -369,10 +378,15 @@ fn render_old_stopped_field_uses_iso_date_prefix() {
     let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
     let plain = strip_ansi(&out);
 
-    // The rendered date prefix must match the local-calendar date of the
-    // stale entry (60 days back, so guaranteed to be >3 days → ISO prefix).
+    // Compute the expected date through the same FixedOffset the
+    // renderer uses (see DatumTime::local_time). Don't reach for
+    // chrono::Local — its DST-awareness diverges from the renderer's
+    // single offset_minutes snapshot when the stale instant lies on
+    // the other side of a DST cutover.
+    let render_offset = chrono::FixedOffset::east_opt(now.offset_minutes * 60)
+        .expect("offset_minutes within FixedOffset range");
     let expected = stale_utc
-        .with_timezone(&chrono::Local)
+        .with_timezone(&render_offset)
         .format("%Y-%m-%d")
         .to_string();
     assert!(
