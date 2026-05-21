@@ -271,12 +271,19 @@ VALUES (
 --                  encrypting outgoing changesets (the client and server
 --                  agree because the server uses `MAX(seq)+1` per device).
 CREATE TABLE IF NOT EXISTS sync_state (
-    db_id         TEXT NOT NULL,
-    push_seq      INTEGER NOT NULL DEFAULT 0,
-    pull_seq      INTEGER NOT NULL DEFAULT 0,
-    my_push_seq   INTEGER NOT NULL DEFAULT 0,
-    last_push_at  INTEGER,
-    last_pull_at  INTEGER,
+    db_id              TEXT NOT NULL,
+    push_seq           INTEGER NOT NULL DEFAULT 0,
+    pull_seq           INTEGER NOT NULL DEFAULT 0,
+    my_push_seq        INTEGER NOT NULL DEFAULT 0,
+    last_push_at       INTEGER,
+    last_pull_at       INTEGER,
+    -- da-eu7o (sub-4 of multi-DB epic da-u6lm): per-DB cluster_id
+    -- assigned by the relay on first sync (NULL until the first
+    -- successful push/pull echoes back the server's choice) and the
+    -- last-seen cluster generation, sent on every push/pull and used to
+    -- detect server-side cluster forks (purge/restore/rewind).
+    cluster_id         TEXT,
+    cluster_generation INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (db_id)
 );
 

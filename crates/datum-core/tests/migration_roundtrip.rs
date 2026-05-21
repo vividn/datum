@@ -142,6 +142,7 @@ fn every_pair_has_a_roundtrip_test() {
         (23, 24),
         (24, 25),
         (25, 26),
+        (26, 27),
     ];
     assert_eq!(
         covered.len(),
@@ -1136,4 +1137,65 @@ fn roundtrip_v25_to_v26_rename_integrity_warnings() {
         )
         .unwrap();
     assert_eq!(kind, "orphan_end");
+}
+
+/// da-eu7o: v26→v27 adds the per-DB `cluster_id` (nullable) and
+/// `cluster_generation` (default 0) columns to `sync_state`. Existing
+/// watermark rows must survive intact. The down step rebuilds the v26
+/// shape, discarding any locally-assigned cluster_id.
+#[test]
+fn roundtrip_v26_to_v27_sync_state_cluster_columns() {
+    let db = fresh_at(26);
+    let conn = db.conn();
+    assert!(table_exists(conn, "sync_state"));
+    assert!(!column_exists(conn, "sync_state", "cluster_id"));
+    assert!(!column_exists(conn, "sync_state", "cluster_generation"));
+
+    // Seed a sync_state row so we can verify it survives the up/down.
+    conn.execute(
+        "INSERT INTO sync_state (db_id, push_seq, pull_seq, my_push_seq, last_push_at, last_pull_at)
+         VALUES ('local', 17, 22, 3, 1700000000000, 1700000005000)",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 26);
+
+    assert!(column_exists(conn, "sync_state", "cluster_id"));
+    assert!(column_exists(conn, "sync_state", "cluster_generation"));
+    // New columns default to NULL / 0 for pre-existing rows.
+    let (cid, cluster_gen, push_seq, my_push_seq): (Option<String>, i64, i64, i64) = conn
+        .query_row(
+            "SELECT cluster_id, cluster_generation, push_seq, my_push_seq
+             FROM sync_state WHERE db_id = 'local'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(cid, None);
+    assert_eq!(cluster_gen, 0);
+    assert_eq!(push_seq, 17);
+    assert_eq!(my_push_seq, 3);
+
+    // Persist a cluster_id + non-zero generation, then walk back to v26.
+    conn.execute(
+        "UPDATE sync_state SET cluster_id = 'cluster-roundtrip', cluster_generation = 4
+         WHERE db_id = 'local'",
+        [],
+    )
+    .unwrap();
+
+    apply_one_down(conn, 27);
+
+    assert!(!column_exists(conn, "sync_state", "cluster_id"));
+    assert!(!column_exists(conn, "sync_state", "cluster_generation"));
+    // Watermark columns survive the rebuild.
+    let push_seq_after: i64 = conn
+        .query_row(
+            "SELECT push_seq FROM sync_state WHERE db_id = 'local'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(push_seq_after, 17);
 }

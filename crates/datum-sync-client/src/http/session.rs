@@ -26,6 +26,7 @@
 
 use std::cell::RefCell;
 
+use datum_sync_protocol::SyncProtocolError;
 use reqwest::blocking::Client;
 
 use crate::http::auth;
@@ -51,6 +52,14 @@ pub enum SessionError {
     SessionExpired,
     #[error("session expired — run `datum sync login` again (no refresh token persisted)")]
     NoRefreshToken,
+    /// The relay's cluster generation disagreed with what we sent. The
+    /// 401-refresh loop has nothing to do here — this is a control-plane
+    /// signal that the cluster has been re-initialised since we last
+    /// synced. CLI surface decides whether to wipe local state and
+    /// re-pull from the new generation (da-eu7o, sub-4 of the multi-DB
+    /// epic da-u6lm).
+    #[error(transparent)]
+    GenerationMismatch(SyncProtocolError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -126,6 +135,9 @@ impl Session {
         match op(&bearer_snapshot) {
             Ok(v) => return Ok(v),
             Err(HttpError::Unauthorized) => { /* fall through to refresh */ }
+            Err(HttpError::GenerationMismatch(e)) => {
+                return Err(SessionError::GenerationMismatch(e))
+            }
             Err(HttpError::Other(e)) => return Err(SessionError::Other(e)),
         }
 
@@ -139,6 +151,7 @@ impl Session {
             // session-expired prompt rather than a transient network
             // issue.
             Err(HttpError::Unauthorized) => Err(SessionError::SessionExpired),
+            Err(HttpError::GenerationMismatch(e)) => Err(SessionError::GenerationMismatch(e)),
             Err(HttpError::Other(e)) => Err(SessionError::Other(e)),
         }
     }
@@ -157,6 +170,12 @@ impl Session {
         let new = match auth::refresh(client, &self.server, &refresh_token) {
             Ok(t) => t,
             Err(HttpError::Unauthorized) => return Err(SessionError::SessionExpired),
+            // /v1/auth/refresh has no cluster concept and the server
+            // doesn't emit GenerationMismatch on this path; if it ever
+            // does, surface it cleanly rather than panicking.
+            Err(HttpError::GenerationMismatch(e)) => {
+                return Err(SessionError::GenerationMismatch(e))
+            }
             Err(HttpError::Other(e)) => return Err(SessionError::Other(e)),
         };
 

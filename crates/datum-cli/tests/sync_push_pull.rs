@@ -554,6 +554,101 @@ fn entries_count(db: &Db) -> i64 {
         .unwrap()
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Cluster registration (da-eu7o)
+// ──────────────────────────────────────────────────────────────────────────
+
+/// da-eu7o sub-4: on first sync the relay echoes back a server-assigned
+/// cluster_id (the user's default cluster_id, currently their user_id
+/// per the da-og24 transitional mapping). The client must persist it
+/// into local sync_state so subsequent syncs send the same cluster_id
+/// and the server's per-cluster scoping behaves predictably.
+#[test]
+fn first_push_registers_cluster_id_locally() {
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    write_token_for(&relay.base_url, &relay.mint_token());
+    write_master_key(&relay.base_url, &[0xa1u8; 32]);
+    let db = fresh_db(&env);
+    db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
+
+    // Before sync the DB has no recorded cluster.
+    assert_eq!(sync_state::get_cluster_id(&db).unwrap(), None);
+    assert_eq!(sync_state::get_cluster_generation(&db).unwrap(), 0);
+
+    let outcome =
+        run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
+    assert_eq!(outcome.pushed, 1);
+
+    // The server's default cluster_id is the user's UUID (da-og24
+    // transitional mapping). We don't assert the exact value to avoid
+    // coupling tests to the server's choice — just that *some*
+    // non-empty cluster_id round-tripped.
+    let stored = sync_state::get_cluster_id(&db).unwrap();
+    assert!(
+        stored.as_deref().is_some_and(|s| !s.is_empty()),
+        "expected cluster_id to be persisted, got {stored:?}",
+    );
+    // Generation is 0 on a freshly-registered cluster.
+    assert_eq!(sync_state::get_cluster_generation(&db).unwrap(), 0);
+}
+
+/// da-eu7o sub-4: after the server bumps the cluster generation (e.g.
+/// via the `/v1/clusters/{id}/bump-generation` endpoint a la da-tat1),
+/// the next push from a client still sitting on the old generation must
+/// be rejected with a typed error — NOT collapsed into an opaque "push
+/// failed: 409" string.
+#[test]
+fn push_after_server_bump_surfaces_generation_mismatch_error() {
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    write_token_for(&relay.base_url, &relay.mint_token());
+    write_master_key(&relay.base_url, &[0xa2u8; 32]);
+    let db = fresh_db(&env);
+
+    // First sync: registers the local cluster at generation 0.
+    db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
+    let registered_cluster = sync_state::get_cluster_id(&db).unwrap().unwrap();
+    assert_eq!(sync_state::get_cluster_generation(&db).unwrap(), 0);
+
+    // Simulate a server-side cluster bump (the da-tat1 endpoint path,
+    // exercised here directly against the shared AppState). The client
+    // is now sitting on generation 0 but the server is on 1.
+    {
+        let conn = relay.state.db.lock().unwrap();
+        let new_gen =
+            datum_sync_server::cluster::bump_generation(&conn, &registered_cluster, &relay.user_id)
+                .unwrap()
+                .unwrap();
+        assert_eq!(new_gen, 1);
+    }
+
+    // A new local write triggers a push — the server must reject with
+    // GenerationMismatch, surfacing as anyhow::Error carrying the
+    // typed `SyncProtocolError::GenerationMismatch` payload through
+    // the SessionError chain.
+    db.insert_entry(&make_entry("mood", 60, "dev-1")).unwrap();
+    let err = run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db)
+        .expect_err("push against bumped server must error");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("generation mismatch")
+            || msg.contains("GenerationMismatch")
+            || msg.contains("expected 1")
+            || msg.contains("expected: 1"),
+        "expected generation-mismatch surface, got: {msg}",
+    );
+
+    // Watermarks must NOT advance after a mismatch — peers depend on
+    // never seeing a row we never committed.
+    assert_eq!(
+        sync_state::get_my_push_seq(&db).unwrap(),
+        1,
+        "my_push_seq must stay pinned on the previous push when the new push fails",
+    );
+}
+
 #[test]
 fn push_idempotent_on_replay() {
     // Pushing the same DB twice with no new writes is a no-op on the

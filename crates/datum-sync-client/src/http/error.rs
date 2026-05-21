@@ -6,6 +6,7 @@
 //! failure mode collapses into `Other(anyhow::Error)` because the retry
 //! logic doesn't care about the difference.
 
+use datum_sync_protocol::SyncProtocolError;
 use thiserror::Error;
 
 /// Errors returned by every authenticated HTTP helper in this crate.
@@ -16,6 +17,13 @@ pub enum HttpError {
     /// see it bubbled up only when the refresh itself fails.
     #[error("unauthorized — bearer token rejected by relay")]
     Unauthorized,
+    /// The relay returned 409 with a structured
+    /// [`SyncProtocolError::GenerationMismatch`] body. Surfaces as its
+    /// own variant (not collapsed into `Other`) so callers can detect
+    /// the "cluster forked, need re-init" condition without sniffing
+    /// strings (da-eu7o, sub-4 of multi-DB epic).
+    #[error(transparent)]
+    GenerationMismatch(SyncProtocolError),
     /// Anything else: network failure, non-401 status, decode error.
     #[error(transparent)]
     Other(#[from] anyhow::Error),

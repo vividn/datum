@@ -158,20 +158,51 @@ pub fn push_once(
     // would otherwise fail to decrypt.
     let next_seq = sync_state::get_my_push_seq(db)?.saturating_add(1);
     let blob = encrypt_changeset(&changeset, master_key, device_id, next_seq)?;
-    let assigned_seq = session.run(client, |bearer| {
-        push_blob(client, server, bearer, device_id, blob.as_bytes())
+
+    // da-eu7o: send the locally-stored cluster_id (None on first sync
+    // — server assigns one and echoes it back) and the last-seen
+    // cluster generation (0 on first sync). A
+    // [`SyncProtocolError::GenerationMismatch`] from the relay
+    // propagates through Session as `SessionError::GenerationMismatch`
+    // and bubbles out to the caller for re-init handling.
+    let local_cluster = sync_state::get_cluster_id(db)?;
+    let local_generation = sync_state::get_cluster_generation(db)?;
+    let ack = session.run(client, |bearer| {
+        push_blob(
+            client,
+            server,
+            bearer,
+            device_id,
+            blob.as_bytes(),
+            local_cluster.as_deref(),
+            Some(local_generation),
+        )
     })?;
 
-    if assigned_seq as u64 != next_seq {
+    if ack.seq as u64 != next_seq {
         anyhow::bail!(
             "relay assigned seq {} but we predicted {}; refusing to advance \
              watermarks — another writer may be using device_id {}",
-            assigned_seq,
+            ack.seq,
             next_seq,
             device_id,
         );
     }
     sync_state::advance_my_push_seq(db, next_seq)?;
+
+    // Persist the cluster_id the server assigned on first sync (or
+    // confirmed on every subsequent push). A response that drops
+    // cluster_id (v1 server, in theory) leaves the local value alone.
+    if let Some(server_cluster) = ack.cluster_id.as_deref() {
+        if local_cluster.as_deref() != Some(server_cluster) {
+            sync_state::set_cluster_id(db, server_cluster)?;
+        }
+    }
+    if let Some(server_generation) = ack.generation {
+        if server_generation != local_generation {
+            sync_state::set_cluster_generation(db, server_generation)?;
+        }
+    }
 
     let advance_to = max_modify_time_ms(&changeset).unwrap_or(watermark);
     if advance_to > watermark {
@@ -195,11 +226,44 @@ pub fn pull_once(
     dry_run: bool,
 ) -> Result<PullOutcome> {
     let since = sync_state::get_pull_seq(db)? as i64;
+    // da-eu7o: pin the pull to the locally-stored cluster (None on
+    // first sync) and the last-seen generation (0 on first sync). The
+    // server runs `check_generation` before returning rows; a mismatch
+    // surfaces as `SessionError::GenerationMismatch` and bubbles out
+    // unchanged.
+    let local_cluster = sync_state::get_cluster_id(db)?;
+    let local_generation = sync_state::get_cluster_generation(db)?;
     let rows = session.run(client, |bearer| {
-        pull_batch(client, server, bearer, device_id, since)
+        pull_batch(
+            client,
+            server,
+            bearer,
+            device_id,
+            since,
+            local_cluster.as_deref(),
+            Some(local_generation),
+        )
     })?;
     if rows.is_empty() {
         return Ok(PullOutcome::default());
+    }
+
+    // Persist the cluster_id / generation echoed back by the relay on
+    // the first row we see — every row carries the cluster scope it was
+    // accepted into. Subsequent rows in the same batch share the same
+    // (cluster_id, generation) because the server filters by cluster
+    // before generation checks.
+    if let Some(first) = rows.first() {
+        if let Some(server_cluster) = first.cluster_id.as_deref() {
+            if local_cluster.as_deref() != Some(server_cluster) {
+                sync_state::set_cluster_id(db, server_cluster)?;
+            }
+        }
+        if let Some(server_generation) = first.generation {
+            if server_generation != local_generation {
+                sync_state::set_cluster_generation(db, server_generation)?;
+            }
+        }
     }
 
     if dry_run {

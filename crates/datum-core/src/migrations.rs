@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 26;
+pub const CURRENT_SCHEMA_VERSION: u32 = 27;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -216,6 +216,13 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "rename sync_conflicts → integrity_warnings (table, indexes, conflict_kind column → kind); these are local data-integrity findings, not cross-device sync conflicts (da-u2do)",
         apply: m25_to_26_rename_integrity_warnings,
         down: down_26_to_25_rename_integrity_warnings,
+    },
+    Migration {
+        from: 26,
+        to: 27,
+        summary: "sync_state: add cluster_id + cluster_generation columns — per-DB cluster registration for the multi-DB sync control plane (da-eu7o)",
+        apply: m26_to_27_sync_state_cluster_columns,
+        down: down_27_to_26_sync_state_cluster_columns,
     },
 ];
 
@@ -607,6 +614,62 @@ fn down_26_to_25_rename_integrity_warnings(conn: &Connection) -> Result<()> {
          CREATE INDEX IF NOT EXISTS sync_conflicts_slug ON sync_conflicts(entry_slug);
          CREATE INDEX IF NOT EXISTS sync_conflicts_pending
              ON sync_conflicts(detected_at) WHERE resolution IS NULL;",
+    )?;
+    Ok(())
+}
+
+/// da-eu7o: add per-DB `cluster_id` (nullable until first sync echoes
+/// back the relay's assignment) and `cluster_generation` (default 0)
+/// columns to `sync_state`. Both `ALTER TABLE ... ADD COLUMN` steps are
+/// natively idempotent via an introspection check so replaying this
+/// migration is safe.
+fn m26_to_27_sync_state_cluster_columns(conn: &Connection) -> Result<()> {
+    let has_cluster_id: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sync_state') WHERE name = 'cluster_id'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_cluster_id {
+        conn.execute_batch("ALTER TABLE sync_state ADD COLUMN cluster_id TEXT;")?;
+    }
+    let has_cluster_gen: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sync_state') WHERE name = 'cluster_generation'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_cluster_gen {
+        conn.execute_batch(
+            "ALTER TABLE sync_state ADD COLUMN cluster_generation INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
+    Ok(())
+}
+
+/// Reverse v26→v27: drop the cluster_id / cluster_generation columns
+/// via a 12-step table rebuild (SQLite's stored-DDL re-parser tripped
+/// on inline `--` comments in our schema.sql when we tried `ALTER TABLE
+/// ... DROP COLUMN`, mirroring v6→v7's workaround). Any locally-stored
+/// cluster_id mapping is discarded — at pre-v1 there are no production
+/// clusters that would suffer.
+fn down_27_to_26_sync_state_cluster_columns(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE sync_state__v26 (
+             db_id         TEXT NOT NULL,
+             push_seq      INTEGER NOT NULL DEFAULT 0,
+             pull_seq      INTEGER NOT NULL DEFAULT 0,
+             my_push_seq   INTEGER NOT NULL DEFAULT 0,
+             last_push_at  INTEGER,
+             last_pull_at  INTEGER,
+             PRIMARY KEY (db_id)
+         );
+         INSERT INTO sync_state__v26 (db_id, push_seq, pull_seq, my_push_seq, last_push_at, last_pull_at)
+            SELECT db_id, push_seq, pull_seq, my_push_seq, last_push_at, last_pull_at FROM sync_state;
+         DROP TABLE sync_state;
+         ALTER TABLE sync_state__v26 RENAME TO sync_state;",
     )?;
     Ok(())
 }

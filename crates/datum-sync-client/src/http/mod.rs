@@ -15,5 +15,5 @@ pub use auth::refresh;
 pub use device_flow::{run_device_flow, DeviceFlowPrompter};
 pub use error::HttpError;
 pub use keys::{fetch_wrapped, upload_wrapped};
-pub use push_pull::{pull_batch, push_blob, PulledChangeset};
+pub use push_pull::{pull_batch, push_blob, PulledChangeset, PushAck};
 pub use session::{OnRefresh, Session, SessionError};

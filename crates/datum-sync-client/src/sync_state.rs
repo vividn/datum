@@ -102,6 +102,57 @@ fn advance_seq(db: &Db, seq_col: &str, at_col: &str, new_seq: u64) -> Result<()>
     Ok(())
 }
 
+/// Read the locally-stored cluster_id assigned by the relay on first
+/// sync. Returns `None` when no sync has completed yet — the caller
+/// should send `cluster_id = None` on the next push/pull and persist
+/// whatever the server echoes back.
+pub fn get_cluster_id(db: &Db) -> Result<Option<String>> {
+    let got: Option<Option<String>> = db
+        .conn()
+        .query_row(
+            "SELECT cluster_id FROM sync_state WHERE db_id = ?1",
+            params![DEFAULT_DB_ID],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(got.flatten())
+}
+
+/// Persist the relay-assigned `cluster_id` for this DB. Replacing a
+/// stored cluster_id with a different one is unusual (would mean the
+/// user re-bound the DB to a different cluster) but allowed — the
+/// generation counter is unrelated and stays untouched here.
+pub fn set_cluster_id(db: &Db, cluster_id: &str) -> Result<()> {
+    db.conn().execute(
+        "INSERT INTO sync_state (db_id, cluster_id)
+         VALUES (?1, ?2)
+         ON CONFLICT(db_id) DO UPDATE SET cluster_id = excluded.cluster_id",
+        params![DEFAULT_DB_ID, cluster_id],
+    )?;
+    Ok(())
+}
+
+/// Read the last-seen cluster generation. Returns 0 when no row exists
+/// or the column was never written.
+pub fn get_cluster_generation(db: &Db) -> Result<u64> {
+    read_seq_column(db, "cluster_generation")
+}
+
+/// Record the cluster generation the server echoed on the most recent
+/// push/pull. Unlike `push_seq`/`pull_seq`, this counter is NOT
+/// monotonic from the client's perspective — a fresh DB attaching to a
+/// long-lived cluster observes whatever generation the server is
+/// already on, which may be > 0. Overwrites unconditionally.
+pub fn set_cluster_generation(db: &Db, generation: u64) -> Result<()> {
+    db.conn().execute(
+        "INSERT INTO sync_state (db_id, cluster_generation)
+         VALUES (?1, ?2)
+         ON CONFLICT(db_id) DO UPDATE SET cluster_generation = excluded.cluster_generation",
+        params![DEFAULT_DB_ID, generation as i64],
+    )?;
+    Ok(())
+}
+
 /// Read the `last_push_at` stamp (epoch-ms), if any push has been recorded.
 pub fn get_last_push_at(db: &Db) -> Result<Option<DateTime<Utc>>> {
     read_at_column(db, "last_push_at")
@@ -156,5 +207,38 @@ mod tests {
         advance_pull_seq(&db, 7).unwrap();
         assert_eq!(get_pull_seq(&db).unwrap(), 7);
         assert_eq!(get_push_seq(&db).unwrap(), 12);
+    }
+
+    /// da-eu7o: a fresh DB reports no cluster_id and generation 0; the
+    /// setters round-trip; persisting a cluster_id without touching the
+    /// generation (and vice-versa) leaves the other column intact.
+    #[test]
+    fn cluster_id_and_generation_round_trip_independently() {
+        let db = fresh_db();
+        assert_eq!(get_cluster_id(&db).unwrap(), None);
+        assert_eq!(get_cluster_generation(&db).unwrap(), 0);
+
+        set_cluster_id(&db, "cluster-X").unwrap();
+        assert_eq!(get_cluster_id(&db).unwrap().as_deref(), Some("cluster-X"));
+        // Setting cluster_id must not disturb the generation default.
+        assert_eq!(get_cluster_generation(&db).unwrap(), 0);
+
+        set_cluster_generation(&db, 42).unwrap();
+        assert_eq!(get_cluster_generation(&db).unwrap(), 42);
+        assert_eq!(get_cluster_id(&db).unwrap().as_deref(), Some("cluster-X"));
+
+        // Re-binding to a different cluster is allowed (uncommon but
+        // legal — the cluster generation persists across the rebind so
+        // the client doesn't pretend it's a fresh attach; the caller is
+        // expected to bump-generation if it intends to fork).
+        set_cluster_id(&db, "cluster-Y").unwrap();
+        assert_eq!(get_cluster_id(&db).unwrap().as_deref(), Some("cluster-Y"));
+        assert_eq!(get_cluster_generation(&db).unwrap(), 42);
+
+        // Generation is NOT monotonic from the client's point of view
+        // (a fresh DB attaching to an existing cluster may see a lower
+        // value). Overwrite without a rewind check.
+        set_cluster_generation(&db, 7).unwrap();
+        assert_eq!(get_cluster_generation(&db).unwrap(), 7);
     }
 }
