@@ -41,6 +41,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_verbs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "verbs");
     let run_aliases = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "aliases");
     let run_slugs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "slugs");
+    let run_integrity = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "integrity");
     let run_default_battery = args.checkers.is_empty();
 
     let mut issues: Vec<Issue> = Vec::new();
@@ -65,6 +66,9 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
             apply_slug_fixes(db, &slug_report.fixes, &delim)?;
         }
         issues.extend(slug_report.issues);
+    }
+    if run_integrity {
+        issues.extend(collect_integrity_warnings(db)?);
     }
     let report = Report {
         issues,
@@ -390,6 +394,89 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<()> {
         db.save_existing_entry_with_auto_reinterp(&fix.existing, entry, delim)?;
     }
     Ok(())
+}
+
+/// Surface pending rows from `integrity_warnings` (`resolution IS NULL`)
+/// — one issue per `kind`. These are local data-integrity findings
+/// (filed by the post-insert validator), not cross-device sync
+/// conflicts. The canonical scenario is a repeated state where the user
+/// forgot to log an intermediate transition; the fix is usually
+/// `datum switch <field> <state> -t -<n>` to backfill the missing
+/// entry, not `datum integrity resolve`.
+///
+/// Resolved rows (`resolution IS NOT NULL`) are excluded — the user
+/// already triaged them. The detection cost is already paid in the
+/// insert path; this checker just makes the queue visible alongside
+/// other `datum check` findings.
+fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
+    use datum_core::integrity::{IntegrityKind, IntegrityWarning, ListFilter};
+    let pending = db.list_integrity_warnings(&ListFilter {
+        kind: None,
+        pending: Some(true),
+    })?;
+    if pending.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut by_kind: std::collections::BTreeMap<&'static str, (usize, &IntegrityWarning)> =
+        std::collections::BTreeMap::new();
+    for w in &pending {
+        by_kind
+            .entry(w.kind.as_str())
+            .and_modify(|(n, _)| *n += 1)
+            .or_insert((1, w));
+    }
+
+    let mut issues = Vec::new();
+    for (_, (count, first)) in by_kind {
+        let kind = first.kind;
+        let message = match kind {
+            IntegrityKind::SameStateRepeat => format!(
+                "{count} entr{y} repeat the prior state without an intermediate transition \
+                 (likely a missing event — backfill with `datum switch <field> <state> -t -<n>`)",
+                y = if count == 1 { "y" } else { "ies" },
+            ),
+            IntegrityKind::DoubleOpen => format!(
+                "{count} field{s} opened a second time while already open",
+                s = if count == 1 { "" } else { "s" },
+            ),
+            IntegrityKind::OrphanEnd => format!(
+                "{count} close{s} arrived on a field with no prior open",
+                s = if count == 1 { "" } else { "s" },
+            ),
+            IntegrityKind::Overlap => format!(
+                "{count} block{s} overlap another block on the same field",
+                s = if count == 1 { "" } else { "s" },
+            ),
+            IntegrityKind::LastStateMismatch => format!(
+                "{count} entr{y} carried a --last-state assertion that disagrees with history",
+                y = if count == 1 { "y" } else { "ies" },
+            ),
+        };
+        let category: &'static str = match kind {
+            IntegrityKind::SameStateRepeat => "integrity_same_state_repeat",
+            IntegrityKind::DoubleOpen => "integrity_double_open",
+            IntegrityKind::OrphanEnd => "integrity_orphan_end",
+            IntegrityKind::Overlap => "integrity_overlap",
+            IntegrityKind::LastStateMismatch => "integrity_last_state_mismatch",
+        };
+        issues.push(Issue {
+            severity: Severity::Warning,
+            category,
+            message,
+            count,
+            example: Some(IssueExample {
+                id: Some(first.hid.clone()),
+                field: Some(first.local_entry.field.clone()),
+                detail: Some(format!(
+                    "trigger slug={slug}  detected={detected}",
+                    slug = first.entry_slug,
+                    detected = first.detected_at.to_rfc3339(),
+                )),
+            }),
+        });
+    }
+    Ok(issues)
 }
 
 #[derive(Debug, Default)]
@@ -1620,5 +1707,140 @@ mod tests {
             "clean db must yield no slug-drift issues, got: {:?}",
             report.issues,
         );
+    }
+
+    // ─── da-ytj4: pending integrity warnings surfaced by `datum check` ───
+
+    /// Two `switch mood happy` entries back-to-back file a
+    /// `same_state_repeat` integrity row; `collect_integrity_warnings`
+    /// surfaces it as a WARN with the matching category and count.
+    #[test]
+    fn integrity_check_reports_pending_same_state_repeat() {
+        let db = Db::open_in_memory().unwrap();
+        let e1 = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e1).unwrap();
+        let e2 = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T11:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e2).unwrap();
+
+        let issues = collect_integrity_warnings(&db).unwrap();
+        let issue = issues
+            .iter()
+            .find(|i| i.category == "integrity_same_state_repeat")
+            .expect("integrity_same_state_repeat must be reported");
+        assert_eq!(issue.severity, Severity::Warning);
+        assert_eq!(issue.count, 1);
+        assert_eq!(
+            issue.example.as_ref().and_then(|e| e.field.as_deref()),
+            Some("mood")
+        );
+    }
+
+    /// Resolved integrity rows (`resolution IS NOT NULL`) are excluded —
+    /// the user already triaged them.
+    #[test]
+    fn integrity_check_skips_resolved_rows() {
+        use datum_core::integrity::{ListFilter, Resolution};
+        let db = Db::open_in_memory().unwrap();
+        let e1 = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e1).unwrap();
+        let e2 = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T11:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e2).unwrap();
+
+        let pending = db
+            .list_integrity_warnings(&ListFilter {
+                kind: None,
+                pending: Some(true),
+            })
+            .unwrap();
+        assert_eq!(pending.len(), 1, "exactly one pending row expected");
+        db.resolve_integrity_warning(&pending[0].id, Resolution::KeepBoth)
+            .unwrap();
+
+        let issues = collect_integrity_warnings(&db).unwrap();
+        assert!(
+            issues.is_empty(),
+            "resolved integrity rows must not surface, got: {issues:?}",
+        );
+    }
+
+    /// A clean DB with no pending integrity rows produces no issues.
+    #[test]
+    fn integrity_check_clean_db_emits_nothing() {
+        let db = Db::open_in_memory().unwrap();
+        let issues = collect_integrity_warnings(&db).unwrap();
+        assert!(
+            issues.is_empty(),
+            "clean db must yield no integrity issues, got: {issues:?}",
+        );
+    }
+
+    /// The integrity-only helper emits exclusively `integrity_*`
+    /// categories — it must not leak unrelated default-battery findings
+    /// (e.g. `unknown_field`).
+    #[test]
+    fn integrity_check_narrows_to_integrity_categories() {
+        let db = Db::open_in_memory().unwrap();
+        let e1 = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e1).unwrap();
+        let e2 = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T11:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e2).unwrap();
+
+        let issues = collect_integrity_warnings(&db).unwrap();
+        assert!(!issues.is_empty(), "expected at least one integrity issue");
+        for issue in &issues {
+            assert!(
+                issue.category.starts_with("integrity_"),
+                "unexpected category in integrity-only run: {}",
+                issue.category,
+            );
+        }
     }
 }
