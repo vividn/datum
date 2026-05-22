@@ -83,7 +83,7 @@ fn derive_source_db() -> String {
     }
 }
 
-pub(crate) fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
+pub fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
     let out_path = std::path::Path::new(&args.path);
     if out_path.exists() && !args.overwrite {
         anyhow::bail!(
@@ -237,10 +237,11 @@ impl RestoreReport {
     }
 }
 
-pub(crate) fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
+pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
     let dry_run = args.dry_run;
     let json = args.json;
     let force = args.force;
+    let bump_cluster = args.cluster;
     let report = cmd_restore_with_report(args, db)?;
 
     if json {
@@ -287,6 +288,43 @@ pub(crate) fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
             "✓ Restore: {} inserted, {} updated, {} skipped",
             report.inserted, report.updated, report.skipped
         );
+    }
+
+    if bump_cluster && !dry_run {
+        bump_cluster_after_restore(db)?;
+    }
+    Ok(())
+}
+
+/// da-ws1q sub-5: after a non-dry-run restore, optionally bump the
+/// sync cluster's generation so peers see GenerationMismatchError
+/// instead of re-pushing their stale snapshot on top of the restored
+/// state. No-op when the local DB has no `sync_state.cluster_id` —
+/// nothing has ever been synced, so there are no peers to invalidate.
+fn bump_cluster_after_restore(db: &Db) -> Result<()> {
+    use datum_sync_client::sync_state;
+
+    let Some(cluster_id) = sync_state::get_cluster_id(db).ok().flatten() else {
+        eprintln!(
+            "⚠ db restore --cluster: no cluster_id recorded locally (never synced); nothing to bump"
+        );
+        return Ok(());
+    };
+    match crate::commands::sync::cluster_ops::bump_generation_for_current_server(&cluster_id) {
+        Ok(new_generation) => {
+            // Stamp the new generation locally so the next push from
+            // this device carries it; otherwise we'd hit our own
+            // GenerationMismatch on the next sync.
+            sync_state::set_cluster_generation(db, new_generation).ok();
+            println!("  cluster {cluster_id}: bumped to generation {new_generation}");
+            println!("  peers on the old generation will see GenerationMismatchError next sync");
+        }
+        Err(e) => {
+            eprintln!("⚠ db restore: local restore succeeded, but cluster bump failed: {e:#}");
+            eprintln!(
+                "  re-run `datum sync` once you can reach the relay; peers may otherwise re-push their stale state on top of the restored snapshot"
+            );
+        }
     }
     Ok(())
 }
@@ -623,6 +661,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -709,6 +748,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -744,6 +784,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -763,6 +804,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -826,6 +868,7 @@ mod tests {
                 force: true,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -932,6 +975,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -983,6 +1027,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1025,6 +1070,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1058,6 +1104,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1104,6 +1151,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1150,6 +1198,7 @@ mod tests {
                 force: false,
                 dry_run: true,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1194,6 +1243,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1211,6 +1261,7 @@ mod tests {
                 force: false,
                 dry_run: true,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1257,6 +1308,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1269,6 +1321,7 @@ mod tests {
                 force: true, // conflict strategy = Update
                 dry_run: true,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1309,6 +1362,7 @@ mod tests {
                 force: false,
                 dry_run: true,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1356,6 +1410,7 @@ mod tests {
                 force: false,
                 dry_run: true,
                 json: false,
+                cluster: false,
             },
             &dst,
         )
@@ -1400,6 +1455,7 @@ mod tests {
                 force: false,
                 dry_run: true,
                 json: false,
+                cluster: false,
             },
             &dst,
         )

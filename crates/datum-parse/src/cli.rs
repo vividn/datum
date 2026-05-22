@@ -221,6 +221,13 @@ pub struct DbPurgeArgs {
     /// `--yes` / `-y` — skip the type-the-database-path confirmation prompt
     /// and purge non-interactively. Required when stdin is not a TTY.
     pub yes: bool,
+    /// `--cluster` (da-ws1q sub-5 of multi-DB epic): after the local
+    /// purge succeeds, also bump the sync cluster's generation on the
+    /// relay so peers on the old generation get
+    /// `GenerationMismatchError` on their next sync and know to re-init
+    /// instead of re-pushing the wiped state. No-op when the local DB
+    /// has never synced (no `sync_state.cluster_id` recorded).
+    pub cluster: bool,
 }
 
 #[derive(Debug, Default)]
@@ -846,6 +853,13 @@ pub struct RestoreArgs {
     pub force: bool,
     pub dry_run: bool,
     pub json: bool,
+    /// `--cluster` (da-ws1q sub-5): after the restore succeeds, bump
+    /// the sync cluster's generation on the relay so peers see a
+    /// `GenerationMismatchError` instead of re-pushing their stale
+    /// state on top of the restored snapshot. No-op when the local DB
+    /// has no recorded `sync_state.cluster_id`, when `--dry-run`, or
+    /// when the restore wrote nothing (no point bumping for nothing).
+    pub cluster: bool,
 }
 
 #[derive(Debug, Default)]

@@ -625,19 +625,21 @@ fn push_after_server_bump_surfaces_generation_mismatch_error() {
     }
 
     // A new local write triggers a push — the server must reject with
-    // GenerationMismatch, surfacing as anyhow::Error carrying the
-    // typed `SyncProtocolError::GenerationMismatch` payload through
-    // the SessionError chain.
+    // GenerationMismatch. da-eu7o surfaces it as a typed
+    // SessionError::GenerationMismatch; da-ws1q sub-5 then rewrites
+    // that into a "cluster forked" CLI surface at the run_sync_inner
+    // boundary, so the message a user sees here is the friendly form.
     db.insert_entry(&make_entry("mood", 60, "dev-1")).unwrap();
     let err = run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db)
         .expect_err("push against bumped server must error");
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("generation mismatch")
-            || msg.contains("GenerationMismatch")
-            || msg.contains("expected 1")
-            || msg.contains("expected: 1"),
-        "expected generation-mismatch surface, got: {msg}",
+        msg.contains("cluster forked"),
+        "expected 'cluster forked' surface from sub-5 rewrite, got: {msg}",
+    );
+    assert!(
+        msg.contains("generation 1") && msg.contains("sent 0"),
+        "expected expected/found generations in surface, got: {msg}",
     );
 
     // Watermarks must NOT advance after a mismatch — peers depend on

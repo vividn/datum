@@ -7,8 +7,10 @@
 //! 3. persisting the minted token under the XDG auth path (mode 0600).
 
 use anyhow::{anyhow, Context, Result};
+use datum_core::db::Db;
 use datum_sync_client::http::{run_device_flow, DeviceFlowPrompter};
 use datum_sync_client::protocol::messages::AuthToken;
+use datum_sync_client::sync_state;
 use reqwest::blocking::Client;
 use std::time::Duration;
 
@@ -17,13 +19,14 @@ use crate::commands::sync::Prompter;
 use crate::config::{auth_token_path, load_raw_config_or_default, server_host_from_url};
 
 /// Production entry point.
-pub fn run(args: SyncLoginArgs, prompter: &mut impl Prompter) -> Result<()> {
+pub fn run(args: SyncLoginArgs, db: &Db, prompter: &mut impl Prompter) -> Result<()> {
     let server = resolve_server(args.server.as_deref())?;
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .context("build reqwest client")?;
-    run_with_client(&server, &client, prompter)?;
+    let token = run_with_client(&server, &client, prompter)?;
+    adopt_cluster_for_user(db, &token);
     Ok(())
 }
 
@@ -37,6 +40,57 @@ pub fn run_with_client(
     let token = run_device_flow(server, client, &mut bridge)?;
     write_token(server, &token)?;
     Ok(token)
+}
+
+/// da-ws1q sub-5: after a successful login, adopt the cluster
+/// registration locally. The transitional default (per da-og24 + the
+/// server's push/pull handlers) is `cluster_id = user_id` — so the
+/// server-side `ensure_cluster` that runs on first push/pull is
+/// deterministic, and we can record the same value here so the very
+/// first sync sends a stable identifier instead of `None`.
+///
+/// Failures here are non-fatal — login itself has succeeded. The next
+/// push/pull will set cluster_id from the server's echo (via da-eu7o)
+/// anyway; this is a UX nicety so the user sees "Cluster <id> bound to
+/// <db>" immediately after login.
+fn adopt_cluster_for_user(db: &Db, token: &AuthToken) {
+    let Some(user_id) = token.user_id.as_deref() else {
+        eprintln!(
+            "⚠ login succeeded but server returned no user_id; first sync will assign a cluster"
+        );
+        return;
+    };
+    // Default cluster_id IS user_id (transitional 1:1 mapping). When
+    // multi-cluster ships this becomes a list and the CLI grows a
+    // `--cluster <id>` arg on `sync login`; for now there is only one.
+    if let Err(e) = sync_state::set_cluster_id(db, user_id) {
+        eprintln!("⚠ login: could not record cluster_id locally: {e:#}");
+        return;
+    }
+    let db_path = current_db_path(db);
+    match db_path {
+        Some(path) => println!("✓ Cluster {user_id} bound to {path}"),
+        None => println!("✓ Cluster {user_id} registered"),
+    }
+}
+
+/// Pull the active SQLite file path off `pragma_database_list`. None
+/// for an in-memory DB (tests) — caller falls back to a path-free
+/// message in that case.
+fn current_db_path(db: &Db) -> Option<String> {
+    let path: String = db
+        .conn()
+        .query_row(
+            "SELECT file FROM pragma_database_list WHERE name = 'main'",
+            [],
+            |row| row.get(0),
+        )
+        .ok()?;
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
 }
 
 /// Adapter: expose the CLI's richer `Prompter` as the client library's

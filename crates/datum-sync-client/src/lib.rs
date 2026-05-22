@@ -49,3 +49,9 @@ pub use crypto::key_wrap::{
     WrappedKey,
 };
 pub use protocol::messages::AuthToken;
+
+// Re-export wire-error types so downstream crates (CLI surface in
+// datum-commands) can match on them without adding a direct dep on the
+// protocol crate. da-ws1q sub-5: the CLI rewrites
+// SessionError::GenerationMismatch into a CLI-friendly instruction.
+pub use datum_sync_protocol::SyncProtocolError;

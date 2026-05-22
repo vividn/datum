@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use crate::args::{SyncArgs, SyncCommand, SyncConfigCommand, SyncKeyCommand};
 
+pub mod cluster_ops;
 pub mod config;
 pub mod daemon_status;
 pub mod install_daemon;
@@ -38,7 +39,7 @@ pub use datum_sync_client::protocol::messages::AuthToken;
 /// Entry point — dispatch `datum sync [flags] [subcommand]`.
 pub fn dispatch(args: SyncArgs, db: &Db) -> Result<()> {
     match args.command {
-        Some(SyncCommand::Login(a)) => login::run(a, &mut StdIoPrompter),
+        Some(SyncCommand::Login(a)) => login::run(a, db, &mut StdIoPrompter),
         Some(SyncCommand::Config(sub)) => match sub {
             SyncConfigCommand::SetServer { url, global } => config::set_server(url, global),
             SyncConfigCommand::Disable => config::disable(),
@@ -170,13 +171,36 @@ pub fn run_sync_inner(
         },
         dry_run,
     };
-    let report = sync_once::sync_once(client, db, &cfg)?;
+    let report = sync_once::sync_once(client, db, &cfg).map_err(rewrite_generation_mismatch)?;
     Ok(SyncOutcome {
         pushed: report.push.pushed,
         pulled: report.pull.applied,
         integrity_warnings_queued: report.pull.integrity_warnings_queued,
         dry_run,
     })
+}
+
+/// da-ws1q sub-5: when sync_once bubbles a SessionError::GenerationMismatch
+/// up through anyhow, replace the raw protocol message with a CLI-actionable
+/// "cluster forked" instruction. Anything else passes through untouched so
+/// network / decode failures keep their original context.
+fn rewrite_generation_mismatch(err: anyhow::Error) -> anyhow::Error {
+    use datum_sync_client::http::SessionError;
+    use datum_sync_client::SyncProtocolError;
+
+    if let Some(SessionError::GenerationMismatch(SyncProtocolError::GenerationMismatch {
+        expected,
+        found,
+    })) = err.downcast_ref::<SessionError>()
+    {
+        return anyhow::anyhow!(
+            "cluster forked: server is on generation {expected} but this device sent {found}. \
+             Another device purged or restored the cluster since your last sync. \
+             Re-init this device: back up local-only work, then run `datum db purge` \
+             (without --cluster) and `datum sync` to re-pull from generation {expected}."
+        );
+    }
+    err
 }
 
 /// Build a [`Session`](datum_sync_client::http::Session) wired to

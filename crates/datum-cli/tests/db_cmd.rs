@@ -93,8 +93,16 @@ fn db_purge_interactive_path_match_proceeds() {
         .value(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(b"\n".to_vec());
-    purge_with_io(DbPurgeArgs { yes: false }, &db, &mut stdin, true)
-        .expect("matching path should proceed");
+    purge_with_io(
+        DbPurgeArgs {
+            yes: false,
+            cluster: false,
+        },
+        &db,
+        &mut stdin,
+        true,
+    )
+    .expect("matching path should proceed");
     assert_eq!(db.count_entries().unwrap(), 0);
 }
 
@@ -105,8 +113,16 @@ fn db_purge_interactive_path_mismatch_aborts() {
         .value(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(b"not-the-path\n".to_vec());
-    let err = purge_with_io(DbPurgeArgs { yes: false }, &db, &mut stdin, true)
-        .expect_err("mismatched path must abort");
+    let err = purge_with_io(
+        DbPurgeArgs {
+            yes: false,
+            cluster: false,
+        },
+        &db,
+        &mut stdin,
+        true,
+    )
+    .expect_err("mismatched path must abort");
     assert!(
         err.to_string().to_lowercase().contains("did not match"),
         "expected 'did not match' message, got: {err}"
@@ -122,8 +138,16 @@ fn db_purge_non_tty_without_yes_aborts() {
         .value(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(Vec::<u8>::new());
-    let err = purge_with_io(DbPurgeArgs { yes: false }, &db, &mut stdin, false)
-        .expect_err("non-tty without --yes must abort");
+    let err = purge_with_io(
+        DbPurgeArgs {
+            yes: false,
+            cluster: false,
+        },
+        &db,
+        &mut stdin,
+        false,
+    )
+    .expect_err("non-tty without --yes must abort");
     let msg = err.to_string().to_lowercase();
     assert!(
         msg.contains("--yes") && (msg.contains("tty") || msg.contains("non-interactive")),

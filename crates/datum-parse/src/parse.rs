@@ -1679,12 +1679,14 @@ fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
     let mut force = false;
     let mut dry_run = false;
     let mut json = false;
+    let mut cluster = false;
     for tok in tail {
         match split_flag(tok) {
             FlagSplit::Positional(s) => pos.push(s),
             FlagSplit::Long("force") => force = true,
             FlagSplit::Long("dry-run") => dry_run = true,
             FlagSplit::Long("json") => json = true,
+            FlagSplit::Long("cluster") => cluster = true,
             f => return Err(unknown_flag(f)),
         }
     }
@@ -1694,6 +1696,7 @@ fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         force,
         dry_run,
         json,
+        cluster,
     })
 }
 
@@ -2253,13 +2256,15 @@ fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
 
 fn parse_db_purge_args(tail: &[&str]) -> Result<DbPurgeArgs> {
     let mut yes = false;
+    let mut cluster = false;
     for tok in tail {
         match split_flag(tok) {
             FlagSplit::Long("yes") | FlagSplit::Short('y') => yes = true,
+            FlagSplit::Long("cluster") => cluster = true,
             f => return Err(unknown_flag(f)),
         }
     }
-    Ok(DbPurgeArgs { yes })
+    Ok(DbPurgeArgs { yes, cluster })
 }
 
 fn parse_config_cmd(tail: &[&str]) -> Result<ConfigCommand> {
