@@ -95,13 +95,15 @@ fn scoped_env() -> EnvGuard {
 fn write_token_for(server: &str, token: &str) {
     let host = server_host_from_url(server);
     let path = auth_token_path(&host).unwrap();
-    let t = AuthToken {
-        token: token.to_string(),
-        refresh_token: None,
-        refreshed_at: Some(Utc::now().to_rfc3339()),
-        server: Some(server.to_string()),
-        user_id: Some("vividn@vividn.dev".to_string()),
-        cluster_id: None,
+    let t = datum_sync_client::PersistedAuthToken {
+        wire: AuthToken {
+            token: token.to_string(),
+            refresh_token: "test-refresh".to_string(),
+            user_id: "vividn@vividn.dev".to_string(),
+            cluster_id: None,
+        },
+        refreshed_at: Utc::now().to_rfc3339(),
+        server: server.to_string(),
     };
     std::fs::write(path, serde_json::to_vec_pretty(&t).unwrap()).unwrap();
 }
@@ -119,10 +121,8 @@ fn write_master_key(server: &str, key_bytes: &[u8; 32]) {
 fn bearer_session(server: &str, bearer: &str) -> datum_sync_client::http::Session {
     let token = AuthToken {
         token: bearer.to_string(),
-        refresh_token: None,
-        refreshed_at: Some(Utc::now().to_rfc3339()),
-        server: Some(server.to_string()),
-        user_id: None,
+        refresh_token: "test-refresh".to_string(),
+        user_id: "test-user".to_string(),
         cluster_id: None,
     };
     datum_sync_client::http::Session::new(server, &token, None)

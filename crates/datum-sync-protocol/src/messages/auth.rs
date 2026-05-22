@@ -2,15 +2,17 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Bearer token returned by `/v1/auth/{register,login}/finish`,
-/// `/v1/auth/device-code/poll` (success branch), and `/v1/auth/refresh`.
-/// Also the on-disk persistence shape used by the CLI for
-/// `$XDG_CONFIG_HOME/datum/auth/<host>.json`.
+/// Wire shape of the bearer token issued by
+/// `/v1/auth/{register,login}/finish`, `/v1/auth/device-code/poll`
+/// (success branch), and `/v1/auth/refresh`.
 ///
-/// Server populates `token` + `user_id` + `refresh_token`. Client
-/// additionally fills `refreshed_at` + `server` at persistence time.
-/// The `user` alias on `user_id` reads legacy persisted files written
-/// before this crate unified the shape — new writes use `user_id`.
+/// Server-only contract: this struct is what the server emits and what
+/// the client deserializes. The CLI's on-disk shape is
+/// `datum_sync_client::auth::PersistedAuthToken`, which wraps this and
+/// adds the client-side metadata (`refreshed_at`, `server`) at
+/// persistence time (da-ixmh). Required fields are `String`, not
+/// `Option<String>`, so the type reads as "these always flow on the
+/// wire" instead of "everything optional, good luck."
 ///
 /// `refresh_token` is a 32-byte random value (URL-safe base64) the
 /// server stores as a SHA-256 hash. The client trades it via
@@ -20,26 +22,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthToken {
     pub token: String,
-    /// User identifier. Server emits the user UUID as a string; client
-    /// persists the same value. `serde(alias = "user")` lets us read
-    /// legacy CLI auth files that wrote `"user"` instead of `"user_id"`.
-    #[serde(default, alias = "user", skip_serializing_if = "Option::is_none")]
-    pub user_id: Option<String>,
-    /// Single-use refresh token. Present on every fresh issuance from
-    /// the server (`/register/finish`, `/login/finish`, `device-code/poll`,
-    /// `/auth/refresh`). Optional on the wire to keep older test-fixture
-    /// files (and pre-da-1i5x persisted tokens) parseable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub refresh_token: Option<String>,
-    /// RFC 3339 timestamp of when the token was minted or refreshed.
-    /// Set client-side at persistence time; absent in raw server responses.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub refreshed_at: Option<String>,
-    /// Origin server URL the token was minted against. Set client-side
-    /// at persistence time; lets callers sanity-check token/server
-    /// mismatches before firing a request.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub server: Option<String>,
+    /// User identifier (server emits the UUID as a string).
+    /// `serde(alias = "user")` reads legacy CLI auth files that wrote
+    /// `"user"` instead of `"user_id"`; new writes use `"user_id"`.
+    #[serde(alias = "user")]
+    pub user_id: String,
+    /// Single-use refresh token. Issued on every fresh
+    /// `/register/finish`, `/login/finish`, `device-code/poll` (success),
+    /// and `/auth/refresh` response.
+    pub refresh_token: String,
     /// Default cluster the user is bound to at issuance time. Absent on
     /// v1 tokens. Lets the client default cluster-scoped requests
     /// without a separate `/clusters` round-trip (da-soeu, sub-1 of

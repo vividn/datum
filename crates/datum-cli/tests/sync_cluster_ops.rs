@@ -90,13 +90,15 @@ fn scoped_env() -> EnvGuard {
 fn write_token_for(server: &str, token: &str, user_id: Option<&str>) {
     let host = server_host_from_url(server);
     let path = auth_token_path(&host).unwrap();
-    let t = AuthToken {
-        token: token.to_string(),
-        refresh_token: None,
-        refreshed_at: Some(Utc::now().to_rfc3339()),
-        server: Some(server.to_string()),
-        user_id: user_id.map(str::to_string),
-        cluster_id: None,
+    let t = datum_sync_client::PersistedAuthToken {
+        wire: AuthToken {
+            token: token.to_string(),
+            refresh_token: "test-refresh".to_string(),
+            user_id: user_id.unwrap_or("test-user").to_string(),
+            cluster_id: None,
+        },
+        refreshed_at: Utc::now().to_rfc3339(),
+        server: server.to_string(),
     };
     std::fs::write(path, serde_json::to_vec_pretty(&t).unwrap()).unwrap();
 }
@@ -177,11 +179,7 @@ fn sync_login_records_cluster_id_from_user_id() {
     let mut prompter = datum_cli::sync::TestPrompter::new(Vec::<String>::new());
     let token = datum_cli::sync::login::run_with_client(&relay.base_url, &client, &mut prompter)
         .expect("login should succeed");
-    let expected_cluster = token
-        .user_id
-        .as_deref()
-        .expect("server returns user_id in token")
-        .to_string();
+    let expected_cluster = token.user_id.clone();
 
     // run_with_client is the test seam — production also stamps the
     // cluster_id locally as part of `run`. Drive that path explicitly

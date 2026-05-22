@@ -27,7 +27,7 @@ use crate::commands::sync::Prompter;
 use crate::config::{
     auth_token_path, load_raw_config_or_default, master_key_path, server_host_from_url,
 };
-use datum_sync_client::protocol::messages::AuthToken;
+use datum_sync_client::PersistedAuthToken;
 
 /// `datum sync key init`
 pub fn init(
@@ -185,15 +185,19 @@ fn resolve_server(cli_server: Option<&str>) -> Result<String> {
         })
 }
 
-/// Load the auth token for `server`; returns `Ok(None)` if there's no file.
-pub fn load_token(server: &str) -> Result<Option<AuthToken>> {
+/// Load the auth token for `server`; returns `Ok(None)` if there's no
+/// file. da-ixmh: returns the on-disk [`PersistedAuthToken`] shape;
+/// callers that need the bearer / refresh / user_id read through the
+/// `Deref<Target = AuthToken>` impl.
+pub fn load_token(server: &str) -> Result<Option<PersistedAuthToken>> {
     let host = server_host_from_url(server);
     let path = auth_token_path(&host)?;
     if !path.exists() {
         return Ok(None);
     }
     let bytes = std::fs::read(&path).with_context(|| format!("read token at {path:?}"))?;
-    let token: AuthToken = serde_json::from_slice(&bytes).context("parse stored auth token")?;
+    let token: PersistedAuthToken =
+        serde_json::from_slice(&bytes).context("parse stored auth token")?;
     Ok(Some(token))
 }
 

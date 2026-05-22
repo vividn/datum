@@ -98,18 +98,31 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
         // A non-202 status with a token field means success.
         if status.is_success() {
             if let Some(tok) = payload.token {
-                let user_id = payload.user_id.clone();
-                let refresh_token = payload.refresh_token.clone();
+                // da-ixmh: the success branch of poll always carries the
+                // (token, user_id, refresh_token) trio. Treat absence as
+                // a protocol-level invariant break — earlier code
+                // silently substituted None and bubbled the partial
+                // shape, which forced every downstream consumer to
+                // handle the Option case.
+                let user_id = payload.user_id.clone().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "device-code/poll success branch missing user_id — \
+                         server contract violation"
+                    )
+                })?;
+                let refresh_token = payload.refresh_token.clone().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "device-code/poll success branch missing refresh_token — \
+                         server contract violation"
+                    )
+                })?;
                 let token = AuthToken {
                     token: tok,
                     refresh_token,
-                    refreshed_at: Some(chrono::Utc::now().to_rfc3339()),
-                    server: Some(server.to_string()),
                     user_id,
                     cluster_id: None,
                 };
-                let label = token.user_id.as_deref().unwrap_or("user");
-                prompter.status(&format!("✓ Authorized as {label}"));
+                prompter.status(&format!("✓ Authorized as {}", token.user_id));
                 return Ok(token);
             }
         }

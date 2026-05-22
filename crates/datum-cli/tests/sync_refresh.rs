@@ -81,13 +81,22 @@ fn scoped_env() -> EnvGuard {
     }
 }
 
+/// Persist a wire token to disk for tests. Wraps in
+/// [`PersistedAuthToken`] with placeholder metadata since these tests
+/// don't care about `refreshed_at`/`server` — they're exercising the
+/// rotation path (da-ixmh).
 fn write_token_for(server: &str, token: AuthToken) {
     let host = server_host_from_url(server);
     let path = auth_token_path(&host).unwrap();
-    std::fs::write(path, serde_json::to_vec_pretty(&token).unwrap()).unwrap();
+    let persisted = datum_sync_client::PersistedAuthToken {
+        wire: token,
+        refreshed_at: Utc::now().to_rfc3339(),
+        server: server.to_string(),
+    };
+    std::fs::write(path, serde_json::to_vec_pretty(&persisted).unwrap()).unwrap();
 }
 
-fn read_token(server: &str) -> AuthToken {
+fn read_token(server: &str) -> datum_sync_client::PersistedAuthToken {
     let host = server_host_from_url(server);
     let path = auth_token_path(&host).unwrap();
     let bytes = std::fs::read(&path).unwrap();
@@ -158,10 +167,8 @@ fn sync_auto_refreshes_on_401_and_persists_new_token() {
         &relay.base_url,
         AuthToken {
             token: "bogus-bearer-not-a-jwt".to_string(),
-            refresh_token: Some(valid_refresh.clone()),
-            refreshed_at: Some(Utc::now().to_rfc3339()),
-            server: Some(relay.base_url.clone()),
-            user_id: Some(relay.user_id.to_string()),
+            refresh_token: valid_refresh.clone(),
+            user_id: relay.user_id.to_string(),
             cluster_id: None,
         },
     );
@@ -181,10 +188,8 @@ fn sync_auto_refreshes_on_401_and_persists_new_token() {
         on_disk.token, "bogus-bearer-not-a-jwt",
         "bearer must be rotated on disk"
     );
-    assert!(on_disk.refresh_token.is_some());
     assert_ne!(
-        on_disk.refresh_token.as_deref(),
-        Some(valid_refresh.as_str()),
+        on_disk.refresh_token, valid_refresh,
         "refresh token rotates on every successful refresh (single-use)"
     );
 }
@@ -201,10 +206,8 @@ fn sync_with_bogus_refresh_fails_with_actionable_error() {
         &relay.base_url,
         AuthToken {
             token: "bogus-bearer".to_string(),
-            refresh_token: Some("bogus-refresh-token".to_string()),
-            refreshed_at: Some(Utc::now().to_rfc3339()),
-            server: Some(relay.base_url.clone()),
-            user_id: Some(relay.user_id.to_string()),
+            refresh_token: "bogus-refresh-token".to_string(),
+            user_id: relay.user_id.to_string(),
             cluster_id: None,
         },
     );
@@ -226,43 +229,12 @@ fn sync_with_bogus_refresh_fails_with_actionable_error() {
     );
 }
 
-/// Missing refresh_token in the persisted file (legacy login or hand-
-/// edited file) → the Session bails with the "no refresh token" branch
-/// of the session-expired prompt, instead of trying to call /refresh
-/// with `None`.
-#[test]
-fn sync_without_refresh_token_fails_gracefully_on_401() {
-    let env = scoped_env();
-    let relay = StubRelay::start();
-
-    write_token_for(
-        &relay.base_url,
-        AuthToken {
-            token: "bogus-bearer".to_string(),
-            refresh_token: None,
-            refreshed_at: Some(Utc::now().to_rfc3339()),
-            server: Some(relay.base_url.clone()),
-            user_id: Some(relay.user_id.to_string()),
-            cluster_id: None,
-        },
-    );
-    write_master_key(&relay.base_url, &[0xA3u8; 32]);
-
-    let db = fresh_db(&env);
-    db.insert_entry(&make_entry("focus", 0, "dev-X")).unwrap();
-
-    let err = run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db)
-        .expect_err("sync with no refresh_token must fail on 401");
-    let msg = format!("{err:#}");
-    assert!(
-        msg.contains("session expired"),
-        "missing-refresh path must surface as session-expired: {msg}"
-    );
-    assert!(
-        msg.contains("datum sync login"),
-        "missing-refresh path must point at `datum sync login`: {msg}"
-    );
-}
+// da-ixmh: the prior `sync_without_refresh_token_fails_gracefully_on_401`
+// test exercised a case that the new typed AuthToken (refresh_token:
+// String, no longer Option) makes unrepresentable. The
+// `SessionError::NoRefreshToken` variant survives for explicit future
+// callers but the legacy-on-disk path is unreachable through the type
+// system now; the test was removed when this contract tightened.
 
 /// Session unit test: a 200 on the first attempt does NOT trigger a
 /// refresh round-trip. Catches the regression where every call would
@@ -276,10 +248,8 @@ fn session_does_not_refresh_on_success() {
 
     let token = AuthToken {
         token: valid_bearer.clone(),
-        refresh_token: Some(valid_refresh),
-        refreshed_at: None,
-        server: Some(relay.base_url.clone()),
-        user_id: Some(relay.user_id.to_string()),
+        refresh_token: valid_refresh,
+        user_id: relay.user_id.to_string(),
         cluster_id: None,
     };
     let session = Session::new(&relay.base_url, &token, None);
@@ -305,10 +275,8 @@ fn session_refreshes_once_on_401_then_retries() {
 
     let token = AuthToken {
         token: "bogus-bearer".to_string(),
-        refresh_token: Some(valid_refresh),
-        refreshed_at: None,
-        server: Some(relay.base_url.clone()),
-        user_id: Some(relay.user_id.to_string()),
+        refresh_token: valid_refresh,
+        user_id: relay.user_id.to_string(),
         cluster_id: None,
     };
     let session = Session::new(&relay.base_url, &token, None);

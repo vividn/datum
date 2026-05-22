@@ -38,7 +38,7 @@ pub fn run(args: SyncStatusArgs) -> Result<()> {
             let user = load_token(url)
                 .ok()
                 .flatten()
-                .and_then(|t| t.user_id)
+                .map(|t| t.user_id.clone())
                 .unwrap_or_else(|| "(not logged in)".to_string());
             (url.to_string(), user)
         }

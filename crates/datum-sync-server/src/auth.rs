@@ -75,10 +75,8 @@ pub async fn register_finish(
     let token = jwt::create_token(&user_id, &state.jwt_secret)?;
     Ok(Json(AuthToken {
         token,
-        user_id: Some(user_id.to_string()),
-        refresh_token: Some(refresh_token),
-        refreshed_at: None,
-        server: None,
+        user_id: user_id.to_string(),
+        refresh_token,
         cluster_id: None,
     }))
 }
@@ -153,10 +151,8 @@ pub async fn login_finish(
     let token = jwt::create_token(&user_id, &state.jwt_secret)?;
     Ok(Json(AuthToken {
         token,
-        user_id: Some(user_id.to_string()),
-        refresh_token: Some(refresh_token),
-        refreshed_at: None,
-        server: None,
+        user_id: user_id.to_string(),
+        refresh_token,
         cluster_id: None,
     }))
 }
@@ -202,10 +198,8 @@ pub async fn refresh(
 
     Ok(Json(AuthToken {
         token,
-        user_id: Some(user_id.to_string()),
-        refresh_token: Some(new_refresh),
-        refreshed_at: None,
-        server: None,
+        user_id: user_id.to_string(),
+        refresh_token: new_refresh,
         cluster_id: None,
     }))
 }

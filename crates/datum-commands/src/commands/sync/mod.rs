@@ -210,6 +210,7 @@ fn rewrite_generation_mismatch(err: anyhow::Error) -> anyhow::Error {
 pub fn build_session(server: &str, token: &AuthToken) -> datum_sync_client::http::Session {
     use crate::config::{auth_token_path, server_host_from_url};
     use datum_sync_client::http::session::OnRefresh;
+    use datum_sync_client::PersistedAuthToken;
 
     let server_string = server.to_string();
     let host = server_host_from_url(server);
@@ -219,18 +220,12 @@ pub fn build_session(server: &str, token: &AuthToken) -> datum_sync_client::http
         // tests that swap DATUM_CONFIG_HOME between sync calls expect the
         // current env var to win.
         let path = auth_token_path(&host)?;
-        // Upgrade the partial response to the full on-disk shape: the
-        // server omits `server`/`refreshed_at`; the persisted file
-        // always carries them. We clone rather than mutate the input
-        // so the caller's view of the rotated token is not surprised.
-        let mut to_write = new.clone();
-        if to_write.server.is_none() {
-            to_write.server = Some(server_string.clone());
-        }
-        if to_write.refreshed_at.is_none() {
-            to_write.refreshed_at = Some(chrono::Utc::now().to_rfc3339());
-        }
-        let body = serde_json::to_vec_pretty(&to_write).context("serialize auth token")?;
+        // da-ixmh: the OnRefresh callback receives the WIRE shape; the
+        // CLI is the layer that owns persistence metadata, so we wrap
+        // here. `from_wire` stamps `refreshed_at` to now and `server`
+        // to the URL the session is bound to.
+        let persisted = PersistedAuthToken::from_wire(new.clone(), &server_string);
+        let body = serde_json::to_vec_pretty(&persisted).context("serialize auth token")?;
         write_private_file(&path, &body)?;
         Ok(())
     });
@@ -267,7 +262,11 @@ fn write_private_file(path: &std::path::Path, body: &[u8]) -> anyhow::Result<()>
 /// Bundle of inputs every sync direction needs — token, key, device_id —
 /// so we can validate them once and fail fast with a useful message.
 pub struct Preflight {
-    pub token: AuthToken,
+    /// On-disk persistence shape (da-ixmh). `Deref`s to the wire
+    /// `AuthToken` for HTTP call sites that only need the bearer +
+    /// user_id + refresh_token; persistence-aware code reads
+    /// `refreshed_at` / `server` directly.
+    pub token: datum_sync_client::PersistedAuthToken,
     pub master_key: [u8; 32],
     pub device_id: String,
 }

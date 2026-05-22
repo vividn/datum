@@ -158,10 +158,8 @@ pub async fn poll(
                 state.device_codes.lock().unwrap().remove(&q.device_code);
                 let body = AuthToken {
                     token,
-                    user_id: Some(user_id.to_string()),
-                    refresh_token: Some(refresh_token),
-                    refreshed_at: None,
-                    server: None,
+                    user_id: user_id.to_string(),
+                    refresh_token,
                     cluster_id: None,
                 };
                 (StatusCode::OK, Json(body)).into_response()

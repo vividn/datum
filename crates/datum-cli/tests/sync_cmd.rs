@@ -74,13 +74,15 @@ fn scoped_env() -> EnvGuard {
 fn write_token_for(server: &str, token: &str) {
     let host = server_host_from_url(server);
     let path = auth_token_path(&host).unwrap();
-    let t = AuthToken {
-        token: token.to_string(),
-        refresh_token: None,
-        refreshed_at: Some(chrono::Utc::now().to_rfc3339()),
-        server: Some(server.to_string()),
-        user_id: Some("vividn@vividn.dev".to_string()),
-        cluster_id: None,
+    let t = datum_sync_client::PersistedAuthToken {
+        wire: AuthToken {
+            token: token.to_string(),
+            refresh_token: "test-refresh".to_string(),
+            user_id: "vividn@vividn.dev".to_string(),
+            cluster_id: None,
+        },
+        refreshed_at: chrono::Utc::now().to_rfc3339(),
+        server: server.to_string(),
     };
     std::fs::write(path, serde_json::to_vec_pretty(&t).unwrap()).unwrap();
 }
@@ -103,11 +105,10 @@ fn sync_login_polls_until_authorized() {
     // Per spec, /v1/auth/device-code/poll echoes the canonical UUID as
     // user_id; the username only matters for the verification UX which
     // is out of scope for v1.
-    assert_eq!(
-        token.user_id.as_deref(),
-        Some(relay.user_id.to_string().as_str())
-    );
-    assert_eq!(token.server.as_deref(), Some(relay.base_url.as_str()));
+    assert_eq!(token.user_id, relay.user_id.to_string());
+    // `server` is no longer on the wire AuthToken (da-ixmh); it's now
+    // persisted on the PersistedAuthToken wrapper. The disk-write test
+    // below verifies the stored file carries it.
 
     // Prompter captured the verification URL + user code (exact values are
     // server-side; the contract is just that *some* `login:...` event was
@@ -167,9 +168,9 @@ fn sync_login_stores_token_at_xdg_path() {
     let path = auth_token_path(&host).unwrap();
     assert!(path.exists(), "token file missing at {:?}", path);
     let bytes = std::fs::read(&path).unwrap();
-    let stored: AuthToken = serde_json::from_slice(&bytes).unwrap();
-    assert!(!stored.token.is_empty(), "non-empty bearer token");
-    assert_eq!(stored.server.as_deref(), Some(relay.base_url.as_str()));
+    let stored: datum_sync_client::PersistedAuthToken = serde_json::from_slice(&bytes).unwrap();
+    assert!(!stored.wire.token.is_empty(), "non-empty bearer token");
+    assert_eq!(stored.server, relay.base_url);
 
     // On unix the file must be mode 0600.
     #[cfg(unix)]

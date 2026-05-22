@@ -41,17 +41,16 @@ pub fn refresh(client: &Client, server: &str, refresh_token: &str) -> Result<Aut
             "refresh failed: {status} {text}"
         )));
     }
-    let mut token: AuthToken = resp
+    // da-ixmh: the wire shape is the wire shape — the `server` /
+    // `refreshed_at` stamping that used to happen here moved to the
+    // CLI's persistence layer (`PersistedAuthToken::from_wire`). HTTP
+    // returns exactly what came off the wire; nobody downstream has to
+    // wonder whether they're looking at a server response or a partly-
+    // hydrated persistence shape.
+    let _ = server; // intentionally unused now; kept for API symmetry
+    let token: AuthToken = resp
         .json()
         .context("parse /v1/auth/refresh response")
         .map_err(HttpError::other)?;
-    // Server omits `server` (it doesn't know what URL the client
-    // dialed); set it here so the persisted file stays consistent.
-    if token.server.is_none() {
-        token.server = Some(server.to_string());
-    }
-    if token.refreshed_at.is_none() {
-        token.refreshed_at = Some(chrono::Utc::now().to_rfc3339());
-    }
     Ok(token)
 }

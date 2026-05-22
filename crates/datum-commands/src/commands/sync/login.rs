@@ -10,7 +10,7 @@ use anyhow::{anyhow, Context, Result};
 use datum_core::db::Db;
 use datum_sync_client::http::{run_device_flow, DeviceFlowPrompter};
 use datum_sync_client::protocol::messages::AuthToken;
-use datum_sync_client::sync_state;
+use datum_sync_client::{sync_state, PersistedAuthToken};
 use reqwest::blocking::Client;
 use std::time::Duration;
 
@@ -31,6 +31,8 @@ pub fn run(args: SyncLoginArgs, db: &Db, prompter: &mut impl Prompter) -> Result
 }
 
 /// Split from `run` so tests can inject a client pointed at a stub relay.
+/// Returns the freshly-issued wire `AuthToken` — the persisted shape
+/// has already been written to disk by this point.
 pub fn run_with_client(
     server: &str,
     client: &Client,
@@ -38,7 +40,11 @@ pub fn run_with_client(
 ) -> Result<AuthToken> {
     let mut bridge = PrompterBridge { inner: prompter };
     let token = run_device_flow(server, client, &mut bridge)?;
-    write_token(server, &token)?;
+    // da-ixmh: persistence is the CLI's job, not the protocol type's.
+    // Wrap the wire token in PersistedAuthToken (which stamps
+    // `refreshed_at` + `server`) before writing.
+    let persisted = PersistedAuthToken::from_wire(token.clone(), server);
+    write_persisted_token(server, &persisted)?;
     Ok(token)
 }
 
@@ -54,15 +60,10 @@ pub fn run_with_client(
 /// anyway; this is a UX nicety so the user sees "Cluster <id> bound to
 /// <db>" immediately after login.
 fn adopt_cluster_for_user(db: &Db, token: &AuthToken) {
-    let Some(user_id) = token.user_id.as_deref() else {
-        eprintln!(
-            "⚠ login succeeded but server returned no user_id; first sync will assign a cluster"
-        );
-        return;
-    };
-    // Default cluster_id IS user_id (transitional 1:1 mapping). When
-    // multi-cluster ships this becomes a list and the CLI grows a
-    // `--cluster <id>` arg on `sync login`; for now there is only one.
+    // da-ixmh: user_id is now a required field of the wire shape, so
+    // the previous "server returned no user_id" branch is dead — keep
+    // the call site simple.
+    let user_id = &token.user_id;
     if let Err(e) = sync_state::set_cluster_id(db, user_id) {
         eprintln!("⚠ login: could not record cluster_id locally: {e:#}");
         return;
@@ -130,8 +131,11 @@ fn resolve_server(cli_server: Option<&str>) -> Result<String> {
         })
 }
 
-/// Persist the token atomically under `auth_token_path(host)`.
-fn write_token(server: &str, token: &AuthToken) -> Result<()> {
+/// Persist the (already-wrapped) token atomically under
+/// `auth_token_path(host)`. Takes [`PersistedAuthToken`] specifically —
+/// callers are responsible for stamping the persistence metadata via
+/// [`PersistedAuthToken::from_wire`] first (da-ixmh).
+fn write_persisted_token(server: &str, token: &PersistedAuthToken) -> Result<()> {
     let host = server_host_from_url(server);
     let path = auth_token_path(&host)?;
     let body = serde_json::to_vec_pretty(token).context("serialize auth token")?;
@@ -160,15 +164,20 @@ fn write_private_file(path: &std::path::Path, body: &[u8]) -> Result<()> {
     }
 }
 
-/// Load a previously-saved token for `server`. Returns `None` if missing.
+/// Load the persisted token for `server`. Returns `Ok(None)` if there's
+/// no file. da-ixmh: this returns the on-disk shape
+/// ([`PersistedAuthToken`]); call sites that only need the bearer use
+/// the `Deref<Target = AuthToken>` impl, while sync_state-aware paths
+/// can read `refreshed_at` / `server`.
 #[allow(dead_code)]
-pub fn load_token(server: &str) -> Result<Option<AuthToken>> {
+pub fn load_token(server: &str) -> Result<Option<PersistedAuthToken>> {
     let host = server_host_from_url(server);
     let path = auth_token_path(&host)?;
     if !path.exists() {
         return Ok(None);
     }
     let bytes = std::fs::read(&path).with_context(|| format!("read token at {path:?}"))?;
-    let token: AuthToken = serde_json::from_slice(&bytes).context("parse stored auth token")?;
+    let token: PersistedAuthToken =
+        serde_json::from_slice(&bytes).context("parse stored auth token")?;
     Ok(Some(token))
 }

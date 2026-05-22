@@ -132,13 +132,15 @@ impl Drop for TwoClientEnv {
 fn write_token_for(server: &str, token: &str, user_id: &str) {
     let host = server_host_from_url(server);
     let path = auth_token_path(&host).unwrap();
-    let t = AuthToken {
-        token: token.to_string(),
-        refresh_token: None,
-        refreshed_at: Some(Utc::now().to_rfc3339()),
-        server: Some(server.to_string()),
-        user_id: Some(user_id.to_string()),
-        cluster_id: None,
+    let t = datum_sync_client::PersistedAuthToken {
+        wire: AuthToken {
+            token: token.to_string(),
+            refresh_token: "test-refresh".to_string(),
+            user_id: user_id.to_string(),
+            cluster_id: None,
+        },
+        refreshed_at: Utc::now().to_rfc3339(),
+        server: server.to_string(),
     };
     std::fs::write(path, serde_json::to_vec_pretty(&t).unwrap()).unwrap();
 }

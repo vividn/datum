@@ -88,7 +88,12 @@ pub struct Session {
 
 struct SessionInner {
     bearer: String,
-    refresh_token: Option<String>,
+    /// Always populated post-da-ixmh: the wire `AuthToken` carries a
+    /// required `refresh_token: String`, so the Session never has to
+    /// wonder whether it can rotate. Kept as a plain `String` (not
+    /// `Option`) to make the rotation path total instead of erroring
+    /// on a "no refresh token" branch that can't happen anymore.
+    refresh_token: String,
 }
 
 impl Session {
@@ -160,12 +165,7 @@ impl Session {
     /// in-memory session and notifies `on_refresh` so the caller can
     /// persist the rotation.
     fn rotate_bearer(&self, client: &Client) -> Result<(), SessionError> {
-        let refresh_token = self
-            .inner
-            .borrow()
-            .refresh_token
-            .clone()
-            .ok_or(SessionError::NoRefreshToken)?;
+        let refresh_token = self.inner.borrow().refresh_token.clone();
 
         let new = match auth::refresh(client, &self.server, &refresh_token) {
             Ok(t) => t,
