@@ -69,87 +69,67 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
 
     if let Some(secs) = args.watch {
         let interval = watch_interval(secs);
-        // da-xorl: on a real terminal, do a full re-fetch + clear-and-
-        // repaint per tick so (a) column widths recompute against the
-        // current window's contents and (b) back-dated entries slot
-        // into their actual chronological position via `occur_time DESC`,
-        // not appended at the bottom. Piped / non-tty output keeps the
-        // legacy append-only behaviour so scripts that consume the
-        // running stream don't break — clearing the screen makes no
-        // sense in a pipe.
-        if tty {
-            watch_repaint_loop(&args, db, auto_count, &tbl, registry.as_ref(), interval)?;
-        } else {
-            watch_append_loop(&args, db, &tbl, registry.as_ref(), &entries, interval)?;
-        }
+        watch_repaint_loop(&args, db, metric, registry.as_ref(), interval)?;
     }
 
     Ok(())
 }
 
-/// da-xorl: terminal `--watch` loop — every tick, re-fetch the entire
-/// window through the same path the initial render used, clear the
-/// screen, and repaint. Recomputes column widths against the fresh
-/// row set and naturally absorbs back-dated entries (the underlying
-/// `list_entries` orders by `occur_time DESC`, so a `-t`-backfilled
-/// switch slots into its chronological position on the next tick).
+/// da-o50m: `tail --watch` always re-fetches the window, recomputes
+/// the column-width + row-count budget against the live terminal and
+/// the fresh row set, clears the screen, and repaints — TTY or not.
+///
+/// Background: the previous (da-xorl) implementation gated the
+/// repaint behind `is_stdout_tty()`, falling back to an append-only
+/// loop for non-tty consumers. That left agent-driven sessions where
+/// stdout isn't a real TTY (tmux/PTY wrappers, IDE terminals, etc.)
+/// stuck on the legacy append path — and that path computes column
+/// widths per-batch, so each tick's new rows render with their own
+/// alignment, producing the staircase artefact vividn caught.
+///
+/// Trade-off: piped consumers now see `\x1b[2J\x1b[H` escapes between
+/// frames. Per the bead, this is the right call — `datum tail --watch`
+/// is an interactive surface; scripts that need a streaming event
+/// feed should use a structured surface, not scrape the ANSI-aware
+/// human view.
 fn watch_repaint_loop(
     args: &TailArgs,
     db: &Db,
-    auto_count: Option<usize>,
-    base_tbl: &TableArgs,
+    metric: TimeMetricCol,
     registry: Option<&datum_core::field_spec::SpecRegistry>,
     interval: std::time::Duration,
 ) -> Result<()> {
     use std::io::Write;
+    let columns = split_columns(&args.columns);
     loop {
         std::thread::sleep(interval);
-        // ANSI clear-and-home so the new render starts at the top.
-        // The pair "\x1b[2J\x1b[H" is the canonical clear+home — same
-        // sequence less invasive than entering the alt-screen, so the
-        // user's scrollback isn't blown away when they Ctrl-C.
+        // Re-detect the terminal every tick so a live `tput cols` /
+        // window resize between frames updates the layout. Non-tty
+        // consumers get the same unbounded path as the initial
+        // render: no width budget, default row count.
+        let tty = is_stdout_tty();
+        let max_total_width = if tty { Some(detect_cols()) } else { None };
+        let auto_count = if tty && args.count.is_none() {
+            Some(detect_rows().saturating_sub(1).max(1))
+        } else {
+            None
+        };
+        // Canonical clear+home — leaves scrollback intact on Ctrl-C
+        // (no alt-screen entry). Flush so the escape lands before
+        // the table writes.
         print!("\x1b[2J\x1b[H");
         let _ = std::io::stdout().flush();
         let entries = tail_entries_with_default_count(args, auto_count, db)?;
+        let tbl = TableArgs {
+            output: args.output()?,
+            metric,
+            columns: columns.clone(),
+            suppress_header: false,
+            max_total_width,
+        };
         let now = DatumTime::now();
         let ctxs = build_render_contexts(&entries, db);
-        print_table_with(&entries, Some(&ctxs), Some(&now), registry, base_tbl);
-    }
-}
-
-/// Legacy `--watch` loop for piped / non-tty output: append-only,
-/// only emits rows that landed since the last tick. Kept verbatim
-/// so scripts consuming the streaming output don't see the screen-
-/// clearing escapes the TTY path now emits.
-fn watch_append_loop(
-    args: &TailArgs,
-    db: &Db,
-    base_tbl: &TableArgs,
-    registry: Option<&datum_core::field_spec::SpecRegistry>,
-    seed_entries: &[Entry],
-    interval: std::time::Duration,
-) -> Result<()> {
-    let mut since = seed_entries
-        .iter()
-        .map(|e| e.create_time)
-        .max()
-        .unwrap_or_else(chrono::Utc::now);
-    let field_refs: Vec<&str> = args.fields.iter().map(|s| s.as_str()).collect();
-    let tick_tbl = TableArgs {
-        suppress_header: true,
-        ..base_tbl.clone()
-    };
-    loop {
-        std::thread::sleep(interval);
-        let new_rows = db.list_entries_created_after(&field_refs, since)?;
-        if let Some(latest) = new_rows.iter().map(|e| e.create_time).max() {
-            since = latest;
-        }
-        if !new_rows.is_empty() {
-            let now = DatumTime::now();
-            let tick_ctxs = build_render_contexts(&new_rows, db);
-            print_table_with(&new_rows, Some(&tick_ctxs), Some(&now), registry, &tick_tbl);
-        }
+        print_table_with(&entries, Some(&ctxs), Some(&now), registry, &tbl);
     }
 }
 
