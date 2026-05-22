@@ -784,19 +784,42 @@ pub fn maybe_collapse_switch_chain(sides: Vec<Vec<String>>) -> Vec<Vec<String>> 
     if sides[0].len() < 2 {
         return sides;
     }
-    // Side 1 starting with a known subcommand means it's its own
-    // invocation (`switch f X , switch g Y`), not a chain continuation.
-    // Multi-entry semantics own that shape — pass through untouched.
-    if sides[1]
-        .first()
-        .is_some_and(|t| KNOWN_SUBCOMMANDS.contains(&t.as_str()))
-    {
-        return sides;
-    }
-    let left_state_part = &sides[0][2..];
-    let right = &sides[1];
+    let field = sides[0][1].clone();
+    let left_state_part: &[String] = &sides[0][2..];
+
+    // Side 1's state slice depends on whether the user repeated the
+    // verb+field prefix (canonical chain form `switch body sit 5 ,
+    // switch body vertical`) or wrote a bare continuation (`switch body
+    // sit 5 , vertical`):
+    //
+    // * Bare continuation — side 1 is just `[state…]`.
+    // * Repeated prefix — side 1 is `[verb, field, state…]`; we strip
+    //   the prefix iff the verb matches `switch` AND the field matches
+    //   side 0's field. A mismatched field (`switch body … , switch
+    //   mood …`) is two genuinely-independent invocations and must
+    //   stay split (da-w8ig: the only safe collapse is when both sides
+    //   target the same field).
+    // * Side 1 leading with a different known subcommand
+    //   (`switch body … , occur foo`) is also two independent
+    //   invocations — pass through.
+    let right_state_part: &[String] = match sides[1].first().map(|s| s.as_str()) {
+        Some("switch") => {
+            if sides[1].len() >= 2 && sides[1][1] == field {
+                &sides[1][2..]
+            } else {
+                // Different field — leave as multi-entry.
+                return sides;
+            }
+        }
+        Some(other) if KNOWN_SUBCOMMANDS.contains(&other) => {
+            // A different verb on side 1 — multi-entry shape.
+            return sides;
+        }
+        _ => &sides[1][..],
+    };
+
     let left_has = side_has_dur_signal(left_state_part);
-    let right_has = side_has_dur_signal(right);
+    let right_has = side_has_dur_signal(right_state_part);
     // `==` covers (false, false) — keep existing concurrent / multi-entry
     // behaviour — and (true, true) which the bead reserves for a
     // follow-up (concurrent dur arrays).
@@ -805,12 +828,12 @@ pub fn maybe_collapse_switch_chain(sides: Vec<Vec<String>>) -> Vec<Vec<String>> 
     }
     let prefix: Vec<String> = sides[0][..2].to_vec();
     let left_state_vec: Vec<String> = left_state_part.to_vec();
-    let right_vec: Vec<String> = right.clone();
+    let right_state_vec: Vec<String> = right_state_part.to_vec();
     let mut merged = prefix;
     let (first, second) = if left_has {
-        (left_state_vec, right_vec)
+        (left_state_vec, right_state_vec)
     } else {
-        (right_vec, left_state_vec)
+        (right_state_vec, left_state_vec)
     };
     merged.extend(first);
     merged.push(MULTI_COMMA.to_string());
@@ -940,19 +963,56 @@ mod tests {
     }
 
     #[test]
-    fn side_1_starts_with_known_verb_is_untouched() {
+    fn side_1_different_field_is_untouched() {
         // `switch env outside , switch body vertical` — two complete
-        // switch invocations. Even though side 1 has 3 bare positionals
-        // (verb+field+state), it must NOT be treated as a dur signal —
-        // it's an independent invocation, not a chain continuation.
-        // Multi-alias-body shapes (`oov = switch env outside , switch
-        // body vertical`) depend on this passthrough.
+        // switch invocations on DIFFERENT fields. The disambiguator
+        // only collapses when both sides target the same field;
+        // mismatched fields stay as multi-entry (preserves the
+        // alias-body `oov = switch env outside , switch body vertical`
+        // shape).
         let sides = vec![
             v(&["switch", "environment", "outside"]),
             v(&["switch", "body", "vertical"]),
         ];
         let out = maybe_collapse_switch_chain(sides.clone());
         assert_eq!(out, sides);
+    }
+
+    /// da-w8ig regression: `switch body sit 5 , switch body vertical`
+    /// — user typed the canonical chain form (repeated `switch FIELD`
+    /// prefix on side 1), same field on both sides, dur positional `5`
+    /// on the left. The disambiguator must strip side 1's `switch
+    /// body` prefix when the field matches, then see only the trailing
+    /// `vertical` state — which has no dur signal — so the left's
+    /// `["sit", "5"]` is the unique dur side and collapse fires.
+    #[test]
+    fn side_1_same_field_switch_prefix_is_stripped_and_collapses() {
+        let sides = vec![
+            v(&["switch", "body", "sit", "5"]),
+            v(&["switch", "body", "vertical"]),
+        ];
+        let out = maybe_collapse_switch_chain(sides);
+        assert_eq!(
+            out,
+            vec![v(&["switch", "body", "sit", "5", ",", "vertical"])]
+        );
+    }
+
+    /// Right-dur variant of the same field-prefix-stripping path:
+    /// `switch body vertical , switch body sit 5` — left has no signal,
+    /// right has the dur positional. Strip side 1's prefix, detect dur
+    /// on the right, swap so dur side leads.
+    #[test]
+    fn side_1_same_field_switch_prefix_right_dur_swaps() {
+        let sides = vec![
+            v(&["switch", "body", "vertical"]),
+            v(&["switch", "body", "sit", "5"]),
+        ];
+        let out = maybe_collapse_switch_chain(sides);
+        assert_eq!(
+            out,
+            vec![v(&["switch", "body", "sit", "5", ",", "vertical"])]
+        );
     }
 
     #[test]
