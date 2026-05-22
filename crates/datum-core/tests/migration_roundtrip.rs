@@ -143,6 +143,7 @@ fn every_pair_has_a_roundtrip_test() {
         (24, 25),
         (25, 26),
         (26, 27),
+        (27, 28),
     ];
     assert_eq!(
         covered.len(),
@@ -1198,4 +1199,68 @@ fn roundtrip_v26_to_v27_sync_state_cluster_columns() {
         )
         .unwrap();
     assert_eq!(push_seq_after, 17);
+}
+
+/// da-acft: v27→v28 deletes stored `same_state_repeat` rows from
+/// `integrity_warnings` — that kind is now computed live from the
+/// `entries` table rather than persisted at insert. Rows of other
+/// kinds (double_open, orphan_end, overlap, last_state_mismatch)
+/// must survive untouched. The down step is a no-op (the deleted
+/// rows were stale by construction).
+#[test]
+fn roundtrip_v27_to_v28_drop_stored_same_state_repeat() {
+    let db = fresh_at(27);
+    let conn = db.conn();
+    assert!(table_exists(conn, "integrity_warnings"));
+
+    // Seed one row per kind so we can verify the migration is
+    // surgical about which it removes.
+    let seed = |id: &str, hid: &str, kind: &str| {
+        conn.execute(
+            r#"INSERT INTO integrity_warnings
+                  (id, hid, entry_slug, local_entry, remote_entry,
+                   detected_at, resolution, resolved_at, detected_by, kind)
+               VALUES (?1, ?2, 'mood:x', '{}', NULL,
+                       '2024-01-01T00:00:00Z', NULL, NULL,
+                       'local_validator', ?3)"#,
+            rusqlite::params![id, hid, kind],
+        )
+        .unwrap();
+    };
+    seed("id_same_state_a", "ha", "same_state_repeat");
+    seed("id_same_state_b", "hb", "same_state_repeat");
+    seed("id_double_open", "do", "double_open");
+    seed("id_orphan_end", "oe", "orphan_end");
+
+    apply_one_up(conn, 27);
+
+    let remaining: Vec<String> = conn
+        .prepare("SELECT kind FROM integrity_warnings ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(
+        remaining,
+        vec!["double_open".to_string(), "orphan_end".to_string()],
+        "only stored same_state_repeat rows should be deleted",
+    );
+
+    // Down step is a no-op — the deleted rows aren't restored. The
+    // migration declares this explicitly; assert the table stays in
+    // the post-up shape.
+    apply_one_down(conn, 28);
+    let after_down: Vec<String> = conn
+        .prepare("SELECT kind FROM integrity_warnings ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(
+        after_down,
+        vec!["double_open".to_string(), "orphan_end".to_string()],
+        "down v28→v27 is a no-op — same_state_repeat rows are not restored",
+    );
 }
