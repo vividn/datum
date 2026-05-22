@@ -69,15 +69,44 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
 
     if let Some(secs) = args.watch {
         let interval = watch_interval(secs);
-        watch_repaint_loop(&args, db, metric, registry.as_ref(), interval)?;
+        // da-d6yo: seed the watch loop with the signature of what we
+        // just painted so the first tick's no-op render is suppressed.
+        let initial = frame_signature(tty, &entries);
+        watch_repaint_loop(&args, db, metric, registry.as_ref(), interval, initial)?;
     }
 
     Ok(())
 }
 
-/// da-o50m: `tail --watch` always re-fetches the window, recomputes
-/// the column-width + row-count budget against the live terminal and
-/// the fresh row set, clears the screen, and repaints — TTY or not.
+/// Per-frame fingerprint used by the watch loop to suppress idle
+/// flicker (da-d6yo). Two ticks that produce the same `(tty, cols,
+/// rows, entry_count, max_modify_time)` paint identical pixels, so
+/// the repaint is a no-op — we skip the clear+redraw and let the
+/// existing frame sit. The terminal dimensions are folded in so a
+/// SIGWINCH-driven wake (da-hsqd) that arrives in the same tick still
+/// repaints whenever the new size actually differs from the last.
+type FrameSig = (bool, usize, usize, usize, Option<chrono::DateTime<Utc>>);
+
+fn frame_signature(tty: bool, entries: &[Entry]) -> FrameSig {
+    let (cols, rows) = if tty {
+        (detect_cols(), detect_rows())
+    } else {
+        (0, 0)
+    };
+    let max_modify = entries.iter().map(|e| e.modify_time).max();
+    (tty, cols, rows, entries.len(), max_modify)
+}
+
+/// da-o50m: `tail --watch` re-fetches the window, recomputes the
+/// column-width + row-count budget against the live terminal and the
+/// fresh row set, clears the screen, and repaints — TTY or not.
+///
+/// da-d6yo: repaints only fire when the frame signature changes
+/// (entry count / max modify_time / terminal dimensions). Idle ticks
+/// where nothing has changed are no-ops, so the watch surface no
+/// longer flickers between empty polls. The signature is seeded by
+/// the initial paint in [`tail`] so the first tick after entering
+/// the loop doesn't re-render identical pixels.
 ///
 /// Background: the previous (da-xorl) implementation gated the
 /// repaint behind `is_stdout_tty()`, falling back to an append-only
@@ -88,10 +117,10 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
 /// alignment, producing the staircase artefact vividn caught.
 ///
 /// Trade-off: piped consumers now see `\x1b[2J\x1b[H` escapes between
-/// frames. Per the bead, this is the right call — `datum tail --watch`
-/// is an interactive surface; scripts that need a streaming event
-/// feed should use a structured surface, not scrape the ANSI-aware
-/// human view.
+/// frames whenever data does change. Per the bead, this is the right
+/// call — `datum tail --watch` is an interactive surface; scripts
+/// that need a streaming event feed should use a structured surface,
+/// not scrape the ANSI-aware human view.
 ///
 /// da-hsqd: a `SIGWINCH` handler flips [`RESIZE_FLAG`]; the loop's
 /// chunked sleep ([`wait_with_resize_wake`]) returns early when the
@@ -105,10 +134,12 @@ fn watch_repaint_loop(
     metric: TimeMetricCol,
     registry: Option<&datum_core::field_spec::SpecRegistry>,
     interval: std::time::Duration,
+    initial_sig: FrameSig,
 ) -> Result<()> {
     use std::io::Write;
     install_sigwinch_handler();
     let columns = split_columns(&args.columns);
+    let mut last_sig = initial_sig;
     loop {
         wait_with_resize_wake(interval);
         // Re-detect the terminal every tick so a live resize between
@@ -124,12 +155,17 @@ fn watch_repaint_loop(
         } else {
             None
         };
+        let entries = tail_entries_with_default_count(args, auto_count, db)?;
+        let sig = frame_signature(tty, &entries);
+        if sig == last_sig {
+            continue;
+        }
+        last_sig = sig;
         // Canonical clear+home — leaves scrollback intact on Ctrl-C
         // (no alt-screen entry). Flush so the escape lands before
         // the table writes.
         print!("\x1b[2J\x1b[H");
         let _ = std::io::stdout().flush();
-        let entries = tail_entries_with_default_count(args, auto_count, db)?;
         let tbl = TableArgs {
             output: args.output()?,
             metric,
