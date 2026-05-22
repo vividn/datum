@@ -107,6 +107,26 @@ impl Db {
         Ok(())
     }
 
+    /// Rewrite just the `content_hash` column of the row identified by
+    /// `slug`. `datum check --fix` (da-adyj) uses this to repair legacy
+    /// rows whose stored hash diverges from `Entry::expected_content_hash`
+    /// — typically because they were written before da-r569 fixed the
+    /// canonicalization rule and never re-saved. Like [`set_entry_verb`],
+    /// this is an integrity housekeeping rewrite and does not record a
+    /// history row: `content_hash` is a derived dedup key, not user-
+    /// editable data. Errors [`DatumError::NotFound`] when the slug
+    /// doesn't match a row.
+    pub fn set_entry_content_hash(&self, slug: &str, content_hash: &str) -> Result<()> {
+        let affected = self.conn.execute(
+            "UPDATE entries SET content_hash = ?2 WHERE slug = ?1",
+            params![slug, content_hash],
+        )?;
+        if affected == 0 {
+            return Err(DatumError::NotFound(slug.to_string()));
+        }
+        Ok(())
+    }
+
     /// Insert an entry and dispatch on [`ConflictStrategy`] when the incoming
     /// `content_hash` already matches a live row. Tombstoned rows are ignored
     /// for collision detection — re-inserting a deleted-then-identical payload

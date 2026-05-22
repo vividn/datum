@@ -51,8 +51,18 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_default_battery = args.checkers.is_empty();
 
     let mut issues: Vec<Issue> = Vec::new();
+    let mut content_hash_repaired = 0usize;
     if run_default_battery {
         issues.extend(collect_issues(db)?.issues);
+        // da-adyj: legacy rows from before da-r569 carry a content_hash
+        // that disagrees with `Entry::expected_content_hash()`. The
+        // default battery already surfaces these as
+        // `content_hash_mismatch`; under `--fix` we additionally
+        // recompute and overwrite the column so dedup lookups (which
+        // use the post-r569 hash) start finding the rows.
+        if args.fix {
+            content_hash_repaired = apply_content_hash_fixes(db)?;
+        }
     }
     if run_verbs {
         let verb_report = collect_verb_drift(db)?;
@@ -93,11 +103,46 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         println!("{}", render_json(&report)?);
     } else {
         print!("{}", render_human(&report));
+        // da-adyj: surface the content_hash repair count in the human
+        // summary so the user sees what `--fix` actually did. JSON
+        // consumers can recompute by diffing two `check --json` runs;
+        // keeping the JSON shape stable avoids forcing a schema bump
+        // for the trailing repair counter.
+        if content_hash_repaired > 0 {
+            println!(
+                "✓ content_hash repaired: {content_hash_repaired} entr{}",
+                if content_hash_repaired == 1 {
+                    "y"
+                } else {
+                    "ies"
+                },
+            );
+        }
     }
     if report.has_errors() {
         std::process::exit(1);
     }
     Ok(())
+}
+
+/// da-adyj: walk every row and rewrite `content_hash` whenever the
+/// stored value disagrees with [`Entry::expected_content_hash`]. The
+/// rewrite is idempotent (a second pass finds no mismatches) and
+/// touches no other column, so downstream queries that key on
+/// `content_hash` (dedup, history reconciliation) start finding the
+/// row under its post-r569 identity. Returns the number of rows
+/// repaired.
+fn apply_content_hash_fixes(db: &Db) -> Result<usize> {
+    let entries = db.all_entries()?;
+    let mut repaired = 0usize;
+    for e in &entries {
+        let expected = e.expected_content_hash();
+        if expected != e.content_hash {
+            db.set_entry_content_hash(&e.slug, &expected)?;
+            repaired += 1;
+        }
+    }
+    Ok(repaired)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -2369,5 +2414,102 @@ mod tests {
             1,
             "flag=false rows are tracked data, must remain"
         );
+    }
+
+    // ─── da-adyj: content_hash repair under --fix ────────────────────────
+
+    /// `apply_content_hash_fixes` rewrites every row whose stored
+    /// `content_hash` disagrees with `Entry::expected_content_hash()`.
+    /// Mirrors the legacy-row repair path vividn asked for.
+    #[test]
+    fn apply_content_hash_fixes_rewrites_drifted_rows_and_is_idempotent() {
+        let db = Db::open_in_memory().unwrap();
+        let e = Entry::new_legacy(
+            "work",
+            Verb::Switch,
+            Some(serde_json::json!("focus")),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e).unwrap();
+
+        // Stomp the stored hash to simulate a pre-r569 legacy row.
+        let bogus = "deadbeefcafef00d";
+        db.conn()
+            .execute(
+                "UPDATE entries SET content_hash = ?1 WHERE field = 'work'",
+                rusqlite::params![bogus],
+            )
+            .unwrap();
+        let stored: String = db
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM entries WHERE field = 'work'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, bogus, "fixture: hash forced");
+
+        let repaired = apply_content_hash_fixes(&db).unwrap();
+        assert_eq!(repaired, 1, "exactly one drifted row was repaired");
+
+        // Hash now matches Entry::expected_content_hash().
+        let after: String = db
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM entries WHERE field = 'work'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_ne!(after, bogus, "hash must change");
+        let expected = db.all_entries().unwrap()[0].expected_content_hash();
+        assert_eq!(after, expected, "hash now matches expected_content_hash");
+
+        // Second pass is a no-op — idempotence is part of the contract.
+        let second = apply_content_hash_fixes(&db).unwrap();
+        assert_eq!(second, 0, "idempotent: nothing left to repair");
+    }
+
+    /// Clean DBs (every row's hash already matches its expected hash —
+    /// i.e. anything written post-r569) report zero repairs. Guards
+    /// against accidentally rewriting healthy rows.
+    #[test]
+    fn apply_content_hash_fixes_leaves_clean_db_untouched() {
+        let db = Db::open_in_memory().unwrap();
+        let e = Entry::new_legacy(
+            "work",
+            Verb::Switch,
+            Some(serde_json::json!("focus")),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e).unwrap();
+        let pre: String = db
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM entries WHERE field = 'work'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+
+        let repaired = apply_content_hash_fixes(&db).unwrap();
+        assert_eq!(repaired, 0, "no repairs on clean DB");
+
+        let post: String = db
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM entries WHERE field = 'work'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(pre, post, "stored hash untouched");
     }
 }
