@@ -725,12 +725,14 @@ pub struct KitUninstallArgs {
 
 #[derive(Debug, Default)]
 pub struct NowArgs {
-    /// `-A/--show-all` — include ignored fields. Layer 3 in the
-    /// disclosure ladder (da-84cg): everything that exists.
+    /// `-A` / `--all` — include ignored fields. Layer 3 in the
+    /// disclosure ladder (da-84cg): everything that exists. Implies
+    /// `--tracked` (the ladder is concentric).
     pub show_all: bool,
-    /// `-t/--tracked` — also surface tracked fields whose current state
-    /// is falsy. Layer 2 in the disclosure ladder; default is layer 1
-    /// (active-only).
+    /// `-a` / `--tracked` — also surface tracked fields whose current
+    /// state is falsy. Layer 2 in the disclosure ladder; default is
+    /// layer 1 (active-only). Rebound from `-t` to `-a` in da-tx8j so
+    /// the standard `-t TIME` time_args flag can fly here.
     pub show_tracked: bool,
     /// `--json` — emit the [`NowSnapshot`](datum_core::db::NowSnapshot)
     /// wire schema instead of the terminal view. Other surfaces (web,
@@ -746,6 +748,11 @@ pub struct NowArgs {
     /// Override terminal width in cells for the nowview band. None →
     /// auto-detect from `$COLUMNS`, fall back to 80.
     pub cols: Option<u16>,
+    /// `-t/-d/-y/-q/-z` — composed timing concern (da-tx8j). When any
+    /// of these are set, `datum now` shows the state-at-that-point
+    /// instead of the live wall-clock state, and suppresses the
+    /// terminal nowview band (which is anchored to the *real* now).
+    pub time: TimeArgs,
 }
 
 #[derive(Debug)]

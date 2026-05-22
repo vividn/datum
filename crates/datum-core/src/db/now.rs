@@ -26,6 +26,12 @@ pub struct NowFilter {
     pub include_tracked_false: bool,
     /// Include fields whose latest state is `IGNORED`.
     pub include_ignored: bool,
+    /// Time-travel anchor for the snapshot (da-tx8j). `None` →
+    /// wall-clock now (legacy behaviour). `Some(t)` → return the state
+    /// each field was in at or before `t`. The returned snapshot's
+    /// `now` field carries the anchor so renderers and `--json`
+    /// consumers see a single stable timestamp.
+    pub snapshot_time: Option<DateTime<Utc>>,
 }
 
 /// Active row: the field is currently in a truthy state.
@@ -90,7 +96,10 @@ impl Db {
     /// `filter`. Within each scope, rows are sorted alphabetically by
     /// field name.
     pub fn current_now(&self, filter: &NowFilter) -> Result<NowSnapshot> {
-        let now = Utc::now();
+        // da-tx8j: snapshot_time pins the anchor for both the query
+        // (`latest_entry_for_now` filters `<= snapshot_time`) and the
+        // wire `now` field. Defaults to wall-clock now when None.
+        let now = filter.snapshot_time.unwrap_or_else(Utc::now);
         let tracked = self.get_tracked_fields()?;
 
         let mut active = Vec::new();
@@ -102,7 +111,7 @@ impl Db {
                 if !filter.include_ignored {
                     continue;
                 }
-                let entry = self.latest_entry_for_now(&tf.field)?;
+                let entry = self.latest_entry_for_now(&tf.field, filter.snapshot_time)?;
                 let since = entry.as_ref().and_then(entry_event_time);
                 ignored.push(NowFieldIgnored {
                     field: tf.field,
@@ -112,7 +121,7 @@ impl Db {
                 continue;
             }
 
-            let entry = self.latest_entry_for_now(&tf.field)?;
+            let entry = self.latest_entry_for_now(&tf.field, filter.snapshot_time)?;
             match entry {
                 None => {
                     if filter.include_tracked_false {

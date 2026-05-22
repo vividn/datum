@@ -235,18 +235,45 @@ impl Db {
     /// Latest non-Add, non-tombstoned entry for a field, for use in the now
     /// view. `add` is skipped because it represents free-form data with no
     /// state effect; the now view shows the most recent state-bearing entry.
-    pub fn latest_entry_for_now(&self, field: &str) -> Result<Option<Entry>> {
-        let sql = format!(
-            "SELECT * FROM entries
-             WHERE field = ?1 AND verb != 'add' AND deleted_at IS NULL
-             ORDER BY {} DESC
-             LIMIT 1",
-            time_expr_endbound(),
-        );
-        self.conn
-            .query_row(&sql, params![field], row_to_entry)
-            .optional()
-            .map_err(DatumError::Db)
+    ///
+    /// `snapshot_time = Some(t)` (da-tx8j) bounds the query to entries
+    /// whose effective time is `<= t` — used by `datum now -t` to render
+    /// the state-at-a-past-point view. `None` keeps the legacy "latest
+    /// of all time" behaviour.
+    pub fn latest_entry_for_now(
+        &self,
+        field: &str,
+        snapshot_time: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<Option<Entry>> {
+        let expr = time_expr_endbound();
+        match snapshot_time {
+            None => {
+                let sql = format!(
+                    "SELECT * FROM entries
+                     WHERE field = ?1 AND verb != 'add' AND deleted_at IS NULL
+                     ORDER BY {expr} DESC
+                     LIMIT 1",
+                );
+                self.conn
+                    .query_row(&sql, params![field], row_to_entry)
+                    .optional()
+                    .map_err(DatumError::Db)
+            }
+            Some(t) => {
+                let cutoff = t.to_rfc3339();
+                let sql = format!(
+                    "SELECT * FROM entries
+                     WHERE field = ?1 AND verb != 'add' AND deleted_at IS NULL
+                       AND {expr} <= ?2
+                     ORDER BY {expr} DESC
+                     LIMIT 1",
+                );
+                self.conn
+                    .query_row(&sql, params![field, cutoff], row_to_entry)
+                    .optional()
+                    .map_err(DatumError::Db)
+            }
+        }
     }
 }
 

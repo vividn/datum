@@ -235,7 +235,7 @@ fn now_view_shows_overlap_warning() {
     // Pull the overlap counts the way cmd_now does, then build a
     // NowSnapshot directly — bypassing the (retired in da-adoi)
     // `render_now_view(tracked, latest_map, …)` legacy signature.
-    let entry = db.latest_entry_for_now("workout").unwrap().unwrap();
+    let entry = db.latest_entry_for_now("workout", None).unwrap().unwrap();
     let since = entry
         .start_time
         .as_ref()

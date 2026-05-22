@@ -3,12 +3,20 @@
 use anyhow::Result;
 use chrono::Utc;
 use datum_core::db::{Db, NowFilter};
+use datum_core::time::DatumTime;
 
 use crate::args::NowArgs;
 use crate::config;
 use crate::render::{render_pending_integrity_warning, render_snapshot};
 
 pub fn now(args: NowArgs, db: &Db) -> Result<()> {
+    // da-tx8j: resolve the optional snapshot_time from time_args. When
+    // ANY time arg was supplied we treat it as "the user explicitly
+    // asked for a past moment" and pin the whole render to it: query
+    // anchor, JSON `now`, "since" timestamps, and band suppression all
+    // hang off `snapshot_time.is_some()`.
+    let snapshot_time = resolve_snapshot_time(&args)?;
+
     // da-84cg + da-mpod: the snapshot is the single source of truth for
     // both the JSON wire path and the terminal renderer. Layered
     // disclosure is encoded in the `NowFilter` passed to
@@ -17,6 +25,7 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
     let filter = NowFilter {
         include_tracked_false: args.show_tracked || args.show_all,
         include_ignored: args.show_all,
+        snapshot_time,
     };
 
     if args.json {
@@ -28,7 +37,12 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
         return Ok(());
     }
 
-    emit_stale_sync_warning(db);
+    // Stale-sync warning is meaningless when the user explicitly
+    // pinned a past time — the current sync state has nothing to do
+    // with the snapshot they asked for. Suppress.
+    if snapshot_time.is_none() {
+        emit_stale_sync_warning(db);
+    }
 
     // C4e: surface a top-line banner when there are unresolved integrity
     // warnings. Swallow read errors silently — the now view is still
@@ -83,10 +97,33 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
     // active-states list. `--bare` suppresses it (e.g. for piping). The
     // band defaults to a 1-hour window, paralleling the SVG `nowview`
     // surface but in cells instead of pixels.
-    if !args.bare {
+    //
+    // da-tx8j: also suppress the band when the user pinned a past
+    // snapshot_time. The band is anchored to *real* now (its
+    // history-minutes window literally runs up to `Utc::now()`); a band
+    // anchored to wall-clock now alongside a snapshot showing the past
+    // would conflict semantically — vividn's intuition in the bead.
+    if !args.bare && snapshot_time.is_none() {
         print_now_band(&args, db);
     }
     Ok(())
+}
+
+/// Resolve `-t/-d/-y/-q/-z` into a snapshot anchor. Returns `None` when
+/// no timing flag was supplied (the legacy wall-clock-now path stays in
+/// effect). Uses `DatumTime::now()` as the reference so relative
+/// offsets (`-y`, `-t -1h`) compose against the host's wall-clock as a
+/// user would expect.
+fn resolve_snapshot_time(args: &NowArgs) -> Result<Option<chrono::DateTime<Utc>>> {
+    let reference = DatumTime::now();
+    let from = args
+        .time
+        .build(&reference)
+        .map_err(|e| anyhow::anyhow!("invalid time args for `datum now`: {e}"))?;
+    if from.unmodified {
+        return Ok(None);
+    }
+    Ok(from.time.map(|dt| dt.utc))
 }
 
 /// Render the terminal nowview band beneath `datum now`. Mirrors the old

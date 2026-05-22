@@ -695,3 +695,151 @@ fn snapshot_render_overlap_warning_prepends_active_row() {
         "got:\n{plain}"
     );
 }
+
+// ─── da-tx8j: time-travel + flag rebinding ───────────────────────────────────
+//
+// `datum now -t <time>` answers "what was the state at <past time>?";
+// `-a` is now the show-tracked-false flag (was `-t/--tracked`) and `-A`
+// long-name is `--all` (was `--show-all`). The legacy spellings are
+// pre-v1 rip-and-replace removals — they should error as unknown.
+
+/// `datum now -t -1h` returns the state the field was in 1h ago, not
+/// the current state. Drives end-to-end through the parser + dispatch.
+#[test]
+fn now_time_travel_returns_past_state_not_present() {
+    use datum_core::db::NowFilter;
+    use datum_core::entry::Verb;
+    let db = fresh_db();
+
+    // Two switches on `mood`: "happy" 90 minutes ago, "sad" 30 minutes
+    // ago. A snapshot at "1 hour ago" should resolve to "happy" — the
+    // "sad" entry is in the future relative to that anchor.
+    let now = chrono::Utc::now();
+    let ninety_min_ago = now - Duration::minutes(90);
+    let thirty_min_ago = now - Duration::minutes(30);
+
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .value(json!("happy"))
+        .time_start_utc(ninety_min_ago)
+        .insert(&db);
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .value(json!("sad"))
+        .time_start_utc(thirty_min_ago)
+        .insert(&db);
+
+    // Live snapshot: latest is "sad".
+    let live = db.current_now(&NowFilter::default()).unwrap();
+    let live_mood = live
+        .active
+        .iter()
+        .find(|a| a.field == "mood")
+        .expect("mood active in live snapshot");
+    assert_eq!(live_mood.state, json!("sad"));
+
+    // Snapshot pinned to 1 hour ago: should resolve to "happy".
+    let past = db
+        .current_now(&NowFilter {
+            snapshot_time: Some(now - Duration::hours(1)),
+            ..NowFilter::default()
+        })
+        .unwrap();
+    let past_mood = past
+        .active
+        .iter()
+        .find(|a| a.field == "mood")
+        .expect("mood active in past snapshot");
+    assert_eq!(past_mood.state, json!("happy"));
+    // The snapshot's `now` field is the anchor, not wall-clock now.
+    assert_eq!(past.now, now - Duration::hours(1));
+}
+
+/// `datum now -a` is the new (da-tx8j) shorthand for "include
+/// tracked-but-false fields". The legacy `-t/--tracked` spelling MUST
+/// error so the user discovers the rebind (pre-v1 rip-and-replace).
+#[test]
+fn now_flag_a_is_tracked_false_layer_and_t_is_rejected_as_unknown_switch() {
+    let db = fresh_db();
+    // `-a` dispatches cleanly.
+    run_cli(&["now", "-a"], &db).expect("now -a (tracked-false layer) dispatches");
+    // `-t` without a value is rejected by parse_now_args' time_args
+    // wiring — it's now a value-bearing flag (snapshot time), not a
+    // switch.
+    let err = run_cli(&["now", "-t"], &db).expect_err("now -t (no value) must error");
+    assert!(
+        err.to_string().to_lowercase().contains("expected value")
+            || err.to_string().to_lowercase().contains("missing value")
+            || err.to_string().contains("--time"),
+        "expected value-required error on -t, got: {err}",
+    );
+}
+
+/// `datum now -A` is the all-disclosure layer (active + tracked-false +
+/// ignored). The new long alias `--all` (was `--show-all`) must work;
+/// the legacy `--show-all` is removed (rip-and-replace).
+#[test]
+fn now_short_a_and_long_all_both_select_all_layer() {
+    let db = fresh_db();
+    run_cli(&["now", "-A"], &db).expect("-A dispatches");
+    run_cli(&["now", "--all"], &db).expect("--all dispatches");
+    // Legacy `--show-all` is gone.
+    let err =
+        run_cli(&["now", "--show-all"], &db).expect_err("--show-all must be rejected post-rebind");
+    assert!(
+        err.to_string().to_lowercase().contains("show-all")
+            || err.to_string().to_lowercase().contains("unknown")
+            || err.to_string().to_lowercase().contains("unexpected"),
+        "expected unknown-flag error on --show-all, got: {err}",
+    );
+}
+
+/// `datum now -t <past> -a` combines time-travel with the tracked-false
+/// layer: fields whose state at `<past>` was falsy still surface in the
+/// tracked_false bucket of the snapshot.
+#[test]
+fn now_time_travel_combines_with_tracked_false_layer() {
+    use datum_core::db::NowFilter;
+    use datum_core::entry::Verb;
+    let db = fresh_db();
+
+    let now = chrono::Utc::now();
+    let two_h_ago = now - Duration::hours(2);
+    let thirty_min_ago = now - Duration::minutes(30);
+
+    // `coffee` was switched-off 2h ago, then on 30m ago. At "1h ago",
+    // coffee was OFF (false).
+    entry_builder("coffee")
+        .verb(Verb::Switch)
+        .value(json!(false))
+        .time_start_utc(two_h_ago)
+        .insert(&db);
+    entry_builder("coffee")
+        .verb(Verb::Switch)
+        .value(json!(true))
+        .time_start_utc(thirty_min_ago)
+        .insert(&db);
+
+    let snap = db
+        .current_now(&NowFilter {
+            include_tracked_false: true,
+            snapshot_time: Some(now - Duration::hours(1)),
+            ..NowFilter::default()
+        })
+        .unwrap();
+    // Active list does NOT contain coffee at 1h ago (it was off then).
+    assert!(
+        snap.active.iter().all(|a| a.field != "coffee"),
+        "coffee should not be active at 1h-ago snapshot: {:?}",
+        snap.active.iter().map(|a| &a.field).collect::<Vec<_>>(),
+    );
+    // Tracked-false list DOES contain it.
+    assert!(
+        snap.tracked_false.iter().any(|f| f.field == "coffee"),
+        "coffee should appear in tracked_false at 1h-ago snapshot: {:?}",
+        snap.tracked_false
+            .iter()
+            .map(|f| &f.field)
+            .collect::<Vec<_>>(),
+    );
+}

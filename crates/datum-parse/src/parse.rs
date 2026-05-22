@@ -770,25 +770,32 @@ fn split_field_state(raw: &str) -> (Vec<String>, Option<Vec<String>>) {
 }
 
 fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
-    // `now` consumes `-A/--show-all` (via OutputArgs registry, kept
-    // canonical) plus its own band-rendering flags: `--bare`, `--no-color`,
-    // `--cols`.
+    // `now` accepts the standard time_args (`-t/-d/-y/-q/-z`) for
+    // time-travel (da-tx8j), the disclosure-layer pair (`-a/--tracked`,
+    // `-A/--all`), and its own band-rendering flags. We do NOT pull in
+    // OutputArgs::FLAG_SPECS — `now` historically only used `-A` from
+    // there, and reusing the `--show-all` long name would conflict with
+    // the new `--all` spelling, which vividn asked for in the rebind.
     #[derive(Default)]
     struct NowParsing {
-        output: OutputArgs,
+        time: input::TimeArgs,
         show_tracked: bool,
+        show_all: bool,
         json: bool,
         bare: bool,
         no_color: bool,
         cols: Option<u16>,
     }
-    let mut registry: Vec<LiftedSpec<NowParsing>> = input::output_args::FLAG_SPECS
-        .iter()
-        .filter(|s| s.short == Some('A'))
-        .map(|s| lift(|p: &mut NowParsing| &mut p.output, s))
-        .collect();
-    registry.push(local_switch(Some('t'), Some("tracked"), |p| {
+    let mut registry: Vec<LiftedSpec<NowParsing>> = Vec::new();
+    for spec in input::time_args::FLAG_SPECS {
+        registry.push(lift(|p: &mut NowParsing| &mut p.time, spec));
+    }
+    registry.push(local_switch(Some('a'), Some("tracked"), |p| {
         p.show_tracked = true;
+        Ok(())
+    }));
+    registry.push(local_switch(Some('A'), Some("all"), |p| {
+        p.show_all = true;
         Ok(())
     }));
     registry.push(local_switch(None, Some("json"), |p| {
@@ -814,12 +821,13 @@ fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
         return Err(unknown_flag(FlagSplit::Positional(extra)));
     }
     Ok(NowArgs {
-        show_all: composed.output.show_all,
+        show_all: composed.show_all,
         show_tracked: composed.show_tracked,
         json: composed.json,
         bare: composed.bare,
         no_color: composed.no_color,
         cols: composed.cols,
+        time: composed.time,
     })
 }
 
