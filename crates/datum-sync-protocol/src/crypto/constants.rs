@@ -2,8 +2,10 @@
 //! must use these exact values; changing them requires a protocol-version
 //! bump (see [`crate::version::PROTOCOL_VERSION`]).
 
-/// AES-256-GCM nonce length in bytes. The aes-gcm crate's required size
-/// for `Aes256Gcm`.
+/// AES-256-GCM standard nonce length (96 bits / 12 bytes). Every
+/// protocol-conforming implementation MUST emit and accept exactly this
+/// length; varying it would break decryption across clients regardless
+/// of which AES-GCM library each side uses.
 pub const NONCE_LEN: usize = 12;
 
 /// Magic prefix for v1 changeset envelopes (`b"DSC1"`). Prepended to the
