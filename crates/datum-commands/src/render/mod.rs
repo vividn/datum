@@ -15,6 +15,7 @@ pub(crate) mod blocks;
 pub mod characters;
 pub mod colors;
 pub mod show_all;
+pub(crate) mod state_truncate;
 pub mod term_layout;
 
 pub use self::action::{
@@ -535,6 +536,9 @@ pub fn format_table_with(
         time: String,
         time_metric_prefix: &'static str,
         field: String,
+        /// Raw field name (no ANSI). Lets the table apply the field-cap
+        /// truncation (da-ftw3) without re-decoding the painted cell.
+        field_name: String,
         state: String,
         dur: String,
         hid: String,
@@ -584,6 +588,7 @@ pub fn format_table_with(
             time,
             time_metric_prefix: prefix,
             field: ex.field.unwrap_or_default(),
+            field_name: e.field.clone(),
             state: ex.state.unwrap_or_default(),
             dur: ex.dur.unwrap_or_default(),
             hid: ex.hid.unwrap_or_default(),
@@ -626,8 +631,18 @@ pub fn format_table_with(
         }))
         .max()
         .unwrap_or(0);
+    // da-ftw3: when a width budget is in force, the field column is capped
+    // at `FIELD_CAP` (default 10). Long field names like `environment`
+    // otherwise compress the state column unhelpfully. Without a budget
+    // (piped output / non-tail callers) the column expands to natural
+    // width — scripts that scrape the table see the full label.
+    let field_cap = if args.max_total_width.is_some() {
+        state_truncate::FIELD_CAP
+    } else {
+        usize::MAX
+    };
     let field_w = std::iter::once(field_header.len())
-        .chain(rows.iter().map(|r| vw(&r.field)))
+        .chain(rows.iter().map(|r| vw(&r.field).min(field_cap)))
         .max()
         .unwrap_or(0);
     let state_w = std::iter::once(state_header.len())
@@ -654,36 +669,46 @@ pub fn format_table_with(
         })
         .collect();
 
-    // da-5025: when a terminal-width budget is set and the natural
-    // layout would overflow, squeeze the state column down to fit. The
-    // gap between cells is 2 spaces in `push_cell`; account for one
-    // gap per shown column. The state column is the only squeezable
-    // one — every other column is either a fixed-width identifier
-    // (time, hid, dur) or a label users need verbatim (field, extras).
-    let state_w = if let Some(budget) = args.max_total_width {
+    // da-ftw3: column-width allocation under a width budget.
+    //
+    // 1. Field column is capped at `FIELD_CAP` (applied above).
+    // 2. State column gets the remainder after fixed columns + gaps.
+    // 3. If state falls below `STATE_FLOOR`, shrink the field column toward
+    //    `FIELD_FLOOR` to recover room. Beyond that the terminal is too
+    //    narrow — we still squeeze state down to 0, but the row will be
+    //    legibly cramped rather than wrap.
+    let (state_w, field_w) = if let Some(budget) = args.max_total_width {
         let gap = 2usize;
-        let fixed: usize = [
-            show_time.then_some(time_w),
-            show_field.then_some(field_w),
-            show_dur.then_some(dur_w),
-            show_hid.then_some(hid_w),
-        ]
-        .into_iter()
-        .flatten()
-        .map(|w| w + gap)
-        .sum::<usize>()
-            + extras_w.iter().map(|w| w + gap).sum::<usize>();
-        if show_state {
-            let remaining = budget.saturating_sub(fixed + gap);
-            // Don't expand past natural width; only squeeze. Below 3
-            // there's no room for "x…" so just hide the column body
-            // (header still renders, padded to its own width).
-            state_w.min(remaining.max(state_header.len()))
+        let nonstate_fixed = |fw: usize| -> usize {
+            [
+                show_time.then_some(time_w),
+                show_field.then_some(fw),
+                show_dur.then_some(dur_w),
+                show_hid.then_some(hid_w),
+            ]
+            .into_iter()
+            .flatten()
+            .map(|w| w + gap)
+            .sum::<usize>()
+                + extras_w.iter().map(|w| w + gap).sum::<usize>()
+        };
+        let mut fw = field_w;
+        let natural_state = state_w;
+        let mut sw = if show_state {
+            let remaining = budget.saturating_sub(nonstate_fixed(fw) + gap);
+            natural_state.min(remaining.max(state_header.len()))
         } else {
-            state_w
+            natural_state
+        };
+        // Shrink the field column toward FIELD_FLOOR to recover state room.
+        while show_state && sw < state_truncate::STATE_FLOOR && fw > state_truncate::FIELD_FLOOR {
+            fw -= 1;
+            let remaining = budget.saturating_sub(nonstate_fixed(fw) + gap);
+            sw = natural_state.min(remaining.max(state_header.len()));
         }
+        (sw, fw)
     } else {
-        state_w
+        (state_w, field_w)
     };
 
     // Header row.
@@ -712,7 +737,7 @@ pub fn format_table_with(
     }
 
     // Data rows.
-    for r in &rows {
+    for (i, r) in rows.iter().enumerate() {
         let mut line = String::new();
         if show_time {
             let body = if r.time_metric_prefix.is_empty() {
@@ -731,17 +756,40 @@ pub fn format_table_with(
             line.push_str("  ");
         }
         if show_field {
-            push_cell(&mut line, &r.field, field_w, false);
+            // da-ftw3: when the field name overflows the (possibly capped)
+            // column width, right-truncate with `…` and re-paint with the
+            // field bg so the chip still reads as the field's colour.
+            let field_cell = if vw(&r.field_name) > field_w {
+                let spec = registry.and_then(|reg| reg.fields.get(&r.field_name));
+                state_truncate::truncate_field_cell(&r.field_name, spec, field_w)
+            } else {
+                r.field.clone()
+            };
+            push_cell(&mut line, &field_cell, field_w, false);
         }
         if show_state {
-            // da-5025: state is the only squeezable column. When a width
-            // budget shrunk it below the natural cell width, ANSI-aware
-            // truncate keeps colour escapes intact and emits a trailing
-            // reset so the pad doesn't inherit a background.
+            // da-ftw3: per-state truncation. When the natural width fits,
+            // use the pre-rendered cell. Otherwise re-render via the
+            // truncating path so each parallel state gets its own share
+            // of the budget and drop-mode emits a `+k` marker styled with
+            // the field's bg.
             let state_cell = if vw(&r.state) > state_w {
-                term_layout::truncate_visible(&r.state, state_w)
+                let e = &entries[i];
+                let spec = registry.and_then(|reg| reg.fields.get(&e.field));
+                let default_ctx = self::action::RenderContext::default();
+                let ctx_ref = contexts.and_then(|c| c.get(i)).unwrap_or(&default_ctx);
+                state_truncate::truncate_state_cell(e, spec, ctx_ref, state_w)
             } else {
                 r.state.clone()
+            };
+            // Belt-and-braces: if the truncating path overshoots (e.g.
+            // a structured chip whose `{id}` body is itself longer than
+            // the budget), fall back to ANSI-aware visible truncation
+            // so we still never wrap.
+            let state_cell = if vw(&state_cell) > state_w {
+                term_layout::truncate_visible(&state_cell, state_w)
+            } else {
+                state_cell
             };
             push_cell(&mut line, &state_cell, state_w, false);
         }

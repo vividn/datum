@@ -10,7 +10,8 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 use datum_commands::render::{
-    colors::strip_ansi, format_info_line_at, format_state_group, RenderContext,
+    colors::strip_ansi, format_info_line_at, format_state_group, format_table_with, RenderContext,
+    TableArgs, TimeMetricCol,
 };
 use datum_core::{
     entry::{Entry, Verb},
@@ -353,4 +354,108 @@ fn tail_state_repeat_no_marker_when_prior_field_ended() {
         !stripped.contains('!'),
         "FieldEnded slot suppresses the marker: {stripped:?}"
     );
+}
+
+// ─── da-ftw3: per-state and per-field truncation in the table path ──────────
+
+fn render_table(entries: &[Entry], total_width: usize) -> String {
+    let args = TableArgs {
+        metric: TimeMetricCol::Occur,
+        max_total_width: Some(total_width),
+        ..Default::default()
+    };
+    let now = dt(2026, 5, 22, 17, 0);
+    format_table_with(entries, None, Some(&now), None, &args).unwrap_or_default()
+}
+
+/// Every emitted row stays within the budget — the hard rule (no wrap).
+fn assert_no_row_wider_than(table: &str, budget: usize) {
+    for line in table.lines() {
+        let w = datum_commands::render::visible_width(line);
+        assert!(
+            w <= budget,
+            "row exceeds budget {budget}: width={w}, line={line:?}"
+        );
+    }
+}
+
+#[test]
+fn tail_table_per_state_truncates_long_array_states() {
+    let _g = no_color_scope();
+    let e = entry_at(
+        "body",
+        Verb::Switch,
+        Some(json!(["vertical", "sit", "sofa"])),
+        dt(2026, 5, 22, 9, 15),
+    );
+    let table = strip_ansi(&render_table(std::slice::from_ref(&e), 40));
+    // Every parallel state should appear at least in its truncated form
+    // — `ve…`, `sit`, `so…` — when the column squeezes them. The exact
+    // body width depends on the rest of the layout, but the row must
+    // never wrap and the truncation marker must be present.
+    let data_line = table.lines().nth(1).unwrap_or("");
+    assert!(data_line.contains("body"), "field cell: {data_line:?}");
+    assert!(
+        data_line.contains('…') || data_line.contains("vertical,sit,sofa"),
+        "either full or per-state-truncated: {data_line:?}"
+    );
+    assert_no_row_wider_than(&table, 40);
+}
+
+#[test]
+fn tail_table_drop_mode_with_plus_k_marker() {
+    let _g = no_color_scope();
+    // Five long states force drop-mode at narrow budgets.
+    let e = entry_at(
+        "body",
+        Verb::Switch,
+        Some(json!(["vertical", "sit", "sofa", "office", "kitchen"])),
+        dt(2026, 5, 22, 9, 15),
+    );
+    let table = strip_ansi(&render_table(std::slice::from_ref(&e), 30));
+    let data_line = table.lines().nth(1).unwrap_or("");
+    assert!(
+        data_line.contains('+'),
+        "drop-mode `+k` marker present: {data_line:?}"
+    );
+    assert_no_row_wider_than(&table, 30);
+}
+
+#[test]
+fn tail_table_field_capped_with_ellipsis() {
+    let _g = no_color_scope();
+    // `environment` is 11 chars, over the 10-char cap.
+    let e = entry_at(
+        "environment",
+        Verb::Switch,
+        Some(json!("ambient")),
+        dt(2026, 5, 22, 9, 15),
+    );
+    let table = strip_ansi(&render_table(std::slice::from_ref(&e), 50));
+    let data_line = table.lines().nth(1).unwrap_or("");
+    assert!(
+        data_line.contains("environme…"),
+        "field truncated at cap=10: {data_line:?}"
+    );
+    assert!(
+        !data_line.contains("environment "),
+        "no full field name after cap: {data_line:?}"
+    );
+    assert_no_row_wider_than(&table, 50);
+}
+
+#[test]
+fn tail_table_no_wrap_under_very_narrow_budget() {
+    let _g = no_color_scope();
+    // Long field + long parallel states + a very narrow terminal —
+    // the hard rule says: no row may wrap. We don't constrain the
+    // exact content; we only enforce the invariant.
+    let e = entry_at(
+        "brushteeth",
+        Verb::Switch,
+        Some(json!(["vertical", "sit", "sofa", "office"])),
+        dt(2026, 5, 22, 9, 15),
+    );
+    let table = strip_ansi(&render_table(std::slice::from_ref(&e), 30));
+    assert_no_row_wider_than(&table, 30);
 }
