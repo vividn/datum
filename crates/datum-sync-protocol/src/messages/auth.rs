@@ -91,31 +91,48 @@ pub struct DeviceCodeAuthorizeRequest {
     pub username: String,
 }
 
-/// Response body for `GET /v1/auth/device-code/poll`. Polymorphic by
-/// design: the server returns one of three shapes inline (success →
-/// `token` set; pending → `status = "pending"`; error → `error` set with
-/// e.g. `slow_down`/`expired`). Every field is Optional so a single
-/// deserialize call handles all three cases.
+/// Response body for `GET /v1/auth/device-code/poll`. Three wire shapes,
+/// one Rust type — `#[serde(untagged)]` lets a single deserialize call
+/// dispatch on the fields present:
+///
+/// - **Success**: the bearer token + user_id + refresh_token, matching
+///   the [`AuthToken`] shape. Recognised by `token` being set.
+/// - **Pending**: `{ "status": "pending" }`. The user hasn't completed
+///   the verification UI yet; poll again at the current interval.
+/// - **Error**: `{ "error": "<code>", "detail": <optional> }` —
+///   `slow_down`, `expired`, etc. RFC 8628 §3.5 error shapes.
+///
+/// The wire format is unchanged from the prior struct-with-optionals
+/// shape and is RFC 8628 compatible. The benefit of the enum is that
+/// the client gets compile-time exhaustive matching on the response
+/// kind, instead of inspecting which field happens to be Some.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PollResponse {
-    #[serde(default)]
-    pub token: Option<String>,
-    #[serde(default)]
-    pub user_id: Option<String>,
-    /// Single-use refresh token, populated on the success branch only.
-    /// The CLI persists this alongside the bearer so subsequent expiry
-    /// can rotate without re-running the device-code flow.
-    #[serde(default)]
-    pub refresh_token: Option<String>,
-    #[serde(default)]
-    pub status: Option<String>,
-    #[serde(default)]
-    pub error: Option<String>,
-    #[serde(default)]
-    pub detail: Option<String>,
-    /// Default cluster bound to the user at completion of the
-    /// device-code grant. Populated on the success branch only; absent
-    /// on v1 responses so old relays still parse.
-    #[serde(default)]
-    pub cluster_id: Option<String>,
+#[serde(untagged)]
+pub enum PollResponse {
+    /// User completed verification; the bearer is ready. The single-use
+    /// `refresh_token` is included so the CLI can rotate without
+    /// re-running the device-code flow on expiry.
+    Success {
+        token: String,
+        #[serde(default)]
+        user_id: Option<String>,
+        #[serde(default)]
+        refresh_token: Option<String>,
+        /// Default cluster bound to the user at completion of the
+        /// device-code grant. Absent on v1 responses so old relays
+        /// still parse.
+        #[serde(default)]
+        cluster_id: Option<String>,
+    },
+    /// Authorization still pending — the verification UI hasn't been
+    /// completed. Client keeps polling at the current interval.
+    Pending { status: String },
+    /// Terminal or transient error from the relay. `error` carries the
+    /// machine-readable code (`slow_down`, `expired`, ...). `detail`
+    /// is an optional human-readable hint.
+    Error {
+        error: String,
+        #[serde(default)]
+        detail: Option<String>,
+    },
 }

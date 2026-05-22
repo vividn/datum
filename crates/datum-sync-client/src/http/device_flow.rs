@@ -74,63 +74,56 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
             .send()
             .context("GET /v1/auth/device-code/poll")?;
 
-        let status = resp.status();
         let payload: PollResponse = resp.json().context("parse device-code/poll response")?;
 
-        // Slow-down hint — the relay asks us to back off. Per RFC 8628 §3.5,
-        // we double the interval and keep polling.
-        if payload.error.as_deref() == Some("slow_down") {
-            interval = interval.saturating_mul(2);
-            prompter.status("slow_down — backing off");
-            continue;
-        }
-
-        // Expired code: unrecoverable, bubble up and let the user retry.
-        if payload.error.as_deref() == Some("expired") {
-            anyhow::bail!("device code expired — run `datum sync login` again");
-        }
-
-        // Still pending — keep polling at the current interval.
-        if payload.status.as_deref() == Some("pending") {
-            continue;
-        }
-
-        // A non-202 status with a token field means success.
-        if status.is_success() {
-            if let Some(tok) = payload.token {
-                // da-ixmh: the success branch of poll always carries the
-                // (token, user_id, refresh_token) trio. Treat absence as
-                // a protocol-level invariant break — earlier code
-                // silently substituted None and bubbled the partial
-                // shape, which forced every downstream consumer to
-                // handle the Option case.
-                let user_id = payload.user_id.clone().ok_or_else(|| {
+        match payload {
+            // Slow-down hint — the relay asks us to back off. Per RFC 8628 §3.5,
+            // we double the interval and keep polling.
+            PollResponse::Error { error, .. } if error == "slow_down" => {
+                interval = interval.saturating_mul(2);
+                prompter.status("slow_down — backing off");
+                continue;
+            }
+            // Expired code: unrecoverable, bubble up and let the user retry.
+            PollResponse::Error { error, .. } if error == "expired" => {
+                anyhow::bail!("device code expired — run `datum sync login` again");
+            }
+            // Any other error code is treated as terminal.
+            PollResponse::Error { error, .. } => {
+                anyhow::bail!("device-code/poll returned error: {error}");
+            }
+            // Still pending — keep polling at the current interval.
+            PollResponse::Pending { .. } => continue,
+            // Success: the bearer is ready. da-ixmh: treat absence of
+            // user_id or refresh_token as a protocol-level invariant break
+            // rather than silently substituting None.
+            PollResponse::Success {
+                token,
+                user_id,
+                refresh_token,
+                cluster_id,
+            } => {
+                let user_id = user_id.ok_or_else(|| {
                     anyhow::anyhow!(
                         "device-code/poll success branch missing user_id — \
                          server contract violation"
                     )
                 })?;
-                let refresh_token = payload.refresh_token.clone().ok_or_else(|| {
+                let refresh_token = refresh_token.ok_or_else(|| {
                     anyhow::anyhow!(
                         "device-code/poll success branch missing refresh_token — \
                          server contract violation"
                     )
                 })?;
                 let token = AuthToken {
-                    token: tok,
+                    token,
                     refresh_token,
                     user_id,
-                    cluster_id: None,
+                    cluster_id,
                 };
                 prompter.status(&format!("✓ Authorized as {}", token.user_id));
                 return Ok(token);
             }
-        }
-
-        // Any other shape is treated as a transient error we keep polling
-        // through — except known terminal errors handled above.
-        if let Some(err) = payload.error.as_deref() {
-            anyhow::bail!("device-code/poll returned error: {err}");
         }
     }
 }

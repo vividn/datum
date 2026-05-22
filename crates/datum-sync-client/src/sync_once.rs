@@ -159,13 +159,30 @@ pub fn push_once(
     let next_seq = sync_state::get_my_push_seq(db)?.saturating_add(1);
     let blob = encrypt_changeset(&changeset, master_key, device_id, next_seq)?;
 
-    // da-eu7o: send the locally-stored cluster_id (None on first sync
-    // — server assigns one and echoes it back) and the last-seen
-    // cluster generation (0 on first sync). A
-    // [`SyncProtocolError::GenerationMismatch`] from the relay
-    // propagates through Session as `SessionError::GenerationMismatch`
-    // and bubbles out to the caller for re-init handling.
-    let local_cluster = sync_state::get_cluster_id(db)?;
+    // Send the locally-stored cluster_id and last-seen cluster generation.
+    // A [`SyncProtocolError::GenerationMismatch`] from the relay propagates
+    // through Session as `SessionError::GenerationMismatch` and bubbles
+    // out to the caller for re-init handling.
+    //
+    // cluster_id is required on the wire (post-pre-prod cleanup). If no
+    // local cluster is set yet (first sync from this device), use the
+    // literal `"default"` — all of a user's devices land on the same
+    // cluster by default, so they sync against each other out of the
+    // box. The server scopes clusters by user_id, so two users' defaults
+    // don't collide. Explicit `datum sync login --cluster <name>` lets
+    // a user split into multiple DBs.
+    //
+    // TODO (vividn, 2026-05-22): revisit this — the DB name (e.g. `vremya`,
+    // `work`) is probably a better default than the literal `"default"`,
+    // since it preserves the multi-DB intent without requiring an explicit
+    // `--cluster` flag for every separate local DB. Deferred because the
+    // DB name isn't accessible from this layer without plumbing.
+    //
+    // `local_was_unset` flips the persistence path below from "only
+    // persist if server bumped us" to "always persist on first sync".
+    let stored_cluster = sync_state::get_cluster_id(db)?;
+    let local_was_unset = stored_cluster.is_none();
+    let local_cluster = stored_cluster.unwrap_or_else(|| "default".to_string());
     let local_generation = sync_state::get_cluster_generation(db)?;
     let ack = session.run(client, |bearer| {
         push_blob(
@@ -174,8 +191,8 @@ pub fn push_once(
             bearer,
             device_id,
             blob.as_bytes(),
-            local_cluster.as_deref(),
-            Some(local_generation),
+            &local_cluster,
+            local_generation,
         )
     })?;
 
@@ -190,18 +207,15 @@ pub fn push_once(
     }
     sync_state::advance_my_push_seq(db, next_seq)?;
 
-    // Persist the cluster_id the server assigned on first sync (or
-    // confirmed on every subsequent push). A response that drops
-    // cluster_id (v1 server, in theory) leaves the local value alone.
-    if let Some(server_cluster) = ack.cluster_id.as_deref() {
-        if local_cluster.as_deref() != Some(server_cluster) {
-            sync_state::set_cluster_id(db, server_cluster)?;
-        }
+    // Persist the cluster_id the server confirmed on push acceptance.
+    // First sync (local_was_unset) always writes, since the locally-used
+    // value was a device-id default; subsequent syncs only write if the
+    // server bumped the cluster between push and acceptance.
+    if local_was_unset || ack.cluster_id != local_cluster {
+        sync_state::set_cluster_id(db, &ack.cluster_id)?;
     }
-    if let Some(server_generation) = ack.generation {
-        if server_generation != local_generation {
-            sync_state::set_cluster_generation(db, server_generation)?;
-        }
+    if ack.generation != local_generation {
+        sync_state::set_cluster_generation(db, ack.generation)?;
     }
 
     let advance_to = max_modify_time_ms(&changeset).unwrap_or(watermark);
@@ -226,12 +240,17 @@ pub fn pull_once(
     dry_run: bool,
 ) -> Result<PullOutcome> {
     let since = sync_state::get_pull_seq(db)? as i64;
-    // da-eu7o: pin the pull to the locally-stored cluster (None on
-    // first sync) and the last-seen generation (0 on first sync). The
-    // server runs `check_generation` before returning rows; a mismatch
+    // Pin the pull to the locally-stored cluster and last-seen generation.
+    // The server runs `check_generation` before returning rows; a mismatch
     // surfaces as `SessionError::GenerationMismatch` and bubbles out
-    // unchanged.
-    let local_cluster = sync_state::get_cluster_id(db)?;
+    // unchanged. Same default-cluster rule as push (see the long comment
+    // there): auto-default to `"default"` when no local cluster is set.
+    // `local_was_unset` lets the persistence below stamp the cluster_id
+    // on first sync even when the server echoes the same default name
+    // we sent.
+    let stored_cluster = sync_state::get_cluster_id(db)?;
+    let local_was_unset = stored_cluster.is_none();
+    let local_cluster = stored_cluster.unwrap_or_else(|| "default".to_string());
     let local_generation = sync_state::get_cluster_generation(db)?;
     let rows = session.run(client, |bearer| {
         pull_batch(
@@ -240,29 +259,26 @@ pub fn pull_once(
             bearer,
             device_id,
             since,
-            local_cluster.as_deref(),
-            Some(local_generation),
+            &local_cluster,
+            local_generation,
         )
     })?;
     if rows.is_empty() {
         return Ok(PullOutcome::default());
     }
 
-    // Persist the cluster_id / generation echoed back by the relay on
-    // the first row we see — every row carries the cluster scope it was
-    // accepted into. Subsequent rows in the same batch share the same
+    // Confirm the cluster_id / generation echoed back by the relay on
+    // the first row. Every row in the batch shares the same
     // (cluster_id, generation) because the server filters by cluster
-    // before generation checks.
+    // before generation checks. First sync (local_was_unset) always
+    // writes, since the locally-used value was a default-string
+    // placeholder; subsequent syncs only write if the server changed it.
     if let Some(first) = rows.first() {
-        if let Some(server_cluster) = first.cluster_id.as_deref() {
-            if local_cluster.as_deref() != Some(server_cluster) {
-                sync_state::set_cluster_id(db, server_cluster)?;
-            }
+        if local_was_unset || first.cluster_id != local_cluster {
+            sync_state::set_cluster_id(db, &first.cluster_id)?;
         }
-        if let Some(server_generation) = first.generation {
-            if server_generation != local_generation {
-                sync_state::set_cluster_generation(db, server_generation)?;
-            }
+        if first.generation != local_generation {
+            sync_state::set_cluster_generation(db, first.generation)?;
         }
     }
 

@@ -625,11 +625,8 @@ fn s5_peer_recovers_from_fork_via_purge_then_sync() {
         "B must see A's post-purge row after recovery; got {b_fields:?}",
     );
     assert_eq!(
-        sync_state::get_cluster_id(&db_b)
-            .unwrap()
-            .as_deref()
-            .map(str::to_string),
-        Some(relay.user_id.to_string()),
-        "B re-registers under the default cluster_id (= user_id)",
+        sync_state::get_cluster_id(&db_b).unwrap().as_deref(),
+        Some("default"),
+        "B re-registers under the client-side default cluster_id",
     );
 }

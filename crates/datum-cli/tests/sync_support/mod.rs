@@ -202,16 +202,17 @@ impl StubRelay {
         let conn = self.state.db.lock().unwrap();
         // Bypass insert_changeset's auto-seq computation so the test can
         // pin the exact seq used as AAD by the encrypting peer.
-        // da-tat1: the production push path stamps cluster_id +
-        // generation; pull filters on cluster_id, so the inject helper
-        // must mirror that or the row is invisible. Default to the test
-        // user's user_id (the transitional cluster_id, matching the
-        // da-og24 backfill rule) and generation = 0.
+        // The production push path stamps cluster_id + generation; pull
+        // filters on cluster_id, so the inject helper must mirror that or
+        // the row is invisible. Mirror the client's default cluster name
+        // (`"default"`) so an injected changeset lands in the cluster the
+        // client will be pulling from.
         let user_id_str = self.user_id.to_string();
+        let default_cluster = "default";
         conn.execute(
             "INSERT INTO changesets (device_id, seq, payload, cluster_id, generation)
              VALUES (?1, ?2, ?3, ?4, 0)",
-            rusqlite::params![device_id, seq, payload_b64, user_id_str],
+            rusqlite::params![device_id, seq, payload_b64, default_cluster],
         )
         .expect("inject changeset");
         // Mirror the production server's auto-device-registration so
@@ -220,11 +221,11 @@ impl StubRelay {
             "INSERT OR IGNORE INTO devices (id, user_id) VALUES (?1, ?2)",
             rusqlite::params![device_id, user_id_str],
         );
-        // The user's default cluster must exist for the pull endpoint's
+        // The default cluster must exist for the pull endpoint's
         // ensure_cluster lookup to pin to the right generation.
         let _ = conn.execute(
             "INSERT OR IGNORE INTO clusters (cluster_id, user_id, generation) VALUES (?1, ?2, 0)",
-            rusqlite::params![user_id_str, user_id_str],
+            rusqlite::params![default_cluster, user_id_str],
         );
     }
 

@@ -219,7 +219,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=test")
+                    .uri("/v1/pull?since=0&device=test&cluster_id=test-cluster&generation=0")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -235,7 +235,9 @@ mod tests {
 
         let push_body = serde_json::json!({
             "device_id": "device-1",
-            "payload_b64": "SGVsbG8gV29ybGQ"
+            "payload_b64": "SGVsbG8gV29ybGQ",
+            "cluster_id": "test-cluster",
+            "generation": 0
         });
 
         let push_resp = build_app(state.clone())
@@ -258,7 +260,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=device-2")
+                    .uri("/v1/pull?since=0&device=device-2&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -283,7 +285,9 @@ mod tests {
         for i in 1..=3 {
             let body = serde_json::json!({
                 "device_id": "device-1",
-                "payload_b64": format!("Y2hhbmdlc2V0LXt9{}", i)
+                "payload_b64": format!("Y2hhbmdlc2V0LXt9{}", i),
+                "cluster_id": "test-cluster",
+                "generation": 0
             });
             let resp = build_app(state.clone())
                 .oneshot(
@@ -304,7 +308,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=device-2")
+                    .uri("/v1/pull?since=0&device=device-2&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -321,7 +325,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=device-1")
+                    .uri("/v1/pull?since=0&device=device-1&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -346,7 +350,9 @@ mod tests {
         for i in 1..=2 {
             let body = serde_json::json!({
                 "device_id": "device-1",
-                "payload_b64": format!("p{}", i)
+                "payload_b64": format!("p{}", i),
+                "cluster_id": "test-cluster",
+                "generation": 0
             });
             build_app(state.clone())
                 .oneshot(
@@ -366,7 +372,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=device-2")
+                    .uri("/v1/pull?since=0&device=device-2&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -377,7 +383,12 @@ mod tests {
             serde_json::from_slice(&resp1.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(batch1.len(), 2);
 
-        let body = serde_json::json!({"device_id": "device-1", "payload_b64": "p3"});
+        let body = serde_json::json!({
+            "device_id": "device-1",
+            "payload_b64": "p3",
+            "cluster_id": "test-cluster",
+            "generation": 0
+        });
         build_app(state.clone())
             .oneshot(
                 Request::builder()
@@ -395,7 +406,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=2&device=device-2")
+                    .uri("/v1/pull?since=2&device=device-2&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -503,7 +514,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=alice-dev")
+                    .uri("/v1/pull?since=0&device=alice-dev&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -605,7 +616,9 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=refresh-test")
+                    .uri(
+                        "/v1/pull?since=0&device=refresh-test&cluster_id=test-cluster&generation=0",
+                    )
                     .header("Authorization", format!("Bearer {}", new_bearer))
                     .body(Body::empty())
                     .unwrap(),
@@ -764,7 +777,8 @@ mod tests {
         let body = serde_json::json!({
             "device_id": "dev-A",
             "payload_b64": "AA",
-            "cluster_id": "cluster-X"
+            "cluster_id": "cluster-X",
+            "generation": 0
         });
         let resp = build_app(state.clone())
             .oneshot(
@@ -809,6 +823,7 @@ mod tests {
                             "device_id": "dev-A",
                             "payload_b64": "AA",
                             "cluster_id": "cluster-Y",
+                            "generation": 0
                         })
                         .to_string(),
                     ))
@@ -872,6 +887,7 @@ mod tests {
                             "device_id": "alice-dev",
                             "payload_b64": "AA",
                             "cluster_id": "cluster-Z",
+                            "generation": 0
                         })
                         .to_string(),
                     ))
