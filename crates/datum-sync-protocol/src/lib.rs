@@ -33,4 +33,4 @@ pub use messages::auth::{
     DeviceCodeResponse, PollResponse, RefreshTokenRequest,
 };
 pub use messages::sync::{Changeset, KdfParams, PushRequest, PushResponse, WrappedKey};
-pub use version::PROTOCOL_VERSION;
+pub use version::{PROTOCOL_VERSION, PROTOCOL_VERSION_PATH};
