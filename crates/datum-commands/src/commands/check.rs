@@ -560,10 +560,11 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<()> {
 }
 
 /// Surface pending rows from `integrity_warnings` (`resolution IS NULL`)
-/// — one issue per `kind`. These are local data-integrity findings
-/// (filed by the post-insert validator), not cross-device sync
-/// conflicts. The canonical scenario is a repeated state where the user
-/// forgot to log an intermediate transition; the fix is usually
+/// plus the live `repeated_state` computation. These are local
+/// data-integrity findings (filed by the post-insert validator or
+/// derived live from current entries), not cross-device sync
+/// conflicts. The canonical scenario is a repeated state where the
+/// user forgot to log an intermediate transition; the fix is usually
 /// `datum switch <field> <state> -t -<n>` to backfill the missing
 /// entry.
 ///
@@ -571,21 +572,31 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<()> {
 /// already triaged them. The detection cost is already paid in the
 /// insert path; this checker just makes the queue visible alongside
 /// other `datum check` findings.
+///
+/// da-acft: `repeated_state` is computed live from the `entries`
+/// table via [`integrity::list_repeated_states`] rather than read
+/// from `integrity_warnings`. Stored same_state_repeat rows are no
+/// longer written at insert (m27→28 cleans up stale ones), so when a
+/// user backfills the missing transition or deletes the duplicate
+/// the warning vanishes on the next `datum check` — there's no
+/// stored row left behind.
 fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     use datum_core::integrity::{IntegrityKind, IntegrityWarning, ListFilter};
     let pending = db.list_integrity_warnings(&ListFilter {
         kind: None,
         pending: Some(true),
     })?;
-    if pending.is_empty() {
-        return Ok(Vec::new());
-    }
 
     // Group pending warnings by kind; preserve insertion order within each
-    // group so per-entry render output matches the queue order.
+    // group so per-entry render output matches the queue order. SameStateRepeat
+    // is intentionally skipped — it's computed live below (da-acft); any rows
+    // that slipped past the cleanup migration are ignored here.
     let mut by_kind: std::collections::BTreeMap<&'static str, Vec<&IntegrityWarning>> =
         std::collections::BTreeMap::new();
     for w in &pending {
+        if matches!(w.kind, IntegrityKind::SameStateRepeat) {
+            continue;
+        }
         by_kind.entry(w.kind.as_str()).or_default().push(w);
     }
 
@@ -685,7 +696,64 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
             rendered_block,
         });
     }
+
+    // da-acft: repeated_state is computed live so backfilling the
+    // missing transition (or deleting the duplicate) makes the
+    // warning disappear on the next run — there's no stored row to
+    // mark resolved.
+    if let Some(issue) = collect_repeated_state_live(db)? {
+        issues.push(issue);
+    }
     Ok(issues)
+}
+
+/// Live counterpart of the stored integrity-warning surface for the
+/// `repeated_state` category (da-acft). Walks `entries` through
+/// [`integrity::list_repeated_states`] and builds the same Issue
+/// shape — category, count, example, FlaggedEntry list, rendered
+/// block — that the legacy stored-row path emitted.
+fn collect_repeated_state_live(db: &Db) -> Result<Option<Issue>> {
+    let triggers = datum_core::integrity::list_repeated_states(db.conn())?;
+    if triggers.is_empty() {
+        return Ok(None);
+    }
+    let count = triggers.len();
+    let message = format!(
+        "{count} entr{y} repeat the prior state on their field. \
+         Look at the surrounding data; the right fix is usually a backfill (missing transition) \
+         or a delete (true duplicate).",
+        y = if count == 1 { "y" } else { "ies" },
+    );
+    let entries: Vec<FlaggedEntry> = triggers
+        .iter()
+        .map(|e| {
+            let state_str = match e.state.as_ref() {
+                Some(v) => render_state_for_flag(v),
+                None => String::new(),
+            };
+            FlaggedEntry {
+                hid: e.short_uid(),
+                field: e.field.clone(),
+                state: format!("!{state_str}"),
+            }
+        })
+        .collect();
+    let first = &triggers[0];
+    let example = Some(IssueExample {
+        id: Some(first.short_uid()),
+        field: Some(first.field.clone()),
+        detail: Some(format!("trigger slug={slug}", slug = first.slug)),
+    });
+    let rendered_block = render_flagged_block(db, &triggers);
+    Ok(Some(Issue {
+        severity: Severity::Warning,
+        category: "repeated_state",
+        message,
+        count,
+        example,
+        entries,
+        rendered_block,
+    }))
 }
 
 /// da-ghlx: surface every live row whose `extra_metadata.flag` is JSON
@@ -2200,11 +2268,63 @@ mod tests {
     }
 
     /// Resolved integrity rows (`resolution IS NOT NULL`) are excluded —
-    /// the user already triaged them.
+    /// the user already triaged them. Exercised against `DoubleOpen`, the
+    /// canonical stored kind: da-acft moved `repeated_state` to a live
+    /// computation, so it has no per-row resolution surface anymore.
     #[test]
     fn integrity_check_skips_resolved_rows() {
-        use datum_core::integrity::{ListFilter, Resolution};
+        use datum_core::integrity::{IntegrityKind, ListFilter, Resolution};
         let db = Db::open_in_memory().unwrap();
+        let e1 = Entry::new_legacy(
+            "task",
+            Verb::Switch,
+            Some(serde_json::json!(true)),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e1).unwrap();
+        let e2 = Entry::new_legacy(
+            "task",
+            Verb::Switch,
+            Some(serde_json::json!(true)),
+            None,
+            Some(t_at("2024-01-01T11:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e2).unwrap();
+
+        let pending = db
+            .list_integrity_warnings(&ListFilter {
+                kind: Some(IntegrityKind::DoubleOpen),
+                pending: Some(true),
+            })
+            .unwrap();
+        assert_eq!(
+            pending.len(),
+            1,
+            "exactly one pending DoubleOpen row expected"
+        );
+        db.resolve_integrity_warning(&pending[0].id, Resolution::KeepBoth)
+            .unwrap();
+
+        let issues = collect_integrity_warnings(&db).unwrap();
+        assert!(
+            issues.iter().all(|i| i.category != "integrity_double_open"),
+            "resolved DoubleOpen rows must not surface, got: {issues:?}",
+        );
+    }
+
+    /// da-acft: `repeated_state` is computed live from `entries`, so
+    /// backfilling the missing transition makes the warning disappear
+    /// on the next check — there is no stored row left behind.
+    #[test]
+    fn repeated_state_clears_when_user_backfills_missing_transition() {
+        let db = Db::open_in_memory().unwrap();
+        // Two consecutive `happy` switches: a repeat (the user forgot
+        // to log a transition through some other state).
         let e1 = Entry::new_legacy(
             "mood",
             Verb::Switch,
@@ -2220,26 +2340,35 @@ mod tests {
             Verb::Switch,
             Some(serde_json::json!("happy")),
             None,
-            Some(t_at("2024-01-01T11:00:00+00:00")),
+            Some(t_at("2024-01-01T12:00:00+00:00")),
             None,
             "d1",
         );
         db.insert_entry(&e2).unwrap();
+        assert!(
+            collect_integrity_warnings(&db)
+                .unwrap()
+                .iter()
+                .any(|i| i.category == "repeated_state"),
+            "repeated_state should fire on consecutive `happy` switches",
+        );
 
-        let pending = db
-            .list_integrity_warnings(&ListFilter {
-                kind: None,
-                pending: Some(true),
-            })
-            .unwrap();
-        assert_eq!(pending.len(), 1, "exactly one pending row expected");
-        db.resolve_integrity_warning(&pending[0].id, Resolution::KeepBoth)
-            .unwrap();
+        // User remembers the intermediate transition and backfills it.
+        let between = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("focused")),
+            None,
+            Some(t_at("2024-01-01T11:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&between).unwrap();
 
         let issues = collect_integrity_warnings(&db).unwrap();
         assert!(
-            issues.is_empty(),
-            "resolved integrity rows must not surface, got: {issues:?}",
+            issues.iter().all(|i| i.category != "repeated_state"),
+            "repeated_state must disappear once the missing transition is backfilled, got: {issues:?}",
         );
     }
 

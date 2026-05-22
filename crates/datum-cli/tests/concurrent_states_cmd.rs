@@ -151,22 +151,18 @@ fn array_state_is_queryable_over_timeline() {
 }
 
 /// Acceptance: `datum switch field state1` while the field is currently
-/// `[state1,state2]` files a `same_state_repeat` (partial overlap).
+/// `[state1,state2]` is a partial repeat — surfaced live (da-acft).
 #[test]
-fn array_to_scalar_with_overlap_flagged_as_same_state_repeat() {
+fn array_to_scalar_with_overlap_is_repeated_state() {
+    use datum_core::integrity;
     let db = fresh_db();
 
     run_cli(&["switch", "project", "datum,household", "-t=-1"], &db).expect("seed array state");
     run_cli(&["switch", "project", "datum"], &db).expect("switch back to single member");
 
-    let conflicts = db
-        .list_integrity_warnings(&ListFilter {
-            kind: Some(IntegrityKind::SameStateRepeat),
-            pending: Some(true),
-        })
-        .unwrap();
+    let hits = integrity::list_repeated_states(db.conn()).unwrap();
     assert_eq!(
-        conflicts.len(),
+        hits.len(),
         1,
         "switching back to an already-active member is a partial repeat",
     );
@@ -175,60 +171,47 @@ fn array_to_scalar_with_overlap_flagged_as_same_state_repeat() {
 /// Scalar → array where the new array includes the current scalar is also
 /// a partial repeat.
 #[test]
-fn scalar_to_array_with_overlap_flagged_as_same_state_repeat() {
+fn scalar_to_array_with_overlap_is_repeated_state() {
+    use datum_core::integrity;
     let db = fresh_db();
 
     run_cli(&["switch", "project", "datum", "-t=-1"], &db).expect("seed scalar");
     run_cli(&["switch", "project", "datum,household"], &db)
         .expect("switch to array containing same member");
 
-    let conflicts = db
-        .list_integrity_warnings(&ListFilter {
-            kind: Some(IntegrityKind::SameStateRepeat),
-            pending: Some(true),
-        })
-        .unwrap();
-    assert_eq!(conflicts.len(), 1);
+    let hits = integrity::list_repeated_states(db.conn()).unwrap();
+    assert_eq!(hits.len(), 1);
 }
 
 /// Array → array with overlapping elements is a partial repeat.
 #[test]
-fn array_to_array_with_overlap_flagged_as_same_state_repeat() {
+fn array_to_array_with_overlap_is_repeated_state() {
+    use datum_core::integrity;
     let db = fresh_db();
 
     run_cli(&["switch", "project", "datum,household", "-t=-1"], &db).expect("seed first array");
     run_cli(&["switch", "project", "datum,gastown"], &db).expect("switch to overlapping array");
 
-    let conflicts = db
-        .list_integrity_warnings(&ListFilter {
-            kind: Some(IntegrityKind::SameStateRepeat),
-            pending: Some(true),
-        })
-        .unwrap();
+    let hits = integrity::list_repeated_states(db.conn()).unwrap();
     assert_eq!(
-        conflicts.len(),
+        hits.len(),
         1,
         "overlapping elements between old and new arrays is a partial repeat",
     );
 }
 
-/// Array → disjoint array (no shared elements) is NOT a same-state-repeat.
+/// Array → disjoint array (no shared elements) is NOT a repeat.
 #[test]
-fn array_to_array_disjoint_is_not_same_state_repeat() {
+fn array_to_array_disjoint_is_not_repeated_state() {
+    use datum_core::integrity;
     let db = fresh_db();
 
     run_cli(&["switch", "project", "datum,household", "-t=-1"], &db).expect("seed first array");
     run_cli(&["switch", "project", "gastown,beads"], &db).expect("switch to disjoint array");
 
-    let conflicts = db
-        .list_integrity_warnings(&ListFilter {
-            kind: Some(IntegrityKind::SameStateRepeat),
-            pending: Some(true),
-        })
-        .unwrap();
-    assert_eq!(
-        conflicts.len(),
-        0,
+    let hits = integrity::list_repeated_states(db.conn()).unwrap();
+    assert!(
+        hits.is_empty(),
         "fully disjoint element sets are a clean transition, not a repeat",
     );
 }

@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 27;
+pub const CURRENT_SCHEMA_VERSION: u32 = 28;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -223,6 +223,13 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_state: add cluster_id + cluster_generation columns — per-DB cluster registration for the multi-DB sync control plane (da-eu7o)",
         apply: m26_to_27_sync_state_cluster_columns,
         down: down_27_to_26_sync_state_cluster_columns,
+    },
+    Migration {
+        from: 27,
+        to: 28,
+        summary: "integrity_warnings: drop stored same_state_repeat rows — `repeated_state` is now computed live from entries (da-acft)",
+        apply: m27_to_28_drop_stored_same_state_repeat,
+        down: down_28_to_27_drop_stored_same_state_repeat,
     },
 ];
 
@@ -659,6 +666,45 @@ fn m26_to_27_sync_state_cluster_columns(conn: &Connection) -> Result<()> {
             "ALTER TABLE sync_state ADD COLUMN cluster_generation INTEGER NOT NULL DEFAULT 0;",
         )?;
     }
+    Ok(())
+}
+
+/// da-acft: clear stored `same_state_repeat` rows from
+/// `integrity_warnings`. Going forward `detect_for_entry` no longer
+/// files this kind — `repeated_state` is computed live from the
+/// `entries` table by `integrity::list_repeated_states`. Any rows
+/// still in the table are stale by construction (the live query will
+/// re-derive the same facts from current data, or stop reporting
+/// them if the user has since backfilled / deleted).
+///
+/// Idempotent: a `DELETE` on an empty (or already-cleared) table is
+/// a no-op. Treats a missing `integrity_warnings` table as already
+/// cleaned — some upgrade-path tests stamp the schema forward without
+/// creating the rename target.
+fn m27_to_28_drop_stored_same_state_repeat(conn: &Connection) -> Result<()> {
+    let has_table: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'integrity_warnings'",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if !has_table {
+        return Ok(());
+    }
+    conn.execute(
+        "DELETE FROM integrity_warnings WHERE kind = 'same_state_repeat'",
+        [],
+    )?;
+    Ok(())
+}
+
+/// Reverse v27→v28: there is nothing to put back. The stored rows we
+/// deleted were stale by construction (the live query at v28 would
+/// have ignored them anyway); we have no preserved snapshot to
+/// re-insert. The down step is a structural no-op so a downgrade
+/// chain can pass through without erroring.
+fn down_28_to_27_drop_stored_same_state_repeat(_conn: &Connection) -> Result<()> {
     Ok(())
 }
 

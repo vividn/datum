@@ -50,50 +50,53 @@ fn stop_last_state_errors_when_no_open_block() {
 }
 
 #[test]
-fn switch_to_same_state_files_same_state_repeat_conflict() {
+fn switch_to_same_state_is_surfaced_live_not_stored() {
     // S6 supersedes the old dedup-error behavior: a switch whose value
-    // equals the field's current active state still lands, and a
-    // `same_state_repeat` conflict is filed for later review.
-    use datum_core::integrity::{IntegrityKind, ListFilter};
+    // equals the field's current active state still lands. da-acft:
+    // `repeated_state` is now computed live from `entries` rather than
+    // stored as a row in `integrity_warnings`, so assert via the live
+    // query — `list_integrity_warnings` no longer returns it.
+    use datum_core::integrity::{self, IntegrityKind, ListFilter};
     let db = fresh_db();
 
-    // Space the two switches so their timestamps (and content hashes) differ.
     run_cli(&["switch", "mood", "happy", "-t=-1"], &db).expect("first switch");
     run_cli(&["switch", "mood", "happy"], &db).expect("repeat switch must not error");
 
     let entries = db.entries_for_field("mood", None).unwrap();
     assert_eq!(entries.len(), 2, "both switches landed");
 
-    let conflicts = db
+    let stored = db
         .list_integrity_warnings(&ListFilter {
             kind: Some(IntegrityKind::SameStateRepeat),
             pending: Some(true),
         })
         .unwrap();
-    assert_eq!(conflicts.len(), 1, "one same_state_repeat conflict filed");
     assert!(
-        conflicts[0].remote_entry.is_some(),
-        "same_state_repeat should carry the prior state-defining counterpart"
+        stored.is_empty(),
+        "da-acft: no stored same_state_repeat rows; live query is the source of truth",
     );
+
+    let hits = integrity::list_repeated_states(db.conn()).unwrap();
+    assert_eq!(
+        hits.len(),
+        1,
+        "live query should flag the trailing `happy` repeat",
+    );
+    assert_eq!(hits[0].field, "mood");
 }
 
 #[test]
-fn switch_to_different_state_does_not_file_conflict() {
-    use datum_core::integrity::{IntegrityKind, ListFilter};
+fn switch_to_different_state_is_not_a_repeat() {
+    use datum_core::integrity;
     let db = fresh_db();
 
     run_cli(&["switch", "mood", "happy", "-t=-1"], &db).expect("first switch");
     run_cli(&["switch", "mood", "sad"], &db).expect("switch to sad");
 
-    let conflicts = db
-        .list_integrity_warnings(&ListFilter {
-            kind: Some(IntegrityKind::SameStateRepeat),
-            pending: Some(true),
-        })
-        .unwrap();
+    let hits = integrity::list_repeated_states(db.conn()).unwrap();
     assert!(
-        conflicts.is_empty(),
-        "genuine state change should not file same_state_repeat"
+        hits.is_empty(),
+        "genuine state change should not show up as a repeated state",
     );
 }
 

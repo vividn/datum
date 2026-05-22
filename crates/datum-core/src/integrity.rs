@@ -231,8 +231,7 @@ pub fn detect_for_entry(
         };
 
         // OrphanEnd: a state=false transition arriving at a field that has
-        // never been opened. Mutually exclusive with SameStateRepeat —
-        // there's no prior state to share with.
+        // never been opened.
         if is_close_state(&new_norm) && prior_at_probe.is_none() {
             filed.push(file_warning(
                 conn,
@@ -242,14 +241,23 @@ pub fn detect_for_entry(
                 IntegrityKind::OrphanEnd,
             )?);
         } else if let Some(prior) = prior_at_probe.as_ref() {
-            if states_share_element(&new_norm, prior) {
-                let kind = if is_open_state(&new_norm) && is_open_state(prior) {
-                    IntegrityKind::DoubleOpen
-                } else {
-                    IntegrityKind::SameStateRepeat
-                };
+            // da-acft: only DoubleOpen (both states normalized to
+            // `true`) is stored at insert. Other state-share patterns
+            // — same string, partial parallel overlap — are surfaced
+            // live by [`list_repeated_states`] so the warning clears
+            // automatically once the user fixes the underlying data.
+            if is_open_state(&new_norm)
+                && is_open_state(prior)
+                && states_share_element(&new_norm, prior)
+            {
                 if let Some(hit) = find_recent_state_setter(conn, trigger)? {
-                    filed.push(file_warning(conn, trigger, Some(&hit), detected_by, kind)?);
+                    filed.push(file_warning(
+                        conn,
+                        trigger,
+                        Some(&hit),
+                        detected_by,
+                        IntegrityKind::DoubleOpen,
+                    )?);
                 }
             }
         }
@@ -278,6 +286,69 @@ pub fn detect_for_entry(
     }
 
     Ok(filed)
+}
+
+/// da-acft: walk live state-bearing entries in `occur_time` order per
+/// field and return each one whose normalized state shares an element
+/// with its predecessor on the same field. Excludes the open/open
+/// case — that's [`IntegrityKind::DoubleOpen`], still filed at insert
+/// because the auto-resolver acts on it.
+///
+/// This is a live computation: nothing is stored, and a user who
+/// fixes the underlying data (backfill missing transition, delete
+/// duplicate) stops seeing the row on the next call. The previous
+/// model — a stored row written by [`detect_for_entry`] — left stale
+/// warnings sitting in `integrity_warnings` long after the data was
+/// repaired, because there was no auto-resolution rule for the kind.
+///
+/// Walks `entries_live_field_occur` (partial index on `(field,
+/// occur_time) WHERE deleted_at IS NULL`) via SQLite's window
+/// function. Per-row state JSON is parsed back into Rust so we can
+/// reuse the same [`states_share_element`] predicate the original
+/// detector used; this preserves the partial-overlap semantics for
+/// parallel/structured states.
+pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
+    let mut stmt = conn.prepare(
+        r#"WITH state_runs AS (
+               SELECT entries.*,
+                      LAG(state) OVER (
+                          PARTITION BY field
+                          ORDER BY occur_time, create_time
+                      ) AS prior_state
+               FROM entries
+               WHERE deleted_at IS NULL
+                 AND state IS NOT NULL
+                 AND occur_time IS NOT NULL
+           )
+           SELECT * FROM state_runs
+           WHERE prior_state IS NOT NULL
+           ORDER BY occur_time, create_time"#,
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let entry = crate::db::row_to_entry_public(row)?;
+        let prior_state: String = row.get("prior_state")?;
+        Ok((entry, prior_state))
+    })?;
+    let mut hits = Vec::new();
+    for row in rows {
+        let (entry, prior_state_json) = row.map_err(DatumError::Db)?;
+        let Some(new_state) = entry.state.as_ref() else {
+            continue;
+        };
+        let Ok(prior_state) = serde_json::from_str::<serde_json::Value>(&prior_state_json) else {
+            continue;
+        };
+        let new_norm = crate::state::normalize_state(new_state).to_json();
+        let prior_norm = crate::state::normalize_state(&prior_state).to_json();
+        if !states_share_element(&new_norm, &prior_norm) {
+            continue;
+        }
+        if is_open_state(&new_norm) && is_open_state(&prior_norm) {
+            continue;
+        }
+        hits.push(entry);
+    }
+    Ok(hits)
 }
 
 /// State value indicating "field is open" — the canonical shorthand
