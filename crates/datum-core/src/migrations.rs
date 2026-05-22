@@ -624,6 +624,19 @@ fn down_26_to_25_rename_integrity_warnings(conn: &Connection) -> Result<()> {
 /// natively idempotent via an introspection check so replaying this
 /// migration is safe.
 fn m26_to_27_sync_state_cluster_columns(conn: &Connection) -> Result<()> {
+    // Some upgrade-path tests stamp the schema forward without creating the
+    // earlier `sync_state` table. Treat its absence as "nothing to extend" —
+    // the v1→v2 step is what owns sync_state existence, not this column add.
+    let has_sync_state: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sync_state'",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if !has_sync_state {
+        return Ok(());
+    }
     let has_cluster_id: bool = conn
         .query_row(
             "SELECT COUNT(*) FROM pragma_table_info('sync_state') WHERE name = 'cluster_id'",

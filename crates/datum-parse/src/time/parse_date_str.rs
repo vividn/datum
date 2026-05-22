@@ -194,14 +194,12 @@ fn most_recent_past(month: u32, day: u32, today: NaiveDate, strict: bool) -> Opt
 /// direction marker treats today as already-past, so `apr29+` on
 /// April 29 yields next year. Walks forward up to 8 years.
 fn next_future(month: u32, day: u32, today: NaiveDate) -> Option<NaiveDate> {
-    let mut y = today.year();
-    for _ in 0..8 {
+    for y in today.year()..today.year() + 8 {
         if let Some(d) = NaiveDate::from_ymd_opt(y, month, day) {
             if d > today {
                 return Some(d);
             }
         }
-        y += 1;
     }
     None
 }
