@@ -35,15 +35,15 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
         .metric
         .parse()
         .map_err(|e: String| anyhow::anyhow!(e))?;
-    // da-ubld: auto-fill the terminal only when `--watch` is set. The
-    // one-shot `datum tail` keeps the legacy `Some(10)` default so a
-    // tail in a 40-row vs 80-row terminal doesn't silently change row
-    // counts on the user (or in a script). Width budget stays TTY-aware
-    // either way — that only affects column truncation, not the query.
+    // da-5025: when stdout is a real terminal AND the user didn't pin
+    // `-n`, expand the query to fill the visible window so the default
+    // tail actually uses the screen. Piped / redirected output stays on
+    // the legacy `Some(10)` so scripts get the stable behaviour they
+    // expect.
     let tty = is_stdout_tty();
     let max_total_width = if tty { Some(detect_cols()) } else { None };
-    // -1 reserves a row for the header.
-    let auto_count = if tty && args.count.is_none() && args.watch.is_some() {
+    // -1 reserves a row for the header. Below 5 stays unhelpful; clamp.
+    let auto_count = if tty && args.count.is_none() {
         Some(detect_rows().saturating_sub(1).max(1))
     } else {
         None
@@ -92,6 +92,13 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
 /// is an interactive surface; scripts that need a streaming event
 /// feed should use a structured surface, not scrape the ANSI-aware
 /// human view.
+///
+/// da-hsqd: a `SIGWINCH` handler flips [`RESIZE_FLAG`]; the loop's
+/// chunked sleep ([`wait_with_resize_wake`]) returns early when the
+/// flag is set, so a window resize triggers an out-of-band repaint
+/// instead of waiting for the next `--watch` tick. The watch is a
+/// custom poll loop (no crossterm event source), so per the bead the
+/// signal-hook path is the right one. No-op on non-unix targets.
 fn watch_repaint_loop(
     args: &TailArgs,
     db: &Db,
@@ -100,13 +107,16 @@ fn watch_repaint_loop(
     interval: std::time::Duration,
 ) -> Result<()> {
     use std::io::Write;
+    install_sigwinch_handler();
     let columns = split_columns(&args.columns);
     loop {
-        std::thread::sleep(interval);
-        // Re-detect the terminal every tick so a live `tput cols` /
-        // window resize between frames updates the layout. Non-tty
-        // consumers get the same unbounded path as the initial
-        // render: no width budget, default row count.
+        wait_with_resize_wake(interval);
+        // Re-detect the terminal every tick so a live resize between
+        // frames updates the layout. `detect_cols`/`detect_rows` query
+        // `TIOCGWINSZ` directly on TTYs, so the post-resize repaint
+        // uses the new dimensions. Non-tty consumers get the same
+        // unbounded path as the initial render: no width budget,
+        // default row count.
         let tty = is_stdout_tty();
         let max_total_width = if tty { Some(detect_cols()) } else { None };
         let auto_count = if tty && args.count.is_none() {
@@ -130,6 +140,73 @@ fn watch_repaint_loop(
         let now = DatumTime::now();
         let ctxs = build_render_contexts(&entries, db);
         print_table_with(&entries, Some(&ctxs), Some(&now), registry, &tbl);
+    }
+}
+
+/// SIGWINCH-handling primitives (da-hsqd). The handler runs on the
+/// signal-delivery context, so the only thing it touches is an atomic
+/// bool — async-signal-safe. The main loop polls/clears the flag.
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static RESIZE_FLAG: AtomicBool = AtomicBool::new(false);
+static HANDLER_INSTALLED: std::sync::Once = std::sync::Once::new();
+
+#[cfg(unix)]
+extern "C" fn on_sigwinch(_: libc::c_int) {
+    RESIZE_FLAG.store(true, Ordering::Relaxed);
+}
+
+/// Idempotently install a SIGWINCH handler that flips
+/// [`RESIZE_FLAG`]. No-op on non-unix targets and on subsequent calls
+/// — the watch loop calls this on entry and we never uninstall (the
+/// handler is process-wide; a tail-watch session owns the process for
+/// its lifetime).
+fn install_sigwinch_handler() {
+    HANDLER_INSTALLED.call_once(|| {
+        #[cfg(unix)]
+        // SAFETY: `sigaction` is documented to read/write `sigaction`
+        // structs; we zero-init the struct, set the handler to a
+        // valid `extern "C"` fn, and pass a null `oldact`. `SA_RESTART`
+        // keeps unrelated syscalls (e.g. db reads) restartable
+        // through SIGWINCH; our wake path is the flag, not EINTR.
+        unsafe {
+            let mut sa: libc::sigaction = std::mem::zeroed();
+            sa.sa_sigaction = on_sigwinch as *const () as libc::sighandler_t;
+            libc::sigemptyset(&mut sa.sa_mask);
+            sa.sa_flags = libc::SA_RESTART;
+            libc::sigaction(libc::SIGWINCH, &sa, std::ptr::null_mut());
+        }
+    });
+}
+
+/// Sleep up to `interval`, but return early if [`RESIZE_FLAG`] is
+/// set — a SIGWINCH between frames should trigger an immediate
+/// repaint instead of waiting out the remainder of the watch tick.
+///
+/// Implementation: poll the flag every 50 ms. We can't reliably rely
+/// on the signal interrupting `std::thread::sleep` because Rust's
+/// implementation restarts on EINTR (clock_nanosleep absolute-time
+/// semantics). 50 ms is well under perception threshold for a
+/// "redraw on resize" UX and keeps the steady-state wake cost
+/// negligible (20 Hz of an atomic-load when idle).
+fn wait_with_resize_wake(interval: std::time::Duration) {
+    use std::time::{Duration, Instant};
+    // Clear any flag carried over from before we entered the wait —
+    // a resize during the previous frame's render is already
+    // reflected in what we just painted.
+    RESIZE_FLAG.store(false, Ordering::Relaxed);
+    let deadline = Instant::now() + interval;
+    let chunk = Duration::from_millis(50);
+    loop {
+        if RESIZE_FLAG.load(Ordering::Relaxed) {
+            return;
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return;
+        }
+        let remaining = deadline - now;
+        std::thread::sleep(remaining.min(chunk));
     }
 }
 
@@ -323,5 +400,89 @@ fn day_bounds_utc(
             .single()
             .unwrap();
         Ok((start.with_timezone(&Utc), end.with_timezone(&Utc)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    /// `RESIZE_FLAG` is a process-global, so tests that mutate it must
+    /// not run concurrently — otherwise a "set" test flips the flag
+    /// out from under a "clear" test and the latter wakes early.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// With the flag clear, `wait_with_resize_wake` blocks for at
+    /// least the requested interval (give or take chunk granularity).
+    #[test]
+    fn wait_blocks_full_interval_when_no_resize() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        RESIZE_FLAG.store(false, Ordering::Relaxed);
+        let target = Duration::from_millis(150);
+        let start = Instant::now();
+        wait_with_resize_wake(target);
+        let elapsed = start.elapsed();
+        // Allow one chunk of slack — Linux's `clock_nanosleep` can
+        // return slightly early on some kernels, and the loop's last
+        // sub-chunk sleep is `remaining.min(chunk)` not a full chunk.
+        assert!(
+            elapsed >= target.saturating_sub(Duration::from_millis(20)),
+            "expected wait near {target:?}, got {elapsed:?}"
+        );
+        assert!(
+            elapsed < target + Duration::from_millis(500),
+            "wait overran significantly: {elapsed:?}"
+        );
+    }
+
+    /// A flag set *during* the wait returns within a chunk (~50 ms).
+    /// We don't rely on a real SIGWINCH — just flip the atomic from
+    /// another thread and verify the loop wakes early.
+    #[test]
+    fn wait_returns_early_when_flag_set_mid_wait() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        RESIZE_FLAG.store(false, Ordering::Relaxed);
+        let handle = std::thread::spawn(|| {
+            std::thread::sleep(Duration::from_millis(60));
+            RESIZE_FLAG.store(true, Ordering::Relaxed);
+        });
+        let start = Instant::now();
+        wait_with_resize_wake(Duration::from_secs(5));
+        let elapsed = start.elapsed();
+        handle.join().unwrap();
+        // Should wake within ~chunk-granularity of the flag flip
+        // (60 ms + 50 ms slack). Generous ceiling to avoid CI flake.
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "wait did not return promptly on resize: {elapsed:?}"
+        );
+    }
+
+    /// `wait_with_resize_wake` clears any pre-existing flag on entry
+    /// so a leftover signal from before the wait doesn't immediately
+    /// return — that would burn through the interval in a tight loop.
+    #[test]
+    fn wait_clears_stale_flag_on_entry() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        RESIZE_FLAG.store(true, Ordering::Relaxed);
+        let target = Duration::from_millis(120);
+        let start = Instant::now();
+        wait_with_resize_wake(target);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= target.saturating_sub(Duration::from_millis(20)),
+            "wait short-circuited on a stale flag: {elapsed:?}"
+        );
+    }
+
+    /// Idempotency: calling `install_sigwinch_handler` twice is safe.
+    /// The `Once` guard means only the first call actually wires the
+    /// handler; subsequent calls return immediately.
+    #[test]
+    fn install_sigwinch_handler_is_idempotent() {
+        install_sigwinch_handler();
+        install_sigwinch_handler();
     }
 }

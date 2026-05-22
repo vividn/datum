@@ -2,10 +2,13 @@
 //!
 //! Two concerns live here:
 //!
-//! 1. **Probe the terminal** — width and height from `$COLUMNS` /
-//!    `$LINES` env vars (the same pattern `now`/`nowview` already use)
-//!    plus an `IsTerminal` check on stdout for the "are we piped"
-//!    fall-through.
+//! 1. **Probe the terminal** — width and height from a live
+//!    `TIOCGWINSZ` ioctl when stdout is a TTY, falling back to
+//!    `$COLUMNS` / `$LINES` env vars (the legacy path `now` / `nowview`
+//!    still use) and finally to 80×24. The live ioctl is what lets
+//!    `datum tail --watch` re-layout against the *actual* terminal
+//!    size after a resize (da-hsqd) — env vars are captured at fork
+//!    and never update.
 //! 2. **Fit a cell to a width budget** — ANSI-aware truncate that
 //!    preserves opening colour escapes, appends `…`, and emits a
 //!    closing reset (`\x1b[0m`) so the trailing pad doesn't inherit
@@ -13,9 +16,50 @@
 
 use std::io::IsTerminal;
 
-/// Detect terminal width via `$COLUMNS`, falling back to 80. Mirrors
-/// the helper in `commands::now` so both surfaces use the same probe.
+/// Live `TIOCGWINSZ` query against stdout. Returns `(cols, rows)`, or
+/// `None` if the ioctl fails (stdout not a tty, or kernel reports a
+/// zero-sized winsize as some pty wrappers do during teardown). Both
+/// dimensions are clamped to `usize` — `ws_col` / `ws_row` are
+/// `u16`, so no overflow path matters here.
+///
+/// da-hsqd: this is the "or equivalent" the bead asked for. We avoid
+/// pulling in `crossterm` for one ioctl when `libc` is already a
+/// workspace dep.
+#[cfg(unix)]
+fn query_winsize() -> Option<(usize, usize)> {
+    // SAFETY: `winsize` is plain POD; `ioctl` writes into it on
+    // success and is well-defined to return 0/-1. We pass STDOUT_FILENO
+    // (always 1) and the correct request constant for the kernel's
+    // winsize layout.
+    unsafe {
+        let mut sz: libc::winsize = std::mem::zeroed();
+        if libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut sz) == 0
+            && sz.ws_col > 0
+            && sz.ws_row > 0
+        {
+            Some((sz.ws_col as usize, sz.ws_row as usize))
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn query_winsize() -> Option<(usize, usize)> {
+    None
+}
+
+/// Detect terminal width. Prefers a live `TIOCGWINSZ` ioctl when
+/// stdout is a TTY (so `datum tail --watch` reflows after resize);
+/// falls back to `$COLUMNS` and finally 80.
 pub fn detect_cols() -> usize {
+    if is_stdout_tty() {
+        if let Some((cols, _)) = query_winsize() {
+            if cols >= 20 {
+                return cols;
+            }
+        }
+    }
     if let Ok(s) = std::env::var("COLUMNS") {
         if let Ok(n) = s.parse::<usize>() {
             if n >= 20 {
@@ -26,11 +70,18 @@ pub fn detect_cols() -> usize {
     80
 }
 
-/// Detect terminal height via `$LINES`, falling back to 24. Used to
-/// pick a default `tail -n` that fills the visible window. The
-/// minimum 5 keeps tests/CI runs from collapsing to a single-row
-/// table when `$LINES` is unset or absurdly small.
+/// Detect terminal height. Same ioctl-first / env-fallback shape as
+/// [`detect_cols`]. Used to pick a default `tail -n` that fills the
+/// visible window. The minimum 5 keeps tests/CI runs from collapsing
+/// to a single-row table when the terminal is unset or absurdly small.
 pub fn detect_rows() -> usize {
+    if is_stdout_tty() {
+        if let Some((_, rows)) = query_winsize() {
+            if rows >= 5 {
+                return rows;
+            }
+        }
+    }
     if let Ok(s) = std::env::var("LINES") {
         if let Ok(n) = s.parse::<usize>() {
             if n >= 5 {
