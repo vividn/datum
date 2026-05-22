@@ -294,7 +294,7 @@ fn check_max_file_size() -> Result<()> {
     if offenders.is_empty() {
         return Ok(());
     }
-    offenders.sort_by(|a, b| b.1.cmp(&a.1));
+    offenders.sort_by_key(|b| std::cmp::Reverse(b.1));
     let lines: Vec<String> = offenders
         .iter()
         .map(|(p, n)| format!("  {p}: {n} LOC (cap = {MAX_FILE_LOC})"))
