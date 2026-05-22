@@ -51,7 +51,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_default_battery = args.checkers.is_empty();
 
     let mut issues: Vec<Issue> = Vec::new();
-    let mut content_hash_repaired = 0usize;
+    let mut content_hash_fix: Option<ContentHashFixReport> = None;
     if run_default_battery {
         issues.extend(collect_issues(db)?.issues);
         // da-adyj: legacy rows from before da-r569 carry a content_hash
@@ -60,8 +60,15 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         // `content_hash_mismatch`; under `--fix` we additionally
         // recompute and overwrite the column so dedup lookups (which
         // use the post-r569 hash) start finding the rows.
+        //
+        // da-4c1c follow-up: the fix originally reported a single
+        // repair count and trusted the UPDATE. The new flow tracks
+        // detect → apply → verify counts separately so a regression
+        // where the rewrite silently no-ops (the bug Vremya hit on
+        // real legacy data) prints a loud diagnostic instead of
+        // pretending success.
         if args.fix {
-            content_hash_repaired = apply_content_hash_fixes(db)?;
+            content_hash_fix = Some(apply_content_hash_fixes(db)?);
         }
     }
     if run_verbs {
@@ -103,20 +110,8 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         println!("{}", render_json(&report)?);
     } else {
         print!("{}", render_human(&report));
-        // da-adyj: surface the content_hash repair count in the human
-        // summary so the user sees what `--fix` actually did. JSON
-        // consumers can recompute by diffing two `check --json` runs;
-        // keeping the JSON shape stable avoids forcing a schema bump
-        // for the trailing repair counter.
-        if content_hash_repaired > 0 {
-            println!(
-                "✓ content_hash repaired: {content_hash_repaired} entr{}",
-                if content_hash_repaired == 1 {
-                    "y"
-                } else {
-                    "ies"
-                },
-            );
+        if let Some(fix) = content_hash_fix.as_ref() {
+            print_content_hash_fix_summary(fix);
         }
     }
     if report.has_errors() {
@@ -125,24 +120,107 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-/// da-adyj: walk every row and rewrite `content_hash` whenever the
-/// stored value disagrees with [`Entry::expected_content_hash`]. The
-/// rewrite is idempotent (a second pass finds no mismatches) and
-/// touches no other column, so downstream queries that key on
-/// `content_hash` (dedup, history reconciliation) start finding the
-/// row under its post-r569 identity. Returns the number of rows
-/// repaired.
-fn apply_content_hash_fixes(db: &Db) -> Result<usize> {
+/// da-4c1c: detect/apply/verify counters for a single `--fix` run.
+/// Distinguishing them lets us catch the "applied but didn't stick"
+/// regression that Vremya hit (the apply call returned Ok but the
+/// re-read showed the row still mismatched).
+#[derive(Debug, Clone, Default)]
+struct ContentHashFixReport {
+    /// Rows the pre-fix walk decided needed repair.
+    detected: usize,
+    /// Rows the per-row UPDATE actually returned affected=1 for.
+    applied: usize,
+    /// Rows the post-fix walk still found mismatched.
+    still_mismatched: usize,
+    /// First few (slug, stored, expected) tuples for the remaining
+    /// mismatches — enough context for a hand-debug without dumping
+    /// hundreds of rows.
+    leftover_samples: Vec<(String, String, String)>,
+}
+
+/// da-adyj + da-4c1c: walk every row, rewrite the `content_hash`
+/// column when the stored value disagrees with
+/// [`Entry::expected_content_hash`], then re-walk to confirm the
+/// rewrites took. Touches no other columns and writes no history row.
+///
+/// The two-pass design (detect → apply → verify) is the da-4c1c
+/// upgrade: the original (da-adyj) one-pass trusted the UPDATE and
+/// only printed the apply count, which silently hid the case where a
+/// row's `expected_content_hash` came out differently across two reads
+/// of the same data (the actual bug Vremya hit on real legacy rows).
+/// Now we count remaining mismatches after the apply pass and print a
+/// loud diagnostic if any survived.
+fn apply_content_hash_fixes(db: &Db) -> Result<ContentHashFixReport> {
+    let mut report = ContentHashFixReport::default();
+
+    // Pass 1: scan + apply.
     let entries = db.all_entries()?;
-    let mut repaired = 0usize;
     for e in &entries {
         let expected = e.expected_content_hash();
         if expected != e.content_hash {
-            db.set_entry_content_hash(&e.slug, &expected)?;
-            repaired += 1;
+            report.detected += 1;
+            // set_entry_content_hash errors with NotFound when no row
+            // matches the slug; treat that as an applied=0, surface
+            // via the still_mismatched count instead of bailing the
+            // whole fix run.
+            match db.set_entry_content_hash(&e.slug, &expected) {
+                Ok(()) => report.applied += 1,
+                Err(_) => { /* counted in verify pass below */ }
+            }
         }
     }
-    Ok(repaired)
+
+    // Pass 2: verify. If any row is still mismatched, capture the
+    // first few for the user to share when they file a follow-up bug.
+    let after = db.all_entries()?;
+    for e in &after {
+        let expected = e.expected_content_hash();
+        if expected != e.content_hash {
+            report.still_mismatched += 1;
+            if report.leftover_samples.len() < 3 {
+                report.leftover_samples.push((
+                    e.slug.to_string(),
+                    e.content_hash.clone(),
+                    expected,
+                ));
+            }
+        }
+    }
+    Ok(report)
+}
+
+fn print_content_hash_fix_summary(fix: &ContentHashFixReport) {
+    // Always print under `--fix` (even when detected == 0) so the user
+    // can distinguish "ran and found nothing" from "didn't run."
+    let entry_word = if fix.applied == 1 { "y" } else { "ies" };
+    println!(
+        "✓ content_hash repaired: {} entr{entry_word} ({} detected, {} still mismatched)",
+        fix.applied, fix.detected, fix.still_mismatched,
+    );
+    if fix.still_mismatched > 0 {
+        eprintln!(
+            "⚠ {} entr{} could not be repaired — \
+             expected_content_hash() may be returning different values on \
+             successive reads of the same row. Sample rows:",
+            fix.still_mismatched,
+            if fix.still_mismatched == 1 {
+                "y"
+            } else {
+                "ies"
+            },
+        );
+        for (slug, stored, expected) in &fix.leftover_samples {
+            eprintln!(
+                "  - {slug}: stored={}…  expected={}…",
+                &stored[..stored.len().min(12)],
+                &expected[..expected.len().min(12)],
+            );
+        }
+        eprintln!(
+            "  File a bug with the failing row's `state` / `data` JSON so the \
+             determinism gap can be reproduced."
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -2453,8 +2531,10 @@ mod tests {
             .unwrap();
         assert_eq!(stored, bogus, "fixture: hash forced");
 
-        let repaired = apply_content_hash_fixes(&db).unwrap();
-        assert_eq!(repaired, 1, "exactly one drifted row was repaired");
+        let fix = apply_content_hash_fixes(&db).unwrap();
+        assert_eq!(fix.detected, 1, "exactly one drifted row was detected");
+        assert_eq!(fix.applied, 1, "and applied");
+        assert_eq!(fix.still_mismatched, 0, "and the rewrite stuck");
 
         // Hash now matches Entry::expected_content_hash().
         let after: String = db
@@ -2471,7 +2551,9 @@ mod tests {
 
         // Second pass is a no-op — idempotence is part of the contract.
         let second = apply_content_hash_fixes(&db).unwrap();
-        assert_eq!(second, 0, "idempotent: nothing left to repair");
+        assert_eq!(second.detected, 0, "idempotent: nothing left to repair");
+        assert_eq!(second.applied, 0);
+        assert_eq!(second.still_mismatched, 0);
     }
 
     /// Clean DBs (every row's hash already matches its expected hash —
@@ -2499,8 +2581,10 @@ mod tests {
             )
             .unwrap();
 
-        let repaired = apply_content_hash_fixes(&db).unwrap();
-        assert_eq!(repaired, 0, "no repairs on clean DB");
+        let fix = apply_content_hash_fixes(&db).unwrap();
+        assert_eq!(fix.detected, 0, "no repairs on clean DB");
+        assert_eq!(fix.applied, 0);
+        assert_eq!(fix.still_mismatched, 0);
 
         let post: String = db
             .conn()
@@ -2511,5 +2595,63 @@ mod tests {
             )
             .unwrap();
         assert_eq!(pre, post, "stored hash untouched");
+    }
+
+    /// da-4c1c: rows whose `data` carries a complex nested-object JSON
+    /// (multi-key, mixed types) still round-trip through the fix path.
+    /// This guards against the hypothesis-2 failure where
+    /// `expected_content_hash` would return different values on
+    /// successive reads of the same row (e.g. via key-order drift in
+    /// the deserialized JsonValue).
+    #[test]
+    fn apply_content_hash_fixes_repairs_rows_with_complex_data_json() {
+        let db = Db::open_in_memory().unwrap();
+        let mut e = Entry::new_legacy(
+            "weight",
+            Verb::Point,
+            Some(serde_json::json!(75.2)),
+            Some(serde_json::json!({
+                "unit": "kg",
+                "note": "morning",
+                "tags": ["calibrated", "indoor"],
+                "nested": {"sensor": "scale-v2", "battery": 87}
+            })),
+            Some(t_at("2024-01-01T07:30:00+00:00")),
+            None,
+            "d1",
+        );
+        // After insert, content_hash should match expected_content_hash —
+        // we'll stomp it to simulate a legacy pre-r569 row.
+        db.insert_entry(&e).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE entries SET content_hash = 'legacy-broken-hash' WHERE field = 'weight'",
+                [],
+            )
+            .unwrap();
+
+        // Sanity: detector path agrees the row needs repair.
+        let entries_pre = db.all_entries().unwrap();
+        assert_eq!(entries_pre.len(), 1);
+        let detector_says_mismatch =
+            entries_pre[0].expected_content_hash() != entries_pre[0].content_hash;
+        assert!(
+            detector_says_mismatch,
+            "fixture must produce a detected mismatch"
+        );
+
+        let fix = apply_content_hash_fixes(&db).unwrap();
+        assert_eq!(fix.detected, 1);
+        assert_eq!(fix.applied, 1);
+        assert_eq!(
+            fix.still_mismatched, 0,
+            "the post-fix verify pass must show zero mismatches; \
+             a non-zero count would mean expected_content_hash() drifted \
+             across two reads of the same row (da-4c1c)"
+        );
+
+        // Suppress unused-mut warning on `e`.
+        e.content_hash = "drop".to_string();
+        let _ = e;
     }
 }
