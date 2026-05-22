@@ -35,15 +35,15 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
         .metric
         .parse()
         .map_err(|e: String| anyhow::anyhow!(e))?;
-    // da-5025: when stdout is a real terminal AND the user didn't pin
-    // `-n`, expand the query to fill the visible window so the default
-    // tail actually uses the screen. Piped / redirected output stays on
-    // the legacy `Some(10)` so scripts get the stable behaviour they
-    // expect.
+    // da-ubld: auto-fill the terminal only when `--watch` is set. The
+    // one-shot `datum tail` keeps the legacy `Some(10)` default so a
+    // tail in a 40-row vs 80-row terminal doesn't silently change row
+    // counts on the user (or in a script). Width budget stays TTY-aware
+    // either way — that only affects column truncation, not the query.
     let tty = is_stdout_tty();
     let max_total_width = if tty { Some(detect_cols()) } else { None };
-    // -1 reserves a row for the header. Below 5 stays unhelpful; clamp.
-    let auto_count = if tty && args.count.is_none() {
+    // -1 reserves a row for the header.
+    let auto_count = if tty && args.count.is_none() && args.watch.is_some() {
         Some(detect_rows().saturating_sub(1).max(1))
     } else {
         None
