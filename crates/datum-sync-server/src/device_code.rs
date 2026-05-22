@@ -11,7 +11,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -22,7 +22,9 @@ use crate::{
     db,
     error::AppError,
     jwt,
-    models::{AuthToken, DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeResponse},
+    models::{
+        DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeResponse, PollResponse,
+    },
     refresh, AppState,
 };
 
@@ -91,14 +93,13 @@ pub async fn start(
     (StatusCode::OK, Json(resp))
 }
 
-#[derive(Debug, Serialize)]
-struct PollPending {
-    status: &'static str,
-}
-
-#[derive(Debug, Serialize)]
-struct PollError {
-    error: &'static str,
+/// Helper to build the `PollResponse::Error` variant with a static error
+/// code (avoids stringly-typed call sites).
+fn poll_error(code: &str) -> PollResponse {
+    PollResponse::Error {
+        error: code.to_string(),
+        detail: None,
+    }
 }
 
 pub async fn poll(
@@ -112,7 +113,7 @@ pub async fn poll(
         let mut remaining = state.slow_down_polls_remaining.lock().unwrap();
         if *remaining > 0 {
             *remaining -= 1;
-            return (StatusCode::OK, Json(PollError { error: "slow_down" })).into_response();
+            return (StatusCode::OK, Json(poll_error("slow_down"))).into_response();
         }
     }
 
@@ -124,22 +125,14 @@ pub async fn poll(
     };
 
     let Some(record) = record else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(PollError { error: "expired" }),
-        )
-            .into_response();
+        return (StatusCode::BAD_REQUEST, Json(poll_error("expired"))).into_response();
     };
 
     if Instant::now() > record.expires_at {
         // Clean up the stale record so /authorize on the same code fails
         // immediately too.
         state.device_codes.lock().unwrap().remove(&q.device_code);
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(PollError { error: "expired" }),
-        )
-            .into_response();
+        return (StatusCode::BAD_REQUEST, Json(poll_error("expired"))).into_response();
     }
 
     if let Some(user_id) = record.authorized_user_id {
@@ -156,10 +149,10 @@ pub async fn poll(
                 // be replayed for a fresh token without re-running the
                 // device-code flow.
                 state.device_codes.lock().unwrap().remove(&q.device_code);
-                let body = AuthToken {
+                let body = PollResponse::Success {
                     token,
-                    user_id: user_id.to_string(),
-                    refresh_token,
+                    user_id: Some(user_id.to_string()),
+                    refresh_token: Some(refresh_token),
                     cluster_id: None,
                 };
                 (StatusCode::OK, Json(body)).into_response()
@@ -167,7 +160,13 @@ pub async fn poll(
             Err(e) => e.into_response(),
         }
     } else {
-        (StatusCode::OK, Json(PollPending { status: "pending" })).into_response()
+        (
+            StatusCode::OK,
+            Json(PollResponse::Pending {
+                status: "pending".to_string(),
+            }),
+        )
+            .into_response()
     }
 }
 
