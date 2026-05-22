@@ -26,12 +26,12 @@ use crate::http::error::HttpError;
 /// Outcome of a successful push. Echoes back the per-device monotonic
 /// `seq` the relay assigned plus the cluster_id + generation the row
 /// landed on (so the client can persist server-assigned values into
-/// local `sync_state` on first sync). Optional for v1 compat.
+/// local `sync_state` on first sync).
 #[derive(Debug, Clone)]
 pub struct PushAck {
     pub seq: i64,
-    pub cluster_id: Option<String>,
-    pub generation: Option<u64>,
+    pub cluster_id: String,
+    pub generation: u64,
 }
 
 /// One row from `GET /v1/pull`, with the payload already base64-decoded to
@@ -54,12 +54,10 @@ pub struct PulledChangeset {
     /// Raw [`EncryptedBlob`] bytes (already base64-decoded).
     pub payload: Vec<u8>,
     pub uploaded_at: String,
-    /// Cluster the row was accepted into. Absent on v1 server responses.
-    /// (da-eu7o.)
-    pub cluster_id: Option<String>,
-    /// Cluster generation when the row was accepted. Absent on v1
-    /// server responses. (da-eu7o.)
-    pub generation: Option<u64>,
+    /// Cluster the row was accepted into.
+    pub cluster_id: String,
+    /// Cluster generation when the row was accepted.
+    pub generation: u64,
 }
 
 /// POST a single encrypted changeset blob to the relay. Returns the
@@ -81,13 +79,13 @@ pub fn push_blob(
     bearer: &str,
     device_id: &str,
     payload: &[u8],
-    cluster_id: Option<&str>,
-    generation: Option<u64>,
+    cluster_id: &str,
+    generation: u64,
 ) -> Result<PushAck, HttpError> {
     let body = PushRequest {
         device_id: device_id.to_string(),
         payload_b64: URL_SAFE_NO_PAD.encode(payload),
-        cluster_id: cluster_id.map(str::to_string),
+        cluster_id: cluster_id.to_string(),
         generation,
     };
     let resp = client
@@ -149,19 +147,15 @@ pub fn pull_batch(
     bearer: &str,
     device_id: &str,
     since: i64,
-    cluster_id: Option<&str>,
-    generation: Option<u64>,
+    cluster_id: &str,
+    generation: u64,
 ) -> Result<Vec<PulledChangeset>, HttpError> {
-    let mut query: Vec<(&str, String)> = vec![
+    let query: Vec<(&str, String)> = vec![
         ("since", since.to_string()),
         ("device", device_id.to_string()),
+        ("cluster_id", cluster_id.to_string()),
+        ("generation", generation.to_string()),
     ];
-    if let Some(c) = cluster_id {
-        query.push(("cluster_id", c.to_string()));
-    }
-    if let Some(g) = generation {
-        query.push(("generation", g.to_string()));
-    }
     let resp = client
         .get(format!("{server}/v1/pull"))
         .bearer_auth(bearer)

@@ -83,23 +83,17 @@ pub fn bump_generation(conn: &Connection, cluster_id: &str, user_id: &Uuid) -> R
     get_generation_for_owner(conn, cluster_id, user_id)
 }
 
-/// Compare a client-supplied generation against the server's. `client`
-/// is the value the wire payload carried; absent (None) means a v1
-/// client that hasn't been retrofitted with generation tracking — let
-/// it through transparently. Sub-4+ flips the default to require a
-/// match once the client side wires generation.
-///
-/// Returns `Err(AppError::GenerationMismatch { ... })` on a mismatch so
-/// the caller can `?` it straight out of the handler.
-pub fn check_generation(server: i64, client: Option<u64>) -> Result<(), AppError> {
-    let Some(c) = client else { return Ok(()) };
-    if (server as u64) == c {
+/// Compare a client-supplied generation against the server's
+/// authoritative value. Returns `Err(AppError::GenerationMismatch { ... })`
+/// on a mismatch so the caller can `?` it straight out of the handler.
+pub fn check_generation(server: i64, client: u64) -> Result<(), AppError> {
+    if (server as u64) == client {
         Ok(())
     } else {
         Err(AppError::GenerationMismatch(
             SyncProtocolError::GenerationMismatch {
                 expected: server as u64,
-                found: c,
+                found: client,
             },
         ))
     }
@@ -206,20 +200,13 @@ mod tests {
     }
 
     #[test]
-    fn check_generation_lets_v1_clients_through_unchanged() {
-        // Absent client generation = pre-da-tat1 client. Must NOT
-        // reject so the migration stays backwards-compatible.
-        check_generation(7, None).unwrap();
-    }
-
-    #[test]
     fn check_generation_passes_on_match() {
-        check_generation(3, Some(3)).unwrap();
+        check_generation(3, 3).unwrap();
     }
 
     #[test]
     fn check_generation_rejects_with_typed_mismatch() {
-        let err = check_generation(5, Some(3)).unwrap_err();
+        let err = check_generation(5, 3).unwrap_err();
         match err {
             AppError::GenerationMismatch(SyncProtocolError::GenerationMismatch {
                 expected,
