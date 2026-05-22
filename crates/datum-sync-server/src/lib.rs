@@ -616,7 +616,9 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=refresh-test&cluster_id=test-cluster&generation=0")
+                    .uri(
+                        "/v1/pull?since=0&device=refresh-test&cluster_id=test-cluster&generation=0",
+                    )
                     .header("Authorization", format!("Bearer {}", new_bearer))
                     .body(Body::empty())
                     .unwrap(),

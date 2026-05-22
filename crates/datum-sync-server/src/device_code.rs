@@ -22,9 +22,7 @@ use crate::{
     db,
     error::AppError,
     jwt,
-    models::{
-        DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeResponse, PollResponse,
-    },
+    models::{DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeResponse, PollResponse},
     refresh, AppState,
 };
 
