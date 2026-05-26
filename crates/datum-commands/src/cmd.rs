@@ -1297,10 +1297,7 @@ mod tests {
         RetimeArgs {
             slug: slug.map(str::to_string),
             offset: Some(offset.to_string()),
-            time: None,
-            field: None,
-            after: None,
-            before: None,
+            ..Default::default()
         }
     }
 
@@ -1377,12 +1374,10 @@ mod tests {
         db.insert_entry(&other).unwrap();
 
         let args = RetimeArgs {
-            slug: None,
             offset: Some("+1h".to_string()),
-            time: None,
             field: Some("coffee".to_string()),
             after: Some("2026-04-01".to_string()),
-            before: None,
+            ..Default::default()
         };
         crate::commands::retime::retime(args, &db).unwrap();
 
@@ -1421,6 +1416,129 @@ mod tests {
         assert_eq!(
             after.start_time.as_ref().unwrap().utc,
             t0 - chrono::Duration::minutes(30)
+        );
+    }
+
+    /// da-rorg: bare numeric positional auto-relative shift.
+    /// `retime <id> -5` shifts the entry's occur_time by -5 minutes.
+    #[test]
+    fn retime_bare_numeric_positional_shifts_minutes() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = make_entry_at("coffee", 10_000, "d1");
+        let id = e.slug.clone();
+        let t0 = e.start_time.as_ref().unwrap().utc;
+        db.insert_entry(&e).unwrap();
+
+        let args = RetimeArgs {
+            slug: Some(id.to_string()),
+            bare_offset_min: Some(-5),
+            ..Default::default()
+        };
+        crate::commands::retime::retime(args, &db).unwrap();
+
+        let after = db.get_entry(&id).unwrap();
+        assert_eq!(
+            after.start_time.as_ref().unwrap().utc,
+            t0 - chrono::Duration::minutes(5)
+        );
+    }
+
+    /// da-rorg: bare-slug retime with no time-args defaults to "set to
+    /// now" — the canonical shorthand for "this entry's time is wrong,
+    /// stamp it now."
+    #[test]
+    fn retime_default_no_time_args_sets_to_now() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        // Seed an entry well in the past so "now" is meaningfully later.
+        let e = make_entry_at_utc(
+            "mood",
+            chrono::Utc::now() - chrono::Duration::hours(2),
+            "d1",
+        );
+        let id = e.slug.clone();
+        db.insert_entry(&e).unwrap();
+
+        let before = chrono::Utc::now();
+        let args = RetimeArgs {
+            slug: Some(id.to_string()),
+            ..Default::default()
+        };
+        crate::commands::retime::retime(args, &db).unwrap();
+        let after = chrono::Utc::now();
+
+        // da-ivld: occur_time template re-derives the slug; the stable
+        // hid is the only safe lookup after a retime.
+        let row = db.get_entry(&e.hid).unwrap();
+        let t = row.start_time.as_ref().unwrap().utc;
+        assert!(
+            t >= before && t <= after,
+            "occur_time {t} not in [{before}, {after}]"
+        );
+    }
+
+    /// da-rorg: bare `retime` (no slug at all) defaults to `_LAST`.
+    /// Last-touched pointer is stamped by inserts, so the freshly-
+    /// inserted entry is the target.
+    #[test]
+    fn retime_bare_no_slug_defaults_to_last() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = make_entry_at_utc(
+            "focus",
+            chrono::Utc::now() - chrono::Duration::hours(1),
+            "d1",
+        );
+        let hid = e.hid.clone();
+        db.insert_entry(&e).unwrap();
+        // Stamp the last-docs pointer on the inserted hid — mirrors what
+        // a real `occur`/`switch`/etc. would have done.
+        let _ = datum_core::last_docs::set_last_docs(&db, std::slice::from_ref(&hid));
+
+        let before = chrono::Utc::now();
+        let args = RetimeArgs::default();
+        crate::commands::retime::retime(args, &db).unwrap();
+        let after = chrono::Utc::now();
+
+        let row = db.get_entry(&hid).unwrap();
+        let t = row.start_time.as_ref().unwrap().utc;
+        assert!(
+            t >= before && t <= after,
+            "bare retime should have stamped _LAST to now; got {t}"
+        );
+    }
+
+    /// da-rorg: `-r` flag flips a `-t -N` time-arg into a relative shift.
+    /// `retime <id> -r -t -5` is equivalent to `retime <id> -5` —
+    /// the entry's occur_time moves by -5 min from its current value,
+    /// not from "now".
+    #[test]
+    fn retime_relative_flag_shifts_by_delta_from_now() {
+        use datum_core::db::Db;
+        use datum_parse::input::TimeArgs;
+        let db = Db::open_in_memory().unwrap();
+        let e = make_entry_at("project", 50_000, "d1");
+        let id = e.slug.clone();
+        let t0 = e.start_time.as_ref().unwrap().utc;
+        db.insert_entry(&e).unwrap();
+
+        let args = RetimeArgs {
+            slug: Some(id.to_string()),
+            relative: true,
+            time: TimeArgs {
+                time: Some("-5".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        crate::commands::retime::retime(args, &db).unwrap();
+
+        let after = db.get_entry(&id).unwrap();
+        assert_eq!(
+            after.start_time.as_ref().unwrap().utc,
+            t0 - chrono::Duration::minutes(5),
+            "-r -t -5 should match `<id> -5`: shift by -5 min from current"
         );
     }
 
@@ -1528,12 +1646,6 @@ mod tests {
         .unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 0);
     }
-
-    // da-uzxj superseded the old hard-refusal protection window with an
-    // interactive [Y/n] prompt (`confirm_default_last_if_stale`). The prompt
-    // behaviour is covered by the `confirm_*` tests in
-    // `commands::helpers`; the former `last_docs_protection_window_rejects_stale_pointer`
-    // test asserted the removed hard-error path and was dropped here.
 
     /// `_LAST` (no protection) resolves regardless of staleness — and bare
     /// `get` defaults to it.

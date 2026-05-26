@@ -1,33 +1,71 @@
-//! `datum retime <id_or_slug>` — move an entry's time_start/time_end.
+//! `datum retime [<id_or_slug>] [shift]` — move an entry's occur_time.
+//!
+//! da-rorg: retime aligns with the update/merge/delete/undo defaults —
+//! a bare slug resolves to `_LAST`, and a missing time-args group means
+//! "set to now". Time targeting is done through three layered paths:
+//!
+//! * `--offset <ISO>` — explicit duration shift (legacy).
+//! * Bare numeric positional (`retime <id> -5`) — minutes-offset
+//!   shorthand for the relative path; auto-relative since retime's
+//!   only meaningful trailing positional is a time.
+//! * Time-args group (`-t`/`-y`/`-q`/`-d`/...) — absolute target by
+//!   default, anchored at "now"; with `-r/--relative` the same args
+//!   compute a delta from "now" that is applied to the entry's
+//!   current occur_time instead.
 
 use anyhow::{Context, Result};
 use chrono::{Local, Utc};
 use datum_core::{
     db::{Db, RetimeFilter},
     ids::resolve_quickid_single,
-    time::{parse_duration, parse_time_arg, TimeBuilder},
+    time::{parse_date_arg, parse_time_arg, DatumTime, TimeBuilder},
 };
 
 use crate::args::RetimeArgs;
 
 pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
-    if args.slug.is_none() && args.field.is_none() && args.after.is_none() && args.before.is_none()
-    {
-        anyhow::bail!(
-            "retime requires at least one selector: <slug>, --field, --after, or --before"
-        );
+    // da-rorg: slug defaults to `_LAST` (matching update/merge/delete/
+    // undo) so a bare `datum retime` resolves the user's last touch.
+    // Bulk filters (--field/--after/--before) stay as explicit
+    // overrides that bypass the `_LAST` shorthand entirely.
+    let want_bulk_filter = args.field.is_some() || args.after.is_some() || args.before.is_some();
+
+    let resolved_entry = if want_bulk_filter {
+        args.slug
+            .as_deref()
+            .map(|raw| resolve_quickid_single(db, raw))
+            .transpose()
+            .map_err(anyhow::Error::from)?
+    } else {
+        let pattern = args
+            .slug
+            .as_deref()
+            .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
+        Some(resolve_quickid_single(db, pattern).map_err(anyhow::Error::from)?)
+    };
+
+    // da-uzxj integration: when the user defaulted to `_LAST` (no
+    // explicit slug, no bulk filter), prompt before mutating if the
+    // pointer is past the 15-minute protection window. Explicit slugs
+    // and bulk filters skip the prompt entirely — the user named what
+    // they wanted. retime has no `--force` flag today, so the prompt
+    // is the only off-switch for the stale-default path.
+    if !want_bulk_filter && args.slug.is_none() {
+        if let Some(entry) = resolved_entry.as_ref() {
+            if !crate::commands::helpers::confirm_default_last_if_stale(
+                db,
+                args.slug.as_deref(),
+                /*force=*/ false,
+                "Retime",
+                std::slice::from_ref(entry),
+            )? {
+                println!("Aborted.");
+                return Ok(());
+            }
+        }
     }
 
-    // Accept the full quickId surface (`_`, `<field>:_`, hid/slug prefix,
-    // slug wildcard) where retime previously required an exact slug/hid.
-    // The underlying filter still matches on exact slug/hid, so we resolve
-    // the user-supplied pattern to a concrete slug first.
-    let resolved_slug: Option<datum_core::ids::Slug> = args
-        .slug
-        .as_deref()
-        .map(|raw| resolve_quickid_single(db, raw).map(|e| e.slug))
-        .transpose()
-        .map_err(anyhow::Error::from)?;
+    let resolved_slug: Option<datum_core::ids::Slug> = resolved_entry.map(|e| e.slug);
 
     let after_utc = args
         .after
@@ -49,42 +87,124 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
         before_utc,
     };
 
-    // --time: re-parse a fresh absolute time and overwrite both the start
-    // timestamp and its precision fields for each match. end_time (if any)
-    // shifts by the same delta so the duration is preserved.
-    if let Some(time_str) = args.time.as_deref() {
-        let ta = parse_time_arg(time_str)
-            .with_context(|| format!("Invalid --time value '{time_str}'"))?;
-        let builder = TimeBuilder::now().with_time_arg(ta);
-        let (new_time, precision) = builder.build_with_precision();
-        let n = db.set_start_time_with_precision(
-            &filter,
-            &new_time,
-            precision.seconds,
-            &precision.unit.to_string(),
-        )?;
-        println!(
-            "✓ Retimed {n} → {} (±{}{})",
-            new_time.utc.to_rfc3339(),
-            precision.seconds,
-            if precision.seconds == 0 { "" } else { "s" },
-        );
+    // Path 1 — bare numeric positional: minutes-offset shorthand for
+    // `-r -t <N>`. Applied as a pure duration shift; we don't need to
+    // re-anchor a TimeBuilder for the minutes-only case.
+    if let Some(mins) = args.bare_offset_min {
+        let offset = chrono::Duration::minutes(mins);
+        let n = db.update_times(&filter, offset)?;
+        report_shift(n, offset);
         return Ok(());
     }
 
-    // --offset: classic duration-shift path.
-    let offset_str = args
-        .offset
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("retime requires either --offset or --time"))?;
-    let offset = parse_duration(offset_str)
-        .with_context(|| format!("Invalid --offset value '{offset_str}'"))?;
+    // Path 2 — explicit ISO duration via --offset.
+    if let Some(offset_str) = args.offset.as_deref() {
+        let offset = datum_core::time::parse_duration(offset_str)
+            .with_context(|| format!("Invalid --offset value '{offset_str}'"))?;
+        let n = db.update_times(&filter, offset)?;
+        report_shift(n, offset);
+        return Ok(());
+    }
 
-    let n = db.update_times(&filter, offset)?;
+    // Path 3a — `-r/--relative` resolves the time-args as a pure
+    // duration delta (-t -N → -N min, -y → -1 day, -q → -5 min) and
+    // applies it as a shift on the entry's current occur_time. Bare
+    // numeric positionals (Path 1) take the same semantics without
+    // needing the flag. Absolute clock/date forms (-t HH:MM,
+    // -d YYYY-MM-DD) are not meaningful as deltas; reject them with
+    // a directive error rather than guessing.
+    if args.relative {
+        let delta = relative_delta(&args.time)?;
+        let n = db.update_times(&filter, delta)?;
+        report_shift(n, delta);
+        return Ok(());
+    }
+
+    // Path 3b — absolute target. No time-args still computes a target
+    // (TimeBuilder::now() with nothing applied = exact "now"), which
+    // is the default "set to now" path the bead asks for.
+    let (new_time, precision) = build_absolute(&args)?;
+    let n = db.set_start_time_with_precision(
+        &filter,
+        &new_time,
+        precision.seconds,
+        &precision.unit.to_string(),
+    )?;
+    println!(
+        "✓ Retimed {n} → {} (±{}{})",
+        new_time.utc.to_rfc3339(),
+        precision.seconds,
+        if precision.seconds == 0 { "" } else { "s" },
+    );
+    Ok(())
+}
+
+/// Compute the duration delta encoded by a `TimeArgs` group when used
+/// in relative mode. Numeric `-t -N` becomes `N` minutes, stacked `-q`
+/// becomes `quick * 5` minutes back, stacked `-y` becomes `yesterday`
+/// days back, and numeric `-d ±N` becomes `±N` days. Absolute clock
+/// or date forms have no meaning as pure deltas and are rejected up-
+/// front so the user gets a directive error instead of a surprise
+/// shift derived from "now".
+fn relative_delta(time: &datum_parse::input::TimeArgs) -> Result<chrono::Duration> {
+    let mut delta = chrono::Duration::zero();
+    if time.yesterday > 0 {
+        delta -= chrono::Duration::days(time.yesterday as i64);
+    }
+    if time.quick > 0 {
+        delta -= chrono::Duration::minutes(time.quick as i64 * 5);
+    }
+    if let Some(t) = &time.time {
+        let ta = parse_time_arg(t)?;
+        if let Some(min_off) = ta.minutes_offset {
+            delta += chrono::Duration::minutes(min_off);
+        } else if ta.absolute.is_some() || ta.iso_instant.is_some() || ta.iso_naive.is_some() {
+            anyhow::bail!(
+                "-r/--relative does not support absolute clock-time forms (-t HH:MM); \
+                 use a numeric -t -N or stacked -q for relative shifts."
+            );
+        }
+    }
+    if let Some(d) = &time.date {
+        let da = parse_date_arg(d)?;
+        if da.absolute.is_some() {
+            anyhow::bail!(
+                "-r/--relative does not support absolute date forms (-d YYYY-MM-DD); \
+                 use a numeric -d ±N or stacked -y for relative day shifts."
+            );
+        }
+        delta += chrono::Duration::days(da.days_offset);
+    }
+    Ok(delta)
+}
+
+/// Build the absolute target time from `args.time`. `args.time` with
+/// no flags set yields "now" with exact precision, which is the
+/// default-to-now path.
+fn build_absolute(args: &RetimeArgs) -> Result<(DatumTime, datum_core::time::Uncertainty)> {
+    let mut builder = TimeBuilder::now()
+        .with_yesterday_count(args.time.yesterday as i64)
+        .with_quick_count(args.time.quick as i64)
+        .with_quick_precision(args.time.quick)
+        .with_full_day(args.time.full_day);
+    if let Some(d) = &args.time.date {
+        builder = builder.with_date_arg(parse_date_arg(d)?);
+    }
+    if let Some(t) = &args.time.time {
+        builder = builder.with_time_arg(parse_time_arg(t)?);
+    }
+    if let Some(tz) = &args.time.timezone {
+        let resolved = datum_core::time::resolve_timezone(tz)
+            .map_err(|e| anyhow::anyhow!("Invalid -z/--timezone value '{tz}': {e}"))?;
+        builder = builder.with_timezone(Some(resolved));
+    }
+    Ok(builder.build_with_precision())
+}
+
+fn report_shift(n: usize, offset: chrono::Duration) {
     let secs = offset.num_seconds();
     let sign = if secs >= 0 { "+" } else { "-" };
     println!("✓ Retimed {n} ({sign}{}s)", secs.abs());
-    Ok(())
 }
 
 /// Parse a `--after` / `--before` argument to a UTC timestamp.

@@ -512,14 +512,30 @@ impl UpdateArgs {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RetimeArgs {
+    /// Optional. When omitted, the command resolves against `_LAST`
+    /// (matching the update/merge/delete/undo default).
     pub slug: Option<String>,
+    /// ISO-8601 duration shift relative to the current occur_time.
+    /// Mutually exclusive with [`bare_offset_min`] and with absolute
+    /// targeting via `time` / `relative` (the parser enforces).
     pub offset: Option<String>,
-    pub time: Option<String>,
+    /// Time-arg group (`-t`/`-y`/`-q`/`-d`/`-z`/`-D`/`-T`). When no
+    /// flag in the group is set, the command treats the request as
+    /// "set to now". `relative=true` flips the reference frame to the
+    /// entry's current occur_time (computed as a delta from "now").
+    pub time: TimeArgs,
     pub field: Option<String>,
     pub after: Option<String>,
     pub before: Option<String>,
+    /// `-r`/`--relative`: interpret `time` as a shift relative to the
+    /// entry's current occur_time rather than absolute from now.
+    pub relative: bool,
+    /// Bare numeric positional after the slug (e.g. `retime <id> -5`)
+    /// → minutes-offset shorthand for `-r -t <N>`. Mutually exclusive
+    /// with `offset`.
+    pub bare_offset_min: Option<i64>,
 }
 
 #[derive(Debug)]

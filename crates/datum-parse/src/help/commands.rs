@@ -367,7 +367,7 @@ const MERGE_BODY: &str = "USAGE:\n  datum merge <ID_OR_SLUG> [VALUE | KEY=VALUE]
 
 const REKEY_BODY: &str = "USAGE:\n  datum rekey <ID_OR_SLUG> [VALUE | KEY=VALUE]...\n\nOPTIONS:\n  --strategy <S>        update|merge|rekey\n  --id <TEMPLATE>       New id/slug template\n  --id-delimiter <S>    Delimiter between empty segments\n  -k, --key <KV>        Extra key=value (repeatable)\n  -c, --comment <T>     Comment\n  --dry-run             Show what would change\n  --strict              Abort on first batch error\n";
 
-const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG] (--offset DUR | --time NEW) [--field F] [--after BND] [--before BND]\n";
+const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG] [SHIFT]\n  datum retime [SLUG] [-r] [-t T] [-y]... [-q]... [-d D]\n  datum retime [SLUG] --offset DUR [--field F] [--after BND] [--before BND]\n\nDEFAULTS:\n  SLUG omitted        → `_LAST` (matches update/delete/undo)\n  No time-args        → set to now\n  SHIFT (bare int)    → minutes-offset shorthand; `retime <id> -5` shifts -5 min\n  -r/--relative       → interpret time-args as a delta from now, applied to the\n                        entry's current occur_time (rather than absolute target).\n                        Same flag is `--reverse` on tail; namespaces don't collide.\n  --offset DUR        → explicit ISO duration shift (legacy form)\n";
 
 const SPEC_BODY: &str = "USAGE:\n  datum spec show <FIELD>\n  datum spec set <FIELD> [--json JSON] [--default-verb V] [--state S]... [--tag T]... ...\n  datum spec list [--tag T]\n  datum spec remove <FIELD>\n";
 
@@ -772,7 +772,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "shift time_start/time_end on entries (alias: rt)",
         top_summary: None,
         long_description: None,
-        usage: &["datum retime [SLUG] (--offset DUR | --time NEW) [--field F] [--after BND] [--before BND]"],
+        usage: &[
+            "datum retime [SLUG] [SHIFT]",
+            "datum retime [SLUG] [-r] [-t T] [-y]... [-q]... [-d D]",
+            "datum retime [SLUG] --offset DUR [--field F] [--after BND] [--before BND]",
+        ],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,

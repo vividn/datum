@@ -1119,18 +1119,22 @@ fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
     #[derive(Default)]
     struct RetimeParsing {
         offset: Option<String>,
-        time: Option<String>,
+        time: TimeArgs,
         field: Option<String>,
         after: Option<String>,
         before: Option<String>,
+        relative: bool,
     }
     let mut registry: Vec<LiftedSpec<RetimeParsing>> = Vec::new();
+    // Time-arg group (-t/-y/-q/-d/-z/-D/-T): lifted onto `time` so
+    // retime composes the same time inputs as occur/start/stop. da-rorg
+    // promotes -t/--time off the old custom value-slot to keep the
+    // semantics unified across mutating commands.
+    for spec in input::time_args::FLAG_SPECS {
+        registry.push(lift(|p: &mut RetimeParsing| &mut p.time, spec));
+    }
     registry.push(local_value(None, Some("offset"), |p, v| {
         p.offset = Some(v.to_string());
-        Ok(())
-    }));
-    registry.push(local_value(Some('t'), Some("time"), |p, v| {
-        p.time = Some(v.to_string());
         Ok(())
     }));
     registry.push(local_value(Some('f'), Some("field"), |p, v| {
@@ -1145,21 +1149,61 @@ fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
         p.before = Some(v.to_string());
         Ok(())
     }));
+    // da-rorg: `-r`/`--relative` flips the reference frame for the
+    // accompanying time args (and matches the implicit semantics of
+    // a bare numeric positional). Note: `-r` is also `--reverse` on
+    // tail; flag namespaces are per-command so they don't collide.
+    registry.push(local_switch(Some('r'), Some("relative"), |p| {
+        p.relative = true;
+        Ok(())
+    }));
 
     let mut composed = RetimeParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
-    if composed.offset.is_some() && composed.time.is_some() {
+
+    // da-rorg: positionals split into a slug (any non-numeric token)
+    // and at most one bare numeric (minutes-offset shorthand for
+    // `-r -t <N>`). Slug-or-hid forms are never bare integers, so the
+    // split is unambiguous in retime's argv shape.
+    let mut slug: Option<String> = None;
+    let mut bare_offset_min: Option<i64> = None;
+    for p in &pos {
+        if let Ok(n) = p.parse::<i64>() {
+            if bare_offset_min.is_some() {
+                return Err(ParseError::InvalidArg(
+                    "retime accepts at most one bare numeric positional (minutes offset)".into(),
+                ));
+            }
+            bare_offset_min = Some(n);
+        } else if slug.is_none() {
+            slug = Some(p.to_string());
+        } else {
+            return Err(ParseError::InvalidArg(format!(
+                "unexpected positional after slug: '{p}'"
+            )));
+        }
+    }
+
+    if composed.offset.is_some() && bare_offset_min.is_some() {
         return Err(ParseError::InvalidArg(
-            "--offset and --time are mutually exclusive".into(),
+            "--offset and a bare numeric positional are mutually exclusive".into(),
         ));
     }
+    if composed.offset.is_some() && (composed.time.time.is_some() || composed.relative) {
+        return Err(ParseError::InvalidArg(
+            "--offset is mutually exclusive with time-arg flags".into(),
+        ));
+    }
+
     Ok(RetimeArgs {
-        slug: pos.first().map(|s| s.to_string()),
+        slug,
         offset: composed.offset,
         time: composed.time,
         field: composed.field,
         after: composed.after,
         before: composed.before,
+        relative: composed.relative,
+        bare_offset_min,
     })
 }
 
@@ -3001,5 +3045,103 @@ mod tests {
         let err = parse_argv(&argv(&["flag"])).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("<FIELD>"), "got: {msg}");
+    }
+
+    // ─── da-rorg: retime parser surface ─────────────────────────────────
+
+    #[test]
+    fn retime_bare_invocation_has_no_slug_no_offset() {
+        // Bare `retime` with no positionals is valid — the command
+        // layer fills in `_LAST` and "set to now".
+        let cli = parse_argv(&argv(&["retime"])).unwrap();
+        match cli.command {
+            Command::Retime(a) => {
+                assert!(a.slug.is_none());
+                assert!(a.offset.is_none());
+                assert!(a.bare_offset_min.is_none());
+                assert!(!a.relative);
+                assert!(a.time.time.is_none() && a.time.yesterday == 0 && a.time.quick == 0);
+            }
+            _ => panic!("expected Retime"),
+        }
+    }
+
+    #[test]
+    fn retime_bare_numeric_positional_captures_minutes() {
+        // `retime <slug> -5` → slug + bare_offset_min=-5.
+        let cli = parse_argv(&argv(&["retime", "coffee:2024", "-5"])).unwrap();
+        match cli.command {
+            Command::Retime(a) => {
+                assert_eq!(a.slug.as_deref(), Some("coffee:2024"));
+                assert_eq!(a.bare_offset_min, Some(-5));
+                assert!(a.offset.is_none());
+            }
+            _ => panic!("expected Retime"),
+        }
+    }
+
+    #[test]
+    fn retime_bare_positive_numeric_positional() {
+        let cli = parse_argv(&argv(&["retime", "mood:abc", "30"])).unwrap();
+        match cli.command {
+            Command::Retime(a) => {
+                assert_eq!(a.slug.as_deref(), Some("mood:abc"));
+                assert_eq!(a.bare_offset_min, Some(30));
+            }
+            _ => panic!("expected Retime"),
+        }
+    }
+
+    #[test]
+    fn retime_numeric_only_positional_defaults_slug_to_last() {
+        // `retime -5` (no slug) — bare numeric goes to `bare_offset_min`;
+        // the command layer fills slug=_LAST.
+        let cli = parse_argv(&argv(&["retime", "-5"])).unwrap();
+        match cli.command {
+            Command::Retime(a) => {
+                assert!(a.slug.is_none());
+                assert_eq!(a.bare_offset_min, Some(-5));
+            }
+            _ => panic!("expected Retime"),
+        }
+    }
+
+    #[test]
+    fn retime_r_flag_sets_relative_bit() {
+        let cli = parse_argv(&argv(&["retime", "coffee:abc", "-r", "-t", "-5"])).unwrap();
+        match cli.command {
+            Command::Retime(a) => {
+                assert!(a.relative);
+                assert_eq!(a.time.time.as_deref(), Some("-5"));
+                assert!(a.bare_offset_min.is_none());
+            }
+            _ => panic!("expected Retime"),
+        }
+    }
+
+    #[test]
+    fn retime_offset_conflicts_with_bare_numeric() {
+        let err =
+            parse_argv(&argv(&["retime", "coffee:abc", "5", "--offset", "PT5M"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("--offset") && msg.contains("bare numeric"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn retime_offset_conflicts_with_time_args() {
+        let err =
+            parse_argv(&argv(&["retime", "coffee:abc", "--offset", "PT5M", "-r"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("--offset"), "got: {msg}");
+    }
+
+    #[test]
+    fn retime_two_bare_numerics_errors() {
+        let err = parse_argv(&argv(&["retime", "coffee:abc", "5", "10"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("at most one bare numeric"), "got: {msg}");
     }
 }
