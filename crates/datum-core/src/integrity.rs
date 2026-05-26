@@ -611,6 +611,15 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<IntegrityWarni
     );
     let mut clauses: Vec<String> = Vec::new();
     let mut binds: Vec<String> = Vec::new();
+    // da-sidz: a warning's trigger entry (`entry_slug`) may since have been
+    // soft-deleted. Once the row is tombstoned the integrity problem no
+    // longer exists in the live dataset, so suppress its stored warning —
+    // otherwise `datum check` keeps reporting (e.g.) a double-open after the
+    // offending entry was deleted. Resolution by id still works: it goes
+    // through `get_by_hid_or_id`, which is unfiltered.
+    clauses.push(
+        "entry_slug NOT IN (SELECT slug FROM entries WHERE deleted_at IS NOT NULL)".to_string(),
+    );
     if let Some(kind) = filter.kind {
         clauses.push(format!("kind = ?{}", binds.len() + 1));
         binds.push(kind.as_str().to_string());

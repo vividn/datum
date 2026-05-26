@@ -69,6 +69,36 @@ fn double_start_creates_conflict_row() {
     assert_eq!(c.local_entry.field, "workout");
 }
 
+#[test]
+fn deleting_trigger_entry_suppresses_double_open_warning() {
+    // da-sidz: after the entry that caused a double_open is soft-deleted,
+    // the integrity problem no longer exists in the live dataset, so the
+    // stored warning must stop surfacing. Previously `list` ignored
+    // `deleted_at`, so `datum check` kept reporting the double-open forever.
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-1"], &db).expect("first start");
+    run_cli(&["start", "workout"], &db).expect("second start (double-open)");
+
+    let filter = ListFilter {
+        kind: Some(IntegrityKind::DoubleOpen),
+        pending: Some(true),
+    };
+    let conflicts = db.list_integrity_warnings(&filter).unwrap();
+    assert_eq!(conflicts.len(), 1, "double_open filed before deletion");
+
+    // Delete the trigger entry (the second start) via the CLI, mirroring
+    // the bead repro.
+    let trigger_slug = conflicts[0].entry_slug.clone();
+    run_cli(&["del", &trigger_slug, "--force"], &db).expect("delete trigger entry");
+
+    let after = db.list_integrity_warnings(&filter).unwrap();
+    assert!(
+        after.is_empty(),
+        "double_open warning must not surface once the trigger is soft-deleted; got {}",
+        after.len()
+    );
+}
+
 // ─── orphan end ──────────────────────────────────────────────────────────────
 
 #[test]
@@ -519,4 +549,27 @@ fn pending_integrity_count_excludes_resolved() {
     db.resolve_integrity_warning(&pending[0].hid, Resolution::KeepBoth)
         .unwrap();
     assert_eq!(db.pending_integrity_count().unwrap(), 0);
+}
+
+#[test]
+fn pending_integrity_count_excludes_soft_deleted_trigger() {
+    // da-sidz: the `now`-view count must agree with `datum check` — a
+    // double-open whose trigger entry was deleted no longer counts.
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older");
+    run_cli(&["start", "workout"], &db).expect("newer (double-open)");
+    assert_eq!(db.pending_integrity_count().unwrap(), 1);
+
+    let pending = db
+        .list_integrity_warnings(&ListFilter {
+            kind: Some(IntegrityKind::DoubleOpen),
+            pending: Some(true),
+        })
+        .unwrap();
+    run_cli(&["del", &pending[0].entry_slug, "--force"], &db).expect("delete trigger");
+    assert_eq!(
+        db.pending_integrity_count().unwrap(),
+        0,
+        "deleting the trigger entry must drop the pending count"
+    );
 }

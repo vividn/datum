@@ -127,10 +127,15 @@ impl Db {
     /// Count of pending integrity warnings (`resolution IS NULL`). The
     /// `now` view uses this to print a top-line warning.
     pub fn pending_integrity_count(&self) -> Result<u32> {
+        // da-sidz: keep this count consistent with `integrity::list` — a
+        // warning whose trigger entry has been soft-deleted is moot, so it
+        // must not inflate the `now`-view pending count either.
         let n: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM integrity_warnings WHERE resolution IS NULL",
+                "SELECT COUNT(*) FROM integrity_warnings
+                 WHERE resolution IS NULL
+                   AND entry_slug NOT IN (SELECT slug FROM entries WHERE deleted_at IS NOT NULL)",
                 [],
                 |row| row.get(0),
             )
