@@ -943,6 +943,43 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     }
     let following_state = post_bare.into_iter().next().unwrap();
     args.rest.push(format!("following_state={following_state}"));
+    // da-b4k5: in chain context the `end`/`stop`/`start` keywords mean
+    // the same thing they do as a standalone verb — `false`/`false`/
+    // `true`. The non-chain path achieves this by rewriting `switch f
+    // end` to `end f` so `Action::Stop` runs (which then sets
+    // `state=false`). The chain path can't go through that rewrite
+    // without losing the chain, so translate the keyword to the
+    // reserved `state=` column AND eagerly peel the duration positional
+    // — `extract_switch_trailing_reserved` would otherwise reassign the
+    // next bare positional as state (it doesn't know `state=…` is
+    // already in flight).
+    let leading_keyword_idx = args
+        .rest
+        .iter()
+        .position(|t| !t.contains('='))
+        .filter(|&i| matches!(args.rest[i].as_str(), "end" | "stop" | "start"));
+    if let Some(idx) = leading_keyword_idx {
+        let keyword = args.rest.remove(idx);
+        let state_kv = match keyword.as_str() {
+            "start" => "state=true",
+            _ => "state=false",
+        };
+        args.rest.push(state_kv.to_string());
+        // Peel the next bare positional as the duration. It's not
+        // required (the bead's repro always supplies one, but a chain
+        // with no dur is still a legal shape — derive_verb rejects
+        // `(state=set, fs=set, dur=None)` further downstream with a
+        // clear error rather than silently producing the wrong row).
+        if let Some(dur_idx) = args.rest.iter().position(|t| !t.contains('=')) {
+            let dur_token = args.rest.remove(dur_idx);
+            if args.duration.duration.is_some() {
+                anyhow::bail!(
+                    "switch: `{keyword}`-chain duration positional `{dur_token}` conflicts with --dur"
+                );
+            }
+            args.duration.duration = Some(dur_token);
+        }
+    }
     Ok(())
 }
 
@@ -1783,6 +1820,67 @@ mod tests {
         assert!(
             err.to_string().contains("only a bare state value"),
             "got: {err}"
+        );
+    }
+
+    /// da-b4k5: the chain-context `end` keyword translates to the
+    /// reserved `state=false` column AND eagerly peels the duration
+    /// positional onto `args.duration`. Without the peel,
+    /// `extract_switch_trailing_reserved` would treat the next bare
+    /// positional (`14m`) as the state slot and silently lose the
+    /// duration.
+    #[test]
+    fn then_chain_translates_end_keyword_to_state_false() {
+        let mut args = switch_args(&["end", "14m", ",", "researching"]);
+        extract_switch_then_chain(&mut args).unwrap();
+        assert!(
+            args.rest.iter().any(|t| t == "state=false"),
+            "state=false reserved key: {:?}",
+            args.rest
+        );
+        assert!(
+            args.rest.iter().any(|t| t == "following_state=researching"),
+            "following_state preserved: {:?}",
+            args.rest
+        );
+        assert!(
+            !args.rest.iter().any(|t| t == "14m"),
+            "dur positional peeled out of rest: {:?}",
+            args.rest
+        );
+        assert_eq!(args.duration.duration.as_deref(), Some("14m"));
+    }
+
+    /// da-b4k5: `stop` mirrors `end` — both map to `state=false`.
+    #[test]
+    fn then_chain_translates_stop_keyword_to_state_false() {
+        let mut args = switch_args(&["stop", "14m", ",", "Y"]);
+        extract_switch_then_chain(&mut args).unwrap();
+        assert!(args.rest.iter().any(|t| t == "state=false"));
+        assert_eq!(args.duration.duration.as_deref(), Some("14m"));
+    }
+
+    /// da-b4k5: `start` maps to `state=true`, mirroring the non-chain
+    /// `start <field>` shorthand.
+    #[test]
+    fn then_chain_translates_start_keyword_to_state_true() {
+        let mut args = switch_args(&["start", "14m", ",", "Y"]);
+        extract_switch_then_chain(&mut args).unwrap();
+        assert!(args.rest.iter().any(|t| t == "state=true"));
+        assert_eq!(args.duration.duration.as_deref(), Some("14m"));
+    }
+
+    /// da-b4k5: a non-keyword leading state is untouched — `vertical`
+    /// stays `vertical` so the existing chain semantics for actual
+    /// state values (the original da-a2o8 contract) keep working.
+    #[test]
+    fn then_chain_preserves_non_keyword_state() {
+        let mut args = switch_args(&["vertical", "5", ",", "sit"]);
+        extract_switch_then_chain(&mut args).unwrap();
+        assert!(
+            args.rest.iter().any(|t| t == "vertical"),
+            "got: {:?}",
+            args.rest
         );
     }
 

@@ -189,6 +189,16 @@ pub fn apply_switch_promote_override(argv: Vec<String>) -> Vec<String> {
     if !SWITCH_PROMOTE_VERBS.contains(&argv[3].as_str()) {
         return argv;
     }
+    // da-b4k5: `switch <field> end <D> , <Y>` (post-collapse) is a
+    // BlockSwitch chain — the `end` here is the *state value* (mapping
+    // to `false` via the chain handler), not a verb-routing intent.
+    // Promoting it to `end <field>` would break the chain detection and
+    // produce two independent invocations that merge into a malformed
+    // parallel-state Block. Skip the rewrite when the chain marker
+    // (standalone `,` token) is present in this side's argv.
+    if argv.iter().skip(2).any(|t| t == MULTI_COMMA) {
+        return argv;
+    }
     let mut iter = argv.into_iter();
     let bin = iter.next().expect("argv[0]");
     let _switch = iter.next();

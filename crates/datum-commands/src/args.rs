@@ -286,14 +286,13 @@ fn parse_invocation_inner(
         alias_chain: expanded.chain.into_iter().map(Into::into).collect(),
     });
 
-    // da-a2o8: collapse a two-sided `switch f X , Y` chain back into a
-    // single invocation when one side carries a dur signal (`-m`,
-    // `dur=`, or a trailing duration positional). The chain becomes a
-    // BlockSwitch / PointSwitch with the dur side as `state` and the
-    // other side promoted to `following_state` downstream in
-    // `extract_switch_then_chain`. Concurrent / multi-entry semantics
-    // (`switch f a , b` with no dur signal) are unchanged.
-    let sides = palias::maybe_collapse_switch_chain(expanded.sides);
+    // da-b4k5: the two-sided `switch f X , Y` chain collapse now runs
+    // inside `expand_into_sides` so it sequences correctly with the
+    // switch-promote-override pass (collapse must precede promote, or
+    // an `end`-state side gets rewritten to a Stop verb and the chain
+    // detection misses it). `expanded.sides` is already collapsed when
+    // applicable.
+    let sides = expanded.sides;
 
     if sides.is_empty() {
         // Shouldn't happen — split_argv_at_commas always returns >=1

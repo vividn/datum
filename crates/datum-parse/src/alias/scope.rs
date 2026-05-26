@@ -26,8 +26,8 @@ use crate::error::{ParseError, Result};
 
 use super::expand::{
     apply_switch_promote_override, apply_terminal_verb_override, expand_stacked_flags,
-    maybe_swap_field_verb, split_argv_at_commas, try_expand_alias, AliasStep, Resolver,
-    KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS, MULTI_COMMA,
+    maybe_collapse_switch_chain, maybe_swap_field_verb, split_argv_at_commas, try_expand_alias,
+    AliasStep, Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS, MULTI_COMMA,
 };
 
 /// Result of [`expand_into_sides`]: N per-side argvs (each without the
@@ -122,14 +122,34 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
         }
     }
 
-    // Step 7: per-side maybe_swap_field_verb + switch-promote override +
-    // stacked-flag expansion, with the call-site-promoted tokens appended.
-    let mut final_sides: Vec<Vec<String>> = Vec::with_capacity(local_sides.len());
+    // Step 7a (da-b4k5): per-side `maybe_swap_field_verb` so any
+    // field-first form is normalized to verb-first BEFORE the
+    // BlockSwitch-chain collapse runs — the collapse keys off
+    // `sides[0][0] == "switch"`, which a pre-swap field-first side
+    // (`["activity", "switch", "end", "14m"]`) wouldn't match.
+    let mut swapped_sides: Vec<Vec<String>> = Vec::with_capacity(local_sides.len());
     for mut side in local_sides {
         side.extend(promoted.iter().cloned());
         let mut side_argv = vec![bin.clone()];
         side_argv.extend(side);
         let side_argv = maybe_swap_field_verb(side_argv);
+        swapped_sides.push(side_argv.into_iter().skip(1).collect());
+    }
+
+    // Step 7b (da-b4k5): collapse a two-sided `switch f X , Y` chain
+    // into a single side BEFORE switch-promote-override fires. Running
+    // promote first would rewrite `switch f end <D>` → `end f <D>` on
+    // side 0, hiding the `switch` lede the chain detector needs.
+    let collapsed_sides = maybe_collapse_switch_chain(swapped_sides);
+
+    // Step 7c: per-side switch-promote + stacked flags. The promote step
+    // now no-ops on a side that carries a standalone `,` (the chain
+    // marker), so the collapsed BlockSwitch side passes through with
+    // `end`/`stop`/`start` intact for the chain handler to translate.
+    let mut final_sides: Vec<Vec<String>> = Vec::with_capacity(collapsed_sides.len());
+    for side in collapsed_sides {
+        let mut side_argv = vec![bin.clone()];
+        side_argv.extend(side);
         let side_argv = apply_switch_promote_override(side_argv);
         let side_argv = expand_stacked_flags(side_argv);
         final_sides.push(side_argv.into_iter().skip(1).collect());

@@ -916,3 +916,111 @@ fn nonstrict_spec_silently_accepts_undeclared_extra_data_key_at_insert() {
     let entry = &db.entries_for_field("mood", None).unwrap()[0];
     assert_eq!(entry.data.as_ref().unwrap()["weather"], json!("sunny"));
 }
+
+// ─── da-b4k5: BlockSwitch chain with `end`/`start` keyword ──────────────────
+
+/// Bead's exact repro: `switch activity end 14m , switch activity researching`
+/// must produce ONE entry at NOW with state=false, dur=14m,
+/// following_state="researching", verb=block-switch.
+///
+/// Previously: side 0 promoted to `Stop`, side 1 dispatched as `Switch`,
+/// the two merged on shared occur_time = now − 14m into a Block row with
+/// `state=[false, "researching"]` and `following_state=NULL`.
+#[test]
+fn switch_chain_with_end_keyword_lands_block_switch_at_now() {
+    let db = fresh_db();
+    let before = chrono::Utc::now();
+
+    run_cli(
+        &[
+            "switch",
+            "activity",
+            "end",
+            "14m",
+            ",",
+            "switch",
+            "activity",
+            "researching",
+        ],
+        &db,
+    )
+    .expect("blockswitch chain dispatch");
+
+    let entries = db.entries_for_field("activity", None).unwrap();
+    let after = chrono::Utc::now();
+
+    // The whole bug: the back-date used to make this 14m in the past.
+    assert_eq!(entries.len(), 1, "chain lands exactly one entry");
+    let e = &entries[0];
+    assert_eq!(
+        e.verb,
+        Verb::BlockSwitch,
+        "verb is BlockSwitch (state=false + dur + fs): got {:?}",
+        e.verb,
+    );
+    assert_eq!(e.state.as_ref(), Some(&json!(false)), "state=false");
+    assert_eq!(
+        e.following_state.as_ref(),
+        Some(&json!("researching")),
+        "follow-on state set"
+    );
+    assert_eq!(e.duration_seconds(), Some(14 * 60), "dur=14m");
+    let occur = e.occur_time.as_ref().expect("occur_time set").utc;
+    assert!(
+        occur >= before && occur <= after,
+        "occur_time is now (not back-dated): occur={occur}, window=[{before}, {after}]"
+    );
+}
+
+/// `stop` mirrors `end` — both end the block.
+#[test]
+fn switch_chain_with_stop_keyword_maps_to_state_false() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "switch", "activity", "stop", "5m", ",", "switch", "activity", "Y",
+        ],
+        &db,
+    )
+    .expect("stop-chain dispatch");
+
+    let e = &db.entries_for_field("activity", None).unwrap()[0];
+    assert_eq!(e.state.as_ref(), Some(&json!(false)));
+    assert_eq!(e.following_state.as_ref(), Some(&json!("Y")));
+}
+
+/// `start` is symmetric — maps to state=true.
+#[test]
+fn switch_chain_with_start_keyword_maps_to_state_true() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "switch", "activity", "start", "5m", ",", "switch", "activity", "Y",
+        ],
+        &db,
+    )
+    .expect("start-chain dispatch");
+
+    let e = &db.entries_for_field("activity", None).unwrap()[0];
+    assert_eq!(e.state.as_ref(), Some(&json!(true)));
+    assert_eq!(e.following_state.as_ref(), Some(&json!("Y")));
+}
+
+/// Regression guard: a non-keyword state name still routes through the
+/// existing chain path unchanged.
+#[test]
+fn switch_chain_with_non_keyword_state_unchanged() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "switch", "body", "vertical", "5m", ",", "switch", "body", "sit",
+        ],
+        &db,
+    )
+    .expect("non-keyword chain dispatch");
+
+    let e = &db.entries_for_field("body", None).unwrap()[0];
+    assert_eq!(e.state.as_ref(), Some(&json!("vertical")));
+    assert_eq!(e.following_state.as_ref(), Some(&json!("sit")));
+    assert_eq!(e.duration_seconds(), Some(5 * 60));
+}
