@@ -190,10 +190,15 @@ fn undo_via_last_docs(
                     db.undelete(&current.slug).map_err(anyhow::Error::from)?;
                     db.get_entry(&current.slug).map_err(anyhow::Error::from)
                 } else {
-                    Err(anyhow::anyhow!(
-                        "Nothing to undo for {} — no prior version recorded",
-                        current.slug,
-                    ))
+                    // Undoing a just-created entry = deleting it. The history
+                    // table has only version 1 (the create); no prior version
+                    // exists to revert to. Soft-delete instead, which tombstones
+                    // the entry — a subsequent `undo` on the same hid restores it
+                    // via the revert/un-delete branches above.
+                    db.soft_delete_entry(&current.slug)
+                        .map_err(anyhow::Error::from)?;
+                    db.get_entry_including_deleted(&current.slug)
+                        .map_err(anyhow::Error::from)
                 }
             }
         };
