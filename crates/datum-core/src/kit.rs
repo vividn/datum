@@ -870,7 +870,7 @@ size = 0.05
         spec.allowed_states = Some(vec!["asleep".into()]);
         spec.state_colors.insert("asleep".into(), "#000000".into());
 
-        let kit = KitToml::from_field_specs("core", Some("0.1"), &[spec.clone()], &[]);
+        let kit = KitToml::from_field_specs("core", Some("0.1"), std::slice::from_ref(&spec), &[]);
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();
         assert_eq!(back.kit.name, "core");
@@ -954,7 +954,7 @@ tags = ["chore", "daily"]
     fn round_trip_preserves_field_tags() {
         let mut spec = FieldSpec::new("dishes", Action::Occur);
         spec.tags = vec!["chore".into(), "daily".into()];
-        let kit = KitToml::from_field_specs("chores", None, &[spec.clone()], &[]);
+        let kit = KitToml::from_field_specs("chores", None, std::slice::from_ref(&spec), &[]);
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();
         assert_eq!(back.fields[0].tags, spec.tags);
@@ -1013,7 +1013,7 @@ render.dayview = false
     fn round_trip_preserves_render_bool() {
         let mut spec = FieldSpec::new("hidden", Action::Occur);
         spec.presentation.render = Some(Render::All(false));
-        let kit = KitToml::from_field_specs("k", None, &[spec.clone()], &[]);
+        let kit = KitToml::from_field_specs("k", None, std::slice::from_ref(&spec), &[]);
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();
         assert_eq!(back.fields[0].render, Some(Render::All(false)));
@@ -1025,7 +1025,7 @@ render.dayview = false
         let mut map = std::collections::HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.presentation.render = Some(Render::PerSurface(map.clone()));
-        let kit = KitToml::from_field_specs("k", None, &[spec.clone()], &[]);
+        let kit = KitToml::from_field_specs("k", None, std::slice::from_ref(&spec), &[]);
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();
         match &back.fields[0].render {
