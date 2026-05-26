@@ -512,7 +512,7 @@ mod tests {
         // Push the last-docs pointer back past the protection window.
         // `last_docs` stores `time` as an RFC-3339 string; we rewrite
         // it directly so the test doesn't have to wait 15 minutes.
-        set_last_docs(db, &[hid.clone()]).unwrap();
+        set_last_docs(db, std::slice::from_ref(hid)).unwrap();
         let stale = chrono::Utc::now() - chrono::Duration::minutes(PROTECTION_WINDOW_MINUTES + 5);
         db.conn()
             .execute(

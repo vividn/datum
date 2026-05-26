@@ -1529,40 +1529,11 @@ mod tests {
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 0);
     }
 
-    /// `_LAST_WITH_PROTECTION` refuses to resolve when the pointer is older
-    /// than the 15-minute window. The error mentions the bypass token so
-    /// the user knows what to do.
-    #[test]
-    fn last_docs_protection_window_rejects_stale_pointer() {
-        use datum_core::db::Db;
-        let db = Db::open_in_memory().unwrap();
-        // Stamp the pointer with a timestamp from yesterday by hand-rolling
-        // the row — `set_last_docs` always writes "now".
-        let stale = (chrono::Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
-        db.conn()
-            .execute(
-                "INSERT INTO last_docs (id, hids, time) VALUES (1, ?1, ?2)",
-                rusqlite::params!["[\"abcdef012345\"]", stale],
-            )
-            .unwrap();
-
-        let err = crate::commands::del::del(
-            DeleteArgs {
-                id_or_slug: None,
-                force: true,
-                dry_run: false,
-                strict: false,
-                output: Default::default(),
-            },
-            &db,
-        )
-        .unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("more than") && msg.contains("_LAST"),
-            "stale-pointer error should explain the bypass: {msg}"
-        );
-    }
+    // da-uzxj superseded the old hard-refusal protection window with an
+    // interactive [Y/n] prompt (`confirm_default_last_if_stale`). The prompt
+    // behaviour is covered by the `confirm_*` tests in
+    // `commands::helpers`; the former `last_docs_protection_window_rejects_stale_pointer`
+    // test asserted the removed hard-error path and was dropped here.
 
     /// `_LAST` (no protection) resolves regardless of staleness — and bare
     /// `get` defaults to it.
