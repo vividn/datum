@@ -15,12 +15,16 @@ use crate::{
 pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
     let registry = load_registry_opt(db);
     let output = args.output()?;
-    // Bare `datum delete` defaults to `_LAST_WITH_PROTECTION` —
-    // refuses if the last-accessed pointer is > 15 minutes stale.
+    // da-uzxj: bare `datum delete` defaults to `_LAST`. The 15-minute
+    // protection window is now a *prompt* (see
+    // `confirm_default_last_if_stale`) rather than a hard refusal —
+    // when the pointer is stale, we render the candidate and ask
+    // [Y/n] before mutating. With an explicit id, or within the
+    // window, or `--force`, no prompt fires at all.
     let pattern = args
         .id_or_slug
         .as_deref()
-        .unwrap_or(datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN);
+        .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
     let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live);
 
     // Nothing resolved — propagate the first token error verbatim so single-token
@@ -61,29 +65,20 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         return Ok(());
     }
 
-    if !args.force {
-        let now = DatumTime::now();
-        let ctxs = build_render_contexts(&entries, db);
-        for (i, entry) in entries.iter().enumerate() {
-            print_entry(entry, ctxs.get(i), Some(&now), registry.as_ref());
-        }
-        let prompt = if entries.len() == 1 {
-            "Delete this entry?".to_string()
-        } else {
-            format!("Delete these {} entries?", entries.len())
-        };
-        eprint!("{prompt} [y/N] ");
-        use std::io::BufRead;
-        let stdin = std::io::stdin();
-        let line = stdin
-            .lock()
-            .lines()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("No input provided"))??;
-        if !matches!(line.to_lowercase().as_str(), "y" | "yes") {
-            println!("Aborted.");
-            return Ok(());
-        }
+    // da-uzxj: prompt only when the user defaulted to `_LAST` AND the
+    // pointer is older than the protection window. Explicit ids,
+    // fresh `_LAST`, and `--force` skip the prompt entirely — the
+    // user named what they wanted (or the pointer is fresh enough to
+    // trust the default).
+    if !crate::commands::helpers::confirm_default_last_if_stale(
+        db,
+        args.id_or_slug.as_deref(),
+        args.force,
+        "Delete",
+        &entries,
+    )? {
+        println!("Aborted.");
+        return Ok(());
     }
 
     let mut first_err: Option<anyhow::Error> = None;

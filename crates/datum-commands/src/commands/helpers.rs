@@ -198,6 +198,111 @@ pub(crate) fn resolve_batch(
     (entries, errors)
 }
 
+/// da-uzxj: stale-default protection for mutating commands.
+///
+/// When the user runs a mutating command (`delete`, `update`, `merge`,
+/// `rekey`, `undo`) with no explicit `<id_or_slug>`, the default
+/// resolves to `_LAST`. The 15-minute "protection window" already used
+/// by `_LAST_WITH_PROTECTION` is mirrored here as a *confirmation
+/// prompt* rather than a hard refusal — the user is more likely to
+/// have moved on after a quarter hour, so we surface the candidate and
+/// ask before mutating.
+///
+/// Returns `Ok(true)` when the caller should proceed:
+/// - the user gave an explicit selector (`explicit_id = Some(_)`), or
+/// - `force` is set, or
+/// - the last-docs pointer is within the protection window, or
+/// - the user confirmed the prompt.
+///
+/// Returns `Ok(false)` only when the user declined the prompt — the
+/// caller turns that into a clean "Aborted." exit.
+///
+/// Prints the candidate rows to stderr before prompting so the user
+/// can verify what they're about to mutate.
+pub(crate) fn confirm_default_last_if_stale(
+    db: &Db,
+    explicit_id: Option<&str>,
+    force: bool,
+    action_verb: &str,
+    entries: &[Entry],
+) -> Result<bool> {
+    let stdin = std::io::stdin();
+    let mut locked = stdin.lock();
+    confirm_default_last_if_stale_with_io(
+        db,
+        explicit_id,
+        force,
+        action_verb,
+        entries,
+        &mut locked,
+        /*render_candidates=*/ true,
+    )
+}
+
+/// Test seam for [`confirm_default_last_if_stale`]: takes the stdin
+/// reader as an argument so tests can drive the prompt with a scripted
+/// answer instead of blocking on the process's real stdin.
+/// `render_candidates = false` suppresses the candidate-row print
+/// (which uses stdout; tests don't try to capture it).
+pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
+    db: &Db,
+    explicit_id: Option<&str>,
+    force: bool,
+    action_verb: &str,
+    entries: &[Entry],
+    stdin: &mut R,
+    render_candidates: bool,
+) -> Result<bool> {
+    use datum_core::last_docs::{get_last_docs, within_protection_window};
+    use std::io::Write;
+
+    if explicit_id.is_some() || force {
+        return Ok(true);
+    }
+    let Some(reference) = get_last_docs(db).ok().flatten() else {
+        // No pointer — let the downstream resolver surface the
+        // NoLastDocsRef error; no prompt to make.
+        return Ok(true);
+    };
+    if within_protection_window(reference.time, chrono::Utc::now()) {
+        return Ok(true);
+    }
+
+    // Stale: render candidates (production only — tests skip) and
+    // prompt with yes-default ([Y/n]).
+    if render_candidates {
+        let registry = load_registry_opt(db);
+        let now = datum_core::time::DatumTime::now();
+        let ctxs = crate::commands::render_helpers::build_render_contexts(entries, db);
+        {
+            let mut stderr = std::io::stderr().lock();
+            let _ = writeln!(
+                stderr,
+                "⚠ default `_LAST` is older than {} minutes — showing target:",
+                datum_core::last_docs::PROTECTION_WINDOW_MINUTES,
+            );
+        }
+        for (i, entry) in entries.iter().enumerate() {
+            crate::render::print_entry(entry, ctxs.get(i), Some(&now), registry.as_ref());
+        }
+    }
+    let prompt = if entries.len() == 1 {
+        format!("{action_verb} this entry? [Y/n] ")
+    } else {
+        format!("{action_verb} these {} entries? [Y/n] ", entries.len())
+    };
+    {
+        let mut stderr = std::io::stderr().lock();
+        let _ = write!(stderr, "{prompt}");
+        let _ = stderr.flush();
+    }
+    let mut line = String::new();
+    let _ = stdin.read_line(&mut line);
+    // Yes-default: empty input OR y/yes proceeds. Anything else aborts.
+    let answer = line.trim().to_lowercase();
+    Ok(answer.is_empty() || matches!(answer.as_str(), "y" | "yes"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,6 +405,182 @@ mod tests {
         let weather_pos = msg.find("'weather'").expect("lists weather");
         assert!(alt_pos < weather_pos, "keys reported sorted: {msg}");
         assert!(msg.contains("key"), "plural marker present: {msg}");
+    }
+
+    // ─── da-uzxj: 15-min protection prompt on default _LAST ─────────
+
+    use datum_core::ids::Hid;
+    use datum_core::last_docs::{set_last_docs, PROTECTION_WINDOW_MINUTES};
+
+    fn seed_entry_with_hid(db: &Db, field: &str) -> Hid {
+        let e = Entry::new_legacy(
+            field,
+            Verb::Switch,
+            Some(json!("v")),
+            None,
+            Some(DatumTime::now()),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e).unwrap();
+        e.hid
+    }
+
+    /// Explicit id supplied → no prompt fires, regardless of pointer age.
+    /// Stdin is empty (would panic on read_line if reached).
+    #[test]
+    fn confirm_with_explicit_id_skips_prompt() {
+        let db = Db::open_in_memory().unwrap();
+        let mut stdin = std::io::Cursor::new(Vec::<u8>::new());
+        let proceed = confirm_default_last_if_stale_with_io(
+            &db,
+            Some("explicit-id"),
+            false,
+            "Delete",
+            &[],
+            &mut stdin,
+            false,
+        )
+        .unwrap();
+        assert!(proceed, "explicit id must skip the stale-default prompt");
+    }
+
+    /// `--force` short-circuits the prompt even without an explicit id.
+    #[test]
+    fn confirm_with_force_skips_prompt() {
+        let db = Db::open_in_memory().unwrap();
+        let mut stdin = std::io::Cursor::new(Vec::<u8>::new());
+        let proceed = confirm_default_last_if_stale_with_io(
+            &db,
+            None,
+            true,
+            "Delete",
+            &[],
+            &mut stdin,
+            false,
+        )
+        .unwrap();
+        assert!(proceed, "force=true must skip the stale-default prompt");
+    }
+
+    /// No last-docs pointer at all → no prompt; downstream resolver
+    /// surfaces the `NoLastDocsRef` error on its own. Empty stdin.
+    #[test]
+    fn confirm_without_last_docs_skips_prompt() {
+        let db = Db::open_in_memory().unwrap();
+        let mut stdin = std::io::Cursor::new(Vec::<u8>::new());
+        let proceed = confirm_default_last_if_stale_with_io(
+            &db,
+            None,
+            false,
+            "Delete",
+            &[],
+            &mut stdin,
+            false,
+        )
+        .unwrap();
+        assert!(
+            proceed,
+            "missing last-docs ref must not prompt — let resolver surface NoLastDocsRef"
+        );
+    }
+
+    /// Within the 15-minute window → no prompt fires. Empty stdin
+    /// proves the read_line is never reached.
+    #[test]
+    fn confirm_within_protection_window_skips_prompt() {
+        let db = Db::open_in_memory().unwrap();
+        let hid = seed_entry_with_hid(&db, "mood");
+        // set_last_docs stamps the pointer with Utc::now(), well within
+        // the protection window.
+        set_last_docs(&db, &[hid]).unwrap();
+        let mut stdin = std::io::Cursor::new(Vec::<u8>::new());
+        let proceed = confirm_default_last_if_stale_with_io(
+            &db,
+            None,
+            false,
+            "Delete",
+            &[],
+            &mut stdin,
+            false,
+        )
+        .unwrap();
+        assert!(proceed, "fresh pointer must skip the stale-default prompt");
+    }
+
+    fn force_last_docs_stale(db: &Db, hid: &Hid) {
+        // Push the last-docs pointer back past the protection window.
+        // `last_docs` stores `time` as an RFC-3339 string; we rewrite
+        // it directly so the test doesn't have to wait 15 minutes.
+        set_last_docs(db, &[hid.clone()]).unwrap();
+        let stale = chrono::Utc::now() - chrono::Duration::minutes(PROTECTION_WINDOW_MINUTES + 5);
+        db.conn()
+            .execute(
+                "UPDATE last_docs SET time = ?1",
+                rusqlite::params![stale.to_rfc3339()],
+            )
+            .unwrap();
+    }
+
+    /// Stale pointer + user types `y` → proceeds.
+    #[test]
+    fn confirm_stale_pointer_yes_input_proceeds() {
+        let db = Db::open_in_memory().unwrap();
+        let hid = seed_entry_with_hid(&db, "mood");
+        force_last_docs_stale(&db, &hid);
+        let mut stdin = std::io::Cursor::new(b"y\n".to_vec());
+        let proceed = confirm_default_last_if_stale_with_io(
+            &db,
+            None,
+            false,
+            "Delete",
+            &[],
+            &mut stdin,
+            false,
+        )
+        .unwrap();
+        assert!(proceed);
+    }
+
+    /// Stale pointer + bare Enter → defaults yes (the key UX change
+    /// vs. the legacy `[y/N]` default-no prompt).
+    #[test]
+    fn confirm_stale_pointer_empty_input_defaults_yes() {
+        let db = Db::open_in_memory().unwrap();
+        let hid = seed_entry_with_hid(&db, "mood");
+        force_last_docs_stale(&db, &hid);
+        let mut stdin = std::io::Cursor::new(b"\n".to_vec());
+        let proceed = confirm_default_last_if_stale_with_io(
+            &db,
+            None,
+            false,
+            "Delete",
+            &[],
+            &mut stdin,
+            false,
+        )
+        .unwrap();
+        assert!(proceed, "empty input must proceed (yes-default)");
+    }
+
+    /// Stale pointer + explicit `n` → aborts.
+    #[test]
+    fn confirm_stale_pointer_no_input_aborts() {
+        let db = Db::open_in_memory().unwrap();
+        let hid = seed_entry_with_hid(&db, "mood");
+        force_last_docs_stale(&db, &hid);
+        let mut stdin = std::io::Cursor::new(b"n\n".to_vec());
+        let proceed = confirm_default_last_if_stale_with_io(
+            &db,
+            None,
+            false,
+            "Delete",
+            &[],
+            &mut stdin,
+            false,
+        )
+        .unwrap();
+        assert!(!proceed, "explicit 'n' must abort");
     }
 
     #[test]

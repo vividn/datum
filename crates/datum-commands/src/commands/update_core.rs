@@ -125,7 +125,12 @@ pub fn update_from_args(
         .transpose()?
         .unwrap_or(default_strategy);
 
-    let (pattern, payload_value, payload_extra) = parse_update_payload(&args)?;
+    let UpdatePayload {
+        pattern,
+        default_last: _,
+        value: payload_value,
+        extra: payload_extra,
+    } = parse_update_payload(&args)?;
     let output = args.output()?;
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
 
@@ -167,7 +172,13 @@ pub fn update_batch_from_args(
         .transpose()?
         .unwrap_or(default_strategy);
 
-    let (pattern, payload_value, payload_extra) = parse_update_payload(&args)?;
+    let payload = parse_update_payload(&args)?;
+    let UpdatePayload {
+        pattern,
+        default_last,
+        value: payload_value,
+        extra: payload_extra,
+    } = payload;
     let (entries, token_errors) = crate::commands::helpers::resolve_batch(
         db,
         &pattern,
@@ -226,6 +237,32 @@ pub fn update_batch_from_args(
             if live == 1 { "entry" } else { "entries" },
         );
         return Ok(());
+    }
+
+    // da-uzxj: prompt before mutating when the user defaulted to
+    // `_LAST` AND the pointer is older than the protection window.
+    // UpdateArgs has no `--force` yet (follow-up); passing `false`
+    // means the prompt always fires under the default+stale branch,
+    // and the user confirms with Enter (yes-default).
+    if default_last {
+        // Capitalize the strategy verb ("Update" / "Merge" / "Rekey")
+        // so the prompt reads naturally.
+        let verb = strategy.verb();
+        let label = {
+            let mut s = String::with_capacity(verb.len());
+            let mut chars = verb.chars();
+            if let Some(c) = chars.next() {
+                s.extend(c.to_uppercase());
+            }
+            s.extend(chars);
+            s
+        };
+        if !crate::commands::helpers::confirm_default_last_if_stale(
+            db, None, false, &label, &entries,
+        )? {
+            println!("Aborted.");
+            return Ok(());
+        }
     }
 
     let mut first_err: Option<anyhow::Error> = None;
@@ -494,9 +531,20 @@ fn deep_merge(existing: JsonValue, incoming: JsonValue) -> JsonValue {
 /// Kept local so update_core doesn't depend on a log_core private const.
 const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 
-pub(crate) fn parse_update_payload(
-    args: &UpdateArgs,
-) -> Result<(String, Option<JsonValue>, Option<JsonValue>)> {
+/// Outcome of [`parse_update_payload`].
+///
+/// `default_last` is true when the caller did NOT supply any
+/// non-`KEY=VALUE` positional — i.e. we fell through to the `_LAST`
+/// fallback. da-uzxj: `update_batch_from_args` reads this to decide
+/// whether the 15-min stale-default prompt should fire.
+pub(crate) struct UpdatePayload {
+    pub pattern: String,
+    pub default_last: bool,
+    pub value: Option<JsonValue>,
+    pub extra: Option<JsonValue>,
+}
+
+pub(crate) fn parse_update_payload(args: &UpdateArgs) -> Result<UpdatePayload> {
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
 
     // da-sk5c: rewire the leading positional through the same slot-fill
@@ -528,8 +576,15 @@ pub(crate) fn parse_update_payload(
     for r in &args.rest {
         consider(r.clone());
     }
-    let resolved_id = resolved_id
-        .unwrap_or_else(|| datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN.to_string());
+    // da-uzxj: when the user supplied no bare positional we record
+    // `default_last = true` and fall back to `_LAST` (NOT
+    // `_LAST_WITH_PROTECTION`). The 15-min protection is now applied
+    // as a prompt in `update_batch_from_args` rather than as a hard
+    // refusal at the resolver layer — keeps the behaviour symmetric
+    // with `delete` and `undo`.
+    let default_last = resolved_id.is_none();
+    let resolved_id =
+        resolved_id.unwrap_or_else(|| datum_core::ids::resolve::LAST_TOKEN.to_string());
 
     // Same composition shape as `parse_log_args` — the only difference is
     // there are no `-K` slug-keys in update (slug stays put) and no `-K`
@@ -608,7 +663,12 @@ pub(crate) fn parse_update_payload(
     } else {
         Some(JsonValue::Object(datum_data))
     };
-    Ok((resolved_id, value, extra_data))
+    Ok(UpdatePayload {
+        pattern: resolved_id,
+        default_last,
+        value,
+        extra: extra_data,
+    })
 }
 
 #[cfg(test)]

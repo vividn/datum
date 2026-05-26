@@ -54,10 +54,12 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
             anyhow::bail!("--to-version requires an <id_or_slug> to target");
         }
 
-        // Bare `undo` defaults to `_LAST_WITH_PROTECTION` (matches datum):
-        // revert whatever the last command targeted, refusing if the
-        // pointer is older than the protection window. `--force` skips
-        // the pointer entirely and falls through to the legacy
+        // Bare `undo` defaults to `_LAST` (matches the broader
+        // mutating-command convention; da-uzxj). Within the 15-minute
+        // protection window we act on the pointer silently. Outside
+        // the window we render the candidate and prompt [Y/n] before
+        // acting — same pattern as `delete` / `update`.  `--force`
+        // skips the pointer entirely and falls through to the legacy
         // most-recent-tombstone path so existing scripts keep working.
         if !args.force {
             match datum_core::last_docs::get_last_docs(db) {
@@ -69,10 +71,32 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
                 {
                     return undo_via_last_docs(db, &reference.hids, &registry, &args.output()?);
                 }
-                Ok(Some(_)) => {
-                    // Pointer exists but is stale — fall through to the
-                    // window-based fallback so legacy `undo --window` and
-                    // bare-undo against ancient tombstones still works.
+                Ok(Some(reference)) => {
+                    // Pointer is stale — prompt before reverting it.
+                    // Collect the live entries the pointer references
+                    // so the prompt shows the user what they're about
+                    // to bring back / revert.
+                    let mut candidates: Vec<datum_core::entry::Entry> = Vec::new();
+                    for hid in &reference.hids {
+                        if let Ok(entry) = db.get_entry_including_deleted(hid) {
+                            candidates.push(entry);
+                        }
+                    }
+                    if !candidates.is_empty()
+                        && crate::commands::helpers::confirm_default_last_if_stale(
+                            db,
+                            None,
+                            false,
+                            "Undo",
+                            &candidates,
+                        )?
+                    {
+                        return undo_via_last_docs(db, &reference.hids, &registry, &args.output()?);
+                    }
+                    // Either declined or pointer is empty — fall
+                    // through to the window-based fallback so legacy
+                    // `undo --window` against older tombstones still
+                    // works after a user-declined prompt.
                 }
                 Ok(None) | Err(_) => {
                     // No pointer (fresh DB or pre-da-e65 schema) — fall through.
