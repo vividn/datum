@@ -217,7 +217,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Nowview(args) => commands::nowview::nowview(args, db),
         Command::View(args) => commands::view::view(args, db),
         Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
-        Command::Db(sub) => commands::db::dispatch(sub, db),
+        Command::Db(sub) => commands::db::dispatch(sub, cli.db.as_deref(), db),
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
         Command::Sync(args) => commands::sync::dispatch(args, db),
         Command::Reparse(args) => commands::reparse::reparse(args, db),

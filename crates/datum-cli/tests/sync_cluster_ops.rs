@@ -234,6 +234,7 @@ fn db_purge_with_cluster_flag_bumps_server_generation() {
         &db,
         &mut stdin,
         false,
+        "",
     )
     .expect("db purge --yes --cluster");
 
@@ -284,6 +285,7 @@ fn db_purge_without_cluster_flag_does_not_touch_server() {
         &db,
         &mut stdin,
         false,
+        "",
     )
     .expect("plain db purge --yes");
 

@@ -353,6 +353,7 @@ fn s2_purge_cluster_propagates_via_generation_mismatch() {
         &db_a,
         &mut stdin,
         false,
+        "",
     )
     .expect("A db purge --yes --cluster");
     assert_eq!(read_server_cluster_generation(&relay, &cluster_id), 1);
@@ -534,6 +535,7 @@ fn s5_peer_recovers_from_fork_via_purge_then_sync() {
         &db_a,
         &mut stdin,
         false,
+        "",
     )
     .unwrap();
     // The relay tracks per-device seq watermarks independent of cluster
@@ -581,6 +583,7 @@ fn s5_peer_recovers_from_fork_via_purge_then_sync() {
         &db_b,
         &mut stdin,
         false,
+        "",
     )
     .expect("plain purge on B");
     assert_eq!(

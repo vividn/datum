@@ -18,10 +18,10 @@ use crate::commands::sync::cluster_ops;
 
 pub mod import;
 
-pub fn dispatch(cmd: DbCommand, db: &Db) -> Result<()> {
+pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
     match cmd {
         DbCommand::Setup(args) => super::setup::setup(args, db),
-        DbCommand::Purge(args) => purge(args, db),
+        DbCommand::Purge(args) => purge(args, cli_db, db),
         DbCommand::Backup(args) => super::backup_restore::cmd_backup(args, db),
         DbCommand::Restore(args) => super::backup_restore::cmd_restore(args, db),
         DbCommand::Migrate(sub) => super::migrate::migrate(sub, db),
@@ -29,23 +29,49 @@ pub fn dispatch(cmd: DbCommand, db: &Db) -> Result<()> {
     }
 }
 
-/// `datum db purge` — destructive, prompts for the database path as
-/// confirmation. Mirrors the PostgreSQL `DROP DATABASE`-with-name pattern:
-/// reflexive `y`-mashing won't trigger a wipe; the user has to retype the
-/// real path. `--yes` skips the prompt for non-interactive runs.
-pub fn purge(args: DbPurgeArgs, db: &Db) -> Result<()> {
+/// `datum db purge` — destructive, prompts for the database identifier
+/// as confirmation. Mirrors the PostgreSQL `DROP DATABASE`-with-name
+/// pattern: reflexive `y`-mashing won't trigger a wipe; the user has
+/// to retype the real identifier.
+///
+/// da-5df1: the confirmation token follows the resolution shape — if
+/// the user opened the DB via `--db <name>` (registry or default-dir
+/// lookup), the prompt accepts that bare name. If they passed an
+/// explicit `--db <path>`, the prompt still wants the full path
+/// (legacy behaviour). `--yes` skips the prompt for non-interactive
+/// runs.
+pub fn purge(args: DbPurgeArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
     let mut stdin = std::io::stdin().lock();
     let is_tty = std::io::stdin().is_terminal();
-    purge_with_io(args, db, &mut stdin, is_tty)
+    let confirm = purge_confirmation_token(cli_db, db);
+    purge_with_io(args, db, &mut stdin, is_tty, &confirm)
 }
 
-/// Test seam — same logic as [`purge`] but with the stdin reader and TTY
-/// flag injected. Production paths go through [`purge`].
+/// What the user has to type to confirm the wipe. Built from the
+/// resolution path: a name-resolved DB confirms by name (the same
+/// token the user passed in `--db <name>` / `DATUM_DB=<name>`); a
+/// path-resolved DB still requires the full path.
+fn purge_confirmation_token(cli_db: Option<&str>, db: &Db) -> String {
+    if let Ok(resolved) = crate::config::resolve_db(cli_db) {
+        if let Some(name) = resolved.name {
+            return name;
+        }
+    }
+    // Path-resolved (or resolution itself failed) — fall back to the
+    // pragma-derived path. Empty for in-memory test DBs; harmless,
+    // since interactive prompts can't fire on those (no TTY).
+    current_db_path(db).unwrap_or_default()
+}
+
+/// Test seam — same logic as [`purge`] but with the stdin reader, TTY
+/// flag, and confirmation token injected. Production paths go through
+/// [`purge`].
 pub fn purge_with_io(
     args: DbPurgeArgs,
     db: &Db,
     stdin: &mut dyn BufRead,
     is_tty: bool,
+    confirm: &str,
 ) -> Result<()> {
     if !args.yes {
         if !is_tty {
@@ -53,18 +79,31 @@ pub fn purge_with_io(
                 "db purge: stdin is not a TTY; re-run with --yes to purge non-interactively"
             );
         }
-        let path = current_db_path(db)?;
         let mut stderr = std::io::stderr().lock();
+        // Render WHAT will be destroyed using the resolved path so the
+        // user sees the real on-disk location even when they confirm
+        // by name. Always include the path; the differing bit is only
+        // the confirmation token.
+        let path = current_db_path(db).unwrap_or_else(|_| "(in-memory)".to_string());
         writeln!(stderr, "This will destroy ALL data in {path}.")?;
-        write!(stderr, "Type the database path to confirm: ")?;
+        // Branch the prompt copy on confirmation-token shape so the
+        // user sees "Type 'vremya'" instead of "Type the database
+        // path" when the resolution was name-based.
+        let looks_like_path =
+            confirm.contains('/') || confirm.starts_with('.') || confirm.ends_with(".db");
+        if looks_like_path {
+            write!(stderr, "Type the database path to confirm: ")?;
+        } else {
+            write!(stderr, "Type '{confirm}' to confirm purge: ")?;
+        }
         stderr.flush()?;
         drop(stderr);
 
         let mut line = String::new();
         stdin.read_line(&mut line)?;
         let answer = line.trim();
-        if answer != path {
-            anyhow::bail!("db purge: aborted (input did not match database path)");
+        if answer != confirm {
+            anyhow::bail!("db purge: aborted (input did not match {confirm})");
         }
     }
 

@@ -93,6 +93,9 @@ fn db_purge_interactive_path_match_proceeds() {
         .value(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(b"\n".to_vec());
+    // In-memory DB → pragma path is "" → bare Enter (trims to "") matches.
+    // The confirm token is supplied by `purge`'s wiring; tests pass it
+    // directly via `purge_with_io` (da-5df1 added the parameter).
     purge_with_io(
         DbPurgeArgs {
             yes: false,
@@ -101,6 +104,7 @@ fn db_purge_interactive_path_match_proceeds() {
         &db,
         &mut stdin,
         true,
+        "",
     )
     .expect("matching path should proceed");
     assert_eq!(db.count_entries().unwrap(), 0);
@@ -121,6 +125,7 @@ fn db_purge_interactive_path_mismatch_aborts() {
         &db,
         &mut stdin,
         true,
+        "",
     )
     .expect_err("mismatched path must abort");
     assert!(
@@ -146,6 +151,7 @@ fn db_purge_non_tty_without_yes_aborts() {
         &db,
         &mut stdin,
         false,
+        "",
     )
     .expect_err("non-tty without --yes must abort");
     let msg = err.to_string().to_lowercase();
@@ -173,4 +179,60 @@ fn setup_force_recreate_flag_is_rejected() {
     );
     // Data is intact — the rejection happens at parse time.
     assert_eq!(db.count_entries().unwrap(), 1);
+}
+
+// ─── da-5df1: purge accepts the bare name when DB was name-resolved ─────────
+
+/// When the user invokes with `--db <name>`, the confirmation prompt
+/// accepts the bare name (no full path required). The wiring threads
+/// the resolved-by-name token through `purge_with_io`'s `confirm`
+/// parameter; here we drive that directly with `confirm = "vremya"`.
+#[test]
+fn db_purge_accepts_bare_name_confirmation_when_name_resolved() {
+    let db = fresh_db();
+    entry_builder("coffee")
+        .value(serde_json::json!(2))
+        .insert(&db);
+    let mut stdin = Cursor::new(b"vremya\n".to_vec());
+    purge_with_io(
+        DbPurgeArgs {
+            yes: false,
+            cluster: false,
+        },
+        &db,
+        &mut stdin,
+        true,
+        "vremya",
+    )
+    .expect("bare-name confirmation must proceed when it matches");
+    assert_eq!(db.count_entries().unwrap(), 0);
+}
+
+/// Mismatched bare name still aborts — the prompt is "type this token";
+/// anything else fails. The abort message echoes the expected token so
+/// the user sees what they should have typed.
+#[test]
+fn db_purge_aborts_when_bare_name_mismatched() {
+    let db = fresh_db();
+    entry_builder("coffee")
+        .value(serde_json::json!(2))
+        .insert(&db);
+    let mut stdin = Cursor::new(b"oops\n".to_vec());
+    let err = purge_with_io(
+        DbPurgeArgs {
+            yes: false,
+            cluster: false,
+        },
+        &db,
+        &mut stdin,
+        true,
+        "vremya",
+    )
+    .expect_err("mismatched bare name must abort");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("vremya"),
+        "abort message should echo the expected token, got: {msg}"
+    );
+    assert_eq!(db.count_entries().unwrap(), 1, "data must survive abort");
 }
