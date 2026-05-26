@@ -42,9 +42,8 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
     // expect.
     let tty = is_stdout_tty();
     let max_total_width = if tty { Some(detect_cols()) } else { None };
-    // -1 reserves a row for the header. Below 5 stays unhelpful; clamp.
     let auto_count = if tty && args.count.is_none() {
-        Some(detect_rows().saturating_sub(1).max(1))
+        Some(auto_fill_rows(detect_rows()))
     } else {
         None
     };
@@ -151,7 +150,7 @@ fn watch_repaint_loop(
         let tty = is_stdout_tty();
         let max_total_width = if tty { Some(detect_cols()) } else { None };
         let auto_count = if tty && args.count.is_none() {
-            Some(detect_rows().saturating_sub(1).max(1))
+            Some(auto_fill_rows(detect_rows()))
         } else {
             None
         };
@@ -244,6 +243,21 @@ fn wait_with_resize_wake(interval: std::time::Duration) {
         let remaining = deadline - now;
         std::thread::sleep(remaining.min(chunk));
     }
+}
+
+/// Auto-fill row budget for `datum tail` when stdout is a TTY and the
+/// user didn't pin `-n`. Reserves **2 rows** of terminal height:
+///
+/// * one for the header (`time field state hid`);
+/// * one for the cursor-parking line that the trailing `\n` on the last
+///   printed row puts the cursor onto.
+///
+/// Without the second slot the cursor lands on row `lines + 1`, which
+/// scrolls the visible window up by one — taking the header off the top
+/// with it on every repaint (the da-fu5l bug). `max(1)` keeps the bound
+/// positive on absurdly small terminals so the query still returns rows.
+fn auto_fill_rows(lines: usize) -> usize {
+    lines.saturating_sub(2).max(1)
 }
 
 /// Clamp a user-supplied `--watch` interval into a sane poll cadence.
@@ -520,5 +534,43 @@ mod tests {
     fn install_sigwinch_handler_is_idempotent() {
         install_sigwinch_handler();
         install_sigwinch_handler();
+    }
+
+    // ─── da-fu5l: auto-fill row budget ──────────────────────────────────
+
+    /// Typical 24-line terminal: budget is 22 data rows so header +
+    /// data + cursor-park-line = 24 rows total. One more row would
+    /// scroll the header off.
+    #[test]
+    fn auto_fill_reserves_two_rows_on_normal_terminal() {
+        assert_eq!(auto_fill_rows(24), 22);
+        assert_eq!(auto_fill_rows(50), 48);
+    }
+
+    /// Tiny terminals stay positive — the `max(1)` floor keeps the
+    /// query from collapsing to zero rows on absurd inputs.
+    #[test]
+    fn auto_fill_clamps_to_one_on_tiny_terminal() {
+        assert_eq!(auto_fill_rows(2), 1);
+        assert_eq!(auto_fill_rows(1), 1);
+        assert_eq!(auto_fill_rows(0), 1);
+    }
+
+    /// The header-plus-data row count must fit inside the terminal
+    /// height with at least one row to spare for cursor parking —
+    /// expressed as the invariant `header + auto_fill_rows(lines) + 1
+    /// <= lines` for all lines where the formula isn't clamped.
+    #[test]
+    fn auto_fill_invariant_leaves_room_for_cursor_park() {
+        for lines in 4..=200 {
+            let header = 1;
+            let trailing_park = 1;
+            assert!(
+                header + auto_fill_rows(lines) + trailing_park <= lines,
+                "row budget overflows at LINES={lines}: data={}, total={}",
+                auto_fill_rows(lines),
+                header + auto_fill_rows(lines) + trailing_park,
+            );
+        }
     }
 }
