@@ -118,6 +118,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // Unknown keys (including `value=`) stay in the data payload (da-53rz).
     let mut reserved = extract_reserved_columns(&mut extra_data)?;
 
+    // da-5t94: the resolved `field` now flows through the shared peeler.
+    // For flex-field verbs the injected `field=` slot lands in
+    // `reserved.field`; `block` keeps `field_or_verb`. `id` is untouched
+    // here — it stays on the insert-only slug-promotion path in
+    // `parse_log_args` so it can defer to an explicit `-K` slug slot.
+    let field = reserved.field.take().unwrap_or(field);
+
     // da-5ns.3 strict positional gate (Action::Add only): the v=20 model
     // has no implicit `value` column, so a bare unkeyed positional with
     // no `-K` slot binding has nowhere to land. Reject with a generic
@@ -579,7 +586,7 @@ pub(crate) struct ParsedLogArgs {
 /// Sentinel remainder-bucket key. Holds positionals that don't fill a
 /// declared `-K`/`-k` slot — extracted post-call as the entry's primary
 /// `value`. The `__datum_*` prefix avoids collision with any user key.
-const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
+pub(crate) const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 
 /// Parse LogArgs into a structured bundle — field, primary value, extra_data,
 /// and the list of `-K` slug-key values for slug derivation.
@@ -608,7 +615,7 @@ pub(crate) fn parse_log_args(
         action,
         Action::Add | Action::Occur | Action::Switch | Action::Start | Action::Stop
     );
-    let mut field = if flex_field {
+    let field = if flex_field {
         String::new()
     } else {
         args.field_or_verb.clone()
@@ -755,18 +762,13 @@ pub(crate) fn parse_log_args(
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
-    // Flex-field actions: pull the resolved field out of `datum_data` so
-    // it lands on entry.field rather than leaking into extra_data. The
-    // slot was injected via flexible_positional above; slot-fill (or an
-    // explicit `field=<x>` later in argv) puts the value at the "field"
-    // path, and last-write-wins gives the latter precedence.
-    if flex_field {
-        match datum_data.remove("field") {
-            Some(JsonValue::String(s)) => field = s,
-            Some(other) => field = datum_value_to_slug_string(Some(&other)),
-            None => {}
-        }
-    }
+    // da-5t94: `field` is peeled by the shared `extract_reserved_columns`
+    // boundary (called after `parse_log_args` returns), so it lands on
+    // `entry.field` for BOTH insert and update. The flex-field slot
+    // injected above (or an explicit `field=<x>`) leaves the resolved
+    // value at the "field" path in `datum_data`; it rides out in
+    // `extra_data` and the shared peeler routes it onto the column. For
+    // non-flex (`block`), `field` is seeded from `field_or_verb`.
 
     // da-ju71.4 / da-rori: normalize state *here* (before slug derivation
     // below reads `state.id`) via the shared `normalize_state`. The same
@@ -1328,6 +1330,16 @@ impl AddTemporalHints {
 /// did not pass the corresponding key.
 #[derive(Debug, Default)]
 pub(crate) struct ReservedColumns {
+    /// `field=` — the entry's identity. Peeled here (the shared boundary)
+    /// so `update <hid> field=X` re-fields in place rather than leaking
+    /// into `data` (da-5t94). On insert the positional field is injected
+    /// as `field=` (see `parse_log_args`) and flows through here too.
+    ///
+    /// `id=` is deliberately NOT lifted here: on insert it competes with
+    /// `-K` slug slots and may legitimately stay in `data` (the slot
+    /// already claimed the slug), so the update path peels it locally
+    /// instead — see `update_core::take_reserved_id`.
+    pub(crate) field: Option<String>,
     pub(crate) state: Option<JsonValue>,
     pub(crate) dur: Option<datum_core::dur::Dur>,
     pub(crate) dur_precision: Option<String>,
@@ -1371,6 +1383,12 @@ pub(crate) fn extract_reserved_columns(
     let Some(JsonValue::Object(obj)) = extra_data.as_mut() else {
         return Ok(out);
     };
+    // da-5t94: `field=` routes onto the entry's identity column. Coerced to
+    // a slug-string here so both callers (insert + update) consume a ready
+    // `String` and the conversion lives in one place.
+    if let Some(v) = obj.remove("field") {
+        out.field = Some(datum_value_to_slug_string(Some(&v)));
+    }
     if let Some(v) = obj.remove("state") {
         // da-rori: normalize at the shared boundary so `update <hid>
         // state=X` and `switch f X` yield the same `entry.state` shape.

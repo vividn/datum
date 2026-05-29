@@ -11,6 +11,9 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     args::{ConflictStrategyArg, OutputFlagsExt, UpdateArgs},
+    // da-5t94 rider: the remainder-bucket sentinel is shared with the log
+    // path rather than re-declared here.
+    commands::log_core::PRIMARY_VALUE_KEY,
     render::{show_create, show_rename, show_update, OutputArgs},
 };
 
@@ -374,9 +377,27 @@ fn apply_mutation(
     // dur, fs) triple.
     let mut payload_extra = payload_extra;
     let reserved = crate::commands::log_core::extract_reserved_columns(&mut payload_extra)?;
+    // da-5t94: `id=` re-slugs on update. The shared peeler leaves `id`
+    // alone (on insert it competes with `-K` slug slots); update has no
+    // slug slots, so a bare `id=` here always rewrites the slug body. Peel
+    // it locally so it lands on `id_structure` instead of leaking to `data`.
+    let id_literal = take_reserved_id(&mut payload_extra);
 
     let mut updated = existing.clone();
     updated.data = combine_extra(updated.data, payload_extra, mode);
+    // da-5t94: `field=` / `id=` re-field and re-slug in place. Setting
+    // `updated.field` (or the literal `id_structure`) makes
+    // `persist_with_auto_reinterp` re-derive the slug as `<field>:<body>`
+    // while preserving hid + timestamps. Previously these keys leaked
+    // silently into `data` because update only peeled the other reserved
+    // columns. The id literal mirrors insert's `id=` promotion (stored as
+    // a literal id_structure so later edits don't re-key the slug).
+    if let Some(f) = reserved.field {
+        updated.field = f;
+    }
+    if let Some(id) = id_literal {
+        updated.id_structure = Some(id);
+    }
     if let Some(v) = payload_value {
         updated.value = Some(v.clone());
         updated.state = Some(v);
@@ -508,6 +529,25 @@ fn is_empty_string(v: &JsonValue) -> bool {
     matches!(v, JsonValue::String(s) if s.is_empty())
 }
 
+/// da-5t94: pull a `id=` token out of the update payload, returning it as
+/// the slug-body literal to stamp onto `id_structure`. Resets the payload
+/// to `None` once empty so an `id`-only update doesn't carry a stray empty
+/// object into `combine_extra`.
+fn take_reserved_id(payload_extra: &mut Option<JsonValue>) -> Option<String> {
+    let JsonValue::Object(obj) = payload_extra.as_mut()? else {
+        return None;
+    };
+    let v = obj.remove("id")?;
+    let lit = match v {
+        JsonValue::String(s) => s,
+        other => other.to_string(),
+    };
+    if obj.is_empty() {
+        *payload_extra = None;
+    }
+    Some(lit)
+}
+
 fn deep_merge(existing: JsonValue, incoming: JsonValue) -> JsonValue {
     match (existing, incoming) {
         (JsonValue::Object(mut e_map), JsonValue::Object(i_map)) => {
@@ -526,10 +566,6 @@ fn deep_merge(existing: JsonValue, incoming: JsonValue) -> JsonValue {
         (_, incoming) => incoming,
     }
 }
-
-/// Sentinel remainder-bucket key (mirrors `commands::log_core::PRIMARY_VALUE_KEY`).
-/// Kept local so update_core doesn't depend on a log_core private const.
-const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 
 /// Outcome of [`parse_update_payload`].
 ///
