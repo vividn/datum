@@ -66,8 +66,16 @@ pub fn pack_changeset_since(db: &Db, since_seq: u64) -> Result<(Changeset, Optio
 }
 
 /// Apply a received changeset to the local DB using last-writer-wins on
-/// `modified_at`. Existing rows whose stored `modified_at` is >= the
-/// incoming row's `modified_at` are left untouched.
+/// `modify_time`. Existing rows whose stored `modify_time` is >= the
+/// incoming row's `modify_time` are left untouched.
+///
+/// `modify_time` is a raw device wall-clock: a device with a fast clock
+/// wins every tie and a lagging one can silently lose a later edit. This
+/// clock-skew risk is an accepted v1 simplification (no HLC/vector clock)
+/// — see `docs/sync-protocol.md` §Merge semantics. The risk is bounded
+/// because every non-no-op overwrite is both preserved in `entry_history`
+/// (`sync_merge`) and surfaced as a `lww_overwrite` integrity warning
+/// (see [`upsert_lww`]).
 pub fn apply_changeset(db: &Db, cs: &Changeset) -> Result<()> {
     let payload = parse_payload(cs.as_bytes())?;
     let tx = db.conn().unchecked_transaction()?;
@@ -141,8 +149,15 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
         if pre.modify_time >= entry.modify_time {
             return Ok(());
         }
-        // Non-no-op: record the pre-merge state as a sync_merge history row.
+        // Non-no-op: record the pre-merge state as a sync_merge history
+        // row (recoverable + auditable), and file a `lww_overwrite`
+        // integrity warning so the overwrite is surfaced to the user (C4e)
+        // rather than applied silently. The history row is the recoverable
+        // source; the warning is the notification keyed off it (da-t96a).
+        // Only the existing-row branch is an overwrite — a fresh arrival
+        // (the `else` below) replaces nothing local and files no warning.
         history::record(tx, pre, ChangeKind::SyncMerge)?;
+        datum_core::integrity::file_lww_overwrite(tx, pre, entry)?;
     } else {
         // Fresh row arriving from a peer — the "pre" state is the incoming
         // row itself (same as a create). Record it as sync_merge so the
@@ -464,5 +479,75 @@ mod tests {
 
         let landed = db.get_entry(&newer.slug).unwrap();
         assert_eq!(landed.state, Some(serde_json::json!("newer")));
+    }
+
+    /// A non-no-op LWW overwrite files exactly one `lww_overwrite`
+    /// integrity warning: `local_entry` is the overwritten loser,
+    /// `remote_entry` the winning incoming edit, tagged `sync_pull`.
+    #[test]
+    fn lww_overwrite_files_integrity_warning() {
+        use datum_core::integrity::{self, DetectedBy, IntegrityKind, ListFilter};
+
+        let db = fresh_db();
+        let mut older = make_entry("coffee", 0);
+        let mut newer = make_entry("coffee", 0);
+        newer.modify_time = older.modify_time + Duration::seconds(60);
+        older.state = Some(serde_json::json!("older"));
+        newer.state = Some(serde_json::json!("newer"));
+
+        db.insert_entry(&older).unwrap();
+
+        let newer_cs = {
+            let tmp = fresh_db();
+            tmp.insert_entry(&newer).unwrap();
+            pack_changeset(&tmp, 0).unwrap()
+        };
+        apply_changeset(&db, &newer_cs).unwrap();
+
+        let warnings = integrity::list(
+            db.conn(),
+            &ListFilter {
+                kind: Some(IntegrityKind::LwwOverwrite),
+                pending: Some(true),
+            },
+        )
+        .unwrap();
+        assert_eq!(warnings.len(), 1, "one warning per overwrite");
+        let w = &warnings[0];
+        assert_eq!(w.detected_by, DetectedBy::SyncPull);
+        assert_eq!(w.local_entry.state, Some(serde_json::json!("older")));
+        assert_eq!(
+            w.remote_entry.as_ref().unwrap().state,
+            Some(serde_json::json!("newer")),
+        );
+    }
+
+    /// A fresh slug arriving from a peer replaces no local edit, so it is
+    /// not an overwrite and files no `lww_overwrite` warning. An LWW no-op
+    /// (re-applying a row we already have) likewise files nothing.
+    #[test]
+    fn non_overwrites_file_no_warning() {
+        use datum_core::integrity::{IntegrityKind, ListFilter};
+
+        let db = fresh_db();
+        let cs = {
+            let tmp = fresh_db();
+            tmp.insert_entry(&make_entry("coffee", 0)).unwrap();
+            pack_changeset(&tmp, 0).unwrap()
+        };
+        // First apply = fresh arrival; second apply = LWW no-op.
+        apply_changeset(&db, &cs).unwrap();
+        apply_changeset(&db, &cs).unwrap();
+
+        let warnings = db
+            .list_integrity_warnings(&ListFilter {
+                kind: Some(IntegrityKind::LwwOverwrite),
+                pending: Some(true),
+            })
+            .unwrap();
+        assert!(
+            warnings.is_empty(),
+            "neither fresh nor no-op is an overwrite"
+        );
     }
 }

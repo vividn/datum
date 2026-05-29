@@ -628,6 +628,11 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                 "{count} entr{y} carried a --last-state assertion that disagrees with history",
                 y = if count == 1 { "y" } else { "ies" },
             ),
+            IntegrityKind::LwwOverwrite => format!(
+                "{count} local edit{s} {were} overwritten by a newer remote edit during sync",
+                s = if count == 1 { "" } else { "s" },
+                were = if count == 1 { "was" } else { "were" },
+            ),
         };
         let category: &'static str = match kind {
             IntegrityKind::SameStateRepeat => "repeated_state",
@@ -635,6 +640,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
             IntegrityKind::OrphanEnd => "integrity_orphan_end",
             IntegrityKind::Overlap => "integrity_overlap",
             IntegrityKind::LastStateMismatch => "integrity_last_state_mismatch",
+            IntegrityKind::LwwOverwrite => "integrity_lww_overwrite",
         };
         // da-mkes: collect one FlaggedEntry per warning. The state column
         // gets a leading `!` for `repeated_state` rows so the human render

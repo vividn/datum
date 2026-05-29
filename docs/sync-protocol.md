@@ -254,6 +254,35 @@ returned by `/push` is discarded after it has been acknowledged — the
 next pack only needs to know which local rows to include, and
 `modified_at` is the authoritative answer for that.
 
+## Merge semantics (last-write-wins)
+
+Incoming entries are reconciled against the local table by
+**last-write-wins on `modify_time`** (wall-clock), keyed on `slug` — the
+durable cross-device identity (`hid` is local-only and not stable across a
+merge). When two devices have edited the same `slug`, the row with the
+larger `modify_time` survives; the loser's pre-merge state is snapshotted
+into `entry_history` as a `sync_merge` change, so it is recoverable and
+auditable. See `crates/datum-sync-client/src/ops.rs::upsert_lww`.
+
+**Clock-skew caveat (accepted, not mitigated).** `modify_time` is a raw
+device wall-clock with no logical-clock component. A device whose clock
+runs fast wins every tie; a device whose clock lags can silently lose an
+edit even if it wrote *later* in real time. For one user's own devices —
+the only model v1 supports — this is a deliberate simplification:
+near-synchronized clocks make collisions rare, and the overwritten edit is
+never destroyed (it lives in `entry_history`). It is **not** hardened with
+a hybrid-logical-clock or vector clock; that is explicitly out of scope for
+v1 (decision da-t96a).
+
+**Overwrites are surfaced, not silent.** Each LWW overwrite of an existing
+local row also files an `integrity_warnings` row with `kind =
+lww_overwrite`, `detected_by = sync_pull`: `local_entry` is the overwritten
+local edit, `remote_entry` the winning remote edit. The
+conflict-resolution UX (C4e) reads these to tell the user "a remote edit
+overwrote yours" and offer take-local / take-remote, sourced from the same
+`sync_merge` history snapshot. A *fresh* row arriving for a slug not yet
+present locally is not an overwrite and files no warning.
+
 ## Encryption
 
 Every `payload_b64` decodes to an `EncryptedBlob`:
@@ -343,7 +372,9 @@ HTTP status mapping:
 These are either later waves or explicitly deferred; document them here
 so reviewers of later beads don't re-litigate the design:
 
-- Conflict resolution UX (C4e).
+- Conflict resolution UX (C4e) — but the backing `lww_overwrite`
+  integrity warnings are now filed on every overwrite (da-t96a), so the UX
+  has data to render when it lands.
 - Daemon-based auto-sync cadence (C4d).
 - QR device-pairing key handoff (C4f).
 - Server-side compaction of superseded changesets.

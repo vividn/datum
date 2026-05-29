@@ -34,7 +34,10 @@
 //! - `resolution`: NULL while pending; filled on resolve (auto or manual).
 //! - `detected_by`: `local_validator` | `sync_pull`.
 //! - `kind`: `double_open` | `orphan_end` | `overlap`
-//!   | `same_state_repeat` | `last_state_mismatch`.
+//!   | `same_state_repeat` | `last_state_mismatch` | `lww_overwrite`.
+//!   `lww_overwrite` rows are filed by the sync-apply path when an
+//!   incoming row wins last-write-wins over an existing local row;
+//!   `local_entry` is the overwritten edit, `remote_entry` the winner.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -93,6 +96,14 @@ pub enum IntegrityKind {
     /// An entry carried an explicit `--last-state=<v>` assertion whose
     /// normalized value differs from the state computed from history (S6).
     LastStateMismatch,
+    /// A last-write-wins sync merge overwrote a local edit: an incoming
+    /// remote row with a newer `modify_time` replaced the existing local
+    /// row for the same slug. `local_entry` is the overwritten local edit,
+    /// `remote_entry` the winning remote edit. The loser is also preserved
+    /// in `entry_history` as `sync_merge`; this row surfaces the overwrite
+    /// to the user (C4e) instead of leaving it silent. Only ever filed with
+    /// `detected_by = sync_pull` (da-t96a).
+    LwwOverwrite,
 }
 
 impl IntegrityKind {
@@ -103,6 +114,7 @@ impl IntegrityKind {
             IntegrityKind::Overlap => "overlap",
             IntegrityKind::SameStateRepeat => "same_state_repeat",
             IntegrityKind::LastStateMismatch => "last_state_mismatch",
+            IntegrityKind::LwwOverwrite => "lww_overwrite",
         }
     }
 }
@@ -122,6 +134,7 @@ impl std::str::FromStr for IntegrityKind {
             "overlap" => Ok(IntegrityKind::Overlap),
             "same_state_repeat" => Ok(IntegrityKind::SameStateRepeat),
             "last_state_mismatch" => Ok(IntegrityKind::LastStateMismatch),
+            "lww_overwrite" => Ok(IntegrityKind::LwwOverwrite),
             other => Err(format!("unknown kind: '{other}'")),
         }
     }
@@ -589,6 +602,30 @@ fn file_warning(
         detected_by,
         kind,
     })
+}
+
+/// File an [`IntegrityKind::LwwOverwrite`] warning: an incoming sync row
+/// (`winner`, newer `modify_time`) replaced an existing local edit
+/// (`loser`) under last-write-wins. `local_entry` becomes the overwritten
+/// local edit (so a later `take_local` resolution can restore it) and
+/// `remote_entry` the winning remote edit. Always tagged `sync_pull` — LWW
+/// overwrites only occur on apply. The loser is also snapshotted to
+/// `entry_history` as `sync_merge` by the apply path; this row is the
+/// user-facing counterpart so the overwrite is surfaced, not silent
+/// (da-t96a). Call from inside the apply transaction so the warning lands
+/// atomically with the overwrite.
+pub fn file_lww_overwrite(
+    conn: &Connection,
+    loser: &Entry,
+    winner: &Entry,
+) -> Result<IntegrityWarning> {
+    file_warning(
+        conn,
+        loser,
+        Some(winner),
+        DetectedBy::SyncPull,
+        IntegrityKind::LwwOverwrite,
+    )
 }
 
 /// Filter for [`list`]. `None` matches any row of that axis.
