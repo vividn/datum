@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 28;
+pub const CURRENT_SCHEMA_VERSION: u32 = 29;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -230,6 +230,13 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "integrity_warnings: drop stored same_state_repeat rows — `repeated_state` is now computed live from entries (da-acft)",
         apply: m27_to_28_drop_stored_same_state_repeat,
         down: down_28_to_27_drop_stored_same_state_repeat,
+    },
+    Migration {
+        from: 28,
+        to: 29,
+        summary: "entries: drop NOT NULL on occur_time — a bare `add` (no -t) is timeless and stores NULL; the absence of a time is what distinguishes `add` from `occur` (da-lxyw)",
+        apply: m28_to_29_occur_time_nullable,
+        down: down_29_to_28_occur_time_nullable,
     },
 ];
 
@@ -871,6 +878,140 @@ fn rebuild_entries_v23(conn: &Connection, with_unit: bool, with_dur_precision: b
         "CREATE INDEX IF NOT EXISTS entries_occur_time \
             ON entries (occur_time, slug) \
             WHERE deleted_at IS NULL;\n",
+    );
+    conn.execute_batch(&sql)?;
+    Ok(())
+}
+
+/// da-lxyw: forward 28→29 — drop the `NOT NULL` on `entries.occur_time`
+/// so a bare `add` (no `-t`) can be stored timeless (`occur_time` NULL).
+/// SQLite has no `ALTER COLUMN`, so rebuild the table preserving every
+/// row, then re-derive `verb` is unnecessary — the column shape and data
+/// are unchanged apart from the relaxed constraint.
+fn m28_to_29_occur_time_nullable(conn: &Connection) -> Result<()> {
+    rebuild_entries_occur_time(conn, true)
+}
+
+/// Reverse 29→28 — restore `NOT NULL` on `occur_time`. Timeless rows
+/// (NULL `occur_time`) created under v29 are backfilled with
+/// `create_time` during the rebuild so they satisfy the constraint —
+/// matching the pre-da-lxyw stub behaviour that defaulted to create_time.
+fn down_29_to_28_occur_time_nullable(conn: &Connection) -> Result<()> {
+    rebuild_entries_occur_time(conn, false)
+}
+
+/// Rebuild `entries` toggling only the `occur_time` nullability, keeping
+/// all other columns, the `following_state` CHECK, and all nine indexes.
+/// When `occur_nullable` is false (down), NULL `occur_time` rows are
+/// backfilled with `create_time` so the restored `NOT NULL` holds.
+fn rebuild_entries_occur_time(conn: &Connection, occur_nullable: bool) -> Result<()> {
+    let occur_col = if occur_nullable {
+        "occur_time TEXT"
+    } else {
+        "occur_time TEXT NOT NULL"
+    };
+    let occur_select = if occur_nullable {
+        "occur_time"
+    } else {
+        "COALESCE(occur_time, create_time)"
+    };
+
+    let cols = [
+        "hid TEXT NOT NULL PRIMARY KEY",
+        "slug TEXT NOT NULL",
+        "content_hash TEXT NOT NULL",
+        "field TEXT NOT NULL",
+        "state TEXT",
+        "dur TEXT",
+        "following_state TEXT",
+        "verb TEXT NOT NULL DEFAULT 'point'",
+        "data TEXT",
+        occur_col,
+        "occur_time_offset INTEGER",
+        "occur_time_tz TEXT",
+        "occur_time_precision TEXT",
+        "dur_precision TEXT",
+        "lat REAL",
+        "lon REAL",
+        "location TEXT",
+        "create_time TEXT NOT NULL",
+        "modify_time TEXT NOT NULL",
+        "device_id TEXT NOT NULL",
+        "deleted_at TEXT",
+        "id_structure TEXT",
+        "field_structure TEXT",
+        "raw_input TEXT NOT NULL DEFAULT ''",
+        "alias_chain TEXT",
+        "parser_version INTEGER NOT NULL DEFAULT 1",
+        "user_asserted_last_state TEXT",
+        "extra_metadata TEXT",
+        "CHECK (following_state IS NULL OR dur IS NOT NULL)",
+    ];
+
+    // Column list mirrors `cols` (minus the trailing CHECK) for the
+    // positional INSERT; the SELECT swaps `occur_time` for its (possibly
+    // COALESCE'd) source expression.
+    let target_cols = "hid, slug, content_hash, field, state, dur, following_state, verb, data, \
+         occur_time, occur_time_offset, occur_time_tz, occur_time_precision, dur_precision, \
+         lat, lon, location, create_time, modify_time, device_id, deleted_at, \
+         id_structure, field_structure, raw_input, alias_chain, parser_version, \
+         user_asserted_last_state, extra_metadata";
+    let select_exprs = format!(
+        "hid, slug, content_hash, field, state, dur, following_state, verb, data, \
+         {occur_select}, occur_time_offset, occur_time_tz, occur_time_precision, dur_precision, \
+         lat, lon, location, create_time, modify_time, device_id, deleted_at, \
+         id_structure, field_structure, raw_input, alias_chain, parser_version, \
+         user_asserted_last_state, extra_metadata"
+    );
+
+    let mut sql = String::new();
+    sql.push_str("DROP INDEX IF EXISTS entries_slug;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_field_occurtime;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_field_occur;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_live_field_occur;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_content_hash;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_verb;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_occur_time;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_id_structure;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_field_structure;\n");
+    sql.push_str(&format!(
+        "CREATE TABLE entries__new ({});\n",
+        cols.join(", ")
+    ));
+    sql.push_str(&format!(
+        "INSERT INTO entries__new ({target_cols}) SELECT {select_exprs} FROM entries;\n"
+    ));
+    sql.push_str("DROP TABLE entries;\n");
+    sql.push_str("ALTER TABLE entries__new RENAME TO entries;\n");
+    sql.push_str("CREATE UNIQUE INDEX IF NOT EXISTS entries_slug ON entries (slug);\n");
+    sql.push_str(
+        "CREATE UNIQUE INDEX IF NOT EXISTS entries_field_occurtime \
+            ON entries (field, occur_time) \
+            WHERE occur_time IS NOT NULL AND deleted_at IS NULL;\n",
+    );
+    sql.push_str(
+        "CREATE INDEX IF NOT EXISTS entries_field_occur \
+            ON entries (field, occur_time DESC);\n",
+    );
+    sql.push_str(
+        "CREATE INDEX IF NOT EXISTS entries_live_field_occur \
+            ON entries (field, occur_time) \
+            WHERE deleted_at IS NULL;\n",
+    );
+    sql.push_str("CREATE INDEX IF NOT EXISTS entries_content_hash ON entries (content_hash);\n");
+    sql.push_str("CREATE INDEX IF NOT EXISTS entries_verb ON entries (verb);\n");
+    sql.push_str(
+        "CREATE INDEX IF NOT EXISTS entries_occur_time \
+            ON entries (occur_time, slug) \
+            WHERE deleted_at IS NULL;\n",
+    );
+    sql.push_str(
+        "CREATE INDEX IF NOT EXISTS entries_id_structure \
+            ON entries (hid) WHERE id_structure IS NOT NULL;\n",
+    );
+    sql.push_str(
+        "CREATE INDEX IF NOT EXISTS entries_field_structure \
+            ON entries (hid) WHERE field_structure IS NOT NULL;\n",
     );
     conn.execute_batch(&sql)?;
     Ok(())
@@ -2885,12 +3026,14 @@ mod tests {
         .unwrap();
         set_schema_version(&conn, 24).unwrap();
 
-        let applied = migrate_to_current(&conn).unwrap();
+        // Scope to the v24→v25 step under test. The minimal fixture omits
+        // most entries columns (only the pre-check's field/occur_time/
+        // deleted_at matter here); the v28→v29 rebuild (da-lxyw) needs the
+        // full column set, so a `migrate_to_current` would trip on the
+        // stub. The clean-DB and roundtrip suites cover the full chain.
+        let applied = apply_migrations(&conn, MIGRATIONS, 24, 25).unwrap();
         assert!(applied.iter().any(|s| s.contains("v24→v25")));
-        assert_eq!(
-            read_schema_version(&conn).unwrap(),
-            Some(CURRENT_SCHEMA_VERSION)
-        );
+        assert_eq!(read_schema_version(&conn).unwrap(), Some(25));
     }
 
     /// da-9u9.1: `infer_legacy_version` returns the correct resume point

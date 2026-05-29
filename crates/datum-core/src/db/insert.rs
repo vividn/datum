@@ -71,6 +71,20 @@ fn storage_content_hash(
     crate::entry::compute_hash(field, occur_str, &dur_str, &state_str, &data_str)
 }
 
+/// The occur_time string used for content-hash computation. Mirrors
+/// [`Entry::new`]'s `unwrap_or_default()`: a timeless entry (no
+/// `occur_time`, e.g. a bare `add`) hashes with an empty occur string —
+/// NOT `create_time`. Keeping this in lockstep with the stored value
+/// (NULL for timeless) is what makes dedup-by-content-hash see two
+/// timeless adds of the same content as one (da-lxyw / da-r569).
+fn hash_occur_str(entry: &Entry) -> String {
+    entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.utc.to_rfc3339())
+        .unwrap_or_default()
+}
+
 impl Db {
     /// Insert an entry using the default [`ConflictStrategy::Ignore`].
     /// Returns `Err(Duplicate)` if the content_hash collides with a live row,
@@ -531,14 +545,9 @@ fn insert_entry_in_tx(
     // duplicate, routing the write into a slug-UNIQUE collision rather than
     // through Update/Merge.
     let (_, _, canonical_state) = derive_verb_for_storage(entry)?;
-    let occur_str = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.utc.to_rfc3339())
-        .unwrap_or_else(|| entry.create_time.to_rfc3339());
     let dedup_hash = storage_content_hash(
         &entry.field,
-        &occur_str,
+        &hash_occur_str(entry),
         entry.dur.as_ref(),
         canonical_state.as_ref(),
         entry.data.as_ref(),
@@ -653,14 +662,9 @@ fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOut
     // da-r569: dedup against the canonical storage hash, matching the value
     // `try_insert` will persist (see `insert_entry_in_tx` for the rationale).
     let (_, _, canonical_state) = derive_verb_for_storage(entry)?;
-    let occur_str = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.utc.to_rfc3339())
-        .unwrap_or_else(|| entry.create_time.to_rfc3339());
     let dedup_hash = storage_content_hash(
         &entry.field,
-        &occur_str,
+        &hash_occur_str(entry),
         entry.dur.as_ref(),
         canonical_state.as_ref(),
         entry.data.as_ref(),
@@ -761,16 +765,13 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
 }
 
 pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entry) -> Result<()> {
-    // da-5ns sub-bead 1 stub: occur_time is required at the schema
-    // level. The CLI parser hasn't been updated yet (sub-bead 3) so
-    // call sites may still produce entries with no time set; default
-    // to create_time so the insert doesn't violate NOT NULL. Sub-bead
-    // 3 promotes this to a parser-level requirement.
-    let occur_str = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.utc.to_rfc3339())
-        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    // da-lxyw: a timeless entry (no `occur_time` — the defining trait of
+    // `add` with no explicit `-t`) stores NULL, NOT `create_time`. The
+    // column is nullable (schema v29); the partial UNIQUE on
+    // `(field, occur_time)` excludes NULL rows, so multiple timeless adds
+    // for one field coexist. The hash uses an empty occur string to match
+    // `Entry::new` / the dedup pre-check (`hash_occur_str`).
+    let occur_str: Option<String> = entry.occur_time.as_ref().map(|t| t.utc.to_rfc3339());
     let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
     let occur_tz = entry
         .occur_time
@@ -779,7 +780,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         &entry.field,
-        &occur_str,
+        &hash_occur_str(entry),
         entry.dur.as_ref(),
         canonical_state.as_ref(),
         entry.data.as_ref(),
@@ -887,11 +888,11 @@ fn raw_overwrite_mutables(
     let data_json = data_value.map(|v| v.to_string());
     let now = Utc::now().to_rfc3339();
 
-    let occur_str = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.utc.to_rfc3339())
-        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    // da-lxyw: preserve a timeless entry's NULL `occur_time` across edits
+    // rather than backfilling `create_time`. Hash with the empty occur
+    // string (`hash_occur_str`) so the rewritten content_hash matches the
+    // insert path.
+    let occur_str: Option<String> = entry.occur_time.as_ref().map(|t| t.utc.to_rfc3339());
     let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
     let occur_tz = entry
         .occur_time
@@ -900,7 +901,7 @@ fn raw_overwrite_mutables(
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         &entry.field,
-        &occur_str,
+        &hash_occur_str(entry),
         entry.dur.as_ref(),
         canonical_state.as_ref(),
         data_value,
@@ -1200,6 +1201,31 @@ mod tests {
         assert!(
             matches!(outcome, InsertOutcome::Updated { .. }),
             "identical content must route through Update, got {outcome:?}"
+        );
+    }
+
+    /// da-lxyw (regression): an entry with no `occur_time` (a bare `add`)
+    /// must round-trip through the insert path as a genuine NULL — the
+    /// stored row reads back `occur_time == None`, NOT a `create_time`
+    /// backfill. The content_hash must also agree on load (the hash uses
+    /// the empty occur string, same as `Entry::new`).
+    #[test]
+    fn timeless_entry_stores_null_occur_time() {
+        let db = fresh_db();
+        let entry = entry_builder("thing").verb(Verb::Point).no_time().build();
+        assert!(entry.occur_time.is_none(), "fixture is timeless");
+        db.insert_entry(&entry).unwrap();
+
+        let stored = db.get_entry(&entry.slug).unwrap();
+        assert!(
+            stored.occur_time.is_none(),
+            "timeless entry must read back occur_time=None, got {:?}",
+            stored.occur_time
+        );
+        assert_eq!(
+            stored.content_hash,
+            stored.expected_content_hash(),
+            "content_hash must agree on load for a timeless entry"
         );
     }
 

@@ -1,4 +1,4 @@
--- datum SQLite schema (v25 — partial UNIQUE on (field, occur_time), da-ga8b).
+-- datum SQLite schema (v29 — occur_time nullable for timeless adds, da-lxyw).
 --
 -- Time-shape pivot 2026-05-01: the entries table reverts from the
 -- start_time/end_time/entry_shape/intent shape to the original datum
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS entries (
     data            TEXT,                        -- JSON (nested, may use {v,u} unit annotations)
 
     -- When
-    occur_time           TEXT NOT NULL,          -- ISO 8601 UTC, required
+    occur_time           TEXT,                   -- ISO 8601 UTC; NULL = timeless (bare `add`), da-lxyw
     occur_time_offset    INTEGER,                -- UTC offset in minutes
     occur_time_tz        TEXT,                   -- IANA timezone name
     -- Single ISO-8601 duration string (e.g. "PT1S", "PT1M", "PT1H",
@@ -124,7 +124,8 @@ CREATE INDEX IF NOT EXISTS entries_field_occur
 -- Live-only variant used by the SQL-backed views (R3). The views consistently
 -- filter tombstones per field; a partial index lets SQLite skip deleted rows
 -- entirely rather than filter them after an index lookup. `occur_time` is
--- NOT NULL so no separate `IS NOT NULL` predicate is needed.
+-- nullable (timeless adds, da-lxyw); SQLite indexes the NULL rows too, which
+-- is fine — the views read them back as `None`.
 CREATE INDEX IF NOT EXISTS entries_live_field_occur
     ON entries (field, occur_time)
     WHERE deleted_at IS NULL;

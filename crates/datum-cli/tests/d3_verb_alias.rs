@@ -244,6 +244,35 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
     run_cli(&["add", "ping", "-t", "10:00"], &db3).expect("add point");
     let e3 = &db3.entries_for_field("ping", None).unwrap()[0];
     assert_eq!(e3.entry_shape, EntryShape::Point);
+    // Explicit `-t` opts the add back into carrying an occur_time.
+    assert!(
+        e3.occur_time.is_some(),
+        "add with explicit -t must anchor occur_time"
+    );
+}
+
+/// da-lxyw (regression, broke twice): a bare `datum add` with NO explicit
+/// time flag must be TIMELESS — `occur_time == None`. The absence of a time
+/// is the defining difference between `add` and `occur`; defaulting it to
+/// `now` (or `create_time` at the insert layer) silently turns every add
+/// into an occur.
+#[test]
+fn bare_add_has_no_occur_time() {
+    let db = fresh_db();
+    run_cli(&["add", "thing", "foo=bar"], &db).expect("bare add");
+    let e = &db.entries_for_field("thing", None).unwrap()[0];
+    assert!(
+        e.occur_time.is_none(),
+        "bare `add` (no -t) must be timeless, got occur_time={:?}",
+        e.occur_time
+    );
+    // The user payload still lands.
+    assert_eq!(
+        e.data.as_ref().and_then(|d| d.get("foo")),
+        Some(&serde_json::json!("bar"))
+    );
+    // A timeless entry slugs as `field:unset` (no timestamp to template).
+    assert_eq!(e.slug.as_str(), "thing:unset");
 }
 
 // ─── 7. `dur=null` forces point shape ────────────────────────────────────────

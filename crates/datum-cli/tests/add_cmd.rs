@@ -424,14 +424,24 @@ fn id_structure_always_set_when_id_given() {
     );
 
     // da-ivld: every entry now carries an id_structure. With no `--id`,
-    // the default body template is `%occur_time%` (or the literal `unset`
-    // if no occur_time is set).
+    // the default body template is `%occur_time%` when the entry has an
+    // occur_time, else the literal sentinel `unset`. da-lxyw: a bare `add`
+    // is timeless (occur_time = None), so it takes the `unset` branch.
     run_cli(&["add", "other"], &db).expect("note other");
     let other = &db.entries_for_field("other", None).unwrap()[0];
     assert_eq!(
         other.id_structure.as_deref(),
+        Some("unset"),
+        "timeless default ⇒ id_structure = `unset`",
+    );
+
+    // A timed default add (explicit -t) takes the `%occur_time%` branch.
+    run_cli(&["add", "timed", "-t", "10:00"], &db).expect("note timed");
+    let timed = &db.entries_for_field("timed", None).unwrap()[0];
+    assert_eq!(
+        timed.id_structure.as_deref(),
         Some("%occur_time%"),
-        "default ⇒ id_structure = `%occur_time%`",
+        "timed default ⇒ id_structure = `%occur_time%`",
     );
 }
 
@@ -443,14 +453,18 @@ fn id_structure_always_set_when_id_given() {
 #[test]
 fn show_all_flag_wired_through() {
     let db = fresh_db();
-    run_cli(&["add", "field", "--id", "that-id", "--show", "all"], &db).expect("--show all");
-    let e = db.get_entry("field:that-id").unwrap();
-    assert_eq!(e.field, "field");
+    // Distinct fields: a bare `add` is timeless (da-lxyw), and the
+    // content_hash keys on (field, occur_time, …) — NOT the slug/`--id` —
+    // so two same-field timeless adds would dedup. Different fields keep
+    // the two flag-wiring checks independent.
+    run_cli(&["add", "fielda", "--id", "that-id", "--show", "all"], &db).expect("--show all");
+    let e = db.get_entry("fielda:that-id").unwrap();
+    assert_eq!(e.field, "fielda");
 
-    run_cli(&["add", "field", "--id", "short-show-all", "-A"], &db)
+    run_cli(&["add", "fieldb", "--id", "short-show-all", "-A"], &db)
         .expect("-A (show-all shorthand)");
-    let e2 = db.get_entry("field:short-show-all").unwrap();
-    assert_eq!(e2.field, "field");
+    let e2 = db.get_entry("fieldb:short-show-all").unwrap();
+    assert_eq!(e2.field, "fieldb");
 }
 
 // ─── TS #22: "can merge into an existing document with --merge" ──────────────

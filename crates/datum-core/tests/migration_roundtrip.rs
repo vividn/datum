@@ -67,6 +67,16 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
     .unwrap_or(false)
 }
 
+/// Whether `table.column` carries a `NOT NULL` constraint.
+fn column_not_null(conn: &Connection, table: &str, column: &str) -> bool {
+    conn.query_row(
+        &format!("SELECT \"notnull\" FROM pragma_table_info('{table}') WHERE name = ?1"),
+        rusqlite::params![column],
+        |row| row.get::<_, i64>(0).map(|n| n != 0),
+    )
+    .unwrap_or(false)
+}
+
 /// Apply one up step from `version`, return summary line.
 fn apply_one_up(conn: &Connection, version: u32) -> String {
     let s = step(version);
@@ -144,6 +154,7 @@ fn every_pair_has_a_roundtrip_test() {
         (25, 26),
         (26, 27),
         (27, 28),
+        (28, 29),
     ];
     assert_eq!(
         covered.len(),
@@ -1262,5 +1273,80 @@ fn roundtrip_v27_to_v28_drop_stored_same_state_repeat() {
         after_down,
         vec!["double_open".to_string(), "orphan_end".to_string()],
         "down v28→v27 is a no-op — same_state_repeat rows are not restored",
+    );
+}
+
+/// da-lxyw: v28→v29 drops the `NOT NULL` on `entries.occur_time` so a
+/// bare `add` is timeless. Existing timed rows survive untouched; a new
+/// timeless row (NULL occur_time) is accepted post-up. The down step
+/// restores `NOT NULL`, backfilling any NULL rows with `create_time`
+/// (matching the pre-da-lxyw stub) so the constraint holds.
+#[test]
+fn roundtrip_v28_to_v29_occur_time_nullable() {
+    let db = fresh_at(28);
+    let conn = db.conn();
+    assert!(
+        column_not_null(conn, "entries", "occur_time"),
+        "v28 occur_time is NOT NULL",
+    );
+
+    // Seed a normal timed row.
+    let seed = |hid: &str, slug: &str, occur: &str, create: &str| {
+        conn.execute(
+            r#"INSERT INTO entries
+                  (hid, slug, content_hash, field, verb, occur_time,
+                   create_time, modify_time, device_id, raw_input, parser_version)
+               VALUES (?1, ?2, 'h', 'mood', 'point', ?3, ?4, ?4, 'dev', '', 1)"#,
+            rusqlite::params![hid, slug, occur, create],
+        )
+        .unwrap();
+    };
+    seed(
+        "h1",
+        "mood:1",
+        "2024-01-01T00:00:00+00:00",
+        "2024-01-01T00:00:00+00:00",
+    );
+
+    apply_one_up(conn, 28);
+    assert!(
+        !column_not_null(conn, "entries", "occur_time"),
+        "v29 occur_time must be nullable",
+    );
+    let surviving: String = conn
+        .query_row("SELECT occur_time FROM entries WHERE hid = 'h1'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        surviving, "2024-01-01T00:00:00+00:00",
+        "timed row survives up"
+    );
+
+    // A timeless row (NULL occur_time) is now accepted. Give it a distinct
+    // create_time so we can verify the down-step backfill.
+    conn.execute(
+        r#"INSERT INTO entries
+              (hid, slug, content_hash, field, verb, occur_time,
+               create_time, modify_time, device_id, raw_input, parser_version)
+           VALUES ('h2', 'mood:unset', 'h', 'mood', 'point', NULL,
+                   '2024-03-03T03:03:03+00:00', '2024-03-03T03:03:03+00:00', 'dev', '', 1)"#,
+        [],
+    )
+    .expect("timeless insert must succeed under v29");
+
+    apply_one_down(conn, 29);
+    assert!(
+        column_not_null(conn, "entries", "occur_time"),
+        "down v29→v28 restores NOT NULL",
+    );
+    let backfilled: String = conn
+        .query_row("SELECT occur_time FROM entries WHERE hid = 'h2'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        backfilled, "2024-03-03T03:03:03+00:00",
+        "down step backfills NULL occur_time with create_time",
     );
 }

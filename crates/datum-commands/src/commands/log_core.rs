@@ -213,8 +213,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         // them out, and derives the entry's shape + start/end from their
         // combination.
         let add_override: Option<AddTimestampResult> = if matches!(action, Action::Add) {
+            // da-lxyw: did the user pin a time? Any clock/date-modifying flag
+            // (`-t`/`-d`/`-y*`/`-q*`/`-D`) opts a bare `add` back into having
+            // an `occur_time`; with none, the add stays timeless. `-z` alone
+            // only re-zones and `-T` is handled by the omit_timestamp branch.
+            let explicit_time = args.time.time.is_some()
+                || args.time.date.is_some()
+                || args.time.yesterday > 0
+                || args.time.quick > 0
+                || args.time.full_day;
             let hints = extract_add_temporal_keys(&mut extra_data, &base_time)?;
-            Some(hints.resolve(&base_time))
+            Some(hints.resolve(&base_time, explicit_time))
         } else {
             None
         };
@@ -1254,14 +1263,20 @@ impl AddTemporalHints {
     ///
     /// Cases (shape | start | end):
     /// - `dur=null`                         → point | `base`          | None
-    /// - no hints                           → point | `base`          | None
+    /// - no hints, explicit `-t`            → point | `base`          | None
+    /// - no hints, no explicit `-t`         → point | None            | None
     /// - start only                         → ongoing | start          | None
     /// - end only                           → block | `base`           | end
     /// - start + end                        → block | start            | end
     /// - dur only                           → block | `base-dur`       | base
     /// - start + dur                        → block | start            | start+dur
     /// - end + dur                          → block | end-dur          | end
-    fn resolve(&self, base_time: &DatumTime) -> AddTimestampResult {
+    ///
+    /// da-lxyw: `add` is the timeless verb. With no temporal hint at all
+    /// (`no hints` + `explicit_time == false`) the entry carries no
+    /// `occur_time` — the absence of a time is what distinguishes `add`
+    /// from `occur`. A bare `-t` (or `-d`/`-y`/`-q`/`-D`) opts back in.
+    fn resolve(&self, base_time: &DatumTime, explicit_time: bool) -> AddTimestampResult {
         use datum_core::entry::EntryShape;
         let mk = |utc: chrono::DateTime<chrono::Utc>| DatumTime {
             utc,
@@ -1317,7 +1332,7 @@ impl AddTemporalHints {
                 }
             }
             (None, None, None) => AddTimestampResult {
-                start_time: Some(base_time.clone()),
+                start_time: explicit_time.then(|| base_time.clone()),
                 end_time: None,
                 shape: EntryShape::Point,
             },
