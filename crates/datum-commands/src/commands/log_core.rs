@@ -768,17 +768,13 @@ pub(crate) fn parse_log_args(
         }
     }
 
-    // da-ju71.4: collapse the trivial `state: {id: x}` Object back to a
-    // scalar when no other `state.*` keys are present, so a user's bare
-    // `state=true` round-trips to `entry.state = true` instead of getting
-    // gratuitously nested as `{id: true}`. The Structured state shape is
-    // still produced when dot-prefixed siblings are present.
-    if let Some(JsonValue::Object(state_obj)) = datum_data.get_mut("state") {
-        if state_obj.len() == 1 {
-            if let Some(id) = state_obj.remove("id") {
-                datum_data.insert("state".to_string(), id);
-            }
-        }
+    // da-ju71.4 / da-rori: normalize state *here* (before slug derivation
+    // below reads `state.id`) via the shared `normalize_state`. The same
+    // step runs again at the `extract_reserved_columns` boundary that both
+    // insert and update share — it is idempotent, so the early collapse
+    // for slug timing and the boundary collapse agree.
+    if let Some(slot) = datum_data.get_mut("state") {
+        *slot = normalize_state(std::mem::replace(slot, JsonValue::Null));
     }
 
     // Value extraction: pull from the PRIMARY_VALUE_KEY remainder bucket.
@@ -1349,6 +1345,25 @@ pub(crate) struct ReservedColumns {
 /// signed offsets, `now`) is left to callers to interpret — the
 /// existing time-flag pipeline already handles common cases via
 /// `-t/--time`; sub-bead 6 (import) drives the column-keyed form.
+/// da-ju71.4 / da-rori: normalize an extracted `state` value. Collapse the
+/// trivial single-key `{id: x}` Object back to the scalar `x` so a bare
+/// `state=v` round-trips to `entry.state = v` instead of the gratuitously
+/// nested `{id: v}`. Structured state (dot-prefixed `state.*` siblings) has
+/// more than one key and is left intact. Idempotent on scalars and arrays,
+/// so callers may pre-normalize (e.g. for slug derivation) without the
+/// shared boundary double-collapsing.
+pub(crate) fn normalize_state(state: JsonValue) -> JsonValue {
+    if let JsonValue::Object(mut obj) = state {
+        if obj.len() == 1 {
+            if let Some(id) = obj.remove("id") {
+                return id;
+            }
+        }
+        return JsonValue::Object(obj);
+    }
+    state
+}
+
 pub(crate) fn extract_reserved_columns(
     extra_data: &mut Option<JsonValue>,
 ) -> Result<ReservedColumns> {
@@ -1357,7 +1372,10 @@ pub(crate) fn extract_reserved_columns(
         return Ok(out);
     };
     if let Some(v) = obj.remove("state") {
-        out.state = Some(v);
+        // da-rori: normalize at the shared boundary so `update <hid>
+        // state=X` and `switch f X` yield the same `entry.state` shape.
+        // Both the insert and update paths route state through here.
+        out.state = Some(normalize_state(v));
     }
     if let Some(v) = obj.remove("dur") {
         // `dur=null` (or string `"null"`) is a sentinel for "no
@@ -1937,5 +1955,59 @@ mod tests {
         assert_eq!(e.following_state, Some(serde_json::json!("sit")));
         // Moment → dur=PT0S (zero seconds).
         assert_eq!(e.duration_seconds(), Some(0));
+    }
+
+    /// da-rori: the shared `extract_reserved_columns` boundary normalizes
+    /// state so insert and update can't drift. A trivial single-key
+    /// `{id: x}` collapses to the scalar `x`.
+    #[test]
+    fn extract_reserved_columns_collapses_trivial_state_id() {
+        let mut data = Some(serde_json::json!({"state": {"id": "happy"}}));
+        let reserved = extract_reserved_columns(&mut data).unwrap();
+        assert_eq!(reserved.state, Some(serde_json::json!("happy")));
+        // state never leaks back into the data payload.
+        assert!(data.is_none());
+    }
+
+    /// da-rori: structured state (multiple `state.*` siblings) survives the
+    /// boundary intact — only the trivial `{id}` shape collapses.
+    #[test]
+    fn extract_reserved_columns_keeps_structured_state() {
+        let mut data = Some(serde_json::json!({"state": {"a": 1, "b": 2}}));
+        let reserved = extract_reserved_columns(&mut data).unwrap();
+        assert_eq!(reserved.state, Some(serde_json::json!({"a": 1, "b": 2})));
+    }
+
+    /// da-rori: `normalize_state` is idempotent on already-normalized shapes
+    /// (scalars, arrays), so the insert path's pre-slug collapse and the
+    /// shared boundary collapse agree.
+    #[test]
+    fn normalize_state_idempotent_on_scalars_and_arrays() {
+        assert_eq!(
+            normalize_state(serde_json::json!("happy")),
+            serde_json::json!("happy"),
+        );
+        assert_eq!(
+            normalize_state(serde_json::json!(["a", "b"])),
+            serde_json::json!(["a", "b"]),
+        );
+        assert_eq!(
+            normalize_state(serde_json::json!({"id": 5})),
+            serde_json::json!(5)
+        );
+    }
+
+    /// da-rori parity: `switch mood happy` produces a scalar `entry.state`.
+    /// The update-side parity assertion lives in `update_core` tests; both
+    /// now route through the same `normalize_state` boundary.
+    #[test]
+    fn switch_yields_scalar_state() {
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::fresh("mood");
+        args.rest = vec!["happy".to_string()];
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].state, Some(serde_json::json!("happy")));
     }
 }

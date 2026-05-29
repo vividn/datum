@@ -626,16 +626,10 @@ pub(crate) fn parse_update_payload(args: &UpdateArgs) -> Result<UpdatePayload> {
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
-    // da-ju71.4: same trivial-state collapse as `parse_log_args` — a bare
-    // `state=v` should round-trip as a scalar, not as `{id: v}`.
-    if let Some(JsonValue::Object(state_obj)) = datum_data.get_mut("state") {
-        if state_obj.len() == 1 {
-            if let Some(id) = state_obj.remove("id") {
-                datum_data.insert("state".to_string(), id);
-            }
-        }
-    }
-
+    // da-rori: state normalization (the trivial `{id: v}` → scalar collapse)
+    // now lives at the shared `extract_reserved_columns` boundary that
+    // `apply_mutation` runs on this payload, so `update <hid> state=v` and
+    // `switch f v` produce the same `entry.state` shape by construction.
     let value = datum_data.remove(PRIMARY_VALUE_KEY);
 
     // Preserve update's empty-string drop sentinel: `KEY=` (or `-k KEY=`)
@@ -951,6 +945,79 @@ mod tests {
                 "{strategy:?}: expected tombstone error, got: {err}"
             );
         }
+    }
+
+    /// da-rori: `update <hid> state=happy` must yield the SAME scalar
+    /// `entry.state` as `switch mood happy` — the trivial `{id: "happy"}`
+    /// collapses at the shared `extract_reserved_columns` boundary, and
+    /// state never leaks into `data`.
+    #[test]
+    fn update_state_key_collapses_trivial_id_to_scalar() {
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("sad")),
+            None,
+        );
+
+        let payload = parse_update_payload(&update_args(&e.slug, vec!["state=happy"])).unwrap();
+        let outcome = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: payload.value,
+                payload_extra: payload.extra,
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.entry.state, Some(serde_json::json!("happy")));
+        assert_eq!(outcome.entry.value, Some(serde_json::json!("happy")));
+        assert!(
+            outcome
+                .entry
+                .data
+                .as_ref()
+                .is_none_or(|d| d.get("state").is_none()),
+            "state must not leak into data: {:?}",
+            outcome.entry.data,
+        );
+    }
+
+    /// da-rori: structured state (`state.a`, `state.b`) normalizes
+    /// identically on the update path — left intact, not collapsed.
+    #[test]
+    fn update_structured_state_survives_intact() {
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("x")),
+            None,
+        );
+
+        let payload = parse_update_payload(&update_args(&e.slug, vec![".a=1", ".b=2"])).unwrap();
+        let outcome = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: payload.value,
+                payload_extra: payload.extra,
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcome.entry.state,
+            Some(serde_json::json!({"a": 1, "b": 2}))
+        );
     }
 
     #[test]
