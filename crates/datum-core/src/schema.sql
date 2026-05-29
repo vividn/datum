@@ -1,4 +1,4 @@
--- datum SQLite schema (v29 — occur_time nullable for timeless adds, da-lxyw).
+-- datum SQLite schema (v30 — indexed modify_time_ms for SQL-side sync filtering, da-x3da).
 --
 -- Time-shape pivot 2026-05-01: the entries table reverts from the
 -- start_time/end_time/entry_shape/intent shape to the original datum
@@ -94,6 +94,15 @@ CREATE TABLE IF NOT EXISTS entries (
     -- conflict resolution mutate it. Not part of `content_hash`.
     extra_metadata TEXT,
 
+    -- da-x3da: epoch-ms of `modify_time`, derived (not stored input) so it
+    -- always tracks the RFC3339 source. VIRTUAL + the index below let sync
+    -- push filter `WHERE modify_time_ms > ?` instead of scanning every row.
+    -- `unixepoch(.., 'subsec')` gives fractional seconds; ×1000 + truncating
+    -- CAST yields ms. The push watermark uses this same metric on both ends,
+    -- so its sub-ms float deviation from chrono is self-consistent.
+    modify_time_ms INTEGER GENERATED ALWAYS AS
+        (CAST(unixepoch(modify_time, 'subsec') * 1000 AS INTEGER)) VIRTUAL,
+
     -- `following_state` is only meaningful when `dur` is set. The
     -- parser-level rejection in da-5ns.3 keeps malformed inserts from
     -- ever reaching this layer; the CHECK is a defence-in-depth gate
@@ -136,6 +145,12 @@ CREATE INDEX IF NOT EXISTS entries_content_hash
 
 -- Filter by stored verb (e.g. "only switch events in this window").
 CREATE INDEX IF NOT EXISTS entries_verb ON entries (verb);
+
+-- da-x3da: sync push filters `WHERE modify_time_ms > <watermark>`. Indexing
+-- the virtual generated column materializes the computed epoch-ms so the
+-- range filter is a b-tree seek instead of a full-table scan.
+CREATE INDEX IF NOT EXISTS entries_modify_time_ms
+    ON entries (modify_time_ms);
 
 -- Bare-time tail/head (no `--field` filter) orders by `occur_time`.
 -- Without this index the planner falls back to a full SCAN + temp

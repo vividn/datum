@@ -35,7 +35,7 @@ use reqwest::blocking::Client;
 use crate::crypto::changeset::{decrypt_changeset, encrypt_changeset, Changeset, EncryptedBlob};
 use crate::http::session::Session;
 use crate::http::{pull_batch, push_blob, PulledChangeset};
-use crate::ops::{apply_changeset, pack_changeset};
+use crate::ops::{apply_changeset, pack_changeset_since};
 use crate::sync_state;
 
 /// Direction of a sync cycle. `Both` is the default for `datum sync` with
@@ -139,7 +139,10 @@ pub fn push_once(
     dry_run: bool,
 ) -> Result<PushOutcome> {
     let watermark = sync_state::get_push_seq(db)?;
-    let changeset = pack_changeset(db, watermark)?;
+    // `max_ms` is the largest `modify_time_ms` over exactly the packed rows,
+    // computed in the same query as the filter — re-using it as the next
+    // watermark cannot skip a row (see `pack_changeset_since`).
+    let (changeset, max_ms) = pack_changeset_since(db, watermark)?;
     let entry_count = changeset_entry_count(&changeset);
     if entry_count == 0 {
         return Ok(PushOutcome::default());
@@ -212,7 +215,7 @@ pub fn push_once(
         sync_state::set_cluster_generation(db, ack.generation)?;
     }
 
-    let advance_to = max_modify_time_ms(&changeset).unwrap_or(watermark);
+    let advance_to = max_ms.unwrap_or(watermark);
     if advance_to > watermark {
         sync_state::advance_push_seq(db, advance_to)?;
     }
@@ -325,28 +328,6 @@ pub fn pull_once(
 
 fn changeset_entry_count(cs: &Changeset) -> usize {
     entries_array(cs).map(|a| a.len()).unwrap_or(0)
-}
-
-fn max_modify_time_ms(cs: &Changeset) -> Option<u64> {
-    let arr = entries_array(cs)?;
-    let mut max: Option<u64> = None;
-    for entry in arr {
-        let Some(mt) = entry.get("modify_time").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Ok(dt) = chrono::DateTime::parse_from_rfc3339(mt) else {
-            continue;
-        };
-        let ms = dt.timestamp_millis();
-        if ms >= 0 {
-            let ms = ms as u64;
-            max = Some(match max {
-                Some(cur) => cur.max(ms),
-                None => ms,
-            });
-        }
-    }
-    max
 }
 
 /// Peek at the `entries` JSON array inside a packed changeset. The wire

@@ -155,6 +155,7 @@ fn every_pair_has_a_roundtrip_test() {
         (26, 27),
         (27, 28),
         (28, 29),
+        (29, 30),
     ];
     assert_eq!(
         covered.len(),
@@ -1349,4 +1350,68 @@ fn roundtrip_v28_to_v29_occur_time_nullable() {
         backfilled, "2024-03-03T03:03:03+00:00",
         "down step backfills NULL occur_time with create_time",
     );
+}
+
+/// da-x3da: v29→v30 adds the `modify_time_ms` virtual generated column
+/// (epoch-ms of `modify_time`) plus an index, so sync push can filter
+/// `WHERE modify_time_ms > ?` against a b-tree instead of scanning the whole
+/// table. Existing rows survive; the computed value matches the RFC3339
+/// source. The down step drops the index then the column.
+#[test]
+fn roundtrip_v29_to_v30_modify_time_ms_index() {
+    let db = fresh_at(29);
+    let conn = db.conn();
+    assert!(!column_exists(conn, "entries", "modify_time_ms"));
+    assert!(!index_exists(conn, "entries_modify_time_ms"));
+
+    // Whole-second modify_time so the float metric equals chrono exactly.
+    conn.execute(
+        r#"INSERT INTO entries
+              (hid, slug, content_hash, field, verb, occur_time,
+               create_time, modify_time, device_id, raw_input, parser_version)
+           VALUES ('h1', 'mood:1', 'h', 'mood', 'point', '2026-05-01T00:00:00+00:00',
+                   '2026-05-01T00:00:00+00:00', '2026-05-01T12:34:56+00:00', 'dev', '', 1)"#,
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 29);
+    assert!(column_exists(conn, "entries", "modify_time_ms"));
+    assert!(index_exists(conn, "entries_modify_time_ms"));
+
+    // The generated column equals the epoch-ms of `2026-05-01T12:34:56Z`.
+    let ms: i64 = conn
+        .query_row(
+            "SELECT modify_time_ms FROM entries WHERE hid = 'h1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        ms, 1_777_638_896_000,
+        "modify_time_ms = epoch-ms of modify_time"
+    );
+
+    // The watermark filter hits the index rather than scanning the table.
+    let plan: String = conn
+        .query_row(
+            "EXPLAIN QUERY PLAN SELECT * FROM entries WHERE modify_time_ms > ?1",
+            [0_i64],
+            |r| r.get(3),
+        )
+        .unwrap();
+    assert!(
+        plan.contains("entries_modify_time_ms"),
+        "expected index seek, planner chose: {plan}"
+    );
+
+    apply_one_down(conn, 30);
+    assert!(!index_exists(conn, "entries_modify_time_ms"));
+    assert!(!column_exists(conn, "entries", "modify_time_ms"));
+    let surviving: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entries WHERE hid = 'h1'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(surviving, 1, "down drops column/index but preserves rows");
 }

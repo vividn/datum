@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 29;
+pub const CURRENT_SCHEMA_VERSION: u32 = 30;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -238,7 +238,70 @@ pub const MIGRATIONS: &[Migration] = &[
         apply: m28_to_29_occur_time_nullable,
         down: down_29_to_28_occur_time_nullable,
     },
+    Migration {
+        from: 29,
+        to: 30,
+        summary: "entries: add indexed modify_time_ms (epoch-ms of modify_time) so sync push filters in SQL instead of scanning every row (da-x3da)",
+        apply: m29_to_30_modify_time_ms_index,
+        down: down_30_to_29_modify_time_ms_index,
+    },
 ];
+
+/// SQL expression deriving epoch-ms from the RFC3339 `modify_time` string.
+/// Kept in one place so the generated column (migration + schema.sql) and any
+/// future reader agree on the metric. `unixepoch(.., 'subsec')` returns
+/// fractional seconds; ×1000 + truncating CAST yields milliseconds. The push
+/// pipeline uses this metric for BOTH the watermark filter and the watermark
+/// it advances to, so the (sub-millisecond) float deviation from chrono's
+/// `timestamp_millis` is self-consistent and cannot skip a row.
+const MODIFY_TIME_MS_EXPR: &str = "CAST(unixepoch(modify_time, 'subsec') * 1000 AS INTEGER)";
+
+/// da-x3da: add a `modify_time_ms` virtual generated column (epoch-ms of the
+/// RFC3339 `modify_time`) plus an index, so `select_entries_since` can push
+/// its watermark filter into SQL (`WHERE modify_time_ms > ?`) and stop
+/// scanning the whole `entries` table on every push.
+///
+/// VIRTUAL (not STORED) because `ALTER TABLE ADD COLUMN` only permits virtual
+/// generated columns; the index materializes the computed values so the range
+/// filter still uses a b-tree seek. Additive and idempotent.
+fn m29_to_30_modify_time_ms_index(conn: &Connection) -> Result<()> {
+    // `pragma_table_info` omits virtual generated columns — probe with
+    // `pragma_table_xinfo`, which lists them.
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_xinfo('entries') WHERE name = 'modify_time_ms'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        conn.execute_batch(&format!(
+            "ALTER TABLE entries ADD COLUMN modify_time_ms INTEGER \
+                GENERATED ALWAYS AS ({MODIFY_TIME_MS_EXPR}) VIRTUAL;"
+        ))?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS entries_modify_time_ms ON entries (modify_time_ms);",
+    )?;
+    Ok(())
+}
+
+/// Reverse 30→29 — drop the index and the generated column. The index must
+/// go first: SQLite refuses to drop a column an index still references.
+fn down_30_to_29_modify_time_ms_index(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP INDEX IF EXISTS entries_modify_time_ms;")?;
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_xinfo('entries') WHERE name = 'modify_time_ms'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if has_col {
+        conn.execute_batch("ALTER TABLE entries DROP COLUMN modify_time_ms;")?;
+    }
+    Ok(())
+}
 
 /// da-5ns.1: time-shape pivot. Reverts daydumb's time model from
 /// start_time/end_time/entry_shape/intent shape back to occur_time +
@@ -2585,6 +2648,7 @@ mod tests {
             "entries_field_structure",
             "entries_id_structure",
             "entries_live_field_occur",
+            "entries_modify_time_ms",
             "entries_occur_time",
             "entries_slug",
             "entries_verb",

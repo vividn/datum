@@ -10,8 +10,10 @@
 //! # Watermark model
 //!
 //! - `since_seq` in [`pack_changeset`] is a local watermark: the largest
-//!   `modified_at` epoch-ms already included in a prior pack. Passing `0`
-//!   produces a full dump of every live and tombstoned entry.
+//!   `modify_time_ms` (epoch-ms) already included in a prior pack. Passing
+//!   `0` produces a full dump of every live and tombstoned entry. The push
+//!   path uses [`pack_changeset_since`] to advance the watermark to the max
+//!   metric of exactly the rows it packed.
 //! - [`crate::sync_state::advance_push_seq`] /
 //!   [`crate::sync_state::advance_pull_seq`] record the latest seq the
 //!   relay accepted on a push and the latest server-assigned global seq
@@ -43,13 +45,24 @@ struct ChangesetPayloadV1 {
 /// [`crate::crypto::changeset::encrypt_changeset`] before it leaves the
 /// device.
 pub fn pack_changeset(db: &Db, since_seq: u64) -> Result<Changeset> {
-    let entries = select_entries_since(db, since_seq)?;
+    Ok(pack_changeset_since(db, since_seq)?.0)
+}
+
+/// Like [`pack_changeset`] but also returns the largest `modify_time_ms`
+/// (epoch-ms metric) among the packed rows — the value the caller advances
+/// the push watermark to. Both the row filter and this maximum read the same
+/// `modify_time_ms` generated column in a single query, so the watermark
+/// exactly matches the packed set (no chrono-vs-SQL drift, no TOCTOU against
+/// a concurrent writer) and re-using it as the next `since_seq` cannot skip a
+/// row. Returns `None` when nothing was packed.
+pub fn pack_changeset_since(db: &Db, since_seq: u64) -> Result<(Changeset, Option<u64>)> {
+    let (entries, max_ms) = select_entries_since(db, since_seq)?;
     let payload = ChangesetPayloadV1 { entries };
     let json = serde_json::to_vec(&payload)?;
     let mut bytes = Vec::with_capacity(CHANGESET_MAGIC_V1.len() + json.len());
     bytes.extend_from_slice(CHANGESET_MAGIC_V1);
     bytes.extend_from_slice(&json);
-    Ok(Changeset::from_bytes(bytes))
+    Ok((Changeset::from_bytes(bytes), max_ms))
 }
 
 /// Apply a received changeset to the local DB using last-writer-wins on
@@ -80,24 +93,37 @@ fn parse_payload(bytes: &[u8]) -> Result<ChangesetPayloadV1> {
     Ok(payload)
 }
 
-fn select_entries_since(db: &Db, since_ms: u64) -> Result<Vec<Entry>> {
-    // Fetch candidate rows and filter by epoch-ms in Rust — the stored
-    // `modify_time` is RFC3339, so a pure-SQL comparison would require a
-    // cast-and-parse dance that's more fragile than a one-pass filter.
-    // Use `SELECT *` so the generated `verb` / `dur_seconds` columns are
-    // included without listing them explicitly.
-    let mut stmt = db
-        .conn()
-        .prepare("SELECT * FROM entries ORDER BY modify_time")?;
-    let rows = stmt.query_map([], datum_core::db::row_to_entry_public)?;
+/// Select every entry whose `modify_time_ms` exceeds `since_ms`, returning
+/// the rows and the maximum `modify_time_ms` among them.
+///
+/// The watermark filter is pushed into SQL against the indexed
+/// `modify_time_ms` generated column (da-x3da), so this is a b-tree range
+/// seek rather than a full-table scan + Rust-side filter. `since_ms == 0`
+/// still selects every live/tombstoned row (a full dump). The max is taken
+/// from the same query so it is exactly the largest metric in the packed set.
+fn select_entries_since(db: &Db, since_ms: u64) -> Result<(Vec<Entry>, Option<u64>)> {
+    // Alias `modify_time_ms` so we can read it by a stable name regardless of
+    // whether `SELECT *` surfaces the generated column on this SQLite build.
+    let mut stmt = db.conn().prepare(
+        "SELECT *, modify_time_ms AS _mtms FROM entries \
+         WHERE modify_time_ms > ?1 ORDER BY modify_time_ms",
+    )?;
+    let rows = stmt.query_map([since_ms as i64], |row| {
+        let entry = datum_core::db::row_to_entry_public(row)?;
+        let ms: i64 = row.get("_mtms")?;
+        Ok((entry, ms))
+    })?;
     let mut out = Vec::new();
+    let mut max_ms: Option<u64> = None;
     for row in rows {
-        let entry = row?;
-        if entry.modify_time.timestamp_millis() as u64 > since_ms {
-            out.push(entry);
+        let (entry, ms) = row?;
+        if ms >= 0 {
+            let ms = ms as u64;
+            max_ms = Some(max_ms.map_or(ms, |cur| cur.max(ms)));
         }
+        out.push(entry);
     }
-    Ok(out)
+    Ok((out, max_ms))
 }
 
 fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
@@ -298,6 +324,47 @@ mod tests {
         let payload = parse_payload(cs.as_bytes()).unwrap();
         assert_eq!(payload.entries.len(), 1);
         assert_eq!(payload.entries[0].field, "mood");
+    }
+
+    /// The watermark filter must hit the `entries_modify_time_ms` index, not
+    /// fall back to a full scan — that is the whole point of da-x3da.
+    #[test]
+    fn pack_filter_uses_modify_time_ms_index() {
+        let db = fresh_db();
+        let plan: String = db
+            .conn()
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT *, modify_time_ms AS _mtms FROM entries \
+                 WHERE modify_time_ms > ?1 ORDER BY modify_time_ms",
+                [0_i64],
+                |row| row.get(3),
+            )
+            .unwrap();
+        assert!(
+            plan.contains("entries_modify_time_ms"),
+            "expected index seek, planner chose: {plan}"
+        );
+    }
+
+    /// Re-using the returned max as the next watermark packs each row exactly
+    /// once: a second pack from that watermark, with no new writes, is empty.
+    #[test]
+    fn watermark_from_max_packs_each_row_once() {
+        let db = fresh_db();
+        db.insert_entry(&make_entry("coffee", 0)).unwrap();
+        db.insert_entry(&make_entry("mood", 120)).unwrap();
+
+        let (cs, max_ms) = pack_changeset_since(&db, 0).unwrap();
+        assert_eq!(parse_payload(cs.as_bytes()).unwrap().entries.len(), 2);
+        let watermark = max_ms.expect("packed rows yield a watermark");
+
+        let (cs2, max2) = pack_changeset_since(&db, watermark).unwrap();
+        assert_eq!(
+            parse_payload(cs2.as_bytes()).unwrap().entries.len(),
+            0,
+            "rows at or below the advanced watermark must not re-pack"
+        );
+        assert_eq!(max2, None);
     }
 
     #[test]
