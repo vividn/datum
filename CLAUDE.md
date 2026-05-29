@@ -116,8 +116,36 @@ Polecat sessions should run `scripts/check-changed.sh` instead of
 but scoped to workspace crates the diff touches plus their transitive
 workspace dependents — falls back to the full `scripts/check.sh` battery
 on workspace-root config changes, empty-crate diffs, or when the closure
-covers ≥75% of the workspace. CI and the refinery always run the full
-battery as the safety net.
+covers ≥75% of the workspace. CI always runs the full battery as the
+safety net; the refinery gate runs the full battery **only if its rig
+config is set to** (see below).
+
+### Refinery merge gate — configuration & hazard
+
+The refinery's pre-merge verification is driven by an **agent checklist**
+that runs each gate **only if the matching command is set** in the rig's
+`merge_queue` config (`<rig>/settings/config.json`, which lives **outside
+this git repo**):
+
+```json
+{ "merge_queue": {
+    "build_command": "...", "test_command": "...", "lint_command": "..." } }
+```
+
+Hazard: an unset `test_command` (or `build_command`) does **not** error —
+that gate is silently skipped. This is exactly how red-test commits
+(`no such table: sync_state`, 2026-05-22) landed on main: the config had
+only `lint_command`, so the refinery ran clippy/fmt but **no tests at all**
+(da-sfzj). Because the bug was also nextest-only (process isolation; plain
+`cargo test`'s shared connection state masks the migration-walk dependency),
+polecats running `cargo test` locally saw green too.
+
+To keep the gate durable and impossible to half-configure, point all three
+commands at the in-repo canonical battery so the gate logic is version-
+controlled and unconditional: e.g. `test_command` → `bash scripts/check.sh`
+(it already mirrors CI exactly: fmt, clippy `-D warnings`, build, nextest,
+doc tests). The refinery must run the **full** battery, never a scoped
+subset — it is the last line of defense after the scoped polecat pre-submit.
 
 ## Build status (as of 2026-04-16)
 
