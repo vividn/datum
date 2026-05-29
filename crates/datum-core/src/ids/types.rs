@@ -19,11 +19,16 @@ use rusqlite::ToSql;
 use serde::{Deserialize, Serialize};
 
 /// Random 12-char base36 entry id. PRIMARY KEY in `entries`.
+///
+/// Local-only identity: a cross-device sync merge keys on `slug` and adopts
+/// the LWW winner's hid, so a row's hid is NOT stable across merges. Use
+/// [`Slug`] as the durable cross-device identity.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(transparent)]
 pub struct Hid(pub String);
 
 /// Human-facing entry reference (`field:<ident>`). UNIQUE-indexed in `entries`.
+/// Durable cross-device identity — sync merges key on the slug (see [`Hid`]).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(transparent)]
 pub struct Slug(pub String);

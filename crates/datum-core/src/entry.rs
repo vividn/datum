@@ -152,10 +152,19 @@ pub fn new_hid() -> Hid {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
     /// Random 12-char base36 id — prefix-addressable, unique. PRIMARY KEY.
+    ///
+    /// Local primary key only — NOT stable across a cross-device sync merge.
+    /// `upsert_lww` keys on `slug` and, on conflict, takes the LWW winner's
+    /// `hid` (`ON CONFLICT(slug) DO UPDATE SET hid = excluded.hid`), so a row's
+    /// hid can change when two devices' edits to the same slug merge. The
+    /// **slug** is the durable identity for sync; do not assume hid permanence.
     pub hid: Hid,
 
     /// datum-compatible human reference (`field:timestamp` or similar).
     /// UNIQUE-indexed, derived at write time from field + id-keys.
+    ///
+    /// Durable cross-device identity: sync merges key on `slug`, so it is the
+    /// stable handle across devices (unlike `hid`, which the LWW winner sets).
     pub slug: Slug,
 
     /// SHA-256 of the identity-defining fields for dedup.

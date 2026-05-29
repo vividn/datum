@@ -163,6 +163,10 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             ?27
         )
         ON CONFLICT(slug) DO UPDATE SET
+            -- Merge keys on slug (the durable cross-device identity). On
+            -- conflict the row takes the LWW winner's hid, so hid is NOT
+            -- stable across a cross-device merge — slug is. Code must not
+            -- assume hid permanence across sync.
             hid             = excluded.hid,
             content_hash    = excluded.content_hash,
             field           = excluded.field,
