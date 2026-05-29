@@ -18,6 +18,15 @@ pub struct PushRequest {
     /// whose generation disagrees with the cluster's current value with
     /// [`crate::errors::SyncProtocolError::GenerationMismatch`].
     pub generation: u64,
+    /// The per-device `seq` the client predicted (`my_push_seq + 1`) and
+    /// bound into the changeset's AAD at encrypt time. The server compares
+    /// it to its own authoritative next seq; a disagreement is rejected
+    /// with [`crate::errors::SyncProtocolError::SeqMismatch`] *before* the
+    /// blob is stored, so a corrupt-AAD row never lands. Unlike the old
+    /// store-then-assign flow this makes the mismatch recoverable: the
+    /// client re-bases to the returned `expected`, re-encrypts, and
+    /// retries (da-ca4q).
+    pub predicted_seq: i64,
 }
 
 /// `POST /v1/push` response body. Returns the per-device monotonic seq
@@ -111,14 +120,17 @@ mod tests {
             payload_b64: "AAAA".into(),
             cluster_id: "c-7".into(),
             generation: 42,
+            predicted_seq: 5,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"cluster_id\":\"c-7\""), "wire key: {json}");
         assert!(json.contains("\"generation\":42"), "wire key: {json}");
+        assert!(json.contains("\"predicted_seq\":5"), "wire key: {json}");
 
         let back: PushRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(back.cluster_id, "c-7");
         assert_eq!(back.generation, 42);
+        assert_eq!(back.predicted_seq, 5);
     }
 
     #[test]

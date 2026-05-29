@@ -24,6 +24,13 @@ pub enum HttpError {
     /// strings (da-eu7o, sub-4 of multi-DB epic).
     #[error(transparent)]
     GenerationMismatch(SyncProtocolError),
+    /// The relay returned 409 with a structured
+    /// [`SyncProtocolError::SeqMismatch`] body. Distinct from
+    /// `GenerationMismatch` because the caller's recovery differs: a seq
+    /// mismatch is fixed in-band by re-basing `my_push_seq`, re-encrypting,
+    /// and retrying the push (da-ca4q), not by re-initialising the cluster.
+    #[error(transparent)]
+    SeqMismatch(SyncProtocolError),
     /// Anything else: network failure, non-401 status, decode error.
     #[error(transparent)]
     Other(#[from] anyhow::Error),

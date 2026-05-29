@@ -243,6 +243,22 @@ pub fn get_passkeys(conn: &Connection, user_id: &Uuid) -> Result<Vec<Passkey>> {
     Ok(passkeys)
 }
 
+/// The per-device `seq` the next push from `device_id` will be assigned
+/// (`MAX(seq) + 1`, or 1 for a device that has never pushed). The push
+/// handler reads this to validate the client's `predicted_seq` *before*
+/// inserting, so a seq the client mispredicted is rejected with
+/// [`SyncProtocolError::SeqMismatch`] instead of stored with a corrupt
+/// AAD (da-ca4q). The whole handler holds the db lock, so this peek and
+/// the subsequent insert see the same value.
+pub fn peek_next_seq(conn: &Connection, device_id: &str) -> Result<i64> {
+    conn.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM changesets WHERE device_id = ?1",
+        params![device_id],
+        |row| row.get(0),
+    )
+    .context("compute next seq")
+}
+
 /// Insert a changeset for a device. Returns (global_id, per_device_seq).
 /// Defaults `cluster_id` to the device's owning user and `generation`
 /// to 0 — the transitional v1 shape from da-og24. Callers that have
@@ -265,13 +281,7 @@ pub fn insert_changeset_into_cluster(
     cluster_id: Option<&str>,
     generation: i64,
 ) -> Result<(i64, i64)> {
-    let seq: i64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(seq), 0) + 1 FROM changesets WHERE device_id = ?1",
-            params![device_id],
-            |row| row.get(0),
-        )
-        .context("compute next seq")?;
+    let seq = peek_next_seq(conn, device_id)?;
 
     // When the caller doesn't supply a cluster_id, fall back to the
     // device's owning user — the da-og24 transitional default. If

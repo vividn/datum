@@ -2,6 +2,7 @@ use axum::{
     extract::{Query, State},
     Extension, Json,
 };
+use datum_sync_protocol::SyncProtocolError;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -28,6 +29,22 @@ pub async fn push(
     // Generation match — the wire-required generation must match the
     // server's authoritative value.
     cluster::check_generation(server_generation, req.generation)?;
+
+    // Seq match (da-ca4q) — the client predicts its per-device seq and
+    // binds it into the changeset AAD at encrypt time. Validate that
+    // prediction against our authoritative next seq BEFORE storing, so a
+    // row whose AAD seq disagrees with its stored seq never lands (peers
+    // could not decrypt it). A disagreement is recoverable, not fatal:
+    // we hand back `expected` and the client re-bases, re-encrypts, and
+    // retries. Holding the db lock for the whole handler makes this peek
+    // and the insert below observe the same next seq.
+    let expected_seq = db::peek_next_seq(&conn, &req.device_id)?;
+    if req.predicted_seq != expected_seq {
+        return Err(AppError::SeqMismatch(SyncProtocolError::SeqMismatch {
+            expected: expected_seq,
+            predicted: req.predicted_seq,
+        }));
+    }
 
     // Server is content-blind: stores payload_b64 string opaquely (per spec §Goals).
     let (_, seq) = db::insert_changeset_into_cluster(

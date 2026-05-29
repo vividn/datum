@@ -73,6 +73,26 @@ pub fn advance_my_push_seq(db: &Db, new_seq: u64) -> Result<()> {
     Ok(())
 }
 
+/// Force `my_push_seq` to an exact value, bypassing the monotonic guard
+/// in [`advance_my_push_seq`]. Used ONLY by the seq-mismatch recovery
+/// path (da-ca4q): the relay handed back its authoritative next seq, and
+/// that value may legitimately be *lower* than our stored one (relay
+/// reset, or a DB restored from a backup the relay has since moved past).
+/// Treating the relay as authoritative here is what un-softlocks the
+/// client — the normal push path keeps using `advance_my_push_seq`.
+pub fn set_my_push_seq(db: &Db, new_seq: u64) -> Result<()> {
+    let now_ms = Utc::now().timestamp_millis();
+    db.conn().execute(
+        "INSERT INTO sync_state (db_id, my_push_seq, last_push_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(db_id) DO UPDATE SET
+            my_push_seq  = excluded.my_push_seq,
+            last_push_at = excluded.last_push_at",
+        params![DEFAULT_DB_ID, new_seq as i64, now_ms],
+    )?;
+    Ok(())
+}
+
 fn read_seq_column(db: &Db, col: &str) -> Result<u64> {
     let sql = format!("SELECT {col} FROM sync_state WHERE db_id = ?1",);
     let got: Option<i64> = db
@@ -236,6 +256,30 @@ mod tests {
         advance_pull_seq(&db, 7).unwrap();
         assert_eq!(get_pull_seq(&db).unwrap(), 7);
         assert_eq!(get_push_seq(&db).unwrap(), 12);
+    }
+
+    /// da-ca4q: `advance_my_push_seq` is monotonic, but the seq-mismatch
+    /// recovery path uses `set_my_push_seq` to force the relay's
+    /// authoritative value — which may legitimately rewind *below* the
+    /// stored seq (relay reset / older-backup restore). The forced set
+    /// must succeed where the monotonic advance refuses.
+    #[test]
+    fn set_my_push_seq_forces_rebase_past_monotonic_guard() {
+        let db = fresh_db();
+        advance_my_push_seq(&db, 10).unwrap();
+        assert_eq!(get_my_push_seq(&db).unwrap(), 10);
+
+        // Monotonic guard rejects a rewind...
+        assert!(advance_my_push_seq(&db, 3).is_err());
+        assert_eq!(get_my_push_seq(&db).unwrap(), 10);
+
+        // ...but the recovery force-set rebases down to the relay's value.
+        set_my_push_seq(&db, 3).unwrap();
+        assert_eq!(get_my_push_seq(&db).unwrap(), 3);
+
+        // And forward re-base works too (the common crash-recovery case).
+        set_my_push_seq(&db, 8).unwrap();
+        assert_eq!(get_my_push_seq(&db).unwrap(), 8);
     }
 
     /// da-eu7o: a fresh DB reports no cluster_id and generation 0; the

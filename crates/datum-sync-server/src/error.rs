@@ -38,6 +38,14 @@ pub enum AppError {
     /// serde tag).
     #[error(transparent)]
     GenerationMismatch(SyncProtocolError),
+
+    /// da-ca4q: the client's predicted per-device seq disagrees with the
+    /// server's authoritative next seq. Surfaces as HTTP 409 with the
+    /// same tagged-enum payload so clients route on `kind`; unlike
+    /// GenerationMismatch the client recovers in-band (re-base,
+    /// re-encrypt, retry) rather than re-initialising.
+    #[error(transparent)]
+    SeqMismatch(SyncProtocolError),
 }
 
 impl From<anyhow::Error> for AppError {
@@ -48,19 +56,21 @@ impl From<anyhow::Error> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        // GenerationMismatch is the only variant that emits a
-        // structured wire-error body (the protocol crate's
-        // SyncProtocolError serialization) so clients can route on
-        // `kind`. Other variants stay on the legacy `{ "error": "..." }`
-        // shape until they grow protocol-crate counterparts.
-        if let AppError::GenerationMismatch(ref err) = self {
+        // GenerationMismatch and SeqMismatch emit a structured wire-error
+        // body (the protocol crate's SyncProtocolError serialization) as
+        // HTTP 409 so clients can route on `kind`. Other variants stay on
+        // the legacy `{ "error": "..." }` shape until they grow
+        // protocol-crate counterparts.
+        if let AppError::GenerationMismatch(ref err) | AppError::SeqMismatch(ref err) = self {
             return (StatusCode::CONFLICT, Json(err)).into_response();
         }
         let (status, message) = match &self {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
-            AppError::GenerationMismatch(_) => unreachable!("handled above"),
+            AppError::GenerationMismatch(_) | AppError::SeqMismatch(_) => {
+                unreachable!("handled above")
+            }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
 

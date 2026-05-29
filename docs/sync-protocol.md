@@ -178,30 +178,64 @@ peer-to-peer handshake; it is outside the v1 contract.
 
 ### `POST /v1/push`
 
-Upload a single encrypted changeset. The server assigns a per-device
-monotonic `seq`.
+Upload a single encrypted changeset. The server validates the client's
+predicted per-device `seq` against its own authoritative value before
+storing.
 
 Request:
 
 ```json
 {
   "device_id": "9f7e2c1a-...",
-  "payload_b64": "<base64 url-safe no-pad of EncryptedBlob bytes>"
+  "payload_b64": "<base64 url-safe no-pad of EncryptedBlob bytes>",
+  "cluster_id": "vremya",
+  "generation": 0,
+  "predicted_seq": 42
 }
 ```
 
 Response (200):
 
 ```json
-{ "seq": 42 }
+{ "seq": 42, "cluster_id": "vremya", "generation": 0 }
 ```
 
 - `device_id` is an opaque client-chosen identifier (UUID in the default
   implementation). The relay auto-registers it on first push.
 - `payload_b64` is the on-the-wire encoding of [`EncryptedBlob`](#encryption) —
   base64 url-safe no-pad.
-- The response `seq` is what the relay assigned. Clients MUST store it
-  (via [`advance_push_seq`](../crates/datum-core/src/sync.rs)).
+- `cluster_id` / `generation` scope the row to a cluster and gate it on
+  the cluster's authoritative generation (a mismatch → `409
+  generation_mismatch`, see below).
+- `predicted_seq` is the per-device seq the client bound into the
+  changeset AAD at encrypt time (`my_push_seq + 1`). The server compares
+  it to `MAX(seq)+1` for the device. On agreement it stores the blob at
+  that seq and echoes it back; on disagreement it returns `409
+  seq_mismatch` **without storing** (see [Seq-mismatch
+  recovery](#seq-mismatch-recovery)).
+
+#### Seq-mismatch recovery
+
+Because the AAD binds `(device_id, seq)`, the client must encrypt before
+the seq is final — so it predicts. If the client and relay seq views
+drift (a crash between a successful push and the local watermark advance,
+a DB restored from an older backup, or a relay reset), the prediction is
+wrong. Rather than store a blob whose AAD seq disagrees with its row seq
+(peers could never decrypt it) and leave the client permanently bailing,
+the relay rejects the push:
+
+```json
+// 409
+{ "kind": "seq_mismatch", "expected": 43, "predicted": 42 }
+```
+
+The client treats this as **recoverable, not terminal**: it re-bases
+`my_push_seq` to `expected`, RE-ENCRYPTS the changeset with the corrected
+seq, surfaces a warning, and retries the push once. Only a *second*
+mismatch indicates a genuine `device_id` collision (two writers racing
+the same id) and is fatal. The relay's `expected` may sit *below* the
+client's stored seq (relay reset / older-backup restore), so recovery
+force-sets `my_push_seq` past the normal monotonic guard.
 
 ### `GET /v1/pull?since=<seq>&device=<device_id>`
 
@@ -346,7 +380,7 @@ HTTP status mapping:
 | 401    | Missing/invalid Bearer token, expired JWT                   |
 | 403    | Valid token, but user can't touch the requested resource     |
 | 404    | `/v1/keys/wrapped` GET with nothing uploaded, unknown routes|
-| 409    | `(device_id, seq)` collision on push (client retry w/ fresh)|
+| 409    | `generation_mismatch` (re-init) or `seq_mismatch` (re-base + retry) — tagged `SyncProtocolError` body |
 | 413    | Payload exceeds relay's configured max (e.g. 10 MB default) |
 | 429    | Rate limit — honor `Retry-After` header                     |
 | 500    | Relay internal error — retry with backoff                   |

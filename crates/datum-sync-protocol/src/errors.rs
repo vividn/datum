@@ -37,6 +37,29 @@ pub enum SyncProtocolError {
         /// The generation the client sent.
         found: u64,
     },
+
+    /// The per-device `seq` the client predicted (and bound into the
+    /// changeset AAD at encrypt time) disagrees with the server's
+    /// authoritative next seq. Triggers whenever the client/relay seq
+    /// views drift: a crash between a successful push and the local
+    /// watermark advance, a DB restore from an older backup, or a relay
+    /// reset.
+    ///
+    /// Unlike [`SyncProtocolError::GenerationMismatch`], this is
+    /// **recoverable, not terminal**: the client re-bases its
+    /// `my_push_seq` to `expected`, re-encrypts the changeset with the
+    /// corrected seq (the AAD binds it), and retries the push. Only a
+    /// second mismatch indicates a genuine device_id collision (two
+    /// writers racing the same device_id) and is fatal. The server emits
+    /// this *before* storing the blob, so a row whose AAD seq disagrees
+    /// with its stored seq never reaches peers (da-ca4q).
+    #[error("seq mismatch: client predicted {predicted}, server expected {expected}")]
+    SeqMismatch {
+        /// The server's authoritative next per-device seq.
+        expected: i64,
+        /// The seq the client predicted.
+        predicted: i64,
+    },
 }
 
 #[cfg(test)]
@@ -61,6 +84,24 @@ mod tests {
         );
         assert!(json.contains("\"expected\":7"), "wire key: {json}");
         assert!(json.contains("\"found\":5"), "wire key: {json}");
+
+        let back: SyncProtocolError = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, err);
+    }
+
+    #[test]
+    fn seq_mismatch_round_trips() {
+        let err = SyncProtocolError::SeqMismatch {
+            expected: 10,
+            predicted: 4,
+        };
+        let json = serde_json::to_string(&err).unwrap();
+        assert!(
+            json.contains("\"kind\":\"seq_mismatch\""),
+            "expected tagged kind, got: {json}",
+        );
+        assert!(json.contains("\"expected\":10"), "wire key: {json}");
+        assert!(json.contains("\"predicted\":4"), "wire key: {json}");
 
         let back: SyncProtocolError = serde_json::from_str(&json).unwrap();
         assert_eq!(back, err);

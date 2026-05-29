@@ -73,6 +73,16 @@ pub struct PulledChangeset {
 /// always send both so the server can run the generation-match gate;
 /// a [`SyncProtocolError::GenerationMismatch`] from the relay surfaces
 /// as [`HttpError::GenerationMismatch`].
+///
+/// `predicted_seq` is the per-device seq the caller bound into the
+/// changeset AAD at encrypt time (`my_push_seq + 1`). The server rejects
+/// a mismatch with [`SyncProtocolError::SeqMismatch`] — surfaced as
+/// [`HttpError::SeqMismatch`] — *before* storing the blob, so the caller
+/// can re-base and retry (da-ca4q).
+// A thin wire helper: each argument is an independent scalar input to the
+// `POST /v1/push` body or the request itself. Bundling them into a struct
+// would only move the same fields behind a name with no clarity gained.
+#[allow(clippy::too_many_arguments)]
 pub fn push_blob(
     client: &Client,
     server: &str,
@@ -81,12 +91,14 @@ pub fn push_blob(
     payload: &[u8],
     cluster_id: &str,
     generation: u64,
+    predicted_seq: i64,
 ) -> Result<PushAck, HttpError> {
     let body = PushRequest {
         device_id: device_id.to_string(),
         payload_b64: URL_SAFE_NO_PAD.encode(payload),
         cluster_id: cluster_id.to_string(),
         generation,
+        predicted_seq,
     };
     let resp = client
         .post(format!("{server}/v1/push"))
@@ -100,11 +112,12 @@ pub fn push_blob(
         return Err(HttpError::Unauthorized);
     }
     if status.as_u16() == 409 {
-        // The server's IntoResponse for GenerationMismatch emits the
-        // tagged-enum SyncProtocolError JSON body directly. Parse-fail
-        // here means a non-protocol 409, surface as Other.
+        // The server's IntoResponse for GenerationMismatch / SeqMismatch
+        // emits the tagged-enum SyncProtocolError JSON body directly;
+        // route on `kind`. Parse-fail here means a non-protocol 409,
+        // surface as Other.
         let text = resp.text().unwrap_or_default();
-        return Err(parse_generation_mismatch(&text, "push"));
+        return Err(parse_sync_conflict(&text, "push"));
     }
     if !status.is_success() {
         let text = resp.text().unwrap_or_default();
@@ -123,9 +136,16 @@ pub fn push_blob(
     })
 }
 
-fn parse_generation_mismatch(body: &str, context: &str) -> HttpError {
+/// Map a 409 body to the matching typed [`HttpError`] by routing on the
+/// [`SyncProtocolError`] `kind` tag: `GenerationMismatch` (re-init) vs
+/// `SeqMismatch` (in-band re-base + retry, da-ca4q). An unparseable body
+/// is a non-protocol 409 and surfaces as `Other`.
+fn parse_sync_conflict(body: &str, context: &str) -> HttpError {
     match serde_json::from_str::<SyncProtocolError>(body) {
-        Ok(err) => HttpError::GenerationMismatch(err),
+        Ok(err @ SyncProtocolError::GenerationMismatch { .. }) => {
+            HttpError::GenerationMismatch(err)
+        }
+        Ok(err @ SyncProtocolError::SeqMismatch { .. }) => HttpError::SeqMismatch(err),
         Err(parse_err) => HttpError::other(anyhow::anyhow!(
             "{context} returned 409 with unparseable body ({parse_err}): {body}"
         )),
@@ -169,7 +189,7 @@ pub fn pull_batch(
     }
     if status.as_u16() == 409 {
         let text = resp.text().unwrap_or_default();
-        return Err(parse_generation_mismatch(&text, "pull"));
+        return Err(parse_sync_conflict(&text, "pull"));
     }
     if !status.is_success() {
         let text = resp.text().unwrap_or_default();

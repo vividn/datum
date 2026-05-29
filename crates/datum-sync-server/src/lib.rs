@@ -237,7 +237,8 @@ mod tests {
             "device_id": "device-1",
             "payload_b64": "SGVsbG8gV29ybGQ",
             "cluster_id": "test-cluster",
-            "generation": 0
+            "generation": 0,
+            "predicted_seq": 1
         });
 
         let push_resp = build_app(state.clone())
@@ -287,7 +288,8 @@ mod tests {
                 "device_id": "device-1",
                 "payload_b64": format!("Y2hhbmdlc2V0LXt9{}", i),
                 "cluster_id": "test-cluster",
-                "generation": 0
+                "generation": 0,
+                "predicted_seq": i
             });
             let resp = build_app(state.clone())
                 .oneshot(
@@ -352,7 +354,8 @@ mod tests {
                 "device_id": "device-1",
                 "payload_b64": format!("p{}", i),
                 "cluster_id": "test-cluster",
-                "generation": 0
+                "generation": 0,
+                "predicted_seq": i
             });
             build_app(state.clone())
                 .oneshot(
@@ -387,7 +390,8 @@ mod tests {
             "device_id": "device-1",
             "payload_b64": "p3",
             "cluster_id": "test-cluster",
-            "generation": 0
+            "generation": 0,
+            "predicted_seq": 3
         });
         build_app(state.clone())
             .oneshot(
@@ -778,7 +782,8 @@ mod tests {
             "device_id": "dev-A",
             "payload_b64": "AA",
             "cluster_id": "cluster-X",
-            "generation": 0
+            "generation": 0,
+            "predicted_seq": 1
         });
         let resp = build_app(state.clone())
             .oneshot(
@@ -823,7 +828,8 @@ mod tests {
                             "device_id": "dev-A",
                             "payload_b64": "AA",
                             "cluster_id": "cluster-Y",
-                            "generation": 0
+                            "generation": 0,
+                            "predicted_seq": 1
                         })
                         .to_string(),
                     ))
@@ -887,7 +893,8 @@ mod tests {
                             "device_id": "alice-dev",
                             "payload_b64": "AA",
                             "cluster_id": "cluster-Z",
-                            "generation": 0
+                            "generation": 0,
+                            "predicted_seq": 1
                         })
                         .to_string(),
                     ))
@@ -941,6 +948,7 @@ mod tests {
                             "payload_b64": "AA",
                             "cluster_id": "cluster-G",
                             "generation": 0,
+                            "predicted_seq": 1,
                         })
                         .to_string(),
                     ))
@@ -977,6 +985,7 @@ mod tests {
                             "payload_b64": "BB",
                             "cluster_id": "cluster-G",
                             "generation": 0,
+                            "predicted_seq": 2,
                         })
                         .to_string(),
                     ))
@@ -989,5 +998,68 @@ mod tests {
         assert_eq!(json["kind"], "generation_mismatch");
         assert_eq!(json["expected"], 1);
         assert_eq!(json["found"], 0);
+    }
+
+    /// da-ca4q: a push whose `predicted_seq` disagrees with the server's
+    /// authoritative next seq is rejected with a 409 carrying the tagged
+    /// `SyncProtocolError::SeqMismatch` payload — and crucially the blob
+    /// is NOT stored (a later peer pull sees only the first push). The
+    /// client routes on `kind` to recover in-band.
+    #[tokio::test]
+    async fn push_rejects_mispredicted_seq_without_storing() {
+        let state = test_state();
+        let (_, token) = make_test_jwt(&state);
+
+        let push = |seq: i64, payload: &str| {
+            let body = serde_json::json!({
+                "device_id": "dev-S",
+                "payload_b64": payload,
+                "cluster_id": "cluster-S",
+                "generation": 0,
+                "predicted_seq": seq,
+            })
+            .to_string();
+            build_app(state.clone()).oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/push")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+        };
+
+        // First push lands at seq 1.
+        let ok = push(1, "AA").await.unwrap();
+        assert_eq!(ok.status(), StatusCode::OK);
+
+        // Re-predicting 1 (e.g. the client never advanced its watermark
+        // after the first push) is a mismatch: the server expects 2.
+        let resp = push(1, "BB").await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let json = json_body(resp).await;
+        assert_eq!(json["kind"], "seq_mismatch");
+        assert_eq!(json["expected"], 2);
+        assert_eq!(json["predicted"], 1);
+
+        // The rejected blob must not have been stored — a peer pull sees
+        // exactly the one accepted row.
+        let pull = build_app(state)
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/pull?since=0&device=dev-other&cluster_id=cluster-S&generation=0")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(pull.status(), StatusCode::OK);
+        let rows: Vec<serde_json::Value> =
+            serde_json::from_slice(&pull.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(rows.len(), 1, "rejected push must not be stored");
+        assert_eq!(rows[0]["payload_b64"], "AA");
     }
 }

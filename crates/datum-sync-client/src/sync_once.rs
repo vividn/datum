@@ -32,8 +32,10 @@ use datum_core::entry::Entry;
 use datum_core::integrity::{self, DetectedBy};
 use reqwest::blocking::Client;
 
+use datum_sync_protocol::SyncProtocolError;
+
 use crate::crypto::changeset::{decrypt_changeset, encrypt_changeset, Changeset, EncryptedBlob};
-use crate::http::session::Session;
+use crate::http::session::{Session, SessionError};
 use crate::http::{pull_batch, push_blob, PulledChangeset};
 use crate::ops::{apply_changeset, pack_changeset_since};
 use crate::sync_state;
@@ -154,14 +156,6 @@ pub fn push_once(
         });
     }
 
-    // Pre-compute next per-device seq, use it as AAD during encryption,
-    // then assert the relay echoes it back. Any divergence means another
-    // writer is using our device_id and we must abort before advancing
-    // watermarks — peers replaying the AAD against the relay-assigned seq
-    // would otherwise fail to decrypt.
-    let next_seq = sync_state::get_my_push_seq(db)?.saturating_add(1);
-    let blob = encrypt_changeset(&changeset, master_key, device_id, next_seq)?;
-
     // Send the locally-stored cluster_id and last-seen cluster generation.
     // A [`SyncProtocolError::GenerationMismatch`] from the relay propagates
     // through Session as `SessionError::GenerationMismatch` and bubbles
@@ -181,28 +175,65 @@ pub fn push_once(
     let local_was_unset = stored_cluster.is_none();
     let local_cluster = stored_cluster.unwrap_or_else(|| sync_state::default_cluster_id(db));
     let local_generation = sync_state::get_cluster_generation(db)?;
-    let ack = session.run(client, |bearer| {
-        push_blob(
-            client,
-            server,
-            bearer,
-            device_id,
-            blob.as_bytes(),
-            &local_cluster,
-            local_generation,
-        )
-    })?;
 
-    if ack.seq as u64 != next_seq {
-        anyhow::bail!(
-            "relay assigned seq {} but we predicted {}; refusing to advance \
-             watermarks — another writer may be using device_id {}",
-            ack.seq,
-            next_seq,
-            device_id,
-        );
-    }
-    sync_state::advance_my_push_seq(db, next_seq)?;
+    // Predict our next per-device seq and bind it into the changeset AAD
+    // at encrypt time (the relay can't stamp a seq into the AAD after the
+    // fact, and the predict-and-check also detects device_id collisions).
+    // The relay validates the prediction *before* storing: on a mismatch
+    // it returns its authoritative `expected` seq and we recover in-band
+    // — re-base `my_push_seq`, RE-ENCRYPT (the AAD depends on seq), and
+    // retry once. This makes a seq desync (crash between push and the
+    // watermark advance, DB restore, relay reset) recoverable instead of
+    // a permanent softlock. Only a *second* mismatch is a genuine
+    // device_id collision and is fatal (da-ca4q).
+    let predicted = sync_state::get_my_push_seq(db)?.saturating_add(1);
+    let blob = encrypt_changeset(&changeset, master_key, device_id, predicted)?;
+    let push_with_seq = |seq: u64, blob: &EncryptedBlob| {
+        session.run(client, |bearer| {
+            push_blob(
+                client,
+                server,
+                bearer,
+                device_id,
+                blob.as_bytes(),
+                &local_cluster,
+                local_generation,
+                seq as i64,
+            )
+        })
+    };
+
+    let ack = match push_with_seq(predicted, &blob) {
+        Ok(ack) => {
+            sync_state::advance_my_push_seq(db, predicted)?;
+            ack
+        }
+        Err(SessionError::SeqMismatch(SyncProtocolError::SeqMismatch { expected, .. })) => {
+            let expected = expected.max(0) as u64;
+            eprintln!(
+                "warning: sync seq diverged for device {device_id} \
+                 (predicted {predicted}, relay expects {expected}); re-basing and retrying"
+            );
+            let reblob = encrypt_changeset(&changeset, master_key, device_id, expected)?;
+            let ack = push_with_seq(expected, &reblob).map_err(|e| match e {
+                SessionError::SeqMismatch(SyncProtocolError::SeqMismatch {
+                    expected,
+                    predicted,
+                }) => anyhow::anyhow!(
+                    "sync seq still mismatched after recovery (retried {predicted}, relay now \
+                     expects {expected}) — another device is using device_id {device_id}; \
+                     refusing to push",
+                ),
+                other => anyhow::Error::new(other),
+            })?;
+            // The relay is authoritative here and `expected` may sit
+            // *below* our stored value (relay reset / older-backup
+            // restore), so force-set past the monotonic guard.
+            sync_state::set_my_push_seq(db, expected)?;
+            ack
+        }
+        Err(other) => return Err(other.into()),
+    };
 
     // Persist the cluster_id the server confirmed on push acceptance.
     // First sync (local_was_unset) always writes, since the locally-used

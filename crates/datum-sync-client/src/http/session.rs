@@ -60,6 +60,13 @@ pub enum SessionError {
     /// epic da-u6lm).
     #[error(transparent)]
     GenerationMismatch(SyncProtocolError),
+    /// The relay's per-device seq disagreed with what we predicted. Like
+    /// `GenerationMismatch` the 401-refresh loop has nothing to do here;
+    /// unlike it, the push path recovers in-band by re-basing
+    /// `my_push_seq`, re-encrypting, and retrying (da-ca4q). Passed
+    /// through untouched so [`crate::sync_once::push_once`] can catch it.
+    #[error(transparent)]
+    SeqMismatch(SyncProtocolError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -143,6 +150,7 @@ impl Session {
             Err(HttpError::GenerationMismatch(e)) => {
                 return Err(SessionError::GenerationMismatch(e))
             }
+            Err(HttpError::SeqMismatch(e)) => return Err(SessionError::SeqMismatch(e)),
             Err(HttpError::Other(e)) => return Err(SessionError::Other(e)),
         }
 
@@ -157,6 +165,7 @@ impl Session {
             // issue.
             Err(HttpError::Unauthorized) => Err(SessionError::SessionExpired),
             Err(HttpError::GenerationMismatch(e)) => Err(SessionError::GenerationMismatch(e)),
+            Err(HttpError::SeqMismatch(e)) => Err(SessionError::SeqMismatch(e)),
             Err(HttpError::Other(e)) => Err(SessionError::Other(e)),
         }
     }
@@ -176,6 +185,9 @@ impl Session {
             Err(HttpError::GenerationMismatch(e)) => {
                 return Err(SessionError::GenerationMismatch(e))
             }
+            // /v1/auth/refresh has no seq concept; surface cleanly if it
+            // ever appears rather than panicking.
+            Err(HttpError::SeqMismatch(e)) => return Err(SessionError::SeqMismatch(e)),
             Err(HttpError::Other(e)) => return Err(SessionError::Other(e)),
         };
 
