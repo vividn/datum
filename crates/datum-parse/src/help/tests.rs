@@ -183,7 +183,7 @@ fn snapshot_end_alias_substitutes_verb() {
 fn snapshot_sync_help_starts_with_header() {
     let s = command_help("sync");
     assert!(s.starts_with("datum sync — push/pull changesets, manage auth & keys\n"));
-    assert!(s.contains("datum sync login [--server URL]\n"));
+    assert!(s.contains("datum sync login [--server URL] [--cluster NAME]\n"));
 }
 
 // ---------------------------------------------------------------------------

@@ -190,6 +190,15 @@ fn open_db(home: &Path) -> Db {
     Db::open(path.to_str().unwrap()).unwrap()
 }
 
+/// Open a DB under `home` with a specific file name, so its file stem
+/// drives the da-3fnd default cluster (e.g. `alpha.db` → cluster
+/// `alpha`). Used by the merge-flow scenario where the two devices'
+/// DBs deliberately differ in name.
+fn open_named_db(home: &Path, file: &str) -> Db {
+    let path = home.join(file);
+    Db::open(path.to_str().unwrap()).unwrap()
+}
+
 fn make_entry(field: &str, offset_secs: i64, device: &str) -> Entry {
     let base = Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap();
     let at = base + Duration::seconds(offset_secs);
@@ -442,11 +451,9 @@ fn s4_multi_db_per_user_isolates_clusters() {
     let key = [0x41u8; 32];
     // Re-purpose the two DATUM_HOMEs as two "DB installs" for the same
     // user — each has its own device_id file, so the per-(cluster_id,
-    // device_id) watermark on the relay doesn't collide. Each DB
-    // adopts a distinct cluster_id (simulating the future `sync login
-    // --cluster <id>` adoption flag); today's default (cluster_id =
-    // user_id) is a 1:1 transitional binding, but the server has
-    // supported N:1 since sub-2.
+    // device_id) watermark on the relay doesn't collide. Each DB adopts
+    // a distinct cluster_id via the `sync login --cluster <id>` record
+    // (da-3fnd); the server has supported N:1 since sub-2.
     let db_personal = provision_client(&env, "A", &relay, &key);
     let db_work = provision_client(&env, "B", &relay, &key);
     sync_state::set_cluster_id(&db_personal, "personal-cluster").unwrap();
@@ -497,6 +504,83 @@ fn s4_multi_db_per_user_isolates_clusters() {
     assert!(
         work_fields.contains(&"standup".to_string()),
         "work cluster still holds its own row; got {work_fields:?}",
+    );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// SCENARIO 6 — db-name default + merge via --cluster (da-3fnd)
+// ──────────────────────────────────────────────────────────────────────────
+
+/// The da-3fnd payoff, end-to-end:
+///   1. Two devices, two differently-named DBs (`alpha.db`, `beta.db`).
+///      With zero config each defaults its cluster to its file stem, so
+///      the two stay isolated — neither sees the other's rows.
+///   2. The merge escape hatch: device B re-binds beta.db to cluster
+///      `alpha` (exactly what `sync login --cluster alpha` records via
+///      `set_cluster_id`), then pulls and converges on A's data.
+#[test]
+fn s6_db_name_default_isolates_then_cluster_override_merges() {
+    let env = TwoClientEnv::new();
+    let relay = StubRelay::start();
+    let key = [0x61u8; 32];
+
+    // provision_client wires token/master_key/server for each DATUM_HOME;
+    // we ignore its datum.db handle and open distinctly-named DBs so the
+    // file-stem default is what segregates the two devices.
+    let _ = provision_client(&env, "A", &relay, &key);
+    let _ = provision_client(&env, "B", &relay, &key);
+    let db_alpha = open_named_db(&env.home_a, "alpha.db");
+    let db_beta = open_named_db(&env.home_b, "beta.db");
+
+    // Each device pushes under its file-name default cluster — no flag,
+    // no prior cluster recorded.
+    env.use_a();
+    db_alpha
+        .insert_entry(&make_entry("coffee", 0, "dev-alpha"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_alpha)
+        .expect("alpha push");
+    env.use_b();
+    db_beta
+        .insert_entry(&make_entry("standup", 60, "dev-beta"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_beta)
+        .expect("beta push");
+
+    // The file-stem defaults landed verbatim, server-side and locally.
+    assert_eq!(
+        cluster_count_on_server(&relay),
+        2,
+        "two differently-named DBs → two clusters",
+    );
+    assert_eq!(
+        sync_state::get_cluster_id(&db_alpha).unwrap().as_deref(),
+        Some("alpha"),
+    );
+    assert_eq!(
+        sync_state::get_cluster_id(&db_beta).unwrap().as_deref(),
+        Some("beta"),
+    );
+
+    // Isolation: beta pulling its own cluster never sees alpha's coffee.
+    env.use_b();
+    run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_beta)
+        .expect("beta pull pre-merge");
+    assert!(
+        !live_fields(&db_beta).contains(&"coffee".to_string()),
+        "beta cluster must not see alpha's coffee before merge",
+    );
+
+    // Merge: re-bind beta.db to cluster `alpha` (the `sync login
+    // --cluster alpha` record) and pull. Beta keeps its own standup row
+    // and now also pulls alpha's coffee → the two DBs are merged.
+    sync_state::set_cluster_id(&db_beta, "alpha").unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_beta)
+        .expect("beta pull post-merge");
+    let merged = live_fields(&db_beta);
+    assert!(
+        merged.contains(&"coffee".to_string()) && merged.contains(&"standup".to_string()),
+        "after --cluster alpha, beta holds both rows; got {merged:?}",
     );
 }
 
@@ -629,7 +713,8 @@ fn s5_peer_recovers_from_fork_via_purge_then_sync() {
     );
     assert_eq!(
         sync_state::get_cluster_id(&db_b).unwrap().as_deref(),
-        Some("default"),
-        "B re-registers under the client-side default cluster_id",
+        Some("datum"),
+        "B re-registers under the client-side default cluster_id \
+         (da-3fnd: the DB file-name stem, here datum.db → datum)",
     );
 }

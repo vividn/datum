@@ -398,7 +398,7 @@ const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n
 
 const CONFIG_BODY: &str = "USAGE:\n  datum config show [--json]\n";
 
-const SYNC_BODY: &str = "USAGE:\n  datum sync [--push | --pull] [--dry-run] [--server URL]\n  datum sync login [--server URL]\n  datum sync config set-server <URL> [--global]\n  datum sync config disable\n  datum sync config show\n  datum sync key (init | unlock | rotate-passphrase | show-fingerprint) [--server URL] [--force]\n  datum sync status [--server URL]\n  datum sync install-daemon [--show | --uninstall]\n";
+const SYNC_BODY: &str = "USAGE:\n  datum sync [--push | --pull] [--dry-run] [--server URL]\n  datum sync login [--server URL] [--cluster NAME]\n  datum sync config set-server <URL> [--global]\n  datum sync config disable\n  datum sync config show\n  datum sync key (init | unlock | rotate-passphrase | show-fingerprint) [--server URL] [--force]\n  datum sync status [--server URL]\n  datum sync install-daemon [--show | --uninstall]\n";
 
 const CONFLICTS_BODY: &str = "USAGE:\n  datum conflicts list [--kind K] [--all]\n  datum conflicts resolve <HID> (--keep V | --close-older)\n  datum conflicts auto-resolve [--min-age SECS]\n";
 
@@ -998,7 +998,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: None,
         usage: &[
             "datum sync [--push | --pull] [--dry-run] [--server URL]",
-            "datum sync login [--server URL]",
+            "datum sync login [--server URL] [--cluster NAME]",
             "datum sync config set-server <URL> [--global]",
             "datum sync config disable",
             "datum sync config show",

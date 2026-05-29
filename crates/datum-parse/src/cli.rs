@@ -134,6 +134,10 @@ pub struct SyncInstallDaemonArgs {
 #[derive(Debug, Default)]
 pub struct SyncLoginArgs {
     pub server: Option<String>,
+    /// `--cluster <name>` (da-3fnd): explicitly bind this DB to a named
+    /// sync cluster instead of the file-name default. Used to merge two
+    /// differently-named DBs onto one cluster, or to split a DB off.
+    pub cluster: Option<String>,
 }
 
 #[derive(Debug)]

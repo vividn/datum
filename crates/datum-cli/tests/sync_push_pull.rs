@@ -439,6 +439,16 @@ fn two_instance_sync_converges() {
     let db_a = Db::open(&path_a).unwrap();
     let db_b = Db::open(&path_b).unwrap();
 
+    // The `alpha.db` / `beta.db` names only exist to give the two
+    // simulated devices distinct local files under one DATUM_HOME —
+    // semantically this is one logical DB synced across two devices. Per
+    // da-3fnd a no-cluster DB defaults its cluster to its file-name stem,
+    // which would split these two into `alpha` / `beta` and stop them
+    // converging; pin both to one shared cluster as a real same-DB pair
+    // (or a `sync login --cluster` user) would.
+    sync_state::set_cluster_id(&db_a, "shared").unwrap();
+    sync_state::set_cluster_id(&db_b, "shared").unwrap();
+
     // Device A writes two rows.
     db_a.insert_entry(&make_entry("a-field-1", 0, "dev-A"))
         .unwrap();

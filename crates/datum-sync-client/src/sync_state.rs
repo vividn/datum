@@ -118,6 +118,35 @@ pub fn get_cluster_id(db: &Db) -> Result<Option<String>> {
     Ok(got.flatten())
 }
 
+/// The cluster_id a DB falls back to when none has been explicitly
+/// recorded — no prior sync and no `sync login --cluster <name>`
+/// override. Per da-3fnd we default to the DB's file-name stem
+/// (`vremya.db` → `vremya`), so two devices tracking a same-named DB
+/// land on the same cluster and sync with zero config, while
+/// differently-named DBs stay isolated. In-memory or path-less DBs
+/// (tests) fall back to the literal `"default"`.
+///
+/// The DB's own path is read off `pragma_database_list` — the same seam
+/// the CLI uses to print the bound path — so this needs no cross-layer
+/// plumbing despite the (now-stale) TODO that claimed otherwise.
+pub fn default_cluster_id(db: &Db) -> String {
+    db.conn()
+        .query_row(
+            "SELECT file FROM pragma_database_list WHERE name = 'main'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .filter(|p| !p.is_empty())
+        .and_then(|p| {
+            std::path::Path::new(&p)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "default".to_string())
+}
+
 /// Persist the relay-assigned `cluster_id` for this DB. Replacing a
 /// stored cluster_id with a different one is unusual (would mean the
 /// user re-bound the DB to a different cluster) but allowed — the
@@ -240,5 +269,30 @@ mod tests {
         // value). Overwrite without a rewind check.
         set_cluster_generation(&db, 7).unwrap();
         assert_eq!(get_cluster_generation(&db).unwrap(), 7);
+    }
+
+    /// da-3fnd: the file-name stem of a file-backed DB is its default
+    /// cluster; an in-memory DB (no path) falls back to `"default"`.
+    #[test]
+    fn default_cluster_id_is_file_stem_else_default() {
+        // In-memory DBs have no backing file → literal "default".
+        let mem = fresh_db();
+        assert_eq!(default_cluster_id(&mem), "default");
+
+        // A file-backed DB derives its cluster from the file stem.
+        let dir = std::env::temp_dir().join(format!("datum-cluster-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("vremya.db");
+        let file_db = Db::open(path.to_str().unwrap()).unwrap();
+        assert_eq!(default_cluster_id(&file_db), "vremya");
+        // The setter still wins over the default once recorded.
+        set_cluster_id(&file_db, "explicit").unwrap();
+        assert_eq!(
+            get_cluster_id(&file_db).unwrap().as_deref(),
+            Some("explicit")
+        );
+
+        drop(file_db);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

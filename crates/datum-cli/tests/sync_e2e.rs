@@ -236,11 +236,20 @@ fn entry_hash_set(db: &Db) -> Vec<String> {
 
 /// Build a fresh DB at `<DATUM_HOME>/<name>.db`. Each device-instance gets
 /// its own file so they don't collide on the shared `entries` schema.
+///
+/// The `<name>` distinguishes only the local *file* — every device in
+/// these scenarios is the same user's same logical DB, so they must
+/// share a sync cluster. Per da-3fnd a DB with no recorded cluster
+/// defaults to its file-name stem, which would split `alpha`/`beta`/…
+/// into separate clusters and stop them converging; pin them all to one
+/// shared cluster, exactly as `sync login --cluster <name>` would.
 fn open_db(name: &str) -> Db {
     let home = std::env::var("DATUM_HOME").unwrap();
     std::fs::create_dir_all(&home).unwrap();
     let path = std::path::Path::new(&home).join(format!("{name}.db"));
-    Db::open(path.to_str().unwrap()).unwrap()
+    let db = Db::open(path.to_str().unwrap()).unwrap();
+    datum_sync_client::sync_state::set_cluster_id(&db, "e2e-shared").unwrap();
+    db
 }
 
 // ──────────────────────────────────────────────────────────────────────────

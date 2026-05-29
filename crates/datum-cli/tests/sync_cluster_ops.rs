@@ -160,38 +160,52 @@ fn read_server_cluster_generation(relay: &StubRelay, cluster_id: &str) -> i64 {
 // `datum sync login` adopts cluster_id locally
 // ──────────────────────────────────────────────────────────────────────────
 
-/// `sync login` must persist `sync_state.cluster_id` to the user_id the
-/// server echoed back in the AuthToken, so the very first push/pull
-/// sends a stable cluster identifier instead of None.
+/// da-3fnd: `sync login` with no `--cluster` flag binds `sync_state.
+/// cluster_id` to the DB's file-name stem (`datum.db` → `datum`), so the
+/// very first push/pull sends a stable cluster identifier instead of
+/// None — and two devices on a same-named DB auto-share a cluster.
 #[test]
-fn sync_login_records_cluster_id_from_user_id() {
+fn sync_login_records_cluster_id_from_db_name() {
     let env = scoped_env();
     let relay = StubRelay::start();
     configure_default_server(&relay.base_url);
     let db = fresh_db(&env);
 
-    // Stub-relay device-code loop authorizes on the 2nd poll — drive the
-    // CLI's login command through it and capture the token.
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
+    // Stub-relay device-code loop authorizes on the 2nd poll.
     let mut prompter = datum_cli::sync::TestPrompter::new(Vec::<String>::new());
-    let token = datum_cli::sync::login::run_with_client(&relay.base_url, &client, &mut prompter)
-        .expect("login should succeed");
-    let expected_cluster = token.user_id.clone();
 
-    // run_with_client is the test seam — production also stamps the
-    // cluster_id locally as part of `run`. Drive that path explicitly
-    // so we exercise the same `adopt_cluster_for_user` code path the
-    // CLI uses.
+    // `run` is the production path — it logs in AND stamps the cluster.
     let args = datum_commands::args::SyncLoginArgs {
         server: Some(relay.base_url.clone()),
+        cluster: None,
+    };
+    datum_cli::sync::login::run(args, &db, &mut prompter).expect("login::run should succeed");
+
+    // fresh_db opens `<DATUM_HOME>/datum.db`, so the default cluster is
+    // its file stem `datum`.
+    let stored = sync_state::get_cluster_id(&db).expect("read cluster_id");
+    assert_eq!(stored.as_deref(), Some("datum"));
+}
+
+/// da-3fnd: `sync login --cluster <name>` overrides the file-name
+/// default — the merge/split escape hatch for putting two differently-
+/// named DBs onto one cluster.
+#[test]
+fn sync_login_cluster_flag_overrides_db_name() {
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    configure_default_server(&relay.base_url);
+    let db = fresh_db(&env);
+
+    let mut prompter = datum_cli::sync::TestPrompter::new(Vec::<String>::new());
+    let args = datum_commands::args::SyncLoginArgs {
+        server: Some(relay.base_url.clone()),
+        cluster: Some("shared-household".to_string()),
     };
     datum_cli::sync::login::run(args, &db, &mut prompter).expect("login::run should succeed");
 
     let stored = sync_state::get_cluster_id(&db).expect("read cluster_id");
-    assert_eq!(stored.as_deref(), Some(expected_cluster.as_str()));
+    assert_eq!(stored.as_deref(), Some("shared-household"));
 }
 
 // ──────────────────────────────────────────────────────────────────────────

@@ -25,8 +25,8 @@ pub fn run(args: SyncLoginArgs, db: &Db, prompter: &mut impl Prompter) -> Result
         .timeout(Duration::from_secs(30))
         .build()
         .context("build reqwest client")?;
-    let token = run_with_client(&server, &client, prompter)?;
-    adopt_cluster_for_user(db, &token);
+    run_with_client(&server, &client, prompter)?;
+    adopt_cluster(db, args.cluster.as_deref());
     Ok(())
 }
 
@@ -48,30 +48,31 @@ pub fn run_with_client(
     Ok(token)
 }
 
-/// da-ws1q sub-5: after a successful login, adopt the cluster
-/// registration locally. The transitional default (per da-og24 + the
-/// server's push/pull handlers) is `cluster_id = user_id` — so the
-/// server-side `ensure_cluster` that runs on first push/pull is
-/// deterministic, and we can record the same value here so the very
-/// first sync sends a stable identifier instead of `None`.
+/// After a successful login, bind this DB to a sync cluster locally so
+/// the very first push/pull sends a stable identifier instead of `None`.
+///
+/// da-3fnd: the default cluster is the DB's file name (e.g. `vremya`) —
+/// two devices on a same-named DB auto-share a cluster with zero config.
+/// `sync login --cluster <name>` overrides that to merge differently-
+/// named DBs onto one cluster (or split one off).
 ///
 /// Failures here are non-fatal — login itself has succeeded. The next
 /// push/pull will set cluster_id from the server's echo (via da-eu7o)
 /// anyway; this is a UX nicety so the user sees "Cluster <id> bound to
 /// <db>" immediately after login.
-fn adopt_cluster_for_user(db: &Db, token: &AuthToken) {
-    // da-ixmh: user_id is now a required field of the wire shape, so
-    // the previous "server returned no user_id" branch is dead — keep
-    // the call site simple.
-    let user_id = &token.user_id;
-    if let Err(e) = sync_state::set_cluster_id(db, user_id) {
+fn adopt_cluster(db: &Db, explicit: Option<&str>) {
+    let cluster = match explicit {
+        Some(name) => name.to_string(),
+        None => sync_state::default_cluster_id(db),
+    };
+    if let Err(e) = sync_state::set_cluster_id(db, &cluster) {
         eprintln!("⚠ login: could not record cluster_id locally: {e:#}");
         return;
     }
     let db_path = current_db_path(db);
     match db_path {
-        Some(path) => println!("✓ Cluster {user_id} bound to {path}"),
-        None => println!("✓ Cluster {user_id} registered"),
+        Some(path) => println!("✓ Cluster {cluster} bound to {path}"),
+        None => println!("✓ Cluster {cluster} registered"),
     }
 }
 

@@ -165,24 +165,18 @@ pub fn push_once(
     // out to the caller for re-init handling.
     //
     // cluster_id is required on the wire (post-pre-prod cleanup). If no
-    // local cluster is set yet (first sync from this device), use the
-    // literal `"default"` — all of a user's devices land on the same
-    // cluster by default, so they sync against each other out of the
-    // box. The server scopes clusters by user_id, so two users' defaults
-    // don't collide. Explicit `datum sync login --cluster <name>` lets
-    // a user split into multiple DBs.
-    //
-    // TODO (vividn, 2026-05-22): revisit this — the DB name (e.g. `vremya`,
-    // `work`) is probably a better default than the literal `"default"`,
-    // since it preserves the multi-DB intent without requiring an explicit
-    // `--cluster` flag for every separate local DB. Deferred because the
-    // DB name isn't accessible from this layer without plumbing.
+    // local cluster is set yet (first sync from this device, no `sync
+    // login --cluster <name>` override), default to the DB's file name
+    // (da-3fnd) — `vremya.db` → `vremya`. Two devices tracking a
+    // same-named DB land on the same cluster and sync out of the box;
+    // differently-named DBs stay isolated. The server scopes clusters by
+    // user_id, so two users' same-named defaults don't collide.
     //
     // `local_was_unset` flips the persistence path below from "only
     // persist if server bumped us" to "always persist on first sync".
     let stored_cluster = sync_state::get_cluster_id(db)?;
     let local_was_unset = stored_cluster.is_none();
-    let local_cluster = stored_cluster.unwrap_or_else(|| "default".to_string());
+    let local_cluster = stored_cluster.unwrap_or_else(|| sync_state::default_cluster_id(db));
     let local_generation = sync_state::get_cluster_generation(db)?;
     let ack = session.run(client, |bearer| {
         push_blob(
@@ -244,13 +238,13 @@ pub fn pull_once(
     // The server runs `check_generation` before returning rows; a mismatch
     // surfaces as `SessionError::GenerationMismatch` and bubbles out
     // unchanged. Same default-cluster rule as push (see the long comment
-    // there): auto-default to `"default"` when no local cluster is set.
-    // `local_was_unset` lets the persistence below stamp the cluster_id
-    // on first sync even when the server echoes the same default name
-    // we sent.
+    // there): auto-default to the DB file name when no local cluster is
+    // set. `local_was_unset` lets the persistence below stamp the
+    // cluster_id on first sync even when the server echoes the same
+    // default name we sent.
     let stored_cluster = sync_state::get_cluster_id(db)?;
     let local_was_unset = stored_cluster.is_none();
-    let local_cluster = stored_cluster.unwrap_or_else(|| "default".to_string());
+    let local_cluster = stored_cluster.unwrap_or_else(|| sync_state::default_cluster_id(db));
     let local_generation = sync_state::get_cluster_generation(db)?;
     let rows = session.run(client, |bearer| {
         pull_batch(

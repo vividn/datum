@@ -2417,6 +2417,15 @@ fn parse_sync_login(tail: &[&str]) -> Result<SyncLoginArgs> {
                 out.server = Some(v.to_string());
                 i += 1;
             }
+            FlagSplit::Long("cluster") => {
+                let (v, ni) = take_value(tail, i, None, "--cluster")?;
+                out.cluster = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("cluster", v) => {
+                out.cluster = Some(v.to_string());
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
@@ -2621,6 +2630,33 @@ mod tests {
             .chain(words.iter().copied())
             .map(|s| s.to_string())
             .collect()
+    }
+
+    #[test]
+    fn sync_login_parses_cluster_flag() {
+        // da-3fnd: `--cluster <name>` overrides the file-name default.
+        for words in [
+            vec!["sync", "login", "--cluster", "household"],
+            vec!["sync", "login", "--cluster=household"],
+        ] {
+            let cli = parse_argv(&argv(&words)).unwrap();
+            match cli.command {
+                Command::Sync(SyncArgs {
+                    command: Some(SyncCommand::Login(login)),
+                    ..
+                }) => assert_eq!(login.cluster.as_deref(), Some("household")),
+                other => panic!("expected sync login, got {other:?}"),
+            }
+        }
+        // Absent flag → None (file-name default applies downstream).
+        let cli = parse_argv(&argv(&["sync", "login"])).unwrap();
+        match cli.command {
+            Command::Sync(SyncArgs {
+                command: Some(SyncCommand::Login(login)),
+                ..
+            }) => assert_eq!(login.cluster, None),
+            other => panic!("expected sync login, got {other:?}"),
+        }
     }
 
     #[test]

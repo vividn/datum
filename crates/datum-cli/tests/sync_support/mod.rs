@@ -204,11 +204,12 @@ impl StubRelay {
         // pin the exact seq used as AAD by the encrypting peer.
         // The production push path stamps cluster_id + generation; pull
         // filters on cluster_id, so the inject helper must mirror that or
-        // the row is invisible. Mirror the client's default cluster name
-        // (`"default"`) so an injected changeset lands in the cluster the
-        // client will be pulling from.
+        // the row is invisible. The pulling clients in these tests open
+        // `fresh_db` (i.e. `datum.db`), and per da-3fnd a DB with no
+        // recorded cluster defaults to its file-name stem — `datum` —
+        // so inject into that cluster.
         let user_id_str = self.user_id.to_string();
-        let default_cluster = "default";
+        let default_cluster = "datum";
         conn.execute(
             "INSERT INTO changesets (device_id, seq, payload, cluster_id, generation)
              VALUES (?1, ?2, ?3, ?4, 0)",
