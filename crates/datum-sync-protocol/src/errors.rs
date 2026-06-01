@@ -47,7 +47,7 @@ pub enum SyncProtocolError {
     ///
     /// Unlike [`SyncProtocolError::GenerationMismatch`], this is
     /// **recoverable, not terminal**: the client re-bases its
-    /// `my_push_seq` to `expected`, re-encrypts the changeset with the
+    /// `device_seq` to `expected`, re-encrypts the changeset with the
     /// corrected seq (the AAD binds it), and retries the push. Only a
     /// second mismatch indicates a genuine device_id collision (two
     /// writers racing the same device_id) and is fatal. The server emits

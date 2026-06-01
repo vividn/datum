@@ -156,6 +156,7 @@ fn every_pair_has_a_roundtrip_test() {
         (27, 28),
         (28, 29),
         (29, 30),
+        (30, 31),
     ];
     assert_eq!(
         covered.len(),
@@ -1414,4 +1415,62 @@ fn roundtrip_v29_to_v30_modify_time_ms_index() {
         })
         .unwrap();
     assert_eq!(surviving, 1, "down drops column/index but preserves rows");
+}
+
+/// da-xuiw: v30→v31 renames `sync_state.push_seq` → `push_mark` and
+/// `my_push_seq` → `device_seq` (pull_seq untouched). Pure rename — the
+/// seeded watermark values must survive both directions.
+#[test]
+fn roundtrip_v30_to_v31_sync_state_rename_seq_columns() {
+    let db = fresh_at(30);
+    let conn = db.conn();
+    assert!(column_exists(conn, "sync_state", "push_seq"));
+    assert!(column_exists(conn, "sync_state", "my_push_seq"));
+    assert!(!column_exists(conn, "sync_state", "push_mark"));
+    assert!(!column_exists(conn, "sync_state", "device_seq"));
+
+    // Seed a watermark row (v30 column names) to verify values survive.
+    conn.execute(
+        "INSERT INTO sync_state (db_id, push_seq, pull_seq, my_push_seq, last_push_at, last_pull_at)
+         VALUES ('local', 17, 22, 3, 1700000000000, 1700000005000)",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 30);
+
+    // Renamed columns present, old names gone, pull_seq untouched.
+    assert!(!column_exists(conn, "sync_state", "push_seq"));
+    assert!(!column_exists(conn, "sync_state", "my_push_seq"));
+    assert!(column_exists(conn, "sync_state", "push_mark"));
+    assert!(column_exists(conn, "sync_state", "device_seq"));
+    assert!(column_exists(conn, "sync_state", "pull_seq"));
+
+    let (push_mark, pull_seq, device_seq): (i64, i64, i64) = conn
+        .query_row(
+            "SELECT push_mark, pull_seq, device_seq FROM sync_state WHERE db_id = 'local'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(push_mark, 17);
+    assert_eq!(pull_seq, 22);
+    assert_eq!(device_seq, 3);
+
+    apply_one_down(conn, 31);
+
+    // Old names restored with values intact.
+    assert!(column_exists(conn, "sync_state", "push_seq"));
+    assert!(column_exists(conn, "sync_state", "my_push_seq"));
+    assert!(!column_exists(conn, "sync_state", "push_mark"));
+    assert!(!column_exists(conn, "sync_state", "device_seq"));
+    let (push_seq, my_push_seq): (i64, i64) = conn
+        .query_row(
+            "SELECT push_seq, my_push_seq FROM sync_state WHERE db_id = 'local'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(push_seq, 17);
+    assert_eq!(my_push_seq, 3);
 }

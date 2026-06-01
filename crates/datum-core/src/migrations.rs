@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 30;
+pub const CURRENT_SCHEMA_VERSION: u32 = 31;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -245,6 +245,13 @@ pub const MIGRATIONS: &[Migration] = &[
         apply: m29_to_30_modify_time_ms_index,
         down: down_30_to_29_modify_time_ms_index,
     },
+    Migration {
+        from: 30,
+        to: 31,
+        summary: "sync_state: rename push_seq -> push_mark, my_push_seq -> device_seq for clarity (da-xuiw)",
+        apply: m30_to_31_sync_state_rename_seq_columns,
+        down: down_31_to_30_sync_state_rename_seq_columns,
+    },
 ];
 
 /// SQL expression deriving epoch-ms from the RFC3339 `modify_time` string.
@@ -299,6 +306,33 @@ fn down_30_to_29_modify_time_ms_index(conn: &Connection) -> Result<()> {
         .unwrap_or(false);
     if has_col {
         conn.execute_batch("ALTER TABLE entries DROP COLUMN modify_time_ms;")?;
+    }
+    Ok(())
+}
+
+/// da-xuiw: rename `sync_state`'s two muddy "push seq" columns for clarity.
+/// `push_seq` (the `modified_at` packing watermark) -> `push_mark`, and
+/// `my_push_seq` (the per-device AAD push counter) -> `device_seq`. Pure
+/// rename, no data change; `pull_seq` already reads cleanly and is left as
+/// is. Guarded per-column so a re-run — or a fresh DB already on the new
+/// names — is a no-op.
+fn m30_to_31_sync_state_rename_seq_columns(conn: &Connection) -> Result<()> {
+    if has_column(conn, "sync_state", "push_seq")? {
+        conn.execute_batch("ALTER TABLE sync_state RENAME COLUMN push_seq TO push_mark;")?;
+    }
+    if has_column(conn, "sync_state", "my_push_seq")? {
+        conn.execute_batch("ALTER TABLE sync_state RENAME COLUMN my_push_seq TO device_seq;")?;
+    }
+    Ok(())
+}
+
+/// Reverse 31→30 — restore the pre-da-xuiw column names.
+fn down_31_to_30_sync_state_rename_seq_columns(conn: &Connection) -> Result<()> {
+    if has_column(conn, "sync_state", "push_mark")? {
+        conn.execute_batch("ALTER TABLE sync_state RENAME COLUMN push_mark TO push_seq;")?;
+    }
+    if has_column(conn, "sync_state", "device_seq")? {
+        conn.execute_batch("ALTER TABLE sync_state RENAME COLUMN device_seq TO my_push_seq;")?;
     }
     Ok(())
 }

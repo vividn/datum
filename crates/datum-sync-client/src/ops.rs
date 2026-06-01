@@ -14,7 +14,7 @@
 //!   `0` produces a full dump of every live and tombstoned entry. The push
 //!   path uses [`pack_changeset_since`] to advance the watermark to the max
 //!   metric of exactly the rows it packed.
-//! - [`crate::sync_state::advance_push_seq`] /
+//! - [`crate::sync_state::advance_push_mark`] /
 //!   [`crate::sync_state::advance_pull_seq`] record the latest seq the
 //!   relay accepted on a push and the latest server-assigned global seq
 //!   consumed on a pull.

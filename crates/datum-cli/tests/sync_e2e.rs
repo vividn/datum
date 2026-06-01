@@ -761,7 +761,7 @@ fn s6_agent_kill_restart_resumes_without_data_loss() {
     }
 
     // Agent restart: brand-new client, brand-new bearer fetch — same
-    // local DB. The push_seq watermark stored on the DB drives
+    // local DB. The push_mark watermark stored on the DB drives
     // resumption; only the new rows go up.
     {
         let client_v2 = Client::builder().build().unwrap();
@@ -845,9 +845,9 @@ fn s7_server_restart_mid_sync() {
     // Watermarks must NOT have advanced on a failed push, otherwise the
     // retry would skip rows.
     assert_eq!(
-        datum_sync_client::sync_state::get_my_push_seq(&db).unwrap(),
+        datum_sync_client::sync_state::get_device_seq(&db).unwrap(),
         0,
-        "push_seq must not advance on a failed upload"
+        "push_mark must not advance on a failed upload"
     );
 
     // Restart server — same AppState (devices, changesets, wrapped key).

@@ -21,8 +21,8 @@
 //!
 //! ## Watermarks
 //!
-//! Push advances two counters: `push_seq` (max `modify_time` epoch-ms
-//! packed) and `my_push_seq` (per-device counter that stays in lockstep
+//! Push advances two counters: `push_mark` (max `modify_time` epoch-ms
+//! packed) and `device_seq` (per-device counter that stays in lockstep
 //! with the relay). Pull advances `pull_seq` to the relay's global row id.
 //! See `docs/sync-protocol.md` §Sequence semantics.
 
@@ -140,7 +140,7 @@ pub fn push_once(
     db: &Db,
     dry_run: bool,
 ) -> Result<PushOutcome> {
-    let watermark = sync_state::get_push_seq(db)?;
+    let watermark = sync_state::get_push_mark(db)?;
     // `max_ms` is the largest `modify_time_ms` over exactly the packed rows,
     // computed in the same query as the filter — re-using it as the next
     // watermark cannot skip a row (see `pack_changeset_since`).
@@ -181,12 +181,12 @@ pub fn push_once(
     // fact, and the predict-and-check also detects device_id collisions).
     // The relay validates the prediction *before* storing: on a mismatch
     // it returns its authoritative `expected` seq and we recover in-band
-    // — re-base `my_push_seq`, RE-ENCRYPT (the AAD depends on seq), and
+    // — re-base `device_seq`, RE-ENCRYPT (the AAD depends on seq), and
     // retry once. This makes a seq desync (crash between push and the
     // watermark advance, DB restore, relay reset) recoverable instead of
     // a permanent softlock. Only a *second* mismatch is a genuine
     // device_id collision and is fatal (da-ca4q).
-    let predicted = sync_state::get_my_push_seq(db)?.saturating_add(1);
+    let predicted = sync_state::get_device_seq(db)?.saturating_add(1);
     let blob = encrypt_changeset(&changeset, master_key, device_id, predicted)?;
     let push_with_seq = |seq: u64, blob: &EncryptedBlob| {
         session.run(client, |bearer| {
@@ -205,7 +205,7 @@ pub fn push_once(
 
     let ack = match push_with_seq(predicted, &blob) {
         Ok(ack) => {
-            sync_state::advance_my_push_seq(db, predicted)?;
+            sync_state::advance_device_seq(db, predicted)?;
             ack
         }
         Err(SessionError::SeqMismatch(SyncProtocolError::SeqMismatch { expected, .. })) => {
@@ -229,7 +229,7 @@ pub fn push_once(
             // The relay is authoritative here and `expected` may sit
             // *below* our stored value (relay reset / older-backup
             // restore), so force-set past the monotonic guard.
-            sync_state::set_my_push_seq(db, expected)?;
+            sync_state::set_device_seq(db, expected)?;
             ack
         }
         Err(other) => return Err(other.into()),
@@ -248,7 +248,7 @@ pub fn push_once(
 
     let advance_to = max_ms.unwrap_or(watermark);
     if advance_to > watermark {
-        sync_state::advance_push_seq(db, advance_to)?;
+        sync_state::advance_push_mark(db, advance_to)?;
     }
 
     Ok(PushOutcome {

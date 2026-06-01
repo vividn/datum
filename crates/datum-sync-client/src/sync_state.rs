@@ -1,7 +1,7 @@
 //! Per-DB sync-state watermarks stored in the `sync_state` table.
 //!
 //! Every device tracks two monotonic counters:
-//! - `push_seq` — the largest `modified_at` epoch-ms the relay has
+//! - `push_mark` — the largest `modified_at` epoch-ms the relay has
 //!   accepted for this device.
 //! - `pull_seq` — the largest global seq returned by the relay in a
 //!   pull response, so we can ask for "newer than this" next time.
@@ -20,10 +20,10 @@ use rusqlite::{params, OptionalExtension};
 /// `sync_state` if they need multi-identity.
 pub const DEFAULT_DB_ID: &str = "local";
 
-/// Read the local `push_seq` watermark. Returns 0 if no row exists yet
+/// Read the local `push_mark` watermark. Returns 0 if no row exists yet
 /// (fresh DB, never synced).
-pub fn get_push_seq(db: &Db) -> Result<u64> {
-    read_seq_column(db, "push_seq")
+pub fn get_push_mark(db: &Db) -> Result<u64> {
+    read_seq_column(db, "push_mark")
 }
 
 /// Read the local `pull_seq` watermark.
@@ -34,15 +34,15 @@ pub fn get_pull_seq(db: &Db) -> Result<u64> {
 /// Read the local per-device push counter. This mirrors the relay's
 /// server-assigned `seq` for this device and is used as the AAD seq when
 /// sealing outgoing changesets (the relay uses `MAX(seq)+1` per device, so
-/// local `my_push_seq + 1` is the value the server will stamp).
-pub fn get_my_push_seq(db: &Db) -> Result<u64> {
-    read_seq_column(db, "my_push_seq")
+/// local `device_seq + 1` is the value the server will stamp).
+pub fn get_device_seq(db: &Db) -> Result<u64> {
+    read_seq_column(db, "device_seq")
 }
 
-/// Advance `push_seq` and stamp `last_push_at` (epoch-ms). A rewind to a
-/// lower value is rejected — `push_seq` is monotonic.
-pub fn advance_push_seq(db: &Db, new_seq: u64) -> Result<()> {
-    advance_seq(db, "push_seq", "last_push_at", new_seq)
+/// Advance `push_mark` and stamp `last_push_at` (epoch-ms). A rewind to a
+/// lower value is rejected — `push_mark` is monotonic.
+pub fn advance_push_mark(db: &Db, new_seq: u64) -> Result<()> {
+    advance_seq(db, "push_mark", "last_push_at", new_seq)
 }
 
 /// Advance `pull_seq` and stamp `last_pull_at` (epoch-ms).
@@ -51,42 +51,42 @@ pub fn advance_pull_seq(db: &Db, new_seq: u64) -> Result<()> {
 }
 
 /// Record the server-acknowledged per-device seq. Expected to be exactly
-/// the value the client predicted via `get_my_push_seq() + 1`; a relay
+/// the value the client predicted via `get_device_seq() + 1`; a relay
 /// that returns a mismatched seq indicates either a protocol bug or a
 /// second writer on the same device_id, so we surface it as an error.
-pub fn advance_my_push_seq(db: &Db, new_seq: u64) -> Result<()> {
-    let current = get_my_push_seq(db)?;
+pub fn advance_device_seq(db: &Db, new_seq: u64) -> Result<()> {
+    let current = get_device_seq(db)?;
     if new_seq < current {
         return Err(DatumError::Other(format!(
-            "sync_state.my_push_seq rewind rejected: stored {current}, asked for {new_seq}"
+            "sync_state.device_seq rewind rejected: stored {current}, asked for {new_seq}"
         )));
     }
     let now_ms = Utc::now().timestamp_millis();
     db.conn().execute(
-        "INSERT INTO sync_state (db_id, my_push_seq, last_push_at)
+        "INSERT INTO sync_state (db_id, device_seq, last_push_at)
          VALUES (?1, ?2, ?3)
          ON CONFLICT(db_id) DO UPDATE SET
-            my_push_seq  = excluded.my_push_seq,
+            device_seq  = excluded.device_seq,
             last_push_at = excluded.last_push_at",
         params![DEFAULT_DB_ID, new_seq as i64, now_ms],
     )?;
     Ok(())
 }
 
-/// Force `my_push_seq` to an exact value, bypassing the monotonic guard
-/// in [`advance_my_push_seq`]. Used ONLY by the seq-mismatch recovery
+/// Force `device_seq` to an exact value, bypassing the monotonic guard
+/// in [`advance_device_seq`]. Used ONLY by the seq-mismatch recovery
 /// path (da-ca4q): the relay handed back its authoritative next seq, and
 /// that value may legitimately be *lower* than our stored one (relay
 /// reset, or a DB restored from a backup the relay has since moved past).
 /// Treating the relay as authoritative here is what un-softlocks the
-/// client — the normal push path keeps using `advance_my_push_seq`.
-pub fn set_my_push_seq(db: &Db, new_seq: u64) -> Result<()> {
+/// client — the normal push path keeps using `advance_device_seq`.
+pub fn set_device_seq(db: &Db, new_seq: u64) -> Result<()> {
     let now_ms = Utc::now().timestamp_millis();
     db.conn().execute(
-        "INSERT INTO sync_state (db_id, my_push_seq, last_push_at)
+        "INSERT INTO sync_state (db_id, device_seq, last_push_at)
          VALUES (?1, ?2, ?3)
          ON CONFLICT(db_id) DO UPDATE SET
-            my_push_seq  = excluded.my_push_seq,
+            device_seq  = excluded.device_seq,
             last_push_at = excluded.last_push_at",
         params![DEFAULT_DB_ID, new_seq as i64, now_ms],
     )?;
@@ -188,7 +188,7 @@ pub fn get_cluster_generation(db: &Db) -> Result<u64> {
 }
 
 /// Record the cluster generation the server echoed on the most recent
-/// push/pull. Unlike `push_seq`/`pull_seq`, this counter is NOT
+/// push/pull. Unlike `push_mark`/`pull_seq`, this counter is NOT
 /// monotonic from the client's perspective — a fresh DB attaching to a
 /// long-lived cluster observes whatever generation the server is
 /// already on, which may be > 0. Overwrites unconditionally.
@@ -237,49 +237,49 @@ mod tests {
     #[test]
     fn seq_advances_correctly() {
         let db = fresh_db();
-        assert_eq!(get_push_seq(&db).unwrap(), 0);
+        assert_eq!(get_push_mark(&db).unwrap(), 0);
         assert_eq!(get_pull_seq(&db).unwrap(), 0);
         assert!(get_last_push_at(&db).unwrap().is_none());
 
-        advance_push_seq(&db, 5).unwrap();
-        assert_eq!(get_push_seq(&db).unwrap(), 5);
+        advance_push_mark(&db, 5).unwrap();
+        assert_eq!(get_push_mark(&db).unwrap(), 5);
         assert!(get_last_push_at(&db).unwrap().is_some());
 
-        advance_push_seq(&db, 12).unwrap();
-        assert_eq!(get_push_seq(&db).unwrap(), 12);
+        advance_push_mark(&db, 12).unwrap();
+        assert_eq!(get_push_mark(&db).unwrap(), 12);
 
         // Rewind is rejected — monotonic watermark.
-        assert!(advance_push_seq(&db, 10).is_err());
-        assert_eq!(get_push_seq(&db).unwrap(), 12);
+        assert!(advance_push_mark(&db, 10).is_err());
+        assert_eq!(get_push_mark(&db).unwrap(), 12);
 
         // push and pull are independent columns.
         advance_pull_seq(&db, 7).unwrap();
         assert_eq!(get_pull_seq(&db).unwrap(), 7);
-        assert_eq!(get_push_seq(&db).unwrap(), 12);
+        assert_eq!(get_push_mark(&db).unwrap(), 12);
     }
 
-    /// da-ca4q: `advance_my_push_seq` is monotonic, but the seq-mismatch
-    /// recovery path uses `set_my_push_seq` to force the relay's
+    /// da-ca4q: `advance_device_seq` is monotonic, but the seq-mismatch
+    /// recovery path uses `set_device_seq` to force the relay's
     /// authoritative value — which may legitimately rewind *below* the
     /// stored seq (relay reset / older-backup restore). The forced set
     /// must succeed where the monotonic advance refuses.
     #[test]
-    fn set_my_push_seq_forces_rebase_past_monotonic_guard() {
+    fn set_device_seq_forces_rebase_past_monotonic_guard() {
         let db = fresh_db();
-        advance_my_push_seq(&db, 10).unwrap();
-        assert_eq!(get_my_push_seq(&db).unwrap(), 10);
+        advance_device_seq(&db, 10).unwrap();
+        assert_eq!(get_device_seq(&db).unwrap(), 10);
 
         // Monotonic guard rejects a rewind...
-        assert!(advance_my_push_seq(&db, 3).is_err());
-        assert_eq!(get_my_push_seq(&db).unwrap(), 10);
+        assert!(advance_device_seq(&db, 3).is_err());
+        assert_eq!(get_device_seq(&db).unwrap(), 10);
 
         // ...but the recovery force-set rebases down to the relay's value.
-        set_my_push_seq(&db, 3).unwrap();
-        assert_eq!(get_my_push_seq(&db).unwrap(), 3);
+        set_device_seq(&db, 3).unwrap();
+        assert_eq!(get_device_seq(&db).unwrap(), 3);
 
         // And forward re-base works too (the common crash-recovery case).
-        set_my_push_seq(&db, 8).unwrap();
-        assert_eq!(get_my_push_seq(&db).unwrap(), 8);
+        set_device_seq(&db, 8).unwrap();
+        assert_eq!(get_device_seq(&db).unwrap(), 8);
     }
 
     /// da-eu7o: a fresh DB reports no cluster_id and generation 0; the

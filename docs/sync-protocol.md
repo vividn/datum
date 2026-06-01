@@ -272,7 +272,7 @@ Response (200):
   the cluster's authoritative generation (a mismatch → `409
   generation_mismatch`, see below).
 - `predicted_seq` is the per-device seq the client bound into the
-  changeset AAD at encrypt time (`my_push_seq + 1`). The server compares
+  changeset AAD at encrypt time (`device_seq + 1`). The server compares
   it to `MAX(seq)+1` for the device. On agreement it stores the blob at
   that seq and echoes it back; on disagreement it returns `409
   seq_mismatch` **without storing** (see [Seq-mismatch
@@ -297,12 +297,12 @@ the relay rejects the push:
 ```
 
 The client treats this as **recoverable, not terminal**: it re-bases
-`my_push_seq` to `expected`, RE-ENCRYPTS the changeset with the corrected
+`device_seq` to `expected`, RE-ENCRYPTS the changeset with the corrected
 seq, surfaces a warning, and retries the push once. Only a *second*
 mismatch indicates a genuine `device_id` collision (two writers racing
 the same id) and is fatal. The relay's `expected` may sit *below* the
 client's stored seq (relay reset / older-backup restore), so recovery
-force-sets `my_push_seq` past the normal monotonic guard.
+force-sets `device_seq` past the normal monotonic guard.
 
 ### `GET /v0/pull?since=<id>&device=<device_id>&cluster_id=<cluster>&generation=<gen>`
 
@@ -350,7 +350,7 @@ not the same number and are not interchangeable:
   beyond being monotonic and ascending.
 - **`seq`** (per-device counter) — one independent sequence per
   `device_id`. The relay is authoritative (`MAX(seq)+1` per device), but
-  the client **predicts** the next value (`my_push_seq + 1`) before
+  the client **predicts** the next value (`device_seq + 1`) before
   pushing, because `seq` is bound into the changeset AAD and so must be
   known at encrypt time. The push response echoes the assigned seq and the
   client asserts equality. Across devices, `seq` values overlap and carry
@@ -359,7 +359,7 @@ not the same number and are not interchangeable:
 
 (An earlier draft said "the server assigns a per-device monotonic seq"
 without the prediction half — accurate as far as it went, but it hid why
-the client maintains its own `my_push_seq` and why a mismatch is fatal.)
+the client maintains its own `device_seq` and why a mismatch is fatal.)
 
 The `sync_state` table in `datum-core`'s schema mirrors these concerns —
 see [`crates/datum-sync-client/src/sync_state.rs`](../crates/datum-sync-client/src/sync_state.rs)
@@ -368,17 +368,17 @@ for the accessors:
 | Column               | Meaning                                                          |
 |----------------------|------------------------------------------------------------------|
 | `db_id`              | Local sync identity. One row per DB (default: `"local"`).        |
-| `push_seq`           | Highest local `modified_at` epoch-ms included in a push (watermark). |
-| `my_push_seq`        | This device's per-device push counter (the predicted `seq`).     |
+| `push_mark`           | Highest local `modified_at` epoch-ms included in a push (watermark). |
+| `device_seq`        | This device's per-device push counter (the predicted `seq`).     |
 | `pull_seq`           | Highest relay-global `id` successfully pulled.                   |
 | `cluster_id`         | Cluster this DB is bound to (echoed by the relay; nullable until first sync). |
 | `cluster_generation` | Last cluster generation the relay echoed (NOT monotonic client-side). |
 | `last_push_at`       | Epoch-ms of the most recent successful push.                     |
 | `last_pull_at`       | Epoch-ms of the most recent successful pull.                     |
 
-`push_seq` is a local watermark (epoch-ms of `modified_at`), **not** a
+`push_mark` is a local watermark (epoch-ms of `modified_at`), **not** a
 server seq — the next pack only needs to know which local rows changed,
-and `modified_at` is the authoritative answer. `my_push_seq` is the
+and `modified_at` is the authoritative answer. `device_seq` is the
 separate per-device counter the client predicts and the relay confirms on
 each push.
 

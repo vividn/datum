@@ -27,7 +27,7 @@ pub enum HttpError {
     /// The relay returned 409 with a structured
     /// [`SyncProtocolError::SeqMismatch`] body. Distinct from
     /// `GenerationMismatch` because the caller's recovery differs: a seq
-    /// mismatch is fixed in-band by re-basing `my_push_seq`, re-encrypting,
+    /// mismatch is fixed in-band by re-basing `device_seq`, re-encrypting,
     /// and retrying the push (da-ca4q), not by re-initialising the cluster.
     #[error(transparent)]
     SeqMismatch(SyncProtocolError),

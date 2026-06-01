@@ -152,16 +152,16 @@ fn sync_push_uploads_new_changes_since_last_seq() {
     assert_eq!(outcome.pushed, 2);
     assert_eq!(outcome.pulled, 0);
 
-    // push_seq advanced past the entries' modify_time.
-    assert!(sync_state::get_push_seq(&db).unwrap() > 0);
-    assert_eq!(sync_state::get_my_push_seq(&db).unwrap(), 1);
+    // push_mark advanced past the entries' modify_time.
+    assert!(sync_state::get_push_mark(&db).unwrap() > 0);
+    assert_eq!(sync_state::get_device_seq(&db).unwrap(), 1);
 
     // A second push with no new rows sends nothing.
     let again =
         run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
     assert_eq!(again.pushed, 0);
     // Counter didn't tick because nothing was uploaded.
-    assert_eq!(sync_state::get_my_push_seq(&db).unwrap(), 1);
+    assert_eq!(sync_state::get_device_seq(&db).unwrap(), 1);
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn sync_bidirectional_pulls_first() {
 
     assert_eq!(outcome.pulled, 1, "should pull 1 peer change");
     // After pulling the peer entry, a fresh pack sees both rows in the DB.
-    // Since push_seq starts at 0, BOTH rows go up the wire.
+    // Since push_mark starts at 0, BOTH rows go up the wire.
     assert_eq!(outcome.pushed, 2);
 }
 
@@ -269,8 +269,8 @@ fn sync_dry_run_does_not_mutate() {
     assert_eq!(outcome.pushed, 1);
     assert!(outcome.dry_run);
     // Watermarks stay at 0 — nothing actually shipped.
-    assert_eq!(sync_state::get_push_seq(&db).unwrap(), 0);
-    assert_eq!(sync_state::get_my_push_seq(&db).unwrap(), 0);
+    assert_eq!(sync_state::get_push_mark(&db).unwrap(), 0);
+    assert_eq!(sync_state::get_device_seq(&db).unwrap(), 0);
     // Relay state is empty.
     assert_eq!(relay.changeset_count(), 0);
 }
@@ -655,9 +655,9 @@ fn push_after_server_bump_surfaces_generation_mismatch_error() {
     // Watermarks must NOT advance after a mismatch — peers depend on
     // never seeing a row we never committed.
     assert_eq!(
-        sync_state::get_my_push_seq(&db).unwrap(),
+        sync_state::get_device_seq(&db).unwrap(),
         1,
-        "my_push_seq must stay pinned on the previous push when the new push fails",
+        "device_seq must stay pinned on the previous push when the new push fails",
     );
 }
 

@@ -63,7 +63,7 @@ pub enum SessionError {
     /// The relay's per-device seq disagreed with what we predicted. Like
     /// `GenerationMismatch` the 401-refresh loop has nothing to do here;
     /// unlike it, the push path recovers in-band by re-basing
-    /// `my_push_seq`, re-encrypting, and retrying (da-ca4q). Passed
+    /// `device_seq`, re-encrypting, and retrying (da-ca4q). Passed
     /// through untouched so [`crate::sync_once::push_once`] can catch it.
     #[error(transparent)]
     SeqMismatch(SyncProtocolError),

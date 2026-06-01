@@ -5,7 +5,7 @@
 //! - `POST /v0/push` — body `{device_id, payload_b64, cluster_id, generation}`,
 //!   response `{seq, cluster_id, generation}`. The relay assigns the
 //!   per-device `seq` (`MAX(seq)+1`) and echoes it; the client predicts the
-//!   same value (`my_push_seq+1`) at encrypt time because `seq` is AAD-bound.
+//!   same value (`device_seq+1`) at encrypt time because `seq` is AAD-bound.
 //! - `GET /v0/pull?since=<id>&device=<id>&cluster_id=<c>&generation=<g>` —
 //!   returns peers' changesets ordered by the relay-global `id` (`since` is an
 //!   `id`, not a `seq`). The caller's own device is excluded server-side.
@@ -79,7 +79,7 @@ pub struct PulledChangeset {
 /// [`HttpError::GenerationMismatch`].
 ///
 /// `predicted_seq` is the per-device seq the caller bound into the
-/// changeset AAD at encrypt time (`my_push_seq + 1`). The server rejects
+/// changeset AAD at encrypt time (`device_seq + 1`). The server rejects
 /// a mismatch with [`SyncProtocolError::SeqMismatch`] — surfaced as
 /// [`HttpError::SeqMismatch`] — *before* storing the blob, so the caller
 /// can re-base and retry (da-ca4q).

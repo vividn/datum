@@ -18,7 +18,7 @@ pub struct PushRequest {
     /// whose generation disagrees with the cluster's current value with
     /// [`crate::errors::SyncProtocolError::GenerationMismatch`].
     pub generation: u64,
-    /// The per-device `seq` the client predicted (`my_push_seq + 1`) and
+    /// The per-device `seq` the client predicted (`device_seq + 1`) and
     /// bound into the changeset's AAD at encrypt time. The server compares
     /// it to its own authoritative next seq; a disagreement is rejected
     /// with [`crate::errors::SyncProtocolError::SeqMismatch`] *before* the
