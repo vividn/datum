@@ -8,6 +8,8 @@ use anyhow::Context;
 use reqwest::blocking::Client;
 use serde::Deserialize;
 
+use datum_sync_protocol::PROTOCOL_VERSION_PATH;
+
 use crate::http::error::HttpError;
 
 /// Response body for `POST /v0/clusters/{cluster_id}/bump-generation`.
@@ -37,7 +39,9 @@ pub fn bump_generation(
     cluster_id: &str,
 ) -> Result<u64, HttpError> {
     let resp = client
-        .post(format!("{server}/v0/clusters/{cluster_id}/bump-generation"))
+        .post(format!(
+            "{server}/{PROTOCOL_VERSION_PATH}/clusters/{cluster_id}/bump-generation"
+        ))
         .bearer_auth(bearer)
         .send()
         .context("POST /v0/clusters/{cluster}/bump-generation")

@@ -17,6 +17,7 @@ use reqwest::blocking::Client;
 use crate::http::error::HttpError;
 use crate::protocol::messages::AuthToken;
 use datum_sync_protocol::messages::auth::RefreshTokenRequest;
+use datum_sync_protocol::PROTOCOL_VERSION_PATH;
 
 /// POST `/v0/auth/refresh` with the supplied single-use refresh token.
 /// Returns the new [`AuthToken`] (which itself carries a fresh
@@ -26,7 +27,7 @@ pub fn refresh(client: &Client, server: &str, refresh_token: &str) -> Result<Aut
         refresh_token: refresh_token.to_string(),
     };
     let resp = client
-        .post(format!("{server}/v0/auth/refresh"))
+        .post(format!("{server}/{PROTOCOL_VERSION_PATH}/auth/refresh"))
         .json(&body)
         .send()
         .context("POST /v0/auth/refresh")

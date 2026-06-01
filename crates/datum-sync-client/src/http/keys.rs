@@ -7,6 +7,8 @@
 use anyhow::Context;
 use reqwest::blocking::Client;
 
+use datum_sync_protocol::PROTOCOL_VERSION_PATH;
+
 use crate::crypto::key_wrap::WrappedKey;
 use crate::http::error::HttpError;
 
@@ -19,7 +21,7 @@ pub fn upload_wrapped(
     wrapped: &WrappedKey,
 ) -> Result<(), HttpError> {
     let resp = client
-        .post(format!("{server}/v0/keys/wrapped"))
+        .post(format!("{server}/{PROTOCOL_VERSION_PATH}/keys/wrapped"))
         .bearer_auth(bearer)
         .json(wrapped)
         .send()
@@ -45,7 +47,7 @@ pub fn fetch_wrapped(
     bearer: &str,
 ) -> Result<Option<WrappedKey>, HttpError> {
     let resp = client
-        .get(format!("{server}/v0/keys/wrapped"))
+        .get(format!("{server}/{PROTOCOL_VERSION_PATH}/keys/wrapped"))
         .bearer_auth(bearer)
         .send()
         .context("GET /v0/keys/wrapped")

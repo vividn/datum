@@ -28,6 +28,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use datum_sync_protocol::PROTOCOL_VERSION_PATH;
 use rusqlite::Connection;
 use std::{
     collections::HashMap,
@@ -142,7 +143,7 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .merge(authed_routes);
 
     Router::new()
-        .nest("/v0", v0)
+        .nest(&format!("/{PROTOCOL_VERSION_PATH}"), v0)
         .route("/health", get(|| async { "ok" }))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -210,6 +211,44 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    /// Guards that routes mount under the prefix derived from
+    /// [`PROTOCOL_VERSION_PATH`], not a hardcoded `/v0` literal — a future
+    /// protocol bump must move the live mount in lock-step (da-wg02).
+    #[tokio::test]
+    async fn test_routes_mounted_under_protocol_version_path() {
+        let app = build_app(test_state());
+        // A route under the derived prefix exists, so it reaches the auth
+        // layer (401) rather than the router's fallback (404)...
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!(
+                        "/{PROTOCOL_VERSION_PATH}/pull?since=0&device=test&cluster_id=test-cluster&generation=0"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        // ...while the same route under a different prefix is unmounted (404),
+        // proving the prefix is the constant and not accepted verbatim.
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v999/pull?since=0&device=test&cluster_id=test-cluster&generation=0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

@@ -12,6 +12,7 @@
 //! WASM client might stash the token elsewhere.
 
 use anyhow::{Context, Result};
+use datum_sync_protocol::PROTOCOL_VERSION_PATH;
 use reqwest::blocking::Client;
 use std::time::Duration;
 
@@ -44,7 +45,7 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
     client: &Client,
     prompter: &mut P,
 ) -> Result<AuthToken> {
-    let start = client.post(format!("{server}/v0/auth/device-code"));
+    let start = client.post(format!("{server}/{PROTOCOL_VERSION_PATH}/auth/device-code"));
     let resp = start
         .json(&serde_json::json!({}))
         .send()
@@ -61,7 +62,7 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
     let mut interval = Duration::from_secs(device.interval.max(1));
     let deadline = std::time::Instant::now() + POLL_TIMEOUT;
 
-    let poll_url = format!("{server}/v0/auth/device-code/poll");
+    let poll_url = format!("{server}/{PROTOCOL_VERSION_PATH}/auth/device-code/poll");
     loop {
         if std::time::Instant::now() >= deadline {
             anyhow::bail!("login timed out waiting for authorization");

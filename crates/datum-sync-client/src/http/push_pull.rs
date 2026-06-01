@@ -22,6 +22,7 @@ use anyhow::Context;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use datum_sync_protocol::messages::sync::{Changeset as WireChangeset, PushRequest, PushResponse};
 use datum_sync_protocol::SyncProtocolError;
+use datum_sync_protocol::PROTOCOL_VERSION_PATH;
 use reqwest::blocking::Client;
 
 use crate::http::error::HttpError;
@@ -105,7 +106,7 @@ pub fn push_blob(
         predicted_seq,
     };
     let resp = client
-        .post(format!("{server}/v0/push"))
+        .post(format!("{server}/{PROTOCOL_VERSION_PATH}/push"))
         .bearer_auth(bearer)
         .json(&body)
         .send()
@@ -181,7 +182,7 @@ pub fn pull_batch(
         ("generation", generation.to_string()),
     ];
     let resp = client
-        .get(format!("{server}/v0/pull"))
+        .get(format!("{server}/{PROTOCOL_VERSION_PATH}/pull"))
         .bearer_auth(bearer)
         .query(&query)
         .send()
