@@ -29,6 +29,7 @@ pub mod key;
 pub mod login;
 pub mod pull;
 pub mod push;
+pub mod recovery;
 pub mod status;
 
 /// Token persisted per server, matching what `login` writes. Re-exported
@@ -97,7 +98,17 @@ pub struct SyncOutcome {
 
 fn run_sync(args: SyncArgs, db: &Db) -> Result<()> {
     let dir = Direction::from_flags(args.push, args.pull);
-    let outcome = run_sync_with_client(args.server.as_deref(), dir, args.dry_run, db)?;
+    // CLI path: pass a real Prompter so GenerationMismatch recovery
+    // (da-74xx) can run interactively. Headless / test callers that go
+    // through the bare `run_sync_with_client` get the pre-recovery
+    // behaviour (the error surfaces with the "cluster forked" message).
+    let outcome = run_sync_with_client_and_prompter(
+        args.server.as_deref(),
+        dir,
+        args.dry_run,
+        db,
+        &mut StdIoPrompter,
+    )?;
 
     let prefix = if outcome.dry_run { "[dry-run] " } else { "" };
     if dir.does_pull() {
@@ -136,16 +147,44 @@ fn plural(n: usize) -> &'static str {
 }
 
 /// Test hook: run a sync against the configured server without printing.
-/// Returns the outcome so tests can make assertions directly.
+/// Returns the outcome so tests can make assertions directly. Backwards-
+/// compatible — does NOT attempt da-74xx recovery on
+/// `GenerationMismatch`. Use [`run_sync_with_client_and_prompter`] when
+/// the caller can drive interactive prompts.
 pub fn run_sync_with_client(
     server_override: Option<&str>,
     direction: Direction,
     dry_run: bool,
     db: &Db,
 ) -> Result<SyncOutcome> {
+    run_sync_with_client_inner(server_override, direction, dry_run, db, None)
+}
+
+/// Prompter-aware variant: the CLI dispatch path uses this with
+/// `StdIoPrompter` so a `GenerationMismatch` triggers the da-74xx
+/// recovery flow (prompt → optional JSONL export → purge pre-reinit →
+/// reset watermark → adopt new generation → retry the sync). Pass a
+/// `TestPrompter` from integration tests to drive the prompts.
+pub fn run_sync_with_client_and_prompter(
+    server_override: Option<&str>,
+    direction: Direction,
+    dry_run: bool,
+    db: &Db,
+    prompter: &mut dyn Prompter,
+) -> Result<SyncOutcome> {
+    run_sync_with_client_inner(server_override, direction, dry_run, db, Some(prompter))
+}
+
+fn run_sync_with_client_inner(
+    server_override: Option<&str>,
+    direction: Direction,
+    dry_run: bool,
+    db: &Db,
+    prompter: Option<&mut dyn Prompter>,
+) -> Result<SyncOutcome> {
     let server = resolve_server(server_override)?;
     let client = build_client()?;
-    run_sync_inner(&server, &client, direction, dry_run, db)
+    run_sync_inner_with_recovery(&server, &client, direction, dry_run, db, prompter)
 }
 
 pub fn run_sync_inner(
@@ -154,6 +193,17 @@ pub fn run_sync_inner(
     direction: Direction,
     dry_run: bool,
     db: &Db,
+) -> Result<SyncOutcome> {
+    run_sync_inner_with_recovery(server, client, direction, dry_run, db, None)
+}
+
+fn run_sync_inner_with_recovery(
+    server: &str,
+    client: &reqwest::blocking::Client,
+    direction: Direction,
+    dry_run: bool,
+    db: &Db,
+    prompter: Option<&mut dyn Prompter>,
 ) -> Result<SyncOutcome> {
     use datum_sync_client::sync_once::{self, Direction as ClientDirection, SyncConfig};
 
@@ -171,13 +221,60 @@ pub fn run_sync_inner(
         },
         dry_run,
     };
-    let report = sync_once::sync_once(client, db, &cfg).map_err(rewrite_generation_mismatch)?;
+
+    // On the happy path this is one call to `sync_once`. On a
+    // `GenerationMismatch` *with* a prompter, run the da-74xx recovery
+    // flow and retry once. Without a prompter, fall back to the original
+    // "cluster forked" CLI message — preserving the test-callable shape.
+    let report = match sync_once::sync_once(client, db, &cfg) {
+        Ok(r) => r,
+        Err(e) => match prompter {
+            Some(p) => match try_recover_and_retry(&e, db, p, client, &cfg)? {
+                Some(retry) => retry,
+                None => return Err(rewrite_generation_mismatch(e)),
+            },
+            None => return Err(rewrite_generation_mismatch(e)),
+        },
+    };
     Ok(SyncOutcome {
         pushed: report.push.pushed,
         pulled: report.pull.applied,
         integrity_warnings_queued: report.pull.integrity_warnings_queued,
         dry_run,
     })
+}
+
+/// Attempt da-74xx recovery for a `GenerationMismatch` error and retry
+/// the sync. Returns `Ok(Some(report))` when both succeed, `Ok(None)`
+/// when the inbound error isn't a `GenerationMismatch` (the caller
+/// should fall through to its non-recovery error path), or `Err(...)`
+/// when recovery itself failed (user declined, IO failure, or the retry
+/// surfaced another error — all propagated so the user sees the cause).
+fn try_recover_and_retry(
+    err: &anyhow::Error,
+    db: &Db,
+    prompter: &mut dyn Prompter,
+    client: &reqwest::blocking::Client,
+    cfg: &datum_sync_client::sync_once::SyncConfig<'_>,
+) -> Result<Option<datum_sync_client::sync_once::SyncReport>> {
+    use datum_sync_client::http::SessionError;
+    use datum_sync_client::SyncProtocolError;
+    let (expected, generation_started_at) = match err.downcast_ref::<SessionError>() {
+        Some(SessionError::GenerationMismatch(SyncProtocolError::GenerationMismatch {
+            expected,
+            generation_started_at,
+            ..
+        })) => (*expected, generation_started_at.clone()),
+        _ => return Ok(None),
+    };
+    let _rep = recovery::run(db, expected, &generation_started_at, prompter)?;
+    // Pass the retry's error through `rewrite_generation_mismatch` so a
+    // rare second mismatch (another reinit landed *during* recovery)
+    // still surfaces the actionable "cluster forked" CLI message rather
+    // than the raw protocol error (Copilot review on PR #8).
+    let retry = datum_sync_client::sync_once::sync_once(client, db, cfg)
+        .map_err(rewrite_generation_mismatch)?;
+    Ok(Some(retry))
 }
 
 /// da-ws1q sub-5: when sync_once bubbles a SessionError::GenerationMismatch
@@ -346,6 +443,21 @@ pub trait Prompter {
     fn sleep(&mut self, dur: Duration) {
         std::thread::sleep(dur);
     }
+    /// Ask a yes/no question; return `true` for an affirmative answer.
+    /// Default impl reads a line from stdin and accepts `y` / `yes`
+    /// (case-insensitive). Used by the GenerationMismatch recovery
+    /// prompt (da-74xx) — and any future interactive decision point.
+    fn confirm(&mut self, prompt: &str) -> Result<bool> {
+        use std::io::{BufRead, Write};
+        let mut stderr = std::io::stderr();
+        write!(stderr, "{prompt} [y/N]: ")?;
+        stderr.flush()?;
+        let stdin = std::io::stdin();
+        let mut line = String::new();
+        stdin.lock().read_line(&mut line)?;
+        let answer = line.trim().to_lowercase();
+        Ok(answer == "y" || answer == "yes")
+    }
 }
 
 /// Production prompter: prints to stderr, reads via `rpassword`.
@@ -370,11 +482,13 @@ impl Prompter for StdIoPrompter {
     }
 }
 
-/// Scripted prompter for tests — passphrases come from a preloaded queue
-/// and status/login events are captured in `events`.
+/// Scripted prompter for tests — passphrases and confirm answers come
+/// from preloaded queues; status/login/confirm events are captured in
+/// `events` for assertions.
 #[cfg(any(test, feature = "test-util"))]
 pub struct TestPrompter {
     pub passphrases: std::collections::VecDeque<String>,
+    pub confirms: std::collections::VecDeque<bool>,
     pub events: Vec<String>,
 }
 
@@ -387,8 +501,16 @@ impl TestPrompter {
     {
         Self {
             passphrases: passphrases.into_iter().map(Into::into).collect(),
+            confirms: std::collections::VecDeque::new(),
             events: Vec::new(),
         }
+    }
+
+    /// Queue an answer for the next `confirm(...)` call. Chainable for
+    /// concise test setup.
+    pub fn push_confirm(&mut self, answer: bool) -> &mut Self {
+        self.confirms.push_back(answer);
+        self
     }
 }
 
@@ -417,4 +539,10 @@ impl Prompter for TestPrompter {
         self.events.push(format!("status:{msg}"));
     }
     fn sleep(&mut self, _dur: Duration) {}
+    fn confirm(&mut self, prompt: &str) -> Result<bool> {
+        self.events.push(format!("confirm:{prompt}"));
+        self.confirms
+            .pop_front()
+            .ok_or_else(|| anyhow::anyhow!("no scripted confirm answer for: {prompt}"))
+    }
 }

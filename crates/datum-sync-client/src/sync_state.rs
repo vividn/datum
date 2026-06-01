@@ -50,6 +50,187 @@ pub fn advance_pull_seq(db: &Db, new_seq: u64) -> Result<()> {
     advance_seq(db, "pull_seq", "last_pull_at", new_seq)
 }
 
+/// Snapshot of how local entries split relative to a cluster's
+/// `generation_started_at` and the local `push_mark`. Built by
+/// [`partition_unsynced_by_generation`] for da-74xx recovery.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct UnsyncedPartition {
+    /// Total entries with `modify_time < generation_started_at` —
+    /// pre-reinit stale state, all discarded during recovery.
+    pub pre_reinit_total: u64,
+    /// Subset of pre-reinit entries with `modify_time_ms > push_mark` —
+    /// recent local edits the user hadn't pushed before the reinit. The
+    /// "exportable" subset.
+    pub pre_reinit_unsynced: u64,
+    /// Entries with `modify_time >= generation_started_at` — post-reinit
+    /// fresh work, preserved through recovery.
+    pub post_reinit: u64,
+}
+
+/// Partition local entries by their `modify_time_ms` against the cluster's
+/// `generation_started_at` (RFC 3339) and the local `push_mark`. Returns
+/// counts only — see [`UnsyncedPartition`].
+///
+/// Uses the indexed `modify_time_ms` generated column (da-x3da) so this
+/// is a single round-trip with conditional aggregation, not a scan.
+pub fn partition_unsynced_by_generation(
+    db: &Db,
+    generation_started_at: &str,
+) -> Result<UnsyncedPartition> {
+    let push_mark = get_push_mark(db)? as i64;
+    let gen_ms = chrono::DateTime::parse_from_rfc3339(generation_started_at)
+        .map_err(|e| {
+            DatumError::Other(format!(
+                "generation_started_at must be RFC 3339, got {generation_started_at:?}: {e}"
+            ))
+        })?
+        .timestamp_millis();
+
+    let row: (i64, i64, i64) = db
+        .conn()
+        .query_row(
+            "SELECT
+                COALESCE(SUM(CASE WHEN modify_time_ms < ?1 THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN modify_time_ms > ?2 AND modify_time_ms < ?1 THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN modify_time_ms >= ?1 THEN 1 ELSE 0 END), 0)
+             FROM entries",
+            params![gen_ms, push_mark],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+    Ok(UnsyncedPartition {
+        pre_reinit_total: row.0 as u64,
+        pre_reinit_unsynced: row.1 as u64,
+        post_reinit: row.2 as u64,
+    })
+}
+
+/// Parse an RFC 3339 UTC timestamp into epoch-ms for comparison against
+/// the indexed `modify_time_ms` generated column.
+fn parse_rfc3339_to_epoch_ms(s: &str) -> Result<i64> {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .map_err(|e| {
+            DatumError::Other(format!(
+                "generation_started_at must be RFC 3339, got {s:?}: {e}"
+            ))
+        })
+        .map(|dt| dt.timestamp_millis())
+}
+
+/// Write the pre-reinit-unsynced subset (entries with
+/// `modify_time_ms > push_mark AND modify_time_ms < generation_started_at`)
+/// to `path` as one JSON-encoded entry per line. Returns the count
+/// written. Used by da-74xx recovery to dump the user's recoverable
+/// stale-edit set before the pre-reinit delete runs.
+pub fn export_pre_reinit_unsynced_to_jsonl(
+    db: &Db,
+    generation_started_at: &str,
+    path: &std::path::Path,
+) -> Result<u64> {
+    use std::io::Write;
+    let push_mark = get_push_mark(db)? as i64;
+    let gen_ms = parse_rfc3339_to_epoch_ms(generation_started_at)?;
+    let conn = db.conn();
+    let mut stmt = conn.prepare(
+        "SELECT * FROM entries \
+         WHERE modify_time_ms > ?1 AND modify_time_ms < ?2 \
+         ORDER BY modify_time_ms",
+    )?;
+    let rows = stmt.query_map(
+        params![push_mark, gen_ms],
+        datum_core::db::row_to_entry_public,
+    )?;
+    // 0600 on Unix + `create_new` (O_EXCL) so the export isn't
+    // group/world-readable and we never silently overwrite an existing
+    // file (Copilot review on PR #8). The caller's filename embeds
+    // millisecond precision, so a collision here is a real anomaly we
+    // want to surface as an error rather than hide.
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts
+        .open(path)
+        .map_err(|e| DatumError::Other(format!("create recovery export {path:?}: {e}")))?;
+    let mut count = 0u64;
+    for row in rows {
+        let entry = row?;
+        let line = serde_json::to_string(&entry)
+            .map_err(|e| DatumError::Other(format!("serialise entry to JSONL: {e}")))?;
+        writeln!(file, "{line}")
+            .map_err(|e| DatumError::Other(format!("write entry to {path:?}: {e}")))?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Delete all entries with `modify_time_ms < generation_started_at`. The
+/// peer mirrors the cluster's reinit by discarding pre-reinit state
+/// (da-74xx); the caller must have already exported any user-recoverable
+/// subset via [`export_pre_reinit_unsynced_to_jsonl`] when appropriate.
+/// Returns the deletion count.
+pub fn delete_pre_reinit_entries(db: &Db, generation_started_at: &str) -> Result<u64> {
+    let gen_ms = parse_rfc3339_to_epoch_ms(generation_started_at)?;
+    let n = db.conn().execute(
+        "DELETE FROM entries WHERE modify_time_ms < ?1",
+        params![gen_ms],
+    )?;
+    Ok(n as u64)
+}
+
+/// Apply the DB-mutation portion of GenerationMismatch recovery
+/// atomically: delete all pre-reinit entries, reset the pull watermark
+/// to 0, adopt the new cluster generation — all under one BEGIN/COMMIT
+/// so a process death partway through can't leave the DB half-recovered
+/// (Copilot review on PR #8). Returns the deletion count; a ROLLBACK is
+/// best-effort on inner failure before the original error is re-raised.
+pub fn apply_recovery_mutations(
+    db: &Db,
+    generation_started_at: &str,
+    expected_generation: u64,
+) -> Result<u64> {
+    let conn = db.conn();
+    conn.execute("BEGIN", [])?;
+    let inner: Result<u64> = (|| {
+        let deleted = delete_pre_reinit_entries(db, generation_started_at)?;
+        reset_pull_seq(db, 0)?;
+        set_cluster_generation(db, expected_generation)?;
+        Ok(deleted)
+    })();
+    match inner {
+        Ok(deleted) => {
+            conn.execute("COMMIT", [])?;
+            Ok(deleted)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
+/// Force `pull_seq` to an exact value, bypassing the monotonic guard in
+/// [`advance_pull_seq`]. Used ONLY by GenerationMismatch recovery
+/// (da-74xx): on cluster reinit, the relay's new-generation row ids
+/// restart from a lower value than the peer's stored watermark, so the
+/// watermark MUST rewind to re-pull the post-reinit snapshot. Normal pull
+/// paths keep using `advance_pull_seq` — its guard catches programming
+/// errors where the recovery isn't the cause of the rewind.
+pub fn reset_pull_seq(db: &Db, new_seq: u64) -> Result<()> {
+    let now_ms = Utc::now().timestamp_millis();
+    db.conn().execute(
+        "INSERT INTO sync_state (db_id, pull_seq, last_pull_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(db_id) DO UPDATE SET
+            pull_seq     = excluded.pull_seq,
+            last_pull_at = excluded.last_pull_at",
+        params![DEFAULT_DB_ID, new_seq as i64, now_ms],
+    )?;
+    Ok(())
+}
+
 /// Record the server-acknowledged per-device seq. Expected to be exactly
 /// the value the client predicted via `get_device_seq() + 1`; a relay
 /// that returns a mismatched seq indicates either a protocol bug or a
@@ -280,6 +461,30 @@ mod tests {
         // And forward re-base works too (the common crash-recovery case).
         set_device_seq(&db, 8).unwrap();
         assert_eq!(get_device_seq(&db).unwrap(), 8);
+    }
+
+    /// da-74xx: `reset_pull_seq` force-sets the pull watermark, including
+    /// rewinding it past `advance_pull_seq`'s monotonic guard. Used on
+    /// GenerationMismatch recovery — the relay's new-generation row ids
+    /// restart from a lower value than the peer's stored watermark.
+    #[test]
+    fn reset_pull_seq_bypasses_monotonic_guard() {
+        let db = fresh_db();
+        advance_pull_seq(&db, 100).unwrap();
+        assert_eq!(get_pull_seq(&db).unwrap(), 100);
+
+        // Normal advance rejects the rewind.
+        assert!(advance_pull_seq(&db, 50).is_err());
+        assert_eq!(get_pull_seq(&db).unwrap(), 100);
+
+        // reset_pull_seq force-rewinds.
+        reset_pull_seq(&db, 5).unwrap();
+        assert_eq!(get_pull_seq(&db).unwrap(), 5);
+
+        // And resets to 0 (the canonical recovery case — re-pull
+        // everything at the new generation).
+        reset_pull_seq(&db, 0).unwrap();
+        assert_eq!(get_pull_seq(&db).unwrap(), 0);
     }
 
     /// da-eu7o: a fresh DB reports no cluster_id and generation 0; the
