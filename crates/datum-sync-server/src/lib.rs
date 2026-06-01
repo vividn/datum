@@ -2,7 +2,7 @@
 
 //! datum-sync-server — relay library + binary.
 //!
-//! All HTTP routes live under the `/v1` version prefix per
+//! All HTTP routes live under the `/v0` version prefix per
 //! `docs/sync-protocol.md`. The relay is content-blind: it never sees
 //! plaintext entries or master keys, only opaque base64 blobs and
 //! JSON-encoded wrapped key bundles.
@@ -103,8 +103,8 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .allow_methods([Method::GET, Method::POST])
         .allow_headers(Any);
 
-    // Unauthenticated under /v1/auth/*: passkey ceremonies + RFC 8628 device-code.
-    // /v1/auth/refresh is unauthenticated by design — it accepts only the
+    // Unauthenticated under /v0/auth/*: passkey ceremonies + RFC 8628 device-code.
+    // /v0/auth/refresh is unauthenticated by design — it accepts only the
     // single-use refresh_token, not a (possibly-expired) bearer.
     let auth_routes = Router::new()
         .route("/register/begin", post(auth::register_begin))
@@ -116,7 +116,7 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .route("/device-code/poll", get(device_code::poll))
         .route("/device-code/authorize", post(device_code::authorize));
 
-    // Bearer-authenticated under /v1: changeset push/pull + wrapped key.
+    // Bearer-authenticated under /v0: changeset push/pull + wrapped key.
     // `/clusters/{id}/bump-generation` lives here too (da-tat1): a client
     // signals a purge / restore / rewind and the relay increments the
     // cluster's generation counter so old-generation pushes start
@@ -137,12 +137,12 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             auth_middleware,
         ));
 
-    let v1 = Router::new()
+    let v0 = Router::new()
         .nest("/auth", auth_routes)
         .merge(authed_routes);
 
     Router::new()
-        .nest("/v1", v1)
+        .nest("/v0", v0)
         .route("/health", get(|| async { "ok" }))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -219,7 +219,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=test&cluster_id=test-cluster&generation=0")
+                    .uri("/v0/pull?since=0&device=test&cluster_id=test-cluster&generation=0")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -245,7 +245,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/push")
+                    .uri("/v0/push")
                     .header("Authorization", format!("Bearer {}", token))
                     .header("Content-Type", "application/json")
                     .body(Body::from(push_body.to_string()))
@@ -261,7 +261,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=device-2&cluster_id=test-cluster&generation=0")
+                    .uri("/v0/pull?since=0&device=device-2&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -295,7 +295,7 @@ mod tests {
                 .oneshot(
                     Request::builder()
                         .method("POST")
-                        .uri("/v1/push")
+                        .uri("/v0/push")
                         .header("Authorization", format!("Bearer {}", token))
                         .header("Content-Type", "application/json")
                         .body(Body::from(body.to_string()))
@@ -310,7 +310,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=device-2&cluster_id=test-cluster&generation=0")
+                    .uri("/v0/pull?since=0&device=device-2&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -327,7 +327,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=device-1&cluster_id=test-cluster&generation=0")
+                    .uri("/v0/pull?since=0&device=device-1&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -361,7 +361,7 @@ mod tests {
                 .oneshot(
                     Request::builder()
                         .method("POST")
-                        .uri("/v1/push")
+                        .uri("/v0/push")
                         .header("Authorization", format!("Bearer {}", token))
                         .header("Content-Type", "application/json")
                         .body(Body::from(body.to_string()))
@@ -375,7 +375,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=device-2&cluster_id=test-cluster&generation=0")
+                    .uri("/v0/pull?since=0&device=device-2&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -397,7 +397,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/push")
+                    .uri("/v0/push")
                     .header("Authorization", format!("Bearer {}", token))
                     .header("Content-Type", "application/json")
                     .body(Body::from(body.to_string()))
@@ -410,7 +410,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=2&device=device-2&cluster_id=test-cluster&generation=0")
+                    .uri("/v0/pull?since=2&device=device-2&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -432,7 +432,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/device-code")
+                    .uri("/v0/auth/device-code")
                     .header("Content-Type", "application/json")
                     .body(Body::from("{}"))
                     .unwrap(),
@@ -450,7 +450,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!(
-                        "/v1/auth/device-code/poll?device_code={}",
+                        "/v0/auth/device-code/poll?device_code={}",
                         device_code
                     ))
                     .body(Body::empty())
@@ -467,7 +467,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/device-code/authorize")
+                    .uri("/v0/auth/device-code/authorize")
                     .header("Content-Type", "application/json")
                     .body(Body::from(
                         serde_json::json!({
@@ -488,7 +488,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!(
-                        "/v1/auth/device-code/poll?device_code={}",
+                        "/v0/auth/device-code/poll?device_code={}",
                         device_code
                     ))
                     .body(Body::empty())
@@ -513,12 +513,12 @@ mod tests {
             "refresh_token must not be empty"
         );
 
-        // 5. token works against /v1/pull
+        // 5. token works against /v0/pull
         let pull = build_app(state)
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=alice-dev&cluster_id=test-cluster&generation=0")
+                    .uri("/v0/pull?since=0&device=alice-dev&cluster_id=test-cluster&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -528,7 +528,7 @@ mod tests {
         assert_eq!(pull.status(), StatusCode::OK);
     }
 
-    /// `/v1/auth/refresh` happy path: trade the refresh token issued by
+    /// `/v0/auth/refresh` happy path: trade the refresh token issued by
     /// the device-code flow for a fresh `(token, refresh_token)` pair,
     /// then exercise the new bearer against an authed endpoint.
     #[tokio::test]
@@ -540,7 +540,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/device-code")
+                    .uri("/v0/auth/device-code")
                     .header("Content-Type", "application/json")
                     .body(Body::from("{}"))
                     .unwrap(),
@@ -556,7 +556,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/device-code/authorize")
+                    .uri("/v0/auth/device-code/authorize")
                     .header("Content-Type", "application/json")
                     .body(Body::from(
                         serde_json::json!({
@@ -575,7 +575,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!(
-                        "/v1/auth/device-code/poll?device_code={}",
+                        "/v0/auth/device-code/poll?device_code={}",
                         device_code
                     ))
                     .body(Body::empty())
@@ -591,7 +591,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/refresh")
+                    .uri("/v0/auth/refresh")
                     .header("Content-Type", "application/json")
                     .body(Body::from(
                         serde_json::json!({"refresh_token": initial_refresh.clone()}).to_string(),
@@ -621,7 +621,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(
-                        "/v1/pull?since=0&device=refresh-test&cluster_id=test-cluster&generation=0",
+                        "/v0/pull?since=0&device=refresh-test&cluster_id=test-cluster&generation=0",
                     )
                     .header("Authorization", format!("Bearer {}", new_bearer))
                     .body(Body::empty())
@@ -632,7 +632,7 @@ mod tests {
         assert_eq!(pull.status(), StatusCode::OK);
     }
 
-    /// `/v1/auth/refresh` rejects an unknown refresh token with 401 —
+    /// `/v0/auth/refresh` rejects an unknown refresh token with 401 —
     /// the same status the bearer endpoints use, so the client retry
     /// path can match on status uniformly.
     #[tokio::test]
@@ -642,7 +642,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/refresh")
+                    .uri("/v0/auth/refresh")
                     .header("Content-Type", "application/json")
                     .body(Body::from(
                         serde_json::json!({"refresh_token": "not-a-real-token"}).to_string(),
@@ -677,7 +677,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/refresh")
+                    .uri("/v0/auth/refresh")
                     .header("Content-Type", "application/json")
                     .body(Body::from(
                         serde_json::json!({"refresh_token": initial_refresh.clone()}).to_string(),
@@ -693,7 +693,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/refresh")
+                    .uri("/v0/auth/refresh")
                     .header("Content-Type", "application/json")
                     .body(Body::from(
                         serde_json::json!({"refresh_token": initial_refresh}).to_string(),
@@ -719,7 +719,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/keys/wrapped")
+                    .uri("/v0/keys/wrapped")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -740,7 +740,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/keys/wrapped")
+                    .uri("/v0/keys/wrapped")
                     .header("Authorization", format!("Bearer {}", token))
                     .header("Content-Type", "application/json")
                     .body(Body::from(body.to_string()))
@@ -755,7 +755,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/keys/wrapped")
+                    .uri("/v0/keys/wrapped")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -789,7 +789,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/push")
+                    .uri("/v0/push")
                     .header("Authorization", format!("Bearer {}", token))
                     .header("Content-Type", "application/json")
                     .body(Body::from(body.to_string()))
@@ -808,7 +808,7 @@ mod tests {
         assert_eq!(gen, Some(0));
     }
 
-    /// `POST /v1/clusters/{id}/bump-generation` increments the
+    /// `POST /v0/clusters/{id}/bump-generation` increments the
     /// counter and returns the new value. Locks the response shape so
     /// the client (sub-4) can parse a stable JSON.
     #[tokio::test]
@@ -820,7 +820,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/push")
+                    .uri("/v0/push")
                     .header("Authorization", format!("Bearer {}", token))
                     .header("Content-Type", "application/json")
                     .body(Body::from(
@@ -842,7 +842,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/clusters/cluster-Y/bump-generation")
+                    .uri("/v0/clusters/cluster-Y/bump-generation")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -860,7 +860,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/clusters/cluster-Y/bump-generation")
+                    .uri("/v0/clusters/cluster-Y/bump-generation")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -885,7 +885,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/push")
+                    .uri("/v0/push")
                     .header("Authorization", format!("Bearer {}", alice_token))
                     .header("Content-Type", "application/json")
                     .body(Body::from(
@@ -908,7 +908,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/clusters/cluster-Z/bump-generation")
+                    .uri("/v0/clusters/cluster-Z/bump-generation")
                     .header("Authorization", format!("Bearer {}", bob_token))
                     .body(Body::empty())
                     .unwrap(),
@@ -939,7 +939,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/push")
+                    .uri("/v0/push")
                     .header("Authorization", format!("Bearer {}", token))
                     .header("Content-Type", "application/json")
                     .body(Body::from(
@@ -962,7 +962,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/clusters/cluster-G/bump-generation")
+                    .uri("/v0/clusters/cluster-G/bump-generation")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),
@@ -976,7 +976,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/push")
+                    .uri("/v0/push")
                     .header("Authorization", format!("Bearer {}", token))
                     .header("Content-Type", "application/json")
                     .body(Body::from(
@@ -1022,7 +1022,7 @@ mod tests {
             build_app(state.clone()).oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/push")
+                    .uri("/v0/push")
                     .header("Authorization", format!("Bearer {}", token))
                     .header("Content-Type", "application/json")
                     .body(Body::from(body))
@@ -1049,7 +1049,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/v1/pull?since=0&device=dev-other&cluster_id=cluster-S&generation=0")
+                    .uri("/v0/pull?since=0&device=dev-other&cluster_id=cluster-S&generation=0")
                     .header("Authorization", format!("Bearer {}", token))
                     .body(Body::empty())
                     .unwrap(),

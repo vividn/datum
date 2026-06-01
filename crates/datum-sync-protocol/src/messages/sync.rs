@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// `POST /v1/push` request body.
+/// `POST /v0/push` request body.
 ///
 /// `payload_b64` is base64 url-safe no-pad of the raw [`crate::crypto`]-
 /// sealed `EncryptedBlob` bytes (`nonce ‖ ciphertext+tag`). The server
@@ -29,7 +29,7 @@ pub struct PushRequest {
     pub predicted_seq: i64,
 }
 
-/// `POST /v1/push` response body. Returns the per-device monotonic seq
+/// `POST /v0/push` response body. Returns the per-device monotonic seq
 /// the relay assigned to this changeset, plus the cluster generation the
 /// row was accepted into (lets the client confirm it stayed on the
 /// expected generation across the round-trip).
@@ -42,7 +42,7 @@ pub struct PushResponse {
     pub generation: u64,
 }
 
-/// One row of `GET /v1/pull?since=<id>&device=<dev>`. Returned in
+/// One row of `GET /v0/pull?since=<id>&device=<dev>`. Returned in
 /// ascending server-assigned `id` order, with the caller's own device
 /// excluded server-side.
 ///
@@ -85,7 +85,7 @@ pub struct KdfParams {
 }
 
 /// Passphrase-wrapped master key, as round-tripped through
-/// `/v1/keys/wrapped`. The relay stores this as opaque JSON; only a
+/// `/v0/keys/wrapped`. The relay stores this as opaque JSON; only a
 /// holder of the passphrase can unwrap it.
 ///
 /// Wire-locked by `docs/sync-protocol.md` §Wrapped key exchange — field

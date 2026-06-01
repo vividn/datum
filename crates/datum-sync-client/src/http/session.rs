@@ -78,7 +78,7 @@ pub enum SessionError {
 pub type OnRefresh = Box<dyn Fn(&AuthToken) -> anyhow::Result<()> + Send + Sync + 'static>;
 
 /// Owns the (bearer, refresh_token) pair for the lifetime of one sync
-/// cycle and rotates them through `/v1/auth/refresh` when the relay
+/// cycle and rotates them through `/v0/auth/refresh` when the relay
 /// returns 401.
 ///
 /// `RefCell` is used internally so [`Session::run`] can mutate the
@@ -179,13 +179,13 @@ impl Session {
         let new = match auth::refresh(client, &self.server, &refresh_token) {
             Ok(t) => t,
             Err(HttpError::Unauthorized) => return Err(SessionError::SessionExpired),
-            // /v1/auth/refresh has no cluster concept and the server
+            // /v0/auth/refresh has no cluster concept and the server
             // doesn't emit GenerationMismatch on this path; if it ever
             // does, surface it cleanly rather than panicking.
             Err(HttpError::GenerationMismatch(e)) => {
                 return Err(SessionError::GenerationMismatch(e))
             }
-            // /v1/auth/refresh has no seq concept; surface cleanly if it
+            // /v0/auth/refresh has no seq concept; surface cleanly if it
             // ever appears rather than panicking.
             Err(HttpError::SeqMismatch(e)) => return Err(SessionError::SeqMismatch(e)),
             Err(HttpError::Other(e)) => return Err(SessionError::Other(e)),

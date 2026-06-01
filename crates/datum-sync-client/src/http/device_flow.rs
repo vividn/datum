@@ -1,9 +1,9 @@
 //! RFC 8628 device-authorization grant against the datum-sync-server relay.
 //!
 //! Flow:
-//!   1. POST /v1/auth/device-code → `{device_code, user_code, verification_uri, interval}`
+//!   1. POST /v0/auth/device-code → `{device_code, user_code, verification_uri, interval}`
 //!   2. Show `verification_uri` + `user_code` to the user.
-//!   3. Poll GET /v1/auth/device-code/poll?device_code=... every `interval`s.
+//!   3. Poll GET /v0/auth/device-code/poll?device_code=... every `interval`s.
 //!   4. On 200 with a `token` field: return the [`AuthToken`].
 //!
 //! Transient poll responses (`pending`, `slow_down`) are handled per spec.
@@ -44,24 +44,24 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
     client: &Client,
     prompter: &mut P,
 ) -> Result<AuthToken> {
-    let start = client.post(format!("{server}/v1/auth/device-code"));
+    let start = client.post(format!("{server}/v0/auth/device-code"));
     let resp = start
         .json(&serde_json::json!({}))
         .send()
-        .context("POST /v1/auth/device-code")?;
+        .context("POST /v0/auth/device-code")?;
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().unwrap_or_default();
         anyhow::bail!("device-code request failed: {status} {body}");
     }
-    let device: DeviceCodeResponse = resp.json().context("parse /v1/auth/device-code response")?;
+    let device: DeviceCodeResponse = resp.json().context("parse /v0/auth/device-code response")?;
 
     prompter.show_login_instructions(&device.verification_uri, &device.user_code);
 
     let mut interval = Duration::from_secs(device.interval.max(1));
     let deadline = std::time::Instant::now() + POLL_TIMEOUT;
 
-    let poll_url = format!("{server}/v1/auth/device-code/poll");
+    let poll_url = format!("{server}/v0/auth/device-code/poll");
     loop {
         if std::time::Instant::now() >= deadline {
             anyhow::bail!("login timed out waiting for authorization");
@@ -72,7 +72,7 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
             .get(&poll_url)
             .query(&[("device_code", device.device_code.as_str())])
             .send()
-            .context("GET /v1/auth/device-code/poll")?;
+            .context("GET /v0/auth/device-code/poll")?;
 
         let payload: PollResponse = resp.json().context("parse device-code/poll response")?;
 

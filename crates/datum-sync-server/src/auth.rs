@@ -157,7 +157,7 @@ pub async fn login_finish(
     }))
 }
 
-/// `POST /v1/auth/refresh`
+/// `POST /v0/auth/refresh`
 ///
 /// Trade a single-use refresh token for a fresh `(token, refresh_token)`
 /// pair. Rotation is enforced server-side: the consumed row is deleted

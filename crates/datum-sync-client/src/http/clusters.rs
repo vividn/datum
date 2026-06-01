@@ -1,5 +1,5 @@
 //! Cluster-control endpoints. Pairs with `datum-sync-server::cluster`
-//! (da-tat1) for the `POST /v1/clusters/{cluster_id}/bump-generation`
+//! (da-tat1) for the `POST /v0/clusters/{cluster_id}/bump-generation`
 //! handler that signals a purge / restore / rewind to the relay.
 //!
 //! Gated by the `http` cargo feature because it depends on `reqwest`.
@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::http::error::HttpError;
 
-/// Response body for `POST /v1/clusters/{cluster_id}/bump-generation`.
+/// Response body for `POST /v0/clusters/{cluster_id}/bump-generation`.
 /// Mirrors the server's `cluster::BumpResponse` field-for-field — kept
 /// private to this module so callers receive just the new generation.
 #[derive(Debug, Deserialize)]
@@ -37,10 +37,10 @@ pub fn bump_generation(
     cluster_id: &str,
 ) -> Result<u64, HttpError> {
     let resp = client
-        .post(format!("{server}/v1/clusters/{cluster_id}/bump-generation"))
+        .post(format!("{server}/v0/clusters/{cluster_id}/bump-generation"))
         .bearer_auth(bearer)
         .send()
-        .context("POST /v1/clusters/{cluster}/bump-generation")
+        .context("POST /v0/clusters/{cluster}/bump-generation")
         .map_err(HttpError::other)?;
     let status = resp.status();
     if status.as_u16() == 401 {

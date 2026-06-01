@@ -142,7 +142,7 @@ fn fresh_db(env: &EnvGuard) -> Db {
 
 /// Mint a refresh token for the relay's test user, plumbed through the
 /// real server `refresh::mint_and_persist` so the resulting token works
-/// against `/v1/auth/refresh` at the wire level.
+/// against `/v0/auth/refresh` at the wire level.
 fn mint_refresh_for_test_user(relay: &StubRelay) -> String {
     let conn = relay.state.db.lock().unwrap();
     server_refresh::mint_and_persist(&conn, &relay.user_id).unwrap()

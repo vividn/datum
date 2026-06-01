@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 /// Wire shape of the bearer token issued by
-/// `/v1/auth/{register,login}/finish`, `/v1/auth/device-code/poll`
-/// (success branch), and `/v1/auth/refresh`.
+/// `/v0/auth/{register,login}/finish`, `/v0/auth/device-code/poll`
+/// (success branch), and `/v0/auth/refresh`.
 ///
 /// Server-only contract: this struct is what the server emits and what
 /// the client deserializes. The CLI's on-disk shape is
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// `refresh_token` is a 32-byte random value (URL-safe base64) the
 /// server stores as a SHA-256 hash. The client trades it via
-/// `POST /v1/auth/refresh` for a fresh `(token, refresh_token)` pair
+/// `POST /v0/auth/refresh` for a fresh `(token, refresh_token)` pair
 /// when its bearer expires; the old refresh value is single-use and is
 /// invalidated server-side as part of the rotation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,19 +39,19 @@ pub struct AuthToken {
     pub cluster_id: Option<String>,
 }
 
-/// Body for `POST /v1/auth/refresh`. Trades a single-use refresh token
+/// Body for `POST /v0/auth/refresh`. Trades a single-use refresh token
 /// for a fresh bearer + refresh pair.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshTokenRequest {
     pub refresh_token: String,
 }
 
-/// Empty body for `POST /v1/auth/device-code`. Kept as a typed struct
+/// Empty body for `POST /v0/auth/device-code`. Kept as a typed struct
 /// rather than `()` so axum's `Json` extractor accepts an empty `{}`.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DeviceCodeRequest {}
 
-/// Response body for `POST /v1/auth/device-code`. Field names + defaults
+/// Response body for `POST /v0/auth/device-code`. Field names + defaults
 /// match RFC 8628 §3.2.
 ///
 /// `verification_uri_complete`, `expires_in`, and `interval` are Optional
@@ -75,13 +75,13 @@ fn default_poll_interval() -> u64 {
     5
 }
 
-/// Query string for `GET /v1/auth/device-code/poll`.
+/// Query string for `GET /v0/auth/device-code/poll`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceCodePollQuery {
     pub device_code: String,
 }
 
-/// Body for the (server-internal) `POST /v1/auth/device-code/authorize`
+/// Body for the (server-internal) `POST /v0/auth/device-code/authorize`
 /// endpoint a verification UI invokes after the user enters their
 /// passphrase. Lives in the protocol crate so a future browser flow has
 /// the canonical shape.
@@ -91,7 +91,7 @@ pub struct DeviceCodeAuthorizeRequest {
     pub username: String,
 }
 
-/// Response body for `GET /v1/auth/device-code/poll`. Three wire shapes,
+/// Response body for `GET /v0/auth/device-code/poll`. Three wire shapes,
 /// one Rust type — `#[serde(untagged)]` lets a single deserialize call
 /// dispatch on the fields present:
 ///

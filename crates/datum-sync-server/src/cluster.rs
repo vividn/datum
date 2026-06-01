@@ -4,7 +4,7 @@
 //!   1. `ensure_cluster` — auto-register a cluster row on first sync, owner-
 //!      pinned to the calling user.
 //!   2. `bump_generation` — increment the cluster's generation counter (the
-//!      `POST /v1/clusters/{id}/bump-generation` handler calls this when a
+//!      `POST /v0/clusters/{id}/bump-generation` handler calls this when a
 //!      client signals purge / restore / rewind).
 //!   3. `check_generation` — gate a sync request against the server's
 //!      authoritative value; mismatches surface as
@@ -101,7 +101,7 @@ pub fn check_generation(server: i64, client: u64) -> Result<(), AppError> {
 
 // ─── HTTP handler ────────────────────────────────────────────────────────────
 
-/// Response body for `POST /v1/clusters/{cluster_id}/bump-generation`.
+/// Response body for `POST /v0/clusters/{cluster_id}/bump-generation`.
 /// Echoes the cluster_id back so a client that fired against a
 /// templated path still sees the canonical value.
 #[derive(Debug, Serialize)]
@@ -110,7 +110,7 @@ pub struct BumpResponse {
     pub generation: i64,
 }
 
-/// `POST /v1/clusters/{cluster_id}/bump-generation`. Client signals a
+/// `POST /v0/clusters/{cluster_id}/bump-generation`. Client signals a
 /// purge / restore / rewind; the relay increments the cluster's
 /// generation so subsequent pushes carrying the old generation are
 /// rejected with [`SyncProtocolError::GenerationMismatch`].

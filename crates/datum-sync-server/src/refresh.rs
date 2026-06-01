@@ -3,7 +3,7 @@
 //! A refresh token is a 32-byte random value (URL-safe base64, no pad)
 //! delivered to the client alongside every fresh JWT. The server stores
 //! only the SHA-256 hash so a database leak does NOT yield reusable
-//! credentials. Single-use rotation: every successful `/v1/auth/refresh`
+//! credentials. Single-use rotation: every successful `/v0/auth/refresh`
 //! deletes the consumed row before inserting the replacement.
 
 use std::time::{SystemTime, UNIX_EPOCH};

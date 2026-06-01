@@ -102,7 +102,7 @@ fn sync_login_polls_until_authorized() {
         login::run_with_client(&relay.base_url, &client, &mut prompter).expect("login succeeds");
 
     assert!(!token.token.is_empty(), "non-empty bearer token");
-    // Per spec, /v1/auth/device-code/poll echoes the canonical UUID as
+    // Per spec, /v0/auth/device-code/poll echoes the canonical UUID as
     // user_id; the username only matters for the verification UX which
     // is out of scope for v1.
     assert_eq!(token.user_id, relay.user_id.to_string());

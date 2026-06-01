@@ -1,4 +1,4 @@
-//! `/v1/keys/wrapped` — store and retrieve the passphrase-wrapped master
+//! `/v0/keys/wrapped` — store and retrieve the passphrase-wrapped master
 //! key blob per `docs/sync-protocol.md` §Wrapped key exchange.
 //!
 //! The relay is content-blind about the inner shape; it just round-trips

@@ -1,8 +1,12 @@
 # daydumb sync — wire protocol
 
-> Status: **v1 draft, locked for C4a.** Binding contract between clients
-> (CLI, web PWA, mobile) and the `datum-sync-server` relay. Additions are OK in
-> later versions; semantics of existing fields are frozen.
+> Status: **v0 — unstable.** The contract between clients (CLI, web PWA,
+> mobile) and the `datum-sync-server` relay while it is still being
+> iterated. Fields and endpoints MAY change in place until the protocol
+> ships to production; at that point v0 freezes and promotes to a stable,
+> breaking-change-disciplined v1. Until then, treat nothing here as
+> locked — the source of truth is the `datum-sync-protocol` crate, and
+> this document is regenerated from it.
 
 ## Goals and constraints
 
@@ -10,8 +14,8 @@
   entries, keys, field names, or user data. Every changeset is
   AES-256-GCM ciphertext.
 - **Content-blind storage.** The server stores opaque base64 blobs keyed
-  by `(device_id, seq)`. It MUST NOT decode, inspect, index, or
-  transform them.
+  by `(device_id, seq)` within a cluster. It MUST NOT decode, inspect,
+  index, or transform them.
 - **JSON over HTTPS.** The contract is the wire format, not Rust types.
   No language-specific tagging, no trait-object schemas, no type IDs
   that only mean something in one language.
@@ -24,18 +28,25 @@
 All endpoints are mounted under a version prefix:
 
 ```
-https://<relay>/v1/...
+https://<relay>/v0/...
 ```
 
-Clients SHOULD prefer `/v1`. The existing relay (see
-`crates/datum-sync-server`) currently exposes its handlers under `/auth/*`
-and `/sync/*` without a version segment — C4c will introduce the `/v1`
-mount when the HTTP client is wired up. Readers of this document
-should treat the version prefix as the forward-compatible surface
-even while older unversioned endpoints still exist.
+The prefix mirrors [`PROTOCOL_VERSION_PATH`](../crates/datum-sync-protocol/src/version.rs)
+(`"v0"`), pinned by a lock-step test to the integer
+[`PROTOCOL_VERSION`](../crates/datum-sync-protocol/src/version.rs) (`0`).
 
-Breaking changes bump the prefix to `/v2`. Additive changes (new fields
-with defaults, new endpoints) stay on `/v1`.
+`v0` is the **unstable, pre-production** surface. While on v0 we change
+fields and semantics in place rather than versioning every revision — the
+whole point of staying on v0 is to tighten the spec freely before it
+solidifies. When the protocol reaches production it freezes and promotes
+to `/v1`; from that point breaking changes bump the prefix (`/v2`, …) and
+additive changes (new optional fields, new endpoints) stay on the current
+prefix. That breaking-change discipline kicks in at promotion, not before.
+
+> The changeset payload-format version (the `DSC1` magic / `ChangesetPayloadV1`,
+> see [Encryption](#encryption)) is **orthogonal** to this URL/protocol
+> version. The magic prefix versions the encrypted body; the URL prefix
+> versions the HTTP contract. They move independently.
 
 ## Authentication
 
@@ -48,7 +59,7 @@ Authorization: Bearer <token>
 Tokens are opaque strings (the current relay uses short-lived JWTs;
 clients MUST NOT depend on this). A 401 response means "reauthenticate";
 the client SHOULD trade its persisted `refresh_token` via
-`POST /v1/auth/refresh` (see below) before falling back to the device-code
+`POST /v0/auth/refresh` (see below) before falling back to the device-code
 flow. Retry the original request once with the rotated bearer.
 
 ### Refresh token rotation
@@ -68,7 +79,7 @@ returns the bearer alongside a single-use `refresh_token`:
 The relay stores only the SHA-256 hash of the refresh token, so a
 database leak does NOT yield reusable credentials.
 
-`POST /v1/auth/refresh`
+`POST /v0/auth/refresh`
 
 Request:
 
@@ -95,7 +106,7 @@ device-code flow.
 The CLI is headless and cannot hold a passkey. It uses the RFC 8628
 device-authorization grant adapted to our relay.
 
-`POST /v1/auth/device-code`
+`POST /v0/auth/device-code`
 
 Request body:
 
@@ -118,7 +129,7 @@ Response (200):
 
 The CLI shows `verification_uri` + `user_code` to the user and then polls:
 
-`GET /v1/auth/device-code/poll?device_code=<opaque>`
+`GET /v0/auth/device-code/poll?device_code=<opaque>`
 
 - 200 with `{"token": "<bearer>", "user_id": "<uuid>"}` once the user
   has completed auth in the browser.
@@ -129,14 +140,14 @@ The CLI shows `verification_uri` + `user_code` to the user and then polls:
 
 Web and mobile clients skip device code and authenticate directly with
 a WebAuthn passkey (see `crates/datum-sync-server/src/auth.rs`); that flow
-predates this document and is out of scope for v1.
+predates this document and is out of scope here.
 
 ### Wrapped key exchange
 
 The encryption key never exists on the relay as plaintext. Two paths are
 supported; clients MAY ship one or both.
 
-`POST /v1/keys/wrapped`
+`POST /v0/keys/wrapped`
 
 Upload (or replace) the passphrase-wrapped master key for the
 authenticated user. The wrapping is opaque to the server — typical
@@ -155,7 +166,7 @@ wrap of the master key.
 
 Response: 200 `{}` on success.
 
-`GET /v1/keys/wrapped`
+`GET /v0/keys/wrapped`
 
 Response (200):
 
@@ -172,11 +183,64 @@ Response (200):
 404 if no wrapped key has been uploaded yet.
 
 QR device-pairing (memory: C4f) replaces this path with a direct
-peer-to-peer handshake; it is outside the v1 contract.
+peer-to-peer handshake; it is outside the current contract.
+
+## Clusters and generations
+
+Every push and pull is scoped to a **cluster** at a specific
+**generation**. Both are carried on the wire (see the message types in
+[`crates/datum-sync-protocol/src/messages/sync.rs`](../crates/datum-sync-protocol/src/messages/sync.rs)).
+
+- **`cluster_id`** — identifies one logical sync cluster. A user may have
+  several (multi-DB; epic da-u6lm). The relay scopes every stored row to
+  its cluster and never mixes them — a pull filters server-side by
+  `cluster_id`. A client sends the `cluster_id` it has persisted from a
+  prior sync, or — on a never-synced DB — its **default**, which is the
+  DB file-name stem (`vremya.db` → `"vremya"`; an in-memory or path-less
+  DB falls back to the literal `"default"`). So two devices tracking a
+  same-named DB land on the same cluster with zero config, while
+  differently-named DBs stay isolated. `datum sync login --cluster <name>`
+  overrides the default. The server echoes the accepted `cluster_id`; the
+  client persists it (see `set_cluster_id` /
+  [`default_cluster_id`](../crates/datum-sync-client/src/sync_state.rs), da-3fnd).
+- **`generation`** — a counter the server holds authoritatively per
+  cluster. It is bumped whenever a cluster is **reinitialised**: a factory
+  reset, or a restore-from-encrypted-backup. Bumping invalidates every
+  pre-reset changeset so peers cannot replay stale state over the restored
+  snapshot. The client stores the last generation the server echoed
+  (`cluster_generation`); unlike the seq watermarks this value is **not**
+  monotonic client-side — a fresh DB attaching to a long-lived cluster
+  simply adopts whatever generation the server is already on.
+
+### `GenerationMismatch`
+
+When a client pushes or pulls with a `generation` that disagrees with the
+cluster's current authoritative value, the relay rejects the request with
+**HTTP 409** and the tagged-enum
+[`SyncProtocolError::GenerationMismatch`](../crates/datum-sync-protocol/src/errors.rs)
+body:
+
+```json
+{ "kind": "generation_mismatch", "expected": 7, "found": 5 }
+```
+
+- `expected` — the cluster's current authoritative generation (server side).
+- `found` — the generation the client sent.
+
+Both client and server MUST treat this as **terminal for the current sync
+attempt**. The contract for the client is: reset its local pull watermark
+and re-pull from `generation = expected`, surfacing a prompt before
+discarding local sync state. Old changesets stay on the server until
+garbage-collected by generation.
+
+> Client-side recovery (watermark reset + re-pull, coordinated with the
+> restore/purge path) is being implemented under da-74xx. This section
+> documents the protocol contract; consult that bead for current client
+> completeness.
 
 ## Sync endpoints
 
-### `POST /v1/push`
+### `POST /v0/push`
 
 Upload a single encrypted changeset. The server validates the client's
 predicted per-device `seq` against its own authoritative value before
@@ -188,7 +252,7 @@ Request:
 {
   "device_id": "9f7e2c1a-...",
   "payload_b64": "<base64 url-safe no-pad of EncryptedBlob bytes>",
-  "cluster_id": "vremya",
+  "cluster_id": "<cluster identifier>",
   "generation": 0,
   "predicted_seq": 42
 }
@@ -197,7 +261,7 @@ Request:
 Response (200):
 
 ```json
-{ "seq": 42, "cluster_id": "vremya", "generation": 0 }
+{ "seq": 42, "cluster_id": "<cluster identifier>", "generation": 0 }
 ```
 
 - `device_id` is an opaque client-chosen identifier (UUID in the default
@@ -213,6 +277,9 @@ Response (200):
   that seq and echoes it back; on disagreement it returns `409
   seq_mismatch` **without storing** (see [Seq-mismatch
   recovery](#seq-mismatch-recovery)).
+- The response also echoes `cluster_id` + `generation` so a client can
+  confirm it stayed on the expected generation across the round-trip
+  (e.g. after a `bump-generation`).
 
 #### Seq-mismatch recovery
 
@@ -237,56 +304,83 @@ the same id) and is fatal. The relay's `expected` may sit *below* the
 client's stored seq (relay reset / older-backup restore), so recovery
 force-sets `my_push_seq` past the normal monotonic guard.
 
-### `GET /v1/pull?since=<seq>&device=<device_id>`
+### `GET /v0/pull?since=<id>&device=<device_id>&cluster_id=<cluster>&generation=<gen>`
 
-Fetch changesets from peers (the caller's own device is excluded) with a
-server-assigned global sequence strictly greater than `since`.
+Fetch changesets from peers (the caller's own device is excluded
+server-side) within the given cluster + generation, with a relay-global
+row id strictly greater than `since`.
 
 Response (200):
 
 ```json
 [
   {
+    "id": 128,
     "device_id": "other-device-uuid",
     "seq": 7,
     "payload_b64": "...",
-    "uploaded_at": "2026-04-21T16:30:00Z"
+    "uploaded_at": "2026-04-21T16:30:00Z",
+    "cluster_id": "<cluster identifier>",
+    "generation": 0
   }
 ]
 ```
 
-- Order MUST be ascending by `seq`.
+- `id` is the relay-global monotonic row id — the ordering key and the
+  client's pull watermark. **`since` is compared against `id`**, not `seq`.
+- `seq` is the **author device's** per-device push counter. The client
+  uses it as the AAD seq when unsealing this row's blob, so it must be the
+  sender's `seq`, not the puller's.
+- Rows MUST be ordered ascending by `id`.
 - Clients advance
-  [`pull_seq`](../crates/datum-core/src/sync.rs) to the last processed
-  `seq` only after a batch has been fully applied to the local DB.
-- Empty response = nothing new; the client should keep its `pull_seq`.
+  [`pull_seq`](../crates/datum-sync-client/src/sync_state.rs) to the last
+  processed `id` only after a batch has been fully applied to the local DB.
+- Empty response = nothing new; the client keeps its `pull_seq`.
+- A generation disagreement returns **409 GenerationMismatch**.
 
 ### Sequence-number semantics
 
-- `seq` is **per-device monotonic**: the relay tracks the highest seq it
-  has assigned for each `device_id` and increments on every `/push`.
-- Across devices, `seq` values overlap and are NOT globally ordered.
-- The `pull_seq` stored client-side is the relay's internal global row id
-  (`changesets.id` in the current server schema), not a per-device seq.
-  It exists so clients can stream without duplicates; it is opaque to
-  clients beyond being monotonic.
+Two distinct counters travel under confusingly-similar names. They are
+not the same number and are not interchangeable:
 
-The `sync_state` table in `datum-core`'s schema mirrors these two
-separate concerns:
+- **`id`** (relay-global row id) — the server's own autoincrement row id
+  across the whole cluster. It is the **pull watermark** (`pull_seq`
+  client-side): clients page through history with `?since=<id>` and
+  advance to the highest `id` they have fully applied. Opaque to clients
+  beyond being monotonic and ascending.
+- **`seq`** (per-device counter) — one independent sequence per
+  `device_id`. The relay is authoritative (`MAX(seq)+1` per device), but
+  the client **predicts** the next value (`my_push_seq + 1`) before
+  pushing, because `seq` is bound into the changeset AAD and so must be
+  known at encrypt time. The push response echoes the assigned seq and the
+  client asserts equality. Across devices, `seq` values overlap and carry
+  no global ordering. `(device_id, seq)` is the relay's content-blind
+  storage key; a duplicate is a **409 conflict**.
 
-| Column         | Meaning                                                       |
-|----------------|---------------------------------------------------------------|
-| `db_id`        | Local sync identity. One row per DB (default: `"local"`).     |
-| `push_seq`     | Highest local `modified_at` epoch-ms included in a push.      |
-| `pull_seq`     | Highest server-assigned global seq successfully pulled.       |
-| `last_push_at` | Epoch-ms of the most recent successful push.                  |
-| `last_pull_at` | Epoch-ms of the most recent successful pull.                  |
+(An earlier draft said "the server assigns a per-device monotonic seq"
+without the prediction half — accurate as far as it went, but it hid why
+the client maintains its own `my_push_seq` and why a mismatch is fatal.)
 
-`push_seq` is intentionally stored as a local watermark (epoch-ms of
-`modified_at`), not as a server-assigned seq. The server-assigned seq
-returned by `/push` is discarded after it has been acknowledged — the
-next pack only needs to know which local rows to include, and
-`modified_at` is the authoritative answer for that.
+The `sync_state` table in `datum-core`'s schema mirrors these concerns —
+see [`crates/datum-sync-client/src/sync_state.rs`](../crates/datum-sync-client/src/sync_state.rs)
+for the accessors:
+
+| Column               | Meaning                                                          |
+|----------------------|------------------------------------------------------------------|
+| `db_id`              | Local sync identity. One row per DB (default: `"local"`).        |
+| `push_seq`           | Highest local `modified_at` epoch-ms included in a push (watermark). |
+| `my_push_seq`        | This device's per-device push counter (the predicted `seq`).     |
+| `pull_seq`           | Highest relay-global `id` successfully pulled.                   |
+| `cluster_id`         | Cluster this DB is bound to (echoed by the relay; nullable until first sync). |
+| `cluster_generation` | Last cluster generation the relay echoed (NOT monotonic client-side). |
+| `last_push_at`       | Epoch-ms of the most recent successful push.                     |
+| `last_pull_at`       | Epoch-ms of the most recent successful pull.                     |
+
+`push_seq` is a local watermark (epoch-ms of `modified_at`), **not** a
+server seq — the next pack only needs to know which local rows changed,
+and `modified_at` is the authoritative answer. `my_push_seq` is the
+separate per-device counter the client predicts and the relay confirms on
+each push.
 
 ## Merge semantics (last-write-wins)
 
@@ -302,11 +396,11 @@ auditable. See `crates/datum-sync-client/src/ops.rs::upsert_lww`.
 device wall-clock with no logical-clock component. A device whose clock
 runs fast wins every tie; a device whose clock lags can silently lose an
 edit even if it wrote *later* in real time. For one user's own devices —
-the only model v1 supports — this is a deliberate simplification:
+the only model v0 supports — this is a deliberate simplification:
 near-synchronized clocks make collisions rare, and the overwritten edit is
 never destroyed (it lives in `entry_history`). It is **not** hardened with
 a hybrid-logical-clock or vector clock; that is explicitly out of scope for
-v1 (decision da-t96a).
+v0 (decision da-t96a).
 
 **Overwrites are surfaced, not silent.** Each LWW overwrite of an existing
 local row also files an `integrity_warnings` row with `kind =
@@ -330,13 +424,15 @@ Every `payload_b64` decodes to an `EncryptedBlob`:
 - **Algorithm:** AES-256-GCM.
 - **Key:** 32 bytes. Derived from the master key (either passphrase-wrapped
   via `/keys/wrapped` or handed off via QR pairing). Per-device subkeys
-  are NOT required for v1 — a single user-wide master key is sufficient
-  because AAD binds each blob to its `(device_id, seq)`.
+  are NOT required — a single user-wide master key is sufficient because
+  the AAD binds each blob to its `(device_id, seq)`.
 - **Nonce:** 12 random bytes, generated fresh per encryption. MUST be
   prepended to the ciphertext. MUST NOT be reused with the same key.
-- **AAD:** `utf-8(device_id)` || `big-endian-u64(seq)`. Tampering with
-  either input surfaces as a decrypt failure — callers MUST treat every
-  failure identically (no oracle).
+- **AAD:** `utf-8(device_id)` || `big-endian-u64(seq)`, where `seq` is the
+  per-device push counter described above. Tampering with either input
+  surfaces as a decrypt failure — callers MUST treat every failure
+  identically (no oracle). (Binding `cluster_id` into the AAD as well is
+  tracked by da-3nkx; today the AAD covers `device_id` + `seq` only.)
 - **Tag:** the 16-byte GCM authenticator is appended to the ciphertext
   by the `aes-gcm` crate (standard behavior across implementations).
 
@@ -362,28 +458,44 @@ non-null ISO 8601 UTC string are soft-deletes.
 
 A future revision MAY swap the JSON body for cr-sqlite's native binary
 changeset format. The magic prefix is the switch: consumers detect the
-payload type by the magic, not by the HTTP content type.
+payload type by the magic (`DSC1` → `DSC2` → …), not by the HTTP content
+type, and independently of the URL/protocol version.
 
 ## Error responses
 
-All errors use the shape:
+Two error shapes coexist:
+
+**HTTP-status-mapped errors** use:
 
 ```json
 { "error": "<machine_tag>", "detail": "optional human-readable string" }
 ```
 
+**Control-plane errors** ([`SyncProtocolError`](../crates/datum-sync-protocol/src/errors.rs))
+use a tagged-enum shape so clients route on `kind` regardless of
+transport:
+
+```json
+{ "kind": "<snake_case_variant>", "...": "variant payload" }
+```
+
+The control-plane variants are `generation_mismatch` (cluster re-init —
+client resets watermark + re-pulls) and `seq_mismatch` (per-device seq
+drift — client re-bases + retries, see [Seq-mismatch recovery](#seq-mismatch-recovery)),
+both delivered on **409**; clients route on `kind`.
+
 HTTP status mapping:
 
-| Status | When                                                        |
-|--------|-------------------------------------------------------------|
-| 400    | Malformed JSON, missing required field, oversized payload   |
-| 401    | Missing/invalid Bearer token, expired JWT                   |
-| 403    | Valid token, but user can't touch the requested resource     |
-| 404    | `/v1/keys/wrapped` GET with nothing uploaded, unknown routes|
+| Status | When                                                                 |
+|--------|----------------------------------------------------------------------|
+| 400    | Malformed JSON, missing required field, oversized payload            |
+| 401    | Missing/invalid Bearer token, expired JWT                            |
+| 403    | Valid token, but user can't touch the requested resource             |
+| 404    | `/v0/keys/wrapped` GET with nothing uploaded, unknown routes         |
 | 409    | `generation_mismatch` (re-init) or `seq_mismatch` (re-base + retry) — tagged `SyncProtocolError` body |
-| 413    | Payload exceeds relay's configured max (e.g. 10 MB default) |
-| 429    | Rate limit — honor `Retry-After` header                     |
-| 500    | Relay internal error — retry with backoff                   |
+| 413    | Payload exceeds relay's configured max (e.g. 10 MB default)          |
+| 429    | Rate limit — honor `Retry-After` header                              |
+| 500    | Relay internal error — retry with backoff                            |
 
 `<machine_tag>` values are stable across minor versions: `invalid_token`,
 `expired`, `slow_down`, `pending`, `oversize`, `conflict`, `not_found`,
@@ -392,19 +504,20 @@ HTTP status mapping:
 ## Portability notes
 
 - All bytes on the wire are either JSON scalars or base64 url-safe
-  no-pad. No MessagePack, no CBOR, no protobuf in v1.
+  no-pad. No MessagePack, no CBOR, no protobuf.
 - All timestamps are RFC 3339 UTC strings (`2026-04-21T16:30:00Z`) in
   JSON, or epoch-ms `INTEGER` inside the local SQLite schema.
-- No Rust-specific enum tagging (`{"Foo": {}}` variants forbidden).
-  Public `datum-core::sync` types expose only `&[u8]` / `Vec<u8>` /
+- No Rust-specific enum tagging by struct shape — control-plane errors use
+  an explicit string `kind` discriminator, not `{"Foo": {}}` positional
+  variants. Public sync types expose only `&[u8]` / `Vec<u8>` / `i64` /
   `u64` / `&str` — safe for FFI and WASM.
 - The changeset magic `"DSC1"` is ASCII; new formats bump the digit
   (`DSC2`, ...) so consumers can branch without parsing JSON first.
 
-## What's intentionally out of scope for v1
+## What's intentionally out of scope for v0
 
-These are either later waves or explicitly deferred; document them here
-so reviewers of later beads don't re-litigate the design:
+These are either later waves or explicitly deferred; documented here so
+reviewers of later beads don't re-litigate the design:
 
 - Conflict resolution UX (C4e) — but the backing `lww_overwrite`
   integrity warnings are now filed on every overwrite (da-t96a), so the UX
@@ -412,5 +525,6 @@ so reviewers of later beads don't re-litigate the design:
 - Daemon-based auto-sync cadence (C4d).
 - QR device-pairing key handoff (C4f).
 - Server-side compaction of superseded changesets.
-- Partial / range pulls (everything-since-N is enough for v1 volumes).
-- Multi-user sharing. The current model is one user ↔ many devices.
+- Partial / range pulls (everything-since-N is enough for current volumes).
+- Multi-user sharing. The current model is one user ↔ many devices, each
+  user owning one or more clusters.

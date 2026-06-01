@@ -2,10 +2,13 @@
 //!
 //! Wire format is locked by `docs/sync-protocol.md`:
 //!
-//! - `POST /v1/push` — body `{device_id, payload_b64}`, response `{seq}`.
-//!   The server assigns a per-device monotonic `seq` and echoes it back.
-//! - `GET /v1/pull?since=<seq>&device=<id>` — returns peers' changesets in
-//!   ascending `seq` order. The caller's own device is excluded server-side.
+//! - `POST /v0/push` — body `{device_id, payload_b64, cluster_id, generation}`,
+//!   response `{seq, cluster_id, generation}`. The relay assigns the
+//!   per-device `seq` (`MAX(seq)+1`) and echoes it; the client predicts the
+//!   same value (`my_push_seq+1`) at encrypt time because `seq` is AAD-bound.
+//! - `GET /v0/pull?since=<id>&device=<id>&cluster_id=<c>&generation=<g>` —
+//!   returns peers' changesets ordered by the relay-global `id` (`since` is an
+//!   `id`, not a `seq`). The caller's own device is excluded server-side.
 //!
 //! The payload is the raw bytes of an [`EncryptedBlob`] (nonce ‖ ciphertext ‖ tag),
 //! base64 url-safe no-pad encoded. This module knows nothing about plaintext
@@ -34,7 +37,7 @@ pub struct PushAck {
     pub generation: u64,
 }
 
-/// One row from `GET /v1/pull`, with the payload already base64-decoded to
+/// One row from `GET /v0/pull`, with the payload already base64-decoded to
 /// raw encrypted bytes. The wire shape itself is
 /// [`datum_sync_protocol::messages::sync::Changeset`]; this struct is the
 /// post-decode native form used by callers (`payload: Vec<u8>` instead of
@@ -68,11 +71,12 @@ pub struct PulledChangeset {
 /// `payload` is the raw bytes of an [`EncryptedBlob`]; this helper handles
 /// the base64 encoding on the wire.
 ///
-/// `cluster_id` / `generation` are optional on the wire (v1 clients send
-/// neither). New clients that have stored a cluster_id locally should
-/// always send both so the server can run the generation-match gate;
-/// a [`SyncProtocolError::GenerationMismatch`] from the relay surfaces
-/// as [`HttpError::GenerationMismatch`].
+/// `cluster_id` / `generation` are required on the wire — the message type
+/// rejects a payload missing them (see the required-fields test in
+/// `datum-sync-protocol`'s `messages::sync`). A client sends its stored
+/// cluster_id (or the db-name default); the relay runs the generation-match
+/// gate and a [`SyncProtocolError::GenerationMismatch`] surfaces as
+/// [`HttpError::GenerationMismatch`].
 ///
 /// `predicted_seq` is the per-device seq the caller bound into the
 /// changeset AAD at encrypt time (`my_push_seq + 1`). The server rejects
@@ -80,7 +84,7 @@ pub struct PulledChangeset {
 /// [`HttpError::SeqMismatch`] — *before* storing the blob, so the caller
 /// can re-base and retry (da-ca4q).
 // A thin wire helper: each argument is an independent scalar input to the
-// `POST /v1/push` body or the request itself. Bundling them into a struct
+// `POST /v0/push` body or the request itself. Bundling them into a struct
 // would only move the same fields behind a name with no clarity gained.
 #[allow(clippy::too_many_arguments)]
 pub fn push_blob(
@@ -101,11 +105,11 @@ pub fn push_blob(
         predicted_seq,
     };
     let resp = client
-        .post(format!("{server}/v1/push"))
+        .post(format!("{server}/v0/push"))
         .bearer_auth(bearer)
         .json(&body)
         .send()
-        .context("POST /v1/push")
+        .context("POST /v0/push")
         .map_err(HttpError::other)?;
     let status = resp.status();
     if status.as_u16() == 401 {
@@ -154,13 +158,13 @@ fn parse_sync_conflict(body: &str, context: &str) -> HttpError {
 
 /// Fetch every changeset the relay has with global id > `since` that was
 /// authored by a device other than `device_id`. Rows are returned in
-/// ascending server-assigned seq order. Empty vec means nothing new.
+/// ascending relay-global `id` order (`since` is an `id`, not a `seq`).
+/// Empty vec means nothing new.
 ///
-/// `cluster_id` / `generation` are optional for v1 compat. New clients
-/// that have a stored cluster_id should pass both so the server runs
-/// the generation gate; a mismatch surfaces as
-/// [`HttpError::GenerationMismatch`] (the client must reset its
-/// watermark and re-pull from `generation = expected`).
+/// `cluster_id` / `generation` are required on the wire. A client sends its
+/// stored cluster_id (or the db-name default); the relay runs the generation
+/// gate and a mismatch surfaces as [`HttpError::GenerationMismatch`] (the
+/// client must reset its watermark and re-pull from `generation = expected`).
 pub fn pull_batch(
     client: &Client,
     server: &str,
@@ -177,11 +181,11 @@ pub fn pull_batch(
         ("generation", generation.to_string()),
     ];
     let resp = client
-        .get(format!("{server}/v1/pull"))
+        .get(format!("{server}/v0/pull"))
         .bearer_auth(bearer)
         .query(&query)
         .send()
-        .context("GET /v1/pull")
+        .context("GET /v0/pull")
         .map_err(HttpError::other)?;
     let status = resp.status();
     if status.as_u16() == 401 {

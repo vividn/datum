@@ -3,8 +3,8 @@
 //!
 //! Tests mutate `DATUM_HOME` and `DATUM_CONFIG_HOME` so they're serialised
 //! through the `ENV_LOCK`. Each test constructs its own stub relay which
-//! exposes the wire protocol from `docs/sync-protocol.md` (`/v1/push`,
-//! `/v1/pull`, `/v1/keys/wrapped`, `/v1/auth/device-code*`).
+//! exposes the wire protocol from `docs/sync-protocol.md` (`/v0/push`,
+//! `/v0/pull`, `/v0/keys/wrapped`, `/v0/auth/device-code*`).
 
 mod sync_support;
 
@@ -604,7 +604,7 @@ fn first_push_registers_cluster_id_locally() {
 }
 
 /// da-eu7o sub-4: after the server bumps the cluster generation (e.g.
-/// via the `/v1/clusters/{id}/bump-generation` endpoint a la da-tat1),
+/// via the `/v0/clusters/{id}/bump-generation` endpoint a la da-tat1),
 /// the next push from a client still sitting on the old generation must
 /// be rejected with a typed error — NOT collapsed into an opaque "push
 /// failed: 409" string.

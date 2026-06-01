@@ -1,4 +1,4 @@
-//! Client-side of `/v1/keys/wrapped` — upload and fetch the
+//! Client-side of `/v0/keys/wrapped` — upload and fetch the
 //! passphrase-wrapped master key blob.
 //!
 //! The server is content-blind about the blob itself (see `docs/sync-protocol.md`);
@@ -19,11 +19,11 @@ pub fn upload_wrapped(
     wrapped: &WrappedKey,
 ) -> Result<(), HttpError> {
     let resp = client
-        .post(format!("{server}/v1/keys/wrapped"))
+        .post(format!("{server}/v0/keys/wrapped"))
         .bearer_auth(bearer)
         .json(wrapped)
         .send()
-        .context("POST /v1/keys/wrapped")
+        .context("POST /v0/keys/wrapped")
         .map_err(HttpError::other)?;
     let status = resp.status();
     if status.as_u16() == 401 {
@@ -45,10 +45,10 @@ pub fn fetch_wrapped(
     bearer: &str,
 ) -> Result<Option<WrappedKey>, HttpError> {
     let resp = client
-        .get(format!("{server}/v1/keys/wrapped"))
+        .get(format!("{server}/v0/keys/wrapped"))
         .bearer_auth(bearer)
         .send()
-        .context("GET /v1/keys/wrapped")
+        .context("GET /v0/keys/wrapped")
         .map_err(HttpError::other)?;
     let status = resp.status();
     if status.as_u16() == 401 {

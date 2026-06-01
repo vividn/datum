@@ -4,21 +4,27 @@
 /// Current protocol version, as an integer (da-p3m9). Comparisons like
 /// `client_v < server_v` should be arithmetic, not string-parsed —
 /// keeping the canonical value typed avoids each new caller re-doing
-/// `"v1".trim_start_matches('v').parse()` (often buggily). Today no
-/// downstream code does version comparison; this exists so the
-/// eventual v2 bump can add comparison logic without an interim
-/// migration.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// `"v0".trim_start_matches('v').parse()` (often buggily). Today no
+/// downstream code does version comparison; this exists so the eventual
+/// promotion to v1 (and any later bump) can add comparison logic without
+/// an interim migration.
+///
+/// `0` is the pre-production, unstable version (da-sshi): the wire
+/// contract may still change in place. It freezes and promotes to `1`
+/// when sync ships to production.
+pub const PROTOCOL_VERSION: u32 = 0;
 
-/// HTTP-path-friendly form of [`PROTOCOL_VERSION`] (`"v1"`) — encoded
-/// into route prefixes and referenced by the changeset magic prefix
-/// (`DSC1` — see [`crate::crypto::CHANGESET_MAGIC_V1`]). Kept as a
-/// separate constant rather than computed at every call site because
-/// (a) `format!` isn't `const`, and (b) the literal form avoids
-/// pulling `const_format` into the dependency graph for what is in
-/// practice a once-per-protocol-version change. The lock-step test
-/// below pins it to [`PROTOCOL_VERSION`].
-pub const PROTOCOL_VERSION_PATH: &str = "v1";
+/// HTTP-path-friendly form of [`PROTOCOL_VERSION`] (`"v0"`) — encoded
+/// into route prefixes. Kept as a separate constant rather than computed
+/// at every call site because (a) `format!` isn't `const`, and (b) the
+/// literal form avoids pulling `const_format` into the dependency graph
+/// for what is in practice a once-per-protocol-version change. The
+/// lock-step test below pins it to [`PROTOCOL_VERSION`].
+///
+/// Orthogonal to the changeset payload-format version (the `DSC1` magic /
+/// [`crate::crypto::CHANGESET_MAGIC_V1`]): that versions the encrypted
+/// body, this versions the HTTP route surface; they move independently.
+pub const PROTOCOL_VERSION_PATH: &str = "v0";
 
 #[cfg(test)]
 mod tests {

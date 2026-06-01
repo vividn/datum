@@ -47,7 +47,7 @@ pub struct StubRelay {
 #[derive(Debug, Clone)]
 pub struct StubRelayOptions {
     /// Username (display string) the relay authorizes device-codes for and
-    /// echoes back as `user_id` on `/v1/auth/device-code/poll`. Kept named
+    /// echoes back as `user_id` on `/v0/auth/device-code/poll`. Kept named
     /// `user_id` for backwards-compat with existing tests.
     pub user_id: String,
     /// First N polls of any device_code return `slow_down` before normal
