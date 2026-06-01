@@ -476,6 +476,54 @@ changeset format. The magic prefix is the switch: consumers detect the
 payload type by the magic (`DSC1` → `DSC2` → …), not by the HTTP content
 type, and independently of the URL/protocol version.
 
+## Post-quantum posture
+
+The protocol is **E2E-encrypted**, which decouples the stored-data
+surface from the authentication surface. That split is what determines
+the quantum threat model: a future quantum attacker who defeats the
+public-key crypto gets *authentication*, not *plaintext*.
+
+**Quantum-safe today (the data plane).** The bytes the relay stores are
+protected only by symmetric primitives, which Grover's algorithm merely
+square-roots:
+
+- **Changeset blobs:** AES-256-GCM. Grover leaves ~128-bit effective
+  security — still infeasible.
+- **Wrapped master key:** Argon2id-derived KEK wrapping AES-256-GCM (see
+  [Wrapped key exchange](#wrapped-key-exchange)). Memory-hardness blunts
+  quantum speedups too.
+- The master key never appears on the wire in plaintext, so there is no
+  harvested ciphertext that decrypts it.
+
+**Classically broken, hence harvest-now-decrypt-later (HNDL) exposed.**
+Everything public-key is vulnerable to Shor's algorithm:
+
+- **WebAuthn passkeys** (Ed25519 / P-256) — long-lived, stored
+  server-side; a forged signature is the prize.
+- **TLS 1.3 handshake** — ephemeral X25519; recorded today, the session
+  key recoverable once a CRQC exists.
+
+**Auth bypass does not yield data.** Because auth and decryption are
+decoupled, a quantum attacker who forges a passkey reaches only the
+relay's content-blind surface: encrypted blobs, the wrapped key,
+`(device_id, seq, cluster_id)` metadata, and a DOS lever. To read
+anything they still need the **passphrase** to unwrap the master key —
+so user passphrase strength × Argon2id memory cost is the real gate, not
+the public-key layer.
+
+**What still defeats E2E** (quantum-independent, and the actual priority):
+
+- A weak passphrase — offline brute-force against the wrapped key.
+- A compromised device — the master key lives in process memory.
+- QR device-pairing (memory: C4f) — its out-of-band channel needs its
+  own quantum-safe handshake; it is outside this contract today.
+
+**Mitigations live upstream and are adopt-when-available.** TLS hybrid
+PQ key exchange (X25519Kyber768) is already shipping in major browsers
+and closes the HNDL window on the transport; PQ-WebAuthn is still in
+draft. daydumb tracks both and turns them on as the platforms expose
+them — no protocol change here is required for either.
+
 ## Error responses
 
 Two error shapes coexist:
