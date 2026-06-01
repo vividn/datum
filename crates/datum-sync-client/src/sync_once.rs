@@ -187,7 +187,10 @@ pub fn push_once(
     // a permanent softlock. Only a *second* mismatch is a genuine
     // device_id collision and is fatal (da-ca4q).
     let predicted = sync_state::get_device_seq(db)?.saturating_add(1);
-    let blob = encrypt_changeset(&changeset, master_key, device_id, predicted)?;
+    // The AAD also binds `cluster_id` (da-3nkx) so a blob cannot be
+    // unsealed against a different cluster — pass `local_cluster` here and
+    // again in the recovery re-encrypt below.
+    let blob = encrypt_changeset(&changeset, master_key, device_id, predicted, &local_cluster)?;
     let push_with_seq = |seq: u64, blob: &EncryptedBlob| {
         session.run(client, |bearer| {
             push_blob(
@@ -214,7 +217,8 @@ pub fn push_once(
                 "warning: sync seq diverged for device {device_id} \
                  (predicted {predicted}, relay expects {expected}); re-basing and retrying"
             );
-            let reblob = encrypt_changeset(&changeset, master_key, device_id, expected)?;
+            let reblob =
+                encrypt_changeset(&changeset, master_key, device_id, expected, &local_cluster)?;
             let ack = push_with_seq(expected, &reblob).map_err(|e| match e {
                 SessionError::SeqMismatch(SyncProtocolError::SeqMismatch {
                     expected,
@@ -326,14 +330,20 @@ pub fn pull_once(
     for row in rows {
         let blob = EncryptedBlob::from_bytes(row.payload.clone());
         // Per the spec, every decrypt failure must look alike — no oracle.
-        let cs =
-            decrypt_changeset(&blob, master_key, &row.device_id, row.seq as u64).map_err(|_| {
-                anyhow::anyhow!(
-                    "failed to decrypt changeset from {} seq {} — wrong key or tampered blob",
-                    row.device_id,
-                    row.seq,
-                )
-            })?;
+        let cs = decrypt_changeset(
+            &blob,
+            master_key,
+            &row.device_id,
+            row.seq as u64,
+            &row.cluster_id,
+        )
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "failed to decrypt changeset from {} seq {} — wrong key or tampered blob",
+                row.device_id,
+                row.seq,
+            )
+        })?;
 
         // Snapshot which entries the incoming changeset carries BEFORE we
         // apply it — `apply_changeset` may drop older-modify_time rows via
@@ -414,7 +424,13 @@ fn parse_entries(bytes: &[u8]) -> Result<Vec<Entry>> {
 /// caller can still surface the error on the real run).
 fn incoming_entry_count(row: &PulledChangeset, master_key: &[u8; 32]) -> usize {
     let blob = EncryptedBlob::from_bytes(row.payload.clone());
-    let Ok(cs) = decrypt_changeset(&blob, master_key, &row.device_id, row.seq as u64) else {
+    let Ok(cs) = decrypt_changeset(
+        &blob,
+        master_key,
+        &row.device_id,
+        row.seq as u64,
+        &row.cluster_id,
+    ) else {
         return 0;
     };
     parse_entries(cs.as_bytes()).map(|v| v.len()).unwrap_or(0)

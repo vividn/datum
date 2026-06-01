@@ -75,19 +75,22 @@ impl EncryptedBlob {
 }
 
 /// AES-256-GCM seal. A fresh 12-byte nonce is generated each call and
-/// prepended to the ciphertext. AAD binds the blob to its `(device_id, seq)`
-/// coordinates so replay or misattribution surfaces as a decrypt failure.
+/// prepended to the ciphertext. AAD binds the blob to its
+/// `(device_id, seq, cluster_id)` coordinates so replay, misattribution, or
+/// a cross-cluster splice surfaces as a decrypt failure (da-3nkx).
 pub fn encrypt_changeset(
     cs: &Changeset,
     key: &[u8; 32],
     device_id: &str,
     seq: u64,
+    cluster_id: &str,
 ) -> Result<EncryptedBlob, CryptoError> {
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
-    let aad = build_aad(device_id, seq);
+    check_aad_field_lens(device_id, cluster_id)?;
+    let aad = build_aad(device_id, seq, cluster_id);
     let ct = cipher
         .encrypt(
             nonce,
@@ -104,13 +107,14 @@ pub fn encrypt_changeset(
 }
 
 /// AES-256-GCM open. Returns [`CryptoError`] on any failure — wrong key,
-/// tampered ciphertext, mismatched device_id/seq. Peers MUST treat every
-/// failure mode identically (no oracle).
+/// tampered ciphertext, mismatched device_id/seq/cluster_id. Peers MUST
+/// treat every failure mode identically (no oracle).
 pub fn decrypt_changeset(
     blob: &EncryptedBlob,
     key: &[u8; 32],
     device_id: &str,
     seq: u64,
+    cluster_id: &str,
 ) -> Result<Changeset, CryptoError> {
     if blob.bytes.len() < NONCE_LEN {
         return Err(CryptoError("ciphertext shorter than nonce".into()));
@@ -118,17 +122,49 @@ pub fn decrypt_changeset(
     let (nonce_bytes, ct) = blob.bytes.split_at(NONCE_LEN);
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let nonce = Nonce::from_slice(nonce_bytes);
-    let aad = build_aad(device_id, seq);
+    check_aad_field_lens(device_id, cluster_id)?;
+    let aad = build_aad(device_id, seq, cluster_id);
     let pt = cipher
         .decrypt(nonce, Payload { msg: ct, aad: &aad })
         .map_err(|e| CryptoError(format!("decrypt: {e}")))?;
     Ok(Changeset { bytes: pt })
 }
 
-fn build_aad(device_id: &str, seq: u64) -> Vec<u8> {
-    let mut aad = Vec::with_capacity(device_id.len() + 8);
-    aad.extend_from_slice(device_id.as_bytes());
+/// Guard against inputs whose length would silently truncate when encoded
+/// as a `u32` length-prefix in [`build_aad`] (Copilot review on PR #4).
+/// Both `device_id` (UUID) and `cluster_id` (slug) are well under `u32::MAX`
+/// in practice; this is defence in depth for pathological callers.
+fn check_aad_field_lens(device_id: &str, cluster_id: &str) -> Result<(), CryptoError> {
+    if device_id.len() > u32::MAX as usize {
+        return Err(CryptoError(format!(
+            "device_id length {} exceeds u32::MAX; AAD length-prefix would truncate",
+            device_id.len()
+        )));
+    }
+    if cluster_id.len() > u32::MAX as usize {
+        return Err(CryptoError(format!(
+            "cluster_id length {} exceeds u32::MAX; AAD length-prefix would truncate",
+            cluster_id.len()
+        )));
+    }
+    Ok(())
+}
+
+/// Build the AAD binding a changeset to its `(device_id, seq, cluster_id)`
+/// coordinates. The two variable-width fields are length-prefixed (u32 BE)
+/// so distinct `(device_id, cluster_id)` tuples cannot alias to the same AAD
+/// bytes — e.g. `("ab", "c")` and `("a", "bc")` stay distinct. Callers MUST
+/// have validated input lengths via [`check_aad_field_lens`] (the encrypt
+/// and decrypt boundaries do this).
+fn build_aad(device_id: &str, seq: u64, cluster_id: &str) -> Vec<u8> {
+    let did = device_id.as_bytes();
+    let cid = cluster_id.as_bytes();
+    let mut aad = Vec::with_capacity(4 + did.len() + 8 + 4 + cid.len());
+    aad.extend_from_slice(&(did.len() as u32).to_be_bytes());
+    aad.extend_from_slice(did);
     aad.extend_from_slice(&seq.to_be_bytes());
+    aad.extend_from_slice(&(cid.len() as u32).to_be_bytes());
+    aad.extend_from_slice(cid);
     aad
 }
 
@@ -144,17 +180,17 @@ mod tests {
     fn encrypt_decrypt_round_trip() {
         let key = [0x11u8; 32];
         let cs = sample_cs();
-        let blob = encrypt_changeset(&cs, &key, "dev-alpha", 42).unwrap();
+        let blob = encrypt_changeset(&cs, &key, "dev-alpha", 42, "cluster-1").unwrap();
         assert!(blob.as_bytes().len() > NONCE_LEN + 16);
-        let got = decrypt_changeset(&blob, &key, "dev-alpha", 42).unwrap();
+        let got = decrypt_changeset(&blob, &key, "dev-alpha", 42, "cluster-1").unwrap();
         assert_eq!(got, cs);
     }
 
     #[test]
     fn wrong_key_fails() {
         let cs = sample_cs();
-        let blob = encrypt_changeset(&cs, &[0x11u8; 32], "dev-alpha", 1).unwrap();
-        let err = decrypt_changeset(&blob, &[0x22u8; 32], "dev-alpha", 1).unwrap_err();
+        let blob = encrypt_changeset(&cs, &[0x11u8; 32], "dev-alpha", 1, "cluster-1").unwrap();
+        let err = decrypt_changeset(&blob, &[0x22u8; 32], "dev-alpha", 1, "cluster-1").unwrap_err();
         assert!(err.0.starts_with("decrypt"));
     }
 
@@ -162,15 +198,33 @@ mod tests {
     fn wrong_aad_fails() {
         let cs = sample_cs();
         let key = [0x11u8; 32];
-        let blob = encrypt_changeset(&cs, &key, "dev-alpha", 1).unwrap();
-        assert!(decrypt_changeset(&blob, &key, "dev-beta", 1).is_err());
-        assert!(decrypt_changeset(&blob, &key, "dev-alpha", 2).is_err());
+        let blob = encrypt_changeset(&cs, &key, "dev-alpha", 1, "cluster-1").unwrap();
+        // A mismatched device_id, seq, or cluster_id all fail to open.
+        assert!(decrypt_changeset(&blob, &key, "dev-beta", 1, "cluster-1").is_err());
+        assert!(decrypt_changeset(&blob, &key, "dev-alpha", 2, "cluster-1").is_err());
+        assert!(decrypt_changeset(&blob, &key, "dev-alpha", 1, "cluster-2").is_err());
         // Flipping a byte in the ciphertext also fails.
         let mut tampered = blob.into_bytes();
         let last = tampered.len() - 1;
         tampered[last] ^= 0x01;
-        assert!(
-            decrypt_changeset(&EncryptedBlob::from_bytes(tampered), &key, "dev-alpha", 1,).is_err()
-        );
+        assert!(decrypt_changeset(
+            &EncryptedBlob::from_bytes(tampered),
+            &key,
+            "dev-alpha",
+            1,
+            "cluster-1",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn cluster_and_device_are_unambiguous() {
+        // A naive `device_id ‖ cluster_id` concat would let ("ab","c") and
+        // ("a","bc") alias; the length-prefixed AAD keeps them distinct, so
+        // a blob sealed under one tuple cannot be opened under the other.
+        let key = [0x11u8; 32];
+        let cs = sample_cs();
+        let blob = encrypt_changeset(&cs, &key, "ab", 1, "c").unwrap();
+        assert!(decrypt_changeset(&blob, &key, "a", 1, "bc").is_err());
     }
 }

@@ -326,7 +326,13 @@ fn s1_local_first_then_server_adoption_with_ciphertext_check() {
     // Decrypt with the test master key — proves AAD binding works
     // end-to-end against the server-stored bytes.
     let blob = EncryptedBlob::from_bytes(cipher_bytes);
-    let cs = decrypt_changeset(&blob, &master_key, device_id, *seq as u64)
+    // Decrypt with the cluster the local bound into the AAD at push time
+    // (da-3nkx) — read it back from sync_state rather than hardcoding, so
+    // this mirrors the production pull path (which uses the row's cluster_id).
+    let cluster = datum_sync_client::sync_state::get_cluster_id(&db)
+        .unwrap()
+        .expect("cluster_id recorded after push");
+    let cs = decrypt_changeset(&blob, &master_key, device_id, *seq as u64, &cluster)
         .expect("decrypt with master key");
     let plain = cs.as_bytes();
     let txt = String::from_utf8_lossy(plain);

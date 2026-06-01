@@ -184,6 +184,7 @@ fn sync_pull_applies_changes_and_advances_seq() {
         &master_key,
         "dev-peer",
         1,
+        "datum", // matches the StubRelay's injected cluster_id (file-stem default)
     )
     .unwrap();
     relay.inject_changeset("dev-peer", 1, peer_blob.as_bytes());
@@ -226,9 +227,14 @@ fn sync_bidirectional_pulls_first() {
         .insert_entry(&make_entry("peer-field", 0, "dev-peer"))
         .unwrap();
     let cs = datum_sync_client::ops::pack_changeset(&peer_db, 0).unwrap();
-    let blob =
-        datum_sync_client::crypto::changeset::encrypt_changeset(&cs, &master_key, "dev-peer", 1)
-            .unwrap();
+    let blob = datum_sync_client::crypto::changeset::encrypt_changeset(
+        &cs,
+        &master_key,
+        "dev-peer",
+        1,
+        "datum",
+    )
+    .unwrap();
     relay.inject_changeset("dev-peer", 1, blob.as_bytes());
 
     // Local has its own entry.
@@ -392,9 +398,14 @@ fn pull_with_conflict_queues_to_conflict_table() {
     peer_db.insert_entry(&peer_start).unwrap();
 
     let cs = datum_sync_client::ops::pack_changeset(&peer_db, 0).unwrap();
-    let blob =
-        datum_sync_client::crypto::changeset::encrypt_changeset(&cs, &master_key, "dev-peer", 1)
-            .unwrap();
+    let blob = datum_sync_client::crypto::changeset::encrypt_changeset(
+        &cs,
+        &master_key,
+        "dev-peer",
+        1,
+        "datum",
+    )
+    .unwrap();
     relay.inject_changeset("dev-peer", 1, blob.as_bytes());
 
     let outcome =

@@ -283,8 +283,8 @@ Response (200):
 
 #### Seq-mismatch recovery
 
-Because the AAD binds `(device_id, seq)`, the client must encrypt before
-the seq is final — so it predicts. If the client and relay seq views
+Because the AAD binds `(device_id, seq, cluster_id)`, the client must
+encrypt before the seq is final — so it predicts. If the client and relay seq views
 drift (a crash between a successful push and the local watermark advance,
 a DB restored from an older backup, or a relay reset), the prediction is
 wrong. Rather than store a blob whose AAD seq disagrees with its row seq
@@ -425,14 +425,17 @@ Every `payload_b64` decodes to an `EncryptedBlob`:
 - **Key:** 32 bytes. Derived from the master key (either passphrase-wrapped
   via `/keys/wrapped` or handed off via QR pairing). Per-device subkeys
   are NOT required — a single user-wide master key is sufficient because
-  the AAD binds each blob to its `(device_id, seq)`.
+  the AAD binds each blob to its `(device_id, seq, cluster_id)`.
 - **Nonce:** 12 random bytes, generated fresh per encryption. MUST be
   prepended to the ciphertext. MUST NOT be reused with the same key.
-- **AAD:** `utf-8(device_id)` || `big-endian-u64(seq)`, where `seq` is the
-  per-device push counter described above. Tampering with either input
-  surfaces as a decrypt failure — callers MUST treat every failure
-  identically (no oracle). (Binding `cluster_id` into the AAD as well is
-  tracked by da-3nkx; today the AAD covers `device_id` + `seq` only.)
+- **AAD:** binds the blob to its `(device_id, seq, cluster_id)` coordinates
+  (da-3nkx) so replay, misattribution, or a cross-cluster splice surfaces as
+  a decrypt failure. Encoding:
+  `len32(device_id) ‖ device_id ‖ big-endian-u64(seq) ‖ len32(cluster_id) ‖ cluster_id`,
+  where the two variable-width fields are length-prefixed (big-endian u32)
+  so distinct `(device_id, cluster_id)` tuples can't alias to the same AAD.
+  `seq` is the per-device push counter described above. Every failure mode
+  MUST look identical to callers (no oracle).
 - **Tag:** the 16-byte GCM authenticator is appended to the ciphertext
   by the `aes-gcm` crate (standard behavior across implementations).
 
