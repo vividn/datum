@@ -191,6 +191,7 @@ fn rewrite_generation_mismatch(err: anyhow::Error) -> anyhow::Error {
     if let Some(SessionError::GenerationMismatch(SyncProtocolError::GenerationMismatch {
         expected,
         found,
+        ..
     })) = err.downcast_ref::<SessionError>()
     {
         return anyhow::anyhow!(

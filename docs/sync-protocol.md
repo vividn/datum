@@ -221,17 +221,29 @@ cluster's current authoritative value, the relay rejects the request with
 body:
 
 ```json
-{ "kind": "generation_mismatch", "expected": 7, "found": 5 }
+{
+  "kind": "generation_mismatch",
+  "expected": 7,
+  "found": 5,
+  "generation_started_at": "2026-06-01T10:00:00Z"
+}
 ```
 
 - `expected` — the cluster's current authoritative generation (server side).
 - `found` — the generation the client sent.
+- `generation_started_at` — RFC 3339 UTC instant the server's current
+  generation was first set (initial cluster creation, or the last
+  `bump-generation`). Clients use this to bucket local unsynced edits
+  during recovery (da-74xx): edits with `modify_time < generation_started_at`
+  are pre-reinit *stale state* and should be discarded; edits with
+  `modify_time >= generation_started_at` are post-reinit *fresh local work*
+  and should be kept (re-pushed naturally on the next push after recovery).
 
 Both client and server MUST treat this as **terminal for the current sync
 attempt**. The contract for the client is: reset its local pull watermark
-and re-pull from `generation = expected`, surfacing a prompt before
-discarding local sync state. Old changesets stay on the server until
-garbage-collected by generation.
+and re-pull from `generation = expected`, prompting the user before
+discarding the pre-reinit local edits. Old changesets stay on the server
+until garbage-collected by generation.
 
 > Client-side recovery (watermark reset + re-pull, coordinated with the
 > restore/purge path) is being implemented under da-74xx. This section

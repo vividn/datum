@@ -29,13 +29,21 @@ pub enum SyncProtocolError {
     /// current sync attempt — the client resets its watermark and
     /// re-pulls from `generation = expected`. Old changesets stay on the
     /// server until garbage-collected by generation.
-    #[error("generation mismatch: client {found}, server {expected}")]
+    #[error(
+        "generation mismatch: client {found}, server {expected} \
+         (current generation started at {generation_started_at})"
+    )]
     GenerationMismatch {
         /// The generation the server expected the client to be on
         /// (the cluster's current authoritative generation).
         expected: u64,
         /// The generation the client sent.
         found: u64,
+        /// When the server's current generation was first set (RFC 3339
+        /// UTC string). Clients use this to bucket local unsynced edits
+        /// into pre-reinit (stale state to discard) and post-reinit
+        /// (fresh local work to keep) during recovery (da-74xx).
+        generation_started_at: String,
     },
 
     /// The per-device `seq` the client predicted (and bound into the
@@ -75,6 +83,7 @@ mod tests {
         let err = SyncProtocolError::GenerationMismatch {
             expected: 7,
             found: 5,
+            generation_started_at: "2026-06-01T10:00:00Z".into(),
         };
         let json = serde_json::to_string(&err).unwrap();
         // Tagged shape — clients route on `kind`.
@@ -84,6 +93,10 @@ mod tests {
         );
         assert!(json.contains("\"expected\":7"), "wire key: {json}");
         assert!(json.contains("\"found\":5"), "wire key: {json}");
+        assert!(
+            json.contains("\"generation_started_at\":\"2026-06-01T10:00:00Z\""),
+            "wire key: {json}",
+        );
 
         let back: SyncProtocolError = serde_json::from_str(&json).unwrap();
         assert_eq!(back, err);
@@ -112,11 +125,16 @@ mod tests {
         let err = SyncProtocolError::GenerationMismatch {
             expected: 9,
             found: 4,
+            generation_started_at: "2026-06-01T12:00:00Z".into(),
         };
         let msg = format!("{err}");
-        // The display must surface BOTH sides so logs are debuggable
-        // without parsing the structured payload.
+        // The display must surface both sides + the timestamp so logs are
+        // debuggable without parsing the structured payload.
         assert!(msg.contains("9"), "expected side missing: {msg}");
         assert!(msg.contains("4"), "found side missing: {msg}");
+        assert!(
+            msg.contains("2026-06-01T12:00:00Z"),
+            "generation_started_at missing: {msg}",
+        );
     }
 }

@@ -34,12 +34,14 @@ pub fn get_generation_for_owner(
     conn: &Connection,
     cluster_id: &str,
     user_id: &Uuid,
-) -> Result<Option<i64>> {
-    let mut stmt =
-        conn.prepare("SELECT generation FROM clusters WHERE cluster_id = ?1 AND user_id = ?2")?;
+) -> Result<Option<(i64, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT generation, generation_started_at FROM clusters \
+         WHERE cluster_id = ?1 AND user_id = ?2",
+    )?;
     let mut rows = stmt.query(params![cluster_id, user_id.to_string()])?;
     if let Some(row) = rows.next()? {
-        Ok(Some(row.get(0)?))
+        Ok(Some((row.get(0)?, row.get(1)?)))
     } else {
         Ok(None)
     }
@@ -50,7 +52,11 @@ pub fn get_generation_for_owner(
 /// exactly one row at generation 0. Returns the generation that was in
 /// effect after the call (existing value if the row was already there,
 /// 0 for a fresh insert).
-pub fn ensure_cluster(conn: &Connection, cluster_id: &str, user_id: &Uuid) -> Result<i64> {
+pub fn ensure_cluster(
+    conn: &Connection,
+    cluster_id: &str,
+    user_id: &Uuid,
+) -> Result<(i64, String)> {
     conn.execute(
         "INSERT OR IGNORE INTO clusters (cluster_id, user_id, generation) VALUES (?1, ?2, 0)",
         params![cluster_id, user_id.to_string()],
@@ -59,6 +65,8 @@ pub fn ensure_cluster(conn: &Connection, cluster_id: &str, user_id: &Uuid) -> Re
     // Re-read because INSERT OR IGNORE doesn't tell us whether the row
     // is fresh or pre-existing — and a row owned by a different user
     // must surface as a permission error to the caller, not as 0.
+    // `generation_started_at` is stamped with RFC 3339 UTC at insert via
+    // the table's DEFAULT (see `db::migrate_to_clusters`).
     get_generation_for_owner(conn, cluster_id, user_id)?
         .ok_or_else(|| anyhow::anyhow!("cluster owned by another user"))
 }
@@ -69,10 +77,19 @@ pub fn ensure_cluster(conn: &Connection, cluster_id: &str, user_id: &Uuid) -> Re
 /// `None` — the bump endpoint never auto-registers because doing so
 /// would invent a cluster with non-zero generation, which has no
 /// meaningful semantics.
-pub fn bump_generation(conn: &Connection, cluster_id: &str, user_id: &Uuid) -> Result<Option<i64>> {
+pub fn bump_generation(
+    conn: &Connection,
+    cluster_id: &str,
+    user_id: &Uuid,
+) -> Result<Option<(i64, String)>> {
+    // Stamp `generation_started_at` in RFC 3339 UTC so the wire form
+    // (carried in the GenerationMismatch error) parses cleanly client-side
+    // — see the long comment on the CREATE TABLE in `db::migrate_to_clusters`.
     let rows = conn
         .execute(
-            "UPDATE clusters SET generation = generation + 1
+            "UPDATE clusters
+             SET generation = generation + 1,
+                 generation_started_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
              WHERE cluster_id = ?1 AND user_id = ?2",
             params![cluster_id, user_id.to_string()],
         )
@@ -86,7 +103,7 @@ pub fn bump_generation(conn: &Connection, cluster_id: &str, user_id: &Uuid) -> R
 /// Compare a client-supplied generation against the server's
 /// authoritative value. Returns `Err(AppError::GenerationMismatch { ... })`
 /// on a mismatch so the caller can `?` it straight out of the handler.
-pub fn check_generation(server: i64, client: u64) -> Result<(), AppError> {
+pub fn check_generation(server: i64, client: u64, started_at: &str) -> Result<(), AppError> {
     if (server as u64) == client {
         Ok(())
     } else {
@@ -94,6 +111,7 @@ pub fn check_generation(server: i64, client: u64) -> Result<(), AppError> {
             SyncProtocolError::GenerationMismatch {
                 expected: server as u64,
                 found: client,
+                generation_started_at: started_at.to_string(),
             },
         ))
     }
@@ -125,7 +143,7 @@ pub async fn bump_generation_endpoint(
 ) -> Result<Json<BumpResponse>, AppError> {
     let conn = state.db.lock().unwrap();
     match bump_generation(&conn, &cluster_id, &user.user_id)? {
-        Some(generation) => Ok(Json(BumpResponse {
+        Some((generation, _started_at)) => Ok(Json(BumpResponse {
             cluster_id,
             generation,
         })),
@@ -149,10 +167,20 @@ mod tests {
         let conn = setup();
         let user = Uuid::new_v4();
         let cid = "cluster-A";
-        assert_eq!(ensure_cluster(&conn, cid, &user).unwrap(), 0);
+        let (gen, started_at) = ensure_cluster(&conn, cid, &user).unwrap();
+        assert_eq!(gen, 0);
+        // RFC 3339 UTC: `YYYY-MM-DDTHH:MM:SSZ`. SQLite's `datetime('now')`
+        // returns a non-RFC-3339 form (`YYYY-MM-DD HH:MM:SS`) and would
+        // fail this check — surfacing the bug Copilot caught on the
+        // initial PR pass.
+        assert!(
+            started_at.contains('T') && started_at.ends_with('Z'),
+            "generation_started_at must be RFC 3339 (`...T...Z`), got: {started_at}"
+        );
         // Second call must NOT bump — registration is a no-op when the
         // row already exists.
-        assert_eq!(ensure_cluster(&conn, cid, &user).unwrap(), 0);
+        let (gen2, _) = ensure_cluster(&conn, cid, &user).unwrap();
+        assert_eq!(gen2, 0);
     }
 
     #[test]
@@ -161,10 +189,18 @@ mod tests {
         let user = Uuid::new_v4();
         let cid = "cluster-B";
         ensure_cluster(&conn, cid, &user).unwrap();
-        assert_eq!(bump_generation(&conn, cid, &user).unwrap(), Some(1));
-        assert_eq!(bump_generation(&conn, cid, &user).unwrap(), Some(2));
         assert_eq!(
-            get_generation_for_owner(&conn, cid, &user).unwrap(),
+            bump_generation(&conn, cid, &user).unwrap().map(|(g, _)| g),
+            Some(1)
+        );
+        assert_eq!(
+            bump_generation(&conn, cid, &user).unwrap().map(|(g, _)| g),
+            Some(2)
+        );
+        assert_eq!(
+            get_generation_for_owner(&conn, cid, &user)
+                .unwrap()
+                .map(|(g, _)| g),
             Some(2)
         );
     }
@@ -194,26 +230,30 @@ mod tests {
 
         // Alice's view is untouched.
         assert_eq!(
-            get_generation_for_owner(&conn, cid, &alice).unwrap(),
+            get_generation_for_owner(&conn, cid, &alice)
+                .unwrap()
+                .map(|(g, _)| g),
             Some(0)
         );
     }
 
     #[test]
     fn check_generation_passes_on_match() {
-        check_generation(3, 3).unwrap();
+        check_generation(3, 3, "2026-06-01T00:00:00Z").unwrap();
     }
 
     #[test]
     fn check_generation_rejects_with_typed_mismatch() {
-        let err = check_generation(5, 3).unwrap_err();
+        let err = check_generation(5, 3, "2026-06-01T12:00:00Z").unwrap_err();
         match err {
             AppError::GenerationMismatch(SyncProtocolError::GenerationMismatch {
                 expected,
                 found,
+                generation_started_at,
             }) => {
                 assert_eq!(expected, 5);
                 assert_eq!(found, 3);
+                assert_eq!(generation_started_at, "2026-06-01T12:00:00Z");
             }
             other => panic!("expected GenerationMismatch variant, got {other:?}"),
         }

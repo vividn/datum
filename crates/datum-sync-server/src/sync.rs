@@ -24,11 +24,15 @@ pub async fn push(
 
     // da-tat1: resolve the cluster the push targets. The request might be
     // the first time the relay has heard about this cluster — auto-register.
-    let server_generation = cluster::ensure_cluster(&conn, &req.cluster_id, &user.user_id)?;
+    // `gen_started_at` is the timestamp the current generation was first
+    // set; we pass it into `check_generation` so a mismatch error carries
+    // it (clients use it to bucket pre/post-reinit local edits, da-74xx).
+    let (server_generation, gen_started_at) =
+        cluster::ensure_cluster(&conn, &req.cluster_id, &user.user_id)?;
 
     // Generation match — the wire-required generation must match the
     // server's authoritative value.
-    cluster::check_generation(server_generation, req.generation)?;
+    cluster::check_generation(server_generation, req.generation, &gen_started_at)?;
 
     // Seq match (da-ca4q) — the client predicts its per-device seq and
     // binds it into the changeset AAD at encrypt time. Validate that
@@ -80,8 +84,9 @@ pub async fn pull(
 ) -> Result<Json<Vec<Changeset>>, AppError> {
     let conn = state.db.lock().unwrap();
 
-    let server_generation = cluster::ensure_cluster(&conn, &q.cluster_id, &user.user_id)?;
-    cluster::check_generation(server_generation, q.generation)?;
+    let (server_generation, gen_started_at) =
+        cluster::ensure_cluster(&conn, &q.cluster_id, &user.user_id)?;
+    cluster::check_generation(server_generation, q.generation, &gen_started_at)?;
 
     let rows = db::pull_changesets_for_cluster(&conn, q.since, &q.device, &q.cluster_id)?;
 

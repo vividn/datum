@@ -65,15 +65,37 @@ pub fn init_db(conn: &Connection) -> Result<()> {
 /// surfaces real cluster creation; until then every server-side path
 /// silently maps `cluster_id := user_id`.
 fn migrate_to_clusters(conn: &Connection) -> Result<()> {
+    // `generation_started_at` is RFC 3339 UTC (`...T...HH:MM:SSZ`) because
+    // the value is surfaced on the wire in `SyncProtocolError::GenerationMismatch`
+    // and the spec promises RFC 3339. SQLite's `datetime('now')` returns
+    // `YYYY-MM-DD HH:MM:SS` (space separator, no Z) which fails RFC 3339
+    // parsers — use `strftime('%Y-%m-%dT%H:%M:%SZ','now')` instead.
+    // `created_at` is server-internal and may stay on the older format
+    // until a separate cleanup; see follow-up bead.
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS clusters (
-            cluster_id TEXT PRIMARY KEY,
-            user_id    TEXT NOT NULL,
-            generation INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            cluster_id            TEXT PRIMARY KEY,
+            user_id               TEXT NOT NULL,
+            generation            INTEGER NOT NULL DEFAULT 0,
+            created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+            generation_started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );",
     )
     .context("create clusters")?;
+
+    // Idempotent migration for existing relays — adds the
+    // `generation_started_at` column tracking when the current generation
+    // was first set (updates on every bump). Clients use this to bucket
+    // local pre/post-reinit unsynced edits during recovery (da-74xx).
+    if !column_exists(conn, "clusters", "generation_started_at")? {
+        conn.execute(
+            "ALTER TABLE clusters \
+             ADD COLUMN generation_started_at TEXT NOT NULL \
+             DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+            [],
+        )
+        .context("add clusters.generation_started_at")?;
+    }
 
     // ALTER ADD COLUMN is idempotent only via the `IF NOT EXISTS` shape
     // (SQLite 3.35+) — older builds error. PRAGMA table_info is the

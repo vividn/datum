@@ -805,7 +805,7 @@ mod tests {
         // Cluster row exists, scoped to the calling user.
         let conn = state.db.lock().unwrap();
         let gen = cluster::get_generation_for_owner(&conn, "cluster-X", &user_id).unwrap();
-        assert_eq!(gen, Some(0));
+        assert_eq!(gen.map(|(g, _)| g), Some(0));
     }
 
     /// `POST /v0/clusters/{id}/bump-generation` increments the
@@ -920,7 +920,9 @@ mod tests {
         // Alice's generation stays at 0 — Bob's attempt was a no-op.
         let conn = state.db.lock().unwrap();
         assert_eq!(
-            cluster::get_generation_for_owner(&conn, "cluster-Z", &alice_uid).unwrap(),
+            cluster::get_generation_for_owner(&conn, "cluster-Z", &alice_uid)
+                .unwrap()
+                .map(|(g, _)| g),
             Some(0)
         );
     }

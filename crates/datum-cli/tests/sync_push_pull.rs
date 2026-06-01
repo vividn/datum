@@ -638,7 +638,7 @@ fn push_after_server_bump_surfaces_generation_mismatch_error() {
     // is now sitting on generation 0 but the server is on 1.
     {
         let conn = relay.state.db.lock().unwrap();
-        let new_gen =
+        let (new_gen, _started_at) =
             datum_sync_server::cluster::bump_generation(&conn, &registered_cluster, &relay.user_id)
                 .unwrap()
                 .unwrap();
