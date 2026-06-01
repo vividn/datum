@@ -17,11 +17,13 @@ use anyhow::{Context, Result};
 use chrono::{Local, Utc};
 use datum_core::{
     db::{Db, RetimeFilter},
-    ids::resolve_quickid_single,
+    entry::Entry,
+    ids::{resolve_quickid_single, Slug},
     time::{parse_date_arg, parse_time_arg, DatumTime, TimeBuilder},
 };
 
 use crate::args::RetimeArgs;
+use crate::commands::helpers::{resolve_batch, BatchMode};
 
 pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // da-rorg: slug defaults to `_LAST` (matching update/merge/delete/
@@ -30,18 +32,39 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // overrides that bypass the `_LAST` shorthand entirely.
     let want_bulk_filter = args.field.is_some() || args.after.is_some() || args.before.is_some();
 
-    let resolved_entry = if want_bulk_filter {
+    // Resolve the target entries. The default path (no --field/--after/
+    // --before) routes through the comma-aware batch resolver so
+    // `retime a,b,c` shifts every named entry — the same canonical path
+    // del/update/get already share (da-obes). The bulk-filter path keeps
+    // single-slug resolution: a comma list combined with --field/--after/
+    // --before is out of scope.
+    let resolved_entries: Vec<Entry> = if want_bulk_filter {
         args.slug
             .as_deref()
             .map(|raw| resolve_quickid_single(db, raw))
             .transpose()
             .map_err(anyhow::Error::from)?
+            .into_iter()
+            .collect()
     } else {
         let pattern = args
             .slug
             .as_deref()
             .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
-        Some(resolve_quickid_single(db, pattern).map_err(anyhow::Error::from)?)
+        let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live);
+        // Any token that fails to resolve fails the whole command, the
+        // same all-or-nothing contract get uses: a bad piece surfaces as
+        // an error rather than being silently dropped, so retime never
+        // mutates a partial set. Propagating the first token error
+        // verbatim also keeps a single-token NotFound / AmbiguousPrefix
+        // reading exactly as it did before da-obes.
+        if let Some((_, err)) = token_errors.into_iter().next() {
+            return Err(err);
+        }
+        if entries.is_empty() {
+            anyhow::bail!("no entries specified");
+        }
+        entries
     };
 
     // da-uzxj integration: when the user defaulted to `_LAST` (no
@@ -50,22 +73,20 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // and bulk filters skip the prompt entirely — the user named what
     // they wanted. retime has no `--force` flag today, so the prompt
     // is the only off-switch for the stale-default path.
-    if !want_bulk_filter && args.slug.is_none() {
-        if let Some(entry) = resolved_entry.as_ref() {
-            if !crate::commands::helpers::confirm_default_last_if_stale(
-                db,
-                args.slug.as_deref(),
-                /*force=*/ false,
-                "Retime",
-                std::slice::from_ref(entry),
-            )? {
-                println!("Aborted.");
-                return Ok(());
-            }
-        }
+    if !want_bulk_filter
+        && args.slug.is_none()
+        && !resolved_entries.is_empty()
+        && !crate::commands::helpers::confirm_default_last_if_stale(
+            db,
+            /*explicit_id=*/ None,
+            /*force=*/ false,
+            "Retime",
+            &resolved_entries,
+        )?
+    {
+        println!("Aborted.");
+        return Ok(());
     }
-
-    let resolved_slug: Option<datum_core::ids::Slug> = resolved_entry.map(|e| e.slug);
 
     let after_utc = args
         .after
@@ -80,11 +101,26 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
         .transpose()
         .context("Invalid --before value")?;
 
-    let filter = RetimeFilter {
-        slug_or_hid: resolved_slug.as_deref(),
-        field: args.field.as_deref(),
-        after_utc,
-        before_utc,
+    // One selection filter per resolved entry on the default path; a
+    // single filter (optional slug + field/time bounds) on the bulk path.
+    // The shift then applies to every filter, so a comma list retimes all
+    // named entries by the same amount.
+    let slugs: Vec<Slug> = resolved_entries.into_iter().map(|e| e.slug).collect();
+    let filters: Vec<RetimeFilter> = if want_bulk_filter {
+        vec![RetimeFilter {
+            slug_or_hid: slugs.first().map(Slug::as_str),
+            field: args.field.as_deref(),
+            after_utc,
+            before_utc,
+        }]
+    } else {
+        slugs
+            .iter()
+            .map(|s| RetimeFilter {
+                slug_or_hid: Some(s.as_str()),
+                ..RetimeFilter::default()
+            })
+            .collect()
     };
 
     // Path 1 — bare numeric positional: minutes-offset shorthand for
@@ -92,7 +128,10 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // re-anchor a TimeBuilder for the minutes-only case.
     if let Some(mins) = args.bare_offset_min {
         let offset = chrono::Duration::minutes(mins);
-        let n = db.update_times(&filter, offset)?;
+        let mut n = 0;
+        for filter in &filters {
+            n += db.update_times(filter, offset)?;
+        }
         report_shift(n, offset);
         return Ok(());
     }
@@ -101,7 +140,10 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     if let Some(offset_str) = args.offset.as_deref() {
         let offset = datum_core::time::parse_duration(offset_str)
             .with_context(|| format!("Invalid --offset value '{offset_str}'"))?;
-        let n = db.update_times(&filter, offset)?;
+        let mut n = 0;
+        for filter in &filters {
+            n += db.update_times(filter, offset)?;
+        }
         report_shift(n, offset);
         return Ok(());
     }
@@ -115,7 +157,10 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // a directive error rather than guessing.
     if args.relative {
         let delta = relative_delta(&args.time)?;
-        let n = db.update_times(&filter, delta)?;
+        let mut n = 0;
+        for filter in &filters {
+            n += db.update_times(filter, delta)?;
+        }
         report_shift(n, delta);
         return Ok(());
     }
@@ -124,12 +169,15 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // (TimeBuilder::now() with nothing applied = exact "now"), which
     // is the default "set to now" path the bead asks for.
     let (new_time, precision) = build_absolute(&args)?;
-    let n = db.set_start_time_with_precision(
-        &filter,
-        &new_time,
-        precision.seconds,
-        &precision.unit.to_string(),
-    )?;
+    let mut n = 0;
+    for filter in &filters {
+        n += db.set_start_time_with_precision(
+            filter,
+            &new_time,
+            precision.seconds,
+            &precision.unit.to_string(),
+        )?;
+    }
     println!(
         "✓ Retimed {n} → {} (±{}{})",
         new_time.utc.to_rfc3339(),

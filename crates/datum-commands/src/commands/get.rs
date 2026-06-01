@@ -3,9 +3,10 @@
 //! matchers.
 
 use anyhow::Result;
-use datum_core::{db::Db, ids::resolve_quickid};
+use datum_core::db::Db;
 
 use crate::args::{GetArgs, OutputFlagsExt};
+use crate::commands::helpers::{resolve_batch, BatchMode};
 use crate::render::{print_entry_pretty, show_action_with_context, Action};
 
 pub fn get(args: GetArgs, db: &Db) -> Result<()> {
@@ -31,24 +32,18 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
         .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
 
     // `dm get id1,id2,id3` — comma splits the pattern into independent
-    // quickIds. Each piece is resolved through the normal precedence
-    // (underscore shorthands, exact match, wildcards, prefix). Slugs and
-    // hids never contain commas, so the split is unambiguous.
-    let pieces: Vec<&str> = if pattern.contains(',') {
-        pattern.split(',').filter(|s| !s.is_empty()).collect()
-    } else {
-        vec![pattern]
-    };
+    // quickIds via the canonical batch resolver (da-obes), the same path
+    // del/update/retime use. Each piece runs the normal precedence
+    // (underscore shorthands, exact match, wildcards, prefix); empty
+    // tokens (trailing comma) drop, duplicates collapse by slug. Live
+    // only — get never surfaces tombstones.
+    let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live);
 
-    let mut entries = Vec::new();
-    for piece in &pieces {
-        let mut sub = resolve_quickid(db, piece).map_err(anyhow::Error::from)?;
-        if sub.is_empty() {
-            return Err(anyhow::Error::from(
-                datum_core::error::DatumError::NotFound((*piece).to_string()),
-            ));
-        }
-        entries.append(&mut sub);
+    // get fails the whole command if any token can't resolve, so a
+    // bad piece surfaces as an error rather than being silently dropped.
+    // Check before stamping the pointer so a partial set never sticks.
+    if let Some((_, err)) = token_errors.into_iter().next() {
+        return Err(err);
     }
     if entries.is_empty() {
         return Err(anyhow::Error::from(

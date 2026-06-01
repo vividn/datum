@@ -279,7 +279,21 @@ pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
     let mut drifted = 0usize;
     let mut fixed = 0usize;
 
-    for token in &args.hids {
+    // Comma-aware tokenisation (da-obes): `reparse a,b` resolves the
+    // same as `reparse a b`, matching get/del/update/retime. Unlike
+    // those, reparse stays on `resolve_quickid_single` per token rather
+    // than the batch resolver — its da-bkak contract forbids walking all
+    // entries, and the batch path would let a wildcard (`*`) expand to
+    // the whole store. Single resolution keeps a multi-match wildcard an
+    // AmbiguousPrefix error instead. Empty tokens (trailing comma) drop.
+    let tokens = args
+        .hids
+        .iter()
+        .flat_map(|raw| raw.split(','))
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
+
+    for token in tokens {
         let entry = resolve_quickid_single(db, token)?;
 
         scanned += 1;
