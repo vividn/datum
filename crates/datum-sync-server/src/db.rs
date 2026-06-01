@@ -26,12 +26,18 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             registered_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
+        -- `uploaded_at` is RFC 3339 UTC (`...T...HH:MM:SSZ`) because it is
+        -- surfaced on the wire in the Pull response (spec §Pull / §Portability:
+        -- all wire timestamps are RFC 3339) and the client parses it with
+        -- `parse_from_rfc3339`. SQLite's `datetime('now')` returns
+        -- `YYYY-MM-DD HH:MM:SS` (space separator, no `Z`) which fails RFC 3339
+        -- parsers — use `strftime('%Y-%m-%dT%H:%M:%SZ','now')` (da-grwx).
         CREATE TABLE IF NOT EXISTS changesets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             device_id TEXT NOT NULL,
             seq INTEGER NOT NULL,
             payload TEXT NOT NULL,
-            uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+            uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
             UNIQUE(device_id, seq)
         );
 
@@ -549,6 +555,30 @@ mod tests {
         let (_, seq2) = insert_changeset(&conn, "device-2", "b2").unwrap();
         assert_eq!(seq1, 1);
         assert_eq!(seq2, 2);
+    }
+
+    /// `uploaded_at` is surfaced on the wire (Pull response) and parsed
+    /// client-side with `parse_from_rfc3339`, so the server-stamped DEFAULT
+    /// must be RFC 3339 UTC (`YYYY-MM-DDTHH:MM:SSZ`), not SQLite's
+    /// `datetime('now')` form (`YYYY-MM-DD HH:MM:SS`). Locks da-grwx.
+    #[test]
+    fn changeset_uploaded_at_is_rfc3339() {
+        let conn = setup();
+        let (id, _) = insert_changeset(&conn, "device-1", "payload").unwrap();
+        let uploaded_at = pull_changesets(&conn, 0, "device-2")
+            .unwrap()
+            .into_iter()
+            .find(|r| r.0 == id)
+            .unwrap()
+            .4;
+
+        // RFC 3339 UTC shape: `YYYY-MM-DDTHH:MM:SSZ` — `T` separator, `Z`
+        // suffix, no space. The space-separated SQLite form would fail all
+        // three checks.
+        assert_eq!(uploaded_at.len(), 20, "got: {uploaded_at}");
+        assert_eq!(uploaded_at.as_bytes()[10], b'T', "got: {uploaded_at}");
+        assert!(uploaded_at.ends_with('Z'), "got: {uploaded_at}");
+        assert!(!uploaded_at.contains(' '), "got: {uploaded_at}");
     }
 
     // ─── da-og24: clusters schema migration ─────────────────────────────────
