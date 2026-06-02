@@ -604,6 +604,10 @@ const META_BODY: &str = "USAGE:\n  datum meta <FIELD> <TEXT>...\n  datum meta sh
 
 const KIT_BODY: &str = "USAGE:\n  datum kit install <PATH> [--force]\n  datum kit export <NAME> [PATH]\n  datum kit list\n  datum kit uninstall <NAME>\n  datum kit show <NAME>\n\nA kit is a TOML bundle of field specs, aliases, SQL views, indices, and\nlevel-1/2 commands. Install upserts the kit's rows tagged with the kit id;\nuninstall drops every row with that id. Export round-trips the installed\nrows back to TOML (defaults to stdout when path is omitted).\n\nList shows every installed kit and its field count. Show prints a single\nkit's installed contents.\n";
 
+const VIEW_BODY: &str = "USAGE:\n  datum view <NAME> [--format FMT] [--watch]\n  datum view --list\n\nARGS:\n  <NAME>           Installed view name (see `datum view --list`).\n\nOPTIONS:\n  -f, --format <FMT>   pretty | tsv | csv | json | auto (default auto).\n  -w, --watch          Re-run the query every 2s; clear-screen between\n                       redraws.\n  --list               Print installed view names and exit.\n\nViews execute under PRAGMA query_only = 1, so a malicious or buggy\nview cannot mutate the DB.\n";
+
+const REPARSE_BODY: &str = "USAGE:\n  datum reparse <HID>... [--fix]\n\nARGS:\n  <HID>...      One or more entries to replay. At least one is required;\n                reparse never walks the entry log implicitly.\n\nOPTIONS:\n  --fix         UPDATE rows where the parser produced a different shape\n                from the persisted columns; bumps `parser_version` and\n                recomputes `content_hash`. Default is dry-run (report only).\n\nReplay is hermetic to the alias state at write time — the entry's\nstored `alias_chain` is rehydrated as the resolver, never the live\n`aliases` table (da-bkak).\n";
+
 // ---------------------------------------------------------------------------
 // Global flags shown in `datum --help` under `GLOBAL OPTIONS:`.
 // ---------------------------------------------------------------------------
@@ -1289,6 +1293,45 @@ pub const COMMANDS: &[CommandSpec] = &[
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(KIT_BODY),
+        display_input_name: false,
+    },
+    // View / reparse — both were dispatched by the parser and answered
+    // `--help` via the parser's HelpRequested error before having a
+    // CommandSpec row; that meant they were invisible to the top-level
+    // `datum --help` category listing (the loop walks COMMANDS, not the
+    // parser's subcommand match). Adding their rows here surfaces them
+    // in the table without changing any behavior.
+    CommandSpec {
+        name: "view",
+        aliases: &[],
+        category: Category::ViewsSync,
+        summary: "execute a named SELECT installed via a kit (or via spec)",
+        top_summary: Some("Execute a named SELECT view and render the rows"),
+        long_description: None,
+        usage: &[
+            "datum view <NAME> [--format pretty|tsv|csv|json] [--watch]",
+            "datum view --list",
+        ],
+        args: NO_ARGS,
+        flags: NO_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 0,
+        body_override: Some(VIEW_BODY),
+        display_input_name: false,
+    },
+    CommandSpec {
+        name: "reparse",
+        aliases: &[],
+        category: Category::Admin,
+        summary: "replay stored raw_input against the current parser",
+        top_summary: Some("Replay an entry's stored raw_input through the current parser; --fix rewrites drifted columns"),
+        long_description: None,
+        usage: &["datum reparse <HID>... [--fix]"],
+        args: NO_ARGS,
+        flags: NO_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 0,
+        body_override: Some(REPARSE_BODY),
         display_input_name: false,
     },
 ];

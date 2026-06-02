@@ -59,12 +59,14 @@ ADMIN:
   config   Show or manage user configuration
   meta     Attach or list protocol-change notes on a field
   kit      Install / export / list field-spec kits (TOML bundles)
+  reparse  Replay an entry's stored raw_input through the current parser; --fix rewrites drifted columns
 
 VIEWS / SYNC:
   count      Count entries (optionally filtered/grouped/since-bounded)
   ids        List entry ids (newest-first by default)
   sync       Push/pull changesets, manage auth & keys
   conflicts  Inspect and resolve sync conflicts
+  view       Execute a named SELECT view and render the rows
 
 GLOBAL OPTIONS:
   --db <NAME_OR_PATH>   Override the active DB
