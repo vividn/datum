@@ -95,7 +95,7 @@ impl From<datum_parse::ParseError> for DatumError {
             datum_parse::ParseError::InvalidTime(s) => DatumError::InvalidTime(s),
             datum_parse::ParseError::InvalidArg(s) => DatumError::Other(s),
             datum_parse::ParseError::MissingRequiredKey(path) => {
-                DatumError::Other(format!("Missing required key: {path}"))
+                DatumError::Other(datum_parse::ParseError::MissingRequiredKey(path).to_string())
             }
             datum_parse::ParseError::ExtraData(rem) => {
                 DatumError::Other(format!("Extra data with no matching key: {rem:?}"))
@@ -119,5 +119,20 @@ impl From<datum_parse::ParseError> for DatumError {
                 DatumError::Other("man requested".to_string())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DatumError;
+
+    #[test]
+    fn parse_missing_required_field_preserves_hint_in_conversion() {
+        let err = DatumError::from(datum_parse::ParseError::MissingRequiredKey("field".into()));
+
+        assert_eq!(
+            err.to_string(),
+            "Missing required key: field — bare `<FIELD>` positional required first; `KEY=VALUE` tokens bind to data keys, not the field slot. Try: `datum <verb> <field> KEY=VALUE`."
+        );
     }
 }
