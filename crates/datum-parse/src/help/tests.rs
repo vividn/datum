@@ -75,6 +75,7 @@ GLOBAL OPTIONS:
   -V, --version         Show version
 
 Run `datum <command> --help` for per-command flag detail.
+With no subcommand, `datum` drops into an interactive REPL (inherits `--db`).
 ";
 
 #[test]
