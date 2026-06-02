@@ -2221,8 +2221,22 @@ fn parse_view_args(tail: &[&str]) -> Result<ViewArgs> {
                 out.watch = true;
                 i += 1;
             }
+            FlagSplit::Long("list") => {
+                out.list = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
+    }
+    if out.list {
+        // --list short-circuits in the command layer; a stray positional
+        // is a typo signal, not silently ignored.
+        if let Some(extra) = name {
+            return Err(ParseError::InvalidArg(format!(
+                "view --list does not take a name positional, got '{extra}'"
+            )));
+        }
+        return Ok(out);
     }
     let name = name.ok_or_else(|| {
         ParseError::InvalidArg("view requires a name (e.g. `datum view chores_due`)".into())
@@ -3179,5 +3193,31 @@ mod tests {
         let err = parse_argv(&argv(&["retime", "coffee:abc", "5", "10"])).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("at most one bare numeric"), "got: {msg}");
+    }
+
+    #[test]
+    fn view_list_flag_parses_without_name() {
+        let cli = parse_argv(&argv(&["view", "--list"])).unwrap();
+        match cli.command {
+            Command::View(args) => {
+                assert!(args.list);
+                assert_eq!(args.name, "");
+            }
+            other => panic!("expected View, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn view_list_with_positional_errors() {
+        let err = parse_argv(&argv(&["view", "--list", "stray"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("--list"), "got: {msg}");
+    }
+
+    #[test]
+    fn view_without_name_or_list_errors() {
+        let err = parse_argv(&argv(&["view"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("requires a name"), "got: {msg}");
     }
 }

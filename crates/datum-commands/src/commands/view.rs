@@ -28,6 +28,20 @@ use crate::args::{ViewArgs, ViewFormat};
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn view(args: ViewArgs, db: &Db) -> Result<()> {
+    if args.list {
+        let views = db.list_views()?;
+        if views.is_empty() {
+            println!("No views installed.");
+            return Ok(());
+        }
+        for v in &views {
+            match &v.kit_id {
+                Some(kit) => println!("{}  (kit: {kit})", v.name),
+                None => println!("{}", v.name),
+            }
+        }
+        return Ok(());
+    }
     if args.watch {
         loop {
             // ANSI clear-screen + cursor home so a long row count doesn't

@@ -1069,6 +1069,10 @@ pub struct ViewArgs {
     /// `--watch` — re-run the query on a poll interval until interrupted.
     /// Slice 4 polls; the daemon-hook integration is a follow-up.
     pub watch: bool,
+    /// `--list` — print the set of installed view names and exit. Mirrors
+    /// `datum check --list` (da-79vv: discoverability gap — view names
+    /// otherwise live only inside kit TOML).
+    pub list: bool,
 }
 
 impl ViewArgs {
@@ -1077,6 +1081,7 @@ impl ViewArgs {
             name: name.into(),
             format: ViewFormat::default(),
             watch: false,
+            list: false,
         }
     }
 }
