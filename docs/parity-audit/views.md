@@ -323,3 +323,7 @@ structurally-directed (stop materialising every live entry × every view).
 - [x] `cargo test --workspace` passes (see R3 commit).
 - [x] `Registry::query(name, db, params)` public API unchanged —
       `datum map` / `datum reduce` / `datum dayview` call sites untouched.
+
+---
+
+*Last touched against `main` @ `4db4903` on 2026-06-02 (vremya/parity-audit-footer). Drift is expected between touches; if a claim here disagrees with code, the code wins. To refresh: walk the doc against current `main`, update the items, bump this footer's sha + date in the same commit.*

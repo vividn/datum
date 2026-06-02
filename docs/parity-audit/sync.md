@@ -54,7 +54,10 @@ crates/
 - Auth: Bearer token via RFC 8628 device-code flow (CLI) or WebAuthn
   passkey (web/mobile).
 - Changesets: `DSC1` magic + JSON payload (`{"entries": [...]}`),
-  sealed with AES-256-GCM. AAD = `device_id || seq-big-endian`.
+  sealed with AES-256-GCM. AAD = `device_id || seq-big-endian ||
+  cluster_id` (length-prefixed encoding per da-3nkx; PR #6 on
+  `vremya/sync-aad-cluster_id` extended the original R4-era
+  two-field AAD).
 - Key wrap: Argon2id (m=64 MiB, t=3, p=1) → AES-256-GCM over the
   32-byte master key. Wrapped blob stored at `/v1/keys/wrapped`.
 - Watermarks: `push_seq` + `pull_seq` per DB, monotonic, stamped with
@@ -347,3 +350,7 @@ Gaps identified that belong to follow-up beads, not R4:
 - Push/pull HTTP clients (C4c) — scaffolded as `http/push_pull.rs`.
 - Background sync daemon (C4d, `da-ndd.15`) — crate reserved.
 - End-to-end two-client convergence tests — depend on push/pull.
+
+---
+
+*Last touched against `main` @ `4db4903` on 2026-06-02 (vremya/parity-audit-footer). Drift is expected between touches; if a claim here disagrees with code, the code wins. To refresh: walk the doc against current `main`, update the items, bump this footer's sha + date in the same commit.*

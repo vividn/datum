@@ -547,3 +547,7 @@ Deliberately *not* carried forward from datum:
 **Net clap footprint after R2:** **zero.** Step 3/N (commit 74fac61,
 da-jzj) removed clap from the entire workspace; `datum-parse` owns
 argv parsing and `--help` rendering for all commands.
+
+---
+
+*Last touched against `main` @ `4db4903` on 2026-06-02 (vremya/parity-audit-footer). Drift is expected between touches; if a claim here disagrees with code, the code wins. To refresh: walk the doc against current `main`, update the items, bump this footer's sha + date in the same commit.*
