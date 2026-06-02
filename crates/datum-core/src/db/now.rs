@@ -135,7 +135,13 @@ impl Db {
                     }
                 }
                 Some(e) => {
-                    let state = e.value.clone().unwrap_or(JsonValue::Null);
+                    // da-2i8g: block-switch / point-switch carry a
+                    // `following_state` that takes effect at
+                    // `occur_time + dur`. If the snapshot moment is
+                    // past that boundary, the *following* state is the
+                    // effective current state — not the primary
+                    // `value` from the row.
+                    let state = effective_state_from_entry(&e, now);
                     let since = entry_event_time(&e);
                     if is_truthy(&state) {
                         active.push(NowFieldActive {
@@ -170,6 +176,32 @@ impl Db {
             tracked_false,
             ignored,
         })
+    }
+}
+
+/// Resolve the *effective* state of an entry at `at`, honouring
+/// `following_state` for block-switch / point-switch when the moment
+/// has crossed the trailing edge. For all other verbs (and for
+/// block-switch rows whose trailing edge is still in the future), the
+/// primary `value` column is the state.
+fn effective_state_from_entry(e: &Entry, at: DateTime<Utc>) -> JsonValue {
+    use crate::entry::Verb;
+    match e.verb {
+        Verb::BlockSwitch | Verb::PointSwitch => {
+            if let (Some(occur), Some(dur), Some(fs)) = (
+                e.start_time.as_ref(),
+                e.dur.as_ref(),
+                e.following_state.as_ref(),
+            ) {
+                let delta = dur.as_seconds().unwrap_or(0);
+                let trailing = occur.utc + chrono::Duration::seconds(delta);
+                if at >= trailing {
+                    return fs.clone();
+                }
+            }
+            e.value.clone().unwrap_or(JsonValue::Null)
+        }
+        _ => e.value.clone().unwrap_or(JsonValue::Null),
     }
 }
 

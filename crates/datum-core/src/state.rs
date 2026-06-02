@@ -18,6 +18,7 @@ use serde_json::{Map, Value};
 use std::fmt;
 
 use crate::db::IGNORED_STATE_VALUE;
+use crate::dur::Dur;
 use crate::entry::{Entry, Verb};
 use crate::error::{DatumError, Result};
 
@@ -414,6 +415,17 @@ impl FieldStateEvents {
                             e.into(),
                         )
                     })?;
+            // da-2i8g sub-bead 5: block-switch / point-switch emit a
+            // trailing event at `occur_time + dur` carrying the
+            // `following_state`. Pull the columns so collect_raw_events
+            // can decide.
+            let dur: Option<Dur> = row
+                .get::<_, Option<String>>("dur")?
+                .as_deref()
+                .and_then(Dur::parse);
+            let following_state: Option<Value> = row
+                .get::<_, Option<String>>("following_state")?
+                .and_then(|s| serde_json::from_str(&s).ok());
             collect_raw_events(
                 &hid,
                 verb,
@@ -421,6 +433,8 @@ impl FieldStateEvents {
                 occur_time,
                 None,
                 create_time,
+                dur.as_ref(),
+                following_state.as_ref(),
                 out,
             );
             Ok(())
@@ -429,7 +443,7 @@ impl FieldStateEvents {
         match max_probe {
             Some(t) => {
                 let mut stmt = conn.prepare(
-                    r#"SELECT hid, verb, state, occur_time, create_time
+                    r#"SELECT hid, verb, state, occur_time, create_time, dur, following_state
                        FROM entries
                        WHERE field = ?1
                          AND deleted_at IS NULL
@@ -445,7 +459,7 @@ impl FieldStateEvents {
             }
             None => {
                 let mut stmt = conn.prepare(
-                    r#"SELECT hid, verb, state, occur_time, create_time
+                    r#"SELECT hid, verb, state, occur_time, create_time, dur, following_state
                        FROM entries
                        WHERE field = ?1
                          AND deleted_at IS NULL
@@ -489,6 +503,7 @@ impl FieldStateEvents {
 /// Variant of [`collect_events`] that operates on already-extracted columns,
 /// tagging each emitted event with its origin `hid` so [`FieldStateEvents`]
 /// can honour `exclude_hid` probes.
+#[allow(clippy::too_many_arguments)]
 fn collect_raw_events(
     hid: &str,
     verb: Verb,
@@ -496,24 +511,48 @@ fn collect_raw_events(
     start_time: Option<DateTime<Utc>>,
     end_time: Option<DateTime<Utc>>,
     create_time: DateTime<Utc>,
+    dur: Option<&Dur>,
+    following_state: Option<&Value>,
     out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)>,
 ) {
     // da-5ns sub-bead 1 stub: emit one event per state-affecting verb at
     // `start_time` (which the caller supplies as occur_time). The
-    // trailing-edge "off" event that the v19 model emitted at
-    // `end_time` for blocks/switches goes away — sub-bead 5 reads the
-    // matching following_state column to decide what the trailing edge
-    // looks like under the new shape. The legacy verb arms (Switch /
-    // Start / Stop / Occur / Block / Add) remain for rows whose stored
-    // verb wasn't rewritten by sub-bead 7's `dm check verbs --fix`.
+    // legacy verb arms (Switch / Start / Stop / Occur / Block / Add)
+    // remain for rows whose stored verb wasn't rewritten by sub-bead
+    // 7's `dm check verbs --fix`.
+    //
+    // da-2i8g sub-bead 5: block-switch and point-switch ALSO emit a
+    // trailing event at `start_time + dur` carrying the
+    // `following_state` value. That trailing event is what makes a
+    // post-block probe see the next state (e.g. after a `sit 30 → vertical`
+    // block, `now` 31 min later reports `vertical`, not `sit`).
     let _ = end_time;
     match verb {
-        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch => {
+        Verb::Switch => {
             if let Some(ts) = start_time {
                 let state = value
                     .map(|v| normalize_state(v).to_json())
                     .unwrap_or(Value::Null);
                 out.push((ts, create_time, state, hid.to_string()));
+            }
+        }
+        Verb::BlockSwitch | Verb::PointSwitch => {
+            if let Some(ts) = start_time {
+                let primary = value
+                    .map(|v| normalize_state(v).to_json())
+                    .unwrap_or(Value::Null);
+                out.push((ts, create_time, primary, hid.to_string()));
+                if let (Some(d), Some(fs)) = (dur, following_state) {
+                    // PointSwitch: dur is a zero span; the trailing
+                    // event lands at the same `start_time`. The
+                    // stable sort preserves the push order so the
+                    // trailing event still wins on a `<= t` probe.
+                    // BlockSwitch: trailing lands at start_time + dur.
+                    let delta = d.as_seconds().unwrap_or(0);
+                    let trailing_ts = ts + chrono::Duration::seconds(delta);
+                    let trailing = normalize_state(fs).to_json();
+                    out.push((trailing_ts, create_time, trailing, hid.to_string()));
+                }
             }
         }
         Verb::Point => {
@@ -537,9 +576,11 @@ fn collect_raw_events(
 }
 
 fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value)>) {
-    // da-5ns sub-bead 1 stub: see the comment on `collect_raw_events`.
-    // Each state-affecting verb emits at most one event at occur_time;
-    // sub-bead 5 expands this with following_state-aware tail events.
+    // da-5ns sub-bead 1: each state-affecting verb emits an event at
+    // occur_time. da-2i8g sub-bead 5: block-switch / point-switch
+    // additionally emit a trailing `following_state` event at
+    // occur_time + dur, so a `state_at(t)` probe past the block sees
+    // the next state, not the block's primary.
     //
     // Timeless rows (`-T` / `--no-timestamp`): the v=20 NOT NULL
     // `occur_time` column carries a `create_time` stub, but the slug
@@ -549,7 +590,7 @@ fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Va
         return;
     }
     match entry.verb {
-        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch => {
+        Verb::Switch => {
             if let Some(ts) = &entry.occur_time {
                 let state = entry
                     .state
@@ -557,6 +598,23 @@ fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Va
                     .map(|v| normalize_state(v).to_json())
                     .unwrap_or(Value::Null);
                 out.push((ts.utc, entry.create_time, state));
+            }
+        }
+        Verb::BlockSwitch | Verb::PointSwitch => {
+            if let Some(ts) = &entry.occur_time {
+                let primary = entry
+                    .state
+                    .as_ref()
+                    .map(|v| normalize_state(v).to_json())
+                    .unwrap_or(Value::Null);
+                out.push((ts.utc, entry.create_time, primary));
+                if let (Some(dur), Some(fs)) = (entry.dur.as_ref(), entry.following_state.as_ref())
+                {
+                    let delta = dur.as_seconds().unwrap_or(0);
+                    let trailing_ts = ts.utc + chrono::Duration::seconds(delta);
+                    let trailing = normalize_state(fs).to_json();
+                    out.push((trailing_ts, entry.create_time, trailing));
+                }
             }
         }
         Verb::Point => {
@@ -820,5 +878,141 @@ mod tests {
         });
         assert_eq!(drive_car, drive_car_again);
         assert_ne!(drive_car, ride_car);
+    }
+
+    // ─── da-2i8g: following_state-aware events ──────────────────────
+
+    fn block_switch_entry(
+        occur: DateTime<Utc>,
+        primary: &str,
+        dur_secs: i64,
+        following: &str,
+    ) -> Entry {
+        use crate::dur::Dur;
+        use crate::entry::Verb;
+        use crate::time::DatumTime;
+        let mut e = Entry::new(
+            "body",
+            Verb::BlockSwitch,
+            Some(json!(primary)),
+            None,
+            Some(DatumTime {
+                utc: occur,
+                offset_minutes: 0,
+                timezone: "UTC".into(),
+            }),
+            Some(Dur::Of(chrono::Duration::seconds(dur_secs))),
+            "dev",
+        );
+        e.following_state = Some(json!(following));
+        e
+    }
+
+    #[test]
+    fn collect_events_emits_following_state_at_end_of_block_switch() {
+        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
+        let entry = block_switch_entry(occur, "sit", 30 * 60, "vertical");
+
+        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value)> = Vec::new();
+        collect_events(&entry, &mut events);
+
+        assert_eq!(events.len(), 2, "block-switch emits primary + trailing");
+        assert_eq!(events[0].0, occur, "first event at occur_time");
+        assert_eq!(events[0].2, json!("sit"));
+        assert_eq!(
+            events[1].0,
+            occur + chrono::Duration::seconds(30 * 60),
+            "trailing event at occur_time + dur"
+        );
+        assert_eq!(events[1].2, json!("vertical"));
+    }
+
+    #[test]
+    fn collect_events_point_switch_emits_both_at_same_instant() {
+        use crate::dur::Dur;
+        use crate::entry::Verb;
+        use crate::time::DatumTime;
+        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
+        let mut e = Entry::new(
+            "mood",
+            Verb::PointSwitch,
+            Some(json!("happy")),
+            None,
+            Some(DatumTime {
+                utc: occur,
+                offset_minutes: 0,
+                timezone: "UTC".into(),
+            }),
+            Some(Dur::Of(chrono::Duration::zero())),
+            "dev",
+        );
+        e.following_state = Some(json!("sad"));
+
+        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value)> = Vec::new();
+        collect_events(&e, &mut events);
+
+        assert_eq!(events.len(), 2, "point-switch emits primary + trailing");
+        assert_eq!(events[0].0, occur);
+        assert_eq!(events[1].0, occur, "point-switch trailing at same instant");
+        assert_eq!(events[0].2, json!("happy"));
+        assert_eq!(events[1].2, json!("sad"));
+    }
+
+    #[test]
+    fn collect_events_block_switch_without_following_state_emits_only_primary() {
+        use crate::dur::Dur;
+        use crate::entry::Verb;
+        use crate::time::DatumTime;
+        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
+        // Verb-derivation rejects this shape today (block-switch requires
+        // following_state), but the row-level defensive guard means a
+        // hand-rolled or migrated row without following_state still
+        // emits the primary cleanly instead of panicking.
+        let mut e = Entry::new(
+            "body",
+            Verb::BlockSwitch,
+            Some(json!("sit")),
+            None,
+            Some(DatumTime {
+                utc: occur,
+                offset_minutes: 0,
+                timezone: "UTC".into(),
+            }),
+            Some(Dur::Of(chrono::Duration::seconds(30 * 60))),
+            "dev",
+        );
+        e.following_state = None;
+
+        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value)> = Vec::new();
+        collect_events(&e, &mut events);
+
+        assert_eq!(events.len(), 1, "no trailing emitted when fs missing");
+        assert_eq!(events[0].2, json!("sit"));
+    }
+
+    #[test]
+    fn state_at_after_block_switch_returns_following_state() {
+        // End-to-end through FieldStateEvents::at: a probe inside the
+        // block sees the primary; a probe after the block sees the
+        // trailing.
+        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
+        let mid = occur + chrono::Duration::minutes(15);
+        let after = occur + chrono::Duration::minutes(31);
+        let entry = block_switch_entry(occur, "sit", 30 * 60, "vertical");
+
+        let mut events = Vec::new();
+        collect_events(&entry, &mut events);
+        // Mirror what FieldStateEvents::at does: scan from the tail and
+        // pick the latest event at or before the probe.
+        let pick = |t: DateTime<Utc>| -> Option<&Value> {
+            events
+                .iter()
+                .rev()
+                .find(|(et, _, _)| *et <= t)
+                .map(|(_, _, v)| v)
+        };
+
+        assert_eq!(pick(mid), Some(&json!("sit")));
+        assert_eq!(pick(after), Some(&json!("vertical")));
     }
 }
