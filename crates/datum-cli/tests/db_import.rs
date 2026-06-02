@@ -271,7 +271,7 @@ fn imported_rows_carry_sentinel_intent_fields() {
         e.parser_version, 0,
         "imported rows use sentinel parser_version=0"
     );
-    assert_eq!(e.raw_input, "");
+    assert_eq!(e.raw_input, None);
     assert!(e.alias_chain.is_none());
     // Provenance lives in `extra_metadata`. The user-payload `data` is
     // empty for this fixture (no fields beyond occurTime/field/state) so it

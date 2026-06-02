@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 31;
+pub const CURRENT_SCHEMA_VERSION: u32 = 32;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -252,6 +252,13 @@ pub const MIGRATIONS: &[Migration] = &[
         apply: m30_to_31_sync_state_rename_seq_columns,
         down: down_31_to_30_sync_state_rename_seq_columns,
     },
+    Migration {
+        from: 31,
+        to: 32,
+        summary: "entries: drop NOT NULL DEFAULT '' from raw_input; existing empty strings normalize to NULL at the row-mapper boundary (polecat §5 #11)",
+        apply: m31_to_32_raw_input_nullable,
+        down: down_32_to_31_raw_input_nullable,
+    },
 ];
 
 /// SQL expression deriving epoch-ms from the RFC3339 `modify_time` string.
@@ -334,6 +341,110 @@ fn down_31_to_30_sync_state_rename_seq_columns(conn: &Connection) -> Result<()> 
     if has_column(conn, "sync_state", "device_seq")? {
         conn.execute_batch("ALTER TABLE sync_state RENAME COLUMN device_seq TO my_push_seq;")?;
     }
+    Ok(())
+}
+
+/// polecat §5 #11: `entries.raw_input` was declared `TEXT NOT NULL
+/// DEFAULT ''`, with the contract pretending raw_input would always be
+/// non-empty even though some write paths (legacy datum CouchDB import)
+/// supply an empty string because the source never captured an argv.
+/// Drop the NOT NULL and the DEFAULT — the column is genuinely
+/// nullable now, with the empty-string sentinel maintained only on the
+/// read side (the row mapper normalises empty → NULL) for backwards
+/// compatibility with already-stored rows.
+///
+/// Implementation: SQLite's ALTER TABLE can't toggle a column's
+/// NULL-ability directly, but it CAN parse a hand-edited
+/// `sqlite_schema.sql`. We flip `writable_schema = 1`, rewrite the
+/// `entries` table's stored CREATE TABLE string with the constraint
+/// removed, then flip it back off. SQLite rebuilds its in-memory
+/// schema on the next open; existing row data is unaffected.
+///
+/// The trick is the recommended path in the SQLite docs ("Making Other
+/// Kinds Of Table Schema Changes") for the specific case of dropping
+/// NOT NULL — a full table rebuild would be 2-3× the I/O for the same
+/// outcome on a column that already only stores valid (non-NULL) text.
+fn m31_to_32_raw_input_nullable(conn: &Connection) -> Result<()> {
+    rewrite_raw_input_column(conn, "entries", "TEXT NOT NULL DEFAULT ''", "TEXT")?;
+    rewrite_raw_input_column(conn, "entry_history", "TEXT NOT NULL", "TEXT")?;
+    Ok(())
+}
+
+/// Rewrite the stored `CREATE TABLE` SQL for `table_name`, swapping the
+/// `raw_input` column definition. Matches the trailing comma so the
+/// replacement is anchored: `raw_input <from>,` → `raw_input <to>,`.
+///
+/// Idempotent: no-op when the target form is already present.
+/// Handles both the padded (schema.sql) and the collapsed-whitespace
+/// (test fixture) variants.
+fn rewrite_raw_input_column(
+    conn: &Connection,
+    table_name: &str,
+    from: &str,
+    to: &str,
+) -> Result<()> {
+    // Some migration tests stand up a partial schema (just `field_specs`,
+    // say) and expect every later forward migration to no-op rather than
+    // hard-fail on a missing table. Mirror that contract.
+    let current_sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_schema WHERE type='table' AND name=?1",
+            [table_name],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(current_sql) = current_sql else {
+        return Ok(());
+    };
+    // Anchor with the trailing comma so `raw_input TEXT NOT NULL ...`
+    // doesn't also match the substring `raw_input TEXT`.
+    let padded_from = format!("raw_input       {from},");
+    let padded_to = format!("raw_input       {to},");
+    let tight_from = format!("raw_input {from},");
+    let tight_to = format!("raw_input {to},");
+    if !current_sql.contains(&padded_from) && !current_sql.contains(&tight_from) {
+        return Ok(());
+    }
+    let new_sql = current_sql
+        .replace(&padded_from, &padded_to)
+        .replace(&tight_from, &tight_to);
+    // SQLite caches the parsed schema in the connection. Rewriting
+    // `sqlite_schema.sql` alone doesn't bump the cache; subsequent
+    // INSERTs on the same connection would still enforce the OLD
+    // constraint. Bumping `schema_version` forces a reparse on the next
+    // SQL statement, which is the documented escape hatch for the
+    // writable_schema editing pattern.
+    let schema_version: i64 =
+        conn.query_row("PRAGMA schema_version", [], |row| row.get(0))?;
+    conn.execute_batch("PRAGMA writable_schema = 1;")?;
+    conn.execute(
+        "UPDATE sqlite_schema SET sql = ?1 WHERE type='table' AND name=?2",
+        rusqlite::params![new_sql, table_name],
+    )?;
+    conn.execute_batch(&format!(
+        "PRAGMA schema_version = {};",
+        schema_version + 1
+    ))?;
+    conn.execute_batch("PRAGMA writable_schema = 0;")?;
+    Ok(())
+}
+
+/// Reverse 32→31 — restore the `NOT NULL DEFAULT ''` constraint via the
+/// same writable_schema mechanism. Existing NULL rows would fail the
+/// reapplied constraint, so we UPDATE them to the empty-string
+/// sentinel first; the data-loss is minimal (NULL ↔ '' is the
+/// transparent mapping the row mapper preserves anyway).
+fn down_32_to_31_raw_input_nullable(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "UPDATE entries SET raw_input = '' WHERE raw_input IS NULL",
+        [],
+    )?;
+    conn.execute(
+        "UPDATE entry_history SET raw_input = '' WHERE raw_input IS NULL",
+        [],
+    )?;
+    rewrite_raw_input_column(conn, "entries", "TEXT", "TEXT NOT NULL DEFAULT ''")?;
+    rewrite_raw_input_column(conn, "entry_history", "TEXT", "TEXT NOT NULL")?;
     Ok(())
 }
 

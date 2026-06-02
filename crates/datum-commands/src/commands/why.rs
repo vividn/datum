@@ -11,8 +11,8 @@ pub fn why(args: WhyArgs, db: &Db) -> Result<()> {
         .with_context(|| format!("entry not found: {}", args.id_or_slug))?;
 
     println!("hid: {}  slug: {}", current.hid, current.slug);
-    if !current.raw_input.is_empty() {
-        println!("  raw_input:   {}", current.raw_input);
+    if let Some(raw) = current.raw_input.as_deref().filter(|s| !s.is_empty()) {
+        println!("  raw_input:   {raw}");
     }
     if let Some(chain) = &current.alias_chain {
         println!("  alias_chain: {}", chain);
@@ -31,10 +31,9 @@ pub fn why(args: WhyArgs, db: &Db) -> Result<()> {
         return Ok(());
     }
     for v in versions {
-        let raw = if v.raw_input.is_empty() {
-            "<no raw_input captured>".to_string()
-        } else {
-            v.raw_input.clone()
+        let raw = match v.raw_input.as_deref() {
+            None | Some("") => "<no raw_input captured>".to_string(),
+            Some(s) => s.to_string(),
         };
         println!(
             "  v{}  {}  {}  {}",

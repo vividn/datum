@@ -101,12 +101,12 @@ fn build_resolver_from_chain(chain: Option<&JsonValue>) -> ChainResolver {
 fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     use datum_parse::alias::shell_split;
 
-    if entry.raw_input.is_empty() {
+    let Some(raw) = entry.raw_input.as_deref().filter(|s| !s.is_empty()) else {
         return Ok(None);
-    }
+    };
 
     let mut argv: Vec<String> = vec!["datum".to_string()];
-    argv.extend(shell_split(&entry.raw_input));
+    argv.extend(shell_split(raw));
 
     let resolver = build_resolver_from_chain(entry.alias_chain.as_ref());
     let (expanded, _chain) =

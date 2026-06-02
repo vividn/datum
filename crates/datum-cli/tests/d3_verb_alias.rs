@@ -345,10 +345,10 @@ fn alias_chain_stored_in_entry() {
 
     // Raw input (the argv the user typed, minus the datum prefix) is also
     // captured alongside the chain.
+    let raw = e.raw_input.as_deref().unwrap_or("");
     assert!(
-        e.raw_input.contains("vbp") && e.raw_input.contains("correr"),
-        "raw_input must preserve the user's literal invocation, got {:?}",
-        e.raw_input,
+        raw.contains("vbp") && raw.contains("correr"),
+        "raw_input must preserve the user's literal invocation, got {raw:?}",
     );
 }
 

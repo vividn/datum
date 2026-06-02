@@ -157,6 +157,7 @@ fn every_pair_has_a_roundtrip_test() {
         (28, 29),
         (29, 30),
         (30, 31),
+        (31, 32),
     ];
     assert_eq!(
         covered.len(),
@@ -1473,4 +1474,116 @@ fn roundtrip_v30_to_v31_sync_state_rename_seq_columns() {
         .unwrap();
     assert_eq!(push_seq, 17);
     assert_eq!(my_push_seq, 3);
+}
+
+/// polecat §5 #11: v31→v32 drops `NOT NULL DEFAULT ''` from
+/// `entries.raw_input` (and `entry_history.raw_input`). Roundtrip
+/// proves the writable-schema trick is reversible and that legacy data
+/// survives the conversion in both directions.
+#[test]
+fn roundtrip_v31_to_v32_raw_input_nullable() {
+    use rusqlite::types::Value as SqlValue;
+
+    let db = fresh_at(31);
+    let conn = db.conn();
+
+    // Pre-up: writing a NULL into entries.raw_input fails the NOT NULL.
+    // (Use a minimal direct INSERT — we just need the constraint check.)
+    let pre_up_null_insert = conn.execute(
+        "INSERT INTO entries (
+            hid, slug, content_hash, field, verb, occur_time, create_time,
+            modify_time, device_id, parser_version, raw_input
+        ) VALUES (
+            'a' || hex(randomblob(4)), 'pre-up-null', 'h', 'f', 'point',
+            '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z',
+            '2026-01-01T00:00:00Z', 'd1', 1, NULL
+        )",
+        [],
+    );
+    assert!(
+        pre_up_null_insert.is_err(),
+        "v31 entries.raw_input must reject NULL inserts"
+    );
+
+    // Seed a row that should round-trip across the up.
+    conn.execute(
+        "INSERT INTO entries (
+            hid, slug, content_hash, field, verb, occur_time, create_time,
+            modify_time, device_id, parser_version, raw_input
+        ) VALUES (
+            'a' || hex(randomblob(4)), 'survives:1', 'hh', 'mood',
+            'switch', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z',
+            '2026-01-01T00:00:00Z', 'd1', 1, 'datum switch mood ok'
+        )",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 31);
+
+    // Post-up: NULL insert now works.
+    conn.execute(
+        "INSERT INTO entries (
+            hid, slug, content_hash, field, verb, occur_time, create_time,
+            modify_time, device_id, parser_version, raw_input
+        ) VALUES (
+            'b' || hex(randomblob(4)), 'post-up-null', 'hn', 'mood',
+            'switch', '2026-01-01T00:00:01Z', '2026-01-01T00:00:01Z',
+            '2026-01-01T00:00:01Z', 'd1', 1, NULL
+        )",
+        [],
+    )
+    .expect("v32 entries.raw_input must accept NULL");
+
+    // Seeded row preserved.
+    let raw: String = conn
+        .query_row(
+            "SELECT raw_input FROM entries WHERE slug = 'survives:1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(raw, "datum switch mood ok");
+
+    // Mirror check on entry_history. v31 still has NOT NULL on this
+    // column; v32 should permit NULL.
+    let pre_down_null_history: SqlValue = conn
+        .query_row(
+            "SELECT raw_input FROM entries WHERE slug = 'post-up-null'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(pre_down_null_history, SqlValue::Null);
+
+    apply_one_down(conn, 32);
+
+    // Post-down: NULL insert fails again, NULL rows were rewritten to ''.
+    let post_down_null_insert = conn.execute(
+        "INSERT INTO entries (
+            hid, slug, content_hash, field, verb, occur_time, create_time,
+            modify_time, device_id, parser_version, raw_input
+        ) VALUES (
+            'c' || hex(randomblob(4)), 'post-down-null', 'hd', 'f', 'point',
+            '2026-01-01T00:00:02Z', '2026-01-01T00:00:02Z',
+            '2026-01-01T00:00:02Z', 'd1', 1, NULL
+        )",
+        [],
+    );
+    assert!(
+        post_down_null_insert.is_err(),
+        "v31 restored: entries.raw_input rejects NULL again"
+    );
+
+    let restored: String = conn
+        .query_row(
+            "SELECT raw_input FROM entries WHERE slug = 'post-up-null'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        restored, "",
+        "down-migration must rewrite NULL → '' to restore the NOT NULL contract"
+    );
 }

@@ -119,7 +119,13 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         deleted_at,
         id_structure: row.get("id_structure")?,
         field_structure: row.get("field_structure")?,
-        raw_input: row.get("raw_input")?,
+        // §5 #11: raw_input went from `String` with empty-string sentinel
+        // to `Option<String>`. Existing rows have empty strings; map them
+        // to `None` at the boundary so readers don't have to special-case
+        // (`is_empty()` ≡ `is_none()`).
+        raw_input: row
+            .get::<_, Option<String>>("raw_input")?
+            .filter(|s| !s.is_empty()),
         alias_chain,
         parser_version,
         user_asserted_last_state,

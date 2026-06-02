@@ -9,7 +9,7 @@
 
 use chrono::{DateTime, Utc};
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 
@@ -77,6 +77,13 @@ impl std::str::FromStr for Verb {
 /// `datum-parse` so `entry::PrecisionUnit` remains a valid path. Definition
 /// lives in `datum_parse::time::precision`.
 pub use datum_parse::PrecisionUnit;
+
+fn deserialize_optional_nonempty_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.filter(|s| !s.is_empty()))
+}
 
 /// Legacy shape classifier kept on the public surface as a compatibility
 /// shim for sub-bead 1: callers that were matching on
@@ -235,9 +242,17 @@ pub struct Entry {
     pub deleted_at: Option<DateTime<Utc>>,
 
     // --- Intent capture ---
-    /// Literal argv of the command that produced this entry.
-    #[serde(default)]
-    pub raw_input: String,
+    /// Literal argv of the command that produced this entry. `None` for
+    /// entries whose source path didn't carry an argv at all — e.g.
+    /// legacy datum CouchDB imports, which never went through the
+    /// daydumb parser. Was `String` with empty-string sentinel pre-§5;
+    /// nullable now per vividn 2026-06-02 (polecat §5 #11).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_nonempty_string"
+    )]
+    pub raw_input: Option<String>,
     /// Chain of alias expansions applied before argv was parsed.
     #[serde(default)]
     pub alias_chain: Option<JsonValue>,
@@ -383,7 +398,7 @@ impl Entry {
             id_structure: None,
             field_structure: None,
             deleted_at: None,
-            raw_input: String::new(),
+            raw_input: None,
             alias_chain: None,
             parser_version: CURRENT_PARSER_VERSION,
             user_asserted_last_state: None,
@@ -580,6 +595,16 @@ mod tests {
     use super::*;
     use crate::time::DatumTime;
 
+    fn fixed_time() -> DatumTime {
+        DatumTime::from_utc_and_tz(
+            chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            "UTC",
+        )
+        .unwrap()
+    }
+
     #[test]
     fn test_entry_creation() {
         let t = DatumTime::now();
@@ -667,5 +692,44 @@ mod tests {
                 .chars()
                 .all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
         }
+    }
+
+    #[test]
+    fn raw_input_none_is_omitted_from_json() {
+        let entry = Entry::new("coffee", Verb::Point, None, None, Some(fixed_time()), None, "d");
+        let json = serde_json::to_value(&entry).unwrap();
+        assert!(
+            json.get("raw_input").is_none(),
+            "raw_input should be omitted when absent, got {json:?}"
+        );
+    }
+
+    #[test]
+    fn raw_input_some_is_serialized_to_json() {
+        let mut entry =
+            Entry::new("coffee", Verb::Point, None, None, Some(fixed_time()), None, "d");
+        entry.raw_input = Some("datum occur coffee".to_string());
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            json.get("raw_input"),
+            Some(&serde_json::json!("datum occur coffee"))
+        );
+    }
+
+    #[test]
+    fn raw_input_empty_string_deserializes_to_none() {
+        let mut json = serde_json::to_value(Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(fixed_time()),
+            None,
+            "d",
+        ))
+        .unwrap();
+        json["raw_input"] = serde_json::json!("");
+        let entry: Entry = serde_json::from_value(json).unwrap();
+        assert_eq!(entry.raw_input, None);
     }
 }

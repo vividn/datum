@@ -64,10 +64,9 @@ pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
         return Ok(());
     }
     for v in versions {
-        let raw = if v.raw_input.is_empty() {
-            String::new()
-        } else {
-            format!("'{}'", v.raw_input)
+        let raw = match v.raw_input.as_deref() {
+            None | Some("") => String::new(),
+            Some(s) => format!("'{s}'"),
         };
         println!(
             "  v{}  {}  {:<22} {}",

@@ -833,7 +833,12 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         entry.deleted_at.map(|t| t.to_rfc3339()),
         entry.id_structure.as_deref(),
         entry.field_structure.as_deref(),
-        entry.raw_input,
+        // §5 #11: nullable in the type, written as empty-string when None
+        // so the bind round-trips against historical NOT NULL versions of
+        // the column during a migration walk (m31→m32 relaxes the
+        // constraint, but earlier migrations still see the old shape).
+        // The row mapper restores None on read.
+        entry.raw_input.as_deref().unwrap_or(""),
         entry.alias_chain.as_ref().map(|v| v.to_string()),
         entry.parser_version,
         entry
@@ -952,7 +957,12 @@ fn raw_overwrite_mutables(
             entry.location.as_deref(),
             now,
             entry.device_id,
-            entry.raw_input,
+            // §5 #11: nullable in the type, written as empty-string when None
+        // so the bind round-trips against historical NOT NULL versions of
+        // the column during a migration walk (m31→m32 relaxes the
+        // constraint, but earlier migrations still see the old shape).
+        // The row mapper restores None on read.
+        entry.raw_input.as_deref().unwrap_or(""),
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
             entry
@@ -1045,7 +1055,12 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         entry.device_id,
         entry.id_structure.as_deref(),
         entry.field_structure.as_deref(),
-        entry.raw_input,
+        // §5 #11: nullable in the type, written as empty-string when None
+        // so the bind round-trips against historical NOT NULL versions of
+        // the column during a migration walk (m31→m32 relaxes the
+        // constraint, but earlier migrations still see the old shape).
+        // The row mapper restores None on read.
+        entry.raw_input.as_deref().unwrap_or(""),
         entry.alias_chain.as_ref().map(|v| v.to_string()),
         entry.parser_version,
         entry
@@ -1135,7 +1150,12 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             entry.deleted_at.map(|t| t.to_rfc3339()),
             entry.id_structure.as_deref(),
             entry.field_structure.as_deref(),
-            entry.raw_input,
+            // §5 #11: nullable in the type, written as empty-string when None
+        // so the bind round-trips against historical NOT NULL versions of
+        // the column during a migration walk (m31→m32 relaxes the
+        // constraint, but earlier migrations still see the old shape).
+        // The row mapper restores None on read.
+        entry.raw_input.as_deref().unwrap_or(""),
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
             entry

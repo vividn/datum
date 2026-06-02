@@ -159,13 +159,7 @@ fn render_column(col: &str, e: &Entry) -> String {
             Some(t) => t.to_rfc3339(),
             None => null_marker(),
         },
-        "raw_input" => {
-            if e.raw_input.is_empty() {
-                null_marker()
-            } else {
-                e.raw_input.clone()
-            }
-        }
+        "raw_input" => render_str_opt(e.raw_input.as_deref()),
         "alias_chain" => render_json_opt(e.alias_chain.as_ref()),
         "parser_version" => e.parser_version.to_string(),
         "user_asserted_last_state" => render_json_opt(e.user_asserted_last_state.as_ref()),
@@ -239,7 +233,7 @@ mod tests {
             id_structure: None,
             field_structure: None,
             deleted_at: None,
-            raw_input: String::new(),
+            raw_input: None,
             alias_chain: None,
             parser_version: 2,
             user_asserted_last_state: None,

@@ -75,8 +75,11 @@ CREATE TABLE IF NOT EXISTS entries (
     field_structure TEXT,
 
     -- Intent capture: record the literal user input so alias/parser changes
-    -- can be re-derived without losing source truth.
-    raw_input       TEXT NOT NULL DEFAULT '',
+    -- can be re-derived without losing source truth. NULLable because some
+    -- write paths (legacy datum CouchDB import) supply no argv at all;
+    -- the row mapper normalises legacy empty-string rows to NULL too so
+    -- "no raw_input" has one canonical representation (polecat §5 #11).
+    raw_input       TEXT,
     alias_chain     TEXT,                        -- JSON array of alias expansions, nullable
     parser_version  INTEGER NOT NULL DEFAULT 1,
 
@@ -312,7 +315,7 @@ CREATE TABLE IF NOT EXISTS entry_history (
     version           INTEGER NOT NULL,
     snapshot          TEXT NOT NULL,
     modify_time       TEXT NOT NULL,
-    raw_input         TEXT NOT NULL,
+    raw_input         TEXT,                      -- nullable, mirrors `entries.raw_input` (§5 #11)
     alias_chain       TEXT,
     device_id         TEXT NOT NULL,
     change_kind       TEXT NOT NULL,

@@ -238,7 +238,10 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // distinguishes them from `CURRENT_PARSER_VERSION` rows so a future
         // re-derive sweep can find and reprocess them.
         entry.parser_version = 0;
-        entry.raw_input = String::new();
+        // Legacy import: no argv to record. The §5 #11 nullable convention
+        // means `None` is the canonical "no raw_input" shape (was
+        // empty-string pre-2026-06-02).
+        entry.raw_input = None;
         entry.alias_chain = None;
         entry.extra_metadata = extra_metadata;
         // Preserve the source doc's `meta.humanId` as our `hid` so the same

@@ -407,7 +407,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // same invocation's context isn't reused for a subsequent entry in the
     // same process (matters for tests that run multiple dispatches).
     if let Some(ctx) = crate::args::take_intent_context() {
-        entry.raw_input = ctx.raw_input.clone();
+        // §5 #11: empty raw_input normalises to None on the way in too;
+        // it doesn't pretend the user passed an empty argv.
+        entry.raw_input = if ctx.raw_input.is_empty() {
+            None
+        } else {
+            Some(ctx.raw_input.clone())
+        };
         entry.alias_chain = ctx.alias_chain_json();
     }
 

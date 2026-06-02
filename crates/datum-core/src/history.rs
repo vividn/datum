@@ -80,7 +80,7 @@ pub struct HistoryVersion {
     pub version: u32,
     pub snapshot: Entry,
     pub modify_time: DateTime<Utc>,
-    pub raw_input: String,
+    pub raw_input: Option<String>,
     pub alias_chain: Option<JsonValue>,
     pub device_id: String,
     pub change_kind: ChangeKind,
@@ -121,7 +121,10 @@ pub fn record(executor: &Connection, snapshot: &Entry, change_kind: ChangeKind) 
             version,
             snapshot_json,
             snapshot.modify_time.to_rfc3339(),
-            snapshot.raw_input,
+            // §5 #11: see `db::insert` for the same bind compat note —
+            // empty-string-when-None preserves migration-walk
+            // compatibility against historical NOT NULL versions.
+            snapshot.raw_input.as_deref().unwrap_or(""),
             alias_chain_json,
             snapshot.device_id,
             change_kind.as_str(),
@@ -231,7 +234,11 @@ fn row_to_version(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryVersion> {
         version: row.get::<_, i64>("version")? as u32,
         snapshot,
         modify_time,
-        raw_input: row.get("raw_input")?,
+        // §5 #11: empty-string sentinel → None at the boundary; mirrors
+        // `crate::db::row_mapper::row_to_entry`.
+        raw_input: row
+            .get::<_, Option<String>>("raw_input")?
+            .filter(|s| !s.is_empty()),
         alias_chain,
         device_id: row.get("device_id")?,
         change_kind,
