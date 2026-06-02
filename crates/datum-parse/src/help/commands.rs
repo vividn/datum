@@ -598,6 +598,12 @@ const SYNC_BODY: &str = "USAGE:\n  datum sync [--push | --pull] [--dry-run] [--s
 
 const CONFLICTS_BODY: &str = "USAGE:\n  datum conflicts list [--kind K] [--all]\n  datum conflicts resolve <HID> (--keep V | --close-older)\n  datum conflicts auto-resolve [--min-age SECS]\n";
 
+const FLAG_BODY: &str = "USAGE:\n  datum flag <FIELD> [COMMENT...] [-y / -q / -d / -t / -z]\n\nAttaches a 'come back to this' marker to <FIELD>. Stored as a Verb::Point\nentry with `extra_metadata = { flag: true, comment: \"...\" }`. The bare\nform `datum flag <FIELD>` records a marker at now with no comment.\n\nDefault rendering hides flags from `datum tail` and `datum now`; use\n`tail --show-meta` to include them, or `datum check` to surface them as\npending review markers. The shape mirrors `datum meta` (which sets\n`meta: true` instead of `flag: true`).\n";
+
+const META_BODY: &str = "USAGE:\n  datum meta <FIELD> <TEXT>...\n  datum meta show <FIELD>\n\nAttach (or list) a protocol-change note on <FIELD>. Stored as a\nVerb::Point entry with `extra_metadata = { meta: true, comment: \"...\" }`.\n`meta show` lists every note attached to <FIELD> in create_time order.\n\nLike `flag`, meta rows are filtered from default tail / now views\n(use `tail --show-meta` to include them).\n";
+
+const KIT_BODY: &str = "USAGE:\n  datum kit install <PATH> [--force]\n  datum kit export <NAME> [PATH]\n  datum kit list\n  datum kit uninstall <NAME>\n  datum kit show <NAME>\n\nA kit is a TOML bundle of field specs, aliases, SQL views, indices, and\nlevel-1/2 commands. Install upserts the kit's rows tagged with the kit id;\nuninstall drops every row with that id. Export round-trips the installed\nrows back to TOML (defaults to stdout when path is omitted).\n\nList shows every installed kit and its field count. Show prints a single\nkit's installed contents.\n";
+
 // ---------------------------------------------------------------------------
 // Global flags shown in `datum --help` under `GLOBAL OPTIONS:`.
 // ---------------------------------------------------------------------------
@@ -1226,6 +1232,60 @@ pub const COMMANDS: &[CommandSpec] = &[
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(CONFLICTS_BODY),
+        display_input_name: false,
+    },
+    CommandSpec {
+        name: "flag",
+        aliases: &[],
+        category: Category::Logging,
+        summary: "mark a field for later review",
+        top_summary: Some("Mark a field for review (lightweight 'come back to this')"),
+        long_description: None,
+        usage: &["datum flag <FIELD> [COMMENT...]"],
+        args: NO_ARGS,
+        flags: NO_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 0,
+        body_override: Some(FLAG_BODY),
+        display_input_name: false,
+    },
+    CommandSpec {
+        name: "meta",
+        aliases: &[],
+        category: Category::Admin,
+        summary: "manage protocol-change notes on a field",
+        top_summary: Some("Attach or list protocol-change notes on a field"),
+        long_description: None,
+        usage: &[
+            "datum meta <FIELD> <TEXT>...",
+            "datum meta show <FIELD>",
+        ],
+        args: NO_ARGS,
+        flags: NO_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 0,
+        body_override: Some(META_BODY),
+        display_input_name: false,
+    },
+    CommandSpec {
+        name: "kit",
+        aliases: &[],
+        category: Category::Admin,
+        summary: "install / export / list field-spec kits",
+        top_summary: Some("Install / export / list field-spec kits (TOML bundles)"),
+        long_description: None,
+        usage: &[
+            "datum kit install <PATH> [--force]",
+            "datum kit export <NAME> [PATH]",
+            "datum kit list",
+            "datum kit uninstall <NAME>",
+            "datum kit show <NAME>",
+        ],
+        args: NO_ARGS,
+        flags: NO_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 0,
+        body_override: Some(KIT_BODY),
         display_input_name: false,
     },
 ];

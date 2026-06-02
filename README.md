@@ -114,6 +114,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `switch` — Transition a field to a new state
 - `track` — Track a field in the now view
 - `ignore` — Ignore a field in the now view
+- `flag` — Mark a field for review (lightweight 'come back to this')
 
 ## MUTATE
 
@@ -148,6 +149,8 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `db` — DB-lifecycle (setup, purge, backup, restore, migrate, import)
 - `info` — Show health/metadata for DB(s)
 - `config` — Show or manage user configuration
+- `meta` — Attach or list protocol-change notes on a field
+- `kit` — Install / export / list field-spec kits (TOML bundles)
 
 ## VIEWS / SYNC
 
