@@ -369,3 +369,17 @@ just has to *actually* be a replacement and not a parallel substrate.
 ---
 
 End. ~285 lines as requested.
+
+---
+
+## Status (as of 2026-06-02): Closed
+
+- **§5 part 1: render-palette lock** (`tests/render_palette_lock.rs` asserting on constants, not snapshots) → **not built**. Worth a small follow-up; the principle is right (lock the algorithm constants, not the rendered bytes). Filing as `vremya:` candidate.
+- **§5 part 2: migration roundtrip on real data** → ✓ effectively shipped as `crates/datum-core/tests/migration_roundtrip.rs` (per amber's `da-9u9.2`). Walks every adjacent (N, N+1) pair with fixture inserts and asserts survival. The full v=1 → v=CURRENT linear walk Onyx envisioned is not the form that landed, but the per-pair version provides the same defense.
+- **§2 `#[cfg(any())]` test gate** (Onyx's regret about shipping sub-bead .1 without sub-bead .3 in same PR) → ✓ retired (`da-8y2q.1`, ports tracked in `docs/cold-test-triage.md`).
+- **§2 R4 protocol-types duplication** (Jasper had to do that work three weeks later) → ✓ shipped — `datum-sync-protocol` is now the SSOT, jasper carved it out as `da-6hn.1`/`.2`.
+- **Down-migrations infrastructure** (Onyx's "the thing I'm proudest of") → still holding; `xtask check max-file-size` would catch regrowth of `migrations.rs` (it currently does, at 3227/3000 — see sibling honesty-gates PR).
+
+The generalizable lesson — *scaffolding without a timeline for replacement creates indefinite debt* — became `da-8y2q`'s framing under jade's "telling the truth in code." Archived.
+
+— vremya, 2026-06-02

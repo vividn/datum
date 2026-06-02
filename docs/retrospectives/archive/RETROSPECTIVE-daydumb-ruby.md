@@ -174,3 +174,17 @@ My areas are a barometer for two project-wide patterns: (1) the codebase rewards
 The single move I'd make before v1 is the view-registry unification (§5). If autonomy for one week and no backlog, that's the work. It deletes ~300 lines, moves ~1500, eliminates two of quartz's "leaky boundary" complaints, and gives the PWA a stable interface that doesn't depend on WASM landing.
 
 — ruby, 2026-05-06
+
+---
+
+## Status (as of 2026-06-02): Closed
+
+- **§5 view-registry unification (`datum-layout` ↔ `datum-core::views`) into `datum-render`** → **open**, tracked as **`da-5895`** (combined with jasper's RenderPlan proposal as the parallel half). 5 sub-beads planned. ~1500 LOC moved, ~300 deleted is still the estimate.
+- **§2 my framework died, my view shapes lived** (the CouchDB-emulation trait thrown away in R3) → ✓ acknowledged: R3's `View::query(db, params)` replaced the map/reduce ceremony cleanly. Ruby's view *shapes* (key/value layouts, registry by name) survived.
+- **§3 ConflictStrategy was a gift / `Tombstoned` error contract** — held; `update_with_strategy` still routes through it.
+- **§3 POD-shaped layout types serialize for free** (`--json` as the web/native bridge) — still the working pattern. WASM bindings are still deferred per Ruby's own recommendation.
+- **§4 6 bugs noticed but didn't fix** — small items, filing the still-applicable as `vremya:` follow-ups.
+
+Ruby's §6 closing lesson — *"small typed PODs at crate boundaries"* + *"forgiving frameworks because inputs/outputs are the contract"* — is the design discipline that makes `da-5895` cheap to execute. Archived.
+
+— vremya, 2026-06-02

@@ -247,3 +247,30 @@ Three single-PR moves I'd take before locking v1:
 If I were given autonomy for one week without a backlog, I'd take a chainsaw to `cmd.rs` and turn the 40 R2-stub `commands/*.rs` files into actual command modules with their own argv parsers — the one move that buys the most future-self goodwill.
 
 — quartz, 2026-05-05
+
+---
+
+## Status (as of 2026-06-02): Closed
+
+Audited against current `main` (HEAD `4db4903`). The three "single-PR moves before v1" are all shipped, the one-week chainsaw is done, and most §5/§6 items have landed:
+
+- **Cut the 11 `#[cfg(any())]` tests** → ✓ shipped (`da-8y2q.1` + `da-gkmc` + ports tracked in `docs/cold-test-triage.md`). `xtask check no-cfg-any` enforces non-return.
+- **Sweep legacy `Verb::{Occur,Start,Stop,Add}`** → ✓ shipped (`da-8y2q.2`). `grep 'Verb::Occur'` returns zero, `xtask check no-legacy-verbs` enforces.
+- **Proptest harness for comma/whitespace tokenizers** → partial: `proptest` is now a workspace dep (used by `datum-parity::fuzz_color`), but the comma-tokenizer harness Quartz specifically called for is **not yet built**. Worth a small follow-up; the dep is ready.
+- **Chainsaw to `cmd.rs`** → ✓ shipped (`da-jflh.1`). cmd.rs is 1937 LOC today (was 5498), the real source is ~265 lines of dispatcher + ~1670 lines of embedded tests; the 66 R2-stub `commands/*.rs` shims are now real per-command modules (`da-8y2q.3`).
+- **`migrate()` ALTER pile + double schema.sql run** → ✓ shipped. Now runs migrations *first*, then a single `schema.sql` apply at the end (amber's own self-correction).
+- **Mega-file budget** → ✓ partial: `xtask check max-file-size` (cap 3000) was wired (`da-8y2q.7`), but `parse.rs` (3183) and `migrations.rs` (3227) have re-grown past it since `da-jflh.2/.4` carved. Re-carve is `vremya:`-shaped follow-up work; the gate itself catches the regrowth.
+- **`OutputFlags::fresh()` Phase D** → ✓ shipped (`da-8y2q.6` / `da-ekrn`).
+- **`derived_from_field` column** → ✓ shipped (`da-8y2q.5` / `da-hchd` — lazy SpecAliasIndex per jade's §5).
+- **`dm reparse`** → ✓ shipped (`da-bkak` + `da-g5uk`, per obsidian's §5).
+- **CI configured at rig level** → ✓ shipped (`da-lq6i`).
+- **`serde_yaml` deprecation** → ✓ shipped (`da-8rnt` follow-up; workspace uses `toml`).
+
+Still open (acknowledged):
+- **Dayview/nowview duplication** — `da-5895` epic (jasper + ruby's §5 combined).
+- **Dotted-key `dm update`**, **batch quickId mutations**, **tail `--watch` post-DB-write hook generalization** — small parser-audit items in `docs/parity-audit/commands.md`.
+- **Honesty gate CI integration** — `xtask check all` exists but `.github/workflows/ci.yml` doesn't yet invoke it; landing this is what locked-in invariance looks like. **(Picked up in this PR's sibling.)**
+
+The "85% to a v1 that ages well" assessment reads closer to **~95% on structure** today. The retro served its load-bearing purpose: it became a roadmap that other polecats and the mayor's epic system chipped through. Archived for posterity.
+
+— vremya, 2026-06-02

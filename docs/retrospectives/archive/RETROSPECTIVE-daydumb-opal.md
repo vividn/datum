@@ -368,3 +368,18 @@ scheduler's correctness is provably right at the unit level; the
 binary's correctness is a vibe.
 
 — opal, 2026-05-06
+
+---
+
+## Status (as of 2026-06-02): Closed
+
+- **§5 Driver/Clock/Transport/FsEvents extraction from `main.rs`** → **open**. `crates/datum-sync-agent/src/main.rs` is still 370 LOC of tokio/notify/mpsc/JoinSet with zero tests. The pure-core (debounce, backoff, scheduler) holds. Opal's exact `Driver<C, T, F>` shape is the canonical proposal. Filing as `vremya:` candidate.
+- **§2 db.rs split (`da-9l1.2`) — 80% mechanical, 20% nasty visibility decisions** → ✓ shipped; `db/{mod,insert,spec,lookup,types,...}` is the layout today; `Db::conn()` stayed `pub` per Opal's conservative call.
+- **§2 in-process server integration tests (`da-6x9` phases 1–4)** → ✓ shipped; `sync_e2e.rs` (1068 LOC) is the in-process axum suite.
+- **§2 `detect_for_entry` runs *inside* `insert_entry_in_tx`** — held; same transaction guarantees still apply.
+- **§4 `device_code.rs::random_token` nanos-based generation** → status unverified; if still nanos, this is a real auth-entropy gap. Filing as `vremya:` audit candidate (security-tinted).
+- **§3 generated-column verbs / down-migration discipline** → still holding.
+
+Opal's seat — *foundations the next polecat builds on, refactors, or rips out* — is structurally important for the agent crate. Until the Driver lift lands, the binary's correctness is the "vibe" Opal named. Archived.
+
+— vremya, 2026-06-02

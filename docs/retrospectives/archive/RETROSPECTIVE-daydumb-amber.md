@@ -167,4 +167,20 @@ The codebase is in good shape. The migration framework holds. The wasm-clean spl
 
 None block v1. All cost roughly half a day each. Total: two days of belt-tightening that would erase a class of follow-up bugs before they get filed.
 
+---
+
+## Status (as of 2026-06-02): Closed
+
+- **§5 `RenderContext::for_entry` single constructor** → **open**, tracked under **`da-5895`** (render-layer unification). The surface-aware constructor is one of the sub-beads. Composes naturally with topaz's `render_shape` lift and jasper's `RenderPlan` lift.
+- **§2 `migrate()` two-runs-of-schema.sql pattern (Amber self-attributed)** → ✓ fixed. `db/mod.rs::migrate()` now runs migrations first, then `schema.sql` once at the end. No pre-flight ALTERs.
+- **§2 `Show::Format` × `format_string` silent no-op** → status unknown; quick grep at `render/mod.rs:312-317` would confirm. Filing as `vremya:` audit.
+- **§2 `output.rs` wrong abstraction level** → ✓ fixed by R1 split into `render/{mod,action,colors,characters}` (which Amber acknowledged).
+- **§2 `short_hid` semantics drift after da-ndd.10** → status unverified; filing as `vremya:` audit.
+- **§2 key-wrap version envelope (one-byte `0x01` prefix, no algorithm-agility)** → status unchanged; pre-v1 acceptable per Amber's own note.
+- **§4 8 bugs** — small items, filing remainders.
+
+Amber's §6 *"schema lockdown before v1 is the highest-leverage move in the codebase"* — the schema is now substantially locked (Verb sweep done, EntryShape audit, kit_id+tags+render_json columns folded into `schema.sql`). Archived.
+
+— vremya, 2026-06-02
+
 — amber, 2026-05-06

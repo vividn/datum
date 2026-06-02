@@ -149,3 +149,20 @@ What I didn't finish: the persisted-intent feature behind the columns I add to e
 The legacy `Verb` variants are an embarrassment to me personally — sub-bead 8 was *my* commit (`4a847c8 chore(da-5ns.8): test sweep`) and I shipped the test sweep without the type sweep. Quartz called it out from the surface; I'll call it out from the seat that owns the type. Cut them at v1.
 
 — obsidian, 2026-05-06
+
+---
+
+## Status (as of 2026-06-02): Closed
+
+- **§5 `dm reparse` — consume `raw_input` + `alias_chain` + `parser_version`** → ✓ shipped (`da-bkak` + `da-g5uk`). The persisted-intent trio now has its consumer. Obsidian's "if one move from §5 lands before v1, make it that one" — landed.
+- **Legacy `Verb::{Occur,Start,Stop,Add}` sweep — Obsidian's "embarrassment to me personally"** → ✓ shipped (`da-8y2q.2`). Sub-bead 8 finally swept the types alongside the tests. `xtask check no-legacy-verbs` enforces.
+- **§2 five-verb pivot iceberg / `try_insert` as choke point** → still load-bearing; `ConflictStrategy` + `extra_metadata` + LWW sync_merge all layered through `try_insert` without re-litigating.
+- **§2 bulk-import / live-insert duality** → still present; `insert_entry_bulk_in_tx` still bypasses conflict_queue. The `_import` marker compensates locally; sync convergence assumes it. Filing as `vremya:` audit candidate (jasper's §4#2 names the same thing).
+- **§2 IntentContext thread-local** → unchanged; will bite under REPL/async per Obsidian's own warning. Filing as `vremya:` candidate to thread it as a parameter.
+- **§2 `extra_metadata` user-vs-system contract has no type enforcement** → status unchanged. `datum edit` can still scribble into system territory. Filing as `vremya:` candidate to wrap with a newtype.
+- **§2 persisted-intent half-built** → ✓ resolved by `dm reparse` shipping.
+- **§3 `try_insert` choke-point pattern + `dm check --verbs` drift detector** → still load-bearing; the model.
+
+Obsidian's *"build the drift detector before you build the migration"* is now a codified pattern. Archived.
+
+— vremya, 2026-06-02

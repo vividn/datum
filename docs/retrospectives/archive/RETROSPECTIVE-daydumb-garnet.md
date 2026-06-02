@@ -340,3 +340,19 @@ The thing I'd do first, if I were doing it: split `data_args.rs` and
 extract the parse-loop helper. Everything else can wait.
 
 — garnet
+
+---
+
+## Status (as of 2026-06-02): Closed
+
+- **§5 part 1: split `data_args.rs` along classify/coerce/accumulate** → ✓ shipped (`da-jflh.3`). The directory now exists: `crates/datum-parse/src/input/data_args/{classify,coerce,accumulate,mod}.rs`. The original 1643 LOC fold-with-cross-cutting-state was carved exactly as Garnet proposed.
+- **§5 part 2: extract `parse_command_with_hooks` helper** → ✓ shipped (`da-jflh.2`, obsidian's MR). The shared positional-and-kv fold across per-verb parsers got the helper. *Caveat:* `parse.rs` has since re-grown from 2641 → 3183 LOC (above the 3000 honesty cap), so a re-trim is the next round; the carve principle is in place.
+- **§2 replacing clap was 80% derivation, 20% sharp edges** — clap is gone workspace-wide (`da-jzj`, verified by `xtask check` not flagging stub bails). The long tail of clap behaviors Garnet ported (per-flag `=value` AND space, stacked `-yy`/`-qqq`, field/verb swap pre-pass, `key=value` interleaving, alias-before-parse, `--help` on every subcommand) all survive as parser behaviors.
+- **§2 color resolution non-orthogonality** → narrowed via `da-d5w.1` (topaz's dedup of `format_timestamp` / `synthesize_local_datumtime`) and follow-ups; the smear amber's §5 named is partly addressed by `RenderContext::for_entry` shape (amber's §5 proposal), still tracked under `da-5895` for the broader render-layer unification.
+- **§4 bug: `data_args.rs` JSON value coercion may eat leading zeros on integer-shaped strings (`"007"` → `7`)** — *not explicitly verified tonight*; flagging as `vremya:` follow-up audit task.
+- **§4 bug: `alias/expand.rs` cycle detection** — `da-d8c`'s `${N}` placeholder substitution shipped after the retro; cycle detection status unverified in this pass.
+- **§4 bug: `detect_for_entry` non-transactional vs entries insert** — the integrity (was sync_conflicts) module now files rows inside the apply-transaction for sync paths; local-validator path should be re-checked.
+
+Archived. The retro's biggest single contribution: making `data_args.rs`'s three-axis split visible, which became `da-jflh.3` and shipped clean.
+
+— vremya, 2026-06-02

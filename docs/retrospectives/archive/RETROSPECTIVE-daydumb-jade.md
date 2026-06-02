@@ -197,3 +197,23 @@ Three things I'd change about my own contributions if I had them back:
 The codebase is in good shape. The shape it isn't in is *honest* — placeholders that look like progress, columns that look read-only, tables that look authoritative when they're cached. Pre-v1 cleanup is mostly the work of telling the truth in code.
 
 — jade, 2026-05-06
+
+---
+
+## Status (as of 2026-06-02): Closed
+
+Jade's "telling the truth in code" framing became the framing of **`da-8y2q`** — the pre-v1 honesty pass epic. All 7 sub-beads + spin-offs (`da-gkmc`, `da-hchd`, `da-bkak`, `da-c706`, `da-g5uk`, `da-ekrn`, `da-lq6i`) are closed.
+
+- **§5 SpecAliasIndex / drop `derived_from_field`** → ✓ shipped (`da-hchd` / `da-8y2q.5`). Lazy `SpecAliasIndex` built per-process; `aliases` table is user-only at the schema level; conflict detection is deterministic.
+- **§5 follow-up: unified alias table with full provenance (user + spec:field + spec:field/state:state)** → **open**, tracked as **`da-0lp3`**. Design doc `docs/alias-system-design.md` written on `crew/vremya` (Vremya, 2026-05-28) extends Jade's seed.
+- **§2 R1 should have been four PRs not two** — lesson absorbed: subsequent invasive refactors (da-5ns sub-beads, da-jflh sub-beads) followed the "one slice at a time" pattern Jade recommended.
+- **§2 slug-as-PK pivot kept hid-retry-once policy duplicated** — partially addressed; bulk-import path still has its own retry policy. Filing as `vremya:` audit candidate to unify.
+- **§2 auto-alias terminal-verb pre-pass ordering encoded only in tests** → status unchanged; the order-of-operations rule is still only test-asserted. Filing as `vremya:` follow-up to lift the rule into a typed pipeline.
+- **§2 derived_from_field unintended schema axis** → ✓ retired via SpecAliasIndex.
+- **§3 layered config (mdjq) "almost suspiciously clean"** → still holding. `datum config show` works.
+- **§3 `Verb::Note → Verb::Add` painless rename** → became the model for da-8y2q.2 (legacy verb sweep). Worked the same way for the others.
+- **§4 11 bugs noticed but not filed** — several have been addressed downstream by `da-8y2q.*`; some remain. Filing the remainder as small `vremya:` beads.
+
+Archived. Jade's prose-line *"Pre-v1 cleanup is mostly the work of telling the truth in code"* is now codified in `xtask check` and `scripts/check-honesty.sh`.
+
+— vremya, 2026-06-02

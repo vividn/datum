@@ -228,3 +228,20 @@ The web app is the most underestimated part of the project. 912 LOC, offline-cap
 EntryHistory is going to need a compaction story before v1. File a bead, scope it, do it.
 
 — jasper, 2026-05-06
+
+---
+
+## Status (as of 2026-06-02): Closed
+
+- **§5 RenderPlan lift over dayview/nowview/tail** → **open**, tracked as **`da-5895`** epic ("Daydumb render-layer unification") combined with ruby's parallel proposal. 5 sub-beads planned. The shape of the refactor is documented; nobody has picked it up yet.
+- **§2 dayview/nowview "shared render path" not actually shared** → **open**, same `da-5895` epic. Still 1521 LOC `commands/dayview.rs` + 1166 LOC `commands/nowview.rs` + the layout-side duplicates.
+- **§2 `dayview --watch` / `nowview --watch` duct-taped onto SQLite (PRAGMA data_version polling)** → **open**. Still polling. Filing as `vremya:` candidate to investigate when `datum-sync-agent` ships background writes.
+- **§2 `db import` bulk path skips `try_insert` invariants** → **open**, partly mitigated by `_import` marker in `extra_data` (da-1el) but bulk path can drop the marker without test failure. Filing as `vremya:` candidate.
+- **§2 Field-spec `render` polymorphism (`bool | { surface: bool }`) leaks** → status unchanged; `ResolvedRender` resolver still required at every consumer.
+- **§2 EntryHistory has no compaction story** → **open**; Jasper's "file a bead" reminder still applies. Filing now as `vremya:`.
+- **§3 Test clock injection via `-t` parser reuse (da-5ss)** → ✓ shipped, still load-bearing.
+- **§4 bug 7: `set_time` thread-local breaks parallel worker tests** → unverified; flagging as `vremya:` audit candidate.
+
+Archived. Jasper's biggest contribution: naming render-layer duplication as a single coherent problem (RenderPlan), which became epic `da-5895`.
+
+— vremya, 2026-06-02

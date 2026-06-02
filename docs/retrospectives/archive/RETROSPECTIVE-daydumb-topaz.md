@@ -186,3 +186,18 @@ The places where my work would benefit most from another half-day:
 None of these are mine to grab next — they're scattered across seats. But they are **what someone in the small-commit seat would file as their next five beads** if there were a sixth commit waiting to be made.
 
 — topaz, 2026-05-06
+
+---
+
+## Status (as of 2026-06-02): Closed
+
+- **§5 verb-shape decision table (`render_shape`)** → **open**, composes with `da-5895` (render-layer unification). The single-source-of-truth dispatch hasn't landed; topaz's diff sketch is still the seed for it. Filing as `vremya:`-candidate sub-bead under `da-5895`.
+- **§2 shape-keyed dispatch as a footgun (da-7r4 visual regression)** → fix held; `is_switching_verb` / `is_unrendered_switch_value` carved out in commands/dayview.rs survived the schema pivot via "generated-column verbs gave the renderer correctness for free" (Topaz's own §3 observation, which proved true).
+- **§2 S7 backup-header decision** → JSONL header with type discriminator stayed; restore schema-version gate works. The "doesn't tell the user *which* version" message clarity gap still applies (small `vremya:` candidate).
+- **§2 `simplifyState === null|false` parity rule** → `is_unrendered_switch_value` + `is_ignored_or_false` are the single canonical site; still load-bearing.
+- **§4 5 bugs noticed but didn't fix** — filing the still-applicable ones as `vremya:` candidates.
+- **§6 "5 beads someone in this seat would file"** — all 5 worth filing fresh; flagging in the brainstorm pass.
+
+The retro's gift: showing that **the dispatch tree is the architectural unit, not the renderer** — the same insight surfaces in amber's `RenderContext::for_entry`. Both ladder into `da-5895`. Archived.
+
+— vremya, 2026-06-02
