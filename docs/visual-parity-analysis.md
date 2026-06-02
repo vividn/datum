@@ -25,11 +25,11 @@ to the renderer must keep this doc and the fixture tests
 
 ```
 <time>  <field-badge>  <state-transition-group>  [duration]
-                       └─ <left-char><state-badge><right-char>
+                       └─ <LEAD cell><state-badge><TRAIL cell>
 ```
 
 - Time, field, state-transition, and duration are all separated by whitespace.
-- **Duration comes AFTER the right-char**, not inside the state group.
+- **Duration comes AFTER the TRAIL cell**, not inside the state group.
 - The state-transition group is self-contained; the field badge stands alone.
 
 ## 3. Timestamp
@@ -62,30 +62,37 @@ to the renderer must keep this doc and the fixture tests
 - Array → bg=first element's color, fg=second element's color (this IS the checkerboard pair)
 - Named state → bg=state color, fg=YIQ-contrast
 
-## 6. State transition group — left-char / state-badge / right-char
+## 6. State transition group — LEAD / state-badge / TRAIL
 
-The left-char, state-badge, and right-char form ONE visual group after the field badge.
+The LEAD, state-badge, and TRAIL form ONE visual group after the field badge. **Per da-25l the three segments are flush against each other** — no whitespace, colored or otherwise, between LEAD/cell/TRAIL.
 
-**Left-char rules** (state active BEFORE this entry):
-- Prior `true` → filled with `true`-color (= field color)
-- Prior named state → that state's color
-- Prior `false` AND this entry is `end` → **yellow `!`** (repeat/overlap detection — feeds S6 conflict queue)
-- No prior entry exists (first tracked event for this field) → **grey `∅`**
-- Prior state is array → FIRST element's color
-- Prior state is `"IGNORED"` → grey (`#888888`)
+**Rendering update (post-da-25l):** LEAD and TRAIL are rendered as **single bg-coloured cells** (a single space painted with the relevant state's bg color), **not as glyph characters**. The original draft of this spec described `∅` / `→` / `←` glyphs in those positions; the renderer chose colored cells instead because they're more compact and compose with the state-badge body without a visible seam. The implementation lives in `crates/datum-commands/src/render/action.rs::render_slot` (LEAD/TRAIL) and `::render_state_cell` (state-badge body).
+
+The `∅` glyph is still rendered for `occur`'s LEAD (a tracked-but-never-seen field gets a grey-`∅` rather than a grey-cell, because occur has no state-badge and the glyph is the entire trio). For switch / start / stop / block, LEAD/TRAIL are colored cells.
+
+**LEAD rules** (state active BEFORE this entry):
+- Prior `true` → cell filled with `true`-color (= field color)
+- Prior named state → cell filled with that state's color
+- Prior `false` AND this entry is `end` → **yellow `!`** glyph (repeat/overlap detection — feeds the integrity queue)
+- No prior entry exists (first tracked event for this field) → cell painted IGNORED-grey (`#888888`). The original spec called for a `∅` glyph here; the renderer uses a grey cell for consistency with the rest of the LEAD/TRAIL behavior.
+- Prior state is array → cell painted with FIRST element's color, FG = SECOND element's color, body = `▞` checkerboard glyph (per da-9vop — both colors visible in 1 cell).
+- Prior state is `"IGNORED"` → cell painted IGNORED-grey (`#888888`)
+- Field has explicitly ended (`Bool(false)` trail after stop) → uncoloured space (no bg)
 
 **State badge body:**
 - Solid background = scalar state (use stateChalk above)
 - **Checkerboard `▞`** with bg=state[0], fg=state[1] = array state (>2 states: truncate to first two for color)
 - Dot/sliver character for point events (occur, add) — see §7
 
-**Right-char rules** (state active AFTER this entry):
-- Switch with NO duration → new state's color (state continues)
-- Switch WITH duration (block) → **prior state's color** (prior resumes after block)
-- `start` → `true`-color
-- `end` → `false`-color (dim/neutral)
-- occur (point) → prior state's color (doesn't change state)
-- End-of-block where already ended → **yellow `!`**
+**TRAIL rules** (state active AFTER this entry):
+- Switch with NO duration → cell painted with new state's color (state continues)
+- Switch WITH duration (block) → cell painted with **prior state's color** (prior resumes after block)
+- `start` → cell painted with `true`-color
+- `end` → cell painted with `false`-color (dim/neutral). When the prior state was `false` (a stop-after-stop), the cell is uncoloured space.
+- occur (point) → cell painted with prior state's color (doesn't change state)
+- End-of-block where already ended → **yellow `!`** glyph (overlap detection)
+
+Same `da-25l` colored-cell rule applies: TRAIL is a single cell, no glyph, painted with the appropriate state color.
 
 ## 7. Per-verb rendering
 
@@ -101,51 +108,51 @@ The left-char, state-badge, and right-char form ONE visual group after the field
 - Single colored dot/square char as the state-badge:
   - Tracked field → field color (or state color if `-m` moment)
   - Ignored/untracked → grey bg, no field color
-- `∅` left-char if first-ever tracked entry for this field
+- `∅` glyph in LEAD slot if first-ever tracked entry for this field (note: occur is the only verb where LEAD is still rendered as a glyph; switch/start/stop use colored cells per §6)
 
 ### `switch <field> <state>` (no duration)
 
 - Field badge
-- Left-char: prior state (or `∅` if first)
-- State badge solid
-- Right-char: new state color (continues)
+- LEAD cell: prior state's color (or IGNORED-grey if first; see §6)
+- State badge solid (background = state color, foreground = state label)
+- TRAIL cell: new state color (state continues)
 
 ### `switch <field> <state> <dur>` (block interruption)
 
 - Field badge
-- Left-char: prior state (or `∅` if first)
+- LEAD cell: prior state's color (or IGNORED-grey if first)
 - State badge solid
-- Right-char: **prior state's color** (resumes after block)
-- Duration `Nm` trailing after right-char
+- TRAIL cell: **prior state's color** (resumes after block)
+- Duration `Nm` trailing after TRAIL cell
 
 ### `switch <field> <s1>,<s2>[,...]` (array)
 
 - Field badge
-- Left-char: prior state (FIRST element if prior was array)
+- LEAD cell: prior state's color (FIRST element if prior was array)
 - Two adjacent state badges with a comma between; comma colored like `state2`
 - Both badges use checkerboard `▞` with bg=state1, fg=state2
-- Right-char: follows block/continue rules based on duration
+- TRAIL cell: follows block/continue rules based on duration
 
 ### `start <field>` (opens block)
 
 - Field badge
-- Left-char: prior state (usually `false` → dim/neutral; yellow `!` if already active)
+- LEAD cell: prior state's color (usually `false` → dim/neutral; yellow `!` if already active)
 - State badge: solid `start`-green (or equivalent `true`-colored)
-- Right-char: `true`-color
+- TRAIL cell: `true`-color
 
 ### `end <field>` / `stop <field>`
 
 - Field badge
-- Left-char: prior state color (yellow `!` if already ended)
+- LEAD cell: prior state's color (yellow `!` if already ended)
 - State badge: `end`-green with left-half prior-state colored (half-fill indicates "was active on left side")
-- Right-char: `false`-color
+- TRAIL cell: `false`-color
 
 ### `start <field> <dur>` (retroactive closed block)
 
 - Field badge
-- Left-char: prior-before-block
+- LEAD cell: prior-before-block
 - State badge: solid
-- Right-char: prior-resumes color
+- TRAIL cell: prior-resumes color
 - Duration trailing
 
 ## 8. Special states
