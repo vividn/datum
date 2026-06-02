@@ -130,6 +130,19 @@ fn split_raw_and_fields(template: &str) -> Vec<String> {
 
 fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
     let key = key.strip_prefix('?').unwrap_or(key);
+    // da-k2xv: legacy camelCase time metadata names (occurTime / createTime
+    // / modifyTime) resolve to their snake_case counterparts so id-templates
+    // ported verbatim from the original datum (which used camelCase) keep
+    // working. Other camelCase keys fall through to lookup_extra_data
+    // unchanged.
+    let key = match key {
+        "occurTime" => "occur_time",
+        "createTime" => "create_time",
+        "modifyTime" => "modify_time",
+        // following_state and dur have no legacy camelCase form (they're
+        // post-v3 additions); pass through unchanged.
+        other => other,
+    };
     match key {
         "" => String::new(),
         "field" => ctx.field.to_string(),
@@ -522,5 +535,57 @@ mod tests {
         let ctx = occur_ctx("f", Some(&extra), "u");
         let got = interpolate("%count%:%on%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "3:true");
+    }
+
+    // ─── da-k2xv: camelCase aliases for time-metadata keys ─────────────
+
+    #[test]
+    fn interpolate_camelcase_createtime_aliases_create_time() {
+        let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
+        let ctx = ctx_with_times(Some(&t), None);
+        let got = interpolate("%createTime%", &ctx, "__");
+        // camelCase resolves to the snake_case branch — including the
+        // `c` auto-suffix that create_time carries.
+        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
+    }
+
+    #[test]
+    fn interpolate_camelcase_modifytime_aliases_modify_time() {
+        let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
+        let ctx = ctx_with_times(None, Some(&t));
+        let got = interpolate("%modifyTime%", &ctx, "__");
+        assert_eq!(got, "2026-05-13T15:00:00.000Zm");
+    }
+
+    #[test]
+    fn interpolate_camelcase_occurtime_aliases_occur_time() {
+        let dt: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
+        let occur = DatumTime::from_utc_and_tz(dt, "UTC").unwrap();
+        let ctx = InterpolationContext {
+            field: "task",
+            verb: &Verb::Point,
+            value: None,
+            extra_data: None,
+            uid: "z",
+            state: None,
+            dur: None,
+            following_state: None,
+            occur_time: Some(&occur),
+            create_time: None,
+            modify_time: None,
+        };
+        let got = interpolate("%occurTime%", &ctx, "__");
+        assert_eq!(got, "2026-05-13T15:00:00.000Z");
+    }
+
+    #[test]
+    fn interpolate_camelcase_optional_form_also_works() {
+        // The `?` (optional) prefix should compose with the camelCase
+        // alias — `%?createTime%` resolves the same way as
+        // `%createTime%`.
+        let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
+        let ctx = ctx_with_times(Some(&t), None);
+        let got = interpolate("%?createTime%", &ctx, "__");
+        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
     }
 }
