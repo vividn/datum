@@ -6,8 +6,12 @@
 //! [`CommandIntent`]. The lookup is polymorphic over the alias source so
 //! the WASM build can plug a non-SQLite resolver (e.g. an in-memory map
 //! populated by the web app).
+//!
+//! Note: spec-derived alias autogen lives on `FieldSpec::
+//! regenerate_derived_aliases` in `datum-core::field_spec::spec`, not in
+//! this module. The originally-planned `alias::autogen` placeholder was
+//! removed once it became clear the canonical home was the spec itself.
 
-pub mod autogen;
 pub mod body;
 pub mod expand;
 pub mod scope;
