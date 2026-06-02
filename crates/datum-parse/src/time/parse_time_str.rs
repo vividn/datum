@@ -199,7 +199,10 @@ fn looks_like_iso_datetime(s: &str) -> bool {
 
 /// Convert a plain-integer string (no sign, variable width) into a
 /// `NaiveTime`. Mirrors datum's parseTimeStr: 1–2 digits = hours,
-/// 3 digits = H:MM, 4 digits = HH:MM.
+/// 3 digits = H:MM, 4 digits = HH:MM, 5 digits = HMMSS,
+/// 6 digits = HH:MM:SS (da-xvsz — previously a 6-digit form fell
+/// through to minute-offset interpretation, e.g. `-t 153045`
+/// would land 153,045 minutes from now instead of at 15:30:45).
 fn plain_number_to_time(s: &str) -> Option<NaiveTime> {
     if s.is_empty() || s.starts_with(['+', '-']) || !s.chars().all(|c| c.is_ascii_digit()) {
         return None;
@@ -227,6 +230,15 @@ fn plain_number_to_time(s: &str) -> Option<NaiveTime> {
             let h = n / 100;
             let m = n % 100;
             NaiveTime::from_hms_opt(h, m, 0)
+        }
+        5 | 6 => {
+            // HMMSS (5) or HHMMSS (6). Single-digit hour for 5-digit form;
+            // full HH:MM:SS for 6-digit (da-xvsz — the previously-missing
+            // arm that made `-t 153045` land 153_045 minutes from now).
+            let h = n / 10000;
+            let m = (n / 100) % 100;
+            let sec = n % 100;
+            NaiveTime::from_hms_opt(h, m, sec)
         }
         _ => None,
     }

@@ -22,6 +22,28 @@ fn test_parse_time_arg_hhmm() {
 }
 
 #[test]
+fn test_parse_time_arg_hhmmss() {
+    // da-xvsz: 6-digit forms must parse as HH:MM:SS, not fall through
+    // to minute-offset (which would land 153_045 minutes from now).
+    let t = parse_time_arg("153045").unwrap();
+    assert_eq!(
+        t.absolute.unwrap(),
+        NaiveTime::from_hms_opt(15, 30, 45).unwrap()
+    );
+    assert!(t.minutes_offset.is_none(), "6-digit must not be an offset");
+}
+
+#[test]
+fn test_parse_time_arg_hmmss_single_hour() {
+    // 5-digit HMMSS — single-digit hour with full MM and SS.
+    let t = parse_time_arg("93045").unwrap();
+    assert_eq!(
+        t.absolute.unwrap(),
+        NaiveTime::from_hms_opt(9, 30, 45).unwrap()
+    );
+}
+
+#[test]
 fn test_parse_time_arg_relative() {
     let t = parse_time_arg("-8").unwrap();
     assert_eq!(t.minutes_offset.unwrap(), -8);
