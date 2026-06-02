@@ -101,3 +101,25 @@ jobs:
 
       - name: cargo check datum-sync-client (wasm32, --no-default-features --features wasm)
         run: cargo check -p datum-sync-client --target wasm32-unknown-unknown --no-default-features --features wasm
+
+  honesty:
+    name: Honesty gates (da-8y2q.7)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+
+      # Runs the four pre-v1 honesty gates from `xtask check`:
+      #   - no-cfg-any      — no #[cfg(any())] dead-test trees
+      #   - no-r2-stubs     — no `bail!("...stub — R2 extracts...")` shims
+      #   - no-legacy-verbs — no Verb::{Occur,Start,Stop,Add} outside migrations
+      #   - max-file-size   — no .rs file in crates/ above MAX_FILE_LOC
+      # See `xtask/src/main.rs` for the rules each gate enforces and
+      # `scripts/check-honesty.sh` for the same battery as a local hook.
+      - name: cargo xtask check all
+        run: cargo run -q -p xtask -- check all

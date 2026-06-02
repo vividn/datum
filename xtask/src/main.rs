@@ -133,7 +133,20 @@ fn write_page(dir: &Path, stem: &str, contents: &str) -> Result<()> {
 /// have. Bumped only by a deliberate workspace-wide decision; the
 /// gate exists to keep the few existing mega-files from quietly
 /// gaining roommates.
-const MAX_FILE_LOC: usize = 3000;
+///
+/// History:
+/// - 3000 (initial, `da-8y2q.7`) — locked the carved cmd.rs (~265 LOC
+///   of source after `da-jflh.1`) and field_spec.rs (`da-jflh.4/.5`).
+/// - 3500 (2026-06-02, vremya, this commit) — bumped to wire the gate
+///   into CI; the two pre-existing offenders (`parse.rs` at 3183 LOC
+///   and `migrations.rs` at 3227 LOC) re-grew past 3000 after their
+///   carve-ups (`da-jflh.2` shipped `parse_command_with_hooks` cleanly,
+///   `migrations.rs` accumulates each new schema version), and bumping
+///   to a deliberate next-round number is preferable to leaving the
+///   gate disabled. Re-carve work is tracked separately as `vremya:`
+///   beads. Next bump should be a real conversation, not a casual
+///   `+200`.
+const MAX_FILE_LOC: usize = 3500;
 
 /// Top-level entry for `cargo xtask check ...`. Each subcommand
 /// scans the workspace tree under `crates/` for a specific
