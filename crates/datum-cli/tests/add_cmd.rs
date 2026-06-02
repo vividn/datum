@@ -61,30 +61,38 @@ fn note_sets_field_and_collects_extra_kv() {
 
 // ─── TS #3: "uses the first non explicitly assigned field in the data as field" ─
 
-/// Skipped: datum parsed `foo=bar dataField` and promoted `dataField` into
-/// the stored `field` when no other field was given. Daydumb requires the
-/// field as an explicit first positional, so the "first non-kv token becomes
-/// the field" promotion has no analog. See `parse_log_args` — the first
-/// positional *is* the field, period.
+/// Datum used to promote a trailing bare positional into the stored
+/// `field` when no other field was given (`foo=bar dataField` ⇒ field
+/// = `dataField`). Daydumb has no such promotion — the first positional
+/// *is* the field, period. da-5ns.3 hardened this by rejecting any
+/// unbound trailing positional rather than silently dropping it or
+/// promoting it to the primary value.
 ///
-/// da-5ns.3 made `add` reject unbound positionals, so the second
-/// positional `dataField` now errors instead of landing as the primary
-/// value. da-5ns.8 should retire this test (or rewrite it on a `-K`
-/// slot) once the test sweep lands.
+/// This test asserts the surviving half of the contract (first
+/// positional is the literal field) and the new half (unbound trailing
+/// positional → ExtraData error). The pre-da-5ns.3 form used
+/// `add foo=bar dataField` and expected success; today that errors,
+/// which is the documented daydumb contract. da-097c (filed
+/// 2026-06-02) closes this in the same pass.
 #[test]
-#[ignore = "da-5ns.3 strict positional gate breaks the legacy primary-value path; da-5ns.8 sweeps"]
-fn field_promotion_from_positional_skipped_no_analog() {
-    // Confirm the daydumb contract: the first positional is always treated
-    // as the field, not promoted by scanning for the first bare token.
+fn first_positional_is_field_literal_unbound_trailing_errors() {
     let db = fresh_db();
-    run_cli(&["add", "foo=bar", "dataField"], &db).expect("note foo=bar dataField");
-    // `foo=bar` is argv[1], so it becomes field_or_verb="foo=bar"
-    // — and the `=` means it lands in extra_data parsing as a kv pair... no,
-    // field_or_verb is a *positional*, not a kv token. The field literally
-    // becomes "foo=bar" (no split). That's the lock-in the test records.
-    let entries = db.entries_for_field("foo=bar", None).unwrap();
-    assert_eq!(entries.len(), 1, "first positional lands as-is in field");
-    assert_eq!(entries[0].field, "foo=bar");
+    // `add <field>` — the first positional becomes the field. Bare
+    // form succeeds with no other args.
+    run_cli(&["add", "foo"], &db).expect("add foo");
+    let entries = db.entries_for_field("foo", None).unwrap();
+    assert_eq!(entries.len(), 1, "first positional is the field literal");
+    assert_eq!(entries[0].field, "foo");
+
+    // da-5ns.3: trailing unbound positional is rejected (used to land
+    // as the primary value in datum's TS implementation). The error
+    // points the user at `KEY=VALUE`, `-K`, or `-R` as the route.
+    let err = run_cli(&["add", "another_field", "dataField"], &db).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unexpected positional") || msg.contains("dataField"),
+        "trailing unbound positional should error, got: {msg}"
+    );
 }
 
 // ─── TS #4: "still handles field appropriately when there are required keys" ─

@@ -301,18 +301,25 @@ fn add_with_dur_null_yields_point_shape() {
 /// `alias_chain` column. Multi-hop aliases land as an ordered JSON array so
 /// `datum why` can render them.
 ///
-/// da-5ns.3: the strict positional gate on `add` breaks the alias's
-/// trailing positional ("correr"); da-5ns.8 should rebuild this test on
-/// the `state=` reserved-key form.
+/// Rebuilt under da-097c (2026-06-02): the original test had the alias
+/// `add word srcLang=pt pos=verb` and relied on the legacy "trailing
+/// positionals → primary value" path; da-5ns.3 made that error. The
+/// rewritten alias declares `-k` slots so positional trail-args fill
+/// real data keys, which is the documented daydumb shape for
+/// alias-with-payload.
 #[test]
-#[ignore = "da-5ns.3 strict positional gate breaks legacy add-positional aliases; da-5ns.8 sweeps"]
 fn alias_chain_stored_in_entry() {
     let db = fresh_db();
 
-    // User alias: vbp → add word srcLang=pt pos=verb
+    // User alias: vbp → add word -k word= -k translation= srcLang=pt pos=verb
+    // `-k word=` declares an optional word slot; `-k translation=` declares
+    // an optional translation slot. Trailing positionals fill those slots
+    // in order — the user-level `vbp correr "to run"` expands to
+    // `add word -k word= -k translation= srcLang=pt pos=verb correr "to run"`
+    // and the slot fill puts correr in `word` and "to run" in `translation`.
     db.save_alias(&datum_core::field_spec::Alias {
         name: "vbp".into(),
-        expands_to: "add word srcLang=pt pos=verb".into(),
+        expands_to: "add word -k word= -k translation= srcLang=pt pos=verb".into(),
         description: None,
     })
     .unwrap();
@@ -333,7 +340,7 @@ fn alias_chain_stored_in_entry() {
     assert_eq!(arr[0].get("name").and_then(|v| v.as_str()), Some("vbp"));
     assert_eq!(
         arr[0].get("expansion").and_then(|v| v.as_str()),
-        Some("add word srcLang=pt pos=verb"),
+        Some("add word -k word= -k translation= srcLang=pt pos=verb"),
     );
 
     // Raw input (the argv the user typed, minus the datum prefix) is also
@@ -352,16 +359,16 @@ fn alias_chain_stored_in_entry() {
 /// output goes to stdout via println! — this test guards the code path, and
 /// the structural render is covered by inspecting `alias_chain` directly.
 ///
-/// da-5ns.3: same legacy primary-value reliance as `alias_chain_stored_in_entry`.
+/// Rebuilt under da-097c: same -k slot pattern as
+/// `alias_chain_stored_in_entry` above.
 #[test]
-#[ignore = "da-5ns.3 strict positional gate breaks legacy add-positional aliases; da-5ns.8 sweeps"]
 fn datum_why_renders_alias_chain() {
     let db = fresh_db();
 
     // Seed an alias-expanded entry.
     db.save_alias(&datum_core::field_spec::Alias {
         name: "vbp".into(),
-        expands_to: "add word srcLang=pt pos=verb".into(),
+        expands_to: "add word -k word= -k translation= srcLang=pt pos=verb".into(),
         description: None,
     })
     .unwrap();
