@@ -92,6 +92,22 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             None => anyhow::bail!("Invalid --state-color format: expected STATE=COLOR, got '{sc}'"),
         }
     }
+    // da-zwqk: per-state descriptions, same STATE=TEXT shape as colors.
+    // Empty TEXT clears the description for that state.
+    for sd in &args.state_descriptions {
+        match sd.split_once('=') {
+            Some((state, "")) => {
+                spec.state_descriptions.remove(state);
+            }
+            Some((state, text)) => {
+                spec.state_descriptions
+                    .insert(state.to_string(), text.to_string());
+            }
+            None => {
+                anyhow::bail!("Invalid --state-description format: expected STATE=TEXT, got '{sd}'")
+            }
+        }
+    }
     // da-2sr: --track / --ignore on `spec set` write switch entries rather
     // than mutating the spec. The flags are kept on the parser surface for
     // backwards compatibility; they no longer touch the spec.
@@ -190,6 +206,7 @@ mod tests {
             states: vec!["happy".to_string(), "sad".to_string()],
             color: Some("green".to_string()),
             state_colors: vec!["happy=00ff00".to_string()],
+            state_descriptions: vec![],
             id_template: Some("%field%:%state%".to_string()),
             description: None,
             unit: None,
@@ -231,6 +248,7 @@ mod tests {
             states: vec!["happy".to_string()],
             color: None,
             state_colors: vec![],
+            state_descriptions: vec![],
             id_template: None,
             description: None,
             unit: None,

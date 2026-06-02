@@ -1309,6 +1309,15 @@ fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.state_colors.push(v.to_string());
                 i += 1;
             }
+            FlagSplit::Long("state-description") => {
+                let (v, ni) = take_value(tail, i, None, "--state-description")?;
+                out.state_descriptions.push(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("state-description", v) => {
+                out.state_descriptions.push(v.to_string());
+                i += 1;
+            }
             FlagSplit::Long("id-template") => {
                 let (v, ni) = take_value(tail, i, None, "--id-template")?;
                 out.id_template = Some(v.to_string());

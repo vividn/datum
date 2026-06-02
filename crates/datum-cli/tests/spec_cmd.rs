@@ -139,3 +139,69 @@ fn spec_set_attached_value_form_works_for_position_flags() {
     assert_eq!(spec.presentation.height, Some(0.10));
     assert_eq!(spec.presentation.z_index, Some(3.0));
 }
+
+// ─── da-zwqk: per-state descriptions ──────────────────────────────────
+
+#[test]
+fn spec_set_persists_state_descriptions() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "spec",
+            "set",
+            "mood",
+            "--default-verb",
+            "switch",
+            "--state",
+            "happy",
+            "--state-description",
+            "happy=feeling good",
+            "--state",
+            "sad",
+            "--state-description=sad=down or flat",
+        ],
+        &db,
+    )
+    .expect("spec set with state descriptions");
+
+    let spec = db.load_spec("mood").unwrap().expect("spec persisted");
+    assert_eq!(
+        spec.state_descriptions.get("happy").map(String::as_str),
+        Some("feeling good"),
+    );
+    assert_eq!(
+        spec.state_descriptions.get("sad").map(String::as_str),
+        Some("down or flat"),
+    );
+}
+
+#[test]
+fn spec_set_state_description_with_empty_text_clears_entry() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "spec",
+            "set",
+            "mood",
+            "--default-verb",
+            "switch",
+            "--state",
+            "happy",
+            "--state-description",
+            "happy=initial meaning",
+        ],
+        &db,
+    )
+    .expect("seed description");
+    run_cli(
+        &["spec", "set", "mood", "--state-description", "happy="],
+        &db,
+    )
+    .expect("clear with STATE=");
+
+    let spec = db.load_spec("mood").unwrap().expect("spec persisted");
+    assert!(
+        !spec.state_descriptions.contains_key("happy"),
+        "STATE= form should clear the description",
+    );
+}

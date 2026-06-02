@@ -638,6 +638,9 @@ pub struct SpecSetArgs {
     pub states: Vec<String>,
     pub color: Option<String>,
     pub state_colors: Vec<String>,
+    /// Per-state descriptions in `STATE=TEXT` form (da-zwqk). Mirrors
+    /// `state_colors`. Empty by default.
+    pub state_descriptions: Vec<String>,
     pub id_template: Option<String>,
     pub description: Option<String>,
     pub unit: Option<String>,
@@ -675,6 +678,7 @@ impl SpecSetArgs {
             states: Vec::new(),
             color: None,
             state_colors: Vec::new(),
+            state_descriptions: Vec::new(),
             id_template: None,
             description: None,
             unit: None,

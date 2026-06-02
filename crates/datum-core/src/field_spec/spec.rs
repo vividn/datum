@@ -82,6 +82,13 @@ pub struct FieldSpec {
     /// Per-state color overrides.
     #[serde(default)]
     pub state_colors: HashMap<String, String>,
+    /// Per-state human descriptions (da-zwqk). Mirrors `state_colors`'s
+    /// per-state pattern — empty by default, absent in JSON when empty.
+    /// Surfaced by `datum spec show <field>` and `datum spec describe
+    /// <field>` so the meaning of each state lives alongside its name
+    /// rather than only in prose.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub state_descriptions: HashMap<String, String>,
     /// Auto-derived aliases (bare-field, terminal-end, and per-state).
     /// Rebuilt on save via [`FieldSpec::regenerate_derived_aliases`].
     #[serde(default)]
@@ -143,6 +150,7 @@ impl FieldSpec {
             color: None,
             allowed_states: None,
             state_colors: HashMap::new(),
+            state_descriptions: HashMap::new(),
             derived_aliases: Vec::new(),
             id_keys: Vec::new(),
             data_keys: Vec::new(),
