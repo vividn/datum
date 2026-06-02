@@ -1216,8 +1216,29 @@ fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
     let rest: &[&str] = &tail[1..];
     match *sub {
         "show" => {
-            let field = require_first_pos(rest, "<FIELD>")?;
-            Ok(SpecCommand::Show { field })
+            // `spec show <FIELD> [--text]` — parse a single positional
+            // (the field) plus optional --text flag (da-nhzo).
+            let mut field: Option<String> = None;
+            let mut text = false;
+            for arg in rest {
+                match split_flag(arg) {
+                    FlagSplit::Long("text") => text = true,
+                    FlagSplit::LongAttached("text", _) => text = true,
+                    FlagSplit::Positional(p) => {
+                        if field.is_none() {
+                            field = Some(p.to_string());
+                        } else {
+                            return Err(ParseError::InvalidArg(format!(
+                                "unexpected argument: '{p}'"
+                            )));
+                        }
+                    }
+                    other => return Err(unknown_flag(other)),
+                }
+            }
+            let field =
+                field.ok_or_else(|| ParseError::MissingRequiredKey("<FIELD>".to_string()))?;
+            Ok(SpecCommand::Show { field, text })
         }
         "set" => Ok(SpecCommand::Set(Box::new(parse_spec_set(rest)?))),
         "list" => Ok(SpecCommand::List {

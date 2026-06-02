@@ -624,10 +624,20 @@ pub struct WhyArgs {
 
 #[derive(Debug)]
 pub enum SpecCommand {
-    Show { field: String },
+    /// `datum spec show <FIELD> [--text]` — JSON by default; `--text`
+    /// switches to a human-readable summary including per-state colors
+    /// and descriptions (da-nhzo).
+    Show {
+        field: String,
+        text: bool,
+    },
     Set(Box<SpecSetArgs>),
-    List { tag: Option<String> },
-    Remove { field: String },
+    List {
+        tag: Option<String>,
+    },
+    Remove {
+        field: String,
+    },
 }
 
 #[derive(Debug)]

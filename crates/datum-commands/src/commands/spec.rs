@@ -15,7 +15,8 @@ use crate::config::device_id;
 
 pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
     match sub {
-        SpecCommand::Show { field } => match db.load_spec(&field)? {
+        SpecCommand::Show { field, text } => match db.load_spec(&field)? {
+            Some(spec) if text => render_spec_text(&spec),
             Some(spec) => println!("{}", serde_json::to_string_pretty(&spec)?),
             None => println!("No spec defined for field '{field}'"),
         },
@@ -186,6 +187,64 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Human-readable summary of a FieldSpec — `datum spec show <FIELD> --text`.
+///
+/// JSON output (`spec show <FIELD>` without `--text`) is precise and good
+/// for programmatic use, but a typed-out reading of the spec's intent reads
+/// faster for humans. This format prints field-level metadata first, then
+/// per-state lines listing color + description side by side (da-nhzo).
+fn render_spec_text(spec: &FieldSpec) {
+    println!("{}", spec.field);
+    println!("  default_verb: {:?}", spec.default_verb);
+    if let Some(d) = &spec.description {
+        println!("  description: {d}");
+    }
+    if let Some(u) = &spec.unit {
+        println!("  unit: {u}");
+    }
+    if let Some(c) = &spec.color {
+        println!("  color: {c}");
+    }
+    if let Some(states) = &spec.allowed_states {
+        println!("  states:");
+        for state in states {
+            let color = spec
+                .state_colors
+                .get(state)
+                .map(String::as_str)
+                .unwrap_or("(auto)");
+            let desc = spec
+                .state_descriptions
+                .get(state)
+                .map(String::as_str)
+                .unwrap_or("");
+            if desc.is_empty() {
+                println!("    {state:<16} {color}");
+            } else {
+                println!("    {state:<16} {color}  — {desc}");
+            }
+        }
+    } else if !spec.state_descriptions.is_empty() {
+        // Descriptions without an allowed_states list — list them anyway.
+        println!("  state_descriptions:");
+        let mut names: Vec<&String> = spec.state_descriptions.keys().collect();
+        names.sort();
+        for name in names {
+            let desc = &spec.state_descriptions[name];
+            println!("    {name:<16} {desc}");
+        }
+    }
+    if !spec.id_keys.is_empty() {
+        println!("  id_keys: {:?}", spec.id_keys);
+    }
+    if !spec.data_keys.is_empty() {
+        println!("  data_keys: {:?}", spec.data_keys);
+    }
+    if !spec.tags.is_empty() {
+        println!("  tags: {:?}", spec.tags);
+    }
 }
 
 #[cfg(test)]
