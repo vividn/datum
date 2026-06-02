@@ -116,10 +116,10 @@ fn render_command_body_structured(spec: &CommandSpec, displayed_name: &str) -> S
         }
         s.push('\n');
     }
-    if !spec.flags.is_empty() {
+    let options = render_options_block(spec.flags, spec.summary_col);
+    if !options.is_empty() {
         s.push('\n');
-        s.push_str("OPTIONS:\n");
-        s.push_str(&render_flag_table(spec.flags, spec.summary_col));
+        s.push_str(&options);
     }
     s
 }
@@ -127,6 +127,26 @@ fn render_command_body_structured(spec: &CommandSpec, displayed_name: &str) -> S
 // ---------------------------------------------------------------------------
 // Shared flag-table renderer.
 // ---------------------------------------------------------------------------
+
+/// Render the `OPTIONS:` block for a flag table — the `OPTIONS:` heading
+/// line followed by the aligned flag rows from [`render_flag_table`].
+///
+/// Returns the empty string when `flags` is empty, so callers can decide
+/// whether to emit the leading blank line that separates it from `USAGE:`.
+///
+/// This is the single structural source of truth for a command's `OPTIONS`
+/// section: a command opts into generated options by leaving `body_override`
+/// unset (rendered fully structurally, like `tail`), so that adding a flag
+/// to its `FlagSpec` table is the *only* thing needed to update its `--help`.
+/// `col` is the command's [`CommandSpec::summary_col`].
+pub fn render_options_block(flags: &[FlagSpec], col: usize) -> String {
+    if flags.is_empty() {
+        return String::new();
+    }
+    let mut s = String::from("OPTIONS:\n");
+    s.push_str(&render_flag_table(flags, col));
+    s
+}
 
 fn render_flag_table(flags: &[FlagSpec], col: usize) -> String {
     let mut s = String::new();

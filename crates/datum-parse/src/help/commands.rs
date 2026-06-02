@@ -2,6 +2,35 @@
 //!
 //! Layout mirrors the section ordering of `datum --help`:
 //! Logging → Mutate → Read → Render → Admin → ViewsSync.
+//!
+//! # Generated OPTIONS (preferred path for new commands)
+//!
+//! A command's `OPTIONS:` section should be *generated* from its
+//! [`CommandSpec::flags`] table, not hand-written, so that adding a flag
+//! forces a `--help` change and the two can never silently drift. To opt
+//! in, leave [`CommandSpec::body_override`] unset and populate `flags`:
+//! the renderer then builds USAGE (from `usage`) + OPTIONS (via
+//! [`crate::help::render::render_options_block`]) structurally. `tail`,
+//! `head`, the log verbs, and `update` / `merge` / `rekey` / `count` /
+//! `ids` use this path.
+//!
+//! `body_override` is the legacy escape hatch for commands whose body
+//! doesn't fit the plain USAGE + OPTIONS shape. Migrate them as their
+//! quirks gain structural support; the ones still on `body_override` are:
+//!
+//! - **Multi-`USAGE` / subcommand trees** (`spec`, `db`, `sync`,
+//!   `conflicts`, `alias`): several calling shapes and prose sections.
+//! - **Narrative bodies with no OPTIONS table** (`now`, `get`, `undo`,
+//!   `delete`, `grep`, `why`, `edit`, `history`, `info`, `config`,
+//!   `track`, `ignore`): nothing to generate.
+//! - **Multi-line flag summaries** (`check`): its `--fix` summary wraps
+//!   across continuation lines, which `render_flag_table` does not yet
+//!   emit.
+//! - **Irregular flag layout** (`dayview`, `nowview`): short-after-long
+//!   forms like `--end-date <DATE>, -d` need per-flag `left_override`s;
+//!   deferred until the table is worth porting wholesale.
+//! - **One-off parser, no FlagSpec** (`retime`): its body is a `DEFAULTS`
+//!   narrative, not an OPTIONS table.
 
 use super::spec::{ArgSpec, Category, CommandSpec, ExampleSpec, FlagSpec};
 
@@ -339,12 +368,189 @@ const TAIL_FLAGS: &[FlagSpec] = &[
 ];
 
 // ---------------------------------------------------------------------------
+// Structurally-rendered flag tables. Commands wired to these leave
+// `body_override` unset, so their OPTIONS section is generated from the
+// table by `render::render_options_block` — adding a flag here is the
+// only edit needed to update the command's `--help`. See the module-level
+// "Generated OPTIONS" note below.
+// ---------------------------------------------------------------------------
+
+const HEAD_FLAGS: &[FlagSpec] = &[FlagSpec {
+    short: Some('n'),
+    long: "limit",
+    takes_value: true,
+    value_hint: Some("N"),
+    value_optional: false,
+    summary: "Number of entries (default 10)",
+    long_description: None,
+    left_override: None,
+}];
+
+// Shared by update / merge / rekey — they take the same flag set.
+const UPDATE_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        short: None,
+        long: "strategy",
+        takes_value: true,
+        value_hint: Some("S"),
+        value_optional: false,
+        summary: "update|merge|rekey",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "id",
+        takes_value: true,
+        value_hint: Some("TEMPLATE"),
+        value_optional: false,
+        summary: "New id/slug template",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "id-delimiter",
+        takes_value: true,
+        value_hint: Some("S"),
+        value_optional: false,
+        summary: "Delimiter between empty segments",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: Some('k'),
+        long: "key",
+        takes_value: true,
+        value_hint: Some("KV"),
+        value_optional: false,
+        summary: "Extra key=value (repeatable)",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: Some('c'),
+        long: "comment",
+        takes_value: true,
+        value_hint: Some("T"),
+        value_optional: false,
+        summary: "Comment",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "dry-run",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Show what would change",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "strict",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Abort on first batch error",
+        long_description: None,
+        left_override: None,
+    },
+];
+
+const COUNT_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        short: None,
+        long: "group-by",
+        takes_value: true,
+        value_hint: Some("KEY"),
+        value_optional: false,
+        summary: "state|value|verb|field",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "since",
+        takes_value: true,
+        value_hint: Some("TIME"),
+        value_optional: false,
+        summary: "RFC3339 / YYYY-MM-DD / duration offset (1d, 30m, 2h)",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "json",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Machine-readable output",
+        long_description: None,
+        left_override: None,
+    },
+];
+
+const IDS_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        short: Some('n'),
+        long: "limit",
+        takes_value: true,
+        value_hint: Some("N"),
+        value_optional: false,
+        summary: "Cap the number of ids returned",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "oldest-first",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Return oldest-first instead of newest-first",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "since",
+        takes_value: true,
+        value_hint: Some("TIME"),
+        value_optional: false,
+        summary: "Same grammar as `datum count --since`",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "slug",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Print slugs instead of short hids",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "json",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Machine-readable output",
+        long_description: None,
+        left_override: None,
+    },
+];
+
+// ---------------------------------------------------------------------------
 // Per-command body_override constants — verbatim copies of the legacy
 // hand-authored strings. These guarantee byte-identical output for the
 // transition; structured render coverage will expand in follow-up PRs.
 // ---------------------------------------------------------------------------
-
-const HEAD_BODY: &str = "USAGE:\n  datum head [FIELD]\n\nOPTIONS:\n  -n, --limit <N>   Number of entries (default 10)\n";
 
 const NOW_BODY: &str = "USAGE:\n  datum now [-A] [--bare] [--no-color] [--cols N]\n\n  -A           Show ignored fields too (dim)\n      --bare   Suppress the terminal nowview band; only show the state list\n      --no-color   Disable ANSI color in the nowview band\n      --cols N Override terminal width in cells (auto-detected from $COLUMNS)\n";
 
@@ -360,12 +566,6 @@ const HISTORY_BODY: &str =
 const WHY_BODY: &str = "USAGE:\n  datum why <ID_OR_SLUG> [--full]\n";
 
 const EDIT_BODY: &str = "USAGE:\n  datum edit <ID_OR_SLUG>\n";
-
-const UPDATE_BODY: &str = "USAGE:\n  datum update <ID_OR_SLUG> [VALUE | KEY=VALUE]...\n\nOPTIONS:\n  --strategy <S>        update|merge|rekey\n  --id <TEMPLATE>       New id/slug template\n  --id-delimiter <S>    Delimiter between empty segments\n  -k, --key <KV>        Extra key=value (repeatable)\n  -c, --comment <T>     Comment\n  --dry-run             Show what would change\n  --strict              Abort on first batch error\n";
-
-const MERGE_BODY: &str = "USAGE:\n  datum merge <ID_OR_SLUG> [VALUE | KEY=VALUE]...\n\nOPTIONS:\n  --strategy <S>        update|merge|rekey\n  --id <TEMPLATE>       New id/slug template\n  --id-delimiter <S>    Delimiter between empty segments\n  -k, --key <KV>        Extra key=value (repeatable)\n  -c, --comment <T>     Comment\n  --dry-run             Show what would change\n  --strict              Abort on first batch error\n";
-
-const REKEY_BODY: &str = "USAGE:\n  datum rekey <ID_OR_SLUG> [VALUE | KEY=VALUE]...\n\nOPTIONS:\n  --strategy <S>        update|merge|rekey\n  --id <TEMPLATE>       New id/slug template\n  --id-delimiter <S>    Delimiter between empty segments\n  -k, --key <KV>        Extra key=value (repeatable)\n  -c, --comment <T>     Comment\n  --dry-run             Show what would change\n  --strict              Abort on first batch error\n";
 
 const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG] [SHIFT]\n  datum retime [SLUG] [-r] [-t T] [-y]... [-q]... [-d D]\n  datum retime [SLUG] --offset DUR [--field F] [--after BND] [--before BND]\n\nDEFAULTS:\n  SLUG omitted        → `_LAST` (matches update/delete/undo)\n  No time-args        → set to now\n  SHIFT (bare int)    → minutes-offset shorthand; `retime <id> -5` shifts -5 min\n  -r/--relative       → interpret time-args as a delta from now, applied to the\n                        entry's current occur_time (rather than absolute target).\n                        Same flag is `--reverse` on tail; namespaces don't collide.\n  --offset DUR        → explicit ISO duration shift (legacy form)\n";
 
@@ -383,10 +583,6 @@ const IGNORE_BODY: &str = "USAGE:\n  datum ignore <FIELD>\n";
 const GREP_BODY: &str = "USAGE:\n  datum grep <PATTERN>... [-f FIELD]\n";
 
 const CHECK_BODY: &str = "USAGE:\n  datum check [CHECKER]... [--fix] [--json]\n  datum check --list [--json]\n\nARGS:\n  [CHECKER]...   Run only the named checker(s). Known: verbs, aliases.\n                 With no positionals, the full default battery runs.\n\nOPTIONS:\n  --fix          Rewrite drifted `verb` columns to match derive_verb;\n                 annotate alias state collisions with the explicit\n                 first-saved-wins resolution.\n  --list         Print the set of known checker names and exit.\n  --json         Machine-readable output.\n\nEXAMPLES:\n  datum check                  # full default battery\n  datum check verbs            # only verb-drift\n  datum check aliases --fix    # only alias divergence, annotate collisions\n  datum check verbs aliases    # both, no other categories\n";
-
-const COUNT_BODY: &str = "USAGE:\n  datum count [FIELD] [--group-by KEY] [--since TIME] [--json]\n\nOPTIONS:\n  --group-by <KEY>   state|value|verb|field\n  --since <TIME>     RFC3339 / YYYY-MM-DD / duration offset (1d, 30m, 2h)\n  --json             Machine-readable output\n";
-
-const IDS_BODY: &str = "USAGE:\n  datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug] [--json]\n\nOPTIONS:\n  -n, --limit <N>    Cap the number of ids returned\n  --oldest-first     Return oldest-first instead of newest-first\n  --since <TIME>     Same grammar as `datum count --since`\n  --slug             Print slugs instead of short hids\n  --json             Machine-readable output\n";
 
 const DAYVIEW_BODY: &str = "USAGE:\n  datum dayview [OPTIONS]\n\nOPTIONS:\n  --start-date <DATE>      Start date (ISO YYYY-MM-DD or relative offset like -3, 0)\n  --end-date <DATE>, -d    End date (default: today)\n  --n-days <N>, -n         Number of days (default: 1)\n  --width <N>              SVG width in pixels (default: 2000)\n  --height <N>             Total SVG height (auto from day-height + n-days when unset)\n  --day-height <N>         Per-day band height (default: 100)\n  --time-axis-height <N>   Bottom time-axis strip height (default: 15)\n  --margin <N>             Outer margin (default: 2)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  --json                   Emit layout JSON instead of SVG (debug)\n  -w, --watch              Redraw on a 5-minute poll loop\n";
 
@@ -593,10 +789,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: None,
         usage: &["datum head [FIELD]"],
         args: NO_ARGS,
-        flags: NO_FLAGS,
+        flags: HEAD_FLAGS,
         examples: NO_EXAMPLES,
         summary_col: 20,
-        body_override: Some(HEAD_BODY),
+        body_override: None,
         display_input_name: false,
     },
     CommandSpec {
@@ -729,10 +925,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: None,
         usage: &["datum update <ID_OR_SLUG> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
-        flags: NO_FLAGS,
+        flags: UPDATE_FLAGS,
         examples: NO_EXAMPLES,
-        summary_col: 24,
-        body_override: Some(UPDATE_BODY),
+        summary_col: 26,
+        body_override: None,
         display_input_name: false,
     },
     CommandSpec {
@@ -744,10 +940,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: None,
         usage: &["datum merge <ID_OR_SLUG> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
-        flags: NO_FLAGS,
+        flags: UPDATE_FLAGS,
         examples: NO_EXAMPLES,
-        summary_col: 24,
-        body_override: Some(MERGE_BODY),
+        summary_col: 26,
+        body_override: None,
         display_input_name: false,
     },
     CommandSpec {
@@ -759,10 +955,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: None,
         usage: &["datum rekey <ID_OR_SLUG> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
-        flags: NO_FLAGS,
+        flags: UPDATE_FLAGS,
         examples: NO_EXAMPLES,
-        summary_col: 24,
-        body_override: Some(REKEY_BODY),
+        summary_col: 26,
+        body_override: None,
         display_input_name: false,
     },
     CommandSpec {
@@ -968,10 +1164,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: None,
         usage: &["datum count [FIELD] [--group-by KEY] [--since TIME] [--json]"],
         args: NO_ARGS,
-        flags: NO_FLAGS,
+        flags: COUNT_FLAGS,
         examples: NO_EXAMPLES,
-        summary_col: 21,
-        body_override: Some(COUNT_BODY),
+        summary_col: 24,
+        body_override: None,
         display_input_name: false,
     },
     CommandSpec {
@@ -983,10 +1179,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: None,
         usage: &["datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug] [--json]"],
         args: NO_ARGS,
-        flags: NO_FLAGS,
+        flags: IDS_FLAGS,
         examples: NO_EXAMPLES,
-        summary_col: 21,
-        body_override: Some(IDS_BODY),
+        summary_col: 22,
+        body_override: None,
         display_input_name: false,
     },
     CommandSpec {

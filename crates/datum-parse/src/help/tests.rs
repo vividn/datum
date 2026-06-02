@@ -383,3 +383,95 @@ fn roff_escapes_hyphens_and_backslashes() {
     // No raw double-hyphen sequences leaked through.
     assert!(!r.contains("--db"));
 }
+
+// ---------------------------------------------------------------------------
+// Commands migrated off `body_override` to generated OPTIONS (da-btkq).
+// These snapshots are the regression guard the migration buys: a flag
+// added to one of these FlagSpec tables now forces a diff here.
+// ---------------------------------------------------------------------------
+
+const EXPECTED_HEAD: &str = "\
+datum head — show oldest entries
+
+USAGE:
+  datum head [FIELD]
+
+OPTIONS:
+  -n, --limit <N>   Number of entries (default 10)
+";
+
+#[test]
+fn snapshot_head_help() {
+    assert_eq!(command_help("head"), EXPECTED_HEAD);
+}
+
+const EXPECTED_UPDATE: &str = "\
+datum update — mutate an existing entry
+
+USAGE:
+  datum update <ID_OR_SLUG> [VALUE | KEY=VALUE]...
+
+OPTIONS:
+      --strategy <S>      update|merge|rekey
+      --id <TEMPLATE>     New id/slug template
+      --id-delimiter <S>  Delimiter between empty segments
+  -k, --key <KV>          Extra key=value (repeatable)
+  -c, --comment <T>       Comment
+      --dry-run           Show what would change
+      --strict            Abort on first batch error
+";
+
+#[test]
+fn snapshot_update_help() {
+    assert_eq!(command_help("update"), EXPECTED_UPDATE);
+}
+
+#[test]
+fn merge_and_rekey_share_update_options() {
+    // All three share UPDATE_FLAGS; only the header + USAGE differ.
+    let options = "OPTIONS:\n      --strategy <S>      update|merge|rekey\n";
+    assert!(
+        command_help("merge").contains(options),
+        "merge should render generated OPTIONS"
+    );
+    assert!(
+        command_help("rekey").contains(options),
+        "rekey should render generated OPTIONS"
+    );
+}
+
+const EXPECTED_COUNT: &str = "\
+datum count — count entries (filtered/grouped/since-bounded)
+
+USAGE:
+  datum count [FIELD] [--group-by KEY] [--since TIME] [--json]
+
+OPTIONS:
+      --group-by <KEY>  state|value|verb|field
+      --since <TIME>    RFC3339 / YYYY-MM-DD / duration offset (1d, 30m, 2h)
+      --json            Machine-readable output
+";
+
+#[test]
+fn snapshot_count_help() {
+    assert_eq!(command_help("count"), EXPECTED_COUNT);
+}
+
+const EXPECTED_IDS: &str = "\
+datum ids — list entry ids (newest-first)
+
+USAGE:
+  datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug] [--json]
+
+OPTIONS:
+  -n, --limit <N>     Cap the number of ids returned
+      --oldest-first  Return oldest-first instead of newest-first
+      --since <TIME>  Same grammar as `datum count --since`
+      --slug          Print slugs instead of short hids
+      --json          Machine-readable output
+";
+
+#[test]
+fn snapshot_ids_help() {
+    assert_eq!(command_help("ids"), EXPECTED_IDS);
+}
