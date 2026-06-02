@@ -365,6 +365,16 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: None,
     },
+    FlagSpec {
+        short: None,
+        long: "show-meta",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Include flag/meta entries (hidden by default)",
+        long_description: None,
+        left_override: Some("    --show-meta       (alias: --show-all-metadata)"),
+    },
 ];
 
 // ---------------------------------------------------------------------------

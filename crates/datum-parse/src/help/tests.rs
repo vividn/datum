@@ -110,6 +110,7 @@ OPTIONS:
   -y / -q               Day / 5-min offsets (stackable)
   -w, --watch [INT]     Stream new entries (default poll 1s)
       --table           Legacy columnar view (default: info-line)
+      --show-meta       (alias: --show-all-metadata)  Include flag/meta entries (hidden by default)
 ";
 
 #[test]
