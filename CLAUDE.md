@@ -18,9 +18,12 @@ crates/
   datum-sync-server/  # Relay server: Rust + axum, E2E-encrypted sync backend
   datum-sync-agent/   # Background sync daemon (planned)
 web/            # SvelteKit PWA: static, OPFS + SQLite WASM, offline-capable
-mobile/         # Flutter: Android + Wear OS
-migrations/     # datum legacy migration scripts
 ```
+
+(Flutter/Android/Wear OS clients are planned but the directories don't
+exist yet; legacy datum migration logic lives in
+`crates/datum-core/src/migrations.rs` and `commands/db/import.rs`, not
+a top-level `migrations/` folder.)
 
 ## Core principles (never violate these)
 
@@ -147,7 +150,7 @@ controlled and unconditional: e.g. `test_command` → `bash scripts/check.sh`
 doc tests). The refinery must run the **full** battery, never a scoped
 subset — it is the last line of defense after the scoped polecat pre-submit.
 
-## Build status (as of 2026-04-16)
+## Build status (as of 2026-04-16, table touched 2026-06-02)
 
 | Phase | Status | Notes |
 |---|---|---|
@@ -158,7 +161,7 @@ subset — it is the last line of defense after the scoped polecat pre-submit.
 | datum-sync-client (library) | 🔄 in progress | da-t6t.4 (R4 split) |
 | datum-sync-agent (daemon) | stub | da-ndd.15 / C4d, depends on sync-client |
 | datum-android (Flutter) | not started | |
-| Migration tool (datum legacy) | stub in CLI | `datum db import --from backup.json` |
+| Migration tool (datum legacy) | ✓ shipped | `datum db import --from backup.json` — real handler at `commands/db/import.rs` (~250 LOC, handles legacy CouchDB JSON with dur/state quirks) |
 | datum-wear (Wear OS) | not started | |
 
 ## Building
