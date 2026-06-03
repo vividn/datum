@@ -13,19 +13,17 @@
 //! | `fieldArgs.ts`          | [`field_args`]                    | ported |
 //! | `outputArgs.ts`         | [`output_args`]                   | ported |
 //! | `quickIdArg.ts`         | [`quick_id_arg`]                  | ported |
-//! | `mainArgs.ts`           | [`main_args`]                     | stub (step 3/N)  |
-//! | `defaults.ts`           | [`defaults`]                      | stub (intentionally empty upstream) |
+//! | —                       | [`flag_registry`]                 | Rust-only |
+//! | —                       | [`matcher`]                       | Rust-only |
 //!
 //! See `docs/parity-audit/parsing.md` for the full behavior inventory.
 
 pub mod consolidate_keys;
 pub mod data_args;
-pub mod defaults;
 pub mod duration_args;
 pub mod field_args;
 pub mod flag_registry;
 pub mod flexible_positional;
-pub mod main_args;
 pub mod matcher;
 pub mod output_args;
 pub mod quick_id_arg;
