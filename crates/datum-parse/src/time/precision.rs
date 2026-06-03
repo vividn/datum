@@ -56,3 +56,66 @@ impl std::str::FromStr for PrecisionUnit {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL: &[PrecisionUnit] = &[
+        PrecisionUnit::Exact,
+        PrecisionUnit::Second,
+        PrecisionUnit::Minute,
+        PrecisionUnit::Hour,
+        PrecisionUnit::Date,
+        PrecisionUnit::Month,
+        PrecisionUnit::Year,
+    ];
+
+    #[test]
+    fn display_and_fromstr_round_trip() {
+        for v in ALL {
+            let s = v.to_string();
+            let parsed: PrecisionUnit = s.parse().unwrap();
+            assert_eq!(*v, parsed, "round-trip failed for {v}");
+        }
+    }
+
+    #[test]
+    fn display_matches_serde_json_string() {
+        for v in ALL {
+            let displayed = v.to_string();
+            let json = serde_json::to_value(v).unwrap();
+            assert_eq!(
+                serde_json::Value::String(displayed.clone()),
+                json,
+                "Display vs serde drift for {v}",
+            );
+        }
+    }
+
+    #[test]
+    fn serde_round_trips_through_json() {
+        for v in ALL {
+            let json = serde_json::to_value(v).unwrap();
+            let back: PrecisionUnit = serde_json::from_value(json).unwrap();
+            assert_eq!(*v, back, "serde round-trip failed for {v}");
+        }
+    }
+
+    #[test]
+    fn fromstr_is_case_insensitive() {
+        assert_eq!(
+            "HOUR".parse::<PrecisionUnit>().unwrap(),
+            PrecisionUnit::Hour
+        );
+        assert_eq!(
+            "Hour".parse::<PrecisionUnit>().unwrap(),
+            PrecisionUnit::Hour
+        );
+    }
+
+    #[test]
+    fn fromstr_rejects_unknown() {
+        assert!("fortnight".parse::<PrecisionUnit>().is_err());
+    }
+}
