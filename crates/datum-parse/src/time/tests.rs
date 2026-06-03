@@ -1,6 +1,7 @@
 use chrono::{Duration, NaiveTime};
 
 use super::*;
+use crate::ParseError;
 
 #[test]
 fn test_stacked_flags() {
@@ -49,6 +50,29 @@ fn test_parse_time_arg_relative() {
     assert_eq!(t.minutes_offset.unwrap(), -8);
     let t = parse_time_arg("+5").unwrap();
     assert_eq!(t.minutes_offset.unwrap(), 5);
+}
+
+#[test]
+fn test_parse_time_arg_unsigned_invalid_time_errors() {
+    // da-4h7k: an unsigned integer that isn't a valid clock time must be
+    // rejected, not silently treated as a relative minute-offset. `2500`
+    // (likely a `2400`/`24:00` typo) used to land 2500 minutes from now.
+    assert!(matches!(
+        parse_time_arg("2500"),
+        Err(ParseError::InvalidTime(_))
+    ));
+    assert!(matches!(
+        parse_time_arg("9999"),
+        Err(ParseError::InvalidTime(_))
+    ));
+    // Valid clock-time forms still parse as absolute times.
+    assert_eq!(
+        parse_time_arg("0913").unwrap().absolute.unwrap(),
+        NaiveTime::from_hms_opt(9, 13, 0).unwrap()
+    );
+    // The signed form is the explicit opt-in for a (wild) minute offset.
+    assert_eq!(parse_time_arg("-2500").unwrap().minutes_offset, Some(-2500));
+    assert_eq!(parse_time_arg("+2500").unwrap().minutes_offset, Some(2500));
 }
 
 #[test]

@@ -46,6 +46,10 @@ pub fn count_stacked_flag(s: &str, ch: char) -> Option<usize> {
 ///   "2024-03-16T15:30:00"                 ISO-8601 datetime, no tz
 ///                                         (caller interprets in effective tz)
 /// plus an optional trailing uncertainty `±N[unit]` / `+-N[unit]`.
+///
+/// An unsigned integer that is not a valid clock time (e.g. `2500`) is
+/// rejected rather than treated as a relative minute-offset — relative
+/// offsets require an explicit leading sign (`+2500` / `-2500`).
 pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
     // Direction suffix (`+` / `-`) sits at the very tail, after any
     // uncertainty marker. Strip it first so `3±5m+` and `3+` both work.
@@ -125,15 +129,16 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                 direction,
             });
         }
-        // Fall back: relative minutes.
-        return Ok(TimeArg {
-            minutes_offset: Some(n),
-            absolute: None,
-            iso_instant: None,
-            iso_naive: None,
-            uncertainty,
-            direction,
-        });
+        // Unsigned integer that isn't a valid clock time. Reject —
+        // relative offsets require a leading sign. (da-4h7k: previously
+        // this fell through to a minutes-offset, so `2500` silently
+        // resolved to 2500 minutes from now instead of being flagged as
+        // the likely `2400`/`24:00` typo it almost always is.)
+        return Err(ParseError::InvalidTime(format!(
+            "Cannot parse time: '{primary}' (must be HH/HHMM/HHMMSS as a \
+             valid clock time; use '+{primary}' or '-{primary}' for \
+             relative minutes)"
+        )));
     }
 
     // `5am` / `5pm` / `5a` / `5p` — hour + meridian, no minutes.

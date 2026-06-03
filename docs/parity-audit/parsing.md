@@ -318,6 +318,13 @@ language fallback.
     "next Thursday 3pm").
 - **Added in daydumb:**
   - `±N[unit]` uncertainty suffix (not in datum).
+- **Deliberate divergence:**
+  - An unsigned integer that isn't a valid clock time (e.g. `2500`,
+    `9999`) is now **rejected** with `InvalidTime` rather than
+    silently falling through to a relative minute-offset (da-4h7k).
+    `2500` used to land 2500 minutes (~41h) from now — almost always
+    a `2400`/`24:00` typo. Relative offsets require an explicit sign
+    (`+2500` / `-2500` still work).
 
 ### `parseDateStr.ts` (47 LOC)
 
