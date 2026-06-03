@@ -729,7 +729,7 @@ fn colon_pattern_value_stored_as_plain_string() {
     run_cli(&["switch", "consume", "book:goldmund"], &db).expect("switch consume book:goldmund");
     let switch_entry = &db.entries_for_field("consume", None).unwrap()[0];
     assert_eq!(
-        switch_entry.value,
+        switch_entry.state,
         Some(json!("book:goldmund")),
         "reference value is stored verbatim — no write-time resolution",
     );
@@ -750,7 +750,7 @@ fn unresolved_doc_reference_does_not_block_write() {
     run_cli(&["switch", "consume", "book:does-not-exist-yet"], &db)
         .expect("forward reference writes successfully");
     let e = &db.entries_for_field("consume", None).unwrap()[0];
-    assert_eq!(e.value, Some(json!("book:does-not-exist-yet")));
+    assert_eq!(e.state, Some(json!("book:does-not-exist-yet")));
 }
 
 /// After D3, `note` is no longer a first-class subcommand — it's a seeded

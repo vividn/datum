@@ -53,19 +53,18 @@ fn resolve_key(entry: &Entry, key: &str) -> Option<JsonValue> {
     match key {
         "field" => Some(JsonValue::String(entry.field.clone())),
         "verb" => Some(JsonValue::String(entry.verb.to_string())),
-        "state" | "value" => entry.value.clone(),
+        "state" | "value" => entry.state.clone(),
         "dur" => entry
             .dur
             .as_ref()
             .and_then(|d| d.as_seconds())
             .map(JsonValue::from),
         "start_time" => entry
-            .start_time
+            .occur_time
             .as_ref()
             .map(|t| JsonValue::String(t.utc.to_rfc3339())),
         "end_time" => entry
-            .end_time
-            .as_ref()
+            .computed_end_time()
             .map(|t| JsonValue::String(t.utc.to_rfc3339())),
         path => entry.data.as_ref().and_then(|d| lookup_path(d, path)),
     }

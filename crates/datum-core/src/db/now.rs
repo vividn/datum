@@ -189,7 +189,7 @@ fn effective_state_from_entry(e: &Entry, at: DateTime<Utc>) -> JsonValue {
     match e.verb {
         Verb::BlockSwitch | Verb::PointSwitch => {
             if let (Some(occur), Some(dur), Some(fs)) = (
-                e.start_time.as_ref(),
+                e.occur_time.as_ref(),
                 e.dur.as_ref(),
                 e.following_state.as_ref(),
             ) {
@@ -199,14 +199,14 @@ fn effective_state_from_entry(e: &Entry, at: DateTime<Utc>) -> JsonValue {
                     return fs.clone();
                 }
             }
-            e.value.clone().unwrap_or(JsonValue::Null)
+            e.state.clone().unwrap_or(JsonValue::Null)
         }
-        _ => e.value.clone().unwrap_or(JsonValue::Null),
+        _ => e.state.clone().unwrap_or(JsonValue::Null),
     }
 }
 
 fn entry_event_time(e: &Entry) -> Option<DateTime<Utc>> {
-    e.start_time.as_ref().or(e.end_time.as_ref()).map(|t| t.utc)
+    e.occur_time.as_ref().map(|t| t.utc)
 }
 
 /// Truthiness in the `datum now` sense: not `false`, not `null`, not the

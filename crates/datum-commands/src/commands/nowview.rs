@@ -709,7 +709,7 @@ fn render_field_visuals(
         // data sourcing (block fill vs switch region, dot fg/bg origin) is
         // resolved via verb-keyed predicate helpers in `datum_core::shape`.
         // Adding a new verb requires updating the helpers, not this match.
-        let shape = render_shape(verb, entry.entry_shape, &entry.state);
+        let shape = render_shape(verb, entry.shape(), &entry.state);
         match shape {
             RenderShape::Hidden | RenderShape::Marker => {}
             RenderShape::Region if is_block_verb(verb) => {
@@ -867,7 +867,7 @@ fn render_field_visuals_terminal(
         // Same dispatch shape as the SVG path. The terminal `Verb::Point` fg
         // differs (md5_rgb fallback when state lookup yields nothing, rather
         // than the field rgb) — preserved via the `else` branch below.
-        let shape = render_shape(verb, entry.entry_shape, &entry.state);
+        let shape = render_shape(verb, entry.shape(), &entry.state);
         match shape {
             RenderShape::Hidden | RenderShape::Marker => {}
             RenderShape::Region if is_block_verb(verb) => {

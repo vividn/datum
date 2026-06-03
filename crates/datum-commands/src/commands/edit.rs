@@ -108,23 +108,18 @@ impl UserEditableEntry {
     fn apply_to(self, e: &mut Entry) {
         e.field = self.field;
         e.verb = self.verb;
-        e.state = self.state.clone();
+        e.state = self.state;
         e.dur = self.dur;
         e.dur_precision = self.dur_precision;
         e.following_state = self.following_state;
         e.data = self.data;
-        e.occur_time = self.occur_time.clone();
+        e.occur_time = self.occur_time;
         e.occur_time_precision = self.occur_time_precision;
         e.lat = self.lat;
         e.lon = self.lon;
         e.location = self.location;
         e.id_structure = self.id_structure;
         e.field_structure = self.field_structure;
-        // Keep the legacy compat shims in lockstep so the rest of the
-        // codebase that still reads entry.value / entry.start_time sees
-        // the new state until sub-bead 8 deletes the shims.
-        e.value = self.state;
-        e.start_time = self.occur_time;
     }
 }
 

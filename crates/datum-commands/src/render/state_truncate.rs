@@ -69,7 +69,7 @@ pub(crate) fn truncate_state_cell(
     // State-bearing verbs render `[LEAD][body][TRAIL]`. LEAD and TRAIL
     // are 1 visible char each — reserve them, give the rest to the body.
     let body_budget = max_w.saturating_sub(2);
-    let body = truncate_state_body(entry.value.as_ref(), &entry.field, spec, body_budget);
+    let body = truncate_state_body(entry.state.as_ref(), &entry.field, spec, body_budget);
     let mut out = String::new();
     out.push_str(&render_lead_slot(ctx, &entry.field, spec));
     out.push_str(&body);

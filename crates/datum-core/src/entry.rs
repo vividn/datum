@@ -269,44 +269,6 @@ pub struct Entry {
     /// rows). Strictly disjoint from `data`.
     #[serde(default)]
     pub extra_metadata: Option<JsonValue>,
-
-    // ─── da-5ns sub-bead 1 compatibility shims ──────────────────────
-    //
-    // Pre-pivot Rust code reads `entry.start_time`, `entry.end_time`,
-    // `entry.value`, `entry.entry_shape`, etc. directly. The v=20
-    // schema dropped those columns, but Rust call sites are out of
-    // scope for sub-bead 1 (sub-bead 3 wires the new flows; sub-bead
-    // 8 sweeps the residue). To keep the crate compiling these fields
-    // are kept on the struct as a compatibility layer:
-    //
-    // - On read (row_to_entry): populated from the new columns —
-    //   start_time mirrors occur_time, value mirrors state, etc.
-    // - On write (try_insert et al.): IGNORED. The SQL paths now
-    //   write occur_time/state/dur/etc. exclusively.
-    // - On serialization: skipped (`#[serde(skip)]`) so the JSON wire
-    //   format reflects the v=20 shape and round-trips cleanly across
-    //   sync.
-    //
-    // Sub-bead 8 deletes these fields and rewrites the residual call
-    // sites to the new accessors.
-    #[serde(skip)]
-    pub start_time: Option<DatumTime>,
-    #[serde(skip)]
-    pub end_time: Option<DatumTime>,
-    #[serde(skip)]
-    pub start_time_precision: u32,
-    #[serde(skip)]
-    pub start_time_precision_unit: PrecisionUnit,
-    #[serde(skip)]
-    pub end_time_precision: u32,
-    #[serde(skip)]
-    pub end_time_precision_unit: PrecisionUnit,
-    #[serde(skip)]
-    pub entry_shape: EntryShape,
-    #[serde(skip)]
-    pub intent: Option<String>,
-    #[serde(skip)]
-    pub value: Option<JsonValue>,
 }
 
 /// Current parser version. Bump when parser behaviour changes so stored
@@ -356,33 +318,13 @@ impl Entry {
 
         let slug = build_slug(&field, occur_time.as_ref());
 
-        // Populate the compat shims so call sites that read
-        // entry.start_time / entry.value / entry.entry_shape see the
-        // same data they did pre-pivot. See the comment on the field
-        // block.
-        let entry_shape = match dur.as_ref() {
-            None => EntryShape::Point,
-            Some(d) if d.is_zero_span() => EntryShape::Point,
-            Some(Dur::Moment) | Some(Dur::Unknown) => EntryShape::Point,
-            Some(_) => EntryShape::Block,
-        };
-        let end_time_compat: Option<DatumTime> = match (occur_time.as_ref(), dur.as_ref()) {
-            (Some(t), Some(d)) => d.as_seconds().map(|secs| {
-                let mut e = t.clone();
-                e.utc += chrono::Duration::seconds(secs);
-                e
-            }),
-            _ => None,
-        };
-        let start_time_compat = occur_time.clone();
-
         Entry {
             hid,
             slug,
             content_hash,
             field,
             verb,
-            state: state.clone(),
+            state,
             dur,
             dur_precision: None,
             following_state: None,
@@ -403,16 +345,6 @@ impl Entry {
             parser_version: CURRENT_PARSER_VERSION,
             user_asserted_last_state: None,
             extra_metadata: None,
-            // Compat shims:
-            start_time: start_time_compat,
-            end_time: end_time_compat,
-            start_time_precision: 0,
-            start_time_precision_unit: PrecisionUnit::Exact,
-            end_time_precision: 0,
-            end_time_precision_unit: PrecisionUnit::Exact,
-            entry_shape,
-            intent: None,
-            value: state,
         }
     }
 
@@ -461,6 +393,20 @@ impl Entry {
         let mut e = occur.clone();
         e.utc += chrono::Duration::seconds(secs);
         Some(e)
+    }
+
+    /// Coarse shape classifier derived from `dur`. Replaces the v=19
+    /// `entry_shape` column-as-field: `Block` when `dur` carries a real
+    /// span, `Point` otherwise (`None` / zero-span / `Moment` / `Unknown`).
+    /// `Ongoing` is never produced from a v=20 entry — open blocks are
+    /// expressed via `verb`, not shape.
+    pub fn shape(&self) -> EntryShape {
+        match self.dur.as_ref() {
+            None => EntryShape::Point,
+            Some(d) if d.is_zero_span() => EntryShape::Point,
+            Some(Dur::Moment) | Some(Dur::Unknown) => EntryShape::Point,
+            Some(_) => EntryShape::Block,
+        }
     }
 
     /// Recompute the content_hash from the entry's current fields.
@@ -636,7 +582,15 @@ mod tests {
 
     #[test]
     fn raw_input_none_is_omitted_from_json() {
-        let entry = Entry::new("coffee", Verb::Point, None, None, Some(fixed_time()), None, "d");
+        let entry = Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(fixed_time()),
+            None,
+            "d",
+        );
         let json = serde_json::to_value(&entry).unwrap();
         assert!(
             json.get("raw_input").is_none(),
@@ -646,8 +600,15 @@ mod tests {
 
     #[test]
     fn raw_input_some_is_serialized_to_json() {
-        let mut entry =
-            Entry::new("coffee", Verb::Point, None, None, Some(fixed_time()), None, "d");
+        let mut entry = Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(fixed_time()),
+            None,
+            "d",
+        );
         entry.raw_input = Some("datum occur coffee".to_string());
         let json = serde_json::to_value(&entry).unwrap();
         assert_eq!(

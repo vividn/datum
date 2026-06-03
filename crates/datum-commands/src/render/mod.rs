@@ -229,7 +229,7 @@ pub(crate) fn extract_with_context_at(
 
     let occur_precision = entry.occur_time_precision.as_deref();
     let occur = entry
-        .start_time
+        .occur_time
         .as_ref()
         .map(|t| self::action::format_timestamp(t, now, occur_precision));
     let create = Some(self::action::format_timestamp(
@@ -350,7 +350,7 @@ pub fn show_action_with_context(
     // structured-state internals on a line below the chip. Tail never
     // takes this path (see `print_table_with`).
     if matches!(args.show, Show::Default | Show::Standard | Show::All) {
-        if let Some(v) = entry.value.as_ref() {
+        if let Some(v) = entry.state.as_ref() {
             if let Some(line) = self::blocks::format_state_doc_line(v, &entry.field, spec) {
                 println!("  {line}");
             }
@@ -931,7 +931,7 @@ fn resolve_template_key(key: &str, entry: &Entry) -> String {
         "hid" => short_hid(&entry.hid),
         "full_hid" => entry.hid.to_string(),
         "value" | "state" => entry
-            .value
+            .state
             .as_ref()
             .map(|v| match v {
                 JsonValue::String(s) => s.clone(),
@@ -1081,7 +1081,7 @@ pub fn render_snapshot(
         let fansi = colors::resolve_rgb(tf_color.as_deref(), &a.field).fg();
         let (state_rendered, state_vw) =
             render_now_state(Some(&a.state), &a.field, &tf_color, state_colors);
-        let entry_time = a.entry.start_time.as_ref().or(a.entry.end_time.as_ref());
+        let entry_time = a.entry.occur_time.as_ref();
         let time_str = match entry_time {
             None => String::new(),
             Some(t) => format_now_time(

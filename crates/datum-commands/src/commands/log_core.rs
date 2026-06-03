@@ -203,8 +203,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // Compute time_start, time_end, precision, and (for Action::Add) a shape
     // override. Skipped entirely for -T — a timeless entry carries no times
     // and no precision metadata.
-    let (time_start, time_end, base_precision, add_override_shape) = if args.time.omit_timestamp {
-        (None, None, None, None)
+    let (time_start, time_end, base_precision) = if args.time.omit_timestamp {
+        (None, None, None)
     } else {
         let (base_time, base_precision) = build_time_with_precision(&args)?;
 
@@ -238,7 +238,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             match db.find_open_block(&field, base_time.utc)? {
                 None => anyhow::bail!("No open block for '{field}' to close with --last-state"),
                 Some(block) => {
-                    let last_state = block.value.clone().unwrap_or(JsonValue::Bool(true));
+                    let last_state = block.state.clone().unwrap_or(JsonValue::Bool(true));
                     let mut obj = match extra_data.take() {
                         Some(JsonValue::Object(m)) => m,
                         _ => serde_json::Map::new(),
@@ -289,8 +289,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             (Some(base_time), None)
         };
 
-        let override_shape = add_override.map(|r| r.shape);
-        (time_start, time_end, Some(base_precision), override_shape)
+        (time_start, time_end, Some(base_precision))
     };
 
     // da-8y2q.2: Entry::new_legacy takes a storage Verb but the value is
@@ -308,21 +307,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         device,
     );
 
-    // For Action::Add, the shape was inferred from temporal hints; override the
-    // shape-inference performed by `Entry::new` so `entry_shape` reflects the
-    // add-specific classification (e.g. `ongoing` when only start_time is set).
-    if let Some(shape) = add_override_shape {
-        entry.entry_shape = shape;
-    }
-
     // da-5ns.3: stamp the reserved columns extracted upstream onto the
     // entry. `state=` overrides the value-derived state assignment from
     // `Entry::new_legacy`; `dur=` and `following_state=` overwrite the
     // legacy time-shape derivation. The storage layer's `derive_verb`
     // call then classifies the resulting (state, dur, fs) triple.
     if let Some(s) = reserved.state {
-        entry.state = Some(s.clone());
-        entry.value = Some(s);
+        entry.state = Some(s);
     }
     if let Some(d) = reserved.dur {
         entry.dur = Some(d);
@@ -354,14 +345,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     if entry.state.is_none() {
         match action {
             Action::Stop => {
-                let v = JsonValue::Bool(false);
-                entry.state = Some(v.clone());
-                entry.value = Some(v);
+                entry.state = Some(JsonValue::Bool(false));
             }
             Action::Start | Action::Switch => {
-                let v = JsonValue::Bool(true);
-                entry.state = Some(v.clone());
-                entry.value = Some(v);
+                entry.state = Some(JsonValue::Bool(true));
             }
             _ => {}
         }
@@ -380,20 +367,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
 
     // Persist the effective precision derived from the -q stack and any
-    // explicit `±N` uncertainty. The end_time precision mirrors start's
-    // since both times flow from the same parse.
+    // explicit `±N` uncertainty. v=20 storage: the only precision column
+    // on the row is `occur_time_precision` (ISO-8601). Stamp it from the
+    // builder result so date-only events (`-D`, bare `-d`/`-y*`) and
+    // explicit `±N` uncertainties survive the live insert path —
+    // previously only retime + import wrote this column.
     if let Some(precision) = base_precision {
-        entry.start_time_precision = precision.seconds;
-        entry.start_time_precision_unit = precision.unit;
-        if entry.end_time.is_some() {
-            entry.end_time_precision = precision.seconds;
-            entry.end_time_precision_unit = precision.unit;
-        }
-        // v=20 storage: the only precision column on the row is
-        // `occur_time_precision` (ISO-8601). Stamp it from the builder
-        // result so date-only events (`-D`, bare `-d`/`-y*`) and
-        // explicit `±N` uncertainties survive the live insert path —
-        // previously only retime + import wrote this column.
         entry.occur_time_precision = precision.to_iso_precision();
     }
 
@@ -1261,7 +1240,6 @@ struct AddTemporalHints {
 struct AddTimestampResult {
     start_time: Option<DatumTime>,
     end_time: Option<DatumTime>,
-    shape: datum_core::entry::EntryShape,
 }
 
 impl AddTemporalHints {
@@ -1283,7 +1261,6 @@ impl AddTemporalHints {
     /// `occur_time` — the absence of a time is what distinguishes `add`
     /// from `occur`. A bare `-t` (or `-d`/`-y`/`-q`/`-D`) opts back in.
     fn resolve(&self, base_time: &DatumTime, explicit_time: bool) -> AddTimestampResult {
-        use datum_core::entry::EntryShape;
         let mk = |utc: chrono::DateTime<chrono::Utc>| DatumTime {
             utc,
             ..base_time.clone()
@@ -1293,7 +1270,6 @@ impl AddTemporalHints {
             return AddTimestampResult {
                 start_time: Some(base_time.clone()),
                 end_time: None,
-                shape: EntryShape::Point,
             };
         }
 
@@ -1301,46 +1277,39 @@ impl AddTemporalHints {
             (Some(s), Some(e), _) => AddTimestampResult {
                 start_time: Some(s),
                 end_time: Some(e),
-                shape: EntryShape::Block,
             },
             (Some(s), None, Some(d)) => {
                 let end = mk(s.utc + d);
                 AddTimestampResult {
                     start_time: Some(s),
                     end_time: Some(end),
-                    shape: EntryShape::Block,
                 }
             }
             (Some(s), None, None) => AddTimestampResult {
                 start_time: Some(s),
                 end_time: None,
-                shape: EntryShape::Ongoing,
             },
             (None, Some(e), Some(d)) => {
                 let start = mk(e.utc - d);
                 AddTimestampResult {
                     start_time: Some(start),
                     end_time: Some(e),
-                    shape: EntryShape::Block,
                 }
             }
             (None, Some(e), None) => AddTimestampResult {
                 start_time: Some(base_time.clone()),
                 end_time: Some(e),
-                shape: EntryShape::Block,
             },
             (None, None, Some(d)) => {
                 let start = mk(base_time.utc - d);
                 AddTimestampResult {
                     start_time: Some(start),
                     end_time: Some(base_time.clone()),
-                    shape: EntryShape::Block,
                 }
             }
             (None, None, None) => AddTimestampResult {
                 start_time: explicit_time.then(|| base_time.clone()),
                 end_time: None,
-                shape: EntryShape::Point,
             },
         }
     }
@@ -1959,7 +1928,7 @@ mod tests {
         assert_eq!(entries.len(), 1, "exactly one row");
         let e = &entries[0];
         assert_eq!(
-            e.value,
+            e.state,
             Some(serde_json::json!("vertical")),
             "state = vertical"
         );
@@ -1990,7 +1959,7 @@ mod tests {
         let entries = db.entries_for_field("body", None).unwrap();
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
-        assert_eq!(e.value, Some(serde_json::json!("vertical")));
+        assert_eq!(e.state, Some(serde_json::json!("vertical")));
         assert_eq!(e.following_state, Some(serde_json::json!("sit")));
         // Moment → dur=PT0S (zero seconds).
         assert_eq!(e.duration_seconds(), Some(0));

@@ -1131,7 +1131,7 @@ mod tests {
         )
         .unwrap();
         let after = db.get_entry(&e.slug).unwrap();
-        assert_eq!(after.value, Some(serde_json::json!("sad")));
+        assert_eq!(after.state, Some(serde_json::json!("sad")));
     }
 
     #[test]
@@ -1336,8 +1336,8 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_block("sleep", 0, 3600, "d1");
         let id = e.slug.clone();
-        let t0_start = e.start_time.as_ref().unwrap().utc;
-        let t0_end = e.end_time.as_ref().unwrap().utc;
+        let t0_start = e.occur_time.as_ref().unwrap().utc;
+        let t0_end = e.computed_end_time().unwrap().utc;
         let hash_before = e.content_hash.clone();
         db.insert_entry(&e).unwrap();
 
@@ -1345,8 +1345,8 @@ mod tests {
 
         let after = db.get_entry(&id).unwrap();
         let shift = chrono::Duration::minutes(-5);
-        assert_eq!(after.start_time.as_ref().unwrap().utc, t0_start + shift);
-        assert_eq!(after.end_time.as_ref().unwrap().utc, t0_end + shift);
+        assert_eq!(after.occur_time.as_ref().unwrap().utc, t0_start + shift);
+        assert_eq!(after.computed_end_time().unwrap().utc, t0_end + shift);
         // content_hash follows the new timestamps; modified_at moves too.
         assert_ne!(after.content_hash, hash_before);
         assert_eq!(after.content_hash, after.expected_content_hash());
@@ -1364,11 +1364,11 @@ mod tests {
         // interpretation doesn't muddle the test across timezones.
         let cutoff: chrono::DateTime<chrono::Utc> = "2026-04-01T00:00:00Z".parse().unwrap();
         let early = make_entry_at_utc("coffee", cutoff - chrono::Duration::days(2), "d1");
-        let early_start = early.start_time.as_ref().unwrap().utc;
+        let early_start = early.occur_time.as_ref().unwrap().utc;
         let late = make_entry_at_utc("coffee", cutoff + chrono::Duration::days(2), "d1");
-        let late_start = late.start_time.as_ref().unwrap().utc;
+        let late_start = late.occur_time.as_ref().unwrap().utc;
         let other = make_entry_at_utc("water", cutoff + chrono::Duration::days(3), "d1");
-        let other_start = other.start_time.as_ref().unwrap().utc;
+        let other_start = other.occur_time.as_ref().unwrap().utc;
         db.insert_entry(&early).unwrap();
         db.insert_entry(&late).unwrap();
         db.insert_entry(&other).unwrap();
@@ -1385,17 +1385,17 @@ mod tests {
         let late_after = db.get_entry(&late.slug).unwrap();
         let other_after = db.get_entry(&other.slug).unwrap();
         assert_eq!(
-            early_after.start_time.as_ref().unwrap().utc,
+            early_after.occur_time.as_ref().unwrap().utc,
             early_start,
             "pre-cutoff row must not shift"
         );
         assert_eq!(
-            late_after.start_time.as_ref().unwrap().utc,
+            late_after.occur_time.as_ref().unwrap().utc,
             late_start + chrono::Duration::hours(1),
             "post-cutoff row shifts +1h"
         );
         assert_eq!(
-            other_after.start_time.as_ref().unwrap().utc,
+            other_after.occur_time.as_ref().unwrap().utc,
             other_start,
             "other field must not shift"
         );
@@ -1407,14 +1407,14 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("focus", 10_000, "d1");
         let id = e.slug.clone();
-        let t0 = e.start_time.as_ref().unwrap().utc;
+        let t0 = e.occur_time.as_ref().unwrap().utc;
         db.insert_entry(&e).unwrap();
 
         crate::commands::retime::retime(retime_args(Some(&id), "-30m"), &db).unwrap();
 
         let after = db.get_entry(&id).unwrap();
         assert_eq!(
-            after.start_time.as_ref().unwrap().utc,
+            after.occur_time.as_ref().unwrap().utc,
             t0 - chrono::Duration::minutes(30)
         );
     }
@@ -1427,7 +1427,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("coffee", 10_000, "d1");
         let id = e.slug.clone();
-        let t0 = e.start_time.as_ref().unwrap().utc;
+        let t0 = e.occur_time.as_ref().unwrap().utc;
         db.insert_entry(&e).unwrap();
 
         let args = RetimeArgs {
@@ -1439,7 +1439,7 @@ mod tests {
 
         let after = db.get_entry(&id).unwrap();
         assert_eq!(
-            after.start_time.as_ref().unwrap().utc,
+            after.occur_time.as_ref().unwrap().utc,
             t0 - chrono::Duration::minutes(5)
         );
     }
@@ -1471,7 +1471,7 @@ mod tests {
         // da-ivld: occur_time template re-derives the slug; the stable
         // hid is the only safe lookup after a retime.
         let row = db.get_entry(&e.hid).unwrap();
-        let t = row.start_time.as_ref().unwrap().utc;
+        let t = row.occur_time.as_ref().unwrap().utc;
         assert!(
             t >= before && t <= after,
             "occur_time {t} not in [{before}, {after}]"
@@ -1502,7 +1502,7 @@ mod tests {
         let after = chrono::Utc::now();
 
         let row = db.get_entry(&hid).unwrap();
-        let t = row.start_time.as_ref().unwrap().utc;
+        let t = row.occur_time.as_ref().unwrap().utc;
         assert!(
             t >= before && t <= after,
             "bare retime should have stamped _LAST to now; got {t}"
@@ -1520,7 +1520,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("project", 50_000, "d1");
         let id = e.slug.clone();
-        let t0 = e.start_time.as_ref().unwrap().utc;
+        let t0 = e.occur_time.as_ref().unwrap().utc;
         db.insert_entry(&e).unwrap();
 
         let args = RetimeArgs {
@@ -1536,7 +1536,7 @@ mod tests {
 
         let after = db.get_entry(&id).unwrap();
         assert_eq!(
-            after.start_time.as_ref().unwrap().utc,
+            after.occur_time.as_ref().unwrap().utc,
             t0 - chrono::Duration::minutes(5),
             "-r -t -5 should match `<id> -5`: shift by -5 min from current"
         );

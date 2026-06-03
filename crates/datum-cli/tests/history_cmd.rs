@@ -19,11 +19,9 @@ fn history_command_lists_versions_newest_first() {
 
     // Record a user_edit so history has at least two versions to list.
     let mut v2 = v1.clone();
-    // v3 (da-5ns): primary state lives in `entry.state`; `entry.value`
-    // is a compat shim that the storage layer doesn't read. Update both
-    // so direct EntryBuilder edits round-trip through the v=20 schema.
+    // v3 (da-5ns): primary state lives in `entry.state`, so a direct
+    // EntryBuilder edit round-trips through the v=20 schema.
     v2.state = Some(serde_json::json!("sad"));
-    v2.value = Some(serde_json::json!("sad"));
     // Record a user_edit via the slug-keyed save path. (The Update
     // strategy is content-hash-based and is the wrong shape here: v1 and
     // v2 carry different state and so have distinct hashes.)
@@ -56,11 +54,9 @@ fn history_diff_between_versions() {
         .insert(&db);
 
     let mut v2 = v1.clone();
-    // v3 (da-5ns): primary state lives in `entry.state`; `entry.value`
-    // is a compat shim that the storage layer doesn't read. Update both
-    // so direct EntryBuilder edits round-trip through the v=20 schema.
+    // v3 (da-5ns): primary state lives in `entry.state`, so a direct
+    // EntryBuilder edit round-trips through the v=20 schema.
     v2.state = Some(serde_json::json!("sad"));
-    v2.value = Some(serde_json::json!("sad"));
     // Record a user_edit via the slug-keyed save path. (The Update
     // strategy is content-hash-based and is the wrong shape here: v1 and
     // v2 carry different state and so have distinct hashes.)
@@ -78,9 +74,7 @@ fn history_diff_between_versions() {
     let snap_v2 = datum_core::history::state_at_version(db.conn(), &v1.hid, 2, Some(&current))
         .unwrap()
         .expect("v2 state");
-    // v3 (da-5ns): primary state lives in `entry.state`; the legacy
-    // `entry.value` shim is populated from state at construction but not
-    // reliably round-tripped through history snapshots.
+    // v3 (da-5ns): primary state lives in `entry.state`.
     assert_eq!(snap_v1.state, Some(serde_json::json!("happy")));
     assert_eq!(snap_v2.state, Some(serde_json::json!("sad")));
 }
@@ -95,24 +89,22 @@ fn undo_restores_entry_state() {
 
     // Mutate the entry: v2 carries value="sad".
     let mut v2 = v1.clone();
-    // v3 (da-5ns): primary state lives in `entry.state`; `entry.value`
-    // is a compat shim that the storage layer doesn't read. Update both
-    // so direct EntryBuilder edits round-trip through the v=20 schema.
+    // v3 (da-5ns): primary state lives in `entry.state`, so a direct
+    // EntryBuilder edit round-trips through the v=20 schema.
     v2.state = Some(serde_json::json!("sad"));
-    v2.value = Some(serde_json::json!("sad"));
     // Record a user_edit via the slug-keyed save path. (The Update
     // strategy is content-hash-based and is the wrong shape here: v1 and
     // v2 carry different state and so have distinct hashes.)
     db.save_existing_entry(&v2).expect("v2 user_edit");
 
     let current = db.get_entry(&v1.slug).unwrap();
-    assert_eq!(current.value, Some(serde_json::json!("sad")));
+    assert_eq!(current.state, Some(serde_json::json!("sad")));
 
     // `datum undo <hid>` reverts to v1 (value=happy).
     run_cli(&["undo", &v1.hid], &db).expect("undo dispatch");
 
     let restored = db.get_entry(&v1.slug).unwrap();
-    assert_eq!(restored.value, Some(serde_json::json!("happy")));
+    assert_eq!(restored.state, Some(serde_json::json!("happy")));
 
     // And the undo itself is recorded as a new version with change_kind='undo'.
     let versions = datum_core::history::list(db.conn(), &v1.hid, false).unwrap();
@@ -166,11 +158,9 @@ fn why_full_traces_through_history() {
 
     // Record a second version so --full has something to walk.
     let mut v2 = v1.clone();
-    // v3 (da-5ns): primary state lives in `entry.state`; `entry.value`
-    // is a compat shim that the storage layer doesn't read. Update both
-    // so direct EntryBuilder edits round-trip through the v=20 schema.
+    // v3 (da-5ns): primary state lives in `entry.state`, so a direct
+    // EntryBuilder edit round-trips through the v=20 schema.
     v2.state = Some(serde_json::json!("sad"));
-    v2.value = Some(serde_json::json!("sad"));
     // Record a user_edit via the slug-keyed save path. (The Update
     // strategy is content-hash-based and is the wrong shape here: v1 and
     // v2 carry different state and so have distinct hashes.)

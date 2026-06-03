@@ -116,7 +116,7 @@ mod tests {
         // Literal string match
         let got = run_grep(&db, &["happy"], None);
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].value.as_ref().unwrap(), &serde_json::json!("happy"));
+        assert_eq!(got[0].state.as_ref().unwrap(), &serde_json::json!("happy"));
 
         // Regex alternation
         let got = run_grep(&db, &["happ|tire"], None);

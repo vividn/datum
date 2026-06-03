@@ -49,9 +49,7 @@ fn build_snapshot(
         if tf.ignored {
             if show_ignored {
                 let entry = latest.get(&tf.field);
-                let since = entry
-                    .and_then(|e| e.start_time.as_ref().or(e.end_time.as_ref()))
-                    .map(|t| t.utc);
+                let since = entry.and_then(|e| e.occur_time.as_ref()).map(|t| t.utc);
                 snap.ignored.push(NowFieldIgnored {
                     field: tf.field.clone(),
                     since,
@@ -69,8 +67,8 @@ fn build_snapshot(
                 entry: None,
             }),
             Some(e) => {
-                let state = e.value.clone().unwrap_or(JsonValue::Null);
-                let since = e.start_time.as_ref().or(e.end_time.as_ref()).map(|t| t.utc);
+                let state = e.state.clone().unwrap_or(JsonValue::Null);
+                let since = e.occur_time.as_ref().map(|t| t.utc);
                 if is_truthy(&state) {
                     snap.active.push(NowFieldActive {
                         field: tf.field.clone(),
@@ -564,7 +562,7 @@ fn empty_snapshot() -> NowSnapshot {
 
 fn active_row(field: &str, state: &str) -> NowFieldActive {
     let e = switch_entry(field, state);
-    let since = e.start_time.as_ref().map(|t| t.utc);
+    let since = e.occur_time.as_ref().map(|t| t.utc);
     NowFieldActive {
         field: field.to_string(),
         state: json!(state),

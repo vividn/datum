@@ -68,13 +68,13 @@ fn needs_state_probe(entry: &Entry) -> bool {
 /// probe at `end_time`; everything else at `start_time`, falling back to
 /// `create_time` for state-affecting rows that lack a start.
 fn probe_upper_bound(entry: &Entry) -> Option<chrono::DateTime<Utc>> {
-    if matches!(entry.entry_shape, datum_core::entry::EntryShape::Block) {
-        if let Some(end) = entry.end_time.as_ref() {
+    if matches!(entry.shape(), datum_core::entry::EntryShape::Block) {
+        if let Some(end) = entry.computed_end_time() {
             return Some(end.utc);
         }
     }
     entry
-        .start_time
+        .occur_time
         .as_ref()
         .map(|t| t.utc)
         .or(Some(entry.create_time))

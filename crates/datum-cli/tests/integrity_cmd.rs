@@ -174,10 +174,10 @@ fn auto_resolver_closes_older_open_after_delay() {
     let older = sorted[0].clone();
     let newer = sorted[1].clone();
     assert_eq!(
-        older.entry_shape,
+        older.shape(),
         EntryShape::Block,
         "older open should be closed into a block; got shape={:?}",
-        older.entry_shape
+        older.shape()
     );
     assert!(older.dur.is_some(), "older open must have dur");
     assert_eq!(older.verb, Verb::Block, "older's verb re-derives to Block");
@@ -199,7 +199,7 @@ fn auto_resolver_closes_older_open_after_delay() {
         newer.dur.is_none(),
         "newer must remain dur-less (still 'open')"
     );
-    assert_eq!(newer.entry_shape, EntryShape::Point);
+    assert_eq!(newer.shape(), EntryShape::Point);
 
     // Pending set should be empty now.
     let pending = db
@@ -266,12 +266,8 @@ fn now_view_shows_overlap_warning() {
     // NowSnapshot directly — bypassing the (retired in da-adoi)
     // `render_now_view(tracked, latest_map, …)` legacy signature.
     let entry = db.latest_entry_for_now("workout", None).unwrap().unwrap();
-    let since = entry
-        .start_time
-        .as_ref()
-        .or(entry.end_time.as_ref())
-        .map(|t| t.utc);
-    let state = entry.value.clone().unwrap_or(JsonValue::Null);
+    let since = entry.occur_time.as_ref().map(|t| t.utc);
+    let state = entry.state.clone().unwrap_or(JsonValue::Null);
     let snap = NowSnapshot {
         schema: NOW_SCHEMA_ID,
         now: chrono::Utc::now(),

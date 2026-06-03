@@ -13,7 +13,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
 use crate::dur::Dur;
-use crate::entry::{Entry, EntryShape, PrecisionUnit, Verb};
+use crate::entry::{Entry, Verb};
 use crate::time::DatumTime;
 
 /// Row → `Entry` adapter for callers that build their own queries over the
@@ -79,36 +79,18 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         .get::<_, Option<String>>("extra_metadata")?
         .and_then(|s| serde_json::from_str(&s).ok());
 
-    // da-5ns sub-bead 1 compat shims: see entry.rs for rationale.
-    // Populate the v=19 fields from the v=20 column data so legacy
-    // call sites still see meaningful values during the transition.
-    let entry_shape = match dur.as_ref() {
-        None => EntryShape::Point,
-        Some(d) if d.is_zero_span() => EntryShape::Point,
-        Some(Dur::Moment) | Some(Dur::Unknown) => EntryShape::Point,
-        Some(_) => EntryShape::Block,
-    };
-    let end_time_compat: Option<DatumTime> = match (occur_time.as_ref(), dur.as_ref()) {
-        (Some(t), Some(d)) => d.as_seconds().map(|secs| {
-            let mut e = t.clone();
-            e.utc += chrono::Duration::seconds(secs);
-            e
-        }),
-        _ => None,
-    };
-
     Ok(Entry {
         hid: row.get("hid")?,
         slug: row.get("slug")?,
         content_hash: row.get("content_hash")?,
         field: row.get("field")?,
         verb,
-        state: state.clone(),
+        state,
         dur,
         dur_precision,
         following_state,
         data,
-        occur_time: occur_time.clone(),
+        occur_time,
         occur_time_precision,
         lat: row.get("lat")?,
         lon: row.get("lon")?,
@@ -130,16 +112,6 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         parser_version,
         user_asserted_last_state,
         extra_metadata,
-        // Compat shims:
-        start_time: occur_time,
-        end_time: end_time_compat,
-        start_time_precision: 0,
-        start_time_precision_unit: PrecisionUnit::Exact,
-        end_time_precision: 0,
-        end_time_precision_unit: PrecisionUnit::Exact,
-        entry_shape,
-        intent: None,
-        value: state,
     })
 }
 

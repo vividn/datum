@@ -174,7 +174,7 @@ impl RenderContext {
         let trail_state = compute_trail_state(events, entry);
         let ongoing_state = compute_ongoing_state(events, entry);
         let probe = entry
-            .start_time
+            .occur_time
             .as_ref()
             .map(|t| t.utc)
             .unwrap_or(entry.create_time);
@@ -202,7 +202,7 @@ pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) ->
     if !has_state_badge(row.verb) {
         return false;
     }
-    let (Some(prior), Some(row_state)) = (prior, row.value.as_ref()) else {
+    let (Some(prior), Some(row_state)) = (prior, row.state.as_ref()) else {
         return false;
     };
     let prior_norm = datum_core::state::normalize_state(prior).to_json();
@@ -217,7 +217,7 @@ fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Optio
     ) {
         return None;
     }
-    let at = entry.start_time.as_ref()?.utc;
+    let at = entry.occur_time.as_ref()?.utc;
     let probe = at - chrono::Duration::microseconds(1);
     events?.at(probe, Some(&entry.hid))
 }
@@ -229,8 +229,8 @@ fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Opti
     ) {
         return None;
     }
-    if matches!(entry.entry_shape, EntryShape::Block) {
-        let end = entry.end_time.as_ref()?.utc;
+    if matches!(entry.shape(), EntryShape::Block) {
+        let end = entry.computed_end_time()?.utc;
         return events?.at(end, Some(&entry.hid));
     }
     entry_self_trail_state(entry)
@@ -240,7 +240,7 @@ fn compute_ongoing_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Op
     if !matches!(entry.verb, Verb::Point) {
         return None;
     }
-    let at = entry.start_time.as_ref()?.utc;
+    let at = entry.occur_time.as_ref()?.utc;
     events?.at(at, Some(&entry.hid))
 }
 
@@ -392,7 +392,7 @@ fn render_state_cell(entry: &Entry, spec: Option<&FieldSpec>) -> String {
     // function — `format_state_group` short-circuits them to the dot
     // renderer.
     if has_state_badge(entry.verb) {
-        render_switch_badge(entry.value.as_ref(), &entry.field, spec)
+        render_switch_badge(entry.state.as_ref(), &entry.field, spec)
     } else {
         String::new()
     }
@@ -465,16 +465,16 @@ fn resolve_slot(state: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>
 /// from the entry alone; the caller queries `state_at(end_time)` for
 /// those and supplies the result via `RenderContext::trail_state`.
 pub fn entry_self_trail_state(entry: &Entry) -> Option<JsonValue> {
-    if matches!(entry.entry_shape, EntryShape::Block) {
+    if matches!(entry.shape(), EntryShape::Block) {
         return None;
     }
     // da-8y2q.2: legacy `Start`/`Stop` are now `Switch` rows with
-    // canonicalized `state=true`/`state=false`. `entry.value.clone()`
+    // canonicalized `state=true`/`state=false`. `entry.state.clone()`
     // returns the same `Some(Bool(true|false))` the legacy arms
     // produced explicitly. Non-state-bearing verbs (Verb::Point) yield
     // no trail state.
     if has_state_badge(entry.verb) {
-        entry.value.clone()
+        entry.state.clone()
     } else {
         None
     }
@@ -673,9 +673,7 @@ pub fn format_info_line_at(
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
     let precision = entry.occur_time_precision.as_deref();
-    if let Some(t) = &entry.start_time {
-        parts.push(format_timestamp(t, now, precision));
-    } else if let Some(t) = &entry.end_time {
+    if let Some(t) = &entry.occur_time {
         parts.push(format_timestamp(t, now, precision));
     } else {
         // Hybrid fallback: row has no occur_time, so render create_time
@@ -1099,7 +1097,7 @@ mod tests {
     #[test]
     fn state_repeat_skipped_for_non_state_verbs() {
         let mut row = occur_row("coffee");
-        row.value = Some(JsonValue::String("vertical".into()));
+        row.state = Some(JsonValue::String("vertical".into()));
         let prior = JsonValue::String("vertical".into());
         assert!(!compute_is_state_repeat(Some(&prior), &row));
     }

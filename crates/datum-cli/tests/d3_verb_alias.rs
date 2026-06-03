@@ -216,7 +216,7 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
     .expect("add with start+end");
 
     let e = &db.entries_for_field("coffee", None).unwrap()[0];
-    assert_eq!(e.entry_shape, EntryShape::Block);
+    assert_eq!(e.shape(), EntryShape::Block);
     assert!(e.occur_time.is_some());
     assert!(e.dur.is_some());
     // Temporal keys get consumed — they don't survive into extra_data.
@@ -243,7 +243,7 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
     let db3 = fresh_db();
     run_cli(&["add", "ping", "-t", "10:00"], &db3).expect("add point");
     let e3 = &db3.entries_for_field("ping", None).unwrap()[0];
-    assert_eq!(e3.entry_shape, EntryShape::Point);
+    assert_eq!(e3.shape(), EntryShape::Point);
     // Explicit `-t` opts the add back into carrying an occur_time.
     assert!(
         e3.occur_time.is_some(),
@@ -286,7 +286,7 @@ fn add_with_dur_null_yields_point_shape() {
     run_cli(&["add", "note_field", "dur=null", "-t", "10:00"], &db).expect("add with dur=null");
 
     let e = &db.entries_for_field("note_field", None).unwrap()[0];
-    assert_eq!(e.entry_shape, EntryShape::Point);
+    assert_eq!(e.shape(), EntryShape::Point);
     assert!(e.dur.is_none(), "dur=null must not set end_time");
     assert!(
         e.data.as_ref().and_then(|d| d.get("dur")).is_none(),

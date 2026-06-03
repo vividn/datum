@@ -400,12 +400,10 @@ fn apply_mutation(
         updated.id_structure = Some(id);
     }
     if let Some(v) = payload_value {
-        updated.value = Some(v.clone());
         updated.state = Some(v);
     }
     if let Some(s) = reserved.state {
-        updated.state = Some(s.clone());
-        updated.value = Some(s);
+        updated.state = Some(s);
     }
     if let Some(d) = reserved.dur {
         updated.dur = Some(d);
@@ -1013,7 +1011,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(outcome.entry.state, Some(serde_json::json!("happy")));
-        assert_eq!(outcome.entry.value, Some(serde_json::json!("happy")));
         assert!(
             outcome
                 .entry

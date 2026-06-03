@@ -349,7 +349,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                 InsertOutcome::Inserted { .. } => inserted += 1,
                 InsertOutcome::Ignored { .. } => {
                     skipped_records.push((SkipReason::Duplicate, doc_id.clone(), None));
-                    match entry.entry_shape {
+                    match entry.shape() {
                         datum_core::entry::EntryShape::Block => {
                             blocks = blocks.saturating_sub(1);
                         }

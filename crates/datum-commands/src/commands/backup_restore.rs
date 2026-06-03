@@ -605,7 +605,7 @@ mod tests {
             assert_eq!(e.content_hash, a.content_hash);
             assert_eq!(e.field, a.field);
             assert_eq!(e.verb, a.verb);
-            assert_eq!(e.value, a.value);
+            assert_eq!(e.state, a.state);
             assert_eq!(e.data, a.data);
         }
     }

@@ -238,15 +238,6 @@ mod tests {
             parser_version: 2,
             user_asserted_last_state: None,
             extra_metadata: None,
-            start_time: None,
-            end_time: None,
-            start_time_precision: 0,
-            start_time_precision_unit: datum_core::entry::PrecisionUnit::Exact,
-            end_time_precision: 0,
-            end_time_precision_unit: datum_core::entry::PrecisionUnit::Exact,
-            entry_shape: datum_core::entry::EntryShape::Point,
-            intent: None,
-            value: None,
         }
     }
 

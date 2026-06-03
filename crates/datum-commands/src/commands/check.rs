@@ -650,7 +650,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
         let entries: Vec<FlaggedEntry> = group
             .iter()
             .map(|w| {
-                let state_str = match w.local_entry.value.as_ref() {
+                let state_str = match w.local_entry.state.as_ref() {
                     Some(v) => render_state_for_flag(v),
                     None => String::new(),
                 };

@@ -803,7 +803,6 @@ fn switch_field_end_equivalent_to_end_field() {
     assert_eq!(a.field, b.field);
     assert_eq!(a.verb, b.verb);
     assert_eq!(a.state, b.state);
-    assert_eq!(a.value, b.value);
 }
 
 /// da-z8o4: a non-reserved state value after `switch <field>` still

@@ -65,7 +65,7 @@ fn unit_annotation_survives_handle_data_args() {
 
     let entry = &db.entries_for_field("weight", None).unwrap()[0];
     assert_eq!(
-        entry.value,
+        entry.state,
         Some(json!({"v": 75.2, "u": "kg"})),
         "unit-annotated primary value preserved",
     );

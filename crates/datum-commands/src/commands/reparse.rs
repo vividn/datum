@@ -255,7 +255,6 @@ fn apply_fix(entry: &Entry, shape: &ReparsedShape, db: &Db) -> Result<()> {
     let mut updated = entry.clone();
     updated.field = shape.field.clone();
     updated.state = shape.state.clone();
-    updated.value = shape.state.clone();
     updated.dur = shape.dur.clone();
     updated.following_state = shape.following_state.clone();
     updated.data = shape.data.clone();

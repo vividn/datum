@@ -69,7 +69,7 @@ mod tests {
         let entries = tail_entries(&head_args(None, Some(10)), &db).unwrap();
         let values: Vec<i64> = entries
             .iter()
-            .map(|e| e.value.as_ref().unwrap().as_i64().unwrap())
+            .map(|e| e.state.as_ref().unwrap().as_i64().unwrap())
             .collect();
         assert_eq!(values, vec![100, 200, 300]);
     }
@@ -89,7 +89,7 @@ mod tests {
         assert_eq!(got.len(), 5);
         let values: Vec<i64> = got
             .iter()
-            .map(|e| e.value.as_ref().unwrap().as_i64().unwrap())
+            .map(|e| e.state.as_ref().unwrap().as_i64().unwrap())
             .collect();
         assert_eq!(values, vec![0, 60, 120, 180, 240]);
     }
@@ -112,7 +112,7 @@ mod tests {
         assert!(got.iter().all(|e| e.field == "coffee"));
         let values: Vec<i64> = got
             .iter()
-            .map(|e| e.value.as_ref().unwrap().as_i64().unwrap())
+            .map(|e| e.state.as_ref().unwrap().as_i64().unwrap())
             .collect();
         assert_eq!(values, vec![100, 300]);
     }
@@ -130,7 +130,7 @@ mod tests {
         let got = tail_entries(&head_args(Some("mood"), None), &db).unwrap();
         assert_eq!(got.len(), 10);
         // First entry should be the oldest (offset=0).
-        assert_eq!(got[0].value.as_ref().unwrap().as_i64().unwrap(), 0);
+        assert_eq!(got[0].state.as_ref().unwrap().as_i64().unwrap(), 0);
     }
 
     #[test]
