@@ -78,25 +78,13 @@ fn run_line(line: &str, db: &Db) -> Result<()> {
     match datum_commands::args::parse_invocation_with_db(argv, db) {
         Ok(invocation) => cmd::dispatch_invocation(invocation, db),
         Err(e) => {
+            // The REPL deliberately omits the kit-level-2 fallback that
+            // `lib.rs::run` adds for unknown subcommands — an unknown
+            // command at the prompt just prints the error and the user
+            // retries.
             if let Some(pe) = e.downcast_ref::<ParseError>() {
-                match pe {
-                    ParseError::HelpRequested(cmd) => {
-                        let text = match cmd.as_deref() {
-                            Some(c) => help::command_help(c),
-                            None => help::top_level_help(),
-                        };
-                        print!("{text}");
-                        return Ok(());
-                    }
-                    ParseError::VersionRequested => {
-                        println!("{}", help::version_banner());
-                        return Ok(());
-                    }
-                    ParseError::ManRequested(cmd) => {
-                        print!("{}", help::render_roff(cmd.as_deref()));
-                        return Ok(());
-                    }
-                    _ => {}
+                if let Some(result) = crate::render_parse_special(pe) {
+                    return result;
                 }
             }
             Err(e)

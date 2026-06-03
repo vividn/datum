@@ -22,6 +22,35 @@ use datum_parse::{help, ParseError};
 
 use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation};
 
+/// If `e` is one of the "clean stdout print" parse errors
+/// (help/version/man requested), render it to stdout and return
+/// `Some(Ok(()))`. Otherwise return `None` — the caller should
+/// propagate the original error (or apply its own fallbacks first).
+///
+/// Shared by `run` (the binary entry path) and `repl::run_line` so the
+/// set of cleanly-rendered variants can't drift between them.
+pub fn render_parse_special(e: &ParseError) -> Option<Result<()>> {
+    match e {
+        ParseError::HelpRequested(cmd) => {
+            let text = match cmd.as_deref() {
+                Some(c) => help::command_help(c),
+                None => help::top_level_help(),
+            };
+            print!("{text}");
+            Some(Ok(()))
+        }
+        ParseError::VersionRequested => {
+            println!("{}", help::version_banner());
+            Some(Ok(()))
+        }
+        ParseError::ManRequested(cmd) => {
+            print!("{}", help::render_roff(cmd.as_deref()));
+            Some(Ok(()))
+        }
+        _ => None,
+    }
+}
+
 /// Drive a captured `argv` through the same path the `datum` binary
 /// uses for `datum <subcommand>` invocations. Carved out of `main.rs`
 /// so the bin-smoke E2E gate (`tests/e2e_bin_smoke.rs`, da-1wat) can
@@ -34,31 +63,17 @@ pub fn run(argv: Vec<String>) -> Result<()> {
     let invocation = match args::parse_invocation(argv) {
         Ok(inv) => inv,
         Err(e) => {
-            // Propagate `--help` / `--version` as a clean stdout print.
+            // Propagate `--help` / `--version` / `--man` as a clean stdout print.
             if let Some(pe) = e.downcast_ref::<ParseError>() {
-                match pe {
-                    ParseError::HelpRequested(cmd) => {
-                        let text = match cmd.as_deref() {
-                            Some(c) => help::command_help(c),
-                            None => help::top_level_help(),
-                        };
-                        print!("{text}");
-                        return Ok(());
-                    }
-                    ParseError::VersionRequested => {
-                        println!("{}", help::version_banner());
-                        return Ok(());
-                    }
-                    ParseError::ManRequested(cmd) => {
-                        print!("{}", help::render_roff(cmd.as_deref()));
-                        return Ok(());
-                    }
-                    ParseError::InvalidArg(msg) if msg.starts_with("unknown subcommand") => {
+                if let Some(result) = render_parse_special(pe) {
+                    return result;
+                }
+                if let ParseError::InvalidArg(msg) = pe {
+                    if msg.starts_with("unknown subcommand") {
                         if let Some(()) = try_kit_level2_dispatch()? {
                             return Ok(());
                         }
                     }
-                    _ => {}
                 }
             }
             return Err(e);
