@@ -692,8 +692,7 @@ pub const GLOBAL_FLAGS_COL: usize = 24;
 pub const TOP_LEVEL_USAGE: &str = "datum [--db NAME_OR_PATH] <command> [args]";
 
 /// Footer printed after `GLOBAL OPTIONS:`.
-pub const TOP_LEVEL_FOOTER: &str =
-    "Run `datum <command> --help` for per-command flag detail.\n\
+pub const TOP_LEVEL_FOOTER: &str = "Run `datum <command> --help` for per-command flag detail.\n\
      With no subcommand, `datum` drops into an interactive REPL \
      (inherits `--db`).";
 

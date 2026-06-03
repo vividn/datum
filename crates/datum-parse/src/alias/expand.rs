@@ -344,14 +344,44 @@ fn apply_alias_dd_distribution(
     // Strip stray `--` markers from trailing — at this layer everything
     // in `trailing` is already post-implicit-body-end-DD by Rule 13, so
     // an explicit user-typed `--` at the call site is idempotent.
-    promoted.extend(trailing.into_iter().filter(|t| t != "--"));
+    let trailing: Vec<String> = trailing.into_iter().filter(|t| t != "--").collect();
+
+    // da-6l4x: the call-site trailing of a MULTI-sided body is no longer
+    // blanket-appended — it rides behind a marker so the scope layer can
+    // slot-allocate its positionals across the fully-expanded sides
+    // (flags / key=value still promote to all sides there). If the
+    // trailing already carries a marker (this distribution is nested
+    // inside an outer one), the outer marker wins: the pre-marker part
+    // is this alias's own residue and keeps blanket promotion; the
+    // marked tail rides through verbatim.
+    let marker_pos = trailing
+        .iter()
+        .position(|t| t == super::allocate::TRAILING_MARKER);
+    let (blanket_tail, marked_tail): (Vec<String>, Vec<String>) = match marker_pos {
+        Some(idx) => {
+            let mut iter = trailing.into_iter();
+            let pre: Vec<String> = iter.by_ref().take(idx).collect();
+            let rest: Vec<String> = iter.collect(); // starts with the marker
+            (pre, rest)
+        }
+        None if trailing.is_empty() => (Vec::new(), Vec::new()),
+        None => {
+            let mut rest = vec![super::allocate::TRAILING_MARKER.to_string()];
+            rest.extend(trailing);
+            (Vec::new(), rest)
+        }
+    };
 
     let mut out: Vec<String> = Vec::new();
     for (i, mut side) in local_sides.into_iter().enumerate() {
         if i > 0 {
             out.push(MULTI_COMMA.to_string());
         }
+        // The body's own post-`--` tokens keep blanket promotion — the
+        // user explicitly asked for all-sides there.
         side.extend(promoted.iter().cloned());
+        side.extend(blanket_tail.iter().cloned());
+        side.extend(marked_tail.iter().cloned());
         out.extend(side);
     }
     Ok(out)

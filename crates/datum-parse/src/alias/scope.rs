@@ -105,6 +105,32 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
         }
     }
 
+    // Step 5b (da-6l4x + da-vo0y F3): allocate alias call-site trailing
+    // across the fully-expanded sides — bare positionals fill declared
+    // slots left-to-right (named `-k` slots share; verb-derived state /
+    // dur slots stay per-side; an unsatisfied `-I`/`-S -R` join claims
+    // the remaining window on every declaring side); flags and
+    // `key=value` keep the propagate-to-all rule. No-op when no alias
+    // trailing marker is present.
+    //
+    // Stacked short flags expand FIRST (per the #45 review): a bundle
+    // with a value-taking terminal (`-yyt 3`, `-SR notes`) must reach
+    // the allocator as canonical `-t 3` / `-S -R notes`, or the value
+    // token would misclassify as an allocatable positional. Step 7c's
+    // expansion below is a no-op on already-expanded sides.
+    let sides: Vec<Vec<String>> = sides
+        .into_iter()
+        .map(|side| {
+            let mut side_argv = vec![bin.clone()];
+            side_argv.extend(side);
+            expand_stacked_flags(side_argv)
+                .into_iter()
+                .skip(1)
+                .collect()
+        })
+        .collect();
+    let sides = super::allocate::distribute_marked_trailing(sides)?;
+
     // Step 6: top-level `--` distribution.
     let mut local_sides: Vec<Vec<String>> = Vec::with_capacity(sides.len());
     let mut promoted: Vec<String> = Vec::new();
@@ -776,5 +802,189 @@ mod tests {
         let (_, leftover) =
             TimeFlags::extract(v(&["occur", "-t", "+5", "field", "-q", "rest"])).unwrap();
         assert_eq!(leftover, v(&["occur", "field", "rest"]));
+    }
+
+    // ── Section L: cross-side slot allocation (da-6l4x + da-vo0y F3) ─────
+
+    #[test]
+    fn trailing_positional_fills_leftmost_slot_not_all_sides() {
+        // The da-6l4x headline: `rans 5` puts 5 into distanceKm on side 0
+        // and does NOT hand it to the switch side as a duration.
+        let mut a = HashMap::new();
+        a.insert(
+            "rans".into(),
+            alias("occur run -k distanceKm , switch body stretch"),
+        );
+        let r = expand_into_sides(v(&["datum", "rans", "5"]), &MapResolver(&a)).unwrap();
+        assert_eq!(r.sides.len(), 2);
+        assert!(
+            r.sides[0].iter().any(|t| t == "distanceKm=5"),
+            "side0: {:?}",
+            r.sides[0]
+        );
+        assert!(
+            !r.sides[1].iter().any(|t| t == "5"),
+            "side1 must not get the 5: {:?}",
+            r.sides[1]
+        );
+    }
+
+    #[test]
+    fn scaff_no_args_no_fills() {
+        let r = expand(&["datum", "scaff"]);
+        assert_eq!(r.sides[0], v(&["switch", "body", "sit"]));
+        assert_eq!(r.sides[1], v(&["occur", "caffeine", "-k", "doseMg="]));
+    }
+
+    #[test]
+    fn scaff_one_arg_fills_first_side_dur() {
+        let r = expand(&["datum", "scaff", "5"]);
+        assert_eq!(r.sides[0], v(&["switch", "body", "sit", "5"]));
+        assert!(!r.sides[1].iter().any(|t| t == "5"), "{:?}", r.sides[1]);
+    }
+
+    #[test]
+    fn scaff_two_args_fill_dur_then_dose() {
+        let r = expand(&["datum", "scaff", "5", "100"]);
+        assert_eq!(r.sides[0], v(&["switch", "body", "sit", "5"]));
+        assert!(
+            r.sides[1].iter().any(|t| t == "doseMg=100"),
+            "{:?}",
+            r.sides[1]
+        );
+    }
+
+    #[test]
+    fn scaff_dot_skips_dur_slot() {
+        let r = expand(&["datum", "scaff", ".", "100"]);
+        assert_eq!(r.sides[0], v(&["switch", "body", "sit"]));
+        assert!(r.sides[1].iter().any(|t| t == "doseMg=100"));
+    }
+
+    #[test]
+    fn two_keys_across_sides_fill_in_order() {
+        let mut a = HashMap::new();
+        a.insert("m".into(), alias("occur a -k x= , occur b -k y="));
+        let r = expand_into_sides(v(&["datum", "m", "1", "2"]), &MapResolver(&a)).unwrap();
+        assert!(r.sides[0].iter().any(|t| t == "x=1"), "{:?}", r.sides[0]);
+        assert!(r.sides[1].iter().any(|t| t == "y=2"), "{:?}", r.sides[1]);
+    }
+
+    #[test]
+    fn shared_key_slot_fills_all_declaring_sides() {
+        let mut a = HashMap::new();
+        a.insert("m".into(), alias("occur a -k arg , occur b -k arg"));
+        let r = expand_into_sides(v(&["datum", "m", "vv"]), &MapResolver(&a)).unwrap();
+        assert!(r.sides[0].iter().any(|t| t == "arg=vv"));
+        assert!(r.sides[1].iter().any(|t| t == "arg=vv"));
+    }
+
+    #[test]
+    fn shared_key_dot_skips_on_all_sides() {
+        let mut a = HashMap::new();
+        a.insert("m".into(), alias("occur a -k arg= , occur b -k arg="));
+        let r = expand_into_sides(v(&["datum", "m", "."]), &MapResolver(&a)).unwrap();
+        // (`arg=` itself is the -k declaration token; a FILL would be
+        // `arg=<value>` with a non-empty value.)
+        assert!(!r.sides[0]
+            .iter()
+            .any(|t| t.starts_with("arg=") && t.len() > 4));
+        assert!(!r.sides[1]
+            .iter()
+            .any(|t| t.starts_with("arg=") && t.len() > 4));
+    }
+
+    #[test]
+    fn vx_fills_dur_state_dur_left_to_right() {
+        // vx = vertical , x. Global slots: [v.dur, x.state, x.dur].
+        let r = expand(&["datum", "vx", "5m", "sit", "10m"]);
+        assert_eq!(r.sides[0], v(&["switch", "body", "vertical", "5m"]));
+        assert_eq!(r.sides[1], v(&["switch", "body", "sit", "10m"]));
+    }
+
+    #[test]
+    fn cx_fills_dose_state_dur() {
+        // cx = caffeine , x. Global slots: [c.doseMg, x.state, x.dur].
+        let r = expand(&["datum", "cx", "100", "vertical", "5m"]);
+        assert!(
+            r.sides[0].iter().any(|t| t == "doseMg=100"),
+            "{:?}",
+            r.sides[0]
+        );
+        assert_eq!(r.sides[1], v(&["switch", "body", "vertical", "5m"]));
+    }
+
+    #[test]
+    fn excess_trailing_positionals_error() {
+        let a = standard_resolver();
+        let r = expand_into_sides(
+            v(&["datum", "scaff", "5", "100", "woops"]),
+            &MapResolver(&a),
+        );
+        assert!(matches!(r, Err(ParseError::ExtraData(_))), "{r:?}");
+    }
+
+    #[test]
+    fn flags_and_keyed_still_promote_to_all_sides() {
+        // The reformed Rule 13 only reroutes bare positionals.
+        let r = expand(&["datum", "scaff", "-q", "shared=Z"]);
+        for side in &r.sides {
+            assert!(side.iter().any(|t| t == "-q"), "{side:?}");
+            assert!(side.iter().any(|t| t == "shared=Z"), "{side:?}");
+        }
+    }
+
+    #[test]
+    fn unsatisfied_string_state_sides_share_the_window() {
+        // da-vo0y F3: `both = switch tv -I , switch movie -I` — neither
+        // body supplies the join, so both escape and share the window.
+        let mut a = HashMap::new();
+        a.insert("both".into(), alias("switch tv -I , switch movie -I"));
+        let r = expand_into_sides(
+            v(&["datum", "both", "blueberry", "muffins"]),
+            &MapResolver(&a),
+        )
+        .unwrap();
+        for side in &r.sides {
+            assert!(side.iter().any(|t| t == "blueberry"), "{side:?}");
+            assert!(side.iter().any(|t| t == "muffins"), "{side:?}");
+        }
+    }
+
+    #[test]
+    fn satisfied_join_side_yields_slots_to_others() {
+        // The -I side's join is satisfied by body positionals, so the
+        // call-site positionals flow to the remaining slots: 15 to the
+        // -I side's dur (its F2 peek digests it), 33 to the dose key.
+        let mut a = HashMap::new();
+        a.insert(
+            "m".into(),
+            alias("switch tv -I adventure time , occur c -k dose="),
+        );
+        let r = expand_into_sides(v(&["datum", "m", "15", "33"]), &MapResolver(&a)).unwrap();
+        assert!(r.sides[0].iter().any(|t| t == "15"), "{:?}", r.sides[0]);
+        assert!(!r.sides[0].iter().any(|t| t == "33"), "{:?}", r.sides[0]);
+        assert!(
+            r.sides[1].iter().any(|t| t == "dose=33"),
+            "{:?}",
+            r.sides[1]
+        );
+    }
+
+    #[test]
+    fn stacked_value_flag_in_trailing_is_not_misallocated() {
+        // Review (#45): `-qqt 3` in the call-site trailing must expand to
+        // `-q -q -t 3` BEFORE allocation, so `3` stays -t's value and
+        // only `5` walks into the dur slot.
+        let r = expand(&["datum", "scaff", "-qqt", "3", "5"]);
+        assert_eq!(r.sides.len(), 2);
+        assert!(r.sides[0].iter().any(|t| t == "5"), "{:?}", r.sides[0]);
+        assert!(!r.sides[1].iter().any(|t| t == "5"), "{:?}", r.sides[1]);
+        // The time flags — with their value — promote to both sides.
+        for side in &r.sides {
+            let (t, _) = extract_time(side);
+            assert_eq!(t.quick, 2, "{side:?}");
+            assert_eq!(t.time.as_deref(), Some("3"), "{side:?}");
+        }
     }
 }

@@ -937,10 +937,7 @@ mod tests {
         a.string_state = true;
         a.peek_trailing_dur = true;
         a.data = vec![r"\.".into()];
-        assert_eq!(
-            run(a),
-            *json!({"state": {"id": "."}}).as_object().unwrap()
-        );
+        assert_eq!(run(a), *json!({"state": {"id": "."}}).as_object().unwrap());
     }
 
     #[test]
