@@ -124,7 +124,7 @@ impl TimeArgs {
         // Refresh `offset_minutes` in case a date shift crossed a DST
         // boundary — `cur.utc` is authoritative; the offset must re-derive
         // from the effective tz at that moment.
-        cur = refresh_offset(cur)?;
+        cur.refresh_offset()?;
 
         Ok(TimeFromArgs {
             time: Some(cur),
@@ -285,16 +285,6 @@ fn validate_tz_name(name: &str) -> Result<String> {
         .parse()
         .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {name}")))?;
     Ok(name.to_string())
-}
-
-fn refresh_offset(mut t: DatumTime) -> Result<DatumTime> {
-    let tz: Tz = t
-        .timezone
-        .parse()
-        .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {}", t.timezone)))?;
-    let local = t.utc.with_timezone(&tz);
-    t.offset_minutes = local.offset().fix().local_minus_utc() / 60;
-    Ok(t)
 }
 
 fn rebase_to_timezone(mut t: DatumTime, tz_name: &str) -> Result<DatumTime> {
