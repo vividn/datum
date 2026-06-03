@@ -194,8 +194,6 @@ impl TimeBuilder {
 
     #[cfg(feature = "native")]
     pub fn build(self) -> DatumTime {
-        use chrono::{Local, Offset};
-
         if let Some(tz_name) = self.timezone.as_deref() {
             // Panic-safe: resolve_timezone() already validated the name
             // before it got here. A bad name at this point means the caller
@@ -204,71 +202,41 @@ impl TimeBuilder {
             let tz: chrono_tz::Tz = tz_name
                 .parse()
                 .expect("TimeBuilder: timezone field must be a validated IANA name");
-            // ISO-8601 overrides establish the base instant; otherwise we
-            // anchor on "now" in the effective zone.
-            let mut dt = if let Some(instant) = self.iso_instant_override {
-                instant.with_timezone(&tz)
-            } else if let Some(naive) = self.iso_naive_override {
-                resolve_naive_in_tz(naive, tz)
-            } else {
-                Utc::now().with_timezone(&tz)
-            };
-            dt -= chrono::Duration::minutes(self.minutes_back);
-            dt -= chrono::Duration::days(self.days_back);
-            if let Some(date) = self.date_override {
-                let time = self.time_override.unwrap_or_else(|| dt.time());
-                if let Some(new_dt) = date.and_time(time).and_local_timezone(tz).single() {
-                    dt = new_dt;
-                }
-            } else if let Some(time) = self.time_override {
-                let mut local_dt = dt.date_naive().and_time(time);
-                if let Some(dir) = self.time_direction {
-                    let now_naive = dt.naive_local();
-                    match dir {
-                        Direction::Future if local_dt <= now_naive => {
-                            local_dt += chrono::Duration::days(1);
-                        }
-                        Direction::Past if local_dt >= now_naive => {
-                            local_dt -= chrono::Duration::days(1);
-                        }
-                        _ => {}
-                    }
-                }
-                if let Some(new_dt) = local_dt.and_local_timezone(tz).single() {
-                    dt = new_dt;
-                }
-            }
-            let utc = dt.with_timezone(&Utc);
-            let offset_minutes = dt.offset().fix().local_minus_utc() / 60;
-            return DatumTime {
-                utc,
-                offset_minutes,
-                timezone: tz_name.to_string(),
-            };
-        }
-
-        // Local-zone path: same precedence — ISO overrides win over "now".
-        let mut dt = if let Some(instant) = self.iso_instant_override {
-            instant.with_timezone(&Local)
-        } else if let Some(naive) = self.iso_naive_override {
-            naive
-                .and_local_timezone(Local)
-                .single()
-                .expect("Ambiguous/non-existent local datetime")
+            let name = tz_name.to_string();
+            self.build_in_tz(tz, name)
         } else {
-            Local::now()
+            let name = crate::time::clock::host_iana_tz_name();
+            self.build_in_tz(chrono::Local, name)
+        }
+    }
+
+    /// Compose the stacked flags into a `DatumTime` anchored in an arbitrary
+    /// [`chrono::TimeZone`]. Both the explicit-`-z` (`chrono_tz::Tz`) and the
+    /// default-host (`chrono::Local`) paths run through this one body, so the
+    /// six resolution steps — base, minute/day offsets, date override, time
+    /// override with direction, and the final UTC/offset computation — stay
+    /// in lockstep. In particular, DST-overlap and DST-gap handling is
+    /// identical regardless of whether `--timezone` was supplied.
+    #[cfg(feature = "native")]
+    fn build_in_tz<T: chrono::TimeZone>(self, tz: T, timezone_name: String) -> DatumTime {
+        use chrono::Offset;
+
+        // ISO-8601 overrides establish the base instant; otherwise we anchor
+        // on "now" in the effective zone.
+        let mut dt = if let Some(instant) = self.iso_instant_override {
+            instant.with_timezone(&tz)
+        } else if let Some(naive) = self.iso_naive_override {
+            resolve_naive_in_tz(naive, tz.clone(), &timezone_name)
+        } else {
+            Utc::now().with_timezone(&tz)
         };
 
-        // Apply minute offsets first
         dt -= chrono::Duration::minutes(self.minutes_back);
-
-        // Apply day offsets
         dt -= chrono::Duration::days(self.days_back);
 
-        // Override date if specified
         if let Some(date) = self.date_override {
             let time = self.time_override.unwrap_or_else(|| dt.time());
-            if let Some(new_dt) = date.and_time(time).and_local_timezone(Local).single() {
+            if let Some(new_dt) = date.and_time(time).and_local_timezone(tz.clone()).single() {
                 dt = new_dt;
             }
         } else if let Some(time) = self.time_override {
@@ -285,18 +253,17 @@ impl TimeBuilder {
                     _ => {}
                 }
             }
-            if let Some(new_dt) = local_dt.and_local_timezone(Local).single() {
+            if let Some(new_dt) = local_dt.and_local_timezone(tz.clone()).single() {
                 dt = new_dt;
             }
         }
 
         let utc = dt.with_timezone(&Utc);
-        let offset_minutes = dt.offset().local_minus_utc() / 60;
-        let timezone = crate::time::clock::host_iana_tz_name();
+        let offset_minutes = dt.offset().fix().local_minus_utc() / 60;
         DatumTime {
             utc,
             offset_minutes,
-            timezone,
+            timezone: timezone_name,
         }
     }
 }
@@ -322,7 +289,9 @@ fn strip_to_start_of_day(dt: DatumTime) -> DatumTime {
         .expect("00:00:00 is always a valid time");
     let local_midnight = match midnight.and_local_timezone(tz) {
         LocalResult::Single(t) => t,
-        LocalResult::Ambiguous(earlier, _later) => earlier,
+        // Earlier instant, selected by UTC like `resolve_naive_in_tz` rather
+        // than by tuple position (see its note on impl-dependent ordering).
+        LocalResult::Ambiguous(a, b) => a.min(b),
         LocalResult::None => {
             panic!("strip_to_start_of_day: midnight {midnight} does not exist in {tz} (DST gap)")
         }
@@ -335,20 +304,34 @@ fn strip_to_start_of_day(dt: DatumTime) -> DatumTime {
 }
 
 /// Resolve a no-zone ISO-8601 datetime into a concrete moment by reading
-/// it as wall-clock in the supplied IANA zone. Picks the earliest valid
-/// instant when the local time falls in a DST overlap, which matches what
-/// users expect from "the first time the clock read 01:30" on fall-back
-/// days. Spring-forward gaps fall through to a panic with a clear message
-/// — they're rare, and silently shifting the user's input by an hour is
-/// worse than failing loudly.
+/// it as wall-clock in the supplied zone. Picks the earliest valid instant
+/// when the local time falls in a DST overlap, which matches what users
+/// expect from "the first time the clock read 01:30" on fall-back days.
+/// Spring-forward gaps fall through to a panic with a clear message — they're
+/// rare, and silently shifting the user's input by an hour is worse than
+/// failing loudly. Generic over the zone so the explicit-`-z` and host-local
+/// paths share one DST contract; `zone_name` only feeds the gap panic since
+/// [`chrono::Local`] has no useful `Display`.
+///
+/// The two `Ambiguous` instants are selected by UTC instant, not by tuple
+/// position: `chrono_tz::Tz` and `chrono::Local` order the pair *oppositely*
+/// (the former yields the earlier instant first, the latter the later), so
+/// keying on position would silently pick the wrong side on the host-local
+/// path. `DateTime` orders by instant, so `min` is the genuinely-earlier one.
 #[cfg(feature = "native")]
-fn resolve_naive_in_tz(naive: NaiveDateTime, tz: chrono_tz::Tz) -> chrono::DateTime<chrono_tz::Tz> {
+fn resolve_naive_in_tz<T: chrono::TimeZone>(
+    naive: NaiveDateTime,
+    tz: T,
+    zone_name: &str,
+) -> chrono::DateTime<T> {
     use chrono::offset::LocalResult;
     match naive.and_local_timezone(tz) {
         LocalResult::Single(dt) => dt,
-        LocalResult::Ambiguous(earlier, _later) => earlier,
+        LocalResult::Ambiguous(a, b) => a.min(b),
         LocalResult::None => {
-            panic!("TimeBuilder: ISO-8601 wall clock {naive} does not exist in {tz} (DST gap)")
+            panic!(
+                "TimeBuilder: ISO-8601 wall clock {naive} does not exist in {zone_name} (DST gap)"
+            )
         }
     }
 }
@@ -450,6 +433,78 @@ mod tests {
             local.date_naive(),
             NaiveDate::from_ymd_opt(2024, 3, 16).unwrap()
         );
+    }
+
+    /// A fall-back-hour ISO-naive wall clock (`01:30` exists twice on
+    /// 2024-11-03 in America/New_York) resolves to the *earlier* instant
+    /// (EDT, −04:00 → 05:30 UTC) rather than panicking. This is the DST
+    /// contract that `build_in_tz` now shares between the explicit-`-z` and
+    /// host-local paths.
+    #[test]
+    fn iso_naive_dst_overlap_picks_earlier_instant() {
+        let b = TimeBuilder::now()
+            .with_timezone(Some("America/New_York".into()))
+            .with_time_arg(TimeArg {
+                absolute: None,
+                iso_instant: None,
+                iso_naive: Some(
+                    NaiveDate::from_ymd_opt(2024, 11, 3)
+                        .unwrap()
+                        .and_hms_opt(1, 30, 0)
+                        .unwrap(),
+                ),
+                minutes_offset: None,
+                uncertainty: None,
+                direction: None,
+            });
+        let dt = b.build();
+        // Earlier of the two 01:30s is EDT (−04:00) → 05:30 UTC.
+        assert_eq!(dt.offset_minutes, -240);
+        assert_eq!(
+            dt.utc,
+            NaiveDate::from_ymd_opt(2024, 11, 3)
+                .unwrap()
+                .and_hms_opt(5, 30, 0)
+                .unwrap()
+                .and_utc()
+        );
+        assert_eq!(dt.timezone, "America/New_York");
+    }
+
+    /// Same fall-back hour, but with no `-z` so the build runs the
+    /// host-local (`chrono::Local`) arm. This is the regression that the
+    /// explicit-`-z` test above cannot catch: `chrono::Local` orders the
+    /// `LocalResult::Ambiguous` pair *opposite* to `chrono_tz::Tz`, so the
+    /// resolver must pick by UTC instant, not tuple position. The earlier
+    /// instant is still EDT (−04:00 → 05:30 UTC). Before the unification this
+    /// path panicked outright ("Ambiguous/non-existent local datetime").
+    #[test]
+    fn iso_naive_dst_overlap_local_arm_picks_earlier_instant() {
+        let _tz = crate::time::clock::test_tz::TzGuard::set(Some("America/New_York"));
+        let b = TimeBuilder::now().with_time_arg(TimeArg {
+            absolute: None,
+            iso_instant: None,
+            iso_naive: Some(
+                NaiveDate::from_ymd_opt(2024, 11, 3)
+                    .unwrap()
+                    .and_hms_opt(1, 30, 0)
+                    .unwrap(),
+            ),
+            minutes_offset: None,
+            uncertainty: None,
+            direction: None,
+        });
+        let dt = b.build();
+        assert_eq!(dt.offset_minutes, -240);
+        assert_eq!(
+            dt.utc,
+            NaiveDate::from_ymd_opt(2024, 11, 3)
+                .unwrap()
+                .and_hms_opt(5, 30, 0)
+                .unwrap()
+                .and_utc()
+        );
+        assert_eq!(dt.timezone, "America/New_York");
     }
 
     /// `-d` paired with `-t` is NOT a date-only event — the explicit time

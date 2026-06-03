@@ -119,22 +119,26 @@ pub fn now() -> DatumTime {
     }
 }
 
+/// Test-only `TZ` override guard, shared crate-wide.
+///
+/// `TZ` is process-wide state and `cargo test` runs tests as parallel
+/// threads in one process, so anything that mutates `TZ` must serialize on
+/// the single [`TZ_LOCK`]. Living at `pub(crate)` lets the `builder` DST
+/// tests reuse the same lock as the `clock` tests instead of racing them
+/// across a second, independent mutex.
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub(crate) mod test_tz {
     use std::sync::Mutex;
 
-    // TZ is process-wide state. Tests that touch it must serialize so
-    // parallel runners don't observe each other's mutations.
     static TZ_LOCK: Mutex<()> = Mutex::new(());
 
-    struct TzGuard {
+    pub(crate) struct TzGuard {
         prior: Option<std::ffi::OsString>,
         _lock: std::sync::MutexGuard<'static, ()>,
     }
 
     impl TzGuard {
-        fn set(value: Option<&str>) -> Self {
+        pub(crate) fn set(value: Option<&str>) -> Self {
             let lock = TZ_LOCK.lock().unwrap_or_else(|p| p.into_inner());
             let prior = std::env::var_os("TZ");
             match value {
@@ -153,6 +157,12 @@ mod tests {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_tz::TzGuard;
+    use super::*;
 
     #[test]
     fn tz_env_iana_name_overrides_host_zone() {
