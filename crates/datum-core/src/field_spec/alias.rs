@@ -19,9 +19,9 @@ use super::FieldSpec;
 /// sleep`), and per-state (`happy` → `switch mood happy`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DerivedAlias {
-    /// Alias name — the invocation token the user types. Named `state` for
-    /// historical reasons (pre-D3 it only ever came from a state).
-    pub state: String,
+    /// Alias name — the invocation token the user types.
+    #[serde(rename = "state")]
+    pub name: String,
     /// The argv expansion (without leading "datum"), e.g. "switch mood happy".
     pub expands_to: String,
     /// What flavour of auto-alias this is. Drives conflict handling.
@@ -157,6 +157,26 @@ mod tests {
         spec.subfields = subfields;
         spec.description = Some("Vocabulary word in a foreign language".to_string());
         spec
+    }
+
+    #[test]
+    fn derived_alias_wire_format_uses_state_key() {
+        // The `name` field serializes under the legacy JSON key `state`
+        // (`#[serde(rename = "state")]`) so stored field-spec blobs keep
+        // deserializing across the rename. Guard both directions.
+        let alias = DerivedAlias {
+            name: "happy".to_string(),
+            expands_to: "switch mood happy".to_string(),
+            kind: DerivedAliasKind::State,
+        };
+        let json = serde_json::to_value(&alias).unwrap();
+        assert_eq!(json["state"], "happy");
+        assert!(json.get("name").is_none());
+
+        let restored: DerivedAlias =
+            serde_json::from_value(serde_json::json!({"state": "happy", "expands_to": "x"}))
+                .unwrap();
+        assert_eq!(restored.name, "happy");
     }
 
     #[test]

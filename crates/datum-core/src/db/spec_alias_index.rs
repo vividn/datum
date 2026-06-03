@@ -72,25 +72,25 @@ fn build_spec_alias_index(db: &Db) -> Result<SpecAliasIndex> {
         let json = row?;
         let spec: FieldSpec = serde_json::from_str(&json)?;
         for d in &spec.derived_aliases {
-            if let Some(existing_owner) = entry_owner.get(&d.state) {
+            if let Some(existing_owner) = entry_owner.get(&d.name) {
                 collisions.push(SpecAliasCollision {
-                    name: d.state.clone(),
+                    name: d.name.clone(),
                     winner: existing_owner.clone(),
                     loser: spec.field.clone(),
                 });
                 continue;
             }
             let alias = Alias {
-                name: d.state.clone(),
+                name: d.name.clone(),
                 expands_to: d.expands_to.clone(),
                 description: Some(format!("Derived from {} spec", spec.field)),
             };
-            entries.insert(d.state.clone(), alias);
-            entry_owner.insert(d.state.clone(), spec.field.clone());
+            entries.insert(d.name.clone(), alias);
+            entry_owner.insert(d.name.clone(), spec.field.clone());
             by_field
                 .entry(spec.field.clone())
                 .or_default()
-                .push(d.state.clone());
+                .push(d.name.clone());
         }
     }
 

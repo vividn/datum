@@ -211,7 +211,7 @@ impl FieldSpec {
 
         // 1. Bare-field alias: `<field>` → `<default_verb> <field>`.
         out.push(DerivedAlias {
-            state: self.field.clone(),
+            name: self.field.clone(),
             expands_to: format!("{} {}", self.default_verb, self.field),
             kind: DerivedAliasKind::BareField,
         });
@@ -219,7 +219,7 @@ impl FieldSpec {
         // 2. Terminal-end alias: only for duration-capable default verbs.
         if matches!(self.default_verb, Action::Start | Action::Switch) {
             out.push(DerivedAlias {
-                state: format!("{}e", self.field),
+                name: format!("{}e", self.field),
                 expands_to: format!("end {}", self.field),
                 kind: DerivedAliasKind::TerminalEnd,
             });
@@ -229,7 +229,7 @@ impl FieldSpec {
         if let Some(states) = &self.allowed_states {
             for s in states {
                 out.push(DerivedAlias {
-                    state: s.clone(),
+                    name: s.clone(),
                     expands_to: format!("switch {} {}", self.field, s),
                     kind: DerivedAliasKind::State,
                 });
@@ -255,7 +255,7 @@ mod tests {
         let bare = spec
             .derived_aliases
             .iter()
-            .find(|a| a.state == "mood")
+            .find(|a| a.name == "mood")
             .unwrap();
         assert_eq!(bare.expands_to, "switch mood");
         assert_eq!(bare.kind, DerivedAliasKind::BareField);
@@ -263,7 +263,7 @@ mod tests {
         let terminal = spec
             .derived_aliases
             .iter()
-            .find(|a| a.state == "moode")
+            .find(|a| a.name == "moode")
             .unwrap();
         assert_eq!(terminal.expands_to, "end mood");
         assert_eq!(terminal.kind, DerivedAliasKind::TerminalEnd);
@@ -271,7 +271,7 @@ mod tests {
         let happy = spec
             .derived_aliases
             .iter()
-            .find(|a| a.state == "happy")
+            .find(|a| a.name == "happy")
             .unwrap();
         assert_eq!(happy.expands_to, "switch mood happy");
         assert_eq!(happy.kind, DerivedAliasKind::State);
@@ -284,7 +284,7 @@ mod tests {
         // Only bare-field — Occur is not duration-capable, no terminal.
         assert_eq!(spec.derived_aliases.len(), 1);
         let bare = &spec.derived_aliases[0];
-        assert_eq!(bare.state, "coffee");
+        assert_eq!(bare.name, "coffee");
         assert_eq!(bare.expands_to, "occur coffee");
         assert_eq!(bare.kind, DerivedAliasKind::BareField);
     }
@@ -298,13 +298,13 @@ mod tests {
         let bare = spec
             .derived_aliases
             .iter()
-            .find(|a| a.state == "sleep")
+            .find(|a| a.name == "sleep")
             .unwrap();
         assert_eq!(bare.expands_to, "start sleep");
         let terminal = spec
             .derived_aliases
             .iter()
-            .find(|a| a.state == "sleepe")
+            .find(|a| a.name == "sleepe")
             .unwrap();
         assert_eq!(terminal.expands_to, "end sleep");
     }

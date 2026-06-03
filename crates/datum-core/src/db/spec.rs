@@ -116,31 +116,31 @@ impl Db {
                 .conn
                 .query_row(
                     "SELECT 1 FROM aliases WHERE name = ?1",
-                    params![&d.state],
+                    params![&d.name],
                     |row| row.get(0),
                 )
                 .optional()?;
             if existing_row.is_some() {
                 skipped.push(AliasConflict {
-                    name: d.state.clone(),
+                    name: d.name.clone(),
                     reason: AliasConflictReason::UserAlias,
                 });
                 continue;
             }
             // Cross-spec collision: index points the name at a different field.
             match index.by_field.get(&spec.field) {
-                Some(names) if names.iter().any(|n| n == &d.state) => {
-                    saved.push(d.state.clone());
+                Some(names) if names.iter().any(|n| n == &d.name) => {
+                    saved.push(d.name.clone());
                 }
                 _ => {
                     let owner = index
                         .collisions
                         .iter()
-                        .find(|c| c.name == d.state && c.loser == spec.field)
+                        .find(|c| c.name == d.name && c.loser == spec.field)
                         .map(|c| c.winner.clone())
                         .unwrap_or_else(|| spec.field.clone());
                     skipped.push(AliasConflict {
-                        name: d.state.clone(),
+                        name: d.name.clone(),
                         reason: AliasConflictReason::OwnedByField(owner),
                     });
                 }
