@@ -9,7 +9,7 @@ use datum_core::{
     db::Db,
     entry::Entry,
     field_spec::SpecRegistry,
-    ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
+    ids::{contains_wildcard, resolve_quickid, resolve_quickid_all, resolve_quickid_single},
 };
 use serde_json::Value as JsonValue;
 
@@ -153,10 +153,16 @@ pub(crate) enum BatchMode {
 /// tokens (`","` / trailing comma) are silently dropped so datum-style
 /// `"abc,def,ghi,"` works without special casing. Duplicates (two tokens
 /// reaching the same slug) collapse in first-seen order.
+///
+/// When `expand_ambiguous` is set, a token whose bare prefix matches many
+/// live entries yields all of them (the read-only `get` path); otherwise an
+/// ambiguous prefix surfaces as a per-token `AmbiguousPrefix` error, which
+/// is the disambiguation UX for the mutating commands.
 pub(crate) fn resolve_batch(
     db: &Db,
     input: &str,
     mode: BatchMode,
+    expand_ambiguous: bool,
 ) -> (Vec<Entry>, Vec<(String, anyhow::Error)>) {
     let mut entries: Vec<Entry> = Vec::new();
     let mut seen: std::collections::HashSet<datum_core::ids::Slug> =
@@ -167,7 +173,12 @@ pub(crate) fn resolve_batch(
         if token.is_empty() {
             continue;
         }
-        match resolve_quickid(db, token) {
+        let resolved = if expand_ambiguous {
+            resolve_quickid_all(db, token)
+        } else {
+            resolve_quickid(db, token)
+        };
+        match resolved {
             Ok(matches) if matches.is_empty() => {
                 // Literal (non-wildcard) tokens may refer to a tombstone —
                 // surface it in LiveOrTombstone mode so update/rekey can

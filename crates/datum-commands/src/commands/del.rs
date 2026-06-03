@@ -25,7 +25,7 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         .id_or_slug
         .as_deref()
         .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
-    let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live);
+    let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live, false);
 
     // Nothing resolved — propagate the first token error verbatim so single-token
     // NotFound / AmbiguousPrefix surfaces unchanged in the common case.

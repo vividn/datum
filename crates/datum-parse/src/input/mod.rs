@@ -39,5 +39,5 @@ pub use flag_registry::{
 pub use flexible_positional::{flexible_positional, FlexibleTarget};
 pub use matcher::{parse_matcher_token, Matcher, MatcherOp};
 pub use output_args::{OutputArgs, OutputResolved, Show};
-pub use quick_id_arg::{OnAmbiguous, QuickIdArg};
+pub use quick_id_arg::QuickIdArg;
 pub use time_args::{TimeArgs, TimeFromArgs};

@@ -51,7 +51,7 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
             .slug
             .as_deref()
             .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
-        let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live);
+        let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live, false);
         // Any token that fails to resolve fails the whole command, the
         // same all-or-nothing contract get uses: a bad piece surfaces as
         // an error rather than being silently dropped, so retime never

@@ -133,6 +133,26 @@ pub fn resolve_quickid(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
     }
 }
 
+/// Resolve a quickId pattern to every live match, expanding an ambiguous
+/// prefix instead of erroring.
+///
+/// Behaves exactly like [`resolve_quickid`] except for the prefix-fallback
+/// case: where [`resolve_quickid`] surfaces [`DatumError::AmbiguousPrefix`]
+/// when a bare prefix matches many entries, this returns all of them. Used
+/// by the read-only `get` command, which renders every match rather than
+/// asking the user to type a discriminating prefix. Mutating commands keep
+/// [`resolve_quickid`]'s fail-on-ambiguous behaviour as their
+/// disambiguation UX.
+pub fn resolve_quickid_all(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
+    match resolve_quickid(db, pattern) {
+        // AmbiguousPrefix can only originate from the prefix fallback, whose
+        // `prefix` field equals `pattern`; re-running the all-matches query
+        // reproduces exactly that match set.
+        Err(DatumError::AmbiguousPrefix { prefix, .. }) => db.resolve_prefix_all(&prefix),
+        other => other,
+    }
+}
+
 /// Resolve a quickId pattern to exactly one live entry.
 ///
 /// Errors:

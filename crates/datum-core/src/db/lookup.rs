@@ -83,33 +83,7 @@ impl Db {
     /// - [`DatumError::AmbiguousPrefix`] with a candidate list (up to 16
     ///   `(slug, hid)` pairs) when more than one live entry matches.
     pub fn resolve_prefix(&self, prefix: &str) -> Result<Entry> {
-        // Exact match (slug or hid) takes precedence — shields full-form
-        // lookups from being drowned by suffixed siblings.
-        let exact = self
-            .conn
-            .query_row(
-                "SELECT * FROM entries
-                 WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NULL
-                 LIMIT 1",
-                params![prefix],
-                row_to_entry,
-            )
-            .optional()?;
-        if let Some(e) = exact {
-            return Ok(e);
-        }
-
-        let pattern = like_prefix_pattern(prefix);
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM entries
-             WHERE (slug LIKE ?1 ESCAPE '\\' OR hid LIKE ?1 ESCAPE '\\')
-               AND deleted_at IS NULL
-             ORDER BY slug",
-        )?;
-        let mut entries: Vec<Entry> = stmt
-            .query_map(params![pattern], row_to_entry)?
-            .collect::<std::result::Result<_, _>>()?;
-
+        let mut entries = self.resolve_prefix_all(prefix)?;
         match entries.len() {
             0 => Err(DatumError::NotFound(prefix.to_string())),
             1 => Ok(entries.pop().unwrap()),
@@ -128,6 +102,42 @@ impl Db {
                 })
             }
         }
+    }
+
+    /// Like [`Db::resolve_prefix`], but returns *every* live entry whose
+    /// slug or hid starts with `prefix` rather than erroring on ambiguity.
+    /// An exact slug/hid match still short-circuits to that single entry
+    /// (shielding full-form lookups from suffixed siblings); zero matches
+    /// returns an empty vec. The return-all `get` path uses this to render
+    /// all matches instead of asking the user to disambiguate.
+    pub fn resolve_prefix_all(&self, prefix: &str) -> Result<Vec<Entry>> {
+        // Exact match (slug or hid) takes precedence — shields full-form
+        // lookups from being drowned by suffixed siblings.
+        let exact = self
+            .conn
+            .query_row(
+                "SELECT * FROM entries
+                 WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NULL
+                 LIMIT 1",
+                params![prefix],
+                row_to_entry,
+            )
+            .optional()?;
+        if let Some(e) = exact {
+            return Ok(vec![e]);
+        }
+
+        let pattern = like_prefix_pattern(prefix);
+        let mut stmt = self.conn.prepare(
+            "SELECT * FROM entries
+             WHERE (slug LIKE ?1 ESCAPE '\\' OR hid LIKE ?1 ESCAPE '\\')
+               AND deleted_at IS NULL
+             ORDER BY slug",
+        )?;
+        let entries: Vec<Entry> = stmt
+            .query_map(params![pattern], row_to_entry)?
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(entries)
     }
 
     /// Fetch an entry by slug or hid regardless of tombstone state.

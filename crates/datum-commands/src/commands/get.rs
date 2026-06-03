@@ -37,7 +37,9 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
     // (underscore shorthands, exact match, wildcards, prefix); empty
     // tokens (trailing comma) drop, duplicates collapse by slug. Live
     // only — get never surfaces tombstones.
-    let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live);
+    // get renders every match, so an ambiguous prefix expands to all live
+    // entries (`expand_ambiguous = true`) rather than erroring.
+    let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live, true);
 
     // get fails the whole command if any token can't resolve, so a
     // bad piece surfaces as an error rather than being silently dropped.
@@ -183,6 +185,34 @@ mod tests {
             msg.contains("zzzz") || msg.to_lowercase().contains("not found"),
             "missing piece should surface in error: {msg}"
         );
+    }
+
+    #[test]
+    fn ambiguous_prefix_returns_all_matches() {
+        // Several entries share a slug prefix (`<field>:<year>…`). get
+        // renders every match instead of erroring with AmbiguousPrefix —
+        // the pointer reflects all of them.
+        let db = Db::open_in_memory().unwrap();
+        let a = entry_at("environment", 100);
+        let b = entry_at("environment", 200);
+        let c = entry_at("environment", 300);
+        db.insert_entry(&a).unwrap();
+        db.insert_entry(&b).unwrap();
+        db.insert_entry(&c).unwrap();
+
+        // All three slugs start with "environment:" — a bare prefix that
+        // matches many. get must not fail.
+        get(GetArgs::with_id("environment:".to_string()), &db).unwrap();
+
+        let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
+        let mut got: Vec<String> = pointer.hids.iter().map(|h| h.to_string()).collect();
+        got.sort();
+        let mut want: Vec<String> = [&a.hid, &b.hid, &c.hid]
+            .iter()
+            .map(|h| h.to_string())
+            .collect();
+        want.sort();
+        assert_eq!(got, want);
     }
 
     #[test]
