@@ -17,6 +17,7 @@
 //! string as `Unknown`.
 
 use chrono::Duration;
+use datum_parse::time::{format_iso_duration, parse_iso_duration};
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +35,7 @@ impl Dur {
         match s {
             "MOMENT" => Some(Dur::Moment),
             "UNKNOWN" => Some(Dur::Unknown),
-            iso => parse_iso_duration(iso).map(Dur::Of),
+            iso => parse_iso_duration(iso).ok().map(Dur::Of),
         }
     }
 
@@ -87,99 +88,6 @@ impl<'de> Deserialize<'de> for Dur {
         let s = String::deserialize(d)?;
         Dur::parse(&s).ok_or_else(|| D::Error::custom(format!("invalid dur value: {s:?}")))
     }
-}
-
-fn parse_iso_duration(input: &str) -> Option<Duration> {
-    let (sign, body) = match input.strip_prefix('-') {
-        Some(rest) => (-1i64, rest),
-        None => (1, input),
-    };
-    let rest = body.strip_prefix('P')?;
-    if rest.is_empty() {
-        return None;
-    }
-
-    if rest.ends_with('W') && !rest.contains('T') {
-        let n_str = &rest[..rest.len() - 1];
-        let n: f64 = n_str.parse().ok()?;
-        let secs = (n * 7.0 * 86400.0) as i64;
-        return Some(Duration::seconds(sign * secs));
-    }
-
-    let mut total: f64 = 0.0;
-    let mut buf = String::new();
-    let mut seen_t = false;
-    let mut had_any = false;
-
-    for c in rest.chars() {
-        if c == 'T' {
-            if seen_t || !buf.is_empty() {
-                return None;
-            }
-            seen_t = true;
-        } else if c.is_ascii_digit() || c == '.' || c == ',' {
-            buf.push(if c == ',' { '.' } else { c });
-        } else {
-            if buf.is_empty() {
-                return None;
-            }
-            let n: f64 = buf.parse().ok()?;
-            buf.clear();
-            let secs = match (seen_t, c) {
-                (false, 'Y') => n * 365.0 * 86400.0,
-                (false, 'M') => n * 30.0 * 86400.0,
-                (false, 'D') => n * 86400.0,
-                (true, 'H') => n * 3600.0,
-                (true, 'M') => n * 60.0,
-                (true, 'S') => n,
-                _ => return None,
-            };
-            total += secs;
-            had_any = true;
-        }
-    }
-
-    if !buf.is_empty() || !had_any {
-        return None;
-    }
-    Some(Duration::seconds(sign * total as i64))
-}
-
-fn format_iso_duration(d: Duration) -> String {
-    let total = d.num_seconds();
-    if total == 0 {
-        return "PT0S".to_string();
-    }
-    let (sign, mut secs) = if total < 0 {
-        ("-", -total)
-    } else {
-        ("", total)
-    };
-    let days = secs / 86400;
-    secs %= 86400;
-    let hours = secs / 3600;
-    secs %= 3600;
-    let mins = secs / 60;
-    secs %= 60;
-
-    let mut out = String::from(sign);
-    out.push('P');
-    if days > 0 {
-        out.push_str(&format!("{days}D"));
-    }
-    if hours > 0 || mins > 0 || secs > 0 {
-        out.push('T');
-        if hours > 0 {
-            out.push_str(&format!("{hours}H"));
-        }
-        if mins > 0 {
-            out.push_str(&format!("{mins}M"));
-        }
-        if secs > 0 {
-            out.push_str(&format!("{secs}S"));
-        }
-    }
-    out
 }
 
 #[cfg(test)]

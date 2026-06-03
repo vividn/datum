@@ -161,36 +161,172 @@ pub(crate) fn split_unit(s: &str) -> (&str, &str) {
     (&s[..idx], &s[idx..])
 }
 
-pub(crate) fn parse_iso_duration(s: &str) -> Result<Duration> {
-    // Minimal ISO 8601 duration parser: PT5M, PT1H30M, P1DT5H, etc.
-    let s = s.strip_prefix('P').unwrap_or(s);
-    let mut secs: i64 = 0;
-    let (date_part, time_part) = if let Some(idx) = s.find('T') {
-        (&s[..idx], &s[idx + 1..])
-    } else {
-        (s, "")
+/// Canonical ISO 8601 duration parser: `PT5M`, `PT1H30M`, `P1DT5H`, `P3W`,
+/// optional leading `-` for negative spans. Unknown unit letters,
+/// unparseable numbers, and trailing residue are all errors — the parser
+/// never silently coerces a malformed segment to zero. This is the single
+/// home for ISO-8601 duration parsing across the workspace; `datum-core`'s
+/// `Dur` delegates here.
+pub fn parse_iso_duration(s: &str) -> Result<Duration> {
+    let err = || ParseError::InvalidTime(format!("Invalid ISO 8601 duration: '{s}'"));
+    let (sign, body) = match s.strip_prefix('-') {
+        Some(rest) => (-1.0, rest),
+        None => (1.0, s),
     };
+    let rest = body.strip_prefix('P').ok_or_else(err)?;
+    if rest.is_empty() {
+        return Err(err());
+    }
 
-    for (part, multiplier) in [
-        (
-            date_part,
-            vec![
-                ('Y', 365 * 86400),
-                ('M', 30 * 86400),
-                ('W', 7 * 86400),
-                ('D', 86400),
-            ],
-        ),
-        (time_part, vec![('H', 3600), ('M', 60), ('S', 1)]),
-    ] {
-        let mut cur = part;
-        for (ch, mult) in multiplier {
-            if let Some(idx) = cur.find(ch) {
-                let n: f64 = cur[..idx].parse().unwrap_or(0.0);
-                secs += (n * mult as f64) as i64;
-                cur = &cur[idx + 1..];
+    // Week form (`PnW`) is mutually exclusive with the rest of the grammar.
+    if rest.ends_with('W') && !rest.contains('T') {
+        let n: f64 = rest[..rest.len() - 1].parse().map_err(|_| err())?;
+        return Ok(Duration::seconds((sign * n * 7.0 * 86400.0) as i64));
+    }
+
+    let mut total: f64 = 0.0;
+    let mut buf = String::new();
+    let mut seen_t = false;
+    let mut had_any = false;
+
+    for c in rest.chars() {
+        if c == 'T' {
+            if seen_t || !buf.is_empty() {
+                return Err(err());
             }
+            seen_t = true;
+        } else if c.is_ascii_digit() || c == '.' || c == ',' {
+            buf.push(if c == ',' { '.' } else { c });
+        } else {
+            if buf.is_empty() {
+                return Err(err());
+            }
+            let n: f64 = buf.parse().map_err(|_| err())?;
+            buf.clear();
+            let secs = match (seen_t, c) {
+                (false, 'Y') => n * 365.0 * 86400.0,
+                (false, 'M') => n * 30.0 * 86400.0,
+                (false, 'D') => n * 86400.0,
+                (true, 'H') => n * 3600.0,
+                (true, 'M') => n * 60.0,
+                (true, 'S') => n,
+                _ => return Err(err()),
+            };
+            total += secs;
+            had_any = true;
         }
     }
-    Ok(Duration::seconds(secs))
+
+    // Trailing digits with no unit, or no segments at all, are malformed.
+    if !buf.is_empty() || !had_any {
+        return Err(err());
+    }
+    Ok(Duration::seconds((sign * total) as i64))
+}
+
+/// Format a `chrono::Duration` as a canonical ISO 8601 string (`PT0S`,
+/// `PT5M`, `PT1H30M`, `P1D`, `-PT5M`). Round-trips with
+/// [`parse_iso_duration`].
+pub fn format_iso_duration(d: Duration) -> String {
+    let total = d.num_seconds();
+    if total == 0 {
+        return "PT0S".to_string();
+    }
+    let (sign, mut secs) = if total < 0 {
+        ("-", -total)
+    } else {
+        ("", total)
+    };
+    let days = secs / 86400;
+    secs %= 86400;
+    let hours = secs / 3600;
+    secs %= 3600;
+    let mins = secs / 60;
+    secs %= 60;
+
+    let mut out = String::from(sign);
+    out.push('P');
+    if days > 0 {
+        out.push_str(&format!("{days}D"));
+    }
+    if hours > 0 || mins > 0 || secs > 0 {
+        out.push('T');
+        if hours > 0 {
+            out.push_str(&format!("{hours}H"));
+        }
+        if mins > 0 {
+            out.push_str(&format!("{mins}M"));
+        }
+        if secs > 0 {
+            out.push_str(&format!("{secs}S"));
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso_rejects_unknown_unit() {
+        // Q is not a known unit — must error, not silently parse as zero.
+        assert!(parse_iso_duration("PT5Q").is_err());
+    }
+
+    #[test]
+    fn iso_rejects_unparseable_number() {
+        assert!(parse_iso_duration("PTxM").is_err());
+    }
+
+    #[test]
+    fn iso_rejects_empty_body() {
+        assert!(parse_iso_duration("PT").is_err());
+        assert!(parse_iso_duration("P").is_err());
+    }
+
+    #[test]
+    fn iso_rejects_trailing_digits() {
+        // A number with no unit is malformed.
+        assert!(parse_iso_duration("PT5").is_err());
+    }
+
+    #[test]
+    fn iso_parses_well_known_compound() {
+        let d = parse_iso_duration("P1Y2M3DT4H5M6S").unwrap();
+        let expect = 365 * 86400 + 2 * 30 * 86400 + 3 * 86400 + 4 * 3600 + 5 * 60 + 6;
+        assert_eq!(d.num_seconds(), expect);
+    }
+
+    #[test]
+    fn iso_parses_week_and_negative() {
+        assert_eq!(
+            parse_iso_duration("P3W").unwrap().num_seconds(),
+            3 * 7 * 86400
+        );
+        assert_eq!(parse_iso_duration("-PT5M").unwrap().num_seconds(), -300);
+    }
+
+    #[test]
+    fn iso_round_trips_through_formatter() {
+        for d in [
+            Duration::zero(),
+            Duration::minutes(5),
+            Duration::seconds(3600 + 30 * 60),
+            Duration::days(1),
+            Duration::seconds(-(86400 + 5 * 3600 + 6)),
+        ] {
+            let s = format_iso_duration(d);
+            assert_eq!(
+                parse_iso_duration(&s).unwrap(),
+                d,
+                "round-trip failed for {s}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_zero_is_pt0s() {
+        assert_eq!(format_iso_duration(Duration::zero()), "PT0S");
+    }
 }

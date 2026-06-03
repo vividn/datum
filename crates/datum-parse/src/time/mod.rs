@@ -30,7 +30,9 @@ pub mod uncertainty;
 pub use builder::TimeBuilder;
 pub use datum_time::DatumTime;
 pub use parse_date_str::{parse_date_arg, DateArg};
-pub use parse_duration_str::{parse_duration, quick_precision_for_count};
+pub use parse_duration_str::{
+    format_iso_duration, parse_duration, parse_iso_duration, quick_precision_for_count,
+};
 pub use parse_time_str::{count_stacked_flag, parse_time_arg, TimeArg};
 pub use precision::PrecisionUnit;
 pub use uncertainty::{

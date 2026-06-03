@@ -181,8 +181,8 @@ fn auto_resolver_closes_older_open_after_delay() {
     );
     assert!(older.dur.is_some(), "older open must have dur");
     assert_eq!(older.verb, Verb::Block, "older's verb re-derives to Block");
-    // dur is stored at second precision under v3 (parse_iso_duration_seconds
-    // returns i64 secs), so equality between computed_end and the sub-second
+    // dur is stored at second precision under v3 (parse_iso_duration
+    // returns whole-second chrono spans), so equality between computed_end and the sub-second
     // newer.occur_time can be off by < 1s. The contract being tested is that
     // the older block ends "at the newer's start moment" — verified by
     // bounding the gap rather than exact equality.

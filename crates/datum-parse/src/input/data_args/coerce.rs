@@ -15,7 +15,7 @@ use serde_json::{Map, Value};
 
 use crate::error::{ParseError, Result};
 use crate::input::data_args::Compat;
-use crate::time::{parse_date_arg, parse_duration, parse_time_arg};
+use crate::time::{format_iso_duration, parse_date_arg, parse_duration, parse_time_arg};
 
 use super::classify::{path_is_date, path_is_duration, path_is_time};
 
@@ -184,47 +184,6 @@ pub fn infer_value(value: &str) -> Option<Value> {
         return Some(v);
     }
     infer_type(value)
-}
-
-/// Format a `chrono::Duration` as an ISO 8601 string (`PT5M`, `PT1H30M`,
-/// `P1DT5H`, etc.). Round-trips with [`crate::time::parse_duration`].
-fn format_iso_duration(d: chrono::Duration) -> String {
-    let total_secs = d.num_seconds();
-    let (sign, mut secs) = if total_secs < 0 {
-        ("-", -total_secs)
-    } else {
-        ("", total_secs)
-    };
-    let days = secs / 86400;
-    secs %= 86400;
-    let hours = secs / 3600;
-    secs %= 3600;
-    let minutes = secs / 60;
-    secs %= 60;
-
-    let mut out = String::new();
-    if !sign.is_empty() {
-        out.push('-');
-    }
-    out.push('P');
-    let had_date = days > 0;
-    if had_date {
-        out.push_str(&format!("{days}D"));
-    }
-    let had_time = hours > 0 || minutes > 0 || secs > 0;
-    if had_time || !had_date {
-        out.push('T');
-        if hours > 0 {
-            out.push_str(&format!("{hours}H"));
-        }
-        if minutes > 0 {
-            out.push_str(&format!("{minutes}M"));
-        }
-        if secs > 0 || (!had_date && hours == 0 && minutes == 0) {
-            out.push_str(&format!("{secs}S"));
-        }
-    }
-    out
 }
 
 /// Port of datum's `inferType`: turn a raw string into the most specific
