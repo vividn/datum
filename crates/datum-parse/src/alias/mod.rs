@@ -12,14 +12,9 @@
 //! this module. The originally-planned `alias::autogen` placeholder was
 //! removed once it became clear the canonical home was the spec itself.
 
-pub mod body;
 pub mod expand;
 pub mod scope;
 
-pub use body::{
-    build_slot_list, parse_alias_body, walk_slots, AliasBody, FieldDecl, GlobalSlot, KeyDecl,
-    KeyForm, SideBinding, SlotKind,
-};
 pub use expand::{
     apply_terminal_verb_override, expand_argv, expand_argv_no_alias, expand_stacked_flags,
     maybe_collapse_switch_chain, maybe_swap_field_verb, shell_join, shell_split,

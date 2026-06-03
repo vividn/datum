@@ -670,45 +670,6 @@ mod tests {
         );
     }
 
-    // ── Section M subset ─────────────────────────────────────────────────
-
-    #[test]
-    fn extra_positional_no_slot_errors() {
-        // `scaff` has slots [dur, doseMg]. Three positionals → extra.
-        use super::super::body::{build_slot_list, parse_alias_body, walk_slots};
-        let r = expand(&["datum", "scaff", "5", "100", "7"]);
-        assert_eq!(r.sides.len(), 2);
-        let sides: Vec<_> = r
-            .sides
-            .iter()
-            .map(|s| parse_alias_body(s).unwrap())
-            .collect();
-        let slots = build_slot_list(&sides).unwrap();
-        // Positionals come from the side argvs themselves; walk
-        // through the explicit invocation positionals (`5`, `100`, `7`).
-        let err = walk_slots(&sides, &slots, &v(&["5", "100", "7"])).unwrap_err();
-        assert!(matches!(err, ParseError::ExtraData(_)));
-    }
-
-    #[test]
-    fn extra_positional_past_dur_filled_errors() {
-        // f12 = f1 , f2 abc. f1 has -k arg1, -k arg2=, -k arg3=def.
-        // f2 has -k arg2 plus the bound positional `abc`. The bound
-        // positional pre-fills f2's first slot. Then dur slots from
-        // start/switch verbs append. Too many invocation positionals
-        // errors.
-        use super::super::body::{build_slot_list, parse_alias_body, walk_slots};
-        let r = expand(&["datum", "f12", "val1", "val2", "val3", "7", "8"]);
-        let sides: Vec<_> = r
-            .sides
-            .iter()
-            .map(|s| parse_alias_body(s).unwrap())
-            .collect();
-        let slots = build_slot_list(&sides).unwrap();
-        let err = walk_slots(&sides, &slots, &v(&["val1", "val2", "val3", "7", "8"])).unwrap_err();
-        assert!(matches!(err, ParseError::ExtraData(_)));
-    }
-
     #[test]
     fn unknown_key_at_call_site_errors() {
         // Call-site `unknown=val` (promoted to all sides) with no
