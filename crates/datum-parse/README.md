@@ -11,12 +11,11 @@ SQLite, reqwest, or other native-only dependencies.
 |-------------|--------------------------------------------------------------------|
 | [`time`]    | Date/time/duration parsing, [`DatumTime`](time::DatumTime), [`PrecisionUnit`](time::PrecisionUnit), uncertainty. |
 | [`input`]   | Argv primitives — `flexible_positional`, `consolidate_keys`, `data_args`. Direct port of datum's `src/input/*.ts`. |
-| [`parse`]   | The bespoke argv parser. Owns the `datum` binary's CLI surface; emits an [`intent`] tree. |
+| [`parse`]   | The bespoke argv parser. Owns the `datum` binary's CLI surface; emits the intent IR ([`cli`]). |
 | [`cli`]     | The intent IR ([`Cli`](cli::Cli), [`Command`](cli::Command)) consumed by `datum-commands`. |
 | [`alias`]   | DB-backed and spec-generated alias expansion. Pre-pass that runs before [`parse_argv`](parse::parse_argv); pluggable via [`alias::Resolver`]. |
 | [`help`]    | Hand-authored help rendering — both the global `--help` and per-command pages. |
 | [`error`]   | The crate-wide [`ParseError`](error::ParseError) and [`Result`](error::Result) alias. |
-| [`intent`]  | Sub-trees that combine into [`cli::Cli`] (verbs, fields, time flags, data args). |
 
 ## CommandSpec model
 
@@ -38,7 +37,7 @@ in [`input`](input) and [`parse`](parse) directly.
 
 1. Update the relevant `CommandSpec` to declare the flag (long name,
    short, value shape).
-2. Add a field to the corresponding intent struct in [`intent`](intent).
+2. Add a field to the corresponding intent struct in [`cli`](cli).
 3. Wire it into [`cli::Cli`] / [`cli::Command`].
 4. Cover the parse and a happy-path dispatch test.
 

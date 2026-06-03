@@ -13,6 +13,8 @@
 //!   spec-generated aliases before the parser runs. Callers plug in a
 //!   [`alias::Resolver`] implementation.
 //! * Hand-authored help rendering ([`help`]).
+//! * Public error type ([`error`]) — `ParseError` and the shared
+//!   `Result` alias for callers that want to match on the variants.
 //!
 //! ## WASM-safety
 //!
@@ -32,7 +34,6 @@ pub mod cli;
 pub mod error;
 pub mod help;
 pub mod input;
-pub mod intent;
 pub mod parse;
 pub mod time;
 
