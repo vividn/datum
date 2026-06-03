@@ -55,6 +55,10 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         p.comment_remainder = true;
         Ok(())
     }));
+    r.push(local_switch(Some('I'), Some("string-state"), |p| {
+        p.string_state = true;
+        Ok(())
+    }));
     r.push(local_value(None, Some("id"), |p, v| {
         p.id = Some(v.to_string());
         Ok(())

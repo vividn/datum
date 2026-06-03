@@ -288,6 +288,10 @@ pub struct LogArgs {
     /// remainder positionals join into a single string and land in
     /// `extra_data.comment`.
     pub comment_remainder: bool,
+    /// `-I` / `--string-state`: join the remainder positionals into the
+    /// entry's state (canonical slot `state.id`) as one space-separated
+    /// string — the state-targeting analogue of `-S`. (da-vo0y Feature 1.)
+    pub string_state: bool,
     pub id: Option<String>,
     /// `--id-delimiter` raw CLI value. `None` means "fall through to env /
     /// `datumrc.toml` / built-in default" at the slug-interpolation site;

@@ -41,6 +41,23 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         check_no_time_flags(&args)?;
     }
 
+    // da-vo0y (review): `-I`/`--string-state` is Switch-only — on other
+    // verbs it would silently suppress the injected `dur=` slot and change
+    // duration parsing. And on switch it conflicts with the other
+    // remainder-routing flags: the joined positionals would land in that
+    // bucket instead of state, leaving a surprise `state=true`.
+    if args.string_state {
+        if !matches!(action, Action::Switch) {
+            anyhow::bail!("`-I`/`--string-state` is only valid with `switch`");
+        }
+        if args.remainder.is_some() || args.string_remainder || args.comment_remainder {
+            anyhow::bail!(
+                "`-I`/`--string-state` conflicts with `-R`/`-S`/`-C` — the \
+                 joined positionals already target the state"
+            );
+        }
+    }
+
     // da-ooe2: restore v2's flexiblePositional duration model. The verb-
     // specific trailing-duration peelers are gone; `prepare_log_args`
     // declares an optional `dur=` slot last for the duration-bearing verbs
@@ -665,6 +682,7 @@ pub(crate) fn parse_log_args(
     let mut switch_state_positional: Option<String> = None;
     for pos in &args.rest {
         if matches!(action, Action::Switch)
+            && !args.string_state
             && switch_state_positional.is_none()
             && !pos.contains('=')
         {
@@ -687,7 +705,13 @@ pub(crate) fn parse_log_args(
     // back to the literal `"."` string and is injected normally. With no
     // positional at all, insert just the slot so the unfilled-keys phase
     // applies the default.
-    if matches!(action, Action::Switch) {
+    // `-I`/`--string-state` (da-vo0y): join ALL positionals into state rather
+    // than peeling a single one, so skip the single-positional state slot.
+    // With `data_args.remainder == None` for switch, `string_state` routes
+    // the joined remainder to `state.id` in `handle_data_args`. The no-
+    // positional case still defaults to `state=true` via the action
+    // canonicalization downstream.
+    if matches!(action, Action::Switch) && !args.string_state {
         if switch_state_positional.is_some() {
             flexible_positional(
                 &mut data_args,
@@ -746,6 +770,7 @@ pub(crate) fn parse_log_args(
     };
     data_args.string_remainder = args.string_remainder;
     data_args.comment_remainder = args.comment_remainder;
+    data_args.string_state = args.string_state;
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
@@ -1003,7 +1028,12 @@ pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()>
         if matches!(action, Action::Start | Action::Stop) {
             args.rest.retain(|t| t != "." && t != r"\.");
         }
-        args.keys.push("dur=".to_string());
+        // da-vo0y: `-I`/`--string-state` joins ALL positionals into state, so
+        // suppress the da-ooe2 `dur=` slot — it would otherwise eat the first
+        // positional as a duration. The `-I` + trailing-dur peek is Feature 2.
+        if !args.string_state {
+            args.keys.push("dur=".to_string());
+        }
     }
     Ok(())
 }
@@ -1915,5 +1945,54 @@ mod tests {
         let entries = db.entries_for_field("mood", None).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].state, Some(serde_json::json!("happy")));
+    }
+
+    #[test]
+    fn switch_string_state_joins_positionals_into_multiword_state() {
+        // da-vo0y Feature 1: `-I`/`--string-state` joins ALL positionals into
+        // the switch state — no single-positional peel, and the da-ooe2 `dur=`
+        // slot is suppressed so it can't eat the first token — so a multi-word
+        // state Just Works.
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("tv");
+        args.rest = vec!["adventure".to_string(), "time".to_string()];
+        args.string_state = true;
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("tv", None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].state, Some(serde_json::json!("adventure time")));
+    }
+
+    #[test]
+    fn switch_string_state_single_token() {
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("movie");
+        args.rest = vec!["blueberry".to_string()];
+        args.string_state = true;
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("movie", None).unwrap();
+        assert_eq!(entries[0].state, Some(serde_json::json!("blueberry")));
+    }
+
+    #[test]
+    fn string_state_rejected_for_non_switch_actions() {
+        // Review fix (da-vo0y): `-I` on start/stop/block would silently
+        // suppress the injected dur= slot — reject it outright.
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("work");
+        args.string_state = true;
+        assert!(log_entry(Action::Start, args, &db).is_err());
+    }
+
+    #[test]
+    fn string_state_conflicts_with_remainder_flags() {
+        // Review fix (da-vo0y): `-I` + `-R`/`-S`/`-C` on switch would route
+        // the joined tokens away from state, leaving a surprise state=true.
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("tv");
+        args.rest = vec!["a".to_string(), "b".to_string()];
+        args.string_state = true;
+        args.string_remainder = true;
+        assert!(log_entry(Action::Switch, args, &db).is_err());
     }
 }

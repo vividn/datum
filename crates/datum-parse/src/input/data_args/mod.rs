@@ -118,6 +118,14 @@ pub static FLAG_SPECS: &[FlagSpec<DataArgs>] = &[
             Ok(())
         }),
     },
+    FlagSpec {
+        short: Some('I'),
+        long: Some("string-state"),
+        action: FlagAction::Switch(|a| {
+            a.string_state = true;
+            Ok(())
+        }),
+    },
 ];
 
 /// The untyped data payload produced by [`handle_data_args`] — the direct
@@ -150,6 +158,12 @@ pub struct DataArgs {
     /// `-l` / `--lenient`: when no `-R` is supplied, default the
     /// remainder bucket to `extra_data` instead of raising.
     pub lenient: bool,
+    /// `-I` / `--string-state`: join the remainder into the entry's
+    /// `state` bucket as one space-separated string (the state-targeting
+    /// analogue of `-S`, which targets a data key). Lets a switch take a
+    /// multi-word state — e.g. `switch tv -I adventure time` → state
+    /// "adventure time". (da-vo0y Feature 1.)
+    pub string_state: bool,
     /// Daydumb compat flag — keeps the strings `"null"` / `"undefined"`
     /// as `String` values rather than coercing them to `Value::Null` /
     /// stripped (datum's TS behaviour). daydumb stores literal `"null"`
@@ -215,6 +229,11 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     let remainder_key: Option<String> = args.remainder.clone().or_else(|| {
         if args.comment_remainder {
             Some("comment".to_string())
+        } else if args.string_state {
+            // `-I` / `--string-state`: the remainder joins into the entry's
+            // state. `state` normalizes to `state.id` downstream (the
+            // canonical state slot), so a switch can take a multi-word state.
+            Some("state".to_string())
         } else if args.lenient || args.string_remainder {
             // `-S` without `-R`/`-C`/`-l` means "string the rest"; "the rest"
             // defaults to the lenient extra-data bucket. Explicit `-R` overrides.
@@ -223,7 +242,12 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
             None
         }
     });
-    let remainder_as_string = args.string_remainder || args.comment_remainder;
+    // Review (da-vo0y): `-I` forces string-joining only when it actually
+    // drove the routing (the remainder bucket IS the state). An explicit
+    // `-R <key>` keeps its own shape — array unless `-S` says otherwise.
+    let remainder_as_string = args.string_remainder
+        || args.comment_remainder
+        || (args.string_state && remainder_key.as_deref() == Some("state"));
 
     let mut datum_data: DatumData = Map::new();
     let mut remainder_data: Vec<String> = Vec::new();
@@ -700,6 +724,73 @@ mod tests {
                 .as_object()
                 .unwrap()
         );
+    }
+
+    // ── -I / --string-state (da-vo0y Feature 1) ─────────────────────────
+
+    #[test]
+    fn string_state_joins_remainder_into_state() {
+        // `-I` joins the remainder into the entry's state (canonical slot
+        // `state.id`), space-joined like `-S`. Lets a switch take a
+        // multi-word state: `switch tv -I adventure time` → "adventure time".
+        let mut a = args();
+        a.string_state = true;
+        a.data = vec!["adventure".into(), "time".into()];
+        assert_eq!(
+            run(a),
+            *json!({"state": {"id": "adventure time"}})
+                .as_object()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn string_state_single_token() {
+        let mut a = args();
+        a.string_state = true;
+        a.data = vec!["blueberry".into()];
+        assert_eq!(
+            run(a),
+            *json!({"state": {"id": "blueberry"}}).as_object().unwrap()
+        );
+    }
+
+    #[test]
+    fn string_state_fills_declared_key_then_joins_rest_to_state() {
+        // A declared data key consumes its positional first; the remaining
+        // positionals join into state.
+        let mut a = args();
+        a.string_state = true;
+        a.keys = vec!["firstKey=".into()];
+        a.data = vec!["fk".into(), "rest".into(), "of".into(), "state".into()];
+        assert_eq!(
+            run(a),
+            *json!({"firstKey": "fk", "state": {"id": "rest of state"}})
+                .as_object()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn string_state_no_positionals_yields_empty() {
+        // `-I` with nothing to claim leaves state unset (the command layer
+        // supplies the action-default state downstream).
+        let mut a = args();
+        a.string_state = true;
+        assert_eq!(run(a), Map::new());
+    }
+
+    #[test]
+    fn string_state_with_explicit_remainder_keeps_array_shape() {
+        // Review fix (da-vo0y): `-I` forces joining only when it actually
+        // drove the routing to `state`. With an explicit `-R custom`, the
+        // remainder keeps -R's own array shape. (The command layer rejects
+        // this combination for switch; the library keeps clean semantics.)
+        let mut a = args();
+        a.string_state = true;
+        a.remainder = Some("rem".into());
+        a.data = vec!["x".into(), "y".into()];
+        assert_eq!(run(a), *json!({"rem": ["x", "y"]}).as_object().unwrap());
     }
 
     #[test]
