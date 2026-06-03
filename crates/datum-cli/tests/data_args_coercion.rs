@@ -145,25 +145,23 @@ fn dash_sr_bundle_joins_remainder_into_named_bucket() {
     assert_eq!(extra["notes"], json!("all the rest is one string"));
 }
 
-/// `-S` without `-R`/`-C` (da-k5o6): the historical "join remainder into
-/// the primary value column" behaviour was a side-effect of the buggy
-/// PRIMARY_VALUE_KEY remainder leak. Under the v=20 contract no verb has
-/// an implicit primary-value bucket for un-keyed positionals: `occur`
-/// rejects them, `add` requires `state=<v>` or a `-K` slot, and
-/// state-bearing verbs (`switch`/`start`/`stop`) peel the first positional
-/// as state. The legitimate `-S` use is with `-R <field>` or `-C` to
-/// shape an explicit bucket — covered by the surrounding tests. So this
-/// test now pins the rejection: `occur` with bare positionals must error.
+/// `-S` without `-R`/`-C`/`-l` (da-tcr8): "string the rest" — the user
+/// asked to stringify the remainder, so "the rest" defaults to the lenient
+/// `extra_data` bucket (joined into one string) rather than erroring. This
+/// supersedes the da-k5o6 rejection: `-S` alone now infers lenient behavior.
+/// Explicit `-R <field>` / `-C` still override the destination.
 #[test]
-fn dash_s_alone_on_occur_rejects_unbound_positionals() {
+fn dash_s_alone_on_occur_infers_lenient_extra_data() {
     let db = fresh_db();
-    let err = run_cli(&["occur", "log", "-S", "a", "long", "phrase"], &db)
-        .expect_err("occur should reject bare positionals even with -S");
+    run_cli(&["occur", "log", "-S", "a", "long", "phrase"], &db)
+        .expect("occur -S alone should infer lenient and land in extra_data");
 
-    let msg = format!("{err:#}");
-    assert!(
-        msg.contains("Extra data"),
-        "expected ExtraData error, got: {msg}"
+    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let extra = entry.data.as_ref().expect("extra_data populated");
+    assert_eq!(
+        extra["extra_data"],
+        json!("a long phrase"),
+        "-S alone joins the remainder into the extra_data bucket",
     );
 }
 

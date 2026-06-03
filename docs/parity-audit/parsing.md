@@ -99,8 +99,10 @@ The workhorse: turns the raw `data` positional list + `-k/-K/-R/-S/-C/-c
 6. **Remainder handling** —
    - `-R <key>` routes unrecognised positional values to `<key>` (array).
    - `-S/--string-remainder` joins remainder as space-separated string.
+     Supplied alone (no `-R`/`-C`/`-l`), it also infers the lenient
+     `extra_data` bucket as the destination.
    - `-C/--comment-remainder` === `-SR comment`.
-   - `-l/--lenient` makes `extraData` the default remainder bucket.
+   - `-l/--lenient` makes `extra_data` the default remainder bucket.
    - Without any of the above, extra data throws `ExtraDataError`.
 7. **Default values** — `-k key=default` fills from default when the
    positional slot is missing OR when the user wrote `.` as a skip.

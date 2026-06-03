@@ -280,8 +280,9 @@ pub struct LogArgs {
     /// remainder-bucket override.
     pub remainder: Option<String>,
     /// `-S` / `--string-remainder`: join the remainder positionals into
-    /// one space-separated string instead of an array (or, when no `-R`
-    /// is supplied, into the primary value).
+    /// one space-separated string instead of an array. When supplied
+    /// without `-R`/`-C`/`-l`, infers lenient behavior — "the rest" lands
+    /// in the `extra_data` bucket rather than erroring.
     pub string_remainder: bool,
     /// `-C` / `--comment-remainder`: shorthand for `-SR comment` —
     /// remainder positionals join into a single string and land in

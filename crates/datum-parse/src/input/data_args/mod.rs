@@ -148,7 +148,7 @@ pub struct DataArgs {
     /// `-C` / `--comment-remainder`: shorthand for `-SR comment`.
     pub comment_remainder: bool,
     /// `-l` / `--lenient`: when no `-R` is supplied, default the
-    /// remainder bucket to `extraData` instead of raising.
+    /// remainder bucket to `extra_data` instead of raising.
     pub lenient: bool,
     /// Daydumb compat flag — keeps the strings `"null"` / `"undefined"`
     /// as `String` values rather than coercing them to `Value::Null` /
@@ -215,8 +215,10 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     let remainder_key: Option<String> = args.remainder.clone().or_else(|| {
         if args.comment_remainder {
             Some("comment".to_string())
-        } else if args.lenient {
-            Some("extraData".to_string())
+        } else if args.lenient || args.string_remainder {
+            // `-S` without `-R`/`-C`/`-l` means "string the rest"; "the rest"
+            // defaults to the lenient extra-data bucket. Explicit `-R` overrides.
+            Some("extra_data".to_string())
         } else {
             None
         }
@@ -423,7 +425,7 @@ mod tests {
         a.data = vec!["keyless".into()];
         assert_eq!(
             run(a),
-            *json!({"extraData": "keyless"}).as_object().unwrap()
+            *json!({"extra_data": "keyless"}).as_object().unwrap()
         );
 
         let mut a = args();
@@ -441,7 +443,7 @@ mod tests {
                 "extra": "Data",
                 "be": "interspersed",
                 "keyed": "data",
-                "extraData": ["can", "with"],
+                "extra_data": ["can", "with"],
             })
             .as_object()
             .unwrap()
@@ -563,7 +565,7 @@ mod tests {
         a.data = vec!["abc=cde".into(), "ghi".into()];
         assert_eq!(
             run(a),
-            *json!({"abc": "cde", "extraData": "ghi"})
+            *json!({"abc": "cde", "extra_data": "ghi"})
                 .as_object()
                 .unwrap()
         );
@@ -655,6 +657,48 @@ mod tests {
             })
             .as_object()
             .unwrap()
+        );
+    }
+
+    #[test]
+    fn string_remainder_alone_infers_lenient_extra_data() {
+        // da-tcr8: `-S` without `-R`/`-C`/`-l` should "string the rest" into
+        // the lenient extra_data bucket (joined), not error.
+        let mut a = args();
+        a.string_remainder = true;
+        a.data = vec!["extra".into(), "extra".into(), "extra".into()];
+        assert_eq!(
+            run(a),
+            *json!({"extra_data": "extra extra extra"})
+                .as_object()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn string_remainder_with_explicit_key_overrides_inferred_bucket() {
+        // `-SR custom_key` still routes to the explicit key (joined string).
+        let mut a = args();
+        a.string_remainder = true;
+        a.remainder = Some("custom_key".into());
+        a.data = vec!["extra".into(), "extra".into()];
+        assert_eq!(
+            run(a),
+            *json!({"custom_key": "extra extra"}).as_object().unwrap()
+        );
+    }
+
+    #[test]
+    fn lenient_alone_collects_array_not_joined() {
+        // `-l` without `-S` keeps single tokens as an array (unchanged).
+        let mut a = args();
+        a.lenient = true;
+        a.data = vec!["extra".into(), "extra".into()];
+        assert_eq!(
+            run(a),
+            *json!({"extra_data": ["extra", "extra"]})
+                .as_object()
+                .unwrap()
         );
     }
 
