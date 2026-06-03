@@ -41,38 +41,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         check_no_time_flags(&args)?;
     }
 
-    // da-ffp6: For switch, only the first bare positional is the state;
-    // subsequent bare positionals are reserved tokens (currently: duration).
-    // Multi-state must be opt-in via comma-separated tokens (`a,b`), never
-    // whitespace. Pull any trailing duration positional into args.duration
-    // before handle_data_args sees it.
-    if matches!(action, Action::Switch) {
-        // da-a2o8: peel a standalone-comma "then" chain (`switch f
-        // vertical 5 , sit`) into `following_state=…` before the
-        // trailing-duration pass. The alias layer's
-        // `maybe_collapse_switch_chain` already ensured the dur-bearing
-        // side is on the left of the comma; here we just split, rewrite
-        // the tail as a reserved-column key, and let the existing
-        // pipeline route it onto `args.following_state`.
-        extract_switch_then_chain(&mut args)?;
-        extract_switch_trailing_reserved(&mut args)?;
-    }
-
-    // da-ixrk: `start` never coerces a positional into state — state is
-    // always `true` (or whatever `state=<v>` reserved-column sets). Any
-    // bare positional must be a duration (or the `.` skip sentinel); a
-    // non-duration positional is rejected so user typos like
-    // `start work sit` don't silently produce a "sit" state.
-    if matches!(action, Action::Start) {
-        extract_start_strict_duration(&mut args)?;
-    }
-    // da-l3f3: For stop, state is optional (defaults to `false`), so a
-    // lone bare positional that parses as a duration is the duration,
-    // not the state. With two positionals, the trailing duration-parsable
-    // one is dur and the earlier one is state.
-    if matches!(action, Action::Stop) {
-        extract_start_stop_trailing_duration(&mut args, action)?;
-    }
+    // da-ooe2: restore v2's flexiblePositional duration model. The verb-
+    // specific trailing-duration peelers are gone; `prepare_log_args`
+    // declares an optional `dur=` slot last for the duration-bearing verbs
+    // and the normal slot machinery in `handle_data_args` fills it from the
+    // trailing positional (or an explicit `dur=<v>` anywhere in argv). The
+    // switch `,`-chain peel (da-a2o8) is preserved inside the helper.
+    prepare_log_args(action, &mut args)?;
 
     // For switch, walk the bare positionals and reject interior `,,`
     // empty segments before handle_data_args runs. Datum's `infer_type`
@@ -316,6 +291,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.state = Some(s);
     }
     if let Some(d) = reserved.dur {
+        // da-ooe2: an explicit duration (trailing positional or `dur=<v>`,
+        // both resolved through the injected `dur=` slot) plus a `--dur`
+        // flag is a double-specification — fail loudly rather than silently
+        // letting one win. The switch `,`-chain peels its dur into the flag
+        // and leaves the slot unfilled, so this never trips on a chain.
+        if args.duration.duration.is_some() {
+            anyhow::bail!(
+                "duration specified twice: trailing positional / `dur=` conflicts with --dur"
+            );
+        }
         entry.dur = Some(d);
     }
     if let Some(dp) = reserved.dur_precision {
@@ -694,19 +679,24 @@ pub(crate) fn parse_log_args(
     // `flexible_positional` prepends the key+value at the front of both
     // lists; calls are made in reverse-order so field ends up first.
     //
-    // `.` is the use-default-or-skip sentinel (da-1n61): drop the value
-    // but keep the `state=true` slot so the default still fires.
-    // `\.` escapes back to the literal `"."` string and is injected
-    // normally.
+    // `.` is the use-default-or-skip sentinel (da-1n61): da-ooe2 injects it
+    // as the slot VALUE so `handle_data_args`' dot-default handling resolves
+    // it to the slot's `true` default. Crucially this consumes the
+    // `state=true` slot rather than leaving it hungry — otherwise the
+    // trailing `dur=` positional would be swallowed as state. `\.` escapes
+    // back to the literal `"."` string and is injected normally. With no
+    // positional at all, insert just the slot so the unfilled-keys phase
+    // applies the default.
     if matches!(action, Action::Switch) {
-        let state_skipped = matches!(switch_state_positional.as_deref(), Some("."));
-        let inject_value = switch_state_positional.filter(|_| !state_skipped);
-        if inject_value.is_some() {
-            flexible_positional(&mut data_args, inject_value, "state=true", false, false);
+        if switch_state_positional.is_some() {
+            flexible_positional(
+                &mut data_args,
+                switch_state_positional.take(),
+                "state=true",
+                false,
+                false,
+            );
         } else {
-            // Value None (no positional, or `.` sentinel): inject just the
-            // slot declaration so the unfilled-keys phase applies the
-            // `true` default.
             data_args.keys.insert(0, "state=true".to_string());
         }
     }
@@ -733,20 +723,23 @@ pub(crate) fn parse_log_args(
     //   * Action::Occur → no remainder; an unbound positional is an error
     //     (occur doesn't carry state, has no `value` column to absorb it,
     //     and silently routing to extra_data would mask user mistakes).
-    //   * Action::Start | Action::Stop → no remainder (da-r6ds): state is
-    //     hard-set by action canonicalization, so an unbound positional
-    //     has nowhere to land. Erroring out matches Start's pre-existing
-    //     strictness (extract_start_strict_duration) and prevents Stop
-    //     from silently coercing typos into state.
-    //   * Otherwise → PRIMARY_VALUE_KEY sentinel; Switch's state slot
-    //     already consumed the leading bare positional above, so the
-    //     remainder only catches *extra* positionals after state.
+    //   * Action::Occur | Start | Stop | Switch → no remainder. State is
+    //     hard-set (start/stop) or flows through the `state=true` slot
+    //     (switch), and the trailing `dur=` slot absorbs the duration, so
+    //     a leftover positional has nowhere meaningful to land. Erroring
+    //     out (da-r6ds / da-ooe2) prevents silent coercion — e.g. a second
+    //     trailing positional on switch (`switch f ai 3 5m`) is rejected
+    //     rather than dropped into an unused primary value.
+    //   * Otherwise (Add) → PRIMARY_VALUE_KEY sentinel.
     let user_remainder = args.remainder.is_some() || args.comment_remainder;
     data_args.remainder = if let Some(r) = &args.remainder {
         Some(r.clone())
     } else if args.comment_remainder {
         Some("comment".to_string())
-    } else if matches!(action, Action::Occur | Action::Start | Action::Stop) {
+    } else if matches!(
+        action,
+        Action::Occur | Action::Start | Action::Stop | Action::Switch
+    ) {
         None
     } else {
         Some(PRIMARY_VALUE_KEY.to_string())
@@ -896,8 +889,9 @@ fn datum_value_to_slug_string(v: Option<&JsonValue>) -> String {
 ///   side of the chain.
 /// * The pre-comma side keeps its existing semantics — a bare
 ///   positional is the state, a trailing bare positional is the
-///   duration. That work is left to
-///   [`extract_switch_trailing_reserved`].
+///   duration. That work is left to the slot machinery in
+///   [`parse_log_args`] (the `state=true` slot and the injected `dur=`
+///   slot from [`prepare_log_args`]).
 pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     let comma_idx = match args.rest.iter().position(|t| t == ",") {
         Some(i) => i,
@@ -942,8 +936,8 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     // `state=false`). The chain path can't go through that rewrite
     // without losing the chain, so translate the keyword to the
     // reserved `state=` column AND eagerly peel the duration positional
-    // — `extract_switch_trailing_reserved` would otherwise reassign the
-    // next bare positional as state (it doesn't know `state=…` is
+    // into the `--dur` flag — the `state=true` slot would otherwise
+    // reassign the next bare positional as state (it doesn't know `state=…` is
     // already in flight).
     let leading_keyword_idx = args
         .rest
@@ -975,136 +969,41 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     Ok(())
 }
 
-/// da-ffp6: For `Verb::Switch`, partition `args.rest` so only the first
-/// bare (non-`KEY=VALUE`) positional contributes to the state value.
-/// Subsequent bare positionals are reserved tokens — currently any
-/// `parse_duration`-compatible string — and feed into `args.duration`
-/// rather than appending to the state list.
+/// da-ooe2: shared verb pre-pass run before `parse_log_args` on both the
+/// insert (`log_entry`) and reparse paths.
 ///
-/// Multi-state remains opt-in via comma-separated tokens (`switch f a,b`);
-/// whitespace-separated trailing positionals never silently become array
-/// elements. A trailing bare positional that fails to parse as a duration
-/// is rejected with a hint pointing at the comma form.
-pub(crate) fn extract_switch_trailing_reserved(args: &mut LogArgs) -> Result<()> {
-    let mut state_consumed = false;
-    let mut new_rest: Vec<String> = Vec::with_capacity(args.rest.len());
-    let mut trailing_duration: Option<String> = None;
-    for token in args.rest.drain(..) {
-        if token.contains('=') {
-            new_rest.push(token);
-            continue;
-        }
-        if !state_consumed {
-            state_consumed = true;
-            new_rest.push(token);
-            continue;
-        }
-        // da-1n61: `.` in the dur slot is the use-default-or-skip
-        // sentinel — drop it without recording a duration.
-        if token == "." {
-            continue;
-        }
-        if parse_duration(&token).is_err() {
-            anyhow::bail!(
-                "switch: trailing positional '{token}' is not a valid duration. \
-                 Use comma-separated states for multi-state switch (e.g. `a,b`)."
-            );
-        }
-        if trailing_duration.is_some() {
-            anyhow::bail!("switch: multiple trailing duration positionals; expected at most one");
-        }
-        trailing_duration = Some(token);
+/// Restores v2 datum's flexiblePositional duration model: rather than
+/// peeling a trailing positional with verb-specific rules, declare an
+/// optional `dur=` slot LAST for the duration-bearing verbs. The trailing
+/// positional (or an explicit `dur=<v>` anywhere in argv) then fills it via
+/// the normal slot machinery in `handle_data_args`, and
+/// `extract_reserved_columns` routes the resolved value onto `entry.dur`.
+///
+/// Occur/Add are excluded: occur is Moment-locked (da-ju71.2) and add
+/// infers its shape from temporal hints. Both still accept an explicit
+/// `dur=<v>` through the reserved-column path.
+///
+/// For start/stop the leading `.` / `\.` skip sentinel has no state slot to
+/// land on (state is hard-set by action canonicalization), so it is
+/// stripped here; switch absorbs `.` into its `state=true` slot inside
+/// `parse_log_args`.
+pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()> {
+    // da-a2o8: peel a standalone-comma "then" chain (`switch f vertical 5 ,
+    // sit`) into `following_state=…` before the dur slot is declared. The
+    // alias layer's `maybe_collapse_switch_chain` already ensured the
+    // dur-bearing side is on the left of the comma.
+    if matches!(action, Action::Switch) {
+        extract_switch_then_chain(args)?;
     }
-    args.rest = new_rest;
-    if let Some(dur) = trailing_duration {
-        if args.duration.duration.is_some() {
-            anyhow::bail!("switch: trailing duration positional conflicts with --dur");
-        }
-        args.duration.duration = Some(dur);
-    }
-    Ok(())
-}
 
-/// da-l3f3: For Start/Stop, peel a trailing bare positional that parses as
-/// a duration into args.duration. Differs from
-/// [`extract_switch_trailing_reserved`] in that state is optional for
-/// start/stop (defaults to `true`), so a single bare-numeric positional
-/// is interpreted as a duration rather than as state. The peel walks from
-/// the right and takes the last bare positional iff it parses as a
-/// duration; any earlier bare positional is left for parse_log_args to
-/// consume as the state value.
-pub(crate) fn extract_start_stop_trailing_duration(
-    args: &mut LogArgs,
-    action: Action,
-) -> Result<()> {
-    // da-r6ds: strip `.` / `\.` skip sentinels — after the bead, stop's
-    // state is hard-set by action canonicalization, so there's no
-    // positional state slot to "use default" for. Removing them here
-    // keeps the data queue clean for handle_data_args downstream.
-    args.rest.retain(|t| t != "." && t != r"\.");
-
-    let last_bare_idx = args.rest.iter().rposition(|t| !t.contains('='));
-    let Some(idx) = last_bare_idx else {
-        return Ok(());
-    };
-    if parse_duration(&args.rest[idx]).is_err() {
-        return Ok(());
-    }
-    let action_name = match action {
-        Action::Start => "start",
-        Action::Stop => "stop",
-        _ => unreachable!("extract_start_stop_trailing_duration called for {action:?}"),
-    };
-    if args.duration.duration.is_some() {
-        anyhow::bail!("{action_name}: trailing duration positional conflicts with --dur");
-    }
-    let dur = args.rest.remove(idx);
-    args.duration.duration = Some(dur);
-    Ok(())
-}
-
-/// da-ixrk: strict positional handling for `Action::Start`. State on start
-/// is always `true` (or the explicit `state=<v>` reserved column); a bare
-/// positional may never become state. The only bare positionals accepted
-/// after `field` are a duration (peeled into `args.duration.duration`) or
-/// the `.` / `\.` skip sentinel (removed in place, no-op). Anything else
-/// is rejected so typos like `start work sit` don't silently land an
-/// unintended state.
-pub(crate) fn extract_start_strict_duration(args: &mut LogArgs) -> Result<()> {
-    // da-r6ds: strip `.` / `\.` skip sentinels — state is hard-set to
-    // `true` by action canonicalization, so there's no positional state
-    // slot to "use default" for. Stripping here keeps the data queue
-    // clean for handle_data_args downstream.
-    args.rest.retain(|t| t != "." && t != r"\.");
-
-    let mut duration_idx: Option<usize> = None;
-    for (i, token) in args.rest.iter().enumerate() {
-        if token.contains('=') {
-            continue;
+    if matches!(
+        action,
+        Action::Switch | Action::Start | Action::Stop | Action::Block
+    ) {
+        if matches!(action, Action::Start | Action::Stop) {
+            args.rest.retain(|t| t != "." && t != r"\.");
         }
-        if parse_duration(token).is_ok() {
-            if let Some(prev) = duration_idx {
-                anyhow::bail!(
-                    "start: only one duration positional allowed (got `{}` and `{}`)",
-                    args.rest[prev],
-                    token,
-                );
-            }
-            duration_idx = Some(i);
-            continue;
-        }
-        anyhow::bail!(
-            "start: positional `{token}` is not a duration. `start` always sets \
-             state=true; use `state=<v>` to set an explicit state, or pass a \
-             duration like `30m` / `10m30s` / `--dur 30m`."
-        );
-    }
-    if let Some(idx) = duration_idx {
-        if args.duration.duration.is_some() {
-            anyhow::bail!("start: trailing duration positional conflicts with --dur");
-        }
-        let dur = args.rest.remove(idx);
-        args.duration.duration = Some(dur);
+        args.keys.push("dur=".to_string());
     }
     Ok(())
 }
@@ -1773,8 +1672,8 @@ mod tests {
     /// `switch body vertical 5 , sit` reaches log_core with the chain
     /// already swapped-if-needed by `maybe_collapse_switch_chain`, so
     /// `args.rest` is `["vertical", "5", ",", "sit"]`. Rewrite the tail
-    /// as `following_state=sit` and let extract_switch_trailing_reserved
-    /// peel `5` into the duration arg.
+    /// as `following_state=sit` and leave `5` for the injected `dur=` slot
+    /// (da-ooe2) to consume downstream.
     #[test]
     fn then_chain_rewrites_tail_as_following_state() {
         let mut args = switch_args(&["vertical", "5", ",", "sit"]);
@@ -1851,10 +1750,9 @@ mod tests {
 
     /// da-b4k5: the chain-context `end` keyword translates to the
     /// reserved `state=false` column AND eagerly peels the duration
-    /// positional onto `args.duration`. Without the peel,
-    /// `extract_switch_trailing_reserved` would treat the next bare
-    /// positional (`14m`) as the state slot and silently lose the
-    /// duration.
+    /// positional onto `args.duration`. Without the peel, the `state=true`
+    /// slot would treat the next bare positional (`14m`) as the state and
+    /// silently lose the duration.
     #[test]
     fn then_chain_translates_end_keyword_to_state_false() {
         let mut args = switch_args(&["end", "14m", ",", "researching"]);

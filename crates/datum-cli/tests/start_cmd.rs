@@ -192,10 +192,11 @@ fn start_extras_do_not_imply_duration() {
 
 /// TS #7: "can skip the duration if the duration is given as . or ''".
 ///
-/// Per da-ixrk, `start` never coerces a positional into state — state is
-/// always `true`. A non-duration positional like `reqVal1` is rejected so
-/// a typo can't silently land a bogus state. Use `state=<v>` to set an
-/// explicit state.
+/// da-ooe2: `start` never coerces a positional into state — state is always
+/// `true`. With no `-k` slot to land on, a bare positional falls into the
+/// injected `dur=` slot; a non-duration token like `reqVal1` is then
+/// rejected at the dur-parse boundary so a typo can't silently land a bogus
+/// state. Use `state=<v>` to set an explicit state.
 #[test]
 fn non_duration_positional_is_rejected() {
     let db = fresh_db();
@@ -204,8 +205,8 @@ fn non_duration_positional_is_rejected() {
         .expect_err("non-duration positional must be rejected on start");
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("not a duration") || msg.contains("state=true"),
-        "error should explain start never coerces state, got: {msg}",
+        msg.contains("invalid dur value") || msg.contains("dur"),
+        "error should flag the bad duration, got: {msg}",
     );
     assert_count!(db, "field", 0);
 }
@@ -317,8 +318,10 @@ fn start_bare_numeric_positional_is_duration() {
     assert_eq!(entry.state.as_ref(), Some(&json!(true)));
 }
 
-/// Per da-ixrk: `dm start abc sit` is rejected. State on start is always
-/// `true`; positionals can never become state. Use `state=sit` instead.
+/// da-ooe2: `dm start abc sit` is rejected. State on start is always
+/// `true`; positionals can never become state. The lone bare positional
+/// falls into the injected `dur=` slot and fails the dur parse. Use
+/// `state=sit` instead.
 #[test]
 fn start_non_duration_positional_errors() {
     let db = fresh_db();
@@ -327,24 +330,26 @@ fn start_non_duration_positional_errors() {
         .expect_err("non-duration positional must be rejected");
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("not a duration"),
-        "error should mention duration: {msg}",
+        msg.contains("invalid dur value") || msg.contains("dur"),
+        "error should flag the bad duration: {msg}",
     );
     assert_count!(db, "abc", 0);
 }
 
-/// Per da-ixrk: two bare positionals on start is rejected. Explicit state
-/// must be set via `state=<v>`; a bare positional must be a duration.
+/// da-ooe2: two bare positionals on start is rejected. The first fills the
+/// `dur=` slot; the second has no remaining slot and no remainder bucket
+/// (start), so it errors as extra data. Explicit state must be set via
+/// `state=<v>`.
 #[test]
 fn start_two_bare_positionals_errors() {
     let db = fresh_db();
 
     let err =
-        run_cli(&["start", "abc", "sit", "3"], &db).expect_err("`sit` is non-duration; rejected");
+        run_cli(&["start", "abc", "3", "sit"], &db).expect_err("second bare positional is extra");
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("not a duration"),
-        "error should mention duration: {msg}",
+        msg.contains("Extra data") || msg.contains("no matching key"),
+        "error should flag the extra positional: {msg}",
     );
     assert_count!(db, "abc", 0);
 }
@@ -375,6 +380,63 @@ fn start_compound_duration_positional() {
     let entry = &db.entries_for_field("work", None).unwrap()[0];
     assert_eq!(entry.state.as_ref(), Some(&json!(true)));
     assert_eq!(entry.duration_seconds(), Some(10 * 60 + 30));
+}
+
+// ─── da-ooe2: flexible-positional duration restoration ───────────────────
+
+/// da-ooe2 (original bug): declared `-k` slots consume their positionals
+/// first, leaving the trailing positional for the injected `dur=` slot.
+/// `start field -k key1 -k key2 -k key3 val1 val2 val3 30m` must fill all
+/// three keys AND record the duration — the old peeler choked on this with
+/// a "too many durations" error.
+#[test]
+fn start_multi_key_slots_plus_trailing_duration() {
+    let db = fresh_db();
+
+    run_cli(
+        &[
+            "start", "field", "-k", "key1", "-k", "key2", "-k", "key3", "val1", "val2", "val3",
+            "30m",
+        ],
+        &db,
+    )
+    .expect("multi-key + trailing dur should not choke");
+
+    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    assert_eq!(entry.duration_seconds(), Some(30 * 60));
+    assert_eq!(entry.state.as_ref(), Some(&json!(true)));
+    let extra = entry.data.as_ref().unwrap();
+    assert_eq!(extra["key1"], json!("val1"));
+    assert_eq!(extra["key2"], json!("val2"));
+    assert_eq!(extra["key3"], json!("val3"));
+    assert!(extra.get("dur").is_none(), "dur routes onto the column");
+}
+
+/// da-ooe2: `dur=<v>` may appear anywhere in argv — it fills the `dur=`
+/// slot directly, while a later bare positional fills the remaining `-k`
+/// slot. `start acb -k key1 dur=5 10` → key1=10, dur=5min.
+#[test]
+fn start_explicit_dur_anywhere_with_key_slot() {
+    let db = fresh_db();
+
+    run_cli(&["start", "acb", "-k", "key1", "dur=5", "10"], &db).expect("flexible dur position");
+
+    let entry = &db.entries_for_field("acb", None).unwrap()[0];
+    assert_eq!(entry.duration_seconds(), Some(5 * 60));
+    assert_eq!(entry.data.as_ref().unwrap()["key1"], json!(10));
+}
+
+/// da-ooe2: an explicit `-k dur=` slot declaration coexists with the
+/// auto-injected one (consolidated to a single slot), filled by the
+/// trailing positional. `start work -k dur= 30m` → dur=30min.
+#[test]
+fn start_explicit_dur_slot_declaration() {
+    let db = fresh_db();
+
+    run_cli(&["start", "work", "-k", "dur=", "30m"], &db).expect("explicit dur slot");
+
+    let entry = &db.entries_for_field("work", None).unwrap()[0];
+    assert_eq!(entry.duration_seconds(), Some(30 * 60));
 }
 
 /// `dm stop abc 3` mirrors start: trailing numeric is duration. For stop,

@@ -189,18 +189,31 @@ fn stop_extras_do_not_imply_duration() {
 
 /// TS #6: "can skip the duration if the duration is given as . or ''".
 ///
-/// Per da-l3f3, daydumb routes a trailing duration-parsable bare positional
-/// into `dur` on stop. So `stop field 50 -k abc=123` interprets `50` as a
-/// 50-minute backward duration (stop's `--dur` semantics:
-/// `time_start = base - dur`); `-k abc=123` still lands as data.
+/// da-ooe2: a lone trailing positional with no competing `-k` slot lands in
+/// the injected `dur=` slot. So `stop field 50` records a 50-minute dur;
+/// with a `-k` slot present the positional fills *that* slot first, and dur
+/// is set explicitly via `dur=<v>` (covered by `stop_explicit_dur_with_key`).
 #[test]
 fn stop_trailing_numeric_positional_lands_as_duration() {
     let db = fresh_db();
 
-    run_cli(&["stop", "field", "50", "-k", "abc=123"], &db).expect("stop with positional value");
+    run_cli(&["stop", "field", "50"], &db).expect("stop with trailing duration");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_eq!(entry.field, "field");
+    assert_eq!(entry.duration_seconds(), Some(50 * 60));
+}
+
+/// da-ooe2: with a `-k` slot in play, a bare positional fills the user slot,
+/// so dur is set explicitly via `dur=<v>` — which coexists with the slot's
+/// default. `stop field -k abc=123 dur=50` → abc keeps its default, dur=50m.
+#[test]
+fn stop_explicit_dur_with_key() {
+    let db = fresh_db();
+
+    run_cli(&["stop", "field", "-k", "abc=123", "dur=50"], &db).expect("stop with explicit dur");
+
+    let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_eq!(entry.duration_seconds(), Some(50 * 60));
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["abc"], json!(123));

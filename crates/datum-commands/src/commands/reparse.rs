@@ -35,8 +35,8 @@ use serde_json::Value as JsonValue;
 
 use crate::args::{Command, ReparseArgs};
 use crate::commands::log_core::{
-    expand_array_states, extract_reserved_columns, extract_switch_trailing_reserved,
-    parse_log_args, validate_switch_state_token,
+    expand_array_states, extract_reserved_columns, parse_log_args, prepare_log_args,
+    validate_switch_state_token,
 };
 
 /// Parser-derivable Entry shape — what the parser alone determines from
@@ -125,9 +125,10 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     };
 
     // Mirror the per-action pre-pass from `log_entry` so the parsed
-    // bundle matches what the insert path would have produced.
+    // bundle matches what the insert path would have produced (da-ooe2:
+    // declares the trailing `dur=` slot and peels the switch `,`-chain).
+    prepare_log_args(action, &mut log_args)?;
     if matches!(action, Action::Switch) {
-        extract_switch_trailing_reserved(&mut log_args)?;
         for tok in &log_args.rest {
             if !tok.contains('=') {
                 validate_switch_state_token(tok)?;

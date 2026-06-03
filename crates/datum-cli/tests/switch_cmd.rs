@@ -672,9 +672,10 @@ fn switch_comma_array_with_trailing_duration_positional() {
     );
 }
 
-/// da-ffp6: a trailing bare positional that doesn't parse as a duration is
-/// rejected — this is the path that, before the fix, would silently
-/// produce a 2-element state array.
+/// da-ooe2: a trailing bare positional that doesn't parse as a duration is
+/// rejected — after the state slot consumes `ai`, `b` falls into the
+/// injected `dur=` slot and fails the dur parse. Multi-state must be opt-in
+/// via the comma form (`a,b`).
 #[test]
 fn switch_trailing_non_duration_positional_rejected() {
     let db = fresh_db();
@@ -683,8 +684,8 @@ fn switch_trailing_non_duration_positional_rejected() {
         .expect_err("`b` is not a duration; whitespace-multi-state must error")
         .to_string();
     assert!(
-        err.contains("not a valid duration") && err.contains("comma"),
-        "error should hint at comma form: {err}",
+        err.contains("invalid dur value") || err.contains("dur"),
+        "error should flag the bad duration: {err}",
     );
     assert_eq!(
         db.entries_for_field("project", None).unwrap().len(),
@@ -708,8 +709,10 @@ fn switch_trailing_duration_conflicts_with_explicit_dur_flag() {
     );
 }
 
-/// da-ffp6: only one trailing duration positional permitted; two is an
-/// error rather than silently picking one.
+/// da-ooe2: only one trailing duration positional permitted. The state slot
+/// takes `ai`, the `dur=` slot takes `3`, and the second `5m` has no slot
+/// and no remainder bucket (switch) — so it errors as extra data rather
+/// than silently picking one.
 #[test]
 fn switch_two_trailing_duration_positionals_rejected() {
     let db = fresh_db();
@@ -718,8 +721,8 @@ fn switch_two_trailing_duration_positionals_rejected() {
         .expect_err("two trailing duration positionals should error")
         .to_string();
     assert!(
-        err.contains("multiple") || err.contains("at most one"),
-        "error should call out the multiplicity: {err}",
+        err.contains("Extra data") || err.contains("no matching key"),
+        "error should flag the extra positional: {err}",
     );
 }
 
