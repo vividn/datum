@@ -50,7 +50,7 @@ mod tests {
             fields: field.into_iter().map(String::from).collect(),
             count,
             oldest_first: true,
-            ..TailArgs::fresh()
+            ..TailArgs::default()
         }
     }
 

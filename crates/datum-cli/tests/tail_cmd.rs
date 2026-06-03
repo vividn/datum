@@ -94,7 +94,7 @@ fn sample_morning(db: &Db) -> Vec<Entry> {
 
 /// Minimal `TailArgs` with all-defaults; tests tweak fields they care about.
 fn tail_args() -> TailArgs {
-    TailArgs::fresh()
+    TailArgs::default()
 }
 
 // ─── Direct db::list_entries acceptance tests ────────────────────────────────

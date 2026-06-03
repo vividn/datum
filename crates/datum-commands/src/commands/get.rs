@@ -152,7 +152,7 @@ mod tests {
         db.insert_entry(&c).unwrap();
 
         let pattern = format!("{},{},{}", &a.hid[..4], &b.hid[..4], &c.hid[..4],);
-        get(GetArgs::fresh(pattern), &db).unwrap();
+        get(GetArgs::with_id(pattern), &db).unwrap();
 
         // Pointer must reflect every requested hid, in order.
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
@@ -165,7 +165,7 @@ mod tests {
         let a = entry_at("coffee", 100);
         db.insert_entry(&a).unwrap();
 
-        get(GetArgs::fresh(a.hid.clone()), &db).unwrap();
+        get(GetArgs::with_id(a.hid.clone()), &db).unwrap();
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         assert_eq!(pointer.hids, vec![a.hid]);
     }
@@ -177,7 +177,7 @@ mod tests {
         db.insert_entry(&a).unwrap();
 
         let pattern = format!("{},zzzz", &a.hid[..4]);
-        let err = get(GetArgs::fresh(pattern), &db).unwrap_err();
+        let err = get(GetArgs::with_id(pattern), &db).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("zzzz") || msg.to_lowercase().contains("not found"),
@@ -194,7 +194,7 @@ mod tests {
         db.insert_entry(&b).unwrap();
 
         let pattern = format!("{},{},", &a.hid[..4], &b.hid[..4]);
-        get(GetArgs::fresh(pattern), &db).unwrap();
+        get(GetArgs::with_id(pattern), &db).unwrap();
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         assert_eq!(pointer.hids, vec![a.hid, b.hid]);
     }

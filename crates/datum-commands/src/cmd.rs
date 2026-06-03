@@ -302,7 +302,7 @@ mod tests {
         // Bare `occur coffee` — occur is stateless under da-k5o6 and rejects
         // bare positionals; the per-occurrence quantity, if any, would land
         // via `-k amount=2`. Auto-track depends on the verb, not the data.
-        let args = LogArgs::fresh("coffee");
+        let args = LogArgs::with_field("coffee");
         log_entry(Action::Occur, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
         assert!(tracked.iter().any(|f| f.field == "coffee" && !f.ignored));
@@ -312,7 +312,7 @@ mod tests {
     fn test_auto_track_on_start() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let args = LogArgs::fresh("work");
+        let args = LogArgs::with_field("work");
         log_entry(Action::Start, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
         assert!(tracked.iter().any(|f| f.field == "work" && !f.ignored));
@@ -325,14 +325,14 @@ mod tests {
 
         // First insert: `datum switch coffee 2` (switch is the state-bearing
         // verb; `occur` carries no state under da-k5o6).
-        let mut args = LogArgs::fresh("coffee");
+        let mut args = LogArgs::with_field("coffee");
         args.rest = vec!["2".to_string()];
         log_entry(Action::Switch, args, &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
 
         // Undo via `-u`: same command form with `args.undo = true`. The
         // matching entry is soft-deleted, so the live count drops to 0.
-        let mut undo_args = LogArgs::fresh("coffee");
+        let mut undo_args = LogArgs::with_field("coffee");
         undo_args.rest = vec!["2".to_string()];
         undo_args.undo = true;
         log_entry(Action::Switch, undo_args, &db).unwrap();
@@ -345,16 +345,16 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // Two entries with different states under the same field.
-        let mut a = LogArgs::fresh("coffee");
+        let mut a = LogArgs::with_field("coffee");
         a.rest = vec!["1".to_string()];
         log_entry(Action::Switch, a, &db).unwrap();
-        let mut b = LogArgs::fresh("coffee");
+        let mut b = LogArgs::with_field("coffee");
         b.rest = vec!["2".to_string()];
         log_entry(Action::Switch, b, &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 2);
 
         // Undo only `switch coffee 2` — the `switch coffee 1` entry stays put.
-        let mut undo = LogArgs::fresh("coffee");
+        let mut undo = LogArgs::with_field("coffee");
         undo.rest = vec!["2".to_string()];
         undo.undo = true;
         log_entry(Action::Switch, undo, &db).unwrap();
@@ -367,7 +367,7 @@ mod tests {
     fn test_undo_flag_errors_when_no_match() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let mut args = LogArgs::fresh("coffee");
+        let mut args = LogArgs::with_field("coffee");
         args.rest = vec!["3".to_string()];
         args.undo = true;
         let err = log_entry(Action::Switch, args, &db).unwrap_err();
@@ -381,7 +381,7 @@ mod tests {
     fn test_no_auto_track_on_note() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let mut args = LogArgs::fresh("journal");
+        let mut args = LogArgs::with_field("journal");
         // v3 (da-5ns): bare positional under Action::Add is rejected
         // (the v=20 schema dropped the implicit `value` column). Stage
         // the note as a kv pair, and use `-T` so the entry is timeless
@@ -491,7 +491,7 @@ mod tests {
         .unwrap();
 
         // With some tracked fields and entries
-        let mut args = LogArgs::fresh("mood");
+        let mut args = LogArgs::with_field("mood");
         args.rest = vec!["happy".to_string()];
         log_entry(Action::Switch, args, &db).unwrap();
         // da-2sr: writing the switch entry alone makes mood tracked; no
@@ -520,7 +520,7 @@ mod tests {
     // ─── id-template tests (A1 acceptance) ──────────────────────────────────
 
     fn log_args(field: &str, rest: Vec<String>, id: Option<String>) -> LogArgs {
-        let mut args = LogArgs::fresh(field);
+        let mut args = LogArgs::with_field(field);
         args.rest = rest;
         args.id = id;
         args
@@ -644,7 +644,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
 
-        let mut args = LogArgs::fresh("word__%srcLang%");
+        let mut args = LogArgs::with_field("word__%srcLang%");
         args.slug_keys = vec!["pos".to_string(), "source".to_string()];
         args.remainder = Some("en".to_string());
         args.rest = vec![
@@ -679,7 +679,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
 
-        let mut args = LogArgs::fresh("word__%srcLang%");
+        let mut args = LogArgs::with_field("word__%srcLang%");
         args.slug_keys = vec!["pos".to_string(), "source".to_string()];
         args.rest = vec![
             "srcLang=pt".to_string(),
@@ -759,7 +759,7 @@ mod tests {
             fields: field.into_iter().map(String::from).collect(),
             count,
             oldest_first: true,
-            ..TailArgs::fresh()
+            ..TailArgs::default()
         }
     }
 
@@ -1609,7 +1609,7 @@ mod tests {
             .slug
             .clone();
 
-        crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap();
+        crate::commands::get::get(GetArgs::default(), &db).unwrap();
 
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         assert_eq!(pointer.hids.len(), 1);
@@ -1667,7 +1667,7 @@ mod tests {
             .unwrap();
 
         // get is non-destructive → defaults to _LAST → no protection check.
-        crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap();
+        crate::commands::get::get(GetArgs::default(), &db).unwrap();
     }
 
     /// Bare `get` against a fresh DB (no pointer ever set) errors with a
@@ -1676,7 +1676,7 @@ mod tests {
     fn last_docs_bare_get_on_fresh_db_errors_clearly() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let err = crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap_err();
+        let err = crate::commands::get::get(GetArgs::default(), &db).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("No previous documents") || msg.contains("touch a document"),
@@ -1717,7 +1717,7 @@ mod tests {
 
         // Bare `get` resolves _LAST → both entries are returned and
         // re-stamped onto the pointer (idempotent).
-        crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap();
+        crate::commands::get::get(GetArgs::default(), &db).unwrap();
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         let got: std::collections::HashSet<datum_core::ids::Hid> =
             pointer.hids.into_iter().collect();
@@ -1751,7 +1751,7 @@ mod tests {
 
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         assert_eq!(pointer.hids.len(), 1);
-        crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap();
+        crate::commands::get::get(GetArgs::default(), &db).unwrap();
     }
 
     // ─── da-5ns.3: insert/update path wires the new schema ───────────────
@@ -1763,7 +1763,7 @@ mod tests {
     // to the user-data payload (da-53rz).
 
     fn make_add_args(field: &str, rest: Vec<&str>) -> LogArgs {
-        let mut a = LogArgs::fresh(field);
+        let mut a = LogArgs::with_field(field);
         a.rest = rest.into_iter().map(String::from).collect();
         a
     }

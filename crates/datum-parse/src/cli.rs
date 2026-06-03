@@ -253,7 +253,7 @@ pub struct DbImportArgs {
 /// `args.output.resolve()` directly. Log-specific extras (unit, keys,
 /// slug_keys, conflict, …) remain as direct fields since no shared
 /// concern module owns them.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct LogArgs {
     pub field_or_verb: String,
     pub rest: Vec<String>,
@@ -322,30 +322,12 @@ pub struct LogArgs {
 }
 
 impl LogArgs {
-    pub fn fresh(field_or_verb: impl Into<String>) -> Self {
+    /// Start from `Default` with `field_or_verb` pre-set — the one field
+    /// every logging caller supplies up front.
+    pub fn with_field(field_or_verb: impl Into<String>) -> Self {
         Self {
             field_or_verb: field_or_verb.into(),
-            rest: Vec::new(),
-            time: TimeArgs::default(),
-            duration: DurationArgs::default(),
-            output: OutputArgs::default(),
-            undo: false,
-            keys: Vec::new(),
-            slug_keys: Vec::new(),
-            comment: Vec::new(),
-            remainder: None,
-            string_remainder: false,
-            comment_remainder: false,
-            id: None,
-            id_delimiter: None,
-            last_state: None,
-            conflict: None,
-            update: false,
-            merge: false,
-            no_metadata: false,
-            alias_name: None,
-            alias_overwrite: false,
-            dry_run: false,
+            ..Self::default()
         }
     }
 }
@@ -404,8 +386,8 @@ pub struct TailArgs {
     pub output: OutputArgs,
 }
 
-impl TailArgs {
-    pub fn fresh() -> Self {
+impl Default for TailArgs {
+    fn default() -> Self {
         Self {
             fields: Vec::new(),
             state_filter: None,
@@ -423,7 +405,7 @@ impl TailArgs {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct GetArgs {
     /// Optional. When omitted, callers default to the `_LAST` quickId
     /// token (resolves against the last-accessed pointer). Repurposed
@@ -439,29 +421,19 @@ pub struct GetArgs {
 }
 
 impl GetArgs {
-    pub fn fresh(id_or_slug: impl Into<String>) -> Self {
+    /// Start from `Default` with the positional id/slug pre-set. The bare
+    /// `datum get` form uses `GetArgs::default()` directly.
+    pub fn with_id(id_or_slug: impl Into<String>) -> Self {
         Self {
             id_or_slug: Some(id_or_slug.into()),
-            pretty: false,
-            output: OutputArgs::default(),
-            matchers: Vec::new(),
-        }
-    }
-
-    /// Constructor for the bare `datum get` form (no positional).
-    pub fn fresh_default() -> Self {
-        Self {
-            id_or_slug: None,
-            pretty: false,
-            output: OutputArgs::default(),
-            matchers: Vec::new(),
+            ..Self::default()
         }
     }
 }
 
 // ─── Mutation (update / merge / rekey) ────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct UpdateArgs {
     /// Optional. When omitted, callers default to the
     /// `_LAST_WITH_PROTECTION` quickId token (resolves against the
@@ -481,39 +453,6 @@ pub struct UpdateArgs {
     pub strict: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
-}
-
-impl UpdateArgs {
-    pub fn fresh(id_or_slug: impl Into<String>) -> Self {
-        Self {
-            id_or_slug: Some(id_or_slug.into()),
-            rest: Vec::new(),
-            strategy: None,
-            id: None,
-            id_delimiter: None,
-            keys: Vec::new(),
-            comment: Vec::new(),
-            dry_run: false,
-            strict: false,
-            output: OutputArgs::default(),
-        }
-    }
-
-    /// Constructor for the bare `datum update` form (no positional).
-    pub fn fresh_default() -> Self {
-        Self {
-            id_or_slug: None,
-            rest: Vec::new(),
-            strategy: None,
-            id: None,
-            id_delimiter: None,
-            keys: Vec::new(),
-            comment: Vec::new(),
-            dry_run: false,
-            strict: false,
-            output: OutputArgs::default(),
-        }
-    }
 }
 
 #[derive(Debug, Default)]
@@ -549,7 +488,7 @@ pub struct EditArgs {
     pub output: OutputArgs,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DeleteArgs {
     /// Optional. When omitted, callers default to the
     /// `_LAST_WITH_PROTECTION` quickId token (resolves against the
@@ -562,28 +501,6 @@ pub struct DeleteArgs {
     pub output: OutputArgs,
 }
 
-impl DeleteArgs {
-    pub fn fresh(id_or_slug: impl Into<String>) -> Self {
-        Self {
-            id_or_slug: Some(id_or_slug.into()),
-            force: false,
-            dry_run: false,
-            strict: false,
-            output: OutputArgs::default(),
-        }
-    }
-
-    pub fn fresh_default() -> Self {
-        Self {
-            id_or_slug: None,
-            force: false,
-            dry_run: false,
-            strict: false,
-            output: OutputArgs::default(),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct UndoArgs {
     pub id_or_slug: Option<String>,
@@ -594,8 +511,8 @@ pub struct UndoArgs {
     pub output: OutputArgs,
 }
 
-impl UndoArgs {
-    pub fn fresh() -> Self {
+impl Default for UndoArgs {
+    fn default() -> Self {
         Self {
             id_or_slug: None,
             to_version: None,
@@ -640,7 +557,7 @@ pub enum SpecCommand {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SpecSetArgs {
     pub field: String,
     pub json: Option<String>,
@@ -677,33 +594,6 @@ pub struct SpecSetArgs {
     /// `orphaned_extra_data_key` check fires for undeclared keys);
     /// `Some(false)` clears strictness; `None` leaves the existing value.
     pub strict: Option<bool>,
-}
-
-impl SpecSetArgs {
-    pub fn fresh(field: impl Into<String>) -> Self {
-        Self {
-            field: field.into(),
-            json: None,
-            default_verb: None,
-            states: Vec::new(),
-            color: None,
-            state_colors: Vec::new(),
-            state_descriptions: Vec::new(),
-            id_template: None,
-            description: None,
-            unit: None,
-            track: false,
-            ignore: false,
-            id_keys: Vec::new(),
-            data_keys: Vec::new(),
-            no_autoalias: false,
-            y: None,
-            height: None,
-            z_index: None,
-            tags: Vec::new(),
-            strict: None,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -824,7 +714,7 @@ pub enum MetaCommand {
 /// standard time-flag group (`-t`/`-d`/`-y`/`-q`/`-z`) places the
 /// flag at a specific moment, including back-dated. The optional
 /// comment becomes the flag's payload.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FlagArgs {
     pub field: String,
     /// Optional payload — what the user wants to review. Empty
@@ -835,16 +725,6 @@ pub struct FlagArgs {
     /// intentionally not exposed (a flag without a moment loses its
     /// point).
     pub time: TimeArgs,
-}
-
-impl FlagArgs {
-    pub fn fresh(field: impl Into<String>) -> Self {
-        Self {
-            field: field.into(),
-            comment: String::new(),
-            time: TimeArgs::default(),
-        }
-    }
 }
 
 // ─── Grep / Count / Ids / Dayview / Check ────────────────────────────────
@@ -982,8 +862,8 @@ pub struct DayviewArgs {
     pub orientation: DayviewOrientation,
 }
 
-impl DayviewArgs {
-    pub fn fresh() -> Self {
+impl Default for DayviewArgs {
+    fn default() -> Self {
         Self {
             start_date: None,
             end_date: None,
@@ -1004,7 +884,7 @@ impl DayviewArgs {
 /// `datum nowview` arguments. Per bead da-6jy nowview shares dayview's
 /// render path scoped to the last `history` minutes (default 30m); there
 /// is no separate "now panel" anymore so `--now-width` was dropped.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct NowviewArgs {
     /// History duration string ("15m", "1h", "2h"). None → 30m default.
     pub history: Option<String>,
@@ -1039,8 +919,8 @@ pub struct NowviewArgs {
     pub no_color: bool,
 }
 
-impl NowviewArgs {
-    pub fn fresh() -> Self {
+impl Default for NowviewArgs {
+    fn default() -> Self {
         Self {
             history: None,
             width: None,
@@ -1074,7 +954,7 @@ pub enum ViewFormat {
 }
 
 /// `datum view <name>` arguments.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ViewArgs {
     /// View name, looked up in the `views` table.
     pub name: String,
@@ -1087,15 +967,4 @@ pub struct ViewArgs {
     /// `datum check --list` (da-79vv: discoverability gap — view names
     /// otherwise live only inside kit TOML).
     pub list: bool,
-}
-
-impl ViewArgs {
-    pub fn fresh(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            format: ViewFormat::default(),
-            watch: false,
-            list: false,
-        }
-    }
 }

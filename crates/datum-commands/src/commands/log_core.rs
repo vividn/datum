@@ -1713,7 +1713,7 @@ mod tests {
     #[test]
     fn test_dur_start_sets_time_end() {
         let db = Db::open_in_memory().unwrap();
-        let mut args = LogArgs::fresh("sleep");
+        let mut args = LogArgs::with_field("sleep");
         args.duration.duration = Some("8h".to_string());
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
         let (base, _precision) = build_time_with_precision(&args).unwrap();
@@ -1728,7 +1728,7 @@ mod tests {
     #[test]
     fn test_dur_stop_sets_time_start() {
         let db = Db::open_in_memory().unwrap();
-        let mut args = LogArgs::fresh("sleep");
+        let mut args = LogArgs::with_field("sleep");
         args.duration.duration = Some("8h".to_string());
         log_entry(Action::Stop, args, &db).unwrap();
         let entries = db.entries_for_field("sleep", None).unwrap();
@@ -1796,7 +1796,7 @@ mod tests {
     // ─── da-a2o8: extract_switch_then_chain ──────────────────────────────
 
     fn switch_args(rest: &[&str]) -> LogArgs {
-        let mut a = LogArgs::fresh("body");
+        let mut a = LogArgs::with_field("body");
         a.rest = rest.iter().map(|s| s.to_string()).collect();
         a
     }
@@ -1947,7 +1947,7 @@ mod tests {
     #[test]
     fn block_switch_e2e_writes_one_row_with_following_state() {
         let db = Db::open_in_memory().unwrap();
-        let mut args = LogArgs::fresh("body");
+        let mut args = LogArgs::with_field("body");
         args.rest = vec![
             "vertical".to_string(),
             "5".to_string(),
@@ -1983,7 +1983,7 @@ mod tests {
     #[test]
     fn point_switch_e2e_writes_zero_duration_row() {
         let db = Db::open_in_memory().unwrap();
-        let mut args = LogArgs::fresh("body");
+        let mut args = LogArgs::with_field("body");
         args.duration.moment = true;
         args.rest = vec!["vertical".to_string(), ",".to_string(), "sit".to_string()];
         log_entry(Action::Switch, args, &db).unwrap();
@@ -2042,7 +2042,7 @@ mod tests {
     #[test]
     fn switch_yields_scalar_state() {
         let db = Db::open_in_memory().unwrap();
-        let mut args = LogArgs::fresh("mood");
+        let mut args = LogArgs::with_field("mood");
         args.rest = vec!["happy".to_string()];
         log_entry(Action::Switch, args, &db).unwrap();
         let entries = db.entries_for_field("mood", None).unwrap();

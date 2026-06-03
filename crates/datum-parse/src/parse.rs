@@ -521,7 +521,7 @@ fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
 
 fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
     let registry = log_args_registry();
-    let mut out = LogArgs::fresh(String::new());
+    let mut out = LogArgs::with_field(String::new());
     let pos = fold_args(tail, &mut out, &registry)?;
     let mut it = pos.into_iter();
     out.field_or_verb = it
@@ -1217,7 +1217,7 @@ fn parse_spec_list_tag(tail: &[&str]) -> Result<Option<String>> {
 }
 
 fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
-    let mut out = SpecSetArgs::fresh(String::new());
+    let mut out = SpecSetArgs::default();
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
@@ -1882,7 +1882,7 @@ fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
 }
 
 fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
-    let mut out = DayviewArgs::fresh();
+    let mut out = DayviewArgs::default();
     let mut i = 0;
     while i < tail.len() {
         let tok = tail[i];
@@ -2042,7 +2042,7 @@ fn parse_orientation(s: &str) -> Result<DayviewOrientation> {
 }
 
 fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
-    let mut out = NowviewArgs::fresh();
+    let mut out = NowviewArgs::default();
     let mut i = 0;
     while i < tail.len() {
         let tok = tail[i];
@@ -2166,7 +2166,7 @@ fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
 /// dispatch time, not from argv.
 fn parse_view_args(tail: &[&str]) -> Result<ViewArgs> {
     let mut name: Option<String> = None;
-    let mut out = ViewArgs::fresh("");
+    let mut out = ViewArgs::default();
     let mut i = 0;
     while i < tail.len() {
         let tok = tail[i];
