@@ -787,6 +787,16 @@ pub(crate) fn parse_log_args(
     data_args.string_remainder = args.string_remainder;
     data_args.comment_remainder = args.comment_remainder;
     data_args.string_state = args.string_state;
+    // da-vo0y F2: trailing-dur peek — only when a string-join remainder is
+    // active on a duration-bearing verb (matches the dur=-slot suppression
+    // in `prepare_log_args`; the peek replaces the slot there).
+    data_args.peek_trailing_dur = (args.string_state
+        || args.string_remainder
+        || args.comment_remainder)
+        && matches!(
+            action,
+            Action::Switch | Action::Start | Action::Stop | Action::Block
+        );
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
@@ -1041,13 +1051,20 @@ pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()>
         action,
         Action::Switch | Action::Start | Action::Stop | Action::Block
     ) {
-        if matches!(action, Action::Start | Action::Stop) {
+        // da-vo0y F2: with a string-join remainder active (`-I`/`-S`/`-C`),
+        // the front-eating `dur=` slot would swallow the first joined token
+        // as a duration (`start movie -SR title terminator 90` must not try
+        // `terminator` as a dur). Suppress the slot and let the trailing-dur
+        // PEEK in `handle_data_args` claim the duration from the join
+        // window's tail instead (set via `peek_trailing_dur` below). The
+        // start/stop `.`-strip is likewise skipped in peek mode — the `.`
+        // is the peek's explicit skip-dur sentinel there.
+        let string_join =
+            args.string_state || args.string_remainder || args.comment_remainder;
+        if matches!(action, Action::Start | Action::Stop) && !string_join {
             args.rest.retain(|t| t != "." && t != r"\.");
         }
-        // da-vo0y: `-I`/`--string-state` joins ALL positionals into state, so
-        // suppress the da-ooe2 `dur=` slot — it would otherwise eat the first
-        // positional as a duration. The `-I` + trailing-dur peek is Feature 2.
-        if !args.string_state {
+        if !string_join {
             args.keys.push("dur=".to_string());
         }
     }
@@ -2073,5 +2090,58 @@ mod tests {
         let mut args = LogArgs::with_field("mode");
         args.rest = vec!["_".to_string()];
         assert!(log_entry(Action::Switch, args, &db).is_err());
+    }
+
+    #[test]
+    fn switch_string_state_trailing_duration_peek() {
+        // da-vo0y F2 e2e: `switch tv -I adventure time 30m` → multi-word
+        // state AND the trailing duration lands as dur.
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("tv");
+        args.rest = vec![
+            "adventure".to_string(),
+            "time".to_string(),
+            "30m".to_string(),
+        ];
+        args.string_state = true;
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("tv", None).unwrap();
+        assert_eq!(entries[0].state, Some(serde_json::json!("adventure time")));
+        assert!(entries[0].dur.is_some(), "trailing 30m must land as dur");
+    }
+
+    #[test]
+    fn switch_string_state_dot_skips_dur() {
+        // `switch tv -I adventure time .` → explicit skip; no dur.
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("tv");
+        args.rest = vec![
+            "adventure".to_string(),
+            "time".to_string(),
+            ".".to_string(),
+        ];
+        args.string_state = true;
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("tv", None).unwrap();
+        assert_eq!(entries[0].state, Some(serde_json::json!("adventure time")));
+        assert!(entries[0].dur.is_none(), ". must skip the dur peek");
+    }
+
+    #[test]
+    fn start_string_remainder_trailing_duration_peek() {
+        // da-vo0y F2 e2e on a non-switch dur-bearing verb:
+        // `start movie -SR title terminator 90` → title joined, dur=90m,
+        // and `terminator` is NOT tried as a duration (the old dur-slot
+        // front-eat).
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("movie");
+        args.rest = vec!["terminator".to_string(), "90".to_string()];
+        args.string_remainder = true;
+        args.remainder = Some("title".to_string());
+        log_entry(Action::Start, args, &db).unwrap();
+        let entries = db.entries_for_field("movie", None).unwrap();
+        let data = entries[0].data.clone().expect("entry carries data");
+        assert_eq!(data["title"], serde_json::json!("terminator"));
+        assert!(entries[0].dur.is_some(), "trailing 90 must land as dur");
     }
 }

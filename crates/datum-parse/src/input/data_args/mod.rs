@@ -164,6 +164,14 @@ pub struct DataArgs {
     /// multi-word state — e.g. `switch tv -I adventure time` → state
     /// "adventure time". (da-vo0y Feature 1.)
     pub string_state: bool,
+    /// da-vo0y Feature 2: before the remainder joins, peek its LAST
+    /// positional — a duration-parseable token routes to `dur` instead of
+    /// joining (`movie terminator 90` → title "terminator", dur 90m); a
+    /// literal `.` is the explicit skip-dur sentinel (consumed, no
+    /// re-peek); `\.` escapes to a literal `.` that joins. Set by the
+    /// command layer when a string-join remainder (`-I`/`-S`/`-C`) is
+    /// active on a duration-bearing verb — never by a flag directly.
+    pub peek_trailing_dur: bool,
     /// Daydumb compat flag — keeps the strings `"null"` / `"undefined"`
     /// as `String` values rather than coercing them to `Value::Null` /
     /// stripped (datum's TS behaviour). daydumb stores literal `"null"`
@@ -344,6 +352,43 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
             false,
             compat,
         )?;
+    }
+
+    // ── trailing-dur peek (da-vo0y F2) ─────────────────────────────────
+    // With a string-join remainder active on a duration-bearing verb, the
+    // LAST positional of the join window is peeked before joining:
+    //   * duration-parseable → routes to `dur` (the trailing-dur idiom);
+    //     an explicit `dur=<v>` anywhere already won — the peek defers.
+    //   * `.`  → explicit skip-dur sentinel; consumed, and the peek does
+    //     NOT re-fire on the new last token (one `.`, one skip).
+    //   * `\.` → escapes to a literal `.` that joins normally.
+    //   * anything else → joins normally.
+    if args.peek_trailing_dur && !remainder_data.is_empty() {
+        let last = remainder_data.last().expect("checked non-empty");
+        if last == "." {
+            remainder_data.pop();
+        } else if last == r"\." {
+            // Escaped literal dot. With other tokens present, unescape now
+            // so it joins as `.` mid-string. As the SOLE token, leave it
+            // escaped — unescaping here would make the joined value exactly
+            // `.`, which `alter_datum_data`'s dot-default handling drops;
+            // the value path unescapes a lone `\.` itself (#44 review).
+            if remainder_data.len() > 1 {
+                let i = remainder_data.len() - 1;
+                remainder_data[i] = ".".to_string();
+            }
+        } else if datum_data.get("dur").is_none() && crate::time::parse_duration(last).is_ok() {
+            let dur_tok = remainder_data.pop().expect("checked non-empty");
+            alter_datum_data(
+                &mut datum_data,
+                "dur",
+                Some(&dur_tok),
+                None,
+                false,
+                false,
+                compat,
+            )?;
+        }
     }
 
     // ── remainder ──────────────────────────────────────────────────────
@@ -791,6 +836,122 @@ mod tests {
         a.remainder = Some("rem".into());
         a.data = vec!["x".into(), "y".into()];
         assert_eq!(run(a), *json!({"rem": ["x", "y"]}).as_object().unwrap());
+    }
+
+    // ── trailing-dur peek (da-vo0y Feature 2) ───────────────────────────
+
+    #[test]
+    fn peek_takes_trailing_duration_into_dur() {
+        // `switch tv -I adventure time 30m` → state + dur.
+        let mut a = args();
+        a.string_state = true;
+        a.peek_trailing_dur = true;
+        a.data = vec!["adventure".into(), "time".into(), "30m".into()];
+        assert_eq!(
+            run(a),
+            *json!({"state": {"id": "adventure time"}, "dur": "PT30M"})
+                .as_object()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn peek_dot_skips_dur_and_joins_rest() {
+        // `movie terminator 2 .` → title "terminator 2", no dur — the `.`
+        // opts out and the would-be-duration "2" joins instead.
+        let mut a = args();
+        a.string_remainder = true;
+        a.remainder = Some("title".into());
+        a.peek_trailing_dur = true;
+        a.data = vec!["terminator".into(), "2".into(), ".".into()];
+        assert_eq!(
+            run(a),
+            *json!({"title": "terminator 2"}).as_object().unwrap()
+        );
+    }
+
+    #[test]
+    fn peek_bare_int_parses_as_minutes() {
+        // `movie terminator 90` → title "terminator", dur 90 minutes.
+        let mut a = args();
+        a.string_remainder = true;
+        a.remainder = Some("title".into());
+        a.peek_trailing_dur = true;
+        a.data = vec!["terminator".into(), "90".into()];
+        assert_eq!(
+            run(a),
+            *json!({"title": "terminator", "dur": "PT1H30M"})
+                .as_object()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn no_peek_without_flag_duration_joins() {
+        // Without the command layer arming the peek (non-dur-bearing verb),
+        // a trailing duration-looking token joins like any other word.
+        let mut a = args();
+        a.string_state = true;
+        a.data = vec!["adventure".into(), "time".into(), "30m".into()];
+        assert_eq!(
+            run(a),
+            *json!({"state": {"id": "adventure time 30m"}})
+                .as_object()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn peek_defers_to_explicit_dur_key() {
+        // `dur=5` anywhere wins; the trailing 10m joins instead of peeking.
+        let mut a = args();
+        a.string_state = true;
+        a.peek_trailing_dur = true;
+        a.data = vec!["dur=5".into(), "a".into(), "10m".into()];
+        assert_eq!(
+            run(a),
+            *json!({"state": {"id": "a 10m"}, "dur": "PT5M"})
+                .as_object()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn peek_escaped_dot_joins_as_literal() {
+        let mut a = args();
+        a.string_state = true;
+        a.peek_trailing_dur = true;
+        a.data = vec!["loading".into(), r"\.".into()];
+        assert_eq!(
+            run(a),
+            *json!({"state": {"id": "loading ."}}).as_object().unwrap()
+        );
+    }
+
+    #[test]
+    fn peek_sole_escaped_dot_survives_as_literal_dot() {
+        // #44 review: a sole `\.` must NOT be unescaped before the join —
+        // the joined value would be exactly `.`, which the dot-default
+        // handling drops. Left escaped, the value path unescapes it.
+        let mut a = args();
+        a.string_state = true;
+        a.peek_trailing_dur = true;
+        a.data = vec![r"\.".into()];
+        assert_eq!(
+            run(a),
+            *json!({"state": {"id": "."}}).as_object().unwrap()
+        );
+    }
+
+    #[test]
+    fn peek_only_token_is_duration() {
+        // `snack 30m` → the join has nothing left to claim; 30m is the dur
+        // (state falls to the action default downstream).
+        let mut a = args();
+        a.string_state = true;
+        a.peek_trailing_dur = true;
+        a.data = vec!["30m".into()];
+        assert_eq!(run(a), *json!({"dur": "PT30M"}).as_object().unwrap());
     }
 
     #[test]
