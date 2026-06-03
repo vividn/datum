@@ -166,6 +166,22 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         reserved.state = expand_array_states(reserved.state)?;
     }
 
+    // da-state-back: when the user writes `_` / `__` / `_n` as a switch
+    // state, resolve it to a previous DISTINCT state of the field —
+    // mirroring the quick-id ordinal pattern (`_` = 1 back, `__` = 2 back).
+    // Only for `Action::Switch`; other verbs treat the same literals as
+    // plain strings. Resolution skips the field's current state and counts
+    // only distinct historical alternatives, so `switch field _` toggles
+    // A↔B and `__` only resolves when a genuine third state exists.
+    let value = if matches!(action, Action::Switch) {
+        resolve_underscore_state(value, db, &field)?
+    } else {
+        value
+    };
+    if matches!(action, Action::Switch) {
+        reserved.state = resolve_underscore_state(reserved.state, db, &field)?;
+    }
+
     // `-u`/`--undo`: instead of inserting, locate the most recent live
     // entry whose (field, state) matches what this command would have
     // produced and soft-delete it. Restores original datum's `uu`-alias
@@ -1075,6 +1091,41 @@ pub(crate) fn validate_switch_state_token(s: &str) -> Result<()> {
         anyhow::bail!("invalid state list '{s}': empty segment between commas");
     }
     Ok(())
+}
+
+/// Resolve `_` / `__` / `_n` state tokens against the field's history.
+///
+/// Mirrors the entry-id quick-id ordinal pattern (`_` = 1 back, `__` = 2,
+/// `_n` = n) but resolves against the field's distinct state history via
+/// [`Db::resolve_state_back`]. Only the scalar-string case is rewritten;
+/// arrays (multi-state) and structured states pass through untouched —
+/// each element of a multi-state array could itself be `_`, but that's a
+/// follow-up.
+///
+/// Errors when the user explicitly asked for a back-state but the field's
+/// history doesn't run that deep — silently storing the literal string
+/// `"_"` would be confusing.
+fn resolve_underscore_state(
+    value: Option<JsonValue>,
+    db: &Db,
+    field: &str,
+) -> Result<Option<JsonValue>> {
+    let Some(JsonValue::String(s)) = &value else {
+        return Ok(value);
+    };
+    let Some(n) = datum_core::ids::parse_underscore_ordinal(s) else {
+        return Ok(value);
+    };
+    match db
+        .resolve_state_back(field, n)
+        .map_err(anyhow::Error::from)?
+    {
+        Some(resolved) => Ok(Some(resolved)),
+        None => Err(anyhow::anyhow!(
+            "no state {n} back on field '{field}' — history is too short or \
+             only contains the current state"
+        )),
+    }
 }
 
 /// S12: for `Verb::Switch`, expand any comma-containing string in the
@@ -1993,6 +2044,34 @@ mod tests {
         args.rest = vec!["a".to_string(), "b".to_string()];
         args.string_state = true;
         args.string_remainder = true;
+        assert!(log_entry(Action::Switch, args, &db).is_err());
+    }
+
+    #[test]
+    fn switch_underscore_resolves_previous_distinct_state() {
+        // da-state-back: `switch field _` toggles back to the previous
+        // distinct state, end-to-end through log_entry.
+        let db = Db::open_in_memory().unwrap();
+        for s in ["focus", "rest"] {
+            let mut args = LogArgs::with_field("mode");
+            args.rest = vec![s.to_string()];
+            log_entry(Action::Switch, args, &db).unwrap();
+        }
+        let mut args = LogArgs::with_field("mode");
+        args.rest = vec!["_".to_string()];
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("mode", None).unwrap();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].state, Some(serde_json::json!("focus")));
+    }
+
+    #[test]
+    fn switch_underscore_errors_when_history_too_short() {
+        // Explicitly asking for a back-state on a field with no
+        // alternatives must error, not store the literal "_".
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("mode");
+        args.rest = vec!["_".to_string()];
         assert!(log_entry(Action::Switch, args, &db).is_err());
     }
 }

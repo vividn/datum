@@ -9,6 +9,7 @@ pub mod resolve;
 pub mod types;
 
 pub use resolve::{
-    contains_wildcard, resolve_quickid, resolve_quickid_all, resolve_quickid_single,
+    contains_wildcard, parse_underscore_ordinal, resolve_quickid, resolve_quickid_all,
+    resolve_quickid_single,
 };
 pub use types::{Hid, Slug};

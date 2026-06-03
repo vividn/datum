@@ -204,7 +204,11 @@ fn exact_live_match(db: &Db, pattern: &str) -> Result<Option<Entry>> {
 ///
 /// Anything else (including `_LAST`, `__5`, the empty string, or
 /// patterns missing a leading underscore) returns `None`.
-fn parse_underscore_ordinal(s: &str) -> Option<usize> {
+///
+/// `pub` because the switch-state back-resolver (`_` / `__` / `_n` as a
+/// previous-state selector, da-state-back) reuses the same ordinal
+/// grammar — one parse, two id-spaces (entries and states).
+pub fn parse_underscore_ordinal(s: &str) -> Option<usize> {
     if !s.starts_with('_') {
         return None;
     }
