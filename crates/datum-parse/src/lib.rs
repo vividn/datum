@@ -36,8 +36,9 @@ pub mod intent;
 pub mod parse;
 pub mod time;
 
+pub use alias::expand::shell_split;
 pub use cli::{Cli, Command};
 pub use error::{ParseError, Result};
 pub use input::{consolidate_keys, flexible_positional, FlexibleTarget};
-pub use parse::{parse_argv, parse_argv_string, shell_split};
+pub use parse::{parse_argv, parse_argv_string};
 pub use time::{DateArg, DatumTime, PrecisionUnit, TimeArg, TimeBuilder, Uncertainty};

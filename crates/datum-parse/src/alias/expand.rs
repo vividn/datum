@@ -634,10 +634,12 @@ fn shell_quote_token(s: &str) -> String {
     out
 }
 
-/// Shell-style split for alias expansion strings (e.g. when reading the
-/// alias's `expands_to` column). Single and double quotes, backslash
-/// escapes; no env-var expansion. Matches the minimal splitter in
-/// `crate::parse`.
+/// Canonical shell-style splitter for the `datum-parse` crate. Single
+/// and double quotes, backslash escapes; no env-var expansion. Not
+/// POSIX-complete — enough for alias expansion (reading an alias's
+/// `expands_to` column), the in-process test harness, and the WASM
+/// frontend. Re-exported at the crate root as `datum_parse::shell_split`
+/// and used by [`parse_argv_string`](crate::parse::parse_argv_string).
 pub fn shell_split(s: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut cur = String::new();
@@ -698,8 +700,8 @@ pub fn shell_split(s: &str) -> Vec<String> {
 }
 
 /// The standalone-comma token that triggers a multi-entry split.
-/// Whitespace-bounded `,` arrives from [`shell_split`] (or its `parse.rs`
-/// twin) as its own argv entry. Non-bounded commas — `vertical,sit`,
+/// Whitespace-bounded `,` arrives from [`shell_split`] as its own argv
+/// entry. Non-bounded commas — `vertical,sit`,
 /// `vertical ,sit`, `key=a,b` — stay glued to their neighbouring chars
 /// and do not trigger.
 pub const MULTI_COMMA: &str = ",";

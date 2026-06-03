@@ -28,6 +28,7 @@
 //!   `=` form gets to carry a hyphen prefix, which is what the existing
 //!   tests lock in.
 
+use crate::alias::expand::shell_split;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
 use crate::input::{
@@ -43,72 +44,13 @@ pub fn parse_argv(argv: &[String]) -> Result<Cli> {
 }
 
 /// String-API variant: shell-tokenize, then parse.
+///
+/// Tokenization is delegated to [`shell_split`](crate::alias::expand::shell_split),
+/// the single canonical splitter shared with the alias-expansion pipeline.
 pub fn parse_argv_string(s: &str) -> Result<Cli> {
     let argv = shell_split(s);
     let tail: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
     parse_tail(&tail)
-}
-
-/// Minimal shell-style splitter: single and double quotes, backslash
-/// escapes. Not POSIX-complete — enough for the in-process test harness
-/// and WASM frontend which don't need env-var expansion.
-pub fn shell_split(s: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut cur = String::new();
-    let mut chars = s.chars().peekable();
-    let mut in_single = false;
-    let mut in_double = false;
-    let mut has_tok = false;
-    while let Some(c) = chars.next() {
-        if in_single {
-            if c == '\'' {
-                in_single = false;
-            } else {
-                cur.push(c);
-            }
-        } else if in_double {
-            if c == '"' {
-                in_double = false;
-            } else if c == '\\' {
-                if let Some(nc) = chars.next() {
-                    cur.push(nc);
-                }
-            } else {
-                cur.push(c);
-            }
-        } else {
-            match c {
-                '\'' => {
-                    in_single = true;
-                    has_tok = true;
-                }
-                '"' => {
-                    in_double = true;
-                    has_tok = true;
-                }
-                '\\' => {
-                    if let Some(nc) = chars.next() {
-                        cur.push(nc);
-                        has_tok = true;
-                    }
-                }
-                c if c.is_whitespace() => {
-                    if has_tok {
-                        out.push(std::mem::take(&mut cur));
-                        has_tok = false;
-                    }
-                }
-                _ => {
-                    cur.push(c);
-                    has_tok = true;
-                }
-            }
-        }
-    }
-    if has_tok {
-        out.push(cur);
-    }
-    out
 }
 
 fn parse_tail(tail: &[&str]) -> Result<Cli> {
