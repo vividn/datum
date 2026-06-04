@@ -958,11 +958,11 @@ fn raw_overwrite_mutables(
             now,
             entry.device_id,
             // §5 #11: nullable in the type, written as empty-string when None
-        // so the bind round-trips against historical NOT NULL versions of
-        // the column during a migration walk (m31→m32 relaxes the
-        // constraint, but earlier migrations still see the old shape).
-        // The row mapper restores None on read.
-        entry.raw_input.as_deref().unwrap_or(""),
+            // so the bind round-trips against historical NOT NULL versions of
+            // the column during a migration walk (m31→m32 relaxes the
+            // constraint, but earlier migrations still see the old shape).
+            // The row mapper restores None on read.
+            entry.raw_input.as_deref().unwrap_or(""),
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
             entry
@@ -1075,11 +1075,14 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
 }
 
 /// Apply `entry` wholesale to the `entries` table (live or tombstoned) — the
-/// hid/slug are treated as the identifying target, every other column takes
+/// hid is the identifying target, every other column (including `slug`, so a
+/// revert across an auto-reinterp rekey restores the old slug; da-mryo) takes
 /// the snapshot's value. Used by `revert_entry_to` so a revert can flip the
 /// `deleted_at` column back to NULL (or set it) in lockstep with the rest of
 /// the row. `modify_time` is taken from the snapshot verbatim; the caller has
-/// already persisted a history row capturing the pre-revert state.
+/// already persisted a history row capturing the pre-revert state. If another
+/// live row has since claimed the snapshot's slug, the UNIQUE constraint
+/// fails the revert loudly rather than silently keeping the wrong slug.
 pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> {
     let occur_str = entry
         .occur_time
@@ -1126,7 +1129,8 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             alias_chain = ?23,
             parser_version = ?24,
             user_asserted_last_state = ?25,
-            extra_metadata = ?26
+            extra_metadata = ?26,
+            slug = ?27
            WHERE hid = ?1"#,
         params![
             entry.hid,
@@ -1151,11 +1155,11 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             entry.id_structure.as_deref(),
             entry.field_structure.as_deref(),
             // §5 #11: nullable in the type, written as empty-string when None
-        // so the bind round-trips against historical NOT NULL versions of
-        // the column during a migration walk (m31→m32 relaxes the
-        // constraint, but earlier migrations still see the old shape).
-        // The row mapper restores None on read.
-        entry.raw_input.as_deref().unwrap_or(""),
+            // so the bind round-trips against historical NOT NULL versions of
+            // the column during a migration walk (m31→m32 relaxes the
+            // constraint, but earlier migrations still see the old shape).
+            // The row mapper restores None on read.
+            entry.raw_input.as_deref().unwrap_or(""),
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
             entry
@@ -1163,6 +1167,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
                 .as_ref()
                 .map(|v| v.to_string()),
             entry.extra_metadata.as_ref().map(|v| v.to_string()),
+            entry.slug,
         ],
     )?;
     if affected == 0 {

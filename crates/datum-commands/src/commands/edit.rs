@@ -42,7 +42,7 @@ const SYSTEM_OWNED_KEYS: &[&str] = &[
 
 use crate::{
     args::{EditArgs, OutputFlagsExt},
-    render::show_update,
+    commands::update_core::{render_outcome, UpdateOutcome},
 };
 
 /// Strict view of the fields a user is allowed to mutate via `datum edit`.
@@ -191,13 +191,18 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
     let mut updated = existing.clone();
     edited_view.apply_to(&mut updated);
     updated.modify_time = Utc::now();
-    updated.content_hash = updated.expected_content_hash();
 
-    db.save_existing_entry(&updated)?;
+    // da-mryo: persist via the auto-reinterp path (like retime/update/rekey)
+    // so a templated slug/field re-derives against the edited values —
+    // occur_time, field, data, and id_structure/field_structure themselves
+    // are all editable here, and all feed the templates. The helper records
+    // a UserEdit history row, recomputes content_hash, and returns the fresh
+    // row under its possibly-rekeyed slug.
+    let delim = crate::config::resolve_id_delimiter(None);
+    let (entry, old_slug) =
+        db.save_existing_entry_with_auto_reinterp(&existing.slug, updated, &delim)?;
 
-    let fresh = db.get_entry(&updated.slug)?;
-    let registry = crate::commands::helpers::load_registry_opt(db);
-    show_update(&fresh, registry.as_ref(), &args.output()?);
+    render_outcome(&UpdateOutcome { entry, old_slug }, &args.output()?, db);
     Ok(())
 }
 
@@ -524,6 +529,83 @@ mod tests {
                 "key {key}: modify_time bumped"
             );
         }
+    }
+
+    /// da-mryo: `edit` must go through slug auto-reinterpolation like
+    /// retime/update/rekey do. Editing `occur_time` on a row whose
+    /// `id_structure` references `%occur_time%` rekeys the slug in place
+    /// (hid preserved), records a `UserEdit` history row, and `datum undo`
+    /// restores BOTH the old time and the old slug.
+    #[test]
+    fn edit_occur_time_reinterpolates_templated_slug() {
+        use datum_core::history::{self, ChangeKind};
+        use datum_core::ids::Slug;
+
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+        );
+        // Give the row a time-templated slug, mirroring the retime tests
+        // (the default slug builder doesn't honor id_structure, so stamp
+        // the canonical templated form via an explicit rekey).
+        let stamped_slug = Slug("mood:2024-01-01T00:00:00.000Z".to_string());
+        let mut stamped = e.clone();
+        stamped.id_structure = Some("%occur_time%".to_string());
+        stamped.slug = stamped_slug.clone();
+        db.save_existing_entry_with_rekey(&e.slug, &stamped)
+            .unwrap();
+        let before = db.get_entry(stamped_slug.as_str()).unwrap();
+
+        let new_time: chrono::DateTime<chrono::Utc> = "2026-05-01T10:00:00Z".parse().unwrap();
+        let new_dt = DatumTime {
+            utc: new_time,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        let payload = editor_payload(&before, |doc| {
+            doc["occur_time"] = serde_json::to_value(&new_dt).unwrap();
+        });
+        let prep = write_editor_payload(&payload);
+
+        let editor_cmd = format!("cp {}", prep.path().display());
+        with_datum_editor(&editor_cmd, || {
+            edit(
+                EditArgs {
+                    id_or_slug: stamped_slug.to_string(),
+                    output: Default::default(),
+                },
+                &db,
+            )
+            .unwrap();
+        });
+
+        // Slug re-derived from the new occur_time; row rekeyed in place.
+        let after = db.get_entry(&e.hid).unwrap();
+        assert_eq!(after.slug.as_str(), "mood:2026-05-01T10:00:00.000Z");
+        assert_eq!(after.hid, e.hid);
+        assert!(db.get_entry(stamped_slug.as_str()).is_err());
+
+        // Pre-edit snapshot recorded as UserEdit, carrying the old slug.
+        let hist = history::list(db.conn(), &e.hid, true).unwrap();
+        assert_eq!(hist[0].change_kind, ChangeKind::UserEdit);
+        assert_eq!(hist[0].snapshot.slug, stamped_slug);
+
+        // Undo restores the old time AND the old slug.
+        crate::commands::undo::undo(
+            crate::args::UndoArgs {
+                id_or_slug: Some(after.slug.to_string()),
+                ..Default::default()
+            },
+            &db,
+        )
+        .unwrap();
+        let restored = db.get_entry(&e.hid).unwrap();
+        assert_eq!(restored.slug, stamped_slug);
+        assert_eq!(restored.occur_time, before.occur_time);
     }
 
     /// da-4lov complement: even when the user makes no semantic change,
