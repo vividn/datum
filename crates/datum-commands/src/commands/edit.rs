@@ -50,8 +50,12 @@ use crate::{
 /// Anything not on this struct is system-only and physically cannot be
 /// touched: it never gets written to the editor tempfile, and the
 /// deserializer has nowhere to land it on read-back.
+///
+/// da-lzrh: `datum grep` reuses this projection as its search haystack, so
+/// patterns can only match text the user can see. When the editable surface
+/// grows, grep's haystack follows automatically.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-struct UserEditableEntry {
+pub(crate) struct UserEditableEntry {
     field: String,
     verb: Verb,
     #[serde(default)]
@@ -81,7 +85,7 @@ struct UserEditableEntry {
 }
 
 impl UserEditableEntry {
-    fn from_entry(e: &Entry) -> Self {
+    pub(crate) fn from_entry(e: &Entry) -> Self {
         Self {
             field: e.field.clone(),
             verb: e.verb,

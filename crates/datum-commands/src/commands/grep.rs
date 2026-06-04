@@ -1,12 +1,24 @@
 //! `datum grep <pattern>` — regex search over entries.
+//!
+//! da-lzrh: the haystack is the user-editable projection — the same
+//! boundary `datum edit` exposes ([`UserEditableEntry`], da-4lov) — plus
+//! the slug, which is user-addressable. System fields (`content_hash`,
+//! `hid`, `device_id`, `parser_version`, `raw_input`, …) never enter it,
+//! so a pattern can only match text the user can actually see.
 
 use anyhow::{Context, Result};
-use datum_core::{db::Db, entry::Entry, time::DatumTime};
+use datum_core::{
+    db::{Db, ListParams},
+    entry::Entry,
+    time::DatumTime,
+};
 use regex_lite::Regex;
 
 use crate::{
     args::{GrepArgs, OutputFlagsExt},
-    commands::{helpers::load_registry_opt, render_helpers::build_render_contexts},
+    commands::{
+        edit::UserEditableEntry, helpers::load_registry_opt, render_helpers::build_render_contexts,
+    },
     render::{print_table_with, TableArgs, TimeMetricCol},
 };
 
@@ -17,24 +29,7 @@ pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
         .map(|p| Regex::new(p).with_context(|| format!("Invalid regex pattern: {p}")))
         .collect::<Result<_>>()?;
 
-    let candidates = if let Some(field) = &args.field {
-        db.entries_for_field(field, None)?
-    } else {
-        let far_future = chrono::Utc::now() + chrono::Duration::days(365);
-        let far_past = chrono::DateTime::UNIX_EPOCH;
-        db.entries_in_range(far_past, far_future)?
-    };
-
-    let matches: Vec<Entry> = candidates
-        .into_iter()
-        .filter(|entry| {
-            let json = match serde_json::to_string(entry) {
-                Ok(s) => s,
-                Err(_) => return false,
-            };
-            regexes.iter().all(|r| r.is_match(&json))
-        })
-        .collect();
+    let matches = grep_entries(db, &regexes, args.field.as_deref())?;
 
     let registry = load_registry_opt(db);
     let tbl = TableArgs {
@@ -48,6 +43,43 @@ pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
     let ctxs = build_render_contexts(&matches, db);
     print_table_with(&matches, Some(&ctxs), Some(&now), registry.as_ref(), &tbl);
     Ok(())
+}
+
+/// Collect live entries whose haystack matches every regex.
+///
+/// Without `--field`, candidates come from `list_entries` with no time
+/// bounds, so entries arbitrarily far in the future (planning entries) are
+/// searchable — the old path capped the window at now + 1 year (da-lzrh).
+/// `include_meta: true` is deliberate: meta/flagged rows (da-ghlx) are
+/// searchable here by design — a grep should search everything, even rows
+/// the live tail/dayview surfaces hide by default.
+fn grep_entries(db: &Db, regexes: &[Regex], field: Option<&str>) -> Result<Vec<Entry>> {
+    let candidates = if let Some(field) = field {
+        db.entries_for_field(field, None)?
+    } else {
+        db.list_entries(&ListParams {
+            include_meta: true,
+            ..Default::default()
+        })?
+    };
+
+    Ok(candidates
+        .into_iter()
+        .filter(|entry| match haystack(entry) {
+            Some(h) => regexes.iter().all(|r| r.is_match(&h)),
+            None => false,
+        })
+        .collect())
+}
+
+/// The searchable text for one entry: its user-editable fields serialized
+/// to JSON, plus the slug (user-addressable identity).
+fn haystack(entry: &Entry) -> Option<String> {
+    let view = UserEditableEntry::from_entry(entry);
+    let mut s = serde_json::to_string(&view).ok()?;
+    s.push(' ');
+    s.push_str(entry.slug.as_str());
+    Some(s)
 }
 
 #[cfg(test)]
@@ -76,20 +108,7 @@ mod tests {
 
     fn run_grep(db: &datum_core::db::Db, patterns: &[&str], field: Option<&str>) -> Vec<Entry> {
         let regexes: Vec<Regex> = patterns.iter().map(|p| Regex::new(p).unwrap()).collect();
-        let candidates = if let Some(f) = field {
-            db.entries_for_field(f, None).unwrap()
-        } else {
-            let far_future = chrono::Utc::now() + chrono::Duration::days(365);
-            let far_past = chrono::DateTime::UNIX_EPOCH;
-            db.entries_in_range(far_past, far_future).unwrap()
-        };
-        candidates
-            .into_iter()
-            .filter(|e| {
-                let j = serde_json::to_string(e).unwrap();
-                regexes.iter().all(|r| r.is_match(&j))
-            })
-            .collect()
+        grep_entries(db, &regexes, field).unwrap()
     }
 
     #[test]
@@ -276,5 +295,71 @@ mod tests {
             &db,
         )
         .unwrap();
+    }
+
+    // da-lzrh: the old no-field path capped candidates at now + 365 days,
+    // silently hiding planning entries further ahead.
+    #[test]
+    fn grep_finds_far_future_entries() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let utc = chrono::Utc::now() + chrono::Duration::days(730);
+        let t = DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        db.insert_entry(&Entry::new_legacy(
+            "plan",
+            Verb::Point,
+            Some(serde_json::json!("sabbatical")),
+            None,
+            Some(t),
+            None,
+            "d1",
+        ))
+        .unwrap();
+
+        let got = run_grep(&db, &["sabbatical"], None);
+        assert_eq!(got.len(), 1, "entries >1y in the future must be greppable");
+        assert_eq!(got[0].field, "plan");
+    }
+
+    // da-lzrh: matching against invisible system fields gave inexplicable
+    // hits — the rendered table shows nothing containing the pattern.
+    #[test]
+    fn grep_ignores_system_fields() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = make_grep_entry("mood", 100, serde_json::json!("happy"), None);
+        db.insert_entry(&e).unwrap();
+
+        assert!(
+            run_grep(&db, &[e.content_hash.as_str()], None).is_empty(),
+            "content_hash must not be searchable"
+        );
+        assert!(
+            run_grep(&db, &[e.hid.as_str()], None).is_empty(),
+            "hid must not be searchable"
+        );
+
+        // The slug IS user-addressable, so it stays in the haystack.
+        let got = run_grep(&db, &[e.slug.as_str()], None);
+        assert_eq!(got.len(), 1, "slug must remain searchable");
+    }
+
+    // Pins the documented decision (da-lzrh / da-ghlx): grep searches
+    // everything, including meta rows that tail/dayview hide by default.
+    #[test]
+    fn grep_searches_meta_rows() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let mut meta = make_grep_entry("journal", 100, serde_json::json!("checkpoint"), None);
+        meta.extra_metadata = Some(serde_json::json!({"meta": true, "text": "x"}));
+        db.insert_entry(&meta).unwrap();
+
+        let got = run_grep(&db, &["checkpoint"], None);
+        assert_eq!(got.len(), 1, "meta rows are searchable by design");
+        assert_eq!(got[0].slug, meta.slug);
     }
 }
