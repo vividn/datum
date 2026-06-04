@@ -82,21 +82,34 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
                             candidates.push(entry);
                         }
                     }
-                    if !candidates.is_empty()
-                        && crate::commands::helpers::confirm_default_last_if_stale(
+                    if !candidates.is_empty() {
+                        if crate::commands::helpers::confirm_default_last_if_stale(
                             db,
                             None,
                             false,
                             "Undo",
                             &candidates,
-                        )?
-                    {
-                        return undo_via_last_docs(db, &reference.hids, &registry, &args.output()?);
+                        )? {
+                            return undo_via_last_docs(
+                                db,
+                                &reference.hids,
+                                &registry,
+                                &args.output()?,
+                            );
+                        }
+                        // Explicit decline stops outright — same
+                        // "Aborted." convention as delete/retime/
+                        // update. Falling through here would let the
+                        // window fallback silently restore a DIFFERENT,
+                        // newer tombstone than the one the user just
+                        // said no to (da-3vvk).
+                        println!("Aborted.");
+                        return Ok(());
                     }
-                    // Either declined or pointer is empty — fall
+                    // Pointer references nothing restorable — fall
                     // through to the window-based fallback so legacy
                     // `undo --window` against older tombstones still
-                    // works after a user-declined prompt.
+                    // works.
                 }
                 Ok(None) | Err(_) => {
                     // No pointer (fresh DB or pre-da-e65 schema) — fall through.

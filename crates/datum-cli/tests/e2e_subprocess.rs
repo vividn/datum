@@ -57,6 +57,33 @@ impl Env {
             .expect("spawn datum")
     }
 
+    /// Like [`Env::run`] but with `input` piped to the child's stdin —
+    /// for interactive prompts ([Y/n]) the in-process harnesses cannot
+    /// drive (a closed stdin reads as the yes-default, not a decline).
+    fn run_with_stdin(&self, args: &[&str], input: &str) -> Output {
+        use std::io::Write;
+        use std::process::Stdio;
+        let bin = env!("CARGO_BIN_EXE_datum");
+        let mut child = Command::new(bin)
+            .env("DATUM_DB", &self.db)
+            .env("DATUM_HOME", &self.home)
+            .env("DATUM_CONFIG_HOME", &self.config_home)
+            .env("DATUM_COLOR", "0")
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn datum");
+        child
+            .stdin
+            .take()
+            .expect("child stdin")
+            .write_all(input.as_bytes())
+            .expect("write child stdin");
+        child.wait_with_output().expect("wait datum")
+    }
+
     fn entry_count(&self) -> i64 {
         let conn = Connection::open(&self.db).expect("open db");
         conn.query_row(
@@ -181,6 +208,51 @@ fn subprocess_sync_status_count_agrees_with_now_after_delete() {
         !now_out.contains("integrity warning"),
         "`now` must agree with sync status after deletion: {now_out:?}"
     );
+}
+
+/// da-3vvk: declining the bare-`undo` stale-`_LAST` prompt must stop
+/// outright ("Aborted."), NOT fall through to the window fallback —
+/// which would silently restore a DIFFERENT, newer tombstone than the
+/// one the user just said no to. Needs the real binary: the prompt
+/// reads stdin, and only a piped "n" can exercise the decline branch
+/// (the in-process harnesses' closed stdin reads as the yes-default).
+#[test]
+fn subprocess_undo_decline_stale_prompt_restores_nothing() {
+    let env = Env::new();
+    // Two entries, both tombstoned. The pointer will name X (coffee);
+    // Y (tea) is the newer tombstone the window fallback would pick.
+    assert_ok(&env.run(&["occur", "coffee"]), "create X");
+    assert_ok(&env.run(&["occur", "tea", "-t", "+1"]), "create Y");
+
+    let conn = Connection::open(&env.db).expect("open db");
+    let x_hid: String = conn
+        .query_row("SELECT hid FROM entries WHERE field = 'coffee'", [], |r| {
+            r.get(0)
+        })
+        .expect("X hid");
+    assert_ok(&env.run(&["del", "coffee", "--force"]), "delete X");
+    assert_ok(&env.run(&["del", "tea", "--force"]), "delete Y");
+
+    // Point `_LAST` at X and age it past the 15-minute protection
+    // window so bare `undo` takes the prompt path.
+    conn.execute(
+        "UPDATE last_docs SET hids = ?1,
+             time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-20 minutes')",
+        [format!("[\"{x_hid}\"]")],
+    )
+    .expect("force-stale pointer at X");
+
+    let out = env.run_with_stdin(&["undo"], "n\n");
+    assert_ok(&out, "undo decline");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("Aborted."),
+        "decline must print Aborted.: stdout={stdout:?} stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // Nothing restored — both tombstones intact (the window fallback
+    // would have brought back Y).
+    assert_eq!(env.entry_count(), 0, "decline must restore nothing");
 }
 
 /// `dm --version` must print the version banner to stdout and exit 0
