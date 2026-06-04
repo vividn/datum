@@ -17,7 +17,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
-use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
+use datum_core::db::{Db, IGNORED_STATE_VALUE};
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_core::integrity::ListFilter;
@@ -448,19 +448,10 @@ fn build_day_fields(
     // a leading buffer so a still-open block that started before the day
     // starts can render. The layout clips to the visible window.
     let buffer = chrono::Duration::days(2);
-    let params = ListParams {
-        fields: Vec::new(),
-        metric: TimeMetric::Hybrid,
-        start_utc: Some(day_start_utc - buffer),
-        end_utc: Some(day_end_utc),
-        limit: None,
-        head: false,
-        reverse: false,
-        // da-ghlx: dayview is a live-data surface; review markers /
-        // protocol notes don't belong in the timeline render.
-        include_meta: false,
-    };
-    let entries = db.list_entries(&params)?;
+    let entries = db.list_entries(&super::render_helpers::live_window_params(
+        day_start_utc - buffer,
+        day_end_utc,
+    ))?;
 
     // Bucket by field.
     let mut by_field: std::collections::BTreeMap<String, Vec<Entry>> =

@@ -19,7 +19,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, TimeZone, Timelike, Utc};
-use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
+use datum_core::db::{Db, IGNORED_STATE_VALUE};
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::{
@@ -363,25 +363,14 @@ pub(crate) fn build_dayview_fields(
 
     // Pull a generous leading window so an ongoing block that started
     // before the visible window can still render. Mirrors dayview's
-    // 2-day buffer scaled down for the shorter nowview scope. Upper
-    // bound is the caller's exact `end` instant (sub-ms precision) so
-    // entries timestamped at "now" stay included — round-tripping `end`
-    // through `day_end_ms` would truncate nanoseconds and exclude them.
+    // 2-day buffer scaled down for the shorter nowview scope. The shared
+    // constructor clamps the upper bound to the caller's exact `end`
+    // instant (sub-ms precision) — round-tripping `end` through
+    // `day_end_ms` would truncate nanoseconds and exclude entries
+    // timestamped at "now".
     let buffer = chrono::Duration::seconds((history_minutes.max(1.0) * 60.0 * 4.0) as i64);
     let fetch_start = day_start_utc - buffer;
-    let params = ListParams {
-        fields: Vec::new(),
-        metric: TimeMetric::Hybrid,
-        start_utc: Some(fetch_start),
-        end_utc: Some(end),
-        limit: None,
-        head: false,
-        reverse: false,
-        // da-ghlx: nowview is a live-data surface; review markers /
-        // protocol notes don't belong in the band stack.
-        include_meta: false,
-    };
-    let entries = db.list_entries(&params)?;
+    let entries = db.list_entries(&super::render_helpers::live_window_params(fetch_start, end))?;
 
     let mut by_field: std::collections::BTreeMap<String, Vec<Entry>> =
         std::collections::BTreeMap::new();
@@ -486,21 +475,16 @@ pub(crate) fn build_fields(
 ) -> Result<Vec<NowviewField>> {
     let day_end_ms = end.timestamp_millis();
 
+    // da-v0uy: same query window as `build_dayview_fields` — in particular
+    // the right edge clamps to `end`, so a future-dated entry can't
+    // truncate the current region at a timestamp past the now-line (the
+    // SVG path and this terminal band must agree on where "now" ends).
     let window_start =
         end - chrono::Duration::seconds((history_minutes.max(1.0) * 60.0 * 4.0) as i64);
-    let params = ListParams {
-        fields: Vec::new(),
-        metric: TimeMetric::Hybrid,
-        start_utc: Some(window_start),
-        end_utc: None,
-        limit: None,
-        head: false,
-        reverse: false,
-        // da-ghlx: nowview is a live-data surface; review markers /
-        // protocol notes don't belong in the band stack.
-        include_meta: false,
-    };
-    let entries = db.list_entries(&params)?;
+    let entries = db.list_entries(&super::render_helpers::live_window_params(
+        window_start,
+        end,
+    ))?;
 
     let mut by_field: std::collections::BTreeMap<String, Vec<Entry>> =
         std::collections::BTreeMap::new();
@@ -1517,6 +1501,71 @@ mod tests {
             fields.iter().all(|f| f.field != "screen"),
             "off-state field must stay hidden",
         );
+    }
+
+    /// da-v0uy: a future-dated switch entry must not leak into either
+    /// field-builder's working set — both the SVG path
+    /// (`build_dayview_fields`) and the terminal band (`build_fields`)
+    /// clamp the query window to `end`, so the current state's region
+    /// ends at the now-line in both, not at the future entry's timestamp.
+    #[test]
+    fn future_switch_excluded_from_both_field_builders() {
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let now = Utc::now();
+        for (offset_min, state) in [(-10i64, "working"), (30, "future")] {
+            let t = DatumTime::from_utc_and_tz(now + chrono::Duration::minutes(offset_min), "UTC")
+                .unwrap();
+            db.insert_entry(&Entry::new(
+                "activity",
+                Verb::Switch,
+                Some(JsonValue::String(state.into())),
+                None,
+                Some(t),
+                None,
+                "test",
+            ))
+            .unwrap();
+        }
+
+        let svg_fields = build_dayview_fields(&db, now, 60.0).unwrap();
+        let svg = svg_fields.iter().find(|f| f.field == "activity").unwrap();
+        let term_fields = build_fields(&db, now, 60.0, false).unwrap();
+        let term = term_fields.iter().find(|f| f.field == "activity").unwrap();
+
+        // Neither surface paints the future block...
+        assert!(
+            svg.blocks
+                .iter()
+                .all(|b| b.state_label.as_deref() != Some("future")),
+            "SVG blocks = {:?}",
+            svg.blocks,
+        );
+        assert!(
+            term.blocks
+                .iter()
+                .all(|b| b.state_label.as_deref() != Some("future")),
+            "terminal blocks = {:?}",
+            term.blocks,
+        );
+
+        // ...and both agree the current region ends at the now-line.
+        let now_ms = now.timestamp_millis();
+        let svg_end = svg
+            .blocks
+            .iter()
+            .find(|b| b.state_label.as_deref() == Some("working"))
+            .map(|b| b.end_ms)
+            .expect("SVG path must render the current state");
+        let term_end = term
+            .blocks
+            .iter()
+            .find(|b| b.state_label.as_deref() == Some("working"))
+            .map(|b| b.end_ms)
+            .expect("terminal band must render the current state");
+        assert_eq!(svg_end, now_ms);
+        assert_eq!(term_end, now_ms);
     }
 
     /// Dayview-shape BlockSwitch produces both leading block and following

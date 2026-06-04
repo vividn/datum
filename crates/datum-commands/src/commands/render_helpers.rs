@@ -4,13 +4,37 @@
 //! update_core / log_entry can share the per-batch state-probe cache without
 //! pulling in the dispatch shell.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use datum_core::{
-    db::Db,
+    db::{Db, ListParams, TimeMetric},
     entry::{Entry, Verb},
 };
 
 use crate::render::RenderContext;
+
+/// Query window shared by the live render surfaces — dayview's day builder
+/// and both nowview field builders (da-v0uy). One constructor so the three
+/// mirrors can't drift: every surface clamps the window's right edge to the
+/// caller's exact `end` instant. The bound is sub-ms precise so entries
+/// stamped at "now" stay included, while future-dated entries stay out —
+/// the now-line is the visual promise; rendering the future deserves a
+/// deliberate feature, not an accident of an unset bound. The leading
+/// `fetch_start` buffer is the caller's choice; the layout clips to the
+/// visible window.
+pub(crate) fn live_window_params(fetch_start: DateTime<Utc>, end: DateTime<Utc>) -> ListParams {
+    ListParams {
+        fields: Vec::new(),
+        metric: TimeMetric::Hybrid,
+        start_utc: Some(fetch_start),
+        end_utc: Some(end),
+        limit: None,
+        head: false,
+        reverse: false,
+        // da-ghlx: dayview/nowview are live-data surfaces; review markers /
+        // protocol notes don't belong in the visual render.
+        include_meta: false,
+    }
+}
 
 /// Vector form of `RenderContext::from_events` — one context per entry, in
 /// the same order. Used by the table path so the canonical state-cell
