@@ -19,16 +19,15 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, TimeZone, Timelike, Utc};
-use datum_core::db::{Db, IGNORED_STATE_VALUE};
-use datum_core::entry::{Entry, Verb};
+use datum_core::db::Db;
+use datum_core::entry::Entry;
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::{
     dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
     is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
 };
 use datum_layout::dayview::{
-    compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput, DayviewFieldInput,
-    DayviewPoint, Orientation,
+    compute_dayview, DayviewBlock, DayviewConfig, DayviewDayInput, DayviewFieldInput, Orientation,
 };
 use datum_layout::nowview::{
     default_width_for_history, nowview_axis_ticks, NowviewBlock, NowviewField, NowviewPanelEntry,
@@ -39,6 +38,10 @@ use datum_parse::time::parse_duration_str::parse_duration;
 use serde_json::Value as JsonValue;
 
 use crate::args::NowviewArgs;
+use crate::commands::field_visuals::{
+    canonical_verb, dur_seconds, occur_time_ms, occur_time_ms_opt, push_switch_region,
+    render_field_visuals, rgb_to_hex, state_label, switch_region_end_ms,
+};
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
 use crate::render::term_layout;
 
@@ -615,62 +618,6 @@ fn build_panel_entries(
     out
 }
 
-fn rgb_to_hex(rgb: Rgb) -> String {
-    format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b)
-}
-
-fn is_ignored_or_false(v: &JsonValue) -> bool {
-    matches!(v, JsonValue::Bool(false))
-        || matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
-}
-
-/// Resolve a block's fill from its value — array → multi-state stripes,
-/// scalar → solid color. Mirrors dayview's `block_fill_for_value`.
-fn block_fill_for_value(
-    value: Option<&JsonValue>,
-    field: &str,
-    spec: Option<&FieldSpec>,
-) -> BlockFill {
-    match value {
-        Some(JsonValue::Array(items)) if !items.is_empty() => {
-            let colors: Vec<String> = items
-                .iter()
-                .map(|v| {
-                    let rgb = state_value_rgb(v, field, spec).unwrap_or(md5_rgb(field));
-                    rgb_to_hex(rgb)
-                })
-                .collect();
-            BlockFill::MultiState(colors)
-        }
-        Some(v) => {
-            let rgb = if is_ignored_or_false(v) {
-                md5_rgb(field)
-            } else {
-                state_value_rgb(v, field, spec).unwrap_or(md5_rgb(field))
-            };
-            BlockFill::Single(rgb_to_hex(rgb))
-        }
-        None => BlockFill::Single(rgb_to_hex(md5_rgb(field))),
-    }
-}
-
-/// For each entry, the UTC-ms end-time of its switch region (the occur_time
-/// of the next switching event on the same field, or `fallback_end_ms` if
-/// it's the last). Input must be sorted by occur_time ascending.
-fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
-    let mut out = vec![fallback_end_ms; entries.len()];
-    let mut next_occur_ms: Option<i64> = None;
-    for (i, entry) in entries.iter().enumerate().rev() {
-        if is_switching_verb(canonical_verb(entry)) {
-            out[i] = next_occur_ms.unwrap_or(fallback_end_ms);
-            if let Some(ms) = occur_time_ms_opt(entry) {
-                next_occur_ms = Some(ms);
-            }
-        }
-    }
-    out
-}
-
 /// Leading-state synthesis (da-ncoa): the entry fetch only reaches back to
 /// `window_start`, so a state set BEFORE that instant has no in-window
 /// switching entry to open its region. Ask [`Db::state_at`] — which knows
@@ -703,184 +650,6 @@ fn leading_state_region(
         Some(state) => Ok(Some((window_start_ms, lead_end_ms, state))),
         None => Ok(None),
     }
-}
-
-fn canonical_verb(entry: &Entry) -> Verb {
-    entry.verb
-}
-
-fn occur_time_ms(entry: &Entry) -> i64 {
-    occur_time_ms_opt(entry).unwrap_or(i64::MIN)
-}
-
-fn occur_time_ms_opt(entry: &Entry) -> Option<i64> {
-    entry.occur_time.as_ref().map(|t| t.utc.timestamp_millis())
-}
-
-fn dur_seconds(entry: &Entry) -> Option<i64> {
-    entry.duration_seconds().map(|s| s.max(0))
-}
-
-/// Verb-driven render of one field's blocks and points for the dayview
-/// pipeline (per da-6jy nowview reuses this shape). Mirrors dayview's
-/// `render_field_visuals_dayview`; differences: window-clipping is by the
-/// nowview scope rather than a calendar day. The dayview layout will clip
-/// blocks that overflow the window automatically.
-fn render_field_visuals(
-    entries: &[Entry],
-    field: &str,
-    spec: Option<&FieldSpec>,
-    day_start_ms: i64,
-    day_end_ms: i64,
-    switch_region_ends: &[i64],
-    db: &Db,
-) -> (Vec<DayviewBlock>, Vec<DayviewPoint>) {
-    let mut blocks: Vec<DayviewBlock> = Vec::new();
-    let mut points: Vec<DayviewPoint> = Vec::new();
-
-    for (idx, entry) in entries.iter().enumerate() {
-        let Some(occur_dt) = entry.occur_time.as_ref() else {
-            continue;
-        };
-        let occur_ms = occur_dt.utc.timestamp_millis();
-
-        let verb = canonical_verb(entry);
-        // Primary visual dispatch flows from the shape table; verb-specific
-        // data sourcing (block fill vs switch region, dot fg/bg origin) is
-        // resolved via verb-keyed predicate helpers in `datum_core::shape`.
-        // Adding a new verb requires updating the helpers, not this match.
-        let shape = render_shape(verb, entry.shape(), &entry.state);
-        match shape {
-            RenderShape::Hidden | RenderShape::Marker => {}
-            RenderShape::Region if is_block_verb(verb) => {
-                push_block_window(
-                    &mut blocks,
-                    entry,
-                    occur_ms,
-                    field,
-                    spec,
-                    day_start_ms,
-                    day_end_ms,
-                );
-            }
-            RenderShape::Region => {
-                // Primary switch region (Verb::Switch).
-                push_switch_region(
-                    &mut blocks,
-                    entry.state.as_ref(),
-                    occur_ms,
-                    switch_region_ends[idx],
-                    field,
-                    spec,
-                    day_start_ms,
-                    day_end_ms,
-                );
-            }
-            RenderShape::Dot => {
-                if occur_ms >= day_start_ms && occur_ms <= day_end_ms {
-                    let fg = if dot_fg_uses_state(verb) {
-                        entry
-                            .state
-                            .as_ref()
-                            .and_then(|v| state_value_rgb(v, field, spec))
-                            .unwrap_or_else(|| field_rgb(field, spec))
-                    } else {
-                        field_rgb(field, spec)
-                    };
-                    let bg = if dot_bg_uses_following_state(verb) {
-                        entry
-                            .following_state
-                            .as_ref()
-                            .and_then(|v| state_value_rgb(v, field, spec))
-                            .unwrap_or_else(|| field_rgb(field, spec))
-                    } else {
-                        match db.state_at(field, occur_dt.utc).unwrap_or(None) {
-                            Some(v) => state_value_rgb(&v, field, spec).unwrap_or(Rgb::BLACK),
-                            None => Rgb::BLACK,
-                        }
-                    };
-                    points.push(DayviewPoint {
-                        time_ms: occur_ms,
-                        fg_color: rgb_to_hex(fg),
-                        bg_color: rgb_to_hex(bg),
-                        state_label: state_label(entry.state.as_ref()),
-                    });
-                }
-            }
-        }
-        // Secondary trailing switch region for compound switching verbs
-        // (BlockSwitch, PointSwitch): a band from `occur_time` colored by
-        // `following_state`.
-        if opens_secondary_switch_region(verb) {
-            push_switch_region(
-                &mut blocks,
-                entry.following_state.as_ref(),
-                occur_ms,
-                switch_region_ends[idx],
-                field,
-                spec,
-                day_start_ms,
-                day_end_ms,
-            );
-        }
-    }
-    (blocks, points)
-}
-
-fn push_block_window(
-    blocks: &mut Vec<DayviewBlock>,
-    entry: &Entry,
-    occur_ms: i64,
-    field: &str,
-    spec: Option<&FieldSpec>,
-    day_start_ms: i64,
-    day_end_ms: i64,
-) {
-    let Some(dur_secs) = dur_seconds(entry) else {
-        return;
-    };
-    if dur_secs == 0 {
-        return;
-    }
-    let start_ms = occur_ms - dur_secs * 1000;
-    let end_ms = occur_ms;
-    if end_ms <= day_start_ms || start_ms >= day_end_ms {
-        return;
-    }
-    let fill = block_fill_for_value(entry.state.as_ref(), field, spec);
-    blocks.push(DayviewBlock {
-        start_ms,
-        end_ms,
-        fill,
-        state_label: state_label(entry.state.as_ref()),
-    });
-}
-
-// Mirrors dayview's helper of the same shape — same trade-off applies.
-#[allow(clippy::too_many_arguments)]
-fn push_switch_region(
-    blocks: &mut Vec<DayviewBlock>,
-    value: Option<&JsonValue>,
-    start_ms: i64,
-    region_end_ms: i64,
-    field: &str,
-    spec: Option<&FieldSpec>,
-    day_start_ms: i64,
-    day_end_ms: i64,
-) {
-    if is_unrendered_switch_value(value) {
-        return;
-    }
-    if region_end_ms <= day_start_ms || start_ms >= day_end_ms {
-        return;
-    }
-    let fill = block_fill_for_value(value, field, spec);
-    blocks.push(DayviewBlock {
-        start_ms,
-        end_ms: region_end_ms,
-        fill,
-        state_label: state_label(value),
-    });
 }
 
 /// Verb-driven render targeting the terminal-band [`NowviewField`] shape
@@ -1038,13 +807,6 @@ fn push_switch_region_terminal(
     });
 }
 
-fn state_label(v: Option<&JsonValue>) -> Option<String> {
-    v.map(|val| match val {
-        JsonValue::String(s) => s.clone(),
-        other => other.to_string(),
-    })
-}
-
 pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
     let local = t.with_timezone(&Local);
     format!("{}:{:02}", local.hour(), local.minute())
@@ -1053,7 +815,9 @@ pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::field_visuals::stub_entry;
     use datum_core::action::Action;
+    use datum_core::entry::Verb;
 
     /// Without the `png` feature, requesting a `.png` output path must
     /// return a friendly error pointing at the missing feature, not panic.
@@ -1097,32 +861,6 @@ mod tests {
     #[test]
     fn duration_minutes_rejects_garbage() {
         assert!(duration_minutes("nope").is_err());
-    }
-
-    #[test]
-    fn rgb_to_hex_emits_six_digit_lowercase() {
-        assert_eq!(
-            rgb_to_hex(Rgb {
-                r: 0xab,
-                g: 0x12,
-                b: 0xcd
-            }),
-            "#ab12cd"
-        );
-        assert_eq!(rgb_to_hex(Rgb { r: 0, g: 0, b: 0 }), "#000000");
-    }
-
-    #[test]
-    fn state_label_serializes_non_string_values() {
-        assert_eq!(
-            state_label(Some(&JsonValue::String("happy".into()))),
-            Some("happy".into())
-        );
-        assert_eq!(
-            state_label(Some(&JsonValue::Number(serde_json::Number::from(7)))),
-            Some("7".into())
-        );
-        assert_eq!(state_label(None), None);
     }
 
     #[test]
@@ -1279,31 +1017,6 @@ mod tests {
 
         let fields = build_fields(&db, now, 60.0, false).unwrap();
         assert!(fields.iter().all(|f| f.field != "background_telemetry"));
-    }
-
-    fn stub_entry(
-        field: &str,
-        verb: Verb,
-        occur_utc: chrono::DateTime<Utc>,
-        dur: Option<&str>,
-        state: Option<JsonValue>,
-        following_state: Option<JsonValue>,
-    ) -> Entry {
-        use datum_core::entry::Entry;
-        use datum_core::time::DatumTime;
-        let dt = DatumTime::from_utc_and_tz(occur_utc, "UTC").unwrap();
-        let mut e = Entry::new(
-            field,
-            verb,
-            state.clone(),
-            None,
-            Some(dt),
-            dur.and_then(datum_core::dur::Dur::parse),
-            "test",
-        );
-        e.verb = verb;
-        e.following_state = following_state;
-        e
     }
 
     /// Terminal-shape Block emits one closed segment at [occur - dur, occur].
@@ -1501,102 +1214,5 @@ mod tests {
             fields.iter().all(|f| f.field != "screen"),
             "off-state field must stay hidden",
         );
-    }
-
-    /// da-v0uy: a future-dated switch entry must not leak into either
-    /// field-builder's working set — both the SVG path
-    /// (`build_dayview_fields`) and the terminal band (`build_fields`)
-    /// clamp the query window to `end`, so the current state's region
-    /// ends at the now-line in both, not at the future entry's timestamp.
-    #[test]
-    fn future_switch_excluded_from_both_field_builders() {
-        use datum_core::time::DatumTime;
-
-        let db = Db::open_in_memory().unwrap();
-        let now = Utc::now();
-        for (offset_min, state) in [(-10i64, "working"), (30, "future")] {
-            let t = DatumTime::from_utc_and_tz(now + chrono::Duration::minutes(offset_min), "UTC")
-                .unwrap();
-            db.insert_entry(&Entry::new(
-                "activity",
-                Verb::Switch,
-                Some(JsonValue::String(state.into())),
-                None,
-                Some(t),
-                None,
-                "test",
-            ))
-            .unwrap();
-        }
-
-        let svg_fields = build_dayview_fields(&db, now, 60.0).unwrap();
-        let svg = svg_fields.iter().find(|f| f.field == "activity").unwrap();
-        let term_fields = build_fields(&db, now, 60.0, false).unwrap();
-        let term = term_fields.iter().find(|f| f.field == "activity").unwrap();
-
-        // Neither surface paints the future block...
-        assert!(
-            svg.blocks
-                .iter()
-                .all(|b| b.state_label.as_deref() != Some("future")),
-            "SVG blocks = {:?}",
-            svg.blocks,
-        );
-        assert!(
-            term.blocks
-                .iter()
-                .all(|b| b.state_label.as_deref() != Some("future")),
-            "terminal blocks = {:?}",
-            term.blocks,
-        );
-
-        // ...and both agree the current region ends at the now-line.
-        let now_ms = now.timestamp_millis();
-        let svg_end = svg
-            .blocks
-            .iter()
-            .find(|b| b.state_label.as_deref() == Some("working"))
-            .map(|b| b.end_ms)
-            .expect("SVG path must render the current state");
-        let term_end = term
-            .blocks
-            .iter()
-            .find(|b| b.state_label.as_deref() == Some("working"))
-            .map(|b| b.end_ms)
-            .expect("terminal band must render the current state");
-        assert_eq!(svg_end, now_ms);
-        assert_eq!(term_end, now_ms);
-    }
-
-    /// Dayview-shape BlockSwitch produces both leading block and following
-    /// region — same behavior as `datum dayview`.
-    #[test]
-    fn dayview_shape_block_switch_emits_block_and_following_region() {
-        use chrono::TimeZone;
-        let db = Db::open_in_memory().unwrap();
-        let occur = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
-        let entries = vec![stub_entry(
-            "mood",
-            Verb::BlockSwitch,
-            occur,
-            Some("PT1H"),
-            Some(JsonValue::String("groggy".into())),
-            Some(JsonValue::String("focused".into())),
-        )];
-        let day_start = Utc
-            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
-            .unwrap()
-            .timestamp_millis();
-        let day_end = Utc
-            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
-            .unwrap()
-            .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, day_end);
-        let (blocks, points) =
-            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends, &db);
-        assert!(points.is_empty());
-        assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[1].start_ms, occur.timestamp_millis());
-        assert_eq!(blocks[1].end_ms, day_end);
     }
 }
