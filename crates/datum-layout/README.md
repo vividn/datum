@@ -17,19 +17,15 @@ No I/O. No `datum-core`. No SQLite. No allocator-specific code.
 
 | Module          | What it owns                                                |
 |-----------------|-------------------------------------------------------------|
-| crate root      | [`layout_day`] — per-field rows of [`Block`]s within a fixed day window. Plus the POD types ([`LayoutEntry`], [`LayoutConfig`], [`Layout`], [`FieldRow`], [`AxisTick`]). |
-| [`dayview`]     | Richer dayview pipeline ([`compute_dayview`](dayview::compute_dayview)) used by the SvelteKit dayview view. |
+| [`dayview`]     | The dayview pipeline ([`compute_dayview`](dayview::compute_dayview)) used by the CLI and the SvelteKit dayview view. |
 | [`nowview`]     | Input shapes for the terminal band (used by `datum now`) and the relative-minute axis tick generator that lets dayview render a nowview-scoped window. The SVG nowview reuses [`dayview::compute_dayview`] (per bead da-6jy). |
 | [`dayview_svg`] | SVG renderer for the dayview output. Convenience for the CLI. |
 | [`nowview_svg`] | Thin overlay wrapper around the dayview renderer that adds the `HH:MM` clock label. |
-| [`svg`]         | Lower-level SVG primitives shared by the two renderers. |
-
-The crate-root [`LayoutEntry`] and [`LayoutConfig`] are the only types
-external callers need to construct; everything else is derived.
+| [`nowview_terminal`] | ANSI terminal renderer for the nowview band. |
 
 ## Renderer contract
 
-A renderer consumes a `Layout` and never re-does math:
+A renderer consumes a [`dayview::DayviewLayout`] and never re-does math:
 
 - pixel positions are already computed,
 - per-field row order is already decided,
