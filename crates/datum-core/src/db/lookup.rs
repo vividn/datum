@@ -10,7 +10,10 @@ use crate::entry::Entry;
 use crate::error::{DatumError, PrefixCandidate, Result};
 
 use super::row_mapper::row_to_entry;
-use super::types::{like_prefix_pattern, time_expr_endbound, AMBIGUOUS_PREFIX_CANDIDATE_CAP};
+use super::types::{
+    like_prefix_pattern, time_expr_endbound, AMBIGUOUS_PREFIX_CANDIDATE_CAP,
+    STATE_ORDER_NEWEST_FIRST, STATE_ORDER_OLDEST_FIRST, STATE_PARTICIPATION_SQL,
+};
 use super::Db;
 
 impl Db {
@@ -160,23 +163,22 @@ impl Db {
     /// Return the active state of `field` at time `at`, or `Value::Null` if
     /// the field has no state-affecting entries at or before `at`.
     ///
-    /// Reconstructs the state-change timeline from non-tombstoned entries of
-    /// verb switch/start/stop/occur for `field` (see `state::compile_state` for
-    /// the event rules) and returns the most recent event's value.
+    /// Reconstructs the state-change timeline from the canonically
+    /// participating rows ([`STATE_PARTICIPATION_SQL`]) for `field` (see
+    /// `state::compile_state` for the event rules) and returns the most
+    /// recent event's value.
     ///
-    /// SQL fetches just the candidate rows (field match, verb ∈ {switch, start,
-    /// stop, occur}, and time_start or time_end ≤ at); compilation runs in Rust.
+    /// SQL fetches just the candidate rows (field match, canonical
+    /// participation, `occur_time` ≤ at); compilation runs in Rust.
     pub fn get_active_state(&self, field: &str, at: DateTime<Utc>) -> Result<JsonValue> {
         let at_str = at.to_rfc3339();
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1
-               AND deleted_at IS NULL
-               AND verb IN ('switch', 'start', 'stop', 'occur', 'block',
-                            'point', 'block-switch', 'point-switch')
-               AND occur_time <= ?2
-             ORDER BY {} ASC",
-            time_expr_endbound(),
+               AND {STATE_PARTICIPATION_SQL}
+               AND {expr} <= ?2
+             ORDER BY {STATE_ORDER_OLDEST_FIRST}",
+            expr = time_expr_endbound(),
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![field, at_str], row_to_entry)?;
@@ -198,15 +200,16 @@ impl Db {
             return Ok(None);
         }
         let at_str = at.to_rfc3339();
-        let mut stmt = self.conn.prepare(
-            r#"SELECT * FROM entries
-               WHERE field = ?1
-                 AND deleted_at IS NULL
-                 AND verb IN ('start', 'switch', 'block', 'block-switch')
-                 AND occur_time <= ?2
-               ORDER BY occur_time DESC, create_time DESC
-               LIMIT 1"#,
-        )?;
+        let sql = format!(
+            "SELECT * FROM entries
+             WHERE field = ?1
+               AND deleted_at IS NULL
+               AND verb IN ('start', 'switch', 'block', 'block-switch')
+               AND occur_time <= ?2
+             ORDER BY {STATE_ORDER_NEWEST_FIRST}
+             LIMIT 1"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let row = stmt
             .query_row(params![field, at_str], row_to_entry)
             .optional()?;
@@ -222,6 +225,13 @@ impl Db {
     /// exact JSON serialization (so `2` and `2.0` are distinct, just as
     /// they are at insert). Ordering: `occur_time` DESC, `create_time`
     /// DESC — newest match wins.
+    ///
+    /// Deliberate OPT-OUT from the canonical state ordering
+    /// ([`super::types::STATE_ORDER_NEWEST_FIRST`], da-ylet): undo targets
+    /// the literal previous *insert*, not the state-timeline winner, so
+    /// same-instant ties break on `create_time` (latest write) rather
+    /// than slug. Timeless `:unset` rows are also fair game — `-u` must
+    /// be able to reverse a `-T` note.
     pub fn find_latest_for_undo(
         &self,
         field: &str,
@@ -242,9 +252,12 @@ impl Db {
         Ok(row)
     }
 
-    /// Latest non-Add, non-tombstoned entry for a field, for use in the now
-    /// view. `add` is skipped because it represents free-form data with no
-    /// state effect; the now view shows the most recent state-bearing entry.
+    /// Latest state-participating entry for a field, for use in the now
+    /// view. Participation and ordering follow the canonical rule
+    /// ([`STATE_PARTICIPATION_SQL`]): timeless `:unset` rows (free-form
+    /// `-T` notes with no state effect) are skipped, and the unbounded
+    /// arm is exactly where that predicate matters — timeless rows store
+    /// NULL `occur_time`, so the bounded arm excludes them implicitly.
     ///
     /// `snapshot_time = Some(t)` (da-tx8j) bounds the query to entries
     /// whose effective time is `<= t` — used by `datum now -t` to render
@@ -260,8 +273,8 @@ impl Db {
             None => {
                 let sql = format!(
                     "SELECT * FROM entries
-                     WHERE field = ?1 AND verb != 'add' AND deleted_at IS NULL
-                     ORDER BY {expr} DESC
+                     WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
+                     ORDER BY {STATE_ORDER_NEWEST_FIRST}
                      LIMIT 1",
                 );
                 self.conn
@@ -273,9 +286,9 @@ impl Db {
                 let cutoff = t.to_rfc3339();
                 let sql = format!(
                     "SELECT * FROM entries
-                     WHERE field = ?1 AND verb != 'add' AND deleted_at IS NULL
+                     WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
                        AND {expr} <= ?2
-                     ORDER BY {expr} DESC
+                     ORDER BY {STATE_ORDER_NEWEST_FIRST}
                      LIMIT 1",
                 );
                 self.conn

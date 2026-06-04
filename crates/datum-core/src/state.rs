@@ -329,16 +329,17 @@ pub fn last_state_at(
 ) -> Result<Option<Value>> {
     let at_str = time.to_rfc3339();
     let exclude = exclude_hid.unwrap_or("");
-    let mut stmt = conn.prepare(
-        r#"SELECT * FROM entries
-           WHERE field = ?1
-             AND deleted_at IS NULL
-             AND verb IN ('switch', 'start', 'stop', 'occur', 'block',
-                          'point', 'block-switch', 'point-switch')
-             AND hid != ?3
-             AND occur_time <= ?2
-           ORDER BY occur_time ASC"#,
-    )?;
+    let sql = format!(
+        "SELECT * FROM entries
+         WHERE field = ?1
+           AND {participation}
+           AND hid != ?3
+           AND occur_time <= ?2
+         ORDER BY {order}",
+        participation = crate::db::STATE_PARTICIPATION_SQL,
+        order = crate::db::STATE_ORDER_OLDEST_FIRST,
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(
         params![field, at_str, exclude],
         crate::db::row_to_entry_public,
@@ -440,33 +441,30 @@ impl FieldStateEvents {
             Ok(())
         };
 
+        let participation = crate::db::STATE_PARTICIPATION_SQL;
         match max_probe {
             Some(t) => {
-                let mut stmt = conn.prepare(
-                    r#"SELECT hid, verb, state, occur_time, create_time, dur, following_state
-                       FROM entries
-                       WHERE field = ?1
-                         AND deleted_at IS NULL
-                         AND verb IN ('switch', 'start', 'stop', 'occur', 'block',
-                                      'point', 'block-switch', 'point-switch')
-                         AND slug NOT LIKE '%:unset'
-                         AND occur_time <= ?2"#,
-                )?;
+                let sql = format!(
+                    "SELECT hid, verb, state, occur_time, create_time, dur, following_state
+                     FROM entries
+                     WHERE field = ?1
+                       AND {participation}
+                       AND occur_time <= ?2"
+                );
+                let mut stmt = conn.prepare(&sql)?;
                 let mut rows = stmt.query(params![field, t.to_rfc3339()])?;
                 while let Some(row) = rows.next()? {
                     push(row, &mut events)?;
                 }
             }
             None => {
-                let mut stmt = conn.prepare(
-                    r#"SELECT hid, verb, state, occur_time, create_time, dur, following_state
-                       FROM entries
-                       WHERE field = ?1
-                         AND deleted_at IS NULL
-                         AND verb IN ('switch', 'start', 'stop', 'occur', 'block',
-                                      'point', 'block-switch', 'point-switch')
-                         AND slug NOT LIKE '%:unset'"#,
-                )?;
+                let sql = format!(
+                    "SELECT hid, verb, state, occur_time, create_time, dur, following_state
+                     FROM entries
+                     WHERE field = ?1
+                       AND {participation}"
+                );
+                let mut stmt = conn.prepare(&sql)?;
                 let mut rows = stmt.query(params![field])?;
                 while let Some(row) = rows.next()? {
                     push(row, &mut events)?;

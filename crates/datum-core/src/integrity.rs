@@ -321,22 +321,24 @@ pub fn detect_for_entry(
 /// detector used; this preserves the partial-overlap semantics for
 /// parallel/structured states.
 pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
-    let mut stmt = conn.prepare(
-        r#"WITH state_runs AS (
-               SELECT entries.*,
-                      LAG(state) OVER (
-                          PARTITION BY field
-                          ORDER BY occur_time, create_time
-                      ) AS prior_state
-               FROM entries
-               WHERE deleted_at IS NULL
-                 AND state IS NOT NULL
-                 AND occur_time IS NOT NULL
-           )
-           SELECT * FROM state_runs
-           WHERE prior_state IS NOT NULL
-           ORDER BY occur_time, create_time"#,
-    )?;
+    let sql = format!(
+        "WITH state_runs AS (
+             SELECT entries.*,
+                    LAG(state) OVER (
+                        PARTITION BY field
+                        ORDER BY {order}
+                    ) AS prior_state
+             FROM entries
+             WHERE deleted_at IS NULL
+               AND state IS NOT NULL
+               AND occur_time IS NOT NULL
+         )
+         SELECT * FROM state_runs
+         WHERE prior_state IS NOT NULL
+         ORDER BY {order}",
+        order = crate::db::STATE_ORDER_OLDEST_FIRST,
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], |row| {
         let entry = crate::db::row_to_entry_public(row)?;
         let prior_state: String = row.get("prior_state")?;
@@ -385,16 +387,22 @@ fn find_recent_state_setter(conn: &Connection, trigger: &Entry) -> Result<Option
         return Ok(None);
     };
     let at_str = ts.utc.to_rfc3339();
+    // Verb list is a SHAPE filter (state-setting entry kinds), not the
+    // state-participation rule; the ordering is the canonical one (da-ylet).
+    let sql = format!(
+        "SELECT * FROM entries
+         WHERE field = ?1
+           AND deleted_at IS NULL
+           AND verb IN ('switch', 'block-switch', 'point-switch')
+           AND occur_time IS NOT NULL
+           AND occur_time < ?2
+           AND hid != ?3
+         ORDER BY {order}
+         LIMIT 1",
+        order = crate::db::STATE_ORDER_NEWEST_FIRST,
+    );
     conn.query_row(
-        r#"SELECT * FROM entries
-           WHERE field = ?1
-             AND deleted_at IS NULL
-             AND verb IN ('switch', 'block-switch', 'point-switch')
-             AND occur_time IS NOT NULL
-             AND occur_time < ?2
-             AND hid != ?3
-           ORDER BY occur_time DESC, create_time DESC
-           LIMIT 1"#,
+        &sql,
         params![trigger.field, at_str, trigger.hid.as_str()],
         crate::db::row_to_entry_public,
     )
@@ -420,16 +428,18 @@ fn find_overlapping_block(conn: &Connection, trigger: &Entry) -> Result<Option<E
     let trig_start = occur.utc;
     let trig_end = occur.utc + chrono::Duration::seconds(secs);
 
-    let mut stmt = conn.prepare(
-        r#"SELECT * FROM entries
-           WHERE field = ?1
-             AND deleted_at IS NULL
-             AND verb IN ('block', 'block-switch')
-             AND occur_time IS NOT NULL
-             AND dur IS NOT NULL
-             AND hid != ?2
-           ORDER BY occur_time ASC, create_time ASC"#,
-    )?;
+    let sql = format!(
+        "SELECT * FROM entries
+         WHERE field = ?1
+           AND deleted_at IS NULL
+           AND verb IN ('block', 'block-switch')
+           AND occur_time IS NOT NULL
+           AND dur IS NOT NULL
+           AND hid != ?2
+         ORDER BY {order}",
+        order = crate::db::STATE_ORDER_OLDEST_FIRST,
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(
         params![trigger.field, trigger.hid.as_str()],
         crate::db::row_to_entry_public,
@@ -539,17 +549,21 @@ fn detect_last_state_mismatch(conn: &Connection, trigger: &Entry) -> Result<Opti
         return Ok(None);
     }
     let at_str = probe.to_rfc3339();
+    let sql = format!(
+        "SELECT * FROM entries
+         WHERE field = ?1
+           AND deleted_at IS NULL
+           AND verb IN ('switch', 'block', 'block-switch', 'point-switch')
+           AND occur_time IS NOT NULL
+           AND occur_time <= ?2
+           AND hid != ?3
+         ORDER BY {order}
+         LIMIT 1",
+        order = crate::db::STATE_ORDER_NEWEST_FIRST,
+    );
     let counterpart = conn
         .query_row(
-            r#"SELECT * FROM entries
-               WHERE field = ?1
-                 AND deleted_at IS NULL
-                 AND verb IN ('switch', 'block', 'block-switch', 'point-switch')
-                 AND occur_time IS NOT NULL
-                 AND occur_time <= ?2
-                 AND hid != ?3
-               ORDER BY occur_time DESC, create_time DESC
-               LIMIT 1"#,
+            &sql,
             params![trigger.field, at_str, trigger.hid.as_str()],
             crate::db::row_to_entry_public,
         )

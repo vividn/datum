@@ -2,7 +2,6 @@
 //! projection, and per-state color reads/writes.
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension};
 use serde_json::Value as JsonValue;
 
 use crate::action::Action;
@@ -10,7 +9,10 @@ use crate::entry::Verb;
 use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 
-use super::types::{time_expr_endbound, TrackedField, IGNORED_STATE_VALUE};
+use super::types::{
+    time_expr_endbound, TrackedField, IGNORED_STATE_VALUE, STATE_ORDER_NEWEST_FIRST,
+    STATE_PARTICIPATION_SQL,
+};
 use super::Db;
 
 impl Db {
@@ -24,8 +26,10 @@ impl Db {
     }
 
     /// Return the field's most recent state-bearing value at or before time
-    /// `t`. The state-bearing verbs are switch / occur / start / stop —
-    /// `add` (notes) does not change state. Tombstoned rows are excluded.
+    /// `t`. Row participation and ordering follow the canonical rule
+    /// ([`super::types::STATE_PARTICIPATION_SQL`]): live, non-`:unset`
+    /// rows, newest `occur_time` first with a slug tiebreak. Delegates to
+    /// [`Db::batch_state_at`] so the two oracles cannot diverge (da-ylet).
     ///
     /// `Ok(None)` means the field has no qualifying entries at or before
     /// `t`, which callers should treat as IGNORED (the default for unseen
@@ -33,28 +37,7 @@ impl Db {
     /// ignore sentinel; any other value (including `Null` from a "track,
     /// no current state" entry) means the field is tracked.
     pub fn state_at(&self, field: &str, t: DateTime<Utc>) -> Result<Option<JsonValue>> {
-        let cutoff = t.to_rfc3339();
-        let sql = format!(
-            "SELECT state FROM entries
-             WHERE field = ?1
-               AND verb != 'add'
-               AND deleted_at IS NULL
-               AND {expr} <= ?2
-             ORDER BY {expr} DESC
-             LIMIT 1",
-            expr = time_expr_endbound(),
-        );
-        let row: Option<Option<String>> = self
-            .conn
-            .query_row(&sql, params![field, cutoff], |row| {
-                row.get::<_, Option<String>>(0)
-            })
-            .optional()?;
-        match row {
-            None => Ok(None),
-            Some(None) => Ok(Some(JsonValue::Null)),
-            Some(Some(s)) => Ok(Some(serde_json::from_str(&s)?)),
-        }
+        Ok(self.batch_state_at(&[field], t)?.remove(field))
     }
 
     /// Batch version of [`Db::state_at`]: latest state-bearing `value` for
@@ -79,22 +62,16 @@ impl Db {
         let placeholders = std::iter::repeat_n("?", fields.len())
             .collect::<Vec<_>>()
             .join(",");
-        // v3 (da-5ns): the legacy `add` verb is gone — Action::Add now
-        // routes to Verb::Point. The "skip add-only entries when computing
-        // tracked-field state" rule survives via the slug `:unset` marker
-        // applied to timeless rows (see log_entry's -T path and build_slug
-        // in entry.rs).
         let sql = format!(
             "SELECT field, state FROM (
                 SELECT field, state,
                   ROW_NUMBER() OVER (
                     PARTITION BY field
-                    ORDER BY {endbound} DESC, slug DESC
+                    ORDER BY {STATE_ORDER_NEWEST_FIRST}
                   ) AS rn
                 FROM entries
                 WHERE field IN ({placeholders})
-                  AND slug NOT LIKE '%:unset'
-                  AND deleted_at IS NULL
+                  AND {STATE_PARTICIPATION_SQL}
                   AND {endbound} <= ?
             ) WHERE rn = 1"
         );
@@ -379,6 +356,150 @@ mod tests {
         );
         assert_eq!(db.resolve_state_back("mood", 2).unwrap(), Some(json!("a")));
         assert_eq!(db.resolve_state_back("mood", 3).unwrap(), None);
+    }
+
+    /// Timeless row (`-T`): occur_time NULL, slug `field:unset`.
+    fn push_timeless_note(db: &Db, field: &str) {
+        let entry = Entry::new(field, Verb::Point, None, None, None, None, "d1");
+        assert!(entry.slug.as_str().ends_with(":unset"));
+        db.insert_entry(&entry).unwrap();
+    }
+
+    /// da-ylet oracle-equality property: for any field and probe time,
+    /// `state_at(f, t)` must equal `batch_state_at([f], t).get(f)` —
+    /// including fields whose history contains timeless `:unset` rows,
+    /// fields with ONLY a timeless row, and fields with no rows at all.
+    #[test]
+    fn state_at_equals_batch_state_at_for_every_field_and_probe() {
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "alpha", json!("a1"), 100);
+        push_switch(&db, "alpha", json!("a2"), 300);
+        push_timeless_note(&db, "alpha");
+        push_timeless_note(&db, "beta"); // only a timeless row
+        push_switch(&db, "gamma", json!("g"), 200);
+        // "delta" has no rows at all.
+
+        let fields = ["alpha", "beta", "gamma", "delta"];
+        for field in fields {
+            for offset in [0, 100, 150, 250, 300, 400] {
+                let t = at(offset).utc;
+                let single = db.state_at(field, t).unwrap();
+                let batch = db.batch_state_at(&[field], t).unwrap();
+                assert_eq!(
+                    single,
+                    batch.get(field).cloned(),
+                    "oracles diverge for field={field} at offset={offset}"
+                );
+            }
+        }
+        // Multi-field batch agrees with per-field state_at too.
+        let t = at(400).utc;
+        let batch = db.batch_state_at(&fields, t).unwrap();
+        for field in fields {
+            assert_eq!(db.state_at(field, t).unwrap(), batch.get(field).cloned());
+        }
+    }
+
+    /// da-ylet axis 1: a timeless `:unset` row must not participate in
+    /// state through ANY door. Before the fix, `state_at`'s dead
+    /// `verb != 'add'` filter let the timeless row through (resolving to
+    /// `Some(Null)`) while `batch_state_at` excluded it.
+    #[test]
+    fn timeless_unset_rows_excluded_through_every_door() {
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "mood", json!("happy"), 100);
+        push_timeless_note(&db, "mood"); // newest row, timeless
+        push_timeless_note(&db, "solo"); // field's ONLY row
+        let probe = at(200).utc;
+
+        // state_at / batch_state_at
+        assert_eq!(db.state_at("mood", probe).unwrap(), Some(json!("happy")));
+        assert_eq!(db.state_at("solo", probe).unwrap(), None);
+        let batch = db.batch_state_at(&["mood", "solo"], probe).unwrap();
+        assert_eq!(batch.get("mood"), Some(&json!("happy")));
+        assert!(!batch.contains_key("solo"));
+
+        // latest_entry_for_now — the unbounded arm is exactly where the
+        // predicate does real work (timeless rows have NULL occur_time,
+        // so any `occur_time <= ?` bound excludes them implicitly).
+        let latest = db.latest_entry_for_now("mood", None).unwrap().unwrap();
+        assert_eq!(latest.state, Some(json!("happy")));
+        assert!(db.latest_entry_for_now("solo", None).unwrap().is_none());
+        let bounded = db
+            .latest_entry_for_now("mood", Some(probe))
+            .unwrap()
+            .unwrap();
+        assert_eq!(bounded.state, Some(json!("happy")));
+
+        // get_active_state (compile-based door)
+        assert_eq!(db.get_active_state("mood", probe).unwrap(), json!("happy"));
+        assert_eq!(db.get_active_state("solo", probe).unwrap(), JsonValue::Null);
+
+        // last_state_at (integrity/render door)
+        assert_eq!(
+            crate::state::last_state_at(&db.conn, "mood", probe, None).unwrap(),
+            Some(json!("happy"))
+        );
+        assert_eq!(
+            crate::state::last_state_at(&db.conn, "solo", probe, None).unwrap(),
+            None
+        );
+    }
+
+    /// da-ylet axis 3: same-instant ties resolve deterministically to the
+    /// slug-DESC winner in BOTH oracles. Live same-instant rows are
+    /// schema-impossible on one device (da-ga8b's partial UNIQUE on
+    /// `(field, occur_time)`), so drop the index to simulate rows that
+    /// bypassed it (raw inserts, sync merges).
+    #[test]
+    fn same_instant_tie_resolves_to_slug_desc_winner_in_both_oracles() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn
+            .execute("DROP INDEX entries_field_occurtime", [])
+            .unwrap();
+        let t = at(100);
+        // Insert the slug-DESC winner FIRST so a (wrong) create_time
+        // tiebreak would pick the other row.
+        let mut winner = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(json!("zzz")),
+            None,
+            Some(t.clone()),
+            None,
+            "d1",
+        );
+        winner.slug = "mood:tie-z".into();
+        let mut loser = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(json!("aaa")),
+            None,
+            Some(t.clone()),
+            None,
+            "d2",
+        );
+        loser.slug = "mood:tie-a".into();
+        db.insert_entry(&winner).unwrap();
+        db.insert_entry(&loser).unwrap();
+
+        let probe = at(200).utc;
+        assert_eq!(
+            db.state_at("mood", probe).unwrap(),
+            Some(json!("zzz")),
+            "state_at must pick the slug-DESC winner"
+        );
+        assert_eq!(
+            db.batch_state_at(&["mood"], probe).unwrap().get("mood"),
+            Some(&json!("zzz")),
+            "batch_state_at must pick the same winner"
+        );
+        let latest = db.latest_entry_for_now("mood", None).unwrap().unwrap();
+        assert_eq!(
+            latest.slug.as_str(),
+            "mood:tie-z",
+            "latest_entry_for_now must pick the same winner"
+        );
     }
 
     #[test]

@@ -107,6 +107,33 @@ pub(super) fn time_expr_endbound() -> &'static str {
     "occur_time"
 }
 
+/// Canonical state-participation predicate (da-ylet): a row contributes
+/// to a field's state timeline iff it is live AND not a deliberately
+/// timeless row (slug suffix `:unset`, written by `-T`/`--no-timestamp`).
+///
+/// This is the ONE place the rule lives. v3 killed the legacy `add` verb
+/// (migration v21 rewrites `add` → `point` unconditionally), so the old
+/// `verb != 'add'` / `verb IN (...)` filters select nothing — "skip
+/// timeless notes" survives solely via the `:unset` slug marker. Since
+/// da-lxyw (v29) timeless rows also store NULL `occur_time`, so any
+/// `occur_time <= ?` bound excludes them implicitly; the predicate does
+/// real work in the unbounded readers (e.g. `latest_entry_for_now` with
+/// no snapshot time).
+pub(crate) const STATE_PARTICIPATION_SQL: &str = "slug NOT LIKE '%:unset' AND deleted_at IS NULL";
+
+/// Canonical newest-first ordering for state reads (da-ylet): latest
+/// `occur_time` wins; ties break on `slug` DESC. Same-instant live ties
+/// are schema-impossible on a single device (da-ga8b's partial UNIQUE on
+/// `(field, occur_time)`), so the slug tiebreak is determinism armor for
+/// rows that bypassed the index (raw inserts, sync merges) — every state
+/// oracle must resolve such a tie to the SAME row.
+pub(crate) const STATE_ORDER_NEWEST_FIRST: &str = "occur_time DESC, slug DESC";
+
+/// Exact mirror of [`STATE_ORDER_NEWEST_FIRST`] for ascending walks
+/// (state compilation replays oldest→newest; the last event it sees must
+/// be the same row the newest-first readers pick).
+pub(crate) const STATE_ORDER_OLDEST_FIRST: &str = "occur_time ASC, slug ASC";
+
 /// Build the shared `WHERE` clause + parameter bindings used by
 /// `count_entries_filtered`, `count_entries_grouped`, and `list_entry_ids`.
 pub(super) fn filtered_where(

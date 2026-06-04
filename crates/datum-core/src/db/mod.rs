@@ -66,6 +66,13 @@ pub use view::{InstallViewsReport, InstalledView, KitViewOutcome, ViewResult};
 // `crate::migrations`.
 pub(crate) use insert::try_insert;
 
+// Canonical state-participation predicate + ordering (da-ylet), shared by
+// every state oracle inside and outside the db module (`crate::state`,
+// `crate::integrity`).
+pub(crate) use types::{
+    STATE_ORDER_NEWEST_FIRST, STATE_ORDER_OLDEST_FIRST, STATE_PARTICIPATION_SQL,
+};
+
 pub struct Db {
     conn: Connection,
     /// Lazy cache of the spec-derived alias index. Built on first access
