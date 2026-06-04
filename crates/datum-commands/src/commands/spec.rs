@@ -84,8 +84,13 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(u) = &args.unit {
         spec.unit = Some(u.clone());
     }
+    // Clear convention for STATE=VALUE flags (--state-color, --state-description,
+    // and any future sibling): an empty VALUE removes the entry for that state.
     for sc in &args.state_colors {
         match sc.split_once('=') {
+            Some((state, "")) => {
+                spec.state_colors.remove(state);
+            }
             Some((state, color)) => {
                 spec.state_colors
                     .insert(state.to_string(), color.to_string());
@@ -325,5 +330,46 @@ mod tests {
         spec_set(args2, &db).unwrap();
         assert!(db.lookup_alias("sad").unwrap().is_none());
         assert!(db.lookup_alias("happy").unwrap().is_some());
+    }
+
+    #[test]
+    fn cmd_spec_set_empty_state_value_clears_entry() {
+        let db = Db::open_in_memory().unwrap();
+
+        // Set a color and a description for the same state...
+        spec_set(
+            SpecSetArgs {
+                field: "mood".to_string(),
+                state_colors: vec!["happy=00ff00".to_string()],
+                state_descriptions: vec!["happy=joyful".to_string()],
+                ..Default::default()
+            },
+            &db,
+        )
+        .unwrap();
+        let spec = db.load_spec("mood").unwrap().unwrap();
+        assert_eq!(
+            spec.state_colors.get("happy").map(String::as_str),
+            Some("00ff00")
+        );
+        assert_eq!(
+            spec.state_descriptions.get("happy").map(String::as_str),
+            Some("joyful")
+        );
+
+        // ...then clear both via the empty-VALUE convention.
+        spec_set(
+            SpecSetArgs {
+                field: "mood".to_string(),
+                state_colors: vec!["happy=".to_string()],
+                state_descriptions: vec!["happy=".to_string()],
+                ..Default::default()
+            },
+            &db,
+        )
+        .unwrap();
+        let spec = db.load_spec("mood").unwrap().unwrap();
+        assert!(!spec.state_colors.contains_key("happy"));
+        assert!(!spec.state_descriptions.contains_key("happy"));
     }
 }

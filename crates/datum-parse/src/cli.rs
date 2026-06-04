@@ -569,9 +569,11 @@ pub struct SpecSetArgs {
     pub default_verb: Option<String>,
     pub states: Vec<String>,
     pub color: Option<String>,
+    /// Per-state colors in `STATE=COLOR` form. An empty COLOR clears the
+    /// entry — the clear convention shared by all `STATE=VALUE` flags here.
     pub state_colors: Vec<String>,
     /// Per-state descriptions in `STATE=TEXT` form (da-zwqk). Mirrors
-    /// `state_colors`. Empty by default.
+    /// `state_colors`, including empty-TEXT-clears. Empty by default.
     pub state_descriptions: Vec<String>,
     pub id_template: Option<String>,
     pub description: Option<String>,
