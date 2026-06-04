@@ -345,6 +345,119 @@ mod tests {
         );
     }
 
+    /// da-ol43: anti-drift guard for the six column lists above. They
+    /// hand-mirror the entries-table DDL in
+    /// `crates/datum-core/src/schema.sql`, and drift has already happened
+    /// once (da-i5vs: `dur_precision` landed in the schema but was missing
+    /// from the When group). Parse the CREATE TABLE block out of the
+    /// embedded schema and assert every stored column appears in exactly
+    /// one group — and that the groups list nothing the schema lacks.
+    ///
+    /// Extracts column names from the `CREATE TABLE ... entries (...)`
+    /// body: one column definition per line, skipping comments,
+    /// continuation lines, table-level constraints, and generated columns
+    /// (`modify_time_ms` is a VIRTUAL derivation of `modify_time` for sync
+    /// filtering — derived data, not part of the engineering dump).
+    fn entries_table_columns() -> Vec<String> {
+        let sql = include_str!("../../../datum-core/src/schema.sql");
+        const HEADER: &str = "CREATE TABLE IF NOT EXISTS entries (";
+        let body_start = sql
+            .find(HEADER)
+            .expect("schema.sql lost its `CREATE TABLE ... entries` block")
+            + HEADER.len();
+        // Walk to the matching close-paren so later tables/indexes in the
+        // file are excluded from the scan.
+        let mut depth = 1usize;
+        let mut body_end = None;
+        for (i, c) in sql[body_start..].char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        body_end = Some(body_start + i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let body = &sql[body_start..body_end.expect("unbalanced parens in entries DDL")];
+
+        let mut cols = Vec::new();
+        for line in body.lines() {
+            let line = line.trim_start();
+            if line.is_empty() || line.starts_with("--") {
+                continue;
+            }
+            let name: String = line
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if name.is_empty() {
+                // Continuation line (e.g. the `(CAST(...)` half of the
+                // modify_time_ms definition).
+                continue;
+            }
+            if matches!(
+                name.to_ascii_uppercase().as_str(),
+                "CHECK" | "PRIMARY" | "FOREIGN" | "UNIQUE" | "CONSTRAINT"
+            ) {
+                continue;
+            }
+            if line.contains("GENERATED ALWAYS") {
+                continue;
+            }
+            cols.push(name);
+        }
+        cols
+    }
+
+    #[test]
+    fn show_all_groups_mirror_entries_schema() {
+        let schema_cols = entries_table_columns();
+        // Sanity-check the extractor itself: a parser bug that returns an
+        // empty/truncated list would otherwise vacuously pass.
+        assert!(
+            schema_cols.len() >= 20 && schema_cols.first().map(String::as_str) == Some("hid"),
+            "entries-DDL extractor looks broken: {schema_cols:?}"
+        );
+
+        let mut listed: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        for col in ID_COLS
+            .iter()
+            .chain(WHAT_COLS)
+            .chain(WHEN_COLS)
+            .chain(WHERE_COLS)
+            .chain(BOOK_COLS)
+            .chain(INTENT_COLS)
+        {
+            *listed.entry(col).or_insert(0) += 1;
+        }
+
+        for col in &schema_cols {
+            match listed.get(col.as_str()) {
+                None => panic!(
+                    "schema column `{col}` is missing from the `-A` view — \
+                     add `{col}` to a show_all group (ID/WHAT/WHEN/WHERE/BOOK/INTENT_COLS) \
+                     and give it a `render_column` arm"
+                ),
+                Some(1) => {}
+                Some(n) => panic!(
+                    "schema column `{col}` appears in {n} show_all groups — must be exactly one"
+                ),
+            }
+        }
+
+        for col in listed.keys() {
+            assert!(
+                schema_cols.iter().any(|c| c == col),
+                "show_all lists `{col}` but the entries table has no such column — \
+                 remove it from its group or fix the schema"
+            );
+        }
+    }
+
     /// da-5uph: exact-second rows (precision `None` or `PT1S`) keep
     /// rendering as RFC3339 — the change is scoped to `P1D`.
     #[test]
