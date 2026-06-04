@@ -17,6 +17,8 @@ use datum_core::kit_color_rule::{self, ColorRule, RowLookup};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
+use crate::render::visible_width;
+
 /// Run a Level 2 command by name. `extra_args` carries any tokens after
 /// the command name on the original argv (e.g. `--watch`); for slice 6
 /// the only flag we honour is `--watch`, gated by `flags = ["watch"]`.
@@ -275,10 +277,12 @@ fn render_pretty(
         println!("(no columns)");
         return;
     }
-    let mut widths: Vec<usize> = headers.iter().map(|c| c.chars().count()).collect();
+    // Column widths in display columns, not chars (da-dhtp) — emoji/CJK
+    // cells occupy two terminal columns each.
+    let mut widths: Vec<usize> = headers.iter().map(|c| visible_width(c)).collect();
     for row in cells {
         for (i, c) in row.iter().enumerate() {
-            let w = c.chars().count();
+            let w = visible_width(c);
             if w > widths[i] {
                 widths[i] = w;
             }
@@ -315,7 +319,9 @@ fn print_row(cells: &[String], widths: &[usize], color: Option<&str>) {
         if i > 0 {
             line.push_str("  ");
         }
-        line.push_str(&format!("{c:<w$}", w = widths[i]));
+        // Pad by display width (da-dhtp), not `format!`'s char-count spec.
+        line.push_str(c);
+        line.push_str(&" ".repeat(widths[i].saturating_sub(visible_width(c))));
     }
     if color.is_some() {
         line.push_str(ANSI_RESET);

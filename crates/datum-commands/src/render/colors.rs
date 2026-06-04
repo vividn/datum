@@ -14,6 +14,7 @@ use datum_core::field_spec::FieldSpec;
 use md5::{Digest, Md5};
 use serde_json::Value as JsonValue;
 use std::io::IsTerminal;
+use unicode_width::UnicodeWidthChar;
 
 use super::characters::IGNORED_STATE;
 
@@ -346,7 +347,10 @@ pub fn strip_ansi(s: &str) -> String {
     out
 }
 
-/// Count visible characters, ignoring ANSI escapes.
+/// Count visible terminal columns, ignoring ANSI escapes. Width is the
+/// Unicode display width (da-dhtp): emoji / CJK count 2 columns,
+/// combining marks and other zero-width chars count 0 — so layout math
+/// matches what the terminal actually renders.
 pub fn visible_width(s: &str) -> usize {
     let mut in_esc = false;
     let mut width = 0usize;
@@ -361,7 +365,7 @@ pub fn visible_width(s: &str) -> usize {
             in_esc = true;
             continue;
         }
-        width += 1;
+        width += UnicodeWidthChar::width(c).unwrap_or(0);
     }
     width
 }
@@ -459,6 +463,17 @@ mod tests {
     #[test]
     fn visible_width_ignores_escapes() {
         assert_eq!(visible_width("\x1b[32m●\x1b[0m"), 1);
+    }
+
+    /// da-dhtp: width is terminal display columns, not char count —
+    /// emoji and CJK occupy two columns each, zero-width chars none.
+    #[test]
+    fn visible_width_counts_display_columns() {
+        assert_eq!(visible_width("😊"), 2);
+        assert_eq!(visible_width("日本"), 4);
+        assert_eq!(visible_width("\x1b[32m😊\x1b[0m"), 2);
+        // 'e' + combining acute (U+0301) renders as one column.
+        assert_eq!(visible_width("e\u{301}"), 1);
     }
 
     /// Per da-9vop, a parallel state set (`["vertical","sit"]`) must yield

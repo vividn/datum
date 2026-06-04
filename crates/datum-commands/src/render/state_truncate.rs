@@ -295,9 +295,11 @@ fn state_label(item: &JsonValue) -> String {
     }
 }
 
-/// Truncate `body` to `max` visible chars, appending `…` when shorter.
+/// Truncate `body` to `max` visible columns, appending `…` when shorter.
 /// Plain text only — no ANSI awareness needed because chip bodies are
 /// the raw label, painted afterwards by `paint_bg`/`paint_chip`.
+/// Width is Unicode display width (da-dhtp): a double-width grapheme
+/// that would straddle the budget is dropped, not split.
 fn right_truncate(body: &str, max: usize) -> String {
     if max == 0 {
         return String::new();
@@ -307,7 +309,16 @@ fn right_truncate(body: &str, max: usize) -> String {
         return body.to_string();
     }
     let keep = max.saturating_sub(1);
-    let mut out: String = body.chars().take(keep).collect();
+    let mut out = String::with_capacity(body.len());
+    let mut seen = 0usize;
+    for c in body.chars() {
+        let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if seen + w > keep {
+            break;
+        }
+        out.push(c);
+        seen += w;
+    }
     out.push('…');
     out
 }

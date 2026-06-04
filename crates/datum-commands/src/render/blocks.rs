@@ -21,10 +21,9 @@
 //!   `"<v><u>"` matching the existing data-block treatment.
 //!
 //! Widths are measured with [`super::colors::visible_width`] so ANSI
-//! escapes don't throw off alignment. Multi-byte width is approximated as
-//! one column per `char` — adequate for the practical alphabet used in
-//! datum keys; CJK would over-pad rather than under-pad, which is the
-//! safe failure mode for alignment.
+//! escapes don't throw off alignment. Since da-dhtp that measure is
+//! Unicode display width (emoji/CJK = 2 columns, zero-width = 0), so
+//! multi-byte keys and values align exactly rather than approximately.
 
 use datum_core::{entry::Entry, field_spec::FieldSpec};
 use serde_json::Value as JsonValue;

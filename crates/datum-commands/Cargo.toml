@@ -36,6 +36,7 @@ chrono-tz = { workspace = true }
 ulid = { workspace = true }
 md-5 = { workspace = true }
 regex-lite = { workspace = true }
+unicode-width = { workspace = true }
 tempfile = "3"
 flate2 = { workspace = true }
 tar = { workspace = true }

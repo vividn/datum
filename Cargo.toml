@@ -59,6 +59,7 @@ base64 = "0.22"
 
 # Text
 regex-lite = "0.1"
+unicode-width = "0.2"
 
 # Archive formats (used by backup/restore)
 flate2 = "1"

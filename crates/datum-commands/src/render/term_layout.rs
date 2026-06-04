@@ -16,6 +16,7 @@
 //!    whatever background colour was open at the truncation point.
 
 use std::io::IsTerminal;
+use unicode_width::UnicodeWidthChar;
 
 /// Live `TIOCGWINSZ` query against stdout. Returns `(cols, rows)`, or
 /// `None` if the ioctl fails (stdout not a tty, or kernel reports a
@@ -117,8 +118,12 @@ pub fn is_stdout_tty() -> bool {
 
 /// Truncate `s` so its visible width is at most `max_w`, preserving
 /// ANSI escape structure. When truncation actually happens we append
-/// `…` (which counts as one visible char) and then a `\x1b[0m` reset
+/// `…` (which counts as one visible column) and then a `\x1b[0m` reset
 /// so the post-padding background doesn't bleed.
+///
+/// Width is Unicode display width (da-dhtp): a double-width grapheme
+/// (emoji, CJK) that would straddle the budget is dropped, not split,
+/// so the result may come in one column under `max_w` but never over.
 ///
 /// `max_w == 0` collapses to the empty string — callers should clamp
 /// before calling if zero is invalid for their layout.
@@ -150,11 +155,12 @@ pub fn truncate_visible(s: &str, max_w: usize) -> String {
             out.push(c);
             continue;
         }
-        if seen_visible >= keep_visible {
+        let w = UnicodeWidthChar::width(c).unwrap_or(0);
+        if seen_visible + w > keep_visible {
             break;
         }
         out.push(c);
-        seen_visible += 1;
+        seen_visible += w;
     }
     out.push('…');
     if any_escape {
@@ -213,6 +219,33 @@ mod tests {
         let got = truncate_visible("anything", 1);
         assert_eq!(visible_width(&got), 1);
         assert!(got.contains('…'));
+    }
+
+    /// da-dhtp: double-width graphemes budget two columns. Five emoji
+    /// (10 columns) into an 8-column cell keep only three emoji
+    /// (6 cols) + `…` (1 col) = 7 — the fourth emoji would straddle
+    /// the budget, so it's dropped, not split.
+    #[test]
+    fn truncate_budgets_double_width_chars() {
+        let got = truncate_visible("😊😊😊😊😊", 8);
+        assert_eq!(got, "😊😊😊…");
+        assert!(visible_width(&got) <= 8);
+    }
+
+    /// da-dhtp: truncation landing mid-double-width drops the char.
+    /// "ab日" is 4 columns; a 3-column budget keeps "ab" (the 日 would
+    /// need cols 3-4 but only col 3 remains before the ellipsis slot).
+    #[test]
+    fn truncate_drops_straddling_cjk_char() {
+        let got = truncate_visible("ab日本語", 3);
+        assert_eq!(got, "ab…");
+        assert_eq!(visible_width(&got), 3);
+    }
+
+    /// CJK string that already fits is returned unchanged.
+    #[test]
+    fn truncate_cjk_fitting_returns_unchanged() {
+        assert_eq!(truncate_visible("日本", 4), "日本");
     }
 
     /// da-tpny: the now/nowview band probes fall back to `$COLUMNS` /
