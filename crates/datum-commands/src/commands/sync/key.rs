@@ -21,12 +21,9 @@ use datum_sync_client::crypto::key_wrap::{key_fingerprint, unwrap_master_key, wr
 use datum_sync_client::http::{fetch_wrapped, upload_wrapped};
 use rand::RngCore;
 use reqwest::blocking::Client;
-use std::time::Duration;
 
-use crate::commands::sync::Prompter;
-use crate::config::{
-    auth_token_path, load_raw_config_or_default, master_key_path, server_host_from_url,
-};
+use crate::commands::sync::{build_client, resolve_server, Prompter};
+use crate::config::{auth_token_path, master_key_path, server_host_from_url};
 use datum_sync_client::PersistedAuthToken;
 
 /// `datum sync key init`
@@ -36,7 +33,7 @@ pub fn init(
     prompter: &mut impl Prompter,
 ) -> Result<()> {
     let server = resolve_server(server_override.as_deref())?;
-    let client = default_client()?;
+    let client = build_client()?;
     init_with_client(&server, &client, force, prompter)?;
     Ok(())
 }
@@ -84,7 +81,7 @@ pub fn init_with_client(
 /// `datum sync key unlock`
 pub fn unlock(server_override: Option<String>, prompter: &mut impl Prompter) -> Result<()> {
     let server = resolve_server(server_override.as_deref())?;
-    let client = default_client()?;
+    let client = build_client()?;
     unlock_with_client(&server, &client, prompter)?;
     Ok(())
 }
@@ -119,7 +116,7 @@ pub fn rotate_passphrase(
     prompter: &mut impl Prompter,
 ) -> Result<()> {
     let server = resolve_server(server_override.as_deref())?;
-    let client = default_client()?;
+    let client = build_client()?;
     rotate_passphrase_with_client(&server, &client, prompter)?;
     Ok(())
 }
@@ -160,30 +157,6 @@ pub fn show_fingerprint(server_override: Option<String>) -> Result<()> {
 }
 
 // --- Shared helpers --------------------------------------------------------
-
-fn default_client() -> Result<Client> {
-    Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .context("build reqwest client")
-}
-
-fn resolve_server(cli_server: Option<&str>) -> Result<String> {
-    if let Some(s) = cli_server {
-        return Ok(s.to_string());
-    }
-    let cfg = load_raw_config_or_default()?;
-    cfg.sync
-        .as_ref()
-        .and_then(|s| s.default_server.clone())
-        .filter(|v| !v.eq_ignore_ascii_case("none"))
-        .ok_or_else(|| {
-            anyhow!(
-                "no sync server configured; pass --server <url> or run \
-                 `datum sync config set-server <url> --global`"
-            )
-        })
-}
 
 /// Load the auth token for `server`; returns `Ok(None)` if there's no
 /// file. da-ixmh: returns the on-disk [`PersistedAuthToken`] shape;

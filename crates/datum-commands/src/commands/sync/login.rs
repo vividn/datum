@@ -1,12 +1,13 @@
 //! `datum sync login` — CLI-side thin wrapper over
 //! [`datum_sync_client::http::run_device_flow`]. This file owns only the
 //! three CLI-side concerns:
-//! 1. resolving which relay URL to talk to (flag > yaml config);
+//! 1. resolving which relay URL to talk to (via the shared
+//!    [`resolve_server`]: flag > per-DB config > global default);
 //! 2. bridging the CLI's `Prompter` trait to the client library's
 //!    `DeviceFlowPrompter`;
 //! 3. persisting the minted token under the XDG auth path (mode 0600).
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use datum_core::db::Db;
 use datum_sync_client::http::{run_device_flow, DeviceFlowPrompter};
 use datum_sync_client::protocol::messages::AuthToken;
@@ -15,16 +16,13 @@ use reqwest::blocking::Client;
 use std::time::Duration;
 
 use crate::args::SyncLoginArgs;
-use crate::commands::sync::Prompter;
-use crate::config::{auth_token_path, load_raw_config_or_default, server_host_from_url};
+use crate::commands::sync::{build_client, resolve_server, Prompter};
+use crate::config::{auth_token_path, server_host_from_url};
 
 /// Production entry point.
 pub fn run(args: SyncLoginArgs, db: &Db, prompter: &mut impl Prompter) -> Result<()> {
     let server = resolve_server(args.server.as_deref())?;
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .context("build reqwest client")?;
+    let client = build_client()?;
     run_with_client(&server, &client, prompter)?;
     adopt_cluster(db, args.cluster.as_deref());
     Ok(())
@@ -114,24 +112,6 @@ impl<'a, P: Prompter + ?Sized> DeviceFlowPrompter for PrompterBridge<'a, P> {
     }
 }
 
-/// Resolve the relay URL: explicit `--server` wins, otherwise YAML config.
-fn resolve_server(cli_server: Option<&str>) -> Result<String> {
-    if let Some(s) = cli_server {
-        return Ok(s.to_string());
-    }
-    let cfg = load_raw_config_or_default()?;
-    cfg.sync
-        .as_ref()
-        .and_then(|s| s.default_server.clone())
-        .filter(|v| !v.eq_ignore_ascii_case("none"))
-        .ok_or_else(|| {
-            anyhow!(
-                "no sync server configured; pass --server <url> or run \
-                 `datum sync config set-server <url> --global`"
-            )
-        })
-}
-
 /// Persist the (already-wrapped) token atomically under
 /// `auth_token_path(host)`. Takes [`PersistedAuthToken`] specifically —
 /// callers are responsible for stamping the persistence metadata via
@@ -163,22 +143,4 @@ fn write_private_file(path: &std::path::Path, body: &[u8]) -> Result<()> {
         std::fs::write(path, body).with_context(|| format!("write {path:?}"))?;
         Ok(())
     }
-}
-
-/// Load the persisted token for `server`. Returns `Ok(None)` if there's
-/// no file. da-ixmh: this returns the on-disk shape
-/// ([`PersistedAuthToken`]); call sites that only need the bearer use
-/// the `Deref<Target = AuthToken>` impl, while sync_state-aware paths
-/// can read `refreshed_at` / `server`.
-#[allow(dead_code)]
-pub fn load_token(server: &str) -> Result<Option<PersistedAuthToken>> {
-    let host = server_host_from_url(server);
-    let path = auth_token_path(&host)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = std::fs::read(&path).with_context(|| format!("read token at {path:?}"))?;
-    let token: PersistedAuthToken =
-        serde_json::from_slice(&bytes).context("parse stored auth token")?;
-    Ok(Some(token))
 }

@@ -311,6 +311,36 @@ fn sync_key_init_creates_wrapped_upload() {
     );
 }
 
+/// da-d25h: `sync key` commands must use the shared resolver — a server
+/// configured per-DB only (no global default) must be found when no
+/// `--server` is passed. key.rs used to carry a global-only duplicate
+/// that failed with "no sync server configured" here.
+#[test]
+fn sync_key_init_resolves_per_db_server() {
+    let _env = scoped_env();
+    let relay = StubRelay::start();
+    std::env::set_var("DATUM_DB", "fitness"); // named, not path-like
+
+    // Per-DB server only; the global default stays unset.
+    datum_cli::sync::config::set_server(relay.base_url.clone(), false).expect("set per-db");
+    let cfg = load_raw_config_or_default().unwrap();
+    assert!(cfg
+        .sync
+        .as_ref()
+        .and_then(|s| s.default_server.as_ref())
+        .is_none());
+
+    write_token_for(&relay.base_url, &relay.mint_token());
+    let mut prompter = TestPrompter::new(["secret-passphrase", "secret-passphrase"]);
+
+    // No --server override: init must resolve the per-DB server.
+    datum_cli::sync::key::init(None, false, &mut prompter).expect("per-db server resolves");
+
+    let host = server_host_from_url(&relay.base_url);
+    assert!(master_key_path(&host).unwrap().exists());
+    assert!(relay.wrapped_key().is_some(), "wrapped key uploaded");
+}
+
 #[test]
 fn sync_key_unlock_downloads_and_unwraps() {
     let _env = scoped_env();
