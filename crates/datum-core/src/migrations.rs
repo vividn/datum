@@ -414,17 +414,13 @@ fn rewrite_raw_input_column(
     // constraint. Bumping `schema_version` forces a reparse on the next
     // SQL statement, which is the documented escape hatch for the
     // writable_schema editing pattern.
-    let schema_version: i64 =
-        conn.query_row("PRAGMA schema_version", [], |row| row.get(0))?;
+    let schema_version: i64 = conn.query_row("PRAGMA schema_version", [], |row| row.get(0))?;
     conn.execute_batch("PRAGMA writable_schema = 1;")?;
     conn.execute(
         "UPDATE sqlite_schema SET sql = ?1 WHERE type='table' AND name=?2",
         rusqlite::params![new_sql, table_name],
     )?;
-    conn.execute_batch(&format!(
-        "PRAGMA schema_version = {};",
-        schema_version + 1
-    ))?;
+    conn.execute_batch(&format!("PRAGMA schema_version = {};", schema_version + 1))?;
     conn.execute_batch("PRAGMA writable_schema = 0;")?;
     Ok(())
 }
