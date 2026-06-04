@@ -138,6 +138,21 @@ fn subprocess_multi_alias_body_writes_two_rows() {
     assert_eq!(env.entry_count(), 2);
 }
 
+/// `alias set <builtin>` succeeds but warns on stderr that the alias
+/// shadows a built-in subcommand (da-vpdz) — same guard as the inline
+/// `--alias` path. Stderr capture needs the real process boundary.
+#[test]
+fn subprocess_alias_set_builtin_name_warns_on_stderr() {
+    let env = Env::new();
+    let out = env.run(&["alias", "set", "tail", "occur coffee"]);
+    assert_ok(&out, "alias set tail");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("shadows a built-in subcommand"),
+        "expected shadow warning on stderr, got: {stderr}"
+    );
+}
+
 /// `dm now` is a non-logging admin verb. It must exit 0 and produce
 /// some stdout but write no rows.
 #[test]

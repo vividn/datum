@@ -79,13 +79,15 @@ impl Db {
         Ok(index.entries.get(name).cloned())
     }
 
-    /// Delete a user-created alias row. Fails silently if it doesn't
-    /// exist. Spec-derived aliases live in `field_specs.spec_json`, not
-    /// in this table, so they cannot be deleted via this entrypoint.
-    pub fn delete_alias(&self, name: &str) -> Result<()> {
-        self.conn
+    /// Delete a user-created alias row. Returns whether a row was
+    /// actually deleted, so callers can report honestly instead of
+    /// hedging. Spec-derived aliases live in `field_specs.spec_json`,
+    /// not in this table, so they cannot be deleted via this entrypoint.
+    pub fn delete_alias(&self, name: &str) -> Result<bool> {
+        let deleted = self
+            .conn
             .execute("DELETE FROM aliases WHERE name = ?1", params![name])?;
-        Ok(())
+        Ok(deleted > 0)
     }
 
     /// Save a user-created alias (kit_id = NULL).

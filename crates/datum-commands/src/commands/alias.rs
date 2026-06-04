@@ -19,12 +19,10 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
             }
         }
         AliasCommand::Set { name, expansion } => {
-            let alias = Alias {
-                name: name.clone(),
-                expands_to: expansion,
-                description: None,
-            };
-            db.save_alias(&alias)?;
+            // The direct command overwrites an existing alias silently —
+            // `alias set` IS the explicit edit, unlike the inline
+            // `--alias` flag which requires `--alias-overwrite`.
+            save_user_alias(&name, expansion, true, db)?;
             println!("✓ Alias '{name}' saved.");
         }
         AliasCommand::List => {
@@ -38,9 +36,67 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
             }
         }
         AliasCommand::Remove { name } => {
-            db.delete_alias(&name)?;
-            println!("✓ Alias '{name}' removed (if it was user-created)");
+            if db.delete_alias(&name)? {
+                println!("✓ Alias '{name}' removed");
+            } else {
+                let index = db.spec_alias_index()?;
+                if index.entries.contains_key(&name) {
+                    let field = index
+                        .by_field
+                        .iter()
+                        .find(|(_field, names)| names.contains(&name))
+                        .map(|(field, _names)| field.clone())
+                        .unwrap_or_default();
+                    bail!(
+                        "'{name}' is a derived alias from the '{field}' field spec; \
+                         edit that spec to change it"
+                    );
+                }
+                bail!("no user alias '{name}'");
+            }
         }
+    }
+    Ok(())
+}
+
+/// Shared save path for user aliases — the single set of guards both
+/// creation paths (`alias set` and the inline `--alias` flag) go through:
+///
+/// * rejects empty names;
+/// * when `overwrite` is false, an existing alias is an error explaining
+///   how to replace it (the inline path passes its `--alias-overwrite`
+///   flag; `alias set` passes `true` — the direct command overwrites
+///   silently by design);
+/// * saves via [`Db::save_alias`];
+/// * warns on stderr when the name shadows a built-in subcommand — the
+///   alias is still saved (per da-0b4) but won't fire when a verb is
+///   expected.
+fn save_user_alias(name: &str, expands_to: String, overwrite: bool, db: &Db) -> Result<()> {
+    if name.is_empty() {
+        bail!("alias name must be non-empty");
+    }
+
+    if !overwrite {
+        if let Some(existing) = db.lookup_alias(name)? {
+            bail!(
+                "alias '{name}' already exists (currently → datum {prev}). \
+                 Re-run with --alias-overwrite to replace it.",
+                prev = existing.expands_to,
+            );
+        }
+    }
+
+    let alias = Alias {
+        name: name.to_string(),
+        expands_to,
+        description: None,
+    };
+    db.save_alias(&alias)?;
+
+    if KNOWN_SUBCOMMANDS.contains(&name) {
+        eprintln!(
+            "warning: alias '{name}' shadows a built-in subcommand and will not fire when a verb is expected"
+        );
     }
     Ok(())
 }
@@ -55,13 +111,10 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
 ///
 /// * Strips `--alias <NAME>`, `--alias=<NAME>`, and
 ///   `--alias-overwrite` tokens from the captured argv.
-/// * If a user alias of the same name already exists and `overwrite`
-///   is false, returns an error explaining how to overwrite.
-/// * Saves the alias via `Db::save_alias`. The next invocation's
-///   pre-pass picks it up automatically through `DbAliasResolver`.
-/// * If the name collides with a built-in subcommand, the alias is
-///   still saved (per da-0b4) but a stderr warning explains that
-///   the alias won't fire when a verb is expected.
+/// * Saves through [`save_user_alias`], which carries the shared
+///   guards: empty-name rejection, the overwrite policy, and the
+///   built-in-shadowing warning. The next invocation's pre-pass picks
+///   the alias up automatically through `DbAliasResolver`.
 pub fn record_inline_alias(
     name: Option<String>,
     overwrite: bool,
@@ -72,38 +125,12 @@ pub fn record_inline_alias(
         return Ok(());
     };
 
-    if name.is_empty() {
-        bail!("--alias requires a non-empty name");
-    }
-
     let canonical = canonical_form(raw_argv);
     if canonical.is_empty() {
         bail!("--alias: nothing to record (canonical command is empty)");
     }
 
-    if let Some(existing) = db.lookup_alias(&name)? {
-        if !overwrite {
-            bail!(
-                "alias '{name}' already exists (currently → datum {prev}). \
-                 Re-run with --alias-overwrite to replace it.",
-                name = name,
-                prev = existing.expands_to,
-            );
-        }
-    }
-
-    let alias = Alias {
-        name: name.clone(),
-        expands_to: canonical.clone(),
-        description: None,
-    };
-    db.save_alias(&alias)?;
-
-    if KNOWN_SUBCOMMANDS.contains(&name.as_str()) {
-        eprintln!(
-            "warning: alias '{name}' shadows a built-in subcommand and will not fire when a verb is expected"
-        );
-    }
+    save_user_alias(&name, canonical.clone(), overwrite, db)?;
 
     eprintln!("✓ Alias '{name}' → datum {canonical}");
     Ok(())
