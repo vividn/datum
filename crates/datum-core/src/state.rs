@@ -575,19 +575,28 @@ fn collect_raw_events(
     }
 }
 
-fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value)>) {
-    // da-5ns sub-bead 1: each state-affecting verb emits an event at
-    // occur_time. da-2i8g sub-bead 5: block-switch / point-switch
-    // additionally emit a trailing `following_state` event at
-    // occur_time + dur, so a `state_at(t)` probe past the block sees
-    // the next state, not the block's primary.
-    //
-    // Timeless rows (`-T` / `--no-timestamp`): the v=20 NOT NULL
-    // `occur_time` column carries a `create_time` stub, but the slug
-    // suffix `:unset` marks the row as deliberately timeless. State
-    // compilation skips these — they shouldn't emit on the timeline.
+/// State-transition events asserted by a single entry, in emission order:
+/// `(event_time, state)` pairs.
+///
+/// da-5ns sub-bead 1: each state-affecting verb emits an event at
+/// occur_time. da-2i8g sub-bead 5: block-switch / point-switch
+/// additionally emit a trailing `following_state` event at
+/// occur_time + dur, so a `state_at(t)` probe past the block sees
+/// the next state, not the block's primary.
+///
+/// Timeless rows (`-T` / `--no-timestamp`): the v=20 NOT NULL
+/// `occur_time` column carries a `create_time` stub, but the slug
+/// suffix `:unset` marks the row as deliberately timeless. State
+/// compilation skips these — they shouldn't emit on the timeline.
+///
+/// This is the per-`Entry` form of the compiler's event extraction.
+/// Callers that must attribute each transition to its originating row
+/// (e.g. tail's block mode, da-eybr) consume this instead of
+/// re-mirroring the verb match.
+pub fn entry_state_events(entry: &Entry) -> Vec<(DateTime<Utc>, Value)> {
+    let mut out = Vec::new();
     if entry.slug.as_str().ends_with(":unset") {
-        return;
+        return out;
     }
     match entry.verb {
         Verb::Switch => {
@@ -597,7 +606,7 @@ fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Va
                     .as_ref()
                     .map(|v| normalize_state(v).to_json())
                     .unwrap_or(Value::Null);
-                out.push((ts.utc, entry.create_time, state));
+                out.push((ts.utc, state));
             }
         }
         Verb::BlockSwitch | Verb::PointSwitch => {
@@ -607,19 +616,19 @@ fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Va
                     .as_ref()
                     .map(|v| normalize_state(v).to_json())
                     .unwrap_or(Value::Null);
-                out.push((ts.utc, entry.create_time, primary));
+                out.push((ts.utc, primary));
                 if let (Some(dur), Some(fs)) = (entry.dur.as_ref(), entry.following_state.as_ref())
                 {
                     let delta = dur.as_seconds().unwrap_or(0);
                     let trailing_ts = ts.utc + chrono::Duration::seconds(delta);
                     let trailing = normalize_state(fs).to_json();
-                    out.push((trailing_ts, entry.create_time, trailing));
+                    out.push((trailing_ts, trailing));
                 }
             }
         }
         Verb::Point => {
             if let Some(ts) = &entry.occur_time {
-                out.push((ts.utc, entry.create_time, Value::Bool(false)));
+                out.push((ts.utc, Value::Bool(false)));
             }
         }
         Verb::Block => {
@@ -629,9 +638,16 @@ fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Va
                     .as_ref()
                     .map(|v| normalize_state(v).to_json())
                     .unwrap_or(Value::Bool(true));
-                out.push((ts.utc, entry.create_time, state));
+                out.push((ts.utc, state));
             }
         }
+    }
+    out
+}
+
+fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value)>) {
+    for (ts, state) in entry_state_events(entry) {
+        out.push((ts, entry.create_time, state));
     }
 }
 

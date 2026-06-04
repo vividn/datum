@@ -10,8 +10,8 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use datum_core::{
     db::Db,
-    entry::{Entry, Verb},
-    state::{normalize_state, StateValue},
+    entry::Entry,
+    state::{entry_state_events, normalize_state, StateValue},
     time::DatumTime,
 };
 use serde_json::Value as JsonValue;
@@ -59,18 +59,23 @@ pub fn tail_state(
     // Default to 10 most-recent matching blocks (parity with the entry-mode
     // tail default). `-n 0` (and any explicit value) wins.
     let n = count.unwrap_or(10);
-    let mut to_show: Vec<&StateBlock> = blocks.iter().rev().take(n).collect();
-    if oldest_first {
-        // already newest-first → reverse for oldest-first display
-        to_show.reverse();
-    } else {
-        // We took the last N newest-first; flip so output reads oldest-to-newest
-        // (matching how entry-mode tail prints — top row is oldest of the N).
-        to_show.reverse();
-    }
-
-    print_blocks(&to_show);
+    print_blocks(&select_blocks(&blocks, n, oldest_first));
     Ok(())
+}
+
+/// Pick which blocks to display. `oldest_first` (head) selects the oldest
+/// `n` blocks; tail selects the newest `n`. Either way the output reads
+/// oldest-to-newest (matching how entry-mode tail prints — top row is the
+/// oldest of the N).
+pub fn select_blocks(blocks: &[StateBlock], n: usize, oldest_first: bool) -> Vec<&StateBlock> {
+    if oldest_first {
+        // `compute_blocks` yields oldest-first already.
+        blocks.iter().take(n).collect()
+    } else {
+        let mut newest: Vec<&StateBlock> = blocks.iter().rev().take(n).collect();
+        newest.reverse();
+        newest
+    }
 }
 
 /// Walk state-bearing entries oldest-first, accumulating contiguous blocks
@@ -79,30 +84,29 @@ pub fn tail_state(
 /// when the field's most recent state equals the filter — that's the
 /// "ongoing" case the renderer needs to display.
 pub fn compute_blocks(entries: &[Entry], filter: &JsonValue) -> Vec<StateBlock> {
+    // The canonical event extractor (`state::entry_state_events`, da-eybr)
+    // emits BOTH the primary event at occur_time and — for block-switch /
+    // point-switch — the trailing `following_state` event at occur_time +
+    // dur. A trailing event's originating entry is the block-switch row
+    // itself: it both closes the primary block and opens the follower, so
+    // opener/closer refs point at that row.
     let mut events: Vec<(DateTime<Utc>, &Entry, JsonValue)> = entries
         .iter()
-        .filter_map(|e| {
-            let ts = e.occur_time.as_ref()?.utc;
-            // Mirror state::collect_raw_events: each state-affecting verb
-            // produces exactly one transition event at occur_time. Note
-            // `:unset` rows are excluded by the loader's slug filter
-            // already (entries_for_field_asc has no such filter, so guard
-            // here too).
-            if e.slug.as_str().ends_with(":unset") {
-                return None;
-            }
-            let state = event_state(e)?;
-            Some((ts, e, state))
+        .flat_map(|e| {
+            entry_state_events(e)
+                .into_iter()
+                .map(move |(ts, state)| (ts, e, state))
         })
         .collect();
     // Stable secondary sort by create_time so same-instant events fold
-    // into a deterministic order (matches FieldStateEvents).
+    // into a deterministic order (matches FieldStateEvents). Stability
+    // also keeps a point-switch's trailing event after its primary.
     events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.create_time.cmp(&b.1.create_time)));
 
     let mut blocks: Vec<StateBlock> = Vec::new();
     let mut current: Option<StateBlock> = None;
 
-    for (_t, entry, state) in events {
+    for (t, entry, state) in events {
         match current.as_mut() {
             Some(cur) if cur.state == state => {
                 // No transition; the block continues. Keep the original
@@ -113,14 +117,14 @@ pub fn compute_blocks(entries: &[Entry], filter: &JsonValue) -> Vec<StateBlock> 
             }
             Some(_) => {
                 let mut prev = current.take().unwrap();
-                prev.end = entry.occur_time.clone();
+                prev.end = Some(event_time(entry, t));
                 prev.closer = Some(entry.clone());
                 if &prev.state == filter {
                     blocks.push(prev);
                 }
                 current = Some(StateBlock {
                     state,
-                    start: entry.occur_time.clone().expect("event has occur_time"),
+                    start: event_time(entry, t),
                     end: None,
                     opener: entry.clone(),
                     closer: None,
@@ -129,7 +133,7 @@ pub fn compute_blocks(entries: &[Entry], filter: &JsonValue) -> Vec<StateBlock> 
             None => {
                 current = Some(StateBlock {
                     state,
-                    start: entry.occur_time.clone().expect("event has occur_time"),
+                    start: event_time(entry, t),
                     end: None,
                     opener: entry.clone(),
                     closer: None,
@@ -145,24 +149,23 @@ pub fn compute_blocks(entries: &[Entry], filter: &JsonValue) -> Vec<StateBlock> 
     blocks
 }
 
-/// What state does this entry assert? Mirrors `state::collect_raw_events`
-/// without going through the FieldStateEvents loader (which discards the
-/// originating `Entry`).
-fn event_state(e: &Entry) -> Option<JsonValue> {
-    match e.verb {
-        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch => Some(
-            e.state
-                .as_ref()
-                .map(|v| normalize_state(v).to_json())
-                .unwrap_or(JsonValue::Null),
-        ),
-        Verb::Point => Some(JsonValue::Bool(false)),
-        Verb::Block => Some(
-            e.state
-                .as_ref()
-                .map(|v| normalize_state(v).to_json())
-                .unwrap_or(JsonValue::Bool(true)),
-        ),
+/// Lift an event timestamp back into the originating entry's timezone.
+/// Primary events land exactly on `occur_time`; trailing
+/// `following_state` events land at occur_time + dur, so re-derive the
+/// offset at that instant (DST-safe), keeping the entry's offset if the
+/// timezone name fails to parse.
+fn event_time(entry: &Entry, ts: DateTime<Utc>) -> DatumTime {
+    let occ = entry
+        .occur_time
+        .as_ref()
+        .expect("state event implies occur_time");
+    if ts == occ.utc {
+        occ.clone()
+    } else {
+        DatumTime::from_utc_and_tz(ts, &occ.timezone).unwrap_or_else(|_| DatumTime {
+            utc: ts,
+            ..occ.clone()
+        })
     }
 }
 
@@ -265,6 +268,7 @@ fn print_blocks(blocks: &[&StateBlock]) {
 mod tests {
     use super::*;
     use chrono::{Duration, TimeZone};
+    use datum_core::entry::Verb;
     use datum_core::test_util::{entry_builder, fresh_db};
     use serde_json::json;
 
@@ -398,5 +402,102 @@ mod tests {
         let blocks2 = compute_blocks(&entries, &json!("vertical"));
         assert_eq!(blocks2.len(), 1);
         assert_eq!(blocks2[0].start.utc, t(30));
+    }
+
+    /// A block-switch row carrying dur + following_state (the builder
+    /// doesn't expose those, so construct directly — same shape as the
+    /// state.rs da-2i8g fixtures).
+    fn block_switch(
+        field: &str,
+        occur: DateTime<Utc>,
+        primary: &str,
+        dur_mins: i64,
+        following: &str,
+    ) -> Entry {
+        use datum_core::dur::Dur;
+        let mut e = Entry::new(
+            field,
+            Verb::BlockSwitch,
+            Some(json!(primary)),
+            None,
+            Some(DatumTime {
+                utc: occur,
+                offset_minutes: 0,
+                timezone: "UTC".into(),
+            }),
+            Some(Dur::Of(Duration::minutes(dur_mins))),
+            "dev",
+        );
+        e.following_state = Some(json!(following));
+        e
+    }
+
+    #[test]
+    fn blocks_block_switch_opens_follower_at_occur_plus_dur() {
+        // The vremya pattern from da-eybr: `switch activity end 14m , researching`
+        // then a plain switch later. Canonically 'end' runs 0–14 and
+        // 'researching' 14–60; pre-fix, block mode dropped the trailing
+        // event so 'end' ran to t(60) and 'researching' never existed.
+        let bs = block_switch("activity", t(0), "end", 14, "researching");
+        let mut lunch = entry_builder("activity")
+            .verb(Verb::Switch)
+            .value(json!("lunch"))
+            .time_start_utc(t(60))
+            .build();
+        lunch.create_time = bs.create_time + Duration::seconds(1);
+        let entries = vec![bs.clone(), lunch];
+
+        // "end" is a normalize_state keyword (→ false); go through
+        // build_filter exactly like the real command does.
+        let end_blocks = compute_blocks(&entries, &build_filter(&["end".to_string()]));
+        assert_eq!(end_blocks.len(), 1);
+        assert_eq!(end_blocks[0].start.utc, t(0));
+        assert_eq!(
+            end_blocks[0].end.as_ref().map(|e| e.utc),
+            Some(t(14)),
+            "primary block closes at occur+dur, not at the next entry"
+        );
+
+        let follower = compute_blocks(&entries, &json!("researching"));
+        assert_eq!(follower.len(), 1, "follower block exists");
+        assert_eq!(follower[0].start.utc, t(14), "follower opens at occur+dur");
+        assert_eq!(follower[0].end.as_ref().map(|e| e.utc), Some(t(60)));
+        // Both opener and the primary's closer are the block-switch row itself.
+        assert_eq!(follower[0].opener.hid, bs.hid);
+        assert_eq!(end_blocks[0].closer.as_ref().map(|c| &c.hid), Some(&bs.hid));
+    }
+
+    #[test]
+    fn head_selects_oldest_blocks_tail_selects_newest() {
+        let db = fresh_db();
+        // Three happy runs: 0–10, 20–30, 40–50.
+        for (start, gap_state) in [(0, 10), (20, 30), (40, 50)] {
+            entry_builder("mood")
+                .verb(Verb::Switch)
+                .value(json!("happy"))
+                .time_start_utc(t(start))
+                .insert(&db);
+            entry_builder("mood")
+                .verb(Verb::Switch)
+                .value(json!("sad"))
+                .time_start_utc(t(gap_state))
+                .insert(&db);
+        }
+
+        let entries = db.entries_for_field_asc("mood", None).unwrap();
+        let blocks = compute_blocks(&entries, &json!("happy"));
+        assert_eq!(blocks.len(), 3);
+
+        // Both render oldest-to-newest, but head takes the oldest N and
+        // tail the newest N.
+        let head = select_blocks(&blocks, 2, true);
+        assert_eq!(head.len(), 2);
+        assert_eq!(head[0].start.utc, t(0));
+        assert_eq!(head[1].start.utc, t(20));
+
+        let tail = select_blocks(&blocks, 2, false);
+        assert_eq!(tail.len(), 2);
+        assert_eq!(tail[0].start.utc, t(20));
+        assert_eq!(tail[1].start.utc, t(40));
     }
 }
