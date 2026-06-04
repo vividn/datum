@@ -27,12 +27,16 @@ use crate::config::{auth_token_path, master_key_path, server_host_from_url};
 use datum_sync_client::PersistedAuthToken;
 
 /// `datum sync key init`
+///
+/// `cli_db` is the global `--db` flag — it beats `DATUM_DB` when naming
+/// the active DB for per-DB server resolution (da-cyn4).
 pub fn init(
     server_override: Option<String>,
     force: bool,
+    cli_db: Option<&str>,
     prompter: &mut impl Prompter,
 ) -> Result<()> {
-    let server = resolve_server(server_override.as_deref())?;
+    let server = resolve_server(server_override.as_deref(), cli_db)?;
     let client = build_client()?;
     init_with_client(&server, &client, force, prompter)?;
     Ok(())
@@ -79,8 +83,12 @@ pub fn init_with_client(
 }
 
 /// `datum sync key unlock`
-pub fn unlock(server_override: Option<String>, prompter: &mut impl Prompter) -> Result<()> {
-    let server = resolve_server(server_override.as_deref())?;
+pub fn unlock(
+    server_override: Option<String>,
+    cli_db: Option<&str>,
+    prompter: &mut impl Prompter,
+) -> Result<()> {
+    let server = resolve_server(server_override.as_deref(), cli_db)?;
     let client = build_client()?;
     unlock_with_client(&server, &client, prompter)?;
     Ok(())
@@ -113,9 +121,10 @@ pub fn unlock_with_client(
 /// `datum sync key rotate-passphrase`
 pub fn rotate_passphrase(
     server_override: Option<String>,
+    cli_db: Option<&str>,
     prompter: &mut impl Prompter,
 ) -> Result<()> {
-    let server = resolve_server(server_override.as_deref())?;
+    let server = resolve_server(server_override.as_deref(), cli_db)?;
     let client = build_client()?;
     rotate_passphrase_with_client(&server, &client, prompter)?;
     Ok(())
@@ -146,8 +155,8 @@ pub fn rotate_passphrase_with_client(
 }
 
 /// `datum sync key show-fingerprint`
-pub fn show_fingerprint(server_override: Option<String>) -> Result<()> {
-    let server = resolve_server(server_override.as_deref())?;
+pub fn show_fingerprint(server_override: Option<String>, cli_db: Option<&str>) -> Result<()> {
+    let server = resolve_server(server_override.as_deref(), cli_db)?;
     let host = server_host_from_url(&server);
     let key_path = master_key_path(&host)?;
     let master = read_key_file(&key_path)

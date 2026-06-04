@@ -190,7 +190,7 @@ fn sync_config_set_server_per_db() {
     let _env = scoped_env();
     std::env::set_var("DATUM_DB", "fitness"); // named, not path-like
 
-    datum_cli::sync::config::set_server("https://sync.example.com".into(), false)
+    datum_cli::sync::config::set_server("https://sync.example.com".into(), false, None)
         .expect("set per-db");
 
     let cfg = load_raw_config_or_default().unwrap();
@@ -218,7 +218,7 @@ fn sync_config_set_server_per_db() {
 fn sync_config_set_server_global() {
     let _env = scoped_env();
 
-    datum_cli::sync::config::set_server("https://sync.example.com".into(), true)
+    datum_cli::sync::config::set_server("https://sync.example.com".into(), true, None)
         .expect("set global");
 
     let cfg = load_raw_config_or_default().unwrap();
@@ -250,11 +250,64 @@ fn sync_config_set_server_global() {
 }
 
 #[test]
+fn sync_config_set_server_db_flag_without_env() {
+    // da-cyn4: `datum --db work sync config set-server` used to fail
+    // with "no active DB name" because only DATUM_DB was consulted.
+    let _env = scoped_env(); // DATUM_DB is unset
+
+    datum_cli::sync::config::set_server("https://work.example.com".into(), false, Some("work"))
+        .expect("set per-db via --db flag");
+
+    let cfg = load_raw_config_or_default().unwrap();
+    assert_eq!(
+        cfg.databases
+            .get("work")
+            .and_then(|s| s.sync_server.as_deref()),
+        Some("https://work.example.com")
+    );
+}
+
+#[test]
+fn sync_config_set_server_db_flag_beats_env() {
+    let _env = scoped_env();
+    std::env::set_var("DATUM_DB", "fitness");
+
+    datum_cli::sync::config::set_server("https://work.example.com".into(), false, Some("work"))
+        .expect("set per-db");
+
+    // The row lands under the flag-named DB, not the env-named one.
+    let cfg = load_raw_config_or_default().unwrap();
+    assert!(cfg.databases.contains_key("work"));
+    assert!(!cfg.databases.contains_key("fitness"));
+}
+
+#[test]
+fn sync_config_disable_scopes_to_db_flag() {
+    let _env = scoped_env();
+
+    datum_cli::sync::config::disable(Some("work")).expect("disable per-db");
+
+    let cfg = load_raw_config_or_default().unwrap();
+    assert_eq!(
+        cfg.databases
+            .get("work")
+            .and_then(|s| s.sync_server.as_deref()),
+        Some("none")
+    );
+    // Global default untouched.
+    assert!(cfg
+        .sync
+        .as_ref()
+        .and_then(|s| s.default_server.as_ref())
+        .is_none());
+}
+
+#[test]
 fn sync_config_disable_writes_none() {
     let _env = scoped_env();
 
     // No active named DB → global disable.
-    datum_cli::sync::config::disable().expect("disable global");
+    datum_cli::sync::config::disable(None).expect("disable global");
     let cfg = load_raw_config_or_default().unwrap();
     assert_eq!(
         cfg.sync.as_ref().and_then(|s| s.default_server.as_deref()),
@@ -322,7 +375,7 @@ fn sync_key_init_resolves_per_db_server() {
     std::env::set_var("DATUM_DB", "fitness"); // named, not path-like
 
     // Per-DB server only; the global default stays unset.
-    datum_cli::sync::config::set_server(relay.base_url.clone(), false).expect("set per-db");
+    datum_cli::sync::config::set_server(relay.base_url.clone(), false, None).expect("set per-db");
     let cfg = load_raw_config_or_default().unwrap();
     assert!(cfg
         .sync
@@ -334,7 +387,7 @@ fn sync_key_init_resolves_per_db_server() {
     let mut prompter = TestPrompter::new(["secret-passphrase", "secret-passphrase"]);
 
     // No --server override: init must resolve the per-DB server.
-    datum_cli::sync::key::init(None, false, &mut prompter).expect("per-db server resolves");
+    datum_cli::sync::key::init(None, false, None, &mut prompter).expect("per-db server resolves");
 
     let host = server_host_from_url(&relay.base_url);
     assert!(master_key_path(&host).unwrap().exists());

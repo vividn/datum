@@ -143,7 +143,8 @@ fn fresh_db(env: &EnvGuard) -> Db {
 /// `cluster_ops::bump_generation_for_current_server` (and `run_sync`)
 /// resolve to the test stub without a per-DB binding.
 fn configure_default_server(server: &str) {
-    datum_cli::sync::config::set_server(server.to_string(), true).expect("set default sync server");
+    datum_cli::sync::config::set_server(server.to_string(), true, None)
+        .expect("set default sync server");
 }
 
 fn read_server_cluster_generation(relay: &StubRelay, cluster_id: &str) -> i64 {
@@ -179,7 +180,7 @@ fn sync_login_records_cluster_id_from_db_name() {
         server: Some(relay.base_url.clone()),
         cluster: None,
     };
-    datum_cli::sync::login::run(args, &db, &mut prompter).expect("login::run should succeed");
+    datum_cli::sync::login::run(args, None, &db, &mut prompter).expect("login::run should succeed");
 
     // fresh_db opens `<DATUM_HOME>/datum.db`, so the default cluster is
     // its file stem `datum`.
@@ -202,7 +203,7 @@ fn sync_login_cluster_flag_overrides_db_name() {
         server: Some(relay.base_url.clone()),
         cluster: Some("shared-household".to_string()),
     };
-    datum_cli::sync::login::run(args, &db, &mut prompter).expect("login::run should succeed");
+    datum_cli::sync::login::run(args, None, &db, &mut prompter).expect("login::run should succeed");
 
     let stored = sync_state::get_cluster_id(&db).expect("read cluster_id");
     assert_eq!(stored.as_deref(), Some("shared-household"));

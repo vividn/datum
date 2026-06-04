@@ -38,25 +38,30 @@ pub mod status;
 pub use datum_sync_client::protocol::messages::AuthToken;
 
 /// Entry point — dispatch `datum sync [flags] [subcommand]`.
-pub fn dispatch(args: SyncArgs, db: &Db) -> Result<()> {
+///
+/// `cli_db` is the global `--db <value>` flag (da-cyn4): per-DB-aware
+/// subcommands must scope by it, not by `DATUM_DB` alone.
+pub fn dispatch(args: SyncArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
     match args.command {
-        Some(SyncCommand::Login(a)) => login::run(a, db, &mut StdIoPrompter),
+        Some(SyncCommand::Login(a)) => login::run(a, cli_db, db, &mut StdIoPrompter),
         Some(SyncCommand::Config(sub)) => match sub {
-            SyncConfigCommand::SetServer { url, global } => config::set_server(url, global),
-            SyncConfigCommand::Disable => config::disable(),
-            SyncConfigCommand::Show => config::show(),
+            SyncConfigCommand::SetServer { url, global } => config::set_server(url, global, cli_db),
+            SyncConfigCommand::Disable => config::disable(cli_db),
+            SyncConfigCommand::Show => config::show(cli_db),
         },
         Some(SyncCommand::Key(sub)) => match sub {
-            SyncKeyCommand::Init { server, force } => key::init(server, force, &mut StdIoPrompter),
-            SyncKeyCommand::Unlock { server } => key::unlock(server, &mut StdIoPrompter),
-            SyncKeyCommand::RotatePassphrase { server } => {
-                key::rotate_passphrase(server, &mut StdIoPrompter)
+            SyncKeyCommand::Init { server, force } => {
+                key::init(server, force, cli_db, &mut StdIoPrompter)
             }
-            SyncKeyCommand::ShowFingerprint { server } => key::show_fingerprint(server),
+            SyncKeyCommand::Unlock { server } => key::unlock(server, cli_db, &mut StdIoPrompter),
+            SyncKeyCommand::RotatePassphrase { server } => {
+                key::rotate_passphrase(server, cli_db, &mut StdIoPrompter)
+            }
+            SyncKeyCommand::ShowFingerprint { server } => key::show_fingerprint(server, cli_db),
         },
-        Some(SyncCommand::Status(a)) => status::run(a),
+        Some(SyncCommand::Status(a)) => status::run(a, cli_db),
         Some(SyncCommand::InstallDaemon(a)) => install_daemon::run(a.show, a.uninstall),
-        None => run_sync(args, db),
+        None => run_sync(args, cli_db, db),
     }
 }
 
@@ -96,14 +101,19 @@ pub struct SyncOutcome {
     pub dry_run: bool,
 }
 
-fn run_sync(args: SyncArgs, db: &Db) -> Result<()> {
+fn run_sync(args: SyncArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
     let dir = Direction::from_flags(args.push, args.pull);
+    // Resolve the relay HERE, --db-aware (da-cyn4), and hand it down as
+    // an explicit override — the inner runner's own resolve_server falls
+    // back to env-only detection and must not be reached from the CLI
+    // path when a per-DB server is pinned.
+    let server = resolve_server(args.server.as_deref(), cli_db)?;
     // CLI path: pass a real Prompter so GenerationMismatch recovery
     // (da-74xx) can run interactively. Headless / test callers that go
     // through the bare `run_sync_with_client` get the pre-recovery
     // behaviour (the error surfaces with the "cluster forked" message).
     let outcome = run_sync_with_client_and_prompter(
-        args.server.as_deref(),
+        Some(&server),
         dir,
         args.dry_run,
         db,
@@ -182,7 +192,7 @@ fn run_sync_with_client_inner(
     db: &Db,
     prompter: Option<&mut dyn Prompter>,
 ) -> Result<SyncOutcome> {
-    let server = resolve_server(server_override)?;
+    let server = resolve_server(server_override, None)?;
     let client = build_client()?;
     run_sync_inner_with_recovery(&server, &client, direction, dry_run, db, prompter)
 }
@@ -403,14 +413,15 @@ pub fn preflight_checks(server: &str) -> Result<Preflight> {
     })
 }
 
-pub(crate) fn resolve_server(cli_server: Option<&str>) -> Result<String> {
+/// Resolve the relay URL: explicit `--server` wins, then the per-DB /
+/// global config for the active DB. `cli_db` is the global `--db` flag —
+/// it beats `DATUM_DB` when naming the active DB (da-cyn4).
+pub(crate) fn resolve_server(cli_server: Option<&str>, cli_db: Option<&str>) -> Result<String> {
     if let Some(s) = cli_server {
         return Ok(s.to_string());
     }
     let cfg = crate::config::load_raw_config_or_default()?;
-    let db_name = std::env::var("DATUM_DB")
-        .ok()
-        .filter(|v| !v.is_empty() && !crate::config::looks_like_path(v));
+    let db_name = crate::config::active_db_name(cli_db);
     crate::config::resolve_sync_server(&cfg, db_name.as_deref()).ok_or_else(|| {
         anyhow::anyhow!(
             "no sync server configured; pass --server <url> or run \

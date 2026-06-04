@@ -126,6 +126,19 @@ pub fn looks_like_path(s: &str) -> bool {
     s.contains('/') || s.starts_with('.') || s.ends_with(".db")
 }
 
+/// Resolve the active *named* DB for per-DB config scoping (da-cyn4):
+/// the explicit `--db` flag wins over the `DATUM_DB` env var, mirroring
+/// [`resolve_db`]. Returns `None` when the active target is a bare path
+/// rather than a registered name — paths have no name to scope by, and
+/// a path-valued flag does NOT fall back to the env var (the flag has
+/// already selected the active DB).
+pub fn active_db_name(cli_db: Option<&str>) -> Option<String> {
+    cli_db
+        .map(str::to_string)
+        .or_else(|| std::env::var("DATUM_DB").ok())
+        .filter(|v| !v.is_empty() && !looks_like_path(v))
+}
+
 /// Cheap pre-scan of argv for the global `--db <value>` / `--db=<value>`
 /// flag, without invoking the full parser. Used by the alias-resolution
 /// pre-pass so it can route to the user-selected db before the parser
@@ -695,6 +708,17 @@ mod tests {
         assert!(looks_like_path("name.db"));
         assert!(!looks_like_path("fitness"));
         assert!(!looks_like_path("my-db"));
+    }
+
+    #[test]
+    fn active_db_name_flag_wins_and_paths_are_nameless() {
+        // The `Some` branches never read DATUM_DB, so these are safe to
+        // assert without env isolation (da-cyn4).
+        assert_eq!(active_db_name(Some("work")), Some("work".to_string()));
+        // A path-valued flag selects the DB but yields no name — and
+        // must NOT fall back to the env var.
+        assert_eq!(active_db_name(Some("/tmp/x.db")), None);
+        assert_eq!(active_db_name(Some("")), None);
     }
 
     fn argv(parts: &[&str]) -> Vec<String> {

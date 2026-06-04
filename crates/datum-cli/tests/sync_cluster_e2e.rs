@@ -152,7 +152,8 @@ fn write_master_key(server: &str, key: &[u8; 32]) {
 }
 
 fn configure_default_server(server: &str) {
-    datum_cli::sync::config::set_server(server.to_string(), true).expect("set default sync server");
+    datum_cli::sync::config::set_server(server.to_string(), true, None)
+        .expect("set default sync server");
 }
 
 /// Provision an isolated client install: token + master_key keyed on

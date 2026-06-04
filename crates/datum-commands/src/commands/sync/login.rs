@@ -20,8 +20,16 @@ use crate::commands::sync::{build_client, resolve_server, Prompter};
 use crate::config::{auth_token_path, server_host_from_url};
 
 /// Production entry point.
-pub fn run(args: SyncLoginArgs, db: &Db, prompter: &mut impl Prompter) -> Result<()> {
-    let server = resolve_server(args.server.as_deref())?;
+///
+/// `cli_db` is the global `--db` flag — it beats `DATUM_DB` when naming
+/// the active DB for per-DB server resolution (da-cyn4).
+pub fn run(
+    args: SyncLoginArgs,
+    cli_db: Option<&str>,
+    db: &Db,
+    prompter: &mut impl Prompter,
+) -> Result<()> {
+    let server = resolve_server(args.server.as_deref(), cli_db)?;
     let client = build_client()?;
     run_with_client(&server, &client, prompter)?;
     adopt_cluster(db, args.cluster.as_deref());

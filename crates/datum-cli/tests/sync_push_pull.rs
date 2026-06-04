@@ -298,9 +298,12 @@ fn sync_status_reports_per_db() {
     // `datum sync status` prints human output; we invoke it for side
     // effects (no panics / errors) and check that watermarks are what the
     // status renderer reads from.
-    datum_cli::sync::status::run(datum_cli::args::SyncStatusArgs {
-        server: Some(relay.base_url.clone()),
-    })
+    datum_cli::sync::status::run(
+        datum_cli::args::SyncStatusArgs {
+            server: Some(relay.base_url.clone()),
+        },
+        None,
+    )
     .unwrap();
 
     let last_push = sync_state::get_last_push_at(&db).unwrap();
@@ -696,4 +699,53 @@ fn push_idempotent_on_replay() {
 
     // Silence unused warning on the guard placeholder in helpers.
     let _ = ChronoDuration::seconds(0);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// --db flag server resolution (da-cyn4)
+// ──────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn sync_db_flag_resolves_per_db_server() {
+    // da-cyn4: the sync tree used to detect the active DB from DATUM_DB
+    // alone, so `datum --db work sync` with a per-DB server pinned for
+    // "work" silently pushed to the GLOBAL relay. The --db flag must win.
+    let env = scoped_env();
+    let global_relay = StubRelay::start();
+    let work_relay = StubRelay::start();
+    for relay in [&global_relay, &work_relay] {
+        write_token_for(&relay.base_url, &relay.mint_token());
+        write_master_key(&relay.base_url, &[0x33u8; 32]);
+    }
+    datum_cli::sync::config::set_server(global_relay.base_url.clone(), true, None).unwrap();
+    datum_cli::sync::config::set_server(work_relay.base_url.clone(), false, Some("work")).unwrap();
+
+    let db = fresh_db(&env);
+    db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
+
+    // DATUM_DB is unset (scoped_env clears it) — only the `--db work`
+    // flag names the active DB.
+    datum_cli::sync::dispatch(
+        datum_cli::args::SyncArgs {
+            command: None,
+            push: true,
+            pull: false,
+            dry_run: false,
+            server: None,
+        },
+        Some("work"),
+        &db,
+    )
+    .unwrap();
+
+    assert_eq!(
+        work_relay.changeset_count(),
+        1,
+        "push must land on work's per-DB relay"
+    );
+    assert_eq!(
+        global_relay.changeset_count(),
+        0,
+        "global relay must stay untouched under --db work"
+    );
 }

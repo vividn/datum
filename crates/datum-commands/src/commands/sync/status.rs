@@ -25,9 +25,11 @@ use crate::commands::sync::daemon_status;
 use crate::commands::sync::key::load_token;
 use crate::config::{load_raw_config_or_default, resolve_db, resolve_sync_server};
 
-pub fn run(args: SyncStatusArgs) -> Result<()> {
+/// `cli_db` is the global `--db` flag — it beats `DATUM_DB` when naming
+/// the active DB (da-cyn4).
+pub fn run(args: SyncStatusArgs, cli_db: Option<&str>) -> Result<()> {
     let cfg = load_raw_config_or_default()?;
-    let db_name = active_db_name();
+    let db_name = crate::config::active_db_name(cli_db);
     let effective_server = args
         .server
         .clone()
@@ -51,7 +53,7 @@ pub fn run(args: SyncStatusArgs) -> Result<()> {
 
     // Render the active DB's row.
     let active_label = db_name.clone().unwrap_or_else(|| "(default)".to_string());
-    let (line, disabled) = render_db_row(&active_label, effective_server.as_deref())?;
+    let (line, disabled) = render_db_row(&active_label, effective_server.as_deref(), cli_db)?;
     println!("{line}");
     if !disabled {
         // Nothing else to print for now — multi-DB enumeration is a later
@@ -77,16 +79,14 @@ fn daemon_line() -> String {
     }
 }
 
-fn active_db_name() -> Option<String> {
-    std::env::var("DATUM_DB")
-        .ok()
-        .filter(|v| !v.is_empty() && !crate::config::looks_like_path(v))
-}
-
 /// Compose the `<name>  ↑ <ts>  ↓ <ts>  <flag>` line for a single DB.
 /// Returns `(line, disabled)` so the caller can skip the trailing legend
 /// when sync is off for this DB.
-fn render_db_row(label: &str, server: Option<&str>) -> Result<(String, bool)> {
+fn render_db_row(
+    label: &str,
+    server: Option<&str>,
+    cli_db: Option<&str>,
+) -> Result<(String, bool)> {
     if server.is_none() {
         return Ok((format!("{:<12}  sync disabled", label), true));
     }
@@ -94,7 +94,7 @@ fn render_db_row(label: &str, server: Option<&str>) -> Result<(String, bool)> {
     // Open the active DB so we can read watermarks + pending conflicts.
     // Failing to open it is non-fatal for `status` — we still print the
     // header so users can diagnose config issues.
-    let Ok(resolved) = resolve_db(None) else {
+    let Ok(resolved) = resolve_db(cli_db) else {
         return Ok((format!("{:<12}  (db unavailable)", label), false));
     };
     let db = match Db::open(&resolved.path.to_string_lossy()) {

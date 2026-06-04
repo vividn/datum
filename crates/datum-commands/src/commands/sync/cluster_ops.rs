@@ -23,7 +23,7 @@ use crate::commands::sync::key::load_token;
 /// DB's configured default. (Pass `--server` to a follow-up `datum
 /// sync` if you need to retarget.)
 pub fn bump_generation_for_current_server(cluster_id: &str) -> Result<u64> {
-    let server = resolve_server(None)?;
+    let server = resolve_server(None, None)?;
     let client = build_client()?;
     let token = load_token(&server)?
         .ok_or_else(|| anyhow!("not logged in to {server} — run `datum sync login` first"))?;

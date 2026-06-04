@@ -9,7 +9,9 @@ use crate::args::NowArgs;
 use crate::config;
 use crate::render::{render_pending_integrity_warning, render_snapshot};
 
-pub fn now(args: NowArgs, db: &Db) -> Result<()> {
+/// `cli_db` is the global `--db` flag — it beats `DATUM_DB` when naming
+/// the active DB for the stale-sync warning (da-cyn4).
+pub fn now(args: NowArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
     // da-tx8j: resolve the optional snapshot_time from time_args. When
     // ANY time arg was supplied we treat it as "the user explicitly
     // asked for a past moment" and pin the whole render to it: query
@@ -41,7 +43,7 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
     // pinned a past time — the current sync state has nothing to do
     // with the snapshot they asked for. Suppress.
     if snapshot_time.is_none() {
-        emit_stale_sync_warning(db);
+        emit_stale_sync_warning(cli_db, db);
     }
 
     // C4e: surface a top-line banner when there are unresolved integrity
@@ -181,13 +183,12 @@ fn detect_terminal_cols() -> u16 {
 /// - No sync configured → no warning
 /// - Daemon running AND recent pull (< 1h) → no warning
 /// - Daemon down OR stale pull (≥ 1h) → warn, explaining why
-fn emit_stale_sync_warning(db: &Db) {
+fn emit_stale_sync_warning(cli_db: Option<&str>, db: &Db) {
     let threshold = chrono::Duration::hours(1);
 
     // Active DB name for per-db config lookup. Bare paths have no name.
-    let db_name = std::env::var("DATUM_DB")
-        .ok()
-        .filter(|v| !v.is_empty() && !config::looks_like_path(v));
+    // `--db` wins over `DATUM_DB` (da-cyn4).
+    let db_name = config::active_db_name(cli_db);
     let cfg = match config::load_raw_config_or_default() {
         Ok(c) => c,
         Err(_) => return,

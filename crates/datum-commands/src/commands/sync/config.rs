@@ -12,14 +12,14 @@ use crate::config::{self, load_raw_config_or_default, resolve_sync_server, save_
 /// `datum sync config set-server <url> [--global]`. The per-DB path reads
 /// the active DB name from `--db` or the `DATUM_DB` env var; bare paths
 /// can't be set per-DB (they have no name).
-pub fn set_server(url: String, global: bool) -> Result<()> {
+pub fn set_server(url: String, global: bool, cli_db: Option<&str>) -> Result<()> {
     let mut cfg = load_raw_config_or_default()?;
     if global {
         let mut sync = cfg.sync.take().unwrap_or_default();
         sync.default_server = Some(url.clone());
         cfg.sync = Some(sync);
     } else {
-        let db_name = active_db_name().context(
+        let db_name = active_db_name(cli_db).context(
             "no active DB name; pass --global, or select a named DB via \
              --db <name> / DATUM_DB",
         )?;
@@ -33,9 +33,9 @@ pub fn set_server(url: String, global: bool) -> Result<()> {
 
 /// `datum sync config disable` — disable sync for the active DB when one is
 /// named, otherwise disable globally.
-pub fn disable() -> Result<()> {
+pub fn disable(cli_db: Option<&str>) -> Result<()> {
     let mut cfg = load_raw_config_or_default()?;
-    match active_db_name_opt() {
+    match config::active_db_name(cli_db) {
         Some(name) => {
             let entry = cfg.databases.entry(name.clone()).or_default();
             entry.sync_server = Some("none".to_string());
@@ -53,9 +53,9 @@ pub fn disable() -> Result<()> {
 }
 
 /// `datum sync config show` — print the resolved sync state for the active DB.
-pub fn show() -> Result<()> {
+pub fn show(cli_db: Option<&str>) -> Result<()> {
     let cfg = load_raw_config_or_default()?;
-    let db = active_db_name_opt();
+    let db = config::active_db_name(cli_db);
     let resolved = resolve_sync_server(&cfg, db.as_deref());
     let global = cfg
         .sync
@@ -88,19 +88,12 @@ pub fn show() -> Result<()> {
 }
 
 /// Resolve the active DB name, or an error if we can't determine one.
-fn active_db_name() -> Result<String> {
-    active_db_name_opt().ok_or_else(|| {
+/// `--db` wins over `DATUM_DB`; see [`config::active_db_name`].
+fn active_db_name(cli_db: Option<&str>) -> Result<String> {
+    config::active_db_name(cli_db).ok_or_else(|| {
         anyhow::anyhow!(
             "no active DB name — use --db <name> or $DATUM_DB (bare paths \
              have no name, use --global instead)"
         )
     })
-}
-
-/// Active DB name without an error — `None` if the active target is a bare
-/// path rather than a registered name.
-fn active_db_name_opt() -> Option<String> {
-    std::env::var("DATUM_DB")
-        .ok()
-        .filter(|v| !v.is_empty() && !config::looks_like_path(v))
 }
