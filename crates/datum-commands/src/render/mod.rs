@@ -38,7 +38,7 @@ const RESET: &str = "\x1b[0m";
 const DIM: &str = "\x1b[2m";
 const GRAY_FG: &str = "\x1b[90m";
 
-// ─── Public API: Show / OutputArgs / Action ──────────────────────────────────
+// ─── Public API: Show / OutputArgs / Outcome ─────────────────────────────────
 
 /// Show levels, mirroring datum's `Show` enum.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -90,7 +90,7 @@ impl OutputArgs {
 
 /// Semantic outcome of a write. Maps to datum's `ACTIONS` vocabulary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Action {
+pub enum Outcome {
     Create,
     Update,
     Delete,
@@ -101,29 +101,29 @@ pub enum Action {
     Failed,
 }
 
-impl Action {
+impl Outcome {
     fn name(self) -> &'static str {
         match self {
-            Action::Create => "CREATE",
-            Action::Update => "UPDATE",
-            Action::Delete => "DELETE",
-            Action::Exists => "EXISTS",
-            Action::OWrite => "OWRITE",
-            Action::Rename => "RENAME",
-            Action::NoDiff => "NODIFF",
-            Action::Failed => "FAILED",
+            Outcome::Create => "CREATE",
+            Outcome::Update => "UPDATE",
+            Outcome::Delete => "DELETE",
+            Outcome::Exists => "EXISTS",
+            Outcome::OWrite => "OWRITE",
+            Outcome::Rename => "RENAME",
+            Outcome::NoDiff => "NODIFF",
+            Outcome::Failed => "FAILED",
         }
     }
 
     /// Foreground ANSI color for the action tag.
     fn ansi_color(self) -> &'static str {
         match self {
-            Action::Create => "\x1b[32m",                  // green
-            Action::Delete | Action::Failed => "\x1b[31m", // red
-            Action::Exists => "\x1b[33m",                  // yellow
-            Action::Update | Action::Rename => "\x1b[36m", // cyan
-            Action::OWrite => "\x1b[34m",                  // blue
-            Action::NoDiff => "\x1b[38;2;255;165;0m",      // orange
+            Outcome::Create => "\x1b[32m",                   // green
+            Outcome::Delete | Outcome::Failed => "\x1b[31m", // red
+            Outcome::Exists => "\x1b[33m",                   // yellow
+            Outcome::Update | Outcome::Rename => "\x1b[36m", // cyan
+            Outcome::OWrite => "\x1b[34m",                   // blue
+            Outcome::NoDiff => "\x1b[38;2;255;165;0m",       // orange
         }
     }
 }
@@ -160,7 +160,7 @@ pub(crate) struct Extracted {
 #[allow(dead_code)]
 pub(crate) fn extract(
     entry: &Entry,
-    action: Option<Action>,
+    action: Option<Outcome>,
     registry: Option<&SpecRegistry>,
 ) -> Extracted {
     extract_with_context(entry, action, registry, None)
@@ -170,7 +170,7 @@ pub(crate) fn extract(
 /// state, first-time-tracked marker) that the entry alone can't carry.
 pub(crate) fn extract_with_context(
     entry: &Entry,
-    action: Option<Action>,
+    action: Option<Outcome>,
     registry: Option<&SpecRegistry>,
     ctx: Option<&RenderContext>,
 ) -> Extracted {
@@ -182,7 +182,7 @@ pub(crate) fn extract_with_context(
 /// batch agrees on what "today" means.
 pub(crate) fn extract_with_context_at(
     entry: &Entry,
-    action: Option<Action>,
+    action: Option<Outcome>,
     registry: Option<&SpecRegistry>,
     ctx: Option<&RenderContext>,
     now: &DatumTime,
@@ -191,7 +191,7 @@ pub(crate) fn extract_with_context_at(
     let action_text = action.map(paint_action);
     let slug_text = Some(paint(GRAY_FG, &entry.slug));
     let hid_text = Some(paint(
-        action.map(Action::ansi_color).unwrap_or(""),
+        action.map(Outcome::ansi_color).unwrap_or(""),
         &short_hid(&entry.hid),
     ));
 
@@ -244,7 +244,7 @@ fn short_hid(hid: &str) -> String {
     hid.chars().take(5).collect()
 }
 
-fn paint_action(action: Action) -> String {
+fn paint_action(action: Outcome) -> String {
     if !color_enabled() {
         return action.name().to_string();
     }
@@ -258,12 +258,12 @@ fn format_gray_prefix(prefix: &str, body: String) -> String {
     format!("{}{}", paint(GRAY_FG, prefix), body)
 }
 
-// ─── Action output: headers + info lines ─────────────────────────────────────
+// ─── Outcome output: headers + info lines ────────────────────────────────────
 
 /// Print the `CREATE`-style two-line header for a single entry.
 pub fn show_action(
     entry: &Entry,
-    action: Action,
+    action: Outcome,
     registry: Option<&SpecRegistry>,
     args: &OutputArgs,
 ) {
@@ -275,7 +275,7 @@ pub fn show_action(
 /// [`show_action`].
 pub fn show_action_with_context(
     entry: &Entry,
-    action: Action,
+    action: Outcome,
     registry: Option<&SpecRegistry>,
     ctx: Option<&RenderContext>,
     args: &OutputArgs,
@@ -346,22 +346,22 @@ pub fn show_action_with_context(
 }
 
 pub fn show_create(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
-    show_action(entry, Action::Create, registry, args);
+    show_action(entry, Outcome::Create, registry, args);
 }
 pub fn show_update(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
-    show_action(entry, Action::Update, registry, args);
+    show_action(entry, Outcome::Update, registry, args);
 }
 pub fn show_delete(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
-    show_action(entry, Action::Delete, registry, args);
+    show_action(entry, Outcome::Delete, registry, args);
 }
 pub fn show_exists(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
-    show_action(entry, Action::Exists, registry, args);
+    show_action(entry, Outcome::Exists, registry, args);
 }
 pub fn show_nodiff(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
-    show_action(entry, Action::NoDiff, registry, args);
+    show_action(entry, Outcome::NoDiff, registry, args);
 }
 pub fn show_failed(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
-    show_action(entry, Action::Failed, registry, args);
+    show_action(entry, Outcome::Failed, registry, args);
 }
 
 /// Context-aware write renderer. Convenience entry point for command-layer
@@ -372,7 +372,7 @@ pub fn show_create_with_context(
     ctx: &RenderContext,
     args: &OutputArgs,
 ) {
-    show_action_with_context(entry, Action::Create, registry, Some(ctx), args);
+    show_action_with_context(entry, Outcome::Create, registry, Some(ctx), args);
 }
 pub fn show_update_with_context(
     entry: &Entry,
@@ -380,7 +380,7 @@ pub fn show_update_with_context(
     ctx: &RenderContext,
     args: &OutputArgs,
 ) {
-    show_action_with_context(entry, Action::Update, registry, Some(ctx), args);
+    show_action_with_context(entry, Outcome::Update, registry, Some(ctx), args);
 }
 
 /// Datum's RENAME output: before id ⟶ after id.
@@ -388,11 +388,11 @@ pub fn show_rename(before_id: &str, after_id: &str, args: &OutputArgs) {
     if args.silent() || args.show == Show::Format {
         return;
     }
-    let code = Action::Rename.ansi_color();
+    let code = Outcome::Rename.ansi_color();
     let tag = if color_enabled() {
-        format!("{code}{}{RESET}", Action::Rename.name())
+        format!("{code}{}{RESET}", Outcome::Rename.name())
     } else {
-        Action::Rename.name().to_string()
+        Outcome::Rename.name().to_string()
     };
     let before_colored = paint(code, before_id);
     let after_colored = paint("\x1b[32m", after_id); // green for new id
@@ -1367,7 +1367,7 @@ mod tests {
     #[test]
     fn extract_populates_all_primary_fields() {
         let entry = sample_entry("coffee", Verb::Point, Some(JsonValue::from(2)));
-        let ex = extract(&entry, Some(Action::Create), None);
+        let ex = extract(&entry, Some(Outcome::Create), None);
         assert!(ex.action.as_deref().unwrap().contains("CREATE"));
         assert!(ex.hid.is_some());
         assert!(ex.slug.is_some());
@@ -1426,9 +1426,9 @@ mod tests {
 
     #[test]
     fn action_colors_distinct_per_action() {
-        assert_ne!(Action::Create.ansi_color(), Action::Delete.ansi_color());
-        assert_ne!(Action::Update.ansi_color(), Action::Failed.ansi_color());
-        assert_ne!(Action::NoDiff.ansi_color(), Action::Create.ansi_color());
+        assert_ne!(Outcome::Create.ansi_color(), Outcome::Delete.ansi_color());
+        assert_ne!(Outcome::Update.ansi_color(), Outcome::Failed.ansi_color());
+        assert_ne!(Outcome::NoDiff.ansi_color(), Outcome::Create.ansi_color());
     }
 
     #[test]

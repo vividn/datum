@@ -14,7 +14,7 @@
 //!     binds together.
 //!   * datum's standard `Show` emits an "EXISTS" tag from `getCmd`; daydumb
 //!     now matches that contract (da-d5b): `cmd_get` renders through
-//!     `show_action` with `Action::Exists`, producing the same on-entry
+//!     `show_action` with `Outcome::Exists`, producing the same on-entry
 //!     header + info line + extra-data shape as a fresh log, prefixed with
 //!     the EXISTS action tag. Case #3 pins the EXISTS marker.
 //!   * datum accepted a compound quickId (`"abc,def,"` → multi-doc return).
@@ -88,7 +88,7 @@ fn get_resolves_hid_prefix() {
 /// TS #3 (da-d5b): "outputs an EXISTS message when show is standard"
 ///
 /// daydumb's `cmd_get` now renders through the same action-based path
-/// as on-entry log, tagged with `Action::Exists` — matching datum's
+/// as on-entry log, tagged with `Outcome::Exists` — matching datum's
 /// `showExists` contract. The portable invariant: stdout contains the
 /// EXISTS marker plus the entry's field name.
 ///

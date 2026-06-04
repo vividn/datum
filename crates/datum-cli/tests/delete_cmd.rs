@@ -171,7 +171,7 @@ fn del_alias_dispatches_to_delete_handler() {
 /// TS #5: "outputs a DELETED message when show is standard"
 ///
 /// Datum asserted `console.log` contained "DELETE". Daydumb routes the same
-/// action tag through `show_delete` → `show_action` (`Action::Delete.name()`
+/// action tag through `show_delete` → `show_action` (`Outcome::Delete.name()`
 /// = "DELETE"). The in-process harness doesn't capture stdout, so this case
 /// follows `output_parity.rs` and shells out to the compiled binary with
 /// `DATUM_COLOR=0` for portable assertions.

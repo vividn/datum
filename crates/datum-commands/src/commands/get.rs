@@ -7,7 +7,7 @@ use datum_core::db::Db;
 
 use crate::args::{GetArgs, OutputFlagsExt};
 use crate::commands::helpers::{resolve_batch, BatchMode};
-use crate::render::{print_entry_pretty, show_action_with_context, Action};
+use crate::render::{print_entry_pretty, show_action_with_context, Outcome};
 
 pub fn get(args: GetArgs, db: &Db) -> Result<()> {
     // da-yhh1: any matchers on the command line route to the search
@@ -62,7 +62,7 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
         } else {
             show_action_with_context(
                 entry,
-                Action::Exists,
+                Outcome::Exists,
                 registry.as_ref(),
                 ctxs.get(i),
                 &output,
@@ -109,7 +109,7 @@ fn search(field: &str, args: GetArgs, db: &Db) -> Result<()> {
         } else {
             show_action_with_context(
                 entry,
-                Action::Exists,
+                Outcome::Exists,
                 registry.as_ref(),
                 ctxs.get(i),
                 &output,
