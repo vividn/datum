@@ -3,9 +3,11 @@
 //! Slice 4 (da-d4t.4) — every view is a named row in the `views` table
 //! holding raw SQL text. Kit installs tag rows with `kit_id`; uninstall
 //! drops only the rows it owns. Execution goes through
-//! [`Db::execute_view`], which flips `PRAGMA query_only` for the duration
-//! of the query so a malicious or buggy SELECT can't issue DDL/DML
-//! against the entries DB.
+//! [`Db::execute_view`], which requires the SQL to be a single
+//! SELECT/`WITH … SELECT` statement and flips `PRAGMA query_only` for
+//! the duration of the query so a malicious or buggy view can't issue
+//! DDL/DML against the entries DB. Kit installs additionally screen the
+//! SQL up front via `crate::kit::validate_view_entry` (da-w3xg).
 //!
 //! See `crate::kit::ViewEntry` for the TOML round-trip shape.
 
@@ -81,6 +83,12 @@ impl Db {
         views: &[ViewEntry],
         force: bool,
     ) -> Result<InstallViewsReport> {
+        // Install-time screen (da-w3xg): reject before any row persists.
+        // execute_view re-checks for pre-existing or directly-written rows.
+        for v in views {
+            crate::kit::validate_view_entry(v)?;
+        }
+
         let tx = self.conn.unchecked_transaction()?;
         let mut report = InstallViewsReport::default();
 
@@ -193,25 +201,52 @@ impl Db {
         Ok(out)
     }
 
-    /// Execute a view's SQL with read-only enforcement.
+    /// Execute a view's SQL with read-only enforcement, in three layers
+    /// (da-w3xg):
     ///
-    /// SQLite's `PRAGMA query_only = 1` rejects every DDL/DML statement on
-    /// the connection while it's set. We toggle it on for the query and
-    /// off afterward (best-effort on error paths so we don't leave the
-    /// connection wedged in read-only mode).
+    /// 1. Statement-kind check: the SQL must start with `SELECT` or
+    ///    `WITH`. `PRAGMA query_only` only blocks statements that change
+    ///    database *files*, so connection-scoped statements (`PRAGMA
+    ///    case_sensitive_like = ON`, `ATTACH …`) would otherwise run fine
+    ///    and their effects would survive the fence.
+    /// 2. `PRAGMA query_only = 1` around the query, so DDL/DML embedded
+    ///    in an otherwise SELECT-shaped statement can't write.
+    /// 3. `sqlite3_stmt_readonly` after prepare (in [`run_view_query`]),
+    ///    which catches e.g. `WITH … DELETE` that passes the prefix check.
+    ///
+    /// If clearing `query_only` fails the error is surfaced rather than
+    /// swallowed — a wedged read-only connection would otherwise make
+    /// every later `datum <log>` fail far from the cause.
     pub fn execute_view(&self, sql: &str) -> Result<ViewResult> {
         // Empty / whitespace-only queries would prepare into a no-op
         // statement that returns no columns; reject explicitly so the
         // caller can give the user a clear error.
-        if sql.trim().is_empty() {
+        let trimmed = sql.trim();
+        if trimmed.is_empty() {
             return Err(DatumError::Other("view SQL is empty".to_string()));
+        }
+        if !crate::kit::is_select_like(trimmed) {
+            return Err(DatumError::Other(
+                "views must be a single SELECT (or WITH … SELECT) statement".to_string(),
+            ));
         }
 
         self.conn.execute_batch("PRAGMA query_only = 1;")?;
         let result = run_view_query(&self.conn, sql);
         // Always clear query_only, even when the query failed, so a later
-        // `datum log …` against the same connection can still write.
-        let _ = self.conn.execute_batch("PRAGMA query_only = 0;");
+        // `datum log …` against the same connection can still write. If
+        // the clear itself fails, say so loudly: the shared connection
+        // may be stuck read-only.
+        if let Err(restore_err) = self.conn.execute_batch("PRAGMA query_only = 0;") {
+            return Err(DatumError::Other(match result {
+                Ok(_) => format!(
+                    "view executed, but clearing query_only failed; the connection may be stuck read-only: {restore_err}"
+                ),
+                Err(query_err) => format!(
+                    "view failed ({query_err}); clearing query_only also failed; the connection may be stuck read-only: {restore_err}"
+                ),
+            }));
+        }
         result
     }
 }
@@ -219,7 +254,26 @@ impl Db {
 /// The actual prepare + iterate. Split out so the caller can wrap the
 /// PRAGMA toggle around it.
 fn run_view_query(conn: &rusqlite::Connection, sql: &str) -> Result<ViewResult> {
-    let mut stmt = conn.prepare(sql).map_err(DatumError::Db)?;
+    // rusqlite's plain `prepare` silently keeps any trailing statements
+    // (`SELECT 1; DELETE …` prepares the SELECT and drops the rest), so
+    // go through `Batch`, which exposes sqlite's own tail parsing, and
+    // reject chained statements explicitly (da-w3xg).
+    let mut batch = rusqlite::Batch::new(conn, sql);
+    let Some(mut stmt) = batch.next().map_err(DatumError::Db)? else {
+        return Err(DatumError::Other("view SQL is empty".to_string()));
+    };
+    if batch.next().map_err(DatumError::Db)?.is_some() {
+        return Err(DatumError::Other(
+            "views must be a single SELECT statement (no statement chaining)".to_string(),
+        ));
+    }
+    // Belt-and-suspenders (da-w3xg): sqlite3_stmt_readonly catches writes
+    // that slip past the SELECT/WITH prefix check, e.g. `WITH … DELETE`.
+    if !stmt.readonly() {
+        return Err(DatumError::Other(
+            "views must be read-only: this statement would write to the database".to_string(),
+        ));
+    }
     let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     let col_count = columns.len();
     let mut out_rows: Vec<Vec<JsonValue>> = Vec::new();
@@ -261,4 +315,111 @@ fn hex_encode(bytes: &[u8]) -> String {
         s.push_str(&format!("{b:02x}"));
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn db() -> Db {
+        Db::open_in_memory().unwrap()
+    }
+
+    #[test]
+    fn execute_view_runs_select_and_with() {
+        let db = db();
+        let r = db.execute_view("SELECT 1 AS v").unwrap();
+        assert_eq!(r.rows, vec![vec![json!(1)]]);
+        let r = db
+            .execute_view("WITH x(v) AS (SELECT 2) SELECT v FROM x")
+            .unwrap();
+        assert_eq!(r.rows, vec![vec![json!(2)]]);
+    }
+
+    #[test]
+    fn execute_view_rejects_multi_statement() {
+        // rusqlite's `prepare` silently drops trailing statements, so the
+        // fence rejects chaining itself (via `Batch` tail detection) —
+        // pin that here.
+        let db = db();
+        let err = db
+            .execute_view("SELECT 1; DELETE FROM entries")
+            .unwrap_err()
+            .to_string()
+            .to_lowercase();
+        assert!(
+            err.contains("statement") || err.contains("extra"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn execute_view_rejects_connection_state_pollution() {
+        // query_only doesn't block connection-scoped statements; the
+        // statement-kind check must (covers rows written directly to the
+        // views table, bypassing the install screen).
+        let db = db();
+        for sql in ["PRAGMA case_sensitive_like = ON", "ATTACH ':memory:' AS x"] {
+            let err = db.execute_view(sql).unwrap_err().to_string();
+            assert!(
+                err.contains("single SELECT"),
+                "sql {sql:?}: unexpected error {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn execute_view_rejects_with_prefixed_write() {
+        // Passes the SELECT/WITH prefix check; sqlite3_stmt_readonly must
+        // catch it.
+        let db = db();
+        let err = db
+            .execute_view(
+                "WITH x(v) AS (SELECT 1) DELETE FROM entries WHERE hid IN (SELECT v FROM x)",
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("read-only"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn execute_view_clears_query_only_after_success_and_failure() {
+        let db = db();
+        db.execute_view("SELECT 1").unwrap();
+        // A write on the same connection must succeed after the fence.
+        db.conn
+            .execute(
+                "INSERT INTO views (name, sql_text) VALUES ('after_ok', 'SELECT 1')",
+                [],
+            )
+            .unwrap();
+
+        db.execute_view("SELECT no_such_column FROM entries")
+            .unwrap_err();
+        db.conn
+            .execute(
+                "INSERT INTO views (name, sql_text) VALUES ('after_err', 'SELECT 1')",
+                [],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn install_kit_views_screens_sql() {
+        let db = db();
+        let err = db
+            .install_kit_views(
+                "test",
+                &[ViewEntry {
+                    name: "evil".into(),
+                    sql: "PRAGMA case_sensitive_like = ON".into(),
+                }],
+                false,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("single SELECT"), "unexpected error: {err}");
+        assert!(db.get_view("evil").unwrap().is_none());
+    }
 }

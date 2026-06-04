@@ -89,18 +89,32 @@ fn dispatch_known_view_succeeds() {
 #[test]
 fn dispatch_view_blocks_writes() {
     let db = Db::open_in_memory().unwrap();
+
+    // Install-time screen (da-w3xg): a write-shaped view never persists.
     let views = vec![ViewEntry {
         name: "evil".into(),
         sql: "DELETE FROM entries".into(),
     }];
-    db.install_kit_views("test", &views, false).unwrap();
+    let err = db.install_kit_views("test", &views, false).unwrap_err();
+    let msg = format!("{err}").to_lowercase();
+    assert!(
+        msg.contains("single select"),
+        "expected install-time rejection, got: {msg}",
+    );
+
+    // Execute-time fence still guards rows written directly to the views
+    // table (bypassing the install screen).
+    db.conn()
+        .execute(
+            "INSERT INTO views (name, sql_text, kit_id) VALUES ('evil', 'DELETE FROM entries', 'test')",
+            [],
+        )
+        .unwrap();
     let err = run_cli(&["view", "evil"], &db).unwrap_err();
-    // anyhow's `:#` formatter walks the cause chain; the `with_context`
-    // wraps the rusqlite error which is what actually carries the
-    // "attempt to write a readonly database" / "query_only" string.
+    // anyhow's `:#` formatter walks the cause chain.
     let msg = format!("{err:#}").to_lowercase();
     assert!(
-        msg.contains("read") || msg.contains("query_only") || msg.contains("attempt to write"),
-        "expected query_only rejection, got: {msg}",
+        msg.contains("single select") || msg.contains("read"),
+        "expected execute-time rejection, got: {msg}",
     );
 }

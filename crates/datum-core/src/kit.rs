@@ -139,8 +139,10 @@ pub struct FieldEntry {
 /// A `[[view]]` entry — a named read-only SELECT.
 ///
 /// Slice 4: views may join system tables (entries, entry_history,
-/// field_specs, _meta). Read-only enforcement happens at execution time
-/// (`PRAGMA query_only = 1`); this entry just round-trips the SQL text.
+/// field_specs, _meta). The SQL is screened at install time by
+/// [`validate_view_entry`] and enforced read-only at execution time
+/// (`PRAGMA query_only = 1` plus statement-kind checks in
+/// `Db::execute_view`); this entry just round-trips the SQL text.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewEntry {
     pub name: String,
@@ -600,37 +602,86 @@ pub fn validate_index_entry(entry: &IndexEntry) -> Result<()> {
             entry.name
         )));
     }
-    validate_sql_fragment(&entry.name, "expression", &entry.expression)?;
+    validate_sql_fragment(
+        &format!("kit index '{}' expression", entry.name),
+        &entry.expression,
+    )?;
     if let Some(w) = &entry.where_clause {
-        validate_sql_fragment(&entry.name, "where", w)?;
+        validate_sql_fragment(&format!("kit index '{}' where", entry.name), w)?;
     }
     Ok(())
 }
 
+/// Validate a [`ViewEntry`]'s SQL before it's persisted.
+///
+/// Kits are third-party content; `PRAGMA query_only` only blocks
+/// statements that change database *files*, so connection-scoped
+/// statements (`PRAGMA case_sensitive_like = ON`, `ATTACH …`) prepare and
+/// run fine under the fence and their effects survive it (da-w3xg). We
+/// screen at install time with the same keyword blocklist indices get,
+/// plus a statement-kind check: views must be a single SELECT (or
+/// `WITH … SELECT`). `Db::execute_view` re-checks at run time for rows
+/// that predate this scan or were written directly.
+pub fn validate_view_entry(entry: &ViewEntry) -> Result<()> {
+    let subject = format!("kit view '{}'", entry.name);
+    let trimmed = entry.sql.trim();
+    if trimmed.is_empty() {
+        return Err(DatumError::Other(format!("{subject}: SQL is empty")));
+    }
+    if !is_select_like(trimmed) {
+        return Err(DatumError::Other(format!(
+            "{subject}: views must be a single SELECT (or WITH … SELECT) statement"
+        )));
+    }
+    validate_sql_fragment(&subject, &entry.sql)
+}
+
+/// True when the (already-trimmed) SQL starts with `SELECT` or `WITH` as
+/// a whole word (case-insensitive) — the only statement kinds a view may
+/// be. Word-bounded so `WITHDRAW`/`SELECTX` don't count.
+pub(crate) fn is_select_like(trimmed: &str) -> bool {
+    starts_with_keyword(trimmed, "SELECT") || starts_with_keyword(trimmed, "WITH")
+}
+
+fn starts_with_keyword(s: &str, kw: &str) -> bool {
+    if s.len() < kw.len() || !s[..kw.len()].eq_ignore_ascii_case(kw) {
+        return false;
+    }
+    match s.as_bytes().get(kw.len()) {
+        None => true,
+        Some(&b) => !(b.is_ascii_alphanumeric() || b == b'_'),
+    }
+}
+
 /// Run the safety scan on a piece of user-supplied SQL fragment.
+/// `subject` names the offending entry in error messages (e.g.
+/// `kit index 'foo' expression`, `kit view 'bar'`).
 ///
 /// We do not parse the SQL; we apply a tight blocklist that's sufficient
 /// for v1's threat model (a malicious kit author who wants to do more
-/// than declare an index). The grammar restriction sits at three levels:
-/// (1) the outer `CREATE INDEX … ON entries(…)` shape is built by us;
+/// than declare an index or a SELECT view). The grammar restriction sits
+/// at three levels:
+/// (1) the outer statement shape is constrained by the caller (indices:
+///     `CREATE INDEX … ON entries(…)` built by us; views: SELECT/WITH
+///     prefix check in [`validate_view_entry`]);
 /// (2) statement chaining via `;` and SQL comments is blocked here;
 /// (3) DDL/DML keywords (CREATE/DROP/ATTACH/…) are rejected here.
-fn validate_sql_fragment(index_name: &str, label: &str, s: &str) -> Result<()> {
+fn validate_sql_fragment(subject: &str, s: &str) -> Result<()> {
     if s.contains(';') {
         return Err(DatumError::Other(format!(
-            "kit index '{index_name}' {label}: ';' is not allowed (no statement chaining)"
+            "{subject}: ';' is not allowed (no statement chaining)"
         )));
     }
     if s.contains("--") || s.contains("/*") || s.contains("*/") {
         return Err(DatumError::Other(format!(
-            "kit index '{index_name}' {label}: SQL comments are not allowed"
+            "{subject}: SQL comments are not allowed"
         )));
     }
     let upper = s.to_ascii_uppercase();
     for forbidden in FORBIDDEN_DDL_KEYWORDS {
         if contains_word(&upper, forbidden) {
             return Err(DatumError::Other(format!(
-                "kit index '{index_name}' {label}: forbidden keyword '{forbidden}'"
+                "{subject}: forbidden keyword '{forbidden}'"
             )));
         }
     }
@@ -1332,5 +1383,69 @@ script = "shellout"
         let kit = KitToml::from_str(toml).unwrap();
         assert_eq!(kit.commands.len(), 1);
         assert_eq!(kit.commands[0].script.as_deref(), Some("shellout"));
+    }
+
+    fn view(sql: &str) -> ViewEntry {
+        ViewEntry {
+            name: "v".into(),
+            sql: sql.into(),
+        }
+    }
+
+    #[test]
+    fn view_validation_allows_select_and_with() {
+        validate_view_entry(&view(
+            "SELECT field, COUNT(*) AS n FROM entries GROUP BY field",
+        ))
+        .unwrap();
+        validate_view_entry(&view("WITH x(v) AS (SELECT 1) SELECT v FROM x")).unwrap();
+        // Leading whitespace and lowercase are fine.
+        validate_view_entry(&view("\n  select 1")).unwrap();
+    }
+
+    #[test]
+    fn view_validation_rejects_non_select_statements() {
+        for sql in [
+            "PRAGMA case_sensitive_like = ON",
+            "ATTACH ':memory:' AS x",
+            "DELETE FROM entries",
+            "",
+            "   ",
+            "WITHDRAW",
+        ] {
+            let err = validate_view_entry(&view(sql)).unwrap_err().to_string();
+            assert!(
+                err.contains("single SELECT") || err.contains("empty"),
+                "sql {sql:?}: unexpected error {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn view_validation_rejects_chaining_and_embedded_ddl() {
+        let err = validate_view_entry(&view("SELECT 1; DELETE FROM entries"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("';'"), "unexpected error {err:?}");
+
+        let err = validate_view_entry(&view("SELECT 1 -- sneaky"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("comments"), "unexpected error {err:?}");
+
+        let err = validate_view_entry(&view("SELECT load_extension('evil')"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("LOAD_EXTENSION"), "unexpected error {err:?}");
+    }
+
+    #[test]
+    fn is_select_like_is_word_bounded() {
+        assert!(is_select_like("SELECT 1"));
+        assert!(is_select_like("with x as (select 1) select 1"));
+        assert!(is_select_like("WITH\nx AS (SELECT 1) SELECT 1"));
+        assert!(!is_select_like("WITHDRAW"));
+        assert!(!is_select_like("SELECTX"));
+        assert!(!is_select_like("PRAGMA case_sensitive_like = ON"));
     }
 }
