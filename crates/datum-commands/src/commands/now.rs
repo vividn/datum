@@ -131,11 +131,10 @@ fn resolve_snapshot_time(args: &NowArgs) -> Result<Option<chrono::DateTime<Utc>>
 /// Render the terminal nowview band beneath `datum now`. Mirrors the old
 /// `datum nowview --terminal` path that lived in commands/nowview.rs.
 fn print_now_band(args: &NowArgs, db: &Db) {
-    use std::io::IsTerminal;
-
     use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
 
     use crate::commands::nowview::{build_fields, format_local_hh_mm};
+    use crate::render::{colors, term_layout};
 
     const HISTORY_MINUTES: f64 = 60.0;
     const NOW_WIDTH_MINUTES: f64 = 5.0;
@@ -145,9 +144,13 @@ fn print_now_band(args: &NowArgs, db: &Db) {
         Ok(f) => f,
         Err(_) => return, // never block the state list on a band-render error
     };
-    let cols = args.cols.unwrap_or_else(detect_terminal_cols);
-    let use_color =
-        !args.no_color && std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal();
+    // da-tpny: canonical probe (ioctl-first, $COLUMNS fallback) and the
+    // canonical color gate (DATUM_COLOR → NO_COLOR → TTY), so the band
+    // reflows and colors exactly like the state list above it.
+    let cols = args
+        .cols
+        .unwrap_or_else(|| term_layout::detect_cols_or(20, 80).min(u16::MAX as usize) as u16);
+    let use_color = !args.no_color && colors::color_enabled();
     let cfg = TerminalConfig {
         end_ms: end.timestamp_millis(),
         history_minutes: HISTORY_MINUTES,
@@ -160,20 +163,6 @@ fn print_now_band(args: &NowArgs, db: &Db) {
     };
     let band = render_nowview_terminal(&fields, &cfg);
     println!("{band}");
-}
-
-/// Detect terminal width via `$COLUMNS`, falling back to 80. Pure-Rust
-/// (no termios crate) so the code path stays wasm-safe in case a host
-/// embedder ever calls into this from a non-tty context.
-fn detect_terminal_cols() -> u16 {
-    if let Ok(s) = std::env::var("COLUMNS") {
-        if let Ok(n) = s.parse::<u16>() {
-            if n >= 20 {
-                return n;
-            }
-        }
-    }
-    80
 }
 
 /// Prepend a stale-sync warning to `datum now` when sync coverage looks

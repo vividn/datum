@@ -268,13 +268,24 @@ pub(crate) fn state_value_colors(
 ///
 /// Precedence: `DATUM_COLOR` (explicit) → `NO_COLOR` → TTY detection.
 pub(crate) fn color_enabled() -> bool {
-    if let Some(f) = force_color() {
+    color_decision(
+        force_color(),
+        std::env::var_os("NO_COLOR").is_some(),
+        std::io::stdout().is_terminal(),
+    )
+}
+
+/// Pure precedence core, split out for tests — the `DATUM_COLOR=always`
+/// branch can't be exercised by mutating the live env without racing
+/// concurrent no-color tests under threaded `cargo test`.
+fn color_decision(force: Option<bool>, no_color: bool, tty: bool) -> bool {
+    if let Some(f) = force {
         return f;
     }
-    if std::env::var_os("NO_COLOR").is_some() {
+    if no_color {
         return false;
     }
-    std::io::stdout().is_terminal()
+    tty
 }
 
 fn force_color() -> Option<bool> {
@@ -482,5 +493,29 @@ mod tests {
     fn state_value_colors_for_field_ended_is_empty() {
         let cs = state_value_colors(&JsonValue::Bool(false), "f", None);
         assert!(cs.is_empty(), "Bool(false) → no colour");
+    }
+
+    /// da-tpny: the gate's precedence table — `DATUM_COLOR` overrides
+    /// both `NO_COLOR` and TTY state in either direction; `NO_COLOR`
+    /// beats TTY; bare TTY detection is the final word.
+    #[test]
+    fn color_decision_precedence() {
+        assert!(color_decision(Some(true), true, false));
+        assert!(!color_decision(Some(false), false, true));
+        assert!(!color_decision(None, true, true));
+        assert!(color_decision(None, false, true));
+        assert!(!color_decision(None, false, false));
+    }
+
+    /// da-tpny: env wiring — `DATUM_COLOR=never`/`0` shuts the gate even
+    /// on a TTY. Only the "off" direction is asserted through the live
+    /// env: an `always` window would race concurrent no-color tests.
+    #[test]
+    fn color_enabled_honors_datum_color_never_via_env() {
+        std::env::set_var("DATUM_COLOR", "never");
+        assert!(!color_enabled());
+        std::env::set_var("DATUM_COLOR", "0");
+        assert!(!color_enabled());
+        std::env::remove_var("DATUM_COLOR");
     }
 }

@@ -31,7 +31,6 @@ use datum_core::{
 };
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use std::io::IsTerminal;
 
 // ─── ANSI primitives ─────────────────────────────────────────────────────────
 
@@ -131,43 +130,12 @@ impl Action {
 
 // ─── TTY / color gating ──────────────────────────────────────────────────────
 
-/// ANSI colors are suppressed when stdout is not a TTY, when the standard
-/// `NO_COLOR` env var is set (<https://no-color.org/>), or when the
-/// test-only `DATUM_COLOR=0`/`never` override is in force.
-///
-/// Precedence: `DATUM_COLOR` (explicit override, highest) → `NO_COLOR`
-/// (standard opt-out) → TTY detection.
-fn color_enabled() -> bool {
-    if let Some(f) = force_color() {
-        return f;
-    }
-    if std::env::var_os("NO_COLOR").is_some() {
-        return false;
-    }
-    std::io::stdout().is_terminal()
-}
-
-// Test-only color force (set via DATUM_COLOR=1/0). Avoids a global static mutex.
-fn force_color() -> Option<bool> {
-    match std::env::var("DATUM_COLOR").ok().as_deref() {
-        Some("1") | Some("always") => Some(true),
-        Some("0") | Some("never") => Some(false),
-        _ => None,
-    }
-}
-
-fn paint(code: &str, body: &str) -> String {
-    if !color_enabled() || code.is_empty() {
-        body.to_string()
-    } else {
-        format!("{code}{body}{RESET}")
-    }
-}
-
-// Truecolor palette (Rgb / paint_bg / resolve_rgb / md5_rgb / parse_hex / …)
-// lives in `colors.rs` — single source of truth. The mod-local duplicates
-// were removed when `format_field` was unified into `action::format_field_cell`
-// (da-c11); colors.rs is the only palette implementation.
+// The color gate (color_enabled / paint) and the truecolor palette (Rgb /
+// paint_bg / resolve_rgb / md5_rgb / parse_hex / …) live in `colors.rs` —
+// single source of truth. The mod-local palette duplicates were removed
+// when `format_field` was unified into `action::format_field_cell`
+// (da-c11); the mod-local gate duplicates followed in da-tpny.
+use self::colors::{color_enabled, paint};
 
 // ─── Extraction (datum's `extractFormatted`) ─────────────────────────────────
 

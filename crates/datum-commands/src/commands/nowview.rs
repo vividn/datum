@@ -40,6 +40,7 @@ use serde_json::Value as JsonValue;
 
 use crate::args::NowviewArgs;
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
+use crate::render::term_layout;
 
 /// Default history window when the user omits `--history` (per bead da-6jy
 /// the user feedback was "scoped to last 30min").
@@ -99,8 +100,6 @@ fn nowview_terminal_periodic_refresh(stdout_is_tty: bool) -> Option<std::time::D
 /// Render the pure-visual terminal nowview once: vertical Snapshot by
 /// default, horizontal Flow when `--window <duration>` was passed.
 fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
-    use std::io::IsTerminal;
-
     use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
 
     let end = Utc::now();
@@ -127,10 +126,17 @@ fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
 
     let fields = build_fields(db, end, lookback, /* include_empty = */ true)?;
 
-    let cols = args.cols.unwrap_or_else(detect_terminal_cols);
-    let rows = args.rows.unwrap_or_else(detect_terminal_rows);
-    let use_color =
-        !args.no_color && std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal();
+    // da-tpny: canonical ioctl-first probes and the canonical color gate
+    // (DATUM_COLOR → NO_COLOR → TTY). Fallbacks stay nowview's own: 40
+    // cols (matches Snapshot's reference width ~80px / 2 cells per
+    // pixel) and 24 rows.
+    let cols = args
+        .cols
+        .unwrap_or_else(|| term_layout::detect_cols_or(4, 40).min(u16::MAX as usize) as u16);
+    let rows = args
+        .rows
+        .unwrap_or_else(|| term_layout::detect_rows_or(3, 24).min(u16::MAX as usize) as u16);
+    let use_color = !args.no_color && crate::render::colors::color_enabled();
 
     let cfg = TerminalConfig {
         end_ms: end.timestamp_millis(),
@@ -146,33 +152,6 @@ fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     let out = render_nowview_terminal(&fields, &cfg);
     println!("{out}");
     Ok(())
-}
-
-/// Auto-detect terminal width. Falls back to 40 (matches Snapshot's
-/// reference width ~80px / 2 cells per pixel).
-fn detect_terminal_cols() -> u16 {
-    if let Ok(s) = std::env::var("COLUMNS") {
-        if let Ok(n) = s.parse::<u16>() {
-            if n >= 4 {
-                return n;
-            }
-        }
-    }
-    40
-}
-
-/// Auto-detect terminal height for the visual band stack. Falls back to
-/// 24 (a typical default). Bigger windows give taller bands; narrower
-/// windows just compress the data area.
-fn detect_terminal_rows() -> u16 {
-    if let Ok(s) = std::env::var("LINES") {
-        if let Ok(n) = s.parse::<u16>() {
-            if n >= 3 {
-                return n;
-            }
-        }
-    }
-    24
 }
 
 fn stdout_is_tty() -> bool {

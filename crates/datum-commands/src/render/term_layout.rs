@@ -4,8 +4,9 @@
 //!
 //! 1. **Probe the terminal** — width and height from a live
 //!    `TIOCGWINSZ` ioctl when stdout is a TTY, falling back to
-//!    `$COLUMNS` / `$LINES` env vars (the legacy path `now` / `nowview`
-//!    still use) and finally to 80×24. The live ioctl is what lets
+//!    `$COLUMNS` / `$LINES` env vars and finally to a caller-chosen
+//!    default (80×24 here; `now` / `nowview` band rendering picks its
+//!    own via [`detect_cols_or`]). The live ioctl is what lets
 //!    `datum tail --watch` re-layout against the *actual* terminal
 //!    size after a resize (da-hsqd) — env vars are captured at fork
 //!    and never update.
@@ -53,21 +54,23 @@ fn query_winsize() -> Option<(usize, usize)> {
 /// stdout is a TTY (so `datum tail --watch` reflows after resize);
 /// falls back to `$COLUMNS` and finally 80.
 pub fn detect_cols() -> usize {
+    detect_cols_or(20, 80)
+}
+
+/// [`detect_cols`] with caller-chosen sanity floor and fallback.
+/// `now` / `nowview` band rendering needs different fallbacks (da-tpny:
+/// nowview's documented 40-col Snapshot reference width) but the same
+/// ioctl-first probe — env vars like `$COLUMNS` are rarely exported to
+/// children, so the env-only path renders 80 cols in a 200-col terminal.
+pub fn detect_cols_or(min: usize, fallback: usize) -> usize {
     if is_stdout_tty() {
         if let Some((cols, _)) = query_winsize() {
-            if cols >= 20 {
+            if cols >= min {
                 return cols;
             }
         }
     }
-    if let Ok(s) = std::env::var("COLUMNS") {
-        if let Ok(n) = s.parse::<usize>() {
-            if n >= 20 {
-                return n;
-            }
-        }
-    }
-    80
+    env_dim_or("COLUMNS", min, fallback)
 }
 
 /// Detect terminal height. Same ioctl-first / env-fallback shape as
@@ -75,21 +78,34 @@ pub fn detect_cols() -> usize {
 /// visible window. The minimum 5 keeps tests/CI runs from collapsing
 /// to a single-row table when the terminal is unset or absurdly small.
 pub fn detect_rows() -> usize {
+    detect_rows_or(5, 24)
+}
+
+/// [`detect_rows`] with caller-chosen sanity floor and fallback
+/// (see [`detect_cols_or`]).
+pub fn detect_rows_or(min: usize, fallback: usize) -> usize {
     if is_stdout_tty() {
         if let Some((_, rows)) = query_winsize() {
-            if rows >= 5 {
+            if rows >= min {
                 return rows;
             }
         }
     }
-    if let Ok(s) = std::env::var("LINES") {
+    env_dim_or("LINES", min, fallback)
+}
+
+/// Env-var half of the probe (`$COLUMNS` / `$LINES`), split out so tests
+/// can exercise the fallback chain without depending on whether the test
+/// runner's stdout is a real terminal (the ioctl path would shadow it).
+fn env_dim_or(var: &str, min: usize, fallback: usize) -> usize {
+    if let Ok(s) = std::env::var(var) {
         if let Ok(n) = s.parse::<usize>() {
-            if n >= 5 {
+            if n >= min {
                 return n;
             }
         }
     }
-    24
+    fallback
 }
 
 /// True when stdout is attached to a real terminal. Piped / redirected
@@ -197,5 +213,22 @@ mod tests {
         let got = truncate_visible("anything", 1);
         assert_eq!(visible_width(&got), 1);
         assert!(got.contains('…'));
+    }
+
+    /// da-tpny: the now/nowview band probes fall back to `$COLUMNS` /
+    /// `$LINES` and then to a caller-chosen default. All assertions live
+    /// in one test fn — `COLUMNS` is process-global state and threaded
+    /// `cargo test` would race split-up variants.
+    #[test]
+    fn env_dim_honors_var_floor_and_per_caller_fallback() {
+        std::env::set_var("COLUMNS", "137");
+        assert_eq!(env_dim_or("COLUMNS", 20, 80), 137);
+        // Below the caller's sanity floor → fall through to the fallback.
+        std::env::set_var("COLUMNS", "3");
+        assert_eq!(env_dim_or("COLUMNS", 4, 40), 40);
+        std::env::remove_var("COLUMNS");
+        // Unset → per-caller fallback (now band: 80, nowview Snapshot: 40).
+        assert_eq!(env_dim_or("COLUMNS", 20, 80), 80);
+        assert_eq!(env_dim_or("COLUMNS", 4, 40), 40);
     }
 }
