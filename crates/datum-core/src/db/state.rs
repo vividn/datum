@@ -181,14 +181,15 @@ impl Db {
 
     /// Project the entry log into a [`TrackedField`] list for the `now`
     /// view. A field appears here iff it has at least one live entry; its
-    /// `ignored` flag derives from [`Db::state_at`] at `now`. Per-field
-    /// color is read from the matching [`FieldSpec`] when one exists.
-    /// Ordered alphabetically by field name.
-    pub fn get_tracked_fields(&self) -> Result<Vec<TrackedField>> {
-        let now = Utc::now();
+    /// `ignored` flag derives from [`Db::state_at`] at `at` — pass
+    /// `Utc::now()` for the live view, or a time-travel anchor (da-n0dr)
+    /// so scope membership matches the per-field states at that moment.
+    /// Per-field color is read from the matching [`FieldSpec`] when one
+    /// exists. Ordered alphabetically by field name.
+    pub fn get_tracked_fields(&self, at: DateTime<Utc>) -> Result<Vec<TrackedField>> {
         let fields = self.list_distinct_fields()?;
         let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
-        let states = self.batch_state_at(&field_refs, now)?;
+        let states = self.batch_state_at(&field_refs, at)?;
         let specs = self.batch_load_specs(&field_refs)?;
         let mut out = Vec::with_capacity(fields.len());
         for field in fields {

@@ -99,8 +99,11 @@ impl Db {
         // da-tx8j: snapshot_time pins the anchor for both the query
         // (`latest_entry_for_now` filters `<= snapshot_time`) and the
         // wire `now` field. Defaults to wall-clock now when None.
+        // da-n0dr: the same anchor scopes the field list, so tracked/
+        // ignored classification matches the per-field states at `now`
+        // rather than mixing epochs with wall-clock membership.
         let now = filter.snapshot_time.unwrap_or_else(Utc::now);
-        let tracked = self.get_tracked_fields()?;
+        let tracked = self.get_tracked_fields(now)?;
 
         let mut active = Vec::new();
         let mut tracked_false = Vec::new();

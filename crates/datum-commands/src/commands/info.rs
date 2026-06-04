@@ -92,7 +92,9 @@ fn print_info_block(name: Option<&str>, path: &std::path::Path, db: Option<&Db>)
     let deleted = count_tombstones(db).unwrap_or(0);
     println!("  entries:  {live} ({deleted} deleted)");
 
-    let tracked = db.get_tracked_fields().unwrap_or_default();
+    let tracked = db
+        .get_tracked_fields(chrono::Utc::now())
+        .unwrap_or_default();
     let (t_count, i_count) = tracked.iter().fold((0usize, 0usize), |(t, i), f| {
         if f.ignored {
             (t, i + 1)

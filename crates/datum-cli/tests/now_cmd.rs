@@ -841,3 +841,102 @@ fn now_time_travel_combines_with_tracked_false_layer() {
             .collect::<Vec<_>>(),
     );
 }
+
+/// da-n0dr: the snapshot anchor scopes the FIELD LIST too, not just the
+/// per-field states. A field switched to IGNORED after the anchor was
+/// still tracked AT the anchor — `now -t <before>` must classify it
+/// active, while the live snapshot classifies it ignored.
+#[test]
+fn now_time_travel_classifies_ignored_at_anchor_not_wall_clock() {
+    use datum_core::db::NowFilter;
+    use datum_core::entry::Verb;
+    let db = fresh_db();
+
+    let now = chrono::Utc::now();
+    // `mood` active 3h ago, switched IGNORED 1h ago.
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .value(json!("happy"))
+        .time_start_utc(now - Duration::hours(3))
+        .insert(&db);
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .value(json!("IGNORED"))
+        .time_start_utc(now - Duration::hours(1))
+        .insert(&db);
+
+    // Live: mood is ignored — absent from active, present in the
+    // ignored bucket when requested.
+    let live = db
+        .current_now(&NowFilter {
+            include_ignored: true,
+            ..NowFilter::default()
+        })
+        .unwrap();
+    assert!(
+        live.active.iter().all(|a| a.field != "mood"),
+        "mood must not be active in the live snapshot"
+    );
+    assert!(
+        live.ignored.iter().any(|f| f.field == "mood"),
+        "mood must be in the live ignored bucket"
+    );
+
+    // Anchored 2h ago (before the IGNORED switch): mood was running —
+    // it belongs in active with its then-current state, NOT in the
+    // ignored bucket the wall-clock classification would put it in.
+    let past = db
+        .current_now(&NowFilter {
+            include_ignored: true,
+            snapshot_time: Some(now - Duration::hours(2)),
+            ..NowFilter::default()
+        })
+        .unwrap();
+    let past_mood = past
+        .active
+        .iter()
+        .find(|a| a.field == "mood")
+        .expect("mood active at the 2h-ago anchor");
+    assert_eq!(past_mood.state, json!("happy"));
+    assert!(
+        past.ignored.iter().all(|f| f.field != "mood"),
+        "mood must not be classified ignored at the 2h-ago anchor"
+    );
+}
+
+/// da-n0dr: a field whose first-ever entry is AFTER the anchor did not
+/// exist in the world-as-of-T — it must not surface as a phantom
+/// tracked_false member of the time-travelled snapshot.
+#[test]
+fn now_time_travel_excludes_fields_born_after_anchor() {
+    use datum_core::db::NowFilter;
+    use datum_core::entry::Verb;
+    let db = fresh_db();
+
+    let now = chrono::Utc::now();
+    // `coffee`'s first-ever entry is 30 minutes ago.
+    entry_builder("coffee")
+        .verb(Verb::Switch)
+        .value(json!(true))
+        .time_start_utc(now - Duration::minutes(30))
+        .insert(&db);
+
+    // Snapshot anchored 2h ago: coffee hadn't been seen yet — unseen
+    // fields default to IGNORED, so it must not appear active or
+    // tracked_false.
+    let past = db
+        .current_now(&NowFilter {
+            include_tracked_false: true,
+            snapshot_time: Some(now - Duration::hours(2)),
+            ..NowFilter::default()
+        })
+        .unwrap();
+    assert!(
+        past.active.iter().all(|a| a.field != "coffee"),
+        "coffee did not exist at the anchor — not active"
+    );
+    assert!(
+        past.tracked_false.iter().all(|f| f.field != "coffee"),
+        "coffee did not exist at the anchor — no phantom tracked_false row"
+    );
+}

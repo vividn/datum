@@ -289,7 +289,7 @@ mod tests {
         assert!(states.contains(&"happy".to_string()) && states.contains(&"sad".to_string()));
         // da-2sr: --track on `spec set` writes a switch entry; the spec
         // itself no longer carries tracked/ignored bits.
-        let mood_tracked = db.get_tracked_fields().unwrap();
+        let mood_tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let mood_row = mood_tracked.iter().find(|f| f.field == "mood").unwrap();
         assert!(!mood_row.ignored);
 

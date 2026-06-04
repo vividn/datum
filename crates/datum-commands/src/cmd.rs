@@ -304,7 +304,7 @@ mod tests {
         // via `-k amount=2`. Auto-track depends on the verb, not the data.
         let args = LogArgs::with_field("coffee");
         log_entry(Action::Occur, args, &db).unwrap();
-        let tracked = db.get_tracked_fields().unwrap();
+        let tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         assert!(tracked.iter().any(|f| f.field == "coffee" && !f.ignored));
     }
 
@@ -314,7 +314,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let args = LogArgs::with_field("work");
         log_entry(Action::Start, args, &db).unwrap();
-        let tracked = db.get_tracked_fields().unwrap();
+        let tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         assert!(tracked.iter().any(|f| f.field == "work" && !f.ignored));
     }
 
@@ -395,7 +395,7 @@ mod tests {
         // returns None — the projection labels it ignored (the "no entries"
         // default). It still appears in `get_tracked_fields` so callers
         // know it exists, but `now` filters it out by default.
-        let tracked = db.get_tracked_fields().unwrap();
+        let tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let journal = tracked.iter().find(|f| f.field == "journal");
         assert!(journal.is_some(), "field should be present after any write");
         assert!(
@@ -428,7 +428,7 @@ mod tests {
 
         // da-2sr: track wrote a switch entry (value=NULL) and a spec for the
         // colors. The derived projection sees mood as tracked.
-        let tracked = db.get_tracked_fields().unwrap();
+        let tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let mood = tracked.iter().find(|f| f.field == "mood").unwrap();
         assert!(!mood.ignored);
         assert_eq!(mood.color.as_deref(), Some("ff6600"));
@@ -451,7 +451,7 @@ mod tests {
             &db,
         )
         .unwrap();
-        let tracked2 = db.get_tracked_fields().unwrap();
+        let tracked2 = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let mood2 = tracked2.iter().find(|f| f.field == "mood").unwrap();
         assert!(mood2.ignored);
         // Color survives because it lives on FieldSpec, not in the entry log.
@@ -469,7 +469,7 @@ mod tests {
             &db,
         )
         .unwrap();
-        let tracked3 = db.get_tracked_fields().unwrap();
+        let tracked3 = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         assert!(!tracked3.iter().find(|f| f.field == "mood").unwrap().ignored);
     }
 

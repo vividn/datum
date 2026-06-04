@@ -62,7 +62,7 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
         // Discriminate "nothing tracked at all" from "tracked but
         // filter-hidden" — the former is the legacy onboarding hint;
         // the latter falls through to `render_snapshot`'s sentinel.
-        if db.get_tracked_fields()?.is_empty() {
+        if db.get_tracked_fields(chrono::Utc::now())?.is_empty() {
             println!("No tracked fields. Use `datum track <field>` or log with `occur`/`start`.");
             return Ok(());
         }

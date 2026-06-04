@@ -413,7 +413,9 @@ pub(crate) fn build_dayview_fields(
     // can still position it (dayview drops empty fields, but a tracked
     // field with an open switch state from before the window will have
     // a leading entry once `state_at` integration lands).
-    let tracked = db.get_tracked_fields().unwrap_or_default();
+    let tracked = db
+        .get_tracked_fields(chrono::Utc::now())
+        .unwrap_or_default();
     for tf in &tracked {
         by_field.entry(tf.field.clone()).or_default();
     }
@@ -507,7 +509,7 @@ pub(crate) fn build_fields(
     }
 
     let mut all_fields: Vec<String> = by_field.keys().cloned().collect();
-    let tracked = db.get_tracked_fields()?;
+    let tracked = db.get_tracked_fields(chrono::Utc::now())?;
     for tf in &tracked {
         if !all_fields.iter().any(|f| f == &tf.field) {
             all_fields.push(tf.field.clone());
