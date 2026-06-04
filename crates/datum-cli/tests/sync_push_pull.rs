@@ -2,7 +2,7 @@
 //! (bead da-ndd.14 = C4c).
 //!
 //! Tests mutate `DATUM_HOME` and `DATUM_CONFIG_HOME` so they're serialised
-//! through the `ENV_LOCK`. Each test constructs its own stub relay which
+//! through the shared env lock. Each test constructs its own stub relay which
 //! exposes the wire protocol from `docs/sync-protocol.md` (`/v0/push`,
 //! `/v0/pull`, `/v0/keys/wrapped`, `/v0/auth/device-code*`).
 
@@ -17,55 +17,27 @@ use datum_core::time::DatumTime;
 use datum_sync_client::sync_state;
 use tempfile::TempDir;
 
-use sync_support::{StubRelay, ENV_LOCK};
+use sync_support::{env_lock, ScopedEnv, StubRelay};
 
 struct EnvGuard {
     // Fields drop in declaration order: restore env vars first, then
     // release the mutex. Putting `_guard` last means no other test can
     // observe a partially-restored environment.
     _tmp: TempDir,
-    _orig_home: EnvRestore,
-    _orig_cfg_home: EnvRestore,
-    _orig_db: EnvRestore,
-    _orig_cfg: EnvRestore,
+    _orig_home: ScopedEnv,
+    _orig_cfg_home: ScopedEnv,
+    _orig_db: ScopedEnv,
+    _orig_cfg: ScopedEnv,
     _guard: std::sync::MutexGuard<'static, ()>,
 }
 
-struct EnvRestore {
-    key: &'static str,
-    prev: Option<String>,
-}
-
-impl EnvRestore {
-    fn capture(key: &'static str) -> Self {
-        Self {
-            key,
-            prev: std::env::var(key).ok(),
-        }
-    }
-}
-
-impl Drop for EnvRestore {
-    fn drop(&mut self) {
-        match &self.prev {
-            Some(v) => std::env::set_var(self.key, v),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
-
 fn scoped_env() -> EnvGuard {
-    let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = env_lock();
     let tmp = TempDir::new().expect("mk tmp");
-    let orig_home = EnvRestore::capture("DATUM_HOME");
-    let orig_cfg = EnvRestore::capture("DATUM_CONFIG_HOME");
-    let orig_db = EnvRestore::capture("DATUM_DB");
-    let orig_cfg_file = EnvRestore::capture("DATUM_CONFIG");
-
-    std::env::set_var("DATUM_HOME", tmp.path().join("data"));
-    std::env::set_var("DATUM_CONFIG_HOME", tmp.path().join("config"));
-    std::env::remove_var("DATUM_DB");
-    std::env::remove_var("DATUM_CONFIG");
+    let orig_home = ScopedEnv::set("DATUM_HOME", tmp.path().join("data"));
+    let orig_cfg = ScopedEnv::set("DATUM_CONFIG_HOME", tmp.path().join("config"));
+    let orig_db = ScopedEnv::remove("DATUM_DB");
+    let orig_cfg_file = ScopedEnv::remove("DATUM_CONFIG");
 
     EnvGuard {
         _tmp: tmp,

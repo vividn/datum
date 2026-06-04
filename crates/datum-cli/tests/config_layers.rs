@@ -5,10 +5,8 @@
 //! Serialized by a process-wide mutex because env is shared state.
 
 use datum_cli::config::{self, Config, Source};
+use datum_test_util::env_lock;
 use std::path::Path;
-use std::sync::Mutex;
-
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 const KEYS_TO_CLEAR: &[&str] = &[
     "DATUM_DB",
@@ -22,8 +20,8 @@ const KEYS_TO_CLEAR: &[&str] = &[
     "EDITOR",
 ];
 
-fn sandbox(tmp: &Path) -> std::sync::MutexGuard<'_, ()> {
-    let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+fn sandbox(tmp: &Path) -> std::sync::MutexGuard<'static, ()> {
+    let guard = env_lock();
     std::env::set_var("DATUM_HOME", tmp.join("data"));
     std::env::set_var("DATUM_CONFIG_HOME", tmp.join("config"));
     for k in KEYS_TO_CLEAR {

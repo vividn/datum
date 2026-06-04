@@ -17,3 +17,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 iana-time-zone = { version = "0.1", optional = true }
+
+[dev-dependencies]
+datum-test-util = { path = "../datum-test-util" }

@@ -123,37 +123,29 @@ pub fn now() -> DatumTime {
 ///
 /// `TZ` is process-wide state and `cargo test` runs tests as parallel
 /// threads in one process, so anything that mutates `TZ` must serialize on
-/// the single [`TZ_LOCK`]. Living at `pub(crate)` lets the `builder` DST
-/// tests reuse the same lock as the `clock` tests instead of racing them
-/// across a second, independent mutex.
+/// the process-wide `datum_test_util::env_lock`. Living at `pub(crate)`
+/// lets the `builder` DST tests reuse the same lock as the `clock` tests
+/// instead of racing them across a second, independent mutex.
 #[cfg(test)]
 pub(crate) mod test_tz {
-    use std::sync::Mutex;
-
-    static TZ_LOCK: Mutex<()> = Mutex::new(());
+    use datum_test_util::{env_lock, ScopedEnv};
 
     pub(crate) struct TzGuard {
-        prior: Option<std::ffi::OsString>,
+        // Field order: env restores before the lock releases.
+        _env: ScopedEnv,
         _lock: std::sync::MutexGuard<'static, ()>,
     }
 
     impl TzGuard {
         pub(crate) fn set(value: Option<&str>) -> Self {
-            let lock = TZ_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-            let prior = std::env::var_os("TZ");
-            match value {
-                Some(v) => std::env::set_var("TZ", v),
-                None => std::env::remove_var("TZ"),
-            }
-            TzGuard { prior, _lock: lock }
-        }
-    }
-
-    impl Drop for TzGuard {
-        fn drop(&mut self) {
-            match self.prior.take() {
-                Some(v) => std::env::set_var("TZ", v),
-                None => std::env::remove_var("TZ"),
+            let lock = env_lock();
+            let env = match value {
+                Some(v) => ScopedEnv::set("TZ", v),
+                None => ScopedEnv::remove("TZ"),
+            };
+            TzGuard {
+                _env: env,
+                _lock: lock,
             }
         }
     }

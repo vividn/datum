@@ -17,40 +17,8 @@ use datum_core::{
     entry::{Entry, Verb},
     time::DatumTime,
 };
+use datum_test_util::no_color_scope;
 use serde_json::json;
-use std::sync::Mutex;
-
-static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-struct ScopedEnv {
-    key: &'static str,
-    prior: Option<std::ffi::OsString>,
-}
-impl ScopedEnv {
-    fn set(key: &'static str, value: Option<&str>) -> Self {
-        let prior = std::env::var_os(key);
-        match value {
-            Some(v) => std::env::set_var(key, v),
-            None => std::env::remove_var(key),
-        }
-        Self { key, prior }
-    }
-}
-impl Drop for ScopedEnv {
-    fn drop(&mut self) {
-        match self.prior.take() {
-            Some(v) => std::env::set_var(self.key, v),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
-
-fn no_color_scope() -> (std::sync::MutexGuard<'static, ()>, ScopedEnv, ScopedEnv) {
-    let g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let d = ScopedEnv::set("DATUM_COLOR", Some("0"));
-    let n = ScopedEnv::set("NO_COLOR", Some("1"));
-    (g, d, n)
-}
 
 fn dt(y: i32, mo: u32, d: u32, h: u32, m: u32) -> DatumTime {
     let utc: DateTime<Utc> = Utc.with_ymd_and_hms(y, mo, d, h, m, 0).unwrap();

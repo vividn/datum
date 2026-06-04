@@ -53,41 +53,8 @@ use datum_layout::{
 };
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-
-// ─── Env scope (shared with render_fixtures.rs by convention) ────────────────
-
-static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-struct ScopedEnv {
-    key: &'static str,
-    prior: Option<std::ffi::OsString>,
-}
-impl ScopedEnv {
-    fn set(key: &'static str, value: Option<&str>) -> Self {
-        let prior = std::env::var_os(key);
-        match value {
-            Some(v) => std::env::set_var(key, v),
-            None => std::env::remove_var(key),
-        }
-        Self { key, prior }
-    }
-}
-impl Drop for ScopedEnv {
-    fn drop(&mut self) {
-        match self.prior.take() {
-            Some(v) => std::env::set_var(self.key, v),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
-
-fn color_scope() -> (std::sync::MutexGuard<'static, ()>, ScopedEnv, ScopedEnv) {
-    let g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let d = ScopedEnv::set("DATUM_COLOR", Some("1"));
-    let n = ScopedEnv::set("NO_COLOR", None);
-    (g, d, n)
-}
+// ─── Env scope (shared with render_fixtures.rs) ──────────────────────────────
+use datum_test_util::color_scope;
 
 // ─── Time + entry construction ───────────────────────────────────────────────
 

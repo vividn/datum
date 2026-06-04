@@ -1309,29 +1309,20 @@ mod tests {
     use super::colors::strip_ansi;
     use super::*;
     use datum_core::time::DatumTime;
-    use std::sync::{Mutex, MutexGuard};
-
-    /// da-jfw6 / da-46nj: tests in this mod toggle the process-global
-    /// `DATUM_COLOR` / `NO_COLOR` env vars via `ScopedEnv` to drive
-    /// deterministic color-on/off rendering. Under parallel `cargo test
-    /// --lib`, one test's mid-flight set_var/remove_var races with
-    /// another's read inside `color_enabled` / `paint`, producing
-    /// intermittent failures like "expected ≥2 bg escapes for two
-    /// chips" with empty backgrounds.
-    ///
-    /// `lock_env()` is acquired ONCE per color-toggling test and held
-    /// for the lifetime of the test body; multiple `ScopedEnv` calls
-    /// inside the test reuse the same guard, so the second call does
-    /// NOT re-acquire the lock (and so doesn't deadlock). The mutex
-    /// is poisoned-safe — a panicking test doesn't cascade into
-    /// "lock poisoned" failures in subsequent runs.
-    static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    fn lock_env() -> MutexGuard<'static, ()> {
-        ENV_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
+    // da-jfw6 / da-46nj: tests in this mod toggle the process-global
+    // `DATUM_COLOR` / `NO_COLOR` env vars via `ScopedEnv` to drive
+    // deterministic color-on/off rendering. Under parallel `cargo test
+    // --lib`, one test's mid-flight set_var/remove_var races with
+    // another's read inside `color_enabled` / `paint`, producing
+    // intermittent failures like "expected ≥2 bg escapes for two
+    // chips" with empty backgrounds.
+    //
+    // `env_lock()` is acquired ONCE per color-toggling test and held
+    // for the lifetime of the test body; multiple `ScopedEnv` calls
+    // inside the test reuse the same guard, so the second call does
+    // NOT re-acquire the lock (and so doesn't deadlock). The mutex
+    // is poison-tolerant and process-wide (da-3ywd).
+    use datum_test_util::{env_lock, ScopedEnv};
 
     #[test]
     fn show_none_propagates_as_silent() {
@@ -1391,7 +1382,7 @@ mod tests {
     /// table while the info-line emitted plain `field`.
     #[test]
     fn field_cell_matches_info_line_badge() {
-        let _env_lock = lock_env();
+        let _env_lock = env_lock();
         let _guard = ColorGuard::force_on();
         let entry = sample_entry("newfield", Verb::Switch, Some(JsonValue::from("ok")));
         let ctx = self::action::RenderContext {
@@ -1478,7 +1469,7 @@ mod tests {
     /// port; previously only `38;5;…` foreground escapes were emitted.
     #[test]
     fn string_state_uses_truecolor_background() {
-        let _env_lock = lock_env();
+        let _env_lock = env_lock();
         let _guard = ColorGuard::force_on();
         let entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
         let out = extract(&entry, None, None).state.unwrap();
@@ -1495,9 +1486,9 @@ mod tests {
     fn no_color_env_suppresses_all_ansi() {
         // Use the NO_COLOR path explicitly by clearing DATUM_COLOR and
         // setting NO_COLOR. The guard restores both on drop.
-        let _env_lock = lock_env();
-        let _datum = ScopedEnv::set("DATUM_COLOR", None);
-        let _no = ScopedEnv::set("NO_COLOR", Some("1"));
+        let _env_lock = env_lock();
+        let _datum = ScopedEnv::remove("DATUM_COLOR");
+        let _no = ScopedEnv::set("NO_COLOR", "1");
         assert!(!color_enabled());
         assert_eq!(paint("\x1b[38;2;255;0;0m", "hi"), "hi");
     }
@@ -1506,9 +1497,9 @@ mod tests {
     /// matrix that wants to force colour on regardless of env.
     #[test]
     fn datum_color_overrides_no_color() {
-        let _env_lock = lock_env();
-        let _no = ScopedEnv::set("NO_COLOR", Some("1"));
-        let _dc = ScopedEnv::set("DATUM_COLOR", Some("1"));
+        let _env_lock = env_lock();
+        let _no = ScopedEnv::set("NO_COLOR", "1");
+        let _dc = ScopedEnv::set("DATUM_COLOR", "1");
         assert!(color_enabled());
     }
 
@@ -1522,8 +1513,8 @@ mod tests {
     // A — structured renders `{id}` chip in main line
     #[test]
     fn structured_state_renders_id_in_curly_braces_in_main_line() {
-        let _env_lock = lock_env();
-        let _no = ScopedEnv::set("NO_COLOR", Some("1"));
+        let _env_lock = env_lock();
+        let _no = ScopedEnv::set("NO_COLOR", "1");
         let entry = sample_entry(
             "call",
             Verb::Switch,
@@ -1543,8 +1534,8 @@ mod tests {
     // A — simple-string state unchanged
     #[test]
     fn simple_string_state_unchanged_in_main_line() {
-        let _env_lock = lock_env();
-        let _no = ScopedEnv::set("NO_COLOR", Some("1"));
+        let _env_lock = env_lock();
+        let _no = ScopedEnv::set("NO_COLOR", "1");
         let entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
         let state = strip_ansi(&extract(&entry, None, None).state.unwrap());
         assert!(state.contains("happy"), "{state:?}");
@@ -1557,9 +1548,9 @@ mod tests {
     // B — same id → same chip background color (color stability)
     #[test]
     fn same_structured_state_id_gets_same_color_across_entries() {
-        let _env_lock = lock_env();
-        let _dc = ScopedEnv::set("DATUM_COLOR", Some("1"));
-        let _no = ScopedEnv::set("NO_COLOR", None);
+        let _env_lock = env_lock();
+        let _dc = ScopedEnv::set("DATUM_COLOR", "1");
+        let _no = ScopedEnv::remove("NO_COLOR");
         let a = sample_entry(
             "call",
             Verb::Switch,
@@ -1590,9 +1581,9 @@ mod tests {
     // B — different id → different chip background color
     #[test]
     fn different_id_gets_different_color() {
-        let _env_lock = lock_env();
-        let _dc = ScopedEnv::set("DATUM_COLOR", Some("1"));
-        let _no = ScopedEnv::set("NO_COLOR", None);
+        let _env_lock = env_lock();
+        let _dc = ScopedEnv::set("DATUM_COLOR", "1");
+        let _no = ScopedEnv::remove("NO_COLOR");
         let a = sample_entry("call", Verb::Switch, Some(serde_json::json!({"id": "joe"})));
         let b = sample_entry("call", Verb::Switch, Some(serde_json::json!({"id": "bob"})));
         let sa = extract(&a, None, None).state.unwrap();
@@ -1603,8 +1594,8 @@ mod tests {
     // F — tail parallel states use `,` with NO space (rule 6)
     #[test]
     fn tail_parallel_states_separated_by_comma_no_space() {
-        let _env_lock = lock_env();
-        let _no = ScopedEnv::set("NO_COLOR", Some("1"));
+        let _env_lock = env_lock();
+        let _no = ScopedEnv::set("NO_COLOR", "1");
         let entry = sample_entry(
             "body",
             Verb::Switch,
@@ -1625,9 +1616,9 @@ mod tests {
     // A — parallel of simple states: each member chipped separately
     #[test]
     fn parallel_simple_states_chipped_separately_in_main_line() {
-        let _env_lock = lock_env();
-        let _dc = ScopedEnv::set("DATUM_COLOR", Some("1"));
-        let _no = ScopedEnv::set("NO_COLOR", None);
+        let _env_lock = env_lock();
+        let _dc = ScopedEnv::set("DATUM_COLOR", "1");
+        let _no = ScopedEnv::remove("NO_COLOR");
         let entry = sample_entry(
             "body",
             Verb::Switch,
@@ -1655,31 +1646,8 @@ mod tests {
     impl ColorGuard {
         fn force_on() -> Self {
             Self {
-                _datum: ScopedEnv::set("DATUM_COLOR", Some("1")),
-                _no: ScopedEnv::set("NO_COLOR", None),
-            }
-        }
-    }
-
-    struct ScopedEnv {
-        key: &'static str,
-        prior: Option<std::ffi::OsString>,
-    }
-    impl ScopedEnv {
-        fn set(key: &'static str, value: Option<&str>) -> Self {
-            let prior = std::env::var_os(key);
-            match value {
-                Some(v) => std::env::set_var(key, v),
-                None => std::env::remove_var(key),
-            }
-            Self { key, prior }
-        }
-    }
-    impl Drop for ScopedEnv {
-        fn drop(&mut self) {
-            match self.prior.take() {
-                Some(v) => std::env::set_var(self.key, v),
-                None => std::env::remove_var(self.key),
+                _datum: ScopedEnv::set("DATUM_COLOR", "1"),
+                _no: ScopedEnv::remove("NO_COLOR"),
             }
         }
     }

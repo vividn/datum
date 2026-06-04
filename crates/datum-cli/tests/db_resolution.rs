@@ -5,13 +5,12 @@
 //! process-wide mutex because the underlying env is shared state.
 
 use datum_cli::config::{self, looks_like_path, ResolvedDb};
-use std::sync::Mutex;
 
 // Env mutations in the resolver aren't safe to parallelize; serialize.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
+use datum_test_util::env_lock;
 
-fn sandbox_env(tmp: &std::path::Path) -> std::sync::MutexGuard<'_, ()> {
-    let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+fn sandbox_env(tmp: &std::path::Path) -> std::sync::MutexGuard<'static, ()> {
+    let guard = env_lock();
     std::env::set_var("DATUM_HOME", tmp.join("data"));
     std::env::set_var("DATUM_CONFIG_HOME", tmp.join("config"));
     std::env::remove_var("DATUM_DB");

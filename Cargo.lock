@@ -479,6 +479,7 @@ dependencies = [
  "datum-parse",
  "datum-sync-client",
  "datum-sync-server",
+ "datum-test-util",
  "md-5",
  "reqwest",
  "rusqlite",
@@ -502,6 +503,7 @@ dependencies = [
  "datum-layout",
  "datum-parse",
  "datum-sync-client",
+ "datum-test-util",
  "flate2",
  "libc",
  "md-5",
@@ -564,6 +566,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "chrono-tz",
+ "datum-test-util",
  "iana-time-zone",
  "serde",
  "serde_json",
@@ -644,6 +647,10 @@ dependencies = [
  "uuid",
  "webauthn-rs",
 ]
+
+[[package]]
+name = "datum-test-util"
+version = "0.1.0"
 
 [[package]]
 name = "der-parser"

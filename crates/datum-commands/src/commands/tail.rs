@@ -456,19 +456,19 @@ fn day_bounds_utc(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
-    /// `RESIZE_FLAG` is a process-global, so tests that mutate it must
-    /// not run concurrently — otherwise a "set" test flips the flag
-    /// out from under a "clear" test and the latter wakes early.
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    // `RESIZE_FLAG` is a process-global, so tests that mutate it must
+    // not run concurrently — otherwise a "set" test flips the flag
+    // out from under a "clear" test and the latter wakes early. The
+    // shared env lock is the canonical process-global-state lock.
+    use datum_test_util::env_lock;
 
     /// With the flag clear, `wait_with_resize_wake` blocks for at
     /// least the requested interval (give or take chunk granularity).
     #[test]
     fn wait_blocks_full_interval_when_no_resize() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = env_lock();
         RESIZE_FLAG.store(false, Ordering::Relaxed);
         let target = Duration::from_millis(150);
         let start = Instant::now();
@@ -492,7 +492,7 @@ mod tests {
     /// another thread and verify the loop wakes early.
     #[test]
     fn wait_returns_early_when_flag_set_mid_wait() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = env_lock();
         RESIZE_FLAG.store(false, Ordering::Relaxed);
         let handle = std::thread::spawn(|| {
             std::thread::sleep(Duration::from_millis(60));
@@ -515,7 +515,7 @@ mod tests {
     /// return — that would burn through the interval in a tight loop.
     #[test]
     fn wait_clears_stale_flag_on_entry() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = env_lock();
         RESIZE_FLAG.store(true, Ordering::Relaxed);
         let target = Duration::from_millis(120);
         let start = Instant::now();

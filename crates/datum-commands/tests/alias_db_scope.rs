@@ -5,60 +5,31 @@
 //! subcommand: 'vbp'" because the resolver opened the default db.
 
 use std::path::Path;
-use std::sync::Mutex;
 
 use datum_commands::args::{parse_invocation, peek_intent_context};
 use datum_core::db::Db;
 use datum_core::field_spec::Alias;
 use tempfile::TempDir;
 
-/// `parse_invocation` reads `HOME` / `XDG_DATA_HOME` / `DATUM_DB` from
-/// the process env to derive the default db path. Integration tests
-/// run in parallel by default — serialize on a mutex so one test's
-/// env doesn't bleed into another's.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-struct EnvVar {
-    key: &'static str,
-    prev: Option<std::ffi::OsString>,
-}
-
-impl EnvVar {
-    fn set(key: &'static str, value: &std::ffi::OsStr) -> Self {
-        let prev = std::env::var_os(key);
-        std::env::set_var(key, value);
-        Self { key, prev }
-    }
-
-    fn remove(key: &'static str) -> Self {
-        let prev = std::env::var_os(key);
-        std::env::remove_var(key);
-        Self { key, prev }
-    }
-}
-
-impl Drop for EnvVar {
-    fn drop(&mut self) {
-        match &self.prev {
-            Some(v) => std::env::set_var(self.key, v),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
+// `parse_invocation` reads `HOME` / `XDG_DATA_HOME` / `DATUM_DB` from
+// the process env to derive the default db path. Integration tests
+// run in parallel by default — serialize on the shared process-wide
+// lock so one test's env doesn't bleed into another's (da-3ywd).
+use datum_test_util::{env_lock, ScopedEnv};
 
 fn argv(parts: &[&str]) -> Vec<String> {
     parts.iter().map(|s| s.to_string()).collect()
 }
 
-fn isolated_home() -> (TempDir, Vec<EnvVar>) {
+fn isolated_home() -> (TempDir, Vec<ScopedEnv>) {
     let tmp = tempfile::tempdir().expect("create isolated XDG home");
     let path = tmp.path();
     let guards = vec![
-        EnvVar::set("HOME", path.as_os_str()),
-        EnvVar::set("XDG_DATA_HOME", path.as_os_str()),
-        EnvVar::set("XDG_CONFIG_HOME", path.as_os_str()),
-        EnvVar::remove("DATUM_DB"),
-        EnvVar::remove("DATUM_HOME"),
+        ScopedEnv::set("HOME", path),
+        ScopedEnv::set("XDG_DATA_HOME", path),
+        ScopedEnv::set("XDG_CONFIG_HOME", path),
+        ScopedEnv::remove("DATUM_DB"),
+        ScopedEnv::remove("DATUM_HOME"),
     ];
     (tmp, guards)
 }
@@ -76,7 +47,7 @@ fn create_db_with_alias(path: &Path, name: &str, expands_to: &str) {
 
 #[test]
 fn parse_invocation_resolves_alias_in_db_flag_target() {
-    let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let _lock = env_lock();
     let (tmp, _guards) = isolated_home();
 
     let target = tmp.path().join("target.db");
@@ -107,7 +78,7 @@ fn parse_invocation_resolves_alias_in_db_flag_target() {
 fn parse_invocation_resolves_alias_in_db_flag_equals_form() {
     // `--db=<value>` (no separating space) must work the same as the
     // separated form — the pre-scan helper handles both.
-    let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let _lock = env_lock();
     let (tmp, _guards) = isolated_home();
 
     let target = tmp.path().join("equals.db");

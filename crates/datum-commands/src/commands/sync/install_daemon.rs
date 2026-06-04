@@ -290,11 +290,11 @@ fn run_cmd(cmd: &str, args: &[&str]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Serializes tests that mutate process env vars (XDG_CONFIG_HOME, HOME,
-    /// DATUM_SYNC_AGENT_BIN) — plain `cargo test` runs tests as threads in
-    /// one process. nextest isolates per-process, so this is belt-and-braces.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // Tests that mutate process env vars (XDG_CONFIG_HOME, HOME,
+    // DATUM_SYNC_AGENT_BIN) serialize on the shared `env_lock` — plain
+    // `cargo test` runs tests as threads in one process. nextest isolates
+    // per-process, so this is belt-and-braces.
+    use datum_test_util::{env_lock, ScopedEnv};
 
     #[test]
     fn systemd_unit_contains_exec_and_install_section() {
@@ -333,14 +333,14 @@ mod tests {
         // No env override, no sibling binary next to the test executable →
         // run(false, false) must bail directively BEFORE writing the unit
         // (and before invoking systemctl/launchctl).
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let prev_bin = std::env::var("DATUM_SYNC_AGENT_BIN").ok();
-        let prev_xdg = std::env::var("XDG_CONFIG_HOME").ok();
-        let prev_home = std::env::var("HOME").ok();
-        std::env::remove_var("DATUM_SYNC_AGENT_BIN");
+        let _guard = env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
-        std::env::set_var("HOME", tmp.path());
+        // ScopedEnv restores on drop even if an assertion panics, so a
+        // failure doesn't leak a deleted tempdir path into sibling tests
+        // (plain `cargo test` shares the process).
+        let _bin = ScopedEnv::remove("DATUM_SYNC_AGENT_BIN");
+        let _xdg = ScopedEnv::set("XDG_CONFIG_HOME", tmp.path());
+        let _home = ScopedEnv::set("HOME", tmp.path());
 
         let err = run(false, false).unwrap_err();
 
@@ -351,17 +351,6 @@ mod tests {
         let unit_written = unit.exists();
         let plist_written = plist.exists();
 
-        // Restore env before asserting so a failure doesn't leak a deleted
-        // tempdir path into sibling tests (plain `cargo test` shares the
-        // process).
-        let restore = |key: &str, prev: Option<String>| match prev {
-            Some(v) => std::env::set_var(key, v),
-            None => std::env::remove_var(key),
-        };
-        restore("DATUM_SYNC_AGENT_BIN", prev_bin);
-        restore("XDG_CONFIG_HOME", prev_xdg);
-        restore("HOME", prev_home);
-
         assert!(err.to_string().contains("DATUM_SYNC_AGENT_BIN"));
         assert!(err.to_string().contains("not found"));
         assert!(!unit_written, "unit file must not be written: {unit:?}");
@@ -370,17 +359,12 @@ mod tests {
 
     #[test]
     fn systemd_unit_path_honors_xdg_config_home() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let prev = std::env::var("XDG_CONFIG_HOME").ok();
-        std::env::set_var("XDG_CONFIG_HOME", "/tmp/xdg-cfg-install-test");
+        let _guard = env_lock();
+        let _xdg = ScopedEnv::set("XDG_CONFIG_HOME", "/tmp/xdg-cfg-install-test");
         let p = unit_path(Platform::SystemdUser).unwrap();
         assert_eq!(
             p,
             PathBuf::from("/tmp/xdg-cfg-install-test/systemd/user/datum-sync-agent.service")
         );
-        match prev {
-            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
-            None => std::env::remove_var("XDG_CONFIG_HOME"),
-        }
     }
 }

@@ -1104,7 +1104,6 @@ mod tests {
 
     // The rendered-output tests for `render_lead_slot` (warning glyph,
     // FieldEnded fallback, NO_COLOR survival) live in
-    // `tests/render_warning_marker.rs` so they can share the integration
-    // tests' `ENV_LOCK` — env mutation in src/ unit tests races with the
-    // unprotected color-env tests in render::mod tests.
+    // `tests/render_fixtures.rs`; all env mutation serializes on the
+    // process-wide `datum_test_util::env_lock` (da-3ywd).
 }

@@ -35,6 +35,7 @@ datum-cli = { path = ".", features = ["test-util"] }
 datum-commands = { path = "../datum-commands", features = ["test-util"] }
 datum-sync-client = { path = "../datum-sync-client" }
 datum-sync-server = { path = "../datum-sync-server" }
+datum-test-util = { path = "../datum-test-util" }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 rusqlite = { workspace = true }

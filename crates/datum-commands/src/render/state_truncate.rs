@@ -335,40 +335,8 @@ mod tests {
     use super::*;
     use crate::render::colors::strip_ansi;
     use datum_core::entry::{Entry, Verb};
+    use datum_test_util::{color_scope, no_color_scope as no_color};
     use serde_json::json;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    struct ScopedEnv {
-        key: &'static str,
-        prior: Option<std::ffi::OsString>,
-    }
-    impl ScopedEnv {
-        fn set(key: &'static str, value: Option<&str>) -> Self {
-            let prior = std::env::var_os(key);
-            match value {
-                Some(v) => std::env::set_var(key, v),
-                None => std::env::remove_var(key),
-            }
-            Self { key, prior }
-        }
-    }
-    impl Drop for ScopedEnv {
-        fn drop(&mut self) {
-            match self.prior.take() {
-                Some(v) => std::env::set_var(self.key, v),
-                None => std::env::remove_var(self.key),
-            }
-        }
-    }
-
-    fn no_color() -> (std::sync::MutexGuard<'static, ()>, ScopedEnv, ScopedEnv) {
-        let g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let d = ScopedEnv::set("DATUM_COLOR", Some("0"));
-        let n = ScopedEnv::set("NO_COLOR", Some("1"));
-        (g, d, n)
-    }
 
     fn switch_entry(field: &str, value: serde_json::Value) -> Entry {
         use chrono::{TimeZone, Utc};
@@ -466,9 +434,7 @@ mod tests {
     /// white-bg-black-fg.
     #[test]
     fn drop_mode_plus_k_uses_field_bg_color() {
-        let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let d = ScopedEnv::set("DATUM_COLOR", Some("1"));
-        let n = ScopedEnv::set("NO_COLOR", None);
+        let _scope = color_scope();
         let e = switch_entry(
             "body",
             json!(["vertical", "sit", "sofa", "office", "kitchen"]),
@@ -493,7 +459,5 @@ mod tests {
             occurrences,
             cell
         );
-        drop(n);
-        drop(d);
     }
 }

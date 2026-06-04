@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -24,11 +24,12 @@ use url::Url;
 use uuid::Uuid;
 
 /// Process-wide lock for tests that mutate `DATUM_HOME` / `DATUM_CONFIG_HOME`
-/// / `DATUM_DB`. All integration tests across files MUST serialise through
-/// this lock — otherwise one test file's `EnvRestore::drop` can unset the
-/// env var that another file's test is mid-flight relying on.
-#[allow(dead_code)]
-pub static ENV_LOCK: Mutex<()> = Mutex::new(());
+/// / `DATUM_DB`. All tests within a binary MUST serialise through this
+/// lock — otherwise one test's `ScopedEnv::drop` can unset the env var
+/// that another test is mid-flight relying on. Re-exported from the
+/// shared harness (da-3ywd) so every module locks the same mutex.
+#[allow(unused_imports)]
+pub use datum_test_util::{env_lock, ScopedEnv};
 
 pub struct StubRelay {
     pub base_url: String,

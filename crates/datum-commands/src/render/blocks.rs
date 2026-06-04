@@ -267,25 +267,12 @@ fn render_data_multiline(pairs: &[(String, String)]) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::sync::{Mutex, MutexGuard};
-
-    /// da-46nj: tests that toggle the process-global `DATUM_COLOR`/`NO_COLOR`
-    /// env vars must run serialized — otherwise one test's `set_var`/
-    /// `remove_var` races with another's read inside `render_value_chip` /
-    /// `format_state_doc_line`. The fix is a single static lock that every
-    /// color-toggling test acquires for the duration of its body.
-    ///
-    /// The lock is poisoned-safe (we don't care if a panicking test
-    /// poisons it; the next acquirer ignores poison) so a panic in one
-    /// color test doesn't cascade into infinite "lock poisoned" failures
-    /// in the rest of the suite.
-    static COLOR_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    fn lock_color_env() -> MutexGuard<'static, ()> {
-        COLOR_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
+    // da-46nj: tests that toggle the process-global `DATUM_COLOR`/`NO_COLOR`
+    // env vars must run serialized — otherwise one test's `set_var`/
+    // `remove_var` races with another's read inside `render_value_chip` /
+    // `format_state_doc_line`. The shared scopes lock the process-wide
+    // poison-tolerant mutex and restore the prior env on drop (da-3ywd).
+    use datum_test_util::{color_scope, no_color_scope};
 
     #[test]
     fn simple_string_state_renders_no_second_line() {
@@ -295,18 +282,15 @@ mod tests {
 
     #[test]
     fn structured_state_renders_inline_when_short() {
-        let _color_lock = lock_color_env();
-        std::env::set_var("DATUM_COLOR", "0");
+        let _scope = no_color_scope();
         let v = json!({"id": "joe"});
         let line = format_state_doc_line(&v, "call", None).unwrap();
         assert_eq!(line, "{ .id: \"joe\" }");
-        std::env::remove_var("DATUM_COLOR");
     }
 
     #[test]
     fn structured_state_renders_multiline_when_long() {
-        let _color_lock = lock_color_env();
-        std::env::set_var("DATUM_COLOR", "0");
+        let _scope = no_color_scope();
         let v = json!({
             "id": "bob",
             "title": "Q2 retro 2024 — all-hands strategy session running long",
@@ -322,7 +306,6 @@ mod tests {
             line.lines().count() >= 2,
             "long state must wrap to multiline: {line}"
         );
-        std::env::remove_var("DATUM_COLOR");
     }
 
     #[test]
@@ -337,8 +320,7 @@ mod tests {
 
     #[test]
     fn parallel_with_structured_member_renders_brackets() {
-        let _color_lock = lock_color_env();
-        std::env::set_var("DATUM_COLOR", "0");
+        let _scope = no_color_scope();
         let v = json!([
             {"id": "joe"},
             {"id": "bob", "format": "audio"},
@@ -355,7 +337,6 @@ mod tests {
             !comma_lines.is_empty(),
             "must have a trailing-comma separator line: {line:?}"
         );
-        std::env::remove_var("DATUM_COLOR");
     }
 
     #[test]
@@ -440,9 +421,7 @@ mod tests {
     fn state_second_line_chip_color_hashed_by_key_eq_value() {
         // `.format=audio` and `.format=video` must paint with different
         // colours because their `key=value` hashes differ — rule 5.
-        let _color_lock = lock_color_env();
-        std::env::set_var("DATUM_COLOR", "1");
-        std::env::remove_var("NO_COLOR");
+        let _scope = color_scope();
         let audio_chip = render_value_chip("format", &json!("audio"), None);
         let video_chip = render_value_chip("format", &json!("video"), None);
         // Strip ANSI to compare; the rendered text body is identical, but
@@ -453,7 +432,6 @@ mod tests {
             audio_ansi, video_ansi,
             "format=audio vs format=video must hash differently"
         );
-        std::env::remove_var("DATUM_COLOR");
     }
 
     // da-bjuv ── `.id` chip on the state second line must use the same
@@ -463,9 +441,7 @@ mod tests {
     #[test]
     fn id_chip_hash_matches_main_render_id_hash() {
         use super::super::colors::{state_rgb, structured_state_rgb};
-        let _color_lock = lock_color_env();
-        std::env::set_var("DATUM_COLOR", "1");
-        std::env::remove_var("NO_COLOR");
+        let _scope = color_scope();
         let chip = render_value_chip("id", &json!("bob"), None);
         let expected_bg = state_rgb("bob", None).bg();
         let main_bg = structured_state_rgb(
@@ -481,7 +457,6 @@ mod tests {
             expected_bg, main_bg,
             "second-line .id chip and main {{id}} chip must share bg"
         );
-        std::env::remove_var("DATUM_COLOR");
     }
 
     // K ── value type rendering
@@ -505,8 +480,7 @@ mod tests {
     // I ── multiline alignment: keys right-aligned, `:` aligned
     #[test]
     fn structured_multiline_keys_right_aligned() {
-        let _color_lock = lock_color_env();
-        std::env::set_var("DATUM_COLOR", "0");
+        let _scope = no_color_scope();
         // Long values force multiline.
         let v = json!({
             "id": "bob",
@@ -528,14 +502,12 @@ mod tests {
             let idx = ln.find(':').unwrap();
             assert_ne!(ln.as_bytes()[idx - 1], b' ', "no space before `:`: {ln:?}");
         }
-        std::env::remove_var("DATUM_COLOR");
     }
 
     // J ── braces: opener on first content line, closer trails last value
     #[test]
     fn structured_multiline_opens_on_first_content_line_closes_after_last_value() {
-        let _color_lock = lock_color_env();
-        std::env::set_var("DATUM_COLOR", "0");
+        let _scope = no_color_scope();
         let v = json!({
             "id": "bob",
             "title": "long enough to push the block past 65 characters easily for sure",
@@ -556,7 +528,6 @@ mod tests {
             !line.lines().any(|l| l.trim() == "{" || l.trim() == "}"),
             "no bare brace lines: {line}"
         );
-        std::env::remove_var("DATUM_COLOR");
     }
 
     // N ── empty/id-only structured: no second line needed
@@ -569,19 +540,16 @@ mod tests {
     // behaviour: id-only structured states **do** print the second line.
     #[test]
     fn id_only_structured_state_still_renders_second_line() {
-        let _color_lock = lock_color_env();
-        std::env::set_var("DATUM_COLOR", "0");
+        let _scope = no_color_scope();
         let v = json!({"id": "x"});
         let line = format_state_doc_line(&v, "f", None);
         assert!(line.is_some(), "id-only structured: second line present");
-        std::env::remove_var("DATUM_COLOR");
     }
 
     // G ── parallel inline-multiline decision is per-state
     #[test]
     fn parallel_states_inline_vs_multiline_decided_independently() {
-        let _color_lock = lock_color_env();
-        std::env::set_var("DATUM_COLOR", "0");
+        let _scope = no_color_scope();
         let v = json!([
             {"id": "joe"},
             {
@@ -603,7 +571,6 @@ mod tests {
             line.lines().count() > 2,
             "long block goes multiline: {line}"
         );
-        std::env::remove_var("DATUM_COLOR");
     }
 
     // H ── data block: single-key always one line
@@ -618,8 +585,7 @@ mod tests {
     // F (doc inline) — inside the inline form, separator is `, ` (with space).
     #[test]
     fn doc_inline_list_uses_comma_with_space() {
-        let _color_lock = lock_color_env();
-        std::env::set_var("DATUM_COLOR", "0");
+        let _scope = no_color_scope();
         let v = json!({"id": "joe", "format": "audio"});
         let line = format_state_doc_line(&v, "call", None).unwrap();
         // Inline form: `{ .id: "joe", .format: "audio" }` — note `, ` between pairs.
@@ -627,6 +593,5 @@ mod tests {
             line.contains(", "),
             "inline list uses `, ` separator: {line:?}"
         );
-        std::env::remove_var("DATUM_COLOR");
     }
 }

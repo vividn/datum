@@ -523,14 +523,14 @@ mod tests {
     }
 
     /// da-tpny: env wiring — `DATUM_COLOR=never`/`0` shuts the gate even
-    /// on a TTY. Only the "off" direction is asserted through the live
-    /// env: an `always` window would race concurrent no-color tests.
+    /// on a TTY. Serialized on the shared env lock (da-3ywd): unlocked,
+    /// this test's `set_var` raced every concurrent color-gate reader.
     #[test]
     fn color_enabled_honors_datum_color_never_via_env() {
-        std::env::set_var("DATUM_COLOR", "never");
+        let _lock = datum_test_util::env_lock();
+        let _dc = datum_test_util::ScopedEnv::set("DATUM_COLOR", "never");
         assert!(!color_enabled());
-        std::env::set_var("DATUM_COLOR", "0");
+        let _dc = datum_test_util::ScopedEnv::set("DATUM_COLOR", "0");
         assert!(!color_enabled());
-        std::env::remove_var("DATUM_COLOR");
     }
 }

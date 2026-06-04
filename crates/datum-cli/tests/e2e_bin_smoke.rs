@@ -32,17 +32,17 @@
 //! prevent.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use anyhow::Result;
 use datum_core::db::Db;
 use serde_json::{json, Value as JsonValue};
 use tempfile::TempDir;
 
-/// `datum_cli::run` consults `DATUM_HOME` / `DATUM_DB` via process-wide
-/// env vars. Integration tests run in parallel by default, so we
-/// serialize on a mutex to keep one case's env from racing another's.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
+// `datum_cli::run` consults `DATUM_HOME` / `DATUM_DB` via process-wide
+// env vars. Integration tests run in parallel by default, so we
+// serialize on the shared process-wide lock (da-3ywd) to keep one
+// case's env from racing another's.
+use datum_test_util::env_lock;
 
 struct BinHarness {
     _home: TempDir,
@@ -58,7 +58,7 @@ impl BinHarness {
         // no DATUM_HOME/data_dir indirection — keeps the smoke test
         // hermetic regardless of the runner's user-level env).
         let db_path = home.path().join("smoke.db");
-        // The whole helper is gated by ENV_LOCK so no other thread
+        // The whole helper is gated by env_lock so no other thread
         // mutates these vars concurrently.
         std::env::set_var("DATUM_HOME", home.path());
         std::env::set_var("DATUM_DB", &db_path);
@@ -121,7 +121,7 @@ fn state(row: &Row) -> Option<JsonValue> {
 /// Mirrors `verb_switch_direct` in `datum-commands/tests/e2e.rs`.
 #[test]
 fn smoke_switch_direct() {
-    let _g = ENV_LOCK.lock().unwrap();
+    let _g = env_lock();
     let h = BinHarness::new();
     h.run(&["switch", "mood", "happy"]).expect("dispatch");
     let rows = live_rows(&h.db());
@@ -133,7 +133,7 @@ fn smoke_switch_direct() {
 /// Mirrors `verb_occur_direct` in `datum-commands/tests/e2e.rs`.
 #[test]
 fn smoke_occur_direct() {
-    let _g = ENV_LOCK.lock().unwrap();
+    let _g = env_lock();
     let h = BinHarness::new();
     h.run(&["occur", "coffee"]).expect("dispatch");
     let rows = live_rows(&h.db());
@@ -145,7 +145,7 @@ fn smoke_occur_direct() {
 /// Field-first form: mirrors `verb_switch_field_first`.
 #[test]
 fn smoke_field_first_swap() {
-    let _g = ENV_LOCK.lock().unwrap();
+    let _g = env_lock();
     let h = BinHarness::new();
     h.run(&["mood", "switch", "happy"]).expect("dispatch");
     let rows = live_rows(&h.db());
@@ -160,7 +160,7 @@ fn smoke_field_first_swap() {
 /// single-side fallback.
 #[test]
 fn smoke_multi_direct_two_fields() {
-    let _g = ENV_LOCK.lock().unwrap();
+    let _g = env_lock();
     let h = BinHarness::new();
     h.run(&[
         "switch",
@@ -183,7 +183,7 @@ fn smoke_multi_direct_two_fields() {
 /// `multi_same_field_parallel_array`.
 #[test]
 fn smoke_multi_same_field_parallel() {
-    let _g = ENV_LOCK.lock().unwrap();
+    let _g = env_lock();
     let h = BinHarness::new();
     h.run(&["switch", "body", "vertical", ",", "switch", "body", "sit"])
         .expect("dispatch");
@@ -197,7 +197,7 @@ fn smoke_multi_same_field_parallel() {
 /// pre-pass reads it from `aliases` to expand `bo`.
 #[test]
 fn smoke_bare_alias() {
-    let _g = ENV_LOCK.lock().unwrap();
+    let _g = env_lock();
     let h = BinHarness::new();
     // Install the alias first.
     h.run(&["alias", "set", "bo", "switch body"])
@@ -215,7 +215,7 @@ fn smoke_bare_alias() {
 /// through the multi-aware path so the comma fires.
 #[test]
 fn smoke_multi_alias_body() {
-    let _g = ENV_LOCK.lock().unwrap();
+    let _g = env_lock();
     let h = BinHarness::new();
     h.run(&[
         "alias",
@@ -236,7 +236,7 @@ fn smoke_multi_alias_body() {
 /// successfully. Confirms non-logging verbs survive the bin-entry path.
 #[test]
 fn smoke_admin_now() {
-    let _g = ENV_LOCK.lock().unwrap();
+    let _g = env_lock();
     let h = BinHarness::new();
     h.run(&["now"]).expect("dispatch");
     let rows = live_rows(&h.db());

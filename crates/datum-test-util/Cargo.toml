@@ -1,0 +1,9 @@
+[package]
+name = "datum-test-util"
+version.workspace = true
+edition.workspace = true
+
+# Test-only harness for process-global state (env vars). Zero dependencies —
+# it sits below every other workspace crate so even datum-parse can use it
+# as a dev-dependency.
+[dependencies]

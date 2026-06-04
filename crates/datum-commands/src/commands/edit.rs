@@ -212,36 +212,21 @@ mod tests {
     //!
     //! The edit command spawns a subprocess under `sh -c` driven by the
     //! DATUM_EDITOR env var. Env vars are process-global, so these tests
-    //! serialize against a shared mutex to avoid stepping on each other.
+    //! serialize against the shared `datum_test_util::env_lock`.
 
     use super::*;
-    use std::sync::Mutex;
-
-    static EDIT_ENV_LOCK: Mutex<()> = Mutex::new(());
+    use datum_test_util::{env_lock, ScopedEnv};
 
     /// Run a closure with DATUM_EDITOR set to `cmd`, holding the env lock.
     fn with_datum_editor<F: FnOnce()>(cmd: &str, f: F) {
-        let _guard = EDIT_ENV_LOCK.lock().unwrap();
-        let prev = std::env::var("DATUM_EDITOR").ok();
-        std::env::set_var("DATUM_EDITOR", cmd);
-        f();
-        match prev {
-            Some(v) => std::env::set_var("DATUM_EDITOR", v),
-            None => std::env::remove_var("DATUM_EDITOR"),
-        }
+        with_datum_editor_result(cmd, f)
     }
 
     /// Like `with_datum_editor` but returns the closure's result.
     fn with_datum_editor_result<T, F: FnOnce() -> T>(cmd: &str, f: F) -> T {
-        let _guard = EDIT_ENV_LOCK.lock().unwrap();
-        let prev = std::env::var("DATUM_EDITOR").ok();
-        std::env::set_var("DATUM_EDITOR", cmd);
-        let out = f();
-        match prev {
-            Some(v) => std::env::set_var("DATUM_EDITOR", v),
-            None => std::env::remove_var("DATUM_EDITOR"),
-        }
-        out
+        let _guard = env_lock();
+        let _editor = ScopedEnv::set("DATUM_EDITOR", cmd);
+        f()
     }
 
     /// Build a minimal JSON payload for the editor tempfile that targets the

@@ -27,54 +27,11 @@ use datum_core::{
     time::DatumTime,
 };
 use serde_json::json;
-use std::sync::Mutex;
-
 // ─── Environment guard ───────────────────────────────────────────────────────
 // `cargo test` threads share a process, so env-var flips for one test could
-// bleed into another. A shared Mutex serialises the few tests that flip
-// `DATUM_COLOR` / `NO_COLOR`. Each guard restores the prior value on drop.
-
-static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-struct ScopedEnv {
-    key: &'static str,
-    prior: Option<std::ffi::OsString>,
-}
-impl ScopedEnv {
-    fn set(key: &'static str, value: Option<&str>) -> Self {
-        let prior = std::env::var_os(key);
-        match value {
-            Some(v) => std::env::set_var(key, v),
-            None => std::env::remove_var(key),
-        }
-        Self { key, prior }
-    }
-}
-impl Drop for ScopedEnv {
-    fn drop(&mut self) {
-        match self.prior.take() {
-            Some(v) => std::env::set_var(self.key, v),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
-
-/// Scope that forces colours off so ANSI-stripped assertions don't depend on
-/// whether the test binary happens to have a TTY.
-fn no_color_scope() -> (std::sync::MutexGuard<'static, ()>, ScopedEnv, ScopedEnv) {
-    let g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let d = ScopedEnv::set("DATUM_COLOR", Some("0"));
-    let n = ScopedEnv::set("NO_COLOR", Some("1"));
-    (g, d, n)
-}
-
-/// Scope that forces colours on.
-fn color_scope() -> (std::sync::MutexGuard<'static, ()>, ScopedEnv, ScopedEnv) {
-    let g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let d = ScopedEnv::set("DATUM_COLOR", Some("1"));
-    let n = ScopedEnv::set("NO_COLOR", None);
-    (g, d, n)
-}
+// bleed into another. The shared scopes (da-3ywd) lock the process-wide
+// mutex and restore the prior `DATUM_COLOR` / `NO_COLOR` on drop.
+use datum_test_util::{color_scope, no_color_scope};
 
 // ─── Entry-construction helpers ──────────────────────────────────────────────
 

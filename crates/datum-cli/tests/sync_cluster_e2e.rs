@@ -45,12 +45,12 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-use sync_support::{StubRelay, ENV_LOCK};
+use sync_support::{env_lock, StubRelay};
 
 // ──────────────────────────────────────────────────────────────────────────
 // Two-client env scaffolding — each "device" has its own DATUM_HOME /
 // DATUM_CONFIG_HOME so the device_id, token, and master_key are isolated.
-// One ENV_LOCK guards all env mutation per test (cargo runs tests across
+// One shared env_lock guards all env mutation per test (cargo runs tests across
 // threads, so we serialise on the same mutex sync_cluster_ops.rs uses).
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ struct TwoClientEnv {
 
 impl TwoClientEnv {
     fn new() -> Self {
-        let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = env_lock();
         let tmp = TempDir::new().expect("mk tmp");
         let orig_home = std::env::var("DATUM_HOME").ok();
         let orig_cfg_home = std::env::var("DATUM_CONFIG_HOME").ok();
