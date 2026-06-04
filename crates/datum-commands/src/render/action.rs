@@ -18,7 +18,6 @@
 //! examples encoded as fixtures.
 
 use chrono::{FixedOffset, Local, Timelike, Utc};
-use datum_core::entry::Verb;
 use datum_core::{
     db::Db,
     entry::{Entry, EntryShape},
@@ -211,10 +210,9 @@ pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) ->
 }
 
 fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
-    if !matches!(
-        entry.verb,
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
-    ) {
+    // The LEAD/TRAIL slots exist only on the state-badge group, so the
+    // gate is exactly `has_state_badge` — shape.rs owns the verb set.
+    if !has_state_badge(entry.verb) {
         return None;
     }
     let at = entry.occur_time.as_ref()?.utc;
@@ -223,10 +221,7 @@ fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Optio
 }
 
 fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
-    if !matches!(
-        entry.verb,
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
-    ) {
+    if !has_state_badge(entry.verb) {
         return None;
     }
     if matches!(entry.shape(), EntryShape::Block) {
@@ -237,7 +232,9 @@ fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Opti
 }
 
 fn compute_ongoing_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
-    if !matches!(entry.verb, Verb::Point) {
+    // Ongoing-state probes apply only to the badge-less verb (the bare
+    // dot reads ambient state) — exactly the complement of the badge set.
+    if has_state_badge(entry.verb) {
         return None;
     }
     let at = entry.occur_time.as_ref()?.utc;
@@ -734,6 +731,7 @@ pub(crate) fn format_duration(secs: i64) -> String {
 mod tests {
     use super::*;
     use chrono::{DateTime, TimeZone};
+    use datum_core::entry::Verb;
 
     #[test]
     fn compress_tz_offset_drops_leading_zeros() {

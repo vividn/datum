@@ -10,7 +10,7 @@ use rand::Rng;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value as JsonValue;
 
-use crate::entry::{new_hid, Entry, Verb};
+use crate::entry::{new_hid, Entry};
 use crate::error::{DatumError, Result};
 use crate::history::{self, ChangeKind};
 use crate::ids::{Hid, Slug};
@@ -37,11 +37,11 @@ use super::Db;
 fn derive_verb_for_storage(
     entry: &Entry,
 ) -> Result<(String, Option<String>, Option<serde_json::Value>)> {
-    let state_in = match (entry.state.clone(), &entry.verb) {
-        (None, Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch) => {
-            Some(serde_json::Value::Bool(true))
-        }
-        (s, _) => s,
+    // The promotable set is exactly the switching family — shape.rs's
+    // `is_switching_verb` owns it, so a new verb forces a decision there.
+    let state_in = match entry.state.clone() {
+        None if crate::shape::is_switching_verb(entry.verb) => Some(serde_json::Value::Bool(true)),
+        s => s,
     };
     let (verb, canonical_state) =
         derive_verb(state_in, entry.dur.as_ref(), entry.following_state.clone())?;

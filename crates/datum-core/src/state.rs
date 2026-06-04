@@ -525,6 +525,9 @@ fn collect_raw_events(
     // post-block probe see the next state (e.g. after a `sit 30 → vertical`
     // block, `now` 31 min later reports `vertical`, not `sit`).
     let _ = end_time;
+    // Exhaustive on purpose (no wildcard): the state compiler is the
+    // storage-side counterpart of shape.rs — a new verb must decide its
+    // event emission here, enforced at compile time.
     match verb {
         Verb::Switch => {
             if let Some(ts) = start_time {
@@ -596,6 +599,8 @@ pub fn entry_state_events(entry: &Entry) -> Vec<(DateTime<Utc>, Value)> {
     if entry.slug.as_str().ends_with(":unset") {
         return out;
     }
+    // Exhaustive on purpose (no wildcard): a new verb compile-breaks here
+    // so its event emission is a deliberate decision (see collect_raw_events).
     match entry.verb {
         Verb::Switch => {
             if let Some(ts) = &entry.occur_time {

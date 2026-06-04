@@ -7,7 +7,7 @@
 use chrono::{DateTime, Utc};
 use datum_core::{
     db::{Db, ListParams, TimeMetric},
-    entry::{Entry, Verb},
+    entry::Entry,
 };
 
 use crate::render::RenderContext;
@@ -56,14 +56,11 @@ pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCon
     // it to the loader prunes the WHERE clause and skips work for histories
     // that extend far past this batch (`tail -yt 15` on a DB written to all
     // morning will skip every today-event).
-    let max_probe: Option<chrono::DateTime<Utc>> = entries
-        .iter()
-        .filter(|e| needs_state_probe(e))
-        .filter_map(probe_upper_bound)
-        .max();
+    let max_probe: Option<chrono::DateTime<Utc>> =
+        entries.iter().filter_map(probe_upper_bound).max();
     let mut cache: HashMap<String, datum_core::state::FieldStateEvents> = HashMap::new();
     for e in entries {
-        if !cache.contains_key(&e.field) && needs_state_probe(e) {
+        if !cache.contains_key(&e.field) {
             let events = datum_core::state::FieldStateEvents::load_for_field_up_to(
                 db.conn(),
                 &e.field,
@@ -77,15 +74,6 @@ pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCon
         .iter()
         .map(|e| RenderContext::from_events(cache.get(&e.field), e, db))
         .collect()
-}
-
-/// Whether this entry's `RenderContext` needs any state-history probe at
-/// all. `Add`/`Note` rows skip the cache load entirely.
-fn needs_state_probe(entry: &Entry) -> bool {
-    matches!(
-        entry.verb,
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch | Verb::Point
-    )
 }
 
 /// The latest probe time the batch will issue for this entry. Block rows

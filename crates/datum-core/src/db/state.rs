@@ -5,7 +5,6 @@ use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
 use crate::action::Action;
-use crate::entry::Verb;
 use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 
@@ -133,7 +132,9 @@ impl Db {
             // Point+true ⇒ occur-shaped annotation noise. Point with any
             // other state ⇒ a zero-length (`--moment`) switch — a genuine
             // transition that must participate (review finding on #43).
-            !(matches!(e.verb, Verb::Point) && state == &JsonValue::Bool(true))
+            // The verb half is exactly the complement of shape.rs's badge
+            // set (`Point` is the lone badge-less verb).
+            crate::shape::has_state_badge(e.verb) || state != &JsonValue::Bool(true)
         });
         let Some(current_entry) = transitions.next() else {
             return Ok(None);
@@ -213,7 +214,7 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entry::Entry;
+    use crate::entry::{Entry, Verb};
     use crate::time::DatumTime;
     use chrono::TimeZone;
     use serde_json::json;

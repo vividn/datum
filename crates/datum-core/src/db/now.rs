@@ -188,24 +188,22 @@ impl Db {
 /// block-switch rows whose trailing edge is still in the future), the
 /// primary `value` column is the state.
 fn effective_state_from_entry(e: &Entry, at: DateTime<Utc>) -> JsonValue {
-    use crate::entry::Verb;
-    match e.verb {
-        Verb::BlockSwitch | Verb::PointSwitch => {
-            if let (Some(occur), Some(dur), Some(fs)) = (
-                e.occur_time.as_ref(),
-                e.dur.as_ref(),
-                e.following_state.as_ref(),
-            ) {
-                let delta = dur.as_seconds().unwrap_or(0);
-                let trailing = occur.utc + chrono::Duration::seconds(delta);
-                if at >= trailing {
-                    return fs.clone();
-                }
+    // `following_state` takes over past the trailing edge for exactly the
+    // verbs that open a secondary switch region — shape.rs owns the set.
+    if crate::shape::opens_secondary_switch_region(e.verb) {
+        if let (Some(occur), Some(dur), Some(fs)) = (
+            e.occur_time.as_ref(),
+            e.dur.as_ref(),
+            e.following_state.as_ref(),
+        ) {
+            let delta = dur.as_seconds().unwrap_or(0);
+            let trailing = occur.utc + chrono::Duration::seconds(delta);
+            if at >= trailing {
+                return fs.clone();
             }
-            e.state.clone().unwrap_or(JsonValue::Null)
         }
-        _ => e.state.clone().unwrap_or(JsonValue::Null),
     }
+    e.state.clone().unwrap_or(JsonValue::Null)
 }
 
 fn entry_event_time(e: &Entry) -> Option<DateTime<Utc>> {

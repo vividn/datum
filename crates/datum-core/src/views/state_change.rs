@@ -155,6 +155,9 @@ fn events_for_row(row: &CandidateRow) -> Result<Vec<PendingEvent>> {
     };
     let value = parse_value(&row.value);
 
+    // Exhaustive on purpose (no wildcard): a new verb compile-breaks here
+    // so its view-event emission is a deliberate decision (storage-side
+    // counterpart of shape.rs, like state::collect_raw_events).
     match verb {
         Verb::Point => {
             if let Some(ts) = start {

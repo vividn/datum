@@ -158,6 +158,9 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
             if let Some(s) = lookup_extra_data(ctx.extra_data, "state") {
                 return s;
             }
+            // Local verb match on purpose: reading the raw value for
+            // legacy pre-canonicalization Switch rows is storage compat,
+            // not a render decision — shape.rs doesn't apply here.
             if matches!(ctx.verb, Verb::Switch) {
                 if let Some(v) = ctx.value {
                     return json_to_plain_string(v);

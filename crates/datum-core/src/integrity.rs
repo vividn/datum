@@ -229,6 +229,9 @@ pub fn detect_for_entry(
     // - LastStateMismatch (S6) is independent of the above.
     let mut filed = Vec::new();
 
+    // Deliberately a local verb match, not a shape.rs predicate: detection
+    // rules key on per-verb-family STORAGE semantics, and a new verb should
+    // conservatively get no detection until a rule is written for it.
     if matches!(trigger.verb, Verb::Switch) {
         let new_norm = trigger
             .state
@@ -276,6 +279,9 @@ pub fn detect_for_entry(
         }
     }
 
+    // Local on purpose: overlap is a dur-interval storage concern, not a
+    // render decision — coupling it to shape.rs predicates would invert
+    // the dependency direction.
     if matches!(trigger.verb, Verb::Block | Verb::BlockSwitch) {
         if let Some(other) = find_overlapping_block(conn, trigger)? {
             filed.push(file_warning(
