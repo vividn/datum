@@ -51,7 +51,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_default_battery = args.checkers.is_empty();
 
     let mut issues: Vec<Issue> = Vec::new();
-    let mut content_hash_fix: Option<ContentHashFixReport> = None;
+    let mut fix_reports: Vec<FixReport> = Vec::new();
     if run_default_battery {
         issues.extend(collect_issues(db)?.issues);
         // da-adyj: legacy rows from before da-r569 carry a content_hash
@@ -68,13 +68,13 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         // real legacy data) prints a loud diagnostic instead of
         // pretending success.
         if args.fix {
-            content_hash_fix = Some(apply_content_hash_fixes(db)?);
+            fix_reports.push(apply_content_hash_fixes(db)?);
         }
     }
     if run_verbs {
         let verb_report = collect_verb_drift(db)?;
         if args.fix {
-            apply_verb_fixes(db, &verb_report.fixes)?;
+            fix_reports.push(apply_verb_fixes(db, &verb_report.fixes)?);
         }
         issues.extend(verb_report.issues);
     }
@@ -86,7 +86,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         let delim = crate::config::resolve_id_delimiter(None);
         let slug_report = collect_slug_drift(db, &delim)?;
         if args.fix {
-            apply_slug_fixes(db, &slug_report.fixes, &delim)?;
+            fix_reports.push(apply_slug_fixes(db, &slug_report.fixes, &delim)?);
         }
         issues.extend(slug_report.issues);
     }
@@ -110,8 +110,8 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         println!("{}", render_json(&report)?);
     } else {
         print!("{}", render_human(&report));
-        if let Some(fix) = content_hash_fix.as_ref() {
-            print_content_hash_fix_summary(fix);
+        for fix in &fix_reports {
+            print_fix_summary(fix);
         }
     }
     if report.has_errors() {
@@ -123,19 +123,64 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
 /// da-4c1c: detect/apply/verify counters for a single `--fix` run.
 /// Distinguishing them lets us catch the "applied but didn't stick"
 /// regression that Vremya hit (the apply call returned Ok but the
-/// re-read showed the row still mismatched).
-#[derive(Debug, Clone, Default)]
-struct ContentHashFixReport {
-    /// Rows the pre-fix walk decided needed repair.
+/// re-read showed the row still mismatched). da-6xvh generalized the
+/// struct from the content_hash applier to all three `--fix` appliers
+/// so verb and slug repairs share the same loud error posture.
+#[derive(Debug, Clone)]
+struct FixReport {
+    /// What this pass repairs (e.g. "content_hash") — names the
+    /// summary line.
+    label: &'static str,
+    /// Next-step guidance printed after the leftover samples when the
+    /// verify pass finds surviving mismatches.
+    hint: &'static str,
+    /// Rows the pre-fix scan decided needed repair.
     detected: usize,
-    /// Rows the per-row UPDATE actually returned affected=1 for.
+    /// Rows the per-row apply call actually succeeded for.
     applied: usize,
-    /// Rows the post-fix walk still found mismatched.
+    /// Rows the post-fix re-scan still found mismatched.
     still_mismatched: usize,
     /// First few (slug, stored, expected) tuples for the remaining
     /// mismatches — enough context for a hand-debug without dumping
     /// hundreds of rows.
     leftover_samples: Vec<(String, String, String)>,
+}
+
+/// da-6xvh: shared detect → apply → verify driver for the `--fix`
+/// appliers. The error posture is deliberate (cf. da-sunq, where a
+/// user-facing batch wants tx atomicity instead): these repairs are
+/// idempotent and re-runnable, so per-row tolerance + post-verify +
+/// loud report beats a transaction — one bad row must not abort the
+/// rest of the batch, and the verify re-scan catches both rows whose
+/// apply failed and rows whose apply "succeeded" but didn't stick.
+fn run_fix_pass<F>(
+    label: &'static str,
+    hint: &'static str,
+    fixes: &[F],
+    mut apply_one: impl FnMut(&F) -> Result<()>,
+    verify: impl FnOnce() -> Result<Vec<(String, String, String)>>,
+) -> Result<FixReport> {
+    let mut report = FixReport {
+        label,
+        hint,
+        detected: fixes.len(),
+        applied: 0,
+        still_mismatched: 0,
+        leftover_samples: Vec::new(),
+    };
+    for fix in fixes {
+        // Per-row tolerance: a failed apply (e.g. NotFound after a
+        // concurrent or cascading rekey) is counted by the verify
+        // re-scan below instead of bailing the whole fix run.
+        match apply_one(fix) {
+            Ok(()) => report.applied += 1,
+            Err(_) => { /* counted in verify pass below */ }
+        }
+    }
+    let leftovers = verify()?;
+    report.still_mismatched = leftovers.len();
+    report.leftover_samples = leftovers.into_iter().take(3).collect();
+    Ok(report)
 }
 
 /// da-adyj + da-4c1c: walk every row, rewrite the `content_hash`
@@ -150,58 +195,61 @@ struct ContentHashFixReport {
 /// of the same data (the actual bug Vremya hit on real legacy rows).
 /// Now we count remaining mismatches after the apply pass and print a
 /// loud diagnostic if any survived.
-fn apply_content_hash_fixes(db: &Db) -> Result<ContentHashFixReport> {
-    let mut report = ContentHashFixReport::default();
-
-    // Pass 1: scan + apply.
-    let entries = db.all_entries()?;
-    for e in &entries {
-        let expected = e.expected_content_hash();
-        if expected != e.content_hash {
-            report.detected += 1;
-            // set_entry_content_hash errors with NotFound when no row
-            // matches the slug; treat that as an applied=0, surface
-            // via the still_mismatched count instead of bailing the
-            // whole fix run.
-            match db.set_entry_content_hash(&e.slug, &expected) {
-                Ok(()) => report.applied += 1,
-                Err(_) => { /* counted in verify pass below */ }
-            }
-        }
-    }
-
-    // Pass 2: verify. If any row is still mismatched, capture the
-    // first few for the user to share when they file a follow-up bug.
-    let after = db.all_entries()?;
-    for e in &after {
-        let expected = e.expected_content_hash();
-        if expected != e.content_hash {
-            report.still_mismatched += 1;
-            if report.leftover_samples.len() < 3 {
-                report.leftover_samples.push((
-                    e.slug.to_string(),
-                    e.content_hash.clone(),
-                    expected,
-                ));
-            }
-        }
-    }
-    Ok(report)
+fn apply_content_hash_fixes(db: &Db) -> Result<FixReport> {
+    let scan = |db: &Db| -> Result<Vec<(String, String, String)>> {
+        Ok(db
+            .all_entries()?
+            .iter()
+            .filter_map(|e| {
+                let expected = e.expected_content_hash();
+                (expected != e.content_hash)
+                    .then(|| (e.slug.to_string(), e.content_hash.clone(), expected))
+            })
+            .collect())
+    };
+    let fixes = scan(db)?;
+    run_fix_pass(
+        "content_hash",
+        "File a bug with the failing row's `state` / `data` JSON — \
+         expected_content_hash() may be returning different values on \
+         successive reads of the same row.",
+        &fixes,
+        |(slug, _, expected)| {
+            db.set_entry_content_hash(slug, expected)?;
+            Ok(())
+        },
+        || {
+            // Truncate the 64-char hashes for the sample lines.
+            Ok(scan(db)?
+                .into_iter()
+                .map(|(slug, stored, expected)| {
+                    (
+                        slug,
+                        truncate_for_sample(&stored),
+                        truncate_for_sample(&expected),
+                    )
+                })
+                .collect())
+        },
+    )
 }
 
-fn print_content_hash_fix_summary(fix: &ContentHashFixReport) {
+/// Shorten a long opaque value (content hash) for a leftover-sample line.
+fn truncate_for_sample(v: &str) -> String {
+    format!("{}…", &v[..v.len().min(12)])
+}
+
+fn print_fix_summary(fix: &FixReport) {
     // Always print under `--fix` (even when detected == 0) so the user
     // can distinguish "ran and found nothing" from "didn't run."
     let entry_word = if fix.applied == 1 { "y" } else { "ies" };
     println!(
-        "✓ content_hash repaired: {} entr{entry_word} ({} detected, {} still mismatched)",
-        fix.applied, fix.detected, fix.still_mismatched,
+        "✓ {} repaired: {} entr{entry_word} ({} detected, {} still mismatched)",
+        fix.label, fix.applied, fix.detected, fix.still_mismatched,
     );
     if fix.still_mismatched > 0 {
         eprintln!(
-            "⚠ {} entr{} could not be repaired — \
-             expected_content_hash() may be returning different values on \
-             successive reads of the same row. Sample rows:",
+            "⚠ {} entr{} could not be repaired. Sample rows:",
             fix.still_mismatched,
             if fix.still_mismatched == 1 {
                 "y"
@@ -210,16 +258,9 @@ fn print_content_hash_fix_summary(fix: &ContentHashFixReport) {
             },
         );
         for (slug, stored, expected) in &fix.leftover_samples {
-            eprintln!(
-                "  - {slug}: stored={}…  expected={}…",
-                &stored[..stored.len().min(12)],
-                &expected[..expected.len().min(12)],
-            );
+            eprintln!("  - {slug}: stored={stored}  expected={expected}");
         }
-        eprintln!(
-            "  File a bug with the failing row's `state` / `data` JSON so the \
-             determinism gap can be reproduced."
-        );
+        eprintln!("  {}", fix.hint);
     }
 }
 
@@ -315,10 +356,12 @@ impl Report {
     }
 }
 
-/// One drifted row queued for `--fix` to rewrite.
+/// One drifted row queued for `--fix` to rewrite. `stored_verb` is
+/// carried only for the verify-pass sample lines (da-6xvh).
 #[derive(Debug, Clone)]
 struct VerbFix {
     slug: String,
+    stored_verb: String,
     expected_verb: String,
 }
 
@@ -372,6 +415,7 @@ fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
                     }
                     fixes.push(VerbFix {
                         slug: e.slug.to_string(),
+                        stored_verb: stored,
                         expected_verb: expected_str,
                     });
                 }
@@ -425,20 +469,38 @@ fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
     Ok(VerbReport { issues, fixes })
 }
 
-/// Rewrite the stored `verb` column for each queued drifted row.
-fn apply_verb_fixes(db: &Db, fixes: &[VerbFix]) -> Result<()> {
-    for fix in fixes {
-        db.set_entry_verb(&fix.slug, &fix.expected_verb)?;
-    }
-    Ok(())
+/// Rewrite the stored `verb` column for each queued drifted row, then
+/// re-scan to confirm the rewrites took (da-6xvh — the da-4c1c
+/// detect/apply/verify posture, shared via [`run_fix_pass`]).
+fn apply_verb_fixes(db: &Db, fixes: &[VerbFix]) -> Result<FixReport> {
+    run_fix_pass(
+        "verb",
+        "File a bug with the failing row's `state` / `dur` / \
+         `following_state` — derive_verb may be returning different \
+         values on successive reads of the same row.",
+        fixes,
+        |fix| {
+            db.set_entry_verb(&fix.slug, &fix.expected_verb)?;
+            Ok(())
+        },
+        || {
+            Ok(collect_verb_drift(db)?
+                .fixes
+                .into_iter()
+                .map(|f| (f.slug, f.stored_verb, f.expected_verb))
+                .collect())
+        },
+    )
 }
 
 /// One drifted row queued for `--fix` to rewrite. Carries the existing
-/// slug so the rekey path can find the row, and the recomputed slug so
-/// the fix is deterministic from the pre-fix scan.
+/// slug so the rekey path can find the row. `expected` is carried only
+/// for the verify-pass sample lines (da-6xvh) — the rekey itself
+/// re-derives the slug through the auto-reinterp path.
 #[derive(Debug, Clone)]
 struct SlugFix {
     existing: Slug,
+    expected: String,
 }
 
 #[derive(Debug, Default)]
@@ -505,6 +567,7 @@ fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
                 }
                 fixes.push(SlugFix {
                     existing: e.slug.clone(),
+                    expected,
                 });
             }
             continue;
@@ -523,6 +586,7 @@ fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
             }
             fixes.push(SlugFix {
                 existing: e.slug.clone(),
+                expected,
             });
         }
     }
@@ -551,12 +615,34 @@ fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
 /// path. This mirrors the update path (`save_existing_entry_with_auto_reinterp`)
 /// so the fix produces the same slug a future write would, and so
 /// history rows are stamped consistently. `hid` is preserved.
-fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<()> {
-    for fix in fixes {
-        let entry = db.get_entry(&fix.existing)?;
-        db.save_existing_entry_with_auto_reinterp(&fix.existing, entry, delim)?;
-    }
-    Ok(())
+///
+/// da-6xvh: slug fixes can self-interfere — `fixes` carries pre-scan
+/// slugs, so an earlier rekey in this same loop can invalidate the
+/// `existing` slug a later fix references (get_entry → NotFound).
+/// [`run_fix_pass`] tolerates the per-row failure instead of aborting
+/// mid-repair; the verify re-scan counts whatever is still drifted and
+/// the hint tells the user a re-run picks it up (repairs are
+/// idempotent).
+fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<FixReport> {
+    run_fix_pass(
+        "slug",
+        "Re-run `datum check --fix` — slug rekeys can cascade, so a row \
+         whose pre-scan slug was invalidated by an earlier rekey is \
+         picked up on the next pass.",
+        fixes,
+        |fix| {
+            let entry = db.get_entry(&fix.existing)?;
+            db.save_existing_entry_with_auto_reinterp(&fix.existing, entry, delim)?;
+            Ok(())
+        },
+        || {
+            Ok(collect_slug_drift(db, delim)?
+                .fixes
+                .into_iter()
+                .map(|f| (f.existing.to_string(), f.existing.to_string(), f.expected))
+                .collect())
+        },
+    )
 }
 
 /// Surface pending rows from `integrity_warnings` (`resolution IS NULL`)
@@ -2788,5 +2874,114 @@ mod tests {
         // Suppress unused-mut warning on `e`.
         e.content_hash = "drop".to_string();
         let _ = e;
+    }
+
+    // ─── da-6xvh: shared detect/apply/verify posture for verb + slug ─────
+
+    /// A failing per-row apply (NotFound on a stale slug) must not abort
+    /// the rest of the verb-fix batch: later rows still get repaired, and
+    /// the verify re-scan counts the survivor with a sample line instead
+    /// of bailing mid-repair (the pre-da-6xvh `?` posture).
+    #[test]
+    fn apply_verb_fixes_tolerates_per_row_failure_and_reports_leftovers() {
+        let db = Db::open_in_memory().unwrap();
+        let mk = |field: &str, hour: u32| {
+            // Block-shape rows (state=set, dur>0) so derive_verb=Block.
+            let entry = Entry::new_legacy(
+                field,
+                Verb::Block,
+                Some(serde_json::json!("on")),
+                None,
+                Some(t_at(&format!("2024-01-01T{hour:02}:00:00+00:00"))),
+                Some(t_at(&format!("2024-01-01T{hour:02}:30:00+00:00"))),
+                "d1",
+            );
+            let slug = entry.slug.to_string();
+            db.insert_entry(&entry).unwrap();
+            db.set_entry_verb(&slug, "switch").unwrap(); // force drift
+            slug
+        };
+        let slug_a = mk("alpha", 10);
+        let slug_b = mk("beta", 11);
+
+        let mut fixes = collect_verb_drift(&db).unwrap().fixes;
+        assert_eq!(fixes.len(), 2, "fixture: both rows drifted");
+        // Sabotage row A's fix: point it at a slug that doesn't exist so
+        // its apply fails with NotFound mid-batch.
+        let a_fix = fixes.iter_mut().find(|f| f.slug == slug_a).unwrap();
+        a_fix.slug = "alpha:no-such-row".to_string();
+
+        let report = apply_verb_fixes(&db, &fixes).unwrap();
+        assert_eq!(report.detected, 2);
+        assert_eq!(
+            report.applied, 1,
+            "row B must be repaired despite row A's failure"
+        );
+        assert_eq!(report.still_mismatched, 1, "verify counts the survivor");
+        assert_eq!(report.leftover_samples.len(), 1);
+        assert_eq!(report.leftover_samples[0].0, slug_a);
+
+        // Row B is actually repaired in the DB.
+        assert_eq!(db.get_entry(&slug_b).unwrap().verb, Verb::Block);
+    }
+
+    /// A SlugFix whose pre-scan `existing` slug no longer resolves —
+    /// da-6xvh's self-interference hazard, where an earlier rekey in the
+    /// same batch invalidates the slug a later fix references — must not
+    /// abort the batch: the NotFound is tolerated, remaining rows are
+    /// rekeyed, and the verify re-scan counts the survivor (a re-run
+    /// picks it up; repairs are idempotent).
+    #[test]
+    fn apply_slug_fixes_tolerates_notfound_and_repairs_rest() {
+        let db = Db::open_in_memory().unwrap();
+        let mk = |field: &str, iso: &str| {
+            let mut entry = Entry::new_legacy(
+                field,
+                Verb::Switch,
+                Some(serde_json::json!("x")),
+                None,
+                Some(t_at(iso)),
+                None,
+                "d1",
+            );
+            entry.id_structure = Some("%occur_time%".to_string());
+            // Hand-corrupt: slug body is short_uid, template expects
+            // %occur_time% — same fixture shape as the da-noz9 tests.
+            entry.slug = Slug(format!("{field}:{}", entry.short_uid()));
+            let slug = entry.slug.clone();
+            db.insert_entry(&entry).unwrap();
+            slug
+        };
+        let slug_a = mk("alpha", "2024-01-01T10:00:00+00:00");
+        let slug_b = mk("beta", "2024-01-01T11:00:00+00:00");
+
+        let mut fixes = collect_slug_drift(&db, ":").unwrap().fixes;
+        assert_eq!(fixes.len(), 2, "fixture: both rows drifted");
+        // Simulate the cascade: row A's pre-scan slug has been
+        // invalidated by the time its fix runs (get_entry → NotFound).
+        let a_fix = fixes
+            .iter_mut()
+            .find(|f| f.existing.as_str() == slug_a.as_str())
+            .unwrap();
+        a_fix.existing = Slug("alpha:rekeyed-away".to_string());
+
+        let report = apply_slug_fixes(&db, &fixes, ":").unwrap();
+        assert_eq!(report.detected, 2);
+        assert_eq!(
+            report.applied, 1,
+            "row B must be rekeyed despite row A's NotFound"
+        );
+        assert_eq!(report.still_mismatched, 1, "verify counts the survivor");
+        assert_eq!(report.leftover_samples.len(), 1);
+        assert_eq!(report.leftover_samples[0].0, slug_a.to_string());
+
+        // Row B is actually rekeyed: only row A remains drifted.
+        let remaining = collect_slug_drift(&db, ":").unwrap().fixes;
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].existing.as_str(), slug_a.as_str());
+        assert!(
+            db.get_entry(slug_b.as_str()).is_err(),
+            "row B's old slug must be gone after the rekey"
+        );
     }
 }
