@@ -1145,8 +1145,11 @@ fn resolve_underscore_state(
     let Some(n) = datum_core::ids::parse_underscore_ordinal(s) else {
         return Ok(value);
     };
+    // Anchored at wall-clock now: `_` means "the previous distinct state
+    // as the timeline reads at this moment" — consistent with `datum now`
+    // even when the entry being logged is backdated.
     match db
-        .resolve_state_back(field, n)
+        .resolve_state_back(field, n, chrono::Utc::now())
         .map_err(anyhow::Error::from)?
     {
         Some(resolved) => Ok(Some(resolved)),

@@ -309,10 +309,15 @@ fn switch_negative_dur_collapses_to_point() {
     );
 
     let ts = entry.occur_time.as_ref().unwrap().utc;
-    // Under v3 Point emits Bool(false) at occur_time regardless of the
-    // entry's stored `state` (carried for downstream consumers but not
-    // used by the state compiler — see state::collect_events).
-    assert_eq!(db.get_active_state("project", ts).unwrap(), json!(false));
+    // da-a0n3: a Point with a real state is a moment-switch — a genuine
+    // zero-length transition whose state prevails from occur_time on.
+    // The compile oracle now agrees with the SQL oracle (`state_at`)
+    // here; only occur-shaped Points (state absent or literal `true`)
+    // still compile to Bool(false).
+    assert_eq!(
+        db.get_active_state("project", ts).unwrap(),
+        json!("household")
+    );
 }
 
 /// TS #10: "when --moment/-m is specified, dur is null and there is no

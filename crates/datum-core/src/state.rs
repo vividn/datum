@@ -498,9 +498,106 @@ impl FieldStateEvents {
     }
 }
 
+/// Whether an emitted state event is a genuine state transition or an
+/// occur-shaped annotation. Both kinds participate in state compilation
+/// (`state_at` / `now` probes); only [`EventKind::Transition`] events are
+/// eligible as `_` ordinal candidates ([`crate::db::Db::resolve_state_back`]).
+/// da-a0n3: this classification lives in the canonical compiler so the
+/// ordinal walk needs no local row predicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EventKind {
+    /// A deliberate state change — counts in the distinct-ordinals walk.
+    Transition,
+    /// Occur-shaped noise (a bare `occur` dot, a stateless block): affects
+    /// compiled state but is invisible to `_` ordinals.
+    Annotation,
+}
+
+/// THE verb → state-events match, shared by [`entry_state_events`],
+/// [`entry_transition_events`] and [`collect_raw_events`] so the three
+/// doors cannot drift (da-a0n3).
+///
+/// da-5ns sub-bead 1: each state-affecting verb emits an event at
+/// `occur` (the row's occur_time). da-2i8g sub-bead 5: block-switch and
+/// point-switch ALSO emit a trailing event at `occur + dur` carrying the
+/// `following_state` value. That trailing event is what makes a
+/// post-block probe see the next state (e.g. after a `sit 30 → vertical`
+/// block, `now` 31 min later reports `vertical`, not `sit`).
+fn verb_state_events(
+    verb: Verb,
+    state: Option<&Value>,
+    occur: Option<DateTime<Utc>>,
+    dur: Option<&Dur>,
+    following_state: Option<&Value>,
+    out: &mut Vec<(DateTime<Utc>, Value, EventKind)>,
+) {
+    // Legacy `add` rows (state=null, no time) wrote nothing — they
+    // classify as Point, but the missing occur_time short-circuits here.
+    let Some(ts) = occur else { return };
+    // Exhaustive on purpose (no wildcard): the state compiler is the
+    // storage-side counterpart of shape.rs — a new verb must decide its
+    // event emission here, enforced at compile time.
+    match verb {
+        Verb::Switch => {
+            // A SQL-NULL state carries no state at all (legacy rows only —
+            // derive_verb never mints a stateless Switch): the compiled
+            // `Null` means "untracked", not a state the user switched to.
+            let (v, kind) = match state {
+                Some(v) => (normalize_state(v).to_json(), EventKind::Transition),
+                None => (Value::Null, EventKind::Annotation),
+            };
+            out.push((ts, v, kind));
+        }
+        Verb::BlockSwitch | Verb::PointSwitch => {
+            let (primary, kind) = match state {
+                Some(v) => (normalize_state(v).to_json(), EventKind::Transition),
+                None => (Value::Null, EventKind::Annotation),
+            };
+            out.push((ts, primary, kind));
+            if let (Some(d), Some(fs)) = (dur, following_state) {
+                // PointSwitch: dur is a zero span; the trailing
+                // event lands at the same occur instant. The
+                // stable sort preserves the push order so the
+                // trailing event still wins on a `<= t` probe.
+                // BlockSwitch: trailing lands at occur + dur.
+                let delta = d.as_seconds().unwrap_or(0);
+                let trailing_ts = ts + chrono::Duration::seconds(delta);
+                let trailing = normalize_state(fs).to_json();
+                out.push((trailing_ts, trailing, EventKind::Transition));
+            }
+        }
+        Verb::Point => {
+            // Occur-shaped rows (state absent, or the literal `true` that
+            // legacy occur wrote): the dot ends any active block —
+            // state=false annotation. Point with any OTHER state is
+            // `switch --moment`: a genuine zero-length transition that
+            // carries (and prevails with) its real state, matching the
+            // SQL oracle ([`crate::db::Db::state_at`]).
+            match state {
+                None | Some(Value::Bool(true)) => {
+                    out.push((ts, Value::Bool(false), EventKind::Annotation));
+                }
+                Some(v) => {
+                    out.push((ts, normalize_state(v).to_json(), EventKind::Transition));
+                }
+            }
+        }
+        Verb::Block => {
+            // A stateless block (`occur --dur`, legacy start/stop spans)
+            // means "active": state=true, but it isn't a state the user
+            // named — annotation for ordinal purposes.
+            let (v, kind) = match state {
+                Some(v) => (normalize_state(v).to_json(), EventKind::Transition),
+                None => (Value::Bool(true), EventKind::Annotation),
+            };
+            out.push((ts, v, kind));
+        }
+    }
+}
+
 /// Variant of [`collect_events`] that operates on already-extracted columns,
 /// tagging each emitted event with its origin `hid` so [`FieldStateEvents`]
-/// can honour `exclude_hid` probes.
+/// can honour `exclude_hid` probes. Delegates to [`verb_state_events`].
 #[allow(clippy::too_many_arguments)]
 fn collect_raw_events(
     hid: &str,
@@ -513,66 +610,11 @@ fn collect_raw_events(
     following_state: Option<&Value>,
     out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)>,
 ) {
-    // da-5ns sub-bead 1 stub: emit one event per state-affecting verb at
-    // `start_time` (which the caller supplies as occur_time). The
-    // legacy verb arms (Switch / Start / Stop / Occur / Block / Add)
-    // remain for rows whose stored verb wasn't rewritten by sub-bead
-    // 7's `dm check verbs --fix`.
-    //
-    // da-2i8g sub-bead 5: block-switch and point-switch ALSO emit a
-    // trailing event at `start_time + dur` carrying the
-    // `following_state` value. That trailing event is what makes a
-    // post-block probe see the next state (e.g. after a `sit 30 → vertical`
-    // block, `now` 31 min later reports `vertical`, not `sit`).
     let _ = end_time;
-    // Exhaustive on purpose (no wildcard): the state compiler is the
-    // storage-side counterpart of shape.rs — a new verb must decide its
-    // event emission here, enforced at compile time.
-    match verb {
-        Verb::Switch => {
-            if let Some(ts) = start_time {
-                let state = value
-                    .map(|v| normalize_state(v).to_json())
-                    .unwrap_or(Value::Null);
-                out.push((ts, create_time, state, hid.to_string()));
-            }
-        }
-        Verb::BlockSwitch | Verb::PointSwitch => {
-            if let Some(ts) = start_time {
-                let primary = value
-                    .map(|v| normalize_state(v).to_json())
-                    .unwrap_or(Value::Null);
-                out.push((ts, create_time, primary, hid.to_string()));
-                if let (Some(d), Some(fs)) = (dur, following_state) {
-                    // PointSwitch: dur is a zero span; the trailing
-                    // event lands at the same `start_time`. The
-                    // stable sort preserves the push order so the
-                    // trailing event still wins on a `<= t` probe.
-                    // BlockSwitch: trailing lands at start_time + dur.
-                    let delta = d.as_seconds().unwrap_or(0);
-                    let trailing_ts = ts + chrono::Duration::seconds(delta);
-                    let trailing = normalize_state(fs).to_json();
-                    out.push((trailing_ts, create_time, trailing, hid.to_string()));
-                }
-            }
-        }
-        Verb::Point => {
-            // Point: legacy `occur` (no state, no dur) → state=false event.
-            // Legacy `add` rows (state=null, no time) wrote nothing — they
-            // also classify as Point, but the missing `start_time` short-
-            // circuits before this match runs.
-            if let Some(ts) = start_time {
-                out.push((ts, create_time, Value::Bool(false), hid.to_string()));
-            }
-        }
-        Verb::Block => {
-            if let Some(ts) = start_time {
-                let state = value
-                    .map(|v| normalize_state(v).to_json())
-                    .unwrap_or(Value::Bool(true));
-                out.push((ts, create_time, state, hid.to_string()));
-            }
-        }
+    let mut events = Vec::new();
+    verb_state_events(verb, value, start_time, dur, following_state, &mut events);
+    for (ts, state, _) in events {
+        out.push((ts, create_time, state, hid.to_string()));
     }
 }
 
@@ -595,56 +637,41 @@ fn collect_raw_events(
 /// (e.g. tail's block mode, da-eybr) consume this instead of
 /// re-mirroring the verb match.
 pub fn entry_state_events(entry: &Entry) -> Vec<(DateTime<Utc>, Value)> {
+    entry_events_kinded(entry)
+        .into_iter()
+        .map(|(ts, state, _)| (ts, state))
+        .collect()
+}
+
+/// The ordinal-eligible subset of [`entry_state_events`]: only genuine
+/// state transitions (deliberate switches, including the trailing
+/// `following_state` event of a compound switch), with occur-shaped
+/// annotations filtered out. This is the stream the `_` / `__` / `_n`
+/// distinct-state walk samples ([`crate::db::Db::resolve_state_back`],
+/// da-a0n3) — the transition/annotation distinction falls out of the
+/// canonical compiler ([`verb_state_events`]), not a caller-side row
+/// predicate.
+pub fn entry_transition_events(entry: &Entry) -> Vec<(DateTime<Utc>, Value)> {
+    entry_events_kinded(entry)
+        .into_iter()
+        .filter(|(_, _, kind)| *kind == EventKind::Transition)
+        .map(|(ts, state, _)| (ts, state))
+        .collect()
+}
+
+fn entry_events_kinded(entry: &Entry) -> Vec<(DateTime<Utc>, Value, EventKind)> {
     let mut out = Vec::new();
     if entry.slug.as_str().ends_with(":unset") {
         return out;
     }
-    // Exhaustive on purpose (no wildcard): a new verb compile-breaks here
-    // so its event emission is a deliberate decision (see collect_raw_events).
-    match entry.verb {
-        Verb::Switch => {
-            if let Some(ts) = &entry.occur_time {
-                let state = entry
-                    .state
-                    .as_ref()
-                    .map(|v| normalize_state(v).to_json())
-                    .unwrap_or(Value::Null);
-                out.push((ts.utc, state));
-            }
-        }
-        Verb::BlockSwitch | Verb::PointSwitch => {
-            if let Some(ts) = &entry.occur_time {
-                let primary = entry
-                    .state
-                    .as_ref()
-                    .map(|v| normalize_state(v).to_json())
-                    .unwrap_or(Value::Null);
-                out.push((ts.utc, primary));
-                if let (Some(dur), Some(fs)) = (entry.dur.as_ref(), entry.following_state.as_ref())
-                {
-                    let delta = dur.as_seconds().unwrap_or(0);
-                    let trailing_ts = ts.utc + chrono::Duration::seconds(delta);
-                    let trailing = normalize_state(fs).to_json();
-                    out.push((trailing_ts, trailing));
-                }
-            }
-        }
-        Verb::Point => {
-            if let Some(ts) = &entry.occur_time {
-                out.push((ts.utc, Value::Bool(false)));
-            }
-        }
-        Verb::Block => {
-            if let Some(ts) = &entry.occur_time {
-                let state = entry
-                    .state
-                    .as_ref()
-                    .map(|v| normalize_state(v).to_json())
-                    .unwrap_or(Value::Bool(true));
-                out.push((ts.utc, state));
-            }
-        }
-    }
+    verb_state_events(
+        entry.verb,
+        entry.state.as_ref(),
+        entry.occur_time.as_ref().map(|t| t.utc),
+        entry.dur.as_ref(),
+        entry.following_state.as_ref(),
+        &mut out,
+    );
     out
 }
 
@@ -1007,6 +1034,69 @@ mod tests {
 
         assert_eq!(events.len(), 1, "no trailing emitted when fs missing");
         assert_eq!(events[0].2, json!("sit"));
+    }
+
+    // ─── da-a0n3: transition stream for `_` ordinals ─────────────────
+
+    fn point_entry(occur: DateTime<Utc>, state: Option<Value>) -> Entry {
+        use crate::dur::Dur;
+        use crate::entry::Verb;
+        use crate::time::DatumTime;
+        Entry::new(
+            "mood",
+            Verb::Point,
+            state,
+            None,
+            Some(DatumTime {
+                utc: occur,
+                offset_minutes: 0,
+                timezone: "UTC".into(),
+            }),
+            Some(Dur::Moment),
+            "dev",
+        )
+    }
+
+    #[test]
+    fn occur_points_are_annotations_not_transitions() {
+        // Occur-shaped rows (Point + no state, or the literal `true`
+        // legacy occur wrote) emit a state=false compile event but are
+        // invisible to the transition stream `_` ordinals sample.
+        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
+        for state in [None, Some(json!(true))] {
+            let e = point_entry(occur, state);
+            assert_eq!(entry_state_events(&e), vec![(occur, json!(false))]);
+            assert!(entry_transition_events(&e).is_empty());
+        }
+    }
+
+    #[test]
+    fn moment_switch_emits_its_real_state_as_a_transition() {
+        // `switch mood happy --moment` derives Point with a real state:
+        // a genuine zero-length transition. The compile event carries the
+        // state itself (not `false`), matching the SQL oracle's answer
+        // for the same row.
+        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
+        let e = point_entry(occur, Some(json!("happy")));
+        assert_eq!(entry_state_events(&e), vec![(occur, json!("happy"))]);
+        assert_eq!(entry_transition_events(&e), vec![(occur, json!("happy"))]);
+    }
+
+    #[test]
+    fn compound_switch_trailing_event_is_a_transition() {
+        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
+        let entry = block_switch_entry(occur, "sit", 30 * 60, "vertical");
+        assert_eq!(
+            entry_transition_events(&entry),
+            vec![
+                (occur, json!("sit")),
+                (
+                    occur + chrono::Duration::seconds(30 * 60),
+                    json!("vertical")
+                ),
+            ],
+            "primary AND following_state are both ordinal candidates"
+        );
     }
 
     #[test]

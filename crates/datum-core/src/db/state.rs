@@ -142,51 +142,63 @@ impl Db {
     /// - `[A, B, A, C, A]` → `resolve_state_back(2)` → `B`
     /// - `[A, B, A, C, A]` → `resolve_state_back(3)` → `None`
     ///
-    /// Only state-transition rows participate. A row is a transition iff
-    /// it carries a state (SQL NULL / `state == None` rows are skipped —
-    /// they carry no state at all) AND it isn't an occur-shaped
-    /// annotation: a `Verb::Point` row whose state is literal `true` is a
-    /// point event (`occur` is Moment-locked and always lands as
-    /// Point+true), so it's ignored for both the CURRENT pick and the
-    /// alternatives walk. A `Verb::Point` row with any OTHER state is a
-    /// genuine zero-length transition — `switch x --moment` derives
-    /// `Point` while keeping its real state — and participates fully.
-    /// An explicit JSON `null` state (`Some(JsonValue::Null)`) is a
-    /// real, storable state value and participates like any other.
+    /// The walk samples the canonical transition timeline — the same
+    /// event stream `now` / `state_at` compile
+    /// ([`crate::state::entry_transition_events`], da-a0n3): every
+    /// deliberate state change emits a transition at its `occur_time`,
+    /// and a compound switch (block-switch / point-switch) additionally
+    /// emits its `following_state` at the trailing edge
+    /// `occur_time + dur` (da-2i8g). Consequences:
+    /// - the "current" anchor is the effective state at `at` — a compound
+    ///   switch past its trailing edge anchors on its `following_state`,
+    ///   exactly like `now`;
+    /// - a `following_state` is an ordinal candidate in its own right;
+    /// - events after `at` (e.g. the trailing edge of a still-running
+    ///   block-switch) are invisible.
     ///
-    /// `following_state` is NOT consulted: the walk reads only primary
-    /// states. ([`Db::state_at`] / `now` DO honour it for the *current*
-    /// state since da-2i8g, but how compound switches should participate
-    /// in the distinct-alternatives walk is a separate design question.)
-    pub fn resolve_state_back(&self, field: &str, n: usize) -> Result<Option<JsonValue>> {
+    /// Row participation falls out of the canonical compiler, not a
+    /// local predicate: occur-shaped annotations (`Verb::Point` with no
+    /// state or the literal `true` legacy occur wrote), stateless
+    /// blocks, and timeless `:unset` rows never emit transitions, while
+    /// `switch x --moment` (Point with a real state) emits a genuine
+    /// zero-length transition. An explicit JSON `null` state is a real,
+    /// storable state value and participates like any other. States
+    /// compare in normalized form ([`crate::state::normalize_state`]).
+    ///
+    /// Array states are ONE OPAQUE entity by design — `switch body a,b`
+    /// participates as the single value `["a","b"]`, never element-wise.
+    /// This is a key feature: `switch body _` returns to a parallel
+    /// multi-state without retyping it.
+    pub fn resolve_state_back(
+        &self,
+        field: &str,
+        n: usize,
+        at: DateTime<Utc>,
+    ) -> Result<Option<JsonValue>> {
         if n == 0 {
             return Ok(None);
         }
         // 256 entries gives plenty of headroom for a heavily-toggled field;
         // the SQL is field-scoped and indexed, so the cost is negligible.
         let entries = self.entries_for_field(field, Some(256))?;
-        let mut transitions = entries.iter().filter(|e| {
-            let Some(state) = e.state.as_ref() else {
-                return false;
-            };
-            // Point+true ⇒ occur-shaped annotation noise. Point with any
-            // other state ⇒ a zero-length (`--moment`) switch — a genuine
-            // transition that must participate (review finding on #43).
-            // The verb half is exactly the complement of shape.rs's badge
-            // set (`Point` is the lone badge-less verb).
-            crate::shape::has_state_badge(e.verb) || state != &JsonValue::Bool(true)
-        });
-        let Some(current_entry) = transitions.next() else {
+        // (event_time, create_time, state), sorted ascending the same way
+        // [`crate::state::FieldStateEvents`] sorts — the stable sort keeps
+        // a point-switch's trailing event after its primary, so reversed
+        // walks anchor on the `following_state`.
+        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, JsonValue)> = Vec::new();
+        for e in &entries {
+            for (t, state) in crate::state::entry_transition_events(e) {
+                events.push((t, e.create_time, state));
+            }
+        }
+        events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        let mut walk = events.iter().rev().filter(|(t, _, _)| *t <= at);
+        let Some((_, _, current)) = walk.next() else {
             return Ok(None);
         };
-        let current = current_entry.state.as_ref();
         let mut alternatives: Vec<JsonValue> = Vec::new();
-        for e in transitions {
-            let s = e
-                .state
-                .as_ref()
-                .expect("filter keeps only state-bearing rows");
-            if Some(s) == current || alternatives.iter().any(|x| x == s) {
+        for (_, _, s) in walk {
+            if s == current || alternatives.iter().any(|x| x == s) {
                 continue;
             }
             alternatives.push(s.clone());
@@ -268,6 +280,11 @@ mod tests {
         }
     }
 
+    /// Ordinal-walk anchor comfortably past every event the tests push.
+    fn probe() -> DateTime<Utc> {
+        at(1_000_000).utc
+    }
+
     fn push_switch(db: &Db, field: &str, state: serde_json::Value, secs_offset: i64) {
         let entry = Entry::new_legacy(
             field,
@@ -316,14 +333,14 @@ mod tests {
     #[test]
     fn state_back_returns_none_when_history_empty() {
         let db = Db::open_in_memory().unwrap();
-        assert_eq!(db.resolve_state_back("mood", 1).unwrap(), None);
+        assert_eq!(db.resolve_state_back("mood", 1, probe()).unwrap(), None);
     }
 
     #[test]
     fn state_back_returns_none_for_zero_ordinal() {
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "mood", json!("happy"), 100);
-        assert_eq!(db.resolve_state_back("mood", 0).unwrap(), None);
+        assert_eq!(db.resolve_state_back("mood", 0, probe()).unwrap(), None);
     }
 
     #[test]
@@ -334,17 +351,17 @@ mod tests {
         push_switch(&db, "mood", json!("c"), 300);
         push_switch(&db, "mood", json!("b"), 400); // current = b
         assert_eq!(
-            db.resolve_state_back("mood", 1).unwrap(),
+            db.resolve_state_back("mood", 1, probe()).unwrap(),
             Some(json!("c")),
             "_ returns the most recent distinct non-current state"
         );
         assert_eq!(
-            db.resolve_state_back("mood", 2).unwrap(),
+            db.resolve_state_back("mood", 2, probe()).unwrap(),
             Some(json!("a")),
             "__ returns the second-most recent distinct non-current state"
         );
         assert_eq!(
-            db.resolve_state_back("mood", 3).unwrap(),
+            db.resolve_state_back("mood", 3, probe()).unwrap(),
             None,
             "___ runs out when only two distinct alternatives exist"
         );
@@ -357,8 +374,11 @@ mod tests {
             push_switch(&db, "mood", json!(s), 100 + i as i64 * 10);
         }
         // Current = a; only one distinct non-current state exists (b).
-        assert_eq!(db.resolve_state_back("mood", 1).unwrap(), Some(json!("b")));
-        assert_eq!(db.resolve_state_back("mood", 2).unwrap(), None);
+        assert_eq!(
+            db.resolve_state_back("mood", 1, probe()).unwrap(),
+            Some(json!("b"))
+        );
+        assert_eq!(db.resolve_state_back("mood", 2, probe()).unwrap(), None);
     }
 
     #[test]
@@ -371,9 +391,12 @@ mod tests {
         push_switch(&db, "mood", json!("happy"), 100);
         push_switch(&db, "mood", json!(null), 200);
         push_switch(&db, "mood", json!("sad"), 300); // current = sad
-        assert_eq!(db.resolve_state_back("mood", 1).unwrap(), Some(json!(null)));
         assert_eq!(
-            db.resolve_state_back("mood", 2).unwrap(),
+            db.resolve_state_back("mood", 1, probe()).unwrap(),
+            Some(json!(null))
+        );
+        assert_eq!(
+            db.resolve_state_back("mood", 2, probe()).unwrap(),
             Some(json!("happy"))
         );
     }
@@ -391,12 +414,15 @@ mod tests {
         push_switch(&db, "mood", json!("c"), 300); // current = c
         push_point(&db, "mood", 350); // noise as the newest row
         assert_eq!(
-            db.resolve_state_back("mood", 1).unwrap(),
+            db.resolve_state_back("mood", 1, probe()).unwrap(),
             Some(json!("b")),
             "current must be c (newest transition), not the Point's true"
         );
-        assert_eq!(db.resolve_state_back("mood", 2).unwrap(), Some(json!("a")));
-        assert_eq!(db.resolve_state_back("mood", 3).unwrap(), None);
+        assert_eq!(
+            db.resolve_state_back("mood", 2, probe()).unwrap(),
+            Some(json!("a"))
+        );
+        assert_eq!(db.resolve_state_back("mood", 3, probe()).unwrap(), None);
     }
 
     /// Timeless row (`-T`): occur_time NULL, slug `field:unset`.
@@ -554,12 +580,18 @@ mod tests {
         push_switch(&db, "mood", json!("c"), 300);
         push_moment_switch(&db, "mood", json!("d"), 400); // current = d
         assert_eq!(
-            db.resolve_state_back("mood", 1).unwrap(),
+            db.resolve_state_back("mood", 1, probe()).unwrap(),
             Some(json!("c")),
             "a moment-switch as the newest row IS the current state"
         );
-        assert_eq!(db.resolve_state_back("mood", 2).unwrap(), Some(json!("b")));
-        assert_eq!(db.resolve_state_back("mood", 3).unwrap(), Some(json!("a")));
+        assert_eq!(
+            db.resolve_state_back("mood", 2, probe()).unwrap(),
+            Some(json!("b"))
+        );
+        assert_eq!(
+            db.resolve_state_back("mood", 3, probe()).unwrap(),
+            Some(json!("a"))
+        );
     }
 
     // ─── da-2i8g: following_state-aware state_at / batch_state_at ───
@@ -663,5 +695,108 @@ mod tests {
         };
         assert!(!flag_at(100 + 900), "inside the block: tracked");
         assert!(flag_at(100 + 3600), "past the trailing edge: ignored");
+    }
+
+    // ─── da-a0n3: `_` ordinals on the canonical transition timeline ──
+
+    #[test]
+    fn state_back_anchors_on_following_state_past_trailing_edge() {
+        // `switch body sit 30 , vertical`, probed after the block ends:
+        // the timeline reads … lying@50, sit@100, vertical@1900 — the
+        // current anchor is `vertical` (matching `now`), so `_` is the
+        // block's primary and `__` the state before the block.
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "body", json!("lying"), 50);
+        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 100);
+
+        let after = at(100 + 3600).utc;
+        assert_eq!(
+            db.resolve_state_back("body", 1, after).unwrap(),
+            Some(json!("sit")),
+            "anchor must be the following_state, so _ is the primary"
+        );
+        assert_eq!(
+            db.resolve_state_back("body", 2, after).unwrap(),
+            Some(json!("lying"))
+        );
+        assert_eq!(db.resolve_state_back("body", 3, after).unwrap(), None);
+    }
+
+    #[test]
+    fn state_back_mid_block_ignores_future_trailing_edge() {
+        // Probed while the block is still running, the trailing
+        // `following_state` event lies in the future: the anchor is the
+        // block's primary and the following_state is NOT yet a candidate.
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "body", json!("lying"), 50);
+        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 100);
+
+        let mid = at(100 + 900).utc;
+        assert_eq!(
+            db.resolve_state_back("body", 1, mid).unwrap(),
+            Some(json!("lying")),
+            "mid-block: current = primary, _ = the pre-block state"
+        );
+        assert_eq!(
+            db.resolve_state_back("body", 2, mid).unwrap(),
+            None,
+            "the future trailing edge must not surface as a candidate"
+        );
+    }
+
+    #[test]
+    fn state_back_offers_following_state_as_candidate() {
+        // A compound switch contributes BOTH its primary and its
+        // following_state as distinct ordinal candidates once both have
+        // happened.
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "mood", json!("a"), 100);
+        push_compound_switch(&db, "mood", json!("b"), 100, json!("c"), 200); // trailing c@300
+        push_switch(&db, "mood", json!("d"), 400); // current = d
+        let t = probe();
+        assert_eq!(
+            db.resolve_state_back("mood", 1, t).unwrap(),
+            Some(json!("c"))
+        );
+        assert_eq!(
+            db.resolve_state_back("mood", 2, t).unwrap(),
+            Some(json!("b"))
+        );
+        assert_eq!(
+            db.resolve_state_back("mood", 3, t).unwrap(),
+            Some(json!("a"))
+        );
+        assert_eq!(db.resolve_state_back("mood", 4, t).unwrap(), None);
+    }
+
+    #[test]
+    fn state_back_point_switch_anchors_on_following_state_at_occur() {
+        // Zero-span compound switch: both events land at the same
+        // instant, but the trailing one is newer — the anchor is the
+        // following_state and the primary becomes `_` (same tie rule as
+        // FieldStateEvents' stable sort).
+        let db = Db::open_in_memory().unwrap();
+        push_compound_switch(&db, "mood", json!("startled"), 0, json!("calm"), 100);
+        assert_eq!(
+            db.resolve_state_back("mood", 1, probe()).unwrap(),
+            Some(json!("startled")),
+            "current = calm (the following_state), so _ = the primary"
+        );
+        assert_eq!(db.resolve_state_back("mood", 2, probe()).unwrap(), None);
+    }
+
+    #[test]
+    fn state_back_array_state_is_one_opaque_entity() {
+        // Spec, not deferral: a parallel multi-state participates as ONE
+        // value — `switch body _` returns to the whole parallel state
+        // without retyping it, never to a single element.
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "body", json!(["vertical", "sit"]), 100);
+        push_switch(&db, "body", json!("lying"), 200); // current = lying
+        assert_eq!(
+            db.resolve_state_back("body", 1, probe()).unwrap(),
+            Some(json!(["vertical", "sit"]))
+        );
+        assert_eq!(db.resolve_state_back("body", 2, probe()).unwrap(), None);
     }
 }
