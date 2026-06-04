@@ -23,7 +23,7 @@ use datum_sync_client::sync_state;
 use crate::args::SyncStatusArgs;
 use crate::commands::sync::daemon_status;
 use crate::commands::sync::key::load_token;
-use crate::config::{db_path, load_raw_config_or_default, resolve_db, resolve_sync_server};
+use crate::config::{load_raw_config_or_default, resolve_db, resolve_sync_server};
 
 pub fn run(args: SyncStatusArgs) -> Result<()> {
     let cfg = load_raw_config_or_default()?;
@@ -97,7 +97,6 @@ fn render_db_row(label: &str, server: Option<&str>) -> Result<(String, bool)> {
     let Ok(resolved) = resolve_db(None) else {
         return Ok((format!("{:<12}  (db unavailable)", label), false));
     };
-    let _ = db_path()?; // side-effect: ensures data dir exists
     let db = match Db::open(&resolved.path.to_string_lossy()) {
         Ok(d) => d,
         Err(_) => return Ok((format!("{:<12}  (db unavailable)", label), false)),
@@ -105,7 +104,9 @@ fn render_db_row(label: &str, server: Option<&str>) -> Result<(String, bool)> {
 
     let last_push = sync_state::get_last_push_at(&db)?;
     let last_pull = sync_state::get_last_pull_at(&db)?;
-    let pending = pending_integrity_warnings(&db)?;
+    // da-sidz: use the canonical count so a warning whose trigger entry was
+    // soft-deleted doesn't inflate this surface while `datum now` excludes it.
+    let pending = db.pending_integrity_count()? as usize;
 
     let flag = match pending {
         0 => "✓".to_string(),
@@ -150,13 +151,4 @@ fn time_ago(past: DateTime<Utc>) -> String {
     }
     let days = delta.num_days();
     format!("{days}d ago")
-}
-
-fn pending_integrity_warnings(db: &Db) -> Result<usize> {
-    let n: i64 = db.conn().query_row(
-        "SELECT COUNT(*) FROM integrity_warnings WHERE resolution IS NULL",
-        [],
-        |row| row.get(0),
-    )?;
-    Ok(n as usize)
 }

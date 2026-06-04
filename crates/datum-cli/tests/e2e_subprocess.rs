@@ -130,6 +130,59 @@ fn subprocess_now_emits_output_without_rows() {
     }
 }
 
+/// da-fytu: `sync status` must count pending integrity warnings through
+/// the canonical `Db::pending_integrity_count` (da-sidz moot-filter) so
+/// it agrees with `dm now` after a warning's trigger entry is
+/// soft-deleted. Previously it hand-rolled the count without the filter
+/// and kept showing the warning forever.
+#[test]
+fn subprocess_sync_status_count_agrees_with_now_after_delete() {
+    let env = Env::new();
+    // Two starts a few minutes apart → one pending double_open warning.
+    assert_ok(&env.run(&["start", "workout", "-t=-5"]), "first start");
+    assert_ok(&env.run(&["start", "workout"]), "second start");
+
+    let sync_status = || {
+        // `--server` (any value) enables the per-DB row without needing a
+        // token or network — status only reads local state.
+        let out = env.run(&["sync", "status", "--server", "http://127.0.0.1:1"]);
+        assert_ok(&out, "sync status");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    let before = sync_status();
+    assert!(
+        before.contains("⚠ 1 integrity warning"),
+        "pending warning must surface before deletion: {before:?}"
+    );
+
+    // Soft-delete the trigger entry (mirrors the bead repro).
+    let slug: String = Connection::open(&env.db)
+        .expect("open db")
+        .query_row(
+            "SELECT entry_slug FROM integrity_warnings WHERE resolution IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .expect("pending warning slug");
+    assert_ok(&env.run(&["del", &slug, "--force"]), "delete trigger");
+
+    let after = sync_status();
+    assert!(
+        after.contains('✓') && !after.contains("integrity warning"),
+        "sync status must drop the moot warning after deletion: {after:?}"
+    );
+
+    // `dm now` agrees — same canonical count, no warning header.
+    let out = env.run(&["now"]);
+    assert_ok(&out, "now");
+    let now_out = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !now_out.contains("integrity warning"),
+        "`now` must agree with sync status after deletion: {now_out:?}"
+    );
+}
+
 /// `dm --version` must print the version banner to stdout and exit 0
 /// without touching the DB.
 #[test]
