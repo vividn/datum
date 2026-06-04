@@ -173,9 +173,16 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     for filter in &filters {
         n += db.set_start_time_with_precision(filter, &new_time, &precision)?;
     }
+    // da-r8xj: the entry was just set to a time the user expressed in
+    // local terms — echo it back through the shared local formatter, not
+    // raw UTC.
     println!(
         "✓ Retimed {n} → {} (±{}{})",
-        new_time.utc.to_rfc3339(),
+        crate::render::action::format_timestamp(
+            &new_time,
+            &crate::render::action::now_local(),
+            None
+        ),
         precision.seconds,
         if precision.seconds == 0 { "" } else { "s" },
     );

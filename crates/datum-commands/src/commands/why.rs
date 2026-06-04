@@ -4,7 +4,8 @@ use anyhow::{Context, Result};
 use datum_core::db::Db;
 
 use crate::args::WhyArgs;
-use crate::commands::helpers::resolve_prefix_or_tombstone;
+use crate::commands::helpers::{format_version_row, resolve_prefix_or_tombstone};
+use crate::render::action::now_local;
 
 pub fn why(args: WhyArgs, db: &Db) -> Result<()> {
     let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)
@@ -30,18 +31,13 @@ pub fn why(args: WhyArgs, db: &Db) -> Result<()> {
         println!("  (no history recorded)");
         return Ok(());
     }
+    let now = now_local();
     for v in versions {
         let raw = match v.raw_input.as_deref() {
             None | Some("") => "<no raw_input captured>".to_string(),
             Some(s) => s.to_string(),
         };
-        println!(
-            "  v{}  {}  {}  {}",
-            v.version,
-            v.modify_time.format("%Y-%m-%dT%H:%M"),
-            v.change_kind,
-            raw
-        );
+        println!("{}", format_version_row(&v, &now, &raw));
         if let Some(chain) = &v.alias_chain {
             println!("       alias_chain: {chain}");
         }

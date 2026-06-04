@@ -17,6 +17,32 @@ fn load_registry(db: &Db) -> Result<datum_core::field_spec::SpecRegistry> {
     Ok(db.load_registry()?)
 }
 
+/// One shared formatter for the version-listing row printed by
+/// `datum history` and `datum why --full` (da-r8xj). `modify_time` is a
+/// host-clock UTC instant; render it through the render layer's local
+/// formatter (`HH:MM:SS+TZ`, relative-day prefix when the day differs)
+/// so the trail's times agree with what tail/now show — and keep seconds
+/// so same-minute edits stay distinguishable in the very listing meant
+/// to sequence them. `raw` is the caller's already-decorated raw_input
+/// cell (the two commands quote/placeholder it differently).
+pub(crate) fn format_version_row(
+    v: &datum_core::history::HistoryVersion,
+    now: &datum_core::time::DatumTime,
+    raw: &str,
+) -> String {
+    format!(
+        "  v{}  {}  {:<22} {}",
+        v.version,
+        crate::render::action::format_timestamp(
+            &crate::render::action::synthesize_local_datumtime(v.modify_time),
+            now,
+            None,
+        ),
+        v.change_kind.as_str(),
+        raw
+    )
+}
+
 /// Convenience wrapper that swallows registry-load errors (the renderer
 /// treats `None` as "no registry available"). Exposed for sibling modules
 /// in `commands/` that don't want to import the private `load_registry`.
@@ -325,6 +351,41 @@ mod tests {
     };
     use serde_json::json;
     use std::collections::HashMap;
+
+    /// da-r8xj: version rows render modify_time through the local
+    /// formatter WITH seconds, so two edits in the same minute stay
+    /// distinguishable in the listing meant to sequence them.
+    #[test]
+    fn version_rows_distinguish_same_minute_edits() {
+        use chrono::TimeZone;
+        let _lock = datum_test_util::env_lock();
+        let _nc = datum_test_util::ScopedEnv::set("NO_COLOR", "1");
+
+        let snapshot = datum_core::test_util::entry_builder("mood").build();
+        let now = DatumTime {
+            utc: chrono::Utc.with_ymd_and_hms(2026, 6, 4, 12, 0, 0).unwrap(),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        let mk = |version: u32, sec: u32| datum_core::history::HistoryVersion {
+            entry_hid: "h1".to_string(),
+            version,
+            snapshot: snapshot.clone(),
+            modify_time: chrono::Utc
+                .with_ymd_and_hms(2026, 6, 4, 9, 15, sec)
+                .unwrap(),
+            raw_input: None,
+            alias_chain: None,
+            device_id: "dev".to_string(),
+            change_kind: datum_core::history::ChangeKind::UserEdit,
+        };
+        // Same minute, different seconds. Seconds survive any whole-minute
+        // host-TZ offset, so assert on them directly.
+        let row_a = format_version_row(&mk(1, 7), &now, "");
+        let row_b = format_version_row(&mk(2, 33), &now, "");
+        assert!(row_a.contains(":07"), "seconds rendered: {row_a:?}");
+        assert!(row_b.contains(":33"), "seconds rendered: {row_b:?}");
+    }
 
     fn spec_with_intensity(strict: bool) -> FieldSpec {
         let mut subfields = HashMap::new();

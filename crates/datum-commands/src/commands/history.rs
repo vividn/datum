@@ -5,7 +5,8 @@ use datum_core::{db::Db, entry::Entry};
 use serde_json::Value as JsonValue;
 
 use crate::args::HistoryArgs;
-use crate::commands::helpers::resolve_prefix_or_tombstone;
+use crate::commands::helpers::{format_version_row, resolve_prefix_or_tombstone};
+use crate::render::action::now_local;
 
 pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
     let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)
@@ -63,18 +64,13 @@ pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
         println!("  (no history recorded)");
         return Ok(());
     }
+    let now = now_local();
     for v in versions {
         let raw = match v.raw_input.as_deref() {
             None | Some("") => String::new(),
             Some(s) => format!("'{s}'"),
         };
-        println!(
-            "  v{}  {}  {:<22} {}",
-            v.version,
-            v.modify_time.format("%Y-%m-%dT%H:%M"),
-            v.change_kind.as_str(),
-            raw
-        );
+        println!("{}", format_version_row(&v, &now, &raw));
     }
     Ok(())
 }
@@ -89,13 +85,25 @@ fn resolve_version_snapshot(db: &Db, current: &Entry, version: u32) -> Result<En
 }
 
 fn print_history_diff(a: u32, snap_a: &Entry, b: u32, snap_b: &Entry) {
-    let va = serde_json::to_value(snap_a).unwrap_or(serde_json::Value::Null);
-    let vb = serde_json::to_value(snap_b).unwrap_or(serde_json::Value::Null);
     println!("--- v{a}\n+++ v{b}");
-    diff_json("", &va, &vb);
+    for line in history_diff_lines(snap_a, snap_b) {
+        println!("{line}");
+    }
 }
 
-fn diff_json(path: &str, a: &JsonValue, b: &JsonValue) {
+/// Diff lines between two snapshots. `content_hash` is derived from the
+/// fields being diffed, so its -/+ pair only restates the adjacent real
+/// diff lines as hex noise — skip it (da-r8xj). `modify_time` lines stay:
+/// they tell the user when each side was written.
+fn history_diff_lines(snap_a: &Entry, snap_b: &Entry) -> Vec<String> {
+    let va = serde_json::to_value(snap_a).unwrap_or(serde_json::Value::Null);
+    let vb = serde_json::to_value(snap_b).unwrap_or(serde_json::Value::Null);
+    let mut lines = Vec::new();
+    diff_json("", &va, &vb, &mut lines);
+    lines
+}
+
+fn diff_json(path: &str, a: &JsonValue, b: &JsonValue, lines: &mut Vec<String>) {
     if a == b {
         return;
     }
@@ -105,26 +113,63 @@ fn diff_json(path: &str, a: &JsonValue, b: &JsonValue) {
             keys.sort();
             keys.dedup();
             for k in keys {
+                // Derived dedup key — restates the real diff as hex noise.
+                if path.is_empty() && k == "content_hash" {
+                    continue;
+                }
                 let child_path = if path.is_empty() {
                     k.clone()
                 } else {
                     format!("{path}.{k}")
                 };
                 match (ma.get(k), mb.get(k)) {
-                    (Some(va), Some(vb)) => diff_json(&child_path, va, vb),
-                    (Some(va), None) => println!("- {child_path}: {}", render_scalar(va)),
-                    (None, Some(vb)) => println!("+ {child_path}: {}", render_scalar(vb)),
+                    (Some(va), Some(vb)) => diff_json(&child_path, va, vb, lines),
+                    (Some(va), None) => {
+                        lines.push(format!("- {child_path}: {}", render_scalar(va)))
+                    }
+                    (None, Some(vb)) => {
+                        lines.push(format!("+ {child_path}: {}", render_scalar(vb)))
+                    }
                     (None, None) => {}
                 }
             }
         }
         _ => {
-            println!("- {}: {}", path, render_scalar(a));
-            println!("+ {}: {}", path, render_scalar(b));
+            lines.push(format!("- {}: {}", path, render_scalar(a)));
+            lines.push(format!("+ {}: {}", path, render_scalar(b)));
         }
     }
 }
 
 fn render_scalar(v: &JsonValue) -> String {
     serde_json::to_string(v).unwrap_or_else(|_| v.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use datum_core::test_util::entry_builder;
+    use serde_json::json;
+
+    /// da-r8xj: the diff of a state change must not include the derived
+    /// content_hash -/+ pair — it only restates the adjacent real diff
+    /// lines as hex noise.
+    #[test]
+    fn diff_of_state_change_has_no_content_hash_line() {
+        let mut a = entry_builder("mood").build();
+        a.state = Some(json!("happy"));
+        let mut b = a.clone();
+        b.state = Some(json!("sad"));
+        b.content_hash = "feedface".into(); // diverged, as a real edit would
+
+        let lines = history_diff_lines(&a, &b);
+        assert!(
+            lines.iter().any(|l| l.contains("state")),
+            "real state diff is present: {lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|l| l.contains("content_hash")),
+            "derived content_hash must be skipped: {lines:?}"
+        );
+    }
 }
