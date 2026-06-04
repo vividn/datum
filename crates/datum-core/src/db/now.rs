@@ -188,22 +188,39 @@ impl Db {
 /// block-switch rows whose trailing edge is still in the future), the
 /// primary `value` column is the state.
 fn effective_state_from_entry(e: &Entry, at: DateTime<Utc>) -> JsonValue {
+    effective_state(
+        e.verb,
+        e.state.as_ref(),
+        e.occur_time.as_ref().map(|t| t.utc),
+        e.dur.as_ref(),
+        e.following_state.as_ref(),
+        at,
+    )
+}
+
+/// Column-level form of [`effective_state_from_entry`], shared with
+/// [`Db::batch_state_at`] so the `now` and `state_at` oracles apply the
+/// SAME trailing-edge rule to the winning row (da-2i8g).
+pub(super) fn effective_state(
+    verb: crate::entry::Verb,
+    state: Option<&JsonValue>,
+    occur_utc: Option<DateTime<Utc>>,
+    dur: Option<&crate::dur::Dur>,
+    following_state: Option<&JsonValue>,
+    at: DateTime<Utc>,
+) -> JsonValue {
     // `following_state` takes over past the trailing edge for exactly the
     // verbs that open a secondary switch region — shape.rs owns the set.
-    if crate::shape::opens_secondary_switch_region(e.verb) {
-        if let (Some(occur), Some(dur), Some(fs)) = (
-            e.occur_time.as_ref(),
-            e.dur.as_ref(),
-            e.following_state.as_ref(),
-        ) {
+    if crate::shape::opens_secondary_switch_region(verb) {
+        if let (Some(occur), Some(dur), Some(fs)) = (occur_utc, dur, following_state) {
             let delta = dur.as_seconds().unwrap_or(0);
-            let trailing = occur.utc + chrono::Duration::seconds(delta);
+            let trailing = occur + chrono::Duration::seconds(delta);
             if at >= trailing {
                 return fs.clone();
             }
         }
     }
-    e.state.clone().unwrap_or(JsonValue::Null)
+    state.cloned().unwrap_or(JsonValue::Null)
 }
 
 fn entry_event_time(e: &Entry) -> Option<DateTime<Utc>> {

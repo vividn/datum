@@ -30,6 +30,11 @@ impl Db {
     /// rows, newest `occur_time` first with a slug tiebreak. Delegates to
     /// [`Db::batch_state_at`] so the two oracles cannot diverge (da-ylet).
     ///
+    /// da-2i8g: when the winning row is a block-switch / point-switch
+    /// whose trailing edge (`occur_time + dur`) is at or before `t`, the
+    /// row's `following_state` is the effective value — same rule as
+    /// `now` ([`super::now::effective_state`]).
+    ///
     /// `Ok(None)` means the field has no qualifying entries at or before
     /// `t`, which callers should treat as IGNORED (the default for unseen
     /// fields). `Ok(Some(JsonValue::String("IGNORED")))` is the explicit
@@ -61,9 +66,14 @@ impl Db {
         let placeholders = std::iter::repeat_n("?", fields.len())
             .collect::<Vec<_>>()
             .join(",");
+        // da-2i8g: the winning row's verb / occur_time / dur /
+        // following_state come along so the trailing-edge rule
+        // ([`super::now::effective_state`]) can swap in the
+        // `following_state` of a block-switch / point-switch whose
+        // trailing edge is at or before `t`.
         let sql = format!(
-            "SELECT field, state FROM (
-                SELECT field, state,
+            "SELECT field, state, verb, occur_time, dur, following_state FROM (
+                SELECT field, state, verb, occur_time, dur, following_state,
                   ROW_NUMBER() OVER (
                     PARTITION BY field
                     ORDER BY {STATE_ORDER_NEWEST_FIRST}
@@ -80,14 +90,42 @@ impl Db {
         let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), |row| {
             let field: String = row.get(0)?;
             let value: Option<String> = row.get(1)?;
-            Ok((field, value))
+            let verb: crate::entry::Verb =
+                row.get::<_, String>(2)?.parse().map_err(|e: String| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        2,
+                        rusqlite::types::Type::Text,
+                        e.into(),
+                    )
+                })?;
+            let occur_utc: Option<DateTime<Utc>> = row
+                .get::<_, Option<String>>(3)?
+                .and_then(|s| s.parse().ok());
+            let dur: Option<crate::dur::Dur> = row
+                .get::<_, Option<String>>(4)?
+                .as_deref()
+                .and_then(crate::dur::Dur::parse);
+            let following: Option<String> = row.get(5)?;
+            Ok((field, value, verb, occur_utc, dur, following))
         })?;
         for r in rows {
-            let (field, value) = r.map_err(DatumError::Db)?;
-            let json = match value {
-                None => JsonValue::Null,
-                Some(s) => serde_json::from_str(&s)?,
+            let (field, value, verb, occur_utc, dur, following) = r.map_err(DatumError::Db)?;
+            let state: Option<JsonValue> = match value {
+                None => None,
+                Some(s) => Some(serde_json::from_str(&s)?),
             };
+            let fs: Option<JsonValue> = match following {
+                None => None,
+                Some(s) => Some(serde_json::from_str(&s)?),
+            };
+            let json = super::now::effective_state(
+                verb,
+                state.as_ref(),
+                occur_utc,
+                dur.as_ref(),
+                fs.as_ref(),
+                t,
+            );
             out.insert(field, json);
         }
         Ok(out)
@@ -116,8 +154,10 @@ impl Db {
     /// An explicit JSON `null` state (`Some(JsonValue::Null)`) is a
     /// real, storable state value and participates like any other.
     ///
-    /// `following_state` is NOT consulted — consistent with [`Db::state_at`]
-    /// / `now`, which don't read it yet either (state.rs sub-bead 5).
+    /// `following_state` is NOT consulted: the walk reads only primary
+    /// states. ([`Db::state_at`] / `now` DO honour it for the *current*
+    /// state since da-2i8g, but how compound switches should participate
+    /// in the distinct-alternatives walk is a separate design question.)
     pub fn resolve_state_back(&self, field: &str, n: usize) -> Result<Option<JsonValue>> {
         if n == 0 {
             return Ok(None);
@@ -520,5 +560,108 @@ mod tests {
         );
         assert_eq!(db.resolve_state_back("mood", 2).unwrap(), Some(json!("b")));
         assert_eq!(db.resolve_state_back("mood", 3).unwrap(), Some(json!("a")));
+    }
+
+    // ─── da-2i8g: following_state-aware state_at / batch_state_at ───
+
+    /// Compound switch (`switch f primary <dur> , following`): the verb is
+    /// re-derived on insert from the (state, dur, following_state) triple —
+    /// positive dur → block-switch, zero dur → point-switch.
+    fn push_compound_switch(
+        db: &Db,
+        field: &str,
+        primary: serde_json::Value,
+        dur_secs: i64,
+        following: serde_json::Value,
+        secs_offset: i64,
+    ) {
+        let mut entry = Entry::new(
+            field,
+            Verb::Switch,
+            Some(primary),
+            None,
+            Some(at(secs_offset)),
+            Some(crate::dur::Dur::Of(chrono::Duration::seconds(dur_secs))),
+            "d1",
+        );
+        entry.following_state = Some(following);
+        db.insert_entry(&entry).unwrap();
+    }
+
+    #[test]
+    fn state_at_block_switch_honours_following_state_past_trailing_edge() {
+        // The da-2i8g repro: `datum switch body sit 30 , vertical`.
+        let db = Db::open_in_memory().unwrap();
+        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 100);
+
+        // Inside the block → primary state.
+        assert_eq!(
+            db.state_at("body", at(100 + 900).utc).unwrap(),
+            Some(json!("sit"))
+        );
+        // At the trailing edge and beyond → following_state.
+        assert_eq!(
+            db.state_at("body", at(100 + 1800).utc).unwrap(),
+            Some(json!("vertical"))
+        );
+        assert_eq!(
+            db.state_at("body", at(100 + 3600).utc).unwrap(),
+            Some(json!("vertical"))
+        );
+        // The batch oracle applies the same rule.
+        let batch = db.batch_state_at(&["body"], at(100 + 3600).utc).unwrap();
+        assert_eq!(batch.get("body"), Some(&json!("vertical")));
+    }
+
+    #[test]
+    fn state_at_point_switch_following_state_wins_at_occur() {
+        // Zero-span compound switch: the primary never prevails on a
+        // `<= t` probe — the trailing edge IS the occur instant.
+        let db = Db::open_in_memory().unwrap();
+        push_compound_switch(&db, "mood", json!("startled"), 0, json!("calm"), 100);
+
+        assert_eq!(db.state_at("mood", at(50).utc).unwrap(), None);
+        assert_eq!(
+            db.state_at("mood", at(100).utc).unwrap(),
+            Some(json!("calm"))
+        );
+    }
+
+    #[test]
+    fn state_at_later_switch_supersedes_block_switch_following_state() {
+        // A newer plain switch wins outright — following_state only
+        // applies when the block-switch row itself is the winner.
+        let db = Db::open_in_memory().unwrap();
+        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 100);
+        push_switch(&db, "body", json!("lying"), 100 + 3600);
+        assert_eq!(
+            db.state_at("body", at(100 + 7200).utc).unwrap(),
+            Some(json!("lying"))
+        );
+    }
+
+    #[test]
+    fn tracked_fields_ignored_flag_follows_following_state() {
+        // `get_tracked_fields` classifies via batch_state_at, so a
+        // block-switch into IGNORED takes effect at the trailing edge.
+        let db = Db::open_in_memory().unwrap();
+        push_compound_switch(
+            &db,
+            "body",
+            json!("sit"),
+            1800,
+            json!(IGNORED_STATE_VALUE),
+            100,
+        );
+        let flag_at = |offset: i64| {
+            let fields = db.get_tracked_fields(at(offset).utc).unwrap();
+            fields
+                .into_iter()
+                .find(|f| f.field == "body")
+                .unwrap()
+                .ignored
+        };
+        assert!(!flag_at(100 + 900), "inside the block: tracked");
+        assert!(flag_at(100 + 3600), "past the trailing edge: ignored");
     }
 }
