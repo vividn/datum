@@ -389,10 +389,11 @@ pub(crate) fn build_dayview_fields(
     // entries timestamped at "now" stay included — round-tripping `end`
     // through `day_end_ms` would truncate nanoseconds and exclude them.
     let buffer = chrono::Duration::seconds((history_minutes.max(1.0) * 60.0 * 4.0) as i64);
+    let fetch_start = day_start_utc - buffer;
     let params = ListParams {
         fields: Vec::new(),
         metric: TimeMetric::Hybrid,
-        start_utc: Some(day_start_utc - buffer),
+        start_utc: Some(fetch_start),
         end_utc: Some(end),
         limit: None,
         head: false,
@@ -409,10 +410,10 @@ pub(crate) fn build_dayview_fields(
         by_field.entry(e.field.clone()).or_default().push(e);
     }
 
-    // Include any tracked field with no entries in window so the layout
-    // can still position it (dayview drops empty fields, but a tracked
-    // field with an open switch state from before the window will have
-    // a leading entry once `state_at` integration lands).
+    // Include any tracked field with no entries in window so the leading-
+    // state synthesis below can still give it a band: a field whose open
+    // switch state predates the fetch window has no in-window entries at
+    // all, but `state_at` still knows its active state (da-ncoa).
     let tracked = db
         .get_tracked_fields(chrono::Utc::now())
         .unwrap_or_default();
@@ -434,7 +435,26 @@ pub(crate) fn build_dayview_fields(
         entries_for_field.sort_by_key(occur_time_ms);
         let switch_region_ends = switch_region_end_ms(&entries_for_field, day_end_ms);
 
-        let (blocks, points) = render_field_visuals(
+        // da-ncoa: synthesize the leading region for a state set before
+        // the fetch window — no in-window entry opens it, so without this
+        // the band falls back to the field-default color.
+        let mut blocks: Vec<DayviewBlock> = Vec::new();
+        if let Some((start_ms, end_ms, state)) =
+            leading_state_region(db, &field, &entries_for_field, fetch_start, day_end_ms)?
+        {
+            push_switch_region(
+                &mut blocks,
+                Some(&state),
+                start_ms,
+                end_ms,
+                &field,
+                spec.as_ref(),
+                day_start_ms,
+                day_end_ms,
+            );
+        }
+
+        let (entry_blocks, points) = render_field_visuals(
             &entries_for_field,
             &field,
             spec.as_ref(),
@@ -443,6 +463,7 @@ pub(crate) fn build_dayview_fields(
             &switch_region_ends,
             db,
         );
+        blocks.extend(entry_blocks);
 
         if blocks.is_empty() && points.is_empty() {
             continue;
@@ -528,13 +549,33 @@ pub(crate) fn build_fields(
         entries_for_field.sort_by_key(occur_time_ms);
         let switch_region_ends = switch_region_end_ms(&entries_for_field, day_end_ms);
 
-        let (blocks, points) = render_field_visuals_terminal(
+        // da-ncoa: synthesize the leading region for a state set before
+        // the fetch window. Without it the renderer paints the field-
+        // default color across the band, or — for `datum now`'s
+        // include_empty=false path — omits the field entirely while the
+        // state list above still shows it.
+        let mut blocks: Vec<NowviewBlock> = Vec::new();
+        if let Some((start_ms, end_ms, state)) =
+            leading_state_region(db, &field, &entries_for_field, window_start, day_end_ms)?
+        {
+            push_switch_region_terminal(
+                &mut blocks,
+                Some(&state),
+                start_ms,
+                end_ms,
+                &field,
+                spec.as_ref(),
+            );
+        }
+
+        let (entry_blocks, points) = render_field_visuals_terminal(
             &entries_for_field,
             &field,
             spec.as_ref(),
             &switch_region_ends,
             db,
         );
+        blocks.extend(entry_blocks);
 
         if !include_empty && blocks.is_empty() && points.is_empty() {
             continue;
@@ -665,6 +706,40 @@ fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
         }
     }
     out
+}
+
+/// Leading-state synthesis (da-ncoa): the entry fetch only reaches back to
+/// `window_start`, so a state set BEFORE that instant has no in-window
+/// switching entry to open its region. Ask [`Db::state_at`] — which knows
+/// the true answer and already drives the SVG state panel — for the state
+/// active at `window_start`, and return the region the missing entry would
+/// have opened: `[window_start, first in-window switching entry or
+/// fallback_end_ms]`. `entries` must be sorted by occur_time ascending.
+///
+/// Returns `Ok(None)` when an in-window switching entry already covers
+/// `window_start` or the field has no prior state-bearing entry. A state
+/// that doesn't render (null / false / IGNORED) is still returned — the
+/// push helpers' existing [`is_unrendered_switch_value`] gate drops it.
+fn leading_state_region(
+    db: &Db,
+    field: &str,
+    entries: &[Entry],
+    window_start: DateTime<Utc>,
+    fallback_end_ms: i64,
+) -> Result<Option<(i64, i64, JsonValue)>> {
+    let window_start_ms = window_start.timestamp_millis();
+    let lead_end_ms = entries
+        .iter()
+        .filter(|e| is_switching_verb(canonical_verb(e)))
+        .find_map(occur_time_ms_opt)
+        .unwrap_or(fallback_end_ms);
+    if lead_end_ms <= window_start_ms {
+        return Ok(None);
+    }
+    match db.state_at(field, window_start)? {
+        Some(state) => Ok(Some((window_start_ms, lead_end_ms, state))),
+        None => Ok(None),
+    }
 }
 
 fn canonical_verb(entry: &Entry) -> Verb {
@@ -1322,6 +1397,147 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
         assert_eq!(blocks[0].state_label.as_deref(), Some("review"));
+    }
+
+    /// da-ncoa: a switch state set long before the fetch window still
+    /// paints the band in its state color — `build_fields` synthesizes a
+    /// leading block from `state_at` instead of falling back to the
+    /// field-default color (or dropping the field when include_empty=false).
+    #[test]
+    fn terminal_fields_synthesize_leading_block_for_pre_window_state() {
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        db.set_state_color("mood", "happy", "#112233").unwrap();
+
+        let now = Utc::now();
+        let old = DatumTime::from_utc_and_tz(now - chrono::Duration::hours(10), "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(JsonValue::String("happy".into())),
+            None,
+            Some(old),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        // history 1.0 min → 4-minute fetch window; the entry is far outside.
+        let fields = build_fields(&db, now, 1.0, false).unwrap();
+        let mood = fields
+            .iter()
+            .find(|f| f.field == "mood")
+            .expect("field with pre-window state must not be omitted");
+        assert_eq!(mood.blocks.len(), 1, "blocks = {:?}", mood.blocks);
+        let block = &mood.blocks[0];
+        let window_start_ms = (now - chrono::Duration::seconds(240)).timestamp_millis();
+        assert_eq!(block.start_ms, window_start_ms);
+        assert_eq!(block.end_ms, now.timestamp_millis());
+        assert_eq!(block.state_label.as_deref(), Some("happy"));
+        assert_eq!(block.colors, vec!["#112233".to_string()]);
+        assert_ne!(block.colors, mood.default_colors);
+    }
+
+    /// da-ncoa: the synthesized leading block ends where the first
+    /// in-window switching entry takes over — no overlap, no gap.
+    #[test]
+    fn leading_block_ends_at_first_in_window_switch() {
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let now = Utc::now();
+        let old = DatumTime::from_utc_and_tz(now - chrono::Duration::hours(10), "UTC").unwrap();
+        let recent_utc = now - chrono::Duration::minutes(2);
+        let recent = DatumTime::from_utc_and_tz(recent_utc, "UTC").unwrap();
+        for (t, state) in [(old, "away"), (recent, "back")] {
+            db.insert_entry(&Entry::new(
+                "presence",
+                Verb::Switch,
+                Some(JsonValue::String(state.into())),
+                None,
+                Some(t),
+                None,
+                "test",
+            ))
+            .unwrap();
+        }
+
+        let fields = build_fields(&db, now, 1.0, false).unwrap();
+        let f = fields.iter().find(|f| f.field == "presence").unwrap();
+        assert_eq!(f.blocks.len(), 2, "blocks = {:?}", f.blocks);
+        assert_eq!(f.blocks[0].state_label.as_deref(), Some("away"));
+        assert_eq!(f.blocks[0].end_ms, recent_utc.timestamp_millis());
+        assert_eq!(f.blocks[1].state_label.as_deref(), Some("back"));
+        assert_eq!(f.blocks[1].start_ms, recent_utc.timestamp_millis());
+    }
+
+    /// da-ncoa: same synthesis on the dayview-shape path used by the SVG
+    /// render — a pre-window state covers the band from the window's
+    /// left edge.
+    #[test]
+    fn dayview_fields_synthesize_leading_block_for_pre_window_state() {
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let now = Utc::now();
+        let old = DatumTime::from_utc_and_tz(now - chrono::Duration::hours(10), "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(JsonValue::String("happy".into())),
+            None,
+            Some(old),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        // history 60 min → fetch buffer 4h; the entry is at -10h.
+        let fields = build_dayview_fields(&db, now, 60.0).unwrap();
+        let mood = fields
+            .iter()
+            .find(|f| f.field == "mood")
+            .expect("field with pre-window state must not be omitted");
+        assert_eq!(mood.blocks.len(), 1, "blocks = {:?}", mood.blocks);
+        let block = &mood.blocks[0];
+        let day_start_ms = now.timestamp_millis() - 60 * 60 * 1000;
+        assert!(
+            block.start_ms <= day_start_ms,
+            "leading block must reach the window's left edge: {} > {}",
+            block.start_ms,
+            day_start_ms,
+        );
+        assert_eq!(block.end_ms, now.timestamp_millis());
+        assert_eq!(block.state_label.as_deref(), Some("happy"));
+    }
+
+    /// da-ncoa: an unrendered pre-window state (switch back to `false`)
+    /// must NOT synthesize a block — with include_empty=false the field
+    /// stays hidden, same as before.
+    #[test]
+    fn unrendered_pre_window_state_synthesizes_nothing() {
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let now = Utc::now();
+        let old = DatumTime::from_utc_and_tz(now - chrono::Duration::hours(10), "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "screen",
+            Verb::Switch,
+            Some(JsonValue::Bool(false)),
+            None,
+            Some(old),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        let fields = build_fields(&db, now, 1.0, false).unwrap();
+        assert!(
+            fields.iter().all(|f| f.field != "screen"),
+            "off-state field must stay hidden",
+        );
     }
 
     /// Dayview-shape BlockSwitch produces both leading block and following

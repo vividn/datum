@@ -856,6 +856,69 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
     DayviewLayoutResult { svg }
 }
 
+fn nowview_scene_leading_state() -> DayviewLayoutResult {
+    // da-ncoa: a state set BEFORE the visible window. The commands-layer
+    // builder synthesizes a leading block whose start_ms predates the
+    // window's left edge; this scene pins that the renderer clips it to
+    // the edge and paints the state color across the entire band (the
+    // pre-fix behavior was a field-default-colored band).
+    let history_minutes = 30.0;
+    let end_ms = DAY_START_MS + 14 * HOUR_MS + 30 * MIN_MS;
+    let start_ms = end_ms - (history_minutes * 60_000.0) as i64;
+
+    let panel_width: f64 = 120.0;
+    let width: f64 = 520.0;
+    let plot_width: f64 = (width - 4.0).max(0.0);
+    let time_axis_extent_for_ticks = (plot_width - panel_width).max(0.0);
+    let axis_ticks_override = Some(nowview_axis_ticks(
+        time_axis_extent_for_ticks,
+        history_minutes,
+    ));
+
+    let day = DayviewDayInput {
+        label_lines: vec![],
+        start_ms,
+        end_ms,
+        has_error: false,
+        fields: vec![DayviewFieldInput {
+            field: "mood".into(),
+            y_frac: 0.0,
+            height_frac: 1.0,
+            z_index: 0.0,
+            blocks: vec![DayviewBlock {
+                // Synthesized leading block: opened 6h before the window.
+                start_ms: start_ms - 6 * HOUR_MS,
+                end_ms,
+                fill: BlockFill::Single("#4488cc".into()),
+                state_label: Some("focused".into()),
+            }],
+            points: vec![],
+        }],
+    };
+    let cfg = DayviewConfig {
+        days: vec![day],
+        now_ms: end_ms,
+        width,
+        height: None,
+        day_height: 250.0,
+        interday_margin: 0.0,
+        time_axis_height: 12.0,
+        margin: 2.0,
+        label_width: Some(0.0),
+        orientation: Orientation::Horizontal,
+        axis_ticks_override,
+        right_panel_width: panel_width,
+    };
+    let layout = compute_dayview(&cfg);
+    let panel_entries = vec![NowviewPanelEntry {
+        field: "mood".into(),
+        state_label: Some("focused".into()),
+        colors: vec!["#4488cc".into()],
+    }];
+    let svg = render_nowview_svg(&layout, "14:30", &panel_entries);
+    DayviewLayoutResult { svg }
+}
+
 struct DayviewLayoutResult {
     svg: String,
 }
@@ -867,6 +930,7 @@ fn svg_scenes() -> Vec<(&'static str, DayviewLayoutResult)> {
         ("dayview_multi_state", dayview_scene_multi_state()),
         ("dayview_today_now_line", dayview_scene_today_now_line()),
         ("nowview_30min", nowview_scene_30min()),
+        ("nowview_leading_state", nowview_scene_leading_state()),
     ]
 }
 
