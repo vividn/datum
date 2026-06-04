@@ -279,7 +279,6 @@ Notable env vars:
 | `DATUM_HOME`            | Override the data directory (default: OS data dir).    |
 | `DATUM_CONFIG`          | Path to a specific `datumrc.toml`.                      |
 | `DATUM_CONFIG_HOME`     | Override the directory `datumrc.toml` lives in.         |
-| `DATUM_TIMEZONE`        | Default IANA timezone for new entries.                 |
 | `DATUM_DEFAULT_FIELD`   | Field used when one is omitted from the argv.          |
 | `DATUM_DEVICE_ID`       | Override the per-device id stamped on entries.         |
 | `DATUM_EDITOR`          | Editor for `datum edit` (falls back to `EDITOR`).      |

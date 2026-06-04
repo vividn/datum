@@ -12,7 +12,6 @@ const KEYS_TO_CLEAR: &[&str] = &[
     "DATUM_DB",
     "DATUM_CONFIG",
     "DATUM_DEVICE_ID",
-    "DATUM_TIMEZONE",
     "DATUM_DEFAULT_FIELD",
     "DATUM_EDITOR",
     "DATUM_ID_DELIMITER",
@@ -49,7 +48,6 @@ fn toml_config_loads_defaults() {
         tmp.path(),
         r#"
 db_path = "/data/main.db"
-timezone = "America/Chicago"
 default_field = "mood"
 editor = "nvim"
 "#,
@@ -58,8 +56,6 @@ editor = "nvim"
     let cfg = Config::load(None).unwrap();
     assert_eq!(cfg.db_path.value, "/data/main.db");
     assert_eq!(cfg.db_path.source, Source::Toml);
-    assert_eq!(cfg.timezone.value, "America/Chicago");
-    assert_eq!(cfg.timezone.source, Source::Toml);
     assert_eq!(cfg.default_field.value.as_deref(), Some("mood"));
     assert_eq!(cfg.default_field.source, Source::Toml);
     assert_eq!(cfg.editor.value, "nvim");
@@ -79,7 +75,6 @@ fn env_var_overrides_toml() {
         tmp.path(),
         r#"
 db_path = "/toml/path.db"
-timezone = "America/Chicago"
 default_field = "toml_field"
 editor = "nano"
 device_id = "toml-device"
@@ -87,7 +82,6 @@ device_id = "toml-device"
     );
 
     std::env::set_var("DATUM_DB", "/env/path.db");
-    std::env::set_var("DATUM_TIMEZONE", "Europe/Berlin");
     std::env::set_var("DATUM_DEFAULT_FIELD", "env_field");
     std::env::set_var("DATUM_EDITOR", "emacs");
     std::env::set_var("DATUM_DEVICE_ID", "env-device");
@@ -96,8 +90,6 @@ device_id = "toml-device"
 
     assert_eq!(cfg.db_path.value, "/env/path.db");
     assert_eq!(cfg.db_path.source, Source::Env);
-    assert_eq!(cfg.timezone.value, "Europe/Berlin");
-    assert_eq!(cfg.timezone.source, Source::Env);
     assert_eq!(cfg.default_field.value.as_deref(), Some("env_field"));
     assert_eq!(cfg.default_field.source, Source::Env);
     assert_eq!(cfg.editor.value, "emacs");
@@ -125,11 +117,10 @@ fn config_show_attributes_sources_correctly() {
     let tmp = tempfile::tempdir().unwrap();
     let _g = sandbox(tmp.path());
 
-    // toml sets timezone, editor
+    // toml sets editor
     write_toml(
         tmp.path(),
         r#"
-timezone = "America/Chicago"
 editor = "nvim"
 "#,
     );
@@ -148,9 +139,6 @@ editor = "nvim"
     assert_eq!(by_key["default_field"].1, Source::Env);
     assert_eq!(by_key["default_field"].0, "mood");
 
-    assert_eq!(by_key["timezone"].1, Source::Toml);
-    assert_eq!(by_key["timezone"].0, "America/Chicago");
-
     assert_eq!(by_key["editor"].1, Source::Toml);
     assert_eq!(by_key["editor"].0, "nvim");
 
@@ -165,15 +153,15 @@ fn datum_config_env_var_overrides_toml_path() {
 
     // Put a toml at the XDG default location — should be IGNORED when
     // DATUM_CONFIG points elsewhere.
-    write_toml(tmp.path(), "timezone = \"Europe/Berlin\"\n");
+    write_toml(tmp.path(), "editor = \"nano\"\n");
 
     let alt = tmp.path().join("alt.toml");
-    std::fs::write(&alt, "timezone = \"Asia/Tokyo\"\n").unwrap();
+    std::fs::write(&alt, "editor = \"nvim\"\n").unwrap();
     std::env::set_var("DATUM_CONFIG", &alt);
 
     let cfg = Config::load(None).unwrap();
-    assert_eq!(cfg.timezone.value, "Asia/Tokyo");
-    assert_eq!(cfg.timezone.source, Source::Toml);
+    assert_eq!(cfg.editor.value, "nvim");
+    assert_eq!(cfg.editor.source, Source::Toml);
     assert_eq!(cfg.toml_path, alt);
     assert!(cfg.toml_loaded);
 }
@@ -186,7 +174,6 @@ fn missing_toml_falls_through_to_defaults() {
     let cfg = Config::load(None).unwrap();
 
     assert!(!cfg.toml_loaded);
-    assert_eq!(cfg.timezone.source, Source::Default);
     assert_eq!(cfg.editor.source, Source::Default);
     assert_eq!(cfg.default_field.source, Source::Default);
     assert_eq!(cfg.default_field.value, None);
@@ -254,6 +241,5 @@ fn empty_toml_is_ok() {
     let cfg = Config::load(None).unwrap();
     assert!(cfg.toml_loaded);
     // Everything falls through to defaults.
-    assert_eq!(cfg.timezone.source, Source::Default);
     assert_eq!(cfg.editor.source, Source::Default);
 }

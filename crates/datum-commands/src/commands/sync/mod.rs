@@ -334,37 +334,12 @@ pub fn build_session(server: &str, token: &AuthToken) -> datum_sync_client::http
         // to the URL the session is bound to.
         let persisted = PersistedAuthToken::from_wire(new.clone(), &server_string);
         let body = serde_json::to_vec_pretty(&persisted).context("serialize auth token")?;
-        write_private_file(&path, &body)?;
+        crate::config::write_atomic(&path, &body, 0o600)
+            .with_context(|| format!("write {path:?}"))?;
         Ok(())
     });
 
     datum_sync_client::http::Session::new(server, token, Some(on_refresh))
-}
-
-#[cfg(unix)]
-fn write_private_file(path: &std::path::Path, body: &[u8]) -> anyhow::Result<()> {
-    use std::os::unix::fs::OpenOptionsExt;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("create {parent:?}"))?;
-    }
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
-        .with_context(|| format!("open {path:?}"))?;
-    std::io::Write::write_all(&mut f, body)?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn write_private_file(path: &std::path::Path, body: &[u8]) -> anyhow::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("create {parent:?}"))?;
-    }
-    std::fs::write(path, body).with_context(|| format!("write {path:?}"))?;
-    Ok(())
 }
 
 /// Bundle of inputs every sync direction needs — token, key, device_id —

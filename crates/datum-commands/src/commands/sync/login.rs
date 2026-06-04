@@ -128,27 +128,5 @@ fn write_persisted_token(server: &str, token: &PersistedAuthToken) -> Result<()>
     let host = server_host_from_url(server);
     let path = auth_token_path(&host)?;
     let body = serde_json::to_vec_pretty(token).context("serialize auth token")?;
-    write_private_file(&path, &body)?;
-    Ok(())
-}
-
-fn write_private_file(path: &std::path::Path, body: &[u8]) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)
-            .with_context(|| format!("open {path:?}"))?;
-        std::io::Write::write_all(&mut f, body)?;
-        Ok(())
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, body).with_context(|| format!("write {path:?}"))?;
-        Ok(())
-    }
+    crate::config::write_atomic(&path, &body, 0o600).with_context(|| format!("write {path:?}"))
 }

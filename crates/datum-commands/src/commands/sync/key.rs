@@ -184,28 +184,7 @@ pub fn load_token(server: &str) -> Result<Option<PersistedAuthToken>> {
 }
 
 fn write_key_file(path: &std::path::Path, key: &[u8; 32]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("create {parent:?}"))?;
-    }
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)
-            .with_context(|| format!("open {path:?}"))?;
-        f.write_all(key)?;
-        Ok(())
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, key).with_context(|| format!("write {path:?}"))?;
-        Ok(())
-    }
+    crate::config::write_atomic(path, key, 0o600).with_context(|| format!("write {path:?}"))
 }
 
 fn read_key_file(path: &std::path::Path) -> Result<[u8; 32]> {

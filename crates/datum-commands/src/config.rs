@@ -384,8 +384,6 @@ pub struct RawConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timezone: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_field: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor: Option<String>,
@@ -428,7 +426,6 @@ pub struct DbSection {
 pub struct Config {
     pub db_path: SourcedValue<String>,
     pub device_id: SourcedValue<String>,
-    pub timezone: SourcedValue<String>,
     pub default_field: SourcedValue<Option<String>>,
     pub editor: SourcedValue<String>,
     pub id_delimiter: SourcedValue<String>,
@@ -459,15 +456,42 @@ pub fn load_raw_config_or_default() -> Result<RawConfig> {
 }
 
 /// Persist the raw user config to `datumrc.toml`. Creates the parent
-/// directory if needed. Overwrites atomically via `fs::write`.
+/// directory if needed. Atomic: temp file + rename, so a crash mid-write
+/// never truncates the existing config.
 pub fn save_raw_config(cfg: &RawConfig) -> Result<()> {
     let path = toml_config_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("Creating config directory {parent:?}"))?;
-    }
     let body = toml::to_string_pretty(cfg).context("Serializing datumrc.toml")?;
-    std::fs::write(&path, body).with_context(|| format!("Writing config to {path:?}"))?;
+    write_atomic(&path, body.as_bytes(), 0o644)
+        .with_context(|| format!("Writing config to {path:?}"))
+}
+
+/// Write `body` to `path` atomically: write a temp file in the same
+/// directory, then rename over the target (rename is atomic on POSIX).
+/// Creates the parent directory if needed. On unix the temp file gets
+/// `mode` before any bytes land, so the final file never exists with
+/// looser permissions.
+pub fn write_atomic(path: &std::path::Path, body: &[u8], mode: u32) -> Result<()> {
+    use std::io::Write;
+    let parent = match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    std::fs::create_dir_all(&parent).with_context(|| format!("Creating directory {parent:?}"))?;
+    let mut tmp = tempfile::NamedTempFile::new_in(&parent)
+        .with_context(|| format!("Creating temp file in {parent:?}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(mode))
+            .with_context(|| format!("Setting permissions on temp file for {path:?}"))?;
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    tmp.write_all(body)
+        .with_context(|| format!("Writing {path:?}"))?;
+    tmp.persist(path)
+        .with_context(|| format!("Renaming temp file into {path:?}"))?;
     Ok(())
 }
 
@@ -558,14 +582,6 @@ pub fn id_delimiter_default() -> String {
     ":".to_string()
 }
 
-fn timezone_default() -> String {
-    // Fall through to the IANA local zone if it resolves; otherwise UTC.
-    // chrono doesn't expose a portable IANA name, so we accept "UTC" as a
-    // conservative default — users who care set `timezone =` in toml or
-    // `DATUM_TIMEZONE` in env.
-    "UTC".to_string()
-}
-
 impl Config {
     /// Load the effective config by layering CLI flag > env > toml > default.
     ///
@@ -597,14 +613,6 @@ impl Config {
             SourcedValue::new(device_id()?, Source::Default)
         };
 
-        let timezone = if let Some(v) = read_env("DATUM_TIMEZONE") {
-            SourcedValue::new(v, Source::Env)
-        } else if let Some(v) = raw.timezone.clone() {
-            SourcedValue::new(v, Source::Toml)
-        } else {
-            SourcedValue::new(timezone_default(), Source::Default)
-        };
-
         let default_field = if let Some(v) = read_env("DATUM_DEFAULT_FIELD") {
             SourcedValue::new(Some(v), Source::Env)
         } else if let Some(v) = raw.default_field.clone() {
@@ -632,7 +640,6 @@ impl Config {
         Ok(Config {
             db_path,
             device_id,
-            timezone,
             default_field,
             editor,
             id_delimiter,
@@ -654,11 +661,6 @@ impl Config {
                 "device_id",
                 self.device_id.value.clone(),
                 self.device_id.source,
-            ),
-            (
-                "timezone",
-                self.timezone.value.clone(),
-                self.timezone.source,
             ),
             (
                 "default_field",
