@@ -8,8 +8,9 @@
 //! - Alive → bail. "Already running".
 //! - Dead (leftover file from a crash) → overwrite with our PID and proceed.
 //!
-//! The alive check uses `kill(pid, 0)` on unix: returns 0 if the target
-//! exists (whether we can signal it or not), ESRCH if not.
+//! The alive check uses `kill(pid, 0)` on unix: returns 0 only if the
+//! target exists and we may signal it (see [`is_pid_alive`] for the
+//! EPERM caveat).
 
 use std::fs;
 use std::io::{self, Write};
@@ -20,23 +21,11 @@ use anyhow::{Context, Result};
 /// Default pid-file path:
 /// - `$XDG_RUNTIME_DIR/datum-sync-agent.pid` if set
 /// - `/tmp/datum-sync-agent-<uid>.pid` otherwise (matches systemd fallback)
-pub fn default_pid_path() -> PathBuf {
-    if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        if !dir.is_empty() {
-            return PathBuf::from(dir).join("datum-sync-agent.pid");
-        }
-    }
-    // Fallback: /tmp, keyed by uid so two users on one box don't collide.
-    #[cfg(unix)]
-    {
-        let uid = unsafe { libc::getuid() };
-        PathBuf::from(format!("/tmp/datum-sync-agent-{uid}.pid"))
-    }
-    #[cfg(not(unix))]
-    {
-        PathBuf::from("/tmp/datum-sync-agent.pid")
-    }
-}
+///
+/// The canonical definition lives in `datum-commands` (the `datum sync
+/// status` readout reads the same file); re-exported here so the writer
+/// and reader of the pid-file can never drift.
+pub use datum_commands::commands::sync::daemon_status::default_pid_path;
 
 /// Owns the pid-file for the lifetime of the daemon process. Removes the
 /// file on drop so a clean shutdown leaves no stale state.

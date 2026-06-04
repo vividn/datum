@@ -4,8 +4,9 @@
 //! `/tmp` fallback) on startup; we read it here to decide whether to
 //! show `● running` or `○ not running`.
 //!
-//! The path scheme is a **contract** between this module and
-//! `datum-sync-agent::liveness`. Any change here must match there.
+//! This module owns the canonical [`default_pid_path`];
+//! `datum-sync-agent::liveness` re-exports it, so writer and reader
+//! agree by construction.
 
 use std::fs;
 use std::path::PathBuf;
@@ -13,8 +14,12 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
 
-/// Default pid-file path used by the agent. Must stay in lockstep with
-/// `datum-sync-agent::liveness::default_pid_path`.
+/// Default pid-file path used by the agent. Canonical single definition —
+/// `datum-sync-agent::liveness` re-exports this.
+///
+/// - `$XDG_RUNTIME_DIR/datum-sync-agent.pid` if set
+/// - `/tmp/datum-sync-agent-<uid>.pid` otherwise (matches systemd fallback,
+///   keyed by uid so two users on one box don't collide)
 pub fn default_pid_path() -> PathBuf {
     if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
         if !dir.is_empty() {
@@ -68,6 +73,9 @@ pub fn read_from(path: PathBuf) -> DaemonState {
     }
 }
 
+/// True if `pid` is alive. Treats any non-zero `kill(pid, 0)` (including
+/// EPERM) as "not alive" — the daemon runs as the same user as the CLI,
+/// so the cross-user EPERM edge case doesn't apply in practice.
 fn is_pid_alive(pid: i32) -> bool {
     #[cfg(unix)]
     {
