@@ -209,9 +209,13 @@ fn merge_data(a: Option<JsonValue>, b: Option<JsonValue>) -> Option<JsonValue> {
 /// - **existing array + scalar incoming** → push incoming onto the
 ///   array; **scalar existing + incoming array** → prepend.
 /// - **equal values** → keep one (no-op merge, mirrors Rule 9 for data).
+///   Checked first, so it applies to arrays and objects too: merging a
+///   value with an identical copy is always idempotent (`[a]+[a]` →
+///   `[a]`, not `[a, a]`).
 fn merge_data_values(a: JsonValue, b: JsonValue) -> JsonValue {
     use JsonValue::*;
     match (a, b) {
+        (a, b) if a == b => a,
         (Object(mut am), Object(bm)) => {
             for (k, v) in bm {
                 match am.remove(&k) {
@@ -237,7 +241,6 @@ fn merge_data_values(a: JsonValue, b: JsonValue) -> JsonValue {
             arr.insert(0, a);
             Array(arr)
         }
-        (a, b) if a == b => a,
         (a, b) => Array(vec![a, b]),
     }
 }
@@ -406,6 +409,57 @@ mod tests {
             merged[0].data,
             Some(json!({"meta": {"flavor": ["sweet", "sour"], "temp": "cold"}}))
         );
+    }
+
+    #[test]
+    fn same_field_equal_data_values_collapse_to_one() {
+        // "Equal values → keep one" applies to every JSON shape, arrays
+        // included: `list=[a]` + `list=[a]` → `[a]`, not `[a, a]`
+        // (no-op merge, mirrors Rule 9 for data). da-zhm3.
+        let a = entry_data(
+            "drink",
+            "2026-05-11T12:00:00Z",
+            json!({"val": 3, "list": ["a"]}),
+        );
+        let b = entry_data(
+            "drink",
+            "2026-05-11T12:00:00Z",
+            json!({"val": 3, "list": ["a"]}),
+        );
+        let merged = merge_same_field_groups(vec![a, b]);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].data, Some(json!({"val": 3, "list": ["a"]})));
+    }
+
+    #[test]
+    fn same_field_equal_nested_arrays_collapse_one_level_down() {
+        // Same shape inside a nested object: recursion hits the equal
+        // arrays and collapses them too. da-zhm3.
+        let a = entry_data(
+            "drink",
+            "2026-05-11T12:00:00Z",
+            json!({"meta": {"tags": ["x", "y"]}}),
+        );
+        let b = entry_data(
+            "drink",
+            "2026-05-11T12:00:00Z",
+            json!({"meta": {"tags": ["x", "y"], "temp": "cold"}}),
+        );
+        let merged = merge_same_field_groups(vec![a, b]);
+        assert_eq!(
+            merged[0].data,
+            Some(json!({"meta": {"tags": ["x", "y"], "temp": "cold"}}))
+        );
+    }
+
+    #[test]
+    fn same_field_unequal_data_arrays_still_concatenate() {
+        // Equality collapse only fires on deep-equal values; distinct
+        // arrays keep the extend behavior.
+        let a = entry_data("drink", "2026-05-11T12:00:00Z", json!({"list": ["a"]}));
+        let b = entry_data("drink", "2026-05-11T12:00:00Z", json!({"list": ["b"]}));
+        let merged = merge_same_field_groups(vec![a, b]);
+        assert_eq!(merged[0].data, Some(json!({"list": ["a", "b"]})));
     }
 
     // ── Section I — different-field rows ─────────────────────────────
