@@ -1,6 +1,7 @@
 //! `datum occur <field>` — record a point-in-time event.
 //!
-//! Thin wrapper around the shared `log_entry` dispatcher in `crate::cmd`.
+//! Thin wrapper around the shared `log_entry` dispatcher in
+//! `crate::commands::log_core`.
 
 use anyhow::Result;
 use datum_core::{action::Action, db::Db};
