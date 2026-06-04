@@ -67,15 +67,16 @@ but it is *typeable* and must be documented in the user docs alongside `,`
    |---------------------|--------------------------------------------------|
    | `-I` present        | `[field?, state(greedy), -k keys…, dur?]`         |
    | `-S`/`-R` present   | `[field?, -k keys…, remainder(greedy), dur?]`     |
-   | neither             | `[field?, state?, -k keys…, value?, dur?]`        |
+   | neither             | `[field?, state?, -k keys…, dur?]`                |
 
    `field?` exists when the body is verb-only (`note` → `add`: the field
    itself comes from the call site, lands right after the verb, strictly
-   per-side). `state?` exists for switch-family verbs; `value?` is bare
-   `occur`'s one primary-value positional (only when no `-k` keys are
-   declared — keyed occur sides expose key slots only, per the k1–k6
-   walk); `dur?` for dur-bearing verbs. At most one greedy per side
-   (`-I` conflicts with `-S/-R/-C` at validation, which guarantees it).
+   per-side). `state?` exists for switch-family verbs; `dur?` for
+   dur-bearing verbs. There is **no** primary-value slot — `value` is a
+   retired concept (vividn, 2026-06-04), and a bare positional beyond the
+   declared slots is excess (rule 9): `occur coffee 2` errors with or
+   without an alias in between. At most one greedy per side (`-I`
+   conflicts with `-S/-R/-C` at validation, which guarantees it).
 6. **Cross-side unification** (per region walk): `-k` slots unify **by
    name**; state and dur slots unify **by kind**. A unified slot fills
    once and propagates to every side that declares it. Satisfied slots —

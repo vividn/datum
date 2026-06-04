@@ -1257,6 +1257,28 @@ mod tests {
 
     #[test]
     fn map_resolver_expansion() {
+        // `add` sinks the trailing positional (occur has no value slot
+        // — a bare positional there is excess, same as the direct form).
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert(
+            "c".to_string(),
+            ResolvedAlias {
+                expands_to: "add coffee".to_string(),
+                tokens: v(&["add", "coffee"]),
+            },
+        );
+        let (argv, chain) = expand_argv(v(&["datum", "c", "2"]), &MapResolver(&aliases)).unwrap();
+        assert_eq!(argv, v(&["datum", "add", "coffee", "2"]));
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].name, "c");
+        assert_eq!(chain[0].expansion, "add coffee");
+    }
+
+    #[test]
+    fn bare_occur_alias_trailing_positional_is_excess() {
+        // vividn, 2026-06-04: there is no occur value slot — `c 2` with
+        // c = "occur coffee" errors at the region walk with the same
+        // ExtraData the direct `occur coffee 2` raises downstream.
         let mut aliases = std::collections::HashMap::new();
         aliases.insert(
             "c".to_string(),
@@ -1265,11 +1287,11 @@ mod tests {
                 tokens: v(&["occur", "coffee"]),
             },
         );
-        let (argv, chain) = expand_argv(v(&["datum", "c", "2"]), &MapResolver(&aliases)).unwrap();
-        assert_eq!(argv, v(&["datum", "occur", "coffee", "2"]));
-        assert_eq!(chain.len(), 1);
-        assert_eq!(chain[0].name, "c");
-        assert_eq!(chain[0].expansion, "occur coffee");
+        let err = expand_argv(v(&["datum", "c", "2"]), &MapResolver(&aliases)).unwrap_err();
+        assert!(
+            matches!(err, crate::error::ParseError::ExtraData(ref t) if t == &vec!["2".to_string()]),
+            "exact excess payload must match the direct form: {err:?}"
+        );
     }
 
     fn alias(expands_to: &str) -> ResolvedAlias {
@@ -1329,12 +1351,14 @@ mod tests {
 
     #[test]
     fn placeholder_repeated_reference_consumes_once() {
-        // $1 appears twice but only consumes one positional arg.
+        // $1 appears twice but only consumes one positional arg; the
+        // leftover Y sinks into add's remainder (occur would reject it
+        // as excess — no value slot).
         let mut aliases = std::collections::HashMap::new();
-        aliases.insert("dup".to_string(), alias("occur $1 also=$1"));
+        aliases.insert("dup".to_string(), alias("add $1 also=$1"));
         let (argv, _) =
             expand_argv(v(&["datum", "dup", "X", "Y"]), &MapResolver(&aliases)).unwrap();
-        assert_eq!(argv, v(&["datum", "occur", "X", "also=X", "Y"]));
+        assert_eq!(argv, v(&["datum", "add", "X", "also=X", "Y"]));
     }
 
     #[test]

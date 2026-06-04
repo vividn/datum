@@ -12,10 +12,10 @@
 //! * per-side array in verb-grammar order — `-I` puts the greedy at the
 //!   front (`[field?, state(greedy), keys…, dur?]`), `-S`/`-R` joins put
 //!   it after the named keys (`[field?, keys…, remainder(greedy),
-//!   dur?]`), plain verbs get `[field?, state?, keys…, value?, dur?]`
-//!   (`field?` for verb-only bodies; `value?` for bare keyless occur);
-//! * cross-side unification: `-k` slots merge **by name**, state / value
-//!   / dur slots merge **by kind**, fields stay strictly per-side; a
+//!   dur?]`), plain verbs get `[field?, state?, keys…, dur?]`
+//!   (`field?` for verb-only bodies like `note` → `add`);
+//! * cross-side unification: `-k` slots merge **by name**, state and dur
+//!   slots merge **by kind**, fields stay strictly per-side; a
 //!   unified slot fills once and propagates to every declaring side;
 //!   satisfied slots are skipped;
 //! * greedy consumption reserves the *last n* tokens for the unfilled
@@ -104,11 +104,6 @@ enum SlotKind {
     /// Verb-derived unbound switch state — filled as a bare positional.
     /// Shared by kind across sides (spec rule 6).
     State,
-    /// `occur`'s unbound primary value — one bare positional (`c 2` must
-    /// keep working when `c = occur coffee`). Sits after the named keys
-    /// (keys claim first: `rans 5` fills distanceKm, not the value).
-    /// Shared by kind, like state/dur.
-    Value,
     /// Verb-derived duration — filled as a bare positional the side's
     /// injected `dur=` slot digests. Shared by kind. Type-gated when
     /// reserved behind a greedy.
@@ -362,17 +357,7 @@ fn side_slots(side_idx: usize, side: &[String]) -> Vec<Slot> {
         if is_switch && body_positionals == 0 && join.is_none() {
             slots.push(Slot::single(SlotKind::State, side_idx, false));
         }
-        // occur's unbound primary value: one positional — but only when
-        // the side declares NO `-k` keys (`c 2` fills the value; `rans 5`
-        // fills distanceKm and a second positional is excess, per the
-        // ratified k1–k6 walk where keyed occur sides expose key slots
-        // only).
-        let value_slot =
-            verb == "occur" && body_positionals == 0 && join.is_none() && key_slots.is_empty();
         slots.extend(key_slots);
-        if value_slot {
-            slots.push(Slot::single(SlotKind::Value, side_idx, false));
-        }
         if join_unsatisfied {
             if let Some(target) = join.clone() {
                 if target != GreedyTarget::State {
@@ -425,7 +410,6 @@ fn unified_slots(locals: &[Vec<String>], prefix_end: usize) -> Vec<Slot> {
                     .iter_mut()
                     .find(|s| matches!(&s.kind, SlotKind::Key { name: n } if n == name)),
                 SlotKind::State => out.iter_mut().find(|s| matches!(s.kind, SlotKind::State)),
-                SlotKind::Value => out.iter_mut().find(|s| matches!(s.kind, SlotKind::Value)),
                 SlotKind::Dur => out.iter_mut().find(|s| matches!(s.kind, SlotKind::Dur)),
                 SlotKind::Greedy(target) => out
                     .iter_mut()
@@ -654,7 +638,7 @@ fn push_fill(fills: &mut Vec<Fill>, kind: &SlotKind, open_sides: Vec<usize>, val
             sides: open_sides,
             kv: format!("{name}={value}"),
         }),
-        SlotKind::State | SlotKind::Value => fills.push(Fill::State {
+        SlotKind::State => fills.push(Fill::State {
             sides: open_sides,
             value,
         }),
@@ -829,7 +813,6 @@ fn slot_identity_eq(a: &SlotKind, b: &SlotKind) -> bool {
         (SlotKind::Field { side: x }, SlotKind::Field { side: y }) => x == y,
         (SlotKind::Key { name: x }, SlotKind::Key { name: y }) => x == y,
         (SlotKind::State, SlotKind::State) => true,
-        (SlotKind::Value, SlotKind::Value) => true,
         (SlotKind::Dur, SlotKind::Dur) => true,
         (SlotKind::Greedy(x), SlotKind::Greedy(y)) => x == y,
         _ => false,
@@ -1084,14 +1067,14 @@ mod tests {
     }
 
     #[test]
-    fn bare_occur_value_slot_takes_one_positional() {
-        // `c 2` with c = "occur coffee": the unbound primary value.
-        let out = apply(&[&["occur", "coffee", ",,", "2"]]).unwrap();
-        assert!(out[0].iter().any(|t| t == "2"));
-        let err = apply(&[&["occur", "coffee", ",,", "2", "3"]]).unwrap_err();
-        assert!(matches!(err, ParseError::ExtraData(_)));
+    fn bare_occur_positional_is_excess() {
+        // There is NO primary-value slot (vividn, 2026-06-04 ~15:31 —
+        // "value is not a thing"; vestigial concept that keeps creeping
+        // back). `occur coffee ,, 2` errors exactly like the direct
+        // `occur coffee 2` does at the data_args layer.
+        let err = apply(&[&["occur", "coffee", ",,", "2"]]).unwrap_err();
+        assert!(matches!(err, ParseError::ExtraData(ref t) if t == &vec!["2".to_string()]));
     }
-
     #[test]
     fn lenient_sink_absorbs_excess() {
         let out = apply(&[&["occur", "f", "-l", ",,", "stray", "bits"]]).unwrap();
