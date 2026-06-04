@@ -340,6 +340,97 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
     Ok(answer.is_empty() || matches!(answer.as_str(), "y" | "yes"))
 }
 
+// ─── Stored alias-chain replay (shared by `reparse` + `why`) ─────────────
+
+/// Owned alias resolver built from a stored `alias_chain` JSON column.
+/// Replay must be hermetic to the alias state at write time, so we
+/// reconstruct the resolver from the row, never read the live aliases
+/// table.
+pub(crate) struct ChainResolver {
+    map: std::collections::HashMap<String, datum_parse::alias::ResolvedAlias>,
+}
+
+impl datum_parse::alias::Resolver for ChainResolver {
+    fn lookup(&self, name: &str) -> Option<datum_parse::alias::ResolvedAlias> {
+        self.map.get(name).cloned()
+    }
+}
+
+pub(crate) fn build_resolver_from_chain(chain: Option<&JsonValue>) -> ChainResolver {
+    use datum_parse::alias::shell_split;
+
+    let mut map: std::collections::HashMap<String, datum_parse::alias::ResolvedAlias> =
+        std::collections::HashMap::new();
+    let Some(JsonValue::Array(steps)) = chain else {
+        return ChainResolver { map };
+    };
+    for step in steps {
+        let Some(name) = step.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(expansion) = step.get("expansion").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        // First-write-wins: a chain may record the same name twice if
+        // the user re-ran a command, but the shape is identical (same
+        // expansion text), so collisions are benign.
+        map.entry(name.to_string())
+            .or_insert_with(|| datum_parse::alias::ResolvedAlias {
+                expands_to: expansion.to_string(),
+                tokens: shell_split(expansion),
+            });
+    }
+    ChainResolver { map }
+}
+
+/// Reconstruct the spec v2.1 *assembled wrapped expansion* — the
+/// self-describing token stream where every alias resolve reads as
+/// `( body ,, own-trailing )` — from an entry's stored provenance
+/// (da-g5su). Replays `raw_input` through
+/// [`datum_parse::alias::expand_wrapped`] with the stored `alias_chain`
+/// rehydrated as the resolver (hermetic to the alias state at write
+/// time, like `reparse`). Returns `None` when no chain is stored, when
+/// replay fails, or when no alias actually fires on replay (the stream
+/// would just echo `raw_input`).
+///
+/// Structural tokens (`(`, `)`, `,,`, `,`) render bare, per the spec's
+/// own examples — they ARE the stream's structure; quoting them (as
+/// `shell_join` would, for shell round-trip safety) buries exactly the
+/// scoping the display exists to show. Plain tokens still shell-quote
+/// as needed.
+pub(crate) fn assembled_expansion(raw_input: &str, chain: Option<&JsonValue>) -> Option<String> {
+    use datum_parse::alias::regions::{BOUNDARY, GROUP_CLOSE, GROUP_OPEN};
+    use datum_parse::alias::{expand_wrapped, shell_join, shell_split, MULTI_COMMA};
+
+    chain?;
+    let mut argv = vec!["datum".to_string()];
+    argv.extend(shell_split(raw_input));
+    // Mirror `parse_invocation`: a global `--db <path>` rides at the
+    // head of raw_input and would shadow the alias name at argv[1] —
+    // strip it before replay, exactly as the original pre-pass did.
+    let (argv, _db_flag) = crate::config::split_off_global_db_flag(argv);
+    let resolver = build_resolver_from_chain(chain);
+    let expanded = expand_wrapped(argv, &resolver).ok()?;
+    if expanded.chain.is_empty() {
+        return None;
+    }
+    let mut tokens: Vec<String> = Vec::new();
+    for (i, side) in expanded.sides.into_iter().enumerate() {
+        if i > 0 {
+            tokens.push(MULTI_COMMA.to_string());
+        }
+        tokens.extend(side);
+    }
+    let rendered: Vec<String> = tokens
+        .iter()
+        .map(|t| match t.as_str() {
+            GROUP_OPEN | GROUP_CLOSE | BOUNDARY | MULTI_COMMA => t.clone(),
+            _ => shell_join(std::slice::from_ref(t)),
+        })
+        .collect();
+    Some(rendered.join(" "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,6 +744,33 @@ mod tests {
         )
         .unwrap();
         assert!(!proceed, "explicit 'n' must abort");
+    }
+
+    /// da-g5su: `datum why` surfaces the assembled v2.1 wrapped
+    /// expansion — `( body ,, own-trailing )` — reconstructed from the
+    /// stored raw_input + alias_chain.
+    #[test]
+    fn assembled_expansion_reconstructs_wrapped_stream() {
+        let chain = json!([{
+            "name": "vbp",
+            "expansion": "add word -k word= -k translation= srcLang=pt pos=verb",
+        }]);
+        let s = assembled_expansion("vbp correr ardor", Some(&chain))
+            .expect("alias fires on replay → wrapped stream");
+        assert_eq!(
+            s,
+            "( add word -k word= -k translation= srcLang=pt pos=verb ,, correr ardor )",
+        );
+    }
+
+    /// No stored chain, or a chain whose alias no longer matches the
+    /// raw head, yields no `expanded:` line — the stream would just
+    /// echo raw_input.
+    #[test]
+    fn assembled_expansion_absent_when_nothing_fires() {
+        assert!(assembled_expansion("occur coffee", None).is_none());
+        let chain = json!([{"name": "vbp", "expansion": "add word"}]);
+        assert!(assembled_expansion("occur coffee", Some(&chain)).is_none());
     }
 
     #[test]

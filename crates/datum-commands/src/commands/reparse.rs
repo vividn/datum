@@ -19,8 +19,6 @@
 //! Switch/Add). Other verbs don't write rows, so they have nothing to
 //! diff against.
 
-use std::collections::HashMap;
-
 use anyhow::Result;
 use datum_core::{
     action::Action,
@@ -29,11 +27,12 @@ use datum_core::{
     entry::{Entry, CURRENT_PARSER_VERSION},
     ids::resolve_quickid_single,
 };
-use datum_parse::alias::{expand_argv, ResolvedAlias, Resolver};
+use datum_parse::alias::expand_argv;
 use datum_parse::parse_argv;
 use serde_json::Value as JsonValue;
 
 use crate::args::{Command, ReparseArgs};
+use crate::commands::helpers::build_resolver_from_chain;
 use crate::commands::log_core::{
     expand_array_states, extract_reserved_columns, parse_log_args, prepare_log_args,
     validate_switch_state_token,
@@ -51,46 +50,6 @@ struct ReparsedShape {
     dur: Option<Dur>,
     following_state: Option<JsonValue>,
     data: Option<JsonValue>,
-}
-
-/// Owned alias resolver built from a stored `alias_chain` JSON column.
-/// Replay must be hermetic to the alias state at write time, so we
-/// reconstruct the resolver from the row, never read the live aliases
-/// table.
-struct ChainResolver {
-    map: HashMap<String, ResolvedAlias>,
-}
-
-impl Resolver for ChainResolver {
-    fn lookup(&self, name: &str) -> Option<ResolvedAlias> {
-        self.map.get(name).cloned()
-    }
-}
-
-fn build_resolver_from_chain(chain: Option<&JsonValue>) -> ChainResolver {
-    use datum_parse::alias::shell_split;
-
-    let mut map: HashMap<String, ResolvedAlias> = HashMap::new();
-    let Some(JsonValue::Array(steps)) = chain else {
-        return ChainResolver { map };
-    };
-    for step in steps {
-        let Some(name) = step.get("name").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Some(expansion) = step.get("expansion").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        // First-write-wins: a chain may record the same name twice if
-        // the user re-ran a command, but the shape is identical (same
-        // expansion text), so collisions are benign.
-        map.entry(name.to_string())
-            .or_insert_with(|| ResolvedAlias {
-                expands_to: expansion.to_string(),
-                tokens: shell_split(expansion),
-            });
-    }
-    ChainResolver { map }
 }
 
 /// Replay one entry's `raw_input` through the current parser and project

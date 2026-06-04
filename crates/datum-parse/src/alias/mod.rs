@@ -22,4 +22,6 @@ pub use expand::{
     split_argv_at_commas, try_expand_alias, AliasStep, MapResolver, NoResolver, ResolvedAlias,
     Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS, MULTI_COMMA, TERMINAL_VERBS,
 };
-pub use scope::{expand_into_sides, verb_is_time_relevant, ExpandedSides, TimeFlags};
+pub use scope::{
+    expand_into_sides, expand_wrapped, verb_is_time_relevant, ExpandedSides, TimeFlags,
+};

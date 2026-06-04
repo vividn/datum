@@ -41,26 +41,17 @@ pub struct ExpandedSides {
     pub chain: Vec<AliasStep>,
 }
 
-/// Full alias-expansion + comma-split + trailing-region pipeline
-/// (spec v2.1).
+/// Steps 1–4 of the spec v2.1 pipeline: terminal-verb override, alias
+/// expansion (every resolve wraps its body in `( body ,, own-trailing )`),
+/// comma split, and per-side fixpoint expansion with multi-of-multi
+/// flattening.
 ///
-/// Steps:
-///
-/// 1. Apply the terminal-verb override (`<field> end` → `end <field>`).
-/// 2. Run [`try_expand_alias`] on the whole argv — every resolve wraps
-///    its body in `( … ,, own-trailing )`.
-/// 3. Comma-split the resulting flat argv into N sides (groups and
-///    boundaries ride inside their sides; commas split at any depth).
-/// 4. Per side, expand head alias chains to a fixpoint, flattening
-///    multi-of-multi — each resolve adds its own nested group, so
-///    region scope stays lexical in the stream.
-/// 5. Canonicalize stacked short flags, then ONE
-///    [`super::regions::apply_regions`] pass: each `,,` binds the
-///    sides to its left within its innermost enclosing group.
-/// 6. (retired — `--` is unix end-of-flags now, spec rule 4.)
-/// 7. Per side, apply the field/verb swap, BlockSwitch-chain collapse,
-///    switch-promote override, and stacked-short-flag expansion.
-pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<ExpandedSides> {
+/// The returned sides keep the wrapper groups and `,,` boundaries
+/// INTACT — this is the spec's *assembled wrapped expansion*, the
+/// self-describing token stream `datum why` surfaces (da-g5su).
+/// [`expand_into_sides`] continues from here by applying regions and
+/// the per-side normalisation passes.
+pub fn expand_wrapped(argv: Vec<String>, resolver: &dyn Resolver) -> Result<ExpandedSides> {
     if argv.is_empty() {
         return Ok(ExpandedSides::default());
     }
@@ -104,6 +95,39 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
             break;
         }
     }
+
+    Ok(ExpandedSides { sides, chain })
+}
+
+/// Full alias-expansion + comma-split + trailing-region pipeline
+/// (spec v2.1).
+///
+/// Steps:
+///
+/// 1. Apply the terminal-verb override (`<field> end` → `end <field>`).
+/// 2. Run [`try_expand_alias`] on the whole argv — every resolve wraps
+///    its body in `( … ,, own-trailing )`.
+/// 3. Comma-split the resulting flat argv into N sides (groups and
+///    boundaries ride inside their sides; commas split at any depth).
+/// 4. Per side, expand head alias chains to a fixpoint, flattening
+///    multi-of-multi — each resolve adds its own nested group, so
+///    region scope stays lexical in the stream.
+///    (1–4 live in [`expand_wrapped`], whose output preserves the
+///    wrapper groups.)
+/// 5. Canonicalize stacked short flags, then ONE
+///    [`super::regions::apply_regions`] pass: each `,,` binds the
+///    sides to its left within its innermost enclosing group.
+/// 6. (retired — `--` is unix end-of-flags now, spec rule 4.)
+/// 7. Per side, apply the field/verb swap, BlockSwitch-chain collapse,
+///    switch-promote override, and stacked-short-flag expansion.
+pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<ExpandedSides> {
+    if argv.is_empty() {
+        return Ok(ExpandedSides::default());
+    }
+    let bin = argv[0].clone();
+
+    // Steps 1–4: alias expansion with wrapper groups intact.
+    let ExpandedSides { sides, chain } = expand_wrapped(argv, resolver)?;
 
     // Step 5b: canonical flag shapes, then ONE region pass — a `,,`
     // binds the sides to its left within its innermost group, typed
@@ -418,6 +442,55 @@ mod tests {
     fn expand(argv: &[&str]) -> ExpandedSides {
         let a = standard_resolver();
         expand_into_sides(v(argv), &MapResolver(&a)).expect("expand")
+    }
+
+    // ── expand_wrapped: the assembled wrapped stream (da-g5su) ───────────
+
+    #[test]
+    fn expand_wrapped_keeps_nested_groups_intact() {
+        // Spec v2.1 rule 1's nested example:
+        // `ax y` → `( ( occur a -k keyX -k keyY ,, x ) ,, y )`.
+        let mut a = HashMap::new();
+        a.insert("a".into(), alias("occur a -k keyX -k keyY"));
+        a.insert("ax".into(), alias("a x"));
+        let r = expand_wrapped(v(&["datum", "ax", "y"]), &MapResolver(&a)).expect("expand");
+        assert_eq!(r.sides.len(), 1);
+        assert_eq!(
+            r.sides[0],
+            v(&[
+                "(", "(", "occur", "a", "-k", "keyX", "-k", "keyY", ",,", "x", ")", ",,", "y", ")",
+            ]),
+        );
+        assert_eq!(r.chain.len(), 2, "ax and a both fire");
+    }
+
+    #[test]
+    fn expand_wrapped_multi_alias_region_stays_inside_group() {
+        // Spec v2.1 rule 2's v2-corner example: `occur z , oov 30m` —
+        // oov's group keeps the 30m region off the z side, and each
+        // inner resolve adds its own wrapper.
+        let r = {
+            let a = standard_resolver();
+            expand_wrapped(
+                v(&["datum", "occur", "z", ",", "oov", "30m"]),
+                &MapResolver(&a),
+            )
+            .expect("expand")
+        };
+        // Sides split at the comma at any depth; parens balance across
+        // the re-joined stream, not per side.
+        assert_eq!(r.sides[0], v(&["occur", "z"]));
+        let joined = r
+            .sides
+            .iter()
+            .map(|s| s.join(" "))
+            .collect::<Vec<_>>()
+            .join(" , ");
+        assert_eq!(
+            joined,
+            "occur z , ( ( switch environment outside ,, ) , \
+             ( switch body vertical ,, ) ,, 30m )",
+        );
     }
 
     // ── Section F: keyed args distribution ───────────────────────────────

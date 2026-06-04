@@ -32,11 +32,12 @@ implementation detail.
    **reserved bare tokens, unconditionally structural**: the machinery
    emits them, and users may also type them (quoted past the shell) for
    manual grouping. The parens make the expanded token stream
-   self-describing — a human can read the scope right off it — but no
-   surface *displays* that assembled stream yet: `raw_input` stores the
-   literal invocation and `alias_chain`/`datum why` record per-step
-   `expands_to` bodies. Surfacing the wrapped expansion in `why` is
-   follow-up work (da-g5su). A literal bare-paren token is spelled `\(` /
+   self-describing — a human can read the scope right off it.
+   `raw_input` stores the literal invocation and `alias_chain` records
+   per-step `expands_to` bodies; `datum why` additionally prints the
+   assembled wrapped stream on an `expanded:` line (da-g5su),
+   reconstructed by replaying `raw_input` against the stored chain.
+   A literal bare-paren token is spelled `\(` /
    `\)` (exact-token escape, mirroring `\.`); multi-char tokens that
    merely contain parens (`(x)`, `:-)`) were never structural. `--`
    does **not** demote parens — it governs flag parsing, not grouping
