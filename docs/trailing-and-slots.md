@@ -1,46 +1,72 @@
-# Trailing arguments & slot allocation — spec v2
+# Trailing arguments & slot allocation — spec v2.1
 
 Status: **ratified** (design session, vividn + Vremya, 2026-06-04 ~10:20–11:40
 Berlin; boundary token amended `--` → `,,` and unix `--` restored, same day
-~13:49). Supersedes the trailing/allocation behavior merged in #42/#44/#45
+~13:49; paren groups added per vividn's proposal ~17:58, ratified ~18:05 —
+dissolving the v2 emitted-vs-typed scope split into one lexical rule).
+Supersedes the trailing/allocation behavior merged in #42/#44/#45
 (da-vo0y features 1–3, da-6l4x). Companion to `docs/alias-system-design.md`.
 The rework beads reference this document; where the merged code disagrees
 with this spec, **this spec wins**.
 
-User-facing note: `,,` is mostly machinery (every alias resolve emits one),
-but it is *typeable* and must be documented in the user docs alongside `,`
-— it is part of the command grammar, not an implementation detail.
+User-facing note: `,,`, `(`, and `)` are mostly machinery (every alias
+resolve emits them), but they are *typeable* and must be documented in the
+user docs alongside `,` — they are part of the command grammar, not an
+implementation detail.
 
 ## Grammar
 
-1. **Sides.** `,` separates sides. Each alias resolution appends `,,` at
-   the end of its expanded body — the boundary marker and the trailing
-   marker are the same token.
-2. **Trailing regions.** `,,` opens a *trailing region*; the next `,`,
-   the next `,,`, or end of argv closes it. Empty regions are no-ops;
-   they occur constantly (every bare alias call produces one). Regions
-   apply left-to-right; later regions see earlier fills as satisfied.
-
-   **Binding scope** (implementation reconciliation, 2026-06-04
-   afternoon — both ratified statements hold):
-   - A **typed** `,,` (written by the user in the original command)
-     binds **all sides to its left** — the cumulative prefix, per the
-     `t2 binds {a,b,c,d}` ruling.
-   - An **alias-emitted** boundary binds **that alias's own expanded
-     sides** ("the sides they are referencing") — so `vvcaf`-style
-     composition (`vertical , caffeine -t +5`) keeps its inner trailing
-     side-scoped, and `z , oov 30m` puts 30m on oov's two sides, not on
-     z. Without this split, an inner alias's trailing would leak onto
-     unrelated earlier sides.
+1. **Sides and groups.** `,` separates sides — at any depth; groups do
+   not hide commas. Every alias resolution wraps its expansion in an
+   explicit **group**:
 
    ```
-   a , b ,, t1 , c , d ,, t2    # typed: t1 binds {a,b}; t2 binds {a,b,c,d}
+   ( body ,, own-trailing )
+   ```
+
+   *own-trailing* is the run of plain call-site trailing tokens up to
+   the first **structural** token — the next `,`, the next `,,`, an
+   enclosing `)`, or a typed `(` (which starts new grouped sides, never
+   trailing args); anything past that rides outside the group with its
+   own structure intact. Nested resolves nest groups. `(` and `)` are
+   **reserved bare tokens, unconditionally structural**: the machinery
+   emits them, and users may also type them (quoted past the shell) for
+   manual grouping. The parens make the expanded token stream
+   self-describing — a human can read the scope right off it — but no
+   surface *displays* that assembled stream yet: `raw_input` stores the
+   literal invocation and `alias_chain`/`datum why` record per-step
+   `expands_to` bodies. Surfacing the wrapped expansion in `why` is
+   follow-up work (da-g5su). A literal bare-paren token is spelled `\(` /
+   `\)` (exact-token escape, mirroring `\.`); multi-char tokens that
+   merely contain parens (`(x)`, `:-)`) were never structural. `--`
+   does **not** demote parens — it governs flag parsing, not grouping
+   (rule 4). Unbalanced groups are an error pointing at the escape.
+2. **Trailing regions — one rule.** `,,` opens a *trailing region*,
+   closed by the next structural token (`,,`, `)`, `(`) or end of side.
+   A region binds
+   **all sides to its left within its innermost enclosing group** (top
+   level counts as the outermost group). This single lexical rule yields
+   both ratified v2 behaviors: a typed top-level `,,` binds the whole
+   prefix (the `t2 binds {a,b,c,d}` ruling), while an alias-emitted `,,`
+   sits inside the alias's own group and binds only the sides that alias
+   produced — so `z , oov 30m` puts 30m on oov's two sides, not on z.
+   Empty regions are no-ops; they occur constantly (every bare alias
+   call produces one). Regions apply left-to-right; later regions see
+   earlier fills as satisfied.
+
+   ```
+   a , b ,, t1 , c , d ,, t2    # top level: t1 binds {a,b}; t2 binds {a,b,c,d}
+   a , ( b , c ,, t ) , d       # manual group: t binds {b,c} only
    oov , switch project gardening
      # oov = "outside , vertical" expands to:
-     # outside , vertical ,, , switch project gardening  (empty region, no-op)
+     # ( outside , vertical ,, ) , switch project gardening  (empty region)
    ax y
      # a  = "occur a -k keyX -k keyY";  ax = "a x" — expands to:
-     # occur a -k keyX -k keyY ,, x ,, y   (x→keyX; keyX satisfied, y→keyY)
+     # ( ( occur a -k keyX -k keyY ,, x ) ,, y )  (x→keyX; keyX satisfied, y→keyY)
+   z , oov 30m
+     # the v2 corner that forced the typed/emitted split: oov's group
+     # keeps 30m off z even when z is dur-bearing:
+     # z , ( outside , vertical ,, 30m )
    ```
 3. **Region semantics.** Within a region: flags and `key=value` tokens
    propagate to **every** prefix side ("blanket"); bare positionals walk
@@ -51,11 +77,15 @@ but it is *typeable* and must be documented in the user docs alongside `,`
    the next `,` or `,,`, and a `--` inside an alias body applies only
    within that body — it never leaks to the call site or outer scopes.
    Dash-positionals participate in slot walks like any positional (they
-   slot; they do not blanket).
+   slot; they do not blanket). `--` does **not** demote parens — `(`/`)`
+   stay structural everywhere (rule 1), so a manual group can still
+   close after a `--` (`( a , b ,, -- --verbose )` works). Literal
+   bare parens are spelled `\(` / `\)`.
 
    ```
    note cmd -- --verbose --dry-run        # stores two dash-positionals
    note cmd -- --verbose , occur coffee -q  # side 2's -q is still a flag
+   occur f -k expr ,, \(                  # expr="(" — escaped literal
    ```
 
 ## Slot model
@@ -121,6 +151,10 @@ but it is *typeable* and must be documented in the user docs alongside `,`
 
 ## Retired by this spec
 
+- The v2 **typed-vs-emitted scope split** (two-stage region application,
+  deferred prefix counting) — superseded by lexical groups (v2.1 rules
+  1–2): one structural parse, one binding rule. The emitted parens carry
+  the scope; provenance no longer matters.
 - The in-band `U+0001` `TRAILING_MARKER` sentinel (alias/allocate.rs) —
   `,,` is the only boundary/trailing token; expansion emits it, the
   region parser consumes it.

@@ -241,10 +241,19 @@ pub fn try_expand_alias(
     let mut chain: Vec<AliasStep> = Vec::new();
     let mut visited: Vec<String> = Vec::new();
     for _ in 0..MAX_ALIAS_HOPS {
-        if argv.len() < 2 || KNOWN_SUBCOMMANDS.contains(&argv[1].as_str()) {
+        // The alias name sits past any open-group parens an earlier
+        // resolve emitted (spec v2.1: every resolve wraps its body in
+        // `( … )`, so a side's head looks like `( ( name …`).
+        let lead = argv
+            .iter()
+            .skip(1)
+            .take_while(|t| *t == super::regions::GROUP_OPEN)
+            .count();
+        let name_idx = 1 + lead;
+        if argv.len() <= name_idx || KNOWN_SUBCOMMANDS.contains(&argv[name_idx].as_str()) {
             return Ok((argv, chain));
         }
-        let name = argv[1].clone();
+        let name = argv[name_idx].clone();
         if visited.iter().any(|v| v == &name) {
             let mut path = visited;
             path.push(name);
@@ -252,7 +261,7 @@ pub fn try_expand_alias(
         }
         match resolver.lookup(&name) {
             Some(alias) => {
-                let trailing = &argv[2..];
+                let trailing = &argv[name_idx + 1..];
                 let max_n = max_placeholder(&alias.tokens);
                 if max_n > trailing.len() {
                     return Err(crate::error::ParseError::InvalidArg(format!(
@@ -278,22 +287,41 @@ pub fn try_expand_alias(
                 });
                 visited.push(name);
 
-                // Spec v2 (docs/trailing-and-slots.md, rule 1): every
-                // resolve appends the `,,` boundary after its body; the
-                // call-site remainder rides behind it as this alias's
-                // trailing region. The region parser later scopes that
-                // region to the cumulative prefix and closes it at the
-                // next `,`, so no comma-splitting is needed here — and
-                // nested resolves chain naturally (`ax y` → `a x ,, y`
-                // → `occur a -k keyX -k keyY ,, x ,, y`). Body-internal
-                // `--` tokens survive untouched: they are unix
-                // end-of-flags now (rule 4), scoped to their side by
-                // the downstream parser.
-                let mut result = Vec::with_capacity(substituted.len() + remaining.len() + 2);
+                // Spec v2.1 (docs/trailing-and-slots.md, rules 1–2):
+                // every resolve wraps its expansion in an explicit
+                // group — `( body ,, own-trailing )` — so a region's
+                // scope is lexical, not positional. The alias's own
+                // trailing is the run of plain tokens up to the first
+                // STRUCTURAL one: `,` (new side), `,,` (new region),
+                // `)` (an enclosing group closes), or `(` (a typed
+                // group opens — new grouped sides, never trailing
+                // args; Copilot review on PR #49). The rest rides
+                // outside the close-paren with its own structure
+                // intact. Nested resolves produce nested groups
+                // (`ax y` → `( ( occur a -k keyX -k keyY ,, x ) ,, y )`).
+                // Body-internal `--` tokens survive untouched: unix
+                // end-of-flags (rule 4), scoped by the downstream
+                // parser; escaped parens (`\(`/`\)`) are plain tokens
+                // here and unescape later in parse_structure.
+                let split = remaining
+                    .iter()
+                    .position(|t| {
+                        t == MULTI_COMMA
+                            || t == super::regions::BOUNDARY
+                            || t == super::regions::GROUP_CLOSE
+                            || t == super::regions::GROUP_OPEN
+                    })
+                    .unwrap_or(remaining.len());
+                let (own_trailing, rest) = remaining.split_at(split);
+                let mut result = Vec::with_capacity(argv.len() + substituted.len() + lead + 4);
                 result.push(argv[0].clone());
+                result.extend(argv[1..name_idx].iter().cloned()); // re-emit lead parens
+                result.push(super::regions::GROUP_OPEN.to_string());
                 result.extend(substituted);
                 result.push(super::regions::BOUNDARY.to_string());
-                result.extend(remaining);
+                result.extend(own_trailing.iter().cloned());
+                result.push(super::regions::GROUP_CLOSE.to_string());
+                result.extend(rest.iter().cloned());
                 argv = result;
             }
             None => return Ok((argv, chain)),
@@ -1291,6 +1319,34 @@ mod tests {
         assert!(
             matches!(err, crate::error::ParseError::ExtraData(ref t) if t == &vec!["2".to_string()]),
             "exact excess payload must match the direct form: {err:?}"
+        );
+    }
+
+    #[test]
+    fn trailing_typed_group_rides_outside_the_wrapper() {
+        // Copilot review on PR #49: a typed `(` in the call-site
+        // trailing starts new grouped sides — never trailing args — so
+        // the own-trailing capture stops there and the typed group's
+        // structure survives outside the emitted wrapper.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert(
+            "c".to_string(),
+            ResolvedAlias {
+                expands_to: "occur coffee".to_string(),
+                tokens: v(&["occur", "coffee"]),
+            },
+        );
+        let (argv, _) = try_expand_alias(
+            v(&["datum", "c", "(", "occur", "b", ",,", "t=1", ")"]),
+            &MapResolver(&aliases),
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            v(&[
+                "datum", "(", "occur", "coffee", ",,", ")", // wrapper, empty own-trailing
+                "(", "occur", "b", ",,", "t=1", ")" // typed group, intact
+            ])
         );
     }
 

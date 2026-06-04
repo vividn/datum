@@ -1,5 +1,5 @@
 //! Side-scoped flag distribution + time-flag composition for
-//! multi-entry aliases (spec v2: `docs/trailing-and-slots.md`;
+//! multi-entry aliases (spec v2.1: `docs/trailing-and-slots.md`;
 //! historically da-gh0.D).
 //!
 //! The layer above [`super::expand::try_expand_alias`]: it expands all
@@ -8,15 +8,17 @@
 //! [`super::regions`]), and exposes a [`TimeFlags`] type that composes
 //! alias-body-bound time flags with call-site time flags (Rule 15).
 //!
-//! Spec-v2 ground rules as they land here:
+//! Spec ground rules as they land here:
 //!
 //! - Time flags (and flags generally) are side-scoped in side text;
 //!   inside a trailing region they blanket the region's bound sides.
 //!   Time-irrelevant verbs silently ignore time flags (Rule 4's second
 //!   sentence survives).
 //! - Multi-of-multi flattens to N sides (Rule 7).
-//! - An alias-emitted region binds the alias's own expanded sides; a
-//!   typed `,,` binds the cumulative prefix (spec rule 2).
+//! - A `,,` region binds all sides to its left within its innermost
+//!   enclosing group (spec v2.1 rule 2). Every alias resolve wraps its
+//!   body in `( … )`, so emitted regions are scoped lexically — this
+//!   layer never tracks region provenance.
 //! - `--` is unix end-of-flags, scoped to its side or region (spec
 //!   rule 4) — the old promote-to-all `--` semantics are retired.
 //! - **Rule 15** — Call-site time flags compose with alias-bound time
@@ -40,21 +42,21 @@ pub struct ExpandedSides {
 }
 
 /// Full alias-expansion + comma-split + trailing-region pipeline
-/// (spec v2).
+/// (spec v2.1).
 ///
 /// Steps:
 ///
 /// 1. Apply the terminal-verb override (`<field> end` → `end <field>`).
-/// 2. Run [`try_expand_alias`] on the whole argv — every resolve
-///    appends a `,,` boundary; its call-site trailing rides behind it.
-/// 3. Comma-split the resulting flat argv into N sides (typed and
-///    step-2 boundaries ride inside their sides).
-/// 4. Per ORIGINAL side: expand its head alias chain to a fixpoint
-///    (flattening multi-of-multi), then apply its alias-emitted
-///    regions scoped to that side's own sub-expansion. Boundaries
-///    present at entry (typed / step-2) defer.
-/// 5. Globally apply the deferred regions — each binds the cumulative
-///    prefix at its position.
+/// 2. Run [`try_expand_alias`] on the whole argv — every resolve wraps
+///    its body in `( … ,, own-trailing )`.
+/// 3. Comma-split the resulting flat argv into N sides (groups and
+///    boundaries ride inside their sides; commas split at any depth).
+/// 4. Per side, expand head alias chains to a fixpoint, flattening
+///    multi-of-multi — each resolve adds its own nested group, so
+///    region scope stays lexical in the stream.
+/// 5. Canonicalize stacked short flags, then ONE
+///    [`super::regions::apply_regions`] pass: each `,,` binds the
+///    sides to its left within its innermost enclosing group.
 /// 6. (retired — `--` is unix end-of-flags now, spec rule 4.)
 /// 7. Per side, apply the field/verb swap, BlockSwitch-chain collapse,
 ///    switch-promote override, and stacked-short-flag expansion.
@@ -72,16 +74,41 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
     let rest: Vec<String> = argv.into_iter().skip(1).collect();
     let sides = split_argv_at_commas(rest)?;
 
-    // Steps 4 + 5 + 5b (spec v2, docs/trailing-and-slots.md): each
-    // ORIGINAL side runs to its own expansion fixpoint, then its
-    // alias-emitted trailing regions are applied SCOPED to that side's
-    // sub-expansion — an alias's call-site region binds the sides that
-    // alias expanded to ("the sides they are referencing"). Boundaries
-    // already present at step-4 entry — the user-typed `,,` of the
-    // original command, and the step-2 outermost alias's emission —
-    // defer to the global pass below, where a region binds the
-    // cumulative prefix at its position (typed regions see everything
-    // to their left).
+    // Steps 4 + 5: per-side alias expansion with multi-of-multi
+    // flattening. Each resolve wraps its expansion in `( … )` (spec
+    // v2.1), so the structure a region needs is IN the stream — no
+    // staging or deferred bookkeeping here.
+    let mut sides = sides;
+    for _ in 0..MAX_ALIAS_HOPS {
+        let mut next_sides: Vec<Vec<String>> = Vec::with_capacity(sides.len());
+        let mut grew_or_changed = false;
+        for side in sides {
+            let mut side_argv = vec![bin.clone()];
+            side_argv.extend(side);
+            let before = side_argv.clone();
+            let (side_argv, side_chain) = try_expand_alias(side_argv, resolver)?;
+            if side_argv != before {
+                grew_or_changed = true;
+            }
+            chain.extend(side_chain);
+            let side: Vec<String> = side_argv.into_iter().skip(1).collect();
+            if side.iter().any(|t| t == MULTI_COMMA) {
+                grew_or_changed = true;
+                next_sides.extend(split_argv_at_commas(side)?);
+            } else {
+                next_sides.push(side);
+            }
+        }
+        sides = next_sides;
+        if !grew_or_changed {
+            break;
+        }
+    }
+
+    // Step 5b: canonical flag shapes, then ONE region pass — a `,,`
+    // binds the sides to its left within its innermost group, typed
+    // top-level boundaries included (the outermost group is the whole
+    // command).
     //
     // Stacked short flags expand BEFORE region application (per the #45
     // review): a bundle with a value-taking terminal (`-yyt 3`,
@@ -89,86 +116,18 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
     // `-S -R notes`, or the value token would misclassify as an
     // allocatable positional. Step 7c's expansion below is a no-op on
     // already-expanded sides.
-    let mut flat_sides: Vec<Vec<String>> = Vec::with_capacity(sides.len());
-    for side in sides {
-        let deferred_count = side
-            .iter()
-            .filter(|t| *t == super::regions::BOUNDARY)
-            .count();
-
-        // Inner fixpoint: expand this side's head alias chain and
-        // flatten its multi-of-multi body commas.
-        let mut subs: Vec<Vec<String>> = vec![side];
-        for _ in 0..MAX_ALIAS_HOPS {
-            let mut next: Vec<Vec<String>> = Vec::with_capacity(subs.len());
-            let mut grew_or_changed = false;
-            for sub in subs {
-                let mut sub_argv = vec![bin.clone()];
-                sub_argv.extend(sub);
-                let before = sub_argv.clone();
-                let (sub_argv, sub_chain) = try_expand_alias(sub_argv, resolver)?;
-                if sub_argv != before {
-                    grew_or_changed = true;
-                }
-                chain.extend(sub_chain);
-                let sub: Vec<String> = sub_argv.into_iter().skip(1).collect();
-                if sub.iter().any(|t| t == MULTI_COMMA) {
-                    grew_or_changed = true;
-                    next.extend(split_argv_at_commas(sub)?);
-                } else {
-                    next.push(sub);
-                }
-            }
-            subs = next;
-            if !grew_or_changed {
-                break;
-            }
-        }
-
-        // Canonical flag shapes before allocation.
-        let mut subs: Vec<Vec<String>> = subs
-            .into_iter()
-            .map(|sub| {
-                let mut sub_argv = vec![bin.clone()];
-                sub_argv.extend(sub);
-                expand_stacked_flags(sub_argv).into_iter().skip(1).collect()
-            })
-            .collect();
-
-        // Peel the deferred tail (the LAST `deferred_count` boundaries —
-        // entry-time boundaries always trail the side's own expansion)
-        // off the last sub-side; it re-attaches after the scoped pass.
-        let mut deferred_tail: Vec<String> = Vec::new();
-        if deferred_count > 0 {
-            if let Some(last) = subs.last_mut() {
-                let bpos: Vec<usize> = last
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, t)| *t == super::regions::BOUNDARY)
-                    .map(|(i, _)| i)
-                    .collect();
-                if bpos.len() >= deferred_count {
-                    let cut = bpos[bpos.len() - deferred_count];
-                    deferred_tail = last.split_off(cut);
-                }
-            }
-        }
-
-        // Stage 1: scoped application — cumulative WITHIN this side's
-        // own expansion is exactly "the alias's sides".
-        let mut subs = super::regions::apply_regions(subs)?;
-        if !deferred_tail.is_empty() {
-            if let Some(last) = subs.last_mut() {
-                last.extend(deferred_tail);
-            } else {
-                subs.push(deferred_tail);
-            }
-        }
-        flat_sides.extend(subs);
-    }
-
-    // Stage 2: typed / outer regions bind the cumulative global prefix.
-    let sides = super::regions::apply_regions(flat_sides)?;
+    let sides: Vec<Vec<String>> = sides
+        .into_iter()
+        .map(|side| {
+            let mut side_argv = vec![bin.clone()];
+            side_argv.extend(side);
+            expand_stacked_flags(side_argv)
+                .into_iter()
+                .skip(1)
+                .collect()
+        })
+        .collect();
+    let sides = super::regions::apply_regions(sides)?;
 
     // An empty side here means a trailing/doubled comma in the original
     // or an alias body like `a ,` — the same error the comma splitter

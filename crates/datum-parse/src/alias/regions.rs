@@ -1,11 +1,14 @@
-//! Trailing-region allocation — spec v2 (`docs/trailing-and-slots.md`).
+//! Trailing-region allocation — spec v2.1 (`docs/trailing-and-slots.md`).
 //!
-//! The grammar in one breath: `,` separates sides; every alias resolve
-//! appends `,,`; a `,,` opens a *trailing region* bound to **all sides to
-//! its left**, closed by the next `,`, the next `,,`, or end of argv.
-//! Within a region, flags and `key=value` blanket to every prefix side
-//! while bare positionals walk the prefix's unfilled slot list. `--` is
-//! plain unix end-of-flags, scoped to the side or region it appears in.
+//! The grammar in one breath: `,` separates sides (at any depth); every
+//! alias resolve wraps its expansion in a group, `( body ,, trailing )`;
+//! a `,,` opens a *trailing region* bound to **all sides to its left
+//! within its innermost enclosing group**, closed by the next structural
+//! token (`,,`, `)`, `(`) or end of side. Within a region, flags and
+//! `key=value` blanket to every bound side while bare positionals walk
+//! the bound sides' unfilled slot list. `--` is plain unix end-of-flags,
+//! scoped to the side or region it appears in; parens stay structural
+//! even after `--` — literal paren data is spelled `\(` / `\)`.
 //!
 //! Slot model (spec rules 5–9):
 //!
@@ -33,6 +36,17 @@ use crate::time::parse_duration_str::parse_duration;
 /// The boundary / trailing-region token. Typeable user grammar, but
 /// mostly emitted by the alias expander at every resolve.
 pub const BOUNDARY: &str = ",,";
+
+/// Group delimiters (spec v2.1). Every alias resolve wraps its
+/// expansion in `( … )`, making region scope LEXICAL: a `,,` binds the
+/// sides to its left within its innermost enclosing group. Users never
+/// need to type them, but may (quoted past the shell) for manual
+/// grouping. The wrapped stream is self-describing, though no display
+/// surface shows it yet (surfacing it in `datum why` is da-g5su).
+/// Unconditionally structural as bare tokens — literal paren data is
+/// spelled `\(` / `\)` (see [`unescape_paren`]).
+pub const GROUP_OPEN: &str = "(";
+pub const GROUP_CLOSE: &str = ")";
 
 /// Flags (at the token level) that consume the next token as a value.
 /// Used to keep flag values out of the positional walk. Mirrors the
@@ -159,40 +173,159 @@ impl Slot {
     }
 }
 
-/// One side, split into its local tokens and the trailing regions that
-/// were attached after it (each region binds the cumulative prefix
-/// `0..=side_index`).
+/// One trailing region, located structurally: it binds sides
+/// `start_side..=end_side` — everything to its left within its
+/// innermost enclosing group (spec v2.1 rule 2).
 #[derive(Debug, Clone)]
-struct ParsedSide {
-    local: Vec<String>,
-    regions: Vec<Vec<String>>,
+struct Region {
+    start_side: usize,
+    end_side: usize,
+    tokens: Vec<String>,
 }
 
-/// Split a side's token vec at `,,` boundaries: tokens before the first
-/// boundary are the side's locals; each following segment is a region.
-fn parse_side(tokens: Vec<String>) -> ParsedSide {
-    let mut local: Vec<String> = Vec::new();
-    let mut regions: Vec<Vec<String>> = Vec::new();
-    let mut current: Option<Vec<String>> = None;
-    for tok in tokens {
-        if tok == BOUNDARY {
-            if let Some(r) = current.take() {
-                regions.push(r);
+/// `\(` / `\)` escape a literal paren token (exact-token, mirroring the
+/// `\.` walk escape). Unescaped here as tokens route to locals/region
+/// content, so downstream layers only ever see plain data parens —
+/// after this parse no bare paren carries structure.
+fn unescape_paren(tok: &str) -> &str {
+    match tok {
+        "\\(" => GROUP_OPEN,
+        "\\)" => GROUP_CLOSE,
+        _ => tok,
+    }
+}
+
+/// Structural parse of the whole side sequence: strip `(`/`)`/`,,`
+/// into group scopes and located regions; everything else is a side's
+/// local token. Groups may span sides (commas split sides regardless
+/// of depth); a region's content is intra-side, ending at the next
+/// `,,`, `)`, `(`, or end of side. Unbalanced groups error.
+///
+/// Parens are structural UNCONDITIONALLY — `--` governs flag parsing,
+/// not grouping (a `--` latch can't demote them without re-importing
+/// the provenance problem the parens exist to solve: a typed `-- )` and
+/// the emitted wrapper's `)` are the same bare token). Literal paren
+/// data uses `\(` / `\)` instead (Copilot review on PR #49).
+fn parse_structure(sides: Vec<Vec<String>>) -> Result<(Vec<Vec<String>>, Vec<Region>)> {
+    let n = sides.len();
+    let mut locals: Vec<Vec<String>> = vec![Vec::new(); n];
+    let mut regions: Vec<Region> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new(); // open groups' start sides
+    for (i, side) in sides.into_iter().enumerate() {
+        let mut j = 0usize;
+        while j < side.len() {
+            let tok = &side[j];
+            if tok == GROUP_OPEN {
+                stack.push(i);
+                j += 1;
+                continue;
             }
-            current = Some(Vec::new());
+            if tok == GROUP_CLOSE {
+                if stack.pop().is_none() {
+                    return Err(ParseError::InvalidArg(
+                        "unbalanced ')' in expanded command (use '\\)' for a literal paren)"
+                            .to_string(),
+                    ));
+                }
+                j += 1;
+                continue;
+            }
+            if tok == BOUNDARY {
+                let start_side = stack.last().copied().unwrap_or(0);
+                j += 1;
+                let mut tokens: Vec<String> = Vec::new();
+                while j < side.len()
+                    && side[j] != BOUNDARY
+                    && side[j] != GROUP_CLOSE
+                    && side[j] != GROUP_OPEN
+                {
+                    tokens.push(unescape_paren(&side[j]).to_string());
+                    j += 1;
+                }
+                // Empty regions are no-ops (every bare alias call
+                // produces one).
+                if !tokens.is_empty() {
+                    regions.push(Region {
+                        start_side,
+                        end_side: i,
+                        tokens,
+                    });
+                }
+                continue;
+            }
+            locals[i].push(unescape_paren(tok).to_string());
+            j += 1;
+        }
+    }
+    if !stack.is_empty() {
+        return Err(ParseError::InvalidArg(
+            "unbalanced '(' in expanded command (use '\\(' for a literal paren)".to_string(),
+        ));
+    }
+    Ok((locals, regions))
+}
+
+/// One side's one slot declaration — the global, range-independent
+/// store. Per-region walks build merged views over the atoms in their
+/// binding range; satisfaction lives here so it persists across
+/// regions with per-side precision.
+#[derive(Debug, Clone)]
+struct Atom {
+    kind: SlotKind,
+    side: usize,
+    satisfied: bool,
+}
+
+/// Flatten every side's declarations into atoms.
+fn atoms_for(locals: &[Vec<String>]) -> Vec<Atom> {
+    let mut out: Vec<Atom> = Vec::new();
+    for (i, side) in locals.iter().enumerate() {
+        for slot in side_slots(i, side) {
+            for sr in slot.sides {
+                out.push(Atom {
+                    kind: slot.kind.clone(),
+                    side: sr.side,
+                    satisfied: sr.satisfied,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Build the merged walk view over the atoms whose side lies in
+/// `lo..=hi`: `-k` merge by name, state/dur by kind, greedies by
+/// target, fields never (spec rules 6 + 8). Returns the view plus, per
+/// view slot, the atom indices backing each of its sides (for
+/// satisfaction write-back).
+fn build_view(atoms: &[Atom], lo: usize, hi: usize) -> (Vec<Slot>, Vec<Vec<usize>>) {
+    let mut view: Vec<Slot> = Vec::new();
+    let mut backing: Vec<Vec<usize>> = Vec::new();
+    for (ai, atom) in atoms.iter().enumerate() {
+        if atom.side < lo || atom.side > hi {
             continue;
         }
-        match current.as_mut() {
-            Some(r) => r.push(tok),
-            None => local.push(tok),
+        let merged = if matches!(atom.kind, SlotKind::Field { .. }) {
+            None
+        } else {
+            view.iter()
+                .position(|s| slot_identity_eq(&s.kind, &atom.kind))
+        };
+        match merged {
+            Some(vi) => {
+                view[vi].sides.push(SideRef {
+                    side: atom.side,
+                    satisfied: atom.satisfied,
+                });
+                backing[vi].push(ai);
+            }
+            None => {
+                view.push(Slot::single(atom.kind.clone(), atom.side, atom.satisfied));
+                backing.push(vec![ai]);
+            }
         }
     }
-    if let Some(r) = current.take() {
-        regions.push(r);
-    }
-    // Empty regions are no-ops (every bare alias call produces one).
-    regions.retain(|r| !r.is_empty());
-    ParsedSide { local, regions }
+    (view, backing)
 }
 
 /// Extract a side's declared slots from its local tokens, in spec
@@ -395,39 +528,6 @@ fn side_slots(side_idx: usize, side: &[String]) -> Vec<Slot> {
         ));
     }
     slots
-}
-
-/// Build the unified slot list for a prefix of sides: per-side slots in
-/// (side, declaration) order; `-k` slots merge by name, state/dur merge
-/// by kind, greedies/sinks merge by target (spec rules 6 + 8).
-fn unified_slots(locals: &[Vec<String>], prefix_end: usize) -> Vec<Slot> {
-    let mut out: Vec<Slot> = Vec::new();
-    for (i, side) in locals.iter().enumerate().take(prefix_end + 1) {
-        for slot in side_slots(i, side) {
-            let merged = match &slot.kind {
-                SlotKind::Field { .. } => None,
-                SlotKind::Key { name } => out
-                    .iter_mut()
-                    .find(|s| matches!(&s.kind, SlotKind::Key { name: n } if n == name)),
-                SlotKind::State => out.iter_mut().find(|s| matches!(s.kind, SlotKind::State)),
-                SlotKind::Dur => out.iter_mut().find(|s| matches!(s.kind, SlotKind::Dur)),
-                SlotKind::Greedy(target) => out
-                    .iter_mut()
-                    .find(|s| matches!(&s.kind, SlotKind::Greedy(t) if t == target)),
-            };
-            match merged {
-                Some(existing) => {
-                    // Per-side satisfaction: the newcomer's declaration
-                    // carries its own flag — an unsatisfied declaration
-                    // re-opens the unified slot for the walk without
-                    // disturbing already-filled sides.
-                    existing.sides.extend(slot.sides);
-                }
-                None => out.push(slot),
-            }
-        }
-    }
-    out
 }
 
 /// Classified region content.
@@ -653,22 +753,21 @@ fn push_fill(fills: &mut Vec<Fill>, kind: &SlotKind, open_sides: Vec<usize>, val
     }
 }
 
-/// Apply every trailing region to its cumulative prefix and emit the
-/// final flat sides. The entry point `expand_into_sides` calls after
-/// full expansion + stacked-flag normalization.
+/// Apply every trailing region over its lexical scope and emit the
+/// final flat sides (spec v2.1). The entry point `expand_into_sides`
+/// calls this once, after full expansion + stacked-flag normalization;
+/// groups (`(`/`)`) and boundaries (`,,`) are consumed here.
 pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>> {
-    let parsed: Vec<ParsedSide> = sides.into_iter().map(parse_side).collect();
-    if parsed.iter().all(|p| p.regions.is_empty()) {
-        return Ok(parsed.into_iter().map(|p| p.local).collect());
+    let (locals, regions) = parse_structure(sides)?;
+    if regions.is_empty() {
+        return Ok(locals);
     }
 
-    let locals: Vec<Vec<String>> = parsed.iter().map(|p| p.local.clone()).collect();
-
-    // The unified slot state spans the WHOLE command: later regions see
-    // earlier fills as satisfied. Slot lists per prefix are views into
-    // one growing unification — build incrementally as the prefix grows.
-    let mut slots: Vec<Slot> = Vec::new();
-    let mut covered_sides = 0usize; // sides whose slots are already unified in
+    // The atom store spans the whole command; satisfaction persists
+    // across regions per (slot, side), so a later region sees earlier
+    // fills as satisfied while a side outside an earlier region's
+    // scope stays fillable.
+    let mut atoms = atoms_for(&locals);
 
     // Per-side emissions, applied at the end. The side parser's grammar
     // wants state before dur (`switch f STATE DUR`) regardless of slot
@@ -682,82 +781,61 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
     let mut dur_fills: Vec<Vec<String>> = vec![Vec::new(); n];
     let mut window_fills: Vec<Vec<String>> = vec![Vec::new(); n];
 
-    for (side_idx, p) in parsed.iter().enumerate() {
-        if p.regions.is_empty() {
-            continue;
+    for region in &regions {
+        let (lo, hi) = (region.start_side, region.end_side);
+        let content = classify_region(&region.tokens);
+        // Blanket flags + k=v to every side in scope.
+        for s in lo..=hi {
+            blanket_flags[s].extend(content.flags.iter().cloned());
+            blanket_kv[s].extend(content.kv.iter().cloned());
         }
-        // Grow the unified slot list to cover sides 0..=side_idx,
-        // carrying satisfaction PER SIDE (Copilot review on PR #47): a
-        // side that joins an already-filled slot re-opens it for the
-        // walk — only the sides an earlier region actually filled stay
-        // satisfied.
-        if covered_sides <= side_idx {
-            let mut grown = unified_slots(&locals, side_idx);
-            for old in slots.iter() {
-                if let Some(gi) = grown
-                    .iter()
-                    .position(|s| slot_identity_eq(&s.kind, &old.kind))
-                {
-                    for old_side in old.sides.iter().filter(|sr| sr.satisfied) {
-                        if let Some(g_side) = grown[gi]
-                            .sides
-                            .iter_mut()
-                            .find(|sr| sr.side == old_side.side)
-                        {
-                            g_side.satisfied = true;
-                        }
+        // Explicit k=v satisfies matching slots in scope (rule 6).
+        for kv in &content.kv {
+            if let Some((name, _)) = kv.split_once('=') {
+                for atom in atoms.iter_mut().filter(|a| a.side >= lo && a.side <= hi) {
+                    if matches!(&atom.kind, SlotKind::Key { name: n } if n == name) {
+                        atom.satisfied = true;
+                    }
+                    if name == "dur" && matches!(atom.kind, SlotKind::Dur) {
+                        atom.satisfied = true;
                     }
                 }
             }
-            slots = grown;
-            covered_sides = side_idx + 1;
         }
-
-        for region in &p.regions {
-            let content = classify_region(region);
-            // Blanket flags + k=v to every prefix side.
-            for s in 0..=side_idx {
-                blanket_flags[s].extend(content.flags.iter().cloned());
-                blanket_kv[s].extend(content.kv.iter().cloned());
-            }
-            // Explicit k=v satisfies matching key slots (rule 6).
-            for kv in &content.kv {
-                if let Some((name, _)) = kv.split_once('=') {
-                    for slot in slots.iter_mut() {
-                        if matches!(&slot.kind, SlotKind::Key { name: n } if n == name) {
-                            slot.mark_all_satisfied();
-                        }
-                        if name == "dur" && matches!(slot.kind, SlotKind::Dur) {
-                            slot.mark_all_satisfied();
-                        }
-                    }
+        // Walk the positionals over the scope's merged view, then
+        // write satisfaction back to the atoms.
+        let (mut view, backing) = build_view(&atoms, lo, hi);
+        let fills = walk_region(content.positionals.clone(), &mut view)?;
+        for (vi, slot) in view.iter().enumerate() {
+            for (si, sr) in slot.sides.iter().enumerate() {
+                if sr.satisfied {
+                    atoms[backing[vi][si]].satisfied = true;
                 }
             }
-            // Walk the positionals.
-            for fill in walk_region(content.positionals, &mut slots)? {
-                match fill {
-                    Fill::Field { side, value } => {
-                        field_fills[side] = Some(value);
+        }
+        for fill in fills {
+            match fill {
+                Fill::Field { side, value } => {
+                    field_fills[side] = Some(value);
+                }
+                Fill::Key { sides, kv } => {
+                    for s in sides {
+                        key_fills[s].push(kv.clone());
                     }
-                    Fill::Key { sides, kv } => {
-                        for s in sides {
-                            key_fills[s].push(kv.clone());
-                        }
+                }
+                Fill::State { sides, value } => {
+                    for s in sides {
+                        state_fills[s].push(value.clone());
                     }
-                    Fill::State { sides, value } => {
-                        for s in sides {
-                            state_fills[s].push(value.clone());
-                        }
+                }
+                Fill::Dur { sides, value } => {
+                    for s in sides {
+                        dur_fills[s].push(value.clone());
                     }
-                    Fill::Dur { sides, value } => {
-                        for s in sides {
-                            dur_fills[s].push(value.clone());
-                        }
-                    }
-                    Fill::Window { sides, tokens } => {
-                        for s in sides {
-                            window_fills[s].extend(tokens.iter().cloned());
-                        }
+                }
+                Fill::Window { sides, tokens } => {
+                    for s in sides {
+                        window_fills[s].extend(tokens.iter().cloned());
                     }
                 }
             }
@@ -1144,6 +1222,68 @@ mod tests {
         assert!(!out[0].iter().any(|t| t == "10m"), "{:?}", out[0]);
         assert!(out[1].iter().any(|t| t == "10m"), "{:?}", out[1]);
         assert!(!out[1].iter().any(|t| t == "5m"), "{:?}", out[1]);
+    }
+
+    // ── spec v2.1: lexical groups ────────────────────────────────────
+
+    #[test]
+    fn manual_group_scopes_region_to_its_sides() {
+        // Power-user grouping: a , ( b , c ,, t ) , d — t binds {b,c}.
+        let out = apply(&[
+            &["occur", "a", "-k", "ka"],
+            &["(", "occur", "b", "-k", "kb"],
+            &["occur", "c", "-k", "kb", ",,", "vv", ")"],
+            &["occur", "d", "-k", "ka"],
+        ])
+        .unwrap();
+        assert!(!has_seq(&out[0], &["kb=vv"]), "{:?}", out[0]);
+        assert!(has_seq(&out[1], &["kb=vv"]));
+        assert!(has_seq(&out[2], &["kb=vv"]));
+        assert!(!has_seq(&out[3], &["kb=vv"]), "{:?}", out[3]);
+    }
+
+    #[test]
+    fn emitted_group_keeps_inner_trailing_off_earlier_sides() {
+        // z , ( outside , vertical ,, 30m ) — the corner pure-cumulative
+        // leaked: 30m must not reach z (here z is dur-bearing to prove
+        // the point).
+        let out = apply(&[
+            &["start", "z"],
+            &["(", "switch", "outside", "out"],
+            &["switch", "vertical", "vert", ",,", "30m", ")"],
+        ])
+        .unwrap();
+        assert!(!out[0].iter().any(|t| t == "30m"), "{:?}", out[0]);
+        assert!(out[1].iter().any(|t| t == "30m"));
+        assert!(out[2].iter().any(|t| t == "30m"));
+    }
+
+    #[test]
+    fn unbalanced_groups_error() {
+        let open = apply(&[&["(", "occur", "a"]]).unwrap_err();
+        assert!(format!("{open}").contains("unbalanced"));
+        let close = apply(&[&["occur", "a", ")"]]).unwrap_err();
+        assert!(format!("{close}").contains("unbalanced"));
+    }
+
+    #[test]
+    fn escaped_paren_fills_as_literal_data() {
+        // `\(` / `\)` are the literal-paren escapes (mirroring `\.`);
+        // parse_structure unescapes them on the way to the walk.
+        let open = apply(&[&["occur", "f", "-k", "expr", ",,", "\\("]]).unwrap();
+        assert!(has_seq(&open[0], &["expr=("]), "{:?}", open[0]);
+        let close = apply(&[&["occur", "f", "-k", "expr", ",,", "\\)"]]).unwrap();
+        assert!(has_seq(&close[0], &["expr=)"]), "{:?}", close[0]);
+    }
+
+    #[test]
+    fn bare_paren_after_dash_dash_stays_structural() {
+        // `--` governs flag parsing, not grouping: a bare paren is
+        // structural even after `--` (demoting it would make a typed
+        // `-- )` and the emitted wrapper's `)` ambiguous). The error
+        // points at the escape.
+        let err = apply(&[&["occur", "f", "-k", "expr", ",,", "--", "("]]).unwrap_err();
+        assert!(format!("{err}").contains("literal paren"), "{err}");
     }
 
     #[test]
