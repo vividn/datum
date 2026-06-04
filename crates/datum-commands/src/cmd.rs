@@ -91,10 +91,11 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
 }
 
 /// Walk `entries` in order, returning the [`OutputArgs`] of the first
-/// entry seen for each unique `(field, occur_time)` key. The output
-/// vector aligns with `merge_same_field_groups`' group-order output,
-/// which matches the `hids` returned by
-/// [`datum_core::db::Db::insert_entries_atomic`].
+/// entry seen for each unique [`datum_core::db::merge_group_key`]. The
+/// output vector aligns with `merge_same_field_groups`' group-order
+/// output, which matches the `hids` returned by
+/// [`datum_core::db::Db::insert_entries_atomic`] — both walk first
+/// appearances of the *same* key, so the pairing holds by construction.
 fn leftmost_output_per_group(
     entries: &[datum_core::entry::Entry],
     outputs: &[OutputArgs],
@@ -103,13 +104,7 @@ fn leftmost_output_per_group(
     let mut seen: HashSet<(String, String)> = HashSet::new();
     let mut group_outputs: Vec<OutputArgs> = Vec::new();
     for (entry, out) in entries.iter().zip(outputs.iter()) {
-        let occur = entry
-            .occur_time
-            .as_ref()
-            .map(|t| t.utc.to_rfc3339())
-            .unwrap_or_default();
-        let key = (entry.field.clone(), occur);
-        if seen.insert(key) {
+        if seen.insert(datum_core::db::merge_group_key(entry)) {
             group_outputs.push(out.clone());
         }
     }
@@ -126,16 +121,34 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
         return;
     }
     let registry = load_registry_opt(db);
-    let entries: Vec<Entry> = hids
-        .iter()
-        .filter_map(|hid| db.get_entry(hid.as_str()).ok())
-        .collect();
+    // Pair each entry with its side's OutputArgs *before* dropping
+    // failed loads, so a single failure skips both halves instead of
+    // shifting every subsequent row onto its neighbor's flags.
+    let mut entries: Vec<Entry> = Vec::with_capacity(hids.len());
+    let mut outputs: Vec<OutputArgs> = Vec::with_capacity(hids.len());
+    for (idx, hid) in hids.iter().enumerate() {
+        match db.get_entry(hid.as_str()) {
+            Ok(entry) => {
+                entries.push(entry);
+                outputs.push(group_outputs.get(idx).cloned().unwrap_or_default());
+            }
+            Err(err) => {
+                // The row was just inserted in the same transaction, so
+                // this should be unreachable — but if it happens, warn
+                // instead of silently misrendering.
+                eprintln!(
+                    "warning: could not load freshly-inserted entry {}: {err}",
+                    hid.as_str()
+                );
+            }
+        }
+    }
     if entries.is_empty() {
         return;
     }
     let contexts = build_render_contexts(&entries, db);
     for (idx, entry) in entries.iter().enumerate() {
-        let output = group_outputs.get(idx).cloned().unwrap_or_default();
+        let output = outputs.get(idx).cloned().unwrap_or_default();
         let ctx = contexts.get(idx).cloned().unwrap_or_default();
         show_create_with_context(entry, registry.as_ref(), &ctx, &output);
     }

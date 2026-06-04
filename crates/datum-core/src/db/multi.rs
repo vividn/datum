@@ -76,7 +76,7 @@ pub fn merge_same_field_groups(entries: Vec<Entry>) -> Vec<Entry> {
     let mut groups: HashMap<(String, String), Vec<Entry>> = HashMap::new();
 
     for entry in entries {
-        let key = group_key(&entry);
+        let key = merge_group_key(&entry);
         if !groups.contains_key(&key) {
             order.push(key.clone());
         }
@@ -98,7 +98,13 @@ pub fn merge_same_field_groups(entries: Vec<Entry>) -> Vec<Entry> {
 /// `(field, occur_time)` key used to bucket candidate rows for merging.
 /// An entry without an occur_time produces a sentinel empty string so
 /// rows fall into the same bucket only when they truly share a time.
-fn group_key(entry: &Entry) -> (String, String) {
+///
+/// Public because the commands layer's multi-render path
+/// (`leftmost_output_per_group`) must bucket per-side `OutputArgs` with
+/// the *same* key [`merge_same_field_groups`] uses — one canonical key,
+/// so a future change to the bucketing (say, including verb) cannot
+/// silently desynchronize render pairing from merge grouping.
+pub fn merge_group_key(entry: &Entry) -> (String, String) {
     let occur = entry
         .occur_time
         .as_ref()

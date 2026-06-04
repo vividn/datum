@@ -197,3 +197,102 @@ fn binary_leading_empty_side_errors_and_writes_nothing() {
         assert!(rows.is_empty(), "rollback leaves no rows: {rows:?}");
     }
 }
+
+/// da-wie4: per-side `--show` flags must attach to their own row, not a
+/// neighbor's. Pins the render-pairing invariant — the per-side
+/// `OutputArgs` bucketing (`leftmost_output_per_group`) now uses core's
+/// canonical `merge_group_key`, so the silenced side stays silent and
+/// the default side renders, regardless of side order.
+#[test]
+fn binary_per_side_show_flags_attach_to_own_row() {
+    let db = tmp_db();
+    let _ = std::fs::remove_file(&db);
+
+    // Side 1 (body) silenced; side 2 (environment) renders by default.
+    let (ok, stdout, stderr) = run(
+        &db,
+        &[
+            "switch",
+            "body",
+            "vertical",
+            "--show",
+            "none",
+            ",",
+            "switch",
+            "environment",
+            "outside",
+        ],
+    );
+    assert!(
+        ok,
+        "multi with per-side --show must succeed; stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("environment:"),
+        "default side must render its CREATE header: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("body:"),
+        "--show none side must stay silent: {stdout:?}"
+    );
+
+    // Mirror image: silence follows the flag, not the position.
+    let db2 = tmp_db();
+    let _ = std::fs::remove_file(&db2);
+    let (ok, stdout, stderr) = run(
+        &db2,
+        &[
+            "switch",
+            "body",
+            "vertical",
+            ",",
+            "switch",
+            "environment",
+            "outside",
+            "--show",
+            "none",
+        ],
+    );
+    assert!(ok, "mirror invocation must succeed; stderr={stderr}");
+    assert!(
+        stdout.contains("body:"),
+        "default side must render its CREATE header: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("environment:"),
+        "--show none side must stay silent: {stdout:?}"
+    );
+}
+
+/// da-wie4 companion: when two sides merge into one row (same field +
+/// occur_time), the *leftmost* contributing side's flags drive the
+/// merged row's render — `--show none` on the left silences the whole
+/// merged row even though the right side asked for `--show all`.
+///
+/// Both sides carry a `--show` flag deliberately: with the flag on only
+/// one side, `side_has_dur_signal` (datum-parse alias/expand.rs) counts
+/// the flag's value as a bare positional and mis-collapses the comma
+/// into a BlockSwitch "then"-chain (filed as da-k8fq);
+/// symmetric flags keep the multi-entry split this test is pinning.
+#[test]
+fn binary_same_field_merge_leftmost_show_flag_wins() {
+    let db = tmp_db();
+    let _ = std::fs::remove_file(&db);
+
+    let (ok, stdout, stderr) = run(
+        &db,
+        &[
+            "switch", "body", "vertical", "--show", "none", ",", "switch", "body", "sit", "--show",
+            "all",
+        ],
+    );
+    assert!(
+        ok,
+        "merge with leftmost --show none must succeed; stderr={stderr}"
+    );
+    assert_eq!(live_rows(&db).len(), 1, "same-field merge yields one row");
+    assert!(
+        stdout.trim().is_empty(),
+        "leftmost side's --show none must silence the merged row: {stdout:?}"
+    );
+}
