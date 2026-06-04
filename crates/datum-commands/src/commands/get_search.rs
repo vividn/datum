@@ -14,15 +14,32 @@
 //! * **Eq/Ne** — string-equal first; falls back to numeric equality so
 //!   `count=5` matches `5` and `5.0` both.
 //! * **Gt/Lt/Gte/Lte** — numeric only. A non-numeric LHS or RHS fails
-//!   the match (no implicit string ordering — `dur>4h` is the user's
-//!   typo, not `dur < 4h`).
+//!   the match (no implicit string ordering). RHS duration literals use
+//!   the same dialect as `--dur` / `--since` (`4h`, `30m`, `1:30`,
+//!   `PT4H`), so `dur>4h` works everywhere the rest of the tool taught it.
 //! * **Regex** — `/…/`-delimited values strip their slashes; bare
 //!   values compile verbatim. Match is "contains" via `Regex::is_match`.
+//!   Patterns are pre-validated by [`validate`] before filtering so a
+//!   bad regex surfaces as a user error, not an empty result.
 
 use datum_core::entry::Entry;
 use datum_parse::input::{Matcher, MatcherOp};
 use regex_lite::Regex;
 use serde_json::Value as JsonValue;
+
+/// Pre-validate matchers before filtering: a regex that fails to
+/// compile is a USER error and must surface as one ("invalid regex
+/// 'x[': …"), never as "no entries on field". Keeping validation here
+/// (run once, up front) leaves [`filter`] infallible.
+pub(crate) fn validate(matchers: &[Matcher]) -> anyhow::Result<()> {
+    for m in matchers {
+        if m.op == MatcherOp::Regex {
+            let pattern = regex_pattern(&m.value);
+            Regex::new(pattern).map_err(|e| anyhow::anyhow!("invalid regex '{pattern}': {e}"))?;
+        }
+    }
+    Ok(())
+}
 
 /// Filter `entries` to only those satisfying every matcher.
 pub(crate) fn filter(entries: Vec<Entry>, matchers: &[Matcher]) -> Vec<Entry> {
@@ -124,14 +141,21 @@ fn compare_regex(lhs: Option<&JsonValue>, rhs: &str) -> bool {
     let Some(lhs) = lhs else {
         return false;
     };
-    let pattern = rhs
-        .strip_prefix('/')
-        .and_then(|r| r.strip_suffix('/'))
-        .unwrap_or(rhs);
-    let Ok(re) = Regex::new(pattern) else {
+    // [`validate`] already rejected uncompilable patterns up front; the
+    // no-match fallback keeps this path infallible regardless.
+    let Ok(re) = Regex::new(regex_pattern(rhs)) else {
         return false;
     };
     re.is_match(&to_compare_string(lhs))
+}
+
+/// `/…/`-delimited values strip their slashes; bare values are the
+/// pattern verbatim. Shared by [`validate`] and [`compare_regex`] so
+/// both see the same pattern.
+fn regex_pattern(rhs: &str) -> &str {
+    rhs.strip_prefix('/')
+        .and_then(|r| r.strip_suffix('/'))
+        .unwrap_or(rhs)
 }
 
 fn to_compare_string(v: &JsonValue) -> String {
@@ -157,11 +181,12 @@ fn parse_number(s: &str) -> Option<f64> {
     if let Ok(n) = s.parse::<f64>() {
         return Some(n);
     }
-    // ISO-8601 duration shorthand: `PT4H`, `PT30M`, `P1D` → seconds. Lets
-    // `dur>PT4H` work without the user converting to seconds first.
-    datum_core::dur::Dur::parse(s)
-        .and_then(|d| d.as_seconds())
-        .map(|s| s as f64)
+    // Duration literals → seconds, in the same dialect every other time
+    // surface accepts (`--dur`, `--since`, `--window`): `4h`, `30m`,
+    // `1:30`, `PT4H` all work without converting to seconds first.
+    datum_core::time::parse_duration(s)
+        .ok()
+        .map(|d| d.num_seconds() as f64)
 }
 
 #[cfg(test)]
@@ -247,6 +272,41 @@ mod tests {
         assert!(match_one(&e, &m("dur", MatcherOp::Gt, "PT4H")));
         assert!(!match_one(&e, &m("dur", MatcherOp::Gt, "PT6H")));
         assert!(match_one(&e, &m("dur", MatcherOp::Gte, "PT5H")));
+    }
+
+    /// da-65fd: the RHS also accepts the CLI shorthand dialect every
+    /// other time surface takes (`--dur`, `--since`): `4h`, `30m`,
+    /// `1:30` — not just ISO-8601.
+    #[test]
+    fn dur_compares_against_cli_shorthand() {
+        let e = block("sleep", json!(true), 5 * 3600);
+        assert!(match_one(&e, &m("dur", MatcherOp::Gt, "4h")));
+        assert!(!match_one(&e, &m("dur", MatcherOp::Gt, "6h")));
+        assert!(match_one(&e, &m("dur", MatcherOp::Gte, "300m")));
+        assert!(match_one(&e, &m("dur", MatcherOp::Gt, "4:30")));
+        assert!(!match_one(&e, &m("dur", MatcherOp::Lt, "1:30")));
+    }
+
+    /// da-65fd: a regex that fails to compile is a user error surfaced
+    /// by [`validate`] with the pattern named — not an empty result.
+    #[test]
+    fn validate_rejects_bad_regex_with_pattern_named() {
+        let err = validate(&[m("state", MatcherOp::Regex, "x[")]).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid regex 'x['"),
+            "pattern should be named in error: {msg}"
+        );
+        // Slash-delimited form strips slashes before validation, so the
+        // named pattern matches what actually failed to compile.
+        let err = validate(&[m("state", MatcherOp::Regex, "/y(/")]).unwrap_err();
+        assert!(err.to_string().contains("invalid regex 'y('"));
+        // Good patterns (and non-regex ops) pass.
+        validate(&[
+            m("state", MatcherOp::Regex, "^happy"),
+            m("dur", MatcherOp::Gt, "4h"),
+        ])
+        .unwrap();
     }
 
     #[test]

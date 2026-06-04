@@ -84,6 +84,9 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
 /// `_LAST` pointer is updated to the resulting set so a follow-up
 /// bare command sees the matched cohort.
 fn search(field: &str, args: GetArgs, db: &Db) -> Result<()> {
+    // Reject malformed matchers (bad regex) up front — a user error must
+    // not masquerade as "no entries matching" (da-65fd).
+    super::get_search::validate(&args.matchers)?;
     let candidates = db
         .entries_for_field(field, None)
         .map_err(anyhow::Error::from)?;
@@ -213,6 +216,32 @@ mod tests {
             .collect();
         want.sort();
         assert_eq!(got, want);
+    }
+
+    /// da-65fd: a bad regex matcher errors as a user error naming the
+    /// pattern — never the misleading "no entries matching".
+    #[test]
+    fn search_bad_regex_surfaces_user_error() {
+        let db = Db::open_in_memory().unwrap();
+        let a = entry_at("mood", 100);
+        db.insert_entry(&a).unwrap();
+
+        let mut args = GetArgs::with_id("mood");
+        args.matchers = vec![datum_parse::input::Matcher {
+            key: "state".to_string(),
+            op: datum_parse::input::MatcherOp::Regex,
+            value: "x[".to_string(),
+        }];
+        let err = get(args, &db).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid regex 'x['"),
+            "expected user error naming the pattern, got: {msg}"
+        );
+        assert!(
+            !msg.contains("no entries"),
+            "must not masquerade as an empty result: {msg}"
+        );
     }
 
     #[test]
