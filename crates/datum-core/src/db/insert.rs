@@ -244,22 +244,7 @@ impl Db {
         change_kind: ChangeKind,
     ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
-        let state: Option<Option<String>> = tx
-            .query_row(
-                "SELECT deleted_at FROM entries WHERE slug = ?1",
-                params![entry.slug],
-                |row| row.get(0),
-            )
-            .optional()?;
-        match state {
-            None => return Err(DatumError::NotFound(entry.slug.to_string())),
-            Some(Some(_)) => return Err(DatumError::Tombstoned(entry.slug.to_string())),
-            Some(None) => {
-                let pre = fetch_entry_any(&tx, &entry.slug)?;
-                history::record(&tx, &pre, change_kind)?;
-                raw_overwrite_mutables(&tx, &entry.slug, entry, None)?;
-            }
-        }
+        save_existing_entry_with_kind_in_tx(&tx, entry, change_kind)?;
         tx.commit()?;
         Ok(())
     }
@@ -302,6 +287,30 @@ impl Db {
     pub fn save_existing_entry_with_auto_reinterp_kind(
         &self,
         existing_slug: &Slug,
+        updated: Entry,
+        slug_delimiter: &str,
+        change_kind: ChangeKind,
+    ) -> Result<(Entry, Option<Slug>)> {
+        let tx = self.conn.unchecked_transaction()?;
+        let out = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
+            existing_slug,
+            updated,
+            slug_delimiter,
+            change_kind,
+        )?;
+        tx.commit()?;
+        Ok(out)
+    }
+
+    /// As [`Self::save_existing_entry_with_auto_reinterp_kind`] but runs
+    /// inside a transaction the caller has already opened on `self.conn`
+    /// — nothing here begins or commits. Used by the bulk retime paths
+    /// (db/time.rs) to make an N-row batch all-or-nothing (da-sunq): a
+    /// mid-batch failure (rekey collision, disk error) rolls back every
+    /// already-shifted row instead of leaving a partial shift.
+    pub(crate) fn save_existing_entry_with_auto_reinterp_kind_in_tx(
+        &self,
+        existing_slug: &Slug,
         mut updated: Entry,
         slug_delimiter: &str,
         change_kind: ChangeKind,
@@ -331,7 +340,12 @@ impl Db {
         if slug_changed {
             let target = new_slug.unwrap();
             updated.slug = target.clone();
-            self.save_existing_entry_with_rekey_kind(existing_slug, &updated, change_kind)?;
+            save_existing_entry_with_rekey_kind_in_tx(
+                &self.conn,
+                existing_slug,
+                &updated,
+                change_kind,
+            )?;
             let fresh = self.get_entry(&target)?;
             Ok((fresh, Some(existing_slug.clone())))
         } else {
@@ -339,7 +353,7 @@ impl Db {
             // path; save_existing_entry matches on entry.slug so make sure
             // it isn't out of sync.
             updated.slug = existing_slug.clone();
-            self.save_existing_entry_with_kind(&updated, change_kind)?;
+            save_existing_entry_with_kind_in_tx(&self.conn, &updated, change_kind)?;
             let fresh = self.get_entry(existing_slug)?;
             Ok((fresh, None))
         }
@@ -370,29 +384,70 @@ impl Db {
         change_kind: ChangeKind,
     ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
-        let pre = fetch_entry_any(&tx, old_slug)?;
-        if pre.deleted_at.is_some() {
-            return Err(DatumError::Tombstoned(old_slug.to_string()));
-        }
-        if pre.hid != entry.hid {
-            return Err(DatumError::Other(format!(
-                "save_existing_entry_with_rekey: hid mismatch — pre={} new={}",
-                pre.hid, entry.hid,
-            )));
-        }
-        history::record(&tx, &pre, change_kind)?;
-        match raw_overwrite_full_by_hid(&tx, entry) {
-            Ok(()) => {}
-            Err(DatumError::Db(e)) if collision_kind(&e) == Some(CollisionKind::Slug) => {
-                return Err(DatumError::Duplicate(format!(
-                    "Cannot rekey {old_slug} → {}: slug already taken",
-                    entry.slug,
-                )));
-            }
-            Err(e) => return Err(e),
-        }
+        save_existing_entry_with_rekey_kind_in_tx(&tx, old_slug, entry, change_kind)?;
         tx.commit()?;
         Ok(())
+    }
+}
+
+/// Transaction-free body of [`Db::save_existing_entry_with_kind`]: runs
+/// inside whatever transaction is already open on `conn` and never
+/// begins or commits one itself. Exists so bulk mutators (db/time.rs's
+/// retime batch, da-sunq) can wrap N per-row saves in a single
+/// all-or-nothing transaction — the same posture as
+/// [`Db::insert_entries_atomic`].
+fn save_existing_entry_with_kind_in_tx(
+    conn: &Connection,
+    entry: &Entry,
+    change_kind: ChangeKind,
+) -> Result<()> {
+    let state: Option<Option<String>> = conn
+        .query_row(
+            "SELECT deleted_at FROM entries WHERE slug = ?1",
+            params![entry.slug],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match state {
+        None => Err(DatumError::NotFound(entry.slug.to_string())),
+        Some(Some(_)) => Err(DatumError::Tombstoned(entry.slug.to_string())),
+        Some(None) => {
+            let pre = fetch_entry_any(conn, &entry.slug)?;
+            history::record(conn, &pre, change_kind)?;
+            raw_overwrite_mutables(conn, &entry.slug, entry, None)?;
+            Ok(())
+        }
+    }
+}
+
+/// Transaction-free body of [`Db::save_existing_entry_with_rekey_kind`];
+/// see [`save_existing_entry_with_kind_in_tx`] for the rationale.
+fn save_existing_entry_with_rekey_kind_in_tx(
+    conn: &Connection,
+    old_slug: &Slug,
+    entry: &Entry,
+    change_kind: ChangeKind,
+) -> Result<()> {
+    let pre = fetch_entry_any(conn, old_slug)?;
+    if pre.deleted_at.is_some() {
+        return Err(DatumError::Tombstoned(old_slug.to_string()));
+    }
+    if pre.hid != entry.hid {
+        return Err(DatumError::Other(format!(
+            "save_existing_entry_with_rekey: hid mismatch — pre={} new={}",
+            pre.hid, entry.hid,
+        )));
+    }
+    history::record(conn, &pre, change_kind)?;
+    match raw_overwrite_full_by_hid(conn, entry) {
+        Ok(()) => Ok(()),
+        Err(DatumError::Db(e)) if collision_kind(&e) == Some(CollisionKind::Slug) => {
+            Err(DatumError::Duplicate(format!(
+                "Cannot rekey {old_slug} → {}: slug already taken",
+                entry.slug,
+            )))
+        }
+        Err(e) => Err(e),
     }
 }
 

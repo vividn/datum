@@ -171,12 +171,7 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     let (new_time, precision) = build_absolute(&args)?;
     let mut n = 0;
     for filter in &filters {
-        n += db.set_start_time_with_precision(
-            filter,
-            &new_time,
-            precision.seconds,
-            &precision.unit.to_string(),
-        )?;
+        n += db.set_start_time_with_precision(filter, &new_time, &precision)?;
     }
     println!(
         "✓ Retimed {n} → {} (±{}{})",

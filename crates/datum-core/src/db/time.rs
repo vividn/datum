@@ -16,6 +16,7 @@ use chrono::Duration;
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 use crate::field_spec::DEFAULT_ID_DELIMITER;
+use crate::time::Uncertainty;
 
 use super::row_mapper::row_to_entry;
 use super::types::RetimeFilter;
@@ -24,25 +25,29 @@ use super::Db;
 impl Db {
     /// Retime matching rows to a fresh absolute `occur_time` + precision.
     ///
-    /// The `precision_unit` is rendered into a single ISO-8601 duration
-    /// string (e.g. `PT1S`, `PT1M`, `P1D`) and stored in
-    /// `occur_time_precision` — the v=20 schema collapsed the
-    /// (precision_seconds, precision_unit) pair into one column.
+    /// The precision is rendered into a single ISO-8601 duration string
+    /// (e.g. `PT1S`, `PT1M`, `P1D`) via [`Uncertainty::to_iso_precision`]
+    /// and stored in `occur_time_precision` — the v=20 schema collapsed
+    /// the (precision_seconds, precision_unit) pair into one column.
+    ///
+    /// da-sunq: the whole batch runs in one transaction — a mid-batch
+    /// failure (rekey collision, disk error) rolls back every
+    /// already-shifted row, so a partial shift is never visible.
     pub fn set_start_time_with_precision(
         &self,
         filter: &RetimeFilter,
         new_start: &crate::time::DatumTime,
-        precision_seconds: u32,
-        precision_unit: &str,
+        precision: &Uncertainty,
     ) -> Result<usize> {
         let entries = select_retime_targets(self, filter)?;
-        let precision_iso = precision_to_iso(precision_seconds, precision_unit);
+        let precision_iso = precision.to_iso_precision();
+        let tx = self.conn.unchecked_transaction()?;
         let mut count = 0usize;
         for mut e in entries {
             let old_slug = e.slug.clone();
             e.occur_time = Some(new_start.clone());
             e.occur_time_precision = precision_iso.clone();
-            self.save_existing_entry_with_auto_reinterp_kind(
+            self.save_existing_entry_with_auto_reinterp_kind_in_tx(
                 &old_slug,
                 e,
                 DEFAULT_ID_DELIMITER,
@@ -50,11 +55,15 @@ impl Db {
             )?;
             count += 1;
         }
+        tx.commit()?;
         Ok(count)
     }
 
+    /// Shift matching rows' `occur_time` by `offset`. Atomic over the
+    /// batch, same as [`Self::set_start_time_with_precision`] (da-sunq).
     pub fn update_times(&self, filter: &RetimeFilter, offset: Duration) -> Result<usize> {
         let entries = select_retime_targets(self, filter)?;
+        let tx = self.conn.unchecked_transaction()?;
         let mut count = 0usize;
         for e in entries {
             let old_slug = e.slug.clone();
@@ -62,7 +71,7 @@ impl Db {
             if let Some(t) = shifted.occur_time.as_mut() {
                 t.utc += offset;
             }
-            self.save_existing_entry_with_auto_reinterp_kind(
+            self.save_existing_entry_with_auto_reinterp_kind_in_tx(
                 &old_slug,
                 shifted,
                 DEFAULT_ID_DELIMITER,
@@ -70,6 +79,7 @@ impl Db {
             )?;
             count += 1;
         }
+        tx.commit()?;
         Ok(count)
     }
 }
@@ -77,8 +87,15 @@ impl Db {
 /// Select live rows matching the retime filter. Shared between the
 /// absolute (`set_start_time_with_precision`) and offset (`update_times`)
 /// paths so the SQL surface stays in one place.
+///
+/// Timeless rows (`occur_time IS NULL`, slug `field:unset`) are excluded:
+/// retime moves an existing time, and giving a timeless row one would
+/// leave a deliberate occur_time behind a `:unset` slug that the state/
+/// timeline views still hide (da-255n owns timeless slug semantics). Use
+/// `datum update` to attach a time to a timeless entry.
 fn select_retime_targets(db: &Db, filter: &RetimeFilter) -> Result<Vec<Entry>> {
-    let mut sql = String::from("SELECT * FROM entries WHERE deleted_at IS NULL");
+    let mut sql =
+        String::from("SELECT * FROM entries WHERE deleted_at IS NULL AND occur_time IS NOT NULL");
     let mut bindings: Vec<String> = Vec::new();
 
     if let Some(needle) = filter.slug_or_hid {
@@ -103,38 +120,6 @@ fn select_retime_targets(db: &Db, filter: &RetimeFilter) -> Result<Vec<Entry>> {
     let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), row_to_entry)?;
     rows.map(|r| r.map_err(DatumError::Db))
         .collect::<Result<_>>()
-}
-
-/// Map a precision-unit name ("second", "minute", "hour", "day",
-/// "month", "year", "exact") to a single ISO-8601 duration string.
-/// Sub-bead 3 will replace this with a proper PrecisionUnit→ISO helper.
-/// Encode a (seconds, unit) precision pair as a single ISO-8601 duration
-/// string for the v=20 `occur_time_precision` column. `unit` selects the
-/// component (PT…M / PT…H / P…D etc.) so a `(300, "minute")` precision
-/// renders as `"PT5M"` rather than collapsing to the bare unit. `exact`
-/// or unrecognized units return `None` (column stored as NULL).
-fn precision_to_iso(seconds: u32, unit: &str) -> Option<String> {
-    if seconds == 0 || matches!(unit, "exact" | "") {
-        return None;
-    }
-    match unit {
-        "second" => Some(format!("PT{seconds}S")),
-        "minute" => {
-            let n = seconds / 60;
-            Some(format!("PT{}M", n.max(1)))
-        }
-        "hour" => {
-            let n = seconds / 3600;
-            Some(format!("PT{}H", n.max(1)))
-        }
-        "date" | "day" => {
-            let n = seconds / 86400;
-            Some(format!("P{}D", n.max(1)))
-        }
-        "month" => Some("P1M".to_string()),
-        "year" => Some("P1Y".to_string()),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
@@ -221,12 +206,86 @@ mod tests {
             slug_or_hid: Some(stamped_slug.as_str()),
             ..Default::default()
         };
-        db.set_start_time_with_precision(&filter, &new_start, 1, "minute")
+        let precision = Uncertainty {
+            seconds: 60,
+            unit: crate::time::PrecisionUnit::Minute,
+        };
+        db.set_start_time_with_precision(&filter, &new_start, &precision)
             .unwrap();
 
         let by_hid = db.get_entry(&hid).unwrap();
         assert_eq!(by_hid.slug.as_str(), "coffee:2026-05-01T10:00:00.000Z");
         assert_eq!(by_hid.hid, hid);
+    }
+
+    /// da-sunq: a mid-batch failure must roll back the whole batch.
+    /// Two rows of one field retimed to the same absolute instant — the
+    /// second row trips the partial UNIQUE index on (field, occur_time),
+    /// and the row that was already shifted must come back untouched.
+    #[test]
+    fn retime_batch_rolls_back_on_midbatch_failure() {
+        let db = Db::open_in_memory().unwrap();
+        let t1 = seed_dt("2024-01-01T10:00:00Z");
+        let t2 = seed_dt("2024-01-01T11:00:00Z");
+        let a = Entry::new("run", Verb::Point, None, None, Some(t1.clone()), None, "d1");
+        let b = Entry::new("run", Verb::Point, None, None, Some(t2.clone()), None, "d1");
+        db.insert_entry(&a).unwrap();
+        db.insert_entry(&b).unwrap();
+
+        let filter = RetimeFilter {
+            field: Some("run"),
+            ..Default::default()
+        };
+        let new_start = seed_dt("2026-05-01T10:00:00Z");
+        let err = db.set_start_time_with_precision(&filter, &new_start, &Uncertainty::exact());
+        assert!(
+            err.is_err(),
+            "second row must collide on (field, occur_time)"
+        );
+
+        // Neither row may carry the new time — including the one that
+        // was successfully shifted before the failure.
+        let a_after = db.get_entry(&a.hid).unwrap();
+        let b_after = db.get_entry(&b.hid).unwrap();
+        assert_eq!(a_after.occur_time.as_ref().unwrap().utc, t1.utc);
+        assert_eq!(b_after.occur_time.as_ref().unwrap().utc, t2.utc);
+    }
+
+    /// da-sunq item 3: timeless rows (occur_time NULL, slug `:unset`)
+    /// are not retime targets — an absolute retime over the field must
+    /// not hand them an occur_time that their `:unset` slug (which the
+    /// state/timeline views key on) would then contradict.
+    #[test]
+    fn retime_skips_timeless_unset_rows() {
+        let db = Db::open_in_memory().unwrap();
+        let timeless = Entry::new("note", Verb::Point, None, None, None, None, "d1");
+        let timed = Entry::new(
+            "note",
+            Verb::Point,
+            None,
+            None,
+            Some(seed_dt("2024-01-01T10:00:00Z")),
+            None,
+            "d1",
+        );
+        assert_eq!(timeless.slug.as_str(), "note:unset");
+        db.insert_entry(&timeless).unwrap();
+        db.insert_entry(&timed).unwrap();
+
+        let filter = RetimeFilter {
+            field: Some("note"),
+            ..Default::default()
+        };
+        let new_start = seed_dt("2026-05-01T10:00:00Z");
+        let n = db
+            .set_start_time_with_precision(&filter, &new_start, &Uncertainty::exact())
+            .unwrap();
+        assert_eq!(n, 1, "only the timed row is a retime target");
+
+        let unset_after = db.get_entry("note:unset").unwrap();
+        assert!(unset_after.occur_time.is_none());
+        let timed_after = db.get_entry(&timed.hid).unwrap();
+        assert_eq!(timed_after.occur_time.unwrap().utc, new_start.utc);
     }
 
     /// Retime on a row whose `id_structure` does NOT reference
