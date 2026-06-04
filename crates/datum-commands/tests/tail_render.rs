@@ -17,7 +17,7 @@ use datum_core::{
     entry::{Entry, Verb},
     time::DatumTime,
 };
-use datum_test_util::no_color_scope;
+use datum_test_util::{color_scope, no_color_scope};
 use serde_json::json;
 
 fn dt(y: i32, mo: u32, d: u32, h: u32, m: u32) -> DatumTime {
@@ -121,6 +121,29 @@ fn tail_future_row_uses_plus_d_prefix() {
     assert!(
         line.starts_with("+2d "),
         "2 days ahead → '+2d ' prefix: {line:?}"
+    );
+}
+
+/// da-pdne: the future-underline marker must compare against the passed
+/// `now`, not the wall clock — a batch rendered against a pinned reference
+/// underlines exactly the rows past that reference. Both instants here are
+/// in the past at real run time, so this only passes via `now`.
+#[test]
+fn tail_future_underline_uses_passed_now() {
+    let _g = color_scope();
+    const UNDERLINE: &str = "\x1b[4m";
+    let now = dt(2026, 4, 22, 17, 0);
+    let just_after = entry_at("plan", Verb::Point, None, dt(2026, 4, 22, 17, 1));
+    let line = format_info_line_at(&just_after, None, &RenderContext::default(), &now);
+    assert!(
+        line.contains(UNDERLINE),
+        "row 1m past the pinned now must be underlined: {line:?}"
+    );
+    let just_before = entry_at("plan", Verb::Point, None, dt(2026, 4, 22, 16, 59));
+    let line = format_info_line_at(&just_before, None, &RenderContext::default(), &now);
+    assert!(
+        !line.contains(UNDERLINE),
+        "row 1m before the pinned now must not be underlined: {line:?}"
     );
 }
 

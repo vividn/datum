@@ -567,7 +567,7 @@ pub(crate) fn format_field_badge(field: &str, spec: Option<&FieldSpec>) -> Strin
 
 /// Format a `DatumTime` per §3: `HH:MM:SS+TZ` with the TZ offset rendered
 /// in the gray slug-color and compressed (leading zeros dropped). The whole
-/// stamp is underlined when `t` is in the future at render time.
+/// stamp is underlined when `t` is in the future relative to `now`.
 ///
 /// When `t`'s local calendar day differs from `now`'s (per
 /// [`format_relative_day_prefix`]), a gray relative-day prefix (`-1d`,
@@ -603,7 +603,7 @@ pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime, precision: Option
             None => stamp,
         }
     };
-    if t.utc > Utc::now() && color_enabled() {
+    if t.utc > now.utc && color_enabled() {
         format!("{UNDERLINE}{composed}{RESET}")
     } else {
         // Even without color, the underline escape is a no-op under
