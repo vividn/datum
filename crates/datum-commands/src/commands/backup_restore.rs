@@ -6,9 +6,10 @@
 //! * `.tar.gz` — a tar archive containing `manifest.json` and `entries.jsonl`
 //!   (same line layout as the plain JSONL form).
 //!
-//! Restore is content-hash idempotent and gates on the `schema_version`
-//! recorded in the header. See `RestoreReport` for the projected/committed
-//! outcome contract.
+//! Restore is content-hash idempotent, gates on the `schema_version`
+//! recorded in the header, and commits all entries in a single transaction —
+//! any failure rolls back to "nothing restored". See `RestoreReport` for the
+//! projected/committed outcome contract.
 
 use anyhow::{Context, Result};
 use datum_core::{
@@ -483,12 +484,19 @@ fn restore_from_reader<R: std::io::BufRead>(
     }
 
     // Decode either the legacy first line or fresh lines from the reader.
-    // Using `chain` keeps the streaming model intact — nothing is buffered
-    // beyond a single line.
+    // Parsing streams line-by-line; decoded entries are collected so the
+    // whole restore commits as ONE transaction via `insert_entries_batch`
+    // (da-e3rr). Per-row autocommit paid a journal sync per entry — measured
+    // ~10ms each on ext4, ~97s per 10k entries, minutes for a multi-year
+    // backup — where one wrapping tx takes ~1.4s for the same 10k.
+    // Batching also upgrades the failure story: a parse error or
+    // mid-batch insert failure now rolls back to "nothing restored" instead
+    // of leaving a half-restored DB.
     let legacy_iter = legacy_first.into_iter().map(Ok);
     let body_iter = reader.lines();
     let all_lines = legacy_iter.chain(body_iter);
 
+    let mut pending: Vec<Entry> = Vec::new();
     for line in all_lines {
         let line = line.context("Reading backup line")?;
         if line.trim().is_empty() {
@@ -518,11 +526,23 @@ fn restore_from_reader<R: std::io::BufRead>(
             continue;
         }
 
-        let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
-        match outcome {
-            InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => report.inserted += 1,
-            InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => report.updated += 1,
-            InsertOutcome::Ignored { .. } => report.skipped += 1,
+        pending.push(entry);
+    }
+
+    if !pending.is_empty() {
+        // Same per-row semantics as insert_entry_with_strategy (history rows,
+        // conflict strategy dispatch), one commit for the whole batch.
+        // Tallies are recomputed from the committed outcomes, so the
+        // entry-count integrity check below reflects what actually landed.
+        let outcomes = db.insert_entries_batch(&pending, strategy)?;
+        for outcome in outcomes {
+            match outcome {
+                InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {
+                    report.inserted += 1
+                }
+                InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => report.updated += 1,
+                InsertOutcome::Ignored { .. } => report.skipped += 1,
+            }
         }
     }
 
@@ -1426,6 +1446,138 @@ mod tests {
         );
 
         std::fs::remove_file(&path).ok();
+    }
+
+    // ─── da-e3rr: single-transaction restore ──────────────────────────────
+
+    #[test]
+    fn restore_failure_mid_file_rolls_back_everything() {
+        use datum_core::db::Db;
+        use std::io::Write;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        // Valid header + valid entries, then a corrupt line LAST — every
+        // valid entry is parsed before the failure. Under the old per-row
+        // autocommit they'd all be committed; single-tx restore must leave
+        // the DB untouched.
+        let header = serde_json::json!({
+            "type": "daydumb_backup",
+            "schema_version": datum_core::migrations::CURRENT_SCHEMA_VERSION,
+            "backup_time": "2026-06-04T00:00:00Z",
+            "source_db": "forged",
+            "entry_count": original.len() + 1,
+        });
+        let path = unique_tmp_path(".jsonl");
+        write_jsonl(&path, Some(&header), &original);
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+            writeln!(f, "{{not valid json").unwrap();
+        }
+
+        let dst = Db::open_in_memory().unwrap();
+        let err = cmd_restore_with_report(
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+                cluster: false,
+            },
+            &dst,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("Parsing entry JSON"),
+            "expected parse error, got: {err}"
+        );
+        assert_eq!(
+            dst.count_entries().unwrap(),
+            0,
+            "failed restore must roll back cleanly — nothing restored"
+        );
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// Manual perf pin for da-e3rr (single-tx restore). Not a CI gate —
+    /// timing-sensitive — run by hand with:
+    /// `cargo test -p datum-commands --release restore_bench_10k -- --ignored --nocapture`
+    /// Uses a file-backed DB so per-transaction journal syncs are actually
+    /// paid (in-memory DBs would hide the cost being measured). The DB lives
+    /// in `temp_dir()` — on systems where /tmp is tmpfs, set TMPDIR to a
+    /// real-disk path or the sync cost vanishes and the comparison is
+    /// meaningless. Measured on ext4: per-row autocommit ~9.7ms/entry
+    /// (~97s per 10k); single-tx batch 1.4s per 10k — ~70x.
+    ///
+    /// Entries are state-less Points on purpose: a state-bearing entry is
+    /// classified `switch` by `derive_verb` and pays `last_state_at`'s
+    /// full-field scan in `detect_for_entry` on every insert — O(n²) across
+    /// the batch, which swamps the journal-sync cost this bench pins
+    /// (~685s for 10k switch rows vs ~1s for 10k points). That scan is a
+    /// separate pre-existing cost, tracked in its own bead; it dominates
+    /// regardless of per-row vs single-tx commit.
+    #[test]
+    #[ignore]
+    fn restore_bench_10k() {
+        use datum_core::db::Db;
+        let n = 10_000usize;
+        let entries: Vec<_> = (0..n)
+            .map(|i| {
+                let base: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
+                let t = DatumTime {
+                    utc: base + chrono::Duration::seconds(i as i64),
+                    offset_minutes: 0,
+                    timezone: "UTC".to_string(),
+                };
+                // state=None → Verb::Point: skips the per-insert
+                // `last_state_at` scan (see doc comment above).
+                Entry::new(
+                    "bench",
+                    Verb::Point,
+                    None,
+                    Some(serde_json::json!({"i": i})),
+                    Some(t),
+                    None,
+                    "d1",
+                )
+            })
+            .collect();
+        let header = serde_json::json!({
+            "type": "daydumb_backup",
+            "schema_version": datum_core::migrations::CURRENT_SCHEMA_VERSION,
+            "backup_time": "2026-06-04T00:00:00Z",
+            "source_db": "bench",
+            "entry_count": n,
+        });
+        let backup_path = unique_tmp_path(".jsonl");
+        write_jsonl(&backup_path, Some(&header), &entries);
+
+        let db_path = unique_tmp_path(".db");
+        let dst = Db::open(&db_path.to_string_lossy()).unwrap();
+        let start = std::time::Instant::now();
+        let report = cmd_restore_with_report(
+            RestoreArgs {
+                path: backup_path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+                cluster: false,
+            },
+            &dst,
+        )
+        .unwrap();
+        let elapsed = start.elapsed();
+        assert_eq!(report.inserted, n);
+        println!("restore_bench_10k: {n} entries in {elapsed:?}");
+
+        std::fs::remove_file(&backup_path).ok();
+        drop(dst);
+        std::fs::remove_file(&db_path).ok();
     }
 
     #[test]
