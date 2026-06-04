@@ -16,15 +16,25 @@ but it is *typeable* and must be documented in the user docs alongside `,`
 1. **Sides.** `,` separates sides. Each alias resolution appends `,,` at
    the end of its expanded body — the boundary marker and the trailing
    marker are the same token.
-2. **Trailing regions.** `,,` opens a *trailing region* scoped to **all
-   sides to its left** (the cumulative prefix — not just the sides since
-   the previous `,,`). The next `,` (or end of argv) closes the region.
-   Empty regions are no-ops; they occur constantly (every bare alias call
-   produces one). Regions apply left-to-right; later regions see earlier
-   fills as satisfied.
+2. **Trailing regions.** `,,` opens a *trailing region*; the next `,`,
+   the next `,,`, or end of argv closes it. Empty regions are no-ops;
+   they occur constantly (every bare alias call produces one). Regions
+   apply left-to-right; later regions see earlier fills as satisfied.
+
+   **Binding scope** (implementation reconciliation, 2026-06-04
+   afternoon — both ratified statements hold):
+   - A **typed** `,,` (written by the user in the original command)
+     binds **all sides to its left** — the cumulative prefix, per the
+     `t2 binds {a,b,c,d}` ruling.
+   - An **alias-emitted** boundary binds **that alias's own expanded
+     sides** ("the sides they are referencing") — so `vvcaf`-style
+     composition (`vertical , caffeine -t +5`) keeps its inner trailing
+     side-scoped, and `z , oov 30m` puts 30m on oov's two sides, not on
+     z. Without this split, an inner alias's trailing would leak onto
+     unrelated earlier sides.
 
    ```
-   a , b ,, t1 , c , d ,, t2    # t1 binds {a,b}; t2 binds {a,b,c,d}
+   a , b ,, t1 , c , d ,, t2    # typed: t1 binds {a,b}; t2 binds {a,b,c,d}
    oov , switch project gardening
      # oov = "outside , vertical" expands to:
      # outside , vertical ,, , switch project gardening  (empty region, no-op)
@@ -53,15 +63,19 @@ but it is *typeable* and must be documented in the user docs alongside `,`
 5. **Per-side slot array**, in verb-grammar order. One greedy mechanism;
    only its *placement* varies:
 
-   | side shape          | slot array                                |
-   |---------------------|-------------------------------------------|
-   | `-I` present        | `[state(greedy), -k keys…, dur?]`          |
-   | `-S`/`-R` present   | `[-k keys…, remainder(greedy), dur?]`      |
-   | neither             | `[state?, -k keys…, dur?]`                 |
+   | side shape          | slot array                                       |
+   |---------------------|--------------------------------------------------|
+   | `-I` present        | `[field?, state(greedy), -k keys…, dur?]`         |
+   | `-S`/`-R` present   | `[field?, -k keys…, remainder(greedy), dur?]`     |
+   | neither             | `[field?, state?, -k keys…, value?, dur?]`        |
 
-   `state?` exists for switch-family verbs; `dur?` for dur-bearing verbs.
-   At most one greedy per side (`-I` conflicts with `-S/-R/-C` at
-   validation, which guarantees it).
+   `field?` exists when the body is verb-only (`note` → `add`: the field
+   itself comes from the call site, lands right after the verb, strictly
+   per-side). `state?` exists for switch-family verbs; `value?` is bare
+   `occur`'s one primary-value positional (only when no `-k` keys are
+   declared — keyed occur sides expose key slots only, per the k1–k6
+   walk); `dur?` for dur-bearing verbs. At most one greedy per side
+   (`-I` conflicts with `-S/-R/-C` at validation, which guarantees it).
 6. **Cross-side unification** (per region walk): `-k` slots unify **by
    name**; state and dur slots unify **by kind**. A unified slot fills
    once and propagates to every side that declares it. Satisfied slots —
@@ -87,9 +101,10 @@ but it is *typeable* and must be documented in the user docs alongside `,`
    - **Key reservations are not type-gated** (a key value is
      indistinguishable from a state word); the last token goes to the key
      unconditionally. `.` skips a slot; `\.` escapes a literal dot.
-   - If reservations leave a single-greedy walk zero tokens for the
-     greedy, error ("nothing left for the `-I` state after reserving for
-     `-k …`") rather than emitting an empty join.
+   - If reservations leave a walk zero tokens for a string **join**,
+     error ("nothing left for the `-I` state after reserving for
+     `-k …`") rather than emitting an empty join. A **sink** with
+     nothing to absorb is simply at rest — no error.
    - This rule **supersedes greedy-window starvation**: named slots after
      a join are reserved for, never starved.
 8. **Multiple greedies** (across sides): greedies with the **same target

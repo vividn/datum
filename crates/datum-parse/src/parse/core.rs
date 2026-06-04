@@ -167,8 +167,24 @@ pub(crate) fn fold_args_with_pre<'a, P: 'static>(
     mut pre_hook: impl FnMut(&'a [&'a str], usize, &mut P) -> Result<Option<usize>>,
 ) -> Result<Vec<&'a str>> {
     let mut pos: Vec<&str> = Vec::new();
+    let mut no_more_flags = false;
     let mut i = 0;
     while i < tail.len() {
+        // Unix `--` (spec v2 rule 4, docs/trailing-and-slots.md): end of
+        // option parsing for the rest of THIS argv — every later token
+        // is positional, even dash-prefixed. Side-scoping is automatic
+        // (each side parses its own argv); alias-scoping is handled by
+        // the region layer before the tokens reach us.
+        if no_more_flags {
+            pos.push(tail[i]);
+            i += 1;
+            continue;
+        }
+        if tail[i] == "--" {
+            no_more_flags = true;
+            i += 1;
+            continue;
+        }
         if let Some(ni) = pre_hook(tail, i, composed)? {
             i = ni;
             continue;

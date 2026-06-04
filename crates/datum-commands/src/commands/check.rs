@@ -1039,6 +1039,48 @@ fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<AliasReport> {
         });
     }
 
+    // 1b. Spec-v2 migration (docs/trailing-and-slots.md): a literal `--`
+    // in a stored alias body used to mean promote-to-all; it now means
+    // unix end-of-flags. Flag any body still carrying one so the user
+    // can decide whether it wants a `,,` rewrite.
+    {
+        let legacy: Vec<datum_core::field_spec::Alias> = db
+            .list_user_aliases()?
+            .into_iter()
+            .filter(|a| {
+                datum_parse::alias::shell_split(&a.expands_to)
+                    .iter()
+                    .any(|t| t == "--")
+            })
+            .collect();
+        if !legacy.is_empty() {
+            let first = &legacy[0];
+            issues.push(Issue {
+                severity: Severity::Warning,
+                category: "alias_legacy_double_dash",
+                message: format!(
+                    "{n} alias bod{ies} contain{s} `--`, which is now unix \
+                     end-of-flags (spec v2); rewrite with `,,` if shared \
+                     trailing was intended",
+                    n = legacy.len(),
+                    ies = if legacy.len() == 1 { "y" } else { "ies" },
+                    s = if legacy.len() == 1 { "s" } else { "" },
+                ),
+                count: legacy.len(),
+                example: Some(IssueExample {
+                    id: None,
+                    field: None,
+                    detail: Some(format!(
+                        "alias '{}' → datum {}",
+                        first.name, first.expands_to
+                    )),
+                }),
+                entries: Vec::new(),
+                rendered_block: String::new(),
+            });
+        }
+    }
+
     // 2 + 3. Orphans and cycles in user/kit alias chains. Spec-derived
     // aliases never need this walk — their `expands_to` always begins with
     // a KNOWN_SUBCOMMAND.

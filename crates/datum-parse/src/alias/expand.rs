@@ -144,6 +144,22 @@ pub fn expand_argv(
 ) -> crate::Result<(Vec<String>, Vec<AliasStep>)> {
     let argv = apply_terminal_verb_override(argv);
     let (argv, chain) = try_expand_alias(argv, resolver)?;
+    // Spec v2: consume `,,` trailing regions on the flat path too (this
+    // wrapper survives for the kit-command recovery + `reparse`
+    // re-expansion paths) so no boundary token ever reaches a parser.
+    // Multi flows re-flatten with their commas preserved.
+    let mut iter = argv.into_iter();
+    let bin = iter.next().unwrap_or_default();
+    let rest: Vec<String> = iter.collect();
+    let sides = split_argv_at_commas(rest)?;
+    let sides = super::regions::apply_regions(sides)?;
+    let mut argv = vec![bin];
+    for (i, side) in sides.into_iter().enumerate() {
+        if i > 0 {
+            argv.push(MULTI_COMMA.to_string());
+        }
+        argv.extend(side);
+    }
     let argv = maybe_swap_field_verb(argv);
     let argv = apply_switch_promote_override(argv);
     let argv = expand_stacked_flags(argv);
@@ -262,138 +278,28 @@ pub fn try_expand_alias(
                 });
                 visited.push(name);
 
-                // Apply this alias's `--` semantics over its body + the
-                // tail of `remaining` that's still inside this alias's
-                // scope (i.e. up to the first standalone comma that
-                // belongs to an *outer* alias's split). See da-gh0
-                // Rules 4/8/13: post-`--` tokens promote to all sides of
-                // *this* alias's body, and the alias's implicit
-                // body-end `--` makes its trailing args do the same.
-                let (real_trailing, post_trailing) = split_at_first_comma(remaining);
-                let distributed = if substituted.iter().any(|t| t == MULTI_COMMA) {
-                    apply_alias_dd_distribution(substituted, real_trailing)?
-                } else {
-                    // Single-side body: literal `--`s inside are scoped
-                    // to this alias's only side. Consume them — the
-                    // tokens after `--` simply continue on this side.
-                    let mut out = consume_inner_double_dash(substituted);
-                    out.extend(real_trailing);
-                    out
-                };
-                let mut result = vec![argv[0].clone()];
-                result.extend(distributed);
-                result.extend(post_trailing);
+                // Spec v2 (docs/trailing-and-slots.md, rule 1): every
+                // resolve appends the `,,` boundary after its body; the
+                // call-site remainder rides behind it as this alias's
+                // trailing region. The region parser later scopes that
+                // region to the cumulative prefix and closes it at the
+                // next `,`, so no comma-splitting is needed here — and
+                // nested resolves chain naturally (`ax y` → `a x ,, y`
+                // → `occur a -k keyX -k keyY ,, x ,, y`). Body-internal
+                // `--` tokens survive untouched: they are unix
+                // end-of-flags now (rule 4), scoped to their side by
+                // the downstream parser.
+                let mut result = Vec::with_capacity(substituted.len() + remaining.len() + 2);
+                result.push(argv[0].clone());
+                result.extend(substituted);
+                result.push(super::regions::BOUNDARY.to_string());
+                result.extend(remaining);
                 argv = result;
             }
             None => return Ok((argv, chain)),
         }
     }
     Ok((argv, chain))
-}
-
-/// Split `tokens` into (before-first-standalone-comma, comma-and-after).
-/// Used by [`try_expand_alias`] to determine how much of an alias's
-/// trailing args belong to *this* alias's scope (everything before the
-/// first comma — anything past it is an outer-alias side boundary).
-fn split_at_first_comma(tokens: Vec<String>) -> (Vec<String>, Vec<String>) {
-    match tokens.iter().position(|t| t == MULTI_COMMA) {
-        Some(idx) => {
-            let mut iter = tokens.into_iter();
-            let before: Vec<String> = iter.by_ref().take(idx).collect();
-            let from: Vec<String> = iter.collect();
-            (before, from)
-        }
-        None => (tokens, Vec::new()),
-    }
-}
-
-/// Apply this alias's `--` distribution over its multi-sided body and
-/// trailing call-site args. Implements Rule 4/13 inside a single
-/// alias's scope:
-///
-/// 1. Comma-split the body into N sides.
-/// 2. For each side, partition at the first literal `--` token.
-///    Tokens before stay local; tokens after collect into the
-///    "promoted" bucket.
-/// 3. Append `trailing` to the promoted bucket (the implicit
-///    body-end `--` — Rule 13).
-/// 4. Append the promoted bucket to every side. Rejoin with `,`.
-///
-/// The result is a flat token sequence with comma separators but no
-/// `--` markers — this alias's `--` semantics have been consumed.
-/// Outer alias scopes (Rule 8) only see clean tokens.
-fn apply_alias_dd_distribution(
-    body: Vec<String>,
-    trailing: Vec<String>,
-) -> crate::Result<Vec<String>> {
-    let sides = split_argv_at_commas(body)?;
-    let mut local_sides: Vec<Vec<String>> = Vec::with_capacity(sides.len());
-    let mut promoted: Vec<String> = Vec::new();
-    for side in sides {
-        match side.iter().position(|t| t == "--") {
-            Some(idx) => {
-                let mut iter = side.into_iter();
-                let local: Vec<String> = iter.by_ref().take(idx).collect();
-                let _dash = iter.next();
-                promoted.extend(iter);
-                local_sides.push(local);
-            }
-            None => local_sides.push(side),
-        }
-    }
-    // Strip stray `--` markers from trailing — at this layer everything
-    // in `trailing` is already post-implicit-body-end-DD by Rule 13, so
-    // an explicit user-typed `--` at the call site is idempotent.
-    let trailing: Vec<String> = trailing.into_iter().filter(|t| t != "--").collect();
-
-    // da-6l4x: the call-site trailing of a MULTI-sided body is no longer
-    // blanket-appended — it rides behind a marker so the scope layer can
-    // slot-allocate its positionals across the fully-expanded sides
-    // (flags / key=value still promote to all sides there). If the
-    // trailing already carries a marker (this distribution is nested
-    // inside an outer one), the outer marker wins: the pre-marker part
-    // is this alias's own residue and keeps blanket promotion; the
-    // marked tail rides through verbatim.
-    let marker_pos = trailing
-        .iter()
-        .position(|t| t == super::allocate::TRAILING_MARKER);
-    let (blanket_tail, marked_tail): (Vec<String>, Vec<String>) = match marker_pos {
-        Some(idx) => {
-            let mut iter = trailing.into_iter();
-            let pre: Vec<String> = iter.by_ref().take(idx).collect();
-            let rest: Vec<String> = iter.collect(); // starts with the marker
-            (pre, rest)
-        }
-        None if trailing.is_empty() => (Vec::new(), Vec::new()),
-        None => {
-            let mut rest = vec![super::allocate::TRAILING_MARKER.to_string()];
-            rest.extend(trailing);
-            (Vec::new(), rest)
-        }
-    };
-
-    let mut out: Vec<String> = Vec::new();
-    for (i, mut side) in local_sides.into_iter().enumerate() {
-        if i > 0 {
-            out.push(MULTI_COMMA.to_string());
-        }
-        // The body's own post-`--` tokens keep blanket promotion — the
-        // user explicitly asked for all-sides there.
-        side.extend(promoted.iter().cloned());
-        side.extend(blanket_tail.iter().cloned());
-        side.extend(marked_tail.iter().cloned());
-        out.extend(side);
-    }
-    Ok(out)
-}
-
-/// Remove literal `--` tokens from a single-side alias body. Rule 8:
-/// `--` inside an inner alias's body doesn't propagate to outer multi
-/// sides. For a single-side alias the post-`--` tokens were already on
-/// the only side, so consuming the marker is a no-op semantically —
-/// it just keeps the marker from leaking into outer scope.
-fn consume_inner_double_dash(body: Vec<String>) -> Vec<String> {
-    body.into_iter().filter(|t| t != "--").collect()
 }
 
 /// Highest `$N` (or `${N}`) placeholder index referenced across the

@@ -1,23 +1,24 @@
 //! Side-scoped flag distribution + time-flag composition for
-//! multi-entry aliases (da-gh0.D).
+//! multi-entry aliases (spec v2: `docs/trailing-and-slots.md`;
+//! historically da-gh0.D).
 //!
 //! The layer above [`super::expand::try_expand_alias`]: it expands all
 //! aliases (including per-side aliases reached via comma split),
-//! flattens multi-of-multi, applies any user-typed top-level `--`
-//! semantics, and exposes a [`TimeFlags`] type that composes
+//! flattens multi-of-multi, applies the `,,` trailing regions (via
+//! [`super::regions`]), and exposes a [`TimeFlags`] type that composes
 //! alias-body-bound time flags with call-site time flags (Rule 15).
 //!
-//! Rules covered (from da-gh0):
+//! Spec-v2 ground rules as they land here:
 //!
-//! - **Rule 4** — Time flags are side-scoped by default; propagate to
-//!   all sides only after `--` (implicit at body end, explicit at call
-//!   site). Time-irrelevant verbs silently ignore time flags.
-//! - **Rule 7** — Multi-of-multi flattens to N sides.
-//! - **Rule 8** — `--` scope ends at the alias boundary. Inner alias's
-//!   `--` consumed at expansion time (see
-//!   [`super::expand::try_expand_alias`]).
-//! - **Rule 13** — `--` is implicit at the end of an alias body.
-//!   Call-site keys/flags apply to all sides.
+//! - Time flags (and flags generally) are side-scoped in side text;
+//!   inside a trailing region they blanket the region's bound sides.
+//!   Time-irrelevant verbs silently ignore time flags (Rule 4's second
+//!   sentence survives).
+//! - Multi-of-multi flattens to N sides (Rule 7).
+//! - An alias-emitted region binds the alias's own expanded sides; a
+//!   typed `,,` binds the cumulative prefix (spec rule 2).
+//! - `--` is unix end-of-flags, scoped to its side or region (spec
+//!   rule 4) — the old promote-to-all `--` semantics are retired.
 //! - **Rule 15** — Call-site time flags compose with alias-bound time
 //!   flags (relative numeric `-t` offsets sum; `-q`/`-y` counters
 //!   accumulate; absolute call-site values win).
@@ -38,30 +39,25 @@ pub struct ExpandedSides {
     pub chain: Vec<AliasStep>,
 }
 
-/// Full alias-expansion + comma-split + `--` distribution pipeline.
+/// Full alias-expansion + comma-split + trailing-region pipeline
+/// (spec v2).
 ///
 /// Steps:
 ///
 /// 1. Apply the terminal-verb override (`<field> end` → `end <field>`).
-/// 2. Run [`try_expand_alias`] on the whole argv, which expands the
-///    outermost alias and, if its body is multi-sided, distributes its
-///    body's `--` and the trailing call-site args across its sides
-///    (Rule 4/13). Inner aliases' internal `--`s are consumed at that
-///    layer (Rule 8).
-/// 3. Comma-split the resulting flat argv into N sides.
-/// 4. Per side, run [`try_expand_alias`] again — the first token of a
-///    side that wasn't argv\[1\] in step 2 still needs resolution
-///    (e.g. `m = vertical , sit` expands `vertical` in step 2 but not
-///    `sit`, which is on side 1).
-/// 5. Flatten multi-of-multi: any side that, after expansion, contains
-///    a standalone-comma token re-splits. Loops until convergent so
-///    three-layer chains (`y = x , c` where `x = a , b`) flatten fully.
-/// 6. Apply the call-site / user-typed top-level `--`: within each
-///    side, partition at the first `--` token; post-`--` tokens from
-///    every side concatenate into a single "promoted" bucket that
-///    appends onto every side.
-/// 7. Per side, apply the field/verb swap and stacked-short-flag
-///    expansion.
+/// 2. Run [`try_expand_alias`] on the whole argv — every resolve
+///    appends a `,,` boundary; its call-site trailing rides behind it.
+/// 3. Comma-split the resulting flat argv into N sides (typed and
+///    step-2 boundaries ride inside their sides).
+/// 4. Per ORIGINAL side: expand its head alias chain to a fixpoint
+///    (flattening multi-of-multi), then apply its alias-emitted
+///    regions scoped to that side's own sub-expansion. Boundaries
+///    present at entry (typed / step-2) defer.
+/// 5. Globally apply the deferred regions — each binds the cumulative
+///    prefix at its position.
+/// 6. (retired — `--` is unix end-of-flags now, spec rule 4.)
+/// 7. Per side, apply the field/verb swap, BlockSwitch-chain collapse,
+///    switch-promote override, and stacked-short-flag expansion.
 pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<ExpandedSides> {
     if argv.is_empty() {
         return Ok(ExpandedSides::default());
@@ -76,86 +72,126 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
     let rest: Vec<String> = argv.into_iter().skip(1).collect();
     let sides = split_argv_at_commas(rest)?;
 
-    // Step 4 + 5: per-side alias expansion with multi-of-multi flattening.
-    let mut sides = sides;
-    for _ in 0..MAX_ALIAS_HOPS {
-        let mut next_sides: Vec<Vec<String>> = Vec::with_capacity(sides.len());
-        let mut grew_or_changed = false;
-        for side in sides {
-            let mut side_argv = vec![bin.clone()];
-            side_argv.extend(side);
-            let before = side_argv.clone();
-            let (side_argv, side_chain) = try_expand_alias(side_argv, resolver)?;
-            if side_argv != before {
-                grew_or_changed = true;
-            }
-            chain.extend(side_chain);
-            let side: Vec<String> = side_argv.into_iter().skip(1).collect();
-            if side.iter().any(|t| t == MULTI_COMMA) {
-                grew_or_changed = true;
-                let sub = split_argv_at_commas(side)?;
-                next_sides.extend(sub);
-            } else {
-                next_sides.push(side);
-            }
-        }
-        sides = next_sides;
-        if !grew_or_changed {
-            break;
-        }
-    }
-
-    // Step 5b (da-6l4x + da-vo0y F3): allocate alias call-site trailing
-    // across the fully-expanded sides — bare positionals fill declared
-    // slots left-to-right (named `-k` slots share; verb-derived state /
-    // dur slots stay per-side; an unsatisfied `-I`/`-S -R` join claims
-    // the remaining window on every declaring side); flags and
-    // `key=value` keep the propagate-to-all rule. No-op when no alias
-    // trailing marker is present.
+    // Steps 4 + 5 + 5b (spec v2, docs/trailing-and-slots.md): each
+    // ORIGINAL side runs to its own expansion fixpoint, then its
+    // alias-emitted trailing regions are applied SCOPED to that side's
+    // sub-expansion — an alias's call-site region binds the sides that
+    // alias expanded to ("the sides they are referencing"). Boundaries
+    // already present at step-4 entry — the user-typed `,,` of the
+    // original command, and the step-2 outermost alias's emission —
+    // defer to the global pass below, where a region binds the
+    // cumulative prefix at its position (typed regions see everything
+    // to their left).
     //
-    // Stacked short flags expand FIRST (per the #45 review): a bundle
-    // with a value-taking terminal (`-yyt 3`, `-SR notes`) must reach
-    // the allocator as canonical `-t 3` / `-S -R notes`, or the value
-    // token would misclassify as an allocatable positional. Step 7c's
-    // expansion below is a no-op on already-expanded sides.
-    let sides: Vec<Vec<String>> = sides
-        .into_iter()
-        .map(|side| {
-            let mut side_argv = vec![bin.clone()];
-            side_argv.extend(side);
-            expand_stacked_flags(side_argv)
-                .into_iter()
-                .skip(1)
-                .collect()
-        })
-        .collect();
-    let sides = super::allocate::distribute_marked_trailing(sides)?;
-
-    // Step 6: top-level `--` distribution.
-    let mut local_sides: Vec<Vec<String>> = Vec::with_capacity(sides.len());
-    let mut promoted: Vec<String> = Vec::new();
+    // Stacked short flags expand BEFORE region application (per the #45
+    // review): a bundle with a value-taking terminal (`-yyt 3`,
+    // `-SR notes`) must reach the allocator as canonical `-t 3` /
+    // `-S -R notes`, or the value token would misclassify as an
+    // allocatable positional. Step 7c's expansion below is a no-op on
+    // already-expanded sides.
+    let mut flat_sides: Vec<Vec<String>> = Vec::with_capacity(sides.len());
     for side in sides {
-        match side.iter().position(|t| t == "--") {
-            Some(idx) => {
-                let mut iter = side.into_iter();
-                let local: Vec<String> = iter.by_ref().take(idx).collect();
-                let _dash = iter.next();
-                // Drop any further `--` tokens (idempotency).
-                promoted.extend(iter.filter(|t| t != "--"));
-                local_sides.push(local);
+        let deferred_count = side
+            .iter()
+            .filter(|t| *t == super::regions::BOUNDARY)
+            .count();
+
+        // Inner fixpoint: expand this side's head alias chain and
+        // flatten its multi-of-multi body commas.
+        let mut subs: Vec<Vec<String>> = vec![side];
+        for _ in 0..MAX_ALIAS_HOPS {
+            let mut next: Vec<Vec<String>> = Vec::with_capacity(subs.len());
+            let mut grew_or_changed = false;
+            for sub in subs {
+                let mut sub_argv = vec![bin.clone()];
+                sub_argv.extend(sub);
+                let before = sub_argv.clone();
+                let (sub_argv, sub_chain) = try_expand_alias(sub_argv, resolver)?;
+                if sub_argv != before {
+                    grew_or_changed = true;
+                }
+                chain.extend(sub_chain);
+                let sub: Vec<String> = sub_argv.into_iter().skip(1).collect();
+                if sub.iter().any(|t| t == MULTI_COMMA) {
+                    grew_or_changed = true;
+                    next.extend(split_argv_at_commas(sub)?);
+                } else {
+                    next.push(sub);
+                }
             }
-            None => local_sides.push(side),
+            subs = next;
+            if !grew_or_changed {
+                break;
+            }
         }
+
+        // Canonical flag shapes before allocation.
+        let mut subs: Vec<Vec<String>> = subs
+            .into_iter()
+            .map(|sub| {
+                let mut sub_argv = vec![bin.clone()];
+                sub_argv.extend(sub);
+                expand_stacked_flags(sub_argv).into_iter().skip(1).collect()
+            })
+            .collect();
+
+        // Peel the deferred tail (the LAST `deferred_count` boundaries —
+        // entry-time boundaries always trail the side's own expansion)
+        // off the last sub-side; it re-attaches after the scoped pass.
+        let mut deferred_tail: Vec<String> = Vec::new();
+        if deferred_count > 0 {
+            if let Some(last) = subs.last_mut() {
+                let bpos: Vec<usize> = last
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, t)| *t == super::regions::BOUNDARY)
+                    .map(|(i, _)| i)
+                    .collect();
+                if bpos.len() >= deferred_count {
+                    let cut = bpos[bpos.len() - deferred_count];
+                    deferred_tail = last.split_off(cut);
+                }
+            }
+        }
+
+        // Stage 1: scoped application — cumulative WITHIN this side's
+        // own expansion is exactly "the alias's sides".
+        let mut subs = super::regions::apply_regions(subs)?;
+        if !deferred_tail.is_empty() {
+            if let Some(last) = subs.last_mut() {
+                last.extend(deferred_tail);
+            } else {
+                subs.push(deferred_tail);
+            }
+        }
+        flat_sides.extend(subs);
     }
+
+    // Stage 2: typed / outer regions bind the cumulative global prefix.
+    let sides = super::regions::apply_regions(flat_sides)?;
+
+    // An empty side here means a trailing/doubled comma in the original
+    // or an alias body like `a ,` — the same error the comma splitter
+    // raises for bare empties (a boundary-only side slips past it
+    // because the `,,` token made the side non-empty at split time).
+    if sides.iter().any(|s| s.is_empty()) {
+        return Err(ParseError::InvalidArg(
+            "empty side in multi-entry command (trailing or doubled comma?)".to_string(),
+        ));
+    }
+
+    // (Step 6 retired by spec v2: `--` is plain unix end-of-flags,
+    // side-scoped, handled by the downstream parser — the old top-level
+    // promote-to-all behavior is gone. Trailing regions (`,,`) replaced
+    // it above.)
 
     // Step 7a (da-b4k5): per-side `maybe_swap_field_verb` so any
     // field-first form is normalized to verb-first BEFORE the
     // BlockSwitch-chain collapse runs — the collapse keys off
     // `sides[0][0] == "switch"`, which a pre-swap field-first side
     // (`["activity", "switch", "end", "14m"]`) wouldn't match.
-    let mut swapped_sides: Vec<Vec<String>> = Vec::with_capacity(local_sides.len());
-    for mut side in local_sides {
-        side.extend(promoted.iter().cloned());
+    let mut swapped_sides: Vec<Vec<String>> = Vec::with_capacity(sides.len());
+    for side in sides {
         let mut side_argv = vec![bin.clone()];
         side_argv.extend(side);
         let side_argv = maybe_swap_field_verb(side_argv);
@@ -457,13 +493,13 @@ mod tests {
     }
 
     #[test]
-    fn keyed_after_explicit_double_dash_in_body_applies_to_all_sides_inside_alias() {
-        // Explicit `--` in alias body → post tokens promote to all
-        // sides of *this* alias.
+    fn keyed_after_boundary_in_body_applies_to_all_sides_inside_alias() {
+        // A `,,` written in the alias body opens a region over the
+        // body's sides — the author's own shared payload (spec v2).
         let mut a = HashMap::new();
         a.insert(
             "m".into(),
-            alias("switch body sit , occur caffeine -- shared=Y"),
+            alias("switch body sit , occur caffeine ,, shared=Y"),
         );
         let r = expand_into_sides(v(&["datum", "m"]), &MapResolver(&a)).unwrap();
         assert_eq!(r.sides.len(), 2);
@@ -487,11 +523,11 @@ mod tests {
     }
 
     #[test]
-    fn keyed_split_per_side_then_promoted_after_dash() {
-        // `vertical abc=1 , sit ghi=2 -- xyz=3`. User-typed top-level
-        // `--`: per-side keys stay scoped; post-`--` promotes to all.
+    fn keyed_split_per_side_then_promoted_after_boundary() {
+        // `vertical abc=1 , sit ghi=2 ,, xyz=3`. Typed `,,`: per-side
+        // keys stay scoped; the region's k=v blankets the prefix.
         let r = expand(&[
-            "datum", "vertical", "abc=1", ",", "sit", "ghi=2", "--", "xyz=3",
+            "datum", "vertical", "abc=1", ",", "sit", "ghi=2", ",,", "xyz=3",
         ]);
         assert_eq!(r.sides.len(), 2);
         assert!(r.sides[0].iter().any(|t| t == "abc=1"));
@@ -500,6 +536,19 @@ mod tests {
         assert!(!r.sides[1].iter().any(|t| t == "abc=1"));
         assert!(r.sides[1].iter().any(|t| t == "ghi=2"));
         assert!(r.sides[1].iter().any(|t| t == "xyz=3"));
+    }
+
+    #[test]
+    fn unix_dash_dash_does_not_promote() {
+        // Spec v2 rule 4: `--` is end-of-flags, side-scoped — the old
+        // promote-to-all meaning is gone. k=v after it stays on its
+        // side (k=v is data grammar, unaffected by the latch).
+        let r = expand(&[
+            "datum", "vertical", "abc=1", ",", "sit", "ghi=2", "--", "xyz=3",
+        ]);
+        assert_eq!(r.sides.len(), 2);
+        assert!(!r.sides[0].iter().any(|t| t == "xyz=3"), "{:?}", r.sides[0]);
+        assert!(r.sides[1].iter().any(|t| t == "xyz=3"), "{:?}", r.sides[1]);
     }
 
     // ── Section J: time flag scoping and composition ─────────────────────
@@ -592,12 +641,13 @@ mod tests {
     }
 
     #[test]
-    fn explicit_double_dash_promotes_per_side_time_flag_to_all() {
-        // `-t +5 -- -t +10`: per-side `-t +5` ends up on each side
-        // local; `-t +10` after the `--` promotes to all. Composed
-        // offset per side: +5 (side-local) + +10 (promoted) = +15.
+    fn typed_boundary_promotes_time_flag_to_all_sides() {
+        // Spec v2: a typed `,,` opens a region binding the cumulative
+        // prefix; region flags blanket. `-t +5` stays side-local;
+        // `-t +10` in the region reaches both. (The old `--` promote
+        // is gone — `--` is unix end-of-flags now, rule 4.)
         let r = expand(&[
-            "datum", "vertical", "-t", "+5", ",", "caffeine", "--", "-t", "+10",
+            "datum", "vertical", "-t", "+5", ",", "caffeine", ",,", "-t", "+10",
         ]);
         let (t0, _) = extract_time(&r.sides[0]);
         let (t1, _) = extract_time(&r.sides[1]);
@@ -895,11 +945,21 @@ mod tests {
     }
 
     #[test]
-    fn vx_fills_dur_state_dur_left_to_right() {
-        // vx = vertical , x. Global slots: [v.dur, x.state, x.dur].
-        let r = expand(&["datum", "vx", "5m", "sit", "10m"]);
+    fn vx_kind_shares_dur_across_sides() {
+        // Spec v2 rule 6: dur slots unify by kind — one fill propagates
+        // to every dur-bearing side. vx = vertical , x.
+        let r = expand(&["datum", "vx", "5m", "sit"]);
         assert_eq!(r.sides[0], v(&["switch", "body", "vertical", "5m"]));
-        assert_eq!(r.sides[1], v(&["switch", "body", "sit", "10m"]));
+        assert_eq!(r.sides[1], v(&["switch", "body", "sit", "5m"]));
+    }
+
+    #[test]
+    fn vx_per_side_durs_from_trailing_are_excess() {
+        // Differing per-side durs are expressed in-side, not from
+        // trailing (spec rule 6); a second dur positional is excess.
+        let a = standard_resolver();
+        let r = expand_into_sides(v(&["datum", "vx", "5m", "sit", "10m"]), &MapResolver(&a));
+        assert!(matches!(r, Err(ParseError::ExtraData(_))), "{r:?}");
     }
 
     #[test]

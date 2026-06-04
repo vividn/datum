@@ -12,8 +12,8 @@
 //! this module. The originally-planned `alias::autogen` placeholder was
 //! removed once it became clear the canonical home was the spec itself.
 
-mod allocate;
 pub mod expand;
+pub mod regions;
 pub mod scope;
 
 pub use expand::{
