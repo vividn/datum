@@ -790,13 +790,12 @@ pub(crate) fn parse_log_args(
     // da-vo0y F2: trailing-dur peek — only when a string-join remainder is
     // active on a duration-bearing verb (matches the dur=-slot suppression
     // in `prepare_log_args`; the peek replaces the slot there).
-    data_args.peek_trailing_dur = (args.string_state
-        || args.string_remainder
-        || args.comment_remainder)
-        && matches!(
-            action,
-            Action::Switch | Action::Start | Action::Stop | Action::Block
-        );
+    data_args.peek_trailing_dur =
+        (args.string_state || args.string_remainder || args.comment_remainder)
+            && matches!(
+                action,
+                Action::Switch | Action::Start | Action::Stop | Action::Block
+            );
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
@@ -990,10 +989,18 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     // into the `--dur` flag — the `state=true` slot would otherwise
     // reassign the next bare positional as state (it doesn't know `state=…` is
     // already in flight).
+    // da-vh30: under `-I`/`--string-state` the bare positionals ARE the
+    // literal string state — `switch song -I end of the road 5m , next`
+    // must keep "end" as the first word of the state, not translate it
+    // to `state=false` (and then mis-peel "of" as the duration). So the
+    // keyword translation is suppressed in string-state mode; a user who
+    // wants the keyword semantics simply omits `-I`. (Post-comma keywords
+    // are literal in BOTH modes — there is no tail translation.)
     let leading_keyword_idx = args
         .rest
         .iter()
         .position(|t| !t.contains('='))
+        .filter(|_| !args.string_state)
         .filter(|&i| matches!(args.rest[i].as_str(), "end" | "stop" | "start"));
     if let Some(idx) = leading_keyword_idx {
         let keyword = args.rest.remove(idx);
@@ -1038,6 +1045,12 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
 /// land on (state is hard-set by action canonicalization), so it is
 /// stripped here; switch absorbs `.` into its `state=true` slot inside
 /// `parse_log_args`.
+///
+/// String-join mode (da-vo0y F2): with `-I`/`-S`/`-C` active the `dur=`
+/// slot is suppressed — it would front-eat the first joined token — and
+/// the trailing-dur PEEK in `handle_data_args` claims the duration from
+/// the join window's tail instead. The start/stop `.`-strip is likewise
+/// bypassed there: the `.` is the peek's explicit skip-dur sentinel.
 pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()> {
     // da-a2o8: peel a standalone-comma "then" chain (`switch f vertical 5 ,
     // sit`) into `following_state=…` before the dur slot is declared. The
@@ -1059,8 +1072,7 @@ pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()>
         // window's tail instead (set via `peek_trailing_dur` below). The
         // start/stop `.`-strip is likewise skipped in peek mode — the `.`
         // is the peek's explicit skip-dur sentinel there.
-        let string_join =
-            args.string_state || args.string_remainder || args.comment_remainder;
+        let string_join = args.string_state || args.string_remainder || args.comment_remainder;
         if matches!(action, Action::Start | Action::Stop) && !string_join {
             args.rest.retain(|t| t != "." && t != r"\.");
         }
@@ -1892,6 +1904,31 @@ mod tests {
         assert_eq!(args.duration.duration.as_deref(), Some("14m"));
     }
 
+    /// da-vh30: under `-I`/`--string-state` the bare positionals are the
+    /// LITERAL string state, so the da-b4k5 keyword translation must not
+    /// fire — `end` stays a bare token (first word of the joined state)
+    /// and no eager dur peel happens; the trailing-dur PEEK claims `14m`
+    /// downstream instead.
+    #[test]
+    fn then_chain_keyword_untranslated_under_string_state() {
+        let mut args = switch_args(&["end", "14m", ",", "researching"]);
+        args.string_state = true;
+        extract_switch_then_chain(&mut args).unwrap();
+        assert_eq!(
+            args.rest,
+            vec![
+                "end".to_string(),
+                "14m".to_string(),
+                "following_state=researching".to_string(),
+            ]
+        );
+        assert!(
+            args.duration.duration.is_none(),
+            "no eager dur peel in string-state mode: {:?}",
+            args.duration.duration
+        );
+    }
+
     /// da-b4k5: a non-keyword leading state is untouched — `vertical`
     /// stays `vertical` so the existing chain semantics for actual
     /// state values (the original da-a2o8 contract) keep working.
@@ -2115,16 +2152,107 @@ mod tests {
         // `switch tv -I adventure time .` → explicit skip; no dur.
         let db = Db::open_in_memory().unwrap();
         let mut args = LogArgs::with_field("tv");
-        args.rest = vec![
-            "adventure".to_string(),
-            "time".to_string(),
-            ".".to_string(),
-        ];
+        args.rest = vec!["adventure".to_string(), "time".to_string(), ".".to_string()];
         args.string_state = true;
         log_entry(Action::Switch, args, &db).unwrap();
         let entries = db.entries_for_field("tv", None).unwrap();
         assert_eq!(entries[0].state, Some(serde_json::json!("adventure time")));
         assert!(entries[0].dur.is_none(), ". must skip the dur peek");
+    }
+
+    // ─── da-vh30: -I (string-state) composed with the `,` chain ─────────
+
+    #[test]
+    fn switch_string_state_then_chain_block_shape() {
+        // da-vh30: the -I + chain + trailing-dur-peek triple —
+        // `switch body -I a b 30m , sit`. The chain peels `, sit` into
+        // `following_state=sit` BEFORE the string join; the join leaves the
+        // key=value alone and folds the bare tokens into the state; the
+        // tail peek claims `30m` as dur → BlockSwitch.
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("body");
+        args.rest = ["a", "b", "30m", ",", "sit"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        args.string_state = true;
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("body", None).unwrap();
+        assert_eq!(entries.len(), 1, "exactly one row");
+        let e = &entries[0];
+        assert_eq!(e.state, Some(serde_json::json!("a b")));
+        assert_eq!(e.following_state, Some(serde_json::json!("sit")));
+        assert_eq!(e.duration_seconds(), Some(30 * 60));
+        assert_eq!(e.verb, Verb::BlockSwitch);
+    }
+
+    #[test]
+    fn switch_string_state_then_chain_point_shape() {
+        // da-vh30: `switch body -I a b -m , sit` → zero-duration
+        // PointSwitch with the joined multi-word state. The peek leaves
+        // `b` alone (not duration-parseable), so the full window joins.
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("body");
+        args.duration.moment = true;
+        args.rest = ["a", "b", ",", "sit"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        args.string_state = true;
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("body", None).unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert_eq!(e.state, Some(serde_json::json!("a b")));
+        assert_eq!(e.following_state, Some(serde_json::json!("sit")));
+        assert_eq!(e.duration_seconds(), Some(0));
+        assert_eq!(e.verb, Verb::PointSwitch);
+    }
+
+    #[test]
+    fn switch_string_state_suppresses_leading_keyword_translation() {
+        // da-vh30 e2e: `switch song -I end of the road 5m , next` — under
+        // -I the positionals are the LITERAL string state, so the da-b4k5
+        // chain-context `end` keyword translation must not fire ("end"
+        // stays the first word of the state; without the gate it would
+        // set state=false and try `of` as a duration). The tail peek
+        // claims `5m`.
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("song");
+        args.rest = ["end", "of", "the", "road", "5m", ",", "next"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        args.string_state = true;
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("song", None).unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert_eq!(e.state, Some(serde_json::json!("end of the road")));
+        assert_eq!(e.following_state, Some(serde_json::json!("next")));
+        assert_eq!(e.duration_seconds(), Some(5 * 60));
+        assert_eq!(e.verb, Verb::BlockSwitch);
+    }
+
+    #[test]
+    fn switch_string_state_post_comma_keyword_is_literal() {
+        // da-vh30 decision: post-comma keywords are literal in BOTH modes
+        // (there is no tail translation) — `switch body -I a b 5m , end`
+        // chains into a literal "end" state, not state=false.
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::with_field("body");
+        args.rest = ["a", "b", "5m", ",", "end"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        args.string_state = true;
+        log_entry(Action::Switch, args, &db).unwrap();
+        let entries = db.entries_for_field("body", None).unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert_eq!(e.state, Some(serde_json::json!("a b")));
+        assert_eq!(e.following_state, Some(serde_json::json!("end")));
+        assert_eq!(e.verb, Verb::BlockSwitch);
     }
 
     #[test]
