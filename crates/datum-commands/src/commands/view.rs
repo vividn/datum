@@ -14,9 +14,11 @@
 //! - `json`    — `[{column: value, …}, …]`, one record per row.
 //! - `auto`    — pretty when stdout is a TTY, otherwise tsv. Default.
 //!
-//! `--watch` polls the query every two seconds and clears the screen
-//! before each redraw. The bead notes a follow-up to swap the poll for
-//! the daemon's entry-mutation hook.
+//! `--watch` re-renders whenever another connection commits to the
+//! database, detected via the SQLite `data_version` poll in
+//! [`crate::commands::watch::watch_loop`] (~500ms latency). The ANSI
+//! clear before each redraw is gated on stdout being a TTY so piped
+//! output (`--format tsv | tee …`) stays free of escape bytes.
 
 use std::io::IsTerminal;
 
@@ -43,13 +45,19 @@ pub fn view(args: ViewArgs, db: &Db) -> Result<()> {
         return Ok(());
     }
     if args.watch {
-        loop {
-            // ANSI clear-screen + cursor home so a long row count doesn't
-            // accumulate scrollback. Inert on non-VT terminals.
-            print!("\x1b[2J\x1b[H");
-            render_once(&args, db)?;
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        }
+        // Re-render whenever an external `datum` write bumps the SQLite
+        // data_version (≈500ms latency). Views are plain SELECTs with no
+        // "now" indicator, so no periodic time-tick is needed.
+        let tty = std::io::stdout().is_terminal();
+        crate::commands::watch::watch_loop(db, None, || {
+            if tty {
+                // ANSI clear-screen + cursor home so a long row count
+                // doesn't accumulate scrollback. Skipped for pipes so
+                // tsv/csv/json streams aren't polluted mid-stream.
+                print!("\x1b[2J\x1b[H");
+            }
+            render_once(&args, db)
+        })
     } else {
         render_once(&args, db)
     }
@@ -287,6 +295,23 @@ mod tests {
     fn tsv_scrubs_embedded_separators() {
         assert_eq!(format_cell_tsv(&json!("a\tb")), "a b");
         assert_eq!(format_cell_tsv(&json!("a\nb")), "a b");
+    }
+
+    /// `--watch` propagates the first render's error (here: missing view)
+    /// instead of looping — same semantics as the old poll loop, now via
+    /// `watch_loop`.
+    #[test]
+    fn watch_propagates_missing_view_error() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("view_watch.db");
+        let db = Db::open(path.to_str().unwrap()).unwrap();
+        let args = ViewArgs {
+            name: "no_such_view".into(),
+            format: ViewFormat::Tsv,
+            watch: true,
+            list: false,
+        };
+        assert!(view(args, &db).is_err());
     }
 
     #[test]

@@ -965,8 +965,8 @@ pub struct ViewArgs {
     pub name: String,
     /// `--format pretty|tsv|csv|json`. Defaults to [`ViewFormat::Auto`].
     pub format: ViewFormat,
-    /// `--watch` — re-run the query on a poll interval until interrupted.
-    /// Slice 4 polls; the daemon-hook integration is a follow-up.
+    /// `--watch` — re-render on every external DB write (SQLite
+    /// `data_version` poll, ~500ms latency) until interrupted.
     pub watch: bool,
     /// `--list` — print the set of installed view names and exit. Mirrors
     /// `datum check --list` (da-79vv: discoverability gap — view names
