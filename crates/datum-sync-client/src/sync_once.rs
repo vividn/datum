@@ -37,7 +37,7 @@ use datum_sync_protocol::SyncProtocolError;
 use crate::crypto::changeset::{decrypt_changeset, encrypt_changeset, Changeset, EncryptedBlob};
 use crate::http::session::{Session, SessionError};
 use crate::http::{pull_batch, push_blob, PulledChangeset};
-use crate::ops::{apply_changeset, pack_changeset_since};
+use crate::ops::{apply_changeset, pack_changeset_since_ms};
 use crate::sync_state;
 
 /// Direction of a sync cycle. `Both` is the default for `datum sync` with
@@ -143,8 +143,8 @@ pub fn push_once(
     let watermark = sync_state::get_push_mark(db)?;
     // `max_ms` is the largest `modify_time_ms` over exactly the packed rows,
     // computed in the same query as the filter — re-using it as the next
-    // watermark cannot skip a row (see `pack_changeset_since`).
-    let (changeset, max_ms) = pack_changeset_since(db, watermark)?;
+    // watermark cannot skip a row (see `pack_changeset_since_ms`).
+    let (changeset, max_ms) = pack_changeset_since_ms(db, watermark)?;
     let entry_count = changeset_entry_count(&changeset);
     if entry_count == 0 {
         return Ok(PushOutcome::default());

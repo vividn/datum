@@ -9,11 +9,13 @@
 //!
 //! # Watermark model
 //!
-//! - `since_seq` in [`pack_changeset`] is a local watermark: the largest
+//! - `since_modify_ms` in [`pack_changeset`] is a local watermark: the largest
 //!   `modify_time_ms` (epoch-ms) already included in a prior pack. Passing
 //!   `0` produces a full dump of every live and tombstoned entry. The push
-//!   path uses [`pack_changeset_since`] to advance the watermark to the max
-//!   metric of exactly the rows it packed.
+//!   path uses [`pack_changeset_since_ms`] to advance the watermark to the max
+//!   metric of exactly the rows it packed. This is an epoch-ms value, NOT a
+//!   seq: "seq" in this crate means either the per-device push counter bound
+//!   into AAD or the server-assigned global row id used as pull watermark.
 //! - [`crate::sync_state::advance_push_mark`] /
 //!   [`crate::sync_state::advance_pull_seq`] record the latest seq the
 //!   relay accepted on a push and the latest server-assigned global seq
@@ -38,14 +40,14 @@ struct ChangesetPayloadV1 {
 }
 
 /// Pack every entry (including tombstones) whose `modified_at` epoch-ms is
-/// strictly greater than `since_seq`. Passing `0` produces a full dump.
+/// strictly greater than `since_modify_ms`. Passing `0` produces a full dump.
 ///
 /// The returned changeset is self-contained plaintext bytes — the caller
 /// is expected to pipe it through
 /// [`crate::crypto::changeset::encrypt_changeset`] before it leaves the
 /// device.
-pub fn pack_changeset(db: &Db, since_seq: u64) -> Result<Changeset> {
-    Ok(pack_changeset_since(db, since_seq)?.0)
+pub fn pack_changeset(db: &Db, since_modify_ms: u64) -> Result<Changeset> {
+    Ok(pack_changeset_since_ms(db, since_modify_ms)?.0)
 }
 
 /// Like [`pack_changeset`] but also returns the largest `modify_time_ms`
@@ -53,10 +55,10 @@ pub fn pack_changeset(db: &Db, since_seq: u64) -> Result<Changeset> {
 /// the push watermark to. Both the row filter and this maximum read the same
 /// `modify_time_ms` generated column in a single query, so the watermark
 /// exactly matches the packed set (no chrono-vs-SQL drift, no TOCTOU against
-/// a concurrent writer) and re-using it as the next `since_seq` cannot skip a
-/// row. Returns `None` when nothing was packed.
-pub fn pack_changeset_since(db: &Db, since_seq: u64) -> Result<(Changeset, Option<u64>)> {
-    let (entries, max_ms) = select_entries_since(db, since_seq)?;
+/// a concurrent writer) and re-using it as the next `since_modify_ms` cannot
+/// skip a row. Returns `None` when nothing was packed.
+pub fn pack_changeset_since_ms(db: &Db, since_modify_ms: u64) -> Result<(Changeset, Option<u64>)> {
+    let (entries, max_ms) = select_entries_since(db, since_modify_ms)?;
     let payload = ChangesetPayloadV1 { entries };
     let json = serde_json::to_vec(&payload)?;
     let mut bytes = Vec::with_capacity(CHANGESET_MAGIC_V1.len() + json.len());
@@ -326,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn pack_since_seq_returns_only_new_rows() {
+    fn pack_since_modify_ms_returns_only_new_rows() {
         let db = fresh_db();
         let e1 = make_entry("coffee", 0);
         let e2 = make_entry("mood", 120);
@@ -369,11 +371,11 @@ mod tests {
         db.insert_entry(&make_entry("coffee", 0)).unwrap();
         db.insert_entry(&make_entry("mood", 120)).unwrap();
 
-        let (cs, max_ms) = pack_changeset_since(&db, 0).unwrap();
+        let (cs, max_ms) = pack_changeset_since_ms(&db, 0).unwrap();
         assert_eq!(parse_payload(cs.as_bytes()).unwrap().entries.len(), 2);
         let watermark = max_ms.expect("packed rows yield a watermark");
 
-        let (cs2, max2) = pack_changeset_since(&db, watermark).unwrap();
+        let (cs2, max2) = pack_changeset_since_ms(&db, watermark).unwrap();
         assert_eq!(
             parse_payload(cs2.as_bytes()).unwrap().entries.len(),
             0,
