@@ -10,7 +10,7 @@ use crate::{
 };
 use axum::{extract::State, Json};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 pub async fn register_begin(
@@ -34,11 +34,7 @@ pub async fn register_begin(
             None,
         )?;
 
-        state
-            .reg_states
-            .lock()
-            .unwrap()
-            .insert(user_id.to_string(), reg_state);
+        crate::sweep_and_insert(&state.reg_states, user_id.to_string(), reg_state);
 
         (user_id, ccr)
     };
@@ -55,11 +51,12 @@ pub async fn register_finish(
 ) -> Result<Json<AuthToken>, AppError> {
     let user_id = Uuid::parse_str(&req.user_id).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    let reg_state = state
+    let (_, reg_state) = state
         .reg_states
         .lock()
         .unwrap()
         .remove(&user_id.to_string())
+        .filter(|(deadline, _)| Instant::now() <= *deadline)
         .ok_or_else(|| AppError::BadRequest("No pending registration for this user".to_string()))?;
 
     let passkey = state
@@ -99,11 +96,7 @@ pub async fn login_begin(
 
         let (rcr, auth_state) = state.webauthn.start_passkey_authentication(&passkeys)?;
 
-        state
-            .auth_states
-            .lock()
-            .unwrap()
-            .insert(user_id.to_string(), auth_state);
+        crate::sweep_and_insert(&state.auth_states, user_id.to_string(), auth_state);
 
         (user_id, rcr)
     };
@@ -120,11 +113,12 @@ pub async fn login_finish(
 ) -> Result<Json<AuthToken>, AppError> {
     let user_id = Uuid::parse_str(&req.user_id).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    let auth_state = state
+    let (_, auth_state) = state
         .auth_states
         .lock()
         .unwrap()
         .remove(&user_id.to_string())
+        .filter(|(deadline, _)| Instant::now() <= *deadline)
         .ok_or_else(|| {
             AppError::BadRequest("No pending authentication for this user".to_string())
         })?;

@@ -34,6 +34,7 @@ use rusqlite::Connection;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -46,14 +47,31 @@ use crate::models::AuthenticatedUser;
 
 pub use crate::device_code::DeviceCodeRecord;
 
+/// Server-side TTL for in-progress passkey ceremonies. Generous bound: the
+/// browser-side challenge times out in ~60s; this only caps how long an
+/// abandoned ceremony may occupy memory before a sweep reclaims it.
+pub const CEREMONY_TTL: Duration = Duration::from_secs(300);
+
+/// Sweep expired entries, then insert the new one with a fresh deadline.
+/// Amortizes cleanup onto the same (unauthenticated) insert path that causes
+/// growth, so abandoned ceremonies can't accumulate unboundedly (da-3huo).
+fn sweep_and_insert<V>(map: &Mutex<HashMap<String, (Instant, V)>>, key: String, value: V) {
+    let now = Instant::now();
+    let mut map = map.lock().unwrap();
+    map.retain(|_, (deadline, _)| *deadline > now);
+    map.insert(key, (now + CEREMONY_TTL, value));
+}
+
 pub struct AppState {
     pub db: Mutex<Connection>,
     pub webauthn: Webauthn,
     pub jwt_secret: String,
-    /// In-progress passkey registration ceremonies keyed by user_id string.
-    pub reg_states: Mutex<HashMap<String, PasskeyRegistration>>,
-    /// In-progress passkey authentication ceremonies keyed by user_id string.
-    pub auth_states: Mutex<HashMap<String, PasskeyAuthentication>>,
+    /// In-progress passkey registration ceremonies keyed by user_id string,
+    /// each paired with its sweep deadline.
+    pub reg_states: Mutex<HashMap<String, (Instant, PasskeyRegistration)>>,
+    /// In-progress passkey authentication ceremonies keyed by user_id string,
+    /// each paired with its sweep deadline.
+    pub auth_states: Mutex<HashMap<String, (Instant, PasskeyAuthentication)>>,
     /// Pending device-code grants keyed by `device_code`.
     pub device_codes: Mutex<HashMap<String, DeviceCodeRecord>>,
     /// Test-only: number of upcoming polls that should respond with
@@ -461,6 +479,76 @@ mod tests {
             serde_json::from_slice(&resp2.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(batch2.len(), 1, "should only get the new changeset");
         assert_eq!(batch2[0]["payload_b64"], "p3");
+    }
+
+    /// da-3huo: an expired device-code grant is reclaimed by the next
+    /// `start` call, not retained until someone happens to poll it.
+    #[tokio::test]
+    async fn test_device_code_start_sweeps_expired_grants() {
+        let state = test_state();
+        state.device_codes.lock().unwrap().insert(
+            "dc-stale".to_string(),
+            DeviceCodeRecord {
+                user_code: "DEAD-BEEF".to_string(),
+                authorized_user_id: None,
+                expires_at: std::time::Instant::now() - std::time::Duration::from_secs(1),
+            },
+        );
+
+        let resp = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v0/auth/device-code")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let map = state.device_codes.lock().unwrap();
+        assert!(
+            !map.contains_key("dc-stale"),
+            "expired grant must be swept on the next start"
+        );
+        assert_eq!(map.len(), 1, "only the freshly minted grant remains");
+    }
+
+    /// da-3huo: an abandoned registration ceremony past its TTL is swept
+    /// by the next `register_begin`, so distinct-username spam can't grow
+    /// `reg_states` unboundedly.
+    #[tokio::test]
+    async fn test_register_begin_sweeps_expired_ceremonies() {
+        let state = test_state();
+
+        let begin = |username: &str| {
+            let body = serde_json::json!({ "username": username }).to_string();
+            build_app(state.clone()).oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v0/auth/register/begin")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+        };
+
+        // Alice begins and abandons; backdate her deadline past the TTL.
+        assert_eq!(begin("alice").await.unwrap().status(), StatusCode::OK);
+        {
+            let mut map = state.reg_states.lock().unwrap();
+            assert_eq!(map.len(), 1);
+            for (deadline, _) in map.values_mut() {
+                *deadline = std::time::Instant::now() - std::time::Duration::from_secs(1);
+            }
+        }
+
+        // Bob's begin sweeps the expired ceremony.
+        assert_eq!(begin("bob").await.unwrap().status(), StatusCode::OK);
+        let map = state.reg_states.lock().unwrap();
+        assert_eq!(map.len(), 1, "expired ceremony must be swept on begin");
     }
 
     #[tokio::test]

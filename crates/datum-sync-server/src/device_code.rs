@@ -66,16 +66,22 @@ pub async fn start(
 ) -> impl IntoResponse {
     let device_code = format!("dc-{}", random_token(24));
     let user_code = random_user_code();
-    let expires_at = Instant::now() + Duration::from_secs(DEFAULT_EXPIRES_IN);
+    let now = Instant::now();
 
-    state.device_codes.lock().unwrap().insert(
+    // Sweep expired grants before inserting: this endpoint is the
+    // unauthenticated path that grows the map, so amortizing cleanup here
+    // bounds it to codes still inside their lifetime (da-3huo).
+    let mut map = state.device_codes.lock().unwrap();
+    map.retain(|_, rec| rec.expires_at > now);
+    map.insert(
         device_code.clone(),
         DeviceCodeRecord {
             user_code: user_code.clone(),
             authorized_user_id: None,
-            expires_at,
+            expires_at: now + Duration::from_secs(DEFAULT_EXPIRES_IN),
         },
     );
+    drop(map);
 
     let resp = DeviceCodeResponse {
         device_code,
