@@ -237,6 +237,23 @@ mod tests {
         assert_eq!(s.poll(tms(base, 6500)), Action::Push);
     }
 
+    /// A sustained sub-quiet-window write stream must not starve push
+    /// forever: the debouncer's max-wait cap (default 10s) forces a Push
+    /// even while writes keep arriving (da-kp5l).
+    #[test]
+    fn sustained_writes_cannot_starve_push() {
+        let base = Instant::now();
+        let mut s =
+            Scheduler::with_params(base, Duration::from_millis(1500), Duration::from_secs(3600));
+
+        // Writes every 100ms — the quiet window alone would never elapse.
+        for i in 0..=100 {
+            s.note_write(tms(base, i * 100));
+        }
+        // 10s into the burst (writes still flowing): the cap fires.
+        assert_eq!(s.poll(tms(base, 10_000)), Action::Push);
+    }
+
     /// Pull backoff is independent of push — auth issues on push should
     /// not starve pull traffic.
     #[test]
