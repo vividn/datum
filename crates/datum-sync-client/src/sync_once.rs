@@ -42,7 +42,7 @@ use datum_sync_protocol::SyncProtocolError;
 use crate::crypto::changeset::{decrypt_changeset, encrypt_changeset, Changeset, EncryptedBlob};
 use crate::http::session::{Session, SessionError};
 use crate::http::{pull_batch, push_blob, PulledChangeset};
-use crate::ops::{apply_changeset, pack_changeset_since_ms};
+use crate::ops::{apply_changeset, changeset_entries, pack_changeset_since_ms};
 use crate::sync_state;
 
 /// Direction of a sync cycle. `Both` is the default for `datum sync` with
@@ -378,7 +378,7 @@ pub fn pull_once(
         // apply it — `apply_changeset` may drop older-modify_time rows via
         // LWW, but conflict detection cares about every row that made it
         // into the local table, not only the ones that actually changed.
-        let incoming = parse_entries(cs.as_bytes())?;
+        let incoming = changeset_entries(cs.as_bytes())?;
         apply_changeset(db, &cs)?;
         outcome.applied += incoming.len();
 
@@ -396,21 +396,13 @@ pub fn pull_once(
     Ok(outcome)
 }
 
+/// Peek at the entry count inside a packed changeset via the single
+/// envelope-validating parser in [`crate::ops`]. An invalid envelope
+/// counts as 0 — the real apply path surfaces the error.
 fn changeset_entry_count(cs: &Changeset) -> usize {
-    entries_array(cs).map(|a| a.len()).unwrap_or(0)
-}
-
-/// Peek at the `entries` JSON array inside a packed changeset. The wire
-/// format is locked in `docs/sync-protocol.md` as a 4-byte magic prefix +
-/// JSON.
-fn entries_array(cs: &Changeset) -> Option<Vec<serde_json::Value>> {
-    let bytes = cs.as_bytes();
-    if bytes.len() < 4 {
-        return None;
-    }
-    let (_magic, json) = bytes.split_at(4);
-    let value: serde_json::Value = serde_json::from_slice(json).ok()?;
-    value.get("entries").and_then(|v| v.as_array()).cloned()
+    changeset_entries(cs.as_bytes())
+        .map(|v| v.len())
+        .unwrap_or(0)
 }
 
 /// After applying incoming entries via LWW, run the same non-blocking
@@ -431,23 +423,6 @@ fn file_warnings_for_incoming(db: &Db, incoming: &[Entry]) -> Result<usize> {
     Ok(filed)
 }
 
-fn parse_entries(bytes: &[u8]) -> Result<Vec<Entry>> {
-    if bytes.len() < 4 {
-        return Ok(vec![]);
-    }
-    let (_magic, json) = bytes.split_at(4);
-    let payload: serde_json::Value = serde_json::from_slice(json)?;
-    let Some(arr) = payload.get("entries").and_then(|v| v.as_array()) else {
-        return Ok(vec![]);
-    };
-    let mut out = Vec::with_capacity(arr.len());
-    for v in arr {
-        let entry: Entry = serde_json::from_value(v.clone())?;
-        out.push(entry);
-    }
-    Ok(out)
-}
-
 /// Dry-run helper: peek at the entry count inside a single pulled row
 /// without mutating anything. Decrypt failures yield 0 silently (the
 /// caller can still surface the error on the real run).
@@ -462,5 +437,5 @@ fn incoming_entry_count(row: &PulledChangeset, master_key: &[u8; 32]) -> usize {
     ) else {
         return 0;
     };
-    parse_entries(cs.as_bytes()).map(|v| v.len()).unwrap_or(0)
+    changeset_entry_count(&cs)
 }

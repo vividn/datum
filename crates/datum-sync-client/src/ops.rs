@@ -90,7 +90,12 @@ pub fn apply_changeset(db: &Db, cs: &Changeset) -> Result<()> {
     Ok(())
 }
 
-fn parse_payload(bytes: &[u8]) -> Result<ChangesetPayloadV1> {
+/// Validate the locked changeset envelope (4-byte magic + JSON, see
+/// `docs/sync-protocol.md`) and return the JSON slice after the magic.
+/// Every reader of a packed changeset must come through here so a future
+/// magic bump (DSC2) is rejected uniformly instead of being mis-parsed
+/// as v1 by a blind 4-byte split (da-pl2o).
+fn payload_json(bytes: &[u8]) -> Result<&[u8]> {
     if bytes.len() < CHANGESET_MAGIC_V1.len() {
         return Err(DatumError::Other("changeset too short".to_string()));
     }
@@ -101,8 +106,18 @@ fn parse_payload(bytes: &[u8]) -> Result<ChangesetPayloadV1> {
             magic
         )));
     }
-    let payload: ChangesetPayloadV1 = serde_json::from_slice(rest)?;
-    Ok(payload)
+    Ok(rest)
+}
+
+fn parse_payload(bytes: &[u8]) -> Result<ChangesetPayloadV1> {
+    Ok(serde_json::from_slice(payload_json(bytes)?)?)
+}
+
+/// Decode the entry list from a packed changeset, validating the envelope
+/// first. Shared with `sync_once` (conflict snapshot + dry-run counters)
+/// so the crate has exactly one envelope parser.
+pub(crate) fn changeset_entries(bytes: &[u8]) -> Result<Vec<Entry>> {
+    Ok(parse_payload(bytes)?.entries)
 }
 
 /// Select every entry whose `modify_time_ms` exceeds `since_ms`, returning
@@ -404,6 +419,21 @@ mod tests {
             "rows at or below the advanced watermark must not re-pack"
         );
         assert_eq!(max2, None);
+    }
+
+    /// Every envelope reader must reject an unknown magic instead of
+    /// blind-splitting at 4 bytes and mis-parsing a future version as v1
+    /// (da-pl2o: a DSC2 blob must error everywhere, uniformly).
+    #[test]
+    fn unknown_magic_is_rejected_not_misparsed() {
+        let db = fresh_db();
+        db.insert_entry(&make_entry("coffee", 0)).unwrap();
+        let mut bytes = pack_changeset(&db, 0).unwrap().as_bytes().to_vec();
+        bytes[..4].copy_from_slice(b"DSC2");
+
+        let err = changeset_entries(&bytes).unwrap_err();
+        assert!(err.to_string().contains("unknown changeset magic"));
+        assert!(changeset_entries(b"DS").is_err(), "short blob must error");
     }
 
     #[test]
