@@ -61,7 +61,12 @@ pub async fn push(
     // we hand back `expected` and the client re-bases, re-encrypts, and
     // retries. Holding the db lock for the whole handler makes this peek
     // and the insert below observe the same next seq.
-    let expected_seq = db::peek_next_seq(&conn, &req.device_id)?;
+    //
+    // Scoped per (device_id, cluster_id), matching the client's per-DB
+    // `device_seq` counter and the AAD's cluster binding (da-hu5y) —
+    // a device-global seq would mismatch on every alternating-DB push
+    // from a multi-DB machine.
+    let expected_seq = db::peek_next_seq(&conn, &req.device_id, Some(&req.cluster_id))?;
     if req.predicted_seq != expected_seq {
         return Err(AppError::SeqMismatch(SyncProtocolError::SeqMismatch {
             expected: expected_seq,

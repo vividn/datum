@@ -266,6 +266,51 @@ fn second_seq_mismatch_refuses_as_device_id_collision() {
     assert_eq!(relay.changeset_count(), 2);
 }
 
+/// da-hu5y: two DBs on one machine share the per-machine `device_id`
+/// (config.rs writes one ULID per machine) but count `device_seq`
+/// independently — sync_state lives in each DB. The relay scopes its
+/// seq counter per (device_id, cluster_id) to match, so alternating
+/// pushes from the two DBs must all be clean: no SeqMismatch re-base
+/// (extra round-trip + re-encrypt) in the multi-DB steady state.
+#[test]
+fn multi_db_one_device_alternating_pushes_never_rebase() {
+    let _env = scoped_env();
+    let relay = StubRelay::start();
+    write_token_for(&relay.base_url, &relay.mint_token());
+    write_master_key(&relay.base_url, &[0x33u8; 32]);
+
+    let home = std::env::var("DATUM_HOME").unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    let db_a = Db::open(&format!("{home}/alpha.db")).unwrap();
+    let db_b = Db::open(&format!("{home}/beta.db")).unwrap();
+    // Two DBs = two clusters (da-3fnd defaults each to its file-name
+    // stem; pinned explicitly here for clarity).
+    sync_state::set_cluster_id(&db_a, "alpha").unwrap();
+    sync_state::set_cluster_id(&db_b, "beta").unwrap();
+
+    // The bead's walk-through: alternate A, B, A, B. Under a device-
+    // global server counter every push after the first would predict
+    // low and re-base; per-cluster scoping makes each predict cleanly.
+    let rounds: [(&Db, &str); 4] = [(&db_a, "a1"), (&db_b, "b1"), (&db_a, "a2"), (&db_b, "b2")];
+    for (round, (db, field)) in rounds.into_iter().enumerate() {
+        db.insert_entry(&make_entry(field, round as i64 * 60, "dev-1"))
+            .unwrap();
+        let outcome =
+            run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, db).unwrap();
+        assert_eq!(outcome.pushed, 1);
+        assert_eq!(
+            outcome.seq_rebased,
+            None,
+            "push #{} ({field}) must not re-base",
+            round + 1
+        );
+    }
+
+    // Per-DB counters advanced independently — each cluster is at 2.
+    assert_eq!(sync_state::get_device_seq(&db_a).unwrap(), 2);
+    assert_eq!(sync_state::get_device_seq(&db_b).unwrap(), 2);
+}
+
 #[test]
 fn sync_pull_applies_changes_and_advances_seq() {
     let env = scoped_env();

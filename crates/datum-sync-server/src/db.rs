@@ -32,13 +32,24 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         -- `parse_from_rfc3339`. SQLite's `datetime('now')` returns
         -- `YYYY-MM-DD HH:MM:SS` (space separator, no `Z`) which fails RFC 3339
         -- parsers — use `strftime('%Y-%m-%dT%H:%M:%SZ','now')` (da-grwx).
+        -- `seq` is scoped per (device_id, cluster_id), not globally per
+        -- device (da-hu5y): device_id is per-machine while the client's
+        -- `device_seq` counter lives in each DB's sync_state, so two DBs
+        -- (= two clusters, da-3fnd) on one machine count independently.
+        -- A device-global seq would force a SeqMismatch re-base + re-
+        -- encrypt on nearly every alternating-DB push. The AAD already
+        -- binds cluster_id (da-3nkx), so per-cluster is the consistent
+        -- model. cluster_id / generation are declared inline here for
+        -- fresh DBs; `migrate_to_clusters` adds them to upgraded ones.
         CREATE TABLE IF NOT EXISTS changesets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             device_id TEXT NOT NULL,
             seq INTEGER NOT NULL,
             payload TEXT NOT NULL,
             uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-            UNIQUE(device_id, seq)
+            cluster_id TEXT,
+            generation INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(device_id, cluster_id, seq)
         );
 
         CREATE TABLE IF NOT EXISTS wrapped_keys (
@@ -162,6 +173,35 @@ fn migrate_to_clusters(conn: &Connection) -> Result<()> {
         .context("add changesets.generation")?;
     }
 
+    // da-hu5y: seq scoping moves from per-device to per (device_id,
+    // cluster_id) — see the schema comment in `init_db`. SQLite can't
+    // rewrite a table-level UNIQUE in place, so upgraded relays whose
+    // changesets table still carries UNIQUE(device_id, seq) get the
+    // table recreated. Global `id`s are copied verbatim (pull
+    // watermarks are id-based) and AUTOINCREMENT resumes past the max
+    // copied id. Gated on the unique index shape so it runs once.
+    if !changesets_unique_covers_cluster(conn)? {
+        conn.execute_batch(
+            "CREATE TABLE changesets_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                payload TEXT NOT NULL,
+                uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                cluster_id TEXT,
+                generation INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(device_id, cluster_id, seq)
+            );
+            INSERT INTO changesets_new
+                (id, device_id, seq, payload, uploaded_at, cluster_id, generation)
+                SELECT id, device_id, seq, payload, uploaded_at, cluster_id, generation
+                FROM changesets;
+            DROP TABLE changesets;
+            ALTER TABLE changesets_new RENAME TO changesets;",
+        )
+        .context("recreate changesets with per-cluster seq uniqueness")?;
+    }
+
     // `wrapped_keys` keys on user_id today; multi-DB means (user_id,
     // cluster_id) pair. SQLite doesn't let us rewrite a primary key in
     // place — recreate the table, copy rows with cluster_id = user_id,
@@ -196,6 +236,31 @@ fn migrate_to_clusters(conn: &Connection) -> Result<()> {
     .context("backfill default clusters")?;
 
     Ok(())
+}
+
+/// Does any UNIQUE index on `changesets` include `cluster_id`? Detects
+/// whether the da-hu5y per-cluster seq uniqueness is already in place
+/// (the inline `UNIQUE(...)` materialises as a `sqlite_autoindex_*`
+/// unique index), gating the one-time table recreate above.
+fn changesets_unique_covers_cluster(conn: &Connection) -> Result<bool> {
+    let mut stmt = conn.prepare("PRAGMA index_list(changesets)")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        let unique: i64 = row.get(2)?;
+        if unique == 0 {
+            continue;
+        }
+        let mut info = conn.prepare(&format!("PRAGMA index_info(\"{name}\")"))?;
+        let mut cols = info.query([])?;
+        while let Some(col) = cols.next()? {
+            let col_name: String = col.get(2)?;
+            if col_name == "cluster_id" {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// PRAGMA-based column lookup. Lets the migration stay idempotent
@@ -322,23 +387,30 @@ pub fn get_passkeys(conn: &Connection, user_id: &Uuid) -> Result<Vec<Passkey>> {
     Ok(passkeys)
 }
 
-/// The per-device `seq` the next push from `device_id` will be assigned
-/// (`MAX(seq) + 1`, or 1 for a device that has never pushed). The push
-/// handler reads this to validate the client's `predicted_seq` *before*
-/// inserting, so a seq the client mispredicted is rejected with
-/// [`SyncProtocolError::SeqMismatch`] instead of stored with a corrupt
-/// AAD (da-ca4q). The whole handler holds the db lock, so this peek and
-/// the subsequent insert see the same value.
-pub fn peek_next_seq(conn: &Connection, device_id: &str) -> Result<i64> {
+/// The `seq` the next push from `device_id` into `cluster_id` will be
+/// assigned (`MAX(seq) + 1`, or 1 for a (device, cluster) pair that has
+/// never pushed). The push handler reads this to validate the client's
+/// `predicted_seq` *before* inserting, so a seq the client mispredicted
+/// is rejected with [`SyncProtocolError::SeqMismatch`] instead of stored
+/// with a corrupt AAD (da-ca4q). The whole handler holds the db lock, so
+/// this peek and the subsequent insert see the same value.
+///
+/// Scoped per (device_id, cluster_id) — NOT device-global (da-hu5y):
+/// the client counts `device_seq` per-DB (= per-cluster), so a global
+/// scope would mismatch on every alternating-DB push from a multi-DB
+/// machine. `cluster_id = None` matches only rows with NULL cluster_id
+/// (legacy/test fixtures) via SQLite's NULL-aware `IS`.
+pub fn peek_next_seq(conn: &Connection, device_id: &str, cluster_id: Option<&str>) -> Result<i64> {
     conn.query_row(
-        "SELECT COALESCE(MAX(seq), 0) + 1 FROM changesets WHERE device_id = ?1",
-        params![device_id],
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM changesets
+         WHERE device_id = ?1 AND cluster_id IS ?2",
+        params![device_id, cluster_id],
         |row| row.get(0),
     )
     .context("compute next seq")
 }
 
-/// Insert a changeset for a device. Returns (global_id, per_device_seq).
+/// Insert a changeset for a device. Returns (global_id, per_cluster_seq).
 /// Defaults `cluster_id` to the device's owning user and `generation`
 /// to 0 — the transitional v1 shape from da-og24. Callers that have
 /// resolved the cluster + generation explicitly use
@@ -360,8 +432,6 @@ pub fn insert_changeset_into_cluster(
     cluster_id: Option<&str>,
     generation: i64,
 ) -> Result<(i64, i64)> {
-    let seq = peek_next_seq(conn, device_id)?;
-
     // When the caller doesn't supply a cluster_id, fall back to the
     // device's owning user — the da-og24 transitional default. If
     // there's no device row (legacy / test fixtures bypassing
@@ -378,6 +448,10 @@ pub fn insert_changeset_into_cluster(
             )
             .ok(),
     };
+
+    // Resolve the cluster BEFORE peeking — the seq counter is scoped
+    // per (device_id, cluster_id) (da-hu5y).
+    let seq = peek_next_seq(conn, device_id, resolved_cluster.as_deref())?;
 
     conn.execute(
         "INSERT INTO changesets (device_id, seq, payload, cluster_id, generation)
@@ -874,6 +948,103 @@ mod tests {
         let rows = pull_changesets_for_cluster(&conn, 0, "bob-dev-2", "notes", &bob).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].3, "bob-payload");
+    }
+
+    // ─── da-hu5y: per-cluster seq scoping ───────────────────────────────────
+
+    /// One device pushing into two clusters (= two local DBs on one
+    /// machine, da-3fnd) keeps an independent seq counter per cluster.
+    /// This is the model the client's per-DB `device_seq` assumes — a
+    /// device-global counter would force a SeqMismatch re-base on every
+    /// alternating-DB push.
+    #[test]
+    fn seq_is_per_cluster_for_one_device() {
+        let conn = setup();
+
+        // Alternate pushes between clusters, mirroring a multi-DB user.
+        let (_, a1) =
+            insert_changeset_into_cluster(&conn, "device-1", "a1", Some("alpha"), 0).unwrap();
+        let (_, b1) =
+            insert_changeset_into_cluster(&conn, "device-1", "b1", Some("beta"), 0).unwrap();
+        let (_, a2) =
+            insert_changeset_into_cluster(&conn, "device-1", "a2", Some("alpha"), 0).unwrap();
+        let (_, b2) =
+            insert_changeset_into_cluster(&conn, "device-1", "b2", Some("beta"), 0).unwrap();
+
+        assert_eq!((a1, a2), (1, 2), "alpha counts independently");
+        assert_eq!((b1, b2), (1, 2), "beta counts independently");
+
+        // peek agrees with what the push handler will validate against.
+        assert_eq!(peek_next_seq(&conn, "device-1", Some("alpha")).unwrap(), 3);
+        assert_eq!(peek_next_seq(&conn, "device-1", Some("beta")).unwrap(), 3);
+        // A cluster this device never pushed into starts at 1.
+        assert_eq!(peek_next_seq(&conn, "device-1", Some("gamma")).unwrap(), 1);
+    }
+
+    /// An upgraded relay whose changesets table still carries the old
+    /// `UNIQUE(device_id, seq)` gets the table recreated: global ids are
+    /// preserved verbatim (pull watermarks are id-based) and the same
+    /// (device, seq) pair becomes legal across different clusters.
+    #[test]
+    fn migration_rewrites_changesets_uniqueness_per_cluster() {
+        let conn = Connection::open_in_memory().unwrap();
+        // The post-da-og24, pre-da-hu5y shape: cluster columns exist but
+        // the uniqueness is still device-global.
+        conn.execute_batch(
+            "CREATE TABLE changesets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                payload TEXT NOT NULL,
+                uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                cluster_id TEXT,
+                generation INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(device_id, seq)
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO changesets (id, device_id, seq, payload, cluster_id)
+             VALUES (7, 'dev-A', 1, 'old-payload', 'alpha')",
+            [],
+        )
+        .unwrap();
+
+        init_db(&conn).unwrap();
+
+        // Row survived the recreate with its global id intact.
+        let (id, payload): (i64, String) = conn
+            .query_row(
+                "SELECT id, payload FROM changesets WHERE device_id = 'dev-A'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((id, payload.as_str()), (7, "old-payload"));
+
+        // Same (device, seq) in a different cluster — rejected by the old
+        // uniqueness, legal under the per-cluster model.
+        let (_, seq) =
+            insert_changeset_into_cluster(&conn, "dev-A", "new-payload", Some("beta"), 0).unwrap();
+        assert_eq!(seq, 1);
+
+        // AUTOINCREMENT resumed past the copied id — no id reuse.
+        let new_id: i64 = conn
+            .query_row(
+                "SELECT id FROM changesets WHERE payload = 'new-payload'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(new_id > 7, "new id {new_id} must not reuse copied ids");
+
+        // Re-running init_db must not recreate again (idempotent gate).
+        assert!(changesets_unique_covers_cluster(&conn).unwrap());
+        init_db(&conn).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM changesets", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
     }
 
     /// Migration is idempotent — running init_db twice on a populated
