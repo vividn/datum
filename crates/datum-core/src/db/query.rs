@@ -133,29 +133,14 @@ impl Db {
         Ok(Vec::new())
     }
 
-    /// Distinct field names across all non-deleted entries.
+    /// Distinct field names across all live (non-deleted) entries,
+    /// alphabetical. The `now` view feeds this into [`Db::state_at`] to
+    /// build its row set.
     pub fn distinct_fields(&self) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT field FROM entries WHERE deleted_at IS NULL ORDER BY field",
         )?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
-    }
-
-    /// All distinct fields that appear in the entry log (live rows only).
-    /// Alphabetical. The `now` view feeds this into [`Db::state_at`] to
-    /// build its row set.
-    pub fn list_distinct_fields(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT field FROM entries
-             WHERE deleted_at IS NULL
-             ORDER BY field",
-        )?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r.map_err(DatumError::Db)?);
-        }
-        Ok(out)
     }
 }

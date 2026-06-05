@@ -217,7 +217,7 @@ impl Db {
     /// Per-field color is read from the matching [`FieldSpec`] when one
     /// exists. Ordered alphabetically by field name.
     pub fn get_tracked_fields(&self, at: DateTime<Utc>) -> Result<Vec<TrackedField>> {
-        let fields = self.list_distinct_fields()?;
+        let fields = self.distinct_fields()?;
         let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
         let states = self.batch_state_at(&field_refs, at)?;
         let specs = self.batch_load_specs(&field_refs)?;

@@ -966,7 +966,7 @@ mod tests {
             .insert(&db);
 
         // All five entries should be present in the table.
-        let entries = db.all_entries().unwrap();
+        let entries = db.list_including_deleted().unwrap();
         let workout = entries.iter().filter(|e| e.field == "workout").count();
         let cooking = entries.iter().filter(|e| e.field == "cooking").count();
         let meeting = entries.iter().filter(|e| e.field == "meeting").count();

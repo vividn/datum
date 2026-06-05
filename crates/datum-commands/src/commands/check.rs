@@ -198,7 +198,7 @@ fn run_fix_pass<F>(
 fn apply_content_hash_fixes(db: &Db) -> Result<FixReport> {
     let scan = |db: &Db| -> Result<Vec<(String, String, String)>> {
         Ok(db
-            .all_entries()?
+            .list_including_deleted()?
             .iter()
             .filter_map(|e| {
                 let expected = e.expected_content_hash();
@@ -385,7 +385,7 @@ struct VerbReport {
 /// them in a single pass. Corruption-shape rows are *not* fixed —
 /// there is no derivable verb to write.
 fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
-    let entries = db.all_entries()?;
+    let entries = db.list_including_deleted()?;
 
     let mut drift_count: usize = 0;
     let mut drift_example: Option<IssueExample> = None;
@@ -524,7 +524,7 @@ struct SlugReport {
 /// Tombstones are skipped — they are historical rows and re-deriving
 /// their slug would produce a meaningless rekey.
 fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
-    let entries = db.all_entries()?;
+    let entries = db.list_including_deleted()?;
 
     let mut drift_count: usize = 0;
     let mut drift_example: Option<IssueExample> = None;
@@ -1243,7 +1243,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
     }
 
     // 2. content_hash mismatches (ERROR)
-    let entries = db.all_entries()?;
+    let entries = db.list_including_deleted()?;
     let mut mismatches: Vec<(String, String, String, String)> = Vec::new();
     for e in &entries {
         let expected = e.expected_content_hash();
@@ -2809,7 +2809,7 @@ mod tests {
             )
             .unwrap();
         assert_ne!(after, bogus, "hash must change");
-        let expected = db.all_entries().unwrap()[0].expected_content_hash();
+        let expected = db.list_including_deleted().unwrap()[0].expected_content_hash();
         assert_eq!(after, expected, "hash now matches expected_content_hash");
 
         // Second pass is a no-op — idempotence is part of the contract.
@@ -2894,7 +2894,7 @@ mod tests {
             .unwrap();
 
         // Sanity: detector path agrees the row needs repair.
-        let entries_pre = db.all_entries().unwrap();
+        let entries_pre = db.list_including_deleted().unwrap();
         assert_eq!(entries_pre.len(), 1);
         let detector_says_mismatch =
             entries_pre[0].expected_content_hash() != entries_pre[0].content_hash;

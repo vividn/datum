@@ -607,10 +607,13 @@ mod tests {
     }
 
     fn all_entries_sorted(db: &datum_core::db::Db) -> Vec<datum_core::entry::Entry> {
-        let far_past = chrono::DateTime::UNIX_EPOCH;
-        let far_future = chrono::Utc::now() + chrono::Duration::days(365);
-        let mut entries = db.entries_in_range(far_past, far_future).unwrap();
-        entries.sort_by(|a, b| a.slug.cmp(&b.slug));
+        // visit_all_entries yields live rows in slug order already.
+        let mut entries = Vec::new();
+        db.visit_all_entries(|e| {
+            entries.push(e);
+            Ok::<(), datum_core::error::DatumError>(())
+        })
+        .unwrap();
         entries
     }
 

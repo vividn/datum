@@ -34,7 +34,7 @@ fn reparse_dryrun_clean_row_reports_zero_drift() {
     run_cli(&["switch", "mood", "happy"], &db).expect("switch");
 
     let hid = {
-        let entries = db.all_entries().unwrap();
+        let entries = db.list_including_deleted().unwrap();
         assert_eq!(entries.len(), 1);
         entries[0].hid.0.clone()
     };
@@ -59,7 +59,7 @@ fn reparse_fix_repairs_a_hand_mutated_row() {
     run_cli(&["switch", "mood", "happy"], &db).expect("switch");
 
     let (slug, hid) = {
-        let entries = db.all_entries().unwrap();
+        let entries = db.list_including_deleted().unwrap();
         assert_eq!(entries.len(), 1);
         (entries[0].slug.clone(), entries[0].hid.0.clone())
     };

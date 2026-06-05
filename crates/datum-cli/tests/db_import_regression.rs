@@ -67,7 +67,7 @@ fn db_import_synthetic_locks_db_shape() {
     let db = fresh_db();
     run_cli(&["db", "import", FIXTURE], &db).expect("synthetic import");
 
-    let entries = db.all_entries().unwrap();
+    let entries = db.list_including_deleted().unwrap();
     assert_eq!(entries.len(), 11, "fixture defines 11 importable docs");
 
     // Per the table above: 8 entries have dur NULL or zero, 3 have positive dur.
@@ -345,12 +345,12 @@ fn db_import_synthetic_locks_db_shape() {
 fn db_import_synthetic_is_idempotent() {
     let db = fresh_db();
     run_cli(&["db", "import", FIXTURE], &db).expect("first import");
-    let n1 = db.all_entries().unwrap().len();
+    let n1 = db.list_including_deleted().unwrap().len();
     assert_eq!(n1, 11);
 
     // Second run on the same DB: content_hash dedup must skip every doc.
     run_cli(&["db", "import", FIXTURE], &db).expect("second import");
-    let n2 = db.all_entries().unwrap().len();
+    let n2 = db.list_including_deleted().unwrap().len();
     assert_eq!(n2, n1, "re-importing same fixture must not add rows");
 }
 
