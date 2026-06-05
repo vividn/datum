@@ -404,6 +404,15 @@ larger `modify_time` survives; the loser's pre-merge state is snapshotted
 into `entry_history` as a `sync_merge` change, so it is recoverable and
 auditable. See `crates/datum-sync-client/src/ops.rs::upsert_lww`.
 
+**Equal-`modify_time` tiebreaker (part of the contract).** When the stored
+and incoming rows carry *exactly* equal `modify_time`, the winner is chosen
+by a deterministic total order: the row with the lexically greater
+`(content_hash, device_id)` pair survives (equal `content_hash` is an
+identical row — a replay — and is skipped with no history row or warning).
+Every client MUST implement this tiebreaker identically: without it each
+device keeps its own row on a tie and both consider themselves up to date —
+a permanent, silent divergence that no future sync heals (da-22zm).
+
 **Clock-skew caveat (accepted, not mitigated).** `modify_time` is a raw
 device wall-clock with no logical-clock component. A device whose clock
 runs fast wins every tie; a device whose clock lags can silently lose an

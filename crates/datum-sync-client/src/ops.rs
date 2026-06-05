@@ -68,8 +68,10 @@ pub fn pack_changeset_since_ms(db: &Db, since_modify_ms: u64) -> Result<(Changes
 }
 
 /// Apply a received changeset to the local DB using last-writer-wins on
-/// `modify_time`. Existing rows whose stored `modify_time` is >= the
-/// incoming row's `modify_time` are left untouched.
+/// `modify_time`. Existing rows whose stored `modify_time` is greater than
+/// the incoming row's are left untouched; exact ties are broken by a
+/// deterministic total order on `(content_hash, device_id)` so every
+/// device resolves the same winner (see [`upsert_lww`]).
 ///
 /// `modify_time` is a raw device wall-clock: a device with a fast clock
 /// wins every tie and a lagging one can silently lose a later edit. This
@@ -137,9 +139,10 @@ fn select_entries_since(db: &Db, since_ms: u64) -> Result<(Vec<Entry>, Option<u6
 }
 
 fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
-    // Skip rows we already have as-new-or-newer. Also pull the current
-    // full-row so we can snapshot it into entry_history when an apply
-    // actually changes state — no-op LWW short-circuits do NOT write history.
+    // Skip rows we already have as newer (or as the tie winner, below).
+    // Also pull the current full-row so we can snapshot it into
+    // entry_history when an apply actually changes state — no-op LWW
+    // short-circuits do NOT write history.
     let existing: Option<Entry> = tx
         .query_row(
             "SELECT * FROM entries WHERE slug = ?1",
@@ -148,8 +151,27 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
         )
         .optional()?;
     if let Some(pre) = existing.as_ref() {
-        if pre.modify_time >= entry.modify_time {
-            return Ok(());
+        match pre.modify_time.cmp(&entry.modify_time) {
+            // Strictly newer local row: incoming loses, plain LWW.
+            std::cmp::Ordering::Greater => return Ok(()),
+            // Exact tie. Identical content (same content_hash) is a replay
+            // of a row we already have — skip without history/warning spam.
+            // Different content in the same instant must NOT let each device
+            // keep its own row (permanent silent divergence, da-22zm):
+            // break the tie with a deterministic total order on
+            // (content_hash, device_id), compared lexically, so every
+            // device picks the same winner. This tiebreaker is part of the
+            // sync contract — all clients must implement it identically
+            // (docs/sync-protocol.md §Merge semantics).
+            std::cmp::Ordering::Equal => {
+                if pre.content_hash == entry.content_hash
+                    || (&pre.content_hash, &pre.device_id) > (&entry.content_hash, &entry.device_id)
+                {
+                    return Ok(());
+                }
+            }
+            // Strictly newer incoming row: overwrite (LWW).
+            std::cmp::Ordering::Less => {}
         }
         // Non-no-op: record the pre-merge state as a sync_merge history
         // row (recoverable + auditable), and file a `lww_overwrite`
@@ -413,6 +435,81 @@ mod tests {
 
         let landed = db_b.get_entry(&newer.slug).unwrap();
         assert_eq!(landed.state, Some(serde_json::json!("newer")));
+    }
+
+    /// Equal `modify_time` with different content must converge to the
+    /// same winner on every device (deterministic tiebreaker on
+    /// `(content_hash, device_id)`), not let each side keep its own row
+    /// (da-22zm: permanent silent divergence).
+    #[test]
+    fn equal_modify_time_tie_converges_deterministically() {
+        let db_a = fresh_db();
+        let db_b = fresh_db();
+
+        // Same slug, same modify_time, different content on each device.
+        let mut on_a = make_entry("coffee", 0);
+        let mut on_b = make_entry("coffee", 0);
+        on_a.state = Some(serde_json::json!("from-a"));
+        on_b.state = Some(serde_json::json!("from-b"));
+        on_b.device_id = "dev-2".to_string();
+        assert_eq!(on_a.slug, on_b.slug);
+        assert_eq!(on_a.modify_time, on_b.modify_time);
+
+        db_a.insert_entry(&on_a).unwrap();
+        db_b.insert_entry(&on_b).unwrap();
+
+        // Full cross-sync: each device applies the other's changeset.
+        let cs_a = pack_changeset(&db_a, 0).unwrap();
+        let cs_b = pack_changeset(&db_b, 0).unwrap();
+        apply_changeset(&db_a, &cs_b).unwrap();
+        apply_changeset(&db_b, &cs_a).unwrap();
+
+        let landed_a = db_a.get_entry(&on_a.slug).unwrap();
+        let landed_b = db_b.get_entry(&on_b.slug).unwrap();
+        assert_eq!(
+            landed_a.content_hash, landed_b.content_hash,
+            "equal-stamp tie must resolve to the same winner on both devices"
+        );
+        assert_eq!(landed_a.state, landed_b.state);
+        assert_eq!(landed_a.device_id, landed_b.device_id);
+    }
+
+    /// An equal-`modify_time` row with *identical* content is a replay, not
+    /// a conflict: it must skip — no overwrite, no history row, no warning —
+    /// even when it carries a different `device_id`.
+    #[test]
+    fn equal_modify_time_identical_content_is_noop() {
+        use datum_core::integrity::{IntegrityKind, ListFilter};
+
+        let db = fresh_db();
+        let local = make_entry("coffee", 0);
+        let hid = local.hid.clone();
+        db.insert_entry(&local).unwrap();
+
+        let mut replay = make_entry("coffee", 0);
+        replay.device_id = "dev-2".to_string();
+        let cs = {
+            let tmp = fresh_db();
+            tmp.insert_entry(&replay).unwrap();
+            pack_changeset(&tmp, 0).unwrap()
+        };
+        let before = history::list(db.conn(), &hid, false).unwrap().len();
+        apply_changeset(&db, &cs).unwrap();
+
+        let landed = db.get_entry(&local.slug).unwrap();
+        assert_eq!(landed.device_id, "dev-1", "identical-content tie must skip");
+        assert_eq!(
+            history::list(db.conn(), &hid, false).unwrap().len(),
+            before,
+            "replay must not add a history row"
+        );
+        let warnings = db
+            .list_integrity_warnings(&ListFilter {
+                kind: Some(IntegrityKind::LwwOverwrite),
+                pending: Some(true),
+            })
+            .unwrap();
+        assert!(warnings.is_empty(), "replay must not file a warning");
     }
 
     /// A second apply of the exact same payload is a LWW no-op: no new
