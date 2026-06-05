@@ -666,6 +666,11 @@ fn starts_with_keyword(s: &str, kw: &str) -> bool {
 ///     prefix check in [`validate_view_entry`]);
 /// (2) statement chaining via `;` and SQL comments is blocked here;
 /// (3) DDL/DML keywords (CREATE/DROP/ATTACH/…) are rejected here.
+///
+/// Out of scope here: resource exhaustion (da-sky7). An unbounded
+/// `WITH RECURSIVE` or a cartesian join is entirely legal SELECT SQL and
+/// no keyword blocklist can catch it; `Db::execute_view` bounds it at run
+/// time with a wall-clock budget that interrupts runaway views.
 fn validate_sql_fragment(subject: &str, s: &str) -> Result<()> {
     if s.contains(';') {
         return Err(DatumError::Other(format!(

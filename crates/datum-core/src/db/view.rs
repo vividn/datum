@@ -4,12 +4,19 @@
 //! holding raw SQL text. Kit installs tag rows with `kit_id`; uninstall
 //! drops only the rows it owns. Execution goes through
 //! [`Db::execute_view`], which requires the SQL to be a single
-//! SELECT/`WITH … SELECT` statement and flips `PRAGMA query_only` for
+//! SELECT/`WITH … SELECT` statement, flips `PRAGMA query_only` for
 //! the duration of the query so a malicious or buggy view can't issue
-//! DDL/DML against the entries DB. Kit installs additionally screen the
-//! SQL up front via `crate::kit::validate_view_entry` (da-w3xg).
+//! DDL/DML against the entries DB, and interrupts the query if it
+//! exceeds a wall-clock budget so a runaway view (unbounded recursive
+//! CTE, cartesian join) can't hang datum (da-sky7). Kit installs
+//! additionally screen the SQL up front via
+//! `crate::kit::validate_view_entry` (da-w3xg).
 //!
 //! See `crate::kit::ViewEntry` for the TOML round-trip shape.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use rusqlite::{params, types::ValueRef, OptionalExtension};
 use serde_json::{Number, Value as JsonValue};
@@ -68,6 +75,18 @@ pub struct ViewResult {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<JsonValue>>,
 }
+
+/// Wall-clock budget for a single view execution (da-sky7). Generous for
+/// any legitimate query over a personal-tracker-sized DB, while bounding
+/// the damage a runaway view (unbounded recursive CTE, cartesian join)
+/// can do — such SQL is entirely legal SELECT and passes every static
+/// check in `crate::kit`.
+const VIEW_TIME_BUDGET: Duration = Duration::from_secs(10);
+
+/// VM instructions between progress-handler callbacks. Each callback is
+/// one `Instant::now()` comparison, so at this interval the overhead on
+/// legitimate queries is unmeasurable.
+const PROGRESS_OPS_INTERVAL: std::os::raw::c_int = 10_000;
 
 impl Db {
     /// Install a kit's views. `kit_id` tags every persisted row;
@@ -201,8 +220,8 @@ impl Db {
         Ok(out)
     }
 
-    /// Execute a view's SQL with read-only enforcement, in three layers
-    /// (da-w3xg):
+    /// Execute a view's SQL with read-only enforcement, in four layers
+    /// (da-w3xg, da-sky7):
     ///
     /// 1. Statement-kind check: the SQL must start with `SELECT` or
     ///    `WITH`. `PRAGMA query_only` only blocks statements that change
@@ -213,11 +232,24 @@ impl Db {
     ///    in an otherwise SELECT-shaped statement can't write.
     /// 3. `sqlite3_stmt_readonly` after prepare (in [`run_view_query`]),
     ///    which catches e.g. `WITH … DELETE` that passes the prefix check.
+    /// 4. A wall-clock execution budget ([`VIEW_TIME_BUDGET`]) enforced
+    ///    via SQLite's progress handler (da-sky7). The install-time
+    ///    keyword blocklist can't catch resource exhaustion expressed in
+    ///    entirely legal SELECT SQL — an unbounded `WITH RECURSIVE` or a
+    ///    cartesian self-join passes every static check — so runaway
+    ///    views are interrupted here instead of hanging datum.
     ///
     /// If clearing `query_only` fails the error is surfaced rather than
     /// swallowed — a wedged read-only connection would otherwise make
     /// every later `datum <log>` fail far from the cause.
     pub fn execute_view(&self, sql: &str) -> Result<ViewResult> {
+        self.execute_view_with_budget(sql, VIEW_TIME_BUDGET)
+    }
+
+    /// [`Db::execute_view`] with an explicit time budget, split out so
+    /// tests can exercise the interrupt path without waiting out the
+    /// production budget.
+    fn execute_view_with_budget(&self, sql: &str, budget: Duration) -> Result<ViewResult> {
         // Empty / whitespace-only queries would prepare into a no-op
         // statement that returns no columns; reject explicitly so the
         // caller can give the user a clear error.
@@ -232,7 +264,27 @@ impl Db {
         }
 
         self.conn.execute_batch("PRAGMA query_only = 1;")?;
+        // Returning true from the progress handler interrupts the query;
+        // the flag distinguishes our deadline from a genuine SQL error.
+        let timed_out = Arc::new(AtomicBool::new(false));
+        {
+            let timed_out = Arc::clone(&timed_out);
+            let deadline = Instant::now() + budget;
+            self.conn.progress_handler(
+                PROGRESS_OPS_INTERVAL,
+                Some(move || {
+                    let expired = Instant::now() >= deadline;
+                    if expired {
+                        timed_out.store(true, Ordering::Relaxed);
+                    }
+                    expired
+                }),
+            );
+        }
         let result = run_view_query(&self.conn, sql);
+        // Remove the handler so the shared connection's normal work (the
+        // logging hot path) doesn't keep paying the per-callback cost.
+        self.conn.progress_handler(0, None::<fn() -> bool>);
         // Always clear query_only, even when the query failed, so a later
         // `datum log …` against the same connection can still write. If
         // the clear itself fails, say so loudly: the shared connection
@@ -247,7 +299,13 @@ impl Db {
                 ),
             }));
         }
-        result
+        match result {
+            Err(_) if timed_out.load(Ordering::Relaxed) => Err(DatumError::Other(format!(
+                "view exceeded its execution budget ({budget:?}) and was interrupted — \
+                 a runaway query (e.g. unbounded WITH RECURSIVE or cartesian join)?"
+            ))),
+            other => other,
+        }
     }
 }
 
@@ -403,6 +461,48 @@ mod tests {
                 [],
             )
             .unwrap();
+    }
+
+    #[test]
+    fn execute_view_interrupts_runaway_query() {
+        // An unbounded recursive CTE is entirely legal SELECT SQL — it
+        // passes every static check in `crate::kit` — so the runtime
+        // budget is the only thing standing between it and a hang
+        // (da-sky7). Tiny budget so the test is fast.
+        let db = db();
+        let err = db
+            .execute_view_with_budget(
+                "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM r) \
+                 SELECT n FROM r",
+                Duration::from_millis(20),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("execution budget"), "unexpected error: {err}");
+
+        // The interrupt path must still clear query_only and remove the
+        // progress handler — the shared connection's normal work (the
+        // logging hot path) continues afterwards.
+        db.conn
+            .execute(
+                "INSERT INTO views (name, sql_text) VALUES ('after_interrupt', 'SELECT 1')",
+                [],
+            )
+            .unwrap();
+        let r = db.execute_view("SELECT 1 AS v").unwrap();
+        assert_eq!(r.rows, vec![vec![json!(1)]]);
+    }
+
+    #[test]
+    fn execute_view_budget_spares_legitimate_queries() {
+        // A genuine SQL error inside the budget must surface as-is, not
+        // be misreported as a timeout.
+        let db = db();
+        let err = db
+            .execute_view_with_budget("SELECT no_such_column FROM entries", VIEW_TIME_BUDGET)
+            .unwrap_err()
+            .to_string();
+        assert!(!err.contains("execution budget"), "unexpected error: {err}");
     }
 
     #[test]

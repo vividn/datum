@@ -27,7 +27,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Database
-rusqlite = { version = "0.32", features = ["bundled"] }
+# "hooks" is dependency-free; it exposes progress_handler, which
+# execute_view uses to interrupt runaway kit views (da-sky7).
+rusqlite = { version = "0.32", features = ["bundled", "hooks"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
