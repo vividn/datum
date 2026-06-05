@@ -364,7 +364,7 @@ fn s2_second_instance_joins_via_passphrase_unwrap() {
         serde_json::from_value(wrapped_json).expect("parse wrapped");
     let master_b = unwrap_master_key("shared-pass", &wrapped).expect("unwrap");
     assert_eq!(
-        master_b, master_a,
+        *master_b, master_a,
         "passphrase unwrap must match A's master"
     );
 

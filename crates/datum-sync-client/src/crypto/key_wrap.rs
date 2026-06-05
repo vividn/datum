@@ -16,6 +16,10 @@ use rand::RngCore;
 
 use crate::crypto::CryptoError;
 
+// Re-exported so callers can name `unwrap_master_key`'s return type without
+// a direct `zeroize` dependency.
+pub use zeroize::Zeroizing;
+
 // `KdfParams` and `WrappedKey` wire types live in `datum-sync-protocol`
 // so client and server can never drift; this module owns the actual
 // crypto (Argon2id + AES-256-GCM) that operates on those types.
@@ -39,6 +43,9 @@ pub fn default_kdf_params_with_fresh_salt() -> KdfParams {
 
 /// Wrap a 32-byte master key with a passphrase. The returned blob is safe to
 /// hand to the relay — decryption requires the passphrase.
+///
+/// `master_key` is borrowed: the caller owns it and is responsible for
+/// zeroizing it when done (the derived KEK is zeroized internally).
 pub fn wrap_master_key(passphrase: &str, master_key: &[u8; 32]) -> Result<WrappedKey, CryptoError> {
     let params = default_kdf_params_with_fresh_salt();
     wrap_master_key_with_params(passphrase, master_key, params)
@@ -53,7 +60,7 @@ pub fn wrap_master_key_with_params(
     params: KdfParams,
 ) -> Result<WrappedKey, CryptoError> {
     let kek = derive_kek(passphrase, &params)?;
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&kek));
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(kek.as_slice()));
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
@@ -73,7 +80,13 @@ pub fn wrap_master_key_with_params(
 /// Unwrap a passphrase-wrapped master key. Returns a single [`CryptoError`]
 /// on a wrong passphrase, tampered ciphertext, or malformed base64 — all
 /// failure modes surface identically (no oracle).
-pub fn unwrap_master_key(passphrase: &str, wrapped: &WrappedKey) -> Result<[u8; 32], CryptoError> {
+///
+/// The returned key is [`Zeroizing`] — it wipes itself on drop. Callers that
+/// copy the bytes out (e.g. to write a key file) own those copies.
+pub fn unwrap_master_key(
+    passphrase: &str,
+    wrapped: &WrappedKey,
+) -> Result<Zeroizing<[u8; 32]>, CryptoError> {
     if wrapped.kdf != "argon2id" {
         return Err(CryptoError(format!("unsupported kdf: {}", wrapped.kdf)));
     }
@@ -94,18 +107,20 @@ pub fn unwrap_master_key(passphrase: &str, wrapped: &WrappedKey) -> Result<[u8; 
             nonce_bytes.len()
         )));
     }
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&kek));
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(kek.as_slice()));
     let nonce = Nonce::from_slice(&nonce_bytes);
-    let pt = cipher
-        .decrypt(nonce, ct.as_slice())
-        .map_err(|e| CryptoError(format!("unwrap master key: {e}")))?;
+    let pt = Zeroizing::new(
+        cipher
+            .decrypt(nonce, ct.as_slice())
+            .map_err(|e| CryptoError(format!("unwrap master key: {e}")))?,
+    );
     if pt.len() != 32 {
         return Err(CryptoError(format!(
             "unwrapped key must be 32 bytes, got {}",
             pt.len()
         )));
     }
-    let mut out = [0u8; 32];
+    let mut out = Zeroizing::new([0u8; 32]);
     out.copy_from_slice(&pt);
     Ok(out)
 }
@@ -121,7 +136,9 @@ pub fn key_fingerprint(master_key: &[u8; 32]) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn derive_kek(passphrase: &str, params: &KdfParams) -> Result<[u8; 32], CryptoError> {
+/// Derive the KEK from the passphrase. The result is [`Zeroizing`] so the
+/// key-encryption key never outlives its wrap/unwrap call in readable memory.
+fn derive_kek(passphrase: &str, params: &KdfParams) -> Result<Zeroizing<[u8; 32]>, CryptoError> {
     let salt =
         b64_decode(&params.salt_b64).map_err(|e| CryptoError(format!("decode salt_b64: {e}")))?;
     let argon_params = argon2::Params::new(params.m_cost, params.t_cost, params.p_cost, Some(32))
@@ -131,9 +148,9 @@ fn derive_kek(passphrase: &str, params: &KdfParams) -> Result<[u8; 32], CryptoEr
         argon2::Version::V0x13,
         argon_params,
     );
-    let mut out = [0u8; 32];
+    let mut out = Zeroizing::new([0u8; 32]);
     argon
-        .hash_password_into(passphrase.as_bytes(), &salt, &mut out)
+        .hash_password_into(passphrase.as_bytes(), &salt, out.as_mut_slice())
         .map_err(|e| CryptoError(format!("argon2 derive: {e}")))?;
     Ok(out)
 }
@@ -161,7 +178,7 @@ mod tests {
         assert_eq!(wrapped.kdf, "argon2id");
         assert_eq!(wrapped.wrap_alg, "aes-256-gcm");
         let got = unwrap_master_key("correct horse battery staple", &wrapped).unwrap();
-        assert_eq!(got, master);
+        assert_eq!(*got, master);
     }
 
     #[test]

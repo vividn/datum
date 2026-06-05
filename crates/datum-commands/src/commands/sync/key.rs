@@ -17,7 +17,9 @@
 //!   devices can eyeball-verify parity.
 
 use anyhow::{anyhow, Context, Result};
-use datum_sync_client::crypto::key_wrap::{key_fingerprint, unwrap_master_key, wrap_master_key};
+use datum_sync_client::crypto::key_wrap::{
+    key_fingerprint, unwrap_master_key, wrap_master_key, Zeroizing,
+};
 use datum_sync_client::http::{fetch_wrapped, upload_wrapped};
 use rand::RngCore;
 use reqwest::blocking::Client;
@@ -98,7 +100,7 @@ pub fn unlock_with_client(
     server: &str,
     client: &Client,
     prompter: &mut impl Prompter,
-) -> Result<[u8; 32]> {
+) -> Result<Zeroizing<[u8; 32]>> {
     let host = server_host_from_url(server);
     let key_path = master_key_path(&host)?;
     let token = load_token(server)?

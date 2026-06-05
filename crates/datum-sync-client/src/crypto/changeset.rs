@@ -78,6 +78,10 @@ impl EncryptedBlob {
 /// prepended to the ciphertext. AAD binds the blob to its
 /// `(device_id, seq, cluster_id)` coordinates so replay, misattribution, or
 /// a cross-cluster splice surfaces as a decrypt failure (da-3nkx).
+///
+/// `key` is borrowed: the caller owns the master key and is responsible for
+/// zeroizing it when done (e.g. hold it in a `zeroize::Zeroizing<[u8; 32]>`,
+/// as `key_wrap::unwrap_master_key` returns).
 pub fn encrypt_changeset(
     cs: &Changeset,
     key: &[u8; 32],
@@ -109,6 +113,9 @@ pub fn encrypt_changeset(
 /// AES-256-GCM open. Returns [`CryptoError`] on any failure — wrong key,
 /// tampered ciphertext, mismatched device_id/seq/cluster_id. Peers MUST
 /// treat every failure mode identically (no oracle).
+///
+/// `key` is borrowed: zeroizing it is the caller's responsibility (see
+/// [`encrypt_changeset`]).
 pub fn decrypt_changeset(
     blob: &EncryptedBlob,
     key: &[u8; 32],

@@ -389,7 +389,7 @@ fn sync_key_unlock_downloads_and_unwraps() {
     let recovered =
         datum_cli::sync::key::unlock_with_client(&relay.base_url, &client, &mut prompter2)
             .expect("unlock ok");
-    assert_eq!(recovered, master);
+    assert_eq!(*recovered, master);
     assert!(key_path.exists());
 }
 
@@ -449,5 +449,5 @@ fn end_to_end_login_and_key_init() {
         serde_json::from_value(wrapped_json).expect("parse wrapped");
     let recovered = datum_sync_client::crypto::key_wrap::unwrap_master_key("the-pass", &wrapped)
         .expect("unwrap");
-    assert_eq!(recovered, master);
+    assert_eq!(*recovered, master);
 }

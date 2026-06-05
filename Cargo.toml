@@ -51,6 +51,7 @@ md-5 = "0.10"
 rand = "0.8"
 argon2 = "0.5"
 rpassword = "7"
+zeroize = "1"
 
 # HTTP client (blocking — CLI is synchronous)
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
