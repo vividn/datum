@@ -16,7 +16,7 @@ use datum_sync_client::http::Session;
 use datum_sync_client::sync_once;
 use reqwest::blocking::Client;
 
-pub use datum_sync_client::sync_once::PushOutcome;
+pub use datum_sync_client::sync_once::{PushOutcome, SeqRebase};
 
 /// Pack changes since the last push watermark, encrypt, and upload. A
 /// `dry_run` packs and counts but skips both the HTTP call and the

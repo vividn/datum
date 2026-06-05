@@ -136,6 +136,44 @@ fn sync_push_uploads_new_changes_since_last_seq() {
     assert_eq!(sync_state::get_device_seq(&db).unwrap(), 1);
 }
 
+/// da-60gf: a seq desync (here: device_seq rolled back, as after a DB
+/// restore from backup) recovers in-band and surfaces as a typed
+/// `SeqRebase` event on the outcome — no library-side printing.
+#[test]
+fn sync_push_seq_rebase_surfaces_in_outcome() {
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    write_token_for(&relay.base_url, &relay.mint_token());
+    write_master_key(&relay.base_url, &[0x11u8; 32]);
+    let db = fresh_db(&env);
+
+    db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
+    let first =
+        run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
+    assert_eq!(
+        first.seq_rebased, None,
+        "clean push must not report a rebase"
+    );
+    assert_eq!(sync_state::get_device_seq(&db).unwrap(), 1);
+
+    // Roll the local counter back — the relay has seq 1 and expects 2,
+    // but the next push will predict 1.
+    sync_state::set_device_seq(&db, 0).unwrap();
+    db.insert_entry(&make_entry("mood", 60, "dev-1")).unwrap();
+
+    let outcome =
+        run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
+    assert_eq!(outcome.pushed, 1);
+    let rebase = outcome
+        .seq_rebased
+        .expect("desynced push must report the rebase");
+    assert_eq!(rebase.predicted, 1);
+    assert_eq!(rebase.expected, 2);
+    assert_eq!(rebase.device_id, datum_cli::config::device_id().unwrap());
+    // Local counter re-based to the relay's authoritative value.
+    assert_eq!(sync_state::get_device_seq(&db).unwrap(), 2);
+}
+
 #[test]
 fn sync_pull_applies_changes_and_advances_seq() {
     let env = scoped_env();

@@ -336,6 +336,13 @@ fn do_push(target: &SyncTarget) -> Result<usize> {
         &db,
         false,
     )?;
+    if let Some(r) = &out.seq_rebased {
+        warn!(
+            db = %target.name, device_id = %r.device_id,
+            predicted = r.predicted, expected = r.expected,
+            "sync seq diverged; re-based to relay's seq and retried"
+        );
+    }
     Ok(out.pushed)
 }
 

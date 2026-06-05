@@ -73,10 +73,28 @@ pub struct SyncConfig<'a> {
     pub dry_run: bool,
 }
 
+/// Emitted when the relay rejected our predicted per-device seq and the
+/// push recovered in-band by re-basing to the relay's authoritative
+/// value (crash between push and watermark advance, DB restore, relay
+/// reset — see the recovery comment in [`push_once`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeqRebase {
+    /// Device whose seq diverged (the local device).
+    pub device_id: String,
+    /// Seq this device predicted from local sync_state.
+    pub predicted: u64,
+    /// Authoritative seq the relay expected; the retry used this value.
+    pub expected: u64,
+}
+
 /// Result of a push run — how many rows went up the wire this time.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PushOutcome {
     pub pushed: usize,
+    /// `Some` when the push recovered from a seq desync. Library code
+    /// never prints — callers decide how to surface it (CLI: stderr
+    /// warning; daemon: tracing).
+    pub seq_rebased: Option<SeqRebase>,
 }
 
 /// Result of a pull run.
@@ -153,6 +171,7 @@ pub fn push_once(
     if dry_run {
         return Ok(PushOutcome {
             pushed: entry_count,
+            seq_rebased: None,
         });
     }
 
@@ -206,17 +225,13 @@ pub fn push_once(
         })
     };
 
-    let ack = match push_with_seq(predicted, &blob) {
+    let (ack, seq_rebased) = match push_with_seq(predicted, &blob) {
         Ok(ack) => {
             sync_state::advance_device_seq(db, predicted)?;
-            ack
+            (ack, None)
         }
         Err(SessionError::SeqMismatch(SyncProtocolError::SeqMismatch { expected, .. })) => {
             let expected = expected.max(0) as u64;
-            eprintln!(
-                "warning: sync seq diverged for device {device_id} \
-                 (predicted {predicted}, relay expects {expected}); re-basing and retrying"
-            );
             let reblob =
                 encrypt_changeset(&changeset, master_key, device_id, expected, &local_cluster)?;
             let ack = push_with_seq(expected, &reblob).map_err(|e| match e {
@@ -234,7 +249,15 @@ pub fn push_once(
             // *below* our stored value (relay reset / older-backup
             // restore), so force-set past the monotonic guard.
             sync_state::set_device_seq(db, expected)?;
-            ack
+            // Surface the recovery as a typed event in the outcome —
+            // the CLI prints a warning, the daemon logs it. No printing
+            // from library code (da-60gf).
+            let rebase = SeqRebase {
+                device_id: device_id.to_string(),
+                predicted,
+                expected,
+            };
+            (ack, Some(rebase))
         }
         Err(other) => return Err(other.into()),
     };
@@ -257,6 +280,7 @@ pub fn push_once(
 
     Ok(PushOutcome {
         pushed: entry_count,
+        seq_rebased,
     })
 }
 

@@ -99,6 +99,10 @@ pub struct SyncOutcome {
     pub pulled: usize,
     pub integrity_warnings_queued: usize,
     pub dry_run: bool,
+    /// `Some` when the push recovered from a seq desync by re-basing to
+    /// the relay's authoritative seq (da-ca4q). The CLI prints this as a
+    /// stderr warning; the library never prints (da-60gf).
+    pub seq_rebased: Option<datum_sync_client::sync_once::SeqRebase>,
 }
 
 fn run_sync(args: SyncArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
@@ -120,6 +124,13 @@ fn run_sync(args: SyncArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
         &mut StdIoPrompter,
     )?;
 
+    if let Some(r) = &outcome.seq_rebased {
+        eprintln!(
+            "warning: sync seq diverged for device {} \
+             (predicted {}, relay expected {}); re-based and retried",
+            r.device_id, r.predicted, r.expected,
+        );
+    }
     let prefix = if outcome.dry_run { "[dry-run] " } else { "" };
     if dir.does_pull() {
         if outcome.integrity_warnings_queued > 0 {
@@ -251,6 +262,7 @@ fn run_sync_inner_with_recovery(
         pulled: report.pull.applied,
         integrity_warnings_queued: report.pull.integrity_warnings_queued,
         dry_run,
+        seq_rebased: report.push.seq_rebased,
     })
 }
 
