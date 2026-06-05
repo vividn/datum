@@ -115,4 +115,14 @@ mod tests {
         assert!(s.alive);
         assert!(s.started_at.is_some());
     }
+
+    #[test]
+    fn dead_pid_reports_not_running() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("pid");
+        fs::write(&path, "2147483646\n").unwrap();
+        let s = read_from(path);
+        assert!(!s.alive);
+        assert_eq!(s.pid, Some(2147483646));
+    }
 }

@@ -21,7 +21,6 @@
 //! | `log`        | tracing-subscriber bootstrap for the daemon          |
 //! | `notify`     | Desktop notifications (notify-send / osascript)      |
 //! | `targets`    | Enumerate auto-sync DBs from `datumrc.toml`          |
-//! | `status`     | Daemon-liveness readout for `datum sync status`      |
 
 pub mod backoff;
 pub mod debounce;
@@ -29,5 +28,4 @@ pub mod liveness;
 pub mod log;
 pub mod notify;
 pub mod scheduler;
-pub mod status;
 pub mod targets;
