@@ -182,8 +182,10 @@ Response (200):
 
 404 if no wrapped key has been uploaded yet.
 
-QR device-pairing (memory: C4f) replaces this path with a direct
-peer-to-peer handshake; it is outside the current contract.
+QR device-pairing (C4f; design in
+[`docs/sync/device-pairing.md`](sync/device-pairing.md), bead da-28a4)
+replaces this path with a direct peer-to-peer handshake; it is outside
+the current contract.
 
 ## Clusters and generations
 
@@ -524,8 +526,8 @@ the public-key layer.
 
 - A weak passphrase — offline brute-force against the wrapped key.
 - A compromised device — the master key lives in process memory.
-- QR device-pairing (memory: C4f) — its out-of-band channel needs its
-  own quantum-safe handshake; it is outside this contract today.
+- QR device-pairing (C4f, bead da-28a4) — its out-of-band channel needs
+  its own quantum-safe handshake; it is outside this contract today.
 
 **Mitigations live upstream and are adopt-when-available.** TLS hybrid
 PQ key exchange (X25519Kyber768) is already shipping in major browsers
@@ -595,7 +597,8 @@ reviewers of later beads don't re-litigate the design:
   integrity warnings are now filed on every overwrite (da-t96a), so the UX
   has data to render when it lands.
 - Daemon-based auto-sync cadence (C4d).
-- QR device-pairing key handoff (C4f).
+- QR device-pairing key handoff (C4f; design in
+  [`docs/sync/device-pairing.md`](sync/device-pairing.md), bead da-28a4).
 - Server-side compaction of superseded changesets.
 - Partial / range pulls (everything-since-N is enough for current volumes).
 - Multi-user sharing. The current model is one user ↔ many devices, each
