@@ -10,7 +10,11 @@
 //! CMP      := '<' | '<=' | '>' | '>=' | '=' | '!='
 //! ```
 //!
-//! No control flow, no function calls, no nested parentheses. Evaluation
+//! No control flow, no function calls, no nested parentheses. `&&` and
+//! `||` have **equal precedence** and evaluate strictly left-to-right, so
+//! `a || b && c` means `(a || b) && c`, NOT the C-style `a || (b && c)`.
+//! With no parentheses to group intent, split mixed clauses into separate
+//! rules and rely on rule order instead. Evaluation
 //! takes a row keyed by column name plus the current "now" timestamp; if a
 //! comparison's atom is a column name the row's cell is read and coerced.
 //! Only date/numeric/string atoms are recognised. The first matching rule
@@ -468,13 +472,18 @@ fn cmp_vals(a: &Val, op: CmpOp, b: &Val) -> bool {
         (Val::Number(x), Val::Number(y)) => x.partial_cmp(y),
         (Val::DateTime(x), Val::DateTime(y)) => Some(x.cmp(y)),
         (Val::String(x), Val::String(y)) => Some(x.cmp(y)),
-        (Val::Number(x), Val::String(y)) | (Val::String(y), Val::Number(x)) => {
-            // Mixed number/string: parse the string; otherwise lex compare.
-            match y.parse::<f64>() {
-                Ok(yn) => x.partial_cmp(&yn),
-                Err(_) => Some(x.to_string().cmp(y)),
-            }
-        }
+        // Mixed number/string: parse the string; otherwise lex compare.
+        // Two arms (not an or-pattern) so operand order is preserved —
+        // an or-pattern binding x=number/y=string would invert string-left
+        // comparisons.
+        (Val::Number(x), Val::String(y)) => match y.parse::<f64>() {
+            Ok(yn) => x.partial_cmp(&yn),
+            Err(_) => Some(x.to_string().cmp(y)),
+        },
+        (Val::String(x), Val::Number(y)) => match x.parse::<f64>() {
+            Ok(xn) => xn.partial_cmp(y),
+            Err(_) => Some(x.as_str().cmp(y.to_string().as_str())),
+        },
         _ => None,
     };
     match ord {
@@ -498,6 +507,9 @@ impl<'a> RowLookup for std::collections::HashMap<&'a str, &'a JsonValue> {
 }
 
 /// Evaluate a parsed expression against a row at the given `now`.
+///
+/// `&&` and `||` have equal precedence and fold strictly left-to-right
+/// (see module docs): `a || b && c` is `(a || b) && c`.
 pub fn eval_expr(expr: &Expr, row: &dyn RowLookup, now: DateTime<Utc>) -> bool {
     let mut acc = eval_term(&expr.head, row, now);
     for (op, term) in &expr.tail {
@@ -621,6 +633,58 @@ mod tests {
         let mut row = HashMap::new();
         row.insert("next_due", &null);
         assert_eq!(pick_color(&rules, &row, now_fixed()), None);
+    }
+
+    #[test]
+    fn eval_numeric_string_literal_left_of_number() {
+        // String-numeric literal on the LEFT must not invert the comparison:
+        // "'5' > count" with count=3 is 5 > 3 = true.
+        let rules = vec![ColorRule::parse("'5' > count", "red").unwrap()];
+        let v = json!(3);
+        let mut row = HashMap::new();
+        row.insert("count", &v);
+        assert_eq!(pick_color(&rules, &row, now_fixed()), Some("red"));
+
+        // Symmetric number-left form agrees: count < '5' with count=3.
+        let rules = vec![ColorRule::parse("count < '5'", "red").unwrap()];
+        assert_eq!(pick_color(&rules, &row, now_fixed()), Some("red"));
+    }
+
+    #[test]
+    fn eval_non_numeric_string_vs_number_lex_fallback_both_orders() {
+        // Unparseable string falls back to lex compare; the two operand
+        // orders must be mirror images, not identical.
+        let v = json!(5);
+        let mut row = HashMap::new();
+        row.insert("count", &v);
+
+        // "abc" > "5" lexicographically.
+        let rules = vec![ColorRule::parse("'abc' > count", "red").unwrap()];
+        assert_eq!(pick_color(&rules, &row, now_fixed()), Some("red"));
+        let rules = vec![ColorRule::parse("count < 'abc'", "red").unwrap()];
+        assert_eq!(pick_color(&rules, &row, now_fixed()), Some("red"));
+    }
+
+    #[test]
+    fn eval_mixed_and_or_is_left_to_right() {
+        // && and || have equal precedence, left-associative:
+        // "a || b && c" is "(a || b) && c". With a=true, b=false, c=false
+        // that is false; C-style precedence would give true.
+        let rules = vec![ColorRule::parse("x = 1 || y = 1 && z = 1", "red").unwrap()];
+        let one = json!(1);
+        let zero = json!(0);
+        let mut row = HashMap::new();
+        row.insert("x", &one);
+        row.insert("y", &zero);
+        row.insert("z", &zero);
+        assert_eq!(pick_color(&rules, &row, now_fixed()), None);
+
+        // And the grouped-left form does match when c is true.
+        let mut row = HashMap::new();
+        row.insert("x", &one);
+        row.insert("y", &zero);
+        row.insert("z", &one);
+        assert_eq!(pick_color(&rules, &row, now_fixed()), Some("red"));
     }
 
     #[test]
