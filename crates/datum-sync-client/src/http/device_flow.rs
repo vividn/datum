@@ -22,9 +22,24 @@ use crate::protocol::messages::{AuthToken, DeviceCodeResponse, PollResponse};
 /// least this long to avoid a hot loop.
 const POLL_INTERVAL_FLOOR: Duration = Duration::from_millis(50);
 
-/// Cap on total polling time. 10 minutes matches the spec's default
-/// `expires_in` (600s).
-const POLL_TIMEOUT: Duration = Duration::from_secs(600);
+/// Fallback total polling time for relays that omit `expires_in`.
+/// 10 minutes matches the spec's default `expires_in` (600s).
+const DEFAULT_POLL_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Cap on the relay-supplied `expires_in` — hostile-relay hygiene so a
+/// bogus value can't keep us polling for hours.
+const MAX_POLL_TIMEOUT: Duration = Duration::from_secs(3600);
+
+/// Total polling budget: the relay's `expires_in` when present (capped at
+/// [`MAX_POLL_TIMEOUT`]), else [`DEFAULT_POLL_TIMEOUT`]. Honoring a longer
+/// relay expiry matters — giving up at 10min while the code is still valid
+/// loses the login for no reason (da-4l8i).
+fn poll_timeout(expires_in: Option<u64>) -> Duration {
+    expires_in
+        .map(Duration::from_secs)
+        .unwrap_or(DEFAULT_POLL_TIMEOUT)
+        .min(MAX_POLL_TIMEOUT)
+}
 
 /// Interactive I/O abstraction for the device-flow. Production wires a
 /// stdout/stderr prompter; tests pass in a scripted one to keep flows
@@ -60,7 +75,7 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
     prompter.show_login_instructions(&device.verification_uri, &device.user_code);
 
     let mut interval = Duration::from_secs(device.interval.max(1));
-    let deadline = std::time::Instant::now() + POLL_TIMEOUT;
+    let deadline = std::time::Instant::now() + poll_timeout(device.expires_in);
 
     let poll_url = format!("{server}/{PROTOCOL_VERSION_PATH}/auth/device-code/poll");
     loop {
@@ -126,5 +141,27 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
                 return Ok(token);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn poll_timeout_honors_relay_expires_in() {
+        assert_eq!(poll_timeout(Some(720)), Duration::from_secs(720));
+        assert_eq!(poll_timeout(Some(30)), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn poll_timeout_falls_back_when_omitted() {
+        assert_eq!(poll_timeout(None), DEFAULT_POLL_TIMEOUT);
+    }
+
+    #[test]
+    fn poll_timeout_caps_hostile_expires_in() {
+        assert_eq!(poll_timeout(Some(86_400)), MAX_POLL_TIMEOUT);
+        assert_eq!(poll_timeout(Some(u64::MAX)), MAX_POLL_TIMEOUT);
     }
 }
