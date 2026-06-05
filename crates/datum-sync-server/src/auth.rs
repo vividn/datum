@@ -161,19 +161,22 @@ pub async fn login_finish(
 ///
 /// Trade a single-use refresh token for a fresh `(token, refresh_token)`
 /// pair. Rotation is enforced server-side: the consumed row is deleted
-/// before the replacement is inserted, so a leaked refresh token is
-/// useful at most once and an attacker who races a legitimate client
-/// loses access on the next legitimate refresh.
+/// and the replacement inserted in one SQL transaction, so a leaked
+/// refresh token is useful at most once, an attacker who races a
+/// legitimate client loses access on the next legitimate refresh, and a
+/// crash mid-rotation rolls back to "old token still valid" instead of
+/// stranding the user with no redeemable token (da-05u7).
 pub async fn refresh(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RefreshTokenRequest>,
 ) -> Result<Json<AuthToken>, AppError> {
     let token_hash = refresh::hash_token(&req.refresh_token);
 
-    let user_id = {
-        let conn = state.db.lock().unwrap();
+    let (user_id, new_refresh) = {
+        let mut conn = state.db.lock().unwrap();
+        let tx = conn.transaction()?;
         let (user_id, expires_at) =
-            db::lookup_refresh_token(&conn, &token_hash)?.ok_or(AppError::Unauthorized)?;
+            db::lookup_refresh_token(&tx, &token_hash)?.ok_or(AppError::Unauthorized)?;
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| AppError::Internal("system clock before unix epoch".to_string()))?
@@ -181,18 +184,18 @@ pub async fn refresh(
         if now >= expires_at {
             // Garbage-collect the expired row so a flood of expired
             // refresh attempts can't unbound the table size.
-            db::delete_refresh_token(&conn, &token_hash)?;
+            db::delete_refresh_token(&tx, &token_hash)?;
+            tx.commit()?;
             return Err(AppError::Unauthorized);
         }
-        // Single-use: drop the old token before issuing the replacement
-        // so a leaked refresh value cannot be redeemed twice.
-        db::delete_refresh_token(&conn, &token_hash)?;
-        user_id
-    };
-
-    let new_refresh = {
-        let conn = state.db.lock().unwrap();
-        refresh::mint_and_persist(&conn, &user_id)?
+        // Single-use rotation, atomically: delete the consumed token and
+        // mint its replacement in one transaction so a crash between the
+        // two rolls back to "old token still valid" instead of leaving
+        // the user with no redeemable token at all.
+        db::delete_refresh_token(&tx, &token_hash)?;
+        let new_refresh = refresh::mint_and_persist(&tx, &user_id)?;
+        tx.commit()?;
+        (user_id, new_refresh)
     };
     let token = jwt::create_token(&user_id, &state.jwt_secret)?;
 
