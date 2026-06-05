@@ -48,7 +48,6 @@ pub fn refresh(client: &Client, server: &str, refresh_token: &str) -> Result<Aut
     // returns exactly what came off the wire; nobody downstream has to
     // wonder whether they're looking at a server response or a partly-
     // hydrated persistence shape.
-    let _ = server; // intentionally unused now; kept for API symmetry
     let token: AuthToken = resp
         .json()
         .context("parse /v0/auth/refresh response")

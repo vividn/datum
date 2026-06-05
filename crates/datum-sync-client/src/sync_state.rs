@@ -78,13 +78,7 @@ pub fn partition_unsynced_by_generation(
     generation_started_at: &str,
 ) -> Result<UnsyncedPartition> {
     let push_mark = get_push_mark(db)? as i64;
-    let gen_ms = chrono::DateTime::parse_from_rfc3339(generation_started_at)
-        .map_err(|e| {
-            DatumError::Other(format!(
-                "generation_started_at must be RFC 3339, got {generation_started_at:?}: {e}"
-            ))
-        })?
-        .timestamp_millis();
+    let gen_ms = parse_rfc3339_to_epoch_ms(generation_started_at)?;
 
     let row: (i64, i64, i64) = db
         .conn()
@@ -242,16 +236,7 @@ pub fn advance_device_seq(db: &Db, new_seq: u64) -> Result<()> {
             "sync_state.device_seq rewind rejected: stored {current}, asked for {new_seq}"
         )));
     }
-    let now_ms = Utc::now().timestamp_millis();
-    db.conn().execute(
-        "INSERT INTO sync_state (db_id, device_seq, last_push_at)
-         VALUES (?1, ?2, ?3)
-         ON CONFLICT(db_id) DO UPDATE SET
-            device_seq  = excluded.device_seq,
-            last_push_at = excluded.last_push_at",
-        params![DEFAULT_DB_ID, new_seq as i64, now_ms],
-    )?;
-    Ok(())
+    set_device_seq(db, new_seq)
 }
 
 /// Force `device_seq` to an exact value, bypassing the monotonic guard
