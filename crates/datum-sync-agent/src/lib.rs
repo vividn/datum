@@ -7,8 +7,8 @@
 //! The library target (this file) only exposes **pure** scheduling /
 //! debounce / backoff types so they can be unit-tested without an async
 //! runtime or filesystem. The binary in `main.rs` wires them to a real
-//! tokio runtime, a file watcher (the external `notify` crate — not this
-//! crate's `notify` module, which is desktop notifications), and a pid-file.
+//! tokio runtime, a file watcher (the external `notify` crate), and a
+//! pid-file.
 //!
 //! Shape:
 //!
@@ -19,13 +19,13 @@
 //! | `scheduler`  | Per-DB next-action policy driving push / pull        |
 //! | `liveness`   | PID-file + alive-check                               |
 //! | `log`        | tracing-subscriber bootstrap for the daemon          |
-//! | `notify`     | Desktop notifications (notify-send / osascript)      |
+//! | `notifications` | Desktop notifications (notify-send / osascript)   |
 //! | `targets`    | Enumerate auto-sync DBs from `datumrc.toml`          |
 
 pub mod backoff;
 pub mod debounce;
 pub mod liveness;
 pub mod log;
-pub mod notify;
+pub mod notifications;
 pub mod scheduler;
 pub mod targets;

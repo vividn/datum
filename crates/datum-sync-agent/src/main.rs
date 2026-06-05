@@ -14,14 +14,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ::notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use anyhow::{bail, Context, Result};
 use datum_sync_agent::liveness::{default_pid_path, PidFile};
 use datum_sync_agent::log as agent_log;
-use datum_sync_agent::notify as agent_notify;
-use datum_sync_agent::notify::Notifier;
+use datum_sync_agent::notifications::{self, Notifier};
 use datum_sync_agent::scheduler::{Action, Scheduler};
 use datum_sync_agent::targets::{self, SyncTarget};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tracing::{info, warn};
@@ -94,7 +93,7 @@ async fn run_forever(one_shot: bool) -> Result<()> {
     // so every pull path uses the same setting. `enabled_default = true`
     // matches the bead spec: "feature-flagged; disabled with
     // `notifications: false`".
-    let notifier = agent_notify::from_config(true);
+    let notifier = notifications::from_config(true);
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut tasks: JoinSet<Result<()>> = JoinSet::new();
@@ -246,7 +245,7 @@ async fn run_worker(
                             "pull ok"
                         );
                         // C4e: announce newly-queued integrity warnings.
-                        agent_notify::announce_new_warnings(
+                        notifications::announce_new_warnings(
                             notifier.as_ref(),
                             &target.name,
                             out.integrity_warnings_queued,

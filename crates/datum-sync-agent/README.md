@@ -22,7 +22,7 @@ loop that asks it what to do next.
 | [`scheduler`]| Per-DB next-action policy driving push / pull.       |
 | [`liveness`] | PID-file + alive-check.                              |
 | [`log`]      | tracing-subscriber bootstrap for the daemon.         |
-| [`notify`]   | Filesystem-watcher adapter.                          |
+| [`notifications`] | Desktop notifications (notify-send / osascript). |
 | [`status`]   | Daemon-liveness readout for `datum sync status`.     |
 | [`targets`]  | Enumerate auto-sync DBs from `datumrc.toml`.          |
 
