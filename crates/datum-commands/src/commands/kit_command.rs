@@ -60,7 +60,16 @@ pub fn run(name: &str, extra_args: &[String], db: &Db) -> Result<()> {
     if want_watch {
         loop {
             print!("\x1b[2J\x1b[H");
-            render_once(&cmd, view_name, db)?;
+            // Flush so the clear is visible even if the render errors
+            // before printing anything.
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+            // A watch must be the most resilient surface, not the least
+            // (da-sd25): show errors in place (transient SQLITE_BUSY, a
+            // momentarily-broken view, even a deleted view the user may
+            // recreate) and retry on the next tick rather than dying.
+            if let Err(e) = render_once(&cmd, view_name, db) {
+                eprintln!("watch '{}': {e:#}", cmd.name);
+            }
             std::thread::sleep(std::time::Duration::from_secs(2));
         }
     } else {
