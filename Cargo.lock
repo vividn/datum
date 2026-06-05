@@ -528,6 +528,7 @@ name = "datum-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "datum-core",
  "datum-parse",
  "md-5",
  "rand 0.8.6",

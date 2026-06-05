@@ -82,9 +82,40 @@ pub struct Db {
 }
 
 impl Db {
+    /// Configure a file-backed connection for concurrent use (da-11qq).
+    ///
+    /// datum's design makes concurrency the normal mode — the sync agent
+    /// pulls and `--watch` loops read while the CLI writes — so every
+    /// connection gets, explicitly and before any migration write:
+    ///
+    /// * `busy_timeout = 5000` — absorbs writer-vs-writer overlap instead
+    ///   of surfacing SQLITE_BUSY. rusqlite happens to set this same 5s
+    ///   default on open, but that is an internal detail of rusqlite —
+    ///   datum's concurrency story shouldn't hinge on it.
+    /// * `journal_mode = WAL` — readers never block the writer (in
+    ///   rollback-journal mode a reader holding a transaction BUSYs any
+    ///   writer). Persistent in the DB file, but set here rather than in
+    ///   schema.sql so unmigrated opens and the migration walk itself run
+    ///   under WAL too.
+    /// * `synchronous = NORMAL` — the standard WAL pairing; fewer fsyncs
+    ///   per commit with no integrity loss (WAL stays consistent on power
+    ///   loss; at worst the last commit rolls back).
+    ///
+    /// All three pragmas cost microseconds — the CLI hot path stays
+    /// instantaneous. (`execute_batch` because these pragmas return rows.)
+    fn configure_connection(conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            "PRAGMA busy_timeout = 5000;\n\
+             PRAGMA journal_mode = WAL;\n\
+             PRAGMA synchronous = NORMAL;",
+        )?;
+        Ok(())
+    }
+
     /// Open (or create) the database at the given path.
     pub fn open(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
+        Self::configure_connection(&conn)?;
         let db = Db {
             conn,
             spec_alias_cache: RefCell::new(None),
@@ -100,6 +131,7 @@ impl Db {
     /// no escape hatch.
     pub fn open_unmigrated(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
+        Self::configure_connection(&conn)?;
         Ok(Db {
             conn,
             spec_alias_cache: RefCell::new(None),

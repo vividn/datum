@@ -13,7 +13,9 @@
 -- (random base36, prefix-addressable); slug is a human-facing unique key
 -- derived at write time from field + id-keys (or timestamp fallback).
 
-PRAGMA journal_mode = WAL;
+-- Connection pragmas (journal_mode, busy_timeout, synchronous) live in
+-- Db::configure_connection — set at open, before any migration write,
+-- so unmigrated opens are covered too (da-11qq).
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS entries (

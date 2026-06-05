@@ -11,6 +11,9 @@ test-util = []
 
 [dev-dependencies]
 tempfile = "3"
+# Self-dependency so this crate's own integration tests get the
+# test-util fixtures (same pattern as datum-cli).
+datum-core = { path = ".", features = ["test-util"] }
 
 [dependencies]
 datum-parse = { path = "../datum-parse" }
