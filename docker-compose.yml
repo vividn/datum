@@ -9,7 +9,9 @@ services:
       - DATUM_SYNC_DB=/data/sync.db
       - DATUM_SYNC_ORIGIN=http://localhost:3000
       - DATUM_SYNC_RP_NAME=datum sync
-      - DATUM_SYNC_JWT_SECRET=change-me-in-production
+      # No default on purpose (da-xsrd): compose aborts if unset rather
+      # than shipping a publicly-known secret. `openssl rand -hex 32`
+      - DATUM_SYNC_JWT_SECRET=${DATUM_SYNC_JWT_SECRET:?set DATUM_SYNC_JWT_SECRET (openssl rand -hex 32)}
     volumes:
       - datum-data:/data
 

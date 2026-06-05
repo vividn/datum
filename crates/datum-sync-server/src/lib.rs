@@ -13,6 +13,7 @@
 
 pub mod auth;
 pub mod cluster;
+pub mod config;
 pub mod db;
 pub mod device_code;
 pub mod error;

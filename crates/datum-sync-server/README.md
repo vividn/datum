@@ -32,6 +32,7 @@ All routes live under `/v1` per `docs/sync-protocol.md`:
 | Module          | What it owns                                                  |
 |-----------------|---------------------------------------------------------------|
 | [`auth`]        | Passkey-based registration/login (WebAuthn) + JWT extraction. |
+| [`config`]      | Env-derived runtime config; fail-closed JWT secret check.     |
 | [`device_code`] | Device-code OAuth flow for the CLI.                           |
 | [`jwt`]         | Token signing/verification. RS256 keys loaded from disk.      |
 | [`keys`]        | Wrapped-key bundle storage (opaque to the server).            |
@@ -43,15 +44,22 @@ All routes live under `/v1` per `docs/sync-protocol.md`:
 ## Run instructions
 
 ```bash
-# Local dev (SQLite at ./datum-sync.db, JWT keys in ./keys/):
-cargo run --release -p datum-sync-server -- --listen 127.0.0.1:8089
+# DATUM_SYNC_JWT_SECRET is mandatory (≥32 bytes) — the server refuses
+# to boot without it. It binds 0.0.0.0, so there is no "dev-only"
+# fallback secret: an unconfigured relay would be network-reachable
+# and its bearers forgeable by anyone who read this repo.
+export DATUM_SYNC_JWT_SECRET="$(openssl rand -hex 32)"
+
+# Local dev (SQLite at ./datum-sync-server.db, port 3000):
+cargo run --release -p datum-sync-server
 
 # Container build:
 docker build -t datum-sync-server -f crates/datum-sync-server/Dockerfile .
 ```
 
-Configure CORS origins, listen address, and key paths via flags or
-environment variables (see `cargo run -p datum-sync-server -- --help`).
+All configuration is environment variables, read in one place
+(`src/config.rs`): `DATUM_SYNC_PORT`, `DATUM_SYNC_DB`,
+`DATUM_SYNC_ORIGIN`, `DATUM_SYNC_RP_NAME`, `DATUM_SYNC_JWT_SECRET`.
 
 ## What does NOT belong here
 
