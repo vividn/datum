@@ -71,9 +71,55 @@ impl IntoResponse for AppError {
             AppError::GenerationMismatch(_) | AppError::SeqMismatch(_) => {
                 unreachable!("handled above")
             }
-            _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            // da-k3re: the 500 family must never echo internal error text
+            // (SQL fragments, file paths, library messages) to the client.
+            // Log the real Display server-side; return a fixed opaque body.
+            _ => {
+                tracing::error!(error = %self, "internal server error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal error".to_string(),
+                )
+            }
         };
 
         (status, Json(json!({ "error": message }))).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http_body_util::BodyExt;
+
+    async fn body_json(resp: Response) -> serde_json::Value {
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    /// da-k3re: the 500 family must return a fixed opaque body — internal
+    /// error text (SQL, paths, ownership details) stays server-side.
+    #[tokio::test]
+    async fn internal_errors_get_opaque_500_body() {
+        for err in [
+            AppError::Internal("secret: /var/lib/relay.db".to_string()),
+            AppError::from(rusqlite::Error::InvalidQuery),
+        ] {
+            let resp = err.into_response();
+            assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(body_json(resp).await["error"], "internal error");
+        }
+    }
+
+    /// Caller-actionable 4xx bodies keep their messages.
+    #[tokio::test]
+    async fn four_xx_bodies_keep_caller_actionable_messages() {
+        let resp = AppError::NotFound.into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(body_json(resp).await["error"], "not found");
+
+        let resp = AppError::BadRequest("missing field: device_id".to_string()).into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(body_json(resp).await["error"], "missing field: device_id");
     }
 }

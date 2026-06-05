@@ -967,6 +967,66 @@ mod tests {
         );
     }
 
+    /// da-k3re: pushing to a cluster_id owned by another user must NOT
+    /// leak ownership — it was a 500 whose body echoed "cluster owned by
+    /// another user", an enumeration oracle. It must be a 404 whose body
+    /// is byte-identical to the generic not-found shape.
+    #[tokio::test]
+    async fn push_to_foreign_cluster_is_indistinguishable_404() {
+        let state = test_state();
+        let (_, alice_token) = make_test_jwt(&state);
+        let (_, bob_token) = make_test_jwt(&state);
+
+        // Alice claims cluster-W.
+        let _ = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v0/push")
+                    .header("Authorization", format!("Bearer {}", alice_token))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "device_id": "alice-dev",
+                            "payload_b64": "AA",
+                            "cluster_id": "cluster-W",
+                            "generation": 0,
+                            "predicted_seq": 1
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Bob probes the same name: 404, generic body, no ownership hint.
+        let resp = build_app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v0/push")
+                    .header("Authorization", format!("Bearer {}", bob_token))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "device_id": "bob-dev",
+                            "payload_b64": "AA",
+                            "cluster_id": "cluster-W",
+                            "generation": 0,
+                            "predicted_seq": 1
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let json = json_body(resp).await;
+        assert_eq!(json, serde_json::json!({ "error": "not found" }));
+    }
+
     /// End-to-end mismatch flow per the bead's acceptance: push at
     /// gen=0, bump → server is now at gen=1, push with stale gen=0
     /// must reject with a 409 carrying the tagged

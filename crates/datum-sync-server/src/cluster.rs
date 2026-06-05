@@ -52,23 +52,26 @@ pub fn get_generation_for_owner(
 /// exactly one row at generation 0. Returns the generation that was in
 /// effect after the call (existing value if the row was already there,
 /// 0 for a fresh insert).
+///
+/// A cluster_id already claimed by a different user surfaces as
+/// [`AppError::NotFound`] — the same 404 the bump endpoint returns —
+/// so the response is indistinguishable from "doesn't exist" and can't
+/// be used to enumerate other users' cluster names (da-k3re).
 pub fn ensure_cluster(
     conn: &Connection,
     cluster_id: &str,
     user_id: &Uuid,
-) -> Result<(i64, String)> {
+) -> Result<(i64, String), AppError> {
     conn.execute(
         "INSERT OR IGNORE INTO clusters (cluster_id, user_id, generation) VALUES (?1, ?2, 0)",
         params![cluster_id, user_id.to_string()],
-    )
-    .context("ensure_cluster")?;
+    )?;
     // Re-read because INSERT OR IGNORE doesn't tell us whether the row
     // is fresh or pre-existing — and a row owned by a different user
-    // must surface as a permission error to the caller, not as 0.
+    // must surface as a 404 to the caller, not as 0.
     // `generation_started_at` is stamped with RFC 3339 UTC at insert via
     // the table's DEFAULT (see `db::migrate_to_clusters`).
-    get_generation_for_owner(conn, cluster_id, user_id)?
-        .ok_or_else(|| anyhow::anyhow!("cluster owned by another user"))
+    get_generation_for_owner(conn, cluster_id, user_id)?.ok_or(AppError::NotFound)
 }
 
 /// Increment the cluster's generation by one and return the new value.
@@ -212,6 +215,22 @@ mod tests {
         assert!(bump_generation(&conn, "never-existed", &user)
             .unwrap()
             .is_none());
+    }
+
+    /// da-k3re: registering against a cluster_id another user owns must
+    /// surface as the typed NotFound — never an Internal whose message
+    /// ("cluster owned by another user") would confirm the cluster exists.
+    #[test]
+    fn ensure_cluster_foreign_owner_is_typed_not_found() {
+        let conn = setup();
+        let alice = Uuid::new_v4();
+        let bob = Uuid::new_v4();
+        let cid = "contested-cluster";
+        ensure_cluster(&conn, cid, &alice).unwrap();
+        match ensure_cluster(&conn, cid, &bob) {
+            Err(AppError::NotFound) => {}
+            other => panic!("expected AppError::NotFound, got {other:?}"),
+        }
     }
 
     #[test]
