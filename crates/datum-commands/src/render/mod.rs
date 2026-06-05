@@ -174,18 +174,22 @@ pub(crate) fn extract_with_context(
     registry: Option<&SpecRegistry>,
     ctx: Option<&RenderContext>,
 ) -> Extracted {
-    extract_with_context_at(entry, action, registry, ctx, &DatumTime::now())
+    extract_with_context_at(entry, action, registry, ctx, &DatumTime::now(), None)
 }
 
 /// As [`extract_with_context`] but with an explicit "now" reference instant.
 /// Batch consumers (e.g. tail) supply a single `now` so every row in the
-/// batch agrees on what "today" means.
+/// batch agrees on what "today" means. `reference_offset` is the table's
+/// header UTC offset (da-lkji): `Some(r)` suppresses per-stamp offsets that
+/// equal `r` and turns differing ones into a gray `(±off)` prefix; `None`
+/// keeps the standalone trailing-offset form.
 pub(crate) fn extract_with_context_at(
     entry: &Entry,
     action: Option<Outcome>,
     registry: Option<&SpecRegistry>,
     ctx: Option<&RenderContext>,
     now: &DatumTime,
+    reference_offset: Option<i32>,
 ) -> Extracted {
     let spec = registry.and_then(|r| r.fields.get(&entry.field));
     let action_text = action.map(paint_action);
@@ -199,24 +203,27 @@ pub(crate) fn extract_with_context_at(
     let occur = entry
         .occur_time
         .as_ref()
-        .map(|t| self::action::format_timestamp(t, now, occur_precision));
-    let create = Some(self::action::format_timestamp(
+        .map(|t| self::action::format_timestamp_ref(t, now, occur_precision, reference_offset));
+    let create = Some(self::action::format_timestamp_ref(
         &self::action::synthesize_local_datumtime(entry.create_time),
         now,
         None,
+        reference_offset,
     ));
-    let modify = Some(self::action::format_timestamp(
+    let modify = Some(self::action::format_timestamp_ref(
         &self::action::synthesize_local_datumtime(entry.modify_time),
         now,
         None,
+        reference_offset,
     ));
     let hybrid = occur.clone().or_else(|| {
         Some(format_gray_prefix(
             "c",
-            self::action::format_timestamp(
+            self::action::format_timestamp_ref(
                 &self::action::synthesize_local_datumtime(entry.create_time),
                 now,
                 None,
+                reference_offset,
             ),
         ))
     });
@@ -530,10 +537,58 @@ pub fn format_table_with(
         }
     };
 
+    // da-lkji: the time column's UTC offset moves into the header. The
+    // reference is the most common offset among the displayed stamps (tie →
+    // the offset of the newest such row); rows that match print no offset,
+    // rows that differ get a gray `(±off)` prefix. Only computed when the
+    // header is actually printed — headerless embeds (`datum check`) keep
+    // the legacy per-row trailing offsets so the offset stays visible.
+    let reference_offset: Option<i32> = if args.suppress_header {
+        None
+    } else {
+        let mut votes: HashMap<i32, (usize, chrono::DateTime<chrono::Utc>)> = HashMap::new();
+        for e in entries {
+            // P1D rows render a bare date (no clock, no offset) and
+            // entries without the metric's stamp render nothing — neither
+            // votes for the reference.
+            let occur_vote = e
+                .occur_time
+                .as_ref()
+                .filter(|_| e.occur_time_precision.as_deref() != Some("P1D"))
+                .map(|t| (t.offset_minutes, t.utc));
+            let host_vote = |utc: chrono::DateTime<chrono::Utc>| {
+                let t = self::action::synthesize_local_datumtime(utc);
+                (t.offset_minutes, t.utc)
+            };
+            let vote = match args.metric {
+                TimeMetricCol::Occur => occur_vote,
+                TimeMetricCol::Hybrid => {
+                    if e.occur_time.is_some() {
+                        occur_vote
+                    } else {
+                        Some(host_vote(e.create_time))
+                    }
+                }
+                TimeMetricCol::Create => Some(host_vote(e.create_time)),
+                TimeMetricCol::Modify => Some(host_vote(e.modify_time)),
+                TimeMetricCol::None => None,
+            };
+            if let Some((off, ts)) = vote {
+                let slot = votes.entry(off).or_insert((0, ts));
+                slot.0 += 1;
+                slot.1 = slot.1.max(ts);
+            }
+        }
+        votes
+            .into_iter()
+            .max_by_key(|&(_, (count, newest))| (count, newest))
+            .map(|(off, _)| off)
+    };
+
     let mut rows: Vec<Row> = Vec::with_capacity(entries.len());
     for (i, e) in entries.iter().enumerate() {
         let ctx = contexts.and_then(|c| c.get(i));
-        let ex = extract_with_context_at(e, None, registry, ctx, now_ref);
+        let ex = extract_with_context_at(e, None, registry, ctx, now_ref, reference_offset);
         let (time, prefix) = match args.metric {
             TimeMetricCol::Hybrid => (ex.time_hybrid.clone().unwrap_or_default(), ""),
             TimeMetricCol::Occur => (ex.time_occur.clone().unwrap_or_default(), ""),
@@ -574,7 +629,18 @@ pub fn format_table_with(
 
     // Column widths (visual, ANSI-aware).
     let vw = colors::visible_width;
-    let time_header = "time";
+    // da-lkji: the header carries the reference offset once — `time (+2)`
+    // — so same-offset rows can drop theirs entirely.
+    let time_header = match reference_offset {
+        Some(r) => format!(
+            "time {}",
+            paint(
+                GRAY_FG,
+                &format!("({})", self::action::compress_offset_minutes(r))
+            )
+        ),
+        None => "time".to_string(),
+    };
     let field_header = if rows.iter().any(|r| vw(&r.field) >= 5) {
         "field"
     } else {
@@ -588,9 +654,17 @@ pub fn format_table_with(
     let dur_header = "dur";
     let hid_header = "hid";
 
-    let time_w = std::iter::once(time_header.len())
+    // da-lkji: the time column right-aligns on the `HH:MM:SS` core; the
+    // gray `±N<unit>` uncertainty suffix hangs into a shared right margin
+    // (`time_suffix_w`) so uncertain rows don't shift the clock.
+    let time_suffix_w = rows
+        .iter()
+        .map(|r| uncertainty_suffix_width(&r.time))
+        .max()
+        .unwrap_or(0);
+    let time_core_w = std::iter::once(vw(&time_header))
         .chain(rows.iter().map(|r| {
-            vw(&r.time)
+            vw(&r.time) - uncertainty_suffix_width(&r.time)
                 + if r.time_metric_prefix.is_empty() {
                     0
                 } else {
@@ -599,6 +673,7 @@ pub fn format_table_with(
         }))
         .max()
         .unwrap_or(0);
+    let time_w = time_core_w + time_suffix_w;
     // da-ftw3: when a width budget is in force, the field column is capped
     // at `FIELD_CAP` (default 10). Long field names like `environment`
     // otherwise compress the state column unhelpfully. Without a budget
@@ -683,7 +758,12 @@ pub fn format_table_with(
     if !args.suppress_header {
         let mut header = String::new();
         if show_time {
-            push_cell(&mut header, time_header, time_w, true);
+            // Right-align on the core (matching the rows' HH:MM:SS edge),
+            // then pad across the ± suffix margin.
+            header.push_str(&" ".repeat(time_core_w.saturating_sub(vw(&time_header))));
+            header.push_str(&time_header);
+            header.push_str(&" ".repeat(time_suffix_w));
+            header.push_str("  ");
         }
         if show_field {
             push_cell(&mut header, field_header, field_w, false);
@@ -713,14 +793,16 @@ pub fn format_table_with(
             } else {
                 format!("{}{}", paint(GRAY_FG, r.time_metric_prefix), r.time)
             };
-            let extra_pad = if r.time_metric_prefix.is_empty() {
-                0
-            } else {
-                1
-            };
-            let pad = time_w.saturating_sub(vw(&r.time) + extra_pad);
-            line.push_str(&" ".repeat(pad));
+            let suffix_w = uncertainty_suffix_width(&r.time);
+            let core_w = vw(&r.time) - suffix_w
+                + if r.time_metric_prefix.is_empty() {
+                    0
+                } else {
+                    1
+                };
+            line.push_str(&" ".repeat(time_core_w.saturating_sub(core_w)));
             line.push_str(&body);
+            line.push_str(&" ".repeat(time_suffix_w.saturating_sub(suffix_w)));
             line.push_str("  ");
         }
         if show_field {
@@ -774,6 +856,17 @@ pub fn format_table_with(
         out.push('\n');
     }
     Some(out)
+}
+
+/// Visible width of the trailing gray `±N<unit>` uncertainty suffix
+/// (da-lkji) in a rendered time cell; 0 when absent. `±` only ever
+/// appears in that suffix within a time cell, so a plain scan suffices.
+fn uncertainty_suffix_width(cell: &str) -> usize {
+    let stripped = strip_ansi(cell);
+    stripped
+        .find('±')
+        .map(|i| colors::visible_width(&stripped[i..]))
+        .unwrap_or(0)
 }
 
 /// Push a left- or right-padded cell (ANSI-aware) with a 2-space gap.

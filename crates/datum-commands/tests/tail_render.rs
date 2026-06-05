@@ -450,3 +450,138 @@ fn tail_table_no_wrap_under_very_narrow_budget() {
     let table = strip_ansi(&render_table(std::slice::from_ref(&e), 30));
     assert_no_row_wider_than(&table, 30);
 }
+
+// ─── da-lkji: header reference offset + grey ± uncertainty suffix ────────────
+
+fn dt_off(y: i32, mo: u32, d: u32, h: u32, m: u32, offset_minutes: i32, tz: &str) -> DatumTime {
+    DatumTime {
+        utc: Utc.with_ymd_and_hms(y, mo, d, h, m, 0).unwrap(),
+        offset_minutes,
+        timezone: tz.to_string(),
+    }
+}
+
+/// Mixed-offset batch: the most common UTC offset moves to the header;
+/// only the off-offset row carries a `(±off)` prefix; only the uncertain
+/// row carries a `±N<unit>` suffix; plain rows are bare `HH:MM:SS`.
+#[test]
+fn tail_table_offset_in_header_prefix_only_when_differing() {
+    let _g = no_color_scope();
+    // now: 2026-04-22 17:00 in +2 — all rows land on "today".
+    let now = dt_off(2026, 4, 22, 15, 0, 120, "Europe/Berlin");
+    let plain = entry_at(
+        "coffee",
+        Verb::Point,
+        None,
+        dt_off(2026, 4, 22, 20, 55, 120, "Europe/Berlin"),
+    );
+    let mut uncertain = entry_at(
+        "coffee",
+        Verb::Point,
+        None,
+        dt_off(2026, 4, 22, 19, 0, 120, "Europe/Berlin"),
+    );
+    uncertain.occur_time_precision = Some("PT3M".to_string());
+    let off_offset = entry_at(
+        "coffee",
+        Verb::Point,
+        None,
+        dt_off(2026, 4, 22, 8, 15, 60, "Europe/London"),
+    );
+    let entries = vec![plain, uncertain, off_offset];
+
+    let args = TableArgs {
+        metric: TimeMetricCol::Occur,
+        ..Default::default()
+    };
+    let table = strip_ansi(&format_table_with(&entries, None, Some(&now), None, &args).unwrap());
+    let lines: Vec<&str> = table.lines().collect();
+    assert!(
+        lines[0].contains("time (+2)"),
+        "header carries the reference offset: {:?}",
+        lines[0]
+    );
+
+    let plain_line = lines[1];
+    assert!(plain_line.contains("22:55:00"), "{plain_line:?}");
+    assert!(
+        !plain_line.contains('(') && !plain_line.contains('±'),
+        "same-offset exact row is bare HH:MM:SS: {plain_line:?}"
+    );
+
+    let uncertain_line = lines[2];
+    assert!(
+        uncertain_line.contains("21:00:00±3m"),
+        "uncertain row gets the ± suffix: {uncertain_line:?}"
+    );
+    assert!(
+        !uncertain_line.contains('('),
+        "same-offset row carries no offset prefix: {uncertain_line:?}"
+    );
+
+    let off_line = lines[3];
+    assert!(
+        off_line.contains("(+1)09:15:00"),
+        "differing row gets its offset as a prefix: {off_line:?}"
+    );
+    assert!(
+        !off_line.contains('±'),
+        "exact row carries no ± suffix: {off_line:?}"
+    );
+
+    // HH:MM:SS columns stay aligned: every clock ends at the same column,
+    // prefixes hanging left and the ± suffix hanging right.
+    let clock_end = |line: &str, clock: &str| line.find(clock).map(|i| i + clock.len());
+    let e1 = clock_end(plain_line, "22:55:00");
+    let e2 = clock_end(uncertain_line, "21:00:00");
+    let e3 = clock_end(off_line, "09:15:00");
+    assert!(
+        e1.is_some() && e1 == e2 && e2 == e3,
+        "clock alignment: {table}"
+    );
+}
+
+/// The `(±off)` prefix and the `±N<unit>` suffix are grey (GRAY_FG);
+/// the `HH:MM:SS` core stays unpainted.
+#[test]
+fn tail_table_offset_prefix_and_uncertainty_suffix_are_grey() {
+    let _g = color_scope();
+    const GRAY: &str = "\x1b[90m";
+    const RESET: &str = "\x1b[0m";
+    let now = dt_off(2026, 4, 22, 15, 0, 120, "Europe/Berlin");
+    let mut uncertain = entry_at(
+        "coffee",
+        Verb::Point,
+        None,
+        dt_off(2026, 4, 22, 19, 0, 120, "Europe/Berlin"),
+    );
+    uncertain.occur_time_precision = Some("PT3M".to_string());
+    let off_offset = entry_at(
+        "coffee",
+        Verb::Point,
+        None,
+        dt_off(2026, 4, 22, 8, 15, 60, "Europe/London"),
+    );
+    // Two +2 stamps (one via `now`-independent majority: uncertain + a plain
+    // +2 row) keep the reference at +2.
+    let plain = entry_at(
+        "coffee",
+        Verb::Point,
+        None,
+        dt_off(2026, 4, 22, 20, 55, 120, "Europe/Berlin"),
+    );
+    let entries = vec![plain, uncertain, off_offset];
+    let args = TableArgs {
+        metric: TimeMetricCol::Occur,
+        ..Default::default()
+    };
+    let table = format_table_with(&entries, None, Some(&now), None, &args).unwrap();
+    assert!(
+        table.contains(&format!("21:00:00{GRAY}±3m{RESET}")),
+        "± suffix grey, clock unpainted: {table:?}"
+    );
+    assert!(
+        table.contains(&format!("{GRAY}(+1){RESET}09:15:00")),
+        "offset prefix grey, clock unpainted: {table:?}"
+    );
+}

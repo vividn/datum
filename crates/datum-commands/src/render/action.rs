@@ -574,9 +574,27 @@ pub(crate) fn format_field_badge(field: &str, spec: Option<&FieldSpec>) -> Strin
 /// `precision` is the row's `occur_time_precision`. When it is `Some("P1D")`
 /// the row is a date-only entry (per da-fc0l) and the stamp degrades to the
 /// bare local date `YYYY-MM-DD` — no clock, no offset, no relative-day
-/// prefix. Any other value (including `None` for exact-second rows) renders
-/// the full datetime.
+/// prefix. Any other value renders the full datetime; non-`P1D` values are
+/// `±N` uncertainties (da-lkji) and append a gray `±N<unit>` suffix.
 pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime, precision: Option<&str>) -> String {
+    format_timestamp_ref(t, now, precision, None)
+}
+
+/// As [`format_timestamp`] but with an optional table-header reference
+/// offset (da-lkji). `reference_offset` is the UTC offset (minutes) the
+/// table prints once in the time-column header:
+///
+/// * `None` — standalone mode: every stamp carries its own trailing gray
+///   offset (`22:55:00+2`), as the info-line always has.
+/// * `Some(r)` — table mode: rows whose offset equals `r` print no offset
+///   at all; rows that differ print theirs as a gray parenthesized
+///   *prefix* (`(+1)09:15:00`) so the `HH:MM:SS` columns stay aligned.
+pub(crate) fn format_timestamp_ref(
+    t: &DatumTime,
+    now: &DatumTime,
+    precision: Option<&str>,
+    reference_offset: Option<i32>,
+) -> String {
     // Render in the row's own timezone — "today" is the row's local day,
     // not the host's. See da-n1q acceptance criteria.
     let local = t.local_time();
@@ -592,9 +610,18 @@ pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime, precision: Option
             local.minute(),
             local.second()
         );
-        let offset = compress_tz_offset(&local.format("%z").to_string());
-        let tz = paint(GRAY_FG, &offset);
-        let stamp = format!("{base}{tz}");
+        let offset = compress_offset_minutes(t.offset_minutes);
+        let uncertainty = format_uncertainty_suffix(precision)
+            .map(|u| paint(GRAY_FG, &u))
+            .unwrap_or_default();
+        let stamp = match reference_offset {
+            Some(r) if r == t.offset_minutes => format!("{base}{uncertainty}"),
+            Some(_) => format!(
+                "{}{base}{uncertainty}",
+                paint(GRAY_FG, &format!("({offset})"))
+            ),
+            None => format!("{base}{}{uncertainty}", paint(GRAY_FG, &offset)),
+        };
         match format_relative_day_prefix(t, now) {
             Some(prefix) => format!("{} {stamp}", paint(GRAY_FG, &prefix)),
             None => stamp,
@@ -622,21 +649,11 @@ pub(crate) fn synthesize_local_datumtime(utc: chrono::DateTime<Utc>) -> DatumTim
     }
 }
 
-/// Compress `%z` output (`+0200`) → `+2` per §3.
-fn compress_tz_offset(raw: &str) -> String {
-    // Expect `+HHMM` or `-HHMM`.
-    if raw.len() < 3 {
-        return raw.to_string();
-    }
-    let (sign, rest) = raw.split_at(1);
-    if rest.len() < 4 {
-        return raw.to_string();
-    }
-    let hours = &rest[0..2];
-    let minutes = &rest[2..4];
-    // Parse hours, drop leading zeros.
-    let h: i32 = hours.parse().unwrap_or(0);
-    let m: i32 = minutes.parse().unwrap_or(0);
+/// Compress a UTC offset in minutes → `+2` / `-5` / `+1:30` per §3.
+pub(crate) fn compress_offset_minutes(minutes: i32) -> String {
+    let sign = if minutes < 0 { '-' } else { '+' };
+    let a = minutes.abs();
+    let (h, m) = (a / 60, a % 60);
     if m == 0 {
         format!("{sign}{h}")
     } else if h == 0 {
@@ -644,6 +661,45 @@ fn compress_tz_offset(raw: &str) -> String {
     } else {
         format!("{sign}{h}:{m:02}")
     }
+}
+
+/// Render the stored `occur_time_precision` (ISO-8601, as written by
+/// `Uncertainty::to_iso_precision`) as the display suffix body — `PT3M` →
+/// `±3m`, `PT90S` → `±90s`, `P2D` → `±2d` (da-lkji). `P1D` is the
+/// date-only marker (da-5uph), never an uncertainty, so it returns `None`;
+/// so do unparseable or compound forms.
+fn format_uncertainty_suffix(precision: Option<&str>) -> Option<String> {
+    let iso = precision?;
+    if iso == "P1D" {
+        return None;
+    }
+    let rest = iso.strip_prefix('P')?;
+    let (num, unit) = match rest.strip_prefix('T') {
+        Some(t) => {
+            let (n, u) = t.split_at(t.len().checked_sub(1)?);
+            let u = match u {
+                "S" => "s",
+                "M" => "m",
+                "H" => "h",
+                _ => return None,
+            };
+            (n, u)
+        }
+        None => {
+            let (n, u) = rest.split_at(rest.len().checked_sub(1)?);
+            let u = match u {
+                "D" => "d",
+                "M" => "mo",
+                "Y" => "y",
+                _ => return None,
+            };
+            (n, u)
+        }
+    };
+    if num.is_empty() || !num.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(format!("±{num}{unit}"))
 }
 
 // ─── Info-line composition ───────────────────────────────────────────────────
@@ -734,11 +790,48 @@ mod tests {
     use datum_core::entry::Verb;
 
     #[test]
-    fn compress_tz_offset_drops_leading_zeros() {
-        assert_eq!(compress_tz_offset("+0200"), "+2");
-        assert_eq!(compress_tz_offset("-0500"), "-5");
-        assert_eq!(compress_tz_offset("+0130"), "+1:30");
-        assert_eq!(compress_tz_offset("+0000"), "+0");
+    fn compress_offset_minutes_drops_leading_zeros() {
+        assert_eq!(compress_offset_minutes(120), "+2");
+        assert_eq!(compress_offset_minutes(-300), "-5");
+        assert_eq!(compress_offset_minutes(90), "+1:30");
+        assert_eq!(compress_offset_minutes(0), "+0");
+        assert_eq!(compress_offset_minutes(-30), "-0:30");
+    }
+
+    #[test]
+    fn uncertainty_suffix_renders_stored_iso_forms() {
+        assert_eq!(format_uncertainty_suffix(None), None);
+        assert_eq!(
+            format_uncertainty_suffix(Some("P1D")),
+            None,
+            "date-only marker"
+        );
+        assert_eq!(
+            format_uncertainty_suffix(Some("PT3M")).as_deref(),
+            Some("±3m")
+        );
+        assert_eq!(
+            format_uncertainty_suffix(Some("PT90S")).as_deref(),
+            Some("±90s")
+        );
+        assert_eq!(
+            format_uncertainty_suffix(Some("PT2H")).as_deref(),
+            Some("±2h")
+        );
+        assert_eq!(
+            format_uncertainty_suffix(Some("P2D")).as_deref(),
+            Some("±2d")
+        );
+        assert_eq!(
+            format_uncertainty_suffix(Some("P1M")).as_deref(),
+            Some("±1mo")
+        );
+        assert_eq!(format_uncertainty_suffix(Some("bogus")), None);
+        assert_eq!(
+            format_uncertainty_suffix(Some("PT1H30M")),
+            None,
+            "compound never stored"
+        );
     }
 
     #[test]
@@ -923,8 +1016,53 @@ mod tests {
         };
         let out_none = format_timestamp(&target, &now, None);
         assert!(out_none.starts_with("09:15:30"), "got {out_none:?}");
+        // da-lkji: a non-P1D precision keeps the clock AND surfaces the
+        // stored uncertainty as a trailing `±N<unit>`.
         let out_sec = format_timestamp(&target, &now, Some("PT1S"));
-        assert_eq!(out_sec, out_none, "PT1S behaves like None");
+        assert_eq!(
+            out_sec,
+            format!("{out_none}±1s"),
+            "PT1S keeps clock + ± suffix"
+        );
+        std::env::remove_var("DATUM_COLOR");
+        std::env::remove_var("NO_COLOR");
+    }
+
+    /// da-lkji: table mode — a row whose offset matches the header
+    /// reference prints no offset at all; a differing row prints its own
+    /// offset as a parenthesized prefix so `HH:MM:SS` stays aligned.
+    #[test]
+    fn timestamp_ref_mode_prefixes_only_differing_offsets() {
+        std::env::set_var("DATUM_COLOR", "0");
+        std::env::set_var("NO_COLOR", "1");
+        let now = dt(2026, 4, 22);
+        let same = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 20, 55, 0).unwrap(),
+            offset_minutes: 120,
+            timezone: "Europe/Berlin".to_string(),
+        };
+        assert_eq!(
+            format_timestamp_ref(&same, &now, None, Some(120)),
+            "22:55:00"
+        );
+        let other = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 8, 15, 0).unwrap(),
+            offset_minutes: 60,
+            timezone: "Europe/London".to_string(),
+        };
+        assert_eq!(
+            format_timestamp_ref(&other, &now, None, Some(120)),
+            "(+1)09:15:00"
+        );
+        // Uncertainty composes independently of the offset prefix.
+        assert_eq!(
+            format_timestamp_ref(&same, &now, Some("PT3M"), Some(120)),
+            "22:55:00±3m"
+        );
+        assert_eq!(
+            format_timestamp_ref(&other, &now, Some("PT3M"), Some(120)),
+            "(+1)09:15:00±3m"
+        );
         std::env::remove_var("DATUM_COLOR");
         std::env::remove_var("NO_COLOR");
     }

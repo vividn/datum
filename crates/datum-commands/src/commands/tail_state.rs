@@ -16,7 +16,7 @@ use datum_core::{
 };
 use serde_json::Value as JsonValue;
 
-use crate::render::action::{format_duration, format_timestamp};
+use crate::render::action::{compress_offset_minutes, format_duration, format_timestamp_ref};
 
 /// Translate the parser's raw `state_filter` strings (`Vec<String>` from
 /// splitting on `,`) into a canonical JSON value, ready for structural
@@ -177,6 +177,25 @@ fn print_blocks(blocks: &[&StateBlock]) {
 
     let now = DatumTime::now();
 
+    // da-lkji: same header-reference treatment as the entry table — the
+    // most common UTC offset across all displayed start/end stamps (tie →
+    // the newest such stamp) prints once in the headers; only differing
+    // rows carry a gray `(±off)` prefix.
+    let mut votes: std::collections::HashMap<i32, (usize, DateTime<Utc>)> =
+        std::collections::HashMap::new();
+    for t in blocks
+        .iter()
+        .flat_map(|b| std::iter::once(&b.start).chain(b.end.as_ref()))
+    {
+        let slot = votes.entry(t.offset_minutes).or_insert((0, t.utc));
+        slot.0 += 1;
+        slot.1 = slot.1.max(t.utc);
+    }
+    let reference = votes
+        .into_iter()
+        .max_by_key(|&(_, (count, newest))| (count, newest))
+        .map(|(off, _)| off);
+
     struct Row {
         start: String,
         end: String,
@@ -187,10 +206,10 @@ fn print_blocks(blocks: &[&StateBlock]) {
 
     let mut rows: Vec<Row> = Vec::with_capacity(blocks.len());
     for b in blocks {
-        let start = format_timestamp(&b.start, &now, None);
+        let start = format_timestamp_ref(&b.start, &now, None, reference);
         let (end, dur_secs) = match &b.end {
             Some(end) => (
-                format_timestamp(end, &now, None),
+                format_timestamp_ref(end, &now, None, reference),
                 (end.utc - b.start.utc).num_seconds(),
             ),
             None => ("ongoing".to_string(), (now.utc - b.start.utc).num_seconds()),
@@ -210,11 +229,24 @@ fn print_blocks(blocks: &[&StateBlock]) {
     }
 
     let vw = crate::render::colors::visible_width;
-    let start_w = std::iter::once("start".len())
+    // Each time column states the shared reference offset once (da-lkji).
+    let annotate = |label: &str| match reference {
+        Some(r) => format!(
+            "{label} {}",
+            crate::render::colors::paint(
+                crate::render::colors::GRAY_FG,
+                &format!("({})", compress_offset_minutes(r))
+            )
+        ),
+        None => label.to_string(),
+    };
+    let start_header = annotate("start");
+    let end_header = annotate("end");
+    let start_w = std::iter::once(vw(&start_header))
         .chain(rows.iter().map(|r| vw(&r.start)))
         .max()
         .unwrap_or(0);
-    let end_w = std::iter::once("end".len())
+    let end_w = std::iter::once(vw(&end_header))
         .chain(rows.iter().map(|r| vw(&r.end)))
         .max()
         .unwrap_or(0);
@@ -246,8 +278,8 @@ fn print_blocks(blocks: &[&StateBlock]) {
 
     // Header
     let mut header = String::new();
-    push_cell(&mut header, "start", start_w, true);
-    push_cell(&mut header, "end", end_w, false);
+    push_cell(&mut header, &start_header, start_w, true);
+    push_cell(&mut header, &end_header, end_w, false);
     push_cell(&mut header, "dur", dur_w, false);
     push_cell(&mut header, "state", state_w, false);
     push_cell(&mut header, "hid", hid_w, false);
