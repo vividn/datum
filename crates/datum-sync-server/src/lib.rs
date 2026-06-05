@@ -78,6 +78,13 @@ pub struct AppState {
     /// `{"error":"slow_down"}` regardless of authorization. Production
     /// always sets this to 0.
     pub slow_down_polls_remaining: Mutex<usize>,
+    /// Test-only: number of upcoming pushes that should be preceded by a
+    /// "twin device" insert under the same device_id, advancing the
+    /// authoritative next seq so the caller's prediction misses. Lets
+    /// tests deterministically exercise the second-mismatch =
+    /// device_id-collision path (da-ca4q). Production always sets this
+    /// to 0.
+    pub collide_pushes_remaining: Mutex<usize>,
 }
 
 impl AppState {
@@ -90,6 +97,7 @@ impl AppState {
             auth_states: Mutex::new(HashMap::new()),
             device_codes: Mutex::new(HashMap::new()),
             slow_down_polls_remaining: Mutex::new(0),
+            collide_pushes_remaining: Mutex::new(0),
         }
     }
 }

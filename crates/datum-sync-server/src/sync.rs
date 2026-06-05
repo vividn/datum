@@ -34,6 +34,25 @@ pub async fn push(
     // server's authoritative value.
     cluster::check_generation(server_generation, req.generation, &gen_started_at)?;
 
+    // Test-only collision twin: while the counter is >0, simulate a second
+    // device sharing this device_id pushing just ahead of every attempt —
+    // insert a row under the same device_id so the authoritative next seq
+    // advances and the prediction check below misses. Production always
+    // leaves this at 0 so the branch is never taken.
+    {
+        let mut remaining = state.collide_pushes_remaining.lock().unwrap();
+        if *remaining > 0 {
+            *remaining -= 1;
+            db::insert_changeset_into_cluster(
+                &conn,
+                &req.device_id,
+                "Y29sbGlzaW9uLXR3aW4", // opaque junk; server is content-blind
+                Some(&req.cluster_id),
+                server_generation,
+            )?;
+        }
+    }
+
     // Seq match (da-ca4q) — the client predicts its per-device seq and
     // binds it into the changeset AAD at encrypt time. Validate that
     // prediction against our authoritative next seq BEFORE storing, so a

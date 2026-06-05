@@ -7,6 +7,11 @@
 //! and conflicts queued. No `clap`, no stdout, no XDG paths — everything
 //! the CLI surface in `datum-commands` once owned.
 //!
+//! Integration coverage for this orchestration (push/pull round-trips,
+//! seq-mismatch recovery, generation mismatch, dry-run) lives in
+//! `crates/datum-cli/tests/` (`sync_push_pull.rs`, `sync_e2e.rs`,
+//! `sync_refresh.rs`) against the real in-process relay server.
+//!
 //! Gated by both `http` and `db` features because a single sync cycle
 //! pairs an HTTP client with the local SQLite. WASM clients that bring
 //! their own fetch shim should reimplement [`sync_once`] against their

@@ -174,6 +174,98 @@ fn sync_push_seq_rebase_surfaces_in_outcome() {
     assert_eq!(sync_state::get_device_seq(&db).unwrap(), 2);
 }
 
+/// da-9xst / da-ca4q: the relay's seq advances mid-flight (a "twin" insert
+/// under our device_id lands just before our push — simulated via the
+/// server's test-only `collide_pushes_remaining` knob). The client must
+/// re-base to the relay's authoritative seq AND re-encrypt — the AAD binds
+/// the seq, so replaying the old ciphertext at the new seq would store a
+/// blob no peer can unseal. Proven here by decrypting the stored blob
+/// under the adopted seq.
+#[test]
+fn seq_recovery_reencrypts_with_relay_authoritative_aad() {
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    write_token_for(&relay.base_url, &relay.mint_token());
+    let master_key = [0xb1u8; 32];
+    write_master_key(&relay.base_url, &master_key);
+    let db = fresh_db(&env);
+    db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
+
+    // One twin insert races ahead of the first push attempt only.
+    *relay.state.collide_pushes_remaining.lock().unwrap() = 1;
+
+    let outcome =
+        run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
+    assert_eq!(outcome.pushed, 1);
+    let rebase = outcome
+        .seq_rebased
+        .expect("raced push must report the rebase");
+    assert_eq!(rebase.predicted, 1);
+    assert_eq!(rebase.expected, 2);
+    // Local counter adopted the relay's authoritative value.
+    assert_eq!(sync_state::get_device_seq(&db).unwrap(), 2);
+
+    // The retried blob landed at the relay's expected seq and unseals
+    // under the NEW AAD (device_id, seq=2, cluster) — i.e. the recovery
+    // re-encrypted rather than replaying the seq-1 ciphertext. Cluster is
+    // the da-3fnd file-stem default for `datum.db`.
+    let device_id = datum_cli::config::device_id().unwrap();
+    let (_, _, payload_b64) = relay
+        .dump_raw_changesets()
+        .into_iter()
+        .find(|(dev, seq, _)| *dev == device_id && *seq == 2)
+        .expect("recovered push stored at relay's expected seq");
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    let raw = URL_SAFE_NO_PAD.decode(payload_b64.as_bytes()).unwrap();
+    let blob = datum_sync_client::crypto::changeset::EncryptedBlob::from_bytes(raw);
+    datum_sync_client::crypto::changeset::decrypt_changeset(
+        &blob,
+        &master_key,
+        &device_id,
+        2,
+        "datum",
+    )
+    .expect("re-encrypted blob must unseal under the adopted seq");
+}
+
+/// da-9xst / da-ca4q: a seq mismatch on the retry as well means a second
+/// device is actively pushing under our device_id — the push must refuse
+/// with the collision error rather than loop on a moving target, and must
+/// leave every local watermark untouched.
+#[test]
+fn second_seq_mismatch_refuses_as_device_id_collision() {
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    write_token_for(&relay.base_url, &relay.mint_token());
+    write_master_key(&relay.base_url, &[0xb2u8; 32]);
+    let db = fresh_db(&env);
+    db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
+
+    // A twin insert races ahead of BOTH the first attempt and the retry.
+    *relay.state.collide_pushes_remaining.lock().unwrap() = 2;
+
+    let err = run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db)
+        .expect_err("second mismatch must be fatal, not retried again");
+    let msg = format!("{err:#}");
+    let device_id = datum_cli::config::device_id().unwrap();
+    assert!(
+        msg.contains("another device is using device_id") && msg.contains(&device_id),
+        "expected device_id-collision refusal naming the device, got: {msg}",
+    );
+    assert!(
+        msg.contains("refusing to push"),
+        "expected refusal surface, got: {msg}",
+    );
+
+    // No watermark corruption: the failed push must not adopt the moving
+    // seq, advance the push mark, or register a cluster.
+    assert_eq!(sync_state::get_device_seq(&db).unwrap(), 0);
+    assert_eq!(sync_state::get_push_mark(&db).unwrap(), 0);
+    assert_eq!(sync_state::get_cluster_id(&db).unwrap(), None);
+    // The relay holds only the two twin rows — our blob never landed.
+    assert_eq!(relay.changeset_count(), 2);
+}
+
 #[test]
 fn sync_pull_applies_changes_and_advances_seq() {
     let env = scoped_env();
