@@ -1,8 +1,10 @@
 #![doc = include_str!("../README.md")]
 
 //! `datum-sync-client` — the client-side library behind `datum sync` and the
-//! forthcoming `datum-sync-agent` daemon. It owns the wire protocol types,
-//! the on-device crypto, and the HTTP client; it does NOT own the relay
+//! forthcoming `datum-sync-agent` daemon. It owns the on-device crypto and
+//! the HTTP client, and re-exports the wire protocol types from
+//! `datum-sync-protocol` (the single source of truth since da-6hn;
+//! `protocol::messages` is a re-export shim). It does NOT own the relay
 //! server (that lives in `datum-sync-server`) or any CLI surface (that lives
 //! in `datum-commands`).
 //!
@@ -16,9 +18,11 @@
 //! | `protocol`      | (none)            | ✓         |
 //! | `crypto`        | (none)            | ✓         |
 //! | `config`        | (none)            | ✓         |
+//! | `auth`          | (none)            | ✓ (serde token shapes; fs I/O lives in callers) |
 //! | `ops`           | `db`              | native only (rusqlite) |
 //! | `sync_state`    | `db`              | native only (rusqlite) |
 //! | `http`          | `http`            | no (reqwest blocking) |
+//! | `sync_once`     | `http` + `db`     | native only |
 //!
 //! Build the WASM-safe surface with
 //! `cargo build --target wasm32-unknown-unknown -p datum-sync-client \

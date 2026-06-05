@@ -23,7 +23,7 @@ db = ["dep:datum-core", "dep:rusqlite"]
 
 # `wasm`: marker feature. Selecting it should be paired with
 # `--no-default-features` — the WASM-safe surface is `protocol/` +
-# `crypto/` + `config/` (pure Rust, no I/O).
+# `crypto/` + `config/` + `auth/` (pure Rust, no I/O).
 wasm = []
 
 [dependencies]

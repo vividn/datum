@@ -158,8 +158,8 @@ subset — it is the last line of defense after the scoped polecat pre-submit.
 | CLI fixes (alias, field/verb, --dur, env) | ✓ merged to main | |
 | datum-web PWA | ✓ merged to main | No sync yet (pending Phase 2) |
 | datum-sync-server (relay) | 🔄 in progress | da-636, quartz polecat |
-| datum-sync-client (library) | 🔄 in progress | da-t6t.4 (R4 split) |
-| datum-sync-agent (daemon) | stub | da-ndd.15 / C4d, depends on sync-client |
+| datum-sync-client (library) | 🔄 in progress | R4 split ✓ (da-t6t.4 closed 2026-04-22); hardening ongoing |
+| datum-sync-agent (daemon) | 🔄 in progress | da-ndd.15 / C4d — real crate (10 files, ~1600 LOC), depends on sync-client |
 | datum-android (Flutter) | not started | |
 | Migration tool (datum legacy) | ✓ shipped | `datum db import --from backup.json` — real handler at `commands/db/import.rs` (~250 LOC, handles legacy CouchDB JSON with dur/state quirks) |
 | datum-wear (Wear OS) | not started | |
