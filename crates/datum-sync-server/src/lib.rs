@@ -1055,64 +1055,82 @@ mod tests {
         );
     }
 
-    /// da-k3re: pushing to a cluster_id owned by another user must NOT
-    /// leak ownership — it was a 500 whose body echoed "cluster owned by
-    /// another user", an enumeration oracle. It must be a 404 whose body
-    /// is byte-identical to the generic not-found shape.
+    /// da-1m63: cluster names are namespaced per user. Two users pushing
+    /// to the same cluster name (the default-name case — names come from
+    /// DB filenames, so 'notes'/'main' recur constantly) each land in
+    /// their own cluster: both pushes succeed, and neither user's pull
+    /// sees the other's blobs. This replaces the old global-namespace
+    /// behavior where the second user 404'd forever (and, before da-k3re,
+    /// 500'd with an ownership-leaking message).
     #[tokio::test]
-    async fn push_to_foreign_cluster_is_indistinguishable_404() {
+    async fn same_named_clusters_are_independent_per_user() {
         let state = test_state();
         let (_, alice_token) = make_test_jwt(&state);
         let (_, bob_token) = make_test_jwt(&state);
 
-        // Alice claims cluster-W.
-        let _ = build_app(state.clone())
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/v0/push")
-                    .header("Authorization", format!("Bearer {}", alice_token))
-                    .header("Content-Type", "application/json")
-                    .body(Body::from(
-                        serde_json::json!({
-                            "device_id": "alice-dev",
-                            "payload_b64": "AA",
-                            "cluster_id": "cluster-W",
-                            "generation": 0,
-                            "predicted_seq": 1
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let push = |token: String, device: &'static str, payload: &'static str| {
+            let state = state.clone();
+            async move {
+                build_app(state)
+                    .oneshot(
+                        Request::builder()
+                            .method("POST")
+                            .uri("/v0/push")
+                            .header("Authorization", format!("Bearer {}", token))
+                            .header("Content-Type", "application/json")
+                            .body(Body::from(
+                                serde_json::json!({
+                                    "device_id": device,
+                                    "payload_b64": payload,
+                                    "cluster_id": "cluster-W",
+                                    "generation": 0,
+                                    "predicted_seq": 1
+                                })
+                                .to_string(),
+                            ))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+            }
+        };
 
-        // Bob probes the same name: 404, generic body, no ownership hint.
-        let resp = build_app(state)
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/v0/push")
-                    .header("Authorization", format!("Bearer {}", bob_token))
-                    .header("Content-Type", "application/json")
-                    .body(Body::from(
-                        serde_json::json!({
-                            "device_id": "bob-dev",
-                            "payload_b64": "AA",
-                            "cluster_id": "cluster-W",
-                            "generation": 0,
-                            "predicted_seq": 1
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-        let json = json_body(resp).await;
-        assert_eq!(json, serde_json::json!({ "error": "not found" }));
+        // Alice registers cluster-W; Bob's same-named push also succeeds
+        // — his own cluster-W, not a 404, not a squat.
+        let resp = push(alice_token.clone(), "alice-dev", "QUxJQ0U").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let resp = push(bob_token.clone(), "bob-dev", "Qk9C").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Pulls are isolated: each user sees only their own changesets.
+        let pull = |token: String, device: &'static str| {
+            let state = state.clone();
+            async move {
+                let resp = build_app(state)
+                    .oneshot(
+                        Request::builder()
+                            .method("GET")
+                            .uri(format!(
+                                "/v0/pull?since=0&device={device}&cluster_id=cluster-W&generation=0"
+                            ))
+                            .header("Authorization", format!("Bearer {}", token))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), StatusCode::OK);
+                json_body(resp).await
+            }
+        };
+
+        let alice_rows = pull(alice_token, "alice-dev-2").await;
+        assert_eq!(alice_rows.as_array().unwrap().len(), 1);
+        assert_eq!(alice_rows[0]["payload_b64"], "QUxJQ0U");
+
+        let bob_rows = pull(bob_token, "bob-dev-2").await;
+        assert_eq!(bob_rows.as_array().unwrap().len(), 1);
+        assert_eq!(bob_rows[0]["payload_b64"], "Qk9C");
     }
 
     /// End-to-end mismatch flow per the bead's acceptance: push at

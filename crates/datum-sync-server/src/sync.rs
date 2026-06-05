@@ -88,7 +88,11 @@ pub async fn pull(
         cluster::ensure_cluster(&conn, &q.cluster_id, &user.user_id)?;
     cluster::check_generation(server_generation, q.generation, &gen_started_at)?;
 
-    let rows = db::pull_changesets_for_cluster(&conn, q.since, &q.device, &q.cluster_id)?;
+    // da-1m63: cluster names are per-user, so the pull is scoped to the
+    // caller's devices as well as the cluster — two users' same-named
+    // clusters never see each other's rows.
+    let rows =
+        db::pull_changesets_for_cluster(&conn, q.since, &q.device, &q.cluster_id, &user.user_id)?;
 
     let changesets = rows
         .into_iter()

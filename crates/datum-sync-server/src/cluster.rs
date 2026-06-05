@@ -26,10 +26,11 @@ use uuid::Uuid;
 
 use crate::{error::AppError, models::AuthenticatedUser, AppState};
 
-/// Look up a cluster's current generation, scoped to `user_id` so a
-/// caller can't probe a cluster they don't own. Returns `None` when the
-/// cluster doesn't exist OR is owned by a different user — the two are
-/// indistinguishable to the caller by design.
+/// Look up a cluster's current generation. Cluster names are
+/// namespaced per user (composite PK, da-1m63), so the `user_id`
+/// filter selects the caller's own row; another user's same-named
+/// cluster is a different row and never visible here. Returns `None`
+/// when the caller has no cluster by that name.
 pub fn get_generation_for_owner(
     conn: &Connection,
     cluster_id: &str,
@@ -53,10 +54,12 @@ pub fn get_generation_for_owner(
 /// effect after the call (existing value if the row was already there,
 /// 0 for a fresh insert).
 ///
-/// A cluster_id already claimed by a different user surfaces as
-/// [`AppError::NotFound`] — the same 404 the bump endpoint returns —
-/// so the response is indistinguishable from "doesn't exist" and can't
-/// be used to enumerate other users' cluster names (da-k3re).
+/// Cluster names are namespaced per user (composite PK, da-1m63): two
+/// users registering the same name get independent rows, so default
+/// names derived from DB filenames ('notes', 'main', …) never collide
+/// across users and name-squatting is impossible. The `NotFound` arm
+/// below is therefore unreachable in practice — kept as a defensive
+/// guard against the re-read racing a row deletion.
 pub fn ensure_cluster(
     conn: &Connection,
     cluster_id: &str,
@@ -67,19 +70,18 @@ pub fn ensure_cluster(
         params![cluster_id, user_id.to_string()],
     )?;
     // Re-read because INSERT OR IGNORE doesn't tell us whether the row
-    // is fresh or pre-existing — and a row owned by a different user
-    // must surface as a 404 to the caller, not as 0.
+    // is fresh or pre-existing.
     // `generation_started_at` is stamped with RFC 3339 UTC at insert via
     // the table's DEFAULT (see `db::migrate_to_clusters`).
     get_generation_for_owner(conn, cluster_id, user_id)?.ok_or(AppError::NotFound)
 }
 
 /// Increment the cluster's generation by one and return the new value.
-/// Scoped to `user_id`: a cluster owned by someone else stays untouched
-/// and the caller gets `None`. Fresh clusters (no row) also return
-/// `None` — the bump endpoint never auto-registers because doing so
-/// would invent a cluster with non-zero generation, which has no
-/// meaningful semantics.
+/// Scoped to `user_id`: another user's same-named cluster is a
+/// different row (per-user namespace) and stays untouched. Fresh
+/// clusters (no row for this user) return `None` — the bump endpoint
+/// never auto-registers because doing so would invent a cluster with
+/// non-zero generation, which has no meaningful semantics.
 pub fn bump_generation(
     conn: &Connection,
     cluster_id: &str,
@@ -136,9 +138,9 @@ pub struct BumpResponse {
 /// generation so subsequent pushes carrying the old generation are
 /// rejected with [`SyncProtocolError::GenerationMismatch`].
 ///
-/// Returns 404 when the cluster doesn't exist or is owned by another
-/// user — the two cases are indistinguishable to the caller, by
-/// design (no cross-owner cluster enumeration).
+/// Returns 404 when the caller has no cluster by that name. Cluster
+/// names are namespaced per user (da-1m63), so another user's
+/// same-named cluster is invisible here.
 pub async fn bump_generation_endpoint(
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<AuthenticatedUser>,
@@ -217,20 +219,32 @@ mod tests {
             .is_none());
     }
 
-    /// da-k3re: registering against a cluster_id another user owns must
-    /// surface as the typed NotFound — never an Internal whose message
-    /// ("cluster owned by another user") would confirm the cluster exists.
+    /// da-1m63: cluster names are namespaced per user. Two users
+    /// registering the same name (the default-name case — 'notes',
+    /// 'main' come from DB filenames) get independent rows with
+    /// independent generations; neither errors, neither squats.
     #[test]
-    fn ensure_cluster_foreign_owner_is_typed_not_found() {
+    fn ensure_cluster_same_name_is_independent_per_user() {
         let conn = setup();
         let alice = Uuid::new_v4();
         let bob = Uuid::new_v4();
-        let cid = "contested-cluster";
-        ensure_cluster(&conn, cid, &alice).unwrap();
-        match ensure_cluster(&conn, cid, &bob) {
-            Err(AppError::NotFound) => {}
-            other => panic!("expected AppError::NotFound, got {other:?}"),
-        }
+        let cid = "notes";
+        let (alice_gen, _) = ensure_cluster(&conn, cid, &alice).unwrap();
+        let (bob_gen, _) = ensure_cluster(&conn, cid, &bob).unwrap();
+        assert_eq!(alice_gen, 0);
+        assert_eq!(bob_gen, 0);
+
+        // Bumping Alice's 'notes' leaves Bob's 'notes' untouched.
+        assert_eq!(
+            bump_generation(&conn, cid, &alice).unwrap().map(|(g, _)| g),
+            Some(1)
+        );
+        assert_eq!(
+            get_generation_for_owner(&conn, cid, &bob)
+                .unwrap()
+                .map(|(g, _)| g),
+            Some(0)
+        );
     }
 
     #[test]

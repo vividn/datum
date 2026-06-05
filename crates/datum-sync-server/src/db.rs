@@ -78,13 +78,21 @@ fn migrate_to_clusters(conn: &Connection) -> Result<()> {
     // parsers — use `strftime('%Y-%m-%dT%H:%M:%SZ','now')` instead.
     // `created_at` is server-internal and may stay on the older format
     // until a separate cleanup; see follow-up bead.
+    //
+    // da-1m63: the PK is composite (cluster_id, user_id) — cluster names
+    // are namespaced PER USER. Default cluster names come from DB
+    // filenames client-side ('notes', 'journal', 'main' recur constantly);
+    // a global namespace meant the first user to sync a name owned it
+    // relay-wide and every later user 404'd forever. Per-user namespaces
+    // also kill name-squatting.
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS clusters (
-            cluster_id            TEXT PRIMARY KEY,
+            cluster_id            TEXT NOT NULL,
             user_id               TEXT NOT NULL,
             generation            INTEGER NOT NULL DEFAULT 0,
             created_at            TEXT NOT NULL DEFAULT (datetime('now')),
-            generation_started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            generation_started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            PRIMARY KEY (cluster_id, user_id)
         );",
     )
     .context("create clusters")?;
@@ -101,6 +109,31 @@ fn migrate_to_clusters(conn: &Connection) -> Result<()> {
             [],
         )
         .context("add clusters.generation_started_at")?;
+    }
+
+    // da-1m63: relays created before the composite PK still carry
+    // `cluster_id TEXT PRIMARY KEY` (global namespace). SQLite can't
+    // rewrite a primary key in place — recreate and copy, same recipe as
+    // the wrapped_keys migration below. Only runs once: post-migration,
+    // user_id is part of the PK.
+    if !is_pk_column(conn, "clusters", "user_id")? {
+        conn.execute_batch(
+            "CREATE TABLE clusters_new (
+                cluster_id            TEXT NOT NULL,
+                user_id               TEXT NOT NULL,
+                generation            INTEGER NOT NULL DEFAULT 0,
+                created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                generation_started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                PRIMARY KEY (cluster_id, user_id)
+            );
+            INSERT INTO clusters_new
+                (cluster_id, user_id, generation, created_at, generation_started_at)
+                SELECT cluster_id, user_id, generation, created_at, generation_started_at
+                FROM clusters;
+            DROP TABLE clusters;
+            ALTER TABLE clusters_new RENAME TO clusters;",
+        )
+        .context("recreate clusters with composite key")?;
     }
 
     // ALTER ADD COLUMN is idempotent only via the `IF NOT EXISTS` shape
@@ -178,6 +211,24 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
         let name: String = row.get(1)?;
         if name == column {
             return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// True when `column` is part of `table`'s primary key. `PRAGMA
+/// table_info`'s `pk` column is the 1-based position within the PK
+/// (0 = not part of it) — this is how the da-1m63 migration detects a
+/// pre-composite `clusters` table. Same literal-only caveat as
+/// [`column_exists`].
+fn is_pk_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            let pk: i64 = row.get(5)?;
+            return Ok(pk > 0);
         }
     }
     Ok(false)
@@ -377,6 +428,12 @@ pub fn pull_changesets(
 /// da-tat1: cluster-scoped pull. Projects cluster_id + generation
 /// alongside the base columns so the wire response can carry them.
 /// Filters rows to the requested cluster — multi-DB isolation guarantee.
+///
+/// da-1m63: cluster names are namespaced per user, so the same
+/// cluster_id can exist for two different users. The pull must
+/// therefore ALSO scope to the calling user — via the changeset
+/// device's owner — or same-named clusters would leak blobs across
+/// users.
 pub type ClusterChangesetRow = (i64, String, i64, String, String, String, i64);
 
 pub fn pull_changesets_for_cluster(
@@ -384,25 +441,30 @@ pub fn pull_changesets_for_cluster(
     since: i64,
     excluding_device: &str,
     cluster_id: &str,
+    user_id: &Uuid,
 ) -> Result<Vec<ClusterChangesetRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, device_id, seq, payload, uploaded_at, cluster_id, generation
          FROM changesets
          WHERE id > ?1 AND device_id != ?2 AND cluster_id = ?3
+           AND device_id IN (SELECT id FROM devices WHERE user_id = ?4)
          ORDER BY id",
     )?;
 
-    let rows = stmt.query_map(params![since, excluding_device, cluster_id], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, i64>(2)?,
-            row.get::<_, String>(3)?,
-            row.get::<_, String>(4)?,
-            row.get::<_, String>(5)?,
-            row.get::<_, i64>(6)?,
-        ))
-    })?;
+    let rows = stmt.query_map(
+        params![since, excluding_device, cluster_id, user_id.to_string()],
+        |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
+        },
+    )?;
 
     let mut results = Vec::new();
     for row in rows {
@@ -739,6 +801,79 @@ mod tests {
             .unwrap();
         assert_eq!(gen_, 0);
         assert_eq!(owner, user_id.to_string());
+    }
+
+    /// da-1m63: a relay created with the global-namespace schema
+    /// (`cluster_id TEXT PRIMARY KEY`) gets its clusters table
+    /// recreated with the composite (cluster_id, user_id) PK; existing
+    /// rows survive, and a second user can then register the same
+    /// cluster name.
+    #[test]
+    fn migration_upgrades_clusters_to_composite_pk() {
+        let conn = Connection::open_in_memory().unwrap();
+        // The pre-da-1m63 clusters table, populated.
+        conn.execute_batch(
+            "CREATE TABLE clusters (
+                cluster_id            TEXT PRIMARY KEY,
+                user_id               TEXT NOT NULL,
+                generation            INTEGER NOT NULL DEFAULT 0,
+                created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                generation_started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            );",
+        )
+        .unwrap();
+        let alice = Uuid::new_v4();
+        let bob = Uuid::new_v4();
+        conn.execute(
+            "INSERT INTO clusters (cluster_id, user_id, generation) VALUES ('notes', ?1, 7)",
+            params![alice.to_string()],
+        )
+        .unwrap();
+
+        init_db(&conn).unwrap();
+
+        // user_id is now part of the PK…
+        assert!(is_pk_column(&conn, "clusters", "user_id").unwrap());
+        // …Alice's row survived with its generation…
+        let gen_: i64 = conn
+            .query_row(
+                "SELECT generation FROM clusters WHERE cluster_id = 'notes' AND user_id = ?1",
+                params![alice.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(gen_, 7);
+        // …and Bob can now register the same name (was a PK conflict).
+        conn.execute(
+            "INSERT INTO clusters (cluster_id, user_id, generation) VALUES ('notes', ?1, 0)",
+            params![bob.to_string()],
+        )
+        .unwrap();
+    }
+
+    /// da-1m63: cluster names are per-user, so a pull scoped to
+    /// (cluster, user) must not return another user's rows even when
+    /// both users named their cluster identically.
+    #[test]
+    fn pull_for_cluster_isolates_same_named_clusters_across_users() {
+        let conn = setup();
+        let alice = Uuid::new_v4();
+        let bob = Uuid::new_v4();
+        ensure_device(&conn, "alice-dev", &alice).unwrap();
+        ensure_device(&conn, "bob-dev", &bob).unwrap();
+        insert_changeset_into_cluster(&conn, "alice-dev", "alice-payload", Some("notes"), 0)
+            .unwrap();
+        insert_changeset_into_cluster(&conn, "bob-dev", "bob-payload", Some("notes"), 0).unwrap();
+
+        // Alice pulling 'notes' from a second device sees only her row.
+        let rows = pull_changesets_for_cluster(&conn, 0, "alice-dev-2", "notes", &alice).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].3, "alice-payload");
+
+        // Bob likewise.
+        let rows = pull_changesets_for_cluster(&conn, 0, "bob-dev-2", "notes", &bob).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].3, "bob-payload");
     }
 
     /// Migration is idempotent — running init_db twice on a populated
