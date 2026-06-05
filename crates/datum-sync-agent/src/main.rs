@@ -20,7 +20,7 @@ use datum_sync_agent::log as agent_log;
 use datum_sync_agent::notifications::{self, Notifier};
 use datum_sync_agent::scheduler::{Action, Scheduler};
 use datum_sync_agent::targets::{self, SyncTarget};
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use datum_sync_agent::watcher::spawn_watcher;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tracing::{info, warn};
@@ -272,38 +272,6 @@ async fn run_worker(
             return Ok(());
         }
     }
-}
-
-/// Spawn a `notify` watcher that forwards every meaningful write event
-/// on `path` as a `()` on `tx`. Keeping the watcher value alive for the
-/// lifetime of the worker is important — dropping it stops the callback.
-fn spawn_watcher(
-    path: &std::path::Path,
-    tx: mpsc::UnboundedSender<()>,
-) -> Result<RecommendedWatcher> {
-    let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
-        if let Ok(event) = res {
-            if matches!(
-                event.kind,
-                EventKind::Modify(_) | EventKind::Create(_) | EventKind::Any
-            ) {
-                let _ = tx.send(());
-            }
-        }
-    })?;
-
-    // Watch the DB file directly. If it doesn't exist yet, watch the
-    // parent directory so we pick it up on create.
-    if path.exists() {
-        watcher
-            .watch(path, RecursiveMode::NonRecursive)
-            .with_context(|| format!("watch {}", path.display()))?;
-    } else if let Some(parent) = path.parent() {
-        watcher
-            .watch(parent, RecursiveMode::NonRecursive)
-            .with_context(|| format!("watch parent {}", parent.display()))?;
-    }
-    Ok(watcher)
 }
 
 /// Execute a push for `target`. Blocks; runs inside `spawn_blocking`.

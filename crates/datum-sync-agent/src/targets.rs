@@ -59,12 +59,14 @@ pub fn targets_from(cfg: &RawConfig) -> Result<Vec<SyncTarget>> {
         });
     }
 
-    // 2) The unnamed default DB, if a global sync server is set and the
-    //    DB file exists. Without the existence check we'd spawn a
-    //    watcher for a nonexistent file.
+    // 2) The unnamed default DB, if a global sync server is set. Same
+    //    lazy-create rule as named DBs: the file may not exist yet —
+    //    it appears on the first CLI write (or the agent's first pull),
+    //    and the watcher handles an absent file by watching its parent
+    //    dir (see `watcher::spawn_watcher`).
     if let Some(server) = resolve_sync_server(cfg, None) {
         let path = data_dir()?.join("datum.db");
-        if path.exists() && !out.iter().any(|t| t.path == path) {
+        if !out.iter().any(|t| t.path == path) {
             out.push(SyncTarget {
                 name: DEFAULT_DB_LABEL.to_string(),
                 path,
@@ -136,10 +138,24 @@ mod tests {
             },
         );
         let targets = targets_from(&cfg).unwrap();
-        // "personal" explicitly disabled, default DB picked up only if
-        // its file exists — in a clean test env it may or may not, but
-        // "personal" definitely shouldn't appear.
-        assert!(targets.iter().all(|t| t.name != "personal"));
+        // "personal" explicitly disabled; only the default DB (always a
+        // target when a global server is set) remains.
+        let names: Vec<_> = targets.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec![DEFAULT_DB_LABEL]);
+    }
+
+    #[test]
+    fn default_db_targeted_even_when_absent() {
+        // Lazy-create, uniformly with named DBs: a global sync server
+        // makes the default DB a target even before `datum.db` exists
+        // on disk (the agent's first pull creates and populates it).
+        // No filesystem setup here on purpose — enumeration must not
+        // depend on the file's existence.
+        let cfg = cfg_with_global("https://relay.example");
+        let targets = targets_from(&cfg).unwrap();
+        let names: Vec<_> = targets.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec![DEFAULT_DB_LABEL]);
+        assert_eq!(targets[0].server, "https://relay.example");
     }
 
     #[test]

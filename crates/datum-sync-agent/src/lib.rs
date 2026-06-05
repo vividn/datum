@@ -4,11 +4,11 @@
 //! push-on-write and pull on a periodic interval without requiring the CLI
 //! to be open.
 //!
-//! The library target (this file) only exposes **pure** scheduling /
-//! debounce / backoff types so they can be unit-tested without an async
-//! runtime or filesystem. The binary in `main.rs` wires them to a real
-//! tokio runtime, a file watcher (the external `notify` crate), and a
-//! pid-file.
+//! The library target (this file) exposes the **pure** scheduling /
+//! debounce / backoff types (unit-testable without an async runtime or
+//! filesystem) plus the `notify`-based file watcher (testable against a
+//! tempdir). The binary in `main.rs` wires them to a real tokio runtime
+//! and a pid-file.
 //!
 //! Shape:
 //!
@@ -21,6 +21,7 @@
 //! | `log`        | tracing-subscriber bootstrap for the daemon          |
 //! | `notifications` | Desktop notifications (notify-send / osascript)   |
 //! | `targets`    | Enumerate auto-sync DBs from `datumrc.toml`          |
+//! | `watcher`    | Per-target fs watcher (parent-dir watch + filter)    |
 
 pub mod backoff;
 pub mod debounce;
@@ -29,3 +30,4 @@ pub mod log;
 pub mod notifications;
 pub mod scheduler;
 pub mod targets;
+pub mod watcher;
