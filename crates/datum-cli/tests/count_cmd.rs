@@ -17,11 +17,11 @@ use serde_json::json;
 #[test]
 fn count_total_returns_all_live_entries() {
     let db = fresh_db();
-    entry_builder("coffee").value(json!(1)).insert(&db);
-    entry_builder("coffee").value(json!(2)).insert(&db);
+    entry_builder("coffee").state(json!(1)).insert(&db);
+    entry_builder("coffee").state(json!(2)).insert(&db);
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("good"))
+        .state(json!("good"))
         .insert(&db);
 
     let result = compute_count(&CountArgs::default(), &db).unwrap();
@@ -31,9 +31,9 @@ fn count_total_returns_all_live_entries() {
 #[test]
 fn count_with_field_filters_to_that_field() {
     let db = fresh_db();
-    entry_builder("coffee").value(json!(1)).insert(&db);
-    entry_builder("coffee").value(json!(2)).insert(&db);
-    entry_builder("tea").value(json!(1)).insert(&db);
+    entry_builder("coffee").state(json!(1)).insert(&db);
+    entry_builder("coffee").state(json!(2)).insert(&db);
+    entry_builder("tea").state(json!(1)).insert(&db);
 
     let result = compute_count(
         &CountArgs {
@@ -51,15 +51,15 @@ fn count_group_by_state_aggregates_per_value() {
     let db = fresh_db();
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("good"))
+        .state(json!("good"))
         .insert(&db);
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("good"))
+        .state(json!("good"))
         .insert(&db);
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("bad"))
+        .state(json!("bad"))
         .insert(&db);
 
     let result = compute_count(
@@ -85,7 +85,7 @@ fn count_group_by_value_and_state_are_equivalent() {
     let db = fresh_db();
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("up"))
+        .state(json!("up"))
         .insert(&db);
 
     let state = compute_count(
@@ -129,11 +129,11 @@ fn count_since_bounds_the_window() {
     let old = Utc::now() - Duration::days(30);
     let recent = Utc::now() - Duration::minutes(5);
     entry_builder("coffee")
-        .value(json!(1))
+        .state(json!(1))
         .time_start_utc(old)
         .insert(&db);
     entry_builder("coffee")
-        .value(json!(2))
+        .state(json!(2))
         .time_start_utc(recent)
         .insert(&db);
 
@@ -153,11 +153,11 @@ fn count_since_accepts_rfc3339_datetime() {
     let db = fresh_db();
     let cutoff = Utc::now() - Duration::days(1);
     entry_builder("coffee")
-        .value(json!(1))
+        .state(json!(1))
         .time_start_utc(Utc::now() - Duration::days(2))
         .insert(&db);
     entry_builder("coffee")
-        .value(json!(2))
+        .state(json!(2))
         .time_start_utc(Utc::now())
         .insert(&db);
 
@@ -177,7 +177,7 @@ fn count_cli_dispatch_smoke_test() {
     // The string-level dispatch path must accept `datum count [field]`
     // without tripping the field/verb pre-pass.
     let db = fresh_db();
-    entry_builder("coffee").value(json!(1)).insert(&db);
+    entry_builder("coffee").state(json!(1)).insert(&db);
     run_cli(&["count"], &db).expect("bare count must dispatch");
     run_cli(&["count", "coffee"], &db).expect("field-filtered count must dispatch");
     run_cli(&["count", "--json"], &db).expect("json count must dispatch");

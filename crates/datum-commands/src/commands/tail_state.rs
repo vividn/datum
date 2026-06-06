@@ -326,22 +326,22 @@ mod tests {
         // happy 0–30, sad 30–60, happy 60–90, sad 90–end
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("happy"))
+            .state(json!("happy"))
             .time_start_utc(t(0))
             .insert(&db);
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("sad"))
+            .state(json!("sad"))
             .time_start_utc(t(30))
             .insert(&db);
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("happy"))
+            .state(json!("happy"))
             .time_start_utc(t(60))
             .insert(&db);
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("sad"))
+            .state(json!("sad"))
             .time_start_utc(t(90))
             .insert(&db);
 
@@ -359,7 +359,7 @@ mod tests {
         let db = fresh_db();
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("happy"))
+            .state(json!("happy"))
             .time_start_utc(t(0))
             .insert(&db);
 
@@ -374,7 +374,7 @@ mod tests {
         let db = fresh_db();
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("sad"))
+            .state(json!("sad"))
             .time_start_utc(t(0))
             .insert(&db);
 
@@ -389,17 +389,17 @@ mod tests {
         // Two `switch happy` in a row → one block, opener is the first.
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("happy"))
+            .state(json!("happy"))
             .time_start_utc(t(0))
             .insert(&db);
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("happy"))
+            .state(json!("happy"))
             .time_start_utc(t(30))
             .insert(&db);
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("sad"))
+            .state(json!("sad"))
             .time_start_utc(t(60))
             .insert(&db);
 
@@ -415,12 +415,12 @@ mod tests {
         let db = fresh_db();
         entry_builder("body")
             .verb(Verb::Switch)
-            .value(json!(["vertical", "sit"]))
+            .state(json!(["vertical", "sit"]))
             .time_start_utc(t(0))
             .insert(&db);
         entry_builder("body")
             .verb(Verb::Switch)
-            .value(json!("vertical"))
+            .state(json!("vertical"))
             .time_start_utc(t(30))
             .insert(&db);
 
@@ -473,7 +473,7 @@ mod tests {
         let bs = block_switch("activity", t(0), "end", 14, "researching");
         let mut lunch = entry_builder("activity")
             .verb(Verb::Switch)
-            .value(json!("lunch"))
+            .state(json!("lunch"))
             .time_start_utc(t(60))
             .build();
         lunch.create_time = bs.create_time + Duration::seconds(1);
@@ -506,12 +506,12 @@ mod tests {
         for (start, gap_state) in [(0, 10), (20, 30), (40, 50)] {
             entry_builder("mood")
                 .verb(Verb::Switch)
-                .value(json!("happy"))
+                .state(json!("happy"))
                 .time_start_utc(t(start))
                 .insert(&db);
             entry_builder("mood")
                 .verb(Verb::Switch)
-                .value(json!("sad"))
+                .state(json!("sad"))
                 .time_start_utc(t(gap_state))
                 .insert(&db);
         }

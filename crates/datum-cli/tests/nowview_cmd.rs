@@ -48,14 +48,14 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
     // edge (now), filling the field band right up to the now-line.
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(serde_json::json!("focused"))
+        .state(serde_json::json!("focused"))
         .time_start_utc(now - Duration::minutes(30))
         .insert(&db);
 
     // A point 10 min ago should land inside the data area as a circle.
     entry_builder("coffee")
         .verb(Verb::Point)
-        .value(serde_json::json!(1))
+        .state(serde_json::json!(1))
         .time_start_utc(now - Duration::minutes(10))
         .insert(&db);
 
@@ -214,7 +214,7 @@ fn nowview_terminal_snapshot_dispatches() {
     let now = Utc::now();
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(serde_json::json!("focused"))
+        .state(serde_json::json!("focused"))
         .time_start_utc(now - Duration::minutes(15))
         .insert(&db);
 
@@ -233,7 +233,7 @@ fn nowview_terminal_flow_dispatches() {
     let now = Utc::now();
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(serde_json::json!("focused"))
+        .state(serde_json::json!("focused"))
         .time_start_utc(now - Duration::minutes(10))
         .insert(&db);
 

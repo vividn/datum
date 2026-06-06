@@ -27,11 +27,11 @@ fn retime_comma_underscore_shifts_all() {
     // `__` (older) and `_` (most recent) by occur_time.
     let older = entry_builder("coffee")
         .time_start_utc(utc("2024-01-01T08:00:00Z"))
-        .value(json!(1))
+        .state(json!(1))
         .insert(&db);
     let newer = entry_builder("mood")
         .time_start_utc(utc("2024-01-01T09:00:00Z"))
-        .value(json!("ok"))
+        .state(json!("ok"))
         .insert(&db);
 
     run_cli(&["retime", "_,__", "--offset", "1h"], &db).expect("retime '_,__' must resolve both");
@@ -57,11 +57,11 @@ fn retime_comma_hid_prefixes_shift_both() {
     let db = fresh_db();
     let a = entry_builder("coffee")
         .time_start_utc(utc("2024-01-01T08:00:00Z"))
-        .value(json!(1))
+        .state(json!(1))
         .insert(&db);
     let b = entry_builder("mood")
         .time_start_utc(utc("2024-01-01T09:00:00Z"))
-        .value(json!("ok"))
+        .state(json!("ok"))
         .insert(&db);
 
     let pattern = format!("{},{}", &a.hid.as_str()[..4], &b.hid.as_str()[..4]);
@@ -80,7 +80,7 @@ fn retime_single_quickid_unchanged() {
     let db = fresh_db();
     let only = entry_builder("coffee")
         .time_start_utc(utc("2024-01-01T08:00:00Z"))
-        .value(json!(1))
+        .state(json!(1))
         .insert(&db);
 
     run_cli(&["retime", only.hid.as_str(), "--offset", "1h"], &db).expect("single retime");
@@ -96,7 +96,7 @@ fn retime_comma_with_missing_token_errors() {
     let db = fresh_db();
     let a = entry_builder("coffee")
         .time_start_utc(utc("2024-01-01T08:00:00Z"))
-        .value(json!(1))
+        .state(json!(1))
         .insert(&db);
 
     let pattern = format!("{},zzzzzzzz", &a.hid.as_str()[..4]);

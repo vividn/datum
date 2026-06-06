@@ -974,7 +974,7 @@ fn import_collision_with_existing_row_errors_and_preserves_existing() {
     let db = fresh_db();
     let preexisting = entry_builder("coffee")
         .verb(Verb::Point)
-        .value(serde_json::json!(null))
+        .state(serde_json::json!(null))
         .insert(&db);
     let stolen_hid = preexisting.hid.clone();
 

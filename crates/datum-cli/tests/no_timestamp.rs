@@ -79,7 +79,7 @@ fn switch_minus_t_preserves_value() {
     // The primary value ("happy") still lands on the entry — `-T` only
     // suppresses the timestamp, not the payload. state="happy", dur=None
     // → Switch.
-    assert_entry_matches!(e, field: "mood", verb: "switch", value: "happy");
+    assert_entry_matches!(e, field: "mood", verb: "switch", state: "happy");
     assert!(e.slug.ends_with(":unset"));
     assert!(e.dur.is_none());
 }

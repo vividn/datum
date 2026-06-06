@@ -21,14 +21,14 @@ use serde_json::json;
 fn compound_update_applies_payload_to_each_row() {
     let db = fresh_db();
     let a = entry_builder("gym")
-        .value(json!(1))
+        .state(json!(1))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
     let b = entry_builder("gym")
-        .value(json!(2))
+        .state(json!(2))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
-    let untouched = entry_builder("coffee").value(json!(1)).insert(&db);
+    let untouched = entry_builder("coffee").state(json!(1)).insert(&db);
 
     let compound = format!("{},{}", a.slug, b.slug);
     run_cli(&["update", &compound, "reps=20"], &db)
@@ -59,7 +59,7 @@ fn compound_merge_expands_wildcards_and_deep_merges() {
     let b = entry_builder("notes")
         .verb(Verb::Point)
         .extra_data(json!({"nested": {"b": 2}}))
-        .value(json!("x"))
+        .state(json!("x"))
         .insert(&db);
 
     run_cli(&["merge", "notes:*", "tag=red"], &db)
@@ -81,11 +81,11 @@ fn compound_merge_expands_wildcards_and_deep_merges() {
 fn compound_update_dry_run_does_not_mutate() {
     let db = fresh_db();
     let a = entry_builder("gym")
-        .value(json!(1))
+        .state(json!(1))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
     let b = entry_builder("gym")
-        .value(json!(2))
+        .state(json!(2))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
 
@@ -109,11 +109,11 @@ fn compound_update_dry_run_does_not_mutate() {
 fn compound_update_continues_past_tombstoned_entry() {
     let db = fresh_db();
     let live = entry_builder("gym")
-        .value(json!(1))
+        .state(json!(1))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
     let dead = entry_builder("gym")
-        .value(json!(2))
+        .state(json!(2))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
     db.soft_delete_entry(&dead.slug).unwrap();
@@ -138,11 +138,11 @@ fn compound_update_continues_past_tombstoned_entry() {
 fn strict_compound_update_aborts_on_first_error() {
     let db = fresh_db();
     let live = entry_builder("gym")
-        .value(json!(1))
+        .state(json!(1))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
     let dead = entry_builder("gym")
-        .value(json!(2))
+        .state(json!(2))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
     db.soft_delete_entry(&dead.slug).unwrap();
@@ -172,15 +172,15 @@ fn strict_compound_update_aborts_on_first_error() {
 fn strict_compound_update_rejects_later_tombstone_without_partial_mutation() {
     let db = fresh_db();
     let first = entry_builder("gym")
-        .value(json!(1))
+        .state(json!(1))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
     let second = entry_builder("gym")
-        .value(json!(2))
+        .state(json!(2))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
     let tomb = entry_builder("gym")
-        .value(json!(3))
+        .state(json!(3))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
     db.soft_delete_entry(&tomb.slug).unwrap();
@@ -215,11 +215,11 @@ fn strict_compound_update_rejects_later_tombstone_without_partial_mutation() {
 fn compound_rekey_renames_data_key_per_entry() {
     let db = fresh_db();
     let a = entry_builder("gym")
-        .value(json!(1))
+        .state(json!(1))
         .extra_data(json!({"reps": 10, "set": 1}))
         .insert(&db);
     let b = entry_builder("gym")
-        .value(json!(2))
+        .state(json!(2))
         .extra_data(json!({"reps": 12, "set": 2}))
         .insert(&db);
 
@@ -248,11 +248,11 @@ fn compound_rekey_renames_data_key_per_entry() {
 fn compound_update_tolerates_trailing_comma() {
     let db = fresh_db();
     let a = entry_builder("gym")
-        .value(json!(1))
+        .state(json!(1))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
     let b = entry_builder("gym")
-        .value(json!(2))
+        .state(json!(2))
         .extra_data(json!({"reps": 10}))
         .insert(&db);
 
@@ -275,7 +275,7 @@ fn strict_spec_blocks_update_introducing_undeclared_key() {
     let db = fresh_db();
 
     let row = entry_builder("mood")
-        .value(json!("happy"))
+        .state(json!("happy"))
         .extra_data(json!({"intensity": 7}))
         .insert(&db);
 
@@ -315,7 +315,7 @@ fn strict_spec_blocks_rekey_into_undeclared_name() {
     let db = fresh_db();
 
     let row = entry_builder("mood")
-        .value(json!("happy"))
+        .state(json!("happy"))
         .extra_data(json!({"intensity": 7}))
         .insert(&db);
 

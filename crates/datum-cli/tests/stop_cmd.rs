@@ -267,7 +267,7 @@ fn stop_dur_plus_extra_still_marks_verb_stop() {
     .expect("stop --dur 30m -k ... dispatch");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "block", value: false);
+    assert_entry_matches!(entry, field: "field", verb: "block", state: false);
     assert_eq!(entry.state.as_ref(), Some(&json!(false)));
     assert_eq!(entry.duration_seconds(), Some(30 * 60));
     let extra = entry.data.as_ref().unwrap();

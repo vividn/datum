@@ -42,17 +42,17 @@ fn action_and_table_agree_across_ignored_transition() {
     //   T+120 switch focus=break     (the row whose context we compare)
     entry_builder("focus")
         .verb(Verb::Switch)
-        .value(json!(IGNORED_STATE_VALUE))
+        .state(json!(IGNORED_STATE_VALUE))
         .time_start(t(0))
         .insert(&db);
     entry_builder("focus")
         .verb(Verb::Switch)
-        .value(json!("work"))
+        .state(json!("work"))
         .time_start(t(60))
         .insert(&db);
     let probe = entry_builder("focus")
         .verb(Verb::Switch)
-        .value(json!("break"))
+        .state(json!("break"))
         .time_start(t(120))
         .insert(&db);
 
@@ -98,12 +98,12 @@ fn info_line_and_now_view_return_default_context() {
     let db = fresh_db();
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("calm"))
+        .state(json!("calm"))
         .time_start(t(0))
         .insert(&db);
     let probe = entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("happy"))
+        .state(json!("happy"))
         .time_start(t(60))
         .insert(&db);
 

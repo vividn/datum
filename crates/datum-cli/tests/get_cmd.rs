@@ -74,7 +74,7 @@ fn get_resolves_hid_prefix() {
     let db = fresh_db();
     let entry = entry_builder("project")
         .verb(Verb::Point)
-        .value(json!("the_quick_brown_fox"))
+        .state(json!("the_quick_brown_fox"))
         .insert(&db);
     let prefix = &entry.hid[..6];
 
@@ -197,8 +197,8 @@ fn get_show_all_long_form_works() {
 #[test]
 fn compound_quickids_resolve_in_one_call() {
     let db = fresh_db();
-    let e1 = entry_builder("alpha").value(json!("abc")).insert(&db);
-    let e2 = entry_builder("beta").value(json!("def")).insert(&db);
+    let e1 = entry_builder("alpha").state(json!("abc")).insert(&db);
+    let e2 = entry_builder("beta").state(json!("def")).insert(&db);
 
     // Compound form with a trailing comma must succeed and stamp the
     // pointer with every resolved hid, in argument order.
@@ -282,7 +282,7 @@ fn get_pretty_round_trips_entry_through_cmd_path() {
     let db = fresh_db();
     let entry = entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("focused"))
+        .state(json!("focused"))
         .insert(&db);
 
     // `get --pretty` through the full CLI path (alias pre-pass, parser,

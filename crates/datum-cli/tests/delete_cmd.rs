@@ -44,7 +44,7 @@ use std::process::Command;
 #[test]
 fn delete_by_exact_id_tombstones_entry() {
     let db = fresh_db();
-    let entry = entry_builder("coffee").value(json!(1)).insert(&db);
+    let entry = entry_builder("coffee").state(json!(1)).insert(&db);
 
     run_cli(&["delete", &entry.slug, "--force"], &db).expect("delete --force");
 
@@ -111,8 +111,8 @@ fn delete_by_slug_tombstones_entry() {
 #[test]
 fn delete_targets_one_row_among_many() {
     let db = fresh_db();
-    let doomed = entry_builder("coffee").value(json!(1)).insert(&db);
-    let keeper = entry_builder("coffee").value(json!(2)).insert(&db);
+    let doomed = entry_builder("coffee").state(json!(1)).insert(&db);
+    let keeper = entry_builder("coffee").state(json!(2)).insert(&db);
 
     run_cli(&["delete", &doomed.slug, "--force"], &db).expect("delete doomed");
 
@@ -147,11 +147,11 @@ fn del_alias_dispatches_to_delete_handler() {
     // Distinct values so content_hash differs (see case #3 rationale).
     let via_delete = entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("via-delete"))
+        .state(json!("via-delete"))
         .insert(&db);
     let via_del = entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("via-del"))
+        .state(json!("via-del"))
         .insert(&db);
 
     run_cli(&["delete", &via_delete.slug, "--force"], &db).expect("canonical delete");
@@ -212,9 +212,9 @@ fn delete_emits_delete_tag_on_standard_show() {
 #[test]
 fn compound_ids_batch_delete_in_one_invocation() {
     let db = fresh_db();
-    let e1 = entry_builder("coffee").value(json!(1)).insert(&db);
-    let e2 = entry_builder("coffee").value(json!(2)).insert(&db);
-    let e3 = entry_builder("coffee").value(json!(3)).insert(&db);
+    let e1 = entry_builder("coffee").state(json!(1)).insert(&db);
+    let e2 = entry_builder("coffee").state(json!(2)).insert(&db);
+    let e3 = entry_builder("coffee").state(json!(3)).insert(&db);
 
     let compound = format!("{},{},{},", e1.slug, e2.slug, e3.slug);
     run_cli(&["delete", &compound, "--force"], &db)
@@ -238,10 +238,10 @@ fn compound_ids_batch_delete_in_one_invocation() {
 #[test]
 fn compound_delete_expands_wildcards() {
     let db = fresh_db();
-    let a = entry_builder("mood").value(json!("a")).insert(&db);
-    let b = entry_builder("mood").value(json!("b")).insert(&db);
-    let c = entry_builder("mood").value(json!("c")).insert(&db);
-    let untouched = entry_builder("coffee").value(json!(1)).insert(&db);
+    let a = entry_builder("mood").state(json!("a")).insert(&db);
+    let b = entry_builder("mood").state(json!("b")).insert(&db);
+    let c = entry_builder("mood").state(json!("c")).insert(&db);
+    let untouched = entry_builder("coffee").state(json!(1)).insert(&db);
 
     // `mood:*` hits all three mood rows, `coffee:*` not listed → preserved.
     run_cli(&["delete", "mood:*", "--force"], &db)
@@ -279,15 +279,15 @@ fn compound_delete_expands_wildcards() {
 fn compound_delete_mixes_hid_slug_and_wildcard() {
     let db = fresh_db();
     let _g = set_time("2026-01-15T12:00:00Z");
-    let by_slug = entry_builder("mood").value(json!("s")).insert(&db);
+    let by_slug = entry_builder("mood").state(json!("s")).insert(&db);
     advance_time("1m");
-    let by_hid = entry_builder("mood").value(json!("h")).insert(&db);
+    let by_hid = entry_builder("mood").state(json!("h")).insert(&db);
     advance_time("1m");
-    let in_wild = entry_builder("book").value(json!("the-hobbit")).insert(&db);
+    let in_wild = entry_builder("book").state(json!("the-hobbit")).insert(&db);
     advance_time("1m");
-    let in_wild2 = entry_builder("book").value(json!("the-iliad")).insert(&db);
+    let in_wild2 = entry_builder("book").state(json!("the-iliad")).insert(&db);
     advance_time("1m");
-    let outside = entry_builder("coffee").value(json!(1)).insert(&db);
+    let outside = entry_builder("coffee").state(json!(1)).insert(&db);
 
     let mixed = format!("{},{},book:*", by_slug.slug, by_hid.hid);
     run_cli(&["delete", &mixed, "--force"], &db)
@@ -315,7 +315,7 @@ fn compound_delete_mixes_hid_slug_and_wildcard() {
 #[test]
 fn compound_delete_collapses_duplicates() {
     let db = fresh_db();
-    let e = entry_builder("mood").value(json!(1)).insert(&db);
+    let e = entry_builder("mood").state(json!(1)).insert(&db);
 
     // Reference the same row twice: once by slug, once by hid prefix.
     let hid5: String = e.hid.chars().take(5).collect();
@@ -338,8 +338,8 @@ fn compound_delete_collapses_duplicates() {
 #[test]
 fn compound_delete_continues_past_bad_token_by_default() {
     let db = fresh_db();
-    let keep = entry_builder("coffee").value(json!(1)).insert(&db);
-    let doomed = entry_builder("coffee").value(json!(2)).insert(&db);
+    let keep = entry_builder("coffee").state(json!(1)).insert(&db);
+    let doomed = entry_builder("coffee").state(json!(2)).insert(&db);
 
     let compound = format!("{},definitely-not-a-real-id", doomed.slug);
     let err = run_cli(&["delete", &compound, "--force"], &db)
@@ -367,8 +367,8 @@ fn compound_delete_continues_past_bad_token_by_default() {
 #[test]
 fn strict_compound_delete_aborts_without_mutating() {
     let db = fresh_db();
-    let a = entry_builder("coffee").value(json!(1)).insert(&db);
-    let b = entry_builder("coffee").value(json!(2)).insert(&db);
+    let a = entry_builder("coffee").state(json!(1)).insert(&db);
+    let b = entry_builder("coffee").state(json!(2)).insert(&db);
 
     let compound = format!("not-a-real-id,{},{}", a.slug, b.slug);
     let err = run_cli(&["delete", &compound, "--force", "--strict"], &db)
@@ -387,8 +387,8 @@ fn strict_compound_delete_aborts_without_mutating() {
 #[test]
 fn compound_delete_dry_run_does_not_mutate() {
     let db = fresh_db();
-    let a = entry_builder("mood").value(json!(1)).insert(&db);
-    let b = entry_builder("mood").value(json!(2)).insert(&db);
+    let a = entry_builder("mood").state(json!(1)).insert(&db);
+    let b = entry_builder("mood").state(json!(2)).insert(&db);
 
     run_cli(&["delete", "mood:*", "--force", "--dry-run"], &db)
         .unwrap_or_else(|err| panic!("dry-run must succeed: {err:#}"));

@@ -129,7 +129,7 @@ fn ignored(field: &str) -> TrackedField {
 fn switch_entry(field: &str, state: &str) -> Entry {
     entry_builder(field)
         .verb(Verb::Switch)
-        .value(json!(state))
+        .state(json!(state))
         .time_start(DatumTime::now())
         .build()
 }
@@ -195,7 +195,7 @@ fn render_array_state_shows_comma_joined_members() {
         "project".to_string(),
         entry_builder("project")
             .verb(Verb::Switch)
-            .value(json!(["datum", "household"]))
+            .state(json!(["datum", "household"]))
             .time_start(DatumTime::now())
             .build(),
     );
@@ -283,7 +283,7 @@ fn render_separator_divides_active_from_stopped() {
         "workout".to_string(),
         entry_builder("workout")
             .verb(Verb::Switch)
-            .value(serde_json::json!(false))
+            .state(serde_json::json!(false))
             .time_start(DatumTime::now())
             .build(),
     );
@@ -718,12 +718,12 @@ fn now_time_travel_returns_past_state_not_present() {
 
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("happy"))
+        .state(json!("happy"))
         .time_start_utc(ninety_min_ago)
         .insert(&db);
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("sad"))
+        .state(json!("sad"))
         .time_start_utc(thirty_min_ago)
         .insert(&db);
 
@@ -809,12 +809,12 @@ fn now_time_travel_combines_with_tracked_false_layer() {
     // coffee was OFF (false).
     entry_builder("coffee")
         .verb(Verb::Switch)
-        .value(json!(false))
+        .state(json!(false))
         .time_start_utc(two_h_ago)
         .insert(&db);
     entry_builder("coffee")
         .verb(Verb::Switch)
-        .value(json!(true))
+        .state(json!(true))
         .time_start_utc(thirty_min_ago)
         .insert(&db);
 
@@ -856,12 +856,12 @@ fn now_time_travel_classifies_ignored_at_anchor_not_wall_clock() {
     // `mood` active 3h ago, switched IGNORED 1h ago.
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("happy"))
+        .state(json!("happy"))
         .time_start_utc(now - Duration::hours(3))
         .insert(&db);
     entry_builder("mood")
         .verb(Verb::Switch)
-        .value(json!("IGNORED"))
+        .state(json!("IGNORED"))
         .time_start_utc(now - Duration::hours(1))
         .insert(&db);
 
@@ -917,7 +917,7 @@ fn now_time_travel_excludes_fields_born_after_anchor() {
     // `coffee`'s first-ever entry is 30 minutes ago.
     entry_builder("coffee")
         .verb(Verb::Switch)
-        .value(json!(true))
+        .state(json!(true))
         .time_start_utc(now - Duration::minutes(30))
         .insert(&db);
 

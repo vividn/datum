@@ -58,7 +58,7 @@ pub fn fresh_db() -> Db {
 pub struct EntryBuilder {
     field: String,
     verb: Verb,
-    value: Option<JsonValue>,
+    state: Option<JsonValue>,
     data: Option<JsonValue>,
     start_time: Option<DatumTime>,
     end_time: Option<DatumTime>,
@@ -70,7 +70,7 @@ impl EntryBuilder {
         Self {
             field: field.into(),
             verb: Verb::Point,
-            value: None,
+            state: None,
             data: None,
             start_time: Some(next_default_time()),
             end_time: None,
@@ -83,8 +83,8 @@ impl EntryBuilder {
         self
     }
 
-    pub fn value(mut self, value: JsonValue) -> Self {
-        self.value = Some(value);
+    pub fn state(mut self, state: JsonValue) -> Self {
+        self.state = Some(state);
         self
     }
 
@@ -147,7 +147,7 @@ impl EntryBuilder {
         Entry::new(
             self.field,
             self.verb,
-            self.value,
+            self.state,
             self.data,
             self.start_time,
             dur,
@@ -282,10 +282,10 @@ pub fn alias_builder(name: impl Into<String>, expansion: impl Into<String>) -> A
 
 /// Assert that entry fields match given key-value pairs.
 ///
-/// Supported fields: `field`, `verb`, `value`, `unit`, `device_id`.
+/// Supported fields: `field`, `verb`, `state`, `device_id`.
 ///
 /// ```ignore
-/// assert_entry_matches!(entry, field: "mood", value: "happy");
+/// assert_entry_matches!(entry, field: "mood", state: "happy");
 /// ```
 #[macro_export]
 macro_rules! assert_entry_matches {
@@ -328,7 +328,7 @@ pub fn _assert_entry_field(entry: &Entry, field_name: &str, expected: &JsonValue
     let actual = match field_name {
         "field" => serde_json::json!(entry.field),
         "verb" => serde_json::json!(entry.verb.to_string()),
-        "value" | "state" => entry.state.clone().unwrap_or(JsonValue::Null),
+        "state" => entry.state.clone().unwrap_or(JsonValue::Null),
         "device_id" => serde_json::json!(entry.device_id),
         other => panic!("assert_entry_matches!: unknown field `{other}`"),
     };
@@ -436,7 +436,7 @@ mod tests {
         let db_b = fresh_db();
 
         entry_builder("coffee")
-            .value(serde_json::json!(2))
+            .state(serde_json::json!(2))
             .insert(&db_a);
 
         // db_b must not see db_a's entry — each fresh_db() is independent.
@@ -448,7 +448,7 @@ mod tests {
         // And inserts into db_b should not appear in db_a.
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(serde_json::json!("happy"))
+            .state(serde_json::json!("happy"))
             .insert(&db_b);
 
         assert_eq!(db_a.entries_for_field("mood", None).unwrap().len(), 0);
@@ -459,7 +459,7 @@ mod tests {
     fn entry_builder_round_trip() {
         let db = fresh_db();
         let built = entry_builder("coffee")
-            .value(serde_json::json!(2))
+            .state(serde_json::json!(2))
             .insert(&db);
 
         let fetched = db.get_entry(&built.slug).unwrap();

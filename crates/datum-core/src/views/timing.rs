@@ -146,7 +146,7 @@ mod tests {
 
         let coffee_at = Utc.with_ymd_and_hms(2026, 4, 20, 8, 15, 0).unwrap();
         let coffee = entry_builder("coffee")
-            .value(json!(1))
+            .state(json!(1))
             .time_start_utc(coffee_at)
             .insert(&db);
 
@@ -187,7 +187,7 @@ mod tests {
         }
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("good"))
+            .state(json!("good"))
             .time_start_utc(day)
             .insert(&db);
 
@@ -218,7 +218,7 @@ mod tests {
         entry_builder("coffee").time_start_utc(day).insert(&db);
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("good"))
+            .state(json!("good"))
             .time_start_utc(day)
             .insert(&db);
 

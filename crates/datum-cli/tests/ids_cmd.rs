@@ -19,15 +19,15 @@ fn ids_default_is_newest_first() {
     let db = fresh_db();
     let now = Utc::now();
     let old = entry_builder("coffee")
-        .value(json!("old"))
+        .state(json!("old"))
         .time_start_utc(now - Duration::hours(2))
         .insert(&db);
     let mid = entry_builder("coffee")
-        .value(json!("mid"))
+        .state(json!("mid"))
         .time_start_utc(now - Duration::hours(1))
         .insert(&db);
     let new = entry_builder("coffee")
-        .value(json!("new"))
+        .state(json!("new"))
         .time_start_utc(now)
         .insert(&db);
 
@@ -40,11 +40,11 @@ fn ids_oldest_first_flips_order() {
     let db = fresh_db();
     let now = Utc::now();
     let a = entry_builder("coffee")
-        .value(json!(1))
+        .state(json!(1))
         .time_start_utc(now - Duration::hours(2))
         .insert(&db);
     let b = entry_builder("coffee")
-        .value(json!(2))
+        .state(json!(2))
         .time_start_utc(now - Duration::hours(1))
         .insert(&db);
 
@@ -65,7 +65,7 @@ fn ids_limit_caps_the_output() {
     let now = Utc::now();
     for i in 0..5 {
         entry_builder("coffee")
-            .value(json!(i))
+            .state(json!(i))
             .time_start_utc(now - Duration::minutes(i * 10))
             .insert(&db);
     }
@@ -83,8 +83,8 @@ fn ids_limit_caps_the_output() {
 #[test]
 fn ids_field_filter_restricts_to_that_field() {
     let db = fresh_db();
-    let c = entry_builder("coffee").value(json!(1)).insert(&db);
-    let _t = entry_builder("tea").value(json!(1)).insert(&db);
+    let c = entry_builder("coffee").state(json!(1)).insert(&db);
+    let _t = entry_builder("tea").state(json!(1)).insert(&db);
 
     let ids = compute_ids(
         &IdsArgs {
@@ -100,7 +100,7 @@ fn ids_field_filter_restricts_to_that_field() {
 #[test]
 fn ids_slug_prints_slugs_instead_of_hids() {
     let db = fresh_db();
-    let e = entry_builder("coffee").value(json!(1)).insert(&db);
+    let e = entry_builder("coffee").state(json!(1)).insert(&db);
 
     let hids = compute_ids(&IdsArgs::default(), &db).unwrap();
     let slugs = compute_ids(
@@ -121,11 +121,11 @@ fn ids_since_bounds_the_window() {
     let db = fresh_db();
     let now = Utc::now();
     entry_builder("coffee")
-        .value(json!("old"))
+        .state(json!("old"))
         .time_start_utc(now - Duration::days(30))
         .insert(&db);
     let recent = entry_builder("coffee")
-        .value(json!("recent"))
+        .state(json!("recent"))
         .time_start_utc(now - Duration::minutes(5))
         .insert(&db);
 
@@ -145,15 +145,15 @@ fn ids_oldest_first_with_slug_and_limit_combine() {
     let db = fresh_db();
     let now = Utc::now();
     let a = entry_builder("coffee")
-        .value(json!(1))
+        .state(json!(1))
         .time_start_utc(now - Duration::hours(3))
         .insert(&db);
     let _b = entry_builder("coffee")
-        .value(json!(2))
+        .state(json!(2))
         .time_start_utc(now - Duration::hours(2))
         .insert(&db);
     let _c = entry_builder("coffee")
-        .value(json!(3))
+        .state(json!(3))
         .time_start_utc(now - Duration::hours(1))
         .insert(&db);
 
@@ -173,7 +173,7 @@ fn ids_oldest_first_with_slug_and_limit_combine() {
 #[test]
 fn ids_cli_dispatch_smoke_test() {
     let db = fresh_db();
-    entry_builder("coffee").value(json!(1)).insert(&db);
+    entry_builder("coffee").state(json!(1)).insert(&db);
     run_cli(&["ids"], &db).expect("bare ids must dispatch");
     run_cli(&["ids", "coffee", "-n", "1"], &db).expect("field + limit must dispatch");
     run_cli(&["ids", "--oldest-first", "--slug"], &db).expect("oldest-first + slug must dispatch");

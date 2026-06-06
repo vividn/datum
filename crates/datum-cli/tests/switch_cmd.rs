@@ -54,7 +54,7 @@ fn switch_creates_entry_with_state() {
 
     assert_count!(db, "field", 1);
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "switch", value: "newState");
+    assert_entry_matches!(entry, field: "field", verb: "switch", state: "newState");
     let ts = entry
         .occur_time
         .as_ref()
@@ -164,7 +164,7 @@ fn switch_always_anchors_time_no_omit_timestamp_flag() {
         falsy.occur_time.is_some(),
         "daydumb always anchors time_start (no --omit-timestamp flag)",
     );
-    assert_entry_matches!(falsy, field: "vacuum", verb: "switch", value: false);
+    assert_entry_matches!(falsy, field: "vacuum", verb: "switch", state: false);
 }
 
 /// TS #5: "still includes lastState if manually specified even when there is
@@ -210,8 +210,8 @@ fn switch_state_null_normalizes_to_null_at_query_time() {
     let luft = &db.entries_for_field("luft", None).unwrap()[0];
 
     // Stored form: string "null"; the normalization lives in state compile.
-    assert_entry_matches!(vacuum, verb: "switch", value: "null");
-    assert_entry_matches!(luft, verb: "switch", value: "null");
+    assert_entry_matches!(vacuum, verb: "switch", state: "null");
+    assert_entry_matches!(luft, verb: "switch", state: "null");
 
     let vacuum_ts = vacuum.occur_time.as_ref().unwrap().utc;
     let luft_ts = luft.occur_time.as_ref().unwrap().utc;
@@ -263,7 +263,7 @@ fn switch_dur_creates_forward_block_ending_false() {
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     // v3 (da-5ns): state="household" + dur=positive → derive_verb returns Block.
-    assert_entry_matches!(entry, field: "project", verb: "block", value: "household");
+    assert_entry_matches!(entry, field: "project", verb: "block", state: "household");
     assert_eq!(entry.duration_seconds(), Some(10 * 60));
 
     let ts = entry.occur_time.as_ref().unwrap().utc;
@@ -301,7 +301,7 @@ fn switch_negative_dur_collapses_to_point() {
     run_cli(&["switch", "project", "household", "--dur=-10m"], &db).expect("switch --dur=-10m");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "project", verb: "point", value: "household");
+    assert_entry_matches!(entry, field: "project", verb: "point", state: "household");
     assert_eq!(
         entry.duration_seconds(),
         Some(0),
@@ -346,7 +346,7 @@ fn switch_moment_produces_point_in_time_entry() {
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     // v3 (da-5ns): --moment yields dur="PT0S"; with state="household" set
     // and dur=Zero, derive_verb returns Point.
-    assert_entry_matches!(entry, field: "project", verb: "point", value: "household");
+    assert_entry_matches!(entry, field: "project", verb: "point", state: "household");
     let ts = entry.occur_time.as_ref().expect("occur_time set");
     let te = entry
         .computed_end_time()
@@ -376,7 +376,7 @@ fn switch_extras_do_not_imply_duration() {
     .expect("switch with -k");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
+    assert_entry_matches!(entry, field: "project", verb: "switch", state: "household");
     assert!(
         entry.dur.is_none(),
         "no --dur ⇒ no time_end (moment-like default)",
@@ -402,7 +402,7 @@ fn switch_extras_never_produce_implicit_duration() {
     .expect("switch with optional key");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
+    assert_entry_matches!(entry, field: "project", verb: "switch", state: "household");
     assert!(
         entry.dur.is_none(),
         "no --dur ⇒ no time_end; `-k KEY=VALUE` never becomes a duration",
@@ -500,7 +500,7 @@ fn switch_multiple_keys_attach_without_complex_state_synthesis() {
         entry,
         field: "book",
         verb: "block",
-        value: "the wind in the willows",
+        state: "the wind in the willows",
     );
     assert_eq!(entry.duration_seconds(), Some(5 * 60));
 
@@ -824,7 +824,7 @@ fn switch_field_non_reserved_state_remains_literal() {
     let entries = db.entries_for_field("project", None).unwrap();
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
-    assert_entry_matches!(e, field: "project", verb: "switch", value: "ai");
+    assert_entry_matches!(e, field: "project", verb: "switch", state: "ai");
 }
 
 // ─── da-rcoi: strict-spec extra_data rejection at insert time ────────────

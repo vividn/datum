@@ -14,7 +14,7 @@ fn history_command_lists_versions_newest_first() {
     let db = fresh_db();
     let v1 = entry_builder("mood")
         .verb(datum_core::entry::Verb::Switch)
-        .value(serde_json::json!("happy"))
+        .state(serde_json::json!("happy"))
         .insert(&db);
 
     // Record a user_edit so history has at least two versions to list.
@@ -50,7 +50,7 @@ fn history_diff_between_versions() {
     let db = fresh_db();
     let v1 = entry_builder("mood")
         .verb(datum_core::entry::Verb::Switch)
-        .value(serde_json::json!("happy"))
+        .state(serde_json::json!("happy"))
         .insert(&db);
 
     let mut v2 = v1.clone();
@@ -84,7 +84,7 @@ fn undo_restores_entry_state() {
     let db = fresh_db();
     let v1 = entry_builder("mood")
         .verb(datum_core::entry::Verb::Switch)
-        .value(serde_json::json!("happy"))
+        .state(serde_json::json!("happy"))
         .insert(&db);
 
     // Mutate the entry: v2 carries value="sad".
@@ -153,7 +153,7 @@ fn why_full_traces_through_history() {
     let db = fresh_db();
     let v1 = entry_builder("mood")
         .verb(datum_core::entry::Verb::Switch)
-        .value(serde_json::json!("happy"))
+        .state(serde_json::json!("happy"))
         .insert(&db);
 
     // Record a second version so --full has something to walk.

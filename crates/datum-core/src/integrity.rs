@@ -938,29 +938,29 @@ mod tests {
 
         // Double-open: two state=true switches on the same field.
         entry_builder("workout")
-            .value(json!(true))
+            .state(json!(true))
             .time_start(ts(300))
             .insert(&db);
         entry_builder("workout")
-            .value(json!(true))
+            .state(json!(true))
             .time_start(ts(60))
             .insert(&db);
 
         // Orphan stop: a state=false switch on a never-opened field.
         entry_builder("cooking")
-            .value(json!(false))
+            .state(json!(false))
             .time_start(ts(120))
             .insert(&db);
 
         // Overlapping blocks: two intervals on the same field that
         // share time. Both must land regardless.
         entry_builder("meeting")
-            .value(json!(true))
+            .state(json!(true))
             .time_start(ts(600))
             .time_end(ts(300))
             .insert(&db);
         entry_builder("meeting")
-            .value(json!(true))
+            .state(json!(true))
             .time_start(ts(500))
             .time_end(ts(200))
             .insert(&db);
@@ -982,12 +982,12 @@ mod tests {
     fn post_write_hook_detects_overlap() {
         let db = Db::open_in_memory().unwrap();
         entry_builder("meeting")
-            .value(json!(true))
+            .state(json!(true))
             .time_start(ts(600))
             .time_end(ts(300))
             .insert(&db);
         entry_builder("meeting")
-            .value(json!(true))
+            .state(json!(true))
             .time_start(ts(500))
             .time_end(ts(200))
             .insert(&db);

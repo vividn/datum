@@ -52,7 +52,7 @@ fn run_cli_harness_surfaces_field_verb_swap() {
 fn del_alias_invokes_delete() {
     let db = fresh_db();
     let entry = entry_builder("coffee")
-        .value(serde_json::json!(2))
+        .state(serde_json::json!(2))
         .insert(&db);
 
     // `datum del <id> --force` routes through the same dispatcher as `delete`.
@@ -71,7 +71,7 @@ fn get_pretty_emits_indented_json() {
     let db = fresh_db();
     let entry = entry_builder("mood")
         .verb(datum_core::entry::Verb::Switch)
-        .value(serde_json::json!("happy"))
+        .state(serde_json::json!("happy"))
         .insert(&db);
 
     // Dispatching `get --pretty` must not error — exercises the full arg path.

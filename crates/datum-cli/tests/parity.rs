@@ -427,14 +427,14 @@ fn populate_dayview_fixture_db(dir: &Path) -> PathBuf {
     // coffee occurrence at 08:00 UTC — point-in-time entry.
     entry_builder("coffee")
         .verb(Verb::Point)
-        .value(serde_json::json!(1))
+        .state(serde_json::json!(1))
         .time_start_utc(at(8, 0))
         .insert(&db);
 
     // workout block 09:00 → 10:00 UTC, switch verb with implicit-true state.
     entry_builder("workout")
         .verb(Verb::Switch)
-        .value(serde_json::json!(true))
+        .state(serde_json::json!(true))
         .time_start_utc(at(9, 0))
         .time_end_utc(at(10, 0))
         .insert(&db);
@@ -442,7 +442,7 @@ fn populate_dayview_fixture_db(dir: &Path) -> PathBuf {
     // project state "meeting" 10:00 → 12:00 UTC — exercises md5(state).
     entry_builder("project")
         .verb(Verb::Switch)
-        .value(serde_json::json!("meeting"))
+        .state(serde_json::json!("meeting"))
         .time_start_utc(at(10, 0))
         .time_end_utc(at(12, 0))
         .insert(&db);
@@ -450,7 +450,7 @@ fn populate_dayview_fixture_db(dir: &Path) -> PathBuf {
     // project state "emails" 14:00 → 16:00 UTC — second block, different state.
     entry_builder("project")
         .verb(Verb::Switch)
-        .value(serde_json::json!("emails"))
+        .state(serde_json::json!("emails"))
         .time_start_utc(at(14, 0))
         .time_end_utc(at(16, 0))
         .insert(&db);

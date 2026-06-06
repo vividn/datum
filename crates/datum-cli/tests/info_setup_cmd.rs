@@ -43,7 +43,7 @@ fn info_runs_against_active_db() {
     // da-2sr: writing an entry is the only thing needed to make a field
     // tracked. No separate set_tracked call.
     entry_builder("coffee")
-        .value(serde_json::json!(2))
+        .state(serde_json::json!(2))
         .insert(&db);
     // info should dispatch cleanly.
     run_cli(&["info"], &db).expect("info dispatch");

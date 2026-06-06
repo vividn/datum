@@ -18,7 +18,7 @@ fn db_purge_yes_wipes_data() {
     let db = fresh_db();
     entry_builder("mood")
         .verb(datum_core::entry::Verb::Switch)
-        .value(serde_json::json!("happy"))
+        .state(serde_json::json!("happy"))
         .insert(&db);
     assert_eq!(db.count_entries().unwrap(), 1);
 
@@ -35,7 +35,7 @@ fn db_purge_short_yes_flag_wipes_data() {
     let db = fresh_db();
     entry_builder("mood")
         .verb(datum_core::entry::Verb::Switch)
-        .value(serde_json::json!("blue"))
+        .state(serde_json::json!("blue"))
         .insert(&db);
     run_cli(&["db", "purge", "-y"], &db).expect("db purge -y dispatch");
     assert_eq!(db.count_entries().unwrap(), 0);
@@ -90,7 +90,7 @@ fn db_purge_yes_recovers_corrupt_db() {
 fn db_purge_interactive_path_match_proceeds() {
     let db = fresh_db();
     entry_builder("coffee")
-        .value(serde_json::json!(2))
+        .state(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(b"\n".to_vec());
     // In-memory DB → pragma path is "" → bare Enter (trims to "") matches.
@@ -114,7 +114,7 @@ fn db_purge_interactive_path_match_proceeds() {
 fn db_purge_interactive_path_mismatch_aborts() {
     let db = fresh_db();
     entry_builder("coffee")
-        .value(serde_json::json!(2))
+        .state(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(b"not-the-path\n".to_vec());
     let err = purge_with_io(
@@ -140,7 +140,7 @@ fn db_purge_interactive_path_mismatch_aborts() {
 fn db_purge_non_tty_without_yes_aborts() {
     let db = fresh_db();
     entry_builder("coffee")
-        .value(serde_json::json!(2))
+        .state(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(Vec::<u8>::new());
     let err = purge_with_io(
@@ -168,7 +168,7 @@ fn db_purge_non_tty_without_yes_aborts() {
 fn setup_force_recreate_flag_is_rejected() {
     let db = fresh_db();
     entry_builder("coffee")
-        .value(serde_json::json!(1))
+        .state(serde_json::json!(1))
         .insert(&db);
     let err = run_cli(&["db", "setup", "--force-recreate"], &db)
         .expect_err("--force-recreate is no longer accepted");
@@ -191,7 +191,7 @@ fn setup_force_recreate_flag_is_rejected() {
 fn db_purge_accepts_bare_name_confirmation_when_name_resolved() {
     let db = fresh_db();
     entry_builder("coffee")
-        .value(serde_json::json!(2))
+        .state(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(b"vremya\n".to_vec());
     purge_with_io(
@@ -215,7 +215,7 @@ fn db_purge_accepts_bare_name_confirmation_when_name_resolved() {
 fn db_purge_aborts_when_bare_name_mismatched() {
     let db = fresh_db();
     entry_builder("coffee")
-        .value(serde_json::json!(2))
+        .state(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(b"oops\n".to_vec());
     let err = purge_with_io(

@@ -68,7 +68,7 @@ fn dayview_json_dumps_layout() {
     let noon = local_noon_today_utc();
     entry_builder("coffee")
         .verb(Verb::Point)
-        .value(serde_json::json!(1))
+        .state(serde_json::json!(1))
         .time_start_utc(noon)
         .insert(&db);
     entry_builder("workout")

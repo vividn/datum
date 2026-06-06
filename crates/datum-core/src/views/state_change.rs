@@ -278,18 +278,18 @@ mod tests {
 
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("focused"))
+            .state(json!("focused"))
             .time_start_utc(t0)
             .insert(&db);
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("tired"))
+            .state(json!("tired"))
             .time_start_utc(t2)
             .insert(&db);
         // v3: legacy Stop is expressed as Switch state=false.
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!(false))
+            .state(json!(false))
             .time_start_utc(t3)
             .insert(&db);
 
@@ -328,7 +328,7 @@ mod tests {
 
         let ghost = entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("ephemeral"))
+            .state(json!("ephemeral"))
             .time_start_utc(t0)
             .insert(&db);
         db.soft_delete_entry(&ghost.slug).unwrap();
@@ -343,7 +343,7 @@ mod tests {
         let t0 = Utc.with_ymd_and_hms(2026, 4, 20, 9, 0, 0).unwrap();
         entry_builder("mood")
             .verb(Verb::Switch)
-            .value(json!("focused"))
+            .state(json!("focused"))
             .time_start_utc(t0)
             .insert(&db);
         entry_builder("workout")

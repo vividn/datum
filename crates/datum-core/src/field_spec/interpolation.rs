@@ -13,7 +13,7 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
-use crate::entry::{Entry, Verb};
+use crate::entry::Entry;
 use crate::time::DatumTime;
 
 /// Default delimiter used when `--id-delimiter` is not provided.
@@ -23,8 +23,6 @@ pub const DEFAULT_ID_DELIMITER: &str = ":";
 /// full [`Entry`] shape so it is easy to test and reuse.
 pub struct InterpolationContext<'a> {
     pub field: &'a str,
-    pub verb: &'a Verb,
-    pub value: Option<&'a JsonValue>,
     pub extra_data: Option<&'a JsonValue>,
     pub uid: &'a str,
     /// da-5ns.4: column-bound state. `%state%` resolves from this first,
@@ -57,8 +55,6 @@ impl<'a> InterpolationContext<'a> {
     pub fn from_entry(entry: &'a Entry, uid_buf: &'a str) -> Self {
         Self {
             field: &entry.field,
-            verb: &entry.verb,
-            value: entry.state.as_ref(),
             extra_data: entry.data.as_ref(),
             uid: uid_buf,
             state: entry.state.as_ref(),
@@ -149,24 +145,12 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
         "uid" => ctx.uid.to_string(),
         "state" => {
             // da-5ns.4: column-bound state wins. The column is canonical
-            // post-pivot; the data-blob and Switch-value paths are kept as
-            // fallbacks for legacy/in-flight entries that haven't been
-            // canonicalized yet.
+            // post-pivot; the data-blob path is kept as a fallback for
+            // legacy/in-flight entries that haven't been canonicalized yet.
             if let Some(s) = ctx.state {
                 return json_to_plain_string(s);
             }
-            if let Some(s) = lookup_extra_data(ctx.extra_data, "state") {
-                return s;
-            }
-            // Local verb match on purpose: reading the raw value for
-            // legacy pre-canonicalization Switch rows is storage compat,
-            // not a render decision — shape.rs doesn't apply here.
-            if matches!(ctx.verb, Verb::Switch) {
-                if let Some(v) = ctx.value {
-                    return json_to_plain_string(v);
-                }
-            }
-            String::new()
+            lookup_extra_data(ctx.extra_data, "state").unwrap_or_default()
         }
         "dur" => ctx.dur.clone().unwrap_or_default(),
         "following_state" => ctx
@@ -276,8 +260,6 @@ mod tests {
     ) -> InterpolationContext<'a> {
         InterpolationContext {
             field,
-            verb: &Verb::Point,
-            value: None,
             extra_data: extra,
             uid,
             state: None,
@@ -298,21 +280,20 @@ mod tests {
 
     #[test]
     fn interpolate_state_from_extra_data() {
-        // Non-switch verb: %state% pulls from extra_data.state
+        // Legacy fallback: %state% pulls from extra_data.state when the
+        // column-bound state is unset.
         let extra = serde_json::json!({"state": "happy"});
         let ctx = occur_ctx("mood", Some(&extra), "ZZZ");
         let got = interpolate("%field%:%state%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "mood:happy");
 
-        // Switch verb: value is the state (no extra_data.state needed)
-        let value = serde_json::json!("focused");
+        // Canonical path: column-bound state wins.
+        let state = serde_json::json!("focused");
         let switch_ctx = InterpolationContext {
             field: "mood",
-            verb: &Verb::Switch,
-            value: Some(&value),
             extra_data: None,
             uid: "zz",
-            state: None,
+            state: Some(&state),
             dur: None,
             following_state: None,
             occur_time: None,
@@ -349,8 +330,6 @@ mod tests {
         let extra = serde_json::json!({"srcLang": "pt", "pos": "verb"});
         let ctx = InterpolationContext {
             field: "word",
-            verb: &Verb::Point,
-            value: None,
             extra_data: Some(&extra),
             uid: "xx",
             state: None,
@@ -386,8 +365,6 @@ mod tests {
     ) -> InterpolationContext<'a> {
         InterpolationContext {
             field: "f",
-            verb: &Verb::Point,
-            value: None,
             extra_data: None,
             uid: "u",
             state: None,
@@ -421,8 +398,6 @@ mod tests {
         let occur = DatumTime::from_utc_and_tz(dt, "UTC").unwrap();
         let ctx = InterpolationContext {
             field: "f",
-            verb: &Verb::Point,
-            value: None,
             extra_data: None,
             uid: "u",
             state: None,
@@ -442,8 +417,6 @@ mod tests {
         let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let ctx = InterpolationContext {
             field: "f",
-            verb: &Verb::Point,
-            value: None,
             extra_data: Some(&extra),
             uid: "u",
             state: None,
@@ -566,8 +539,6 @@ mod tests {
         let occur = DatumTime::from_utc_and_tz(dt, "UTC").unwrap();
         let ctx = InterpolationContext {
             field: "task",
-            verb: &Verb::Point,
-            value: None,
             extra_data: None,
             uid: "z",
             state: None,
