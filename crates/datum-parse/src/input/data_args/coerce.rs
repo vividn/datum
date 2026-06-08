@@ -130,11 +130,26 @@ pub(super) fn infer_typed_value(
     Ok(infer_type(value))
 }
 
+/// Minimum length at which an all-hex token is read as an opaque
+/// identifier (hash/commit prefix) rather than a `<number><unit>` quantity.
+/// Git short-hashes are 7+ chars; real measurements with an `a`–`f` unit on
+/// a 7+-digit value are implausible, so this never shadows `5d`, `98f`, etc.
+const HEX_ID_MIN_LEN: usize = 7;
+
 /// daydumb extension: detect `75.2kg` / `500ml` style tokens and emit
 /// `{"v": <num>, "u": "<unit>"}`. Returns `None` when the token isn't of
 /// `<number><alpha-unit>` form. Public so the verb-specific switch-state
 /// parser in `datum-commands` can apply the same coercion.
+///
+/// A long all-hex token (`8291251c`, a SHA/commit prefix) is treated as an
+/// opaque string, not a quantity — silently turning a logged hash into
+/// `{"v": 8291251.0, "u": "c"}` is data corruption (da-srfh). To force any
+/// ambiguous token to a string, wrap it in literal JSON quotes:
+/// `ref='"8291251c"'`.
 pub fn unit_annotated_value(value: &str) -> Option<Value> {
+    if looks_like_hex_id(value) {
+        return None;
+    }
     let (num, unit) = split_numeric_unit(value)?;
     let n: f64 = num.parse().ok()?;
     let n_value = serde_json::Number::from_f64(n).map(Value::Number)?;
@@ -153,6 +168,16 @@ fn is_pure_signed_integer(s: &str) -> bool {
         .or_else(|| s.strip_prefix('-'))
         .unwrap_or(s);
     !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// `true` for a token long enough, and made entirely of hex digits, to be
+/// an opaque identifier (a hash/commit prefix like `8291251c`) rather than a
+/// `<number><unit>` quantity. Requiring all chars to be hex means a real
+/// unit suffix (`kg`, `ml`, `m`, `s` — non-hex letters) never qualifies; the
+/// only collisions are `a`–`f` "units" on long integer runs, which are not
+/// real measurements (da-srfh).
+fn looks_like_hex_id(s: &str) -> bool {
+    s.len() >= HEX_ID_MIN_LEN && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// Split `"75.2kg"` → `Some(("75.2", "kg"))`, `"hello"` → `None`. The
@@ -324,5 +349,59 @@ mod tests {
     fn infer_type_quoted_empty_string() {
         assert_eq!(infer_type("''"), Some(Value::String(String::new())));
         assert_eq!(infer_type("\"\""), Some(Value::String(String::new())));
+    }
+
+    #[test]
+    fn unit_annotation_still_works_for_real_units() {
+        assert_eq!(
+            unit_annotated_value("75.2kg"),
+            Some(json!({"v": 75.2, "u": "kg"}))
+        );
+        assert_eq!(
+            unit_annotated_value("500ml"),
+            Some(json!({"v": 500.0, "u": "ml"}))
+        );
+        assert_eq!(
+            unit_annotated_value("5m"),
+            Some(json!({"v": 5.0, "u": "m"}))
+        );
+        assert_eq!(
+            unit_annotated_value("10s"),
+            Some(json!({"v": 10.0, "u": "s"}))
+        );
+        // Short hex-collision units (`a`–`f`) stay annotated — below the
+        // identifier length threshold and genuinely ambiguous with units.
+        assert_eq!(
+            unit_annotated_value("5d"),
+            Some(json!({"v": 5.0, "u": "d"}))
+        );
+        assert_eq!(
+            unit_annotated_value("98f"),
+            Some(json!({"v": 98.0, "u": "f"}))
+        );
+    }
+
+    #[test]
+    fn long_hex_id_is_not_coerced_to_quantity() {
+        // da-srfh: a SHA/commit prefix must not become {"v":…,"u":…}.
+        assert_eq!(unit_annotated_value("8291251c"), None);
+        assert_eq!(unit_annotated_value("1234567f"), None);
+        // It falls through to a plain string via infer_type / infer_value.
+        assert_eq!(
+            infer_value("8291251c"),
+            Some(Value::String("8291251c".into()))
+        );
+        // Pure-digit hashes never had an alpha suffix to annotate anyway,
+        // and must still read as plain strings, not numbers.
+        assert_eq!(
+            infer_value("0000000a"),
+            Some(Value::String("0000000a".into()))
+        );
+    }
+
+    #[test]
+    fn json_quote_escape_forces_string() {
+        // The documented escape: literal JSON quotes bypass coercion.
+        assert_eq!(infer_value("\"5kg\""), Some(Value::String("5kg".into())));
     }
 }
