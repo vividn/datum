@@ -84,8 +84,18 @@ fn test_parse_duration_minutes_default() {
 
 #[test]
 fn test_parse_duration_colon() {
+    // da-b1q5: the rightmost colon field shifts by part count — minutes for
+    // the 2-part HH:MM form, seconds for 3+ parts. A bare `1:30` is 1h30m
+    // (one-thirty stopwatch-style), a deliberate 60× divergence from v2's
+    // seconds-anchored `1:30` = 1m30s. Lock both readings against drift.
     assert_eq!(parse_duration("1:30").unwrap(), Duration::minutes(90));
+    assert_eq!(parse_duration("0:30").unwrap(), Duration::minutes(30));
     assert_eq!(parse_duration("1:15:30").unwrap(), Duration::seconds(4530));
+    assert_eq!(parse_duration("0:00:30").unwrap(), Duration::seconds(30));
+    assert_eq!(
+        parse_duration("1:00:00:00").unwrap(),
+        Duration::seconds(86400),
+    );
 }
 
 #[test]

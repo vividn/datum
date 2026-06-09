@@ -18,6 +18,28 @@ use crate::time::uncertainty::Uncertainty;
 ///   "1:30"     → 1 hour 30 min
 ///   "1:15:30"  → 1h 15m 30s
 ///   "PT5M"     → ISO 8601
+///
+/// ## Colon-form contract (read carefully — the rightmost field shifts)
+///
+/// The colon form is anchored by part count, and the 2-part case is
+/// deliberately read as `HH:MM`, *not* `MM:SS`:
+///
+/// ```text
+///   2 parts → HH:MM        1:30       = 1h30m,  0:30 = 30 min
+///   3 parts → HH:MM:SS     1:15:30    = 1h15m30s
+///   4 parts → DD:HH:MM:SS  1:00:00:00 = 1 day
+/// ```
+///
+/// So the rightmost field is *minutes* for the 2-part form but *seconds* for
+/// the 3- and 4-part forms. This is intentional: people read a bare `1:30`
+/// stopwatch-style as one-thirty (an hour and a half), which is the common
+/// `--dur` case, while the longer forms want second-precision.
+///
+/// This is a deliberate divergence from datum-v2, whose colon form was
+/// *seconds*-anchored across all part counts
+/// (`[[[[years:]days:]hours:]minutes:]seconds`), so v2's `1:30` meant
+/// 1 min 30 sec — 60× shorter. See `docs/parity-audit/parsing.md`
+/// (`parseDurationStr.ts`) for the divergence record.
 pub fn parse_duration(s: &str) -> Result<Duration> {
     // ISO 8601 duration
     if s.starts_with("PT") || s.starts_with("P") {

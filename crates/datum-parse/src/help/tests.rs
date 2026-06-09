@@ -137,7 +137,7 @@ OPTIONS:
   -q                    Go back 5 min (stackable: -qq=10 min, ...)
   -d, --date <VAL>      Date override (offset or YYYY-MM-DD)
   -t, --time <VAL>      Time override (offset or HH:MM or 9:15am)
-      --dur <VAL>       Duration (30m, 1:30, 2h, PT30M)
+      --dur <VAL>       Duration (30m, 1:30=1h30m, 2h, PT30M)
   -z, --timezone <TZ>   Timezone (IANA or UTC offset)
   -D, --full-day        Date-only entry (no clock time)
   -u, --undo            Undo: delete most recent matching entry

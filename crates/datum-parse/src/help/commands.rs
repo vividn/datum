@@ -89,7 +89,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         takes_value: true,
         value_hint: Some("VAL"),
         value_optional: false,
-        summary: "Duration (30m, 1:30, 2h, PT30M)",
+        summary: "Duration (30m, 1:30=1h30m, 2h, PT30M)",
         long_description: None,
         left_override: None,
     },

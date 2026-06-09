@@ -356,7 +356,20 @@ package for named units (`5min`, `2h`, `1d`, `5ms`, ...).
   - Sign prefix handling (daydumb flows sign through the numeric
     parse, which works for named-unit form but not ISO or
     colon-split).
-- **Added in daydumb:** none.
+- **Intentional divergence (colon-split 2-part semantics):** v2's
+  colon form is *seconds*-anchored across every part count
+  (`[[[[years:]days:]hours:]minutes:]seconds`), so the rightmost
+  field is always seconds and `1:30` = **1 min 30 sec**. Daydumb
+  reads the 2-part form as `HH:MM` instead, so `1:30` = **1h 30m** —
+  60× longer for the same input. This is deliberate: a bare `1:30`
+  reads stopwatch-style as one-thirty, the common `--dur` case. The
+  3- and 4-part forms stay seconds-anchored (`HH:MM:SS`,
+  `DD:HH:MM:SS`), matching v2, so the rightmost field is minutes for
+  the 2-part form but seconds for 3+ parts. Migration risk is low —
+  stored durations are already parsed; only new colon input (and
+  colon-duration aliases) carry the 60× muscle-memory hazard. See the
+  `parse_duration` doc-comment for the canonical contract. (da-b1q5)
+- **Added in daydumb:** none beyond the 2-part divergence above.
 
 ### `datumTime.ts` (86 LOC)
 
