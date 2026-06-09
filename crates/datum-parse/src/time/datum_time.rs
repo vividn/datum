@@ -44,12 +44,15 @@ impl DatumTime {
         })
     }
 
-    /// Re-derive `offset_minutes` from `utc` resolved at `timezone`.
+    /// The UTC offset (in minutes) that `timezone` actually produces at
+    /// `utc` — i.e. what `offset_minutes` *should* equal for the struct to
+    /// be in sync. Returns `InvalidTime` if `timezone` isn't a recognised
+    /// IANA name. Does not mutate; [`refresh_offset`] is the in-place form,
+    /// and `datum check tz` compares this against the stored value to flag
+    /// already-desynced rows.
     ///
-    /// Call after directly mutating `utc` or `timezone`, or after shifting
-    /// across a DST boundary, to restore the struct's invariant. Returns
-    /// `InvalidTime` if `timezone` isn't a recognised IANA name.
-    pub fn refresh_offset(&mut self) -> Result<()> {
+    /// [`refresh_offset`]: Self::refresh_offset
+    pub fn expected_offset_minutes(&self) -> Result<i32> {
         let tz: Tz = self
             .timezone
             .parse()
@@ -60,7 +63,16 @@ impl DatumTime {
             .fixed_offset()
             .offset()
             .local_minus_utc();
-        self.offset_minutes = offset_secs / 60;
+        Ok(offset_secs / 60)
+    }
+
+    /// Re-derive `offset_minutes` from `utc` resolved at `timezone`.
+    ///
+    /// Call after directly mutating `utc` or `timezone`, or after shifting
+    /// across a DST boundary, to restore the struct's invariant. Returns
+    /// `InvalidTime` if `timezone` isn't a recognised IANA name.
+    pub fn refresh_offset(&mut self) -> Result<()> {
+        self.offset_minutes = self.expected_offset_minutes()?;
         Ok(())
     }
 

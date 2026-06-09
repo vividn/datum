@@ -48,6 +48,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_slugs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "slugs");
     let run_integrity = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "integrity");
     let run_flags = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "flags");
+    let run_tz = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "tz");
     let run_default_battery = args.checkers.is_empty();
 
     let mut issues: Vec<Issue> = Vec::new();
@@ -95,6 +96,9 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     }
     if run_flags {
         issues.extend(collect_pending_flags(db)?);
+    }
+    if run_tz {
+        issues.extend(collect_tz_drift(db)?);
     }
     let report = Report {
         issues,
@@ -932,6 +936,98 @@ fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
     }])
 }
 
+/// Recompute each live entry's `occur_time` offset from its `timezone` at
+/// `utc` and flag any row whose stored `offset_minutes` disagrees — the
+/// `tz` checker. A `DatumTime`'s three fields are not independent
+/// (`crates/datum-parse/src/time/datum_time.rs`): `offset_minutes` must
+/// equal the offset `timezone` produces at `utc`. v3 derives the offset at
+/// construction so a freshly-written row is always in sync, but a legacy
+/// import, a sync merge, a hand-edited DB row, or a time mutation that
+/// skipped `refresh_offset` can leave a row desynced — and a wrong stored
+/// offset renders as a wrong wall-clock time, the cardinal error for a
+/// time tracker. This is the `check`-time complement to v3's
+/// prevention-by-construction (and the replacement for v2's dropped
+/// read-time mismatch warn).
+///
+/// A row with an unparseable `timezone` is also flagged here: the offset
+/// can't be verified and `local_time` is meaningless until the name is
+/// fixed. Tombstones are skipped — historical rows, not live data.
+///
+/// Report-only: the "which field is authoritative — tz or offset?" call
+/// deserves a human, so there is deliberately no `--fix` re-derivation yet
+/// (a future `--fix` would trust `timezone` and re-run `refresh_offset`).
+fn collect_tz_drift(db: &Db) -> Result<Vec<Issue>> {
+    let entries = db.list_including_deleted()?;
+
+    let mut flagged: Vec<Entry> = Vec::new();
+    let mut example: Option<IssueExample> = None;
+    for e in &entries {
+        if e.deleted_at.is_some() {
+            continue;
+        }
+        let Some(occur) = e.occur_time.as_ref() else {
+            continue;
+        };
+        let detail = match occur.expected_offset_minutes() {
+            Ok(expected) if expected == occur.offset_minutes => continue,
+            Ok(expected) => format!(
+                "tz={tz}  stored_offset={stored}  expected_offset={expected}",
+                tz = occur.timezone,
+                stored = occur.offset_minutes,
+            ),
+            Err(err) => format!(
+                "tz={tz}  stored_offset={stored}  {err}",
+                tz = occur.timezone,
+                stored = occur.offset_minutes,
+            ),
+        };
+        if example.is_none() {
+            example = Some(IssueExample {
+                id: Some(e.slug.to_string()),
+                field: Some(e.field.clone()),
+                detail: Some(detail),
+            });
+        }
+        flagged.push(e.clone());
+    }
+
+    if flagged.is_empty() {
+        return Ok(Vec::new());
+    }
+    let count = flagged.len();
+    let entries_out: Vec<FlaggedEntry> = flagged
+        .iter()
+        .map(|e| FlaggedEntry {
+            hid: e.short_uid(),
+            field: e.field.clone(),
+            // occur_time is always Some here (filtered above); show the
+            // stored→expected offset delta so the row's problem is legible
+            // without re-reading the DB.
+            state: e
+                .occur_time
+                .as_ref()
+                .map(|t| match t.expected_offset_minutes() {
+                    Ok(exp) => format!("{}→{exp}", t.offset_minutes),
+                    Err(_) => format!("{}→? (bad tz)", t.offset_minutes),
+                })
+                .unwrap_or_default(),
+        })
+        .collect();
+    let rendered_block = render_flagged_block(db, &flagged);
+    Ok(vec![Issue {
+        severity: Severity::Error,
+        category: "tz_offset_mismatch",
+        message: format!(
+            "{count} entr{y} have a stored UTC offset that disagrees with their timezone at that instant",
+            y = if count == 1 { "y" } else { "ies" },
+        ),
+        count,
+        example,
+        entries: entries_out,
+        rendered_block,
+    }])
+}
+
 /// Format flagged entries through the live tail table formatter. Returns the
 /// fully rendered text block (one line per entry, no header). Empty input
 /// yields an empty string so callers can `if !block.is_empty()` to decide
@@ -1467,6 +1563,110 @@ mod tests {
         assert!(!report.has_errors(), "empty db must have no errors");
         assert!(report.issues.is_empty(), "empty db must produce no issues");
         assert!(report.summary.clean);
+    }
+
+    /// A row whose stored `occur_time_offset` disagrees with the offset its
+    /// `occur_time_tz` produces at that instant is flagged by the `tz`
+    /// checker as a `tz_offset_mismatch` ERROR. v3 never writes such a row
+    /// (the offset is derived at construction), so the test seeds the
+    /// desync directly into the column — exactly the legacy-import /
+    /// machine-timezone-seam class this checker exists to catch.
+    #[test]
+    fn tz_check_flags_desynced_offset() {
+        let db = Db::open_in_memory().unwrap();
+        // America/Chicago at this instant is CST (-360). new_legacy derives
+        // the correct offset; we then corrupt the stored column to +0.
+        let occur =
+            DatumTime::from_utc_and_tz(t_at("2024-01-15T12:00:00+00:00").utc, "America/Chicago")
+                .unwrap();
+        assert_eq!(occur.offset_minutes, -360);
+        let entry = Entry::new_legacy("work", Verb::Switch, None, None, Some(occur), None, "d1");
+        db.insert_entry(&entry).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE entries SET occur_time_offset = 0 WHERE field = 'work'",
+                [],
+            )
+            .unwrap();
+
+        let issues = collect_tz_drift(&db).unwrap();
+        assert_eq!(issues.len(), 1, "exactly one tz issue");
+        let issue = &issues[0];
+        assert_eq!(issue.category, "tz_offset_mismatch");
+        assert_eq!(issue.severity, Severity::Error);
+        assert_eq!(issue.count, 1);
+        let detail = issue
+            .example
+            .as_ref()
+            .and_then(|e| e.detail.as_deref())
+            .unwrap_or_default();
+        assert!(
+            detail.contains("stored_offset=0") && detail.contains("expected_offset=-360"),
+            "detail names both offsets: {detail}",
+        );
+    }
+
+    /// An in-sync row (offset derived correctly at construction) produces no
+    /// `tz` issue — the checker only fires on genuine desync.
+    #[test]
+    fn tz_check_clean_db_emits_nothing() {
+        let db = Db::open_in_memory().unwrap();
+        let occur =
+            DatumTime::from_utc_and_tz(t_at("2024-07-15T12:00:00+00:00").utc, "America/Chicago")
+                .unwrap();
+        let entry = Entry::new_legacy("work", Verb::Switch, None, None, Some(occur), None, "d1");
+        db.insert_entry(&entry).unwrap();
+        assert!(collect_tz_drift(&db).unwrap().is_empty());
+    }
+
+    /// An unparseable stored `occur_time_tz` can't be reconciled against the
+    /// offset, so the row is flagged too — `local_time` is meaningless until
+    /// the name is repaired.
+    #[test]
+    fn tz_check_flags_unparseable_timezone() {
+        let db = Db::open_in_memory().unwrap();
+        let entry = Entry::new_legacy(
+            "work",
+            Verb::Switch,
+            None,
+            None,
+            Some(t_at("2024-01-15T12:00:00+00:00")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&entry).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE entries SET occur_time_tz = 'Mars/Olympus_Mons' WHERE field = 'work'",
+                [],
+            )
+            .unwrap();
+        let issues = collect_tz_drift(&db).unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].category, "tz_offset_mismatch");
+    }
+
+    /// Tombstoned rows are historical, not live data — the `tz` checker
+    /// skips them even when their stored offset is desynced.
+    #[test]
+    fn tz_check_skips_tombstoned_rows() {
+        let db = Db::open_in_memory().unwrap();
+        let occur =
+            DatumTime::from_utc_and_tz(t_at("2024-01-15T12:00:00+00:00").utc, "America/Chicago")
+                .unwrap();
+        let entry = Entry::new_legacy("work", Verb::Switch, None, None, Some(occur), None, "d1");
+        db.insert_entry(&entry).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE entries SET occur_time_offset = 0, \
+                 deleted_at = '2024-01-16T00:00:00+00:00' WHERE field = 'work'",
+                [],
+            )
+            .unwrap();
+        assert!(
+            collect_tz_drift(&db).unwrap().is_empty(),
+            "desynced tombstone must not be flagged",
+        );
     }
 
     #[test]
