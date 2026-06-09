@@ -104,6 +104,15 @@ thread_local! {
     /// `--format`, etc.) for the corresponding merged row.
     static MULTI_COLLECTOR: RefCell<Option<Vec<(datum_core::entry::Entry, OutputArgs)>>> =
         const { RefCell::new(None) };
+    /// da-9sfm: set when a content-identical re-log dedups to an existing row
+    /// (`InsertOutcome::Ignored`). A dedup is a *successful* no-op — rendered
+    /// as `EXISTS`, not an error — so it must not travel the error channel
+    /// (the REPL would print it as "error:" and lose the friendly render).
+    /// Instead the binary entry point (`datum-cli` `main`) consults this flag
+    /// after a clean run and exits 11, restoring v2's distinct exit code for
+    /// idempotent loggers. The REPL never reads it, so its behaviour is
+    /// unchanged.
+    static DUPLICATE_NOOP: RefCell<bool> = const { RefCell::new(false) };
 }
 
 pub fn set_intent_context(ctx: IntentContext) {
@@ -147,6 +156,25 @@ pub fn push_to_multi_collector(entry: datum_core::entry::Entry, output: OutputAr
             false
         }
     })
+}
+
+/// Record that the just-completed insert deduped against an existing row
+/// (a content-identical re-log). See [`DUPLICATE_NOOP`].
+pub fn mark_duplicate_noop() {
+    DUPLICATE_NOOP.with(|slot| *slot.borrow_mut() = true);
+}
+
+/// Clear the dedup-no-op flag. Called at the start of each top-level run so
+/// the flag reflects only the current invocation (in-process test harnesses
+/// drive many runs on one thread).
+pub fn reset_duplicate_noop() {
+    DUPLICATE_NOOP.with(|slot| *slot.borrow_mut() = false);
+}
+
+/// Whether the most recent run deduped a content-identical entry. The binary
+/// maps `true` to process exit code 11 (datum v2 parity).
+pub fn took_duplicate_noop() -> bool {
+    DUPLICATE_NOOP.with(|slot| *slot.borrow())
 }
 
 // ─── Cli — convenience parser entry points ───────────────────────────────

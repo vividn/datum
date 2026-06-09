@@ -562,6 +562,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             } else if !output.silent() {
                 eprintln!("⚠ Ignored 1 — duplicate of {slug}");
             }
+            // Signal the benign idempotent re-log so the binary exits 11
+            // (datum v2 parity, da-9sfm). Not an error — the EXISTS render
+            // above is the user-facing result.
+            crate::args::mark_duplicate_noop();
         }
     }
 

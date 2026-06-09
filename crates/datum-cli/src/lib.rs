@@ -60,6 +60,9 @@ pub fn render_parse_special(e: &ParseError) -> Option<Result<()>> {
 /// Does **not** route through the REPL — callers handle the empty-argv
 /// case themselves.
 pub fn run(argv: Vec<String>) -> Result<()> {
+    // Clear the dedup-no-op flag so it reflects only this invocation
+    // (da-9sfm). `main` reads it after a clean run to choose exit code 11.
+    args::reset_duplicate_noop();
     let invocation = match args::parse_invocation(argv) {
         Ok(inv) => inv,
         Err(e) => {

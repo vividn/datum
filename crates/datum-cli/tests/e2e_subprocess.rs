@@ -116,6 +116,82 @@ fn subprocess_switch_writes_row() {
     assert_eq!(env.entry_count(), 1);
 }
 
+/// da-9sfm: a content-identical re-log dedups to the existing row and must
+/// exit **11** — the distinct, scriptable code datum v2 reserved for
+/// "already have this" so idempotent loggers can skip the no-op. The first
+/// log exits 0 (CREATE); the second exits 11 (EXISTS) while still rendering
+/// the existing entry and writing no new row. Only the real process boundary
+/// surfaces the exit code, so this lives here.
+#[test]
+fn subprocess_duplicate_relog_exits_11() {
+    let env = Env::new();
+
+    // Pin the time so both logs produce identical content (same slug + hash).
+    let first = env.run(&["occur", "coffee", "-t", "0900"]);
+    assert_ok(&first, "first occur");
+    assert_eq!(env.entry_count(), 1);
+
+    let second = env.run(&["occur", "coffee", "-t", "0900"]);
+    assert_eq!(
+        second.status.code(),
+        Some(11),
+        "re-log must exit 11 (duplicate): stdout={} stderr={}",
+        String::from_utf8_lossy(&second.stdout),
+        String::from_utf8_lossy(&second.stderr),
+    );
+    // Benign no-op: EXISTS rendered, no second row, no scary "Error:".
+    assert!(
+        String::from_utf8_lossy(&second.stdout).contains("EXISTS"),
+        "duplicate should still render the existing entry"
+    );
+    assert_eq!(env.entry_count(), 1, "re-log must not write a new row");
+
+    // A subsequent distinct log exits 0 — the flag is per-invocation.
+    let third = env.run(&["occur", "tea", "-t", "0900"]);
+    assert_ok(&third, "distinct occur after duplicate");
+}
+
+/// da-9sfm: the other duplicate flavour — a slug collision with *conflicting*
+/// data (`--id` reused, different payload) — is a hard `Duplicate` error. It
+/// also exits 11 (v2 `DocExistsError` parity) but prints the error and writes
+/// nothing.
+#[test]
+fn subprocess_conflicting_id_exits_11_with_error() {
+    let env = Env::new();
+    assert_ok(
+        &env.run(&["add", "field", "--id", "doug", "foo=bar"]),
+        "first add",
+    );
+
+    let collision = env.run(&["add", "field", "--id", "doug", "different=data"]);
+    assert_eq!(
+        collision.status.code(),
+        Some(11),
+        "slug collision must exit 11: stdout={} stderr={}",
+        String::from_utf8_lossy(&collision.stdout),
+        String::from_utf8_lossy(&collision.stderr),
+    );
+    assert!(
+        String::from_utf8_lossy(&collision.stderr).contains("Duplicate"),
+        "conflicting-data collision must report the error on stderr"
+    );
+    assert_eq!(env.entry_count(), 1, "collision must not write a new row");
+}
+
+/// A plain failure (missing required positional) keeps the generic exit 1 —
+/// the distinct code is reserved for duplicates only.
+#[test]
+fn subprocess_generic_error_exits_1() {
+    let env = Env::new();
+    let out = env.run(&["occur"]);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "generic error must exit 1: stderr={}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
 /// Same path as the bin-smoke `smoke_multi_alias_body` case but through
 /// the real binary. Catches process-boundary regressions in the
 /// multi-row commit (e.g. the multi-collector relying on thread-local

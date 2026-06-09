@@ -24,6 +24,21 @@ synchronous to the path between `fn main` and the first SQLite open
 unless it has been measured. Lazy work belongs after dispatch, never
 before.
 
+## Exit codes
+
+`main` maps outcomes to process exit codes so `datum` composes in scripts:
+
+| Code | Meaning |
+|------|---------|
+| `0`  | Success. |
+| `11` | Duplicate — the entry is already present. Either a content-identical re-log (deduped to `EXISTS`, a benign no-op) or a slug collision with conflicting data (a hard error printed to stderr). Matches datum v2's `DocExistsError` code so idempotent loggers can skip: `datum occur coffee ; [ $? -eq 11 ] && echo skip`. |
+| `1`  | Any other error. |
+
+The `11`-for-duplicate code is the only special case — exit-code sprawl is
+its own footgun. The benign re-log travels as a successful `Ok` carrying a
+side-signal (so the REPL keeps rendering `EXISTS` rather than printing an
+error); only the binary turns that signal into exit `11`.
+
 ## Command surface
 
 For the full user-facing command list — verbs, time flags, alias
