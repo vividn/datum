@@ -60,6 +60,10 @@ use self::history::*;
 use self::info_db::*;
 use self::kit::*;
 use self::log::*;
+// Re-exported so the help-drift guard (`help::tests`) can compare the
+// documented log-verb flags against the flags the parser actually accepts.
+#[cfg(test)]
+pub(crate) use self::log::log_args_registry;
 use self::meta::*;
 use self::now::*;
 use self::retime::*;

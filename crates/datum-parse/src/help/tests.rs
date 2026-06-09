@@ -139,10 +139,15 @@ OPTIONS:
   -t, --time <VAL>      Time override (offset or HH:MM or 9:15am)
       --dur <VAL>       Duration (30m, 1:30, 2h, PT30M)
   -z, --timezone <TZ>   Timezone (IANA or UTC offset)
+  -D, --full-day        Date-only entry (no clock time)
   -u, --undo            Undo: delete most recent matching entry
   -k, --key <KEY_SPEC>  Data-only id-key (forms: K req, K= opt, K=val default)
   -K, --slug-key <S>    Slug-contributing id-key (same K / K= / K=val forms)
   -c, --comment <T>     Comment
+  -R, --remainder <KEY> Route un-keyed positionals to data key <KEY>
+  -S, --string-remainder  Join remainder positionals into one string (not array)
+  -C, --comment-remainder  Remainder positionals → extra_data.comment string
+  -I, --string-state    Join remainder positionals into the state as one string
       --id <TEMPLATE>   Slug template (e.g. %field%:%uid%)
       --id-delimiter <S>  Delimiter to collapse empty segments
   -L, --last-state[=<V>]  Assert prior state (bare: close-most-recent on stop)
@@ -155,6 +160,9 @@ OPTIONS:
       --alias <NAME>    On success, save current invocation as alias <NAME>
       --alias-overwrite Allow --alias to replace an existing alias
       --dry-run         Preview the would-be entry without writing
+  -A, --show-all        Show full entry detail after writing
+      --show <MODE>     Output verbosity (none|minimal|standard|all|format)
+  -o, --format-string <FMT>  Render written entry via format string
 ";
 
 #[test]
@@ -164,6 +172,89 @@ fn snapshot_add_help() {
         actual, EXPECTED_ADD,
         "datum add --help drifted from snapshot"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Help-vs-parser drift guard (da-uk4t).
+//
+// The log verbs' `--help` flag table (`LOG_FLAGS`) is authored separately
+// from the parser registry (`log_args_registry`). They drifted: working
+// flags like `-D/--full-day`, `-R/--remainder`, and the output group never
+// appeared in `occur --help`. This test binds the two so they cannot
+// silently diverge again — every flag the parser accepts must be documented
+// (with a matching value form), and the help table may not document a flag
+// the parser rejects.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn log_help_matches_parser_registry() {
+    use crate::help::commands::find_command;
+    use crate::help::spec::FlagSpec;
+    use crate::input::ValueMode;
+    use crate::parse::log_args_registry;
+    use std::collections::HashMap;
+
+    // Pure spelling-aliases of a documented flag that intentionally stay out
+    // of `--help`. `--dryrun` is just `--dry-run` without the hyphen.
+    const PARSER_ONLY: &[&str] = &["dryrun"];
+
+    // Identity key: the short letter (`-y`) when present, else the long name
+    // (`dur`). Short-first so the `-y`/`-q` rows — documented short-only even
+    // though the parser also accepts `--yesterday`/`--quick` — still match.
+    fn help_key(f: &FlagSpec) -> String {
+        match f.short {
+            Some(c) => format!("-{c}"),
+            None => f.long.to_string(),
+        }
+    }
+    fn parser_key(short: Option<char>, long: Option<&str>) -> String {
+        match short {
+            Some(c) => format!("-{c}"),
+            None => long
+                .expect("parser flag has neither short nor long")
+                .to_string(),
+        }
+    }
+
+    let help_flags = find_command("occur").expect("occur command spec").0.flags;
+    let help: HashMap<String, &FlagSpec> = help_flags.iter().map(|f| (help_key(f), f)).collect();
+
+    let registry = log_args_registry();
+    let mut parser_keys = std::collections::HashSet::new();
+    for spec in &registry {
+        let key = parser_key(spec.short, spec.long);
+        if PARSER_ONLY.contains(&key.as_str()) {
+            continue;
+        }
+        parser_keys.insert(key.clone());
+
+        let f = help.get(&key).unwrap_or_else(|| {
+            panic!(
+                "parser accepts `{key}` on the log verbs but LOG_FLAGS \
+                 (help/commands.rs) omits it — `datum occur --help` hides it"
+            )
+        });
+        let takes_value = spec.value_mode != ValueMode::None;
+        assert_eq!(
+            f.takes_value, takes_value,
+            "`{key}`: help takes_value={} but parser value_mode={:?}",
+            f.takes_value, spec.value_mode
+        );
+        let optional = spec.value_mode == ValueMode::OptionalAttached;
+        assert_eq!(
+            f.value_optional, optional,
+            "`{key}`: help value_optional={} but parser value_mode={:?}",
+            f.value_optional, spec.value_mode
+        );
+    }
+
+    for f in help_flags {
+        let key = help_key(f);
+        assert!(
+            parser_keys.contains(&key),
+            "LOG_FLAGS documents `{key}` but the parser registry has no such flag"
+        );
+    }
 }
 
 #[test]
