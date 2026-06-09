@@ -56,8 +56,8 @@ impl std::str::FromStr for TimeMetric {
 /// strings into the query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GroupColumn {
-    /// The `value` column (state for switch, quantity for occur, …).
-    Value,
+    /// The `state` column.
+    State,
     /// The derived `verb` column.
     Verb,
     /// The `field` column.
@@ -67,7 +67,7 @@ pub enum GroupColumn {
 impl GroupColumn {
     pub fn as_sql(self) -> &'static str {
         match self {
-            GroupColumn::Value => "state",
+            GroupColumn::State => "state",
             GroupColumn::Verb => "verb",
             GroupColumn::Field => "field",
         }
@@ -78,11 +78,11 @@ impl std::str::FromStr for GroupColumn {
     type Err = String;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "state" | "value" => Ok(GroupColumn::Value),
+            "state" => Ok(GroupColumn::State),
             "verb" => Ok(GroupColumn::Verb),
             "field" => Ok(GroupColumn::Field),
             other => Err(format!(
-                "unsupported group-by key '{other}' (supported: state/value, verb, field)"
+                "unsupported group-by key '{other}' (supported: state, verb, field)"
             )),
         }
     }
@@ -350,4 +350,21 @@ pub(super) fn like_prefix_pattern(prefix: &str) -> String {
     }
     out.push('%');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    // da-igwt regression guard: entry "value" vocab is permanently gone.
+    // The group-by key is "state"; the old "value" alias must NOT come back.
+    #[test]
+    fn group_column_rejects_value_alias() {
+        assert_eq!(GroupColumn::from_str("state"), Ok(GroupColumn::State));
+        assert!(
+            GroupColumn::from_str("value").is_err(),
+            "`value` must not be an accepted group-by key (da-igwt: value is gone)"
+        );
+    }
 }

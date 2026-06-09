@@ -991,7 +991,7 @@ fn resolve_template_key(key: &str, entry: &Entry) -> String {
         "id" | "slug" => entry.slug.to_string(),
         "hid" => short_hid(&entry.hid),
         "full_hid" => entry.hid.to_string(),
-        "value" | "state" => entry
+        "state" => entry
             .state
             .as_ref()
             .map(|v| match v {
@@ -1437,8 +1437,21 @@ mod tests {
     #[test]
     fn interpolate_expands_template_keys() {
         let entry = sample_entry("coffee", Verb::Point, Some(JsonValue::from(2)));
-        let out = interpolate("%field%=%value%", &entry);
+        let out = interpolate("%field%=%state%", &entry);
         assert_eq!(out, "coffee=2");
+    }
+
+    // da-igwt regression guard: entry "value" vocab is permanently gone.
+    // `%state%` is the only state template key; `%value%` must NOT alias it.
+    #[test]
+    fn value_is_not_a_state_template_alias() {
+        let entry = sample_entry("mood", Verb::Switch, Some(serde_json::json!("happy")));
+        assert_eq!(resolve_template_key("state", &entry), "happy");
+        assert_ne!(
+            resolve_template_key("value", &entry),
+            "happy",
+            "the `value` template key must not alias state (da-igwt: value is gone)"
+        );
     }
 
     #[test]

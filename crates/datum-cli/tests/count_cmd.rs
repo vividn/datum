@@ -81,30 +81,37 @@ fn count_group_by_state_aggregates_per_value() {
 }
 
 #[test]
-fn count_group_by_value_and_state_are_equivalent() {
+fn count_group_by_value_is_rejected() {
+    // da-igwt regression guard: entry "value" vocab is gone. "state" is the
+    // only group-by key; the old "value" alias must be rejected.
     let db = fresh_db();
     entry_builder("mood")
         .verb(Verb::Switch)
         .state(json!("up"))
         .insert(&db);
 
-    let state = compute_count(
-        &CountArgs {
-            group_by: Some("state".to_string()),
-            ..CountArgs::default()
-        },
-        &db,
-    )
-    .unwrap();
-    let value = compute_count(
-        &CountArgs {
-            group_by: Some("value".to_string()),
-            ..CountArgs::default()
-        },
-        &db,
-    )
-    .unwrap();
-    assert_eq!(state, value);
+    assert!(
+        compute_count(
+            &CountArgs {
+                group_by: Some("state".to_string()),
+                ..CountArgs::default()
+            },
+            &db,
+        )
+        .is_ok(),
+        "`--group-by state` must work"
+    );
+    assert!(
+        compute_count(
+            &CountArgs {
+                group_by: Some("value".to_string()),
+                ..CountArgs::default()
+            },
+            &db,
+        )
+        .is_err(),
+        "`--group-by value` must be rejected (da-igwt: value is gone)"
+    );
 }
 
 #[test]
