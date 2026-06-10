@@ -289,3 +289,64 @@ fn nowview_no_field_data_still_renders_envelope() {
     // da-34w: 30m history → 400 base + 120 panel = 520.
     assert!(svg.contains(r#"width="520""#));
 }
+
+/// `nowview --json` emits the resolved current-state panel as structured
+/// data (the shape the Pebble `nowview` watchface consumes) instead of SVG:
+/// `{ now_ms, history_minutes, panel: [{ field, state_label, colors }] }`.
+#[test]
+fn nowview_json_emits_current_state_panel() {
+    let db = fresh_db();
+    let now = Utc::now();
+    // Ongoing switch → resolves to a labeled current state at "now".
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .state(serde_json::json!("focused"))
+        .time_start_utc(now - Duration::minutes(10))
+        .insert(&db);
+    // Occur-only field → no ongoing state; the panel still lists it with a
+    // null label as a presence cue, which the watchface renders as the bare
+    // field name.
+    entry_builder("coffee")
+        .verb(Verb::Point)
+        .time_start_utc(now - Duration::minutes(5))
+        .insert(&db);
+
+    let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    run_cli(&["nowview", "--json", "--output-file", &path], &db).expect("nowview --json dispatch");
+
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).expect("read json"))
+            .expect("valid json");
+
+    assert!(v["now_ms"].as_i64().is_some(), "now_ms present");
+    assert_eq!(v["history_minutes"].as_f64(), Some(30.0));
+
+    let panel = v["panel"].as_array().expect("panel array");
+    let mood = panel
+        .iter()
+        .find(|e| e["field"] == "mood")
+        .expect("mood entry present");
+    assert_eq!(mood["state_label"], "focused");
+    let colors = mood["colors"].as_array().expect("colors array");
+    assert!(!colors.is_empty(), "mood carries at least one hex color");
+
+    let coffee = panel
+        .iter()
+        .find(|e| e["field"] == "coffee")
+        .expect("coffee entry present");
+    assert!(
+        coffee["state_label"].is_null(),
+        "occur-only field has null state_label, got {:?}",
+        coffee["state_label"]
+    );
+}
+
+/// `nowview --json` with no `--output-file` must short-circuit to stdout —
+/// never fall through to the terminal band-stack path. Just assert clean
+/// dispatch (content is covered by the file-based test above).
+#[test]
+fn nowview_json_stdout_dispatches() {
+    let db = fresh_db();
+    run_cli(&["nowview", "--json"], &db).expect("nowview --json stdout dispatch");
+}

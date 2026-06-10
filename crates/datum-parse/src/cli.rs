@@ -995,6 +995,11 @@ pub struct NowviewArgs {
     /// terminal output (per da-57dj), routed through the
     /// `nowview_terminal` visual band-stack renderer.
     pub output_file: Option<String>,
+    /// Emit the current-state panel as JSON instead of rendering. Mirrors
+    /// `dayview --json`; consumed by external clients (e.g. the Pebble
+    /// `nowview` watchface) that want the resolved per-field state + colors
+    /// without parsing SVG. Short-circuits before terminal/SVG dispatch.
+    pub json: bool,
     /// Watch mode: redraw on DB change (≈500ms) plus a 60s periodic
     /// refresh so the clock keeps advancing on an idle DB.
     pub watch: bool,
@@ -1026,6 +1031,7 @@ impl Default for NowviewArgs {
             // ~9pt. The previous default rendered too small to read.
             time_axis_height: 22.0,
             output_file: None,
+            json: false,
             watch: false,
             window: None,
             cols: None,

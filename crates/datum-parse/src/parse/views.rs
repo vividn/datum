@@ -231,6 +231,10 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
                 out.output_file = Some(v.to_string());
                 i += 1;
             }
+            FlagSplit::Long("json") => {
+                out.json = true;
+                i += 1;
+            }
             FlagSplit::Long("watch") | FlagSplit::Short('w') => {
                 out.watch = true;
                 i += 1;

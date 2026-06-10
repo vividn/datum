@@ -62,6 +62,13 @@ const PANEL_DEFAULT_WIDTH_BUMP: f64 = 120.0;
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
+    // `--json` emits the resolved current-state panel as structured data for
+    // external clients (e.g. the Pebble `nowview` watchface) and short-
+    // circuits both the terminal and SVG dispatch below.
+    if args.json {
+        return render_json_once(&args, db);
+    }
+
     // Per da-57dj: no `--output-file` → render a pure visual band stack to
     // the terminal. With `--window` we emit the horizontal Flow layout,
     // otherwise the vertical Snapshot of each tracked field's current
@@ -177,7 +184,18 @@ fn nowview_periodic_refresh(
     }
 }
 
-fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
+/// Resolve the history window, run the dayview layout, and build the
+/// current-state panel — the shared compute behind both the SVG renderer
+/// ([`render_once`]) and the JSON emitter ([`render_json_once`]).
+struct NowComputed {
+    end: DateTime<Utc>,
+    end_ms: i64,
+    history_minutes: f64,
+    layout: datum_layout::dayview::DayviewLayout,
+    panel_entries: Vec<NowviewPanelEntry>,
+}
+
+fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     let history_minutes = match &args.history {
         Some(s) => duration_minutes(s).with_context(|| format!("invalid --history: '{s}'"))?,
         None => DEFAULT_HISTORY_MINUTES,
@@ -249,7 +267,20 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
 
     let layout = compute_dayview(&config);
     let panel_entries = build_panel_entries(db, end, &layout);
-    let svg = render_nowview_svg(&layout, &format_local_hh_mm(end), &panel_entries);
+
+    Ok(NowComputed {
+        end,
+        end_ms,
+        history_minutes,
+        layout,
+        panel_entries,
+    })
+}
+
+/// Render the nowview SVG, to stdout or `--output-file`.
+fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
+    let c = compute_now(args, db)?;
+    let svg = render_nowview_svg(&c.layout, &format_local_hh_mm(c.end), &c.panel_entries);
 
     match args.output_file.as_deref() {
         None => {
@@ -257,6 +288,30 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
             Ok(())
         }
         Some(path) => write_output(path, &svg),
+    }
+}
+
+/// Emit the current-state panel as JSON (`--json`). The shape is
+/// `{ now_ms, history_minutes, panel: [{ field, state_label, colors }] }` —
+/// the resolved per-field state and hex color(s) at "now", without any SVG
+/// geometry. Consumed by external clients like the Pebble `nowview`
+/// watchface. With `--output-file` the JSON is written there; otherwise to
+/// stdout.
+fn render_json_once(args: &NowviewArgs, db: &Db) -> Result<()> {
+    let c = compute_now(args, db)?;
+    let payload = serde_json::json!({
+        "now_ms": c.end_ms,
+        "history_minutes": c.history_minutes,
+        "panel": c.panel_entries,
+    });
+    let body = serde_json::to_string_pretty(&payload)?;
+
+    match args.output_file.as_deref() {
+        None => {
+            println!("{body}");
+            Ok(())
+        }
+        Some(path) => std::fs::write(path, body).with_context(|| format!("write {path}")),
     }
 }
 
