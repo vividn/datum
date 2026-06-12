@@ -151,10 +151,14 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
         .or_else(|_| std::env::var("EDITOR"))
         .unwrap_or_else(|_| "vi".to_string());
 
-    let status = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(format!("{editor} \"$1\""))
-        .arg("--")
+    // da-sdg6: spawn the editor's argv directly rather than through `sh -c`,
+    // so a value in $DATUM_EDITOR/$EDITOR can never be interpreted as a shell
+    // command. We still shell-split it so an editor carrying flags —
+    // `EDITOR="code --wait"`, `"emacsclient -nw"` — keeps working; the
+    // tempfile is appended as the final argument.
+    let (program, editor_args) = split_editor(&editor)?;
+    let status = std::process::Command::new(&program)
+        .args(&editor_args)
         .arg(tmp.path())
         .status()
         .with_context(|| format!("failed to invoke editor: {editor}"))?;
@@ -210,13 +214,30 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
+/// Split the configured editor string into `(program, leading_args)` with
+/// datum's shell splitter. Spawning this argv directly (no `sh -c`) is what
+/// keeps a value in `$DATUM_EDITOR`/`$EDITOR` from injecting shell commands,
+/// while still supporting an editor that legitimately carries flags
+/// (`code --wait`). The caller appends the tempfile path as the final
+/// argument. Errors only when the editor string is empty after splitting —
+/// otherwise the tempfile itself would be executed as the program.
+fn split_editor(editor: &str) -> Result<(String, Vec<String>)> {
+    let mut parts = datum_parse::shell_split(editor);
+    if parts.is_empty() {
+        anyhow::bail!("no editor configured (DATUM_EDITOR/EDITOR is empty)");
+    }
+    let program = parts.remove(0);
+    Ok((program, parts))
+}
+
 #[cfg(test)]
 mod tests {
     //! `datum edit` tests.
     //!
-    //! The edit command spawns a subprocess under `sh -c` driven by the
-    //! DATUM_EDITOR env var. Env vars are process-global, so these tests
-    //! serialize against the shared `datum_test_util::env_lock`.
+    //! The edit command spawns the editor's argv directly (no shell — see
+    //! [`split_editor`]), driven by the DATUM_EDITOR env var. Env vars are
+    //! process-global, so these tests serialize against the shared
+    //! `datum_test_util::env_lock`.
 
     use super::*;
     use datum_test_util::{env_lock, ScopedEnv};
@@ -231,6 +252,47 @@ mod tests {
         let _guard = env_lock();
         let _editor = ScopedEnv::set("DATUM_EDITOR", cmd);
         f()
+    }
+
+    #[test]
+    fn split_editor_plain_program() {
+        let (program, args) = split_editor("vi").unwrap();
+        assert_eq!(program, "vi");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn split_editor_preserves_flags() {
+        // The reason the splitter exists: editors that carry args must keep
+        // working without a shell.
+        let (program, args) = split_editor("code --wait").unwrap();
+        assert_eq!(program, "code");
+        assert_eq!(args, vec!["--wait".to_string()]);
+        let (program, args) = split_editor("emacsclient -nw").unwrap();
+        assert_eq!(program, "emacsclient");
+        assert_eq!(args, vec!["-nw".to_string()]);
+    }
+
+    #[test]
+    fn split_editor_empty_is_error() {
+        // Empty / whitespace-only must fail loudly, never fall through to
+        // executing the tempfile as the program.
+        assert!(split_editor("").is_err());
+        assert!(split_editor("   ").is_err());
+    }
+
+    #[test]
+    fn split_editor_does_not_interpret_shell_metacharacters() {
+        // da-sdg6: a `;`-chained payload is NOT a second command. It
+        // tokenizes into argv, so "rm" lands as an argument to a
+        // (nonexistent) program literally named "vi;" — never as its own
+        // shell command. This is the whole security property.
+        let (program, args) = split_editor("vi; rm -rf ~").unwrap();
+        assert_eq!(program, "vi;");
+        assert_eq!(
+            args,
+            vec!["rm".to_string(), "-rf".to_string(), "~".to_string()]
+        );
     }
 
     /// Build a minimal JSON payload for the editor tempfile that targets the
