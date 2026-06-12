@@ -20,7 +20,7 @@ use anyhow::Result;
 use datum_commands::commands;
 use datum_parse::{help, ParseError};
 
-use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation};
+use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation, SyncArgs, SyncCommand};
 
 /// If `e` is one of the "clean stdout print" parse errors
 /// (help/version/man requested), render it to stdout and return
@@ -94,7 +94,23 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         return repl::run(cli.db.as_deref());
     }
 
-    if matches!(&cli.command, Command::Config(_) | Command::Sync(_)) {
+    // `datum config show` and the db-independent `sync` subcommands (server
+    // config, key files, daemon install, status) run against an in-memory
+    // placeholder. But the actual push/pull (`datum sync`, no subcommand)
+    // and `sync login` (which records the cluster in `sync_state`) operate
+    // on the REAL entry db — without it, `datum sync` packs an empty db and
+    // silently pushes nothing, and login's cluster binding is lost. This was
+    // masked because every sync test calls the handlers directly with a real
+    // db rather than through this `run()` path (da-spct).
+    let sync_needs_real_db = matches!(
+        &cli.command,
+        Command::Sync(SyncArgs { command: None, .. })
+            | Command::Sync(SyncArgs {
+                command: Some(SyncCommand::Login(_)),
+                ..
+            })
+    );
+    if matches!(&cli.command, Command::Config(_) | Command::Sync(_)) && !sync_needs_real_db {
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);
     }

@@ -270,3 +270,53 @@ fn session_refreshes_once_on_401_then_retries() {
     assert_eq!(attempts.get(), 2, "exactly one retry");
     assert_eq!(session.refresh_count(), 1, "exactly one refresh round-trip");
 }
+
+/// Regression for da-spct: `datum sync` must operate on the real `--db`,
+/// not an in-memory placeholder. Drives the actual binary entry path
+/// (`datum_cli::run`) end-to-end against the in-process relay — the
+/// coverage that was missing when the placeholder bug shipped (every other
+/// sync test calls the handlers directly with a real `Db`). With the bug,
+/// `datum sync` packs an empty in-memory db and the relay stays empty.
+#[test]
+fn datum_sync_run_path_pushes_real_db_entries() {
+    let env = scoped_env();
+    let relay = StubRelay::start();
+
+    // Auth + master key on disk so `datum sync` clears preflight without
+    // the device-code flow or a passphrase prompt.
+    write_token_for(
+        &relay.base_url,
+        AuthToken {
+            token: relay.mint_token(),
+            user_id: relay.user_id.to_string(),
+            refresh_token: "test-refresh".to_string(),
+            cluster_id: None,
+        },
+    );
+    write_master_key(&relay.base_url, &[7u8; 32]);
+
+    // A real file-backed db with one entry to push.
+    let db = fresh_db(&env);
+    db.insert_entry(&make_entry("coffee", 0, "dev-A")).unwrap();
+    let db_path = std::env::var("DATUM_HOME").unwrap() + "/datum.db";
+    drop(db); // release the handle so run() opens the file itself
+
+    assert_eq!(relay.changeset_count(), 0, "relay starts empty");
+
+    datum_cli::run(vec![
+        "datum".into(),
+        "--db".into(),
+        db_path,
+        "sync".into(),
+        "--server".into(),
+        relay.base_url.clone(),
+        "--push".into(),
+    ])
+    .expect("datum sync via run()");
+
+    assert_eq!(
+        relay.changeset_count(),
+        1,
+        "datum sync (run path) must push the real db's entry, not a placeholder's"
+    );
+}

@@ -24,7 +24,7 @@ use datum_sync_client::http::{fetch_wrapped, upload_wrapped};
 use rand::RngCore;
 use reqwest::blocking::Client;
 
-use crate::commands::sync::{build_client, resolve_server, Prompter};
+use crate::commands::sync::{build_client, resolve_server, AuthToken, Prompter};
 use crate::config::{auth_token_path, master_key_path, server_host_from_url};
 use datum_sync_client::PersistedAuthToken;
 
@@ -174,6 +174,26 @@ pub fn show_fingerprint(server_override: Option<String>, cli_db: Option<&str>) -
 /// callers that need the bearer / refresh / user_id read through the
 /// `Deref<Target = AuthToken>` impl.
 pub fn load_token(server: &str) -> Result<Option<PersistedAuthToken>> {
+    // Bootstrap / test override: a bearer in DATUM_SYNC_TOKEN is used
+    // directly, bypassing the on-disk login token. This lets a relay admin
+    // mint a credential (`datum-sync-server mint-token <user>`) and hand it
+    // to a client with no login flow — the supported path for standing up
+    // multi-client sync while the browser verification UI is unbuilt
+    // (da-1am4). DATUM_SYNC_REFRESH_TOKEN is optional; a fresh 30-day bearer
+    // needs no refresh for a session.
+    if let Ok(bearer) = std::env::var("DATUM_SYNC_TOKEN") {
+        let bearer = bearer.trim();
+        if !bearer.is_empty() {
+            let wire = AuthToken {
+                token: bearer.to_string(),
+                user_id: String::new(),
+                refresh_token: std::env::var("DATUM_SYNC_REFRESH_TOKEN").unwrap_or_default(),
+                cluster_id: None,
+            };
+            return Ok(Some(PersistedAuthToken::from_wire(wire, server)));
+        }
+    }
+
     let host = server_host_from_url(server);
     let path = auth_token_path(&host)?;
     if !path.exists() {
