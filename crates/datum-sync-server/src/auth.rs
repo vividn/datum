@@ -6,7 +6,7 @@ use crate::{
         AuthToken, LoginBeginRequest, LoginBeginResponse, LoginFinishRequest, RefreshTokenRequest,
         RegisterBeginRequest, RegisterBeginResponse, RegisterFinishRequest,
     },
-    refresh, AppState,
+    refresh, AppState, LockRecover,
 };
 use axum::{extract::State, Json};
 use std::sync::Arc;
@@ -18,7 +18,7 @@ pub async fn register_begin(
     Json(req): Json<RegisterBeginRequest>,
 ) -> Result<Json<RegisterBeginResponse>, AppError> {
     let (user_id, ccr) = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db.lock_recover();
 
         let user_id = match db::get_user_by_username(&conn, &req.username)? {
             Some(id) => id,
@@ -53,8 +53,7 @@ pub async fn register_finish(
 
     let (_, reg_state) = state
         .reg_states
-        .lock()
-        .unwrap()
+        .lock_recover()
         .remove(&user_id.to_string())
         .filter(|(deadline, _)| Instant::now() <= *deadline)
         .ok_or_else(|| AppError::BadRequest("No pending registration for this user".to_string()))?;
@@ -64,7 +63,7 @@ pub async fn register_finish(
         .finish_passkey_registration(&req.credential, &reg_state)?;
 
     let refresh_token = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db.lock_recover();
         db::save_credential(&conn, &user_id, &passkey)?;
         refresh::mint_and_persist(&conn, &user_id)?
     };
@@ -83,7 +82,7 @@ pub async fn login_begin(
     Json(req): Json<LoginBeginRequest>,
 ) -> Result<Json<LoginBeginResponse>, AppError> {
     let (user_id, rcr) = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db.lock_recover();
 
         let user_id = db::get_user_by_username(&conn, &req.username)?.ok_or(AppError::NotFound)?;
 
@@ -115,8 +114,7 @@ pub async fn login_finish(
 
     let (_, auth_state) = state
         .auth_states
-        .lock()
-        .unwrap()
+        .lock_recover()
         .remove(&user_id.to_string())
         .filter(|(deadline, _)| Instant::now() <= *deadline)
         .ok_or_else(|| {
@@ -131,7 +129,7 @@ pub async fn login_finish(
     // refresh token under the same lock so we don't have to grab the
     // mutex twice in a row.
     let refresh_token = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db.lock_recover();
         let mut passkeys = db::get_passkeys(&conn, &user_id)?;
         for pk in passkeys.iter_mut() {
             if pk.update_credential(&auth_result).is_some() {
@@ -167,7 +165,7 @@ pub async fn refresh(
     let token_hash = refresh::hash_token(&req.refresh_token);
 
     let (user_id, new_refresh) = {
-        let mut conn = state.db.lock().unwrap();
+        let mut conn = state.db.lock_recover();
         let tx = conn.transaction()?;
         let (user_id, expires_at) =
             db::lookup_refresh_token(&tx, &token_hash)?.ok_or(AppError::Unauthorized)?;

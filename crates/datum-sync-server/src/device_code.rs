@@ -23,7 +23,7 @@ use crate::{
     error::AppError,
     jwt,
     models::{DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeResponse, PollResponse},
-    refresh, AppState,
+    refresh, AppState, LockRecover,
 };
 
 /// In-memory record of one pending device-code grant.
@@ -72,7 +72,7 @@ pub async fn start(
     // Sweep expired grants before inserting: this endpoint is the
     // unauthenticated path that grows the map, so amortizing cleanup here
     // bounds it to codes still inside their lifetime (da-3huo).
-    let mut map = state.device_codes.lock().unwrap();
+    let mut map = state.device_codes.lock_recover();
     map.retain(|_, rec| rec.expires_at > now);
     // da-t3f3: pick a user_code not already pending. A future verify-by-code
     // flow keys on it, so two live grants must never share one. At 32 random
@@ -125,7 +125,7 @@ pub async fn poll(
     // before doing anything else. Production sets this to 0 so the branch
     // is never taken.
     {
-        let mut remaining = state.slow_down_polls_remaining.lock().unwrap();
+        let mut remaining = state.slow_down_polls_remaining.lock_recover();
         if *remaining > 0 {
             *remaining -= 1;
             return (StatusCode::OK, Json(poll_error("slow_down"))).into_response();
@@ -135,7 +135,7 @@ pub async fn poll(
     // Snapshot the record under the lock, then drop it before issuing a JWT
     // so we don't hold the device_codes mutex across crypto work.
     let record = {
-        let map = state.device_codes.lock().unwrap();
+        let map = state.device_codes.lock_recover();
         map.get(&q.device_code).cloned()
     };
 
@@ -146,13 +146,13 @@ pub async fn poll(
     if Instant::now() > record.expires_at {
         // Clean up the stale record so /authorize on the same code fails
         // immediately too.
-        state.device_codes.lock().unwrap().remove(&q.device_code);
+        state.device_codes.lock_recover().remove(&q.device_code);
         return (StatusCode::BAD_REQUEST, Json(poll_error("expired"))).into_response();
     }
 
     if let Some(user_id) = record.authorized_user_id {
         let refresh_token = {
-            let conn = state.db.lock().unwrap();
+            let conn = state.db.lock_recover();
             match refresh::mint_and_persist(&conn, &user_id) {
                 Ok(t) => t,
                 Err(e) => return e.into_response(),
@@ -163,7 +163,7 @@ pub async fn poll(
                 // One-shot: drop the device_code so the same poll can't
                 // be replayed for a fresh token without re-running the
                 // device-code flow.
-                state.device_codes.lock().unwrap().remove(&q.device_code);
+                state.device_codes.lock_recover().remove(&q.device_code);
                 let body = PollResponse::Success {
                     token,
                     user_id: Some(user_id.to_string()),
@@ -196,14 +196,14 @@ pub async fn authorize(
     Json(req): Json<DeviceCodeAuthorizeRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let user_id = {
-        let conn = state.db.lock().unwrap();
+        let conn = state.db.lock_recover();
         match db::get_user_by_username(&conn, &req.username)? {
             Some(id) => id,
             None => db::create_user(&conn, &req.username)?,
         }
     };
 
-    let mut map = state.device_codes.lock().unwrap();
+    let mut map = state.device_codes.lock_recover();
     let entry = map
         .get_mut(&req.device_code)
         .ok_or_else(|| AppError::BadRequest("unknown device_code".to_string()))?;

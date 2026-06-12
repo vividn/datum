@@ -50,6 +50,21 @@ use crate::ratelimit::RateLimiter;
 
 pub use crate::device_code::DeviceCodeRecord;
 
+/// Lock a `Mutex`, recovering the guard even if a previous holder panicked
+/// mid-critical-section. std `Mutex` *poisons* on such a panic, after which
+/// every plain `.lock().unwrap()` also panics — so one bad request could
+/// brick the relay permanently. Recovering keeps it serving (the panicked
+/// operation is the bug to fix, not the lock). da-h53o / catalog #3.
+pub(crate) trait LockRecover<T> {
+    fn lock_recover(&self) -> std::sync::MutexGuard<'_, T>;
+}
+
+impl<T> LockRecover<T> for Mutex<T> {
+    fn lock_recover(&self) -> std::sync::MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 /// Ceiling on a request body, chosen rather than inherited (da-5ua6).
 /// Axum's `Router` applies a 2 MiB default that nobody picked, and a first
 /// sync of a real history sailed straight into it as
@@ -71,7 +86,7 @@ pub const CEREMONY_TTL: Duration = Duration::from_secs(300);
 /// growth, so abandoned ceremonies can't accumulate unboundedly (da-3huo).
 fn sweep_and_insert<V>(map: &Mutex<HashMap<String, (Instant, V)>>, key: String, value: V) {
     let now = Instant::now();
-    let mut map = map.lock().unwrap();
+    let mut map = map.lock_recover();
     map.retain(|_, (deadline, _)| *deadline > now);
     map.insert(key, (now + CEREMONY_TTL, value));
 }
@@ -339,9 +354,23 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
+    #[test]
+    fn lock_recover_survives_a_poisoned_mutex() {
+        let m = Arc::new(Mutex::new(1));
+        let m2 = Arc::clone(&m);
+        let _ = std::thread::spawn(move || {
+            let _guard = m2.lock().unwrap();
+            panic!("panic mid-critical-section");
+        })
+        .join();
+        assert!(m.is_poisoned());
+        *m.lock_recover() += 1;
+        assert_eq!(*m.lock_recover(), 2);
+    }
+
     fn make_test_jwt(state: &AppState) -> (Uuid, String) {
         let user_id = Uuid::new_v4();
-        let conn = state.db.lock().unwrap();
+        let conn = state.db.lock_recover();
         conn.execute(
             "INSERT INTO users (id, username) VALUES (?1, ?2)",
             rusqlite::params![user_id.to_string(), format!("user-{}", user_id)],
@@ -746,7 +775,7 @@ mod tests {
     #[tokio::test]
     async fn test_device_code_start_sweeps_expired_grants() {
         let state = test_state();
-        state.device_codes.lock().unwrap().insert(
+        state.device_codes.lock_recover().insert(
             "dc-stale".to_string(),
             DeviceCodeRecord {
                 user_code: "DEAD-BEEF".to_string(),
@@ -768,7 +797,7 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let map = state.device_codes.lock().unwrap();
+        let map = state.device_codes.lock_recover();
         assert!(
             !map.contains_key("dc-stale"),
             "expired grant must be swept on the next start"
@@ -798,7 +827,7 @@ mod tests {
         // Alice begins and abandons; backdate her deadline past the TTL.
         assert_eq!(begin("alice").await.unwrap().status(), StatusCode::OK);
         {
-            let mut map = state.reg_states.lock().unwrap();
+            let mut map = state.reg_states.lock_recover();
             assert_eq!(map.len(), 1);
             for (deadline, _) in map.values_mut() {
                 *deadline = std::time::Instant::now() - std::time::Duration::from_secs(1);
@@ -807,7 +836,7 @@ mod tests {
 
         // Bob's begin sweeps the expired ceremony.
         assert_eq!(begin("bob").await.unwrap().status(), StatusCode::OK);
-        let map = state.reg_states.lock().unwrap();
+        let map = state.reg_states.lock_recover();
         assert_eq!(map.len(), 1, "expired ceremony must be swept on begin");
     }
 
@@ -1052,11 +1081,11 @@ mod tests {
         // Mint a refresh manually so we don't depend on the full
         // device-code flow plumbing in this test.
         let user_id = {
-            let conn = state.db.lock().unwrap();
+            let conn = state.db.lock_recover();
             db::create_user(&conn, "single-use-user").unwrap()
         };
         let initial_refresh = {
-            let conn = state.db.lock().unwrap();
+            let conn = state.db.lock_recover();
             crate::refresh::mint_and_persist(&conn, &user_id).unwrap()
         };
 
@@ -1191,7 +1220,7 @@ mod tests {
         assert_eq!(json["generation"], 0);
 
         // Cluster row exists, scoped to the calling user.
-        let conn = state.db.lock().unwrap();
+        let conn = state.db.lock_recover();
         let gen = cluster::get_generation_for_owner(&conn, "cluster-X", &user_id).unwrap();
         assert_eq!(gen.map(|(g, _)| g), Some(0));
     }
@@ -1306,7 +1335,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
         // Alice's generation stays at 0 — Bob's attempt was a no-op.
-        let conn = state.db.lock().unwrap();
+        let conn = state.db.lock_recover();
         assert_eq!(
             cluster::get_generation_for_owner(&conn, "cluster-Z", &alice_uid)
                 .unwrap()

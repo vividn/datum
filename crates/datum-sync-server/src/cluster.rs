@@ -24,7 +24,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::{error::AppError, models::AuthenticatedUser, AppState};
+use crate::{error::AppError, models::AuthenticatedUser, AppState, LockRecover};
 
 /// Look up a cluster's current generation. Cluster names are
 /// namespaced per user (composite PK, da-1m63), so the `user_id`
@@ -146,7 +146,7 @@ pub async fn bump_generation_endpoint(
     Extension(user): Extension<AuthenticatedUser>,
     Path(cluster_id): Path<String>,
 ) -> Result<Json<BumpResponse>, AppError> {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db.lock_recover();
     match bump_generation(&conn, &cluster_id, &user.user_id)? {
         Some((generation, _started_at)) => Ok(Json(BumpResponse {
             cluster_id,

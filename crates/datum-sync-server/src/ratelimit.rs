@@ -29,6 +29,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::LockRecover;
+
 /// One IP's bucket: a fractional token count and the instant it was last
 /// touched (for lazy refill).
 struct Bucket {
@@ -93,7 +95,7 @@ impl RateLimiter {
         let Some(inner) = &self.inner else {
             return true; // disabled
         };
-        let mut buckets = inner.lock().unwrap();
+        let mut buckets = inner.lock_recover();
 
         // Drop fully-refilled (idle) buckets first: bounds the map to IPs
         // active within the refill window, so a flood of distinct source IPs
@@ -183,13 +185,13 @@ mod tests {
         let rl = RateLimiter::new(30);
         let t0 = Instant::now();
         assert!(rl.check_at(ip(1), t0));
-        assert_eq!(rl.inner.as_ref().unwrap().lock().unwrap().len(), 1);
+        assert_eq!(rl.inner.as_ref().unwrap().lock_recover().len(), 1);
 
         // Touch a different IP well past the 20s full-refill window; the
         // sweep in that call evicts ip(1).
         let t1 = t0 + Duration::from_secs(60);
         assert!(rl.check_at(ip(2), t1));
-        let map = rl.inner.as_ref().unwrap().lock().unwrap();
+        let map = rl.inner.as_ref().unwrap().lock_recover();
         assert!(!map.contains_key(&ip(1)), "idle bucket must be swept");
         assert_eq!(map.len(), 1, "only the active IP remains");
     }

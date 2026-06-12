@@ -10,7 +10,7 @@ use crate::{
     cluster, db,
     error::AppError,
     models::{AuthenticatedUser, Changeset, PullResponse, PushRequest, PushResponse},
-    AppState,
+    AppState, LockRecover,
 };
 
 pub async fn push(
@@ -18,7 +18,7 @@ pub async fn push(
     Extension(user): Extension<AuthenticatedUser>,
     Json(req): Json<PushRequest>,
 ) -> Result<Json<PushResponse>, AppError> {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db.lock_recover();
 
     // da-h4te: reject a push submitted under a device_id owned by another
     // user. Without this guard, `ensure_device`'s INSERT OR IGNORE silently
@@ -52,7 +52,7 @@ pub async fn push(
     // advances and the prediction check below misses. Production always
     // leaves this at 0 so the branch is never taken.
     {
-        let mut remaining = state.collide_pushes_remaining.lock().unwrap();
+        let mut remaining = state.collide_pushes_remaining.lock_recover();
         if *remaining > 0 {
             *remaining -= 1;
             db::insert_changeset_into_cluster(
@@ -129,7 +129,7 @@ pub async fn pull(
     Extension(user): Extension<AuthenticatedUser>,
     Query(q): Query<PullQuery>,
 ) -> Result<Json<PullResponse>, AppError> {
-    let conn = state.db.lock().unwrap();
+    let conn = state.db.lock_recover();
 
     let (server_generation, gen_started_at) =
         cluster::ensure_cluster(&conn, &q.cluster_id, &user.user_id)?;
