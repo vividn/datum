@@ -583,7 +583,24 @@ pub fn get_wrapped_key(conn: &Connection, user_id: &Uuid) -> Result<Option<Strin
     }
 }
 
+/// The user_id (as a string) that owns `device_id`, or `None` if the device
+/// is not yet registered. Lets `push` reject a changeset submitted under
+/// another user's device identity before it writes (da-h4te).
+pub fn device_owner(conn: &Connection, device_id: &str) -> Result<Option<String>> {
+    use rusqlite::OptionalExtension;
+    Ok(conn
+        .query_row(
+            "SELECT user_id FROM devices WHERE id = ?1",
+            params![device_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?)
+}
+
 /// Ensure a device is registered for a user (auto-registers if not present).
+/// Callers that accept attacker-supplied `device_id` (i.e. `push`) must
+/// first reject foreign ownership via [`device_owner`] — this `INSERT OR
+/// IGNORE` silently no-ops on a device_id already owned by someone else.
 pub fn ensure_device(conn: &Connection, device_id: &str, user_id: &Uuid) -> Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO devices (id, user_id) VALUES (?1, ?2)",

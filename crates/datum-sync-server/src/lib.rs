@@ -345,6 +345,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn push_under_foreign_device_is_forbidden() {
+        // da-h4te: a device_id first seen under user A cannot be reused by
+        // user B — B's push fails closed with 403 instead of silently
+        // writing an orphaned changeset under A's device identity.
+        let state = test_state();
+        let (_user_a, token_a) = make_test_jwt(&state);
+        let (_user_b, token_b) = make_test_jwt(&state);
+
+        let body = serde_json::json!({
+            "device_id": "shared-device",
+            "payload_b64": "SGVsbG8",
+            "cluster_id": "c",
+            "generation": 0,
+            "predicted_seq": 1
+        });
+
+        // A registers `shared-device` by pushing.
+        let resp_a = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v0/push")
+                    .header("Authorization", format!("Bearer {token_a}"))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_a.status(), StatusCode::OK);
+
+        // B tries the same device_id → 403.
+        let resp_b = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v0/push")
+                    .header("Authorization", format!("Bearer {token_b}"))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_b.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
     async fn test_multi_device_integration() {
         let state = test_state();
         let (_, token) = make_test_jwt(&state);

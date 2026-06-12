@@ -133,6 +133,27 @@ impl Drop for TempFileGuard {
     }
 }
 
+/// Create+truncate a file owned read/write by the current user only (0600).
+/// Used for the backup staging file, which transiently holds the full
+/// plaintext dataset in a shared temp dir (da-903m). On non-Unix we fall
+/// back to a plain create — those platforms don't share `/tmp` the same way.
+fn create_private_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::File::create(path)
+    }
+}
+
 fn backup_targz(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Result<()> {
     use std::io::Write;
 
@@ -145,7 +166,11 @@ fn backup_targz(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Resul
 
     let mut count = 0usize;
     {
-        let temp_file = std::fs::File::create(&guard.0)
+        // da-903m: the staging file holds the user's entire plaintext entry
+        // set in a shared temp dir. Create it 0600 so another local user
+        // can't read the export during the backup window. (`{hid}` already
+        // makes the name unpredictable; this closes the read permission.)
+        let temp_file = create_private_file(&guard.0)
             .with_context(|| format!("Creating staging file: {}", guard.0.display()))?;
         let mut writer = std::io::BufWriter::new(temp_file);
         writeln!(writer, "{}", serde_json::to_string(header)?)?;

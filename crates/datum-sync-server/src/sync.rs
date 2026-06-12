@@ -20,6 +20,18 @@ pub async fn push(
 ) -> Result<Json<PushResponse>, AppError> {
     let conn = state.db.lock().unwrap();
 
+    // da-h4te: reject a push submitted under a device_id owned by another
+    // user. Without this guard, `ensure_device`'s INSERT OR IGNORE silently
+    // no-ops on a foreign device_id and the changeset lands orphaned; fail
+    // closed (403) so a caller can only write under devices it owns.
+    if let Some(owner) = db::device_owner(&conn, &req.device_id)? {
+        if owner != user.user_id.to_string() {
+            return Err(AppError::Forbidden(
+                "device_id is registered to another user".to_string(),
+            ));
+        }
+    }
+
     db::ensure_device(&conn, &req.device_id, &user.user_id)?;
 
     // da-tat1: resolve the cluster the push targets. The request might be

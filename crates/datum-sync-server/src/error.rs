@@ -29,6 +29,11 @@ pub enum AppError {
     #[error("bad request: {0}")]
     BadRequest(String),
 
+    /// da-h4te: the authenticated caller asked to act under a resource
+    /// (e.g. a device_id) owned by a different user. Surfaces as HTTP 403.
+    #[error("forbidden: {0}")]
+    Forbidden(String),
+
     #[error("internal error: {0}")]
     Internal(String),
 
@@ -68,6 +73,7 @@ impl IntoResponse for AppError {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             AppError::GenerationMismatch(_) | AppError::SeqMismatch(_) => {
                 unreachable!("handled above")
             }

@@ -52,11 +52,13 @@ fn random_token(len: usize) -> String {
 }
 
 fn random_user_code() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let n = nanos as u32;
+    // da-t3f3: the user_code is a credential the verification flow keys on,
+    // so it must be unpredictable — same reasoning as `random_token` above.
+    // The previous implementation derived it from the system clock, which is
+    // guessable by anyone who knows roughly when `start` ran (an oversight:
+    // the device_code was hardened to OsRng but this sibling was missed).
+    use rand::{rngs::OsRng, RngCore};
+    let n = OsRng.next_u32();
     format!("{:04X}-{:04X}", n & 0xFFFF, (n >> 16) & 0xFFFF)
 }
 
@@ -65,7 +67,6 @@ pub async fn start(
     Json(_body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     let device_code = format!("dc-{}", random_token(24));
-    let user_code = random_user_code();
     let now = Instant::now();
 
     // Sweep expired grants before inserting: this endpoint is the
@@ -73,6 +74,16 @@ pub async fn start(
     // bounds it to codes still inside their lifetime (da-3huo).
     let mut map = state.device_codes.lock().unwrap();
     map.retain(|_, rec| rec.expires_at > now);
+    // da-t3f3: pick a user_code not already pending. A future verify-by-code
+    // flow keys on it, so two live grants must never share one. At 32 random
+    // bits a collision is astronomically unlikely; the loop is correctness
+    // insurance, evaluated under the same lock as the insert.
+    let user_code = loop {
+        let candidate = random_user_code();
+        if !map.values().any(|rec| rec.user_code == candidate) {
+            break candidate;
+        }
+    };
     map.insert(
         device_code.clone(),
         DeviceCodeRecord {
