@@ -20,7 +20,10 @@ async fn main() -> anyhow::Result<()> {
     let conn = Connection::open(&config.db_path)?;
     db::init_db(&conn)?;
 
-    let state = Arc::new(AppState::new(conn, webauthn, config.jwt_secret));
+    let state = Arc::new(
+        AppState::new(conn, webauthn, config.jwt_secret)
+            .with_device_authorize(config.device_authorize_enabled),
+    );
     let app = build_app(state);
 
     let addr = format!("0.0.0.0:{}", config.port);

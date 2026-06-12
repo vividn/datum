@@ -66,6 +66,13 @@ pub struct AppState {
     pub db: Mutex<Connection>,
     pub webauthn: Webauthn,
     pub jwt_secret: String,
+    /// da-1am4: gate for the unauthenticated `/device-code/authorize`
+    /// endpoint. OFF by default — that endpoint binds a device-code to an
+    /// arbitrary username with no credential (a full account-takeover
+    /// vector), so a deployed relay must not expose it until a real
+    /// verification step replaces the v1 stub. Wired from
+    /// `DATUM_SYNC_ENABLE_DEVICE_AUTHORIZE`; tests opt in.
+    pub device_authorize_enabled: bool,
     /// In-progress passkey registration ceremonies keyed by user_id string,
     /// each paired with its sweep deadline.
     pub reg_states: Mutex<HashMap<String, (Instant, PasskeyRegistration)>>,
@@ -98,7 +105,15 @@ impl AppState {
             device_codes: Mutex::new(HashMap::new()),
             slow_down_polls_remaining: Mutex::new(0),
             collide_pushes_remaining: Mutex::new(0),
+            device_authorize_enabled: false,
         }
+    }
+
+    /// Enable the gated `/device-code/authorize` route (da-1am4). Off by
+    /// default; production wires this from config, tests opt in.
+    pub fn with_device_authorize(mut self, enabled: bool) -> Self {
+        self.device_authorize_enabled = enabled;
+        self
     }
 }
 
@@ -134,15 +149,24 @@ pub fn build_app(state: Arc<AppState>) -> Router {
     // Unauthenticated under /v0/auth/*: passkey ceremonies + RFC 8628 device-code.
     // /v0/auth/refresh is unauthenticated by design — it accepts only the
     // single-use refresh_token, not a (possibly-expired) bearer.
-    let auth_routes = Router::new()
+    let mut auth_routes = Router::new()
         .route("/register/begin", post(auth::register_begin))
         .route("/register/finish", post(auth::register_finish))
         .route("/login/begin", post(auth::login_begin))
         .route("/login/finish", post(auth::login_finish))
         .route("/refresh", post(auth::refresh))
         .route("/device-code", post(device_code::start))
-        .route("/device-code/poll", get(device_code::poll))
-        .route("/device-code/authorize", post(device_code::authorize));
+        .route("/device-code/poll", get(device_code::poll));
+    // da-1am4: `/device-code/authorize` binds a pending device-code to an
+    // arbitrary username with NO credential — a complete account-takeover
+    // bypass of the passkey ceremony. The real browser verification UI that
+    // would gate it is unbuilt, so the route is mounted ONLY when explicitly
+    // enabled. Off by default → a deployed relay cannot boot the bypass.
+    // Consequence: device-code *login* is unavailable until a real
+    // verification step replaces this stub (tracked on da-1am4).
+    if state.device_authorize_enabled {
+        auth_routes = auth_routes.route("/device-code/authorize", post(device_code::authorize));
+    }
 
     // Bearer-authenticated under /v0: changeset push/pull + wrapped key.
     // `/clusters/{id}/bump-generation` lives here too (da-tat1): a client
@@ -200,11 +224,47 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state() -> Arc<AppState> {
+        build_test_state(false)
+    }
+
+    /// Like [`test_state`] but with the gated device-code `authorize` route
+    /// mounted (da-1am4) — for tests that drive the full device-code flow.
+    fn test_state_with_device_authorize() -> Arc<AppState> {
+        build_test_state(true)
+    }
+
+    fn build_test_state(device_authorize: bool) -> Arc<AppState> {
         let conn = Connection::open_in_memory().unwrap();
         db::init_db(&conn).unwrap();
         let origin = Url::parse("http://localhost:3000").unwrap();
         let webauthn = build_webauthn(&origin, "datum-test").unwrap();
-        Arc::new(AppState::new(conn, webauthn, "test-secret".to_string()))
+        Arc::new(
+            AppState::new(conn, webauthn, "test-secret".to_string())
+                .with_device_authorize(device_authorize),
+        )
+    }
+
+    #[tokio::test]
+    async fn device_code_authorize_is_disabled_by_default() {
+        // da-1am4: with the default state (authorize OFF), the bypass route
+        // is not mounted, so POSTing to it 404s — a deployed relay cannot
+        // boot the account-takeover endpoint.
+        let state = test_state();
+        let resp = build_app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v0/auth/device-code/authorize")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "device_code": "dc-x", "username": "victim" })
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     fn make_test_jwt(state: &AppState) -> (Uuid, String) {
@@ -609,7 +669,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_device_code_flow_end_to_end() {
-        let state = test_state();
+        let state = test_state_with_device_authorize();
 
         // 1. start
         let start_resp = build_app(state.clone())
@@ -717,7 +777,7 @@ mod tests {
     /// then exercise the new bearer against an authed endpoint.
     #[tokio::test]
     async fn test_refresh_token_roundtrip() {
-        let state = test_state();
+        let state = test_state_with_device_authorize();
 
         // Drive a device-code flow to get an initial refresh token.
         let start = build_app(state.clone())

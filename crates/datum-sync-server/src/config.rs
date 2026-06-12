@@ -23,6 +23,11 @@ pub struct Config {
     pub origin: String,
     pub rp_name: String,
     pub jwt_secret: String,
+    /// da-1am4: opt-in for the unauthenticated `/device-code/authorize`
+    /// endpoint. Default false — leaving it off keeps a deployed relay from
+    /// exposing the account-takeover bypass. Enable only behind a real
+    /// verification step. Set `DATUM_SYNC_ENABLE_DEVICE_AUTHORIZE=true`.
+    pub device_authorize_enabled: bool,
 }
 
 impl Config {
@@ -59,12 +64,20 @@ impl Config {
             None => 3000,
         };
 
+        // da-1am4: explicit opt-in only. Anything other than "true"/"1"
+        // (incl. unset) leaves the bypass route unmounted.
+        let device_authorize_enabled = matches!(
+            var("DATUM_SYNC_ENABLE_DEVICE_AUTHORIZE").as_deref(),
+            Some("true") | Some("1")
+        );
+
         Ok(Config {
             db_path: var("DATUM_SYNC_DB").unwrap_or_else(|| "./datum-sync-server.db".into()),
             origin: var("DATUM_SYNC_ORIGIN").unwrap_or_else(|| format!("http://localhost:{port}")),
             rp_name: var("DATUM_SYNC_RP_NAME").unwrap_or_else(|| "datum sync".into()),
             jwt_secret,
             port,
+            device_authorize_enabled,
         })
     }
 }
