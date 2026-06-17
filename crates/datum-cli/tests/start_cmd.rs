@@ -5,7 +5,8 @@
 //!   * daydumb supplies positional duration via `--dur`; `-m`/`--moment`
 //!     forces a zero-duration point (`dur=MOMENT`). A bare `start` with
 //!     neither opens an ongoing block (no `time_end`). `-T` (omit timestamp)
-//!     has no equivalent — daydumb always anchors entries to `time_start`.
+//!     IS supported — it yields a timeless entry (`occur_time` NULL, slug
+//!     `field:unset`); see `no_timestamp.rs` for the cross-verb coverage.
 //!   * "Required keys" (`-k key`) is also datum-specific; daydumb's `-k`
 //!     always takes `KEY=VALUE`.
 //!
@@ -221,9 +222,9 @@ fn start_moment_yields_to_explicit_dur() {
 /// TS #6: "when --omit-timestamp/-T is specified, there is no positional
 /// duration argument".
 ///
-/// `-T` has no daydumb equivalent (daydumb entries are always time-anchored).
-/// The salvageable behavior being tested: extra keys attach correctly and
-/// no duration is derived from extra positionals.
+/// daydumb does support `-T` (see `no_timestamp.rs`); the behavior ported
+/// here is the orthogonal one: extra keys attach correctly and no duration
+/// is derived from extra positionals.
 #[test]
 fn start_extras_do_not_imply_duration() {
     let db = fresh_db();

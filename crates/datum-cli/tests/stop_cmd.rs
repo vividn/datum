@@ -2,9 +2,11 @@
 //!
 //! Ports the 8 cases from `endCmd.test.ts` in the original datum project,
 //! adapted to daydumb's flag-based model:
-//!   * daydumb lacks `--moment` on stop, `-T` (omit-timestamp), and positional
-//!     duration — duration is supplied only via `--dur`. "Moment" semantics
-//!     are the default for stop (no `--dur` ⇒ no `time_end`).
+//!   * daydumb lacks `--moment` on stop and positional duration — duration
+//!     is supplied only via `--dur`. "Moment" semantics are the default for
+//!     stop (no `--dur` ⇒ no `time_end`). `-T` (omit-timestamp) IS supported
+//!     and yields a timeless entry (`occur_time` NULL, slug `field:unset`);
+//!     see `no_timestamp.rs` for the cross-verb coverage.
 //!   * "Required keys" (`-k key`) is datum-specific; daydumb's `-k` always
 //!     takes `KEY=VALUE`.
 //!   * `end` is a CLI alias for `stop` — both produce `Verb::Switch`.
@@ -163,9 +165,9 @@ fn stop_without_dur_is_moment_like() {
 /// TS #5: "when --omit-timestamp/-T is specified, there is no positional
 /// duration argument".
 ///
-/// `-T` has no daydumb equivalent — daydumb entries are always
-/// time-anchored. The salvageable behavior: multiple `-k` flags attach
-/// cleanly, and no trailing positional gets misinterpreted as a duration.
+/// daydumb does support `-T` (see `no_timestamp.rs`); the behavior ported
+/// here is the orthogonal one: multiple `-k` flags attach cleanly, and no
+/// trailing positional gets misinterpreted as a duration.
 #[test]
 fn stop_extras_do_not_imply_duration() {
     let db = fresh_db();

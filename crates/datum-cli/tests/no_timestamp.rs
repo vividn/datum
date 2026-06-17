@@ -95,6 +95,30 @@ fn add_minus_t_is_timeless_point() {
     assert!(e.dur.is_none());
 }
 
+// ─── Regression: -T entry is genuinely timeless (occur_time NULL) ────────────
+
+/// da-o7iz: `<verb> foo -T` produces a timeless, add-equivalent entry —
+/// `occur_time` reads back as `None` (not a `create_time` stub) and the slug
+/// carries `:unset`, exactly like a bare `add foo`. Guards against the stale
+/// belief that "daydumb always anchors entries to `time_start`" (the comments
+/// formerly in `start_cmd.rs`/`stop_cmd.rs` claiming `-T` has no equivalent).
+#[test]
+fn minus_t_entry_is_timeless_occur_time_none() {
+    let db = fresh_db();
+    run_cli(&["occur", "coffee", "-T"], &db).expect("occur coffee -T");
+    let e = &db.entries_for_field("coffee", None).unwrap()[0];
+    assert!(
+        e.occur_time.is_none(),
+        "`-T` must leave occur_time NULL (timeless), got {:?}",
+        e.occur_time
+    );
+    assert!(
+        e.slug.ends_with(":unset"),
+        "timeless slug carries :unset (got: {})",
+        e.slug
+    );
+}
+
 // ─── Payload preservation: -T still routes through the normal kv parsing ─────
 
 #[test]
