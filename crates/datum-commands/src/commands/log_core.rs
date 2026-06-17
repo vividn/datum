@@ -208,6 +208,19 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
     let device = device_id()?;
 
+    // `start foo -m` is a momentary dot, not an open block: stamp dur=MOMENT
+    // via the occur model — `(time_start, None)` + `Dur::Moment` (NOT a
+    // `(base, base)` zero-span, which would derive `Dur::Of(PT0S)` and preempt
+    // the Moment). `derive_verb` then locks it to `Verb::Point`. An explicit
+    // duration overrides it — `dur=` / trailing positional (reserved.dur) or
+    // `--dur` (args.duration.duration) — per "set dur to MOMENT unless
+    // explicitly set otherwise (dur=3)". (Switch has its own zero-span point
+    // path below; occur is a point by default.)
+    let moment_point = args.duration.moment
+        && matches!(action, Action::Start)
+        && reserved.dur.is_none()
+        && args.duration.duration.is_none();
+
     // Compute time_start, time_end, precision, and (for Action::Add) a shape
     // override. Skipped entirely for -T — a timeless entry carries no times
     // and no precision metadata.
@@ -260,7 +273,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         let (time_start, time_end) = if let Some(result) = &add_override {
             (result.start_time.clone(), result.end_time.clone())
         } else if args.duration.moment && matches!(action, Action::Switch) {
-            // --moment on switch: point-in-time change (time_start == time_end)
+            // --moment on switch: point-in-time change (time_start == time_end).
+            // Switch keeps the zero-span shape (deriving dur=PT0S); start takes
+            // the dur=MOMENT path instead (see `moment_point`).
             (Some(base_time.clone()), Some(base_time))
         } else if let Some(dur_str) = &args.duration.duration {
             let dur = parse_duration(dur_str)?;
@@ -344,12 +359,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
     let _ = reserved.occur_time;
 
-    // da-ju71.2: emit `Dur::Moment` ("MOMENT") for Action::Occur when no
-    // explicit dur was supplied. This locks the entry to Verb::Point in
-    // `derive_verb` regardless of state shape, so an occur with
-    // structured state (e.g. `occur drive .id=car .role=driver`) stays a
-    // point-in-time event instead of being classified as Switch.
-    if matches!(action, Action::Occur) && entry.dur.is_none() {
+    // da-ju71.2: stamp `Dur::Moment` ("MOMENT") to lock the entry to
+    // Verb::Point in `derive_verb` regardless of state shape. Two cases:
+    // Action::Occur is a point by default (e.g. `occur drive .id=car
+    // .role=driver` stays a point, not a switch); and `-m`/`--moment` on
+    // switch/start does the same (`moment_point`), so `start foo -m` is a
+    // dot rather than an open block. An explicit dur was honored above.
+    if entry.dur.is_none() && (matches!(action, Action::Occur) || moment_point) {
         entry.dur = Some(datum_core::dur::Dur::Moment);
     }
 

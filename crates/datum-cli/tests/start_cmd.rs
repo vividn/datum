@@ -2,10 +2,10 @@
 //!
 //! Ports the 10 cases from `startCmd.test.ts` in the original datum project,
 //! adapted to daydumb's flag-based model:
-//!   * daydumb lacks `--moment` / `-T` / positional duration — duration is
-//!     supplied only via `--dur`. "Moment" semantics are the default (no
-//!     `--dur` ⇒ no `time_end`), and `-T` (omit timestamp) has no equivalent
-//!     because daydumb always anchors entries to `time_start`.
+//!   * daydumb supplies positional duration via `--dur`; `-m`/`--moment`
+//!     forces a zero-duration point (`dur=MOMENT`). A bare `start` with
+//!     neither opens an ongoing block (no `time_end`). `-T` (omit timestamp)
+//!     has no equivalent — daydumb always anchors entries to `time_start`.
 //!   * "Required keys" (`-k key`) is also datum-specific; daydumb's `-k`
 //!     always takes `KEY=VALUE`.
 //!
@@ -148,10 +148,11 @@ fn negative_dur_collapses_to_point() {
 /// TS #5: "when --moment is specified, dur is null and there is no duration
 /// positional argument".
 ///
-/// Daydumb has no `--moment` flag — the default `start` behavior is already
-/// "moment-like": without `--dur`, no `time_end` is derived. `-k` flags
-/// accept `KEY=VALUE` (a datum divergence: datum's `-k` takes a key name
-/// and pulls the value from the next positional).
+/// This covers the bare `start` (no `-m`, no `--dur`): it opens an ongoing
+/// block (verb=switch, no `time_end`). For the `-m` point-dot behavior see
+/// `start_moment_records_point_dot` below. `-k` flags accept `KEY=VALUE` (a
+/// datum divergence: datum's `-k` takes a key name and pulls the value from
+/// the next positional).
 #[test]
 fn start_without_dur_is_moment_like() {
     let db = fresh_db();
@@ -164,6 +165,57 @@ fn start_without_dur_is_moment_like() {
     assert!(entry.dur.is_none(), "no --dur ⇒ no dur (moment semantics)",);
     let extra = entry.data.as_ref().expect("extra_data with skillPoints");
     assert_eq!(extra["skillPoints"], json!(3));
+}
+
+/// `start foo -m` records a momentary point (an occur-style dot), not an open
+/// block: `-m` forces `dur=MOMENT`, which locks the entry to `Verb::Point`.
+/// Regression for the bug where `-m` was ignored on `start` — it only fired
+/// for `switch` (vividn, 2026-06-17).
+#[test]
+fn start_moment_records_point_dot() {
+    let db = fresh_db();
+
+    run_cli(&["start", "meeting", "-m"], &db).expect("start -m dispatch");
+
+    let entry = &db.entries_for_field("meeting", None).unwrap()[0];
+    assert_entry_matches!(entry, field: "meeting", verb: "point");
+    assert!(
+        matches!(entry.dur, Some(datum_core::dur::Dur::Moment)),
+        "-m must set dur to MOMENT, got {:?}",
+        entry.dur
+    );
+    let ts = entry
+        .occur_time
+        .as_ref()
+        .expect("a moment still anchors a time");
+    // A MOMENT has no span: no derived end time...
+    assert!(
+        entry.computed_end_time().is_none(),
+        "MOMENT carries no end time",
+    );
+    // ...and it must NOT register as an open block (verb=point, not switch).
+    assert!(
+        db.find_open_block("meeting", ts.utc).unwrap().is_none(),
+        "a -m start is a dot, not an open block",
+    );
+}
+
+/// An explicit duration overrides `-m`: `start foo -m dur=30m` keeps the
+/// duration, not MOMENT — "set dur to MOMENT unless explicitly set otherwise
+/// (dur=3)" (vividn, 2026-06-17).
+#[test]
+fn start_moment_yields_to_explicit_dur() {
+    let db = fresh_db();
+
+    run_cli(&["start", "meeting", "-m", "dur=30m"], &db).expect("start -m dur=30m");
+
+    let entry = &db.entries_for_field("meeting", None).unwrap()[0];
+    assert!(entry.dur.is_some(), "explicit dur must be kept");
+    assert!(
+        !matches!(entry.dur, Some(datum_core::dur::Dur::Moment)),
+        "explicit dur must win over -m, got {:?}",
+        entry.dur
+    );
 }
 
 /// TS #6: "when --omit-timestamp/-T is specified, there is no positional
