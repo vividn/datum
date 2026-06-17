@@ -189,18 +189,30 @@ fn switch_moment_records_point_in_time() {
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
 
-    let ts = e.occur_time.as_ref().expect("time_start set");
-    let te = e.computed_end_time().expect("time_end set on --moment");
-    assert_eq!(ts.utc, te.utc, "--moment: time_start == time_end");
+    // da-64yd: `switch foo -m` records a MOMENT (mirrors `start -m`), not a
+    // zero-span PT0S. A moment anchors a time but has no end.
+    e.occur_time.as_ref().expect("time_start set");
+    assert!(
+        matches!(e.dur, Some(datum_core::dur::Dur::Moment)),
+        "--moment must set dur to MOMENT, got {:?}",
+        e.dur
+    );
+    assert!(
+        e.computed_end_time().is_none(),
+        "MOMENT carries no end time"
+    );
+    assert_eq!(e.verb, Verb::Point);
 
     // Short-flag form (-m) also works.
     let db2 = fresh_db();
     run_cli(&["switch", "mood", "happy", "-m"], &db2).expect("short -m");
     let e2 = &db2.entries_for_field("mood", None).unwrap()[0];
-    assert_eq!(
-        e2.occur_time.as_ref().unwrap().utc,
-        e2.computed_end_time().unwrap().utc,
+    assert!(
+        matches!(e2.dur, Some(datum_core::dur::Dur::Moment)),
+        "short -m must set dur to MOMENT, got {:?}",
+        e2.dur
     );
+    assert!(e2.computed_end_time().is_none());
 }
 
 #[test]

@@ -208,18 +208,24 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
     let device = device_id()?;
 
-    // `start foo -m` is a momentary dot, not an open block: stamp dur=MOMENT
-    // via the occur model — `(time_start, None)` + `Dur::Moment` (NOT a
-    // `(base, base)` zero-span, which would derive `Dur::Of(PT0S)` and preempt
-    // the Moment). `derive_verb` then locks it to `Verb::Point`. An explicit
-    // duration overrides it — `dur=` / trailing positional (reserved.dur) or
-    // `--dur` (args.duration.duration) — per "set dur to MOMENT unless
-    // explicitly set otherwise (dur=3)". (Switch has its own zero-span point
-    // path below; occur is a point by default.)
+    // `start foo -m` / `switch foo -m` is a momentary dot, not an open block:
+    // stamp dur=MOMENT via the occur model — `(time_start, None)` + `Dur::Moment`
+    // (NOT a `(base, base)` zero-span, which would derive `Dur::Of(PT0S)` and
+    // preempt the Moment, since a moment has no end). `derive_verb` then locks it
+    // to `Verb::Point`. An explicit duration overrides it — `dur=` / trailing
+    // positional (reserved.dur) or `--dur` (args.duration.duration) — per "set
+    // dur to MOMENT unless explicitly set otherwise (dur=3)". (Occur is a point
+    // by default.)
+    // A switch `,`-chain (`switch a -m , b`) carries a `following_state` and
+    // must stay a zero-span `Verb::PointSwitch` — `derive_verb` short-circuits
+    // `Dur::Moment` to `Verb::Point` and drops the following_state, so the
+    // Moment path is only for the non-chain switch (and start). That chain keeps
+    // the `(base, base)` branch below.
     let moment_point = args.duration.moment
-        && matches!(action, Action::Start)
+        && matches!(action, Action::Start | Action::Switch)
         && reserved.dur.is_none()
-        && args.duration.duration.is_none();
+        && args.duration.duration.is_none()
+        && reserved.following_state.is_none();
 
     // Compute time_start, time_end, precision, and (for Action::Add) a shape
     // override. Skipped entirely for -T — a timeless entry carries no times
@@ -272,10 +278,14 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
         let (time_start, time_end) = if let Some(result) = &add_override {
             (result.start_time.clone(), result.end_time.clone())
-        } else if args.duration.moment && matches!(action, Action::Switch) {
-            // --moment on switch: point-in-time change (time_start == time_end).
-            // Switch keeps the zero-span shape (deriving dur=PT0S); start takes
-            // the dur=MOMENT path instead (see `moment_point`).
+        } else if args.duration.moment
+            && matches!(action, Action::Switch)
+            && reserved.following_state.is_some()
+        {
+            // `switch a -m , b`: a zero-span point-in-time switch with a
+            // following_state — `derive_verb` reads (state, dur=PT0S,
+            // following_state) as `Verb::PointSwitch`. The bare `switch foo -m`
+            // (no chain) takes the dur=MOMENT path instead (see `moment_point`).
             (Some(base_time.clone()), Some(base_time))
         } else if let Some(dur_str) = &args.duration.duration {
             let dur = parse_duration(dur_str)?;

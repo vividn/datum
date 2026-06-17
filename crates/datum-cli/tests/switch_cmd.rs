@@ -344,16 +344,19 @@ fn switch_moment_produces_point_in_time_entry() {
     .expect("switch --moment with -k");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
-    // v3 (da-5ns): --moment yields dur="PT0S"; with state="household" set
-    // and dur=Zero, derive_verb returns Point.
+    // da-64yd: `switch foo -m` yields dur=MOMENT (mirrors `start -m`), not a
+    // zero-span PT0S. With state="household" set, derive_verb still returns
+    // Point. A moment has no end, so computed_end_time() is None.
     assert_entry_matches!(entry, field: "project", verb: "point", state: "household");
-    let ts = entry.occur_time.as_ref().expect("occur_time set");
-    let te = entry
-        .computed_end_time()
-        .expect("computed_end_time available on --moment");
-    assert_eq!(
-        ts.utc, te.utc,
-        "--moment: occur_time == computed_end_time (point-in-time)",
+    assert!(
+        matches!(entry.dur, Some(datum_core::dur::Dur::Moment)),
+        "-m must set dur to MOMENT, got {:?}",
+        entry.dur
+    );
+    entry.occur_time.as_ref().expect("occur_time set");
+    assert!(
+        entry.computed_end_time().is_none(),
+        "MOMENT carries no end time",
     );
     let extra = entry.data.as_ref().expect("skillPoints in extra_data");
     assert_eq!(extra["skillPoints"], json!(3));
