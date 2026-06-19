@@ -190,7 +190,7 @@ fn array_to_array_with_overlap_is_repeated_state() {
     let db = fresh_db();
 
     run_cli(&["switch", "project", "datum,household", "-t=-1"], &db).expect("seed first array");
-    run_cli(&["switch", "project", "datum,gastown"], &db).expect("switch to overlapping array");
+    run_cli(&["switch", "project", "datum,garden"], &db).expect("switch to overlapping array");
 
     let hits = integrity::list_repeated_states(db.conn()).unwrap();
     assert_eq!(
@@ -207,7 +207,7 @@ fn array_to_array_disjoint_is_not_repeated_state() {
     let db = fresh_db();
 
     run_cli(&["switch", "project", "datum,household", "-t=-1"], &db).expect("seed first array");
-    run_cli(&["switch", "project", "gastown,beads"], &db).expect("switch to disjoint array");
+    run_cli(&["switch", "project", "garden,cooking"], &db).expect("switch to disjoint array");
 
     let hits = integrity::list_repeated_states(db.conn()).unwrap();
     assert!(
