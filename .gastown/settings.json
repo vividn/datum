@@ -1,8 +1,0 @@
-{
-  "type": "rig-settings",
-  "version": 1,
-  "merge_queue": {
-    "build_command": "./scripts/check-changed.sh",
-    "test_command": "./scripts/check-changed.sh"
-  }
-}
