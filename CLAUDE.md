@@ -112,57 +112,20 @@ cargo test -p datum-cli
 
 All 22 Phase 1 tests must pass. Add tests for new behaviors.
 
-## Pre-submit gate (polecats)
+## Pre-submit
 
-Polecat sessions should run `scripts/check-changed.sh` instead of
-`scripts/check.sh` for pre-submit. Same battery (fmt/clippy/build/test/doc),
-but scoped to workspace crates the diff touches plus their transitive
-workspace dependents — falls back to the full `scripts/check.sh` battery
-on workspace-root config changes, empty-crate diffs, or when the closure
-covers ≥75% of the workspace. CI always runs the full battery as the
-safety net; the refinery gate runs the full battery **only if its rig
-config is set to** (see below).
+Before opening a PR, run the local mirror of the CI battery:
 
-### Refinery merge gate — configuration & hazard
-
-The refinery's pre-merge verification is driven by an **agent checklist**
-that runs each gate **only if the matching command is set** in the rig's
-`merge_queue` config (`<rig>/settings/config.json`, which lives **outside
-this git repo**):
-
-```json
-{ "merge_queue": {
-    "build_command": "...", "test_command": "...", "lint_command": "..." } }
+```bash
+bash scripts/check.sh
 ```
 
-Hazard: an unset `test_command` (or `build_command`) does **not** error —
-that gate is silently skipped. This is exactly how red-test commits
-(`no such table: sync_state`, 2026-05-22) landed on main: the config had
-only `lint_command`, so the refinery ran clippy/fmt but **no tests at all**
-(da-sfzj). Because the bug was also nextest-only (process isolation; plain
-`cargo test`'s shared connection state masks the migration-walk dependency),
-polecats running `cargo test` locally saw green too.
-
-To keep the gate durable and impossible to half-configure, point all three
-commands at the in-repo canonical battery so the gate logic is version-
-controlled and unconditional: e.g. `test_command` → `bash scripts/check.sh`
-(it already mirrors CI exactly: fmt, clippy `-D warnings`, build, nextest,
-doc tests). The refinery must run the **full** battery, never a scoped
-subset — it is the last line of defense after the scoped polecat pre-submit.
-
-## Build status (as of 2026-04-16, table touched 2026-06-02)
-
-| Phase | Status | Notes |
-|---|---|---|
-| datum-core + datum CLI | ✓ merged to main | 22+ tests, <5ms startup |
-| CLI fixes (alias, field/verb, --dur, env) | ✓ merged to main | |
-| datum-web PWA | ✓ merged to main | No sync yet (pending Phase 2) |
-| datum-sync-server (relay) | 🔄 in progress | da-636, quartz polecat |
-| datum-sync-client (library) | 🔄 in progress | R4 split ✓ (da-t6t.4 closed 2026-04-22); hardening ongoing |
-| datum-sync-agent (daemon) | 🔄 in progress | da-ndd.15 / C4d — real crate (10 files, ~1600 LOC), depends on sync-client |
-| datum-android (Flutter) | not started | |
-| Migration tool (datum legacy) | ✓ shipped | `datum db import --from backup.json` — real handler at `commands/db/import.rs` (~250 LOC, handles legacy CouchDB JSON with dur/state quirks) |
-| datum-wear (Wear OS) | not started | |
+It runs `cargo fmt --check`, `cargo clippy -D warnings`, the workspace build,
+the test suite (nextest when installed, else `cargo test`), and the doc tests —
+the same set CI gates on. For fast iteration on a small change,
+`scripts/check-changed.sh` runs the same battery scoped to the crates the diff
+touches (falling back to the full battery on workspace-root config changes or
+when the dependent closure is large).
 
 ## Building
 

@@ -10,9 +10,8 @@
 __pycache__/
 state.json
 
-# agent instruction files (CLAUDE.local.md is private)
-CLAUDE.md
+# private agent instructions (the shippable CLAUDE.md is committed)
 CLAUDE.local.md
 
-# Crew agents' private working notes — never ship (migrating to cantownhall).
+# local working notes (not shipped)
 /notes/
