@@ -1,6 +1,7 @@
 /target
 /.beads
-/.claude
+/.claude/*
+!/.claude/skills/
 /.runtime
 /embeddeddolt
 /man
