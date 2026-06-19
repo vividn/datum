@@ -102,7 +102,8 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 ## LOGGING
 
-- `add` — Add a new entry (timeless data)
+- `add` — Register a keyed timeless record (needs an id)
+- `note` — Jot a timeless entry (auto create_time id)
 - `occur` — Record a point-in-time event
 - `start` — Begin a duration-tracked activity
 - `stop` — End a duration-tracked activity (alias: end)

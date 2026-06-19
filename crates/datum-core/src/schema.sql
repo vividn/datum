@@ -273,15 +273,6 @@ CREATE TABLE IF NOT EXISTS aliases (
 CREATE INDEX IF NOT EXISTS idx_aliases_kit_id
     ON aliases (kit_id);
 
--- Seed alias: `note` routes to `add`. After D3 `note` is no longer a
--- first-class verb; this alias preserves muscle memory. User can override
--- or remove via `datum alias set note ...` or `datum alias remove note`.
-INSERT OR IGNORE INTO aliases (name, alias_json)
-VALUES (
-    'note',
-    '{"name":"note","expands_to":"add","description":"compat: note → add (seeded)"}'
-);
-
 -- Sync state: per-DB bookkeeping for push/pull against a relay.
 --
 -- `push_mark`    — largest `modified_at` epoch-ms included in any prior push

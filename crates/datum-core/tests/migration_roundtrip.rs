@@ -505,16 +505,21 @@ fn roundtrip_v15_to_v16_aliases_kit_id() {
     let db = fresh_at(15);
     let conn = db.conn();
     assert!(!column_exists(conn, "aliases", "kit_id"));
-    // The seed `note` alias (from schema.sql) survives the down-walk
-    // through v15 because its row is in the v15 aliases shape.
-    let note_count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM aliases WHERE name = 'note'",
-            [],
-            |r| r.get(0),
-        )
+    // da-r17h: `note` is now a built-in verb, not a seeded alias, so no alias
+    // ships by default. Seed a user alias in the v15 shape and verify it
+    // survives the kit_id up/down rebuild.
+    conn.execute(
+        "INSERT INTO aliases (name, alias_json) VALUES ('vbp', \
+         '{\"name\":\"vbp\",\"expands_to\":\"note word\"}')",
+        [],
+    )
+    .unwrap();
+    let alias_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM aliases WHERE name = 'vbp'", [], |r| {
+            r.get(0)
+        })
         .unwrap();
-    assert_eq!(note_count, 1, "seeded `note` alias survives down to v15");
+    assert_eq!(alias_count, 1, "user alias present at v15");
 
     apply_one_up(conn, 15);
     assert!(column_exists(conn, "aliases", "kit_id"));
@@ -523,15 +528,13 @@ fn roundtrip_v15_to_v16_aliases_kit_id() {
     apply_one_down(conn, 16);
     assert!(!column_exists(conn, "aliases", "kit_id"));
     assert!(!index_exists(conn, "idx_aliases_kit_id"));
-    // Rebuild preserved the seeded alias.
-    let note_after: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM aliases WHERE name = 'note'",
-            [],
-            |r| r.get(0),
-        )
+    // Rebuild preserved the user alias.
+    let alias_after: i64 = conn
+        .query_row("SELECT COUNT(*) FROM aliases WHERE name = 'vbp'", [], |r| {
+            r.get(0)
+        })
         .unwrap();
-    assert_eq!(note_after, 1);
+    assert_eq!(alias_after, 1);
 }
 
 #[test]

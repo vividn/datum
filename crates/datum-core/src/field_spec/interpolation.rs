@@ -40,11 +40,11 @@ pub struct InterpolationContext<'a> {
     /// da-5ns.4: column-bound `occur_time`. `%occur_time%` formats this as
     /// `YYYY-MM-DDTHH:MM:SS.sssZ` (matching the default-slug builder).
     pub occur_time: Option<&'a DatumTime>,
-    /// da-xbjy: `%create_time%` renders this and auto-appends `'c'`
-    /// (deliberate divergence from datum, which required the user to write
-    /// the literal suffix).
+    /// da-xbjy / da-r17h: `%create_time%` renders this and auto-prepends
+    /// `'c'`, mirroring the display's `c<time>` convention (the slug for a
+    /// timeless entry is `field:c<create_time>`).
     pub create_time: Option<&'a DateTime<Utc>>,
-    /// da-xbjy: `%modify_time%` renders this and auto-appends `'m'`.
+    /// da-xbjy / da-r17h: `%modify_time%` renders this and auto-prepends `'m'`.
     pub modify_time: Option<&'a DateTime<Utc>>,
 }
 
@@ -161,16 +161,18 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
             .occur_time
             .map(|t| t.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
             .unwrap_or_default(),
-        // da-xbjy: auto-suffix `c` / `m` (deliberate divergence from datum).
-        // The suffix is appended to the rendered value, not the key, and only
-        // when the value is non-empty so missing-key delimiter collapsing
-        // still works.
-        "create_time" => suffix_when_present(
+        // da-xbjy / da-r17h: auto-prefix `c` / `m`, mirroring the display
+        // convention (a timeless entry renders `c18:54:59`, a modify-keyed
+        // one `m…`). The marker is prepended to the rendered value, not the
+        // key, and only when the value is non-empty so missing-key delimiter
+        // collapsing still works. Slug `field:c<create_time>` thus mirrors
+        // the `c<time>` the tail/dayview surfaces show.
+        "create_time" => prefix_when_present(
             ctx.create_time
                 .map(|t| t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
             'c',
         ),
-        "modify_time" => suffix_when_present(
+        "modify_time" => prefix_when_present(
             ctx.modify_time
                 .map(|t| t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
             'm',
@@ -179,11 +181,12 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
     }
 }
 
-fn suffix_when_present(rendered: Option<String>, suffix: char) -> String {
+fn prefix_when_present(rendered: Option<String>, marker: char) -> String {
     match rendered {
         Some(s) if !s.is_empty() => {
-            let mut out = s;
-            out.push(suffix);
+            let mut out = String::with_capacity(s.len() + 1);
+            out.push(marker);
+            out.push_str(&s);
             out
         }
         _ => String::new(),
@@ -358,7 +361,7 @@ mod tests {
         assert_eq!(got, "100% of f");
     }
 
-    // da-xbjy: %create_time% / %modify_time% auto-append c / m suffixes.
+    // da-xbjy / da-r17h: %create_time% / %modify_time% auto-prepend c / m markers.
     fn ctx_with_times<'a>(
         create: Option<&'a DateTime<Utc>>,
         modify: Option<&'a DateTime<Utc>>,
@@ -377,19 +380,19 @@ mod tests {
     }
 
     #[test]
-    fn interpolate_create_time_auto_suffix_c() {
+    fn interpolate_create_time_auto_prefix_c() {
         let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let ctx = ctx_with_times(Some(&t), None);
         let got = interpolate("%create_time%", &ctx, "__");
-        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
+        assert_eq!(got, "c2026-05-13T15:00:00.000Z");
     }
 
     #[test]
-    fn interpolate_modify_time_auto_suffix_m() {
+    fn interpolate_modify_time_auto_prefix_m() {
         let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let ctx = ctx_with_times(None, Some(&t));
         let got = interpolate("%modify_time%", &ctx, "__");
-        assert_eq!(got, "2026-05-13T15:00:00.000Zm");
+        assert_eq!(got, "m2026-05-13T15:00:00.000Z");
     }
 
     #[test]
@@ -427,7 +430,7 @@ mod tests {
             modify_time: None,
         };
         let got = interpolate("%a%__%create_time%", &ctx, "__");
-        assert_eq!(got, "x__2026-05-13T15:00:00.000Zc");
+        assert_eq!(got, "x__c2026-05-13T15:00:00.000Z");
     }
 
     #[test]
@@ -474,11 +477,11 @@ mod tests {
     }
 
     #[test]
-    fn interpolate_optional_create_time_keeps_c_suffix_when_present() {
+    fn interpolate_optional_create_time_keeps_c_prefix_when_present() {
         let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let ctx = ctx_with_times(Some(&t), None);
         let got = interpolate("%?create_time%", &ctx, "__");
-        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
+        assert_eq!(got, "c2026-05-13T15:00:00.000Z");
     }
 
     #[test]
@@ -521,8 +524,8 @@ mod tests {
         let ctx = ctx_with_times(Some(&t), None);
         let got = interpolate("%createTime%", &ctx, "__");
         // camelCase resolves to the snake_case branch — including the
-        // `c` auto-suffix that create_time carries.
-        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
+        // `c` auto-prefix that create_time carries.
+        assert_eq!(got, "c2026-05-13T15:00:00.000Z");
     }
 
     #[test]
@@ -530,7 +533,7 @@ mod tests {
         let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let ctx = ctx_with_times(None, Some(&t));
         let got = interpolate("%modifyTime%", &ctx, "__");
-        assert_eq!(got, "2026-05-13T15:00:00.000Zm");
+        assert_eq!(got, "m2026-05-13T15:00:00.000Z");
     }
 
     #[test]
@@ -560,6 +563,6 @@ mod tests {
         let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
         let ctx = ctx_with_times(Some(&t), None);
         let got = interpolate("%?createTime%", &ctx, "__");
-        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
+        assert_eq!(got, "c2026-05-13T15:00:00.000Z");
     }
 }

@@ -730,7 +730,7 @@ fn occur_alias_baked_field_kv() {
 #[test]
 fn add_field_kv_consumed_onto_column() {
     let db = fresh_db();
-    run_cli(&["add", "field=abc"], &db).expect("add field=abc");
+    run_cli(&["note", "field=abc"], &db).expect("note field=abc");
     let entries = db.entries_for_field("abc", None).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].field, "abc");
@@ -745,7 +745,7 @@ fn add_field_kv_consumed_onto_column() {
 #[test]
 fn add_positional_overrides_field_default_extras_preserved() {
     let db = fresh_db();
-    run_cli(&["add", "-k", "field=ghi", "abc", "kv=v"], &db).expect("add -k field=ghi abc kv=v");
+    run_cli(&["note", "-k", "field=ghi", "abc", "kv=v"], &db).expect("note -k field=ghi abc kv=v");
     let entries = db.entries_for_field("abc", None).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].field, "abc");

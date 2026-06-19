@@ -30,6 +30,8 @@ pub enum Command {
     Stop(LogArgs),
     Switch(LogArgs),
     Add(LogArgs),
+    /// `datum note <field>` — timeless, auto create_time id (da-r17h).
+    Note(LogArgs),
 
     Tail(TailArgs),
     /// Show oldest entries — powered by Tail with `oldest_first = true`.

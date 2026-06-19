@@ -34,7 +34,7 @@ use serde_json::json;
 #[test]
 fn note_creates_exactly_one_entry() {
     let db = fresh_db();
-    run_cli(&["add", "foo"], &db).expect("note foo");
+    run_cli(&["note", "foo"], &db).expect("note foo");
     assert_count!(db, "foo", 1);
 }
 
@@ -45,14 +45,14 @@ fn note_creates_exactly_one_entry() {
 #[test]
 fn note_sets_field_and_collects_extra_kv() {
     let db = fresh_db();
-    run_cli(&["add", "field"], &db).expect("note field");
+    run_cli(&["note", "field"], &db).expect("note field");
     let e1 = &db.entries_for_field("field", None).unwrap()[0];
     // da-5ns: verb is derived from (state, dur, following_state). `add field`
     // with no time-shape inputs derives to `point` under the v3 model.
     assert_entry_matches!(e1, field: "field", verb: "point");
     assert!(e1.data.is_none(), "no kv pairs ⇒ extra_data stays None",);
 
-    run_cli(&["add", "field2", "foo=bar"], &db).expect("note field2 foo=bar");
+    run_cli(&["note", "field2", "foo=bar"], &db).expect("note field2 foo=bar");
     let e2 = &db.entries_for_field("field2", None).unwrap()[0];
     assert_entry_matches!(e2, field: "field2");
     let extra = e2.data.as_ref().expect("foo=bar lands in extra_data");
@@ -79,7 +79,7 @@ fn first_positional_is_field_literal_unbound_trailing_errors() {
     let db = fresh_db();
     // `add <field>` — the first positional becomes the field. Bare
     // form succeeds with no other args.
-    run_cli(&["add", "foo"], &db).expect("add foo");
+    run_cli(&["note", "foo"], &db).expect("note foo");
     let entries = db.entries_for_field("foo", None).unwrap();
     assert_eq!(entries.len(), 1, "first positional is the field literal");
     assert_eq!(entries[0].field, "foo");
@@ -87,7 +87,7 @@ fn first_positional_is_field_literal_unbound_trailing_errors() {
     // da-5ns.3: trailing unbound positional is rejected (used to land
     // as the primary value in datum's TS implementation). The error
     // points the user at `KEY=VALUE`, `-K`, or `-R` as the route.
-    let err = run_cli(&["add", "another_field", "dataField"], &db).unwrap_err();
+    let err = run_cli(&["note", "another_field", "dataField"], &db).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("unexpected positional") || msg.contains("dataField"),
@@ -106,7 +106,7 @@ fn required_keys_positional_absorption_skipped_no_analog() {
     // In daydumb, `-k abc` (no `=`) is still consumed as the -k
     // value but `parse_log_args` only splits on `=`; it is silently dropped.
     // The positional `value` becomes the primary value.
-    run_cli(&["add", "field", "-k", "abc=value"], &db).expect("note field -k abc=value");
+    run_cli(&["note", "field", "-k", "abc=value"], &db).expect("note field -k abc=value");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     let extra = e.data.as_ref().expect("-k lands in extra_data");
     assert_eq!(extra.get("abc"), Some(&json!("value")));
@@ -139,7 +139,7 @@ fn fieldless_mode_skipped_no_analog() {
 #[test]
 fn field_kv_overrides_positional_via_flex_slot() {
     let db = fresh_db();
-    run_cli(&["add", "fromField", "field=fromData"], &db).expect("note fromField field=fromData");
+    run_cli(&["note", "fromField", "field=fromData"], &db).expect("note fromField field=fromData");
     let entries = db.entries_for_field("fromData", None).unwrap();
     assert_eq!(entries.len(), 1, "field=... overrides the positional");
     let e = &entries[0];
@@ -198,7 +198,7 @@ fn blank_fieldless_with_metadata_skipped_no_analog() {
     // the upstream survey. Inverse invariant: a normal `note field` always
     // carries populated bookkeeping fields by default.
     let db = fresh_db();
-    run_cli(&["add", "field"], &db).expect("note field");
+    run_cli(&["note", "field"], &db).expect("note field");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     assert!(!e.device_id.is_empty(), "device_id populated by default");
     assert_ne!(
@@ -433,14 +433,15 @@ fn id_structure_always_set_when_id_given() {
 
     // da-ivld: every entry now carries an id_structure. With no `--id`,
     // the default body template is `%occur_time%` when the entry has an
-    // occur_time, else the literal sentinel `unset`. da-lxyw: a bare `add`
-    // is timeless (occur_time = None), so it takes the `unset` branch.
-    run_cli(&["add", "other"], &db).expect("note other");
+    // occur_time, else `%create_time%`. da-r17h: a timeless `note` is
+    // create_time-identified, so it takes the `%create_time%` branch
+    // (the slug renders `other:c<create_time>`).
+    run_cli(&["note", "other"], &db).expect("note other");
     let other = &db.entries_for_field("other", None).unwrap()[0];
     assert_eq!(
         other.id_structure.as_deref(),
-        Some("unset"),
-        "timeless default ⇒ id_structure = `unset`",
+        Some("%create_time%"),
+        "timeless default ⇒ id_structure = `%create_time%`",
     );
 
     // A timed default add (explicit -t) takes the `%occur_time%` branch.
@@ -593,8 +594,11 @@ fn slug_template_interpolates_composite_keys() {
 #[test]
 fn comment_flag_populates_extra_data_comment() {
     let db = fresh_db();
-    run_cli(&["add", "field", "foo=bar", "-c", "comment remainder"], &db)
-        .expect("note -c 'comment remainder'");
+    run_cli(
+        &["note", "field", "foo=bar", "-c", "comment remainder"],
+        &db,
+    )
+    .expect("note -c 'comment remainder'");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     let extra = e.data.as_ref().unwrap();
     assert_eq!(extra.get("foo"), Some(&json!("bar")));
@@ -658,22 +662,22 @@ fn id_positional_alone_produces_field_colon_id_slug() {
     );
 }
 
-/// Without `id=` (or `-K`), slugs fall back to the default `field:<timestamp>`
-/// shape. Regression guard: the new promotion path must not hijack entries
-/// that have no `id=` at all.
+/// Without `id=` (or `-K`), a timeless `note` falls back to the default
+/// `field:c<create_time>` shape. Regression guard: the `id=` promotion path
+/// must not hijack entries that have no `id=` at all.
 #[test]
 fn no_id_falls_back_to_timestamp_slug() {
     let db = fresh_db();
-    run_cli(&["add", "book", "title=anon"], &db).expect("add book title=anon");
+    run_cli(&["note", "book", "title=anon"], &db).expect("note book title=anon");
     let e = &db.entries_for_field("book", None).unwrap()[0];
     assert!(
-        e.slug.starts_with("book:"),
-        "slug preserves the field:<id> shape: {}",
+        e.slug.starts_with("book:c"),
+        "timeless slug is create_time-derived (field:c<create_time>): {}",
         e.slug,
     );
     assert!(
         !e.slug.ends_with(":anon") && e.slug.len() > "book:".len() + 4,
-        "slug is timestamp-derived, not id-derived: {}",
+        "slug is create_time-derived, not id-derived: {}",
         e.slug,
     );
     let extra = e.data.as_ref().unwrap();
@@ -836,12 +840,12 @@ fn add_dash_sr_bundle_joins_remainder_into_named_bucket() {
     let db = fresh_db();
     run_cli(
         &[
-            "add", "field", "-SR", "key", "all", "the", "rest", "of", "the", "args", "should",
+            "note", "field", "-SR", "key", "all", "the", "rest", "of", "the", "args", "should",
             "be", "parsed", "as", "a", "string", "and", "put", "into", "key",
         ],
         &db,
     )
-    .expect("dm add field -SR key <rest...>");
+    .expect("dm note field -SR key <rest...>");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     let extra = entry.data.as_ref().expect("extra_data populated");

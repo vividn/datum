@@ -230,7 +230,7 @@ impl Db {
     /// ([`super::types::STATE_ORDER_NEWEST_FIRST`], da-ylet): undo targets
     /// the literal previous *insert*, not the state-timeline winner, so
     /// same-instant ties break on `create_time` (latest write) rather
-    /// than slug. Timeless `:unset` rows are also fair game — `-u` must
+    /// than slug. Timeless rows (occur_time NULL) are also fair game — `-u` must
     /// be able to reverse a `-T` note.
     pub fn find_latest_for_undo(
         &self,
@@ -254,7 +254,7 @@ impl Db {
 
     /// Latest state-participating entry for a field, for use in the now
     /// view. Participation and ordering follow the canonical rule
-    /// ([`STATE_PARTICIPATION_SQL`]): timeless `:unset` rows (free-form
+    /// ([`STATE_PARTICIPATION_SQL`]): timeless rows (occur_time NULL, free-form
     /// `-T` notes with no state effect) are skipped, and the unbounded
     /// arm is exactly where that predicate matters — timeless rows store
     /// NULL `occur_time`, so the bounded arm excludes them implicitly.

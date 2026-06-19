@@ -257,13 +257,16 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
 /// `now` (or `create_time` at the insert layer) silently turns every add
 /// into an occur.
 #[test]
-fn bare_add_has_no_occur_time() {
+fn bare_note_has_no_occur_time() {
     let db = fresh_db();
-    run_cli(&["add", "thing", "foo=bar"], &db).expect("bare add");
+    // da-r17h: the timeless freeform logger is now `note` (`add` requires an
+    // explicit id). A bare `note` (no -t) must be TIMELESS — `occur_time`
+    // None — and slug on create_time.
+    run_cli(&["note", "thing", "foo=bar"], &db).expect("bare note");
     let e = &db.entries_for_field("thing", None).unwrap()[0];
     assert!(
         e.occur_time.is_none(),
-        "bare `add` (no -t) must be timeless, got occur_time={:?}",
+        "bare `note` (no -t) must be timeless, got occur_time={:?}",
         e.occur_time
     );
     // The user payload still lands.
@@ -271,8 +274,12 @@ fn bare_add_has_no_occur_time() {
         e.data.as_ref().and_then(|d| d.get("foo")),
         Some(&serde_json::json!("bar"))
     );
-    // A timeless entry slugs as `field:unset` (no timestamp to template).
-    assert_eq!(e.slug.as_str(), "thing:unset");
+    // A timeless entry slugs as `field:c<create_time>` (da-r17h).
+    assert!(
+        e.slug.as_str().starts_with("thing:c"),
+        "timeless note slugs on create_time, got {}",
+        e.slug
+    );
 }
 
 // ─── 7. `dur=null` forces point shape ────────────────────────────────────────
@@ -311,15 +318,15 @@ fn add_with_dur_null_yields_point_shape() {
 fn alias_chain_stored_in_entry() {
     let db = fresh_db();
 
-    // User alias: vbp → add word -k word= -k translation= srcLang=pt pos=verb
+    // User alias: vbp → note word -k word= -k translation= srcLang=pt pos=verb
     // `-k word=` declares an optional word slot; `-k translation=` declares
     // an optional translation slot. Trailing positionals fill those slots
     // in order — the user-level `vbp correr "to run"` expands to
-    // `add word -k word= -k translation= srcLang=pt pos=verb correr "to run"`
+    // `note word -k word= -k translation= srcLang=pt pos=verb correr "to run"`
     // and the slot fill puts correr in `word` and "to run" in `translation`.
     db.save_alias(&datum_core::field_spec::Alias {
         name: "vbp".into(),
-        expands_to: "add word -k word= -k translation= srcLang=pt pos=verb".into(),
+        expands_to: "note word -k word= -k translation= srcLang=pt pos=verb".into(),
         description: None,
     })
     .unwrap();
@@ -340,7 +347,7 @@ fn alias_chain_stored_in_entry() {
     assert_eq!(arr[0].get("name").and_then(|v| v.as_str()), Some("vbp"));
     assert_eq!(
         arr[0].get("expansion").and_then(|v| v.as_str()),
-        Some("add word -k word= -k translation= srcLang=pt pos=verb"),
+        Some("note word -k word= -k translation= srcLang=pt pos=verb"),
     );
 
     // Raw input (the argv the user typed, minus the datum prefix) is also
@@ -368,7 +375,7 @@ fn datum_why_renders_alias_chain() {
     // Seed an alias-expanded entry.
     db.save_alias(&datum_core::field_spec::Alias {
         name: "vbp".into(),
-        expands_to: "add word -k word= -k translation= srcLang=pt pos=verb".into(),
+        expands_to: "note word -k word= -k translation= srcLang=pt pos=verb".into(),
         description: None,
     })
     .unwrap();

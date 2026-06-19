@@ -78,6 +78,7 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         Command::Stop(a) => (Action::Stop, a),
         Command::Switch(a) => (Action::Switch, a),
         Command::Add(a) => (Action::Add, a),
+        Command::Note(a) => (Action::Note, a),
         // Non-log verbs don't produce entries — their replay has nothing
         // to compare against.
         _ => return Ok(None),

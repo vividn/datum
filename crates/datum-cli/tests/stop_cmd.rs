@@ -5,7 +5,7 @@
 //!   * daydumb lacks `--moment` on stop and positional duration — duration
 //!     is supplied only via `--dur`. "Moment" semantics are the default for
 //!     stop (no `--dur` ⇒ no `time_end`). `-T` (omit-timestamp) IS supported
-//!     and yields a timeless entry (`occur_time` NULL, slug `field:unset`);
+//!     and yields a timeless entry (`occur_time` NULL, slug `field:c<create_time>`);
 //!     see `no_timestamp.rs` for the cross-verb coverage.
 //!   * "Required keys" (`-k key`) is datum-specific; daydumb's `-k` always
 //!     takes `KEY=VALUE`.

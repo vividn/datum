@@ -32,6 +32,7 @@ pub mod log_core;
 pub mod merge;
 pub mod meta;
 pub mod migrate;
+pub mod note;
 pub mod now;
 pub mod nowview;
 pub mod occur;

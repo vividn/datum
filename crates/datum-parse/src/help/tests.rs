@@ -19,7 +19,8 @@ USAGE:
   datum [--db NAME_OR_PATH] <command> [args]
 
 LOGGING:
-  add      Add a new entry (timeless data)
+  add      Register a keyed timeless record (needs an id)
+  note     Jot a timeless entry (auto create_time id)
   occur    Record a point-in-time event
   start    Begin a duration-tracked activity
   stop     End a duration-tracked activity (alias: end)
@@ -127,10 +128,11 @@ fn snapshot_tail_help() {
 // log verb, exercising LOG_FLAGS through the table renderer. The expected
 // string is byte-identical to the legacy `log_help("add")` output.
 const EXPECTED_ADD: &str = "\
-datum add — log an entry (timeless data)
+datum add — register a keyed timeless record (needs an id)
 
 USAGE:
-  datum add <FIELD> [VALUE | KEY=VALUE]...
+  datum add <FIELD> -K <KEY> [KEY=VALUE]...
+  datum add <FIELD> --id <VALUE>
 
 OPTIONS:
   -y                    Go back 1 day (stackable: -yy=2 days, ...)
@@ -156,7 +158,7 @@ OPTIONS:
       --update          Shorthand for --conflict update
       --merge           Shorthand for --conflict merge
   -M, --no-metadata     Zero created_at/modified_at, clear device_id
-  -T, --no-timestamp    Route through timeless `add`
+  -T, --no-timestamp    Timeless note-data (create_time id, no occurrence)
       --alias <NAME>    On success, save current invocation as alias <NAME>
       --alias-overwrite Allow --alias to replace an existing alias
       --dry-run         Preview the would-be entry without writing
@@ -172,6 +174,23 @@ fn snapshot_add_help() {
         actual, EXPECTED_ADD,
         "datum add --help drifted from snapshot"
     );
+}
+
+// da-r17h: `note` is the timeless sibling of `add` — same LOG_FLAGS table,
+// distinct header/usage. The header reflects the auto-create_time-id contract.
+#[test]
+fn snapshot_note_help() {
+    let actual = command_help("note");
+    let expected = EXPECTED_ADD
+        .replace(
+            "datum add — register a keyed timeless record (needs an id)",
+            "datum note — jot a timeless entry (auto create_time id)",
+        )
+        .replace(
+            "  datum add <FIELD> -K <KEY> [KEY=VALUE]...\n  datum add <FIELD> --id <VALUE>\n",
+            "  datum note <FIELD> [VALUE | KEY=VALUE]...\n",
+        );
+    assert_eq!(actual, expected, "datum note --help drifted from snapshot");
 }
 
 // ---------------------------------------------------------------------------
@@ -264,15 +283,16 @@ fn snapshot_end_alias_substitutes_verb() {
     // of `log_help("end")`.
     let s = command_help("end");
     // `end` is an alias of `stop`, whose summary is the bare "log an entry"
-    // — so the header drops the `add`-specific "(timeless data)" parenthetical.
+    // — so the header drops `add`'s keyed-record summary, and its single
+    // USAGE line replaces `add`'s two-line `-K`/`--id` form (da-r17h).
     let expected = EXPECTED_ADD
         .replace(
-            "datum add — log an entry (timeless data)",
+            "datum add — register a keyed timeless record (needs an id)",
             "datum end — log an entry",
         )
         .replace(
-            "datum add <FIELD> [VALUE | KEY=VALUE]...",
-            "datum end <FIELD> [VALUE | KEY=VALUE]...",
+            "  datum add <FIELD> -K <KEY> [KEY=VALUE]...\n  datum add <FIELD> --id <VALUE>\n",
+            "  datum end <FIELD> [VALUE | KEY=VALUE]...\n",
         );
     assert_eq!(s, expected);
 }

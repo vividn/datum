@@ -88,11 +88,10 @@ impl Db {
 /// absolute (`set_start_time_with_precision`) and offset (`update_times`)
 /// paths so the SQL surface stays in one place.
 ///
-/// Timeless rows (`occur_time IS NULL`, slug `field:unset`) are excluded:
-/// retime moves an existing time, and giving a timeless row one would
-/// leave a deliberate occur_time behind a `:unset` slug that the state/
-/// timeline views still hide (da-255n owns timeless slug semantics). Use
-/// `datum update` to attach a time to a timeless entry.
+/// Timeless rows (`occur_time IS NULL`, slug `field:c<create_time>`) are
+/// excluded: retime moves an existing time, and giving a timeless row one
+/// would contradict the `occur_time IS NULL` marker the state/timeline views
+/// key on (da-r17h). Use `datum update` to attach a time to a timeless entry.
 fn select_retime_targets(db: &Db, filter: &RetimeFilter) -> Result<Vec<Entry>> {
     let mut sql =
         String::from("SELECT * FROM entries WHERE deleted_at IS NULL AND occur_time IS NOT NULL");
@@ -251,12 +250,12 @@ mod tests {
         assert_eq!(b_after.occur_time.as_ref().unwrap().utc, t2.utc);
     }
 
-    /// da-sunq item 3: timeless rows (occur_time NULL, slug `:unset`)
-    /// are not retime targets — an absolute retime over the field must
-    /// not hand them an occur_time that their `:unset` slug (which the
-    /// state/timeline views key on) would then contradict.
+    /// da-sunq item 3 / da-r17h: timeless rows (occur_time NULL, slug
+    /// `note:c<create_time>`) are not retime targets — an absolute retime
+    /// over the field must not hand them an occur_time, since `occur_time
+    /// IS NULL` is what the state/timeline views key the timeless row on.
     #[test]
-    fn retime_skips_timeless_unset_rows() {
+    fn retime_skips_timeless_rows() {
         let db = Db::open_in_memory().unwrap();
         let timeless = Entry::new("note", Verb::Point, None, None, None, None, "d1");
         let timed = Entry::new(
@@ -268,7 +267,11 @@ mod tests {
             None,
             "d1",
         );
-        assert_eq!(timeless.slug.as_str(), "note:unset");
+        let timeless_slug = timeless.slug.clone();
+        assert!(
+            timeless_slug.as_str().starts_with("note:c"),
+            "timeless slug is create_time-keyed, got {timeless_slug}"
+        );
         db.insert_entry(&timeless).unwrap();
         db.insert_entry(&timed).unwrap();
 
@@ -282,7 +285,7 @@ mod tests {
             .unwrap();
         assert_eq!(n, 1, "only the timed row is a retime target");
 
-        let unset_after = db.get_entry("note:unset").unwrap();
+        let unset_after = db.get_entry(timeless_slug.as_str()).unwrap();
         assert!(unset_after.occur_time.is_none());
         let timed_after = db.get_entry(&timed.hid).unwrap();
         assert_eq!(timed_after.occur_time.unwrap().utc, new_start.utc);

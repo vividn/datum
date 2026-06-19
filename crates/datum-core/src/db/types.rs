@@ -109,17 +109,19 @@ pub(super) fn time_expr_endbound() -> &'static str {
 
 /// Canonical state-participation predicate (da-ylet): a row contributes
 /// to a field's state timeline iff it is live AND not a deliberately
-/// timeless row (slug suffix `:unset`, written by `-T`/`--no-timestamp`).
+/// timeless row (`occur_time IS NULL`, written by `add` / `note` /
+/// `-T`/`--no-timestamp`).
 ///
 /// This is the ONE place the rule lives. v3 killed the legacy `add` verb
 /// (migration v21 rewrites `add` → `point` unconditionally), so the old
 /// `verb != 'add'` / `verb IN (...)` filters select nothing — "skip
-/// timeless notes" survives solely via the `:unset` slug marker. Since
-/// da-lxyw (v29) timeless rows also store NULL `occur_time`, so any
-/// `occur_time <= ?` bound excludes them implicitly; the predicate does
-/// real work in the unbounded readers (e.g. `latest_entry_for_now` with
-/// no snapshot time).
-pub(crate) const STATE_PARTICIPATION_SQL: &str = "slug NOT LIKE '%:unset' AND deleted_at IS NULL";
+/// timeless notes" survives via the NULL `occur_time` marker. da-r17h:
+/// the timeless slug is now `field:c<create_time>` (was `field:unset`)
+/// so the row identifies many-per-field; `occur_time IS NULL` is the
+/// durable timeless predicate (any `occur_time <= ?` bound already
+/// excludes these implicitly — the predicate does real work in the
+/// unbounded readers, e.g. `latest_entry_for_now` with no snapshot time).
+pub(crate) const STATE_PARTICIPATION_SQL: &str = "occur_time IS NOT NULL AND deleted_at IS NULL";
 
 /// Canonical newest-first ordering for state reads (da-ylet): latest
 /// `occur_time` wins; ties break on `slug` DESC. Same-instant live ties

@@ -60,7 +60,17 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         Ok(())
     }));
     r.push(local_value(None, Some("id"), |p, v| {
-        p.id = Some(v.to_string());
+        // da-r17h (task 7): repeated `--id` flags compose into one template,
+        // joined by the canonical slug separator `__` — e.g.
+        // `--id %occurTime% --id %comment%` slugs on BOTH (each `%key%`
+        // interpolated, `__`-joined). A single `--id` is unchanged.
+        match &mut p.id {
+            Some(existing) => {
+                existing.push_str("__");
+                existing.push_str(v);
+            }
+            None => p.id = Some(v.to_string()),
+        }
         Ok(())
     }));
     r.push(local_value(None, Some("id-delimiter"), |p, v| {

@@ -52,13 +52,13 @@ impl Db {
         let mut sql = String::from("SELECT * FROM entries WHERE deleted_at IS NULL");
         let mut bindings: Vec<String> = Vec::new();
 
-        // da-5ns: occur_time is NOT NULL post-pivot — but the CLI's
-        // `-T` / no-timestamp path stubs occur_time with create_time and
-        // marks the row by giving it a `:unset` slug suffix. The Occur
+        // da-5ns / da-r17h: a timeless row (bare `add`/`note`, or any
+        // `-T`/--no-timestamp insert) stores `occur_time IS NULL` (its
+        // slug is `field:c<create_time>`, not a stub timestamp). The Occur
         // metric (chronological "when did this happen") must skip those
-        // stub rows; Modify / Hybrid still see them.
+        // rows; Modify / Hybrid still see them.
         if params.metric == TimeMetric::Occur {
-            sql.push_str(" AND slug NOT LIKE '%:unset'");
+            sql.push_str(" AND occur_time IS NOT NULL");
         }
         // da-ghlx: default-filter review markers (`extra_metadata.flag =
         // true`, da-dnnn) and protocol notes (`extra_metadata.meta =

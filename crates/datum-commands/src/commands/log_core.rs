@@ -34,9 +34,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // own state-canonicalization rules (so `switch ... -T` still preserves
     // its positional state, `start -T` still records state=true, etc.).
     // Time-specifying flags are rejected so silent discard can't mask a
-    // user misconception. The schema's NOT NULL `occur_time` is filled in
-    // at insert time with `create_time` as a stub, and the slug carries
-    // `:unset` so timeless entries remain identifiable downstream.
+    // user misconception. A timeless entry stores `occur_time = NULL` (the
+    // durable timeless marker) and slugs on `create_time` →
+    // `field:c<create_time>` (da-r17h), so `occur f -T` becomes note-data:
+    // the data lands, no occurrence is logged, and many-per-field works.
     if args.time.omit_timestamp {
         check_no_time_flags(&args)?;
     }
@@ -117,13 +118,14 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `parse_log_args` so it can defer to an explicit `-K` slug slot.
     let field = reserved.field.take().unwrap_or(field);
 
-    // da-5ns.3 strict positional gate (Action::Add only): the v=20 model
-    // has no implicit `value` column, so a bare unkeyed positional with
-    // no `-K` slot binding has nowhere to land. Reject with a generic
+    // da-5ns.3 strict positional gate (the timeless Add/Note family): the
+    // v=20 model has no implicit `value` column, so a bare unkeyed positional
+    // with no `-K` slot binding has nowhere to land. Reject with a generic
     // extra-args error naming the offending tokens — `state=<v>` is just
     // one of several ways to attach data and should not be presented as a
     // hard requirement (da-obmm).
-    if matches!(action, Action::Add) && value.is_some() && args.slug_keys.is_empty() {
+    if matches!(action, Action::Add | Action::Note) && value.is_some() && args.slug_keys.is_empty()
+    {
         let extras: Vec<&str> = args
             .rest
             .iter()
@@ -132,7 +134,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             .collect();
         let joined = extras.join(" ");
         anyhow::bail!(
-            "unexpected positional argument(s) for `dm add`: {joined}. \
+            "unexpected positional argument(s) for `dm {action}`: {joined}. \
              Use `KEY=VALUE` to assign data (e.g. `state=...`, `foo=bar`), declare a \
              `-K key=` slug slot, or route them with `-R <bucket>` / `-C`."
         );
@@ -235,25 +237,27 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     } else {
         let (base_time, base_precision) = build_time_with_precision(&args)?;
 
-        // Action::Add is the canonical shape-inferring verb. It peeks for
-        // `start_time=` / `end_time=` / `dur=` tokens in extra_data, strips
-        // them out, and derives the entry's shape + start/end from their
-        // combination.
-        let add_override: Option<AddTimestampResult> = if matches!(action, Action::Add) {
-            // da-lxyw: did the user pin a time? Any clock/date-modifying flag
-            // (`-t`/`-d`/`-y*`/`-q*`/`-D`) opts a bare `add` back into having
-            // an `occur_time`; with none, the add stays timeless. `-z` alone
-            // only re-zones and `-T` is handled by the omit_timestamp branch.
-            let explicit_time = args.time.time.is_some()
-                || args.time.date.is_some()
-                || args.time.yesterday > 0
-                || args.time.quick > 0
-                || args.time.full_day;
-            let hints = extract_add_temporal_keys(&mut extra_data, &base_time)?;
-            Some(hints.resolve(&base_time, explicit_time))
-        } else {
-            None
-        };
+        // Add/Note are the timeless shape-inferring verbs. They peek for
+        // `start_time=` / `end_time=` / `dur=` tokens in extra_data, strip
+        // them out, and derive the entry's shape + start/end from their
+        // combination. (da-r17h: `note` is `add` with auto-id, so it shares
+        // the identical timeless temporal resolution.)
+        let add_override: Option<AddTimestampResult> =
+            if matches!(action, Action::Add | Action::Note) {
+                // da-lxyw: did the user pin a time? Any clock/date-modifying flag
+                // (`-t`/`-d`/`-y*`/`-q*`/`-D`) opts a bare `add` back into having
+                // an `occur_time`; with none, the add stays timeless. `-z` alone
+                // only re-zones and `-T` is handled by the omit_timestamp branch.
+                let explicit_time = args.time.time.is_some()
+                    || args.time.date.is_some()
+                    || args.time.yesterday > 0
+                    || args.time.quick > 0
+                    || args.time.full_day;
+                let hints = extract_add_temporal_keys(&mut extra_data, &base_time)?;
+                Some(hints.resolve(&base_time, explicit_time))
+            } else {
+                None
+            };
 
         // --last-state on Stop: close the most recent open block, recording
         // its prior state as `last_state` metadata. Errors if there's nothing
@@ -367,7 +371,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     if let Some(fs) = reserved.following_state {
         entry.following_state = Some(fs);
     }
-    let _ = reserved.occur_time;
+    // da-r17h (task 8): an explicit `occur_time=` key always overwrites the
+    // column — like `dur=` above — with type-aware parsing (RFC3339, clock
+    // times, `now`, or signed offsets). This makes the time-anchored columns
+    // uniformly settable across every verb: `add field occur_time=+5` shifts
+    // it +5m and re-anchors what was a timeless entry. The relative-offset
+    // base is the entry's current occur_time when present, else wall-clock
+    // now (mirrors the `dm update` path in update_core::apply_mutation).
+    if let Some(t) = reserved.occur_time {
+        let base = entry.occur_time.clone().unwrap_or_else(DatumTime::now);
+        entry.occur_time = Some(parse_reserved_occur_time(&t, &base)?);
+    }
 
     // da-ju71.2: stamp `Dur::Moment` ("MOMENT") to lock the entry to
     // Verb::Point in `derive_verb` regardless of state shape. Two cases:
@@ -469,8 +483,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     //   3. `--id` template
     //   4. spec's `id_template`
     //   5. Default → `%occur_time%` if the entry has an occur_time, else
-    //      the literal sentinel `unset` (preserves the
-    //      `slug LIKE '%:unset'` filter used for add-only timeless entries).
+    //      (timeless) `%create_time%` → `field:c<create_time>`. da-r17h:
+    //      this replaced the old `:unset` sentinel, which made the slug
+    //      UNIQUE-collide so only one timeless entry per field could exist.
+    //      Distinct create_times keep many-per-field timeless notes apart.
+    //      A bare `add` is the exception: it demands an explicit id (it is
+    //      identified by *what*, not *when*), so it errors here instead.
     let id_structure: String = if !args.slug_keys.is_empty() {
         args.slug_keys
             .iter()
@@ -491,8 +509,19 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         tmpl
     } else if entry.occur_time.is_some() {
         "%occur_time%".to_string()
+    } else if matches!(action, Action::Add) && !args.time.omit_timestamp {
+        // da-r17h: a bare timeless `add` with no id has no identity to slug
+        // on. `note` (auto create_time id) or an explicit id is the way in.
+        // `add … -T` is exempt: `-T` explicitly converts to note-data, so it
+        // takes the create_time-id branch below like any other `-T` insert.
+        anyhow::bail!(
+            "add needs an id. Derive one from a key (-K name) or set it \
+             directly (--id <value>). See --help for --id %templates% and id=."
+        );
     } else {
-        "unset".to_string()
+        // Timeless `note` / `-T` / `--no-timestamp`: identify by create_time.
+        // `%create_time%` auto-prefixes `c` → `field:c<create_time>`.
+        "%create_time%".to_string()
     };
     {
         let uid = entry.short_uid();
@@ -655,7 +684,7 @@ pub(crate) fn parse_log_args(
     // flexiblePositional pattern across the verb family.
     let flex_field = matches!(
         action,
-        Action::Add | Action::Occur | Action::Switch | Action::Start | Action::Stop
+        Action::Add | Action::Note | Action::Occur | Action::Switch | Action::Start | Action::Stop
     );
     let field = if flex_field {
         String::new()

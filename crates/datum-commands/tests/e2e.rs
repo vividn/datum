@@ -404,19 +404,20 @@ e2e_case!(fast, verb_stop_direct: CaseSpec {
     freeze_time: Some("09:00"),
 });
 
-e2e_case!(fast, verb_add_direct: CaseSpec {
-    // `add` is the shape-inferring verb with a strict positional gate
-    // (da-5ns.3) — bare positional values require an accompanying
-    // `-k`/slug-key. The simplest legal form is bare field, optional
-    // `key=value` extra-data.
-    argv: "add foo",
+e2e_case!(fast, verb_note_direct: CaseSpec {
+    // da-r17h: `note` is the timeless shape-inferring verb (auto create_time
+    // id), with the same strict positional gate (da-5ns.3) — bare positional
+    // values require an accompanying `-k`/slug-key. The simplest legal form
+    // is bare field, optional `key=value` extra-data. (`add` would error here
+    // demanding an explicit id.)
+    argv: "note foo",
     setup: no_setup,
     expected: rows(vec![row("foo").no_state()]),
     freeze_time: Some("09:00"),
 });
 
-e2e_case!(fast, verb_add_with_data: CaseSpec {
-    argv: "add foo bar=baz",
+e2e_case!(fast, verb_note_with_data: CaseSpec {
+    argv: "note foo bar=baz",
     setup: no_setup,
     expected: rows(vec![row("foo").no_state().data("bar", json!("baz"))]),
     freeze_time: Some("09:00"),

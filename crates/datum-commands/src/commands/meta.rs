@@ -4,8 +4,7 @@
 //! Each note is stored as a `Verb::Point` entry on the named field,
 //! `occur_time = now` (so multiple notes on the same field disambiguate
 //! by their wall-clock timestamps via the standard `<field>:<time>`
-//! slug — `:unset` would collide on UNIQUE slug after the first note),
-//! and `extra_metadata = { "meta": true, "text": "<note>" }`. Plain
+//! slug), and `extra_metadata = { "meta": true, "text": "<note>" }`. Plain
 //! reads (`tail`, `now`, `dayview`) can filter on `extra_metadata.meta`
 //! to hide these; `meta show` queries explicitly for them.
 
@@ -32,11 +31,9 @@ fn add_note(field: &str, text: &str, db: &Db) -> Result<()> {
     if text.trim().is_empty() {
         anyhow::bail!("`datum meta {field}` requires a non-empty note");
     }
-    // `occur_time = now` so notes slug to `<field>:<timestamp>` and don't
-    // collide with each other on the UNIQUE(slug) constraint. (A truly
-    // timeless `:unset` slug would only allow one note per field.) The
-    // user-facing temporal meaning still lives in `create_time`, which
-    // equals this `occur_time` at insert.
+    // `occur_time = now` so notes slug to `<field>:<timestamp>` and read
+    // back as point-in-time annotations. The user-facing temporal meaning
+    // still lives in `create_time`, which equals this `occur_time` at insert.
     //
     // `Dur::Moment` locks the row to `Verb::Point` regardless of state
     // shape so the verb classifier doesn't promote it to a switch.
@@ -61,10 +58,9 @@ fn add_note(field: &str, text: &str, db: &Db) -> Result<()> {
 }
 
 fn show_notes(field: &str, db: &Db) -> Result<()> {
-    // Pull every row for this field — meta-notes always slug to
-    // `<field>:unset` so there's at most one per insert per
-    // `create_time` tick. Filter for rows whose `extra_metadata.meta`
-    // is true and print them in `create_time` order.
+    // Pull every row for this field — meta-notes slug to
+    // `<field>:<timestamp>` (occur_time = now). Filter for rows whose
+    // `extra_metadata.meta` is true and print them in `create_time` order.
     let mut entries = db
         .entries_for_field(field, None)
         .with_context(|| format!("loading entries for field '{field}'"))?;

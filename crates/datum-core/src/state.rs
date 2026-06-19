@@ -627,10 +627,10 @@ fn collect_raw_events(
 /// occur_time + dur, so a `state_at(t)` probe past the block sees
 /// the next state, not the block's primary.
 ///
-/// Timeless rows (`-T` / `--no-timestamp`): the v=20 NOT NULL
-/// `occur_time` column carries a `create_time` stub, but the slug
-/// suffix `:unset` marks the row as deliberately timeless. State
-/// compilation skips these — they shouldn't emit on the timeline.
+/// Timeless rows (bare `add`/`note`, or `-T`/`--no-timestamp`): the
+/// `occur_time` column is NULL, which marks the row as deliberately
+/// timeless (its slug is `field:c<create_time>`). State compilation
+/// skips these — they shouldn't emit on the timeline.
 ///
 /// This is the per-`Entry` form of the compiler's event extraction.
 /// Callers that must attribute each transition to its originating row
@@ -661,7 +661,10 @@ pub fn entry_transition_events(entry: &Entry) -> Vec<(DateTime<Utc>, Value)> {
 
 fn entry_events_kinded(entry: &Entry) -> Vec<(DateTime<Utc>, Value, EventKind)> {
     let mut out = Vec::new();
-    if entry.slug.as_str().ends_with(":unset") {
+    // da-r17h: a deliberately timeless row carries `occur_time IS NULL`
+    // (its slug is now `field:c<create_time>`, no longer the `:unset`
+    // sentinel). It has no place on the timeline, so emit no events.
+    if entry.occur_time.is_none() {
         return out;
     }
     verb_state_events(

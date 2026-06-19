@@ -1,6 +1,6 @@
 ---
 name: datum
-description: Log and review personal life-data with the `datum` CLI in this repo. Use when recording events, states, or durations (the verbs occur / start / stop / switch / add) or reading them back (tail / now / get / grep / dayview). Covers time-flags for backdating, choosing a database, and the data model.
+description: Log and review personal life-data with the `datum` CLI in this repo. Use when recording events, states, or durations (the verbs occur / start / stop / switch / note / add) or reading them back (tail / now / get / grep / dayview). Covers time-flags for backdating, choosing a database, and the data model.
 ---
 
 # Using datum
@@ -18,12 +18,40 @@ datum switch mood happy             # a field's new state (persists until change
 datum switch weight 75.2kg          # state + structured data (units parse to {"v":75.2,"u":"kg"})
 datum start work project=writing    # begin a duration-tracked activity
 datum stop work                     # end the open one (alias: end)
-datum add person name=Ada           # timeless data (no occur-time)
+datum note idea spark=svg-timeline  # timeless jot, auto-id'd on create_time
+datum add person -K name name=Ada   # timeless keyed record (needs an explicit id)
 ```
 
 `track` / `ignore` control whether a field appears in `datum now`; `flag` marks a
 field to come back to. Structured data is `key=value`; a trailing unit on a number
 is parsed automatically.
+
+### note vs add — timeless data, split by identity (when vs what)
+
+Both `note` and `add` record **timeless** data (no `occur_time`); they differ in
+how the entry is identified:
+
+- **`note` = "record this moment, won't look it up."** Identified by *when* —
+  auto-ids on its create_time, so its slug is `field:c<create_time>` and many
+  notes per field coexist. No id needed. Use it to update a field without
+  claiming an occurrence.
+- **`add` = "register this keyed thing, will look it up."** Identified by *what* —
+  it **requires** an explicit id so you can reference it later. Give one with
+  `-K <key>` (derive the slug from a data key), `--id <value>` (set it directly,
+  templates like `--id %field%__%srcLang%` allowed), or the `id=<value>`
+  positional. A bare `add field` with no id errors descriptively.
+
+`-T` / `--no-timestamp` converts any occurred verb into **note-data**: the data
+still lands, but no occurrence is logged and the entry gets a create_time id.
+Canonical use — *chore-shirk*: advance a recurring chore's schedule without
+claiming you did it.
+
+```bash
+datum occur chore -T next_date=+3   # bump the next-due date; logs no occurrence
+```
+
+`-T` (drop the time entirely → timeless) is distinct from `-D` / `--full-day`
+(keep a **date**, drop the clock time → a date-only, still time-anchored entry).
 
 ## Backdating / shifting time
 
@@ -49,8 +77,9 @@ datum dayview                       # render a day as an SVG timeline ("data as 
 ## The data model (essentials)
 
 An **entry** has a `field` (what is tracked), a `state` (JSON value), an optional
-ISO-8601 `dur`, an `occur_time`, and a `slug` (`field:time` — the human-readable id;
-the short `hid` in `datum tail` resolves to the same entry). You choose the CLI verb;
+ISO-8601 `dur`, an `occur_time`, and a `slug` — the human-readable id, `field:<time>`
+for a time-anchored entry or `field:c<create_time>` for a timeless `note`/`-T` one
+(the short `hid` in `datum tail` resolves to the same entry). You choose the CLI verb;
 datum *derives* the storage classifier (point / switch / block / block-switch /
 point-switch) from the (state, dur) it produces.
 

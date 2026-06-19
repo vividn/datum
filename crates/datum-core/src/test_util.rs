@@ -121,7 +121,8 @@ impl EntryBuilder {
         self
     }
 
-    /// Clear the default `start_time` (produces a slug of `field:unset`).
+    /// Clear the default `start_time` → a timeless entry (occur_time NULL,
+    /// slug `field:c<create_time>`).
     pub fn no_time(mut self) -> Self {
         self.start_time = None;
         self

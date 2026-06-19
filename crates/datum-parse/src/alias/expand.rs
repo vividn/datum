@@ -75,6 +75,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "end",
     "switch",
     "add",
+    "note",
     "tail",
     "head",
     "now",

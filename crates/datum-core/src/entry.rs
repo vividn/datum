@@ -316,7 +316,7 @@ impl Entry {
 
         let content_hash = compute_hash(&field, &occur_str, &dur_str, &state_str, &data_str);
 
-        let slug = build_slug(&field, occur_time.as_ref());
+        let slug = build_slug(&field, occur_time.as_ref(), &now);
 
         Entry {
             hid,
@@ -465,13 +465,22 @@ pub(crate) fn compat_dur_secs(s: &str) -> Option<i64> {
     crate::dur::Dur::parse(s).and_then(|d| d.as_seconds())
 }
 
-/// Default slug: `<field>:<timestamp>` — millisecond precision keeps
-/// same-field same-second inserts on distinct slugs. Entries without a time
-/// fall back to `<field>:unset`.
-pub fn build_slug(field: &str, time: Option<&DatumTime>) -> Slug {
+/// Default slug. A time-anchored entry slugs `<field>:<occur_time>`;
+/// millisecond precision keeps same-field same-second inserts on distinct
+/// slugs. A timeless entry (no `occur_time`) slugs `<field>:c<create_time>`
+/// (da-r17h) — the `c` marker mirrors the display convention and `create_time`
+/// keeps many-per-field timeless entries apart (the old `<field>:unset` made
+/// every timeless entry collide on the UNIQUE slug). This is the default for
+/// directly-constructed entries; the CLI insert path overrides it with the
+/// field's `id_structure` template.
+pub fn build_slug(field: &str, time: Option<&DatumTime>, create_time: &DateTime<Utc>) -> Slug {
     let s = match time {
         Some(t) => format!("{}:{}", field, t.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ")),
-        None => format!("{}:unset", field),
+        None => format!(
+            "{}:c{}",
+            field,
+            create_time.format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        ),
     };
     Slug(s)
 }

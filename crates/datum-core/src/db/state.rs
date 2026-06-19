@@ -26,7 +26,7 @@ impl Db {
 
     /// Return the field's most recent state-bearing value at or before time
     /// `t`. Row participation and ordering follow the canonical rule
-    /// ([`super::types::STATE_PARTICIPATION_SQL`]): live, non-`:unset`
+    /// ([`super::types::STATE_PARTICIPATION_SQL`]): live, occur_time-bearing
     /// rows, newest `occur_time` first with a slug tiebreak. Delegates to
     /// [`Db::batch_state_at`] so the two oracles cannot diverge (da-ylet).
     ///
@@ -159,7 +159,7 @@ impl Db {
     /// Row participation falls out of the canonical compiler, not a
     /// local predicate: occur-shaped annotations (`Verb::Point` with no
     /// state or the literal `true` legacy occur wrote), stateless
-    /// blocks, and timeless `:unset` rows never emit transitions, while
+    /// blocks, and timeless rows (`occur_time IS NULL`) never emit transitions, while
     /// `switch x --moment` (Point with a real state) emits a genuine
     /// zero-length transition. An explicit JSON `null` state is a real,
     /// storable state value and participates like any other. States
@@ -425,16 +425,20 @@ mod tests {
         assert_eq!(db.resolve_state_back("mood", 3, probe()).unwrap(), None);
     }
 
-    /// Timeless row (`-T`): occur_time NULL, slug `field:unset`.
+    /// Timeless row (`note`/`-T`): occur_time NULL, slug `field:c<create_time>`.
     fn push_timeless_note(db: &Db, field: &str) {
         let entry = Entry::new(field, Verb::Point, None, None, None, None, "d1");
-        assert!(entry.slug.as_str().ends_with(":unset"));
+        assert!(
+            entry.occur_time.is_none() && entry.slug.as_str().contains(":c"),
+            "timeless row: occur_time NULL + create_time-keyed slug, got {}",
+            entry.slug
+        );
         db.insert_entry(&entry).unwrap();
     }
 
     /// da-ylet oracle-equality property: for any field and probe time,
     /// `state_at(f, t)` must equal `batch_state_at([f], t).get(f)` —
-    /// including fields whose history contains timeless `:unset` rows,
+    /// including fields whose history contains timeless (occur_time NULL) rows,
     /// fields with ONLY a timeless row, and fields with no rows at all.
     #[test]
     fn state_at_equals_batch_state_at_for_every_field_and_probe() {
@@ -467,7 +471,7 @@ mod tests {
         }
     }
 
-    /// da-ylet axis 1: a timeless `:unset` row must not participate in
+    /// da-ylet axis 1: a timeless (occur_time NULL) row must not participate in
     /// state through ANY door. Before the fix, `state_at`'s dead
     /// `verb != 'add'` filter let the timeless row through (resolving to
     /// `Some(Null)`) while `batch_state_at` excluded it.

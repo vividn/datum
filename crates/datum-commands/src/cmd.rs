@@ -180,7 +180,8 @@ fn normalize_shared_occur_time(
             let body = field_spec::interpolate(&tmpl, &ctx, ":");
             entry.slug = datum_core::ids::Slug(format!("{}:{}", entry.field, body));
         } else {
-            entry.slug = datum_core::entry::build_slug(&entry.field, Some(&shared));
+            entry.slug =
+                datum_core::entry::build_slug(&entry.field, Some(&shared), &entry.create_time);
         }
         entry.content_hash = entry.expected_content_hash();
     }
@@ -202,6 +203,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Stop(args) => run_log_with_alias(args, db, commands::end::stop),
         Command::Switch(args) => run_log_with_alias(args, db, commands::switch::switch),
         Command::Add(args) => run_log_with_alias(args, db, commands::add::add),
+        Command::Note(args) => run_log_with_alias(args, db, commands::note::note),
         Command::Tail(args) => commands::tail::tail(args, db),
         Command::Head(args) => commands::head::head(args, db),
         Command::Now(args) => commands::now::now(args, cli.db.as_deref(), db),
@@ -395,15 +397,14 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let mut args = LogArgs::with_field("journal");
-        // v3 (da-5ns): bare positional under Action::Add is rejected
-        // (the v=20 schema dropped the implicit `value` column). Stage
-        // the note as a kv pair, and use `-T` so the entry is timeless
-        // — without an `occur_time` event, the state compiler emits
-        // nothing for a Point row, which is what the original
-        // "add-only ⇒ ignored" semantic relied on.
+        // v3 (da-5ns): bare positional under the Add/Note family is rejected
+        // (the v=20 schema dropped the implicit `value` column). Stage the
+        // note as a kv pair. da-r17h: `Action::Note` is inherently timeless
+        // (auto create_time id, no occur_time) — without an `occur_time`
+        // event the state compiler emits nothing for a Point row, which is
+        // what the original "add-only ⇒ ignored" semantic relied on.
         args.rest = vec!["text=some text".to_string()];
-        args.time.omit_timestamp = true;
-        log_entry(Action::Add, args, &db).unwrap();
+        log_entry(Action::Note, args, &db).unwrap();
         // da-2sr: an add-only field has no state-bearing entry, so state_at
         // returns None — the projection labels it ignored (the "no entries"
         // default). It still appears in `get_tracked_fields` so callers
@@ -1788,12 +1789,13 @@ mod tests {
     fn add_with_state_and_dur_lands_block_verb() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        // `dm add` is the shape-inferring verb that lets reserved keys
-        // drive the truth-table classification. `Action::Occur` rejects
-        // explicit `state=` under da-k5o6, so the prior use of Occur here
-        // was incidental — the truth-table contract belongs to Add.
+        // da-r17h: `note` is the timeless shape-inferring verb (auto
+        // create_time id) that lets reserved keys drive the truth-table
+        // classification. `Action::Occur` rejects explicit `state=` under
+        // da-k5o6, and bare `add` now demands an explicit id — so the
+        // truth-table contract belongs to `note`.
         log_entry(
-            Action::Add,
+            Action::Note,
             make_add_args("focus", vec!["state=true", "dur=PT1H"]),
             &db,
         )
@@ -1817,7 +1819,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         log_entry(
-            Action::Add,
+            Action::Note,
             make_add_args(
                 "phase",
                 vec!["state=true", "dur=PT0S", "following_state=false"],

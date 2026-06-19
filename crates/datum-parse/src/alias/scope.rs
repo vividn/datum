@@ -351,8 +351,8 @@ impl TimeFlags {
 /// `add` and other verbs that don't bind to a moment. The slot walker
 /// silently drops time flags for these (Rule 4 second sentence).
 const TIME_IRRELEVANT_VERBS: &[&str] = &[
-    "add", "alias", "rekey", "edit", "config", "db", "spec", "help", "ids", "count", "check",
-    "grep", "info",
+    "add", "note", "alias", "rekey", "edit", "config", "db", "spec", "help", "ids", "count",
+    "check", "grep", "info",
 ];
 
 /// Does this verb consume time flags? `false` for `add`, `alias`, etc.

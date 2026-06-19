@@ -421,6 +421,7 @@ impl FieldEntry {
             Action::Start => Some("start".to_string()),
             Action::Switch => Some("switch".to_string()),
             Action::Add => Some("add".to_string()),
+            Action::Note => Some("note".to_string()),
             _ => None,
         };
 
