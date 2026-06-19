@@ -11,16 +11,12 @@ turns the result into something worth looking at.
 on your machine, and the CLI never makes network calls in the hot path.
 An optional encrypted relay (see `crates/datum-sync-server/`) shuttles
 data between your devices end-to-end-encrypted; the relay is content-blind.
-Architectural rationale lives in the ADRs: `da-vm0` (visualisation
-priorities), `da-ydg` (tech-stack decisions), `da-ylm` (data-model and
-field-spec system).
 
 ## Status
 
 **Alpha.** Data model v2 (locked in 2026-04-21); breaking changes to
 storage layout, command surface, and CLI grammar are still in scope.
-Use it on a database you can afford to throw away. See `da-ylm` for
-the current data-model contract.
+Use it on a database you can afford to throw away.
 
 ## Install
 
@@ -61,12 +57,12 @@ Every flag and every verb is documented in `datum --help`,
 
 ## Concepts
 
-The full conceptual model is documented in the ADRs; one-line summaries:
+One-line summaries of the model:
 
 - **Entry** — one row. Has an id (ULID), a slug (`field:time`), a field,
   a verb (storage classifier), an `occur_time`, a `state` JSON value, an
   optional ISO-8601 `dur`, an optional `following_state`, and arbitrarily
-  nested `extra_data`. See `da-ylm`, `da-5ns`.
+  nested `extra_data`.
 - **Field** — what is being tracked: `mood`, `coffee`, `weight`,
   `project`. Freeform by default; can be schema-constrained via
   `datum spec set`.
@@ -74,7 +70,7 @@ The full conceptual model is documented in the ADRs; one-line summaries:
   `start`, `stop`, `switch`. Action is parsed from argv, canonicalizes
   the (state, dur, following_state) triple (`start` ⇒ state=true,
   `stop` ⇒ state=false), and is then discarded — only the triple
-  reaches storage. See `da-8y2q.2`.
+  reaches storage.
 - **Verb** — the storage classifier derived from (state, dur,
   following_state) by `derive_verb` (datum-core::verb): `point`,
   `switch`, `block`, `block-switch`, `point-switch`. The CLI verbs
@@ -89,8 +85,7 @@ The full conceptual model is documented in the ADRs; one-line summaries:
   same entry.
 - **Intent** — the original argv is captured and replayed under a
   pinned `parser_version`, so a future parser fix can retroactively
-  correct old entries without losing what the user actually typed
-  (see `da-ydg`).
+  correct old entries without losing what the user actually typed.
 
 ## Commands
 
@@ -248,8 +243,8 @@ that invocation. Follow-up commands like `rekey _LAST oldkey=newkey`
 therefore affect every row of the atomic group. A subsequent
 single-entry write resets `_LAST` to that one row.
 
-For the condensed in-app reference, run `datum alias --help`; the
-full behavioural contract lives in `da-gh0`.
+For the condensed in-app reference, run `datum alias --help`; the full
+behavioural contract is in [`docs/alias-system-design.md`](docs/alias-system-design.md).
 
 ## Sync
 
@@ -261,7 +256,7 @@ to fan changesets out to your other devices. It cannot read your data.
 - `crates/datum-sync-server/` — Rust + axum relay.
 - `crates/datum-sync-agent/` — background daemon (planned).
 
-Per-crate READMEs land in **da-docs.3**.
+Per-crate READMEs are planned.
 
 ## Configuration
 
@@ -315,8 +310,7 @@ The roff is generated from the same `CommandSpec` table that drives
 
 ## Pre-submit check
 
-Before opening a PR (or before a polecat submits to the merge queue),
-run the local mirror of the CI battery:
+Before opening a PR, run the local mirror of the CI battery:
 
 ```bash,no_run
 ./scripts/check.sh
@@ -336,9 +330,8 @@ dependents (so a one-line change in `datum-cli` does not rebuild and
 retest `datum-sync-*`). The script falls back to the full battery
 above when a workspace-root config file changes, when nothing
 crate-shaped is touched, or when the dependent closure already covers
-≥75% of the workspace. Polecats use `check-changed.sh` for pre-submit;
-CI and the refinery always run the full `check.sh` battery as the
-safety net.
+≥75% of the workspace. Use `check-changed.sh` for fast local iteration;
+CI always runs the full `check.sh` battery as the safety net.
 
 To run the same battery automatically on every `git push`, enable the
 tracked pre-push hook once per clone:
