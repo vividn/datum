@@ -65,6 +65,13 @@ fn bg_escape(name: &str) -> String {
     format!("\x1b[48;2;{r};{g};{b}m")
 }
 
+/// ANSI fg escape for an MD5-derived colour. Moment-state labels paint the
+/// state name as fg text (no bg chip), matching datumv2's point-case.
+fn fg_escape(name: &str) -> String {
+    let [r, g, b] = md5_rgb(name);
+    format!("\x1b[38;2;{r};{g};{b}m")
+}
+
 /// `Rgb::IGNORED = #888888` per `render/colors.rs` — bg of LEAD/TRAIL
 /// slots when there's no prior or continuing state to depict (da-25l).
 const IGNORED_BG_ESC: &str = "\x1b[48;2;136;136;136m";
@@ -241,6 +248,64 @@ fn rendered_rows_carry_no_arrow_glyphs() {
             );
         }
     }
+
+    let _ = std::fs::remove_file(&db);
+}
+
+/// da-ck55: a moment-state (`switch <field> <state> --moment`) is a
+/// `Verb::Point` row that still carries a state. datumv2 renders the dot
+/// immediately followed by the state name painted in the state's colour as
+/// **fg** text (no bg chip). v3 previously showed the bare dot only. Pin
+/// the state name's presence and its fg colouring (and the absence of a
+/// state bg chip) on both the CREATE info line and the `tail` row.
+#[test]
+fn moment_state_renders_state_name_as_fg_text() {
+    let db = tmp_db();
+    let _ = std::fs::remove_file(&db);
+
+    let create_out = run_color(&db, &["switch", "mood", "happy", "--moment"]);
+    let line = info_line(&create_out);
+
+    let fg = fg_escape("happy");
+    let bg = bg_escape("happy");
+    assert!(
+        line.contains(&format!("{fg}happy")),
+        "moment-state should render the state name in its fg colour; got:\n{line:?}"
+    );
+    assert!(
+        !line.contains(&format!("{bg}happy")),
+        "moment-state must NOT render the state name as a bg chip; got:\n{line:?}"
+    );
+    // The dot precedes the label (point shape, not a transition group).
+    assert!(
+        line.contains('●'),
+        "moment-state keeps its occur dot:\n{line:?}"
+    );
+
+    // The same label rides through to the `tail` row.
+    let tail_out = run_color(&db, &["tail"]);
+    assert!(
+        tail_out.contains(&format!("{fg}happy")),
+        "tail should carry the moment-state name in fg colour; got:\n{tail_out:?}"
+    );
+
+    let _ = std::fs::remove_file(&db);
+}
+
+/// A plain `occur` (no state) keeps the bare dot — adding the moment-state
+/// label must not synthesize a state name onto stateless points.
+#[test]
+fn plain_occur_renders_bare_dot_without_state_name() {
+    let db = tmp_db();
+    let _ = std::fs::remove_file(&db);
+
+    let create_out = run_color(&db, &["occur", "coffee"]);
+    let line = info_line(&create_out);
+    assert!(line.contains('●'), "occur renders a dot:\n{line:?}");
+    assert!(
+        !line.contains("start") && !line.contains("end"),
+        "stateless occur must not synthesize a state name:\n{line:?}"
+    );
 
     let _ = std::fs::remove_file(&db);
 }

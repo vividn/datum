@@ -282,8 +282,61 @@ fn render_occur(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) ->
     // state at the row's time (ongoing block / IGNORED tracking / none).
     let (fg, bg) = compute_occur_dot_colors(entry, spec, ctx.ongoing_state.as_ref());
     out.push_str(&paint_dot(fg, bg, DOT));
+    // Moment-state: a `Verb::Point` row that still carries a state
+    // (`switch <field> <state> --moment`) renders its state name right
+    // after the dot, matching datumv2's `isPoint` branch of `formatState`
+    // (the dot followed by the state name painted in the state's colour,
+    // as fg text — no bg chip, no surrounding slots). A plain `occur`
+    // (`state = None`) keeps the bare dot.
+    if let Some(state) = entry.state.as_ref() {
+        out.push_str(&render_point_state_label(state, &entry.field, spec));
+    }
     // Occur is a point — no right-char.
     out
+}
+
+/// Render a moment-state's state name as fg-coloured text trailing the
+/// occur dot. Mirrors datumv2's `currentChalk = chalk.hex(stateColor)`
+/// point-case: the label is painted with the state's colour as foreground
+/// rather than the bg chip used by the switch/block state cell, so a
+/// moment-state reads as "a point that happens to name a state" rather
+/// than a state transition.
+fn render_point_state_label(state: &JsonValue, field: &str, spec: Option<&FieldSpec>) -> String {
+    match state {
+        JsonValue::Bool(true) => paint(&field_rgb(field, spec).fg(), "start"),
+        JsonValue::Bool(false) => paint(&field_rgb(field, spec).fg(), "end"),
+        JsonValue::Null => paint(&Rgb::IGNORED.fg(), NULL_SET),
+        JsonValue::String(s) if s == IGNORED_STATE => paint(&Rgb::IGNORED.fg(), s),
+        JsonValue::String(s) => paint(&state_rgb(s, spec).fg(), s),
+        JsonValue::Object(obj) => {
+            let body = match obj.get("id").and_then(JsonValue::as_str) {
+                Some(id) => format!("{{{id}}}"),
+                None => "{}".to_string(),
+            };
+            paint(&structured_state_rgb(obj, spec).fg(), &body)
+        }
+        // Parallel moment-state — render each member in its own colour,
+        // comma-joined (the comma tinted with the upcoming member's hue,
+        // matching the switch-badge convention).
+        JsonValue::Array(items) if items.len() >= 2 => {
+            let mut out = String::new();
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED);
+                    out.push_str(&paint(&color.fg(), ","));
+                }
+                out.push_str(&render_point_state_label(item, field, spec));
+            }
+            out
+        }
+        JsonValue::Array(items) if items.len() == 1 => {
+            render_point_state_label(&items[0], field, spec)
+        }
+        other => paint(
+            &state_rgb(&other.to_string(), spec).fg(),
+            &other.to_string(),
+        ),
+    }
 }
 
 /// Per da-k5z: the occur "dot" paints the row's field/state color as **fg**
