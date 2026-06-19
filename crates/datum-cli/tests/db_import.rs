@@ -53,14 +53,14 @@ fn write_backup(docs: serde_json::Value) -> tempfile::NamedTempFile {
 fn occur_only_doc_maps_to_state_null() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "coffee"
         },
         "meta": {
             "humanId": "abc123",
-            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"}
+            "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
         }
     }]));
 
@@ -69,7 +69,7 @@ fn occur_only_doc_maps_to_state_null() {
     let entries = db.list_including_deleted().unwrap();
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
-    assert_eq!(e.field, "brushteeth");
+    assert_eq!(e.field, "coffee");
     assert!(e.state.is_none(), "no state in source → state stays null");
     assert!(e.dur.is_none(), "no legacy dur key → dur column NULL");
     assert!(e.following_state.is_none());
@@ -142,16 +142,16 @@ fn occur_with_dur_maps_to_block() {
 fn switch_doc_with_boolean_state_maps_to_switch() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "contacts:2025-01-08T23:53:21.053Z",
+        "_id": "read:2025-01-08T07:10:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:21.053Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "contacts",
+            "occurTime": {"utc": "2025-01-08T07:10:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "read",
             "state": false,
             "lastState": true
         },
         "meta": {
             "humanId": "ok",
-            "createTime": {"utc": "2025-01-08T23:53:21.464Z", "o": 1, "tz": "Europe/Berlin"}
+            "createTime": {"utc": "2025-01-08T07:10:00.500Z", "o": 1, "tz": "Europe/Berlin"}
         }
     }]));
 
@@ -180,15 +180,15 @@ fn switch_doc_with_boolean_state_maps_to_switch() {
 fn explicit_dur_null_maps_to_zero_duration() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "floss:2025-01-08T23:53:14.217Z",
+        "_id": "walk:2025-01-08T07:05:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:14.217Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "floss",
+            "occurTime": {"utc": "2025-01-08T07:05:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "walk",
             "dur": serde_json::Value::Null
         },
         "meta": {
             "humanId": "n",
-            "createTime": {"utc": "2025-01-08T23:53:14.693Z", "o": 1, "tz": "Europe/Berlin"}
+            "createTime": {"utc": "2025-01-08T07:05:00.500Z", "o": 1, "tz": "Europe/Berlin"}
         }
     }]));
 
@@ -253,14 +253,14 @@ fn doc_without_occur_time_maps_to_point() {
 fn imported_rows_carry_sentinel_intent_fields() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "coffee"
         },
         "meta": {
             "humanId": "abc",
-            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"}
+            "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
         }
     }]));
 
@@ -285,7 +285,7 @@ fn imported_rows_carry_sentinel_intent_fields() {
     );
     assert_eq!(
         marker["original_id"],
-        serde_json::json!("brushteeth:2025-01-08T23:53:08.259Z"),
+        serde_json::json!("coffee:2025-01-08T07:00:00.000Z"),
     );
     assert!(e.data.is_none(), "no user payload → `data` stays NULL");
 }
@@ -306,12 +306,12 @@ fn dry_run_does_not_insert() {
             "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T08:00:00.500Z", "o": 1, "tz": "UTC"}}
         },
         {
-            "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+            "_id": "coffee:2025-01-08T07:00:00.000Z",
             "data": {
-                "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "UTC"},
-                "field": "brushteeth"
+                "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "UTC"},
+                "field": "coffee"
             },
-            "meta": {"humanId": "b", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "UTC"}}
+            "meta": {"humanId": "b", "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "UTC"}}
         }
     ]));
 
@@ -425,12 +425,12 @@ fn import_3day_fixture_produces_blocks_and_points() {
 fn second_import_is_idempotent_via_content_hash() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "UTC"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "UTC"},
+            "field": "coffee"
         },
-        "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "UTC"}}
+        "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "UTC"}}
     }]));
 
     run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
@@ -445,13 +445,13 @@ fn second_import_is_idempotent_via_content_hash() {
 #[test]
 fn import_preserves_create_and_modify_times_and_marker() {
     let db = fresh_db();
-    let create_iso = "2025-01-08T23:53:08.569Z";
+    let create_iso = "2025-01-08T07:00:00.500Z";
     let modify_iso = "2025-03-15T10:00:00.000Z";
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "coffee"
         },
         "meta": {
             "humanId": "abc",
@@ -488,7 +488,7 @@ fn import_preserves_create_and_modify_times_and_marker() {
     );
     assert_eq!(
         marker["original_id"],
-        serde_json::json!("brushteeth:2025-01-08T23:53:08.259Z"),
+        serde_json::json!("coffee:2025-01-08T07:00:00.000Z"),
     );
 }
 
@@ -497,12 +497,12 @@ fn import_preserves_create_and_modify_times_and_marker() {
 #[test]
 fn import_falls_back_to_create_time_when_modify_time_missing() {
     let db = fresh_db();
-    let create_iso = "2025-01-08T23:53:08.569Z";
+    let create_iso = "2025-01-08T07:00:00.500Z";
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "coffee"
         },
         "meta": {
             "humanId": "abc",
@@ -640,14 +640,14 @@ fn missing_precision_unit_leaves_column_null() {
 fn import_preserves_id_structure_from_meta() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "coffee"
         },
         "meta": {
             "humanId": "abc",
-            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"},
+            "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "Europe/Berlin"},
             "idStructure": "%field%:%occurTime%"
         }
     }]));
@@ -779,19 +779,19 @@ fn skip_log_records_duplicates_and_no_field_docs() {
     // `no-field` on first import).
     let f = write_backup(serde_json::json!([
         {
-            "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+            "_id": "coffee:2025-01-08T07:00:00.000Z",
             "data": {
-                "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "UTC"},
-                "field": "brushteeth"
+                "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "UTC"},
+                "field": "coffee"
             },
-            "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "UTC"}}
+            "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "UTC"}}
         },
         {
             "_id": "orphan:no-field-here",
             "data": {
-                "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "UTC"}
+                "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "UTC"}
             },
-            "meta": {"humanId": "b", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "UTC"}}
+            "meta": {"humanId": "b", "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "UTC"}}
         }
     ]));
 
@@ -833,7 +833,7 @@ fn skip_log_records_duplicates_and_no_field_docs() {
     .unwrap();
     let body = std::fs::read_to_string(&log_path).unwrap();
     assert!(
-        body.contains("duplicate\tbrushteeth:2025-01-08T23:53:08.259Z"),
+        body.contains("duplicate\tcoffee:2025-01-08T07:00:00.000Z"),
         "re-import must record dedup skip by source _id; got:\n{body}",
     );
     assert!(
@@ -848,9 +848,9 @@ fn skip_log_includes_header_and_uses_synthetic_id_when_missing() {
     // No `_id` and no `field` — both no-field skip AND synthetic-id path.
     let f = write_backup(serde_json::json!([{
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 0, "tz": "UTC"}
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 0, "tz": "UTC"}
         },
-        "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 0, "tz": "UTC"}}
+        "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 0, "tz": "UTC"}}
     }]));
 
     let log = tempfile::NamedTempFile::new().unwrap();
@@ -887,14 +887,14 @@ fn skip_log_includes_header_and_uses_synthetic_id_when_missing() {
 fn import_preserves_source_humanid_as_hid() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "coffee"
         },
         "meta": {
             "humanId": "abc123def456",
-            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"}
+            "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
         }
     }]));
 
@@ -918,13 +918,13 @@ fn import_without_humanid_generates_fresh_hid() {
     // import cleanly with an auto-generated 12-char base36 hid.
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "coffee"
         },
         "meta": {
-            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"}
+            "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
         }
     }]));
 
@@ -948,14 +948,14 @@ fn import_with_empty_humanid_generates_fresh_hid() {
     // being absent. Avoids surfacing a corrupt zero-length hid in the DB.
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "coffee"
         },
         "meta": {
             "humanId": "",
-            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"}
+            "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
         }
     }]));
     run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
@@ -979,14 +979,14 @@ fn import_collision_with_existing_row_errors_and_preserves_existing() {
     let stolen_hid = preexisting.hid.clone();
 
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "coffee"
         },
         "meta": {
             "humanId": stolen_hid.as_str(),
-            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"}
+            "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
         }
     }]));
 
@@ -1002,7 +1002,7 @@ fn import_collision_with_existing_row_errors_and_preserves_existing() {
         "error message must include the colliding hid; got: {msg}",
     );
     assert!(
-        msg.contains("brushteeth:2025-01-08T23:53:08.259Z"),
+        msg.contains("coffee:2025-01-08T07:00:00.000Z"),
         "error message must name the source doc that triggered it; got: {msg}",
     );
 
@@ -1021,18 +1021,18 @@ fn import_in_batch_humanid_duplicate_with_distinct_content_errors() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([
         {
-            "_id": "brushteeth:2025-01-08T08:00:00.000Z",
+            "_id": "coffee:2025-01-08T08:00:00.000Z",
             "data": {
                 "occurTime": {"utc": "2025-01-08T08:00:00.000Z", "o": 0, "tz": "UTC"},
-                "field": "brushteeth"
+                "field": "coffee"
             },
             "meta": {"humanId": "dup", "createTime": {"utc": "2025-01-08T08:00:00.500Z", "o": 0, "tz": "UTC"}}
         },
         {
-            "_id": "floss:2025-01-08T09:00:00.000Z",
+            "_id": "walk:2025-01-08T09:00:00.000Z",
             "data": {
                 "occurTime": {"utc": "2025-01-08T09:00:00.000Z", "o": 0, "tz": "UTC"},
-                "field": "floss"
+                "field": "walk"
             },
             "meta": {"humanId": "dup", "createTime": {"utc": "2025-01-08T09:00:00.500Z", "o": 0, "tz": "UTC"}}
         }
@@ -1054,12 +1054,12 @@ fn import_reimport_with_same_humanid_and_same_content_is_idempotent() {
     // is benign).
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
-            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "UTC"},
-            "field": "brushteeth"
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "UTC"},
+            "field": "coffee"
         },
-        "meta": {"humanId": "stable42", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "UTC"}}
+        "meta": {"humanId": "stable42", "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "UTC"}}
     }]));
 
     run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
