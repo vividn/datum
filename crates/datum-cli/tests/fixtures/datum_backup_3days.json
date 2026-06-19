@@ -1,0 +1,3163 @@
+{
+  "backupTime": "2025-02-02T12:26:32.488Z",
+  "docs": [
+    {
+      "_id": "coffee:2025-01-01T07:00:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T07:00:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "coffee",
+        "dur": "PT15M"
+      },
+      "meta": {
+        "humanId": "syn0000",
+        "createTime": {
+          "utc": "2025-01-01T07:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T07:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "walk:2025-01-01T07:22:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T07:22:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "walk"
+      },
+      "meta": {
+        "humanId": "syn0001",
+        "createTime": {
+          "utc": "2025-01-01T07:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T07:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "read:2025-01-01T07:44:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T07:44:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "read"
+      },
+      "meta": {
+        "humanId": "syn0002",
+        "createTime": {
+          "utc": "2025-01-01T07:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T07:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "water:2025-01-01T08:06:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T08:06:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "water"
+      },
+      "meta": {
+        "humanId": "syn0003",
+        "createTime": {
+          "utc": "2025-01-01T08:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T08:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "stretch:2025-01-01T08:28:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T08:28:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "stretch"
+      },
+      "meta": {
+        "humanId": "syn0004",
+        "createTime": {
+          "utc": "2025-01-01T08:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T08:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "music:2025-01-01T08:50:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T08:50:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "music",
+        "dur": "PT30M"
+      },
+      "meta": {
+        "humanId": "syn0005",
+        "createTime": {
+          "utc": "2025-01-01T08:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T08:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "code:2025-01-01T09:12:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T09:12:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "code"
+      },
+      "meta": {
+        "humanId": "syn0006",
+        "createTime": {
+          "utc": "2025-01-01T09:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T09:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "tea:2025-01-01T09:34:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T09:34:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "tea",
+        "state": "off"
+      },
+      "meta": {
+        "humanId": "syn0007",
+        "createTime": {
+          "utc": "2025-01-01T09:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T09:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "nap:2025-01-01T09:56:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T09:56:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "nap"
+      },
+      "meta": {
+        "humanId": "syn0008",
+        "createTime": {
+          "utc": "2025-01-01T09:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T09:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "cook:2025-01-01T10:18:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T10:18:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "cook"
+      },
+      "meta": {
+        "humanId": "syn0009",
+        "createTime": {
+          "utc": "2025-01-01T10:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T10:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "garden:2025-01-01T10:40:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T10:40:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "garden",
+        "dur": "PT45M"
+      },
+      "meta": {
+        "humanId": "syn0010",
+        "createTime": {
+          "utc": "2025-01-01T10:40:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T10:40:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "write:2025-01-01T11:02:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T11:02:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "write"
+      },
+      "meta": {
+        "humanId": "syn0011",
+        "createTime": {
+          "utc": "2025-01-01T11:02:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T11:02:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "clean:2025-01-01T11:24:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T11:24:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "clean"
+      },
+      "meta": {
+        "humanId": "syn0012",
+        "createTime": {
+          "utc": "2025-01-01T11:24:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T11:24:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "plants:2025-01-01T11:46:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T11:46:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "plants"
+      },
+      "meta": {
+        "humanId": "syn0013",
+        "createTime": {
+          "utc": "2025-01-01T11:46:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T11:46:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "study:2025-01-01T12:08:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T12:08:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "study",
+        "state": "on"
+      },
+      "meta": {
+        "humanId": "syn0014",
+        "createTime": {
+          "utc": "2025-01-01T12:08:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T12:08:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "rest:2025-01-01T12:30:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T12:30:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "rest",
+        "dur": "PT25M"
+      },
+      "meta": {
+        "humanId": "syn0015",
+        "createTime": {
+          "utc": "2025-01-01T12:30:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T12:30:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "coffee:2025-01-01T12:52:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T12:52:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "coffee"
+      },
+      "meta": {
+        "humanId": "syn0016",
+        "createTime": {
+          "utc": "2025-01-01T12:52:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T12:52:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "walk:2025-01-01T13:14:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T13:14:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "walk"
+      },
+      "meta": {
+        "humanId": "syn0017",
+        "createTime": {
+          "utc": "2025-01-01T13:14:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T13:14:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "read:2025-01-01T13:36:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T13:36:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "read"
+      },
+      "meta": {
+        "humanId": "syn0018",
+        "createTime": {
+          "utc": "2025-01-01T13:36:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T13:36:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "water:2025-01-01T13:58:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T13:58:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "water"
+      },
+      "meta": {
+        "humanId": "syn0019",
+        "createTime": {
+          "utc": "2025-01-01T13:58:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T13:58:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "stretch:2025-01-01T14:20:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T14:20:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "stretch",
+        "dur": "PT50M"
+      },
+      "meta": {
+        "humanId": "syn0020",
+        "createTime": {
+          "utc": "2025-01-01T14:20:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T14:20:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "music:2025-01-01T14:42:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T14:42:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "music",
+        "state": "off"
+      },
+      "meta": {
+        "humanId": "syn0021",
+        "createTime": {
+          "utc": "2025-01-01T14:42:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T14:42:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "code:2025-01-01T15:04:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T15:04:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "code"
+      },
+      "meta": {
+        "humanId": "syn0022",
+        "createTime": {
+          "utc": "2025-01-01T15:04:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T15:04:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "tea:2025-01-01T15:26:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T15:26:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "tea"
+      },
+      "meta": {
+        "humanId": "syn0023",
+        "createTime": {
+          "utc": "2025-01-01T15:26:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T15:26:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "nap:2025-01-01T15:48:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T15:48:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "nap"
+      },
+      "meta": {
+        "humanId": "syn0024",
+        "createTime": {
+          "utc": "2025-01-01T15:48:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T15:48:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "cook:2025-01-01T16:10:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T16:10:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "cook",
+        "dur": "PT15M"
+      },
+      "meta": {
+        "humanId": "syn0025",
+        "createTime": {
+          "utc": "2025-01-01T16:10:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T16:10:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "garden:2025-01-01T16:32:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T16:32:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "garden"
+      },
+      "meta": {
+        "humanId": "syn0026",
+        "createTime": {
+          "utc": "2025-01-01T16:32:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T16:32:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "write:2025-01-01T16:54:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T16:54:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "write"
+      },
+      "meta": {
+        "humanId": "syn0027",
+        "createTime": {
+          "utc": "2025-01-01T16:54:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T16:54:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "clean:2025-01-01T17:16:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T17:16:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "clean",
+        "state": "on"
+      },
+      "meta": {
+        "humanId": "syn0028",
+        "createTime": {
+          "utc": "2025-01-01T17:16:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T17:16:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "plants:2025-01-01T17:38:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T17:38:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "plants"
+      },
+      "meta": {
+        "humanId": "syn0029",
+        "createTime": {
+          "utc": "2025-01-01T17:38:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T17:38:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "study:2025-01-01T18:00:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T18:00:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "study",
+        "dur": "PT30M"
+      },
+      "meta": {
+        "humanId": "syn0030",
+        "createTime": {
+          "utc": "2025-01-01T18:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T18:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "rest:2025-01-01T18:22:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T18:22:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "rest"
+      },
+      "meta": {
+        "humanId": "syn0031",
+        "createTime": {
+          "utc": "2025-01-01T18:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T18:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "coffee:2025-01-01T18:44:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T18:44:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "coffee"
+      },
+      "meta": {
+        "humanId": "syn0032",
+        "createTime": {
+          "utc": "2025-01-01T18:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T18:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "walk:2025-01-01T19:06:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T19:06:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "walk"
+      },
+      "meta": {
+        "humanId": "syn0033",
+        "createTime": {
+          "utc": "2025-01-01T19:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T19:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "read:2025-01-01T19:28:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T19:28:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "read"
+      },
+      "meta": {
+        "humanId": "syn0034",
+        "createTime": {
+          "utc": "2025-01-01T19:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T19:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "water:2025-01-01T19:50:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T19:50:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "water",
+        "dur": "PT45M"
+      },
+      "meta": {
+        "humanId": "syn0035",
+        "createTime": {
+          "utc": "2025-01-01T19:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T19:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "stretch:2025-01-01T20:12:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T20:12:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "stretch"
+      },
+      "meta": {
+        "humanId": "syn0036",
+        "createTime": {
+          "utc": "2025-01-01T20:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T20:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "music:2025-01-01T20:34:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T20:34:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "music"
+      },
+      "meta": {
+        "humanId": "syn0037",
+        "createTime": {
+          "utc": "2025-01-01T20:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T20:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "code:2025-01-01T20:56:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T20:56:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "code"
+      },
+      "meta": {
+        "humanId": "syn0038",
+        "createTime": {
+          "utc": "2025-01-01T20:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T20:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "tea:2025-01-01T21:18:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-01T21:18:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "tea"
+      },
+      "meta": {
+        "humanId": "syn0039",
+        "createTime": {
+          "utc": "2025-01-01T21:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-01T21:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "nap:2025-01-02T07:00:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T07:00:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "nap",
+        "dur": "PT25M"
+      },
+      "meta": {
+        "humanId": "syn0040",
+        "createTime": {
+          "utc": "2025-01-02T07:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T07:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "cook:2025-01-02T07:22:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T07:22:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "cook"
+      },
+      "meta": {
+        "humanId": "syn0041",
+        "createTime": {
+          "utc": "2025-01-02T07:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T07:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "garden:2025-01-02T07:44:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T07:44:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "garden",
+        "state": "on"
+      },
+      "meta": {
+        "humanId": "syn0042",
+        "createTime": {
+          "utc": "2025-01-02T07:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T07:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "write:2025-01-02T08:06:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T08:06:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "write"
+      },
+      "meta": {
+        "humanId": "syn0043",
+        "createTime": {
+          "utc": "2025-01-02T08:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T08:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "clean:2025-01-02T08:28:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T08:28:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "clean"
+      },
+      "meta": {
+        "humanId": "syn0044",
+        "createTime": {
+          "utc": "2025-01-02T08:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T08:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "plants:2025-01-02T08:50:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T08:50:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "plants",
+        "dur": "PT50M"
+      },
+      "meta": {
+        "humanId": "syn0045",
+        "createTime": {
+          "utc": "2025-01-02T08:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T08:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "study:2025-01-02T09:12:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T09:12:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "study"
+      },
+      "meta": {
+        "humanId": "syn0046",
+        "createTime": {
+          "utc": "2025-01-02T09:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T09:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "rest:2025-01-02T09:34:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T09:34:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "rest"
+      },
+      "meta": {
+        "humanId": "syn0047",
+        "createTime": {
+          "utc": "2025-01-02T09:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T09:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "coffee:2025-01-02T09:56:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T09:56:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "coffee"
+      },
+      "meta": {
+        "humanId": "syn0048",
+        "createTime": {
+          "utc": "2025-01-02T09:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T09:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "walk:2025-01-02T10:18:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T10:18:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "walk",
+        "state": "off"
+      },
+      "meta": {
+        "humanId": "syn0049",
+        "createTime": {
+          "utc": "2025-01-02T10:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T10:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "read:2025-01-02T10:40:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T10:40:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "read",
+        "dur": "PT15M"
+      },
+      "meta": {
+        "humanId": "syn0050",
+        "createTime": {
+          "utc": "2025-01-02T10:40:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T10:40:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "water:2025-01-02T11:02:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T11:02:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "water"
+      },
+      "meta": {
+        "humanId": "syn0051",
+        "createTime": {
+          "utc": "2025-01-02T11:02:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T11:02:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "stretch:2025-01-02T11:24:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T11:24:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "stretch"
+      },
+      "meta": {
+        "humanId": "syn0052",
+        "createTime": {
+          "utc": "2025-01-02T11:24:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T11:24:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "music:2025-01-02T11:46:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T11:46:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "music"
+      },
+      "meta": {
+        "humanId": "syn0053",
+        "createTime": {
+          "utc": "2025-01-02T11:46:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T11:46:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "code:2025-01-02T12:08:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T12:08:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "code"
+      },
+      "meta": {
+        "humanId": "syn0054",
+        "createTime": {
+          "utc": "2025-01-02T12:08:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T12:08:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "tea:2025-01-02T12:30:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T12:30:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "tea",
+        "dur": "PT30M"
+      },
+      "meta": {
+        "humanId": "syn0055",
+        "createTime": {
+          "utc": "2025-01-02T12:30:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T12:30:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "nap:2025-01-02T12:52:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T12:52:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "nap",
+        "state": "on"
+      },
+      "meta": {
+        "humanId": "syn0056",
+        "createTime": {
+          "utc": "2025-01-02T12:52:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T12:52:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "cook:2025-01-02T13:14:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T13:14:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "cook"
+      },
+      "meta": {
+        "humanId": "syn0057",
+        "createTime": {
+          "utc": "2025-01-02T13:14:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T13:14:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "garden:2025-01-02T13:36:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T13:36:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "garden"
+      },
+      "meta": {
+        "humanId": "syn0058",
+        "createTime": {
+          "utc": "2025-01-02T13:36:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T13:36:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "write:2025-01-02T13:58:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T13:58:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "write"
+      },
+      "meta": {
+        "humanId": "syn0059",
+        "createTime": {
+          "utc": "2025-01-02T13:58:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T13:58:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "clean:2025-01-02T14:20:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T14:20:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "clean",
+        "dur": "PT45M"
+      },
+      "meta": {
+        "humanId": "syn0060",
+        "createTime": {
+          "utc": "2025-01-02T14:20:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T14:20:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "plants:2025-01-02T14:42:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T14:42:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "plants"
+      },
+      "meta": {
+        "humanId": "syn0061",
+        "createTime": {
+          "utc": "2025-01-02T14:42:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T14:42:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "study:2025-01-02T15:04:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T15:04:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "study"
+      },
+      "meta": {
+        "humanId": "syn0062",
+        "createTime": {
+          "utc": "2025-01-02T15:04:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T15:04:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "rest:2025-01-02T15:26:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T15:26:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "rest",
+        "state": "off"
+      },
+      "meta": {
+        "humanId": "syn0063",
+        "createTime": {
+          "utc": "2025-01-02T15:26:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T15:26:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "coffee:2025-01-02T15:48:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T15:48:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "coffee"
+      },
+      "meta": {
+        "humanId": "syn0064",
+        "createTime": {
+          "utc": "2025-01-02T15:48:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T15:48:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "walk:2025-01-02T16:10:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T16:10:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "walk",
+        "dur": "PT25M"
+      },
+      "meta": {
+        "humanId": "syn0065",
+        "createTime": {
+          "utc": "2025-01-02T16:10:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T16:10:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "read:2025-01-02T16:32:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T16:32:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "read"
+      },
+      "meta": {
+        "humanId": "syn0066",
+        "createTime": {
+          "utc": "2025-01-02T16:32:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T16:32:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "water:2025-01-02T16:54:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T16:54:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "water"
+      },
+      "meta": {
+        "humanId": "syn0067",
+        "createTime": {
+          "utc": "2025-01-02T16:54:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T16:54:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "stretch:2025-01-02T17:16:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T17:16:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "stretch"
+      },
+      "meta": {
+        "humanId": "syn0068",
+        "createTime": {
+          "utc": "2025-01-02T17:16:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T17:16:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "music:2025-01-02T17:38:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T17:38:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "music"
+      },
+      "meta": {
+        "humanId": "syn0069",
+        "createTime": {
+          "utc": "2025-01-02T17:38:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T17:38:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "code:2025-01-02T18:00:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T18:00:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "code",
+        "dur": "PT50M"
+      },
+      "meta": {
+        "humanId": "syn0070",
+        "createTime": {
+          "utc": "2025-01-02T18:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T18:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "tea:2025-01-02T18:22:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T18:22:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "tea"
+      },
+      "meta": {
+        "humanId": "syn0071",
+        "createTime": {
+          "utc": "2025-01-02T18:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T18:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "nap:2025-01-02T18:44:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T18:44:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "nap"
+      },
+      "meta": {
+        "humanId": "syn0072",
+        "createTime": {
+          "utc": "2025-01-02T18:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T18:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "cook:2025-01-02T19:06:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T19:06:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "cook"
+      },
+      "meta": {
+        "humanId": "syn0073",
+        "createTime": {
+          "utc": "2025-01-02T19:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T19:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "garden:2025-01-02T19:28:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T19:28:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "garden"
+      },
+      "meta": {
+        "humanId": "syn0074",
+        "createTime": {
+          "utc": "2025-01-02T19:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T19:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "write:2025-01-02T19:50:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T19:50:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "write",
+        "dur": "PT15M"
+      },
+      "meta": {
+        "humanId": "syn0075",
+        "createTime": {
+          "utc": "2025-01-02T19:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T19:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "clean:2025-01-02T20:12:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T20:12:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "clean"
+      },
+      "meta": {
+        "humanId": "syn0076",
+        "createTime": {
+          "utc": "2025-01-02T20:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T20:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "plants:2025-01-02T20:34:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T20:34:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "plants",
+        "state": "off"
+      },
+      "meta": {
+        "humanId": "syn0077",
+        "createTime": {
+          "utc": "2025-01-02T20:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T20:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "study:2025-01-02T20:56:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T20:56:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "study"
+      },
+      "meta": {
+        "humanId": "syn0078",
+        "createTime": {
+          "utc": "2025-01-02T20:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T20:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "rest:2025-01-02T21:18:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-02T21:18:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "rest"
+      },
+      "meta": {
+        "humanId": "syn0079",
+        "createTime": {
+          "utc": "2025-01-02T21:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-02T21:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "coffee:2025-01-03T07:00:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T07:00:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "coffee",
+        "dur": "PT30M"
+      },
+      "meta": {
+        "humanId": "syn0080",
+        "createTime": {
+          "utc": "2025-01-03T07:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T07:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "walk:2025-01-03T07:22:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T07:22:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "walk"
+      },
+      "meta": {
+        "humanId": "syn0081",
+        "createTime": {
+          "utc": "2025-01-03T07:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T07:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "read:2025-01-03T07:44:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T07:44:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "read"
+      },
+      "meta": {
+        "humanId": "syn0082",
+        "createTime": {
+          "utc": "2025-01-03T07:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T07:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "water:2025-01-03T08:06:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T08:06:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "water"
+      },
+      "meta": {
+        "humanId": "syn0083",
+        "createTime": {
+          "utc": "2025-01-03T08:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T08:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "stretch:2025-01-03T08:28:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T08:28:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "stretch",
+        "state": "on"
+      },
+      "meta": {
+        "humanId": "syn0084",
+        "createTime": {
+          "utc": "2025-01-03T08:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T08:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "music:2025-01-03T08:50:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T08:50:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "music",
+        "dur": "PT45M"
+      },
+      "meta": {
+        "humanId": "syn0085",
+        "createTime": {
+          "utc": "2025-01-03T08:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T08:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "code:2025-01-03T09:12:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T09:12:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "code"
+      },
+      "meta": {
+        "humanId": "syn0086",
+        "createTime": {
+          "utc": "2025-01-03T09:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T09:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "tea:2025-01-03T09:34:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T09:34:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "tea"
+      },
+      "meta": {
+        "humanId": "syn0087",
+        "createTime": {
+          "utc": "2025-01-03T09:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T09:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "nap:2025-01-03T09:56:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T09:56:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "nap"
+      },
+      "meta": {
+        "humanId": "syn0088",
+        "createTime": {
+          "utc": "2025-01-03T09:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T09:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "cook:2025-01-03T10:18:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T10:18:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "cook"
+      },
+      "meta": {
+        "humanId": "syn0089",
+        "createTime": {
+          "utc": "2025-01-03T10:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T10:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "garden:2025-01-03T10:40:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T10:40:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "garden",
+        "dur": "PT25M"
+      },
+      "meta": {
+        "humanId": "syn0090",
+        "createTime": {
+          "utc": "2025-01-03T10:40:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T10:40:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "write:2025-01-03T11:02:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T11:02:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "write",
+        "state": "off"
+      },
+      "meta": {
+        "humanId": "syn0091",
+        "createTime": {
+          "utc": "2025-01-03T11:02:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T11:02:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "clean:2025-01-03T11:24:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T11:24:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "clean"
+      },
+      "meta": {
+        "humanId": "syn0092",
+        "createTime": {
+          "utc": "2025-01-03T11:24:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T11:24:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "plants:2025-01-03T11:46:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T11:46:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "plants"
+      },
+      "meta": {
+        "humanId": "syn0093",
+        "createTime": {
+          "utc": "2025-01-03T11:46:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T11:46:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "study:2025-01-03T12:08:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T12:08:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "study"
+      },
+      "meta": {
+        "humanId": "syn0094",
+        "createTime": {
+          "utc": "2025-01-03T12:08:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T12:08:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "rest:2025-01-03T12:30:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T12:30:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "rest",
+        "dur": "PT50M"
+      },
+      "meta": {
+        "humanId": "syn0095",
+        "createTime": {
+          "utc": "2025-01-03T12:30:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T12:30:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "coffee:2025-01-03T12:52:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T12:52:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "coffee"
+      },
+      "meta": {
+        "humanId": "syn0096",
+        "createTime": {
+          "utc": "2025-01-03T12:52:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T12:52:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "walk:2025-01-03T13:14:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T13:14:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "walk"
+      },
+      "meta": {
+        "humanId": "syn0097",
+        "createTime": {
+          "utc": "2025-01-03T13:14:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T13:14:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "read:2025-01-03T13:36:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T13:36:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "read",
+        "state": "on"
+      },
+      "meta": {
+        "humanId": "syn0098",
+        "createTime": {
+          "utc": "2025-01-03T13:36:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T13:36:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "water:2025-01-03T13:58:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T13:58:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "water"
+      },
+      "meta": {
+        "humanId": "syn0099",
+        "createTime": {
+          "utc": "2025-01-03T13:58:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T13:58:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "stretch:2025-01-03T14:20:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T14:20:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "stretch",
+        "dur": "PT15M"
+      },
+      "meta": {
+        "humanId": "syn0100",
+        "createTime": {
+          "utc": "2025-01-03T14:20:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T14:20:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "music:2025-01-03T14:42:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T14:42:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "music"
+      },
+      "meta": {
+        "humanId": "syn0101",
+        "createTime": {
+          "utc": "2025-01-03T14:42:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T14:42:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "code:2025-01-03T15:04:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T15:04:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "code"
+      },
+      "meta": {
+        "humanId": "syn0102",
+        "createTime": {
+          "utc": "2025-01-03T15:04:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T15:04:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "tea:2025-01-03T15:26:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T15:26:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "tea"
+      },
+      "meta": {
+        "humanId": "syn0103",
+        "createTime": {
+          "utc": "2025-01-03T15:26:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T15:26:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "nap:2025-01-03T15:48:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T15:48:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "nap"
+      },
+      "meta": {
+        "humanId": "syn0104",
+        "createTime": {
+          "utc": "2025-01-03T15:48:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T15:48:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "cook:2025-01-03T16:10:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T16:10:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "cook",
+        "dur": "PT30M"
+      },
+      "meta": {
+        "humanId": "syn0105",
+        "createTime": {
+          "utc": "2025-01-03T16:10:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T16:10:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "garden:2025-01-03T16:32:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T16:32:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "garden"
+      },
+      "meta": {
+        "humanId": "syn0106",
+        "createTime": {
+          "utc": "2025-01-03T16:32:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T16:32:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "write:2025-01-03T16:54:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T16:54:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "write"
+      },
+      "meta": {
+        "humanId": "syn0107",
+        "createTime": {
+          "utc": "2025-01-03T16:54:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T16:54:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "clean:2025-01-03T17:16:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T17:16:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "clean"
+      },
+      "meta": {
+        "humanId": "syn0108",
+        "createTime": {
+          "utc": "2025-01-03T17:16:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T17:16:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "plants:2025-01-03T17:38:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T17:38:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "plants"
+      },
+      "meta": {
+        "humanId": "syn0109",
+        "createTime": {
+          "utc": "2025-01-03T17:38:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T17:38:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "study:2025-01-03T18:00:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T18:00:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "study",
+        "dur": "PT45M"
+      },
+      "meta": {
+        "humanId": "syn0110",
+        "createTime": {
+          "utc": "2025-01-03T18:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T18:00:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "rest:2025-01-03T18:22:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T18:22:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "rest"
+      },
+      "meta": {
+        "humanId": "syn0111",
+        "createTime": {
+          "utc": "2025-01-03T18:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T18:22:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "coffee:2025-01-03T18:44:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T18:44:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "coffee",
+        "state": "on"
+      },
+      "meta": {
+        "humanId": "syn0112",
+        "createTime": {
+          "utc": "2025-01-03T18:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T18:44:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "walk:2025-01-03T19:06:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T19:06:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "walk"
+      },
+      "meta": {
+        "humanId": "syn0113",
+        "createTime": {
+          "utc": "2025-01-03T19:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T19:06:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "read:2025-01-03T19:28:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T19:28:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "read"
+      },
+      "meta": {
+        "humanId": "syn0114",
+        "createTime": {
+          "utc": "2025-01-03T19:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T19:28:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "water:2025-01-03T19:50:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T19:50:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "water",
+        "dur": "PT25M"
+      },
+      "meta": {
+        "humanId": "syn0115",
+        "createTime": {
+          "utc": "2025-01-03T19:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T19:50:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "stretch:2025-01-03T20:12:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T20:12:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "stretch"
+      },
+      "meta": {
+        "humanId": "syn0116",
+        "createTime": {
+          "utc": "2025-01-03T20:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T20:12:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "music:2025-01-03T20:34:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T20:34:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "music"
+      },
+      "meta": {
+        "humanId": "syn0117",
+        "createTime": {
+          "utc": "2025-01-03T20:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T20:34:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "code:2025-01-03T20:56:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T20:56:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "code"
+      },
+      "meta": {
+        "humanId": "syn0118",
+        "createTime": {
+          "utc": "2025-01-03T20:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T20:56:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    },
+    {
+      "_id": "tea:2025-01-03T21:18:00.000Z",
+      "_rev": "1-synthetic",
+      "data": {
+        "occurTime": {
+          "utc": "2025-01-03T21:18:00.000Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "field": "tea",
+        "state": "off"
+      },
+      "meta": {
+        "humanId": "syn0119",
+        "createTime": {
+          "utc": "2025-01-03T21:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "modifyTime": {
+          "utc": "2025-01-03T21:18:00.500Z",
+          "o": 1,
+          "tz": "Europe/Berlin"
+        },
+        "idStructure": "%field%:%occurTime%"
+      }
+    }
+  ]
+}
