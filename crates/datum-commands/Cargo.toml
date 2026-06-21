@@ -46,6 +46,8 @@ rpassword = { workspace = true }
 url = { workspace = true }
 rand = { workspace = true }
 libc = { workspace = true }
+# Alt-screen TUI for `datum tail -w` (da-3l6m): key/mouse events + raw mode.
+crossterm = { workspace = true }
 # Pure-Rust SVG → PNG rasterization for `datum {dayview,nowview} --output
 # foo.png`. Optional via the `png` feature: ~50 transitive crates + ~1.5 MiB
 # of `.text` drop out under `--no-default-features`. Pulled at the CLI

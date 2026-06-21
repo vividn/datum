@@ -81,6 +81,11 @@ notify = "6"
 # Low-level syscalls (used by datum-sync-agent for pid-alive checks)
 libc = "0.2"
 
+# Terminal UI — alt-screen + key/mouse events for `datum tail -w` (da-3l6m).
+# `event-stream` is intentionally omitted: the watch loop is synchronous and
+# polls `event::poll`, so no async runtime is pulled in.
+crossterm = "0.28"
+
 # Structured logging (journalctl-friendly output for the daemon)
 tracing = "0.1"
 tracing-subscriber = { version = "0.3" }

@@ -68,6 +68,13 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
 
     if let Some(secs) = args.watch {
         let interval = watch_interval(secs);
+        if tty {
+            // da-3l6m: on a real terminal, hand off to the scrollable
+            // alt-screen TUI (key/mouse input + live follow). It owns the
+            // screen until the user quits, then restores it. Non-TTY
+            // consumers stay on the append/repaint loop below.
+            return crate::commands::tail_tui::run(&args, db, metric, registry.as_ref(), interval);
+        }
         // da-d6yo: seed the watch loop with the signature of what we
         // just painted so the first tick's no-op render is suppressed.
         let initial = frame_signature(tty, &entries);

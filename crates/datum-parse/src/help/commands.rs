@@ -431,7 +431,7 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         takes_value: true,
         value_hint: Some("INT"),
         value_optional: true,
-        summary: "Stream new entries (default poll 1s)",
+        summary: "Live scrollable view; stream entries (poll 1s)",
         long_description: None,
         left_override: Some("-w, --watch [INT]"),
     },
