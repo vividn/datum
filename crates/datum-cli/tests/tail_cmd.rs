@@ -517,7 +517,7 @@ fn t11_default_includes_future_entries() {
 #[test]
 fn t12_t_now_excludes_future() {
     // Datum: does not display future entries if `-t now` is given.
-    // Parsing "now" to `TimeArg(minutes_offset=0)` is exercised in time.rs.
+    // Parsing "now" to `TimeArg(offset=0)` is exercised in time.rs.
     // Here we assert the `end_utc=now` path drops future rows.
     let db = fresh_db();
     let _past = insert(&db, "sleep", Verb::Point, -60);

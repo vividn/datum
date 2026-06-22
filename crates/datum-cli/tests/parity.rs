@@ -228,8 +228,8 @@ fn relative_offsets_goldens_match_parser_output() {
                 let arg = parse_time_arg(input)
                     .unwrap_or_else(|e| panic!("parse_time_arg({input:?}) line {lineno}: {e}"));
                 assert_eq!(
-                    arg.minutes_offset,
-                    Some(want_n),
+                    arg.offset,
+                    Some(chrono::Duration::minutes(want_n)),
                     "relative_offsets[time] line {lineno} input={input:?}",
                 );
                 assert!(

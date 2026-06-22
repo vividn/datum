@@ -206,8 +206,8 @@ fn relative_delta(time: &datum_parse::input::TimeArgs) -> Result<chrono::Duratio
     }
     if let Some(t) = &time.time {
         let ta = parse_time_arg(t)?;
-        if let Some(min_off) = ta.minutes_offset {
-            delta += chrono::Duration::minutes(min_off);
+        if let Some(off) = ta.offset {
+            delta += off;
         } else if ta.absolute.is_some() || ta.iso_instant.is_some() || ta.iso_naive.is_some() {
             anyhow::bail!(
                 "-r/--relative does not support absolute clock-time forms (-t HH:MM); \

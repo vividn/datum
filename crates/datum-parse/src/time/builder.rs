@@ -1,6 +1,6 @@
 //! `TimeBuilder` — compose stacked flags into a final `DatumTime`.
 
-use chrono::{DateTime, NaiveDateTime, NaiveTime, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
 
 #[cfg(feature = "native")]
 use crate::time::datum_time::DatumTime;
@@ -16,6 +16,10 @@ use crate::time::uncertainty::{Direction, Uncertainty};
 pub struct TimeBuilder {
     pub days_back: i64,
     pub minutes_back: i64,
+    /// Signed relative shift from `-t ±N` (positive = future). Held as a
+    /// `Duration` rather than folded into `minutes_back` so decimal and
+    /// unit offsets (`-3.5`, `+10m`, `-1.5h`) keep second precision.
+    pub time_offset: Duration,
     pub date_override: Option<chrono::NaiveDate>,
     pub time_override: Option<NaiveTime>,
     /// ISO-8601 datetime with explicit zone (`...Z` / `...+02:00`) — a
@@ -57,6 +61,7 @@ impl TimeBuilder {
         TimeBuilder {
             days_back: 0,
             minutes_back: 0,
+            time_offset: Duration::zero(),
             date_override: None,
             time_override: None,
             iso_instant_override: None,
@@ -116,8 +121,11 @@ impl TimeBuilder {
             // Direction is only meaningful when we resolve a bare clock
             // against "today" — that's the time_override path.
             self.time_direction = arg.direction;
-        } else if let Some(offset) = arg.minutes_offset {
-            self.minutes_back += -offset; // -8 means 8 min ago → minutes_back += 8
+        } else if let Some(offset) = arg.offset {
+            // Signed relative shift (`+5` future, `-8` past, `-3.5`/`-10m`
+            // sub-minute). Stored as a Duration so decimal/unit offsets keep
+            // their second-precision instead of truncating to whole minutes.
+            self.time_offset += offset;
         }
         if let Some(u) = arg.uncertainty {
             self.explicit_precision = Some(u);
@@ -188,6 +196,7 @@ impl TimeBuilder {
             || self.iso_instant_override.is_some()
             || self.iso_naive_override.is_some()
             || self.minutes_back != 0
+            || self.time_offset != Duration::zero()
             || self.quick_precision.is_some();
         self.full_day || (date_or_yesterday && !time_or_quick)
     }
@@ -233,6 +242,7 @@ impl TimeBuilder {
 
         dt -= chrono::Duration::minutes(self.minutes_back);
         dt -= chrono::Duration::days(self.days_back);
+        dt += self.time_offset; // signed `-t ±N` shift (future positive)
 
         if let Some(date) = self.date_override {
             let time = self.time_override.unwrap_or_else(|| dt.time());
@@ -419,7 +429,7 @@ mod tests {
                 absolute: Some(NaiveTime::from_hms_opt(5, 0, 0).unwrap()),
                 iso_instant: None,
                 iso_naive: None,
-                minutes_offset: None,
+                offset: None,
                 uncertainty: None,
                 direction: None,
             })
@@ -453,7 +463,7 @@ mod tests {
                         .and_hms_opt(1, 30, 0)
                         .unwrap(),
                 ),
-                minutes_offset: None,
+                offset: None,
                 uncertainty: None,
                 direction: None,
             });
@@ -490,7 +500,7 @@ mod tests {
                     .and_hms_opt(1, 30, 0)
                     .unwrap(),
             ),
-            minutes_offset: None,
+            offset: None,
             uncertainty: None,
             direction: None,
         });
@@ -523,7 +533,7 @@ mod tests {
                 absolute: Some(NaiveTime::from_hms_opt(14, 37, 0).unwrap()),
                 iso_instant: None,
                 iso_naive: None,
-                minutes_offset: None,
+                offset: None,
                 uncertainty: None,
                 direction: None,
             });

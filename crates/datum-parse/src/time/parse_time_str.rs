@@ -1,15 +1,20 @@
 //! Parse `-t` / `--time` arguments, plus stacked-flag counting helpers.
 
-use chrono::{DateTime, NaiveDateTime, NaiveTime, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
 
 use crate::error::{ParseError, Result};
+use crate::time::parse_duration_str::parse_duration;
 use crate::time::uncertainty::{
     parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
 };
 
 /// Parsed result of a time argument (-t flag).
 pub struct TimeArg {
-    pub minutes_offset: Option<i64>,
+    /// Relative shift from "now", signed (`+` future, `-` past). A bare
+    /// number defaults to minutes (`-8` = 8 min ago); decimals and unit
+    /// suffixes are accepted (`-3.5`, `+10m`, `-1.5h`, `+100s`), so the
+    /// offset is held at second precision rather than whole minutes.
+    pub offset: Option<Duration>,
     pub absolute: Option<NaiveTime>,
     /// Full ISO-8601 datetime with timezone suffix (`Z` or `±HH:MM`) — a
     /// fully-resolved instant. Caller stores `utc` directly and keeps its
@@ -57,10 +62,10 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
     let (primary, uncert_body) = split_uncertainty(s_no_dir);
     let uncertainty = uncert_body.map(parse_uncertainty).transpose()?;
 
-    // Literal "now" → current moment (minutes_offset = 0). Matches datum.
+    // Literal "now" → current moment (zero offset). Matches datum.
     if primary.eq_ignore_ascii_case("now") {
         return Ok(TimeArg {
-            minutes_offset: Some(0),
+            offset: Some(Duration::zero()),
             absolute: None,
             iso_instant: None,
             iso_naive: None,
@@ -75,7 +80,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
     if looks_like_iso_datetime(primary) {
         if let Ok(dt) = DateTime::parse_from_rfc3339(primary) {
             return Ok(TimeArg {
-                minutes_offset: None,
+                offset: None,
                 absolute: None,
                 iso_instant: Some(dt.with_timezone(&Utc)),
                 iso_naive: None,
@@ -90,7 +95,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
         ] {
             if let Ok(naive) = NaiveDateTime::parse_from_str(primary, fmt) {
                 return Ok(TimeArg {
-                    minutes_offset: None,
+                    offset: None,
                     absolute: None,
                     iso_instant: None,
                     iso_naive: Some(naive),
@@ -104,24 +109,34 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
         )));
     }
 
-    // Relative minute offset: "+5" (future) or "-8" (past).
-    if let Ok(n) = primary.parse::<i64>() {
-        if primary.starts_with('+') || primary.starts_with('-') {
-            return Ok(TimeArg {
-                minutes_offset: Some(n),
+    // Relative offset: an explicit leading sign opts in. The magnitude is
+    // parsed by the shared duration parser, so it accepts decimals and
+    // unit suffixes (`-3.5`, `+10m`, `-1.5h`, `+100s`); a bare signed
+    // number still defaults to minutes (`-8` = 8 min ago, `+5` = 5 min
+    // ahead). (da-5722 — previously integer-only, so `-3.5`/`-10m` fell
+    // through to the generic reject below.)
+    if primary.starts_with('+') || primary.starts_with('-') {
+        return parse_duration(primary)
+            .map(|dur| TimeArg {
+                offset: Some(dur),
                 absolute: None,
                 iso_instant: None,
                 iso_naive: None,
                 uncertainty,
                 direction,
+            })
+            .map_err(|_| {
+                ParseError::InvalidTime(format!("Cannot parse relative time offset: '{primary}'"))
             });
-        }
-        // Plain unsigned number → absolute time.
-        // "H" / "HH" → hours; "HMM" → 3-digit hour+minute; "HHMM" → 4-digit.
-        // Datum treats 24 as next-midnight.
+    }
+
+    // Plain unsigned integer → absolute time.
+    // "H" / "HH" → hours; "HMM" → 3-digit hour+minute; "HHMM" → 4-digit.
+    // Datum treats 24 as next-midnight.
+    if primary.parse::<i64>().is_ok() {
         if let Some(t) = plain_number_to_time(primary) {
             return Ok(TimeArg {
-                minutes_offset: None,
+                offset: None,
                 absolute: Some(t),
                 iso_instant: None,
                 iso_naive: None,
@@ -144,7 +159,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
     // `5am` / `5pm` / `5a` / `5p` — hour + meridian, no minutes.
     if let Some(t) = parse_hour_meridian(primary) {
         return Ok(TimeArg {
-            minutes_offset: None,
+            offset: None,
             absolute: Some(t),
             iso_instant: None,
             iso_naive: None,
@@ -157,7 +172,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
     // aren't directly supported by chrono, so we handle them explicitly.
     if let Some(t) = parse_short_meridian(primary) {
         return Ok(TimeArg {
-            minutes_offset: None,
+            offset: None,
             absolute: Some(t),
             iso_instant: None,
             iso_naive: None,
@@ -176,7 +191,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
     ] {
         if let Ok(t) = NaiveTime::parse_from_str(primary, fmt) {
             return Ok(TimeArg {
-                minutes_offset: None,
+                offset: None,
                 absolute: Some(t),
                 iso_instant: None,
                 iso_naive: None,

@@ -2,7 +2,7 @@
 # Format: kind <TAB> input <TAB> expected
 #
 # kind=date  → days_offset for `parse_date_arg(input)`. Bare `+N`/`-N`/`0`.
-# kind=time  → minutes_offset for `parse_time_arg(input)`. Bare `+N`/`-N`.
+# kind=time  → offset (minutes) for `parse_time_arg(input)`. Bare `+N`/`-N`.
 #
 # These cases lock the bare-integer relative-offset semantics that datum
 # inherits from luxon's `Duration.fromObject({ days|minutes: N })`.

@@ -69,26 +69,17 @@ pub(super) fn infer_typed_value(
             // plugins store full-instant due-dates on `next_time`-style keys
             // and would be broken by truncating to time-of-day. Users who want
             // just the time-of-day write `wake_time=08:15`.
-            if let (Some(mins), Some(base)) = (t.minutes_offset, compat.base_local) {
-                let resolved = base + chrono::Duration::minutes(mins);
+            // Relative offset (`+30`, `-15`, `+1h`, `-90m`) resolves against
+            // the entry's effective occur-time. `parse_time_arg` now handles
+            // decimal/unit forms directly, so this is the single relative
+            // branch — bare `1h` (no sign) still falls through to the
+            // unit-annotation extension. With no base anchor (reparse/update
+            // payload) it drops through to raw-string passthrough.
+            if let (Some(offset), Some(base)) = (t.offset, compat.base_local) {
+                let resolved = base + offset;
                 return Ok(Some(Value::String(
                     resolved.time().format("%H:%M:%S").to_string(),
                 )));
-            }
-        }
-        // Signed-duration token on a `*_time` key: `+1h`, `-30m`, `+90m`.
-        // Gated to leading `+`/`-` (and non-pure-integer to avoid shadowing
-        // the `minutes_offset` branch above) so bare `1h` keeps falling
-        // through to the unit-annotation extension.
-        if let Some(base) = compat.base_local {
-            if (value.starts_with('+') || value.starts_with('-')) && !is_pure_signed_integer(value)
-            {
-                if let Ok(dur) = parse_duration(value) {
-                    let resolved = base + dur;
-                    return Ok(Some(Value::String(
-                        resolved.time().format("%H:%M:%S").to_string(),
-                    )));
-                }
             }
         }
         // Fallthrough: if we couldn't parse as time, leave as inferType's
@@ -157,17 +148,6 @@ pub fn unit_annotated_value(value: &str) -> Option<Value> {
     obj.insert("v".to_string(), n_value);
     obj.insert("u".to_string(), Value::String(unit.to_string()));
     Some(Value::Object(obj))
-}
-
-/// `+30` / `-8` / `7` style — leading sign optional, all-digits tail.
-/// Used to guard the time-key signed-duration branch from shadowing the
-/// `minutes_offset` branch above.
-fn is_pure_signed_integer(s: &str) -> bool {
-    let rest = s
-        .strip_prefix('+')
-        .or_else(|| s.strip_prefix('-'))
-        .unwrap_or(s);
-    !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// `true` for a token long enough, and made entirely of hex digits, to be

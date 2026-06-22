@@ -330,9 +330,13 @@ fn apply_time_arg(
         if let Some(abs) = arg.absolute {
             return set_clock(cur, abs, arg.direction);
         }
-        if let Some(mins) = arg.minutes_offset {
+        if let Some(offset) = arg.offset {
             // Relative offsets are already directional — ignore suffix.
-            return shift_minutes(cur, mins);
+            // Held as a Duration so decimal/unit forms keep second precision.
+            return Ok(DatumTime {
+                utc: cur.utc + offset,
+                ..cur
+            });
         }
     }
 

@@ -31,7 +31,7 @@ fn test_parse_time_arg_hhmmss() {
         t.absolute.unwrap(),
         NaiveTime::from_hms_opt(15, 30, 45).unwrap()
     );
-    assert!(t.minutes_offset.is_none(), "6-digit must not be an offset");
+    assert!(t.offset.is_none(), "6-digit must not be an offset");
 }
 
 #[test]
@@ -47,9 +47,45 @@ fn test_parse_time_arg_hmmss_single_hour() {
 #[test]
 fn test_parse_time_arg_relative() {
     let t = parse_time_arg("-8").unwrap();
-    assert_eq!(t.minutes_offset.unwrap(), -8);
+    assert_eq!(t.offset.unwrap(), Duration::minutes(-8));
     let t = parse_time_arg("+5").unwrap();
-    assert_eq!(t.minutes_offset.unwrap(), 5);
+    assert_eq!(t.offset.unwrap(), Duration::minutes(5));
+}
+
+#[test]
+fn test_parse_time_arg_relative_decimal_and_units() {
+    // da-5722: signed relative offsets must accept decimals and unit
+    // suffixes, not just bare integers. The default unit stays minutes.
+    assert_eq!(
+        parse_time_arg("-3.5").unwrap().offset.unwrap(),
+        Duration::seconds(-210), // 3.5 min in the past
+    );
+    assert_eq!(
+        parse_time_arg("+3.5").unwrap().offset.unwrap(),
+        Duration::seconds(210),
+    );
+    assert_eq!(
+        parse_time_arg("-0.5").unwrap().offset.unwrap(),
+        Duration::seconds(-30),
+    );
+    assert_eq!(
+        parse_time_arg("-10m").unwrap().offset.unwrap(),
+        Duration::minutes(-10),
+    );
+    assert_eq!(
+        parse_time_arg("-1.5h").unwrap().offset.unwrap(),
+        Duration::minutes(-90),
+    );
+    assert_eq!(
+        parse_time_arg("+100s").unwrap().offset.unwrap(),
+        Duration::seconds(100),
+    );
+    // Unsigned decimals are NOT relative offsets (the sign is the opt-in,
+    // per da-4h7k) and aren't valid clocks → rejected.
+    assert!(matches!(
+        parse_time_arg(".5"),
+        Err(ParseError::InvalidTime(_))
+    ));
 }
 
 #[test]
@@ -71,8 +107,14 @@ fn test_parse_time_arg_unsigned_invalid_time_errors() {
         NaiveTime::from_hms_opt(9, 13, 0).unwrap()
     );
     // The signed form is the explicit opt-in for a (wild) minute offset.
-    assert_eq!(parse_time_arg("-2500").unwrap().minutes_offset, Some(-2500));
-    assert_eq!(parse_time_arg("+2500").unwrap().minutes_offset, Some(2500));
+    assert_eq!(
+        parse_time_arg("-2500").unwrap().offset,
+        Some(Duration::minutes(-2500))
+    );
+    assert_eq!(
+        parse_time_arg("+2500").unwrap().offset,
+        Some(Duration::minutes(2500))
+    );
 }
 
 #[test]
@@ -179,14 +221,14 @@ fn parse_uncertainty_with_units() {
 fn parse_combined_time_and_uncertainty() {
     // relative offset + unicode ± with minute unit
     let t = parse_time_arg("+5±2m").unwrap();
-    assert_eq!(t.minutes_offset, Some(5));
+    assert_eq!(t.offset, Some(Duration::minutes(5)));
     let u = t.uncertainty.unwrap();
     assert_eq!(u.seconds, 120);
     assert_eq!(u.unit, PrecisionUnit::Minute);
 
     // relative negative offset + ascii +- with second unit
     let t = parse_time_arg("-30+-10s").unwrap();
-    assert_eq!(t.minutes_offset, Some(-30));
+    assert_eq!(t.offset, Some(Duration::minutes(-30)));
     let u = t.uncertainty.unwrap();
     assert_eq!(u.seconds, 10);
     assert_eq!(u.unit, PrecisionUnit::Second);
@@ -238,11 +280,11 @@ fn explicit_uncertainty_overrides_q_precision() {
 fn relative_time_sign_future_vs_past() {
     // `+N` = N minutes in the future
     let t = parse_time_arg("+5").unwrap();
-    assert_eq!(t.minutes_offset, Some(5));
+    assert_eq!(t.offset, Some(Duration::minutes(5)));
 
     // `-N` = N minutes in the past
     let t = parse_time_arg("-8").unwrap();
-    assert_eq!(t.minutes_offset, Some(-8));
+    assert_eq!(t.offset, Some(Duration::minutes(-8)));
 }
 
 // ── ISO-8601 datetime forms ─────────────────────────────────────────────
@@ -259,7 +301,7 @@ fn iso_datetime_z_suffix() {
     );
     assert!(t.iso_naive.is_none());
     assert!(t.absolute.is_none());
-    assert!(t.minutes_offset.is_none());
+    assert!(t.offset.is_none());
 }
 
 #[test]
@@ -567,10 +609,10 @@ fn time_direction_suffix_on_relative_form() {
     // A relative offset is already directional; the parser still surfaces
     // the hint, but the apply layer ignores it.
     let t = parse_time_arg("+5+").unwrap();
-    assert_eq!(t.minutes_offset, Some(5));
+    assert_eq!(t.offset, Some(Duration::minutes(5)));
     assert_eq!(t.direction, Some(Direction::Future));
     let t = parse_time_arg("-30-").unwrap();
-    assert_eq!(t.minutes_offset, Some(-30));
+    assert_eq!(t.offset, Some(Duration::minutes(-30)));
     assert_eq!(t.direction, Some(Direction::Past));
 }
 
