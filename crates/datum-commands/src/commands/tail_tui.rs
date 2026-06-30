@@ -126,43 +126,62 @@ pub fn run(
         }
 
         // ── Wait for input or the next poll tick, whichever comes first. ──
+        //
+        // Then **drain every event already buffered** before looping back to
+        // repaint. A mouse-wheel spin (or a held arrow key) enqueues events
+        // faster than the per-frame render can retire them; handling one per
+        // iteration lets that backlog keep scrolling long after the user's
+        // hand stops, and buries the quit key behind it — the unrecoverable
+        // "runaway scroll" of da-ogwz. Coalescing each burst into a single
+        // render bounds the work and keeps `q` responsive.
         let timeout = next_fetch.saturating_duration_since(Instant::now());
         if event::poll(timeout)? {
-            match event::read()? {
-                Event::Key(k) if k.kind != KeyEventKind::Release => {
-                    let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
-                    match k.code {
-                        KeyCode::Char('q') | KeyCode::Esc => break,
-                        KeyCode::Char('c') if ctrl => break,
-                        KeyCode::Up | KeyCode::Char('k') => state.line_up(),
-                        KeyCode::Down | KeyCode::Char('j') => state.line_down(max),
-                        KeyCode::PageUp => state.page_up(page(view_h)),
-                        KeyCode::PageDown => state.page_down(page(view_h), max),
-                        KeyCode::Home | KeyCode::Char('g') => state.jump_top(),
-                        KeyCode::End | KeyCode::Char('G') => state.jump_bottom(max),
+            let mut quit = false;
+            loop {
+                match event::read()? {
+                    Event::Key(k) if k.kind != KeyEventKind::Release => {
+                        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+                        match k.code {
+                            KeyCode::Char('q') | KeyCode::Esc => quit = true,
+                            KeyCode::Char('c') if ctrl => quit = true,
+                            KeyCode::Up | KeyCode::Char('k') => state.line_up(),
+                            KeyCode::Down | KeyCode::Char('j') => state.line_down(max),
+                            KeyCode::PageUp => state.page_up(page(view_h)),
+                            KeyCode::PageDown => state.page_down(page(view_h), max),
+                            KeyCode::Home | KeyCode::Char('g') => state.jump_top(),
+                            KeyCode::End | KeyCode::Char('G') => state.jump_bottom(max),
+                            _ => {}
+                        }
+                    }
+                    Event::Mouse(m) => match m.kind {
+                        MouseEventKind::ScrollUp => {
+                            for _ in 0..3 {
+                                state.line_up();
+                            }
+                        }
+                        MouseEventKind::ScrollDown => {
+                            for _ in 0..3 {
+                                state.line_down(max);
+                            }
+                        }
                         _ => {}
-                    }
-                }
-                Event::Mouse(m) => match m.kind {
-                    MouseEventKind::ScrollUp => {
-                        for _ in 0..3 {
-                            state.line_up();
-                        }
-                    }
-                    MouseEventKind::ScrollDown => {
-                        for _ in 0..3 {
-                            state.line_down(max);
-                        }
+                    },
+                    Event::Resize(w, h) => {
+                        cols = w;
+                        rows = h;
+                        // Re-clamp against the new height; follow sticks to bottom.
+                        state.recompute(&slugs, view_height(rows), None);
                     }
                     _ => {}
-                },
-                Event::Resize(w, h) => {
-                    cols = w;
-                    rows = h;
-                    // Re-clamp against the new height; follow sticks to bottom.
-                    state.recompute(&slugs, view_height(rows), None);
                 }
-                _ => {}
+                // Stop on quit, or once the input queue is empty — whichever
+                // comes first. `poll(0)` is a non-blocking peek.
+                if quit || !event::poll(Duration::from_secs(0))? {
+                    break;
+                }
+            }
+            if quit {
+                break;
             }
         }
 
