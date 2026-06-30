@@ -102,6 +102,35 @@ fn delete_by_slug_tombstones_entry() {
     assert!(ghost.deleted_at.is_some(), "tombstone must be set");
 }
 
+/// da-95ez: a tombstoned entry no longer holds its slug, so re-`occur`-ing at
+/// the same slug after a delete succeeds instead of failing with
+/// `Duplicate entry: Entry already exists with slug …`. This is the exact flow
+/// that bit the backfill (delete-then-recreate at the same minute). The
+/// tombstoned row is revived in place — one row per slug, sync-safe.
+#[test]
+fn reoccur_at_same_slug_after_delete_succeeds() {
+    let db = fresh_db();
+
+    // `--id pin` forces a fixed slug so both occurs target `coffee:pin`.
+    run_cli(&["occur", "coffee", "--id", "pin"], &db).expect("first occur");
+    run_cli(&["delete", "coffee:pin", "--force"], &db).expect("delete the entry");
+
+    // Re-`occur` at the very same slug — previously rejected by the slug
+    // UNIQUE that the tombstone still held.
+    run_cli(&["occur", "coffee", "--id", "pin"], &db)
+        .unwrap_or_else(|err| panic!("re-occur at freed slug must succeed: {err:#}"));
+
+    // Exactly one live entry holds the slug, and it is not a tombstone.
+    assert_count!(db, "coffee", 1);
+    let live = db
+        .get_entry("coffee:pin")
+        .expect("live entry at reused slug");
+    assert!(
+        live.deleted_at.is_none(),
+        "the reused slug must resolve to a live row, not the ghost",
+    );
+}
+
 /// TS #3: "only deletes the one document"
 ///
 /// Seed two rows, delete one by id, verify the other survives. Distinct

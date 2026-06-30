@@ -620,31 +620,61 @@ fn insert_entry_in_tx(
 
     let outcome = match (existing, strategy) {
         (None, _) => {
-            // No content_hash match — distinct content. A slug collision
-            // here means the user is asserting a *different* thing at the
-            // same identity (same field, same instant, distinct content),
-            // which is semantically a duplicate-identity conflict. We let
-            // raw_insert's `Duplicate` propagate so the caller sees an
-            // error rather than silently dropping the second write — this
-            // applies even under `Ignore`, which is meant to skip true
-            // content duplicates, not different-content same-slug writes.
-            // (The bulk-import fast path takes the opposite stance — see
-            // `insert_entry_bulk_in_tx` — because backups commonly carry
-            // legitimate same-instant rows that the user has already
-            // accepted as historical.)
-            let (stored_slug, stored_hid) = raw_insert(conn, entry)?;
-            let inserted = fetch_entry_any(conn, &stored_slug)?;
-            history::record(conn, &inserted, ChangeKind::Create)?;
-            // D5: post-write conflict detection. Runs inside the same
-            // transaction so the conflict row is atomic with the insert.
-            crate::integrity::detect_for_entry(
-                conn,
-                &inserted,
-                crate::integrity::DetectedBy::LocalValidator,
-            )?;
-            InsertOutcome::Inserted {
-                slug: stored_slug,
-                hid: stored_hid,
+            // No content_hash match — distinct content. da-95ez: if the slug
+            // is held *only by a tombstone*, the deleted entry no longer owns
+            // its identity, so revive that row in place rather than colliding
+            // (delete-then-recreate at the same slug must work). One row per
+            // slug is preserved — the invariant slug-keyed LWW sync depends on
+            // (the full slug UNIQUE stays; a partial index would let a ghost
+            // and a re-occur share a slug and break tombstone propagation).
+            // The pre-revive tombstone is snapshotted into entry_history so
+            // `undo` can still walk back to the deletion.
+            if let Some(ghost) = fetch_tombstone_by_slug(conn, &entry.slug)? {
+                history::record(conn, &ghost, ChangeKind::UserEdit)?;
+                // Clear the tombstone first, keyed on the retained hid, then
+                // overwrite the now-live row's mutable columns with the new
+                // content (raw_overwrite_mutables matches on the slug, which
+                // is unique). The hid carries over so history/undo stay linked.
+                conn.execute(
+                    "UPDATE entries SET deleted_at = NULL WHERE hid = ?1",
+                    params![ghost.hid],
+                )?;
+                raw_overwrite_mutables(conn, &entry.slug, entry, None)?;
+                let revived = fetch_entry_any(conn, &entry.slug)?;
+                crate::integrity::detect_for_entry(
+                    conn,
+                    &revived,
+                    crate::integrity::DetectedBy::LocalValidator,
+                )?;
+                InsertOutcome::Inserted {
+                    slug: revived.slug,
+                    hid: revived.hid,
+                }
+            } else {
+                // A *live* row at this slug means the user is asserting a
+                // different thing at the same identity (same field+instant,
+                // distinct content) — a real duplicate-identity conflict. We
+                // let raw_insert's `Duplicate` propagate so the caller sees an
+                // error rather than silently dropping the second write; this
+                // applies even under `Ignore`, which skips true content
+                // duplicates, not different-content same-slug writes. (The
+                // bulk-import fast path takes the opposite stance — see
+                // `insert_entry_bulk_in_tx` — because backups commonly carry
+                // legitimate same-instant rows already accepted as historical.)
+                let (stored_slug, stored_hid) = raw_insert(conn, entry)?;
+                let inserted = fetch_entry_any(conn, &stored_slug)?;
+                history::record(conn, &inserted, ChangeKind::Create)?;
+                // D5: post-write conflict detection. Runs inside the same
+                // transaction so the conflict row is atomic with the insert.
+                crate::integrity::detect_for_entry(
+                    conn,
+                    &inserted,
+                    crate::integrity::DetectedBy::LocalValidator,
+                )?;
+                InsertOutcome::Inserted {
+                    slug: stored_slug,
+                    hid: stored_hid,
+                }
             }
         }
         (Some((slug, _)), ConflictStrategy::Ignore) => InsertOutcome::Ignored { slug },
@@ -765,6 +795,20 @@ fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOut
 /// quintillion values). We retry once with a fresh hid; a second collision
 /// almost certainly indicates a bug or environmental problem and is
 /// returned as [`DatumError::Other`].
+/// Fetch the tombstoned row holding `slug`, if one exists. da-95ez: the slug
+/// UNIQUE is total, so at most one row (live OR tombstoned) ever holds a slug;
+/// this returns it only when that single row is a tombstone, signalling the
+/// insert path that the slug is free to revive.
+fn fetch_tombstone_by_slug(conn: &Connection, slug: &Slug) -> Result<Option<Entry>> {
+    conn.query_row(
+        "SELECT * FROM entries WHERE slug = ?1 AND deleted_at IS NOT NULL LIMIT 1",
+        params![slug],
+        row_to_entry,
+    )
+    .optional()
+    .map_err(DatumError::Db)
+}
+
 pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)> {
     let mut hid = entry.hid.clone();
     let mut hid_attempt = 0u8;

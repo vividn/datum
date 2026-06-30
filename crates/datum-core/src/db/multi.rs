@@ -673,6 +673,68 @@ mod tests {
         assert_eq!(live_count, 1);
     }
 
+    // ── Section O′ — da-95ez: slug freed on tombstone via row-reuse ──
+
+    /// The headline da-95ez fix: re-`occur`-ing at a slug held only by a
+    /// tombstone revives that row in place instead of colliding. One row per
+    /// slug is preserved (sync keys on slug); the deleted entry's hid is
+    /// retained and its tombstoned state is kept in history for undo.
+    #[test]
+    fn reoccur_at_tombstoned_slug_revives_row() {
+        let db = Db::open_in_memory().unwrap();
+        let seed = entry_at("project", "2026-05-13T09:00:00Z", Some(json!("money")));
+        let slug = seed.slug.clone();
+        let original_hid = seed.hid.clone();
+        db.insert_entry(&seed).unwrap();
+        db.soft_delete_entry(&slug.0).unwrap();
+
+        // Re-occur at the very same slug with new content — previously this
+        // hit the slug UNIQUE and returned Duplicate.
+        let replay = entry_at("project", "2026-05-13T09:00:00Z", Some(json!("work")));
+        assert_eq!(replay.slug, slug, "same field+occur derives the same slug");
+        db.insert_entry(&replay).unwrap();
+
+        // Exactly one live row holds the slug, and it is the revived original
+        // row (hid retained) carrying the new content.
+        let live: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(live, 1, "row-reuse keeps one row per slug");
+        let revived = db.get_entry(&slug.0).unwrap();
+        assert_eq!(revived.hid, original_hid, "the hid is retained on revive");
+        assert_eq!(revived.state, Some(json!("work")), "new content is stored");
+        assert!(revived.deleted_at.is_none(), "tombstone cleared");
+
+        // The deletion is still walkable in history (undo support).
+        let versions = crate::history::list(db.conn(), &original_hid.0, true).unwrap();
+        assert!(
+            versions.iter().any(|v| v.snapshot.deleted_at.is_some()),
+            "the tombstoned state must be preserved in history",
+        );
+    }
+
+    /// Revive only applies to *tombstoned* slugs. A distinct-content insert at
+    /// a slug still held by a LIVE row remains a duplicate-identity conflict.
+    #[test]
+    fn insert_at_live_slug_still_conflicts() {
+        let db = Db::open_in_memory().unwrap();
+        let seed = entry_at("project", "2026-05-13T09:00:00Z", Some(json!("money")));
+        let slug = seed.slug.clone();
+        db.insert_entry(&seed).unwrap();
+
+        let intruder = entry_at("project", "2026-05-13T09:00:00Z", Some(json!("work")));
+        assert_eq!(intruder.slug, slug);
+        assert!(
+            matches!(db.insert_entry(&intruder), Err(DatumError::Duplicate(_))),
+            "a live slug must still reject a colliding distinct-content insert",
+        );
+    }
+
     /// Different fields at the same `occur_time` remain independent — the
     /// constraint is scoped to `(field, occur_time)`, not `occur_time`.
     /// This regression-guards against a future widening of the index.
