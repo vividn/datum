@@ -64,12 +64,20 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         // joined by the canonical slug separator `__` — e.g.
         // `--id %occurTime% --id %comment%` slugs on BOTH (each `%key%`
         // interpolated, `__`-joined). A single `--id` is unchanged.
+        //
+        // da-es84: each value is normalized first, so the datum-compatible
+        // bare-key form (`--id %occurTime`, missing its closing `%`) becomes
+        // a well-formed `%occurTime%` placeholder the slug interpolator
+        // resolves. Without this the composed `%occurTime__%comment` is
+        // malformed — interpolation drops `%occurTime` and only the literal
+        // `comment` survives, collapsing the multi-`--id` to the last key.
+        let seg = normalize_id_segment(v);
         match &mut p.id {
             Some(existing) => {
                 existing.push_str("__");
-                existing.push_str(v);
+                existing.push_str(&seg);
             }
-            None => p.id = Some(v.to_string()),
+            None => p.id = Some(seg),
         }
         Ok(())
     }));
@@ -133,6 +141,22 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     r
 }
 
+/// Normalize a single `--id` value into one slug-interpolation segment.
+///
+/// The datum-compatible bare-key form opens a `%key` placeholder but omits
+/// its closing `%` (`--id %occurTime`); complete it so the slug interpolator
+/// resolves the key. Everything else is kept verbatim: a plain literal
+/// (`rawString`, or empty) carries no leading `%`, and a value already
+/// holding balanced `%…%` placeholders (`%occur_time%`, `override-%uid%`,
+/// `%state%:%uid%`) is a complete template.
+fn normalize_id_segment(v: &str) -> String {
+    if v.starts_with('%') && v.matches('%').count() % 2 == 1 {
+        format!("{v}%")
+    } else {
+        v.to_string()
+    }
+}
+
 pub(crate) fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
     let registry = log_args_registry();
     let mut out = LogArgs::with_field(String::new());
@@ -146,4 +170,41 @@ pub(crate) fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
         .to_string();
     out.rest = it.map(|s| s.to_string()).collect();
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // da-es84: multiple `--id` flags in the datum-compatible bare-key form
+    // (`%occurTime` with no closing `%`) must each become a `%key%` segment
+    // and join on `__` — not collapse to the last key.
+    #[test]
+    fn multiple_bare_id_flags_compose_into_key_template() {
+        let args = parse_log_args(&[
+            "field",
+            "--id",
+            "%occurTime",
+            "--id",
+            "%comment",
+            "comment=abcdefg",
+        ])
+        .unwrap();
+        assert_eq!(args.id.as_deref(), Some("%occurTime%__%comment%"));
+    }
+
+    #[test]
+    fn normalize_id_segment_completes_open_key_and_keeps_literals() {
+        // datum-compat leading-`%` key missing its close → completed.
+        assert_eq!(normalize_id_segment("%occurTime"), "%occurTime%");
+        assert_eq!(normalize_id_segment("%comment"), "%comment%");
+        // Plain literals (no leading `%`) are kept verbatim — `--id` still
+        // accepts a raw slug body and the empty string.
+        assert_eq!(normalize_id_segment("rawString"), "rawString");
+        assert_eq!(normalize_id_segment(""), "");
+        // Complete templates are untouched.
+        assert_eq!(normalize_id_segment("%occur_time%"), "%occur_time%");
+        assert_eq!(normalize_id_segment("override-%uid%"), "override-%uid%");
+        assert_eq!(normalize_id_segment("%state%:%uid%"), "%state%:%uid%");
+    }
 }

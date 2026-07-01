@@ -648,6 +648,43 @@ mod tests {
         assert_eq!(e.slug, format!("coffee:{uid}"));
     }
 
+    // da-es84: end-to-end fixture. `occur field --id %occurTime --id %comment
+    // comment=abcdefg` must slug on BOTH id-keys — the occur_time ISO and the
+    // interpolated `comment` value — joined by `__`. Regression guard for the
+    // multi-`--id`-collapse + un-interpolated-`%key` double bug.
+    #[test]
+    fn multiple_id_flags_interpolate_and_join_via_parser() {
+        use datum_core::db::Db;
+        use datum_parse::cli::Command;
+        let db = Db::open_in_memory().unwrap();
+
+        let cli = datum_parse::parse_argv_string(
+            "occur field --id %occurTime --id %comment comment=abcdefg",
+        )
+        .unwrap();
+        let Command::Occur(args) = cli.command else {
+            panic!("expected an occur command");
+        };
+        // Parser composes both id-keys into one `%key%__%key%` template.
+        assert_eq!(args.id.as_deref(), Some("%occurTime%__%comment%"));
+
+        log_entry(Action::Occur, args, &db).unwrap();
+
+        let entries = db.entries_for_field("field", None).unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert_eq!(e.id_structure.as_deref(), Some("%occurTime%__%comment%"));
+        // Slug body = <occur_time-iso>__abcdefg (both keys interpolated).
+        let occur_iso = e
+            .occur_time
+            .as_ref()
+            .unwrap()
+            .utc
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string();
+        assert_eq!(e.slug, format!("field:{occur_iso}__abcdefg"));
+    }
+
     // ─── field-template (da-qjrc) tests ─────────────────────────────────────
 
     #[test]
