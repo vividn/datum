@@ -565,7 +565,7 @@ USAGE:
   datum count [FIELD] [--group-by KEY] [--since TIME] [--json]
 
 OPTIONS:
-      --group-by <KEY>  state|value|verb|field
+      --group-by <KEY>  state|verb|field
       --since <TIME>    RFC3339 / YYYY-MM-DD / duration offset (1d, 30m, 2h)
       --json            Machine-readable output
 ";

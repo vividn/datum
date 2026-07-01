@@ -557,7 +557,7 @@ const COUNT_FLAGS: &[FlagSpec] = &[
         takes_value: true,
         value_hint: Some("KEY"),
         value_optional: false,
-        summary: "state|value|verb|field",
+        summary: "state|verb|field",
         long_description: None,
         left_override: None,
     },

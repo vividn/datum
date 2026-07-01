@@ -115,6 +115,43 @@ fn count_group_by_value_is_rejected() {
 }
 
 #[test]
+fn count_help_group_by_keys_match_accepted_keys() {
+    // da-3z0f anti-drift guard: the `--group-by` help summary must list
+    // exactly the keys the command accepts — no more (help can't advertise
+    // an unimplemented key like the old "value"), no fewer.
+    use datum_core::db::GroupColumn;
+    use datum_parse::help::find_command;
+
+    let (spec, _) = find_command("count").expect("count command spec");
+    let summary = spec
+        .flags
+        .iter()
+        .find(|f| f.long == "group-by")
+        .expect("--group-by flag spec")
+        .summary;
+
+    let mut advertised: Vec<&str> = summary.split('|').collect();
+    advertised.sort_unstable();
+
+    // Every advertised key must parse (advertised ⊆ accepted).
+    for key in &advertised {
+        assert!(
+            key.parse::<GroupColumn>().is_ok(),
+            "help advertises unaccepted group-by key '{key}'"
+        );
+    }
+
+    // Every accepted key must be advertised (accepted ⊆ advertised).
+    let mut accepted: Vec<&str> = GroupColumn::ALL.iter().map(|c| c.as_sql()).collect();
+    accepted.sort_unstable();
+
+    assert_eq!(
+        advertised, accepted,
+        "count --help group-by keys ({advertised:?}) must match accepted keys ({accepted:?})"
+    );
+}
+
+#[test]
 fn count_group_by_rejects_unknown_key() {
     let db = fresh_db();
     entry_builder("x").insert(&db);

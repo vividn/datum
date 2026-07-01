@@ -65,6 +65,11 @@ pub enum GroupColumn {
 }
 
 impl GroupColumn {
+    /// Every accepted group-by key. The single source of truth the CLI
+    /// help is asserted against (da-3z0f), so docs can't drift from behavior.
+    pub const ALL: &'static [GroupColumn] =
+        &[GroupColumn::State, GroupColumn::Verb, GroupColumn::Field];
+
     pub fn as_sql(self) -> &'static str {
         match self {
             GroupColumn::State => "state",
