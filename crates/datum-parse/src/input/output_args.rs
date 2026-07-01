@@ -85,8 +85,9 @@ pub struct OutputArgs {
     /// `--show <mode>` — exact string the user supplied. `None` means the
     /// flag wasn't passed; the empty string is never produced by argparse.
     pub show: Option<String>,
-    /// `-o` / `--format-string`: `%field%`-templated output. When set and
-    /// nothing else is explicit, `Show::Format` is implied.
+    /// `-o` / `--format-string`: `%field%`-templated output. Appended to
+    /// the stock render; it does *not* imply `Show::Format` (only an
+    /// explicit `--show format` does).
     pub format_string: Option<String>,
 }
 
@@ -104,29 +105,24 @@ impl OutputArgs {
     /// 1. `-A` / `--show-all` → `Show::All` regardless of `--show`.
     /// 2. `--show <mode>` parses with [`Show::from_str`] (default on
     ///    parse-failure, matching the pre-R2 code).
-    /// 3. If `-o` is supplied with no other explicit override, `Show::Format`.
+    ///
+    /// `-o` does **not** influence the `Show` level (da-jose). Supplying a
+    /// format string at the default show keeps the header + info lines and
+    /// appends the format string in place of the data block; only an
+    /// explicit `--show format` collapses to format-string-only output.
+    /// This mirrors datumv2's `sanitizeOutputArgs`, where the CLI always
+    /// sets `show = Default` and the `formatString → Format` fallback only
+    /// fires for an unset show.
     pub fn resolve(&self) -> OutputResolved {
         let parsed = self
             .show
             .as_deref()
             .map(|s| Show::from_str(s).unwrap_or_default());
 
-        let base = if self.show_all {
+        let show = if self.show_all {
             Show::All
         } else {
             parsed.unwrap_or_default()
-        };
-
-        // `-o` implies `Show::Format` only when the user didn't explicitly
-        // pick something else. `--show default` (or omitted) counts as
-        // "not explicit" per the pre-R2 behaviour.
-        let show = if self.format_string.is_some()
-            && !self.show_all
-            && matches!(self.show.as_deref(), None | Some("default"))
-        {
-            Show::Format
-        } else {
-            base
         };
 
         OutputResolved {
@@ -178,15 +174,28 @@ mod tests {
     }
 
     #[test]
-    fn format_string_alone_implies_format_show() {
+    fn format_string_alone_keeps_default_show() {
+        // da-jose: `-o` no longer collapses the default show to Format —
+        // the header + info lines stay and the format string is appended.
+        // Only an explicit `--show format` gives format-string-only output.
         let a = OutputArgs {
             show_all: false,
             show: None,
             format_string: Some("%slug% %field%".into()),
         };
         let r = a.resolve();
-        assert_eq!(r.show, Show::Format);
+        assert_eq!(r.show, Show::Default);
         assert_eq!(r.format_string.as_deref(), Some("%slug% %field%"));
+    }
+
+    #[test]
+    fn explicit_show_format_gives_format_show() {
+        let a = OutputArgs {
+            show_all: false,
+            show: Some("format".into()),
+            format_string: Some("%slug%".into()),
+        };
+        assert_eq!(a.resolve().show, Show::Format);
     }
 
     #[test]
@@ -200,15 +209,15 @@ mod tests {
     }
 
     #[test]
-    fn format_string_applies_even_when_show_is_default_literal() {
-        // Matches the pre-R2 behaviour: an explicit `--show default` with
-        // `-o foo` still counts as "not explicit" and flips to Format.
+    fn format_string_keeps_show_when_default_literal() {
+        // da-jose: an explicit `--show default` with `-o foo` stays Default
+        // (header + info + appended format string), not Format.
         let a = OutputArgs {
             show_all: false,
             show: Some("default".into()),
             format_string: Some("%slug%".into()),
         };
-        assert_eq!(a.resolve().show, Show::Format);
+        assert_eq!(a.resolve().show, Show::Default);
     }
 
     #[test]

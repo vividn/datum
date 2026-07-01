@@ -189,17 +189,60 @@ fn delete_emits_delete_action_tag() {
     let _ = std::fs::remove_file(&db);
 }
 
+/// da-jose: at the default show, `-o` appends the format string to the
+/// stock header + info lines (replacing the data block), matching datumv2.
+/// An explicit `--show format` collapses to the format string alone.
 #[test]
 fn format_string_renders_custom_template() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
+
+    // Default show: header + info line + format string, and the data block
+    // (the `amount: 7` columnar view) is replaced by the format string.
     let (stdout, _) = run(
         &db,
         &["occur", "coffee", "amount=7", "-o", "%field%:%amount%"],
     );
+    let lines: Vec<&str> = stdout.lines().collect();
     assert!(
-        stdout.trim() == "coffee:7",
-        "expected custom format output, got: {stdout:?}"
+        lines.len() >= 3,
+        "default `-o` should keep the two info lines plus the format string, got: {stdout:?}"
+    );
+    assert!(
+        lines[0].starts_with("CREATE"),
+        "first line should be the action header, got: {stdout:?}"
+    );
+    assert!(
+        lines[1].contains("coffee"),
+        "second line should be the main info line, got: {stdout:?}"
+    );
+    assert_eq!(
+        lines.last().copied(),
+        Some("coffee:7"),
+        "format string should be the final line, got: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("amount: 7"),
+        "format string should replace the data block, got: {stdout:?}"
+    );
+
+    // Explicit `--show format`: format string only.
+    let (stdout, _) = run(
+        &db,
+        &[
+            "occur",
+            "coffee",
+            "amount=7",
+            "--show",
+            "format",
+            "-o",
+            "%field%:%amount%",
+        ],
+    );
+    assert_eq!(
+        stdout.trim(),
+        "coffee:7",
+        "`--show format` should emit only the format string, got: {stdout:?}"
     );
     let _ = std::fs::remove_file(&db);
 }

@@ -398,6 +398,66 @@ fn show_format_without_output_string_errors() {
     let _ = std::fs::remove_file(&db);
 }
 
+/// da-jose: `get <hid> -o FMT` at the DEFAULT show must keep the two main
+/// info lines (the `EXISTS <hid> <slug>` header + the `time field ● state`
+/// line) and render the format string *in place of* the detailed data
+/// block. An explicit `--show format` renders only the format string. The
+/// old behaviour collapsed default `-o` to `Show::Format`, dropping both
+/// info lines.
+#[test]
+fn get_o_at_default_show_keeps_info_lines_plus_format() {
+    let db = tmp_db_path();
+    let _ = std::fs::remove_file(&db);
+
+    run_binary(&db, &["occur", "fmttest", "reps=10", "comment=hello"]);
+
+    // Default show + `-o`: header + info line + format string; the columnar
+    // data block (`reps: 10`, `comment: "hello"`) is replaced by the format.
+    let (stdout, _) = run_binary(&db, &["get", "_LAST", "-o", "FMT[%field%|reps=%reps%]"]);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines.len(),
+        3,
+        "default `-o` should emit exactly header + info + format, got: {stdout:?}"
+    );
+    assert!(
+        lines[0].starts_with("EXISTS") && lines[0].contains("fmttest:"),
+        "first line should be the EXISTS header, got: {stdout:?}"
+    );
+    assert!(
+        lines[1].contains("fmttest"),
+        "second line should be the main info line, got: {stdout:?}"
+    );
+    assert_eq!(
+        lines[2], "FMT[fmttest|reps=10]",
+        "third line should be the interpolated format string, got: {stdout:?}"
+    );
+    assert!(
+        !stdout.contains("reps: 10"),
+        "format string should replace the data block, got: {stdout:?}"
+    );
+
+    // Explicit `--show format` + `-o`: format string only, no info lines.
+    let (stdout, _) = run_binary(
+        &db,
+        &[
+            "get",
+            "_LAST",
+            "--show",
+            "format",
+            "-o",
+            "FMT[%field%|reps=%reps%]",
+        ],
+    );
+    assert_eq!(
+        stdout.trim(),
+        "FMT[fmttest|reps=10]",
+        "`--show format` should emit only the format string, got: {stdout:?}"
+    );
+
+    let _ = std::fs::remove_file(&db);
+}
+
 /// MD5-derived ANSI bg escape — mirrors the renderer's `md5_rgb` derivation
 /// so the test asserts on absolute byte values without depending on the
 /// renderer crate's internals. Duplicated from `render_state_group.rs`

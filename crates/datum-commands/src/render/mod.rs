@@ -321,10 +321,22 @@ pub fn show_action_with_context(
         println!("{info}");
     }
 
+    // The detailed data view (structured-state doc line + columnar data
+    // block). Per datumv2's `showSingle` (da-jose): a supplied format
+    // string *replaces* this view at the default show — the header + info
+    // lines still print, then the format string stands in for the data
+    // block. `Standard` keeps the data even alongside a format string;
+    // `All` keeps its full doc dump regardless.
+    let show_data_view = match args.show {
+        Show::Standard | Show::All => true,
+        Show::Default => args.format_string.is_none(),
+        _ => false,
+    };
+
     // State second line (da-gvj1 rule 3): doc-style renderers expose
     // structured-state internals on a line below the chip. Tail never
     // takes this path (see `print_table_with`).
-    if matches!(args.show, Show::Default | Show::Standard | Show::All) {
+    if show_data_view {
         if let Some(v) = entry.state.as_ref() {
             if let Some(line) = self::blocks::format_state_doc_line(v, &entry.field, spec) {
                 println!("  {line}");
@@ -333,7 +345,7 @@ pub fn show_action_with_context(
     }
 
     // User-data block
-    if matches!(args.show, Show::Default | Show::Standard | Show::All) {
+    if show_data_view {
         if let Some(extra) = self::blocks::format_data_block(entry) {
             println!("{extra}");
         }
@@ -495,13 +507,14 @@ pub fn format_table_with(
         return Some(out);
     }
 
-    // Custom format short-circuits the table.
-    if args.output.show == Show::Format {
-        if let Some(fmt) = &args.output.format_string {
-            for e in entries {
-                out.push_str(&interpolate(fmt, e));
-                out.push('\n');
-            }
+    // Custom format short-circuits the table. Per datumv2's `tableOutput`
+    // (da-jose) the presence of a format string alone drives format-only
+    // rows here — unlike the single-doc `show_action` path, a table never
+    // interleaves the format string with stock columns.
+    if let Some(fmt) = &args.output.format_string {
+        for e in entries {
+            out.push_str(&interpolate(fmt, e));
+            out.push('\n');
         }
         return Some(out);
     }
