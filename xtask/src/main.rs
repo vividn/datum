@@ -6,6 +6,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use datum_parse::help::{render_markdown, render_roff, COMMANDS};
@@ -22,6 +23,7 @@ fn main() -> Result<()> {
         "manpages" => manpages(args.collect()),
         "readme" => readme(),
         "check" => check(args.collect()),
+        "bump-version" => bump_version(args.collect()),
         "" => {
             print_usage();
             bail!("missing task name");
@@ -42,6 +44,8 @@ fn print_usage() {
     eprintln!("  check <which>       run a pre-v1 honesty gate (da-8y2q.7)");
     eprintln!("                        which: all | no-cfg-any | no-r2-stubs |");
     eprintln!("                               no-legacy-verbs | max-file-size");
+    eprintln!("  bump-version        bump the workspace version from HEAD's commit type");
+    eprintln!("                        flags: --push --dry-run --subject <msg>");
 }
 
 fn readme() -> Result<()> {
@@ -125,6 +129,267 @@ fn write_page(dir: &Path, stem: &str, contents: &str) -> Result<()> {
     let path = dir.join(format!("{stem}.1"));
     fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
+}
+
+// ─── da-qlfk: auto-bump the workspace version in the merge path ───────────────
+
+/// The version bump implied by a merged commit's subject.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Bump {
+    /// A `feat:` merge — bump the minor, zero the patch.
+    Minor,
+    /// Any other merge (`fix:`, `docs:`, unprefixed, …) — bump the patch.
+    Patch,
+    /// The merge is our own `chore(release):` bump — do nothing, so a
+    /// re-run (or a push that re-triggers the hook) never chains bumps.
+    Skip,
+}
+
+/// Auto-bump the `[workspace.package]` version so it tracks main, then
+/// commit (and optionally push) the change. Pairs with the on-merge
+/// auto-upgrade (`datum-upgrade`); wire it into the merge-queue
+/// `post_merge_cmd` — see `docs/version-bumping.md`.
+///
+/// Policy (conventional-commit): a `feat:` merge → **minor**; anything
+/// else → **patch**. The version stays **0.x** until production — the
+/// major is never bumped automatically. The bump kind is read from
+/// HEAD's commit subject (override with `--subject "<msg>"`).
+fn bump_version(args: Vec<String>) -> Result<()> {
+    let mut push = false;
+    let mut dry_run = false;
+    let mut subject: Option<String> = None;
+    let mut it = args.into_iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--push" => push = true,
+            "--dry-run" => dry_run = true,
+            "--subject" => subject = Some(it.next().context("--subject needs a value")?),
+            other => bail!("unknown bump-version flag: {other}"),
+        }
+    }
+
+    let root = workspace_root()?;
+    let subject = match subject {
+        Some(s) => s,
+        None => git_head_subject(&root)?,
+    };
+
+    let kind = bump_kind(&subject);
+    if kind == Bump::Skip {
+        eprintln!("bump-version: HEAD is a release commit — nothing to bump");
+        return Ok(());
+    }
+
+    let manifest_path = root.join("Cargo.toml");
+    let manifest = fs::read_to_string(&manifest_path)
+        .with_context(|| format!("reading {}", manifest_path.display()))?;
+    let old = read_workspace_version(&manifest)?;
+    let new = apply_bump(&old, kind)?;
+    eprintln!("bump-version: {old} → {new}  ({kind:?}, from {subject:?})");
+    if dry_run {
+        return Ok(());
+    }
+
+    let (_, updated_manifest) = set_workspace_version(&manifest, &new)?;
+    fs::write(&manifest_path, &updated_manifest)
+        .with_context(|| format!("writing {}", manifest_path.display()))?;
+
+    // Keep Cargo.lock in step so the merge host's tree stays clean and a
+    // `--locked` build never trips. All local crates share the workspace
+    // version, so they move together.
+    let lock_path = root.join("Cargo.lock");
+    if lock_path.is_file() {
+        let lock = fs::read_to_string(&lock_path)
+            .with_context(|| format!("reading {}", lock_path.display()))?;
+        fs::write(&lock_path, set_lockfile_versions(&lock, &new))
+            .with_context(|| format!("writing {}", lock_path.display()))?;
+    }
+
+    run_git(&root, &["add", "Cargo.toml", "Cargo.lock"])?;
+    run_git(&root, &["commit", "-m", &format!("chore(release): v{new}")])?;
+    eprintln!("bump-version: committed chore(release): v{new}");
+    if push {
+        run_git(&root, &["push"])?;
+        eprintln!("bump-version: pushed");
+    }
+    Ok(())
+}
+
+/// Map a merged commit's subject to a bump kind. Our own
+/// `chore(release):` commits are skipped so a bump never chains; a
+/// `feat` type bumps the minor; everything else bumps the patch.
+fn bump_kind(subject: &str) -> Bump {
+    if subject.trim_start().starts_with("chore(release):") {
+        return Bump::Skip;
+    }
+    match commit_type(subject) {
+        Some("feat") => Bump::Minor,
+        _ => Bump::Patch,
+    }
+}
+
+/// The conventional-commit *type* token at the head of `subject`, if the
+/// header is well-formed: a lowercase `<type>`, an optional `(scope)`,
+/// an optional `!`, then `:`. `feat(cli)!: x` → `Some("feat")`;
+/// `plain words` → `None`.
+fn commit_type(subject: &str) -> Option<&str> {
+    let s = subject.trim_start();
+    let ty_len = s.find(|c: char| !c.is_ascii_lowercase())?;
+    if ty_len == 0 {
+        return None;
+    }
+    let (ty, mut rest) = s.split_at(ty_len);
+    if let Some(after_open) = rest.strip_prefix('(') {
+        rest = &after_open[after_open.find(')')? + 1..];
+    }
+    rest = rest.strip_prefix('!').unwrap_or(rest);
+    rest.starts_with(':').then_some(ty)
+}
+
+/// Apply a bump to a `major.minor.patch` version, keeping the pre-v1
+/// invariant: the **major is fixed** (0.x until production). A minor
+/// bump zeroes the patch; a patch bump leaves the minor untouched.
+fn apply_bump(version: &str, kind: Bump) -> Result<String> {
+    let (major, minor, patch) = parse_semver(version)?;
+    let (minor, patch) = match kind {
+        Bump::Minor => (minor + 1, 0),
+        Bump::Patch => (minor, patch + 1),
+        Bump::Skip => return Ok(version.to_string()),
+    };
+    Ok(format!("{major}.{minor}.{patch}"))
+}
+
+fn parse_semver(v: &str) -> Result<(u64, u64, u64)> {
+    let parts: Vec<&str> = v.split('.').collect();
+    if parts.len() != 3 {
+        bail!("version `{v}` is not `major.minor.patch`");
+    }
+    let num = |s: &str| -> Result<u64> {
+        s.parse::<u64>()
+            .with_context(|| format!("non-numeric component in version `{v}`"))
+    };
+    Ok((num(parts[0])?, num(parts[1])?, num(parts[2])?))
+}
+
+/// Extract the double-quoted value from a bare `version = "..."` line.
+/// Ignores `version.workspace = true` and any line whose key isn't a
+/// standalone `version`. Shared by the Cargo.toml and Cargo.lock passes.
+fn parse_version_line(line: &str) -> Option<&str> {
+    let rest = line.trim_start().strip_prefix("version")?;
+    let rest = rest.trim_start().strip_prefix('=')?.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    Some(&rest[..rest.find('"')?])
+}
+
+/// Read the `[workspace.package]` version from a Cargo.toml.
+fn read_workspace_version(cargo_toml: &str) -> Result<String> {
+    let mut in_pkg = false;
+    for line in cargo_toml.lines() {
+        let t = line.trim_start();
+        if t.starts_with('[') {
+            in_pkg = t.starts_with("[workspace.package]");
+        } else if in_pkg {
+            if let Some(v) = parse_version_line(line) {
+                return Ok(v.to_string());
+            }
+        }
+    }
+    bail!("no `[workspace.package]` version in Cargo.toml")
+}
+
+/// Rewrite the `[workspace.package]` version, returning `(old, updated)`.
+/// Only the single version line in that section changes; every other
+/// byte is preserved so the diff stays minimal.
+fn set_workspace_version(cargo_toml: &str, new: &str) -> Result<(String, String)> {
+    let mut in_pkg = false;
+    let mut old: Option<String> = None;
+    let mut out = String::with_capacity(cargo_toml.len() + 8);
+    for line in cargo_toml.lines() {
+        let t = line.trim_start();
+        if t.starts_with('[') {
+            in_pkg = t.starts_with("[workspace.package]");
+        } else if in_pkg && old.is_none() {
+            if let Some(v) = parse_version_line(line) {
+                old = Some(v.to_string());
+                out.push_str(&format!("version = \"{new}\"\n"));
+                continue;
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    let old = old.context("no `[workspace.package]` version in Cargo.toml")?;
+    Ok((old, out))
+}
+
+/// Bump every *local* crate's version in Cargo.lock to `new`. Local
+/// (path/workspace) crates are exactly the `[[package]]` blocks with no
+/// `source` field — registry crates always carry one — and they all
+/// inherit the single workspace version, so they move together. The
+/// top-of-file lockfile-format `version = N` sits outside any package
+/// block and is left untouched.
+fn set_lockfile_versions(lock: &str, new: &str) -> String {
+    let mut out = String::with_capacity(lock.len());
+    let mut block: Vec<&str> = Vec::new();
+    let mut in_block = false;
+    let flush = |out: &mut String, block: &[&str]| {
+        let local = !block
+            .iter()
+            .any(|l| l.trim_start().starts_with("source = "));
+        let mut replaced = false;
+        for l in block {
+            if local && !replaced && l.trim_start().starts_with("version = \"") {
+                out.push_str(&format!("version = \"{new}\"\n"));
+                replaced = true;
+            } else {
+                out.push_str(l);
+                out.push('\n');
+            }
+        }
+    };
+    for line in lock.lines() {
+        if line.trim_start() == "[[package]]" {
+            if in_block {
+                flush(&mut out, &block);
+                block.clear();
+            }
+            in_block = true;
+        }
+        if in_block {
+            block.push(line);
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    if in_block {
+        flush(&mut out, &block);
+    }
+    out
+}
+
+fn git_head_subject(root: &Path) -> Result<String> {
+    Ok(run_git(root, &["log", "-1", "--format=%s"])?
+        .trim()
+        .to_string())
+}
+
+/// Run `git -C <root> <args>`, returning stdout; bails on a non-zero exit.
+fn run_git(root: &Path, args: &[&str]) -> Result<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .with_context(|| format!("running git {}", args.join(" ")))?;
+    if !out.status.success() {
+        bail!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 // ─── da-8y2q.7: pre-v1 honesty gates ─────────────────────────────────────────
@@ -423,4 +688,81 @@ fn workspace_root() -> Result<PathBuf> {
         }
     }
     bail!("could not locate workspace root from {}", start.display())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commit_type_parses_conventional_headers() {
+        assert_eq!(commit_type("feat: add thing"), Some("feat"));
+        assert_eq!(commit_type("feat(cli): add thing"), Some("feat"));
+        assert_eq!(commit_type("feat(cli)!: breaking"), Some("feat"));
+        assert_eq!(commit_type("fix(count): drop unimplemented"), Some("fix"));
+        assert_eq!(commit_type("  chore(release): v0.1.1"), Some("chore"));
+        assert_eq!(commit_type("plain words, no prefix"), None);
+        assert_eq!(commit_type("Feat: capitalized isn't a type"), None);
+    }
+
+    #[test]
+    fn bump_kind_maps_feat_to_minor_else_patch() {
+        assert_eq!(
+            bump_kind("feat(spec): safe incremental add-state"),
+            Bump::Minor
+        );
+        assert_eq!(bump_kind("fix(retime): refresh offset"), Bump::Patch);
+        assert_eq!(bump_kind("docs: tidy readme"), Bump::Patch);
+        assert_eq!(bump_kind("random unprefixed merge"), Bump::Patch);
+        // Our own release commit must never chain another bump.
+        assert_eq!(bump_kind("chore(release): v0.2.0"), Bump::Skip);
+    }
+
+    #[test]
+    fn apply_bump_keeps_major_fixed() {
+        assert_eq!(apply_bump("0.1.0", Bump::Minor).unwrap(), "0.2.0");
+        assert_eq!(apply_bump("0.1.5", Bump::Minor).unwrap(), "0.2.0");
+        assert_eq!(apply_bump("0.1.0", Bump::Patch).unwrap(), "0.1.1");
+        assert_eq!(apply_bump("0.2.9", Bump::Patch).unwrap(), "0.2.10");
+        assert_eq!(apply_bump("0.1.0", Bump::Skip).unwrap(), "0.1.0");
+        assert!(apply_bump("0.1", Bump::Patch).is_err());
+        assert!(apply_bump("0.1.x", Bump::Patch).is_err());
+    }
+
+    #[test]
+    fn parse_version_line_only_matches_bare_version_key() {
+        assert_eq!(parse_version_line("version = \"0.1.0\""), Some("0.1.0"));
+        assert_eq!(parse_version_line("  version=\"1.2.3\""), Some("1.2.3"));
+        assert_eq!(parse_version_line("version.workspace = true"), None);
+        assert_eq!(parse_version_line("serde = { version = \"1\" }"), None);
+    }
+
+    #[test]
+    fn set_workspace_version_touches_only_the_package_section() {
+        let toml = "[workspace]\nmembers = [\"a\"]\n\n\
+                    [workspace.package]\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
+                    [workspace.dependencies]\nserde = { version = \"1\" }\n";
+        let (old, out) = set_workspace_version(toml, "0.2.0").unwrap();
+        assert_eq!(old, "0.1.0");
+        assert!(out.contains("[workspace.package]\nversion = \"0.2.0\"\nedition"));
+        // The dependency's version = "1" must be untouched.
+        assert!(out.contains("serde = { version = \"1\" }"));
+        assert_eq!(read_workspace_version(&out).unwrap(), "0.2.0");
+    }
+
+    #[test]
+    fn set_lockfile_versions_bumps_locals_only() {
+        let lock = "# @generated\nversion = 4\n\n\
+                    [[package]]\nname = \"adler2\"\nversion = \"2.0.1\"\n\
+                    source = \"registry+https://example\"\nchecksum = \"abc\"\n\n\
+                    [[package]]\nname = \"datum-core\"\nversion = \"0.1.0\"\n\
+                    dependencies = [\n \"serde\",\n]\n";
+        let out = set_lockfile_versions(lock, "0.2.0");
+        // Top-of-file lockfile format version untouched.
+        assert!(out.contains("version = 4\n"));
+        // Registry crate untouched.
+        assert!(out.contains("name = \"adler2\"\nversion = \"2.0.1\""));
+        // Local crate bumped.
+        assert!(out.contains("name = \"datum-core\"\nversion = \"0.2.0\""));
+    }
 }
