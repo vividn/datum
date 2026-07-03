@@ -187,3 +187,77 @@ fn why_full_traces_through_history() {
         datum_core::history::ChangeKind::Create
     );
 }
+
+/// da-96yy: `undo --to-version` must bounds-check the target against the
+/// entry's version range [1, latest]. Out-of-range versions used to misbehave
+/// silently — v>latest no-op'd, v=0 reverted to the create-state — instead of
+/// erroring. Both edges must now bail without touching the entry.
+#[test]
+fn undo_to_version_out_of_range_errors_and_leaves_entry_untouched() {
+    let db = fresh_db();
+    let v1 = entry_builder("mood")
+        .verb(datum_core::entry::Verb::Switch)
+        .state(serde_json::json!("happy"))
+        .insert(&db);
+
+    // Give the entry a second version so latest=2.
+    let mut v2 = v1.clone();
+    v2.state = Some(serde_json::json!("sad"));
+    db.save_existing_entry(&v2).expect("v2 user_edit");
+
+    let live_before = db.get_entry(&v1.slug).unwrap();
+    assert_eq!(live_before.state, Some(serde_json::json!("sad")));
+
+    // v > latest: used to silently no-op. Must error now.
+    let err = run_cli(&["undo", &v1.hid, "--to-version", "99"], &db)
+        .expect_err("--to-version above latest must error");
+    assert!(
+        err.to_string().contains("doesn't exist"),
+        "error should name the missing version, got: {err}"
+    );
+
+    // v = 0: used to silently revert to the create-state. Must error now.
+    let err0 = run_cli(&["undo", &v1.hid, "--to-version", "0"], &db)
+        .expect_err("--to-version 0 must error");
+    assert!(
+        err0.to_string().contains("doesn't exist"),
+        "error should name the missing version, got: {err0}"
+    );
+
+    // Neither failed attempt mutated the entry or its trail.
+    let live_after = db.get_entry(&v1.slug).unwrap();
+    assert_eq!(
+        live_after.state,
+        Some(serde_json::json!("sad")),
+        "out-of-range undo must not change the entry"
+    );
+    let versions = datum_core::history::list(db.conn(), &v1.hid, false).unwrap();
+    assert_eq!(
+        versions.len(),
+        2,
+        "no new version recorded on a failed undo"
+    );
+}
+
+/// da-96yy: the in-range edge `--to-version <latest>` must keep working — it
+/// resolves to the live row and reverts to that (current) state.
+#[test]
+fn undo_to_version_at_latest_is_in_range() {
+    let db = fresh_db();
+    let v1 = entry_builder("mood")
+        .verb(datum_core::entry::Verb::Switch)
+        .state(serde_json::json!("happy"))
+        .insert(&db);
+    let mut v2 = v1.clone();
+    v2.state = Some(serde_json::json!("sad"));
+    db.save_existing_entry(&v2).expect("v2 user_edit");
+
+    // latest == 2 is in range and must dispatch without error.
+    run_cli(&["undo", &v1.hid, "--to-version", "2"], &db)
+        .expect("--to-version at latest must succeed");
+
+    // Reverting to v1 must still work too.
+    run_cli(&["undo", &v1.hid, "--to-version", "1"], &db).expect("--to-version 1 must succeed");
+    let restored = db.get_entry(&v1.slug).unwrap();
+    assert_eq!(restored.state, Some(serde_json::json!("happy")));
+}

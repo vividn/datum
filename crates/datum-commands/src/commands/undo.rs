@@ -25,6 +25,16 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
         let output = args.output()?;
         match (args.to_version, latest) {
             (Some(v), _) => {
+                // Bounds-check against the entry's version range [1, latest].
+                // `state_at_version` is version-agnostic by design and misbehaves
+                // silently at the edges (v=0 reverts to create-state; v>latest
+                // no-ops), so the clarity check belongs here where `latest` is
+                // known. An out-of-range version must point at the problem, not
+                // quietly do the wrong thing (da-96yy).
+                let latest_n = latest.unwrap_or(0);
+                if v < 1 || v > latest_n {
+                    anyhow::bail!("version {v} doesn't exist; entry has {latest_n} version(s)");
+                }
                 let restored = db
                     .revert_entry_to(&current.hid, v)
                     .map_err(anyhow::Error::from)?;
