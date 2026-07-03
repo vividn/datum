@@ -392,6 +392,11 @@ impl Entry {
         let secs = self.dur.as_ref()?.as_seconds()?;
         let mut e = occur.clone();
         e.utc += chrono::Duration::seconds(secs);
+        // The `utc` bump desyncs `offset_minutes` (see the DatumTime
+        // doc-comment); re-derive it so an end that crosses a DST
+        // boundary renders the correct wall-clock instead of the start's
+        // stale offset. Render-only path — drop to None on unknown-tz.
+        e.refresh_offset().ok()?;
         Some(e)
     }
 

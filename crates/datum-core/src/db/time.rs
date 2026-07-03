@@ -70,6 +70,11 @@ impl Db {
             let mut shifted = e;
             if let Some(t) = shifted.occur_time.as_mut() {
                 t.utc += offset;
+                // A raw `utc` mutation desyncs `offset_minutes` (see the
+                // DatumTime doc-comment); re-derive it so a cross-DST shift
+                // renders the intended wall-clock and rekeys %occur_time%
+                // slugs correctly. Propagates on unknown-tz.
+                t.refresh_offset()?;
             }
             self.save_existing_entry_with_auto_reinterp_kind_in_tx(
                 &old_slug,
@@ -319,5 +324,75 @@ mod tests {
 
         let after = db.get_entry(slug.as_str()).unwrap();
         assert_eq!(after.hid, hid);
+    }
+
+    /// da-2nik: the SHIFT path (`update_times`) mutates `occur_time.utc`
+    /// directly. When the shift crosses a DST boundary the stored
+    /// `offset_minutes` desyncs unless `refresh_offset` re-derives it —
+    /// leaving `local_time()` rendering the wrong wall-clock (off by the
+    /// DST hour). Shift a Europe/Berlin entry across spring-forward and
+    /// assert the persisted row lands on the intended local time.
+    #[test]
+    fn retime_shift_across_dst_refreshes_offset() {
+        use chrono::Timelike;
+
+        let db = Db::open_in_memory().unwrap();
+        // 2024-03-31 01:30 Berlin (CET, UTC+1) — 30 min before the
+        // 02:00→03:00 spring-forward transition.
+        let before =
+            DatumTime::from_utc_and_tz("2024-03-31T00:30:00Z".parse().unwrap(), "Europe/Berlin")
+                .unwrap();
+        assert_eq!(before.offset_minutes, 60, "pre-shift is CET (UTC+1)");
+
+        let e = Entry::new("wake", Verb::Point, None, None, Some(before), None, "d1");
+        let hid = e.hid.clone();
+        db.insert_entry(&e).unwrap();
+
+        // Shift +2h → UTC 02:30 = 04:30 Berlin (CEST, UTC+2). Intended
+        // wall-clock is 04:30.
+        let filter = RetimeFilter {
+            slug_or_hid: Some(&hid),
+            ..Default::default()
+        };
+        db.update_times(&filter, Duration::hours(2)).unwrap();
+
+        let after = db.get_entry(&hid).unwrap();
+        let t = after.occur_time.unwrap();
+        assert_eq!(
+            t.offset_minutes, 120,
+            "offset must re-derive to CEST (UTC+2) after crossing DST"
+        );
+        let local = t.local_time();
+        assert_eq!(
+            (local.hour(), local.minute()),
+            (4, 30),
+            "local_time must land on the intended 04:30 wall-clock, not the stale-offset 03:30"
+        );
+    }
+
+    /// da-2nik companion: `Entry::computed_end_time` bumps `occur_time.utc`
+    /// by the duration to derive the end. A block whose end crosses a DST
+    /// boundary must render with the end's offset, not the start's stale
+    /// one.
+    #[test]
+    fn computed_end_time_refreshes_offset_across_dst() {
+        use chrono::Timelike;
+
+        // Start 2024-03-31 01:30 Berlin (CET, UTC+1); 2h block ends
+        // 04:30 Berlin (CEST, UTC+2).
+        let start =
+            DatumTime::from_utc_and_tz("2024-03-31T00:30:00Z".parse().unwrap(), "Europe/Berlin")
+                .unwrap();
+        let mut e = Entry::new("focus", Verb::Point, None, None, Some(start), None, "d1");
+        e.dur = Some(crate::dur::Dur::Of(chrono::Duration::hours(2)));
+
+        let end = e.computed_end_time().unwrap();
+        assert_eq!(end.offset_minutes, 120, "end offset must re-derive to CEST");
+        let local = end.local_time();
+        assert_eq!(
+            (local.hour(), local.minute()),
+            (4, 30),
+            "end wall-clock must be 04:30, not the start's stale-offset 03:30"
+        );
     }
 }
