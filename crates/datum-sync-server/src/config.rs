@@ -28,6 +28,12 @@ pub struct Config {
     /// exposing the account-takeover bypass. Enable only behind a real
     /// verification step. Set `DATUM_SYNC_ENABLE_DEVICE_AUTHORIZE=true`.
     pub device_authorize_enabled: bool,
+    /// da-7vc3: per-IP request budget for the unauthenticated auth surface
+    /// (passkey ceremonies, refresh, device-code start), requests per
+    /// minute. Default 30 (burst ~10); 0 disables the limiter. The
+    /// device-code poll endpoint is excluded regardless. Set
+    /// `DATUM_SYNC_AUTH_RATELIMIT_PER_MIN`.
+    pub auth_ratelimit_per_min: u32,
 }
 
 impl Config {
@@ -71,6 +77,16 @@ impl Config {
             Some("true") | Some("1")
         );
 
+        // da-7vc3: default 30/min/IP. A malformed value is a hard error —
+        // same fail-closed posture as the port, so a typo can't silently
+        // disable the limiter.
+        let auth_ratelimit_per_min: u32 = match var("DATUM_SYNC_AUTH_RATELIMIT_PER_MIN") {
+            Some(v) => v.parse().with_context(|| {
+                format!("DATUM_SYNC_AUTH_RATELIMIT_PER_MIN is not a valid count: {v:?}")
+            })?,
+            None => 30,
+        };
+
         Ok(Config {
             db_path: var("DATUM_SYNC_DB").unwrap_or_else(|| "./datum-sync-server.db".into()),
             origin: var("DATUM_SYNC_ORIGIN").unwrap_or_else(|| format!("http://localhost:{port}")),
@@ -78,6 +94,7 @@ impl Config {
             jwt_secret,
             port,
             device_authorize_enabled,
+            auth_ratelimit_per_min,
         })
     }
 }
@@ -131,6 +148,40 @@ mod tests {
         assert_eq!(config.origin, "http://localhost:3000");
         assert_eq!(config.rp_name, "datum sync");
         assert_eq!(config.jwt_secret, GOOD_SECRET);
+        assert_eq!(config.auth_ratelimit_per_min, 30);
+    }
+
+    /// da-7vc3: the auth rate-limit budget is env-tunable, and `0` is the
+    /// explicit off-switch.
+    #[test]
+    fn auth_ratelimit_is_configurable() {
+        let config = Config::from_lookup(lookup(&[
+            ("DATUM_SYNC_JWT_SECRET", GOOD_SECRET),
+            ("DATUM_SYNC_AUTH_RATELIMIT_PER_MIN", "0"),
+        ]))
+        .unwrap();
+        assert_eq!(config.auth_ratelimit_per_min, 0);
+
+        let config = Config::from_lookup(lookup(&[
+            ("DATUM_SYNC_JWT_SECRET", GOOD_SECRET),
+            ("DATUM_SYNC_AUTH_RATELIMIT_PER_MIN", "120"),
+        ]))
+        .unwrap();
+        assert_eq!(config.auth_ratelimit_per_min, 120);
+    }
+
+    /// A garbage rate-limit value fails closed rather than silently
+    /// disabling the limiter.
+    #[test]
+    fn invalid_auth_ratelimit_is_rejected() {
+        let err = Config::from_lookup(lookup(&[
+            ("DATUM_SYNC_JWT_SECRET", GOOD_SECRET),
+            ("DATUM_SYNC_AUTH_RATELIMIT_PER_MIN", "lots"),
+        ]))
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("DATUM_SYNC_AUTH_RATELIMIT_PER_MIN"));
     }
 
     /// The default origin tracks the configured port, matching what the

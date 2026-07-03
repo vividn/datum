@@ -49,7 +49,8 @@ async fn main() -> anyhow::Result<()> {
 
     let state = Arc::new(
         AppState::new(conn, webauthn, config.jwt_secret)
-            .with_device_authorize(config.device_authorize_enabled),
+            .with_device_authorize(config.device_authorize_enabled)
+            .with_rate_limit(config.auth_ratelimit_per_min),
     );
     let app = build_app(state);
 
@@ -57,7 +58,14 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("datum-sync-server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+    // da-7vc3: `into_make_service_with_connect_info` exposes the peer
+    // `SocketAddr` to the per-IP rate limiter. Without it every request
+    // would fall back to the unspecified address and share one bucket.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

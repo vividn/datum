@@ -37,6 +37,12 @@ pub enum AppError {
     #[error("internal error: {0}")]
     Internal(String),
 
+    /// da-7vc3: the client IP exceeded the per-IP budget on the
+    /// unauthenticated auth surface. Surfaces as HTTP 429 with a
+    /// `Retry-After` hint.
+    #[error("rate limit exceeded")]
+    RateLimited,
+
     /// da-tat1: client's view of the cluster generation disagrees with
     /// the server's. Surfaces as HTTP 409 with the tagged-enum payload
     /// so clients route on `kind` (per [`SyncProtocolError`]'s
@@ -69,11 +75,23 @@ impl IntoResponse for AppError {
         if let AppError::GenerationMismatch(ref err) | AppError::SeqMismatch(ref err) = self {
             return (StatusCode::CONFLICT, Json(err)).into_response();
         }
+        // da-7vc3: a 429 carries a Retry-After so RFC 8628 / refresh clients
+        // back off instead of hot-looping. Built here rather than via the
+        // generic path below because it needs a header.
+        if let AppError::RateLimited = self {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(axum::http::header::RETRY_AFTER, "60")],
+                Json(json!({ "error": self.to_string() })),
+            )
+                .into_response();
+        }
         let (status, message) = match &self {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
+            AppError::RateLimited => unreachable!("handled above"),
             AppError::GenerationMismatch(_) | AppError::SeqMismatch(_) => {
                 unreachable!("handled above")
             }

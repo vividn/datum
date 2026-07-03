@@ -59,7 +59,15 @@ docker build -t datum-sync-server -f crates/datum-sync-server/Dockerfile .
 
 All configuration is environment variables, read in one place
 (`src/config.rs`): `DATUM_SYNC_PORT`, `DATUM_SYNC_DB`,
-`DATUM_SYNC_ORIGIN`, `DATUM_SYNC_RP_NAME`, `DATUM_SYNC_JWT_SECRET`.
+`DATUM_SYNC_ORIGIN`, `DATUM_SYNC_RP_NAME`, `DATUM_SYNC_JWT_SECRET`,
+`DATUM_SYNC_AUTH_RATELIMIT_PER_MIN`.
+
+The unauthenticated auth surface (passkey ceremonies, `/auth/refresh`,
+device-code *start*) is rate-limited per peer IP —
+`DATUM_SYNC_AUTH_RATELIMIT_PER_MIN` requests/min, default 30 (burst
+~10), `0` disables it. The high-frequency device-code *poll* endpoint is
+excluded. Keying is peer-IP only; `X-Forwarded-For` is not trusted, so
+behind a proxy terminate client-IP at a trusted layer.
 
 ## What does NOT belong here
 

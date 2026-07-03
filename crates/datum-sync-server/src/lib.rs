@@ -20,6 +20,7 @@ pub mod error;
 pub mod jwt;
 pub mod keys;
 pub mod models;
+pub mod ratelimit;
 pub mod refresh;
 pub mod sync;
 
@@ -44,6 +45,7 @@ use webauthn_rs::prelude::{PasskeyAuthentication, PasskeyRegistration, Webauthn}
 
 use crate::error::AppError;
 use crate::models::AuthenticatedUser;
+use crate::ratelimit::RateLimiter;
 
 pub use crate::device_code::DeviceCodeRecord;
 
@@ -92,6 +94,10 @@ pub struct AppState {
     /// device_id-collision path (da-ca4q). Production always sets this
     /// to 0.
     pub collide_pushes_remaining: Mutex<usize>,
+    /// da-7vc3: per-IP token-bucket limiter guarding the unauthenticated
+    /// auth surface. Excludes device-code poll (mounted outside the limited
+    /// group in [`build_app`]).
+    pub rate_limiter: RateLimiter,
 }
 
 impl AppState {
@@ -106,6 +112,10 @@ impl AppState {
             slow_down_polls_remaining: Mutex::new(0),
             collide_pushes_remaining: Mutex::new(0),
             device_authorize_enabled: false,
+            // da-7vc3: default 30/min/IP so tests and unconfigured callers
+            // get the same protection as production; override via
+            // `with_rate_limit`.
+            rate_limiter: RateLimiter::new(30),
         }
     }
 
@@ -113,6 +123,13 @@ impl AppState {
     /// default; production wires this from config, tests opt in.
     pub fn with_device_authorize(mut self, enabled: bool) -> Self {
         self.device_authorize_enabled = enabled;
+        self
+    }
+
+    /// Set the per-IP auth rate-limit budget (requests/min; 0 disables).
+    /// da-7vc3 — production wires this from `DATUM_SYNC_AUTH_RATELIMIT_PER_MIN`.
+    pub fn with_rate_limit(mut self, per_min: u32) -> Self {
+        self.rate_limiter = RateLimiter::new(per_min);
         self
     }
 }
@@ -140,6 +157,32 @@ async fn auth_middleware(
     Ok(next.run(req).await)
 }
 
+/// da-7vc3: per-IP rate-limit gate for the unauthenticated auth surface.
+///
+/// The client IP comes from axum's `ConnectInfo<SocketAddr>` extension,
+/// which the binary installs via `into_make_service_with_connect_info`
+/// (see `main.rs`). It is read from request extensions (not as an
+/// extractor) so a request without it — chiefly tower `oneshot` in tests —
+/// falls back to the unspecified address rather than 500-ing. `ConnectInfo`
+/// reflects the real peer only; `X-Forwarded-For` is intentionally ignored
+/// (see [`ratelimit`]).
+async fn rate_limit_middleware(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    req: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> Result<axum::response::Response, AppError> {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    let ip = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip())
+        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+    if !state.rate_limiter.check(ip) {
+        return Err(AppError::RateLimited);
+    }
+    Ok(next.run(req).await)
+}
+
 pub fn build_app(state: Arc<AppState>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -149,24 +192,39 @@ pub fn build_app(state: Arc<AppState>) -> Router {
     // Unauthenticated under /v0/auth/*: passkey ceremonies + RFC 8628 device-code.
     // /v0/auth/refresh is unauthenticated by design — it accepts only the
     // single-use refresh_token, not a (possibly-expired) bearer.
-    let mut auth_routes = Router::new()
+    //
+    // da-7vc3: the rare ceremony-initiators (register/login/refresh/
+    // device-code start) are rate-limited per IP. The device-code *poll*
+    // endpoint is deliberately excluded — RFC 8628 polls it ~1s, so sharing
+    // the ceremony bucket would break normal pairing — and is merged in
+    // below, outside the limited group.
+    let mut limited_auth_routes = Router::new()
         .route("/register/begin", post(auth::register_begin))
         .route("/register/finish", post(auth::register_finish))
         .route("/login/begin", post(auth::login_begin))
         .route("/login/finish", post(auth::login_finish))
         .route("/refresh", post(auth::refresh))
-        .route("/device-code", post(device_code::start))
-        .route("/device-code/poll", get(device_code::poll));
+        .route("/device-code", post(device_code::start));
     // da-1am4: `/device-code/authorize` binds a pending device-code to an
     // arbitrary username with NO credential — a complete account-takeover
     // bypass of the passkey ceremony. The real browser verification UI that
     // would gate it is unbuilt, so the route is mounted ONLY when explicitly
     // enabled. Off by default → a deployed relay cannot boot the bypass.
     // Consequence: device-code *login* is unavailable until a real
-    // verification step replaces this stub (tracked on da-1am4).
+    // verification step replaces this stub (tracked on da-1am4). It joins the
+    // rate-limited group when enabled — it is unauthenticated too.
     if state.device_authorize_enabled {
-        auth_routes = auth_routes.route("/device-code/authorize", post(device_code::authorize));
+        limited_auth_routes =
+            limited_auth_routes.route("/device-code/authorize", post(device_code::authorize));
     }
+
+    let auth_routes = limited_auth_routes
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
+        // Poll is high-frequency by design; keep it off the limiter.
+        .route("/device-code/poll", get(device_code::poll));
 
     // Bearer-authenticated under /v0: changeset push/pull + wrapped key.
     // `/clusters/{id}/bump-generation` lives here too (da-tat1): a client
@@ -1385,5 +1443,126 @@ mod tests {
             serde_json::from_slice(&pull.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(rows.len(), 1, "rejected push must not be stored");
         assert_eq!(rows[0]["payload_b64"], "AA");
+    }
+
+    // ─── da-7vc3: per-IP rate limiting on the unauthenticated auth surface ──
+
+    fn rate_limited_state(per_min: u32) -> Arc<AppState> {
+        let conn = Connection::open_in_memory().unwrap();
+        db::init_db(&conn).unwrap();
+        let origin = Url::parse("http://localhost:3000").unwrap();
+        let webauthn = build_webauthn(&origin, "datum-test").unwrap();
+        Arc::new(AppState::new(conn, webauthn, "test-secret".to_string()).with_rate_limit(per_min))
+    }
+
+    /// Build a `login/begin` request tagged with a synthetic peer IP, the
+    /// way `into_make_service_with_connect_info` would in production.
+    fn login_begin_from(ip: &str) -> Request<Body> {
+        use axum::extract::ConnectInfo;
+        use std::net::SocketAddr;
+        let mut req = Request::builder()
+            .method("POST")
+            .uri("/v0/auth/login/begin")
+            .header("Content-Type", "application/json")
+            .body(Body::from(
+                serde_json::json!({ "username": "someone" }).to_string(),
+            ))
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(
+            format!("{ip}:5555").parse::<SocketAddr>().unwrap(),
+        ));
+        req
+    }
+
+    /// A per-IP budget of 3/min yields a burst of 1, so a second request
+    /// from the same IP is throttled with 429 while a different IP still
+    /// gets through — the limit keys on peer IP, not globally.
+    #[tokio::test]
+    async fn auth_endpoints_are_rate_limited_per_ip() {
+        let state = rate_limited_state(3); // capacity == max(1, 3/3) == 1
+
+        let first = build_app(state.clone())
+            .oneshot(login_begin_from("203.0.113.7"))
+            .await
+            .unwrap();
+        assert_ne!(
+            first.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "first request from an IP must not be throttled"
+        );
+
+        let second = build_app(state.clone())
+            .oneshot(login_begin_from("203.0.113.7"))
+            .await
+            .unwrap();
+        assert_eq!(
+            second.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "second request from the same IP exhausts the burst"
+        );
+        // The 429 carries a Retry-After hint for well-behaved clients.
+        assert_eq!(
+            second
+                .headers()
+                .get(axum::http::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok()),
+            Some("60")
+        );
+
+        // A different IP has its own bucket.
+        let other = build_app(state)
+            .oneshot(login_begin_from("198.51.100.9"))
+            .await
+            .unwrap();
+        assert_ne!(
+            other.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "a distinct IP must not inherit another IP's throttle"
+        );
+    }
+
+    /// The device-code poll endpoint is excluded from the limiter (RFC 8628
+    /// polls it ~1s); hammering it from one IP never yields a 429 even under
+    /// a budget that would throttle a single ceremony re-init.
+    #[tokio::test]
+    async fn device_code_poll_is_not_rate_limited() {
+        use axum::extract::ConnectInfo;
+        use std::net::SocketAddr;
+        let state = rate_limited_state(3); // burst 1 — would throttle after 1
+
+        for i in 0..5 {
+            let mut req = Request::builder()
+                .method("GET")
+                .uri("/v0/auth/device-code/poll?device_code=dc-nonexistent")
+                .body(Body::empty())
+                .unwrap();
+            req.extensions_mut().insert(ConnectInfo(
+                "203.0.113.7:5555".parse::<SocketAddr>().unwrap(),
+            ));
+            let resp = build_app(state.clone()).oneshot(req).await.unwrap();
+            assert_ne!(
+                resp.status(),
+                StatusCode::TOO_MANY_REQUESTS,
+                "poll #{i} must never be throttled"
+            );
+        }
+    }
+
+    /// A budget of 0 disables the limiter: many same-IP ceremony inits all
+    /// pass, matching `DATUM_SYNC_AUTH_RATELIMIT_PER_MIN=0`.
+    #[tokio::test]
+    async fn zero_budget_disables_the_limiter() {
+        let state = rate_limited_state(0);
+        for i in 0..20 {
+            let resp = build_app(state.clone())
+                .oneshot(login_begin_from("203.0.113.7"))
+                .await
+                .unwrap();
+            assert_ne!(
+                resp.status(),
+                StatusCode::TOO_MANY_REQUESTS,
+                "request #{i} must pass with the limiter disabled"
+            );
+        }
     }
 }
