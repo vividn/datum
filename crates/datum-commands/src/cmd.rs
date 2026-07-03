@@ -227,6 +227,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Grep(args) => commands::grep::grep(args, db),
         Command::Check(args) => commands::check::check(args, db),
         Command::Count(args) => commands::count::count(args, db),
+        Command::Stats(args) => commands::stats::stats(args, db),
         Command::Ids(args) => commands::ids::ids(args, db),
         Command::Dayview(args) => commands::dayview::dayview(args, db),
         Command::Nowview(args) => commands::nowview::nowview(args, db),

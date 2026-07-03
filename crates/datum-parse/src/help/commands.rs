@@ -583,6 +583,39 @@ const COUNT_FLAGS: &[FlagSpec] = &[
     },
 ];
 
+const STATS_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        short: None,
+        long: "since",
+        takes_value: true,
+        value_hint: Some("TIME"),
+        value_optional: false,
+        summary: "Inclusive lower bound (RFC3339 / YYYY-MM-DD / duration offset)",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "until",
+        takes_value: true,
+        value_hint: Some("TIME"),
+        value_optional: false,
+        summary: "Upper bound; a bare YYYY-MM-DD covers the whole named day",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "json",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Machine-readable output",
+        long_description: None,
+        left_override: None,
+    },
+];
+
 const IDS_FLAGS: &[FlagSpec] = &[
     FlagSpec {
         short: Some('n'),
@@ -1287,6 +1320,23 @@ pub const COMMANDS: &[CommandSpec] = &[
         usage: &["datum count [FIELD] [--group-by KEY] [--since TIME] [--json]"],
         args: NO_ARGS,
         flags: COUNT_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 24,
+        body_override: None,
+        display_input_name: false,
+    },
+    CommandSpec {
+        name: "stats",
+        aliases: &[],
+        category: Category::ViewsSync,
+        summary: "count / duration / state-ratio rollup",
+        top_summary: Some("Count, total duration, and per-state ratio over a time slice"),
+        long_description: None,
+        usage: &[
+            "datum stats <FIELD[:STATE]> [SLICE] [--since TIME] [--until TIME] [--json]",
+        ],
+        args: NO_ARGS,
+        flags: STATS_FLAGS,
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,

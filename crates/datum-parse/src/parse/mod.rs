@@ -226,6 +226,7 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
         "check" => Command::Check(parse_check_args(rest)?),
 
         "count" => Command::Count(parse_count_args(rest)?),
+        "stats" => Command::Stats(parse_stats_args(rest)?),
         "ids" => Command::Ids(parse_ids_args(rest)?),
 
         "dayview" => Command::Dayview(parse_dayview_args(rest)?),

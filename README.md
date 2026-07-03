@@ -152,6 +152,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 ## VIEWS / SYNC
 
 - `count` — Count entries (optionally filtered/grouped/since-bounded)
+- `stats` — Count, total duration, and per-state ratio over a time slice
 - `ids` — List entry ids (newest-first by default)
 - `sync` — Push/pull changesets, manage auth & keys
 - `conflicts` — Inspect and resolve sync conflicts

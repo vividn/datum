@@ -78,6 +78,7 @@ pub enum Command {
     Check(CheckArgs),
 
     Count(CountArgs),
+    Stats(StatsArgs),
     Ids(IdsArgs),
 
     Dayview(DayviewArgs),
@@ -762,6 +763,30 @@ pub struct CountArgs {
     pub field: Option<String>,
     pub group_by: Option<String>,
     pub since: Option<String>,
+    pub json: bool,
+}
+
+/// `datum stats <field[:state]> [SLICE] [--since T] [--until T] [--json]`
+/// — count / total-duration / per-state-ratio rollup over a time slice.
+///
+/// The selector is a whole field (`activity` → every state) or a single
+/// `field:state` (`activity:coding`). SLICE is a shorthand whole-period
+/// positional — a year (`2026`), a month (`2026-06`), or a day
+/// (`2026-06-15`); it is exactly equivalent to the matching
+/// `--since`/`--until` pair. Block durations are reconstructed from
+/// consecutive `occur_time`s per field (switch-block semantics); a
+/// stored `dur` on a block entry is used verbatim instead of the
+/// gap-to-next.
+#[derive(Debug, Default)]
+pub struct StatsArgs {
+    /// `field` or `field:state`. Required — `stats` needs a field.
+    pub selector: Option<String>,
+    /// Shorthand whole-period slice: `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`.
+    pub slice: Option<String>,
+    /// Inclusive lower bound (RFC3339 / `YYYY-MM-DD` / duration offset).
+    pub since: Option<String>,
+    /// Upper bound. A bare `YYYY-MM-DD` covers the whole named day.
+    pub until: Option<String>,
     pub json: bool,
 }
 

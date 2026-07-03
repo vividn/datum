@@ -110,6 +110,55 @@ pub(crate) fn parse_count_args(tail: &[&str]) -> Result<CountArgs> {
     Ok(out)
 }
 
+pub(crate) fn parse_stats_args(tail: &[&str]) -> Result<StatsArgs> {
+    let mut pos: Vec<&str> = Vec::new();
+    let mut out = StatsArgs::default();
+    let mut i = 0;
+    while i < tail.len() {
+        let tok = tail[i];
+        match split_flag(tok) {
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
+            FlagSplit::Long("since") => {
+                let (v, ni) = take_value(tail, i, None, "--since")?;
+                out.since = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("since", v) => {
+                out.since = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("until") => {
+                let (v, ni) = take_value(tail, i, None, "--until")?;
+                out.until = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("until", v) => {
+                out.until = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("json") => {
+                out.json = true;
+                i += 1;
+            }
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    // First positional is the `field[:state]` selector; an optional second
+    // positional is the shorthand time-slice (`2026`, `2026-06`, …).
+    let mut it = pos.into_iter();
+    out.selector = it.next().map(|s| s.to_string());
+    out.slice = it.next().map(|s| s.to_string());
+    if let Some(extra) = it.next() {
+        return Err(ParseError::InvalidArg(format!(
+            "stats takes at most a selector and a time-slice; unexpected '{extra}'"
+        )));
+    }
+    Ok(out)
+}
+
 pub(crate) fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
     let mut pos: Vec<&str> = Vec::new();
     let mut out = IdsArgs::default();
