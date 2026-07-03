@@ -175,6 +175,68 @@ fn spec_set_persists_state_descriptions() {
     );
 }
 
+// ─── da-t9ps: safe incremental `spec add-state` ───────────────────────
+
+#[test]
+fn spec_add_state_merges_positionally_without_dropping_others() {
+    let db = fresh_db();
+    // Seed a two-state field.
+    run_cli(
+        &[
+            "spec",
+            "set",
+            "mood",
+            "--default-verb",
+            "switch",
+            "--state",
+            "happy",
+            "--state",
+            "sad",
+        ],
+        &db,
+    )
+    .expect("seed mood");
+
+    // add-state <FIELD> <NAME> <COLOR> <DESCRIPTION> — all four positionals.
+    run_cli(
+        &["spec", "add-state", "mood", "meh", "yellow", "so-so"],
+        &db,
+    )
+    .expect("add-state with color + description");
+
+    let spec = db.load_spec("mood").unwrap().expect("spec persisted");
+    // Existing states survive; the new one is appended.
+    assert_eq!(
+        spec.allowed_states.as_ref().unwrap(),
+        &["happy".to_string(), "sad".to_string(), "meh".to_string()],
+    );
+    assert_eq!(
+        spec.state_colors.get("meh").map(String::as_str),
+        Some("yellow")
+    );
+    assert_eq!(
+        spec.state_descriptions.get("meh").map(String::as_str),
+        Some("so-so"),
+    );
+}
+
+#[test]
+fn spec_add_state_dash_color_sets_description_only() {
+    let db = fresh_db();
+    run_cli(
+        &["spec", "add-state", "mood", "grumpy", "-", "irritable"],
+        &db,
+    )
+    .expect("dash color, description only");
+
+    let spec = db.load_spec("mood").unwrap().expect("spec persisted");
+    assert!(!spec.state_colors.contains_key("grumpy"));
+    assert_eq!(
+        spec.state_descriptions.get("grumpy").map(String::as_str),
+        Some("irritable"),
+    );
+}
+
 #[test]
 fn spec_set_state_description_with_empty_text_clears_entry() {
     let db = fresh_db();

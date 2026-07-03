@@ -548,12 +548,23 @@ pub struct WhyArgs {
 
 #[derive(Debug)]
 pub enum SpecCommand {
-    /// `datum spec show <FIELD> [--text]` — JSON by default; `--text`
-    /// switches to a human-readable summary including per-state colors
-    /// and descriptions (da-nhzo).
+    /// `datum spec show <FIELD> [--text | --json]` — JSON by default;
+    /// `--text` switches to a human-readable summary including per-state
+    /// colors and descriptions (da-nhzo). `--json` is accepted as the
+    /// explicit form of the default for a round-trippable fetch.
     Show {
         field: String,
         text: bool,
+    },
+    /// `datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]` — merge a
+    /// single state into a field spec without disturbing the others
+    /// (da-t9ps). The safe, incremental counterpart to `spec set --state`,
+    /// which replaces the whole list.
+    AddState {
+        field: String,
+        name: String,
+        color: Option<String>,
+        description: Option<String>,
     },
     Set(Box<SpecSetArgs>),
     List {

@@ -5,7 +5,7 @@ use crate::error::{ParseError, Result};
 pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing spec subcommand (show|set|list|remove)".into(),
+            "missing spec subcommand (show|add-state|set|list|remove)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
@@ -19,6 +19,10 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
                 match split_flag(arg) {
                     FlagSplit::Long("text") => text = true,
                     FlagSplit::LongAttached("text", _) => text = true,
+                    // `--json` is the explicit form of the default; accept it
+                    // so `spec show --json` round-trips instead of erroring.
+                    FlagSplit::Long("json") => text = false,
+                    FlagSplit::LongAttached("json", _) => text = false,
                     FlagSplit::Positional(p) => {
                         if field.is_none() {
                             field = Some(p.to_string());
@@ -35,6 +39,7 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
                 field.ok_or_else(|| ParseError::MissingRequiredKey("<FIELD>".to_string()))?;
             Ok(SpecCommand::Show { field, text })
         }
+        "add-state" => parse_spec_add_state(rest),
         "set" => Ok(SpecCommand::Set(Box::new(parse_spec_set(rest)?))),
         "list" => Ok(SpecCommand::List {
             tag: parse_spec_list_tag(rest)?,
@@ -47,6 +52,45 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
             "unknown spec subcommand: '{other}'"
         ))),
     }
+}
+
+/// `spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]` — up to four
+/// positionals, no flags. COLOR and DESCRIPTION are optional; a lone dash
+/// (`-`) in the COLOR slot leaves the color unset while still supplying a
+/// description (`add-state mood meh - "so-so"`).
+pub(crate) fn parse_spec_add_state(tail: &[&str]) -> Result<SpecCommand> {
+    let mut pos: Vec<&str> = Vec::new();
+    for arg in tail {
+        match split_flag(arg) {
+            FlagSplit::Positional(p) => pos.push(p),
+            other => return Err(unknown_flag(other)),
+        }
+    }
+    let mut it = pos.into_iter();
+    let field = it
+        .next()
+        .ok_or_else(|| ParseError::MissingRequiredKey("<FIELD>".to_string()))?
+        .to_string();
+    let name = it
+        .next()
+        .ok_or_else(|| ParseError::MissingRequiredKey("<NAME>".to_string()))?
+        .to_string();
+    let color = match it.next() {
+        Some("-") | None => None,
+        Some(c) => Some(c.to_string()),
+    };
+    let description = it.next().map(str::to_string);
+    if let Some(extra) = it.next() {
+        return Err(ParseError::InvalidArg(format!(
+            "unexpected argument: '{extra}'"
+        )));
+    }
+    Ok(SpecCommand::AddState {
+        field,
+        name,
+        color,
+        description,
+    })
 }
 
 pub(crate) fn parse_spec_list_tag(tail: &[&str]) -> Result<Option<String>> {

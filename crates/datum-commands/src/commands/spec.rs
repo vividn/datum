@@ -20,6 +20,12 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
             Some(spec) => println!("{}", serde_json::to_string_pretty(&spec)?),
             None => println!("No spec defined for field '{field}'"),
         },
+        SpecCommand::AddState {
+            field,
+            name,
+            color,
+            description,
+        } => spec_add_state(&field, &name, color.as_deref(), description.as_deref(), db)?,
         SpecCommand::Set(args) => spec_set(*args, db)?,
         SpecCommand::List { tag } => {
             if let Some(tag) = tag {
@@ -179,6 +185,13 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
 
     let report = db.save_field_spec_with_report(&spec)?;
     println!("✓ Spec saved for '{}'", spec.field);
+    warn_alias_conflicts(&report);
+    Ok(())
+}
+
+/// Print the `⚠ auto-alias … skipped` lines from a save report to stderr.
+/// Shared by every spec-mutating command that regenerates aliases.
+fn warn_alias_conflicts(report: &datum_core::db::SaveSpecReport) {
     for conflict in &report.skipped {
         match &conflict.reason {
             datum_core::db::AliasConflictReason::UserAlias => eprintln!(
@@ -191,6 +204,48 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             ),
         }
     }
+}
+
+/// `datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]` — merge one
+/// state into a field spec without disturbing the others (da-t9ps).
+///
+/// The incremental, footgun-free counterpart to `spec set --state`, which
+/// replaces the whole `allowed_states` list. Appends NAME to the states
+/// (idempotent — re-adding an existing state just refreshes its color and
+/// description) and, when supplied, records the per-state color and
+/// description alongside it. Creates the spec (Occur default) if absent.
+fn spec_add_state(
+    field: &str,
+    name: &str,
+    color: Option<&str>,
+    description: Option<&str>,
+    db: &Db,
+) -> Result<()> {
+    let mut spec = db
+        .load_spec(field)?
+        .unwrap_or_else(|| FieldSpec::new(field, Action::Occur));
+
+    let states = spec.allowed_states.get_or_insert_with(Vec::new);
+    let existed = states.iter().any(|s| s == name);
+    if !existed {
+        states.push(name.to_string());
+    }
+    if let Some(c) = color {
+        spec.state_colors.insert(name.to_string(), c.to_string());
+    }
+    if let Some(d) = description {
+        spec.state_descriptions
+            .insert(name.to_string(), d.to_string());
+    }
+
+    spec.validate_default_verb()
+        .map_err(|e| anyhow::anyhow!(e))?;
+    spec.regenerate_derived_aliases();
+
+    let report = db.save_field_spec_with_report(&spec)?;
+    let verb = if existed { "updated" } else { "added" };
+    println!("✓ State '{name}' {verb} on '{field}'");
+    warn_alias_conflicts(&report);
     Ok(())
 }
 
@@ -330,6 +385,77 @@ mod tests {
         spec_set(args2, &db).unwrap();
         assert!(db.lookup_alias("sad").unwrap().is_none());
         assert!(db.lookup_alias("happy").unwrap().is_some());
+    }
+
+    #[test]
+    fn cmd_spec_add_state_merges_without_dropping_others() {
+        let db = Db::open_in_memory().unwrap();
+
+        // A live multi-state field.
+        spec_set(
+            SpecSetArgs {
+                field: "mood".to_string(),
+                default_verb: Some("switch".to_string()),
+                states: vec!["happy".to_string(), "sad".to_string()],
+                state_descriptions: vec!["happy=joyful".to_string()],
+                ..Default::default()
+            },
+            &db,
+        )
+        .unwrap();
+
+        // Add one state with color + description — the others must survive.
+        spec_add_state("mood", "meh", Some("yellow"), Some("so-so"), &db).unwrap();
+
+        let spec = db.load_spec("mood").unwrap().unwrap();
+        let states = spec.allowed_states.as_ref().unwrap();
+        assert_eq!(states, &["happy", "sad", "meh"]);
+        assert_eq!(
+            spec.state_colors.get("meh").map(String::as_str),
+            Some("yellow")
+        );
+        assert_eq!(
+            spec.state_descriptions.get("meh").map(String::as_str),
+            Some("so-so")
+        );
+        // Pre-existing description is untouched.
+        assert_eq!(
+            spec.state_descriptions.get("happy").map(String::as_str),
+            Some("joyful")
+        );
+        // The new state's derived alias landed.
+        let meh = db.lookup_alias("meh").unwrap().unwrap();
+        assert_eq!(meh.expands_to, "switch mood meh");
+    }
+
+    #[test]
+    fn cmd_spec_add_state_creates_spec_and_reupdates_idempotently() {
+        let db = Db::open_in_memory().unwrap();
+
+        // No spec yet — add-state creates an Occur-default spec.
+        spec_add_state("energy", "high", Some("green"), Some("wired"), &db).unwrap();
+        let spec = db.load_spec("energy").unwrap().unwrap();
+        assert_eq!(
+            spec.allowed_states.as_deref(),
+            Some(&["high".to_string()][..])
+        );
+
+        // Re-adding refreshes the color but does not duplicate the state or
+        // clobber a description that wasn't re-supplied.
+        spec_add_state("energy", "high", Some("lime"), None, &db).unwrap();
+        let spec = db.load_spec("energy").unwrap().unwrap();
+        assert_eq!(
+            spec.allowed_states.as_deref(),
+            Some(&["high".to_string()][..])
+        );
+        assert_eq!(
+            spec.state_colors.get("high").map(String::as_str),
+            Some("lime")
+        );
+        assert_eq!(
+            spec.state_descriptions.get("high").map(String::as_str),
+            Some("wired")
+        );
     }
 
     #[test]
