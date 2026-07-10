@@ -544,6 +544,20 @@ fn expand_stacked(s: &str) -> Option<Vec<String>> {
         return Some(chars.iter().map(|c| format!("-{c}")).collect());
     }
 
+    // Switch prefix + a multi-char remainder that is neither more switches
+    // nor a lone terminal short (e.g. `-qq10`, `-yy2024`): expand the real
+    // switches and hand the remainder back as a standalone positional, so it
+    // fails the keyless-arg check downstream instead of being silently
+    // swallowed as an attached value on the last switch.
+    if prefix_len >= 1 {
+        let mut out: Vec<String> = chars[..prefix_len]
+            .iter()
+            .map(|c| format!("-{c}"))
+            .collect();
+        out.push(chars[prefix_len..].iter().collect());
+        return Some(out);
+    }
+
     None
 }
 
@@ -1203,6 +1217,19 @@ mod tests {
         // it as `-t` with attached value `D`.
         let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-tD"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "x", "-tD"]));
+    }
+
+    #[test]
+    fn switch_bundle_with_multichar_remainder_splits_off_positional() {
+        // `-qq10` is NOT `-q`: `qq` are two real quick flags and the trailing
+        // `10` is a standalone positional (rejected downstream by the keyless-arg
+        // check), not an attached value silently swallowed by `-q`.
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-qq10"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-q", "-q", "10"]));
+
+        // Same shape with `-y`: `-yy2024` → `-y -y 2024`.
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-yy2024"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-y", "-y", "2024"]));
     }
 
     #[test]
