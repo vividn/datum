@@ -100,7 +100,6 @@
     "parse-duration": "1.1.0",
     "picocolors": "^1.1.0",
     "pluralize": "^8.0.0",
-    "postinstall-postinstall": "^2.1.0",
     "pouchdb": "^9.0.0",
     "pouchdb-adapter-http": "^9.0.0",
     "pouchdb-adapter-idb": "^9.0.0",
