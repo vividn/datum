@@ -306,6 +306,25 @@ fn parse_invocation_inner(
     // alias DB and the dispatch DB stay aligned.)
     let (argv_for_expand, db_flag_tokens) = crate::config::split_off_global_db_flag(argv);
 
+    // da-wdo9: a zero-token tail (`datum`, `datum --db NAME`) is the
+    // documented REPL invocation, not a comma-split. Route it straight
+    // to `parse_argv` — the splitter would hand a single empty side to
+    // the empty-side guard, which cannot tell it apart from the
+    // trailing/doubled comma it exists to reject. Short-circuiting here
+    // keeps that guard strict.
+    if argv_for_expand.len() <= 1 {
+        set_intent_context(IntentContext {
+            raw_input,
+            raw_argv,
+            alias_chain: Vec::new(),
+        });
+        let mut side_argv = Vec::with_capacity(1 + db_flag_tokens.len());
+        side_argv.push(argv0);
+        side_argv.extend(db_flag_tokens);
+        let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
+        return Ok(Invocation::Single(cli));
+    }
+
     let expanded = palias::expand_into_sides(argv_for_expand, resolver)?;
 
     set_intent_context(IntentContext {

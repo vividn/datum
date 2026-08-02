@@ -372,3 +372,68 @@ fn subprocess_help_flag() {
         "help output should describe usage: {stdout:?}"
     );
 }
+
+/// da-wdo9: `datum` with no subcommand drops into the REPL, which on a
+/// closed stdin prints its banner and exits 0. This must be exercised
+/// through the real binary — the parser-layer unit tests
+/// (`parse_argv` → `Command::Repl`) pass either way, because the break
+/// lived one layer up in `parse_invocation`, where a zero-token tail
+/// reached the comma splitter and tripped the empty-side guard.
+#[test]
+fn subprocess_bare_invocation_enters_repl() {
+    let env = Env::new();
+    let out = env.run(&[]);
+    assert_ok(&out, "bare invocation");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("Type `help` for commands"),
+        "bare `datum` must print the REPL banner: stdout={stdout:?} stderr={}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// da-wdo9 / da-g6nl: same for `datum --db NAME` — the global flag is
+/// consumed and the REPL opens against that DB.
+#[test]
+fn subprocess_db_flag_without_subcommand_enters_repl() {
+    let env = Env::new();
+    for args in [&["--db", "test"][..], &["--db=test"][..]] {
+        let out = env.run(args);
+        assert_ok(&out, "--db without subcommand");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains("Type `help` for commands"),
+            "`datum {args:?}` must print the REPL banner: stdout={stdout:?} stderr={}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+}
+
+/// The counterpart the short-circuit must not weaken: a genuinely empty
+/// side (trailing, doubled, or leading standalone `,`) still errors.
+#[test]
+fn subprocess_empty_comma_sides_still_error() {
+    let env = Env::new();
+    // Seed one row so the count below reads a real (migrated) db.
+    assert_ok(&env.run(&["occur", "water"]), "seed row");
+    for args in [
+        &["occur", "coffee", ","][..],
+        &["occur", "coffee", ",", ",", "occur", "tea"][..],
+        &[",", "occur", "tea"][..],
+    ] {
+        let out = env.run(args);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "`datum {args:?}` must still be rejected: stdout={} stderr={}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("empty"),
+            "rejection must name the empty side: stderr={}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+    assert_eq!(env.entry_count(), 1, "no rejected side may write a row");
+}
