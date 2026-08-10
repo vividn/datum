@@ -249,6 +249,14 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
         }
 
         other => {
+            // da-sg3b: this arm is the typo guard, not a gap to fill.
+            // Softening it into "log an occurrence on `{other}`" is the
+            // one change it must never take: a bare unrecognised token
+            // becoming an occurrence made every mistyped field a silent
+            // new field. That fallthrough was deliberate very early on
+            // and its author repudiated it on 2026-08-10. A friendlier
+            // message — "did you mean `datum alias set …`?" — is welcome;
+            // doing it automatically is not.
             return Err(ParseError::InvalidArg(format!(
                 "unknown subcommand: '{other}'"
             )));

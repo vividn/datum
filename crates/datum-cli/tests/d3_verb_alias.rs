@@ -81,6 +81,31 @@ fn default_verb_in_spec_autogenerates_bare_alias() {
     assert_eq!(entries[0].state.as_ref(), Some(&json!("happy")));
 }
 
+/// da-sg3b — the mirror of the test above, and the reason that one is its
+/// control: a bare token that resolves to *nothing* (no user alias, no
+/// spec-derived alias) must error and write nothing.
+///
+/// A bare unrecognised token used to become an occurrence on a brand-new
+/// field of that name, so `datum cofee` looked like a successful log and
+/// quietly grew a `cofee` field. Deliberate very early on, repudiated by
+/// its author 2026-08-10. This test fails loudly if anyone reinstates it.
+#[test]
+fn bare_unknown_token_errors() {
+    let db = fresh_db();
+
+    let err = run_cli(&["cofee"], &db).expect_err("a bare unresolved token must not log");
+    assert!(
+        err.to_string().contains("unknown subcommand: 'cofee'"),
+        "expected the unknown-subcommand error, got: {err}"
+    );
+
+    // The point of erroring is that a typo leaves nothing to clean up.
+    assert!(
+        db.entries_for_field("cofee", None).unwrap().is_empty(),
+        "a rejected token must not create an entry"
+    );
+}
+
 // ─── 3. Cross-field state-alias collision ────────────────────────────────────
 
 /// Two specs declaring the same state name emit colliding state aliases. The

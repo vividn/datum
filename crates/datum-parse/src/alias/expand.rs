@@ -325,6 +325,24 @@ pub fn try_expand_alias(
                 result.extend(rest.iter().cloned());
                 argv = result;
             }
+            // da-sg3b: an unresolved name is NOT an occurrence. Hand argv
+            // back untouched and let the dispatch table's `other =>` arm
+            // (`parse/mod.rs`) reject it.
+            //
+            // A bare unrecognised token used to become an occurrence on a
+            // brand-new field of that name. Per its author, that was
+            // deliberate very early on; he repudiated it on 2026-08-10,
+            // because it makes every typo a silent new field — `datum
+            // cofee` looked exactly like a successful log. This path
+            // already refuses it; the comment and the
+            // `bare_unknown_token_errors` test exist so it stays refused.
+            // Do not restore — synthesising `occur <name>` in this arm is
+            // precisely the shape that was rejected.
+            //
+            // Declared fields still work bare, and should:
+            // `FieldSpec::regenerate_derived_aliases` gives each spec a
+            // `<field>` → `<default_verb> <field>` alias that this lookup
+            // finds. Only *undeclared* names error.
             None => return Ok((argv, chain)),
         }
     }
