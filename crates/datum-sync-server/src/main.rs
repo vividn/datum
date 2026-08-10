@@ -47,6 +47,14 @@ async fn main() -> anyhow::Result<()> {
     let conn = Connection::open(&config.db_path)?;
     db::init_db(&conn)?;
 
+    // da-1am4: say it out loud before the listener comes up. The gate is
+    // enforced in code; this is the half that was missing — an operator who
+    // enables the bypass to restore device-code login gets told what they just
+    // mounted, instead of a silent "listening on ...".
+    if let Some(warning) = config.device_authorize_warning() {
+        tracing::warn!("{warning}");
+    }
+
     let state = Arc::new(
         AppState::new(conn, webauthn, config.jwt_secret)
             .with_device_authorize(config.device_authorize_enabled)

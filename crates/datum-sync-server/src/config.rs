@@ -97,6 +97,24 @@ impl Config {
             auth_ratelimit_per_min,
         })
     }
+
+    /// da-1am4: the operational half of the gate. The route being off by
+    /// default is enforced in code and covered by a test; *turning it on* is a
+    /// deploy-time act that nothing objected to, and the pressure to do it is
+    /// built in — the gate deliberately breaks device-code login, so an
+    /// operator fixing that feature restores an unauthenticated
+    /// account-takeover path and the server starts silently.
+    ///
+    /// Returned rather than logged here so the warning itself is falsifiable:
+    /// deleting it fails a test instead of failing quietly in production.
+    pub fn device_authorize_warning(&self) -> Option<&'static str> {
+        self.device_authorize_enabled.then_some(
+            "SECURITY (da-1am4): DATUM_SYNC_ENABLE_DEVICE_AUTHORIZE is set. \
+             /v0/auth/device-code/authorize is mounted UNAUTHENTICATED — it binds a \
+             pending device code to any username with no proof of control, which is a \
+             full account-takeover path. Enable only behind a real verification step.",
+        )
+    }
 }
 
 #[cfg(test)]
@@ -207,6 +225,34 @@ mod tests {
         ]))
         .unwrap_err();
         assert!(err.to_string().contains("DATUM_SYNC_PORT"));
+    }
+
+    /// da-1am4: the warning must exist exactly when the bypass is mounted.
+    /// Its whole job is to be loud at deploy time, so it needs a falsifier of
+    /// its own — delete the warning and this fails.
+    #[test]
+    fn enabling_device_authorize_warns() {
+        let off = Config::from_lookup(lookup(&[("DATUM_SYNC_JWT_SECRET", GOOD_SECRET)])).unwrap();
+        assert!(!off.device_authorize_enabled);
+        assert!(
+            off.device_authorize_warning().is_none(),
+            "no warning when the bypass is not mounted"
+        );
+
+        let on = Config::from_lookup(lookup(&[
+            ("DATUM_SYNC_JWT_SECRET", GOOD_SECRET),
+            ("DATUM_SYNC_ENABLE_DEVICE_AUTHORIZE", "true"),
+        ]))
+        .unwrap();
+        assert!(on.device_authorize_enabled);
+        let warning = on
+            .device_authorize_warning()
+            .expect("enabling the bypass must warn");
+        assert!(warning.contains("da-1am4"), "warning must cite the bead");
+        assert!(
+            warning.contains("UNAUTHENTICATED"),
+            "warning must name the exposure, not just the flag"
+        );
     }
 
     #[test]
