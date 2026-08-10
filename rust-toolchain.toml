@@ -1,0 +1,19 @@
+# The one place the Rust version is decided — CI reads this file, not `stable`.
+#
+# Why pin at all: on 2026-07-14 stable moved 1.95.0 -> 1.97.1, clippy 1.97 added
+# the `question_mark` lint, and CI's blanket `-D warnings` turned it into a hard
+# error. `main` and five open PRs went red without a line of code changing.
+#
+# To bump: change `channel` here, run the gates locally
+# (`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+# `cargo nextest run --workspace`), fix whatever the new release flags, and merge
+# that as its own PR. Upgrading is a deliberate act, not something that happens
+# to us on a Tuesday.
+[toolchain]
+channel = "1.97.1"
+# `profile` is explicit because rustup's own default is machine-configurable;
+# `default` is what supplies rustdoc for `cargo test --doc`.
+profile = "default"
+components = ["rustfmt", "clippy"]
+# `wasm-check` builds datum-sync-client for the browser.
+targets = ["wasm32-unknown-unknown"]
