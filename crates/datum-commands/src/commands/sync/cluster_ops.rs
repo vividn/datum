@@ -9,8 +9,7 @@
 use anyhow::{anyhow, Context, Result};
 use datum_sync_client::http::{self, Session, SessionError};
 
-use super::{build_client, build_session, resolve_server};
-use crate::commands::sync::key::load_token;
+use super::{build_client, build_session, require_token, resolve_server};
 
 /// Bump the cluster's generation on whichever server the active DB is
 /// configured to sync against. Returns the new generation the server
@@ -25,8 +24,7 @@ use crate::commands::sync::key::load_token;
 pub fn bump_generation_for_current_server(cluster_id: &str) -> Result<u64> {
     let server = resolve_server(None, None)?;
     let client = build_client()?;
-    let token = load_token(&server)?
-        .ok_or_else(|| anyhow!("not logged in to {server} — run `datum sync login` first"))?;
+    let token = require_token(&server)?;
     let session = build_session(&server, &token);
     let new_generation = run_bump(&client, &server, &session, cluster_id)
         .with_context(|| format!("bump cluster {cluster_id} generation against {server}"))?;

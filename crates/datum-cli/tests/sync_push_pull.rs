@@ -471,8 +471,8 @@ fn sync_without_login_errors_cleanly() {
     let err = run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db).unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("not logged in"),
-        "expected not-logged-in error, got: {msg}"
+        msg.contains("DATUM_SYNC_TOKEN"),
+        "error should point at the working bootstrap (DATUM_SYNC_TOKEN), got: {msg}"
     );
 }
 

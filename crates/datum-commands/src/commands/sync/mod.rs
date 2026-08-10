@@ -366,12 +366,30 @@ pub struct Preflight {
     pub device_id: String,
 }
 
+/// Load the persisted bearer for `server`, or explain — accurately — how to
+/// get one.
+///
+/// The supported bootstrap on a default relay is an admin-minted token
+/// exported as `DATUM_SYNC_TOKEN`; `datum sync login` (the passkey /
+/// device-code path) only completes once the relay enables it. Lead with the
+/// working path so a new user isn't sent to a dead end (da-gqp5).
+pub(crate) fn require_token(server: &str) -> Result<datum_sync_client::PersistedAuthToken> {
+    crate::commands::sync::key::load_token(server)?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "no sync credentials for {server}.\n\
+             Get a token from the relay admin — on the relay host, run:\n    \
+             datum-sync-server mint-token <your-username>\n\
+             then export it on this device and re-run:\n    \
+             export DATUM_SYNC_TOKEN=<token>\n\
+             (`datum sync login` is the passkey path — available once the relay enables it.)"
+        )
+    })
+}
+
 pub fn preflight_checks(server: &str) -> Result<Preflight> {
-    use crate::commands::sync::key::load_token;
     use crate::config::{device_id, master_key_path, server_host_from_url};
 
-    let token = load_token(server)?
-        .ok_or_else(|| anyhow::anyhow!("not logged in — run `datum sync login` first"))?;
+    let token = require_token(server)?;
 
     let host = server_host_from_url(server);
     let key_path = master_key_path(&host)?;

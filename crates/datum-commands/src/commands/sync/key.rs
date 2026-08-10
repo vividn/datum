@@ -69,8 +69,7 @@ pub fn init_with_client(
     rand::thread_rng().fill_bytes(&mut master);
     let wrapped = wrap_master_key(&passphrase, &master)?;
 
-    let token = load_token(server)?
-        .ok_or_else(|| anyhow!("not logged in — run `datum sync login` first"))?;
+    let token = crate::commands::sync::require_token(server)?;
     let session = crate::commands::sync::build_session(server, &token);
     session.run(client, |bearer| {
         upload_wrapped(client, server, bearer, &wrapped)
@@ -103,8 +102,7 @@ pub fn unlock_with_client(
 ) -> Result<Zeroizing<[u8; 32]>> {
     let host = server_host_from_url(server);
     let key_path = master_key_path(&host)?;
-    let token = load_token(server)?
-        .ok_or_else(|| anyhow!("not logged in — run `datum sync login` first"))?;
+    let token = crate::commands::sync::require_token(server)?;
     let session = crate::commands::sync::build_session(server, &token);
     let wrapped = session
         .run(client, |bearer| fetch_wrapped(client, server, bearer))?
@@ -146,8 +144,7 @@ pub fn rotate_passphrase_with_client(
         anyhow::bail!("passphrase cannot be empty");
     }
     let wrapped = wrap_master_key(&new_pass, &master)?;
-    let token = load_token(server)?
-        .ok_or_else(|| anyhow!("not logged in — run `datum sync login` first"))?;
+    let token = crate::commands::sync::require_token(server)?;
     let session = crate::commands::sync::build_session(server, &token);
     session.run(client, |bearer| {
         upload_wrapped(client, server, bearer, &wrapped)
