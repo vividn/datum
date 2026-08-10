@@ -1349,20 +1349,37 @@ fn format_now_time_utc(
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 fn format_ago(secs: i64) -> String {
+    // A negative age means the entry is stamped ahead of now. Sub-minute
+    // negatives are clock skew and still read as the present, but anything
+    // further out is a genuinely future-stamped entry and has to say so:
+    // a mis-typed `-t` (a wrong tz offset, say) otherwise renders as
+    // "just now" and a state that has not started reads as the current one.
     if secs < 0 {
-        return "just now".to_string();
+        let ahead = -secs;
+        return if ahead < 60 {
+            "just now".to_string()
+        } else {
+            format!("in {}", format_span(ahead))
+        };
     }
     if secs < 60 {
-        format!("{secs}s ago")
-    } else if secs < 3600 {
-        format!("{}m ago", secs / 60)
+        return format!("{secs}s ago");
+    }
+    format!("{} ago", format_span(secs))
+}
+
+/// Coarse minute/hour span shared by the past (`… ago`) and future
+/// (`in …`) renderings of the now-view time column.
+fn format_span(secs: i64) -> String {
+    if secs < 3600 {
+        format!("{}m", secs / 60)
     } else {
         let h = secs / 3600;
         let m = (secs % 3600) / 60;
         if m == 0 {
-            format!("{h}h ago")
+            format!("{h}h")
         } else {
-            format!("{h}h{m}m ago")
+            format!("{h}h{m}m")
         }
     }
 }
@@ -1751,6 +1768,27 @@ mod tests {
             bg_count >= 2,
             "expected ≥2 bg escapes for two chips: {state:?}"
         );
+    }
+
+    /// The now-view time column must not read a future stamp as the present.
+    /// Sub-minute negatives stay "just now" (clock skew); past renderings are
+    /// unchanged; anything genuinely ahead says how far.
+    #[test]
+    fn format_ago_names_the_future_instead_of_calling_it_just_now() {
+        // Past side — unchanged.
+        assert_eq!(format_ago(0), "0s ago");
+        assert_eq!(format_ago(59), "59s ago");
+        assert_eq!(format_ago(60), "1m ago");
+        assert_eq!(format_ago(3599), "59m ago");
+        assert_eq!(format_ago(3600), "1h ago");
+        assert_eq!(format_ago(3660), "1h1m ago");
+        // Clock skew — still the present.
+        assert_eq!(format_ago(-1), "just now");
+        assert_eq!(format_ago(-59), "just now");
+        // Genuinely ahead — must say so, not "just now".
+        assert_eq!(format_ago(-60), "in 1m");
+        assert_eq!(format_ago(-3600), "in 1h");
+        assert_eq!(format_ago(-10080), "in 2h48m");
     }
 
     // ─── Test helpers ────────────────────────────────────────────────────────
