@@ -120,11 +120,15 @@ jobs:
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
 
-      # Runs the four pre-v1 honesty gates from `xtask check`:
+      # Runs the repo-hygiene gates — the four pre-v1 honesty gates:
       #   - no-cfg-any      — no #[cfg(any())] dead-test trees
       #   - no-r2-stubs     — no `bail!("...stub — R2 extracts...")` shims
       #   - no-legacy-verbs — no Verb::{Occur,Start,Stop,Add} outside migrations
       #   - max-file-size   — no .rs file in crates/ above MAX_FILE_LOC
+      # and one anti-drift gate:
+      #   - toolchain-pin   — every Dockerfile's `FROM rust:<tag>` agrees with
+      #                       rust-toolchain.toml (a stale tag still builds,
+      #                       so nothing else would catch it)
       # See `xtask/src/main.rs` for the rules each gate enforces and
       # `scripts/check-honesty.sh` for the same battery as a local hook.
       #

@@ -45,9 +45,10 @@ fn print_usage() {
     eprintln!("                        all   full CI-parity battery: the lint gates,");
     eprintln!("                              then fmt, clippy, build, tests, doc tests");
     eprintln!("                              (slow — it compiles the workspace)");
-    eprintln!("                        lint  the four repo-hygiene gates only (fast)");
+    eprintln!("                        lint  the repo-hygiene gates only (fast)");
     eprintln!("                        one gate: no-cfg-any | no-r2-stubs |");
-    eprintln!("                                  no-legacy-verbs | max-file-size");
+    eprintln!("                                  no-legacy-verbs | max-file-size |");
+    eprintln!("                                  toolchain-pin");
     eprintln!("  bump-version        bump the workspace version from HEAD's commit type");
     eprintln!("                        flags: --push --dry-run --subject <msg>");
 }
@@ -420,9 +421,11 @@ const MAX_FILE_LOC: usize = 3500;
 /// Top-level entry for `cargo xtask check ...` — two batteries, plus
 /// every gate addressable on its own by name.
 ///
-/// * `lint` — the four in-process repo-hygiene gates (`da-8y2q.7`).
-///   Each scans the tree under `crates/` for a regression pattern.
-///   Compiles nothing, so it's the fast pre-commit loop.
+/// * `lint` — the in-process repo-hygiene gates: the four pre-v1
+///   honesty gates (`da-8y2q.7`), which scan the tree under `crates/`
+///   for a regression pattern, plus `toolchain-pin`, which reads
+///   `rust-toolchain.toml` and every Dockerfile. Compiles nothing, so
+///   it's the fast pre-commit loop.
 /// * `all` — `lint`, then the gates that actually compile the code:
 ///   `cargo fmt --check`, `cargo clippy -D warnings`, `cargo build`,
 ///   `cargo nextest run`, and the doc tests. Mirrors the `build-and-test`,
@@ -450,9 +453,10 @@ fn check(args: Vec<String>) -> Result<()> {
         "no-r2-stubs" => check_no_r2_stubs(),
         "no-legacy-verbs" => check_no_legacy_verbs(),
         "max-file-size" => check_max_file_size(),
+        "toolchain-pin" => check_toolchain_pin(),
         "" => bail!(
             "check requires a subcommand: all | lint | no-cfg-any | no-r2-stubs | \
-             no-legacy-verbs | max-file-size"
+             no-legacy-verbs | max-file-size | toolchain-pin"
         ),
         other => bail!("unknown check: {other}"),
     }
@@ -465,14 +469,18 @@ type CheckFn = fn() -> Result<()>;
 /// the one a reader can copy out of the output and re-run by hand).
 #[derive(Clone, Copy)]
 enum Step {
-    Gate(&'static str, CheckFn),
+    /// Name, what it reads, and the gate itself. The scope is carried
+    /// per-gate rather than assumed: the gates no longer all read the
+    /// same tree, and a step that misreports its own reach is the defect
+    /// this printing exists to prevent.
+    Gate(&'static str, &'static str, CheckFn),
     Cargo(&'static str, &'static [&'static str]),
 }
 
 impl Step {
     fn name(&self) -> &'static str {
         match self {
-            Step::Gate(name, _) | Step::Cargo(name, _) => name,
+            Step::Gate(name, ..) | Step::Cargo(name, _) => name,
         }
     }
 
@@ -480,26 +488,32 @@ impl Step {
     /// output names its own coverage rather than asking for trust.
     fn detail(&self) -> String {
         match self {
-            Step::Gate(..) => "in-process scan of crates/".to_string(),
+            Step::Gate(_, scope, _) => format!("in-process scan of {scope}"),
             Step::Cargo(_, args) => format!("cargo {}", args.join(" ")),
         }
     }
 
     fn run(&self) -> Result<()> {
         match self {
-            Step::Gate(_, run) => run(),
+            Step::Gate(_, _, run) => run(),
             Step::Cargo(_, args) => run_cargo(args),
         }
     }
 }
 
-/// The four pre-v1 honesty gates (`da-8y2q.7`) — `check lint`, and the
-/// head of `check all`.
+/// The repo-hygiene gates — `check lint`, and the head of `check all`.
+/// The first four are the pre-v1 honesty gates (`da-8y2q.7`); the last
+/// keeps the Rust version single-sourced.
 const LINT_STEPS: &[Step] = &[
-    Step::Gate("no-cfg-any", check_no_cfg_any),
-    Step::Gate("no-r2-stubs", check_no_r2_stubs),
-    Step::Gate("no-legacy-verbs", check_no_legacy_verbs),
-    Step::Gate("max-file-size", check_max_file_size),
+    Step::Gate("no-cfg-any", "crates/", check_no_cfg_any),
+    Step::Gate("no-r2-stubs", "crates/", check_no_r2_stubs),
+    Step::Gate("no-legacy-verbs", "crates/", check_no_legacy_verbs),
+    Step::Gate("max-file-size", "crates/", check_max_file_size),
+    Step::Gate(
+        "toolchain-pin",
+        "rust-toolchain.toml + every Dockerfile",
+        check_toolchain_pin,
+    ),
 ];
 
 /// The compiling half of `check all`, ordered cheapest-first so a stray
@@ -758,6 +772,130 @@ fn check_max_file_size() -> Result<()> {
     );
 }
 
+/// Keeps the Rust version single-sourced. `rust-toolchain.toml` decides
+/// it; a Dockerfile's `FROM rust:<tag>` is only a cache hint, because
+/// rustup obeys the pin whatever the tag says. That is exactly what makes
+/// a stale tag dangerous rather than loud: the image still builds, so
+/// nothing goes red, and the tag sat at `1.85` long after the workspace
+/// moved on. The gate is the price of letting the version appear twice —
+/// remove it and the second copy is free to drift again.
+///
+/// Fails if the pin is unreadable, if no Dockerfile names a `rust:` base
+/// (a gate that finds nothing must not pass), or if any tag disagrees.
+fn check_toolchain_pin() -> Result<()> {
+    let root = workspace_root()?;
+    let pin_path = root.join("rust-toolchain.toml");
+    let pin =
+        fs::read_to_string(&pin_path).with_context(|| format!("reading {}", pin_path.display()))?;
+    let channel = toolchain_channel(&pin)
+        .with_context(|| format!("no `[toolchain] channel` in {}", pin_path.display()))?;
+
+    let dockerfiles = walk_files(&root, &|p| {
+        p.file_name()
+            .and_then(|s| s.to_str())
+            .is_some_and(|n| n.starts_with("Dockerfile"))
+    })?;
+
+    let mut examined = 0usize;
+    let mut mismatches: Vec<String> = Vec::new();
+    for path in &dockerfiles {
+        let content =
+            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        for (line, tag) in rust_base_tags(&content) {
+            examined += 1;
+            if tag != channel {
+                mismatches.push(format!(
+                    "  {}:{line}: base image is rust:{tag}, pin says {channel}",
+                    path.display()
+                ));
+            }
+        }
+    }
+
+    if examined == 0 {
+        bail!(
+            "no `FROM rust:<tag>` line in any of the {} Dockerfile(s) under {} — \
+             this gate had nothing to compare and would have passed vacuously; \
+             fix the scan in `xtask/src/main.rs` rather than deleting the gate.",
+            dockerfiles.len(),
+            root.display()
+        );
+    }
+    if mismatches.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "{} Dockerfile base tag(s) disagree with rust-toolchain.toml:\n{}\n\
+         retag to rust:{channel} — the pin decides the version, the tag only \
+         decides whether the base image's compiler can be reused.",
+        mismatches.len(),
+        mismatches.join("\n")
+    )
+}
+
+/// The `channel` value from a rust-toolchain.toml's `[toolchain]` table.
+/// A `channel` key in any other table isn't the pin, and comment lines
+/// (the pin file's header talks *about* `channel`) never count.
+fn toolchain_channel(pin: &str) -> Option<&str> {
+    let mut in_toolchain = false;
+    for line in pin.lines() {
+        let t = line.trim_start();
+        if t.starts_with('#') {
+            continue;
+        }
+        if t.starts_with('[') {
+            in_toolchain = t.starts_with("[toolchain]");
+        } else if in_toolchain {
+            if let Some(v) = quoted_value(t, "channel") {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// `key = "value"` → `Some("value")`. A longer key that merely starts with
+/// `key` falls out on its own: the remainder won't begin with `=`.
+fn quoted_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let rest = line
+        .trim_start()
+        .strip_prefix(key)?
+        .trim_start()
+        .strip_prefix('=')?
+        .trim_start()
+        .strip_prefix('"')?;
+    Some(&rest[..rest.find('"')?])
+}
+
+/// Every `rust:` base image a Dockerfile builds on, as `(line, version)`.
+/// Handles the shapes that actually occur: a lowercase instruction, a
+/// `--platform` flag, a registry-qualified name. The variant suffix is
+/// dropped (`1.97.1-slim` → `1.97.1`) so moving to a slim or alpine base
+/// isn't a spurious failure; a tag naming no version (`rust:latest`) is
+/// returned as-is and therefore matches no pin, which is the point.
+fn rust_base_tags(dockerfile: &str) -> Vec<(usize, &str)> {
+    let mut out: Vec<(usize, &str)> = Vec::new();
+    for (i, line) in dockerfile.lines().enumerate() {
+        let t = line.trim_start();
+        if t.starts_with('#') || !t.get(..5).is_some_and(|h| h.eq_ignore_ascii_case("FROM ")) {
+            continue;
+        }
+        let Some(image) = t[5..].split_whitespace().find(|tok| !tok.starts_with("--")) else {
+            continue;
+        };
+        // `docker.io/library/rust:1.97.1` and `rust:1.97.1` alike.
+        let Some(tag) = image
+            .rsplit('/')
+            .next()
+            .and_then(|r| r.strip_prefix("rust:"))
+        else {
+            continue;
+        };
+        out.push((i + 1, tag.split('-').next().unwrap_or(tag)));
+    }
+    out
+}
+
 /// Strip everything from the first `//` onward so comment text
 /// doesn't trip the substring checks. Doesn't handle block comments
 /// `/* … */`; they're rare enough in this codebase that we accept
@@ -812,16 +950,23 @@ fn format_hits(hits: &[String]) -> String {
         .join("\n")
 }
 
-/// Recursively collect every `*.rs` file under `dir`. Hidden
-/// directories (e.g. `.git`) and `target/` are skipped — neither
-/// owns source code we want to lint.
+/// Recursively collect every `*.rs` file under `dir`.
 fn walk_rs(dir: &Path) -> Result<Vec<PathBuf>> {
+    walk_files(dir, &|p| {
+        p.extension().and_then(|s| s.to_str()) == Some("rs")
+    })
+}
+
+/// Recursively collect every file under `dir` that `keep` accepts. Hidden
+/// directories (e.g. `.git`) and `target/` are skipped — neither owns
+/// source we want to lint.
+fn walk_files(dir: &Path, keep: &dyn Fn(&Path) -> bool) -> Result<Vec<PathBuf>> {
     let mut out: Vec<PathBuf> = Vec::new();
-    walk_rs_into(dir, &mut out)?;
+    walk_files_into(dir, keep, &mut out)?;
     Ok(out)
 }
 
-fn walk_rs_into(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+fn walk_files_into(dir: &Path, keep: &dyn Fn(&Path) -> bool, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(dir).with_context(|| format!("reading dir {}", dir.display()))? {
         let entry = entry?;
         let path = entry.path();
@@ -833,8 +978,8 @@ fn walk_rs_into(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
             continue;
         }
         if path.is_dir() {
-            walk_rs_into(&path, out)?;
-        } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
+            walk_files_into(&path, keep, out)?;
+        } else if keep(&path) {
             out.push(path);
         }
     }
@@ -919,6 +1064,58 @@ mod tests {
         // The dependency's version = "1" must be untouched.
         assert!(out.contains("serde = { version = \"1\" }"));
         assert_eq!(read_workspace_version(&out).unwrap(), "0.2.0");
+    }
+
+    #[test]
+    fn toolchain_channel_reads_only_the_pin() {
+        let pin = "# To bump: change `channel` here, then run the gates.\n\
+                   [toolchain]\nchannel = \"1.97.1\"\nprofile = \"default\"\n";
+        assert_eq!(toolchain_channel(pin), Some("1.97.1"));
+        // A `channel` under some other table is not the pin.
+        assert_eq!(toolchain_channel("[other]\nchannel = \"nope\"\n"), None);
+        assert_eq!(
+            toolchain_channel("[toolchain]\nprofile = \"default\"\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn rust_base_tags_finds_the_version_it_must_compare() {
+        assert_eq!(
+            rust_base_tags("FROM rust:1.97.1 AS builder\n"),
+            vec![(1, "1.97.1")]
+        );
+        // Variant suffixes compare on the version alone.
+        assert_eq!(
+            rust_base_tags("FROM rust:1.97.1-slim\n"),
+            vec![(1, "1.97.1")]
+        );
+        // Lowercase instruction, --platform flag, registry-qualified name.
+        assert_eq!(
+            rust_base_tags("from --platform=$BUILDPLATFORM docker.io/library/rust:1.85\n"),
+            vec![(1, "1.85")]
+        );
+        // Comments and other bases aren't ours to police.
+        assert_eq!(
+            rust_base_tags("# FROM rust:1.0\nFROM debian:bookworm-slim\n"),
+            vec![]
+        );
+        // A floating tag names no version, so it can never agree with a pin.
+        assert_eq!(rust_base_tags("FROM rust:latest\n"), vec![(1, "latest")]);
+    }
+
+    #[test]
+    fn quoted_value_only_matches_the_whole_key() {
+        assert_eq!(
+            quoted_value("channel = \"1.97.1\"", "channel"),
+            Some("1.97.1")
+        );
+        assert_eq!(
+            quoted_value("  channel=\"1.97.1\"", "channel"),
+            Some("1.97.1")
+        );
+        assert_eq!(quoted_value("channel-override = \"x\"", "channel"), None);
+        assert_eq!(quoted_value("profile = \"default\"", "channel"), None);
     }
 
     #[test]
