@@ -127,5 +127,12 @@ jobs:
       #   - max-file-size   — no .rs file in crates/ above MAX_FILE_LOC
       # See `xtask/src/main.rs` for the rules each gate enforces and
       # `scripts/check-honesty.sh` for the same battery as a local hook.
-      - name: cargo xtask check all
-        run: cargo run -q -p xtask -- check all
+      #
+      # `check lint`, not `check all`: this job does not install
+      # cargo-nextest, so `check all` would fail at its nextest step. And
+      # running it here would duplicate the `lint` and `build-and-test`
+      # jobs, which already cover the fmt, clippy, build and test steps
+      # `all` adds. `all` is the local one-command mirror of CI; this job
+      # is its hygiene quarter.
+      - name: cargo xtask check lint
+        run: cargo run -q -p xtask -- check lint

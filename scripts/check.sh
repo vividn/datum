@@ -14,6 +14,10 @@
 #   * build-and-test job: cargo build, nextest run, doc tests
 #   * lint job:           cargo fmt --check, cargo clippy -D warnings
 #
+# `cargo xtask check all` runs the same battery plus the four honesty
+# gates from the `honesty` job, and fails instead of falling back when a
+# tool is missing. Keep the two in step when either changes.
+#
 # Falls back to `cargo test` when cargo-nextest isn't installed so the
 # script stays usable on a fresh checkout. CI itself always uses nextest.
 #

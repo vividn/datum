@@ -6,7 +6,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 use datum_parse::help::{render_markdown, render_roff, COMMANDS};
@@ -41,9 +41,13 @@ fn print_usage() {
     eprintln!("tasks:");
     eprintln!("  manpages [DIR]      write `man/datum.1` and `man/datum-NAME.1` files");
     eprintln!("  readme              rewrite the autogen Commands section in README.md");
-    eprintln!("  check <which>       run a pre-v1 honesty gate (da-8y2q.7)");
-    eprintln!("                        which: all | no-cfg-any | no-r2-stubs |");
-    eprintln!("                               no-legacy-verbs | max-file-size");
+    eprintln!("  check <which>       run a check battery, or one gate by name");
+    eprintln!("                        all   full CI-parity battery: the lint gates,");
+    eprintln!("                              then fmt, clippy, build, tests, doc tests");
+    eprintln!("                              (slow — it compiles the workspace)");
+    eprintln!("                        lint  the four repo-hygiene gates only (fast)");
+    eprintln!("                        one gate: no-cfg-any | no-r2-stubs |");
+    eprintln!("                                  no-legacy-verbs | max-file-size");
     eprintln!("  bump-version        bump the workspace version from HEAD's commit type");
     eprintln!("                        flags: --push --dry-run --subject <msg>");
 }
@@ -413,55 +417,222 @@ fn run_git(root: &Path, args: &[&str]) -> Result<String> {
 ///   `+200`.
 const MAX_FILE_LOC: usize = 3500;
 
-/// Top-level entry for `cargo xtask check ...`. Each subcommand
-/// scans the workspace tree under `crates/` for a specific
-/// regression pattern and exits non-zero (via `bail!`) when it finds
-/// one. `all` runs every gate.
+/// Top-level entry for `cargo xtask check ...` — two batteries, plus
+/// every gate addressable on its own by name.
+///
+/// * `lint` — the four in-process repo-hygiene gates (`da-8y2q.7`).
+///   Each scans the tree under `crates/` for a regression pattern.
+///   Compiles nothing, so it's the fast pre-commit loop.
+/// * `all` — `lint`, then the gates that actually compile the code:
+///   `cargo fmt --check`, `cargo clippy -D warnings`, `cargo build`,
+///   `cargo nextest run`, and the doc tests. Mirrors the `build-and-test`,
+///   `lint` and `honesty` jobs of `.github/workflows/ci.yml`.
+///
+/// **What `all` does not cover**, stated here and printed after every
+/// run, because a battery whose name outruns its contents is exactly
+/// the defect this shape exists to prevent: the `e2e-full` and
+/// `wasm-check` jobs, both separate jobs in that same workflow. See
+/// `UNCOVERED_BY_ALL`.
+///
+/// A step that *cannot* run — `cargo-nextest` not installed, say — is a
+/// failure, never a skip. Quietly dropping a step and still printing
+/// green is the one outcome this command must never produce.
 fn check(args: Vec<String>) -> Result<()> {
     let which = args.first().map(String::as_str).unwrap_or("");
     match which {
-        "all" => check_all(),
+        "all" => run_battery(
+            "all",
+            &[LINT_STEPS, COMPILE_STEPS].concat(),
+            UNCOVERED_BY_ALL,
+        ),
+        "lint" => run_battery("lint", LINT_STEPS, UNCOVERED_BY_LINT),
         "no-cfg-any" => check_no_cfg_any(),
         "no-r2-stubs" => check_no_r2_stubs(),
         "no-legacy-verbs" => check_no_legacy_verbs(),
         "max-file-size" => check_max_file_size(),
         "" => bail!(
-            "check requires a subcommand: all | no-cfg-any | no-r2-stubs | \
+            "check requires a subcommand: all | lint | no-cfg-any | no-r2-stubs | \
              no-legacy-verbs | max-file-size"
         ),
         other => bail!("unknown check: {other}"),
     }
 }
 
-fn check_all() -> Result<()> {
-    // Run every gate, collecting failures so a single bad commit
-    // doesn't hide adjacent ones. Bails with a joined message at the
-    // end if anything failed.
-    let mut failures: Vec<String> = Vec::new();
-    for (name, run) in CHECKS {
-        match run() {
-            Ok(()) => eprintln!("  ✓ {name}"),
-            Err(e) => failures.push(format!("  ✗ {name}: {e}")),
+type CheckFn = fn() -> Result<()>;
+
+/// One step of a battery: an in-process hygiene gate, or a `cargo`
+/// invocation shelled out so it is verbatim the command CI runs (and
+/// the one a reader can copy out of the output and re-run by hand).
+#[derive(Clone, Copy)]
+enum Step {
+    Gate(&'static str, CheckFn),
+    Cargo(&'static str, &'static [&'static str]),
+}
+
+impl Step {
+    fn name(&self) -> &'static str {
+        match self {
+            Step::Gate(name, _) | Step::Cargo(name, _) => name,
         }
+    }
+
+    /// What the step actually does, printed alongside the name so the
+    /// output names its own coverage rather than asking for trust.
+    fn detail(&self) -> String {
+        match self {
+            Step::Gate(..) => "in-process scan of crates/".to_string(),
+            Step::Cargo(_, args) => format!("cargo {}", args.join(" ")),
+        }
+    }
+
+    fn run(&self) -> Result<()> {
+        match self {
+            Step::Gate(_, run) => run(),
+            Step::Cargo(_, args) => run_cargo(args),
+        }
+    }
+}
+
+/// The four pre-v1 honesty gates (`da-8y2q.7`) — `check lint`, and the
+/// head of `check all`.
+const LINT_STEPS: &[Step] = &[
+    Step::Gate("no-cfg-any", check_no_cfg_any),
+    Step::Gate("no-r2-stubs", check_no_r2_stubs),
+    Step::Gate("no-legacy-verbs", check_no_legacy_verbs),
+    Step::Gate("max-file-size", check_max_file_size),
+];
+
+/// The compiling half of `check all`, ordered cheapest-first so a stray
+/// comma fails in seconds instead of after the test suite.
+const COMPILE_STEPS: &[Step] = &[
+    Step::Cargo("fmt", &["fmt", "--all", "--", "--check"]),
+    Step::Cargo(
+        "clippy",
+        &[
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    ),
+    Step::Cargo("build", &["build", "--workspace", "--all-targets"]),
+    Step::Cargo(
+        "nextest",
+        &["nextest", "run", "--workspace", "--no-fail-fast"],
+    ),
+    Step::Cargo("doc-tests", &["test", "--workspace", "--doc"]),
+];
+
+/// CI jobs `check all` deliberately leaves out, printed after every run.
+/// Naming the gap is the point: `check all` previously meant four
+/// hygiene lints while its name implied the lot, and an unnamed gap is
+/// how that happens.
+const UNCOVERED_BY_ALL: &[&str] = &[
+    "e2e-full   — cargo nextest run -p datum-commands --test e2e --features e2e-full \
+     (feature-gated cohort; its own CI job)",
+    "wasm-check — cargo check -p datum-sync-client --target wasm32-unknown-unknown \
+     --no-default-features --features wasm (needs the wasm32 target installed)",
+];
+
+/// `lint` is the fast subset and must not be mistaken for the battery.
+const UNCOVERED_BY_LINT: &[&str] = &[
+    "everything that compiles — fmt, clippy, build, tests, doc tests: \
+     run `cargo xtask check all`",
+];
+
+/// Run a battery, printing each step and its result as it goes, then
+/// listing what actually executed and what was not covered.
+///
+/// Failures are collected rather than short-circuited — the original
+/// `check all` did this deliberately so one bad commit can't hide
+/// adjacent breakage, and it matters more now that a step can be a
+/// twenty-minute test run.
+fn run_battery(battery: &str, steps: &[Step], uncovered: &[&str]) -> Result<()> {
+    eprintln!("cargo xtask check {battery} — {} step(s)", steps.len());
+    let mut failures: Vec<String> = Vec::new();
+    let mut ran: Vec<&str> = Vec::new();
+    for step in steps {
+        eprintln!("\n── {} — {}", step.name(), step.detail());
+        ran.push(step.name());
+        match step.run() {
+            Ok(()) => eprintln!("  ✓ {}", step.name()),
+            Err(e) => {
+                eprintln!("  ✗ {}: {e}", step.name());
+                failures.push(format!("  ✗ {}: {e}", step.name()));
+            }
+        }
+    }
+
+    eprintln!("\n── summary");
+    eprintln!("  ran {} step(s): {}", ran.len(), ran.join(", "));
+    for line in uncovered {
+        eprintln!("  not covered: {line}");
     }
     if !failures.is_empty() {
         bail!(
-            "{} check(s) failed:\n{}",
+            "{} of {} step(s) failed:\n{}",
             failures.len(),
+            steps.len(),
             failures.join("\n")
         );
     }
+    eprintln!("  ✓ all {} step(s) passed", steps.len());
     Ok(())
 }
 
-type CheckFn = fn() -> Result<()>;
+/// Cargo subcommands that ship as a separately-installed binary, with
+/// the command that installs each. Used only to turn a missing tool
+/// into a message that says so.
+const CARGO_PLUGINS: &[(&str, &str)] = &[("nextest", "cargo install cargo-nextest --locked")];
 
-const CHECKS: &[(&str, CheckFn)] = &[
-    ("no-cfg-any", check_no_cfg_any),
-    ("no-r2-stubs", check_no_r2_stubs),
-    ("no-legacy-verbs", check_no_legacy_verbs),
-    ("max-file-size", check_max_file_size),
-];
+/// Shell out to `cargo <args>` at the workspace root, inheriting stdio
+/// so a failure is diagnosable in the terminal it ran in.
+///
+/// A tool that isn't installed is an error here, not a fallback.
+/// `scripts/check.sh` substitutes `cargo test` when `cargo-nextest` is
+/// missing, which is right for a convenience script and wrong for a
+/// gate: the run would go green having tested something other than what
+/// it claimed.
+fn run_cargo(args: &[&str]) -> Result<()> {
+    let root = workspace_root()?;
+    // `CARGO` is set when we're invoked as `cargo xtask`; the fallback
+    // keeps the binary usable when run directly.
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let status = Command::new(&cargo)
+        .current_dir(&root)
+        .args(args)
+        .status()
+        .with_context(|| format!("could not run `{cargo}` — is cargo on PATH?"))?;
+    if status.success() {
+        return Ok(());
+    }
+    let sub = args.first().copied().unwrap_or_default();
+    if let Some((_, install)) = CARGO_PLUGINS.iter().find(|(name, _)| *name == sub) {
+        if !plugin_installed(&cargo, sub) {
+            bail!(
+                "`cargo {sub}` is not installed — install it with `{install}`. \
+                 This step fails rather than falling back to another command, so a \
+                 green run always means every named gate actually ran."
+            );
+        }
+    }
+    match status.code() {
+        Some(code) => bail!("`cargo {}` exited {code}", args.join(" ")),
+        None => bail!("`cargo {}` was killed by a signal", args.join(" ")),
+    }
+}
+
+/// Whether `cargo <sub>` resolves to an installed plugin.
+fn plugin_installed(cargo: &str, sub: &str) -> bool {
+    Command::new(cargo)
+        .args([sub, "--version"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
 
 /// Locks in da-8y2q.1: the `#[cfg(any())]` attribute was the
 /// "disabled module" hack — every reachable use was deleted in that

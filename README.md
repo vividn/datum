@@ -346,6 +346,36 @@ crate-shaped is touched, or when the dependent closure already covers
 ≥75% of the workspace. Use `check-changed.sh` for fast local iteration;
 CI always runs the full `check.sh` battery as the safety net.
 
+### `cargo xtask check`
+
+The same battery is reachable from the task runner, which additionally
+runs the four repo-hygiene gates:
+
+```bash,no_run
+cargo xtask check all     # hygiene gates, then fmt, clippy, build, tests, doc tests
+cargo xtask check lint    # the four hygiene gates only — compiles nothing, seconds
+```
+
+`check all` prints each step, its result, and a closing summary naming
+every step that ran — read the output rather than the command name to
+know what was covered. Two CI jobs are **not** covered, and `check all`
+says so on every run:
+
+- `e2e-full` — the feature-gated E2E cohort
+  (`cargo nextest run -p datum-commands --test e2e --features e2e-full`)
+- `wasm-check` — `cargo check -p datum-sync-client --target
+  wasm32-unknown-unknown --no-default-features --features wasm`
+
+A step that cannot run fails the battery. If `cargo-nextest` is not
+installed, `check all` exits non-zero and says so; it never substitutes
+another command and reports green. (`scripts/check.sh` does fall back to
+`cargo test` — deliberate for a convenience script, wrong for a gate.)
+
+The individual gates stay addressable by name for debugging a single
+regression: `cargo xtask check no-cfg-any`, `no-r2-stubs`,
+`no-legacy-verbs`, `max-file-size`. `scripts/check-honesty.sh` is the
+hygiene-only battery as a pre-commit hook.
+
 To run the same battery automatically on every `git push`, enable the
 tracked pre-push hook once per clone:
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Pre-v1 honesty gates (da-8y2q.7).
 #
-# Runs every `cargo xtask check ...` subcommand on the current tree:
+# Runs the four repo-hygiene gates (`cargo xtask check lint`) on the
+# current tree:
 #
 #   * no-cfg-any       — locks in da-8y2q.1: no dead `#[cfg(any())]` blocks.
 #   * no-r2-stubs      — locks in da-8y2q.3: no `bail!("stub — R2 extract ...")` stubs.
@@ -10,9 +11,14 @@
 #                        decodes them from persisted strings).
 #   * max-file-size    — gate further growth in monolithic source files.
 #
-# Exits non-zero on the first regression so CI / pre-commit hooks can
-# short-circuit on failure.
+# These compile nothing, so the script stays fast enough for a
+# pre-commit hook. It is NOT a pre-submit check: it does not build, test,
+# format-check or lint the code. For that use `cargo xtask check all`
+# (or `scripts/check.sh`), which runs these four gates and then the
+# compiling half of CI.
+#
+# Exits non-zero when any gate regresses.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-exec cargo run -q -p xtask -- check all
+exec cargo run -q -p xtask -- check lint
