@@ -83,7 +83,7 @@ pub fn update_with_strategy(req: UpdateRequest<'_>, db: &Db) -> Result<UpdateOut
     let existing = crate::commands::helpers::resolve_prefix_or_tombstone(db, req.id_or_slug)?;
     if existing.deleted_at.is_some() {
         anyhow::bail!(
-            "Cannot {} tombstoned entry {} — restore it first with `datum undelete`",
+            "Cannot {} tombstoned entry {} — restore it first with `datum undo`",
             req.strategy.verb(),
             req.id_or_slug,
         );
@@ -206,7 +206,7 @@ pub fn update_batch_from_args(
         // aren't pre-detectable.
         if let Some(tomb) = entries.iter().find(|e| e.deleted_at.is_some()) {
             anyhow::bail!(
-                "Cannot {} tombstoned entry {} — restore it first with `datum undelete`",
+                "Cannot {} tombstoned entry {} — restore it first with `datum undo`",
                 strategy.verb(),
                 tomb.slug,
             );
@@ -223,7 +223,7 @@ pub fn update_batch_from_args(
         for (i, entry) in entries.iter().enumerate() {
             if entry.deleted_at.is_some() {
                 eprintln!(
-                    "[dry-run] skip tombstoned: {} (restore first with `datum undelete`)",
+                    "[dry-run] skip tombstoned: {} (restore first with `datum undo`)",
                     entry.slug,
                 );
                 continue;
@@ -274,7 +274,7 @@ pub fn update_batch_from_args(
     for existing in entries {
         if existing.deleted_at.is_some() {
             let msg = format!(
-                "Cannot {} tombstoned entry {} — restore it first with `datum undelete`",
+                "Cannot {} tombstoned entry {} — restore it first with `datum undo`",
                 strategy.verb(),
                 existing.slug,
             );
