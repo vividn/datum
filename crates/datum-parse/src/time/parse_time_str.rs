@@ -273,10 +273,9 @@ fn parse_hour_meridian(s: &str) -> Option<NaiveTime> {
         (stripped, 'p')
     } else if let Some(stripped) = lower.strip_suffix('a') {
         (stripped, 'a')
-    } else if let Some(stripped) = lower.strip_suffix('p') {
-        (stripped, 'p')
     } else {
-        return None;
+        let stripped = lower.strip_suffix('p')?;
+        (stripped, 'p')
     };
     if num_part.is_empty() || !num_part.chars().all(|c| c.is_ascii_digit()) {
         return None;
@@ -306,13 +305,12 @@ fn parse_short_meridian(s: &str) -> Option<NaiveTime> {
             return None; // already 2-letter; fall through to chrono
         }
         (stripped, 'a')
-    } else if let Some(stripped) = lower.strip_suffix('p') {
+    } else {
+        let stripped = lower.strip_suffix('p')?;
         if stripped.ends_with("pm") {
             return None;
         }
         (stripped, 'p')
-    } else {
-        return None;
     };
     // Body must include at least one `:` — bare-hour meridian is handled
     // by `parse_hour_meridian` instead.
