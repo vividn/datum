@@ -260,6 +260,15 @@ Upload a single encrypted changeset. The server validates the client's
 predicted per-device `seq` against its own authoritative value before
 storing.
 
+A changeset is **one page of local history, not all of it** (da-5ua6).
+Clients pack at most `DEFAULT_PUSH_PAGE_ENTRIES` (~1k) entries per request
+and repeat until a page comes back empty, advancing the local `push_mark`
+watermark after each accepted page — so an interrupted first sync resumes
+at the first page that never landed, and the relay assigns one `seq` per
+page. Request bodies are capped at the relay's `MAX_BODY_BYTES` (8 MiB, a
+chosen ceiling rather than the framework default); a body past it is
+`413 Payload Too Large`.
+
 Request:
 
 ```json
@@ -318,7 +327,7 @@ the same id) and is fatal. The relay's `expected` may sit *below* the
 client's stored seq (relay reset / older-backup restore), so recovery
 force-sets `device_seq` past the normal monotonic guard.
 
-### `GET /v0/pull?since=<id>&device=<device_id>&cluster_id=<cluster>&generation=<gen>`
+### `GET /v0/pull?since=<id>&device=<device_id>&cluster_id=<cluster>&generation=<gen>&limit=<n>`
 
 Fetch changesets from peers (the caller's own device is excluded
 server-side) within the given cluster + generation, with a relay-global
@@ -346,9 +355,14 @@ Response (200):
   uses it as the AAD seq when unsealing this row's blob, so it must be the
   sender's `seq`, not the puller's.
 - Rows MUST be ordered ascending by `id`.
+- `limit` caps the rows in the response. It is clamped to the relay's
+  `MAX_PULL_ROWS` (100), which is also the value used when the parameter
+  is absent — pull is paged for the same reason push is (da-5ua6), so a
+  peer's whole history is never one response.
 - Clients advance
   [`pull_seq`](../crates/datum-sync-client/src/sync_state.rs) to the last
-  processed `id` only after a batch has been fully applied to the local DB.
+  processed `id` only after a batch has been fully applied to the local DB,
+  then re-ask from that `id` until a page comes back empty (or short).
 - Empty response = nothing new; the client keeps its `pull_seq`.
 - A generation disagreement returns **409 GenerationMismatch**.
 

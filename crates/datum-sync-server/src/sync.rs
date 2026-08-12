@@ -111,7 +111,19 @@ pub struct PullQuery {
     /// consumes peers' post-bump changesets.
     pub cluster_id: String,
     pub generation: u64,
+    /// Max rows in the response (da-5ua6). Absent or out of range →
+    /// [`MAX_PULL_ROWS`], so a client that omits it still can't ask the
+    /// relay to serialise a whole history into one body.
+    pub limit: Option<i64>,
 }
+
+/// Ceiling on rows per `GET /v0/pull` response, and the value used when a
+/// client sends no `limit`. Each row is one client push page, so this
+/// bounds a pull response at roughly `MAX_PULL_ROWS ×` the push body
+/// limit's worth of history — big enough that a normal sync is one
+/// request, small enough that a first sync of a long history is many
+/// bounded ones instead of a single unbounded serialisation.
+pub const MAX_PULL_ROWS: i64 = 100;
 
 pub async fn pull(
     State(state): State<Arc<AppState>>,
@@ -127,8 +139,18 @@ pub async fn pull(
     // da-1m63: cluster names are per-user, so the pull is scoped to the
     // caller's devices as well as the cluster — two users' same-named
     // clusters never see each other's rows.
-    let rows =
-        db::pull_changesets_for_cluster(&conn, q.since, &q.device, &q.cluster_id, &user.user_id)?;
+    let limit = q
+        .limit
+        .filter(|n| (1..=MAX_PULL_ROWS).contains(n))
+        .unwrap_or(MAX_PULL_ROWS);
+    let rows = db::pull_changesets_for_cluster(
+        &conn,
+        q.since,
+        &q.device,
+        &q.cluster_id,
+        &user.user_id,
+        limit,
+    )?;
 
     let changesets = rows
         .into_iter()

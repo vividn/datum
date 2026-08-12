@@ -896,3 +896,230 @@ fn sync_db_flag_resolves_per_db_server() {
         "global relay must stay untouched under --db work"
     );
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Paging (da-5ua6): no request carries a whole history
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Session over the raw bearer, mirroring `run_sync_inner_for_device` —
+/// the paging tests drive `push_once_with` / `pull_once_with` directly so
+/// they can shrink the page size without building a huge DB.
+fn session_for(server: &str, bearer: &str) -> datum_sync_client::http::Session {
+    let token = AuthToken {
+        token: bearer.to_string(),
+        refresh_token: "test-refresh".to_string(),
+        user_id: "test-user".to_string(),
+        cluster_id: None,
+    };
+    datum_sync_client::http::Session::new(server, &token, None)
+}
+
+fn paged_opts(page_size: usize) -> datum_sync_client::sync_once::SyncOpts<'static> {
+    datum_sync_client::sync_once::SyncOpts {
+        page_size,
+        progress: None,
+    }
+}
+
+/// The acceptance case behind the bead: a first sync of a database bigger
+/// than one request completes in bounded requests, and the peer pulls it
+/// down in bounded requests too — the mirror failure, not just the push
+/// half.
+#[test]
+fn first_sync_pages_push_and_pull_in_bounded_requests() {
+    use datum_sync_client::sync_once::{pull_once_with, push_once_with};
+
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    let bearer = relay.mint_token();
+    write_token_for(&relay.base_url, &bearer);
+    let master_key = [0x5au8; 32];
+    write_master_key(&relay.base_url, &master_key);
+
+    let home = std::env::var("DATUM_HOME").unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    let db_a = Db::open(&format!("{home}/alpha.db")).unwrap();
+    let db_b = Db::open(&format!("{home}/beta.db")).unwrap();
+    // Two devices, one logical DB — pin both to one cluster (da-3fnd
+    // would otherwise split them by file-name stem).
+    sync_state::set_cluster_id(&db_a, "shared").unwrap();
+    sync_state::set_cluster_id(&db_b, "shared").unwrap();
+    let _ = &env;
+
+    for i in 0..10 {
+        db_a.insert_entry(&make_entry(&format!("f{i}"), i * 60, "dev-A"))
+            .unwrap();
+    }
+
+    let client = reqwest::blocking::Client::builder().build().unwrap();
+    let session = session_for(&relay.base_url, &bearer);
+
+    // Push in pages of 3: 10 entries → 4 requests, none of them the whole
+    // history.
+    let pushed = push_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-A",
+        &master_key,
+        &db_a,
+        false,
+        &paged_opts(3),
+    )
+    .unwrap();
+    assert_eq!(pushed.pushed, 10);
+    assert_eq!(pushed.pages, 4, "10 entries at 3/page is 4 requests");
+    assert_eq!(relay.changeset_count(), 4, "one relay row per page");
+
+    // Pull in pages of 2 relay rows: the peer walks the same history in
+    // bounded responses and lands every entry exactly once.
+    let pulled = pull_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-B",
+        &master_key,
+        &db_b,
+        false,
+        &paged_opts(2),
+    )
+    .unwrap();
+    assert_eq!(pulled.applied, 10);
+    assert_eq!(pulled.pages, 2, "4 rows at 2/page is 2 requests");
+    assert_eq!(entries_count(&db_b), 10, "peer converged on every entry");
+
+    // Both watermarks are caught up: re-running either direction is a
+    // no-op, so paging didn't leave a row behind or re-send one.
+    let again = push_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-A",
+        &master_key,
+        &db_a,
+        false,
+        &paged_opts(3),
+    )
+    .unwrap();
+    assert_eq!((again.pushed, again.pages), (0, 0));
+    let again = pull_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-B",
+        &master_key,
+        &db_b,
+        false,
+        &paged_opts(2),
+    )
+    .unwrap();
+    assert_eq!((again.applied, again.pages), (0, 0));
+}
+
+/// A push that dies mid-history resumes at the first page that never
+/// landed: completed pages persisted their watermark, so the re-run
+/// re-sends nothing and skips nothing.
+#[test]
+fn interrupted_push_resumes_from_the_last_completed_page() {
+    use datum_sync_client::sync_once::{pull_once_with, push_once_with, SyncOpts, SyncProgress};
+
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    let bearer = relay.mint_token();
+    write_token_for(&relay.base_url, &bearer);
+    let master_key = [0x5bu8; 32];
+    write_master_key(&relay.base_url, &master_key);
+
+    let home = std::env::var("DATUM_HOME").unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    let db_a = Db::open(&format!("{home}/alpha.db")).unwrap();
+    let db_b = Db::open(&format!("{home}/beta.db")).unwrap();
+    sync_state::set_cluster_id(&db_a, "shared").unwrap();
+    sync_state::set_cluster_id(&db_b, "shared").unwrap();
+    let _ = &env;
+
+    for i in 0..9 {
+        db_a.insert_entry(&make_entry(&format!("f{i}"), i * 60, "dev-A"))
+            .unwrap();
+    }
+
+    let client = reqwest::blocking::Client::builder().build().unwrap();
+    let session = session_for(&relay.base_url, &bearer);
+
+    // Break the run after page 2 by handing dev-A to another user on the
+    // relay: the next page comes back 403 and the push errors out
+    // mid-history, exactly like a dropped connection would.
+    let hijack = |p: SyncProgress| {
+        if let SyncProgress::PushPage { page: 2, .. } = p {
+            let conn = relay.state.db.lock().unwrap();
+            conn.execute(
+                "UPDATE devices SET user_id = ?1 WHERE id = 'dev-A'",
+                [uuid::Uuid::new_v4().to_string()],
+            )
+            .unwrap();
+        }
+    };
+    let err = push_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-A",
+        &master_key,
+        &db_a,
+        false,
+        &SyncOpts {
+            page_size: 3,
+            progress: Some(&hijack),
+        },
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("403"),
+        "expected the injected mid-run failure, got: {err}"
+    );
+    assert_eq!(
+        relay.changeset_count(),
+        2,
+        "two pages landed before the break"
+    );
+
+    // Undo the hijack and re-run: the resume sends only what never
+    // landed — 3 entries, one page — not the whole history again.
+    {
+        let conn = relay.state.db.lock().unwrap();
+        conn.execute(
+            "UPDATE devices SET user_id = ?1 WHERE id = 'dev-A'",
+            [relay.user_id.to_string()],
+        )
+        .unwrap();
+    }
+    let resumed = push_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-A",
+        &master_key,
+        &db_a,
+        false,
+        &paged_opts(3),
+    )
+    .unwrap();
+    assert_eq!(resumed.pushed, 3, "only the un-landed page re-sent");
+    assert_eq!(relay.changeset_count(), 3);
+
+    // And the history is whole on the far side — nothing skipped by the
+    // interruption.
+    let pulled = pull_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-B",
+        &master_key,
+        &db_b,
+        false,
+        &paged_opts(2),
+    )
+    .unwrap();
+    assert_eq!(pulled.applied, 9);
+    assert_eq!(entries_count(&db_b), 9);
+}

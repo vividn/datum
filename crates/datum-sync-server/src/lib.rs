@@ -25,6 +25,7 @@ pub mod refresh;
 pub mod sync;
 
 use axum::{
+    extract::DefaultBodyLimit,
     http::Method,
     middleware,
     routing::{get, post},
@@ -48,6 +49,17 @@ use crate::models::AuthenticatedUser;
 use crate::ratelimit::RateLimiter;
 
 pub use crate::device_code::DeviceCodeRecord;
+
+/// Ceiling on a request body, chosen rather than inherited (da-5ua6).
+/// Axum's `Router` applies a 2 MiB default that nobody picked, and a first
+/// sync of a real history sailed straight into it as
+/// `413 Payload Too Large`. Clients now page their pushes
+/// ([`datum_sync_client`'s `DEFAULT_PUSH_PAGE_ENTRIES`], ~1k entries ≈ a
+/// few hundred KB after JSON + encryption + base64), so this sits an order
+/// of magnitude above a well-behaved page: headroom for entries with large
+/// `extra_data` or a client that pages coarser, while still bounding what
+/// one request can make the relay buffer.
+pub const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 /// Server-side TTL for in-progress passkey ceremonies. Generous bound: the
 /// browser-side challenge times out in ~60s; this only caps how long an
@@ -254,6 +266,8 @@ pub fn build_app(state: Arc<AppState>) -> Router {
     Router::new()
         .nest(&format!("/{PROTOCOL_VERSION_PATH}"), v0)
         .route("/health", get(|| async { "ok" }))
+        // The body ceiling is ours, not axum's silent 2 MiB default.
+        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -1443,6 +1457,128 @@ mod tests {
             serde_json::from_slice(&pull.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(rows.len(), 1, "rejected push must not be stored");
         assert_eq!(rows[0]["payload_b64"], "AA");
+    }
+
+    // ─── da-5ua6: bounded bodies + paged pulls ──────────────────────────────
+
+    /// A push body between axum's unchosen 2 MiB `Router` default and our
+    /// own ceiling must be accepted. This is the exact wall a first sync
+    /// of a real history hit ("413 Payload Too Large / length limit
+    /// exceeded"), and the default is what put it there.
+    #[tokio::test]
+    async fn push_body_above_the_axum_default_is_accepted() {
+        let state = test_state();
+        let (_, token) = make_test_jwt(&state);
+        let payload = "A".repeat(3 * 1024 * 1024);
+        let body = serde_json::json!({
+            "device_id": "dev-big",
+            "payload_b64": payload,
+            "cluster_id": "cluster-big",
+            "generation": 0,
+            "predicted_seq": 1,
+        })
+        .to_string();
+        assert!(body.len() > 2 * 1024 * 1024 && body.len() < MAX_BODY_BYTES);
+
+        let resp = build_app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v0/push")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    /// A body past our chosen ceiling still bounces — the limit is a
+    /// chosen number, not an absent one.
+    #[tokio::test]
+    async fn push_body_past_our_ceiling_is_rejected() {
+        let state = test_state();
+        let (_, token) = make_test_jwt(&state);
+        let body = "A".repeat(MAX_BODY_BYTES + 1024);
+
+        let resp = build_app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v0/push")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    /// Pull returns at most `limit` rows, and a client that omits the
+    /// parameter (or asks for more than the relay allows) is capped at
+    /// [`sync::MAX_PULL_ROWS`] rather than handed the whole history.
+    #[tokio::test]
+    async fn pull_respects_the_row_limit() {
+        let state = test_state();
+        let (_, token) = make_test_jwt(&state);
+
+        for seq in 1..=5 {
+            let body = serde_json::json!({
+                "device_id": "dev-P",
+                "payload_b64": format!("row{seq}"),
+                "cluster_id": "cluster-P",
+                "generation": 0,
+                "predicted_seq": seq,
+            })
+            .to_string();
+            let resp = build_app(state.clone())
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v0/push")
+                        .header("Authorization", format!("Bearer {token}"))
+                        .header("Content-Type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+
+        let pull = |query: &str| {
+            let uri = format!(
+                "/v0/pull?since=0&device=dev-other&cluster_id=cluster-P&generation=0{query}"
+            );
+            build_app(state.clone()).oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(uri)
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+        };
+        let rows = |resp: axum::response::Response| async {
+            let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+            serde_json::from_slice::<Vec<serde_json::Value>>(&bytes).unwrap()
+        };
+
+        let page = rows(pull("&limit=2").await.unwrap()).await;
+        assert_eq!(page.len(), 2, "the page is capped at the requested limit");
+        assert_eq!(page[0]["payload_b64"], "row1", "ascending by id");
+
+        // Ask past the ceiling, and past the end of the history: both are
+        // clamped to what the relay is willing to serialise.
+        let beyond = crate::sync::MAX_PULL_ROWS + 1;
+        let over = rows(pull(&format!("&limit={beyond}")).await.unwrap()).await;
+        assert_eq!(over.len(), 5);
+        let none = rows(pull("").await.unwrap()).await;
+        assert_eq!(none.len(), 5, "an absent limit is the relay's default");
     }
 
     // ─── da-7vc3: per-IP rate limiting on the unauthenticated auth surface ──

@@ -226,11 +226,45 @@ fn run_sync_inner_with_recovery(
     db: &Db,
     prompter: Option<&mut dyn Prompter>,
 ) -> Result<SyncOutcome> {
-    use datum_sync_client::sync_once::{self, Direction as ClientDirection, SyncConfig};
+    use datum_sync_client::sync_once::{self, Direction as ClientDirection, SyncConfig, SyncOpts};
 
     let preflight = preflight_checks(server)?;
     let session = build_session(server, &preflight.token);
+    // A first sync of a real history is many pages over many seconds
+    // (da-5ua6). Report each one on stderr — but only from the second
+    // page, so the ordinary single-page sync stays quiet and the summary
+    // line remains the whole output.
+    let progress = |p: datum_sync_client::sync_once::SyncProgress| {
+        use datum_sync_client::sync_once::SyncProgress::*;
+        match p {
+            PushPage {
+                page,
+                entries,
+                total,
+            } if page > 1 => {
+                eprintln!(
+                    "  ↑ page {page}: {entries} change{} ({total} so far)",
+                    plural(entries)
+                )
+            }
+            PullPage {
+                page,
+                entries,
+                total,
+            } if page > 1 => {
+                eprintln!(
+                    "  ↓ page {page}: {entries} change{} ({total} so far)",
+                    plural(entries)
+                )
+            }
+            _ => {}
+        }
+    };
     let cfg = SyncConfig {
+        opts: SyncOpts {
+            progress: Some(&progress),
+            ..SyncOpts::default()
+        },
         server,
         session: &session,
         device_id: &preflight.device_id,

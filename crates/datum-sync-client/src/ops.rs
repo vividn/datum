@@ -12,8 +12,9 @@
 //! - `since_modify_ms` in [`pack_changeset`] is a local watermark: the largest
 //!   `modify_time_ms` (epoch-ms) already included in a prior pack. Passing
 //!   `0` produces a full dump of every live and tombstoned entry. The push
-//!   path uses [`pack_changeset_since_ms`] to advance the watermark to the max
-//!   metric of exactly the rows it packed. This is an epoch-ms value, NOT a
+//!   path uses [`pack_changeset_page`] to walk that history one bounded
+//!   page at a time, advancing the watermark to the max metric of exactly
+//!   the rows each page packed. This is an epoch-ms value, NOT a
 //!   seq: "seq" in this crate means either the per-device push counter bound
 //!   into AAD or the server-assigned global row id used as pull watermark.
 //! - [`crate::sync_state::advance_push_mark`] /
@@ -39,26 +40,43 @@ struct ChangesetPayloadV1 {
     entries: Vec<Entry>,
 }
 
+/// Entries per push page when the caller doesn't pick a size (da-5ua6).
+/// A page is one HTTP request body, so this is the knob that keeps a
+/// first sync of a long history under the relay's body limit
+/// ([`datum_sync_server`'s `MAX_BODY_BYTES`], 8 MiB): ~1k entries is a
+/// few hundred KB of JSON before encryption and base64.
+pub const DEFAULT_PUSH_PAGE_ENTRIES: usize = 1000;
+
 /// Pack every entry (including tombstones) whose `modified_at` epoch-ms is
-/// strictly greater than `since_modify_ms`. Passing `0` produces a full dump.
+/// strictly greater than `since_modify_ms`. Passing `0` produces a full dump
+/// — unbounded, so this is for tests and callers that know the set is
+/// small; the push path pages via [`pack_changeset_page`].
 ///
 /// The returned changeset is self-contained plaintext bytes — the caller
 /// is expected to pipe it through
 /// [`crate::crypto::changeset::encrypt_changeset`] before it leaves the
 /// device.
 pub fn pack_changeset(db: &Db, since_modify_ms: u64) -> Result<Changeset> {
-    Ok(pack_changeset_since_ms(db, since_modify_ms)?.0)
+    Ok(pack_changeset_page(db, since_modify_ms, usize::MAX)?.0)
 }
 
-/// Like [`pack_changeset`] but also returns the largest `modify_time_ms`
-/// (epoch-ms metric) among the packed rows — the value the caller advances
-/// the push watermark to. Both the row filter and this maximum read the same
-/// `modify_time_ms` generated column in a single query, so the watermark
-/// exactly matches the packed set (no chrono-vs-SQL drift, no TOCTOU against
-/// a concurrent writer) and re-using it as the next `since_modify_ms` cannot
-/// skip a row. Returns `None` when nothing was packed.
-pub fn pack_changeset_since_ms(db: &Db, since_modify_ms: u64) -> Result<(Changeset, Option<u64>)> {
-    let (entries, max_ms) = select_entries_since(db, since_modify_ms)?;
+/// Pack at most `limit` entries newer than `since_modify_ms`, and return
+/// the largest `modify_time_ms` (epoch-ms metric) among them — the value
+/// the caller advances the push watermark to, and passes back as the next
+/// `since_modify_ms` to walk the rest. Both the row filter and this
+/// maximum read the same `modify_time_ms` generated column in a single
+/// query, so the watermark exactly matches the packed set (no
+/// chrono-vs-SQL drift, no TOCTOU against a concurrent writer) and
+/// re-using it as the next `since_modify_ms` cannot skip a row — see
+/// [`select_entries_since`] for how the page boundary stays honest when
+/// several rows share one millisecond. Returns `None` when nothing was
+/// packed, which is the loop's termination signal.
+pub fn pack_changeset_page(
+    db: &Db,
+    since_modify_ms: u64,
+    limit: usize,
+) -> Result<(Changeset, Option<u64>)> {
+    let (entries, max_ms) = select_entries_since(db, since_modify_ms, limit)?;
     let payload = ChangesetPayloadV1 { entries };
     let json = serde_json::to_vec(&payload)?;
     let mut bytes = Vec::with_capacity(CHANGESET_MAGIC_V1.len() + json.len());
@@ -120,30 +138,57 @@ pub(crate) fn changeset_entries(bytes: &[u8]) -> Result<Vec<Entry>> {
     Ok(parse_payload(bytes)?.entries)
 }
 
-/// Select every entry whose `modify_time_ms` exceeds `since_ms`, returning
-/// the rows and the maximum `modify_time_ms` among them.
+/// Select at most `limit` entries whose `modify_time_ms` exceeds
+/// `since_ms`, returning the rows and the maximum `modify_time_ms` among
+/// them.
 ///
 /// The watermark filter is pushed into SQL against the indexed
 /// `modify_time_ms` generated column (da-x3da), so this is a b-tree range
 /// seek rather than a full-table scan + Rust-side filter. `since_ms == 0`
-/// still selects every live/tombstoned row (a full dump). The max is taken
-/// from the same query so it is exactly the largest metric in the packed set.
-fn select_entries_since(db: &Db, since_ms: u64) -> Result<(Vec<Entry>, Option<u64>)> {
-    // Alias `modify_time_ms` so we can read it by a stable name regardless of
-    // whether `SELECT *` surfaces the generated column on this SQLite build.
-    let mut stmt = db.conn().prepare(
+/// still selects every live/tombstoned row (a full dump) up to `limit`.
+/// The max is taken from the same query so it is exactly the largest
+/// metric in the packed set.
+///
+/// # Page boundaries and same-millisecond groups
+///
+/// The cursor has millisecond granularity, so the next page asks for
+/// `> max_ms`: a page that ended *inside* a group of rows sharing one
+/// `modify_time_ms` would silently skip that group's remainder. To see the
+/// boundary, the query reads one row beyond the page. When that extra row
+/// belongs to a new millisecond the page is already group-aligned and is
+/// returned in full; when it continues the page's last group, that group
+/// is dropped and comes back whole next time. A group that fills the page
+/// on its own can't be dropped — that would make no progress — so it is
+/// re-selected unbounded: an ms-granular cursor cannot split it, and one
+/// oversized page beats a stalled loop or a skipped row.
+fn select_entries_since(db: &Db, since_ms: u64, limit: usize) -> Result<(Vec<Entry>, Option<u64>)> {
+    let mut rows = query_entries(
+        db,
         "SELECT *, modify_time_ms AS _mtms FROM entries \
-         WHERE modify_time_ms > ?1 ORDER BY modify_time_ms",
+         WHERE modify_time_ms > ?1 ORDER BY modify_time_ms LIMIT ?2",
+        params![since_ms as i64, clamp_limit(limit.saturating_add(1))],
     )?;
-    let rows = stmt.query_map([since_ms as i64], |row| {
-        let entry = datum_core::db::row_to_entry_public(row)?;
-        let ms: i64 = row.get("_mtms")?;
-        Ok((entry, ms))
-    })?;
-    let mut out = Vec::new();
+
+    if rows.len() > limit {
+        let boundary_ms = rows[limit - 1].1;
+        if rows[limit].1 != boundary_ms {
+            rows.truncate(limit);
+        } else if rows[0].1 == boundary_ms {
+            rows = query_entries(
+                db,
+                "SELECT *, modify_time_ms AS _mtms FROM entries \
+                 WHERE modify_time_ms = ?1",
+                params![boundary_ms],
+            )?;
+        } else {
+            let cut = rows.iter().position(|(_, ms)| *ms == boundary_ms).unwrap();
+            rows.truncate(cut);
+        }
+    }
+
     let mut max_ms: Option<u64> = None;
-    for row in rows {
-        let (entry, ms) = row?;
+    let mut out = Vec::with_capacity(rows.len());
+    for (entry, ms) in rows {
         if ms >= 0 {
             let ms = ms as u64;
             max_ms = Some(max_ms.map_or(ms, |cur| cur.max(ms)));
@@ -151,6 +196,31 @@ fn select_entries_since(db: &Db, since_ms: u64) -> Result<(Vec<Entry>, Option<u6
         out.push(entry);
     }
     Ok((out, max_ms))
+}
+
+/// `usize::MAX` as an i64 LIMIT would wrap to -1, which SQLite reads as
+/// "no limit" — accidentally correct for [`pack_changeset`], but not
+/// something to rely on. Saturate instead.
+fn clamp_limit(limit: usize) -> i64 {
+    limit.min(i64::MAX as usize) as i64
+}
+
+/// Run one of the two page selections, pairing each entry with its
+/// `modify_time_ms`. `modify_time_ms` is aliased so we can read it by a
+/// stable name regardless of whether `SELECT *` surfaces the generated
+/// column on this SQLite build.
+fn query_entries(db: &Db, sql: &str, args: impl rusqlite::Params) -> Result<Vec<(Entry, i64)>> {
+    let mut stmt = db.conn().prepare(sql)?;
+    let rows = stmt.query_map(args, |row| {
+        let entry = datum_core::db::row_to_entry_public(row)?;
+        let ms: i64 = row.get("_mtms")?;
+        Ok((entry, ms))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
 }
 
 fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
@@ -408,17 +478,91 @@ mod tests {
         db.insert_entry(&make_entry("coffee", 0)).unwrap();
         db.insert_entry(&make_entry("mood", 120)).unwrap();
 
-        let (cs, max_ms) = pack_changeset_since_ms(&db, 0).unwrap();
+        let (cs, max_ms) = pack_changeset_page(&db, 0, usize::MAX).unwrap();
         assert_eq!(parse_payload(cs.as_bytes()).unwrap().entries.len(), 2);
         let watermark = max_ms.expect("packed rows yield a watermark");
 
-        let (cs2, max2) = pack_changeset_since_ms(&db, watermark).unwrap();
+        let (cs2, max2) = pack_changeset_page(&db, watermark, usize::MAX).unwrap();
         assert_eq!(
             parse_payload(cs2.as_bytes()).unwrap().entries.len(),
             0,
             "rows at or below the advanced watermark must not re-pack"
         );
         assert_eq!(max2, None);
+    }
+
+    /// Walk a history the way `push_once` does — page, advance the
+    /// watermark to the returned cursor, repeat — and land every row
+    /// exactly once, in bounded pages (da-5ua6).
+    fn walk_pages(db: &Db, limit: usize) -> (Vec<usize>, Vec<String>) {
+        let mut sizes = Vec::new();
+        let mut slugs = Vec::new();
+        let mut watermark = 0u64;
+        loop {
+            let (cs, max_ms) = pack_changeset_page(db, watermark, limit).unwrap();
+            let entries = parse_payload(cs.as_bytes()).unwrap().entries;
+            if entries.is_empty() {
+                break;
+            }
+            sizes.push(entries.len());
+            slugs.extend(entries.into_iter().map(|e| e.slug.to_string()));
+            watermark = max_ms.expect("a non-empty page yields a cursor");
+        }
+        (sizes, slugs)
+    }
+
+    #[test]
+    fn paged_walk_covers_every_row_exactly_once() {
+        let db = fresh_db();
+        // Distinct seconds → distinct modify_time_ms, so pages fill exactly.
+        for i in 0..10 {
+            db.insert_entry(&make_entry(&format!("f{i}"), i * 60))
+                .unwrap();
+        }
+
+        let (sizes, mut slugs) = walk_pages(&db, 3);
+        assert_eq!(sizes, vec![3, 3, 3, 1], "pages must respect the limit");
+        slugs.sort();
+        slugs.dedup();
+        assert_eq!(slugs.len(), 10, "every row packed exactly once");
+    }
+
+    /// The cursor has ms granularity, so a page must never end mid-group:
+    /// the next page asks for `> max_ms` and would skip the remainder.
+    /// A full page drops its trailing group; the group returns whole next
+    /// time.
+    #[test]
+    fn page_boundary_never_splits_a_millisecond_group() {
+        let db = fresh_db();
+        // Three rows at t+0 (one shared ms), two at t+60.
+        for f in ["a", "b", "c"] {
+            db.insert_entry(&make_entry(f, 0)).unwrap();
+        }
+        for f in ["d", "e"] {
+            db.insert_entry(&make_entry(f, 60)).unwrap();
+        }
+
+        // limit 4 would cut the t+60 group in half — it must be deferred.
+        let (sizes, mut slugs) = walk_pages(&db, 4);
+        assert_eq!(sizes, vec![3, 2]);
+        slugs.sort();
+        assert_eq!(slugs.len(), 5, "no row skipped across the boundary");
+    }
+
+    /// A single millisecond holding more rows than the page size cannot be
+    /// split by an ms-granular cursor, so it ships whole — an oversized
+    /// page, but never a skipped row or a stalled loop.
+    #[test]
+    fn oversized_millisecond_group_ships_whole() {
+        let db = fresh_db();
+        for f in ["a", "b", "c", "d"] {
+            db.insert_entry(&make_entry(f, 0)).unwrap();
+        }
+        db.insert_entry(&make_entry("later", 60)).unwrap();
+
+        let (sizes, slugs) = walk_pages(&db, 2);
+        assert_eq!(sizes, vec![4, 1], "the 4-row group exceeds the page whole");
+        assert_eq!(slugs.len(), 5);
     }
 
     /// Every envelope reader must reject an unknown magic instead of

@@ -508,6 +508,10 @@ pub fn pull_changesets(
 /// therefore ALSO scope to the calling user — via the changeset
 /// device's owner — or same-named clusters would leak blobs across
 /// users.
+///
+/// da-5ua6: returns at most `limit` rows, ascending by `id`, so a peer
+/// with a long history is paged down rather than serialised into one
+/// response. The caller re-asks from the last `id` it applied.
 pub type ClusterChangesetRow = (i64, String, i64, String, String, String, i64);
 
 pub fn pull_changesets_for_cluster(
@@ -516,17 +520,25 @@ pub fn pull_changesets_for_cluster(
     excluding_device: &str,
     cluster_id: &str,
     user_id: &Uuid,
+    limit: i64,
 ) -> Result<Vec<ClusterChangesetRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, device_id, seq, payload, uploaded_at, cluster_id, generation
          FROM changesets
          WHERE id > ?1 AND device_id != ?2 AND cluster_id = ?3
            AND device_id IN (SELECT id FROM devices WHERE user_id = ?4)
-         ORDER BY id",
+         ORDER BY id
+         LIMIT ?5",
     )?;
 
     let rows = stmt.query_map(
-        params![since, excluding_device, cluster_id, user_id.to_string()],
+        params![
+            since,
+            excluding_device,
+            cluster_id,
+            user_id.to_string(),
+            limit
+        ],
         |row| {
             Ok((
                 row.get::<_, i64>(0)?,
@@ -957,12 +969,13 @@ mod tests {
         insert_changeset_into_cluster(&conn, "bob-dev", "bob-payload", Some("notes"), 0).unwrap();
 
         // Alice pulling 'notes' from a second device sees only her row.
-        let rows = pull_changesets_for_cluster(&conn, 0, "alice-dev-2", "notes", &alice).unwrap();
+        let rows =
+            pull_changesets_for_cluster(&conn, 0, "alice-dev-2", "notes", &alice, 100).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].3, "alice-payload");
 
         // Bob likewise.
-        let rows = pull_changesets_for_cluster(&conn, 0, "bob-dev-2", "notes", &bob).unwrap();
+        let rows = pull_changesets_for_cluster(&conn, 0, "bob-dev-2", "notes", &bob, 100).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].3, "bob-payload");
     }

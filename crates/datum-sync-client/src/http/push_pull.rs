@@ -157,15 +157,18 @@ fn parse_sync_conflict(body: &str, context: &str) -> HttpError {
     }
 }
 
-/// Fetch every changeset the relay has with global id > `since` that was
-/// authored by a device other than `device_id`. Rows are returned in
-/// ascending relay-global `id` order (`since` is an `id`, not a `seq`).
-/// Empty vec means nothing new.
+/// Fetch up to `limit` changesets the relay has with global id > `since`
+/// that were authored by a device other than `device_id`. Rows are
+/// returned in ascending relay-global `id` order (`since` is an `id`, not
+/// a `seq`). Empty vec means nothing new; a full page means the caller
+/// should ask again from the last `id` it applied (da-5ua6 — a peer's
+/// whole history must not arrive in one response).
 ///
 /// `cluster_id` / `generation` are required on the wire. A client sends its
 /// stored cluster_id (or the db-name default); the relay runs the generation
 /// gate and a mismatch surfaces as [`HttpError::GenerationMismatch`] (the
 /// client must reset its watermark and re-pull from `generation = expected`).
+#[allow(clippy::too_many_arguments)]
 pub fn pull_batch(
     client: &Client,
     server: &str,
@@ -174,12 +177,14 @@ pub fn pull_batch(
     since: i64,
     cluster_id: &str,
     generation: u64,
+    limit: usize,
 ) -> Result<Vec<PulledChangeset>, HttpError> {
     let query: Vec<(&str, String)> = vec![
         ("since", since.to_string()),
         ("device", device_id.to_string()),
         ("cluster_id", cluster_id.to_string()),
         ("generation", generation.to_string()),
+        ("limit", limit.to_string()),
     ];
     let resp = client
         .get(format!("{server}/{PROTOCOL_VERSION_PATH}/pull"))
