@@ -111,19 +111,18 @@ pub struct PullQuery {
     /// consumes peers' post-bump changesets.
     pub cluster_id: String,
     pub generation: u64,
-    /// Max rows in the response (da-5ua6). Absent or out of range →
-    /// [`MAX_PULL_ROWS`], so a client that omits it still can't ask the
-    /// relay to serialise a whole history into one body.
+    /// Max rows in the response (da-5ua6). Absent → [`MAX_PULL_ROWS`], so
+    /// a client that omits it still can't ask the relay to serialise a
+    /// whole history into one body. Out of range → 400, so an over-ask is
+    /// answered rather than silently downgraded (da-blcb).
     pub limit: Option<i64>,
 }
 
 /// Ceiling on rows per `GET /v0/pull` response, and the value used when a
-/// client sends no `limit`. Each row is one client push page, so this
-/// bounds a pull response at roughly `MAX_PULL_ROWS ×` the push body
-/// limit's worth of history — big enough that a normal sync is one
-/// request, small enough that a first sync of a long history is many
-/// bounded ones instead of a single unbounded serialisation.
-pub const MAX_PULL_ROWS: i64 = 100;
+/// client sends no `limit`. Defined once in the wire contract — see
+/// [`datum_sync_protocol::messages::sync::MAX_PULL_ROWS`] for why both
+/// sides must read the same number.
+pub const MAX_PULL_ROWS: i64 = datum_sync_protocol::messages::sync::MAX_PULL_ROWS as i64;
 
 pub async fn pull(
     State(state): State<Arc<AppState>>,
@@ -136,13 +135,23 @@ pub async fn pull(
         cluster::ensure_cluster(&conn, &q.cluster_id, &user.user_id)?;
     cluster::check_generation(server_generation, q.generation, &gen_started_at)?;
 
+    // A clamp that silently substitutes turns a client's over-ask into a
+    // false end-of-stream: the client sizes its paging loop by the limit
+    // it sent, sees a shorter page, and concludes the history is done
+    // (da-blcb). Answering the over-ask instead keeps the disagreement
+    // loud and local to the request that made it.
+    let limit = match q.limit {
+        None => MAX_PULL_ROWS,
+        Some(n) if (1..=MAX_PULL_ROWS).contains(&n) => n,
+        Some(n) => {
+            return Err(AppError::BadRequest(format!(
+                "limit must be between 1 and {MAX_PULL_ROWS}, got {n}"
+            )))
+        }
+    };
     // da-1m63: cluster names are per-user, so the pull is scoped to the
     // caller's devices as well as the cluster — two users' same-named
     // clusters never see each other's rows.
-    let limit = q
-        .limit
-        .filter(|n| (1..=MAX_PULL_ROWS).contains(n))
-        .unwrap_or(MAX_PULL_ROWS);
     let rows = db::pull_changesets_for_cluster(
         &conn,
         q.since,

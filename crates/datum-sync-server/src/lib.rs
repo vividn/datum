@@ -1518,9 +1518,11 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
-    /// Pull returns at most `limit` rows, and a client that omits the
-    /// parameter (or asks for more than the relay allows) is capped at
-    /// [`sync::MAX_PULL_ROWS`] rather than handed the whole history.
+    /// Pull returns at most `limit` rows; a client that omits the
+    /// parameter gets [`sync::MAX_PULL_ROWS`] rather than the whole
+    /// history, and one that asks for more than that is told so (da-blcb)
+    /// instead of being handed a smaller page it would misread as the end
+    /// of the history.
     #[tokio::test]
     async fn pull_respects_the_row_limit() {
         let state = test_state();
@@ -1572,11 +1574,22 @@ mod tests {
         assert_eq!(page.len(), 2, "the page is capped at the requested limit");
         assert_eq!(page[0]["payload_b64"], "row1", "ascending by id");
 
-        // Ask past the ceiling, and past the end of the history: both are
-        // clamped to what the relay is willing to serialise.
+        // Asking past the ceiling is a protocol error, not a quiet
+        // downgrade: a client that got 100 rows back after asking for
+        // 1000 would take the short page for end-of-stream and stop
+        // mid-history (da-blcb).
         let beyond = crate::sync::MAX_PULL_ROWS + 1;
-        let over = rows(pull(&format!("&limit={beyond}")).await.unwrap()).await;
-        assert_eq!(over.len(), 5);
+        for bad in [beyond, 0, -1] {
+            let resp = pull(&format!("&limit={bad}")).await.unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::BAD_REQUEST,
+                "limit={bad} must be refused, not substituted",
+            );
+        }
+
+        // An absent limit is still the relay's default — a client that
+        // never learned about paging can't ask for the whole history.
         let none = rows(pull("").await.unwrap()).await;
         assert_eq!(none.len(), 5, "an absent limit is the relay's default");
     }

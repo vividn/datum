@@ -914,9 +914,14 @@ fn session_for(server: &str, bearer: &str) -> datum_sync_client::http::Session {
     datum_sync_client::http::Session::new(server, &token, None)
 }
 
-fn paged_opts(page_size: usize) -> datum_sync_client::sync_once::SyncOpts<'static> {
+/// Shrink both page sizes to `n`. Useful for driving the loops without a
+/// huge DB — but note that a test built only on this never sees the
+/// shipped configuration, which is how da-blcb hid: see
+/// [`default_page_size_pulls_a_history_past_the_relay_row_ceiling`].
+fn paged_opts(n: usize) -> datum_sync_client::sync_once::SyncOpts<'static> {
     datum_sync_client::sync_once::SyncOpts {
-        page_size,
+        push_page_entries: n,
+        pull_page_rows: n,
         progress: None,
     }
 }
@@ -1068,8 +1073,9 @@ fn interrupted_push_resumes_from_the_last_completed_page() {
         &db_a,
         false,
         &SyncOpts {
-            page_size: 3,
+            push_page_entries: 3,
             progress: Some(&hijack),
+            ..SyncOpts::default()
         },
     )
     .unwrap_err();
@@ -1122,4 +1128,92 @@ fn interrupted_push_resumes_from_the_last_completed_page() {
     .unwrap();
     assert_eq!(pulled.applied, 9);
     assert_eq!(entries_count(&db_b), 9);
+}
+
+/// The bug da-5ua6's paging loop shipped with: at the default page size
+/// the client asked for ten times the relay's row ceiling, the relay
+/// answered with its own smaller number, and the client read the short
+/// page as end-of-stream. A history longer than `MAX_PULL_ROWS` relay rows
+/// came down as a prefix and reported a successful sync (da-blcb).
+///
+/// Every other test in this section overrides both page sizes, which puts
+/// client and relay in agreement by construction — the regime where the
+/// loop was never broken. This one takes `SyncOpts::default()` for the
+/// pull, so it exercises the only configuration that ships.
+#[test]
+fn default_page_size_pulls_a_history_past_the_relay_row_ceiling() {
+    use datum_sync_client::sync_once::{
+        pull_once_with, push_once_with, SyncOpts, SyncProgress, MAX_PULL_ROWS,
+    };
+
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    let bearer = relay.mint_token();
+    write_token_for(&relay.base_url, &bearer);
+    let master_key = [0x5cu8; 32];
+    write_master_key(&relay.base_url, &master_key);
+
+    let home = std::env::var("DATUM_HOME").unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    let db_a = Db::open(&format!("{home}/alpha.db")).unwrap();
+    let db_b = Db::open(&format!("{home}/beta.db")).unwrap();
+    sync_state::set_cluster_id(&db_a, "shared").unwrap();
+    sync_state::set_cluster_id(&db_b, "shared").unwrap();
+    let _ = &env;
+
+    // One entry per push page ⇒ one relay row per entry, so the relay
+    // ends up holding one row more than a single pull response may carry.
+    let rows = MAX_PULL_ROWS + 1;
+    for i in 0..rows {
+        db_a.insert_entry(&make_entry(&format!("f{i}"), i as i64 * 60, "dev-A"))
+            .unwrap();
+    }
+
+    let client = reqwest::blocking::Client::builder().build().unwrap();
+    let session = session_for(&relay.base_url, &bearer);
+
+    let pushed = push_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-A",
+        &master_key,
+        &db_a,
+        false,
+        &paged_opts(1),
+    )
+    .unwrap();
+    assert_eq!(pushed.pushed, rows);
+    assert_eq!(relay.changeset_count(), rows, "one relay row per entry");
+
+    let seen: std::cell::RefCell<Vec<usize>> = std::cell::RefCell::new(Vec::new());
+    let sink = |p: SyncProgress| {
+        if let SyncProgress::PullPage { page, .. } = p {
+            seen.borrow_mut().push(page);
+        }
+    };
+    let pulled = pull_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-B",
+        &master_key,
+        &db_b,
+        false,
+        &SyncOpts {
+            progress: Some(&sink),
+            ..SyncOpts::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        pulled.applied, rows,
+        "the whole history, not a MAX_PULL_ROWS-row prefix reported as success",
+    );
+    assert_eq!(entries_count(&db_b), rows as i64);
+    assert_eq!(pulled.pages, 2, "{MAX_PULL_ROWS} rows, then the remainder");
+    // A second page means `dm sync`'s `page > 1` guard fires, so a long
+    // pull is no longer silent.
+    assert_eq!(*seen.borrow(), vec![1, 2], "per-page progress is reported");
 }

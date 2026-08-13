@@ -2,6 +2,20 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Ceiling on rows per `GET /v0/pull` response, and the value the relay
+/// uses when a client sends no `limit`. It lives here, in the wire
+/// contract, because both sides have to agree on it: the client sizes its
+/// pull page from this constant and treats a short page as end-of-stream,
+/// so a client that believed a different number would read the relay's
+/// cap as "no more rows" and stop early (da-blcb). A `limit` above this is
+/// a protocol error, not something the relay quietly substitutes for.
+///
+/// Each row is one client push page, so this bounds a pull response at
+/// roughly `MAX_PULL_ROWS ×` the push body limit's worth of history — big
+/// enough that a normal sync is one request, small enough that a first
+/// sync of a long history is many bounded ones.
+pub const MAX_PULL_ROWS: usize = 100;
+
 /// `POST /v0/push` request body.
 ///
 /// `payload_b64` is base64 url-safe no-pad of the raw [`crate::crypto`]-

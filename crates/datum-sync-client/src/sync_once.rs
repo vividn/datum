@@ -34,12 +34,17 @@
 //! ## Paging (da-5ua6)
 //!
 //! Neither direction sends a whole history in one request. Push walks the
-//! local history in pages of [`SyncOpts::page_size`] entries, and pull
-//! asks for at most that many relay rows per response. Both loop until a
-//! page comes back empty, advancing (and persisting) their watermark per
-//! completed page — so a run that dies mid-history resumes at the next
-//! page rather than restarting, and neither side depends on a request or
-//! response that grows with the size of the database.
+//! local history in pages of [`SyncOpts::push_page_entries`] entries, and
+//! pull asks for at most [`SyncOpts::pull_page_rows`] relay rows per
+//! response. Both loop until a page comes back empty, advancing (and
+//! persisting) their watermark per completed page — so a run that dies
+//! mid-history resumes at the next page rather than restarting, and
+//! neither side depends on a request or response that grows with the size
+//! of the database.
+//!
+//! The two page sizes are separate numbers because they count different
+//! things — entries versus relay rows — and only the pull one is bounded
+//! by the relay (da-blcb).
 
 use anyhow::Result;
 use datum_core::db::Db;
@@ -47,6 +52,7 @@ use datum_core::entry::Entry;
 use datum_core::integrity::{self, DetectedBy};
 use reqwest::blocking::Client;
 
+pub use datum_sync_protocol::messages::sync::MAX_PULL_ROWS;
 use datum_sync_protocol::SyncProtocolError;
 
 use crate::crypto::changeset::{decrypt_changeset, encrypt_changeset, Changeset, EncryptedBlob};
@@ -117,32 +123,51 @@ pub enum SyncProgress {
 
 /// Tunables for one sync cycle: how big a page is, and where per-page
 /// progress goes. [`Default`] is the right choice for every caller that
-/// doesn't have a reason to differ — tests shrink `page_size` to exercise
-/// the paging loop without building a huge DB.
+/// doesn't have a reason to differ — tests shrink the page sizes to
+/// exercise the paging loops without building a huge DB.
+///
+/// Push and pull pages are measured in different units and carry separate
+/// knobs. Sharing one number for both is what broke pull: a push page is
+/// entries, a pull page is relay rows (each holding up to a whole push
+/// page of entries), so the push default over-asked the relay's row
+/// ceiling by 10× and every pull ended after one page (da-blcb).
 #[derive(Clone, Copy)]
 pub struct SyncOpts<'a> {
-    /// Max entries per push request, and max relay rows per pull
-    /// response. Zero is treated as the default rather than as "no
-    /// progress possible".
-    pub page_size: usize,
+    /// Max entries per push request. Zero is treated as the default
+    /// rather than as "no progress possible".
+    pub push_page_entries: usize,
+    /// Max relay rows per pull response. Zero is treated as the default;
+    /// anything above [`MAX_PULL_ROWS`] is capped to it, since the relay
+    /// rejects a larger ask and a client that asked for more than it can
+    /// be granted would misread the granted page as end-of-stream.
+    pub pull_page_rows: usize,
     pub progress: Option<&'a dyn Fn(SyncProgress)>,
 }
 
 impl Default for SyncOpts<'_> {
     fn default() -> Self {
         Self {
-            page_size: crate::ops::DEFAULT_PUSH_PAGE_ENTRIES,
+            push_page_entries: crate::ops::DEFAULT_PUSH_PAGE_ENTRIES,
+            pull_page_rows: MAX_PULL_ROWS,
             progress: None,
         }
     }
 }
 
 impl SyncOpts<'_> {
-    fn page_size(&self) -> usize {
-        if self.page_size == 0 {
+    fn push_page_entries(&self) -> usize {
+        if self.push_page_entries == 0 {
             crate::ops::DEFAULT_PUSH_PAGE_ENTRIES
         } else {
-            self.page_size
+            self.push_page_entries
+        }
+    }
+
+    fn pull_page_rows(&self) -> usize {
+        if self.pull_page_rows == 0 {
+            MAX_PULL_ROWS
+        } else {
+            self.pull_page_rows.min(MAX_PULL_ROWS)
         }
     }
 
@@ -156,7 +181,8 @@ impl SyncOpts<'_> {
 impl std::fmt::Debug for SyncOpts<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SyncOpts")
-            .field("page_size", &self.page_size)
+            .field("push_page_entries", &self.push_page_entries)
+            .field("pull_page_rows", &self.pull_page_rows)
             .field("progress", &self.progress.is_some())
             .finish()
     }
@@ -265,7 +291,7 @@ pub fn push_once(
 }
 
 /// Pack changes since the last push watermark, encrypt, and upload,
-/// walking the history in pages of `opts.page_size` entries until a page
+/// walking the history in pages of `opts.push_page_entries` entries until a page
 /// comes back empty (da-5ua6). Each accepted page advances *and persists*
 /// the watermark, so an interrupted run resumes at the first page that
 /// never landed instead of re-uploading everything — and no single
@@ -306,7 +332,7 @@ pub fn push_once_with(
     let local_cluster = stored_cluster.unwrap_or_else(|| sync_state::default_cluster_id(db));
     let local_generation = sync_state::get_cluster_generation(db)?;
 
-    let page_size = opts.page_size();
+    let page_size = opts.push_page_entries();
     // Local cursor: it tracks the persisted `push_mark` on a real run, and
     // stands in for it on a dry run (which must still walk every page to
     // count, without committing anything to the DB).
@@ -486,7 +512,7 @@ pub fn pull_once(
 }
 
 /// Fetch peers' changesets, decrypt, apply via LWW, and queue any
-/// conflicts the apply uncovered, at most `opts.page_size` relay rows per
+/// conflicts the apply uncovered, at most `opts.pull_page_rows` relay rows per
 /// request until a page comes back empty (da-5ua6).
 ///
 /// Pull is the mirror of push: the second device syncing down a history
@@ -517,7 +543,7 @@ pub fn pull_once_with(
     let local_cluster = stored_cluster.unwrap_or_else(|| sync_state::default_cluster_id(db));
     let local_generation = sync_state::get_cluster_generation(db)?;
 
-    let page_rows = opts.page_size();
+    let page_rows = opts.pull_page_rows();
     // Local cursor over relay-global row ids; mirrors the persisted
     // `pull_seq` on a real run and stands in for it on a dry run.
     let mut since = sync_state::get_pull_seq(db)? as i64;
@@ -618,7 +644,10 @@ pub fn pull_once_with(
         }
         since = max_seq as i64;
         // A short page means the relay had nothing more; skip the extra
-        // round-trip that would only confirm it.
+        // round-trip that would only confirm it. Sound only because
+        // `page_rows` is what the relay actually granted — it never
+        // exceeds MAX_PULL_ROWS, and the relay rejects a larger ask
+        // rather than substituting its own number (da-blcb).
         if !full_page {
             break;
         }
