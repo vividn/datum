@@ -356,6 +356,24 @@ impl Db {
         };
         updated.content_hash = updated.expected_content_hash();
 
+        // da-l4uz: a sync merge parks a row that lost a slug contest by
+        // suffixing the slug with the row's own hid (`slug::parked`), and
+        // that state lives in the very column re-interpolated above. A plain
+        // re-derive would rewrite the row back onto the slug parking moved it
+        // off — colliding with the winner, or, worse, quietly undoing a
+        // resolution both devices had already agreed on. Keep the park while
+        // the natural slug is still held by another row; drop it once that
+        // slug is free, which is the repair the user actually wants.
+        let new_slug = match new_slug {
+            Some(target)
+                if crate::slug::is_parked(existing_slug, &updated.hid)
+                    && slug_held_by_other(&self.conn, &target, &updated.hid)? =>
+            {
+                Some(crate::slug::parked(&target, &updated.hid))
+            }
+            other => other,
+        };
+
         let slug_changed = matches!(&new_slug, Some(s) if s != existing_slug);
 
         if slug_changed {
@@ -470,6 +488,20 @@ fn save_existing_entry_with_rekey_kind_in_tx(
         }
         Err(e) => Err(e),
     }
+}
+
+/// Whether `slug` already belongs to a row other than `hid`. The UNIQUE
+/// index over `slug` is total, so tombstones hold their slug too and count
+/// as holders here.
+fn slug_held_by_other(conn: &Connection, slug: &Slug, hid: &Hid) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM entries WHERE slug = ?1 AND hid != ?2",
+            params![slug, hid],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
 }
 
 /// Append a short random base36 suffix to a slug. Used by the

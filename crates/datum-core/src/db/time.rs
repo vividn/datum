@@ -222,6 +222,97 @@ mod tests {
         assert_eq!(by_hid.hid, hid);
     }
 
+    /// Two custom-id rows (`--id brew`) at different instants share one
+    /// natural slug, so a sync merge keeps both and parks the loser under
+    /// `coffee:brew_<hid>` (da-zlug). Seeds that pair.
+    fn seed_parked_pair(db: &Db) -> (Entry, Entry) {
+        let mut winner = Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(seed_dt("2024-01-01T08:00:00Z")),
+            None,
+            "d1",
+        );
+        winner.id_structure = Some("brew".to_string());
+        winner.slug = Slug("coffee:brew".to_string());
+        db.insert_entry(&winner).unwrap();
+
+        let mut parked = Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(seed_dt("2024-01-01T09:00:00Z")),
+            None,
+            "d2",
+        );
+        parked.id_structure = Some("brew".to_string());
+        parked.slug = crate::slug::parked("coffee:brew", &parked.hid);
+        db.insert_entry(&parked).unwrap();
+        (winner, parked)
+    }
+
+    /// da-l4uz: retiming a parked row must not re-derive its slug back onto
+    /// the winner's — that is the collision the merge resolved, and the
+    /// resolution is what two devices agreed on without coordinating.
+    #[test]
+    fn retime_keeps_a_parked_row_parked() {
+        let db = Db::open_in_memory().unwrap();
+        let (winner, parked) = seed_parked_pair(&db);
+
+        let filter = RetimeFilter {
+            slug_or_hid: Some(parked.slug.as_str()),
+            ..Default::default()
+        };
+        db.update_times(&filter, Duration::minutes(30)).unwrap();
+
+        let after = db.get_entry(&parked.hid).unwrap();
+        assert_eq!(after.slug, parked.slug, "the park must survive the retime");
+        assert_eq!(
+            after.occur_time.as_ref().unwrap().utc,
+            seed_dt("2024-01-01T09:30:00Z").utc,
+            "the retime itself must still apply",
+        );
+        assert_eq!(
+            db.get_entry("coffee:brew").unwrap().hid,
+            winner.hid,
+            "the winner keeps the contested slug",
+        );
+    }
+
+    /// The park is kept only while someone else holds the natural slug.
+    /// Alone, the row re-derives to the plain slug — the repair a user
+    /// wants once the collision is gone.
+    #[test]
+    fn retime_unparks_when_the_contested_slug_is_free() {
+        let db = Db::open_in_memory().unwrap();
+        let mut lone = Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(seed_dt("2024-01-01T09:00:00Z")),
+            None,
+            "d2",
+        );
+        lone.id_structure = Some("brew".to_string());
+        lone.slug = crate::slug::parked("coffee:brew", &lone.hid);
+        db.insert_entry(&lone).unwrap();
+
+        let filter = RetimeFilter {
+            slug_or_hid: Some(lone.slug.as_str()),
+            ..Default::default()
+        };
+        db.update_times(&filter, Duration::minutes(30)).unwrap();
+
+        assert_eq!(
+            db.get_entry(&lone.hid).unwrap().slug.as_str(),
+            "coffee:brew"
+        );
+    }
+
     /// da-sunq: a mid-batch failure must roll back the whole batch.
     /// Two rows of one field retimed to the same absolute instant — the
     /// second row trips the partial UNIQUE index on (field, occur_time),

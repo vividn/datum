@@ -298,14 +298,6 @@ fn fold_duplicate(
     Ok(())
 }
 
-/// The slug a parked loser takes: its own slug suffixed with its own hid.
-/// Deterministic (no RNG — unlike `insert.rs`'s local `suffixed_slug`) and
-/// unique (hid is the primary key), which is what lets two devices reach
-/// the same pair of slugs without talking to each other.
-fn parked_slug(loser: &Entry) -> String {
-    format!("{}_{}", loser.slug, loser.hid)
-}
-
 /// Local rows, other than `entry` itself, that hold an identity `entry`
 /// needs: the same slug (total UNIQUE, tombstones included), or the same
 /// live `(field, occur_time)` (partial UNIQUE, live rows only). This is
@@ -354,7 +346,11 @@ fn find_blockers(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<Vec<En
 fn parked_shape(loser: &Entry, winner: &Entry) -> Entry {
     let mut parked = loser.clone();
     if loser.slug == winner.slug {
-        parked.slug = datum_core::ids::Slug::new(parked_slug(loser));
+        // The suffix is the loser's own hid — see `slug::parked`. The same
+        // helper tells the slug-re-deriving paths (`retime`, `datum edit`,
+        // `datum check --fix`) that this slug is a park to be preserved
+        // rather than drift to be repaired (da-l4uz).
+        parked.slug = datum_core::slug::parked(&loser.slug, &loser.hid);
     }
     if loser.deleted_at.is_none()
         && winner.deleted_at.is_none()
@@ -407,7 +403,8 @@ fn is_replay_of_park(tx: &rusqlite::Transaction<'_>, pre: &Entry, entry: &Entry)
 }
 
 /// Park `loser` out of `winner`'s way without destroying it: move it to its
-/// [`parked_slug`] when the two contend for one slug, and tombstone it
+/// [parked slug](datum_core::slug::parked) when the two contend for one
+/// slug, and tombstone it
 /// (`deleted_at` = the winner's `modify_time`, so both devices write the
 /// same value) when they contend for one live `(field, occur_time)`.
 ///
