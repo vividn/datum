@@ -86,10 +86,14 @@ pub fn pack_changeset_page(
 }
 
 /// Apply a received changeset to the local DB using last-writer-wins on
-/// `modify_time`. Existing rows whose stored `modify_time` is greater than
-/// the incoming row's are left untouched; exact ties are broken by a
-/// deterministic total order on `(content_hash, device_id)` so every
-/// device resolves the same winner (see [`upsert_lww`]).
+/// `modify_time`, keyed on `hid` — the primary key, and the only identity
+/// an entry keeps across an edit (`retime` rewrites the slug in place).
+/// Existing rows whose stored `modify_time` is greater than the incoming
+/// row's are left untouched; exact ties are broken by a deterministic total
+/// order on `(content_hash, device_id)` so every device resolves the same
+/// winner. Two *different* entries contending for one slug, or one live
+/// `(field, occur_time)`, are both kept — the loser is parked and filed as
+/// an `identity_collision` warning (see [`upsert_lww`]).
 ///
 /// `modify_time` is a raw device wall-clock: a device with a fast clock
 /// wins every tie and a lagging one can silently lose a later edit. This
@@ -223,15 +227,128 @@ fn query_entries(db: &Db, sql: &str, args: impl rusqlite::Params) -> Result<Vec<
     Ok(out)
 }
 
+/// Deterministic total order used to pick a winner between two rows that
+/// cannot both hold one identity. Extends the equal-`modify_time`
+/// tiebreaker (`(content_hash, device_id)`, part of the wire contract)
+/// with `hid` as a final discriminator so the order is *total* — two rows
+/// with identical content from the same device still resolve, and every
+/// device resolves them the same way. Greater wins.
+fn merge_rank(e: &Entry) -> (chrono::DateTime<chrono::Utc>, &str, &str, &str) {
+    (e.modify_time, &e.content_hash, &e.device_id, e.hid.as_str())
+}
+
+/// The slug a parked loser takes: its own slug suffixed with its own hid.
+/// Deterministic (no RNG — unlike `insert.rs`'s local `suffixed_slug`) and
+/// unique (hid is the primary key), which is what lets two devices reach
+/// the same pair of slugs without talking to each other.
+fn parked_slug(loser: &Entry) -> String {
+    format!("{}_{}", loser.slug, loser.hid)
+}
+
+/// Local rows, other than `entry` itself, that hold an identity `entry`
+/// needs: the same slug (total UNIQUE, tombstones included), or the same
+/// live `(field, occur_time)` (partial UNIQUE, live rows only). This is
+/// the pre-check the merge's identity probe has to be in order to be one —
+/// every constraint the write can trip is looked up here, so the apply
+/// decides a merge rather than meeting a raw SQLite error (da-zlug).
+fn find_blockers(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<Vec<Entry>> {
+    let mut blockers: Vec<Entry> = tx
+        .prepare("SELECT * FROM entries WHERE slug = ?1 AND hid != ?2")?
+        .query_map(
+            params![entry.slug, entry.hid],
+            datum_core::db::row_to_entry_public,
+        )?
+        .collect::<rusqlite::Result<_>>()?;
+
+    // The partial index only covers live rows with a real occur_time, so an
+    // incoming tombstone or a timeless entry can never trip it.
+    if entry.deleted_at.is_none() {
+        if let Some(occur) = entry.occur_time.as_ref() {
+            let rows: Vec<Entry> = tx
+                .prepare(
+                    "SELECT * FROM entries \
+                     WHERE field = ?1 AND occur_time = ?2 \
+                       AND deleted_at IS NULL AND hid != ?3",
+                )?
+                .query_map(
+                    params![entry.field, occur.utc.to_rfc3339(), entry.hid],
+                    datum_core::db::row_to_entry_public,
+                )?
+                .collect::<rusqlite::Result<_>>()?;
+            for row in rows {
+                if !blockers.iter().any(|b| b.hid == row.hid) {
+                    blockers.push(row);
+                }
+            }
+        }
+    }
+    Ok(blockers)
+}
+
+/// Park `loser` out of `winner`'s way without destroying it: move it to its
+/// [`parked_slug`] when the two contend for one slug, and tombstone it
+/// (`deleted_at` = the winner's `modify_time`, so both devices write the
+/// same value) when they contend for one live `(field, occur_time)`.
+///
+/// `modify_time` is deliberately NOT bumped. Parking is a pure function of
+/// the two rows, so every device reaches it independently; a bump would
+/// both re-push a row nobody edited and let the parked copy start winning
+/// LWW against its own origin.
+///
+/// `write_now` distinguishes the two losers: a local blocker is already a
+/// row and is rewritten here, while a losing *incoming* row is returned for
+/// the caller's own write. Either way the returned entry is the parked
+/// shape, and it is what the warning names.
+fn park_loser(
+    tx: &rusqlite::Transaction<'_>,
+    loser: &Entry,
+    winner: &Entry,
+    write_now: bool,
+) -> Result<Entry> {
+    let mut parked = loser.clone();
+    if loser.slug == winner.slug {
+        parked.slug = datum_core::ids::Slug::new(parked_slug(loser));
+    }
+    if loser.deleted_at.is_none()
+        && winner.deleted_at.is_none()
+        && loser.occur_time.is_some()
+        && loser.field == winner.field
+        && loser.occur_time.as_ref().map(|t| t.utc) == winner.occur_time.as_ref().map(|t| t.utc)
+    {
+        parked.deleted_at = Some(winner.modify_time);
+    }
+    if write_now {
+        // The loser is a row already in the table: rewrite just the two
+        // identity columns the parking touches, snapshotting the pre-park
+        // state so the move is auditable and reversible.
+        history::record(tx, loser, ChangeKind::SyncMerge)?;
+        tx.execute(
+            "UPDATE entries SET slug = ?2, deleted_at = ?3 WHERE hid = ?1",
+            params![
+                parked.hid,
+                parked.slug,
+                parked.deleted_at.map(|t| t.to_rfc3339()),
+            ],
+        )?;
+    }
+    datum_core::integrity::file_identity_collision(tx, &parked, winner)?;
+    Ok(parked)
+}
+
 fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
-    // Skip rows we already have as newer (or as the tie winner, below).
-    // Also pull the current full-row so we can snapshot it into
-    // entry_history when an apply actually changes state — no-op LWW
-    // short-circuits do NOT write history.
+    // The merge keys on `hid` — the primary key, and the only identity a
+    // row keeps across an edit. `slug` is derived from `field` + occur_time
+    // and `retime` rewrites it in place (datum-core/src/db/time.rs:147), so
+    // a slug-keyed probe misses a retimed row's earlier changeset and
+    // "freshly" inserts it onto its own primary key (da-zlug).
+    //
+    // Pull the current full row so we can snapshot it into entry_history
+    // when an apply actually changes state — no-op LWW short-circuits do
+    // NOT write history.
     let existing: Option<Entry> = tx
         .query_row(
-            "SELECT * FROM entries WHERE slug = ?1",
-            params![entry.slug],
+            "SELECT * FROM entries WHERE hid = ?1",
+            params![entry.hid],
             datum_core::db::row_to_entry_public,
         )
         .optional()?;
@@ -263,11 +380,42 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
         // integrity warning so the overwrite is surfaced to the user (C4e)
         // rather than applied silently. The history row is the recoverable
         // source; the warning is the notification keyed off it (da-t96a).
-        // Only the existing-row branch is an overwrite — a fresh arrival
-        // (the `else` below) replaces nothing local and files no warning.
+        // Only this branch is an overwrite — a row arriving under an hid we
+        // don't hold replaces nothing local and files no warning.
         history::record(tx, pre, ChangeKind::SyncMerge)?;
         datum_core::integrity::file_lww_overwrite(tx, pre, entry)?;
-    } else {
+    }
+
+    // `hid` merge means two *different* rows can now contend for one slug
+    // or one live `(field, occur_time)` — the constraints slug-keyed merge
+    // used to hide by collapsing both sides into one row. Neither is a
+    // crash and neither is a discard: keep both, park the deterministic
+    // loser, and file a warning naming the pair (da-zlug). The policy for
+    // deduping an *essentially identical* pair silently is da-yiq9, which
+    // waits on `content_hash` covering `following_state`.
+    let blockers = find_blockers(tx, entry)?;
+    let top = blockers
+        .iter()
+        .max_by(|a, b| merge_rank(a).cmp(&merge_rank(b)));
+    let parked;
+    let entry = match top {
+        // Incoming loses: write it in its parked shape rather than dropping
+        // it, so the device that pulls second holds the same rows as the one
+        // that pulled first.
+        Some(winner) if merge_rank(winner) > merge_rank(entry) => {
+            parked = park_loser(tx, entry, winner, false)?;
+            &parked
+        }
+        // Incoming wins: move every blocker out of the way in place.
+        _ => {
+            for blocker in &blockers {
+                park_loser(tx, blocker, entry, true)?;
+            }
+            entry
+        }
+    };
+
+    if existing.is_none() {
         // Fresh row arriving from a peer — the "pre" state is the incoming
         // row itself (same as a create). Record it as sync_merge so the
         // change_kind reflects how it got here, matching the protocol spec.
@@ -312,12 +460,15 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             ?24, ?25, ?26,
             ?27
         )
-        ON CONFLICT(slug) DO UPDATE SET
-            -- Merge keys on slug (the durable cross-device identity). On
-            -- conflict the row takes the LWW winner's hid, so hid is NOT
-            -- stable across a cross-device merge — slug is. Code must not
-            -- assume hid permanence across sync.
-            hid             = excluded.hid,
+        ON CONFLICT(hid) DO UPDATE SET
+            -- Merge keys on hid — the primary key, replicated with
+            -- fidelity, and the identity entry_history, integrity_warnings
+            -- and prefix-addressing already join on. `slug` is derived from
+            -- field + occur_time and `retime` rewrites it in place, so it
+            -- is the *mutable* column here and takes the winner's value
+            -- (da-zlug). The slug/(field, occur_time) constraints are
+            -- pre-resolved above, so hid is the only conflict left to hit.
+            slug            = excluded.slug,
             content_hash    = excluded.content_hash,
             field           = excluded.field,
             verb            = excluded.verb,
@@ -388,6 +539,24 @@ mod tests {
 
     fn fresh_db() -> Db {
         Db::open_in_memory().unwrap()
+    }
+
+    /// Pack one entry as a peer would ship it.
+    fn changeset_of(entry: &Entry) -> Changeset {
+        let tmp = fresh_db();
+        tmp.insert_entry(entry).unwrap();
+        pack_changeset(&tmp, 0).unwrap()
+    }
+
+    /// The row stored under `hid`, live or tombstoned.
+    fn row_by_hid(db: &Db, hid: &datum_core::ids::Hid) -> Entry {
+        db.conn()
+            .query_row(
+                "SELECT * FROM entries WHERE hid = ?1",
+                params![hid],
+                datum_core::db::row_to_entry_public,
+            )
+            .unwrap()
     }
 
     fn make_entry(field: &str, offset_secs: i64) -> Entry {
@@ -587,6 +756,9 @@ mod tests {
 
         let mut older = make_entry("coffee", 0);
         let mut newer = make_entry("coffee", 0);
+        // One entry edited on two devices: since da-zlug the merge keys on
+        // hid, so "the same entry" means the same hid.
+        newer.hid = older.hid.clone();
         newer.modify_time = older.modify_time + Duration::seconds(60);
         // Distinguish older vs newer by real content — the storage layer
         // canonicalizes content_hash (da-r569), so a synthetic label on
@@ -596,11 +768,7 @@ mod tests {
 
         db_a.insert_entry(&newer).unwrap();
 
-        let older_cs = {
-            let tmp = fresh_db();
-            tmp.insert_entry(&older).unwrap();
-            pack_changeset(&tmp, 0).unwrap()
-        };
+        let older_cs = changeset_of(&older);
         let newer_cs = pack_changeset(&db_a, 0).unwrap();
 
         apply_changeset(&db_b, &older_cs).unwrap();
@@ -620,9 +788,10 @@ mod tests {
         let db_a = fresh_db();
         let db_b = fresh_db();
 
-        // Same slug, same modify_time, different content on each device.
+        // One entry (one hid), edited on each device in the same instant.
         let mut on_a = make_entry("coffee", 0);
         let mut on_b = make_entry("coffee", 0);
+        on_b.hid = on_a.hid.clone();
         on_a.state = Some(serde_json::json!("from-a"));
         on_b.state = Some(serde_json::json!("from-b"));
         on_b.device_id = "dev-2".to_string();
@@ -661,12 +830,9 @@ mod tests {
         db.insert_entry(&local).unwrap();
 
         let mut replay = make_entry("coffee", 0);
+        replay.hid = hid.clone();
         replay.device_id = "dev-2".to_string();
-        let cs = {
-            let tmp = fresh_db();
-            tmp.insert_entry(&replay).unwrap();
-            pack_changeset(&tmp, 0).unwrap()
-        };
+        let cs = changeset_of(&replay);
         let before = history::list(db.conn(), &hid, false).unwrap().len();
         apply_changeset(&db, &cs).unwrap();
 
@@ -721,6 +887,7 @@ mod tests {
         let db = fresh_db();
         let mut older = make_entry("coffee", 0);
         let mut newer = make_entry("coffee", 0);
+        newer.hid = older.hid.clone();
         newer.modify_time = older.modify_time + Duration::seconds(60);
         // Distinguish older vs newer by real content; see
         // `apply_changeset_lww_skips_older_incoming` for the rationale.
@@ -732,11 +899,7 @@ mod tests {
         let versions_before = history::list(db.conn(), &hid, false).unwrap();
         assert_eq!(versions_before.len(), 1);
 
-        let newer_cs = {
-            let tmp = fresh_db();
-            tmp.insert_entry(&newer).unwrap();
-            pack_changeset(&tmp, 0).unwrap()
-        };
+        let newer_cs = changeset_of(&newer);
         apply_changeset(&db, &newer_cs).unwrap();
 
         let versions_after = history::list(db.conn(), &hid, false).unwrap();
@@ -764,17 +927,14 @@ mod tests {
         let db = fresh_db();
         let mut older = make_entry("coffee", 0);
         let mut newer = make_entry("coffee", 0);
+        newer.hid = older.hid.clone();
         newer.modify_time = older.modify_time + Duration::seconds(60);
         older.state = Some(serde_json::json!("older"));
         newer.state = Some(serde_json::json!("newer"));
 
         db.insert_entry(&older).unwrap();
 
-        let newer_cs = {
-            let tmp = fresh_db();
-            tmp.insert_entry(&newer).unwrap();
-            pack_changeset(&tmp, 0).unwrap()
-        };
+        let newer_cs = changeset_of(&newer);
         apply_changeset(&db, &newer_cs).unwrap();
 
         let warnings = integrity::list(
@@ -822,5 +982,215 @@ mod tests {
             warnings.is_empty(),
             "neither fresh nor no-op is an overwrite"
         );
+    }
+
+    /// da-zlug, the reported crash: `retime` rekeys a row in place — hid
+    /// preserved, slug rewritten (`datum-core/src/db/time.rs:147`) — and the
+    /// relay is append-only, so the entry sits on it under two slugs with
+    /// one hid. A slug-keyed probe missed the second one and inserted it
+    /// straight onto its own primary key: `UNIQUE constraint failed:
+    /// entries.hid`. Merging on hid makes it the update it always was.
+    #[test]
+    fn retimed_entry_replays_onto_itself_without_pk_collision() {
+        let db = fresh_db();
+        let before = make_entry("coffee", 0);
+        let mut after = make_entry("coffee", 3600);
+        after.hid = before.hid.clone();
+        after.modify_time = before.modify_time + Duration::seconds(60);
+        assert_ne!(before.slug, after.slug, "retime changes the slug");
+
+        // The relay replays the pre-retime changeset, then the post-retime
+        // one — both live there forever.
+        apply_changeset(&db, &changeset_of(&before)).unwrap();
+        apply_changeset(&db, &changeset_of(&after)).unwrap();
+
+        let count: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "one entry, not two — the hid is the identity");
+        let landed = row_by_hid(&db, &before.hid);
+        assert_eq!(landed.slug, after.slug, "the row follows the new slug");
+        assert!(
+            db.get_entry(&before.slug).is_err(),
+            "the pre-retime slug no longer resolves"
+        );
+        // History stays joined to the hid, which nothing rewrites (da-0ye9).
+        assert_eq!(
+            history::list(db.conn(), &before.hid, false).unwrap().len(),
+            2
+        );
+    }
+
+    /// The other half of the inversion: two *different* entries claiming one
+    /// slug. Both are kept — the deterministic loser is parked under a slug
+    /// carrying its own hid, and tombstoned because a live pair cannot share
+    /// `(field, occur_time)` — and one `identity_collision` warning names
+    /// the pair for `datum check` (da-zlug; policy refinement is da-yiq9).
+    #[test]
+    fn same_slug_different_hid_keeps_both_and_parks_the_loser() {
+        use datum_core::integrity::{DetectedBy, IntegrityKind, ListFilter};
+
+        let db = fresh_db();
+        let mut local = make_entry("coffee", 0);
+        let mut incoming = make_entry("coffee", 0);
+        local.state = Some(serde_json::json!("local"));
+        incoming.state = Some(serde_json::json!("incoming"));
+        incoming.modify_time = local.modify_time + Duration::seconds(60);
+        assert_eq!(local.slug, incoming.slug);
+        assert_ne!(local.hid, incoming.hid);
+
+        db.insert_entry(&local).unwrap();
+        apply_changeset(&db, &changeset_of(&incoming)).unwrap();
+
+        // Newer incoming wins the contested slug; the local row survives.
+        let kept = db.get_entry(&incoming.slug).unwrap();
+        assert_eq!(kept.hid, incoming.hid);
+        let parked = row_by_hid(&db, &local.hid);
+        assert_eq!(
+            parked.slug.as_str(),
+            format!("{}_{}", local.slug, local.hid)
+        );
+        assert_eq!(
+            parked.deleted_at,
+            Some(incoming.modify_time),
+            "tombstoned at the winner's modify_time — the same value on every device"
+        );
+        assert_eq!(
+            parked.state,
+            Some(serde_json::json!("local")),
+            "not destroyed"
+        );
+
+        let warnings = db
+            .list_integrity_warnings(&ListFilter {
+                kind: Some(IntegrityKind::IdentityCollision),
+                pending: Some(true),
+            })
+            .unwrap();
+        assert_eq!(warnings.len(), 1, "one warning naming the pair");
+        assert_eq!(warnings[0].detected_by, DetectedBy::SyncPull);
+        assert_eq!(warnings[0].local_entry.hid, local.hid);
+        assert_eq!(warnings[0].remote_entry.as_ref().unwrap().hid, incoming.hid);
+    }
+
+    /// The parking rule is a pure function of the two rows, so devices that
+    /// meet them in opposite orders land on the same pair of rows — the
+    /// divergence guard da-22zm names, applied to the collision the
+    /// inversion creates. Re-applying afterwards changes nothing.
+    #[test]
+    fn identity_collision_converges_regardless_of_arrival_order() {
+        use datum_core::integrity::{IntegrityKind, ListFilter};
+
+        let mut on_a = make_entry("coffee", 0);
+        let mut on_b = make_entry("coffee", 0);
+        on_a.state = Some(serde_json::json!("from-a"));
+        on_b.state = Some(serde_json::json!("from-b"));
+        on_b.device_id = "dev-2".to_string();
+        on_b.modify_time = on_a.modify_time + Duration::seconds(60);
+        let cs_a = changeset_of(&on_a);
+        let cs_b = changeset_of(&on_b);
+
+        let db_a = fresh_db();
+        apply_changeset(&db_a, &cs_a).unwrap();
+        apply_changeset(&db_a, &cs_b).unwrap();
+        let db_b = fresh_db();
+        apply_changeset(&db_b, &cs_b).unwrap();
+        apply_changeset(&db_b, &cs_a).unwrap();
+        // ...and a re-pull of both, which the append-only relay guarantees.
+        apply_changeset(&db_a, &cs_a).unwrap();
+        apply_changeset(&db_b, &cs_b).unwrap();
+
+        let shape = |db: &Db| -> Vec<(String, String, bool)> {
+            let mut stmt = db
+                .conn()
+                .prepare("SELECT hid, slug, deleted_at FROM entries ORDER BY hid")
+                .unwrap();
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, Option<String>>(2)?.is_some(),
+                    ))
+                })
+                .unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+        let shape_a = shape(&db_a);
+        assert_eq!(shape_a.len(), 2, "both rows kept");
+        assert_eq!(shape_a, shape(&db_b), "same two rows, same two slugs");
+
+        // Idempotent: the second pass files no further warnings.
+        let count = |db: &Db| {
+            db.list_integrity_warnings(&ListFilter {
+                kind: Some(IntegrityKind::IdentityCollision),
+                pending: Some(true),
+            })
+            .unwrap()
+            .len()
+        };
+        assert_eq!(count(&db_a), 1);
+        assert_eq!(count(&db_b), 1);
+    }
+
+    /// The third constraint, which no test ever built: two rows with
+    /// *distinct* slugs (custom `--id` templates) at the same field and
+    /// instant trip the partial UNIQUE on `(field, occur_time)`. It is a
+    /// merge case like the others, not a constraint error — the loser keeps
+    /// its own slug and is tombstoned.
+    #[test]
+    fn field_occur_time_collision_is_a_merge_not_an_error() {
+        use datum_core::integrity::{IntegrityKind, ListFilter};
+
+        let db = fresh_db();
+        let mut local = make_entry("coffee", 0);
+        let mut incoming = make_entry("coffee", 0);
+        local.slug = datum_core::ids::Slug::new("coffee:morning");
+        incoming.slug = datum_core::ids::Slug::new("coffee:first-cup");
+        incoming.modify_time = local.modify_time + Duration::seconds(60);
+
+        db.insert_entry(&local).unwrap();
+        apply_changeset(&db, &changeset_of(&incoming)).unwrap();
+
+        let kept = db.get_entry(&incoming.slug).unwrap();
+        assert_eq!(kept.hid, incoming.hid);
+        let parked = row_by_hid(&db, &local.hid);
+        assert_eq!(parked.slug, local.slug, "no slug contest, no slug change");
+        assert_eq!(parked.deleted_at, Some(incoming.modify_time));
+        assert_eq!(
+            db.list_integrity_warnings(&ListFilter {
+                kind: Some(IntegrityKind::IdentityCollision),
+                pending: Some(true),
+            })
+            .unwrap()
+            .len(),
+            1,
+        );
+    }
+
+    /// An incoming row that *loses* the contest is still applied — parked
+    /// rather than dropped, so the two devices hold the same rows and the
+    /// entry is not silently lost on whichever device happens to be second.
+    #[test]
+    fn losing_incoming_row_is_parked_not_discarded() {
+        let db = fresh_db();
+        let mut local = make_entry("coffee", 0);
+        let mut incoming = make_entry("coffee", 0);
+        local.state = Some(serde_json::json!("local"));
+        incoming.state = Some(serde_json::json!("incoming"));
+        local.modify_time = incoming.modify_time + Duration::seconds(60);
+
+        db.insert_entry(&local).unwrap();
+        apply_changeset(&db, &changeset_of(&incoming)).unwrap();
+
+        assert_eq!(db.get_entry(&local.slug).unwrap().hid, local.hid);
+        let parked = row_by_hid(&db, &incoming.hid);
+        assert_eq!(
+            parked.slug.as_str(),
+            format!("{}_{}", incoming.slug, incoming.hid)
+        );
+        assert_eq!(parked.deleted_at, Some(local.modify_time));
+        assert_eq!(parked.state, Some(serde_json::json!("incoming")));
     }
 }

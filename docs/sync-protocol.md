@@ -413,12 +413,46 @@ each push.
 ## Merge semantics (last-write-wins)
 
 Incoming entries are reconciled against the local table by
-**last-write-wins on `modify_time`** (wall-clock), keyed on `slug` — the
-durable cross-device identity (`hid` is local-only and not stable across a
-merge). When two devices have edited the same `slug`, the row with the
-larger `modify_time` survives; the loser's pre-merge state is snapshotted
-into `entry_history` as a `sync_merge` change, so it is recoverable and
+**last-write-wins on `modify_time`** (wall-clock), keyed on `hid` — the
+primary key, replicated across devices with fidelity, and the identity
+`entry_history`, `integrity_warnings` and prefix-addressing already join
+on. When two devices have edited the same `hid`, the row with the larger
+`modify_time` survives; the loser's pre-merge state is snapshotted into
+`entry_history` as a `sync_merge` change, so it is recoverable and
 auditable. See `crates/datum-sync-client/src/ops.rs::upsert_lww`.
+
+**Why not `slug`.** `slug` is *derived* from `field` + `occur_time`, and
+`retime` rewrites it in place while preserving the hid
+(`datum-core/src/db/time.rs`). The relay is an append-only log, so a
+retimed entry sits on it under two slugs with one hid; a slug-keyed probe
+misses the second changeset, calls it a fresh arrival, and inserts it onto
+its own primary key — `UNIQUE constraint failed: entries.hid` (da-zlug). A
+key derived from mutable data cannot be an identity.
+
+**Identity collisions (`slug`, `(field, occur_time)`).** Keying on `hid`
+means two genuinely *different* entries can now contend for one slug, or
+for one live `(field, occur_time)` — the constraints slug-keyed merge hid
+by collapsing both sides into a single row. Neither is an error and neither
+side is discarded:
+
+- The winner is the row with the greater `(modify_time, content_hash,
+  device_id, hid)` — the equal-`modify_time` tiebreaker below, extended
+  with `hid` so the order is total.
+- The loser is **parked, not dropped**: its slug becomes `<slug>_<hid>`
+  when the two contend for a slug, and it is tombstoned with `deleted_at =
+  <winner's modify_time>` when they cannot both be live. Its content is
+  untouched.
+- `modify_time` is not bumped. Parking is a pure function of the two rows,
+  so every device reaches the same pair of rows independently, in any
+  arrival order, with no extra traffic.
+- One `integrity_warnings` row with `kind = identity_collision` names the
+  pair; `datum check` is where the user meets it. Sync never blocks — the
+  daemon has no one to ask.
+
+Two rows with *essentially identical* content still park rather than
+dedupe. Deduping them silently is da-yiq9, and it waits on `content_hash`
+covering `following_state` — until then "identical content" is a predicate
+that conflates semantically different entries.
 
 **Equal-`modify_time` tiebreaker (part of the contract).** When the stored
 and incoming rows carry *exactly* equal `modify_time`, the winner is chosen
@@ -427,7 +461,10 @@ by a deterministic total order: the row with the lexically greater
 identical row — a replay — and is skipped with no history row or warning).
 Every client MUST implement this tiebreaker identically: without it each
 device keeps its own row on a tie and both consider themselves up to date —
-a permanent, silent divergence that no future sync heals (da-22zm).
+a permanent, silent divergence that no future sync heals (da-22zm). The
+identity-collision parking above extends the same order with `hid` as a
+final discriminator; clients MUST implement that identically too, for the
+same reason.
 
 **Clock-skew caveat (accepted, not mitigated).** `modify_time` is a raw
 device wall-clock with no logical-clock component. A device whose clock
@@ -445,7 +482,7 @@ lww_overwrite`, `detected_by = sync_pull`: `local_entry` is the overwritten
 local edit, `remote_entry` the winning remote edit. The
 conflict-resolution UX (C4e) reads these to tell the user "a remote edit
 overwrote yours" and offer take-local / take-remote, sourced from the same
-`sync_merge` history snapshot. A *fresh* row arriving for a slug not yet
+`sync_merge` history snapshot. A *fresh* row arriving for an hid not yet
 present locally is not an overwrite and files no warning.
 
 ## Encryption

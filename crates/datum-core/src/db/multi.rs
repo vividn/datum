@@ -677,7 +677,7 @@ mod tests {
 
     /// The headline da-95ez fix: re-`occur`-ing at a slug held only by a
     /// tombstone revives that row in place instead of colliding. One row per
-    /// slug is preserved (sync keys on slug); the deleted entry's hid is
+    /// slug is preserved (the slug UNIQUE is total); the deleted entry's hid is
     /// retained and its tombstoned state is kept in history for undo.
     #[test]
     fn reoccur_at_tombstoned_slug_revives_row() {

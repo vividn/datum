@@ -104,6 +104,16 @@ pub enum IntegrityKind {
     /// to the user (C4e) instead of leaving it silent. Only ever filed with
     /// `detected_by = sync_pull` (da-t96a).
     LwwOverwrite,
+    /// Two *distinct* entries (different `hid`) claim one identity the
+    /// `entries` table can only give to one row: the same `slug`, or the
+    /// same live `(field, occur_time)`. Since da-zlug the sync apply merges
+    /// on `hid`, so these are genuinely two rows rather than two versions
+    /// of one — both are kept, the deterministic loser is parked (slug
+    /// suffixed with its own hid, and/or tombstoned when the pair cannot
+    /// both be live), and this row names the pair. `local_entry` is the
+    /// parked loser, `remote_entry` the row that kept the identity. Only
+    /// ever filed with `detected_by = sync_pull`.
+    IdentityCollision,
 }
 
 impl IntegrityKind {
@@ -115,6 +125,7 @@ impl IntegrityKind {
             IntegrityKind::SameStateRepeat => "same_state_repeat",
             IntegrityKind::LastStateMismatch => "last_state_mismatch",
             IntegrityKind::LwwOverwrite => "lww_overwrite",
+            IntegrityKind::IdentityCollision => "identity_collision",
         }
     }
 }
@@ -135,6 +146,7 @@ impl std::str::FromStr for IntegrityKind {
             "same_state_repeat" => Ok(IntegrityKind::SameStateRepeat),
             "last_state_mismatch" => Ok(IntegrityKind::LastStateMismatch),
             "lww_overwrite" => Ok(IntegrityKind::LwwOverwrite),
+            "identity_collision" => Ok(IntegrityKind::IdentityCollision),
             other => Err(format!("unknown kind: '{other}'")),
         }
     }
@@ -725,6 +737,28 @@ pub fn file_lww_overwrite(
     )
 }
 
+/// File an [`IntegrityKind::IdentityCollision`] warning: two distinct
+/// entries claimed one `slug` (or one live `(field, occur_time)`) during a
+/// sync apply. `parked` is the deterministic loser as it now stands —
+/// suffixed slug, tombstoned if the pair could not both stay live — and
+/// `kept` the row that holds the contested identity. Both rows survive;
+/// this row is what tells the user they need to decide between them
+/// (da-zlug; the merge policy itself is da-yiq9). Call from inside the
+/// apply transaction so the warning lands atomically with the parking.
+pub fn file_identity_collision(
+    conn: &Connection,
+    parked: &Entry,
+    kept: &Entry,
+) -> Result<IntegrityWarning> {
+    file_warning(
+        conn,
+        parked,
+        Some(kept),
+        DetectedBy::SyncPull,
+        IntegrityKind::IdentityCollision,
+    )
+}
+
 /// Filter for [`list`]. `None` matches any row of that axis.
 #[derive(Debug, Clone, Default)]
 pub struct ListFilter {
@@ -751,9 +785,16 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<IntegrityWarni
     // otherwise `datum check` keeps reporting (e.g.) a double-open after the
     // offending entry was deleted. Resolution by id still works: it goes
     // through `get_by_hid_or_id`, which is unfiltered.
-    clauses.push(
-        "entry_slug NOT IN (SELECT slug FROM entries WHERE deleted_at IS NOT NULL)".to_string(),
-    );
+    //
+    // `identity_collision` is exempt (da-zlug): its trigger is the row the
+    // sync apply *parked*, and parking tombstones the loser when the pair
+    // cannot both be live. There the tombstone is the finding, not evidence
+    // it went away — suppressing it would hide every collision it reports.
+    clauses.push(format!(
+        "(kind = '{}' OR \
+          entry_slug NOT IN (SELECT slug FROM entries WHERE deleted_at IS NOT NULL))",
+        IntegrityKind::IdentityCollision.as_str(),
+    ));
     if let Some(kind) = filter.kind {
         clauses.push(format!("kind = ?{}", binds.len() + 1));
         binds.push(kind.as_str().to_string());

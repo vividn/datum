@@ -723,6 +723,12 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                 s = if count == 1 { "" } else { "s" },
                 were = if count == 1 { "was" } else { "were" },
             ),
+            IntegrityKind::IdentityCollision => format!(
+                "{count} entr{y} from another device collided with a local entry on slug \
+                 or on (field, occur_time). Both were kept — the loser's slug carries its \
+                 hid, and it is tombstoned when the two could not both stay live.",
+                y = if count == 1 { "y" } else { "ies" },
+            ),
         };
         let category: &'static str = match kind {
             IntegrityKind::SameStateRepeat => "repeated_state",
@@ -731,6 +737,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
             IntegrityKind::Overlap => "integrity_overlap",
             IntegrityKind::LastStateMismatch => "integrity_last_state_mismatch",
             IntegrityKind::LwwOverwrite => "integrity_lww_overwrite",
+            IntegrityKind::IdentityCollision => "integrity_identity_collision",
         };
         // da-mkes: collect one FlaggedEntry per warning. The state column
         // gets a leading `!` for `repeated_state` rows so the human render

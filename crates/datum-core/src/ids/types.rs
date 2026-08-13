@@ -20,15 +20,16 @@ use serde::{Deserialize, Serialize};
 
 /// Random 12-char base36 entry id. PRIMARY KEY in `entries`.
 ///
-/// Local-only identity: a cross-device sync merge keys on `slug` and adopts
-/// the LWW winner's hid, so a row's hid is NOT stable across merges. Use
-/// [`Slug`] as the durable cross-device identity.
+/// The durable identity, local and cross-device: a sync merge keys on the
+/// hid and never rewrites it (da-zlug). [`Slug`] is the mutable, human-facing
+/// handle.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(transparent)]
 pub struct Hid(pub String);
 
 /// Human-facing entry reference (`field:<ident>`). UNIQUE-indexed in `entries`.
-/// Durable cross-device identity — sync merges key on the slug (see [`Hid`]).
+/// Derived from field + occur_time and rewritten in place by `retime`, so it
+/// is a handle, not an identity — see [`Hid`] for the stable one.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(transparent)]
 pub struct Slug(pub String);

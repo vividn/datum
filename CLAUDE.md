@@ -35,8 +35,8 @@ a top-level `migrations/` folder.)
 ## Data model fundamentals
 
 ### Entry fields
-- `id` (`hid`): internal, prefix-addressable, sortable. **Local primary key only — NOT stable across a cross-device sync merge.** Merges key on `slug` and adopt the LWW winner's hid, so the **slug is the durable identity for sync**; never assume hid permanence across merges.
-- `slug`: `field:2024-03-16T09:15Z` (human reference, datum-compatible). Durable cross-device identity — sync merges key on it.
+- `id` (`hid`): internal, prefix-addressable, sortable. **Primary key and the durable identity, local and cross-device** — sync merges key on it and never rewrite it (da-zlug).
+- `slug`: `field:2024-03-16T09:15Z` (human reference, datum-compatible). Derived from field + occur_time, so `retime` rewrites it — **mutable, not an identity**.
 - `content_hash`: SHA-256 dedup key
 - `field`: what is being tracked (e.g. "coffee", "mood", "project", "word")
 - `verb`: occur | start | stop | switch | note

@@ -624,9 +624,9 @@ fn insert_entry_in_tx(
             // is held *only by a tombstone*, the deleted entry no longer owns
             // its identity, so revive that row in place rather than colliding
             // (delete-then-recreate at the same slug must work). One row per
-            // slug is preserved — the invariant slug-keyed LWW sync depends on
-            // (the full slug UNIQUE stays; a partial index would let a ghost
-            // and a re-occur share a slug and break tombstone propagation).
+            // slug is preserved (the full slug UNIQUE stays; a partial index
+            // would let a ghost and a re-occur share a slug and break
+            // tombstone propagation).
             // The pre-revive tombstone is snapshotted into entry_history so
             // `undo` can still walk back to the deletion.
             if let Some(ghost) = fetch_tombstone_by_slug(conn, &entry.slug)? {
