@@ -23,7 +23,7 @@ fn t(secs: i64) -> DatumTime {
     DatumTime {
         utc: base + chrono::Duration::seconds(secs),
         offset_minutes: 0,
-        timezone: "UTC".to_string(),
+        timezone: Some("UTC".to_string()),
     }
 }
 

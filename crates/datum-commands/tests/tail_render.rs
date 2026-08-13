@@ -25,7 +25,7 @@ fn dt(y: i32, mo: u32, d: u32, h: u32, m: u32) -> DatumTime {
     DatumTime {
         utc,
         offset_minutes: 0,
-        timezone: "UTC".to_string(),
+        timezone: Some("UTC".to_string()),
     }
 }
 
@@ -457,7 +457,7 @@ fn dt_off(y: i32, mo: u32, d: u32, h: u32, m: u32, offset_minutes: i32, tz: &str
     DatumTime {
         utc: Utc.with_ymd_and_hms(y, mo, d, h, m, 0).unwrap(),
         offset_minutes,
-        timezone: tz.to_string(),
+        timezone: Some(tz.to_string()),
     }
 }
 

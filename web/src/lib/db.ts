@@ -50,7 +50,7 @@ function rowToEntry(row: Record<string, unknown>): Entry {
 		occurTime: {
 			utc: row.occur_time as string,
 			offsetMinutes: (row.occur_time_offset as number | null) ?? 0,
-			timezone: (row.occur_time_tz as string | null) ?? 'UTC'
+			timezone: (row.occur_time_tz as string | null) ?? undefined
 		},
 		occurTimePrecision: (row.occur_time_precision as string | null) ?? undefined,
 		lat: (row.lat as number | null) ?? undefined,
@@ -93,7 +93,7 @@ export async function insertEntry(entry: Entry): Promise<void> {
 			$unit: entry.unit ?? null,
 			$occur_time: entry.occurTime.utc,
 			$occur_time_offset: entry.occurTime.offsetMinutes,
-			$occur_time_tz: entry.occurTime.timezone,
+			$occur_time_tz: entry.occurTime.timezone ?? null,
 			$occur_time_precision: entry.occurTimePrecision ?? null,
 			$lat: entry.lat ?? null,
 			$lon: entry.lon ?? null,

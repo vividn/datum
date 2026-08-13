@@ -958,7 +958,10 @@ fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
 ///
 /// A row with an unparseable `timezone` is also flagged here: the offset
 /// can't be verified and `local_time` is meaningless until the name is
-/// fixed. Tombstones are skipped — historical rows, not live data.
+/// fixed. A row with *no* stored `timezone` is skipped — a legacy import
+/// can carry an offset without a zone name (da-vfbq), and an offset alone
+/// is self-verifying: there is no zone claim for it to disagree with.
+/// Tombstones are skipped too — historical rows, not live data.
 ///
 /// Report-only: the "which field is authoritative — tz or offset?" call
 /// deserves a human, so there is deliberately no `--fix` re-derivation yet
@@ -976,15 +979,18 @@ fn collect_tz_drift(db: &Db) -> Result<Vec<Issue>> {
             continue;
         };
         let detail = match occur.expected_offset_minutes() {
-            Ok(expected) if expected == occur.offset_minutes => continue,
-            Ok(expected) => format!(
+            // No stored zone, or one that agrees with the offset: nothing to
+            // reconcile.
+            Ok(None) => continue,
+            Ok(Some(expected)) if expected == occur.offset_minutes => continue,
+            Ok(Some(expected)) => format!(
                 "tz={tz}  stored_offset={stored}  expected_offset={expected}",
-                tz = occur.timezone,
+                tz = occur.timezone.as_deref().unwrap_or("—"),
                 stored = occur.offset_minutes,
             ),
             Err(err) => format!(
                 "tz={tz}  stored_offset={stored}  {err}",
-                tz = occur.timezone,
+                tz = occur.timezone.as_deref().unwrap_or("—"),
                 stored = occur.offset_minutes,
             ),
         };
@@ -1014,7 +1020,9 @@ fn collect_tz_drift(db: &Db) -> Result<Vec<Issue>> {
                 .occur_time
                 .as_ref()
                 .map(|t| match t.expected_offset_minutes() {
-                    Ok(exp) => format!("{}→{exp}", t.offset_minutes),
+                    Ok(Some(exp)) => format!("{}→{exp}", t.offset_minutes),
+                    // Unreachable: zone-less rows are never flagged.
+                    Ok(None) => format!("{}→— (no tz)", t.offset_minutes),
                     Err(_) => format!("{}→? (bad tz)", t.offset_minutes),
                 })
                 .unwrap_or_default(),
@@ -1559,7 +1567,7 @@ mod tests {
         DatumTime {
             utc,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         }
     }
 
@@ -1651,6 +1659,38 @@ mod tests {
         let issues = collect_tz_drift(&db).unwrap();
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].category, "tz_offset_mismatch");
+    }
+
+    /// A row with a non-zero offset and *no* stored zone is clean: an
+    /// offset is self-verifying, and there is no zone claim for it to
+    /// contradict. This is the shape a legacy import produces when the
+    /// backup carried `o` but no `tz` (da-vfbq) — before the fix those rows
+    /// were written as `tz='UTC'` beside the offset and every one of them
+    /// was flagged.
+    #[test]
+    fn tz_check_skips_rows_with_no_stored_timezone() {
+        let db = Db::open_in_memory().unwrap();
+        let occur = DatumTime {
+            utc: t_at("2024-01-15T12:00:00+00:00").utc,
+            offset_minutes: 60,
+            timezone: None,
+        };
+        let entry = Entry::new_legacy("work", Verb::Switch, None, None, Some(occur), None, "d1");
+        db.insert_entry(&entry).unwrap();
+
+        let stored: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT occur_time_tz FROM entries WHERE field = 'work'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, None, "an absent zone stays NULL in the column");
+        assert!(
+            collect_tz_drift(&db).unwrap().is_empty(),
+            "offset without a zone name is not a mismatch",
+        );
     }
 
     /// Tombstoned rows are historical, not live data — the `tz` checker

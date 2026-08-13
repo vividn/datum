@@ -602,7 +602,7 @@ mod tests {
         let t = DatumTime {
             utc,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         Entry::new(field, Verb::Point, Some(value), extra, Some(t), None, "d1")
     }
@@ -895,7 +895,7 @@ mod tests {
         let t = DatumTime {
             utc: base + chrono::Duration::seconds(100),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let dup = Entry::new(
             "mood",
@@ -1560,7 +1560,7 @@ mod tests {
                 let t = DatumTime {
                     utc: base + chrono::Duration::seconds(i as i64),
                     offset_minutes: 0,
-                    timezone: "UTC".to_string(),
+                    timezone: Some("UTC".to_string()),
                 };
                 // state=None → Verb::Point: skips the per-insert
                 // `last_state_at` scan (see doc comment above).

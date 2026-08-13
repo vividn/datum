@@ -432,10 +432,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
         .map(|t| t.utc.to_rfc3339())
         .unwrap_or_else(|| entry.create_time.to_rfc3339());
     let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
-    let occur_tz = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.timezone.as_str().to_string());
+    let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let verb_str = entry.verb.to_string();
 
     tx.execute(
@@ -565,7 +562,7 @@ mod tests {
         let t = DatumTime {
             utc: at,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let mut e = Entry::new(
             field,

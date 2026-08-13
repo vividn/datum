@@ -242,7 +242,10 @@ fn db_import_synthetic_locks_db_shape() {
     );
     assert_eq!(test.verb, Verb::Block, "doc 6: stored verb");
     assert_eq!(test.occur_time.as_ref().unwrap().offset_minutes, 0);
-    assert_eq!(test.occur_time.as_ref().unwrap().timezone, "UTC");
+    assert_eq!(
+        test.occur_time.as_ref().unwrap().timezone.as_deref(),
+        Some("UTC")
+    );
 
     // Doc 7 (consume): extras `id`, `medium` go into `data` and don't
     // collide with Entry.hid. da-7sr: also must store verb='point'.

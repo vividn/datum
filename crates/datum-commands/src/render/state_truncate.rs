@@ -344,7 +344,7 @@ mod tests {
         let t = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 5, 22, 14, 30, 0).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         Entry::new(field, Verb::Switch, Some(value), None, Some(t), None, "dev")
     }

@@ -1077,3 +1077,90 @@ fn import_reimport_with_same_humanid_and_same_content_is_idempotent() {
     );
     assert_eq!(after_second[0].hid, "stable42");
 }
+
+// ─── da-vfbq: an absent `tz` is unknown, not UTC ─────────────────────
+// Legacy datum types both `o` and `tz` as optional, and older docs carry
+// the offset alone. Defaulting the zone to "UTC" beside a non-zero offset
+// asserts a zone the backup never contained *and* contradicts the offset
+// stored next to it, so `datum check tz` flagged every non-UTC row.
+
+#[test]
+fn import_offset_without_tz_leaves_the_zone_unset() {
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([{
+        "_id": "coffee:2025-01-08T07:00:00.000Z",
+        "data": {
+            "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1},
+            "field": "coffee"
+        },
+        "meta": {
+            "humanId": "notz01",
+            "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1}
+        }
+    }]));
+
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+
+    let entries = db.list_including_deleted().unwrap();
+    assert_eq!(entries.len(), 1);
+    let occur = entries[0].occur_time.as_ref().expect("occur_time");
+    assert_eq!(occur.offset_minutes, 60, "the offset the backup did carry");
+    assert_eq!(
+        occur.timezone, None,
+        "no `tz` key in the source → no zone claim in the row",
+    );
+    // The offset still drives local time: 07:00Z at UTC+1 is 08:00 local.
+    assert_eq!(occur.local_time().to_rfc3339(), "2025-01-08T08:00:00+01:00");
+
+    // ...and the pair no longer contradicts itself, so `check tz` is clean.
+    let report = datum_commands::commands::check::collect_issues(&db).unwrap();
+    assert!(
+        !report
+            .issues
+            .iter()
+            .any(|i| i.category == "tz_offset_mismatch"),
+        "an offset with no zone is not a mismatch: {:?}",
+        report.issues,
+    );
+}
+
+#[test]
+fn import_preserves_a_half_hour_offset() {
+    // `o` is signed *hours* and may be fractional (India +5.5, Nepal +5.75,
+    // Chatham +12.75). It must round to minutes, not truncate to whole
+    // hours — nothing else in the suite pins this.
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([
+        {
+            "_id": "chai:2025-01-08T07:00:00.000Z",
+            "data": {
+                "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 5.5},
+                "field": "chai"
+            },
+            "meta": {"humanId": "half01", "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 5.5}}
+        },
+        {
+            "_id": "momo:2025-01-08T08:00:00.000Z",
+            "data": {
+                "occurTime": {"utc": "2025-01-08T08:00:00.000Z", "o": 5.75, "tz": "Asia/Kathmandu"},
+                "field": "momo"
+            },
+            "meta": {"humanId": "qtr01", "createTime": {"utc": "2025-01-08T08:00:00.500Z", "o": 5.75}}
+        }
+    ]));
+
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+
+    let entries = db.list_including_deleted().unwrap();
+    let occur_of = |field: &str| {
+        entries
+            .iter()
+            .find(|e| e.field == field)
+            .and_then(|e| e.occur_time.clone())
+            .unwrap_or_else(|| panic!("{field} imported"))
+    };
+    let chai = occur_of("chai");
+    assert_eq!(chai.offset_minutes, 330, "+5:30 survives as 330 minutes");
+    assert_eq!(chai.local_time().to_rfc3339(), "2025-01-08T12:30:00+05:30");
+    assert_eq!(occur_of("momo").offset_minutes, 345, "+5:45 → 345 minutes");
+}

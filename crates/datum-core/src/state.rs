@@ -958,7 +958,7 @@ mod tests {
             Some(DatumTime {
                 utc: occur,
                 offset_minutes: 0,
-                timezone: "UTC".into(),
+                timezone: Some("UTC".into()),
             }),
             Some(Dur::Of(chrono::Duration::seconds(dur_secs))),
             "dev",
@@ -1000,7 +1000,7 @@ mod tests {
             Some(DatumTime {
                 utc: occur,
                 offset_minutes: 0,
-                timezone: "UTC".into(),
+                timezone: Some("UTC".into()),
             }),
             Some(Dur::Of(chrono::Duration::zero())),
             "dev",
@@ -1035,7 +1035,7 @@ mod tests {
             Some(DatumTime {
                 utc: occur,
                 offset_minutes: 0,
-                timezone: "UTC".into(),
+                timezone: Some("UTC".into()),
             }),
             Some(Dur::Of(chrono::Duration::seconds(30 * 60))),
             "dev",
@@ -1063,7 +1063,7 @@ mod tests {
             Some(DatumTime {
                 utc: occur,
                 offset_minutes: 0,
-                timezone: "UTC".into(),
+                timezone: Some("UTC".into()),
             }),
             Some(Dur::Moment),
             "dev",

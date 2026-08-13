@@ -1042,7 +1042,7 @@ mod tests {
         DatumTime {
             utc: Utc::now() - Duration::seconds(seconds_ago),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         }
     }
 

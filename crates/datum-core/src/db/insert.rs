@@ -872,10 +872,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
     // `Entry::new` / the dedup pre-check (`hash_occur_str`).
     let occur_str: Option<String> = entry.occur_time.as_ref().map(|t| t.utc.to_rfc3339());
     let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
-    let occur_tz = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.timezone.as_str().to_string());
+    let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         &entry.field,
@@ -998,10 +995,7 @@ fn raw_overwrite_mutables(
     // insert path.
     let occur_str: Option<String> = entry.occur_time.as_ref().map(|t| t.utc.to_rfc3339());
     let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
-    let occur_tz = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.timezone.as_str().to_string());
+    let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         &entry.field,
@@ -1091,10 +1085,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         .map(|t| t.utc.to_rfc3339())
         .unwrap_or_else(|| entry.create_time.to_rfc3339());
     let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
-    let occur_tz = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.timezone.as_str().to_string());
+    let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         &entry.field,
@@ -1189,10 +1180,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
         .map(|t| t.utc.to_rfc3339())
         .unwrap_or_else(|| entry.create_time.to_rfc3339());
     let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
-    let occur_tz = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.timezone.as_str().to_string());
+    let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         &entry.field,

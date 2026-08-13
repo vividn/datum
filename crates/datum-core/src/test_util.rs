@@ -107,7 +107,7 @@ impl EntryBuilder {
         self.start_time = Some(DatumTime {
             utc,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         });
         self
     }
@@ -116,7 +116,7 @@ impl EntryBuilder {
         self.end_time = Some(DatumTime {
             utc,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         });
         self
     }

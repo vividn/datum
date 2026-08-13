@@ -204,7 +204,7 @@ mod tests {
         DatumTime {
             utc: Utc.timestamp_opt(secs, 0).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         }
     }
 

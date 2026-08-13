@@ -276,7 +276,7 @@ mod tests {
         DatumTime {
             utc: base + chrono::Duration::seconds(secs_offset),
             offset_minutes: 0,
-            timezone: "UTC".into(),
+            timezone: Some("UTC".into()),
         }
     }
 

@@ -364,7 +364,7 @@ fn with_mocked_today<F: FnOnce()>(today: chrono::NaiveDate, f: F) {
     let dt = DatumTime {
         utc,
         offset_minutes: 0,
-        timezone: "UTC".into(),
+        timezone: Some("UTC".into()),
     };
     install(Arc::new(MockClock::new(dt)));
     f();

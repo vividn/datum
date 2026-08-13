@@ -125,6 +125,9 @@ pub(super) fn build_datum_time(
     Some(DatumTime {
         utc,
         offset_minutes: offset.unwrap_or(0),
-        timezone: tz.unwrap_or_else(|| "UTC".to_string()),
+        // A NULL `occur_time_tz` means the zone is unknown — never "UTC".
+        // Naming a zone the row doesn't carry contradicts the offset stored
+        // beside it and lights up `datum check tz` (da-vfbq).
+        timezone: tz,
     })
 }

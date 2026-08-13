@@ -794,7 +794,7 @@ mod tests {
         let t = DatumTime {
             utc,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         Entry::new_legacy(
             field,
@@ -847,7 +847,7 @@ mod tests {
         let dt = DatumTime {
             utc: t,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let e = Entry::new_legacy(field, verb, value, extra, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();
@@ -1103,7 +1103,7 @@ mod tests {
             let dt = DatumTime {
                 utc: t,
                 offset_minutes: 0,
-                timezone: "UTC".to_string(),
+                timezone: Some("UTC".to_string()),
             };
             let e = Entry::new_legacy(
                 "gym",
@@ -1367,12 +1367,12 @@ mod tests {
         let start = DatumTime {
             utc: base + chrono::Duration::seconds(start_secs),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let end = DatumTime {
             utc: base + chrono::Duration::seconds(end_secs),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         Entry::new_legacy(
             field,
@@ -1606,7 +1606,7 @@ mod tests {
         let t = DatumTime {
             utc,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         Entry::new_legacy(field, Verb::Point, None, None, Some(t), None, device)
     }
@@ -1921,7 +1921,7 @@ mod tests {
         let dt = DatumTime {
             utc: t,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let e = Entry::new(
             "mood",
@@ -1964,7 +1964,7 @@ mod tests {
         let dt = DatumTime {
             utc: t,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let e = Entry::new(
             "focus",

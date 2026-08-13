@@ -138,7 +138,7 @@ fn render_column(col: &str, e: &Entry) -> String {
             None => null_marker(),
         },
         "occur_time_tz" => match &e.occur_time {
-            Some(t) => t.timezone.clone(),
+            Some(t) => render_str_opt(t.timezone.as_deref()),
             None => null_marker(),
         },
         "occur_time_precision" => render_str_opt(e.occur_time_precision.as_deref()),
@@ -313,7 +313,7 @@ mod tests {
                 .unwrap()
                 .with_timezone(&chrono::Utc),
             offset_minutes: 5 * 60,
-            timezone: "Asia/Karachi".to_string(),
+            timezone: Some("Asia/Karachi".to_string()),
         });
         e.occur_time_precision = Some("P1D".to_string());
         let plain = strip_ansi(&format_show_all(&e));
@@ -468,7 +468,7 @@ mod tests {
                 .unwrap()
                 .with_timezone(&chrono::Utc),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         });
         let plain = strip_ansi(&format_show_all(&e));
         assert!(

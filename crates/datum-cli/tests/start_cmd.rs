@@ -339,6 +339,8 @@ fn yesterday_flag_consumes_trailing_numeric_as_duration() {
     let occur = entry.occur_time.as_ref().unwrap();
     let tz: chrono_tz::Tz = occur
         .timezone
+        .as_deref()
+        .expect("a CLI-logged entry must carry a timezone")
         .parse()
         .expect("entry must carry a valid IANA timezone");
     let local = occur.utc.with_timezone(&tz);

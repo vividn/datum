@@ -139,7 +139,7 @@ mod tests {
         DatumTime {
             utc,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         }
     }
 

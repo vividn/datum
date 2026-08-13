@@ -178,7 +178,11 @@ fn numeric_offset_flag_applies() {
         start.utc, expected_utc,
         "`-z +3`: 12:00 in UTC+3 = 09:00 UTC"
     );
-    assert_eq!(start.timezone, "Etc/GMT-3", "POSIX-sign IANA name");
+    assert_eq!(
+        start.timezone.as_deref(),
+        Some("Etc/GMT-3"),
+        "POSIX-sign IANA name"
+    );
     assert_eq!(start.offset_minutes, 180, "UTC+3 offset in minutes");
 }
 
@@ -215,7 +219,7 @@ fn iana_timezone_flag_applies() {
         start.utc, expected_utc,
         "12:00 CET (winter, UTC+1) = 11:00 UTC"
     );
-    assert_eq!(start.timezone, "Europe/Berlin");
+    assert_eq!(start.timezone.as_deref(), Some("Europe/Berlin"));
     assert_eq!(start.offset_minutes, 60, "CET winter offset");
 }
 

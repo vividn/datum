@@ -464,15 +464,29 @@ fn write_skip_log(
     Ok(())
 }
 
+/// Map a legacy datum time block (`{utc, o?, tz?}`) onto a [`DatumTime`].
+///
+/// Both `o` and `tz` are optional upstream, and they are read
+/// independently: an absent `tz` leaves the zone `None` rather than naming
+/// UTC. Fabricating `"UTC"` beside a non-zero `o` asserts a zone the backup
+/// never contained and contradicts the offset stored next to it, which is
+/// what `datum check tz` was flagging on every non-UTC row (da-vfbq).
+///
+/// `o` is a signed offset in **hours** and may be fractional (India +5.5,
+/// Nepal +5.75, Chatham +12.75); it is rounded, not truncated, so the
+/// minutes survive.
 fn parse_datum_time(v: &JsonValue) -> Option<DatumTime> {
     let utc_str = v["utc"].as_str()?;
     let utc: chrono::DateTime<chrono::Utc> = utc_str.parse().ok()?;
-    let tz = v["tz"].as_str().unwrap_or("UTC").to_string();
-    let offset_minutes = v["o"].as_f64().map(|o| (o * 60.0) as i32).unwrap_or(0);
+    let timezone = v["tz"].as_str().map(str::to_string);
+    let offset_minutes = v["o"]
+        .as_f64()
+        .map(|o| (o * 60.0).round() as i32)
+        .unwrap_or(0);
     Some(DatumTime {
         utc,
         offset_minutes,
-        timezone: tz,
+        timezone,
     })
 }
 

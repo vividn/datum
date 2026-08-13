@@ -22,8 +22,17 @@ pub struct DatumTime {
     pub utc: DateTime<Utc>,
     /// UTC offset in minutes (e.g. -300 for UTC-5)
     pub offset_minutes: i32,
-    /// IANA timezone name (e.g. "America/Chicago")
-    pub timezone: String,
+    /// IANA timezone name (e.g. "America/Chicago"), or `None` when the zone
+    /// is unknown.
+    ///
+    /// `None` means *unknown*, which is not the same claim as `"UTC"`: a
+    /// legacy-datum backup may carry an offset with no `tz` key, and naming
+    /// a zone we were not given both invents history and contradicts the
+    /// offset (see da-vfbq). An offset is self-verifying; a zone name is a
+    /// claim that requires a lookup. With no name, `offset_minutes` is the
+    /// whole of what we know, and consumers that need a zone fall back to
+    /// that fixed offset.
+    pub timezone: Option<String>,
 }
 
 impl DatumTime {
@@ -40,39 +49,46 @@ impl DatumTime {
         Ok(DatumTime {
             utc,
             offset_minutes,
-            timezone: timezone.to_string(),
+            timezone: Some(timezone.to_string()),
         })
     }
 
     /// The UTC offset (in minutes) that `timezone` actually produces at
     /// `utc` — i.e. what `offset_minutes` *should* equal for the struct to
-    /// be in sync. Returns `InvalidTime` if `timezone` isn't a recognised
-    /// IANA name. Does not mutate; [`refresh_offset`] is the in-place form,
-    /// and `datum check tz` compares this against the stored value to flag
-    /// already-desynced rows.
+    /// be in sync. `Ok(None)` when no zone is stored: there is no claim to
+    /// reconcile the offset against. Returns `InvalidTime` if `timezone`
+    /// isn't a recognised IANA name. Does not mutate; [`refresh_offset`] is
+    /// the in-place form, and `datum check tz` compares this against the
+    /// stored value to flag already-desynced rows.
     ///
     /// [`refresh_offset`]: Self::refresh_offset
-    pub fn expected_offset_minutes(&self) -> Result<i32> {
-        let tz: Tz = self
-            .timezone
+    pub fn expected_offset_minutes(&self) -> Result<Option<i32>> {
+        let Some(name) = self.timezone.as_deref() else {
+            return Ok(None);
+        };
+        let tz: Tz = name
             .parse()
-            .map_err(|_| ParseError::InvalidTime(format!("Unknown timezone: {}", self.timezone)))?;
+            .map_err(|_| ParseError::InvalidTime(format!("Unknown timezone: {name}")))?;
         let offset_secs = self
             .utc
             .with_timezone(&tz)
             .fixed_offset()
             .offset()
             .local_minus_utc();
-        Ok(offset_secs / 60)
+        Ok(Some(offset_secs / 60))
     }
 
     /// Re-derive `offset_minutes` from `utc` resolved at `timezone`.
     ///
     /// Call after directly mutating `utc` or `timezone`, or after shifting
-    /// across a DST boundary, to restore the struct's invariant. Returns
+    /// across a DST boundary, to restore the struct's invariant. A no-op
+    /// when no zone is stored — the offset is then the only zone information
+    /// there is, so there is nothing to re-derive it from. Returns
     /// `InvalidTime` if `timezone` isn't a recognised IANA name.
     pub fn refresh_offset(&mut self) -> Result<()> {
-        self.offset_minutes = self.expected_offset_minutes()?;
+        if let Some(expected) = self.expected_offset_minutes()? {
+            self.offset_minutes = expected;
+        }
         Ok(())
     }
 
@@ -125,7 +141,23 @@ mod tests {
     #[test]
     fn refresh_offset_rejects_unknown_timezone() {
         let mut t = DatumTime::from_utc_and_tz(at("2024-01-15T12:00:00Z"), "UTC").unwrap();
-        t.timezone = "Mars/Olympus_Mons".to_string();
+        t.timezone = Some("Mars/Olympus_Mons".to_string());
         assert!(t.refresh_offset().is_err());
+    }
+
+    /// A zone-less time is not a claim about a zone, so there is nothing for
+    /// the offset to disagree with — and nothing to re-derive it from. The
+    /// offset survives `refresh_offset` untouched (da-vfbq).
+    #[test]
+    fn absent_timezone_has_no_expected_offset() {
+        let mut t = DatumTime {
+            utc: at("2024-01-15T12:00:00Z"),
+            offset_minutes: 330, // UTC+05:30, zone unknown
+            timezone: None,
+        };
+        assert_eq!(t.expected_offset_minutes().unwrap(), None);
+        t.refresh_offset().unwrap();
+        assert_eq!(t.offset_minutes, 330);
+        assert_eq!(t.local_time().to_rfc3339(), "2024-01-15T17:30:00+05:30");
     }
 }

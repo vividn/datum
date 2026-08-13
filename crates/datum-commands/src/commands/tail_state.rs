@@ -162,10 +162,18 @@ fn event_time(entry: &Entry, ts: DateTime<Utc>) -> DatumTime {
     if ts == occ.utc {
         occ.clone()
     } else {
-        DatumTime::from_utc_and_tz(ts, &occ.timezone).unwrap_or_else(|_| DatumTime {
-            utc: ts,
-            ..occ.clone()
-        })
+        // With no stored zone there is no name to re-resolve the offset
+        // from, so carry the offset across unchanged.
+        match occ.timezone.as_deref() {
+            Some(name) => DatumTime::from_utc_and_tz(ts, name).unwrap_or_else(|_| DatumTime {
+                utc: ts,
+                ..occ.clone()
+            }),
+            None => DatumTime {
+                utc: ts,
+                ..occ.clone()
+            },
+        }
     }
 }
 
@@ -455,7 +463,7 @@ mod tests {
             Some(DatumTime {
                 utc: occur,
                 offset_minutes: 0,
-                timezone: "UTC".into(),
+                timezone: Some("UTC".into()),
             }),
             Some(Dur::Of(Duration::minutes(dur_mins))),
             "dev",

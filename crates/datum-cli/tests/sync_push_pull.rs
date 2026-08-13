@@ -78,7 +78,7 @@ fn make_entry(field: &str, offset_secs: i64, device: &str) -> Entry {
     let t = DatumTime {
         utc: at,
         offset_minutes: 0,
-        timezone: "UTC".to_string(),
+        timezone: Some("UTC".to_string()),
     };
     let mut e = Entry::new(
         field,
@@ -518,7 +518,7 @@ fn pull_with_conflict_queues_to_conflict_table() {
         Some(DatumTime {
             utc: base,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         }),
         None,
         "dev-1",
@@ -538,7 +538,7 @@ fn pull_with_conflict_queues_to_conflict_table() {
         Some(DatumTime {
             utc: peer_at,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         }),
         None,
         "dev-peer",

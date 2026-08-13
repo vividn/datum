@@ -203,7 +203,7 @@ mod tests {
         let t = DatumTime {
             utc: at,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let mut e = Entry::new(
             field,

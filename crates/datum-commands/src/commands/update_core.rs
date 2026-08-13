@@ -734,7 +734,7 @@ mod tests {
         let dt = DatumTime {
             utc: t,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let e = Entry::new(field, verb, value, extra, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();

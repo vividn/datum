@@ -273,7 +273,7 @@ impl TimeBuilder {
         DatumTime {
             utc,
             offset_minutes,
-            timezone: timezone_name,
+            timezone: Some(timezone_name),
         }
     }
 }
@@ -286,18 +286,36 @@ impl TimeBuilder {
 /// but is panicked on for surface area parity with `resolve_naive_in_tz`.
 #[cfg(feature = "native")]
 fn strip_to_start_of_day(dt: DatumTime) -> DatumTime {
+    match dt.timezone.as_deref() {
+        Some(name) => {
+            let tz: chrono_tz::Tz = name
+                .parse()
+                .expect("strip_to_start_of_day: DatumTime.timezone must be a validated IANA name");
+            strip_in_zone(dt, tz)
+        }
+        // No stored zone: the fixed offset is all we know about local time,
+        // and it has no DST transition for midnight to land on the far side
+        // of, so the day boundary is unambiguous.
+        None => {
+            let offset = *dt.local_time().offset();
+            strip_in_zone(dt, offset)
+        }
+    }
+}
+
+#[cfg(feature = "native")]
+fn strip_in_zone<Z>(dt: DatumTime, tz: Z) -> DatumTime
+where
+    Z: chrono::TimeZone + std::fmt::Display,
+{
     use chrono::offset::LocalResult;
     use chrono::Offset;
-    let tz: chrono_tz::Tz = dt
-        .timezone
-        .parse()
-        .expect("strip_to_start_of_day: DatumTime.timezone must be a validated IANA name");
     let local = dt.utc.with_timezone(&tz);
     let midnight = local
         .date_naive()
         .and_hms_opt(0, 0, 0)
         .expect("00:00:00 is always a valid time");
-    let local_midnight = match midnight.and_local_timezone(tz) {
+    let local_midnight = match midnight.and_local_timezone(tz.clone()) {
         LocalResult::Single(t) => t,
         // Earlier instant, selected by UTC like `resolve_naive_in_tz` rather
         // than by tuple position (see its note on impl-dependent ordering).
@@ -374,7 +392,7 @@ mod tests {
         assert_eq!(precision, p1d());
         let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
         assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-        assert_eq!(dt.timezone, "America/Chicago");
+        assert_eq!(dt.timezone.as_deref(), Some("America/Chicago"));
     }
 
     /// An absolute `-d` with no `-t`/`-q` is a date-only event.
@@ -478,7 +496,7 @@ mod tests {
                 .unwrap()
                 .and_utc()
         );
-        assert_eq!(dt.timezone, "America/New_York");
+        assert_eq!(dt.timezone.as_deref(), Some("America/New_York"));
     }
 
     /// Same fall-back hour, but with no `-z` so the build runs the
@@ -514,7 +532,7 @@ mod tests {
                 .unwrap()
                 .and_utc()
         );
-        assert_eq!(dt.timezone, "America/New_York");
+        assert_eq!(dt.timezone.as_deref(), Some("America/New_York"));
     }
 
     /// `-d` paired with `-t` is NOT a date-only event — the explicit time

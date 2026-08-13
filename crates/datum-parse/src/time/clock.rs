@@ -56,7 +56,7 @@ impl Clock for SystemClock {
         DatumTime {
             utc,
             offset_minutes,
-            timezone,
+            timezone: Some(timezone),
         }
     }
 }
@@ -209,6 +209,9 @@ mod tests {
         // Regression for da-flbu: SystemClock.now() must report the same
         // timezone name as host_iana_tz_name() — they're meant to agree.
         let _g = TzGuard::set(Some("America/New_York"));
-        assert_eq!(SystemClock.now().timezone, "America/New_York");
+        assert_eq!(
+            SystemClock.now().timezone.as_deref(),
+            Some("America/New_York")
+        );
     }
 }

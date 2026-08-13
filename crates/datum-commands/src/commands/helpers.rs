@@ -456,7 +456,7 @@ mod tests {
         let now = DatumTime {
             utc: chrono::Utc.with_ymd_and_hms(2026, 6, 4, 12, 0, 0).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let mk = |version: u32, sec: u32| datum_core::history::HistoryVersion {
             entry_hid: "h1".to_string(),

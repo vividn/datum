@@ -81,15 +81,20 @@ impl TimeArgs {
         }
 
         // Resolve the effective timezone.
+        // `None` means the reference carries no zone name of its own and
+        // none was requested — its fixed offset stands in for one.
         let tz_name = match self.timezone.as_deref() {
-            Some(s) => resolve_timezone(s)?,
+            Some(s) => Some(resolve_timezone(s)?),
             None => reference.timezone.clone(),
         };
 
         // Shift the reference into the effective timezone without changing
         // the instant, so clock-level overrides (time / date) land in the
         // local-time frame the user expects.
-        let reference = rebase_to_timezone(reference.clone(), &tz_name)?;
+        let reference = match tz_name.as_deref() {
+            Some(name) => rebase_to_timezone(reference.clone(), name)?,
+            None => reference.clone(),
+        };
 
         let mut unmodified = true;
         let mut cur = reference.clone();
@@ -107,12 +112,12 @@ impl TimeArgs {
         }
 
         if let Some(ref s) = self.date {
-            cur = apply_date_arg(cur, s, &mut uncertainty, &tz_name)?;
+            cur = apply_date_arg(cur, s, &mut uncertainty, tz_name.as_deref())?;
             unmodified = false;
         }
 
         if self.yesterday > 0 {
-            cur = shift_days(cur, -(i64::from(self.yesterday)), &tz_name)?;
+            cur = shift_days(cur, -(i64::from(self.yesterday)), tz_name.as_deref())?;
             unmodified = false;
         }
 
@@ -293,7 +298,7 @@ fn rebase_to_timezone(mut t: DatumTime, tz_name: &str) -> Result<DatumTime> {
         .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {tz_name}")))?;
     let local = t.utc.with_timezone(&tz);
     t.offset_minutes = local.offset().fix().local_minus_utc() / 60;
-    t.timezone = tz_name.to_string();
+    t.timezone = Some(tz_name.to_string());
     Ok(t)
 }
 
@@ -362,7 +367,7 @@ fn apply_date_arg(
     cur: DatumTime,
     s: &str,
     uncertainty: &mut Option<Uncertainty>,
-    tz_name: &str,
+    tz_name: Option<&str>,
 ) -> Result<DatumTime> {
     if let Ok(arg) = parse_date_arg(s) {
         if let Some(u) = arg.uncertainty {
@@ -418,11 +423,40 @@ fn split_number_unit(s: &str) -> (&str, &str) {
     (&s[..idx], &s[idx..])
 }
 
+/// The zone to read a `DatumTime`'s wall clock in: the named IANA zone when
+/// there is one, otherwise the fixed offset stored beside the instant.
+///
+/// A zone-less time (a legacy import that carried an offset but no `tz` —
+/// da-vfbq) still has a local clock; it just has no DST rules. Falling back
+/// to the offset keeps every clock/date operation working on such a time
+/// instead of erroring on a name that was never there.
+enum Zone {
+    Iana(Tz),
+    Fixed(chrono::FixedOffset),
+}
+
+fn zone_of(name: Option<&str>, t: &DatumTime) -> Result<Zone> {
+    match name {
+        Some(name) => name
+            .parse()
+            .map(Zone::Iana)
+            .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {name}"))),
+        None => Ok(Zone::Fixed(*t.local_time().offset())),
+    }
+}
+
 fn set_naive_datetime(cur: DatumTime, naive: chrono::NaiveDateTime) -> Result<DatumTime> {
-    let tz: Tz = cur
-        .timezone
-        .parse()
-        .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {}", cur.timezone)))?;
+    match zone_of(cur.timezone.as_deref(), &cur)? {
+        Zone::Iana(tz) => set_naive_datetime_in(cur, naive, tz),
+        Zone::Fixed(off) => set_naive_datetime_in(cur, naive, off),
+    }
+}
+
+fn set_naive_datetime_in<Z: TimeZone>(
+    cur: DatumTime,
+    naive: chrono::NaiveDateTime,
+    tz: Z,
+) -> Result<DatumTime> {
     let utc = tz
         .from_local_datetime(&naive)
         .single()
@@ -438,10 +472,18 @@ fn set_clock(
     abs: chrono::NaiveTime,
     direction: Option<Direction>,
 ) -> Result<DatumTime> {
-    let tz: Tz = cur
-        .timezone
-        .parse()
-        .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {}", cur.timezone)))?;
+    match zone_of(cur.timezone.as_deref(), &cur)? {
+        Zone::Iana(tz) => set_clock_in(cur, abs, direction, tz),
+        Zone::Fixed(off) => set_clock_in(cur, abs, direction, off),
+    }
+}
+
+fn set_clock_in<Z: TimeZone>(
+    cur: DatumTime,
+    abs: chrono::NaiveTime,
+    direction: Option<Direction>,
+    tz: Z,
+) -> Result<DatumTime> {
     let now_local = cur.utc.with_timezone(&tz);
     let mut local_dt = now_local.date_naive().and_time(abs);
     // Direction-suffix disambiguation: shift by ±1 day when the candidate
@@ -470,10 +512,14 @@ fn set_clock(
     Ok(DatumTime { utc, ..cur })
 }
 
-fn set_date(cur: DatumTime, abs: chrono::NaiveDate, tz_name: &str) -> Result<DatumTime> {
-    let tz: Tz = tz_name
-        .parse()
-        .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {tz_name}")))?;
+fn set_date(cur: DatumTime, abs: chrono::NaiveDate, tz_name: Option<&str>) -> Result<DatumTime> {
+    match zone_of(tz_name, &cur)? {
+        Zone::Iana(tz) => set_date_in(cur, abs, tz),
+        Zone::Fixed(off) => set_date_in(cur, abs, off),
+    }
+}
+
+fn set_date_in<Z: TimeZone>(cur: DatumTime, abs: chrono::NaiveDate, tz: Z) -> Result<DatumTime> {
     let local = cur.utc.with_timezone(&tz).time();
     let local_dt = abs.and_time(local);
     let utc = tz
@@ -493,12 +539,16 @@ fn shift_minutes(cur: DatumTime, minutes: i64) -> Result<DatumTime> {
     })
 }
 
-fn shift_days(cur: DatumTime, days: i64, tz_name: &str) -> Result<DatumTime> {
+fn shift_days(cur: DatumTime, days: i64, tz_name: Option<&str>) -> Result<DatumTime> {
     // Shifting by calendar days requires re-anchoring in the local zone so
     // DST transitions land on the intended wall-clock moment.
-    let tz: Tz = tz_name
-        .parse()
-        .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {tz_name}")))?;
+    match zone_of(tz_name, &cur)? {
+        Zone::Iana(tz) => shift_days_in(cur, days, tz),
+        Zone::Fixed(off) => shift_days_in(cur, days, off),
+    }
+}
+
+fn shift_days_in<Z: TimeZone>(cur: DatumTime, days: i64, tz: Z) -> Result<DatumTime> {
     let local = cur.utc.with_timezone(&tz);
     let shifted = local + Duration::days(days);
     let utc = shifted.with_timezone(&Utc);
@@ -619,7 +669,10 @@ mod tests {
         a.time = Some("2024-03-16T15:30:00Z".into());
         let got = build(a);
         assert_utc(&got, "2024-03-16T15:30:00Z");
-        assert_eq!(got.time.as_ref().unwrap().timezone, "America/New_York");
+        assert_eq!(
+            got.time.as_ref().unwrap().timezone.as_deref(),
+            Some("America/New_York")
+        );
         // Offset reflects NY at that instant (EDT = -4h on 2024-03-16).
         assert_eq!(got.time.unwrap().offset_minutes, -4 * 60);
     }

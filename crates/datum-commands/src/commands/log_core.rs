@@ -1788,7 +1788,7 @@ mod tests {
         let base = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 5, 21, 13, 31, 12).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         // Post-infer normalized form.
         let got = parse_add_time_value(&JsonValue::String("11:00:00".into()), &base).unwrap();
@@ -1812,7 +1812,7 @@ mod tests {
         let base = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 5, 21, 13, 31, 12).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let got = parse_add_time_value(&JsonValue::String("-5m".into()), &base).unwrap();
         assert_eq!(

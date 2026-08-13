@@ -698,7 +698,7 @@ pub(crate) fn synthesize_local_datumtime(utc: chrono::DateTime<Utc>) -> DatumTim
     DatumTime {
         utc,
         offset_minutes,
-        timezone: "Local".to_string(),
+        timezone: Some("Local".to_string()),
     }
 }
 
@@ -900,7 +900,7 @@ mod tests {
         DatumTime {
             utc,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         }
     }
 
@@ -969,12 +969,12 @@ mod tests {
         let target = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 21, 22, 0, 0).unwrap(),
             offset_minutes: 12 * 60,
-            timezone: "Pacific/Auckland".to_string(),
+            timezone: Some("Pacific/Auckland".to_string()),
         };
         let now_in_utc = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 0, 0, 0).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         // Per UTC: target (Apr 21) is "yesterday" relative to now (Apr 22).
         // Per target's local clock: both are Apr 22 → today, no prefix.
@@ -1010,12 +1010,12 @@ mod tests {
         let target = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 15, 30).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let now = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 17, 0, 0).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let out = format_timestamp(&target, &now, None);
         assert!(
@@ -1037,7 +1037,7 @@ mod tests {
         let target = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 0, 0, 0).unwrap(),
             offset_minutes: 5 * 60,
-            timezone: "Asia/Karachi".to_string(),
+            timezone: Some("Asia/Karachi".to_string()),
         };
         let now = dt(2026, 4, 22);
         let out = format_timestamp(&target, &now, Some("P1D"));
@@ -1060,12 +1060,12 @@ mod tests {
         let target = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 15, 30).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let now = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 17, 0, 0).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let out_none = format_timestamp(&target, &now, None);
         assert!(out_none.starts_with("09:15:30"), "got {out_none:?}");
@@ -1092,7 +1092,7 @@ mod tests {
         let same = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 20, 55, 0).unwrap(),
             offset_minutes: 120,
-            timezone: "Europe/Berlin".to_string(),
+            timezone: Some("Europe/Berlin".to_string()),
         };
         assert_eq!(
             format_timestamp_ref(&same, &now, None, Some(120)),
@@ -1101,7 +1101,7 @@ mod tests {
         let other = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 8, 15, 0).unwrap(),
             offset_minutes: 60,
-            timezone: "Europe/London".to_string(),
+            timezone: Some("Europe/London".to_string()),
         };
         assert_eq!(
             format_timestamp_ref(&other, &now, None, Some(120)),
@@ -1133,14 +1133,14 @@ mod tests {
         let ny_target = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 10, 0, 0).unwrap(),
             offset_minutes: -4 * 60,
-            timezone: "America/New_York".to_string(),
+            timezone: Some("America/New_York".to_string()),
         };
         // "now" is in Berlin — used to verify the relative-day calc
         // also uses the row's local calendar, not the host's.
         let berlin_now = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 10, 0, 0).unwrap(),
             offset_minutes: 2 * 60,
-            timezone: "Europe/Berlin".to_string(),
+            timezone: Some("Europe/Berlin".to_string()),
         };
         let out = format_timestamp(&ny_target, &berlin_now, None);
         assert!(
@@ -1165,7 +1165,7 @@ mod tests {
         let ts = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 0, 0).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         Entry::new(
             field.to_string(),
@@ -1231,7 +1231,7 @@ mod tests {
         let ts = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 0, 0).unwrap(),
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         Entry::new(
             field.to_string(),

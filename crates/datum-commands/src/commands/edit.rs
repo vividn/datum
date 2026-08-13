@@ -352,7 +352,7 @@ mod tests {
         let dt = DatumTime {
             utc: t,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let e = Entry::new_legacy(field, verb, value, extra, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();
@@ -615,7 +615,7 @@ mod tests {
         let new_dt = DatumTime {
             utc: new_time,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         let payload = editor_payload(&before, |doc| {
             doc["occur_time"] = serde_json::to_value(&new_dt).unwrap();

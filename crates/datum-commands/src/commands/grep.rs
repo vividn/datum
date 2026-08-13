@@ -101,7 +101,7 @@ mod tests {
         let t = DatumTime {
             utc,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         Entry::new_legacy(field, Verb::Point, Some(value), extra, Some(t), None, "d1")
     }
@@ -307,7 +307,7 @@ mod tests {
         let t = DatumTime {
             utc,
             offset_minutes: 0,
-            timezone: "UTC".to_string(),
+            timezone: Some("UTC".to_string()),
         };
         db.insert_entry(&Entry::new_legacy(
             "plan",

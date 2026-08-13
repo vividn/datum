@@ -1,7 +1,12 @@
 export interface DatumTime {
 	utc: string; // ISO 8601
 	offsetMinutes: number;
-	timezone: string;
+	// IANA name, or undefined when the zone is unknown (a legacy import can
+	// carry an offset with no zone — da-vfbq). Undefined means *unknown*,
+	// not UTC: naming a zone the row doesn't carry contradicts the offset
+	// stored beside it. Mirrors `DatumTime.timezone: Option<String>` in
+	// crates/datum-parse/src/time/datum_time.rs.
+	timezone?: string;
 }
 
 // Stored verb (shape-derived classifier). Maps 1:1 to the
