@@ -401,10 +401,10 @@ fn detect_one(
 }
 
 /// da-acft: walk live state-bearing entries in `occur_time` order per
-/// field and return each one whose normalized state shares an element
-/// with its predecessor on the same field. Excludes the open/open
-/// case — that's [`IntegrityKind::DoubleOpen`], still filed at insert
-/// because the auto-resolver acts on it.
+/// field and return each one whose normalized state *equals* its
+/// predecessor on the same field. Excludes the open/open case — that's
+/// [`IntegrityKind::DoubleOpen`], still filed at insert because the
+/// auto-resolver acts on it.
 ///
 /// This is a live computation: nothing is stored, and a user who
 /// fixes the underlying data (backfill missing transition, delete
@@ -416,9 +416,13 @@ fn detect_one(
 /// Walks `entries_live_field_occur` (partial index on `(field,
 /// occur_time) WHERE deleted_at IS NULL`) via SQLite's window
 /// function. Per-row state JSON is parsed back into Rust so we can
-/// reuse the same [`states_share_element`] predicate the original
-/// detector used; this preserves the partial-overlap semantics for
-/// parallel/structured states.
+/// apply [`states_equal_set_aware`], which is what the kind actually
+/// means: a repeat is a state *equal* to the one before it, with
+/// `Parallel` values compared as order-insensitive multisets. da-g1b8:
+/// this used to test set intersection (`states_share_element`), so
+/// `"vertical"` → `["vertical","sit"]` — adding a concurrent element,
+/// an ordinary transition — reported as a repeat. Intersection stays
+/// where it belongs, on [`IntegrityKind::DoubleOpen`].
 pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
     let sql = format!(
         "WITH state_runs AS (
@@ -454,7 +458,7 @@ pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
         };
         let new_norm = crate::state::normalize_state(new_state).to_json();
         let prior_norm = crate::state::normalize_state(&prior_state).to_json();
-        if !states_share_element(&new_norm, &prior_norm) {
+        if !states_equal_set_aware(&new_norm, &prior_norm) {
             continue;
         }
         if is_open_state(&new_norm) && is_open_state(&prior_norm) {
@@ -574,7 +578,10 @@ pub fn states_share_element(a: &serde_json::Value, b: &serde_json::Value) -> boo
 /// S12: set-aware equality on top of [`StateValue`] PartialEq — `Parallel`
 /// values compare order-insensitive (same multiset of elements), everything
 /// else compares structurally.
-fn states_equal_set_aware(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+///
+/// Exported so the renderer's `!` marker uses the same predicate as
+/// [`IntegrityKind::SameStateRepeat`] (da-g1b8).
+pub fn states_equal_set_aware(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     let Ok(sva) = StateValue::from_json(a) else {
         return false;
     };

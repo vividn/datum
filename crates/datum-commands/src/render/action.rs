@@ -94,8 +94,8 @@ pub(crate) fn now_local() -> DatumTime {
 ///   excluding the row itself. Drives the bg of an occur dot per
 ///   `da-k5z`. State-transition verbs (switch / start / stop / block) use
 ///   `lead_state` and `trail_state` instead.
-/// * `is_state_repeat` — set when the row's emitted state shares an
-///   element with `lead_state` (per `integrity::states_share_element`).
+/// * `is_state_repeat` — set when the row's emitted state equals
+///   `lead_state` (per `integrity::states_equal_set_aware`).
 ///   Drives the LEAD `!` warning marker (`da-qfv0`): the visual signal
 ///   that a switch left the field's compiled state unchanged, which most
 ///   often means an intermediate transition was forgotten and the user
@@ -189,10 +189,12 @@ impl RenderContext {
     }
 }
 
-/// True when the trigger's emitted state shares an element with `prior`
-/// (per [`datum_core::integrity::states_share_element`]). Mirrors the
-/// `SameStateRepeat` detector at `integrity.rs:243` so the visual `!`
-/// marker fires on exactly the same shape as the warning record.
+/// True when the trigger's emitted state equals `prior` (per
+/// [`datum_core::integrity::states_equal_set_aware`]). Mirrors
+/// `list_repeated_states` so the visual `!` marker fires on exactly the
+/// same shape as the `SameStateRepeat` warning — including da-g1b8's
+/// rule that adding an element to a parallel state (`"vertical"` →
+/// `["vertical","sit"]`) is a transition, not a repeat.
 ///
 /// Non-state-bearing verbs (`Point`, `Note`, `Add`) always return `false`
 /// — they don't drive a state cell to mark. A `None` prior or a missing
@@ -206,7 +208,7 @@ pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) ->
     };
     let prior_norm = datum_core::state::normalize_state(prior).to_json();
     let row_norm = datum_core::state::normalize_state(row_state).to_json();
-    datum_core::integrity::states_share_element(&row_norm, &prior_norm)
+    datum_core::integrity::states_equal_set_aware(&row_norm, &prior_norm)
 }
 
 fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
@@ -1268,12 +1270,44 @@ mod tests {
         assert!(!compute_is_state_repeat(None, &row));
     }
 
-    /// Element-share equality (matches the conflict detector): a switch
-    /// to one member of a parallel prior still counts as a repeat since
-    /// the field's state set already contained it.
+    /// da-g1b8: dropping a member of a parallel prior is a transition —
+    /// no `!` on the row the user just wrote.
     #[test]
-    fn state_repeat_flagged_when_value_shares_parallel_member() {
+    fn state_repeat_not_flagged_when_value_narrows_parallel_prior() {
         let row = switch_row("body", JsonValue::String("vertical".into()));
+        let prior = JsonValue::Array(vec![
+            JsonValue::String("vertical".into()),
+            JsonValue::String("sit".into()),
+        ]);
+        assert!(!compute_is_state_repeat(Some(&prior), &row));
+    }
+
+    /// da-g1b8, the reported case: adding an element to a parallel state
+    /// must not stamp the write-time `!` marker.
+    #[test]
+    fn state_repeat_not_flagged_when_value_adds_parallel_member() {
+        let row = switch_row(
+            "body",
+            JsonValue::Array(vec![
+                JsonValue::String("vertical".into()),
+                JsonValue::String("sit".into()),
+            ]),
+        );
+        let prior = JsonValue::String("vertical".into());
+        assert!(!compute_is_state_repeat(Some(&prior), &row));
+    }
+
+    /// da-g1b8: the same members reordered are the same state, so the
+    /// marker still fires — `Parallel` compares as a multiset.
+    #[test]
+    fn state_repeat_flagged_when_parallel_members_only_reordered() {
+        let row = switch_row(
+            "body",
+            JsonValue::Array(vec![
+                JsonValue::String("sit".into()),
+                JsonValue::String("vertical".into()),
+            ]),
+        );
         let prior = JsonValue::Array(vec![
             JsonValue::String("vertical".into()),
             JsonValue::String("sit".into()),

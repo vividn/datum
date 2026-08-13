@@ -150,10 +150,11 @@ fn array_state_is_queryable_over_timeline() {
     );
 }
 
-/// Acceptance: `datum switch field state1` while the field is currently
-/// `[state1,state2]` is a partial repeat — surfaced live (da-acft).
+/// da-g1b8: `datum switch field state1` while the field is currently
+/// `[state1,state2]` DROPS an element — an ordinary transition, not a
+/// repeat. `repeated_state` means equality; partial overlap is not it.
 #[test]
-fn array_to_scalar_with_overlap_is_repeated_state() {
+fn array_to_scalar_with_overlap_is_not_repeated_state() {
     use datum_core::integrity;
     let db = fresh_db();
 
@@ -161,31 +162,33 @@ fn array_to_scalar_with_overlap_is_repeated_state() {
     run_cli(&["switch", "project", "datum"], &db).expect("switch back to single member");
 
     let hits = integrity::list_repeated_states(db.conn()).unwrap();
-    assert_eq!(
-        hits.len(),
-        1,
-        "switching back to an already-active member is a partial repeat",
+    assert!(
+        hits.is_empty(),
+        "narrowing a parallel state to one of its members is a transition",
     );
 }
 
-/// Scalar → array where the new array includes the current scalar is also
-/// a partial repeat.
+/// da-g1b8, the reported case: scalar → array that ADDS an element
+/// (`vertical` → `[vertical,sit]`) is ordinary use of parallel states.
 #[test]
-fn scalar_to_array_with_overlap_is_repeated_state() {
+fn scalar_to_array_with_overlap_is_not_repeated_state() {
     use datum_core::integrity;
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "datum", "-t=-1"], &db).expect("seed scalar");
-    run_cli(&["switch", "project", "datum,household"], &db)
-        .expect("switch to array containing same member");
+    run_cli(&["switch", "body", "vertical", "-t=-1"], &db).expect("seed scalar");
+    run_cli(&["switch", "body", "vertical,sit"], &db).expect("add a concurrent element");
 
     let hits = integrity::list_repeated_states(db.conn()).unwrap();
-    assert_eq!(hits.len(), 1);
+    assert!(
+        hits.is_empty(),
+        "adding an element to a parallel state is a transition, not a repeat",
+    );
 }
 
-/// Array → array with overlapping elements is a partial repeat.
+/// da-g1b8: array → array sharing some but not all elements swaps one
+/// concurrent state for another. Still a transition.
 #[test]
-fn array_to_array_with_overlap_is_repeated_state() {
+fn array_to_array_with_partial_overlap_is_not_repeated_state() {
     use datum_core::integrity;
     let db = fresh_db();
 
@@ -193,10 +196,9 @@ fn array_to_array_with_overlap_is_repeated_state() {
     run_cli(&["switch", "project", "datum,garden"], &db).expect("switch to overlapping array");
 
     let hits = integrity::list_repeated_states(db.conn()).unwrap();
-    assert_eq!(
-        hits.len(),
-        1,
-        "overlapping elements between old and new arrays is a partial repeat",
+    assert!(
+        hits.is_empty(),
+        "partial overlap between old and new arrays is a transition",
     );
 }
 
@@ -213,6 +215,24 @@ fn array_to_array_disjoint_is_not_repeated_state() {
     assert!(
         hits.is_empty(),
         "fully disjoint element sets are a clean transition, not a repeat",
+    );
+}
+
+/// da-g1b8: reordering the same members is not a transition — the
+/// multiset is unchanged, so it stays flagged.
+#[test]
+fn array_to_reordered_same_members_is_repeated_state() {
+    use datum_core::integrity;
+    let db = fresh_db();
+
+    run_cli(&["switch", "body", "vertical,sit", "-t=-1"], &db).expect("seed array state");
+    run_cli(&["switch", "body", "sit,vertical"], &db).expect("re-log the same members reordered");
+
+    let hits = integrity::list_repeated_states(db.conn()).unwrap();
+    assert_eq!(
+        hits.len(),
+        1,
+        "same multiset in a different order is a repeat, not a transition",
     );
 }
 
