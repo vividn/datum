@@ -516,6 +516,15 @@ identity-collision parking above extends the same order with `hid` as a
 final discriminator; clients MUST implement that identically too, for the
 same reason.
 
+**Comparing the ordering keys.** An order is only shared if the *values*
+are compared in the same form. `modify_time` is compared as an **instant**,
+not as text: parse the stored RFC-3339 string and compare the resulting UTC
+timestamps, so `…T09:15:00Z`, `…T09:15:00.000Z` and `…T09:15:00+00:00` are
+one value and an exact tie is a tie on every client. `content_hash`,
+`device_id` and `hid` are compared **byte-wise over their ASCII text**;
+`content_hash` is lowercase hex (see below), and a client that upper-cased
+it would sort differently for the same rows.
+
 ### Content hash
 
 `content_hash` is `SHA-256` over a `\x00`-separated framing of exactly
@@ -539,6 +548,52 @@ provenance column (`hid`, `slug`, `create_time`, `modify_time`,
 `*_structure` columns). `verb` is outside it too but is fully determined by
 the hashed `(state, dur, following_state)` triple, so a verb difference
 cannot hide behind an equal hash.
+
+#### Canonical serialization
+
+Naming the inputs is not enough: `state` and `data` are arbitrary JSON, and
+how they are written down decides the bytes, the digest, and therefore
+which row wins the merge. This section specifies the preimage completely —
+an implementation with no access to this source tree can reproduce a
+`content_hash` from it alone, and
+`crates/datum-parity/goldens/hash/content_hash.toml` carries worked
+byte-level examples (segments, preimage hex, digest) to check against.
+
+The preimage is the seven segments joined by a **single `0x00` byte** —
+six separators, none leading or trailing — encoded UTF-8. An absent value
+is the **empty string**, never `null` or the text `"null"`: a timeless
+entry contributes an empty `occur_time` segment and its separators stay in
+place. The digest is `SHA-256` rendered as **lowercase hex**
+(`crates/datum-core/src/entry.rs::compute_hash`).
+
+Segment by segment:
+
+1. **`field`** — the field name verbatim.
+2. **`occur_time`** — the UTC instant as RFC-3339 with a numeric `+00:00`
+   offset (not `Z`), carrying only as many fractional-second digits as the
+   value needs: none for a whole second, otherwise 3, 6 or 9
+   (`2026-03-16T09:15:00+00:00`, `2026-03-16T09:15:30.500+00:00`). Empty
+   for a timeless entry.
+3. **`dur`** — the storage form: an ISO-8601 span (`PT30M`, `P1D`) or the
+   sentinel `MOMENT` / `UNKNOWN`. Empty when unset.
+4. **`state`**, 5. **`data`**, 6. **`following_state`** — compact JSON with
+   **no insignificant whitespace** and **object keys sorted ascending by
+   their UTF-8 bytes at every level of nesting** (`srcLang` < `tags` <
+   `état` — byte order, not locale collation). Array element order is data
+   and is never reordered. Strings escape only what JSON requires (`"`,
+   `\`, control characters), leaving non-ASCII literal: `é` is its two
+   UTF-8 bytes, not `é`. Non-integer numbers take the shortest form
+   that round-trips to the same double. Empty when the column is NULL.
+7. **deleted-marker** — `deleted` or empty, as above.
+
+**The sorted keys are load-bearing, and Rust gets them by accident.**
+`serde_json::Map` is a `BTreeMap`, so keys come out sorted — but the
+`preserve_order` feature makes it insertion-ordered, and Cargo features are
+additive across a workspace: one crate anywhere in the graph enabling it
+would change the `content_hash` of every entry with a structured `state` or
+`data`, silently. `datum-core`'s `json_object_keys_serialize_sorted`
+asserts on the serialized bytes so that flip fails a test rather than a
+sync.
 
 **Version skew is UNSUPPORTED: upgrade every device in a cluster
 together.** The hash definition is part of the merge contract, not a local

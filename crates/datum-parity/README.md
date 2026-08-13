@@ -19,6 +19,7 @@ This crate exists to be that reference.
 | `tail` text output | `goldens/text/fixtures.toml` (7 fixtures) | yes |
 | `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures) | yes |
 | `dayview` SVG output | `goldens/text/fixtures.toml` (4 fixtures) | yes |
+| `content_hash` preimage | `goldens/hash/content_hash.toml` (6 fixtures) | no |
 | Bug regressions (da-438y, etc.) | `tests/regressions.rs` (5 tests + lock) | no |
 | Algorithm fuzz (proptest) | `tests/fuzz_color.rs` (10 props × 500 cases) | no |
 
@@ -90,6 +91,8 @@ crates/datum-parity/
 ├── goldens/
 │   ├── colors/
 │   │   └── colors.tsv  # field/state name → expected hex (md5-derived)
+│   ├── hash/
+│   │   └── content_hash.toml  # entry → canonical preimage → SHA-256
 │   └── text/
 │       ├── fixtures.toml          # 21 fixtures across all 4 surfaces
 │       └── expected/<name>.txt    # captured stdout/SVG, one per fixture
@@ -103,6 +106,7 @@ crates/datum-parity/
 └── tests/
     ├── colors.rs           # color goldens TSV → algorithm assertion
     ├── fuzz_color.rs       # proptest harness over the color algebra
+    ├── hash_goldens.rs     # content_hash preimage goldens (da-yira)
     ├── regressions.rs      # da-438y / da-ffp6 / da-luc8 / da-aw2o / da-jp0b locks
     └── text_goldens.rs     # text + SVG fixture runner (gated for live mode)
 ```
@@ -150,6 +154,20 @@ Compute `contrast_fg`: YIQ-brightness `(R*299 + G*587 + B*114) / 1000`;
 
 `<note>` is mandatory and should explain why the row exists (e.g.,
 "would have caught da-438y for body=run").
+
+### Hash goldens (`goldens/hash/content_hash.toml`)
+
+Append a `[[fixture]]` block describing the entry's hashed columns, then
+the three derived values: `parts` (the seven preimage segments, in the
+order `docs/sync-protocol.md` § "Canonical serialization" specifies),
+`preimage_hex` (hex of `parts` joined by a single `0x00` byte), and
+`content_hash` (lowercase-hex `SHA-256` of those bytes).
+
+Derive them by hand rather than from daydumb's output — a golden copied
+from the implementation cannot contradict it. `tests/hash_goldens.rs`
+checks the three against each other *and* against
+`Entry::expected_content_hash`, so a mistake in either surfaces as a
+failure rather than a rubber stamp.
 
 ### Text goldens (`goldens/text/fixtures.toml`)
 

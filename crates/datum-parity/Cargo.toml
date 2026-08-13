@@ -24,3 +24,9 @@ proptest = "1"
 tempfile = "3"
 chrono = { workspace = true }
 regex-lite = { workspace = true }
+# `tests/hash_goldens.rs` checks the pinned content_hash preimages against
+# what datum-core actually computes — the goldens are only worth anything
+# if they're bound to the implementation.
+datum-core = { path = "../datum-core" }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

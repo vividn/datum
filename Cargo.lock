@@ -579,10 +579,13 @@ name = "datum-parity"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "datum-core",
  "md-5",
  "proptest",
  "regex-lite",
  "serde",
+ "serde_json",
+ "sha2",
  "tempfile",
  "toml",
 ]

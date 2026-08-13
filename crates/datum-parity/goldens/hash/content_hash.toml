@@ -1,0 +1,115 @@
+# Byte-level `content_hash` fixtures (da-yira).
+#
+# The merge order `(modify_time, content_hash, device_id, hid)` is only
+# deterministic across implementations if every implementation derives the
+# same `content_hash` bytes. `docs/sync-protocol.md` § "Canonical
+# serialization" specifies the preimage; these fixtures pin it so a second
+# implementation can check itself instead of reverse-engineering the
+# convention from observed behaviour.
+#
+# Each fixture carries:
+#   * the entry's hashed columns, `state` / `data` / `following_state` given
+#     as they might arrive (keys deliberately NOT in sorted order);
+#   * `parts` — the seven canonical preimage segments, in order;
+#   * `preimage_hex` — lowercase hex of `parts` joined by a single 0x00 byte;
+#   * `content_hash` — lowercase hex `SHA-256` of those bytes.
+#
+# `tests/hash_goldens.rs` checks the three against each other AND against
+# `datum_core::entry::Entry::expected_content_hash`, so a drift in either the
+# fixture or the implementation fails.
+
+[[fixture]]
+name = "flat-point"
+description = "Minimal occur entry: no state, no data, `MOMENT` dur."
+field = "coffee"
+occur = "2026-03-16T09:15:00Z"
+dur = "MOMENT"
+parts = ["coffee", "2026-03-16T09:15:00+00:00", "MOMENT", "", "", "", ""]
+preimage_hex = "636f6666656500323032362d30332d31365430393a31353a30302b30303a3030004d4f4d454e5400000000"
+content_hash = "ecc13ff36e656560fcc6d460d110cdadb304e02ff317f3c6c588050b02f2fc34"
+
+[[fixture]]
+name = "nested-unsorted-keys"
+description = """
+The load-bearing case: nested objects whose keys arrive unsorted. Both the \
+top level and the nested unit-annotation objects must come out sorted. If \
+`serde_json`'s `preserve_order` feature is ever enabled anywhere in the \
+workspace graph, `parts[3]` / `parts[4]` change and this fixture fails."""
+field = "workout"
+occur = "2026-03-16T09:15:30.500Z"
+dur = "PT30M"
+state = '{"zone":"Z2","cadence":{"v":88,"unit":"spm"}}'
+data = '{"weight":{"v":75.2,"u":"kg"},"reps":10}'
+parts = [
+    "workout",
+    "2026-03-16T09:15:30.500+00:00",
+    "PT30M",
+    '{"cadence":{"unit":"spm","v":88},"zone":"Z2"}',
+    '{"reps":10,"weight":{"u":"kg","v":75.2}}',
+    "",
+    "",
+]
+preimage_hex = "776f726b6f757400323032362d30332d31365430393a31353a33302e3530302b30303a303000505433304d007b22636164656e6365223a7b22756e6974223a2273706d222c2276223a38387d2c227a6f6e65223a225a32227d007b2272657073223a31302c22776569676874223a7b2275223a226b67222c2276223a37352e327d7d0000"
+content_hash = "62ce6aa6a139c583950443d93ed61a8be08a2d48e50b7b40207f3ff3618cc0a6"
+
+[[fixture]]
+name = "unicode-keys-and-arrays"
+description = """
+Key order is by UTF-8 byte, not by locale collation: `srcLang` < `tags` < \
+`état`. Array element order is data, never sorted."""
+field = "word"
+occur = "2026-03-16T09:15:00Z"
+dur = "MOMENT"
+state = '{"état":"appris","srcLang":"pt","tags":["b","a"]}'
+parts = [
+    "word",
+    "2026-03-16T09:15:00+00:00",
+    "MOMENT",
+    '{"srcLang":"pt","tags":["b","a"],"état":"appris"}',
+    "",
+    "",
+    "",
+]
+preimage_hex = "776f726400323032362d30332d31365430393a31353a30302b30303a3030004d4f4d454e54007b227372634c616e67223a227074222c2274616773223a5b2262222c2261225d2c22c3a9746174223a22617070726973227d000000"
+content_hash = "83745cac699425d215dd254f89bc8f6a8999285b4a4994a97e95aeaaea485a0c"
+
+[[fixture]]
+name = "switch-with-following-state"
+description = "`following_state` is hashed (da-4vyw), so a switch differs from a bare start."
+field = "mood"
+occur = "2026-03-16T09:15:00Z"
+state = '"happy"'
+following_state = '"sad"'
+parts = [
+    "mood",
+    "2026-03-16T09:15:00+00:00",
+    "",
+    '"happy"',
+    "",
+    '"sad"',
+    "",
+]
+preimage_hex = "6d6f6f6400323032362d30332d31365430393a31353a30302b30303a30300000226861707079220000227361642200"
+content_hash = "ce02bfdcf41387eb8463fbf316bd7596bf379795ddee5d8ae24929f7b867836b"
+
+[[fixture]]
+name = "tombstone"
+description = """
+Deleted-ness, not the deletion instant: the marker is the literal `deleted`, \
+so two devices deleting the same entry independently agree on the hash."""
+field = "coffee"
+occur = "2026-03-16T09:15:00Z"
+dur = "MOMENT"
+deleted = true
+parts = ["coffee", "2026-03-16T09:15:00+00:00", "MOMENT", "", "", "", "deleted"]
+preimage_hex = "636f6666656500323032362d30332d31365430393a31353a30302b30303a3030004d4f4d454e540000000064656c65746564"
+content_hash = "989dab1c0a7d5f859a4260cd4108b0ef6b7ab6ddc86646c8234953a640077eef"
+
+[[fixture]]
+name = "timeless"
+description = "No occur_time and no dur: both segments are empty, and the separators remain."
+field = "note"
+state = '"idea"'
+parts = ["note", "", "", '"idea"', "", "", ""]
+preimage_hex = "6e6f7465000000226964656122000000"
+content_hash = "5623a9583764fd982e329087abe918e16c4378f88a9e89733b5a4a23b2220f68"

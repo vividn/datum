@@ -813,4 +813,46 @@ mod tests {
         });
         assert_ne!(shifted, split);
     }
+
+    /// **Object keys must serialize sorted** (da-yira). `state` and `data`
+    /// go into the preimage as `Value::to_string()`, so key order decides
+    /// the bytes, the hash, and therefore which row wins a sync merge.
+    ///
+    /// Today that order is canonical *by default*: `serde_json::Map` is a
+    /// `BTreeMap` unless the `preserve_order` feature is on. Cargo features
+    /// are additive across a workspace, so any crate in the graph — including
+    /// a transitive one nobody chose — flipping it on would switch every
+    /// object to insertion order and silently change the `content_hash` of
+    /// every structured entry. This asserts on the serialized bytes rather
+    /// than a round-trip, which is what makes it fail in that case.
+    ///
+    /// Byte-level fixtures for whole entries live in
+    /// `crates/datum-parity/goldens/hash/content_hash.toml`.
+    #[test]
+    fn json_object_keys_serialize_sorted() {
+        const CANONICAL: &str = r#"{"alpha":{"a":3,"b":2},"zeta":1}"#;
+
+        // Built in memory (the insert path).
+        let built = serde_json::json!({"zeta": 1, "alpha": {"b": 2, "a": 3}});
+        assert_eq!(built.to_string(), CANONICAL);
+
+        // Read back from SQL text (the sync/merge path).
+        let parsed: JsonValue =
+            serde_json::from_str(r#"{"zeta":1,"alpha":{"b":2,"a":3}}"#).unwrap();
+        assert_eq!(parsed.to_string(), CANONICAL);
+
+        // And the hash follows the canonical form, not the input's order.
+        let inputs = |state: &JsonValue| {
+            compute_hash(&HashInputs {
+                field: "workout",
+                occur: "",
+                dur: "",
+                state: &state.to_string(),
+                data: "",
+                following_state: "",
+                deleted: false,
+            })
+        };
+        assert_eq!(inputs(&built), inputs(&parsed));
+    }
 }
