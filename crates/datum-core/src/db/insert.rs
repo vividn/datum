@@ -56,19 +56,40 @@ fn derive_verb_for_storage(
 /// the entry post-`Entry::new` (`Dur::Moment` for `occur`, state
 /// canonicalization for switch family); without this, the precomputed
 /// `entry.content_hash` is stale by the time the row reaches the bind.
+///
+/// `occur_str`, `canonical_state` and `data` are passed separately because
+/// the write paths derive them rather than reading them off `entry`
+/// (timeless rows hash an empty occur string, the switch family
+/// canonicalizes `state`, and `raw_overwrite_mutables` can override
+/// `data`). Everything else — including `following_state` and the
+/// deleted-ness flag added in da-4vyw — comes straight from `entry`.
 fn storage_content_hash(
-    field: &str,
+    entry: &Entry,
     occur_str: &str,
-    dur: Option<&crate::dur::Dur>,
     canonical_state: Option<&serde_json::Value>,
     data: Option<&JsonValue>,
 ) -> String {
-    let dur_str = dur
+    let dur_str = entry
+        .dur
+        .as_ref()
         .map(crate::dur::Dur::to_storage_string)
         .unwrap_or_default();
     let state_str = canonical_state.map(|v| v.to_string()).unwrap_or_default();
     let data_str = data.map(|v| v.to_string()).unwrap_or_default();
-    crate::entry::compute_hash(field, occur_str, &dur_str, &state_str, &data_str)
+    let following_str = entry
+        .following_state
+        .as_ref()
+        .map(|v| v.to_string())
+        .unwrap_or_default();
+    crate::entry::compute_hash(&crate::entry::HashInputs {
+        field: &entry.field,
+        occur: occur_str,
+        dur: &dur_str,
+        state: &state_str,
+        data: &data_str,
+        following_state: &following_str,
+        deleted: entry.deleted_at.is_some(),
+    })
 }
 
 /// The occur_time string used for content-hash computation. Mirrors
@@ -601,9 +622,8 @@ fn insert_entry_in_tx(
     // through Update/Merge.
     let (_, _, canonical_state) = derive_verb_for_storage(entry)?;
     let dedup_hash = storage_content_hash(
-        &entry.field,
+        entry,
         &hash_occur_str(entry),
-        entry.dur.as_ref(),
         canonical_state.as_ref(),
         entry.data.as_ref(),
     );
@@ -748,9 +768,8 @@ fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOut
     // `try_insert` will persist (see `insert_entry_in_tx` for the rationale).
     let (_, _, canonical_state) = derive_verb_for_storage(entry)?;
     let dedup_hash = storage_content_hash(
-        &entry.field,
+        entry,
         &hash_occur_str(entry),
-        entry.dur.as_ref(),
         canonical_state.as_ref(),
         entry.data.as_ref(),
     );
@@ -875,9 +894,8 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
     let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
-        &entry.field,
+        entry,
         &hash_occur_str(entry),
-        entry.dur.as_ref(),
         canonical_state.as_ref(),
         entry.data.as_ref(),
     );
@@ -998,9 +1016,8 @@ fn raw_overwrite_mutables(
     let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
-        &entry.field,
+        entry,
         &hash_occur_str(entry),
-        entry.dur.as_ref(),
         canonical_state.as_ref(),
         data_value,
     );
@@ -1088,9 +1105,8 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
     let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
-        &entry.field,
+        entry,
         &occur_str,
-        entry.dur.as_ref(),
         canonical_state.as_ref(),
         entry.data.as_ref(),
     );
@@ -1183,9 +1199,8 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
     let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
-        &entry.field,
+        entry,
         &occur_str,
-        entry.dur.as_ref(),
         canonical_state.as_ref(),
         entry.data.as_ref(),
     );

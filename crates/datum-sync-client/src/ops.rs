@@ -285,6 +285,62 @@ fn find_blockers(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<Vec<En
     Ok(blockers)
 }
 
+/// The shape `loser` takes when parked out of `winner`'s way — a pure
+/// function of the two rows, which is what lets every device reach the same
+/// pair without talking to each other. See [`park_loser`] for the policy;
+/// this is only the derivation, so callers can also ask "is the row I
+/// already hold the parked form of this one?" without writing anything.
+fn parked_shape(loser: &Entry, winner: &Entry) -> Entry {
+    let mut parked = loser.clone();
+    if loser.slug == winner.slug {
+        parked.slug = datum_core::ids::Slug::new(parked_slug(loser));
+    }
+    if loser.deleted_at.is_none()
+        && winner.deleted_at.is_none()
+        && loser.occur_time.is_some()
+        && loser.field == winner.field
+        && loser.occur_time.as_ref().map(|t| t.utc) == winner.occur_time.as_ref().map(|t| t.utc)
+    {
+        parked.deleted_at = Some(winner.modify_time);
+    }
+    // da-4vyw: deleted-ness is part of `content_hash`, so tombstoning the
+    // loser moves its hash. The column has to follow, or the parked row
+    // reads as drifted to `datum check` and carries a stale key into the
+    // next merge's tiebreak. Still deterministic — both devices derive the
+    // same `deleted_at` and therefore the same hash.
+    parked.content_hash = parked.expected_content_hash();
+    parked
+}
+
+/// Whether the local row `pre` is simply `entry` already parked — i.e. this
+/// pull is a replay of the very changeset `pre` was derived from.
+///
+/// Parking deliberately does not bump `modify_time`, so a re-pull of a
+/// parked row's origin arrives as an *exact* `modify_time` tie against a
+/// row that no longer matches it byte-for-byte: since da-4vyw the park's
+/// tombstone moves `content_hash`, so the plain equality short-circuit
+/// misses. Re-deriving the park is the precise test — if parking `entry`
+/// against its current blocker reproduces the row we already hold, nothing
+/// has changed and the apply must stop here. Without this the row fights
+/// its own origin: an lww_overwrite warning and a duplicate
+/// identity_collision on every pull, forever.
+fn is_replay_of_park(tx: &rusqlite::Transaction<'_>, pre: &Entry, entry: &Entry) -> Result<bool> {
+    let blockers = find_blockers(tx, entry)?;
+    let Some(winner) = blockers
+        .iter()
+        .max_by(|a, b| merge_rank(a).cmp(&merge_rank(b)))
+    else {
+        return Ok(false);
+    };
+    if merge_rank(winner) <= merge_rank(entry) {
+        return Ok(false);
+    }
+    let shape = parked_shape(entry, winner);
+    Ok(shape.slug == pre.slug
+        && shape.deleted_at == pre.deleted_at
+        && shape.content_hash == pre.content_hash)
+}
+
 /// Park `loser` out of `winner`'s way without destroying it: move it to its
 /// [`parked_slug`] when the two contend for one slug, and tombstone it
 /// (`deleted_at` = the winner's `modify_time`, so both devices write the
@@ -305,29 +361,19 @@ fn park_loser(
     winner: &Entry,
     write_now: bool,
 ) -> Result<Entry> {
-    let mut parked = loser.clone();
-    if loser.slug == winner.slug {
-        parked.slug = datum_core::ids::Slug::new(parked_slug(loser));
-    }
-    if loser.deleted_at.is_none()
-        && winner.deleted_at.is_none()
-        && loser.occur_time.is_some()
-        && loser.field == winner.field
-        && loser.occur_time.as_ref().map(|t| t.utc) == winner.occur_time.as_ref().map(|t| t.utc)
-    {
-        parked.deleted_at = Some(winner.modify_time);
-    }
+    let parked = parked_shape(loser, winner);
     if write_now {
-        // The loser is a row already in the table: rewrite just the two
-        // identity columns the parking touches, snapshotting the pre-park
-        // state so the move is auditable and reversible.
+        // The loser is a row already in the table: rewrite just the identity
+        // columns the parking touches plus the hash they move, snapshotting
+        // the pre-park state so the move is auditable and reversible.
         history::record(tx, loser, ChangeKind::SyncMerge)?;
         tx.execute(
-            "UPDATE entries SET slug = ?2, deleted_at = ?3 WHERE hid = ?1",
+            "UPDATE entries SET slug = ?2, deleted_at = ?3, content_hash = ?4 WHERE hid = ?1",
             params![
                 parked.hid,
                 parked.slug,
                 parked.deleted_at.map(|t| t.to_rfc3339()),
+                parked.content_hash,
             ],
         )?;
     }
@@ -367,6 +413,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             // (docs/sync-protocol.md §Merge semantics).
             std::cmp::Ordering::Equal => {
                 if pre.content_hash == entry.content_hash
+                    || is_replay_of_park(tx, pre, entry)?
                     || (&pre.content_hash, &pre.device_id) > (&entry.content_hash, &entry.device_id)
                 {
                     return Ok(());
@@ -391,8 +438,9 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
     // used to hide by collapsing both sides into one row. Neither is a
     // crash and neither is a discard: keep both, park the deterministic
     // loser, and file a warning naming the pair (da-zlug). The policy for
-    // deduping an *essentially identical* pair silently is da-yiq9, which
-    // waits on `content_hash` covering `following_state`.
+    // deduping an *essentially identical* pair silently is da-yiq9; its
+    // prerequisite — a `content_hash` that does not conflate semantically
+    // different entries — landed in da-4vyw.
     let blockers = find_blockers(tx, entry)?;
     let top = blockers
         .iter()

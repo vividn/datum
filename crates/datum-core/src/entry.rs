@@ -315,7 +315,18 @@ impl Entry {
         let data_str = data.as_ref().map(|v| v.to_string()).unwrap_or_default();
         let state_str = state.as_ref().map(|v| v.to_string()).unwrap_or_default();
 
-        let content_hash = compute_hash(&field, &occur_str, &dur_str, &state_str, &data_str);
+        // `following_state` and `deleted_at` are always unset on a
+        // freshly-built entry — callers that populate them do so after
+        // construction and go through the insert path, which recomputes.
+        let content_hash = compute_hash(&HashInputs {
+            field: &field,
+            occur: &occur_str,
+            dur: &dur_str,
+            state: &state_str,
+            data: &data_str,
+            following_state: "",
+            deleted: false,
+        });
 
         let slug = build_slug(&field, occur_time.as_ref(), &now);
 
@@ -437,27 +448,74 @@ impl Entry {
             .as_ref()
             .map(|v| v.to_string())
             .unwrap_or_default();
-        compute_hash(&self.field, &occur_str, &dur_str, &state_str, &data_str)
+        let following_str = self
+            .following_state
+            .as_ref()
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        compute_hash(&HashInputs {
+            field: &self.field,
+            occur: &occur_str,
+            dur: &dur_str,
+            state: &state_str,
+            data: &data_str,
+            following_state: &following_str,
+            deleted: self.deleted_at.is_some(),
+        })
     }
 }
 
-pub(crate) fn compute_hash(
-    field: &str,
-    occur: &str,
-    dur: &str,
-    state: &str,
-    extra: &str,
-) -> String {
+/// The columns that constitute an entry's *content* for dedup, replay
+/// detection and the sync tiebreaker.
+///
+/// vividn's ruling (da-4vyw): the hash covers **the fact asserted**, not the
+/// annotations around it. In: `field`, `occur_time` (UTC instant only),
+/// `dur`, `state`, `data`, `following_state`, and whether the row is
+/// deleted. Out: `lat`/`lon`/`location`, `occur_time_offset`/`_tz` (the
+/// instant is the fact, the offset is how it was rendered),
+/// `occur_time_precision`/`dur_precision`, `user_asserted_last_state`,
+/// `extra_metadata`, and every identity/provenance column.
+///
+/// `following_state` closes a second hole as a side effect: `verb` is
+/// derived from `(state, dur, following_state)`, so with all three hashed
+/// a verb difference can no longer hide behind an equal hash.
+///
+/// Adding a field is one line here, one line in [`compute_hash`]'s `parts`,
+/// and one migration that rewrites every stored row — see
+/// `migrations::m32_to_33_content_hash_v33`.
+pub(crate) struct HashInputs<'a> {
+    pub field: &'a str,
+    pub occur: &'a str,
+    pub dur: &'a str,
+    pub state: &'a str,
+    pub data: &'a str,
+    pub following_state: &'a str,
+    /// **Deleted-ness, not the deletion instant.** `deleted_at` is a
+    /// timestamp, but hashing its value would give two devices that delete
+    /// the same entry independently two different hashes for the same
+    /// outcome — and would change a tombstone's hash if the deletion time
+    /// were ever rewritten. Only the null/non-null distinction is content.
+    pub deleted: bool,
+}
+
+pub(crate) fn compute_hash(inputs: &HashInputs) -> String {
+    let parts: [&str; 7] = [
+        inputs.field,
+        inputs.occur,
+        inputs.dur,
+        inputs.state,
+        inputs.data,
+        inputs.following_state,
+        // A marker rather than the instant — see `HashInputs::deleted`.
+        if inputs.deleted { "deleted" } else { "" },
+    ];
     let mut h = Sha256::new();
-    h.update(field.as_bytes());
-    h.update(b"\x00");
-    h.update(occur.as_bytes());
-    h.update(b"\x00");
-    h.update(dur.as_bytes());
-    h.update(b"\x00");
-    h.update(state.as_bytes());
-    h.update(b"\x00");
-    h.update(extra.as_bytes());
+    for (i, part) in parts.iter().enumerate() {
+        if i > 0 {
+            h.update(b"\x00");
+        }
+        h.update(part.as_bytes());
+    }
     format!("{:x}", h.finalize())
 }
 
@@ -647,5 +705,112 @@ mod tests {
         json["raw_input"] = serde_json::json!("");
         let entry: Entry = serde_json::from_value(json).unwrap();
         assert_eq!(entry.raw_input, None);
+    }
+
+    /// Base entry for the hash-coverage tests: a block, so `following_state`
+    /// is legal on it (the schema CHECK requires `dur IS NOT NULL`).
+    fn hashable_block() -> Entry {
+        let mut e = Entry::new(
+            "project",
+            Verb::Block,
+            Some(serde_json::json!("writing")),
+            None,
+            Some(fixed_time()),
+            Some(Dur::Of(chrono::Duration::minutes(30))),
+            "d",
+        );
+        e.content_hash = e.expected_content_hash();
+        e
+    }
+
+    /// da-4vyw: `following_state` is the state a field changes *to* when the
+    /// block ends — two entries that differ only there mean different things
+    /// and must not share a dedup key.
+    #[test]
+    fn following_state_changes_the_content_hash() {
+        let plain = hashable_block();
+        let mut with_following = plain.clone();
+        with_following.following_state = Some(serde_json::json!("resting"));
+
+        assert_ne!(
+            plain.expected_content_hash(),
+            with_following.expected_content_hash(),
+            "a block and a block-switch must not hash alike"
+        );
+
+        // …and two different targets must not collapse into each other.
+        let mut other_target = plain.clone();
+        other_target.following_state = Some(serde_json::json!("meeting"));
+        assert_ne!(
+            with_following.expected_content_hash(),
+            other_target.expected_content_hash(),
+            "distinct following_state values must not hash alike"
+        );
+    }
+
+    /// da-4vyw: a tombstone must never read as identical content to the live
+    /// row it replaced.
+    #[test]
+    fn deleted_ness_changes_the_content_hash() {
+        let live = hashable_block();
+        let mut dead = live.clone();
+        dead.deleted_at = Some(Utc::now());
+
+        assert_ne!(
+            live.expected_content_hash(),
+            dead.expected_content_hash(),
+            "a tombstone must not hash like its live counterpart"
+        );
+    }
+
+    /// The deletion *instant* is deliberately not hashed — two devices that
+    /// delete the same entry independently reach the same outcome and must
+    /// reach the same hash.
+    #[test]
+    fn deletion_instant_does_not_change_the_content_hash() {
+        let live = hashable_block();
+        let mut dead_early = live.clone();
+        dead_early.deleted_at = Some(
+            chrono::DateTime::parse_from_rfc3339("2026-01-02T04:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        );
+        let mut dead_late = live.clone();
+        dead_late.deleted_at = Some(
+            chrono::DateTime::parse_from_rfc3339("2026-06-30T23:59:59Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        );
+
+        assert_eq!(
+            dead_early.expected_content_hash(),
+            dead_late.expected_content_hash(),
+            "the deleted marker is hashed, not the instant"
+        );
+    }
+
+    /// The `\x00` framing keeps field boundaries unambiguous: content that
+    /// spans a boundary must not hash like the same bytes shifted across it.
+    #[test]
+    fn hash_framing_keeps_field_boundaries_unambiguous() {
+        let shifted = compute_hash(&HashInputs {
+            field: "ab",
+            occur: "",
+            dur: "",
+            state: "",
+            data: "",
+            following_state: "",
+            deleted: false,
+        });
+        let split = compute_hash(&HashInputs {
+            field: "a",
+            occur: "b",
+            dur: "",
+            state: "",
+            data: "",
+            following_state: "",
+            deleted: false,
+        });
+        assert_ne!(shifted, split);
     }
 }

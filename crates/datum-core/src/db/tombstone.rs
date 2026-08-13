@@ -34,10 +34,19 @@ impl Db {
             None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
         };
         history::record(&tx, &pre, ChangeKind::UserEdit)?;
+        // da-4vyw: deleted-ness is hashed, so clearing the tombstone moves
+        // the row's content_hash back to its live value. Without this the
+        // stored hash disagrees with `expected_content_hash` forever after.
+        let mut live = pre.clone();
+        live.deleted_at = None;
         tx.execute(
-            "UPDATE entries SET deleted_at = NULL, modify_time = ?2
+            "UPDATE entries SET deleted_at = NULL, modify_time = ?2, content_hash = ?3
              WHERE slug = ?1",
-            params![pre.slug, Utc::now().to_rfc3339()],
+            params![
+                pre.slug,
+                Utc::now().to_rfc3339(),
+                live.expected_content_hash()
+            ],
         )?;
         tx.commit()?;
         Ok(())
@@ -79,10 +88,17 @@ impl Db {
             None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
         };
         history::record(&tx, &pre, ChangeKind::UserEdit)?;
-        let now = Utc::now().to_rfc3339();
+        let now = Utc::now();
+        // da-4vyw: a tombstone must not hash identically to the live row it
+        // replaced — that equality is what would authorise a silent dedupe
+        // of a deletion against its own original. Rehash with the deleted
+        // marker set (the marker, not the instant — see `HashInputs`).
+        let mut dead = pre.clone();
+        dead.deleted_at = Some(now);
         tx.execute(
-            "UPDATE entries SET deleted_at = ?1, modify_time = ?1 WHERE slug = ?2",
-            params![now, pre.slug],
+            "UPDATE entries SET deleted_at = ?1, modify_time = ?1, content_hash = ?3
+             WHERE slug = ?2",
+            params![now.to_rfc3339(), pre.slug, dead.expected_content_hash()],
         )?;
         tx.commit()?;
         Ok(())

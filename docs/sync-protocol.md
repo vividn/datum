@@ -463,14 +463,23 @@ side is discarded:
 - `modify_time` is not bumped. Parking is a pure function of the two rows,
   so every device reaches the same pair of rows independently, in any
   arrival order, with no extra traffic.
+- Because `modify_time` is not bumped, a re-pull of a parked row's *own*
+  changeset arrives as an exact tie against a row that no longer matches it
+  byte-for-byte — the park's tombstone moves `content_hash` (see **Content
+  hash**). Clients MUST re-derive the park before applying such a tie: if
+  parking the incoming row against its current blocker reproduces the row
+  already held, the pull is a replay and MUST be skipped. Skipping it is
+  what stops a parked row from fighting its own origin and re-filing
+  warnings on every pull.
 - One `integrity_warnings` row with `kind = identity_collision` names the
   pair; `datum check` is where the user meets it. Sync never blocks — the
   daemon has no one to ask.
 
 Two rows with *essentially identical* content still park rather than
-dedupe. Deduping them silently is da-yiq9, and it waits on `content_hash`
-covering `following_state` — until then "identical content" is a predicate
-that conflates semantically different entries.
+dedupe. Deduping them silently is da-yiq9. Its prerequisite — a
+`content_hash` that does not conflate semantically different entries —
+landed in da-4vyw; see **Content hash** below for what the predicate now
+covers.
 
 **Equal-`modify_time` tiebreaker (part of the contract).** When the stored
 and incoming rows carry *exactly* equal `modify_time`, the winner is chosen
@@ -483,6 +492,48 @@ a permanent, silent divergence that no future sync heals (da-22zm). The
 identity-collision parking above extends the same order with `hid` as a
 final discriminator; clients MUST implement that identically too, for the
 same reason.
+
+### Content hash
+
+`content_hash` is `SHA-256` over a `\x00`-separated framing of exactly
+seven inputs, in this order (da-4vyw):
+
+`field · occur_time (UTC instant) · dur · state · data · following_state ·
+deleted-marker`
+
+The deleted-marker is the literal `deleted` for a tombstone and the empty
+string for a live row — **deleted-ness, not the deletion instant**. Hashing
+the timestamp would give two devices that delete the same entry
+independently two different hashes for the same outcome.
+
+Deliberately **outside** the hash: `lat` / `lon` / `location`;
+`occur_time_offset` / `occur_time_tz` (the instant is the fact, the offset
+is how it was rendered — two devices in different zones logging one moment
+should dedupe); `occur_time_precision` / `dur_precision`;
+`user_asserted_last_state`; `extra_metadata`; and every identity or
+provenance column (`hid`, `slug`, `create_time`, `modify_time`,
+`device_id`, `raw_input`, `alias_chain`, `parser_version`, the two
+`*_structure` columns). `verb` is outside it too but is fully determined by
+the hashed `(state, dur, following_state)` triple, so a verb difference
+cannot hide behind an equal hash.
+
+**Version skew is UNSUPPORTED: upgrade every device in a cluster
+together.** The hash definition is part of the merge contract, not a local
+detail. Two clients on different definitions compute different hashes for
+the same logical entry, and then:
+
+- the replay short-circuit (`pre.content_hash == entry.content_hash`) stops
+  firing, so rows the device already holds are re-applied and file spurious
+  `lww_overwrite` warnings; and
+- the `(content_hash, device_id)` tiebreaker above **stops being a total
+  order both sides agree on**, which is precisely the permanent silent
+  divergence it exists to prevent (da-22zm).
+
+Nothing on the wire currently detects this — a client cannot tell a peer's
+hash definition from the blob. Making the skew *detected and refused*
+rather than silently divergent means carrying a hash version in the
+protocol; that is filed as da-engu and is not implemented here. Until it
+is, a mixed-version cluster is out of contract.
 
 **Clock-skew caveat (accepted, not mitigated).** `modify_time` is a raw
 device wall-clock with no logical-clock component. A device whose clock

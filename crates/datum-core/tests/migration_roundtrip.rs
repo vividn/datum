@@ -158,6 +158,7 @@ fn every_pair_has_a_roundtrip_test() {
         (29, 30),
         (30, 31),
         (31, 32),
+        (32, 33),
     ];
     assert_eq!(
         covered.len(),
@@ -1589,4 +1590,145 @@ fn roundtrip_v31_to_v32_raw_input_nullable() {
         restored, "",
         "down-migration must rewrite NULL → '' to restore the NOT NULL contract"
     );
+}
+
+/// da-4vyw: v32→v33 recomputes every `content_hash` under the definition
+/// that now covers `following_state` and deleted-ness. Roundtrip proves the
+/// forward step separates the pairs v32 conflated, leaves no row disagreeing
+/// with `expected_content_hash`, walks tombstones too, and that the down step
+/// restores the v32 five-input hashes exactly.
+#[test]
+fn roundtrip_v32_to_v33_content_hash_rehash() {
+    let db = fresh_at(32);
+    let conn = db.conn();
+
+    // The pre-da-4vyw hash: field · occur · dur · state · data, \x00-framed.
+    let v32_hash = |occur: &str| {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        for (i, part) in ["project", occur, "PT30M", "\"writing\"", ""]
+            .iter()
+            .enumerate()
+        {
+            if i > 0 {
+                h.update(b"\x00");
+            }
+            h.update(part.as_bytes());
+        }
+        format!("{:x}", h.finalize())
+    };
+
+    // Two pairs that v32 cannot tell apart, planted with direct SQL so the
+    // stored hashes are genuinely the v32 values (the live insert path would
+    // already write v33 ones):
+    //
+    //   h1 / h3 — identical content, one live and one tombstoned. This is
+    //             the case that would authorise a silent resurrection or
+    //             discard once da-yiq9 lands.
+    //   h5 / h6 — identical apart from `following_state`. Both tombstoned,
+    //             because the partial UNIQUE on (field, occur_time) will not
+    //             let two *live* rows sit at one instant.
+    struct Planted {
+        hid: &'static str,
+        slug: &'static str,
+        occur: &'static str,
+        following_state: Option<&'static str>,
+        deleted_at: Option<&'static str>,
+    }
+    let nine = "2026-01-02T09:00:00+00:00";
+    let thirteen = "2026-01-02T13:00:00+00:00";
+    let rows = &[
+        Planted {
+            hid: "h1",
+            slug: "project:09-live",
+            occur: nine,
+            following_state: None,
+            deleted_at: None,
+        },
+        Planted {
+            hid: "h3",
+            slug: "project:09-dead",
+            occur: nine,
+            following_state: None,
+            deleted_at: Some(thirteen),
+        },
+        Planted {
+            hid: "h5",
+            slug: "project:13-plain",
+            occur: thirteen,
+            following_state: None,
+            deleted_at: Some(thirteen),
+        },
+        Planted {
+            hid: "h6",
+            slug: "project:13-switch",
+            occur: thirteen,
+            following_state: Some("\"resting\""),
+            deleted_at: Some(thirteen),
+        },
+    ];
+    for Planted {
+        hid,
+        slug,
+        occur,
+        following_state: following,
+        deleted_at: deleted,
+    } in rows
+    {
+        conn.execute(
+            "INSERT INTO entries (
+                hid, slug, content_hash, field, verb, state, dur,
+                following_state, occur_time, create_time, modify_time,
+                device_id, parser_version, deleted_at
+             ) VALUES (?1, ?2, ?3, 'project', 'block', '\"writing\"', 'PT30M',
+                       ?4, ?5, '2026-01-01T00:00:00+00:00',
+                       '2026-01-01T00:00:00+00:00', 'd1', 1, ?6)",
+            rusqlite::params![hid, slug, v32_hash(occur), following, occur, deleted],
+        )
+        .unwrap();
+    }
+
+    let distinct = |conn: &Connection| -> i64 {
+        conn.query_row(
+            "SELECT COUNT(DISTINCT content_hash) FROM entries",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        distinct(conn),
+        2,
+        "v32 collapses four distinct rows onto two hashes"
+    );
+
+    apply_one_up(conn, 32);
+
+    assert_eq!(
+        distinct(conn),
+        4,
+        "v33 must give every semantically distinct row its own hash"
+    );
+    for entry in db.list_including_deleted().unwrap() {
+        assert_eq!(
+            entry.content_hash,
+            entry.expected_content_hash(),
+            "row {} disagrees with expected_content_hash after v33",
+            entry.slug
+        );
+    }
+
+    apply_one_down(conn, 33);
+
+    assert_eq!(distinct(conn), 2, "down must restore the v32 hashes");
+    for row in rows {
+        let restored: String = conn
+            .query_row(
+                "SELECT content_hash FROM entries WHERE hid = ?1",
+                rusqlite::params![row.hid],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(restored, v32_hash(row.occur), "{} not restored", row.hid);
+    }
 }

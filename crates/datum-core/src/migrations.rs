@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 32;
+pub const CURRENT_SCHEMA_VERSION: u32 = 33;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -259,6 +259,13 @@ pub const MIGRATIONS: &[Migration] = &[
         apply: m31_to_32_raw_input_nullable,
         down: down_32_to_31_raw_input_nullable,
     },
+    Migration {
+        from: 32,
+        to: 33,
+        summary: "entries: recompute every content_hash — the hash now covers `following_state` and deleted-ness, so two semantically different entries no longer hash alike (da-4vyw)",
+        apply: m32_to_33_content_hash_v33,
+        down: down_33_to_32_content_hash_v33,
+    },
 ];
 
 /// SQL expression deriving epoch-ms from the RFC3339 `modify_time` string.
@@ -441,6 +448,103 @@ fn down_32_to_31_raw_input_nullable(conn: &Connection) -> Result<()> {
     )?;
     rewrite_raw_input_column(conn, "entries", "TEXT", "TEXT NOT NULL DEFAULT ''")?;
     rewrite_raw_input_column(conn, "entry_history", "TEXT", "TEXT NOT NULL")?;
+    Ok(())
+}
+
+/// da-4vyw: `content_hash` now covers `following_state` and deleted-ness on
+/// top of the original `field · occur_time · dur · state · data`. Every
+/// stored row's hash therefore has to be rewritten, or the whole database
+/// reads as drifted to `datum check` and dedup compares old hashes against
+/// new ones.
+///
+/// SHA-256 is not available to SQLite here, so this walks the rows in Rust
+/// rather than running one `UPDATE`. It deliberately materializes each row
+/// through the live row mapper and asks [`Entry::expected_content_hash`]
+/// for the value: that is the exact predicate `datum check` uses, so the
+/// migration cannot leave behind a row the checker would then flag. The
+/// cost of that choice is that this migration is coupled to the current
+/// hash definition rather than frozen at v33 — which is harmless, because
+/// the *next* hash change must ship its own full rewrite anyway.
+///
+/// Structurally a no-op (an in-place UPDATE, like m21→m22), so
+/// [`infer_legacy_version`] has nothing to probe for.
+fn m32_to_33_content_hash_v33(conn: &Connection) -> Result<()> {
+    rehash_all_entries(conn, |entry| entry.expected_content_hash())
+}
+
+/// Reverse 33→32 — recompute every hash under the pre-da-4vyw definition
+/// (`field · occur_time · dur · state · data`, `\x00`-separated), which is
+/// reproduced locally here because the live one has moved on.
+fn down_33_to_32_content_hash_v33(conn: &Connection) -> Result<()> {
+    rehash_all_entries(conn, |entry| {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        for (i, part) in [
+            entry.field.clone(),
+            entry
+                .occur_time
+                .as_ref()
+                .map(|t| t.utc.to_rfc3339())
+                .unwrap_or_default(),
+            entry
+                .dur
+                .as_ref()
+                .map(crate::dur::Dur::to_storage_string)
+                .unwrap_or_default(),
+            entry
+                .state
+                .as_ref()
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            entry
+                .data
+                .as_ref()
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+        ]
+        .iter()
+        .enumerate()
+        {
+            if i > 0 {
+                h.update(b"\x00");
+            }
+            h.update(part.as_bytes());
+        }
+        format!("{:x}", h.finalize())
+    })
+}
+
+/// Walk `entries` (tombstones included) and rewrite each row's
+/// `content_hash` to whatever `hash_of` returns. Keyed on `hid`, the one
+/// identity that survives an edit. Idempotent, and a no-op on a partial
+/// schema that has no `entries` table — some migration tests stand up only
+/// a fragment and expect later forward steps to skip rather than fail.
+fn rehash_all_entries(
+    conn: &Connection,
+    hash_of: impl Fn(&crate::entry::Entry) -> String,
+) -> Result<()> {
+    let has_entries: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='entries'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_entries {
+        return Ok(());
+    }
+    let rows: Vec<(String, String)> = {
+        let mut stmt = conn.prepare("SELECT * FROM entries")?;
+        let mapped = stmt.query_map([], |row| {
+            let entry = crate::db::row_to_entry_public(row)?;
+            Ok((entry.hid.to_string(), hash_of(&entry)))
+        })?;
+        mapped.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let mut update = conn.prepare("UPDATE entries SET content_hash = ?2 WHERE hid = ?1")?;
+    for (hid, hash) in rows {
+        update.execute(params![hid, hash])?;
+    }
     Ok(())
 }
 
@@ -3330,5 +3434,165 @@ mod tests {
             read_schema_version(db.conn()).unwrap(),
             Some(CURRENT_SCHEMA_VERSION),
         );
+    }
+
+    /// Seed a DB with the row shapes whose hashes the v33 definition moves:
+    /// a plain point, a block, a block-switch (`following_state` set), and a
+    /// tombstone. Returns the db.
+    fn db_with_hashable_rows() -> Db {
+        use crate::entry::Verb;
+        use crate::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let at = |s: &str| {
+            DatumTime::from_utc_and_tz(
+                chrono::DateTime::parse_from_rfc3339(s)
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+                "UTC",
+            )
+            .unwrap()
+        };
+
+        let point = crate::entry::Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(at("2026-01-02T03:04:05Z")),
+            None,
+            "dev",
+        );
+        db.insert_entry(&point).unwrap();
+
+        let block = crate::entry::Entry::new(
+            "project",
+            Verb::Block,
+            Some(serde_json::json!("writing")),
+            None,
+            Some(at("2026-01-02T09:00:00Z")),
+            Some(crate::dur::Dur::Of(chrono::Duration::minutes(30))),
+            "dev",
+        );
+        db.insert_entry(&block).unwrap();
+
+        let mut block_switch = crate::entry::Entry::new(
+            "project",
+            Verb::Block,
+            Some(serde_json::json!("writing")),
+            None,
+            Some(at("2026-01-02T11:00:00Z")),
+            Some(crate::dur::Dur::Of(chrono::Duration::minutes(30))),
+            "dev",
+        );
+        block_switch.following_state = Some(serde_json::json!("resting"));
+        db.insert_entry(&block_switch).unwrap();
+
+        let doomed = crate::entry::Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(at("2026-01-02T15:00:00Z")),
+            None,
+            "dev",
+        );
+        db.insert_entry(&doomed).unwrap();
+        db.soft_delete_entry(doomed.slug.as_str()).unwrap();
+
+        db
+    }
+
+    /// da-4vyw acceptance: a v32 database opens, migrates to v33, and every
+    /// row's stored `content_hash` equals its `expected_content_hash`
+    /// afterwards — the same predicate `datum check` uses, so a migrated DB
+    /// reports no hash drift.
+    #[test]
+    fn m32_to_33_rewrites_every_content_hash() {
+        let db = db_with_hashable_rows();
+
+        // Walk back to v32 — `down_33_to_32` restores the pre-da-4vyw
+        // five-input hashes, which is exactly the on-disk state of a
+        // database written by the previous release.
+        migrate_down_to(db.conn(), 32).unwrap();
+        assert_eq!(read_schema_version(db.conn()).unwrap(), Some(32));
+        let stale: Vec<String> = db
+            .list_including_deleted()
+            .unwrap()
+            .iter()
+            .map(|e| e.content_hash.clone())
+            .collect();
+        assert_eq!(stale.len(), 4);
+        for entry in db.list_including_deleted().unwrap() {
+            assert_ne!(
+                entry.content_hash,
+                entry.expected_content_hash(),
+                "the v32 hash must actually differ, or this proves nothing"
+            );
+        }
+
+        let applied = migrate_to_current(db.conn()).unwrap();
+        assert!(applied.iter().any(|s| s.contains("v32→v33")), "{applied:?}");
+
+        let migrated = db.list_including_deleted().unwrap();
+        assert_eq!(migrated.len(), 4);
+        for entry in &migrated {
+            assert_eq!(
+                entry.content_hash,
+                entry.expected_content_hash(),
+                "row {} still carries a drifted hash after v33",
+                entry.slug
+            );
+        }
+        // Tombstones are included in the walk, not just live rows.
+        assert!(migrated.iter().any(|e| e.deleted_at.is_some()));
+
+        // Idempotent — re-running is a no-op.
+        assert!(migrate_to_current(db.conn()).unwrap().is_empty());
+    }
+
+    /// Soft-delete moves the row's `content_hash` — a tombstone must not
+    /// keep reading as identical content to the live row it replaced — and
+    /// the stored value must stay in step with `expected_content_hash` so
+    /// `datum check` sees no drift.
+    #[test]
+    fn soft_delete_and_undelete_keep_the_content_hash_in_step() {
+        use crate::entry::Verb;
+        use crate::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let entry = crate::entry::Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(
+                DatumTime::from_utc_and_tz(
+                    chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05Z")
+                        .unwrap()
+                        .with_timezone(&chrono::Utc),
+                    "UTC",
+                )
+                .unwrap(),
+            ),
+            None,
+            "dev",
+        );
+        db.insert_entry(&entry).unwrap();
+        let live_hash = db.list_including_deleted().unwrap()[0].content_hash.clone();
+
+        db.soft_delete_entry(entry.slug.as_str()).unwrap();
+        let dead = db.list_including_deleted().unwrap().remove(0);
+        assert!(dead.deleted_at.is_some());
+        assert_ne!(dead.content_hash, live_hash, "tombstone must rehash");
+        assert_eq!(dead.content_hash, dead.expected_content_hash());
+
+        db.undelete(entry.slug.as_str()).unwrap();
+        let revived = db.list_including_deleted().unwrap().remove(0);
+        assert_eq!(
+            revived.content_hash, live_hash,
+            "clearing the tombstone must restore the live hash"
+        );
+        assert_eq!(revived.content_hash, revived.expected_content_hash());
     }
 }
