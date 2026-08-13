@@ -237,6 +237,10 @@ pub struct PullOutcome {
     pub integrity_warnings_queued: usize,
     /// Requests the run took (da-5ua6).
     pub pages: usize,
+    /// Relay rows skipped because they were written under a superseded
+    /// generation (da-pjhg). Counted rather than dropped silently — a
+    /// device that ignores incoming data should say how much.
+    pub superseded_skipped: usize,
 }
 
 /// Tally of a full [`sync_once`] cycle.
@@ -560,6 +564,10 @@ pub fn pull_once_with(
     let mut since = sync_state::get_pull_seq(db)? as i64;
     let mut outcome = PullOutcome::default();
     let mut cluster_confirmed = false;
+    // The generation this device is currently on. Starts at the stored
+    // value and only ever moves forward (da-pjhg) — see the page-level
+    // adoption below.
+    let mut current_generation = local_generation;
     // 1-based changeset counter across the whole run, for within-page progress.
     let mut changesets = 0usize;
 
@@ -572,7 +580,7 @@ pub fn pull_once_with(
                 device_id,
                 since,
                 &local_cluster,
-                local_generation,
+                current_generation,
                 page_rows,
             )
         })?;
@@ -581,22 +589,47 @@ pub fn pull_once_with(
         }
         let full_page = rows.len() >= page_rows;
 
-        // Confirm the cluster_id / generation echoed back by the relay on
-        // the first row. Every row in the batch shares the same
-        // (cluster_id, generation) because the server filters by cluster
-        // before generation checks. First sync (local_was_unset) always
+        // Confirm the cluster_id the relay echoed back, on the first row.
+        // Every row in the batch shares it because the pull is filtered
+        // server-side by cluster. First sync (local_was_unset) always
         // writes, since the locally-used value was a default-string
         // placeholder; subsequent syncs only write if the server changed
-        // it. Once per run — later pages carry the same values.
+        // it. Once per run — later pages carry the same cluster.
+        //
+        // `generation` is deliberately NOT read here (da-pjhg). The relay
+        // filters a pull by cluster, device and user — not by generation —
+        // so one batch can carry rows from several generations, and
+        // `rows[0]`'s value is simply whichever row sorted first. Reading
+        // it as "the batch's generation" let a batch whose first row
+        // predated a bump assign this device a *lower* generation than it
+        // already held, after which every push 409'd. Each row is now
+        // judged on its own generation in the loop below.
         if !dry_run && !cluster_confirmed {
             let first = &rows[0];
             if local_was_unset || first.cluster_id != local_cluster {
                 sync_state::set_cluster_id(db, &first.cluster_id)?;
             }
-            if first.generation != local_generation {
-                sync_state::set_cluster_generation(db, first.generation)?;
-            }
             cluster_confirmed = true;
+        }
+
+        // Adopt a newer generation before judging any row against it, so
+        // a page that straddles a bump is measured against the newest
+        // generation it carries rather than the first row's. Forward
+        // only: a lower value is a superseded row, not a new truth, and
+        // assigning it would push this device back onto a dead
+        // generation. (Same distinction `advance_pull_seq` draws against
+        // `reset_pull_seq` — a monotonic guard, with the deliberate
+        // rewind confined to recovery.)
+        let page_generation = rows
+            .iter()
+            .map(|r| r.generation)
+            .max()
+            .unwrap_or(current_generation);
+        if page_generation > current_generation {
+            current_generation = page_generation;
+            if !dry_run {
+                sync_state::set_cluster_generation(db, current_generation)?;
+            }
         }
 
         let mut max_seq: u64 = since as u64;
@@ -608,6 +641,23 @@ pub fn pull_once_with(
         for row in &rows {
             if (row.id as u64) > max_seq {
                 max_seq = row.id as u64;
+            }
+            // da-pjhg: never apply a changeset written under a superseded
+            // generation. A bump is the cluster stating that what came
+            // before it is void — a purge means "this data is gone", a
+            // restore means "the snapshot is the truth now". Applying a
+            // pre-bump row merges exactly the state the bump discarded
+            // back in, which is how a purged device re-acquired its old
+            // rows on the next sync. The recovery flow deletes local
+            // pre-reinit entries by timestamp *before* the retry pull, so
+            // without this gate nothing re-examines what arrives after.
+            //
+            // The watermark still advances past a skipped row (above): a
+            // superseded row can never become applicable, so leaving the
+            // watermark behind would re-fetch it on every sync forever.
+            if row.generation < current_generation {
+                outcome.superseded_skipped += 1;
+                continue;
             }
             if dry_run {
                 applied += incoming_entry_count(row, master_key);

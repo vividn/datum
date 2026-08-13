@@ -98,6 +98,11 @@ pub struct SyncOutcome {
     pub pushed: usize,
     pub pulled: usize,
     pub integrity_warnings_queued: usize,
+    /// Rows the pull ignored because they were written under a
+    /// superseded generation (da-pjhg). The CLI mentions them so a
+    /// device that just re-inited can see why a pull that fetched a lot
+    /// applied little.
+    pub superseded_skipped: usize,
     pub dry_run: bool,
     /// `Some` when the push recovered from a seq desync by re-basing to
     /// the relay's authoritative seq (da-ca4q). The CLI prints this as a
@@ -146,6 +151,16 @@ fn run_sync(args: SyncArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
                 "{prefix}↓ pulled {} change{}",
                 outcome.pulled,
                 plural(outcome.pulled),
+            );
+        }
+        // Say it out loud rather than letting the count quietly not add
+        // up: these rows arrived and were ignored because the cluster has
+        // moved past the generation they were written under (da-pjhg).
+        if outcome.superseded_skipped > 0 {
+            println!(
+                "{prefix}  ({} changeset{} from a superseded generation ignored)",
+                outcome.superseded_skipped,
+                plural(outcome.superseded_skipped),
             );
         }
     }
@@ -308,6 +323,7 @@ fn run_sync_inner_with_recovery(
         pushed: report.push.pushed,
         pulled: report.pull.applied,
         integrity_warnings_queued: report.pull.integrity_warnings_queued,
+        superseded_skipped: report.pull.superseded_skipped,
         dry_run,
         seq_rebased: report.push.seq_rebased,
     })

@@ -23,6 +23,12 @@
 //! 5. Re-init after fork: B follows the cluster-forked recovery
 //!    (`db purge` without `--cluster`, then `sync`) and converges
 //!    on the post-purge state.
+//! 7. The generation gate (da-pjhg): a changeset written under a
+//!    superseded generation is never applied, whichever route it
+//!    arrives by — so `db purge --cluster` leaves both devices empty,
+//!    a batch straddling a bump neither applies its old rows nor
+//!    rewinds the device's generation, and a restore-bump reconciles
+//!    to the restored snapshot instead of re-merging what preceded it.
 //!
 //! Each "client" gets its own DATUM_HOME (so the auto-managed
 //! `device_id` file and the per-host token/master-key live on
@@ -700,22 +706,244 @@ fn s5_peer_recovers_from_fork_via_purge_then_sync() {
     run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_b)
         .expect("B re-syncs after recovery");
     let b_fields = live_fields(&db_b);
-    // The relay's `bump_generation` increments the cluster's
-    // generation counter but does NOT garbage-collect prior
-    // changesets — a recovering peer replays the full cluster history
-    // and lands on A's current row set (both the pre- and post-purge
-    // rows A wrote). The load-bearing recovery behaviour is "B catches
-    // up to the cluster's current generation without throwing"; whether
-    // historical rows survive the bump is a separate server-side
-    // policy question.
+    // da-pjhg: the relay still holds A's pre-purge changesets — it
+    // garbage-collects nothing — so B is offered them and must decline.
+    // A changeset written under a superseded generation is dead state;
+    // applying it merges back exactly what the purge discarded. B ends
+    // on A's post-purge row set, which is what "re-init" means.
     assert!(
         b_fields.contains(&"post-purge".to_string()),
         "B must see A's post-purge row after recovery; got {b_fields:?}",
+    );
+    assert!(
+        !b_fields.contains(&"coffee".to_string()),
+        "B must NOT re-acquire A's pre-purge row: it was written under \
+         the generation the purge retired; got {b_fields:?}",
     );
     assert_eq!(
         sync_state::get_cluster_id(&db_b).unwrap().as_deref(),
         Some("datum"),
         "B re-registers under the client-side default cluster_id \
          (da-3fnd: the DB file-name stem, here datum.db → datum)",
+    );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// SCENARIO 7 — the generation gate (da-pjhg)
+// ──────────────────────────────────────────────────────────────────────────
+
+/// vividn's scenario, end to end: two devices holding each other's rows,
+/// `db purge --cluster` on one of them, then a sync on each. Both must
+/// end up empty. The purge says "this cluster's contents are gone"; a
+/// device that pulls the pre-bump changesets back has not purged
+/// anything, it has round-tripped its data through the relay.
+#[test]
+fn s7_purge_cluster_leaves_both_devices_empty_after_sync() {
+    let env = TwoClientEnv::new();
+    let relay = StubRelay::start();
+    let key = [0x71u8; 32];
+    let db_a = provision_client(&env, "A", &relay, &key);
+    let db_b = provision_client(&env, "B", &relay, &key);
+
+    // Baseline: a row on each device, both sides converged.
+    env.use_a();
+    db_a.insert_entry(&make_entry("coffee", 0, "dev-A"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_a).unwrap();
+    env.use_b();
+    db_b.insert_entry(&make_entry("mood", 60, "dev-B")).unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_b).unwrap();
+    env.use_a();
+    run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_a).unwrap();
+    assert_eq!(live_rows(&db_a), 2, "pre-condition: A holds both rows");
+    assert_eq!(live_rows(&db_b), 2, "pre-condition: B holds both rows");
+
+    // A purges the cluster.
+    let mut stdin = Cursor::new(Vec::<u8>::new());
+    purge_with_io(
+        DbPurgeArgs {
+            yes: true,
+            cluster: true,
+        },
+        &db_a,
+        &mut stdin,
+        false,
+        "",
+    )
+    .expect("A db purge --yes --cluster");
+
+    // A syncs. The relay still holds B's pre-bump changeset and offers
+    // it; A must not take it back.
+    let outcome_a = run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_a)
+        .expect("A syncs after its own purge");
+    assert_eq!(
+        live_rows(&db_a),
+        0,
+        "A purged the cluster and must stay empty; got {:?}",
+        live_fields(&db_a),
+    );
+    assert!(
+        outcome_a.superseded_skipped > 0,
+        "A should report the superseded rows it declined, not drop them silently",
+    );
+
+    // B syncs. It is still on the old generation, so this is the
+    // recovery path: discard local pre-reinit state, adopt the new
+    // generation, re-pull — and decline everything the old generation
+    // wrote.
+    env.use_b();
+    let mut prompter = datum_cli::sync::TestPrompter::new::<Vec<String>, String>(vec![]);
+    prompter.push_confirm(true);
+    datum_cli::sync::run_sync_with_client_and_prompter(
+        Some(&relay.base_url),
+        Direction::Both,
+        false,
+        &db_b,
+        &mut prompter,
+    )
+    .expect("B recovers and syncs");
+    assert_eq!(
+        live_rows(&db_b),
+        0,
+        "B must converge on the purged cluster's state (empty); got {:?}",
+        live_fields(&db_b),
+    );
+}
+
+/// The relay filters a pull by cluster, device and user — never by
+/// generation — so one batch can straddle a bump. Two things must hold
+/// for such a batch: the superseded row is not applied, and the client
+/// does not assign itself the older generation it carries. The second
+/// is the sharper failure: a device that rewinds its own generation
+/// 409s on every subsequent push.
+#[test]
+fn s7_mixed_generation_batch_ignores_the_old_rows_and_never_rewinds() {
+    let env = TwoClientEnv::new();
+    let relay = StubRelay::start();
+    let key = [0x72u8; 32];
+    let db_a = provision_client(&env, "A", &relay, &key);
+    let db_b = provision_client(&env, "B", &relay, &key);
+
+    // A pushes two rows. Both land at generation 0.
+    env.use_a();
+    db_a.insert_entry(&make_entry("pre-bump", 0, "dev-A"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_a).unwrap();
+    db_a.insert_entry(&make_entry("post-bump", 60, "dev-A"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_a).unwrap();
+
+    // Re-stamp the *second* changeset as generation 1, and the cluster
+    // with it: the shape the relay is in immediately after a bump that
+    // some rows were written before and some after. Doing it in SQL
+    // rather than through a real bump is what makes both generations
+    // reachable in one batch.
+    let cluster_id = sync_state::get_cluster_id(&db_a).unwrap().unwrap();
+    {
+        let conn = relay.state.db.lock().unwrap();
+        let newest: i64 = conn
+            .query_row("SELECT MAX(id) FROM changesets", [], |r| r.get(0))
+            .unwrap();
+        conn.execute(
+            "UPDATE changesets SET generation = 1 WHERE id = ?1",
+            rusqlite::params![newest],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE clusters SET generation = 1 WHERE cluster_id = ?1 AND user_id = ?2",
+            rusqlite::params![cluster_id, relay.user_id.to_string()],
+        )
+        .unwrap();
+    }
+
+    // B arrives on generation 1 and pulls both rows in one batch.
+    env.use_b();
+    sync_state::set_cluster_id(&db_b, &cluster_id).unwrap();
+    sync_state::set_cluster_generation(&db_b, 1).unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_b)
+        .expect("B pulls the straddling batch");
+
+    let fields = live_fields(&db_b);
+    assert!(
+        fields.contains(&"post-bump".to_string()),
+        "the current-generation row must still arrive — the gate retires \
+         superseded generations, not all history; got {fields:?}",
+    );
+    assert!(
+        !fields.contains(&"pre-bump".to_string()),
+        "the superseded row must not be applied; got {fields:?}",
+    );
+    assert_eq!(
+        sync_state::get_cluster_generation(&db_b).unwrap(),
+        1,
+        "an older row in the batch must not drag the device back to its generation",
+    );
+
+    // And the watermark moved past the skipped row: a second pull has
+    // nothing left to offer, rather than re-fetching it forever.
+    let again = run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_b)
+        .expect("B pulls again");
+    assert_eq!(again.pulled, 0);
+    assert_eq!(again.superseded_skipped, 0);
+}
+
+/// The restore half of "reconcile, don't merge". A restore-bump does
+/// not mean "discard everything" — it means "the restored snapshot is
+/// the truth now". The peer must land on the snapshot, and neither
+/// re-merge its own pre-restore rows nor the cluster's.
+#[test]
+fn s7_restore_bump_reconciles_to_the_restored_snapshot() {
+    let env = TwoClientEnv::new();
+    let relay = StubRelay::start();
+    let key = [0x73u8; 32];
+    let db_a = provision_client(&env, "A", &relay, &key);
+    let db_b = provision_client(&env, "B", &relay, &key);
+
+    // Baseline: A and B both have pre-restore rows on the relay.
+    env.use_a();
+    db_a.insert_entry(&make_entry("a-pre-restore", 0, "dev-A"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_a).unwrap();
+    env.use_b();
+    db_b.insert_entry(&make_entry("b-pre-restore", 60, "dev-B"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_b).unwrap();
+
+    // A restores a snapshot: the cluster's generation bumps, and A
+    // pushes the restored content under the new generation. Driven
+    // through the same bump seam `db restore --cluster` uses (s3).
+    env.use_a();
+    let cluster_id = sync_state::get_cluster_id(&db_a).unwrap().unwrap();
+    let new_gen = datum_commands::commands::sync::cluster_ops::bump_generation_for_current_server(
+        &cluster_id,
+    )
+    .expect("server bump");
+    sync_state::set_cluster_generation(&db_a, new_gen).unwrap();
+    db_a.insert_entry(&make_entry("restored", 120, "dev-A"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_a).unwrap();
+
+    // B recovers and syncs.
+    env.use_b();
+    let mut prompter = datum_cli::sync::TestPrompter::new::<Vec<String>, String>(vec![]);
+    prompter.push_confirm(true);
+    datum_cli::sync::run_sync_with_client_and_prompter(
+        Some(&relay.base_url),
+        Direction::PullOnly,
+        false,
+        &db_b,
+        &mut prompter,
+    )
+    .expect("B recovers and pulls the restored snapshot");
+
+    let fields = live_fields(&db_b);
+    assert!(
+        fields.contains(&"restored".to_string()),
+        "B must adopt the restored state; got {fields:?}",
+    );
+    assert!(
+        !fields.contains(&"a-pre-restore".to_string())
+            && !fields.contains(&"b-pre-restore".to_string()),
+        "neither side's pre-restore rows may be merged back over the snapshot; got {fields:?}",
     );
 }

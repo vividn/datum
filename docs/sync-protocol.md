@@ -247,6 +247,24 @@ and re-pull from `generation = expected`, prompting the user before
 discarding the pre-reinit local edits. Old changesets stay on the server
 until garbage-collected by generation.
 
+### Applying pulled rows (client contract)
+
+A pull can return rows from more than one generation: the relay filters by
+cluster, device and user, and `generation` is carried on each row rather
+than applied as a filter. Clients therefore MUST judge every row on its
+own value (da-pjhg):
+
+- **A row whose `generation` is older than the client's current one MUST
+  NOT be applied.** A bump means the cluster has declared what preceded it
+  void — discarded by a purge, superseded by a restore. Applying such a
+  row merges back exactly the state the bump retired. The pull watermark
+  still advances past it: a superseded row never becomes applicable.
+- **Generation adoption from pulled rows MUST be forward-only.** A lower
+  generation on the wire is a superseded row, not a new authority;
+  assigning it puts the device on a dead generation and every later push
+  409s. Moving *backwards* is legitimate only in the reinit recovery
+  above, where the relay stated the value directly.
+
 > Client-side recovery (watermark reset + re-pull, coordinated with the
 > restore/purge path) is being implemented under da-74xx. This section
 > documents the protocol contract; consult that bead for current client
