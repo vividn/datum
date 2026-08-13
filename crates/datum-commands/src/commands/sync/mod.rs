@@ -257,6 +257,19 @@ fn run_sync_inner_with_recovery(
                     plural(entries)
                 )
             }
+            // One relay row is a whole push page, so a single pull page can
+            // carry a first sync's worth of entries (da-j8cu). Same "quiet
+            // until there's more than one" rule as the page lines.
+            PullChangeset {
+                changeset,
+                entries,
+                total,
+            } if changeset > 1 => {
+                eprintln!(
+                    "  ↓ changeset {changeset}: {entries} change{} ({total} so far)",
+                    plural(entries)
+                )
+            }
             _ => {}
         }
     };

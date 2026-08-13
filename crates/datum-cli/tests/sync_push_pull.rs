@@ -1021,6 +1021,88 @@ fn first_sync_pages_push_and_pull_in_bounded_requests() {
     assert_eq!((again.applied, again.pages), (0, 0));
 }
 
+/// A pull page carries whole push pages, so one page can be an entire
+/// first sync — page-granular progress would then say nothing for the
+/// length of the run. Progress must arrive per changeset (da-j8cu).
+#[test]
+fn pull_reports_progress_within_a_single_page() {
+    use datum_sync_client::sync_once::{pull_once_with, push_once_with, SyncOpts, SyncProgress};
+
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    let bearer = relay.mint_token();
+    write_token_for(&relay.base_url, &bearer);
+    let master_key = [0x5cu8; 32];
+    write_master_key(&relay.base_url, &master_key);
+
+    let home = std::env::var("DATUM_HOME").unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    let db_a = Db::open(&format!("{home}/alpha.db")).unwrap();
+    let db_b = Db::open(&format!("{home}/beta.db")).unwrap();
+    sync_state::set_cluster_id(&db_a, "shared").unwrap();
+    sync_state::set_cluster_id(&db_b, "shared").unwrap();
+    let _ = &env;
+
+    for i in 0..10 {
+        db_a.insert_entry(&make_entry(&format!("f{i}"), i * 60, "dev-A"))
+            .unwrap();
+    }
+
+    let client = reqwest::blocking::Client::builder().build().unwrap();
+    let session = session_for(&relay.base_url, &bearer);
+
+    // 10 entries at 3/page → 4 relay rows.
+    push_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-A",
+        &master_key,
+        &db_a,
+        false,
+        &paged_opts(3),
+    )
+    .unwrap();
+
+    // Pull them all in ONE page — the shape that used to be silent.
+    let seen = std::cell::RefCell::new(Vec::new());
+    let record = |p: SyncProgress| seen.borrow_mut().push(p);
+    let pulled = pull_once_with(
+        &relay.base_url,
+        &client,
+        &session,
+        "dev-B",
+        &master_key,
+        &db_b,
+        false,
+        &SyncOpts {
+            pull_page_rows: 50,
+            progress: Some(&record),
+            ..SyncOpts::default()
+        },
+    )
+    .unwrap();
+    assert_eq!((pulled.applied, pulled.pages), (10, 1));
+
+    let events = seen.into_inner();
+    let within_page: Vec<_> = events
+        .iter()
+        .filter_map(|p| match p {
+            SyncProgress::PullChangeset {
+                changeset,
+                entries,
+                total,
+            } => Some((*changeset, *entries, *total)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        within_page,
+        vec![(1, 3, 3), (2, 3, 6), (3, 3, 9), (4, 1, 10)],
+        "every changeset reports, with a running total"
+    );
+}
+
 /// A push that dies mid-history resumes at the first page that never
 /// landed: completed pages persisted their watermark, so the re-run
 /// re-sends nothing and skips nothing.

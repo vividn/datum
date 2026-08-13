@@ -119,6 +119,17 @@ pub enum SyncProgress {
         entries: usize,
         total: usize,
     },
+    /// One changeset within a pull page was applied (da-j8cu). A relay row
+    /// carries a whole push page, so one pull page can be the entire first
+    /// sync — page-granular progress alone would stay silent through it.
+    PullChangeset {
+        /// 1-based changeset number within this run.
+        changeset: usize,
+        /// Entries this changeset carried.
+        entries: usize,
+        /// Entries applied so far in this run, this changeset included.
+        total: usize,
+    },
 }
 
 /// Tunables for one sync cycle: how big a page is, and where per-page
@@ -549,6 +560,8 @@ pub fn pull_once_with(
     let mut since = sync_state::get_pull_seq(db)? as i64;
     let mut outcome = PullOutcome::default();
     let mut cluster_confirmed = false;
+    // 1-based changeset counter across the whole run, for within-page progress.
+    let mut changesets = 0usize;
 
     loop {
         let rows = session.run(client, |bearer| {
@@ -588,6 +601,10 @@ pub fn pull_once_with(
 
         let mut max_seq: u64 = since as u64;
         let mut applied = 0usize;
+        // Entries applied but not yet walked through integrity detection.
+        // Detection is batched (da-j8cu) so the per-field history it reads
+        // is read once per flush instead of once per entry.
+        let mut pending_detect: Vec<Entry> = Vec::new();
         for row in &rows {
             if (row.id as u64) > max_seq {
                 max_seq = row.id as u64;
@@ -621,10 +638,27 @@ pub fn pull_once_with(
             // actually changed.
             let incoming = changeset_entries(cs.as_bytes())?;
             apply_changeset(db, &cs)?;
-            applied += incoming.len();
+            let incoming_len = incoming.len();
+            applied += incoming_len;
+            pending_detect.extend(incoming);
+            if pending_detect.len() >= DETECT_BATCH_ENTRIES {
+                outcome.integrity_warnings_queued +=
+                    file_warnings_for_incoming(db, &pending_detect)?;
+                pending_detect.clear();
+            }
 
-            outcome.integrity_warnings_queued += file_warnings_for_incoming(db, &incoming)?;
+            // One relay row is a whole push page — up to
+            // `DEFAULT_PUSH_PAGE_ENTRIES` entries — so a single pull page can
+            // be the entire first sync. Report inside the page too, or a
+            // minutes-long apply says nothing until it is over (da-j8cu).
+            changesets += 1;
+            opts.report(SyncProgress::PullChangeset {
+                changeset: changesets,
+                entries: incoming_len,
+                total: outcome.applied + applied,
+            });
         }
+        outcome.integrity_warnings_queued += file_warnings_for_incoming(db, &pending_detect)?;
 
         outcome.applied += applied;
         outcome.pages += 1;
@@ -665,22 +699,31 @@ fn changeset_entry_count(cs: &Changeset) -> usize {
         .unwrap_or(0)
 }
 
+/// How many applied entries may queue up before integrity detection runs.
+/// Detection reads each touched field's history once per flush, so a bigger
+/// batch means fewer reads; the cap is what keeps a first sync's entries from
+/// all being held in memory at once. One relay row already carries up to
+/// `DEFAULT_PUSH_PAGE_ENTRIES` (1000), so this spans several of them.
+const DETECT_BATCH_ENTRIES: usize = 4096;
+
 /// After applying incoming entries via LWW, run the same non-blocking
 /// overlap/double-open/orphan-end detector D5 uses for local writes — but
 /// tag each detected row as `detected_by='sync_pull'` so the integrity-
 /// warning UX (C4e) can distinguish the two sources.
+///
+/// Batched on purpose (da-j8cu): the per-entry door re-reads the whole
+/// history of the entry's field for every row, which made a first pull
+/// quadratic — ten minutes of silence on a real history. `detect_for_entries`
+/// reads each field once for the batch. Every entry passed here must already
+/// have been applied, which is what the caller's flush points guarantee.
 fn file_warnings_for_incoming(db: &Db, incoming: &[Entry]) -> Result<usize> {
     if incoming.is_empty() {
         return Ok(0);
     }
     let tx = db.conn().unchecked_transaction()?;
-    let mut filed = 0usize;
-    for entry in incoming {
-        let found = integrity::detect_for_entry(&tx, entry, DetectedBy::SyncPull)?;
-        filed += found.len();
-    }
+    let filed = integrity::detect_for_entries(&tx, incoming, DetectedBy::SyncPull)?;
     tx.commit()?;
-    Ok(filed)
+    Ok(filed.len())
 }
 
 /// Dry-run helper: peek at the entry count inside a single pulled row

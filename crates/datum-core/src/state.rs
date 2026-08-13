@@ -449,7 +449,9 @@ impl FieldStateEvents {
                      FROM entries
                      WHERE field = ?1
                        AND {participation}
-                       AND occur_time <= ?2"
+                       AND occur_time <= ?2
+                     ORDER BY {order}",
+                    order = crate::db::STATE_ORDER_OLDEST_FIRST,
                 );
                 let mut stmt = conn.prepare(&sql)?;
                 let mut rows = stmt.query(params![field, t.to_rfc3339()])?;
@@ -462,7 +464,9 @@ impl FieldStateEvents {
                     "SELECT hid, verb, state, occur_time, create_time, dur, following_state
                      FROM entries
                      WHERE field = ?1
-                       AND {participation}"
+                       AND {participation}
+                     ORDER BY {order}",
+                    order = crate::db::STATE_ORDER_OLDEST_FIRST,
                 );
                 let mut stmt = conn.prepare(&sql)?;
                 let mut rows = stmt.query(params![field])?;
@@ -472,6 +476,12 @@ impl FieldStateEvents {
             }
         }
 
+        // Stable sort: rows tied on (event_time, create_time) keep the SQL
+        // order, which is why both arms above ask for the canonical
+        // oldest-first ordering. Same-instant live rows are schema-impossible
+        // on one device but arrive routinely from a sync merge (da-ylet), and
+        // this is the door integrity detection reads through (da-j8cu) — it
+        // must resolve such a tie to the same row `last_state_at` picks.
         events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
         Ok(FieldStateEvents { events })
     }

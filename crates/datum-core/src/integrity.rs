@@ -217,6 +217,87 @@ pub fn detect_for_entry(
     trigger: &Entry,
     detected_by: DetectedBy,
 ) -> Result<Vec<IntegrityWarning>> {
+    detect_for_entries(conn, std::slice::from_ref(trigger), detected_by)
+}
+
+/// Batched [`detect_for_entry`]: same rules, same results, but the
+/// per-field history each rule consults is read **once for the whole
+/// batch** instead of once per trigger (da-j8cu).
+///
+/// The per-trigger form asks two full-field questions — "what was the
+/// state just before this row?" and "does this block overlap another?"
+/// — and each one reads the field's entire history. Run in a loop over
+/// N incoming rows that is O(N²): a sync pull of a real history stops
+/// looking slow and starts looking hung. Here the field snapshots are
+/// loaded lazily on first use and reused, so a batch costs one read per
+/// touched field. Measured on one field of switches (release):
+/// 2k triggers 11.5s → 8ms, 4k triggers 46.4s → 21ms.
+///
+/// The snapshots are taken when a field is first seen and are NOT
+/// refreshed as the batch proceeds, so **every trigger must already be
+/// in the `entries` table before the call** — the same post-insert
+/// contract [`detect_for_entry`] has, applied to the whole slice. That
+/// snapshot is also what makes the batch order-independent: an
+/// out-of-order arrival sees the same history as its neighbours.
+pub fn detect_for_entries(
+    conn: &Connection,
+    triggers: &[Entry],
+    detected_by: DetectedBy,
+) -> Result<Vec<IntegrityWarning>> {
+    let mut snaps = FieldSnapshots::default();
+    let mut filed = Vec::new();
+    for trigger in triggers {
+        detect_one(conn, trigger, detected_by, &mut snaps, &mut filed)?;
+    }
+    Ok(filed)
+}
+
+/// Per-field history read once and reused across a batch of detections.
+/// Both maps are lazily filled: a batch that carries no `Block` pays for
+/// no block snapshot, and a field nobody triggers on is never read.
+#[derive(Default)]
+struct FieldSnapshots {
+    /// State-transition events per field — the cheap form of the
+    /// `last_state_at` question (fewer columns, no `Entry` materialisation).
+    states: std::collections::HashMap<String, crate::state::FieldStateEvents>,
+    /// Live Block / BlockSwitch rows per field, in canonical oldest-first
+    /// order, for the overlap scan.
+    blocks: std::collections::HashMap<String, Vec<Entry>>,
+}
+
+impl FieldSnapshots {
+    /// Compiled state of `field` at `probe`, ignoring `exclude_hid` —
+    /// the snapshot-backed equivalent of [`crate::state::last_state_at`].
+    fn state_at(
+        &mut self,
+        conn: &Connection,
+        field: &str,
+        probe: DateTime<Utc>,
+        exclude_hid: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        if !self.states.contains_key(field) {
+            let events = crate::state::FieldStateEvents::load_for_field(conn, field)?;
+            self.states.insert(field.to_string(), events);
+        }
+        Ok(self.states[field].at(probe, Some(exclude_hid)))
+    }
+
+    fn blocks(&mut self, conn: &Connection, field: &str) -> Result<&[Entry]> {
+        if !self.blocks.contains_key(field) {
+            self.blocks
+                .insert(field.to_string(), load_blocks_for_field(conn, field)?);
+        }
+        Ok(&self.blocks[field])
+    }
+}
+
+fn detect_one(
+    conn: &Connection,
+    trigger: &Entry,
+    detected_by: DetectedBy,
+    snaps: &mut FieldSnapshots,
+    filed: &mut Vec<IntegrityWarning>,
+) -> Result<()> {
     // da-nm5b: detection under v3 verbs.
     // - Switch with state=Bool(true) on a field whose pre-trigger state is
     //   also Bool(true) → DoubleOpen.
@@ -227,7 +308,6 @@ pub fn detect_for_entry(
     // - Block / BlockSwitch whose [occur, occur+dur] interval overlaps an
     //   existing Block/BlockSwitch on the same field → Overlap.
     // - LastStateMismatch (S6) is independent of the above.
-    let mut filed = Vec::new();
 
     // Deliberately a local verb match, not a shape.rs predicate: detection
     // rules key on per-verb-family STORAGE semantics, and a new verb should
@@ -241,7 +321,7 @@ pub fn detect_for_entry(
 
         let prior_at_probe = if let Some(ts) = trigger.occur_time.as_ref() {
             let probe = ts.utc - chrono::Duration::microseconds(1);
-            crate::state::last_state_at(conn, &trigger.field, probe, Some(trigger.hid.as_str()))?
+            snaps.state_at(conn, &trigger.field, probe, trigger.hid.as_str())?
         } else {
             None
         };
@@ -283,7 +363,8 @@ pub fn detect_for_entry(
     // render decision — coupling it to shape.rs predicates would invert
     // the dependency direction.
     if matches!(trigger.verb, Verb::Block | Verb::BlockSwitch) {
-        if let Some(other) = find_overlapping_block(conn, trigger)? {
+        let overlap = find_overlapping_block(snaps.blocks(conn, &trigger.field)?, trigger).cloned();
+        if let Some(other) = overlap {
             filed.push(file_warning(
                 conn,
                 trigger,
@@ -294,7 +375,7 @@ pub fn detect_for_entry(
         }
     }
 
-    if let Some(mismatch) = detect_last_state_mismatch(conn, trigger)? {
+    if let Some(mismatch) = detect_last_state_mismatch(conn, trigger, snaps)? {
         filed.push(file_warning(
             conn,
             trigger,
@@ -304,7 +385,7 @@ pub fn detect_for_entry(
         )?);
     }
 
-    Ok(filed)
+    Ok(())
 }
 
 /// da-acft: walk live state-bearing entries in `occur_time` order per
@@ -416,24 +497,12 @@ fn find_recent_state_setter(conn: &Connection, trigger: &Entry) -> Result<Option
     .map_err(DatumError::Db)
 }
 
-/// Find a live Block / BlockSwitch on the same field whose
-/// `[occur, occur+dur]` interval overlaps the trigger's. Touching
-/// boundaries (one ends exactly when the other starts) do NOT overlap —
-/// a back-to-back schedule is legitimate. Returns the first hit; the
-/// caller files exactly one Overlap row per trigger.
-fn find_overlapping_block(conn: &Connection, trigger: &Entry) -> Result<Option<Entry>> {
-    let Some(occur) = &trigger.occur_time else {
-        return Ok(None);
-    };
-    let Some(dur) = trigger.dur.as_ref() else {
-        return Ok(None);
-    };
-    let Some(secs) = dur.as_seconds() else {
-        return Ok(None);
-    };
-    let trig_start = occur.utc;
-    let trig_end = occur.utc + chrono::Duration::seconds(secs);
-
+/// Every live Block / BlockSwitch on `field` that carries an interval, in
+/// canonical oldest-first order. Read once per field per batch and scanned
+/// in memory by [`find_overlapping_block`]; the trigger's own row is
+/// filtered there (by hid) rather than here, so one snapshot serves every
+/// trigger on the field.
+fn load_blocks_for_field(conn: &Connection, field: &str) -> Result<Vec<Entry>> {
     let sql = format!(
         "SELECT * FROM entries
          WHERE field = ?1
@@ -441,35 +510,39 @@ fn find_overlapping_block(conn: &Connection, trigger: &Entry) -> Result<Option<E
            AND verb IN ('block', 'block-switch')
            AND occur_time IS NOT NULL
            AND dur IS NOT NULL
-           AND hid != ?2
          ORDER BY {order}",
         order = crate::db::STATE_ORDER_OLDEST_FIRST,
     );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(
-        params![trigger.field, trigger.hid.as_str()],
-        crate::db::row_to_entry_public,
-    )?;
+    let rows = stmt.query_map(params![field], crate::db::row_to_entry_public)?;
+    rows.map(|r| r.map_err(DatumError::Db)).collect()
+}
 
-    for row in rows {
-        let other = row.map_err(DatumError::Db)?;
-        let Some(o_occur) = other.occur_time.as_ref() else {
-            continue;
-        };
-        let Some(o_dur) = other.dur.as_ref() else {
-            continue;
+/// Find a live Block / BlockSwitch on the same field whose
+/// `[occur, occur+dur]` interval overlaps the trigger's. Touching
+/// boundaries (one ends exactly when the other starts) do NOT overlap —
+/// a back-to-back schedule is legitimate. Returns the first hit; the
+/// caller files exactly one Overlap row per trigger.
+fn find_overlapping_block<'a>(blocks: &'a [Entry], trigger: &Entry) -> Option<&'a Entry> {
+    let occur = trigger.occur_time.as_ref()?;
+    let secs = trigger.dur.as_ref()?.as_seconds()?;
+    let trig_start = occur.utc;
+    let trig_end = occur.utc + chrono::Duration::seconds(secs);
+
+    blocks.iter().find(|other| {
+        if other.hid == trigger.hid {
+            return false;
+        }
+        let (Some(o_occur), Some(o_dur)) = (other.occur_time.as_ref(), other.dur.as_ref()) else {
+            return false;
         };
         let Some(o_secs) = o_dur.as_seconds() else {
-            continue;
+            return false;
         };
         let o_start = o_occur.utc;
         let o_end = o_occur.utc + chrono::Duration::seconds(o_secs);
-        if trig_start < o_end && o_start < trig_end {
-            return Ok(Some(other));
-        }
-    }
-
-    Ok(None)
+        trig_start < o_end && o_start < trig_end
+    })
 }
 
 /// S12: true when two (normalized) states share at least one element. Scalar
@@ -539,7 +612,11 @@ fn state_multiset_eq(va: &[StateValue], vb: &[StateValue]) -> bool {
 /// last-state. `Ok(None)` when there's no assertion or the assertion
 /// matches; `Ok(Some(_))` on mismatch — the inner Option is a counterpart
 /// entry for display (may be None if no prior entry exists).
-fn detect_last_state_mismatch(conn: &Connection, trigger: &Entry) -> Result<Option<Option<Entry>>> {
+fn detect_last_state_mismatch(
+    conn: &Connection,
+    trigger: &Entry,
+    snaps: &mut FieldSnapshots,
+) -> Result<Option<Option<Entry>>> {
     let Some(asserted_raw) = trigger.user_asserted_last_state.as_ref() else {
         return Ok(None);
     };
@@ -548,9 +625,9 @@ fn detect_last_state_mismatch(conn: &Connection, trigger: &Entry) -> Result<Opti
     };
     let probe = ts.utc - chrono::Duration::microseconds(1);
     let asserted = crate::state::normalize_state(asserted_raw).to_json();
-    let actual =
-        crate::state::last_state_at(conn, &trigger.field, probe, Some(trigger.hid.as_str()))?
-            .unwrap_or(serde_json::Value::Null);
+    let actual = snaps
+        .state_at(conn, &trigger.field, probe, trigger.hid.as_str())?
+        .unwrap_or(serde_json::Value::Null);
     if states_equal_set_aware(&asserted, &actual) {
         return Ok(None);
     }
@@ -1081,5 +1158,146 @@ mod tests {
         let ride_set = json!([{"id": "car", "role": "passenger"}]);
         assert!(!states_share_element(&drive_set, &ride_set));
         assert!(!states_equal_set_aware(&drive_set, &ride_set));
+    }
+
+    // ─── da-j8cu: batched detection ──────────────────────────────────────
+
+    /// A batch shaped like a sync pull: two fields, a double-open pair, an
+    /// orphan end, and a pair of overlapping blocks. Returned already
+    /// applied (as `apply_changeset` would leave them) so detection can run
+    /// over the finished table.
+    fn applied_pull_batch(db: &Db) -> Vec<Entry> {
+        // Fixed, not `now`: the two DBs this builds must produce slug-for-slug
+        // identical batches for the comparison below to mean anything.
+        let base: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
+        let mut batch = vec![
+            entry_builder("workout")
+                .verb(Verb::Switch)
+                .state(json!(true))
+                .time_start_utc(base)
+                .build(),
+            // Double-open: opens a field that the row above already opened.
+            entry_builder("workout")
+                .verb(Verb::Switch)
+                .state(json!(true))
+                .time_start_utc(base + Duration::minutes(10))
+                .build(),
+            // Orphan end: a close on a field with no history at all.
+            entry_builder("cooking")
+                .verb(Verb::Switch)
+                .state(json!(false))
+                .time_start_utc(base + Duration::minutes(20))
+                .build(),
+            entry_builder("meeting")
+                .verb(Verb::Block)
+                .time_start_utc(base)
+                .time_end_utc(base + Duration::minutes(60))
+                .build(),
+            // Overlap: shares the middle half-hour with the block above.
+            entry_builder("meeting")
+                .verb(Verb::Block)
+                .time_start_utc(base + Duration::minutes(30))
+                .time_end_utc(base + Duration::minutes(90))
+                .build(),
+        ];
+        // The bulk door skips detection, which is exactly the sync shape:
+        // rows land first, warnings are filed afterwards.
+        db.insert_entries_bulk(&batch, crate::db::ConflictStrategy::Ignore)
+            .unwrap();
+        for entry in &mut batch {
+            *entry = db.get_entry(&entry.slug).unwrap();
+        }
+        batch
+    }
+
+    fn summarize(warnings: &[IntegrityWarning]) -> Vec<(IntegrityKind, String, Option<Slug>)> {
+        warnings
+            .iter()
+            .map(|w| {
+                (
+                    w.kind,
+                    w.entry_slug.to_string(),
+                    w.remote_entry.as_ref().map(|e| e.slug.clone()),
+                )
+            })
+            .collect()
+    }
+
+    /// The batched door files exactly what the per-entry door files, kind
+    /// for kind and counterpart for counterpart. This is the contract that
+    /// lets sync pull use it — the speedup must cost no detection.
+    #[test]
+    fn batched_detection_matches_per_entry_detection() {
+        let per_entry_db = Db::open_in_memory().unwrap();
+        let batch = applied_pull_batch(&per_entry_db);
+        let mut one_at_a_time = Vec::new();
+        for entry in &batch {
+            one_at_a_time.extend(
+                detect_for_entry(per_entry_db.conn(), entry, DetectedBy::SyncPull).unwrap(),
+            );
+        }
+
+        let batched_db = Db::open_in_memory().unwrap();
+        let same_batch = applied_pull_batch(&batched_db);
+        let batched =
+            detect_for_entries(batched_db.conn(), &same_batch, DetectedBy::SyncPull).unwrap();
+
+        assert!(
+            !one_at_a_time.is_empty(),
+            "fixture must actually trigger detection, else this proves nothing"
+        );
+        assert_eq!(summarize(&batched), summarize(&one_at_a_time));
+    }
+
+    /// The point of the batch: the field's history is read once for the
+    /// whole batch, not once per entry. Counted through SQLite's authorizer,
+    /// which fires per column read at prepare time — so a per-entry scan
+    /// shows up as a count that grows with the batch, and the batched one
+    /// does not. Without this, a first sync of a real history is quadratic
+    /// and looks hung (da-j8cu).
+    #[test]
+    fn detection_reads_each_field_once_per_batch() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        fn entry_reads_for_batch(size: usize) -> usize {
+            let db = Db::open_in_memory().unwrap();
+            let base = Utc::now() - Duration::hours(6);
+            let batch: Vec<Entry> = (0..size)
+                .map(|i| {
+                    entry_builder("mood")
+                        .verb(Verb::Switch)
+                        .state(json!(format!("s{i}")))
+                        .time_start_utc(base + Duration::minutes(i as i64))
+                        .build()
+                })
+                .collect();
+            db.insert_entries_bulk(&batch, crate::db::ConflictStrategy::Ignore)
+                .unwrap();
+
+            let reads = Arc::new(AtomicUsize::new(0));
+            let counter = Arc::clone(&reads);
+            db.conn().authorizer(Some(
+                move |ctx: rusqlite::hooks::AuthContext<'_>| -> rusqlite::hooks::Authorization {
+                    if let rusqlite::hooks::AuthAction::Read { table_name, .. } = ctx.action {
+                        if table_name == "entries" {
+                            counter.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                    rusqlite::hooks::Authorization::Allow
+                },
+            ));
+            detect_for_entries(db.conn(), &batch, DetectedBy::SyncPull).unwrap();
+            db.conn()
+                .authorizer(None::<fn(rusqlite::hooks::AuthContext<'_>) -> _>);
+            reads.load(Ordering::Relaxed)
+        }
+
+        let small = entry_reads_for_batch(8);
+        let large = entry_reads_for_batch(64);
+        assert_eq!(
+            small, large,
+            "reads of `entries` must not grow with the batch — one snapshot per field"
+        );
     }
 }
