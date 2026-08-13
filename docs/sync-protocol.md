@@ -448,10 +448,33 @@ its own primary key — `UNIQUE constraint failed: entries.hid` (da-zlug). A
 key derived from mutable data cannot be an identity.
 
 **Identity collisions (`slug`, `(field, occur_time)`).** Keying on `hid`
-means two genuinely *different* entries can now contend for one slug, or
-for one live `(field, occur_time)` — the constraints slug-keyed merge hid
-by collapsing both sides into a single row. Neither is an error and neither
-side is discarded:
+means two entries can now contend for one slug, or for one live `(field,
+occur_time)` — the constraints slug-keyed merge hid by collapsing both
+sides into a single row. Neither is an error. What happens next depends on
+whether the two record the same thing (da-yiq9):
+
+**Same event → folded silently.** Two devices logging one event mint two
+hids for it, and it is not a conflict. Clients MUST fold rather than park
+when the contending rows are *essentially identical*:
+
+- The predicate is equal `content_hash` **plus** equal `lat`, `lon` and
+  `location` (those three sit outside the hash; two logs of one thing in
+  different places are a real difference). The hash MUST be re-derived from
+  the incoming row's own columns, not read from the wire: a peer running a
+  pre-da-4vyw client computed it without `following_state`, and trusting it
+  would fold away two entries that differ in meaning.
+- The survivor is the greater `(modify_time, content_hash, device_id, hid)`
+  — the same total order the parking path uses — so every device keeps the
+  same hid without extra traffic, in any arrival order.
+- The loser's hid ceases to exist. Its `entry_history` rows move onto the
+  survivor's hid (versions shifted past the survivor's last) so the trail
+  is not stranded; the row itself is deleted, with no tombstone — nothing
+  was lost, so there is nothing to replicate.
+- **No warning, no user action.** The relay re-delivers the folded-away
+  changeset forever; every replay re-folds to a no-op write.
+
+**Different events → both kept, and surfaced.** When the two differ at all,
+neither side is discarded:
 
 - The winner is the row with the greater `(modify_time, content_hash,
   device_id, hid)` — the equal-`modify_time` tiebreaker below, extended
@@ -475,11 +498,11 @@ side is discarded:
   pair; `datum check` is where the user meets it. Sync never blocks — the
   daemon has no one to ask.
 
-Two rows with *essentially identical* content still park rather than
-dedupe. Deduping them silently is da-yiq9. Its prerequisite — a
-`content_hash` that does not conflate semantically different entries —
-landed in da-4vyw; see **Content hash** below for what the predicate now
-covers.
+The split rests entirely on `content_hash` meaning what it says: see
+**Content hash** below for exactly which columns the predicate covers.
+`following_state` is in it (da-4vyw) precisely so that a block and a
+block-switch over the same span take the surfaced path rather than the
+silent one.
 
 **Equal-`modify_time` tiebreaker (part of the contract).** When the stored
 and incoming rows carry *exactly* equal `modify_time`, the winner is chosen

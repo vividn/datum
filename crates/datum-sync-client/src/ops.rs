@@ -91,9 +91,11 @@ pub fn pack_changeset_page(
 /// Existing rows whose stored `modify_time` is greater than the incoming
 /// row's are left untouched; exact ties are broken by a deterministic total
 /// order on `(content_hash, device_id)` so every device resolves the same
-/// winner. Two *different* entries contending for one slug, or one live
-/// `(field, occur_time)`, are both kept — the loser is parked and filed as
-/// an `identity_collision` warning (see [`upsert_lww`]).
+/// winner. Two entries contending for one slug, or one live `(field,
+/// occur_time)`, split on whether they record the same event (da-yiq9):
+/// identical ones fold into a single row silently, and different ones are
+/// both kept — the loser parked and filed as an `identity_collision`
+/// warning (see [`upsert_lww`]).
 ///
 /// `modify_time` is a raw device wall-clock: a device with a fast clock
 /// wins every tie and a lagging one can silently lose a later edit. This
@@ -237,6 +239,65 @@ fn merge_rank(e: &Entry) -> (chrono::DateTime<chrono::Utc>, &str, &str, &str) {
     (e.modify_time, &e.content_hash, &e.device_id, e.hid.as_str())
 }
 
+/// vividn's *essentially identical* predicate (da-yiq9): the two rows record
+/// the same event, so merging them is conflict-free and the user never
+/// needs to see it. Anything that differs is a rival and gets surfaced.
+///
+/// `content_hash` is already exactly this predicate for the fact asserted —
+/// `field`, instant, `dur`, `state`, `following_state`, `data`,
+/// deleted-ness — and ignores every device-local annotation (`hid`, `slug`,
+/// `device_id`, the timestamps), which is the "essentially". It is
+/// **re-derived** here rather than read from the column: the stored hash is
+/// whatever the peer sent, and a peer running a pre-da-4vyw client computed
+/// it without `following_state`. Trusting that hash would silently destroy
+/// one of two entries that differ only in `following_state` — precisely the
+/// conflation da-4vyw closed.
+///
+/// `lat`/`lon`/`location` sit outside the hash and vividn was not asked about
+/// them. Two logs at different places are a real difference in a life-log,
+/// so they are compared separately: differing location takes the surfaced
+/// path, which is the safe side of an undecided question. Folding them into
+/// the hash later (a full rehash migration) would make this line redundant,
+/// not wrong.
+fn is_same_event(a: &Entry, b: &Entry) -> bool {
+    a.expected_content_hash() == b.expected_content_hash()
+        && a.lat == b.lat
+        && a.lon == b.lon
+        && a.location == b.location
+}
+
+/// Fold the duplicate row `loser_hid` into `winner`: one recorded event
+/// must end up as one row, so the loser's hid ceases to exist.
+///
+/// hid is what `entry_history` joins on, so dropping the row alone would
+/// strand its trail (the defect da-0ye9 named, from the other side). Move
+/// the trail onto the winner first, shifting each version past the
+/// winner's last so the two chains concatenate instead of colliding on
+/// `PRIMARY KEY (entry_hid, version)`. The snapshots describe the same
+/// event, so the merged chain still reconstructs — and `datum history
+/// <winner>` shows that the fold happened rather than hiding it.
+///
+/// Both statements are no-ops when the loser is an incoming row this
+/// device never held, which is the common case: the append-only relay
+/// re-delivers a folded-away changeset forever and every replay lands here
+/// and writes nothing.
+fn fold_duplicate(
+    tx: &rusqlite::Transaction<'_>,
+    loser_hid: &datum_core::ids::Hid,
+    winner: &Entry,
+) -> Result<()> {
+    if loser_hid == &winner.hid {
+        return Ok(());
+    }
+    let offset = history::latest_version(tx, winner.hid.as_str())?.unwrap_or(0);
+    tx.execute(
+        "UPDATE entry_history SET entry_hid = ?1, version = version + ?2 WHERE entry_hid = ?3",
+        params![winner.hid, offset, loser_hid],
+    )?;
+    tx.execute("DELETE FROM entries WHERE hid = ?1", params![loser_hid])?;
+    Ok(())
+}
+
 /// The slug a parked loser takes: its own slug suffixed with its own hid.
 /// Deterministic (no RNG — unlike `insert.rs`'s local `suffixed_slug`) and
 /// unique (hid is the primary key), which is what lets two devices reach
@@ -326,8 +387,12 @@ fn parked_shape(loser: &Entry, winner: &Entry) -> Entry {
 /// identity_collision on every pull, forever.
 fn is_replay_of_park(tx: &rusqlite::Transaction<'_>, pre: &Entry, entry: &Entry) -> Result<bool> {
     let blockers = find_blockers(tx, entry)?;
+    // Only a rival is ever parked — a twin is folded away instead
+    // (da-yiq9) — so a twin must not be able to stand in as the winner a
+    // park was derived against.
     let Some(winner) = blockers
         .iter()
+        .filter(|b| !is_same_event(b, entry))
         .max_by(|a, b| merge_rank(a).cmp(&merge_rank(b)))
     else {
         return Ok(false);
@@ -435,14 +500,43 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
 
     // `hid` merge means two *different* rows can now contend for one slug
     // or one live `(field, occur_time)` — the constraints slug-keyed merge
-    // used to hide by collapsing both sides into one row. Neither is a
-    // crash and neither is a discard: keep both, park the deterministic
-    // loser, and file a warning naming the pair (da-zlug). The policy for
-    // deduping an *essentially identical* pair silently is da-yiq9; its
-    // prerequisite — a `content_hash` that does not conflate semantically
-    // different entries — landed in da-4vyw.
+    // used to hide by collapsing both sides into one row.
+    //
+    // vividn's policy for that collision (da-yiq9): "if the data is
+    // essentially identical, then a conflict-free merge should just happen.
+    // If there are any differences, that should be surfaced to the user to
+    // decide how to merge them." So split the collision by
+    // [`is_same_event`] before deciding what to do with it. A *twin* is one
+    // event logged on two devices and folds away silently; a *rival* is two
+    // different facts wearing one identity, and both are kept, parked and
+    // warned about (da-zlug). Twins first — folding one frees the identity
+    // the write below is about to claim.
     let blockers = find_blockers(tx, entry)?;
-    let top = blockers
+    let (twins, rivals): (Vec<Entry>, Vec<Entry>) = blockers
+        .into_iter()
+        .partition(|blocker| is_same_event(blocker, entry));
+    if let Some(survivor) = twins
+        .iter()
+        .max_by(|a, b| merge_rank(a).cmp(&merge_rank(b)))
+    {
+        if merge_rank(survivor) > merge_rank(entry) {
+            // The copy already here outranks the incoming one. Fold the
+            // incoming hid into it and write nothing — the surviving row is
+            // byte-identical in every column that means anything, so there
+            // is no state left to apply, no warning to file and no user
+            // action to ask for.
+            fold_duplicate(tx, &entry.hid, survivor)?;
+            return Ok(());
+        }
+        // The incoming copy outranks every local twin: fold them into it.
+        // Ranking is a pure function of the two rows, so the device that
+        // folds the other way reaches the same surviving hid.
+        for twin in &twins {
+            fold_duplicate(tx, &twin.hid, entry)?;
+        }
+    }
+
+    let top = rivals
         .iter()
         .max_by(|a, b| merge_rank(a).cmp(&merge_rank(b)));
     let parked;
@@ -454,10 +548,10 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             parked = park_loser(tx, entry, winner, false)?;
             &parked
         }
-        // Incoming wins: move every blocker out of the way in place.
+        // Incoming wins: move every rival out of the way in place.
         _ => {
-            for blocker in &blockers {
-                park_loser(tx, blocker, entry, true)?;
+            for rival in &rivals {
+                park_loser(tx, rival, entry, true)?;
             }
             entry
         }
@@ -1183,7 +1277,8 @@ mod tests {
     /// *distinct* slugs (custom `--id` templates) at the same field and
     /// instant trip the partial UNIQUE on `(field, occur_time)`. It is a
     /// merge case like the others, not a constraint error — the loser keeps
-    /// its own slug and is tombstoned.
+    /// its own slug and is tombstoned. The two must record *different*
+    /// things; identical ones now fold into one row instead (da-yiq9).
     #[test]
     fn field_occur_time_collision_is_a_merge_not_an_error() {
         use datum_core::integrity::{IntegrityKind, ListFilter};
@@ -1193,6 +1288,10 @@ mod tests {
         let mut incoming = make_entry("coffee", 0);
         local.slug = datum_core::ids::Slug::new("coffee:morning");
         incoming.slug = datum_core::ids::Slug::new("coffee:first-cup");
+        local.state = Some(serde_json::json!("local"));
+        incoming.state = Some(serde_json::json!("incoming"));
+        local.content_hash = local.expected_content_hash();
+        incoming.content_hash = incoming.expected_content_hash();
         incoming.modify_time = local.modify_time + Duration::seconds(60);
 
         db.insert_entry(&local).unwrap();
@@ -1203,6 +1302,201 @@ mod tests {
         let parked = row_by_hid(&db, &local.hid);
         assert_eq!(parked.slug, local.slug, "no slug contest, no slug change");
         assert_eq!(parked.deleted_at, Some(incoming.modify_time));
+        assert_eq!(
+            db.list_integrity_warnings(&ListFilter {
+                kind: Some(IntegrityKind::IdentityCollision),
+                pending: Some(true),
+            })
+            .unwrap()
+            .len(),
+            1,
+        );
+    }
+
+    /// da-yiq9, the whole point: two devices that independently record the
+    /// same event at the same instant converge to **one** row — no warning,
+    /// no user action — and they get there in either arrival order, so the
+    /// dedupe is a pure function of the pair rather than of who synced
+    /// first. Re-pulls (the relay keeps both changesets forever) change
+    /// nothing.
+    #[test]
+    fn identical_entries_on_two_devices_dedupe_silently() {
+        use datum_core::integrity::ListFilter;
+
+        let on_a = make_entry("coffee", 0);
+        let mut on_b = make_entry("coffee", 0);
+        on_b.device_id = "dev-2".to_string();
+        assert_eq!(on_a.slug, on_b.slug, "same field, same instant, one slug");
+        assert_ne!(on_a.hid, on_b.hid, "two devices minted two hids");
+        assert_eq!(on_a.content_hash, on_b.content_hash, "one recorded event");
+        let cs_a = changeset_of(&on_a);
+        let cs_b = changeset_of(&on_b);
+
+        let db_a = fresh_db();
+        apply_changeset(&db_a, &cs_a).unwrap();
+        apply_changeset(&db_a, &cs_b).unwrap();
+        let db_b = fresh_db();
+        apply_changeset(&db_b, &cs_b).unwrap();
+        apply_changeset(&db_b, &cs_a).unwrap();
+        // ...and the append-only relay hands both back on the next pull.
+        apply_changeset(&db_a, &cs_a).unwrap();
+        apply_changeset(&db_b, &cs_b).unwrap();
+
+        let survivor = |db: &Db| -> (String, String) {
+            db.conn()
+                .query_row("SELECT hid, slug FROM entries", [], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .expect("exactly one row")
+        };
+        assert_eq!(
+            survivor(&db_a),
+            survivor(&db_b),
+            "one row on both devices, and the same one"
+        );
+        for db in [&db_a, &db_b] {
+            assert!(
+                db.list_integrity_warnings(&ListFilter {
+                    kind: None,
+                    pending: Some(true),
+                })
+                .unwrap()
+                .is_empty(),
+                "a conflict-free merge asks the user nothing",
+            );
+        }
+    }
+
+    /// The dedupe destroys an hid, and hid is what `entry_history` joins on
+    /// — so the loser's trail moves to the survivor rather than being
+    /// stranded (the da-0ye9 defect, from the other side). Versions shift
+    /// past the survivor's last so the two chains concatenate.
+    #[test]
+    fn dedupe_moves_the_losers_history_onto_the_survivor() {
+        let db = fresh_db();
+        let local = make_entry("coffee", 0);
+        let mut incoming = make_entry("coffee", 0);
+        incoming.device_id = "dev-2".to_string();
+        assert!(
+            merge_rank(&incoming) > merge_rank(&local),
+            "'dev-2' outranks 'dev-1' on the shared instant and hash",
+        );
+
+        db.insert_entry(&local).unwrap();
+        assert_eq!(
+            history::list(db.conn(), &local.hid, false).unwrap().len(),
+            1
+        );
+        apply_changeset(&db, &changeset_of(&incoming)).unwrap();
+
+        let count: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "one event, one row");
+        assert_eq!(row_by_hid(&db, &incoming.hid).hid, incoming.hid);
+        assert!(
+            history::list(db.conn(), &local.hid, false)
+                .unwrap()
+                .is_empty(),
+            "nothing left stranded under the folded-away hid",
+        );
+        let trail = history::list(db.conn(), &incoming.hid, false).unwrap();
+        assert_eq!(trail.len(), 2, "the loser's create plus this arrival");
+        assert_eq!(trail[0].snapshot.hid, local.hid, "the folded-in trail");
+        assert_eq!(
+            trail.iter().map(|v| v.version).collect::<Vec<_>>(),
+            vec![1, 2],
+            "versions concatenate rather than collide",
+        );
+    }
+
+    /// The predicate's sharp edge, and the reason da-4vyw had to land first:
+    /// two entries differing *only* in `following_state` mean different
+    /// things — one is a plain block, the other a switch to a named state —
+    /// so they take the surfaced path, not the silent one. Before
+    /// `following_state` was hashed they read as identical and one would
+    /// have been destroyed with no warning.
+    #[test]
+    fn following_state_only_difference_is_surfaced_not_deduped() {
+        use datum_core::integrity::{IntegrityKind, ListFilter};
+
+        let db = fresh_db();
+        // A block and a block-switch over the same span: `verb` is derived
+        // from `(state, dur, following_state)`, so this is the pair the old
+        // hash could not tell apart.
+        let at = Utc.with_ymd_and_hms(2026, 4, 21, 12, 0, 0).unwrap();
+        let t = DatumTime {
+            utc: at,
+            offset_minutes: 0,
+            timezone: Some("UTC".to_string()),
+        };
+        let mut local = Entry::new(
+            "coffee",
+            Verb::Block,
+            Some(serde_json::json!("on")),
+            None,
+            Some(t),
+            Some(datum_core::dur::Dur::Of(Duration::minutes(30))),
+            "dev-1",
+        );
+        local.create_time = at;
+        local.modify_time = at;
+        let mut incoming = local.clone();
+        incoming.hid = datum_core::entry::new_hid();
+        incoming.verb = Verb::BlockSwitch;
+        incoming.following_state = Some(serde_json::json!("decaf"));
+        incoming.content_hash = incoming.expected_content_hash();
+        incoming.modify_time = at + Duration::seconds(60);
+        assert_eq!(local.slug, incoming.slug, "one slug, two meanings");
+        assert_ne!(local.content_hash, incoming.content_hash);
+
+        db.insert_entry(&local).unwrap();
+        apply_changeset(&db, &changeset_of(&incoming)).unwrap();
+
+        let count: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2, "both kept — neither meaning is discarded");
+        assert_eq!(
+            db.list_integrity_warnings(&ListFilter {
+                kind: Some(IntegrityKind::IdentityCollision),
+                pending: Some(true),
+            })
+            .unwrap()
+            .len(),
+            1,
+            "and the pair is named for `datum check`",
+        );
+    }
+
+    /// `lat`/`lon`/`location` ride outside `content_hash` and vividn ruled
+    /// only on `following_state`, so the silent path compares them
+    /// separately: two logs of the same thing in different places are a
+    /// real difference in a life-log and get surfaced rather than folded.
+    #[test]
+    fn different_location_is_not_essentially_identical() {
+        use datum_core::integrity::{IntegrityKind, ListFilter};
+
+        let db = fresh_db();
+        let local = make_entry("coffee", 0);
+        let mut incoming = make_entry("coffee", 0);
+        incoming.location = Some("the other cafe".to_string());
+        incoming.modify_time = local.modify_time + Duration::seconds(60);
+        assert_eq!(
+            local.content_hash, incoming.content_hash,
+            "location is outside the hash — which is exactly the risk",
+        );
+
+        db.insert_entry(&local).unwrap();
+        apply_changeset(&db, &changeset_of(&incoming)).unwrap();
+
+        let count: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2, "both kept");
         assert_eq!(
             db.list_integrity_warnings(&ListFilter {
                 kind: Some(IntegrityKind::IdentityCollision),
