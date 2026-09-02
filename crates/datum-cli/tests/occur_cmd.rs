@@ -379,6 +379,51 @@ fn full_day_writes_precision_and_strips_clock() {
     assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
 }
 
+/// da-4fyb: a date-only entry slugs on the bare local date, not on the
+/// midnight timestamp its `occur_time` happens to store. `%occur_time%`
+/// interpolation is what builds the default slug, and a `T00:00:00.000Z`
+/// suffix there reads as a real time-of-day the entry does not have — and,
+/// east of UTC, names the wrong calendar day.
+#[test]
+fn full_day_slugs_on_bare_date() {
+    use chrono::Local;
+
+    let db = fresh_db();
+
+    // Bracket the CLI call: reading the date only AFTER it runs makes the
+    // assertion flake when local midnight falls between the two (Copilot
+    // review, PR #86). The entry's date must be whichever side of midnight
+    // the CLI actually landed on, so accept either.
+    let before = Local::now().date_naive();
+    run_cli(&["occur", "fullday_slug", "-D"], &db).expect("occur -D");
+    let after = Local::now().date_naive();
+    let e = &db.entries_for_field("fullday_slug", None).unwrap()[0];
+    let acceptable = [
+        format!("fullday_slug:{}", before.format("%Y-%m-%d")),
+        format!("fullday_slug:{}", after.format("%Y-%m-%d")),
+    ];
+    assert!(
+        acceptable.contains(&e.slug.as_str().to_string()),
+        "slug {} matched neither side of the midnight boundary ({acceptable:?})",
+        e.slug.as_str(),
+    );
+
+    // A timed entry on the same day keeps the full stamp.
+    run_cli(&["occur", "timed_slug", "-t", "14:00"], &db).expect("occur -t 14:00");
+    let e = &db.entries_for_field("timed_slug", None).unwrap()[0];
+    assert_eq!(
+        e.slug.as_str(),
+        format!(
+            "timed_slug:{}",
+            e.occur_time
+                .as_ref()
+                .unwrap()
+                .utc
+                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        ),
+    );
+}
+
 /// TS #8: "can occur on a full day"
 ///
 /// Datum's `-D`/`--full-day` recorded a whole-day event. Daydumb now parses
