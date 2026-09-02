@@ -27,6 +27,7 @@ pub fn run(db_hint: Option<&str>) -> Result<()> {
         }
     }
     let db = Db::open(&resolved.path.to_string_lossy())?;
+    datum_commands::announce_migration(&db);
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);
     }

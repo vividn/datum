@@ -144,6 +144,7 @@ fn dispatch_single(cli: Cli) -> Result<()> {
     } else {
         datum_core::db::Db::open(&resolved.path.to_string_lossy())?
     };
+    datum_commands::announce_migration(&db);
 
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);
@@ -167,6 +168,7 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
         }
     }
     let db = datum_core::db::Db::open(&resolved.path.to_string_lossy())?;
+    datum_commands::announce_migration(&db);
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);
     }
@@ -184,6 +186,7 @@ fn try_kit_level2_dispatch() -> Result<Option<()>> {
         return Ok(None);
     }
     let db = datum_core::db::Db::open(&resolved.path.to_string_lossy())?;
+    datum_commands::announce_migration(&db);
 
     let expanded = args::expand_argv_with_db(raw, &db)?;
     if expanded.len() < 2 {

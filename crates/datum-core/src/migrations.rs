@@ -2822,6 +2822,141 @@ pub fn migrate_to_current(conn: &Connection) -> Result<Vec<String>> {
     apply_migrations(conn, MIGRATIONS, current, CURRENT_SCHEMA_VERSION)
 }
 
+/// The schema version a DB is at, resolved without writing to it.
+///
+/// [`migrate_to_current`] resolves the same value but stamps `_meta` as a
+/// side-effect. The pre-migration backup has to know `from` *before* any
+/// write lands, so this variant infers without stamping.
+pub fn peek_schema_version(conn: &Connection) -> Result<u32> {
+    let has_meta: bool = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_meta'",
+        [],
+        |row| row.get::<_, i64>(0),
+    )? > 0;
+    if has_meta {
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT value FROM _meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(s) = stored {
+            return s
+                .parse::<u32>()
+                .map_err(|e| DatumError::Other(format!("bad schema_version in _meta: {e}")));
+        }
+    }
+    infer_legacy_version(conn)
+}
+
+/// What a single [`crate::db::Db::open`] did to the schema, so the CLI can
+/// say so. `datum-core` is deliberately silent — the migration happens
+/// here, the telling happens at the edge.
+#[derive(Debug, Clone)]
+pub struct MigrationReport {
+    pub from_version: u32,
+    pub to_version: u32,
+    /// The pre-migration snapshot. `None` only for in-memory databases,
+    /// which have no file to snapshot.
+    pub backup_path: Option<std::path::PathBuf>,
+    /// One summary line per migration step applied.
+    pub applied: Vec<String>,
+    /// Older snapshots removed by retention after this migration.
+    pub pruned: Vec<std::path::PathBuf>,
+}
+
+/// How many pre-migration snapshots to keep alongside a database. Older
+/// ones are pruned after a successful migration — never before, so a
+/// failed migration can never cost you a backup.
+pub const MAX_PRE_MIGRATION_BACKUPS: usize = 5;
+
+/// Snapshot the database file before migrating it. Returns the path written.
+///
+/// `VACUUM INTO`, not a filesystem copy: connections run in WAL mode, so
+/// the `.db` file on its own is not the whole database, and a copy taken
+/// without the `-wal` sidecar can be stale. `VACUUM INTO` writes one
+/// self-contained file holding exactly the committed contents, and — the
+/// point of the exercise — it goes through SQLite, not through datum's
+/// serialisation code, which is the code the migration is changing.
+///
+/// The caller must treat a failure here as fatal: a migration that runs
+/// after a failed backup is worse than no backup policy at all, because
+/// the note printed afterwards would claim a snapshot that isn't there.
+pub fn backup_before_migration(
+    conn: &Connection,
+    db_path: &std::path::Path,
+    from: u32,
+    to: u32,
+) -> Result<std::path::PathBuf> {
+    let dest = free_backup_path(db_path, from, to);
+    // `VACUUM INTO` refuses to overwrite, so an existing file is an error
+    // rather than silent data loss — exactly what we want.
+    conn.execute("VACUUM INTO ?1", params![dest.to_string_lossy()])
+        .map_err(|e| {
+            DatumError::Other(format!(
+                "refusing to migrate schema v{from}→v{to}: could not write the \
+                 pre-migration backup to {}: {e}",
+                dest.display()
+            ))
+        })?;
+    Ok(dest)
+}
+
+/// `<db file name>.pre-v<from>-to-v<to>-<UTC timestamp>.bak`, next to the
+/// database, with a `-<n>` disambiguator if that name is somehow taken.
+fn free_backup_path(db_path: &std::path::Path, from: u32, to: u32) -> std::path::PathBuf {
+    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let base = format!(
+        "{}.pre-v{from}-to-v{to}-{stamp}",
+        db_path.file_name().unwrap_or_default().to_string_lossy()
+    );
+    let dir = db_path.parent().unwrap_or(std::path::Path::new("."));
+    let mut candidate = dir.join(format!("{base}.bak"));
+    let mut n = 2;
+    while candidate.exists() {
+        candidate = dir.join(format!("{base}-{n}.bak"));
+        n += 1;
+    }
+    candidate
+}
+
+/// Drop all but the newest [`MAX_PRE_MIGRATION_BACKUPS`] snapshots taken
+/// for this database. Best-effort: anything we cannot read or remove is
+/// left alone, since failing to prune is harmless and refusing to open the
+/// database over it would not be.
+pub fn prune_pre_migration_backups(db_path: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let (Some(dir), Some(name)) = (db_path.parent(), db_path.file_name()) else {
+        return Vec::new();
+    };
+    let prefix = format!("{}.pre-v", name.to_string_lossy());
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found: Vec<(std::time::SystemTime, std::path::PathBuf)> = entries
+        .flatten()
+        .filter(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.starts_with(&prefix) && n.ends_with(".bak")
+        })
+        .filter_map(|e| {
+            let modified = e.metadata().ok()?.modified().ok()?;
+            Some((modified, e.path()))
+        })
+        .collect();
+    if found.len() <= MAX_PRE_MIGRATION_BACKUPS {
+        return Vec::new();
+    }
+    // Newest first, then discard everything past the keep window.
+    found.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    found
+        .split_off(MAX_PRE_MIGRATION_BACKUPS)
+        .into_iter()
+        .filter(|(_, path)| std::fs::remove_file(path).is_ok())
+        .map(|(_, path)| path)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3594,5 +3729,171 @@ mod tests {
             "clearing the tombstone must restore the live hash"
         );
         assert_eq!(revived.content_hash, revived.expected_content_hash());
+    }
+
+    // ---- pre-migration backups (da-ksao) -------------------------------
+
+    /// Build a file-backed DB, put a row in it, then walk the schema back
+    /// to `version` so the next `Db::open` has real migration work to do.
+    fn legacy_file_db(path: &std::path::Path, version: u32) {
+        let db = Db::open(path.to_str().unwrap()).unwrap();
+        let entry = crate::entry::Entry::new(
+            "coffee",
+            crate::entry::Verb::Point,
+            None,
+            None,
+            Some(
+                crate::time::DatumTime::from_utc_and_tz(
+                    chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05Z")
+                        .unwrap()
+                        .with_timezone(&chrono::Utc),
+                    "UTC",
+                )
+                .unwrap(),
+            ),
+            None,
+            "dev",
+        );
+        db.insert_entry(&entry).unwrap();
+        migrate_down_to(db.conn(), version).unwrap();
+    }
+
+    /// Read a schema version without the `ensure_meta_table` write, so
+    /// inspecting a backup cannot modify it.
+    fn version_of(path: &std::path::Path) -> u32 {
+        let conn = Connection::open(path).unwrap();
+        peek_schema_version(&conn).unwrap()
+    }
+
+    fn backups_beside(db_path: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let prefix = format!("{}.pre-v", db_path.file_name().unwrap().to_string_lossy());
+        let mut found: Vec<_> = std::fs::read_dir(db_path.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                let n = p.file_name().unwrap().to_string_lossy().into_owned();
+                n.starts_with(&prefix) && n.ends_with(".bak")
+            })
+            .collect();
+        found.sort();
+        found
+    }
+
+    /// A DB that actually needs migrating is snapshotted first, and the
+    /// snapshot holds the *pre*-migration schema and the user's rows.
+    #[test]
+    fn migrating_a_file_db_snapshots_it_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("datum.db");
+        legacy_file_db(&path, 30);
+        assert_eq!(version_of(&path), 30);
+        assert!(backups_beside(&path).is_empty(), "nothing to back up yet");
+
+        let db = Db::open(path.to_str().unwrap()).unwrap();
+        let report = db.last_migration().expect("migration must be reported");
+        assert_eq!(report.from_version, 30);
+        assert_eq!(report.to_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(report.applied.len(), (CURRENT_SCHEMA_VERSION - 30) as usize);
+        assert_eq!(db.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
+
+        let backup = report
+            .backup_path
+            .as_ref()
+            .expect("file DBs get a snapshot");
+        assert_eq!(backups_beside(&path), vec![backup.clone()]);
+        assert!(backup
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with(&format!("datum.db.pre-v30-to-v{CURRENT_SCHEMA_VERSION}-")));
+
+        // The snapshot is the old database, not the new one — old shape,
+        // and the user's row is in it.
+        assert_eq!(version_of(backup), 30);
+        let snap = Connection::open(backup).unwrap();
+        let rows: i64 = snap
+            .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 1);
+    }
+
+    /// A DB already at the current version is opened untouched: no
+    /// snapshot, no report. Migrations are rare; backups must be too.
+    #[test]
+    fn an_up_to_date_db_is_not_backed_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("datum.db");
+        assert!(Db::open(path.to_str().unwrap())
+            .unwrap()
+            .last_migration()
+            .is_none());
+        assert!(Db::open(path.to_str().unwrap())
+            .unwrap()
+            .last_migration()
+            .is_none());
+        assert!(backups_beside(&path).is_empty());
+    }
+
+    /// The guard: if the snapshot cannot be written, the migration must
+    /// not run. Forced by a database filename long enough that appending
+    /// the 36-byte `.pre-v30-to-v33-<stamp>.bak` suffix overruns the
+    /// filesystem's 255-byte name limit while `…db`, `…db-wal` and
+    /// `…db-shm` all still fit — so the database opens and is writable
+    /// and only the backup target is unreachable, which is the disk-full
+    /// / read-only shape we are guarding against.
+    #[test]
+    fn a_failed_backup_aborts_the_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("{}.db", "d".repeat(240)));
+        legacy_file_db(&path, 30);
+
+        let msg = match Db::open(path.to_str().unwrap()) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("open must fail when the snapshot cannot be written"),
+        };
+        assert!(msg.contains("refusing to migrate"), "{msg}");
+        assert!(
+            msg.contains(&format!("v30→v{CURRENT_SCHEMA_VERSION}")),
+            "{msg}"
+        );
+
+        // The database is untouched — still at the old version, no
+        // half-written snapshot left beside it.
+        assert_eq!(version_of(&path), 30);
+        assert!(backups_beside(&path).is_empty());
+    }
+
+    /// Retention keeps the newest [`MAX_PRE_MIGRATION_BACKUPS`] snapshots
+    /// and reports what it removed, so the accumulation is neither
+    /// unbounded nor silent.
+    #[test]
+    fn retention_prunes_the_oldest_snapshots() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("datum.db");
+        std::fs::write(&path, b"").unwrap();
+        // Unrelated neighbours that must survive.
+        std::fs::write(dir.path().join("other.db.pre-v1-to-v2-x.bak"), b"").unwrap();
+        std::fs::write(dir.path().join("datum.db.bak"), b"").unwrap();
+
+        let epoch = std::time::SystemTime::UNIX_EPOCH;
+        let mut made = Vec::new();
+        for i in 0..MAX_PRE_MIGRATION_BACKUPS + 2 {
+            let p = dir.path().join(format!("datum.db.pre-v{i}-to-v33-t.bak"));
+            let f = std::fs::File::create(&p).unwrap();
+            f.set_modified(epoch + std::time::Duration::from_secs(i as u64))
+                .unwrap();
+            made.push(p);
+        }
+
+        let mut pruned = prune_pre_migration_backups(&path);
+        pruned.sort();
+        assert_eq!(pruned, made[..2].to_vec(), "the two oldest go");
+        assert_eq!(backups_beside(&path).len(), MAX_PRE_MIGRATION_BACKUPS);
+        assert!(dir.path().join("other.db.pre-v1-to-v2-x.bak").exists());
+        assert!(dir.path().join("datum.db.bak").exists());
+
+        // Idempotent once the directory is inside the keep window.
+        assert!(prune_pre_migration_backups(&path).is_empty());
     }
 }

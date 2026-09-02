@@ -273,7 +273,16 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
     })();
 
     match maybe_db {
-        Some(db) => parse_invocation_inner(argv, &DbAliasResolver::new(&db)),
+        Some(db) => {
+            // This open runs BEFORE any dispatch, so it is usually the one
+            // that migrates — and its `Db` dies here, taking the report with
+            // it. Announce from here too or the first post-upgrade
+            // invocation reshapes the user's data in total silence: the
+            // dispatcher's later open finds the schema already current and
+            // has nothing left to report (da-ksao).
+            crate::announce_migration(&db);
+            parse_invocation_inner(argv, &DbAliasResolver::new(&db))
+        }
         None => parse_invocation_inner(argv, &palias::NoResolver),
     }
 }

@@ -43,6 +43,8 @@ use rusqlite::{params, Connection};
 
 use crate::error::{DatumError, Result};
 
+pub use crate::migrations::{MigrationReport, MAX_PRE_MIGRATION_BACKUPS};
+
 pub use alias::{InstallAliasesReport, KitAliasOutcome};
 pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
 pub use kit_command::{
@@ -79,6 +81,10 @@ pub struct Db {
     /// after open or after invalidation. Mutating operations on
     /// `field_specs` clear it via [`Db::invalidate_spec_alias_index`].
     spec_alias_cache: RefCell<Option<SpecAliasIndex>>,
+    /// What this open did to the schema, if anything. `None` when the DB
+    /// was already current. datum-core never prints; the CLI reads this
+    /// and tells the user (da-ksao).
+    last_migration: Option<MigrationReport>,
 }
 
 impl Db {
@@ -116,11 +122,12 @@ impl Db {
     pub fn open(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
         Self::configure_connection(&conn)?;
-        let db = Db {
+        let mut db = Db {
             conn,
             spec_alias_cache: RefCell::new(None),
+            last_migration: None,
         };
-        db.migrate()?;
+        db.last_migration = db.migrate(Some(std::path::Path::new(path)))?;
         Ok(db)
     }
 
@@ -135,21 +142,34 @@ impl Db {
         Ok(Db {
             conn,
             spec_alias_cache: RefCell::new(None),
+            last_migration: None,
         })
     }
 
     /// Open an in-memory database (for tests).
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        let db = Db {
+        let mut db = Db {
             conn,
             spec_alias_cache: RefCell::new(None),
+            last_migration: None,
         };
-        db.migrate()?;
+        db.last_migration = db.migrate(None)?;
         Ok(db)
     }
 
-    fn migrate(&self) -> Result<()> {
+    /// What the migration walk during [`Db::open`] did, or `None` if the
+    /// database was already at the current schema version.
+    pub fn last_migration(&self) -> Option<&MigrationReport> {
+        self.last_migration.as_ref()
+    }
+
+    /// Bring the schema to [`crate::migrations::CURRENT_SCHEMA_VERSION`],
+    /// snapshotting the file first when there is real work to do.
+    ///
+    /// `db_path` is `None` only for in-memory databases, which are always
+    /// created fresh at the current version and so never migrate.
+    fn migrate(&self, db_path: Option<&std::path::Path>) -> Result<Option<MigrationReport>> {
         // Reject pre-refactor entries tables (which have an `id` column):
         // this refactor drops ULID entirely and slug is now PK. Silent
         // migration would lose or re-key data unpredictably; the user must
@@ -181,14 +201,41 @@ impl Db {
         // CURRENT_SCHEMA_VERSION; legacy DBs walk their column-add probes
         // forward. Migrations add or rebuild the tables they need, so we
         // run them BEFORE schema.sql — no pre-flight ALTER hacks required.
-        crate::migrations::migrate_to_current(&self.conn)?;
+        // Snapshot BEFORE the first write. A migration that runs without
+        // its backup is the failure this guards against, so a backup
+        // error aborts the open rather than being logged and ignored.
+        let from = crate::migrations::peek_schema_version(&self.conn)?;
+        let to = crate::migrations::CURRENT_SCHEMA_VERSION;
+        let backup_path = match db_path {
+            Some(path) if from < to => Some(crate::migrations::backup_before_migration(
+                &self.conn, path, from, to,
+            )?),
+            _ => None,
+        };
+
+        let applied = crate::migrations::migrate_to_current(&self.conn)?;
         // schema.sql lands the final shape: any indexes / tables the
         // migration registry doesn't create (because they were always part
         // of schema.sql since they were introduced) are filled in here.
         // CREATE … IF NOT EXISTS keeps the pass idempotent on already-current
         // databases.
         self.conn.execute_batch(include_str!("../schema.sql"))?;
-        Ok(())
+
+        if applied.is_empty() {
+            return Ok(None);
+        }
+        // Retention runs only after the migration succeeded — we never
+        // delete an old snapshot to make room for one that may be needed.
+        let pruned = db_path
+            .map(crate::migrations::prune_pre_migration_backups)
+            .unwrap_or_default();
+        Ok(Some(MigrationReport {
+            from_version: from,
+            to_version: to,
+            backup_path,
+            applied,
+            pruned,
+        }))
     }
 
     /// Borrow the underlying connection. Low-level — callers should prefer

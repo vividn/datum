@@ -437,3 +437,133 @@ fn subprocess_empty_comma_sides_still_error() {
     }
     assert_eq!(env.entry_count(), 1, "no rejected side may write a row");
 }
+
+/// da-ksao: the user-facing half of the pre-migration backup. Migrations
+/// are automatic — the first `datum` call after an upgrade reshapes the
+/// database with no prompt — so it must say so, and it must say so on
+/// **stderr**: a note on stdout would corrupt `datum tail -o … | …` for
+/// exactly the one invocation that follows an upgrade.
+///
+/// Only a subprocess can prove this. The in-process harnesses capture a
+/// single merged stream, so they cannot tell stdout from stderr, and the
+/// snapshot is a file written beside the db rather than a row inside it.
+#[test]
+fn subprocess_migration_announces_itself_and_leaves_a_backup() {
+    let env = Env::new();
+    // A real db with a real row, walked back so the next open must migrate.
+    assert_ok(&env.run(&["occur", "coffee"]), "seed row");
+    {
+        let conn = Connection::open(&env.db).expect("open db");
+        datum_core::migrations::migrate_down_to(&conn, 30).expect("walk schema back");
+    }
+
+    let out = env.run(&["tail", "-o", "%field%"]);
+    assert_ok(&out, "migrating open must still succeed");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    let to = datum_core::migrations::CURRENT_SCHEMA_VERSION;
+    assert!(
+        stderr.contains(&format!("migrated v30 → v{to}")),
+        "the note must name both versions: stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("pre-migration backup saved to"),
+        "the note must point at the snapshot: stderr={stderr}"
+    );
+    assert!(
+        !stdout.contains("migrated"),
+        "the note must not pollute stdout: stdout={stdout}"
+    );
+    // stdout is still only the payload, machine-readable across the upgrade.
+    assert_eq!(
+        stdout.trim(),
+        "coffee",
+        "stdout carries the data and nothing else"
+    );
+
+    // The snapshot exists beside the db and holds the pre-migration shape.
+    let backup = stderr
+        .lines()
+        .find_map(|l| l.strip_prefix("note: pre-migration backup saved to "))
+        .expect("the note names the path");
+    let snap = Connection::open(backup.trim()).expect("open snapshot");
+    assert_eq!(
+        datum_core::migrations::peek_schema_version(&snap).unwrap(),
+        30,
+        "the snapshot is the OLD database, not the migrated one"
+    );
+
+    // And the migration itself landed: the row survived, at the new version.
+    assert_eq!(env.entry_count(), 1);
+    let conn = Connection::open(&env.db).expect("reopen db");
+    assert_eq!(
+        datum_core::migrations::peek_schema_version(&conn).unwrap(),
+        to
+    );
+}
+
+/// da-ksao, the load-bearing half: if the snapshot cannot be written the
+/// migration must not run, and the refusal must reach the user.
+///
+/// Worth a subprocess case of its own because the pre-pass DB open
+/// (`args::parse_invocation`) swallows open failures with `.ok()` to fall
+/// back to alias-less parsing. That must not swallow *this* failure into a
+/// silent successful run — the dispatcher's open has to surface it as a
+/// non-zero exit.
+///
+/// The failure is forced with a database name long enough that appending
+/// the `.pre-v30-to-v33-<stamp>.bak` suffix overruns the 255-byte
+/// filesystem limit while `…db`, `…db-wal` and `…db-shm` all still fit: the
+/// db opens and is writable, only the backup target is unreachable — the
+/// disk-full / read-only shape, without needing either.
+#[test]
+fn subprocess_unwritable_backup_refuses_to_migrate() {
+    let tmp = tempfile::tempdir().expect("create tmpdir");
+    let home = tmp.path().join("home");
+    let config_home = tmp.path().join("config");
+    let db = tmp.path().join(format!("{}.db", "d".repeat(240)));
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&config_home).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", &db)
+            .env("DATUM_HOME", &home)
+            .env("DATUM_CONFIG_HOME", &config_home)
+            .env("DATUM_COLOR", "0")
+            .args(args)
+            .output()
+            .expect("spawn datum")
+    };
+
+    assert_ok(&run(&["occur", "coffee"]), "seed row");
+    {
+        let conn = Connection::open(&db).expect("open db");
+        datum_core::migrations::migrate_down_to(&conn, 30).expect("walk schema back");
+    }
+
+    let out = run(&["tail", "-o", "%field%"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "an unbackupable migration must fail loudly, not proceed: stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("refusing to migrate"),
+        "the refusal must say why: stderr={stderr}"
+    );
+
+    // The database is exactly as it was: old schema, row intact, no
+    // half-written snapshot. A refused migration costs the user nothing.
+    let conn = Connection::open(&db).expect("reopen db");
+    assert_eq!(
+        datum_core::migrations::peek_schema_version(&conn).unwrap(),
+        30,
+        "the schema must not have moved"
+    );
+    let rows: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+        .expect("count entries");
+    assert_eq!(rows, 1, "the user's row must survive a refused migration");
+}
