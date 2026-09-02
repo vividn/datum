@@ -89,3 +89,20 @@ crossterm = "0.28"
 # Structured logging (journalctl-friendly output for the daemon)
 tracing = "0.1"
 tracing-subscriber = { version = "0.3" }
+
+# ── Build-artifact size, added 2026-09-02 ───────────────────────────────
+# Full debug info was costing ~200 MB PER TEST BINARY and 23 GB across the
+# workspace's ~90 of them. That is what filled the CI runner's disk
+# ("rustc-LLVM ERROR: IO failure on output stream: No space left on device"
+# on every PR today), and it is most of the 36 GB a local `target/` reaches.
+#
+# `line-tables-only` keeps what a backtrace actually needs -- file and line
+# for every frame -- and drops the variable/type debug info that a debugger
+# would want and that nothing in CI reads. Linking gets correspondingly
+# faster, which is the other half of the complaint: a can waiting 25 minutes
+# for a workspace test run is mostly waiting on the linker.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"

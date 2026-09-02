@@ -416,7 +416,21 @@ fn run_git(root: &Path, args: &[&str]) -> Result<String> {
 ///   gate disabled. Re-carve work is tracked separately as `vremya:`
 ///   beads. Next bump should be a real conversation, not a casual
 ///   `+200`.
-const MAX_FILE_LOC: usize = 3500;
+/// - 4000 (2026-09-02, vremya, vividn's decision) — the gate had been RED
+///   ON MAIN since `148c729` (2026-08-13), where `migrations.rs` already
+///   stood at 3598 LOC. Every PR opened since then failed `Honesty gates`
+///   through no fault of its own, including six branches of real work on
+///   2026-09-02. A gate that fails on `main` is not a gate; it is a tax
+///   on everyone downstream of it, and it is invisible to the author who
+///   trips it because their own diff is innocent.
+///   vividn's call, made explicitly rather than casually: bump now to
+///   unblock, carve separately. 4000 rather than 3600 because
+///   `migrations.rs` gains a block per schema version by construction —
+///   a cap set just above today's size would be red again on the very
+///   next migration, and one is imminent (the Precision→Uncertainty
+///   rename). Carving is tracked as its own bead so this bump does not
+///   quietly become the resolution.
+const MAX_FILE_LOC: usize = 4000;
 
 /// Top-level entry for `cargo xtask check ...` — two batteries, plus
 /// every gate addressable on its own by name.
