@@ -55,11 +55,11 @@ fn stats_reconstructs_durations_and_ratios() {
     assert_eq!(r.states[0].state, "coding");
     assert_eq!(r.states[0].count, 2);
     assert_eq!(r.states[0].duration_seconds, 5400);
-    assert_eq!(r.states[0].ratio, 0.75);
+    assert_eq!(r.states[0].ratio, Some(0.75));
     assert_eq!(r.states[1].state, "meeting");
     assert_eq!(r.states[1].count, 1);
     assert_eq!(r.states[1].duration_seconds, 1800);
-    assert_eq!(r.states[1].ratio, 0.25);
+    assert_eq!(r.states[1].ratio, Some(0.25));
 }
 
 #[test]
@@ -104,7 +104,11 @@ fn stats_field_state_selector_isolates_one_state() {
     assert_eq!(r.states[0].state, "coding");
     assert_eq!(r.states[0].duration_seconds, 5400);
     assert_eq!(r.states[0].count, 2);
-    assert_eq!(r.states[0].ratio, 0.75, "ratio is vs the whole field");
+    assert_eq!(
+        r.states[0].ratio,
+        Some(0.75),
+        "ratio is vs the tracked total"
+    );
     // Totals stay whole-field so the JSON still describes the field.
     assert_eq!(r.total_duration_seconds, 7200);
     assert_eq!(r.total_count, 3);
@@ -209,4 +213,135 @@ fn stats_runs_through_cli_dispatch() {
     run_cli(&["stats", "activity"], &db).unwrap();
     run_cli(&["stats", "activity:coding", "--json"], &db).unwrap();
     run_cli(&["stats", "activity", "2026-06"], &db).unwrap();
+}
+
+// ─── Ratio denominator (da-icba) ────────────────────────────────────────────
+
+/// activity: coding@10:00 → stop@10:30 → coding@11:00 → stop@11:15, with
+/// `now` frozen at 12:00. coding = 30m + 15m = 45m tracked; the closed
+/// (`false`) state fills the two gaps = 30m + 45m = 75m.
+fn seed_with_closed(db: &datum_core::db::Db) {
+    for (t, state) in [
+        ("2026-06-15T10:00:00Z", json!("coding")),
+        ("2026-06-15T10:30:00Z", json!(false)),
+        ("2026-06-15T11:00:00Z", json!("coding")),
+        ("2026-06-15T11:15:00Z", json!(false)),
+    ] {
+        entry_builder("activity")
+            .verb(Verb::Switch)
+            .state(state)
+            .time_start_utc(at(t))
+            .insert(db);
+    }
+}
+
+#[test]
+fn stats_excludes_closed_state_from_the_denominator() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    seed_with_closed(&db);
+
+    let r = compute_stats(&selector("activity"), &db).unwrap();
+
+    // Durations and counts are untouched — only the ratio denominator moves.
+    assert_eq!(r.total_duration_seconds, 7200, "the whole 2h is measured");
+    assert_eq!(r.tracked_duration_seconds, 2700, "45m of coding");
+    assert_eq!(r.total_count, 4);
+    let closed = r.states.iter().find(|s| s.state == "false").unwrap();
+    assert_eq!(closed.duration_seconds, 4500);
+    assert_eq!(closed.count, 2);
+    assert_eq!(closed.ratio, None, "false is outside its own denominator");
+    let coding = r.states.iter().find(|s| s.state == "coding").unwrap();
+    assert_eq!(coding.duration_seconds, 2700);
+    assert_eq!(
+        coding.ratio,
+        Some(1.0),
+        "coding is all of the tracked time, not 37.5% of wall-clock"
+    );
+}
+
+#[test]
+fn stats_include_false_restores_the_wall_clock_denominator() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    seed_with_closed(&db);
+
+    let args = StatsArgs {
+        include_false: true,
+        ..selector("activity")
+    };
+    let r = compute_stats(&args, &db).unwrap();
+
+    assert_eq!(r.tracked_duration_seconds, r.total_duration_seconds);
+    let closed = r.states.iter().find(|s| s.state == "false").unwrap();
+    assert_eq!(closed.ratio, Some(0.625));
+    let coding = r.states.iter().find(|s| s.state == "coding").unwrap();
+    assert_eq!(coding.ratio, Some(0.375));
+}
+
+#[test]
+fn stats_excludes_untracked_states_from_the_denominator() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    // reading@10:00 → IGNORED@10:30 → null@11:00 → reading@11:30.
+    for (t, state) in [
+        ("2026-06-15T10:00:00Z", json!("reading")),
+        ("2026-06-15T10:30:00Z", json!("IGNORED")),
+        ("2026-06-15T11:00:00Z", json!(null)),
+        ("2026-06-15T11:30:00Z", json!("reading")),
+    ] {
+        entry_builder("activity")
+            .verb(Verb::Switch)
+            .state(state)
+            .time_start_utc(at(t))
+            .insert(&db);
+    }
+
+    let r = compute_stats(&selector("activity"), &db).unwrap();
+    assert_eq!(r.total_duration_seconds, 7200);
+    assert_eq!(r.tracked_duration_seconds, 3600, "30m + 30m of reading");
+    for untracked in ["IGNORED", "null"] {
+        let s = r.states.iter().find(|s| s.state == untracked).unwrap();
+        assert_eq!(s.duration_seconds, 1800);
+        assert_eq!(s.ratio, None, "{untracked} is outside the denominator");
+    }
+    let reading = r.states.iter().find(|s| s.state == "reading").unwrap();
+    assert_eq!(reading.ratio, Some(1.0));
+
+    let all = compute_stats(
+        &StatsArgs {
+            include_untracked: true,
+            ..selector("activity")
+        },
+        &db,
+    )
+    .unwrap();
+    assert_eq!(all.tracked_duration_seconds, 7200);
+    for state in ["IGNORED", "null", "reading"] {
+        let s = all.states.iter().find(|s| s.state == state).unwrap();
+        assert!(s.ratio.is_some(), "{state} is back in the denominator");
+    }
+}
+
+#[test]
+fn stats_selecting_an_excluded_state_still_reports_a_ratio() {
+    // `stats activity:false` asks about the closed state outright — it is
+    // the subject of the query, so it stays in its own denominator.
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    seed_with_closed(&db);
+
+    let r = compute_stats(&selector("activity:false"), &db).unwrap();
+    assert_eq!(r.states[0].duration_seconds, 4500);
+    assert_eq!(r.states[0].ratio, Some(0.625), "share of the whole 2h");
+    assert_eq!(r.tracked_duration_seconds, 7200);
+}
+
+#[test]
+fn stats_flags_parse_and_dispatch() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    seed_with_closed(&db);
+    run_cli(&["stats", "activity", "--include-false"], &db).unwrap();
+    run_cli(&["stats", "activity", "--include-untracked", "--json"], &db).unwrap();
 }

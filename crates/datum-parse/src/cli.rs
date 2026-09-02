@@ -787,6 +787,14 @@ pub struct StatsArgs {
     pub since: Option<String>,
     /// Upper bound. A bare `YYYY-MM-DD` covers the whole named day.
     pub until: Option<String>,
+    /// `--include-false` — keep the `false` (closed / stopped) state in the
+    /// ratio denominator. Off by default: on a real db the closed state is
+    /// every gap between blocks and swamps the ratio column (da-icba).
+    pub include_false: bool,
+    /// `--include-untracked` — keep the untracked states (`null`, the
+    /// `IGNORED` sentinel) in the ratio denominator. Off by default, same
+    /// reason as [`StatsArgs::include_false`].
+    pub include_untracked: bool,
     pub json: bool,
 }
 

@@ -139,6 +139,14 @@ pub(crate) fn parse_stats_args(tail: &[&str]) -> Result<StatsArgs> {
                 out.until = Some(v.to_string());
                 i += 1;
             }
+            FlagSplit::Long("include-false") => {
+                out.include_false = true;
+                i += 1;
+            }
+            FlagSplit::Long("include-untracked") => {
+                out.include_untracked = true;
+                i += 1;
+            }
             FlagSplit::Long("json") => {
                 out.json = true;
                 i += 1;

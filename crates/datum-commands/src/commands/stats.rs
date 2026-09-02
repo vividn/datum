@@ -10,13 +10,21 @@
 //! block, e.g. `run --dur 30m`) is measured by that span instead of the
 //! gap-to-next, and its `following_state` (if any) fills the remainder up to
 //! the next entry. Ref algorithm: crew/vremya/scripts/timespent.py.
+//!
+//! The ratio is a share of *tracked* time, not of wall-clock: the closed
+//! state (`false` — every gap between blocks) and the untracked states
+//! (`null`, the `IGNORED` sentinel, no state at all) are out of the
+//! denominator unless `--include-false` / `--include-untracked` put them
+//! back. Without that, a real db's states all read under 1% (da-icba).
+//! Counts and durations are unaffected — only the denominator moves.
 
 use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, Local, NaiveDate, TimeZone, Utc};
-use datum_core::db::{Db, ListParams, TimeMetric};
+use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
 use datum_core::time::DatumTime;
+use serde_json::Value as JsonValue;
 
 use crate::args::StatsArgs;
 use crate::commands::field_visuals::state_label;
@@ -29,8 +37,10 @@ pub struct StateStat {
     pub state: String,
     pub count: usize,
     pub duration_seconds: i64,
-    /// Fraction of the *field's* total measured duration (0.0..=1.0).
-    pub ratio: f64,
+    /// Fraction of the field's *tracked* duration (0.0..=1.0), or `None`
+    /// when the state is itself outside the denominator (`false` /
+    /// untracked, absent `--include-false` / `--include-untracked`).
+    pub ratio: Option<f64>,
 }
 
 /// Structured result of `stats` — exposed so tests can assert on the data
@@ -43,6 +53,9 @@ pub struct StatsResult {
     pub selected_state: Option<String>,
     pub total_count: usize,
     pub total_duration_seconds: i64,
+    /// The ratio denominator: measured duration in states that count as
+    /// tracked. Equals `total_duration_seconds` when nothing is excluded.
+    pub tracked_duration_seconds: i64,
     /// Longest-duration first; ties broken by state name.
     pub states: Vec<StateStat>,
 }
@@ -76,15 +89,18 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
         .filter_map(|e| {
             Some(TimelineRow {
                 state: state_label(e.state.as_ref()).unwrap_or_else(|| "(none)".to_string()),
+                class: classify(e.state.as_ref()),
                 occur: e.occur_time.as_ref()?.utc,
                 dur: e.duration_seconds(),
                 following: state_label(e.following_state.as_ref()),
+                following_class: classify(e.following_state.as_ref()),
             })
         })
         .collect();
 
     let mut dur_by_state: BTreeMap<String, i64> = BTreeMap::new();
     let mut count_by_state: BTreeMap<String, usize> = BTreeMap::new();
+    let mut class_by_state: BTreeMap<String, StateClass> = BTreeMap::new();
 
     for (i, row) in timeline.iter().enumerate() {
         let next = timeline.get(i + 1).map(|r| r.occur).unwrap_or(now);
@@ -103,11 +119,13 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
             start,
             end,
         );
+        note_class(&mut class_by_state, &row.state, row.class);
 
         // Block B — with an explicit `dur` and a `following_state`, the field
         // reverts to that state from the block's end until the next entry.
         if let (Some(_), Some(fs)) = (row.dur, &row.following) {
             add_overlap(&mut dur_by_state, fs, block_a_end, next, start, end);
+            note_class(&mut class_by_state, fs, row.following_class);
         }
 
         // Count the entry itself when its occur instant lands in-window.
@@ -122,18 +140,43 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
         dur_by_state.entry(state.clone()).or_insert(0);
     }
 
+    // The denominator. `false` (every gap between blocks) and the untracked
+    // states would otherwise swamp the ratio column, turning it into "share
+    // of wall-clock" instead of "share of tracked time" (da-icba). A state
+    // named outright by the selector is always its own subject, so it stays
+    // in the denominator whatever its class.
+    let counted = |state: &str| {
+        selected_state.as_deref() == Some(state)
+            || match class_by_state
+                .get(state)
+                .copied()
+                .unwrap_or(StateClass::Tracked)
+            {
+                StateClass::Tracked => true,
+                StateClass::Closed => args.include_false,
+                StateClass::Untracked => args.include_untracked,
+            }
+    };
+
     let total_duration_seconds: i64 = dur_by_state.values().sum();
+    let tracked_duration_seconds: i64 = dur_by_state
+        .iter()
+        .filter(|(state, _)| counted(state))
+        .map(|(_, d)| *d)
+        .sum();
     let total_count: usize = count_by_state.values().sum();
 
     let mut states: Vec<StateStat> = dur_by_state
         .into_iter()
         .map(|(state, duration_seconds)| {
             let count = count_by_state.get(&state).copied().unwrap_or(0);
-            let ratio = if total_duration_seconds > 0 {
-                duration_seconds as f64 / total_duration_seconds as f64
-            } else {
-                0.0
-            };
+            let ratio = counted(&state).then(|| {
+                if tracked_duration_seconds > 0 {
+                    duration_seconds as f64 / tracked_duration_seconds as f64
+                } else {
+                    0.0
+                }
+            });
             StateStat {
                 state,
                 count,
@@ -159,7 +202,7 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
                 state: sel.clone(),
                 count: 0,
                 duration_seconds: 0,
-                ratio: 0.0,
+                ratio: Some(0.0),
             });
         states = vec![one];
     }
@@ -169,6 +212,7 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
         selected_state,
         total_count,
         total_duration_seconds,
+        tracked_duration_seconds,
         states,
     })
 }
@@ -271,9 +315,42 @@ fn local_midnight(date: NaiveDate) -> Result<DateTime<Utc>> {
 
 struct TimelineRow {
     state: String,
+    class: StateClass,
     occur: DateTime<Utc>,
     dur: Option<i64>,
     following: Option<String>,
+    following_class: StateClass,
+}
+
+/// How a state value participates in the ratio denominator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StateClass {
+    /// A real state the user tracked — always in the denominator.
+    Tracked,
+    /// `false` — the field is stopped. This is every gap between blocks.
+    Closed,
+    /// `null`, the `IGNORED` sentinel, or no state at all.
+    Untracked,
+}
+
+fn classify(v: Option<&JsonValue>) -> StateClass {
+    match v {
+        None | Some(JsonValue::Null) => StateClass::Untracked,
+        Some(JsonValue::String(s)) if s == IGNORED_STATE_VALUE => StateClass::Untracked,
+        Some(JsonValue::Bool(false)) => StateClass::Closed,
+        _ => StateClass::Tracked,
+    }
+}
+
+/// Record a label's class. Distinct JSON values can share a label (the
+/// string `"false"` and `Bool(false)` both render as `false`, and stats
+/// already folds them into one row) — a tracked reading of a label wins, so
+/// a genuine named state is never silently dropped from the denominator.
+fn note_class(map: &mut BTreeMap<String, StateClass>, state: &str, class: StateClass) {
+    let slot = map.entry(state.to_string()).or_insert(class);
+    if class == StateClass::Tracked {
+        *slot = StateClass::Tracked;
+    }
 }
 
 fn add_overlap(
@@ -307,11 +384,11 @@ fn render_text(r: &StatsResult) -> String {
     if let Some(sel) = &r.selected_state {
         let s = &r.states[0];
         return format!(
-            "{}:{}  ·  {}  {:.1}% of {}  ({}×)\n",
+            "{}:{}  ·  {}  {} of {}  ({}×)\n",
             r.field,
             sel,
             format_duration(s.duration_seconds),
-            s.ratio * 100.0,
+            percent(s.ratio),
             r.field,
             s.count,
         );
@@ -334,20 +411,40 @@ fn render_text(r: &StatsResult) -> String {
         .max()
         .unwrap_or(0);
 
+    // Ratios are shares of the tracked total, which is not the whole
+    // measured total once `false` / untracked are out of the denominator —
+    // so name it, rather than leave a column that doesn't sum to the header.
+    let tracked_note = if r.tracked_duration_seconds == r.total_duration_seconds {
+        String::new()
+    } else {
+        format!(
+            "  ({} tracked)",
+            format_duration(r.tracked_duration_seconds)
+        )
+    };
     let mut out = format!(
-        "{}  ·  {} over {} entries\n\n",
-        r.field, total_dur, r.total_count
+        "{}  ·  {} over {} entries{}\n\n",
+        r.field, total_dur, r.total_count, tracked_note
     );
     for s in &r.states {
         out.push_str(&format!(
-            "  {:>dur_w$}  {:>5.1}%  {:>cnt_w$}×  {}\n",
+            "  {:>dur_w$}  {:>6}  {:>cnt_w$}×  {}\n",
             format_duration(s.duration_seconds),
-            s.ratio * 100.0,
+            percent(s.ratio),
             s.count,
             s.state,
         ));
     }
     out
+}
+
+/// The ratio column. A state outside the denominator has no meaningful
+/// share of it — an em dash says so without pretending to a number.
+fn percent(ratio: Option<f64>) -> String {
+    match ratio {
+        Some(r) => format!("{:.1}%", r * 100.0),
+        None => "—".to_string(),
+    }
 }
 
 fn render_json(r: &StatsResult) -> String {
@@ -382,6 +479,7 @@ fn render_json(r: &StatsResult) -> String {
             "field": r.field,
             "total_count": r.total_count,
             "total_duration_seconds": r.total_duration_seconds,
+            "tracked_duration_seconds": r.tracked_duration_seconds,
             "states": states,
         })
     )
