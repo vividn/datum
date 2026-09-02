@@ -15,7 +15,10 @@ use serde_json::{Map, Value};
 
 use crate::error::{ParseError, Result};
 use crate::input::data_args::Compat;
-use crate::time::{format_iso_duration, parse_date_arg, parse_duration, parse_time_arg};
+use crate::time::{
+    format_iso_duration, parse_date_arg, parse_duration, parse_time_arg, DateArg, DefaultDirection,
+    TimeCtx,
+};
 
 use super::classify::{path_is_date, path_is_duration, path_is_time};
 
@@ -54,13 +57,17 @@ pub(super) fn infer_typed_value(
         return Ok(Some(Value::Null));
     }
 
-    // Time-like key → parse as time. Relative forms (`+30`, `-1h`) resolve
-    // against `compat.base_local` (the entry's effective occur-time in its
-    // local zone) when supplied — `wake_time=+30` with `-t 10:00` becomes
-    // `10:30:00`. With no base anchor (reparse / update payload) the
-    // relative branches fall through to raw-string passthrough.
+    // Time-like key → parse as time. Relative forms (`+30`, `-1h`) and
+    // day words (`sunday`, `yesterday`) resolve against `compat.base_local`
+    // (the entry's effective occur-time in its local zone) when supplied —
+    // `wake_time=+30` with `-t 10:00` becomes `10:30:00`. With no base
+    // anchor (reparse / update payload) the relative branches fall through
+    // to raw-string passthrough. Data args face `Nearest`: an unmarked
+    // `finish_time=sunday` means the Sunday closest to the entry, not one
+    // a week out.
     if path_is_time(path) {
-        if let Ok(t) = parse_time_arg(value) {
+        let ctx = time_ctx(compat);
+        if let Ok(t) = parse_time_arg(value, ctx) {
             if let Some(abs) = t.absolute {
                 return Ok(Some(Value::String(abs.format("%H:%M:%S").to_string())));
             }
@@ -81,6 +88,16 @@ pub(super) fn infer_typed_value(
                     resolved.time().format("%H:%M:%S").to_string(),
                 )));
             }
+            // The value named a day rather than a clock (`finish_time=sunday`,
+            // `next_time=yesterday`). It becomes that day's midnight, the same
+            // full-datetime shape the plugin due-dates above already use.
+            if let Some(date) = t.date {
+                if let Some(day) = resolve_date_arg(&date, compat) {
+                    return Ok(Some(Value::String(
+                        day.format("%Y-%m-%dT00:00:00").to_string(),
+                    )));
+                }
+            }
         }
         // Fallthrough: if we couldn't parse as time, leave as inferType's
         // usual handling. Datum would have errored; we accept the value
@@ -90,15 +107,9 @@ pub(super) fn infer_typed_value(
     // Date-like key → parse as date. Relative day offsets (`nextDate=+3`)
     // resolve against `compat.base_local.date()` when supplied.
     if path_is_date(path) {
-        if let Ok(d) = parse_date_arg(value) {
-            if let Some(abs) = d.absolute {
-                return Ok(Some(Value::String(abs.format("%Y-%m-%d").to_string())));
-            }
-            // Relative day-offset: `+3`, `-7`, `0`. parse_date_arg succeeds
-            // for these with `absolute=None`; resolve against base date.
-            if let Some(base) = compat.base_local {
-                let resolved = base.date() + chrono::Duration::days(d.days_offset);
-                return Ok(Some(Value::String(resolved.format("%Y-%m-%d").to_string())));
+        if let Ok(d) = parse_date_arg(value, time_ctx(compat)) {
+            if let Some(day) = resolve_date_arg(&d, compat) {
+                return Ok(Some(Value::String(day.format("%Y-%m-%d").to_string())));
             }
         }
     }
@@ -119,6 +130,23 @@ pub(super) fn infer_typed_value(
     }
 
     Ok(infer_type(value))
+}
+
+/// What ambiguous data-arg values resolve against: the entry's own
+/// occur-time when it has one, else the wall clock.
+fn time_ctx(compat: Compat) -> TimeCtx {
+    TimeCtx::now()
+        .anchored_at(compat.base_local)
+        .facing(DefaultDirection::Nearest)
+}
+
+/// The calendar day a parsed [`DateArg`] names. Pinned dates stand alone;
+/// a relative day-offset (`+3`, `-7`, `0`, `yesterday`) needs the entry's
+/// base date, and yields `None` without one (reparse / update payload) so
+/// the value drops through to raw-string passthrough.
+fn resolve_date_arg(d: &DateArg, compat: Compat) -> Option<chrono::NaiveDate> {
+    d.absolute
+        .or_else(|| Some(compat.base_local?.date() + chrono::Duration::days(d.days_offset)))
 }
 
 /// Minimum length at which an all-hex token is read as an opaque

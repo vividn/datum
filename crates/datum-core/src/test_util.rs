@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
 use datum_parse::time::clock::{self, MockClock};
-use datum_parse::time::{parse_duration, parse_time_arg, TimeBuilder};
+use datum_parse::time::{parse_duration, parse_time_arg, TimeBuilder, TimeCtx};
 
 use crate::action::Action;
 use crate::db::Db;
@@ -421,8 +421,8 @@ pub fn reset_time() {
 }
 
 fn parse_test_time(s: &str) -> DatumTime {
-    let arg =
-        parse_time_arg(s).unwrap_or_else(|e| panic!("set_time: cannot parse time {s:?}: {e}"));
+    let arg = parse_time_arg(s, TimeCtx::now())
+        .unwrap_or_else(|e| panic!("set_time: cannot parse time {s:?}: {e}"));
     TimeBuilder::now().with_time_arg(arg).build()
 }
 

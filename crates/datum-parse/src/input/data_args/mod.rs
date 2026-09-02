@@ -1425,6 +1425,68 @@ mod tests {
         );
     }
 
+    // ── day words / weekdays on temporal keys (da-0gs4) ─────────────────
+
+    #[test]
+    fn day_words_on_temporal_keys_resolve_against_base_local() {
+        // 2026-05-20 is a Wednesday. A `*_date` key yields the date; a
+        // `*_time` key yields that day's midnight, matching the full-
+        // datetime shape plugin due-dates already use.
+        let mut a = args();
+        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.data = vec![
+            "question_date=yesterday".into(),
+            "next_time=tomorrow".into(),
+        ];
+        assert_eq!(
+            run(a),
+            *json!({
+                "question_date": "2026-05-19",
+                "next_time": "2026-05-21T00:00:00",
+            })
+            .as_object()
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn weekday_on_temporal_key_takes_the_nearest_side() {
+        // Data args face `Nearest`, so from Wednesday 2026-05-20 the
+        // unmarked `friday` is the coming one (2 days on) rather than
+        // the past one (5 days back). `-` forces the past.
+        let mut a = args();
+        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.data = vec!["finish_time=friday".into(), "start_date=friday-".into()];
+        assert_eq!(
+            run(a),
+            *json!({
+                "finish_time": "2026-05-22T00:00:00",
+                "start_date": "2026-05-15",
+            })
+            .as_object()
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn weekday_without_base_local_falls_back_to_the_wall_clock() {
+        // With no entry anchor the wall clock stands in — the same
+        // fallback the year-less compact form (`apr29`) already used.
+        use chrono::{Datelike, Weekday};
+        let mut a = args();
+        a.data = vec!["finish_time=friday".into()];
+        let out = run(a);
+        let resolved = out["finish_time"].as_str().expect("resolved to a string");
+        let day = chrono::NaiveDate::parse_from_str(&resolved[..10], "%Y-%m-%d")
+            .expect("resolved value is a date");
+        assert_eq!(day.weekday(), Weekday::Fri);
+        let today = chrono::Local::now().date_naive();
+        assert!(
+            (day - today).num_days().abs() <= 3,
+            "nearest Friday is within half a week (today={today} got={day})"
+        );
+    }
+
     #[test]
     fn preserve_null_strings_keeps_literal_null() {
         // Daydumb compat: `null` / `undefined` stay as strings on the

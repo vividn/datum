@@ -317,9 +317,21 @@ language fallback.
   (da-jp0b).
 - **Missing in daydumb:**
   - Chrono-node natural-language fallback ("yesterday at noon",
-    "next Thursday 3pm").
+    "next Thursday 3pm"). The bounded word vocabulary below covers the
+    common single-word cases without the NLP dep.
 - **Added in daydumb:**
   - `±N[unit]` uncertainty suffix (not in datum).
+  - Date fallback (da-0gs4): input that names a *day* rather than a
+    clock time is handed to `parse_date_arg` and returned in
+    `TimeArg::date`, so `-t sunday` / `-t yesterday` / `-t 2024-03-16`
+    work and a caller wanting "either a time or a date" makes one call.
+    The `2500` rejection below happens first and is final, so an
+    out-of-range clock integer never reaches the date parser (where it
+    would read as a 2500-*day* offset).
+  - A `TimeCtx` parameter (da-0gs4): the reference moment ambiguous
+    input resolves against, plus the direction it resolves in when no
+    `+`/`-` marker was given. Lets a data key resolve against its
+    entry's occur-time instead of wall-clock now.
 - **Deliberate divergence:**
   - An unsigned integer that isn't a valid clock time (e.g. `2500`,
     `9999`) is now **rejected** with `InvalidTime` rather than
@@ -335,8 +347,20 @@ natural-language fallback.
 
 - **Daydumb today:** `parse_date_arg` in
   `datum_parse::time::parse_date_str`. Covers relative integer
-  offsets and `%Y-%m-%d` ISO. **Missing:** chrono-node fallback.
-- **Added in daydumb:** `±N[unit]` on the date itself.
+  offsets, `%Y-%m-%d` ISO, compact `<mmm><day>`, the day words
+  `today` / `yesterday` / `tomorrow`, and weekday names (`sunday`,
+  `sun`). **Missing:** chrono-node fallback — the word list is a
+  deliberately bounded subset, not a natural-language parser.
+- **Added in daydumb:** `±N[unit]` on the date itself; the trailing
+  `+`/`-` direction marker; the `TimeCtx` reference/default-direction
+  parameter (da-0gs4).
+- **Direction contract (da-0gs4):** an explicit `+`/`-` marker searches
+  *strictly*, so on a Tuesday `tuesday-` is a week back. Absent a
+  marker `ctx.default_direction` decides, non-strictly — the reference
+  day answers for its own weekday. Command flags face `Past` (vividn's
+  call: the vast majority of `--since`-shaped uses look backward);
+  data args face `Nearest`, so `finish_time=friday` means the Friday
+  closest to the entry.
 
 ### `parseDurationStr.ts` (89 LOC)
 

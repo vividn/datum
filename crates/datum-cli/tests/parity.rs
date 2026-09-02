@@ -30,7 +30,9 @@ use datum_core::db::Db;
 use datum_core::entry::Verb;
 use datum_core::test_util::entry_builder;
 use datum_parse::time::clock::{install, uninstall, MockClock};
-use datum_parse::time::{count_stacked_flag, parse_date_arg, parse_time_arg, DatumTime, Direction};
+use datum_parse::time::{
+    count_stacked_flag, parse_date_arg, parse_time_arg, DatumTime, Direction, TimeCtx,
+};
 use md5::{Digest, Md5};
 use serde_json::Value as JsonValue;
 
@@ -148,7 +150,7 @@ fn compact_date_goldens_round_trip_through_parse_date_arg() {
         }
 
         with_mocked_today(today, || {
-            let arg = parse_date_arg(input)
+            let arg = parse_date_arg(input, TimeCtx::now())
                 .unwrap_or_else(|e| panic!("parse_date_arg({input:?}) line {lineno}: {e}"));
             let got = arg
                 .absolute
@@ -213,7 +215,7 @@ fn relative_offsets_goldens_match_parser_output() {
 
         match kind {
             "date" => {
-                let arg = parse_date_arg(input)
+                let arg = parse_date_arg(input, TimeCtx::now())
                     .unwrap_or_else(|e| panic!("parse_date_arg({input:?}) line {lineno}: {e}"));
                 assert_eq!(
                     arg.days_offset, want_n,
@@ -225,7 +227,7 @@ fn relative_offsets_goldens_match_parser_output() {
                 );
             }
             "time" => {
-                let arg = parse_time_arg(input)
+                let arg = parse_time_arg(input, TimeCtx::now())
                     .unwrap_or_else(|e| panic!("parse_time_arg({input:?}) line {lineno}: {e}"));
                 assert_eq!(
                     arg.offset,
@@ -272,7 +274,7 @@ fn absolute_time_goldens_match_parse_time_arg() {
         let input = cols[0];
         let want = cols[1];
 
-        let arg = parse_time_arg(input)
+        let arg = parse_time_arg(input, TimeCtx::now())
             .unwrap_or_else(|e| panic!("parse_time_arg({input:?}) line {lineno}: {e}"));
         let got = arg.absolute.unwrap_or_else(|| {
             panic!("absolute_times line {lineno}: no absolute time for {input:?}")
@@ -309,7 +311,7 @@ fn iso_datetime_goldens_route_through_correct_branch() {
         let input = cols[1];
         let want = cols[2];
 
-        let arg = parse_time_arg(input)
+        let arg = parse_time_arg(input, TimeCtx::now())
             .unwrap_or_else(|e| panic!("parse_time_arg({input:?}) line {lineno}: {e}"));
 
         match kind {

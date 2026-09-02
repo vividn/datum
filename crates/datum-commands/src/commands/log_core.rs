@@ -14,6 +14,7 @@ use datum_core::{
     field_spec::{self, InterpolationContext},
     time::{
         parse_date_arg, parse_duration, parse_time_arg, resolve_timezone, DatumTime, TimeBuilder,
+        TimeCtx,
     },
 };
 use serde_json::Value as JsonValue;
@@ -1706,11 +1707,11 @@ pub(crate) fn build_time_with_precision(
         .with_full_day(args.time.full_day);
 
     if let Some(d) = &args.time.date {
-        let da = parse_date_arg(d)?;
+        let da = parse_date_arg(d, TimeCtx::now())?;
         builder = builder.with_date_arg(da);
     }
     if let Some(t) = &args.time.time {
-        let ta = parse_time_arg(t)?;
+        let ta = parse_time_arg(t, TimeCtx::now())?;
         builder = builder.with_time_arg(ta);
     }
 

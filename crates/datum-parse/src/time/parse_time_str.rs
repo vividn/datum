@@ -3,6 +3,8 @@
 use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
 
 use crate::error::{ParseError, Result};
+use crate::time::context::TimeCtx;
+use crate::time::parse_date_str::{parse_date_arg, DateArg};
 use crate::time::parse_duration_str::parse_duration;
 use crate::time::uncertainty::{
     parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
@@ -24,6 +26,10 @@ pub struct TimeArg {
     /// (`2024-03-16T15:30:00`). Caller interprets the wall-clock moment
     /// in its current effective timezone.
     pub iso_naive: Option<NaiveDateTime>,
+    /// Date-only fallback: the input named a day rather than a clock time
+    /// (`sunday`, `yesterday`, `apr29`, `2024-03-16`), so it was parsed as
+    /// a `-d` argument instead. Callers route it through their date path.
+    pub date: Option<DateArg>,
     pub uncertainty: Option<Uncertainty>,
     /// Trailing `+` / `-` direction hint. Forces resolution into the next
     /// (`Future`) or most-recent-prior (`Past`) occurrence. Already-pinned
@@ -52,10 +58,17 @@ pub fn count_stacked_flag(s: &str, ch: char) -> Option<usize> {
 ///                                         (caller interprets in effective tz)
 /// plus an optional trailing uncertainty `±N[unit]` / `+-N[unit]`.
 ///
+/// Anything that names a *day* rather than a clock time falls through to
+/// [`parse_date_arg`] and comes back in [`TimeArg::date`] — so `sunday`,
+/// `yesterday` and `apr29` are accepted here too, and a caller wanting
+/// "either a time or a date" needs only this one call.
+///
 /// An unsigned integer that is not a valid clock time (e.g. `2500`) is
 /// rejected rather than treated as a relative minute-offset — relative
-/// offsets require an explicit leading sign (`+2500` / `-2500`).
-pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
+/// offsets require an explicit leading sign (`+2500` / `-2500`). That
+/// rejection is final: it must not reach the date fallback, where `2500`
+/// would read as a 2500-day offset.
+pub fn parse_time_arg(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
     // Direction suffix (`+` / `-`) sits at the very tail, after any
     // uncertainty marker. Strip it first so `3±5m+` and `3+` both work.
     let (s_no_dir, direction) = split_direction_suffix(s)?;
@@ -69,6 +82,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
             absolute: None,
             iso_instant: None,
             iso_naive: None,
+            date: None,
             uncertainty,
             direction,
         });
@@ -84,6 +98,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                 absolute: None,
                 iso_instant: Some(dt.with_timezone(&Utc)),
                 iso_naive: None,
+                date: None,
                 uncertainty,
                 direction,
             });
@@ -99,6 +114,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                     absolute: None,
                     iso_instant: None,
                     iso_naive: Some(naive),
+                    date: None,
                     uncertainty,
                     direction,
                 });
@@ -122,6 +138,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                 absolute: None,
                 iso_instant: None,
                 iso_naive: None,
+                date: None,
                 uncertainty,
                 direction,
             })
@@ -140,6 +157,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                 absolute: Some(t),
                 iso_instant: None,
                 iso_naive: None,
+                date: None,
                 uncertainty,
                 direction,
             });
@@ -163,6 +181,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
             absolute: Some(t),
             iso_instant: None,
             iso_naive: None,
+            date: None,
             uncertainty,
             direction,
         });
@@ -176,6 +195,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
             absolute: Some(t),
             iso_instant: None,
             iso_naive: None,
+            date: None,
             uncertainty,
             direction,
         });
@@ -195,10 +215,25 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                 absolute: Some(t),
                 iso_instant: None,
                 iso_naive: None,
+                date: None,
                 uncertainty,
                 direction,
             });
         }
+    }
+
+    // Not a clock time — try it as a date. The original `s` goes in so
+    // the date parser re-reads the direction/uncertainty suffixes itself.
+    if let Ok(date) = parse_date_arg(s, ctx) {
+        return Ok(TimeArg {
+            offset: None,
+            absolute: None,
+            iso_instant: None,
+            iso_naive: None,
+            uncertainty: date.uncertainty.clone(),
+            direction: date.direction,
+            date: Some(date),
+        });
     }
 
     Err(ParseError::InvalidTime(format!("Cannot parse time: '{s}'")))

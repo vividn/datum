@@ -16,6 +16,9 @@
 //!   `"june 18"`, `"2 days ago"`, …). The parity audit lists this as an
 //!   explicit non-port — daydumb returns `InvalidTime` for those
 //!   forms, and callers can pre-process NL inputs before handing off.
+//!   Single-word day forms (`yesterday`, `sunday`) are *not* part of the
+//!   non-port: `parse_date_arg` handles them from a bounded vocabulary,
+//!   and `-t` reaches them through its date fallback (da-0gs4).
 //!
 //! See `docs/parity-audit/parsing.md` ("`timeArgs.ts`") for the spec.
 
@@ -24,7 +27,7 @@ use chrono_tz::Tz;
 
 use crate::error::{ParseError, Result};
 use crate::input::flag_registry::{FlagAction, FlagSpec};
-use crate::time::{parse_date_arg, parse_time_arg, DatumTime, Direction, Uncertainty};
+use crate::time::{parse_date_arg, parse_time_arg, DatumTime, Direction, TimeCtx, Uncertainty};
 
 /// Parsed shape of the timing flag group.
 #[derive(Debug, Clone, Default)]
@@ -101,7 +104,7 @@ impl TimeArgs {
         let mut uncertainty: Option<Uncertainty> = None;
 
         if let Some(ref s) = self.time {
-            cur = apply_time_arg(cur, s, &mut uncertainty)?;
+            cur = apply_time_arg(cur, s, &mut uncertainty, tz_name.as_deref())?;
             unmodified = false;
         }
 
@@ -308,11 +311,24 @@ fn apply_time_arg(
     cur: DatumTime,
     s: &str,
     uncertainty: &mut Option<Uncertainty>,
+    tz_name: Option<&str>,
 ) -> Result<DatumTime> {
-    // Try daydumb's structured parser first.
-    if let Ok(arg) = parse_time_arg(s) {
+    // Try daydumb's structured parser first. Ambiguous forms resolve
+    // against the running `cur`, so `-t` reads relative to whatever the
+    // earlier flags already established rather than to wall-clock now.
+    let ctx = TimeCtx::at(cur.local_time().naive_local());
+    if let Ok(arg) = parse_time_arg(s, ctx) {
         if let Some(u) = arg.uncertainty {
             *uncertainty = Some(u);
+        }
+        // The value named a day, not a clock time (`-t sunday`). It fell
+        // back to the date parser, so it takes the date path here too.
+        if let Some(date) = arg.date {
+            return if let Some(abs) = date.absolute {
+                set_date(cur, abs, tz_name)
+            } else {
+                shift_days(cur, date.days_offset, tz_name)
+            };
         }
         // ISO-8601 instant (`...Z` / `...+02:00`) — the wall clock and zone
         // are fully resolved by the literal. We keep the entry's `timezone`
@@ -369,7 +385,8 @@ fn apply_date_arg(
     uncertainty: &mut Option<Uncertainty>,
     tz_name: Option<&str>,
 ) -> Result<DatumTime> {
-    if let Ok(arg) = parse_date_arg(s) {
+    let ctx = TimeCtx::at(cur.local_time().naive_local());
+    if let Ok(arg) = parse_date_arg(s, ctx) {
         if let Some(u) = arg.uncertainty {
             *uncertainty = Some(u);
         }

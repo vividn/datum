@@ -67,6 +67,11 @@ CLI parses `weight=75.2kg` → annotated form automatically.
 - `-d -1` = yesterday, `-d +1` = tomorrow (day offset)
 - `-t -8` = 8 min ago, `-t +5` = 5 min ahead (minute offset)
 - `-t 1513` = 15:13 today, `-t 9:15am` = natural time
+- `-d yesterday` / `today` / `tomorrow`; `-d sunday` = the most recent
+  Sunday, `-d sunday+` = the coming one (trailing `+`/`-` forces the
+  direction, and applies to `apr29`-style dates too)
+- `-t` accepts anything `-d` does — day words, weekdays, `2024-03-16` —
+  so a caller holding "either a time or a date" needs only one flag
 - `--dur 30m` = duration (30 min, 1:30, 2h, ISO PT30M all work)
 
 ### Syntax variants (both must work)

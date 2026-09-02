@@ -3,6 +3,8 @@
 //! Submodules mirror the layout the R2 bead calls for (and the original
 //! datum `src/time/` TS module):
 //!
+//! * [`context`] — `TimeCtx` / `DefaultDirection`: what ambiguous input
+//!   resolves against.
 //! * [`precision`] — `PrecisionUnit` (formerly in `datum-core::entry`).
 //! * [`uncertainty`] — `Uncertainty` struct + `±N[unit]` suffix parsing.
 //! * [`datum_time`] — `DatumTime` (UTC + offset + IANA name).
@@ -18,6 +20,7 @@
 pub mod builder;
 #[cfg(feature = "native")]
 pub mod clock;
+pub mod context;
 pub mod datum_time;
 pub mod get_timezone;
 pub mod human_time;
@@ -28,6 +31,7 @@ pub mod precision;
 pub mod uncertainty;
 
 pub use builder::TimeBuilder;
+pub use context::{DefaultDirection, TimeCtx};
 pub use datum_time::DatumTime;
 pub use parse_date_str::{parse_date_arg, DateArg};
 pub use parse_duration_str::{

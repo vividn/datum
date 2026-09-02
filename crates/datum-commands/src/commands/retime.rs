@@ -19,7 +19,7 @@ use datum_core::{
     db::{Db, RetimeFilter},
     entry::Entry,
     ids::{resolve_quickid_single, Slug},
-    time::{parse_date_arg, parse_time_arg, DatumTime, TimeBuilder},
+    time::{parse_date_arg, parse_time_arg, DatumTime, TimeBuilder, TimeCtx},
 };
 
 use crate::args::RetimeArgs;
@@ -205,7 +205,7 @@ fn relative_delta(time: &datum_parse::input::TimeArgs) -> Result<chrono::Duratio
         delta -= chrono::Duration::minutes(time.quick as i64 * 5);
     }
     if let Some(t) = &time.time {
-        let ta = parse_time_arg(t)?;
+        let ta = parse_time_arg(t, TimeCtx::now())?;
         if let Some(off) = ta.offset {
             delta += off;
         } else if ta.absolute.is_some() || ta.iso_instant.is_some() || ta.iso_naive.is_some() {
@@ -216,7 +216,7 @@ fn relative_delta(time: &datum_parse::input::TimeArgs) -> Result<chrono::Duratio
         }
     }
     if let Some(d) = &time.date {
-        let da = parse_date_arg(d)?;
+        let da = parse_date_arg(d, TimeCtx::now())?;
         if da.absolute.is_some() {
             anyhow::bail!(
                 "-r/--relative does not support absolute date forms (-d YYYY-MM-DD); \
@@ -238,10 +238,10 @@ fn build_absolute(args: &RetimeArgs) -> Result<(DatumTime, datum_core::time::Unc
         .with_quick_precision(args.time.quick)
         .with_full_day(args.time.full_day);
     if let Some(d) = &args.time.date {
-        builder = builder.with_date_arg(parse_date_arg(d)?);
+        builder = builder.with_date_arg(parse_date_arg(d, TimeCtx::now())?);
     }
     if let Some(t) = &args.time.time {
-        builder = builder.with_time_arg(parse_time_arg(t)?);
+        builder = builder.with_time_arg(parse_time_arg(t, TimeCtx::now())?);
     }
     if let Some(tz) = &args.time.timezone {
         let resolved = datum_core::time::resolve_timezone(tz)

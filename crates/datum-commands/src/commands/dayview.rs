@@ -26,7 +26,7 @@ use datum_layout::dayview::{
 };
 use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
 use datum_parse::cli::DayviewOrientation;
-use datum_parse::time::{parse_date_arg, DateArg};
+use datum_parse::time::{parse_date_arg, DateArg, TimeCtx};
 
 use crate::args::DayviewArgs;
 use crate::commands::field_visuals::{occur_time_ms, render_field_visuals, switch_region_end_ms};
@@ -356,7 +356,7 @@ fn rasterize_to_png(svg_xml: &str) -> Result<Vec<u8>> {
 
 /// Resolve an absolute or relative date arg against `today`.
 fn resolve_date_arg(s: &str, today: NaiveDate) -> Result<NaiveDate> {
-    let parsed: DateArg = parse_date_arg(s).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let parsed: DateArg = parse_date_arg(s, TimeCtx::now()).map_err(|e| anyhow::anyhow!("{e}"))?;
     if let Some(d) = parsed.absolute {
         return Ok(d);
     }

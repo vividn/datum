@@ -112,6 +112,11 @@ impl TimeBuilder {
     }
 
     pub fn with_time_arg(mut self, arg: TimeArg) -> Self {
+        // `-t sunday` / `-t 2024-03-16`: the value named a day, not a
+        // clock, so it takes the date path and lands as a date-only event.
+        if let Some(date) = arg.date {
+            return self.with_date_arg(date);
+        }
         if let Some(instant) = arg.iso_instant {
             self.iso_instant_override = Some(instant);
         } else if let Some(naive) = arg.iso_naive {
@@ -447,6 +452,7 @@ mod tests {
                 absolute: Some(NaiveTime::from_hms_opt(5, 0, 0).unwrap()),
                 iso_instant: None,
                 iso_naive: None,
+                date: None,
                 offset: None,
                 uncertainty: None,
                 direction: None,
@@ -481,6 +487,7 @@ mod tests {
                         .and_hms_opt(1, 30, 0)
                         .unwrap(),
                 ),
+                date: None,
                 offset: None,
                 uncertainty: None,
                 direction: None,
@@ -518,6 +525,7 @@ mod tests {
                     .and_hms_opt(1, 30, 0)
                     .unwrap(),
             ),
+            date: None,
             offset: None,
             uncertainty: None,
             direction: None,
@@ -551,6 +559,7 @@ mod tests {
                 absolute: Some(NaiveTime::from_hms_opt(14, 37, 0).unwrap()),
                 iso_instant: None,
                 iso_naive: None,
+                date: None,
                 offset: None,
                 uncertainty: None,
                 direction: None,
