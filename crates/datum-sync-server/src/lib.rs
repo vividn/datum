@@ -357,6 +357,16 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
+    /// The rows out of a `GET /v0/pull` body. The response is an object
+    /// (`{device_high_seq, changesets}`) rather than a bare array since
+    /// da-od2t, so tests reach through it for the rows.
+    async fn pull_rows(response: axum::response::Response) -> Vec<serde_json::Value> {
+        json_body(response).await["changesets"]
+            .as_array()
+            .expect("pull response carries a `changesets` array")
+            .clone()
+    }
+
     #[tokio::test]
     async fn test_health_check() {
         let app = build_app(test_state());
@@ -467,9 +477,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(pull_resp.status(), StatusCode::OK);
-        let changesets: Vec<serde_json::Value> =
-            serde_json::from_slice(&pull_resp.into_body().collect().await.unwrap().to_bytes())
-                .unwrap();
+        let changesets = pull_rows(pull_resp).await;
         assert_eq!(changesets.len(), 1);
         assert_eq!(changesets[0]["device_id"], "device-1");
         assert_eq!(changesets[0]["payload_b64"], "SGVsbG8gV29ybGQ");
@@ -564,9 +572,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(pull_resp.status(), StatusCode::OK);
-        let changesets: Vec<serde_json::Value> =
-            serde_json::from_slice(&pull_resp.into_body().collect().await.unwrap().to_bytes())
-                .unwrap();
+        let changesets = pull_rows(pull_resp).await;
         assert_eq!(changesets.len(), 3, "device-2 should see 3 changesets");
 
         let pull_resp2 = build_app(state)
@@ -580,9 +586,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let self_view: Vec<serde_json::Value> =
-            serde_json::from_slice(&pull_resp2.into_body().collect().await.unwrap().to_bytes())
-                .unwrap();
+        let self_view = pull_rows(pull_resp2).await;
         assert_eq!(
             self_view.len(),
             0,
@@ -628,8 +632,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let batch1: Vec<serde_json::Value> =
-            serde_json::from_slice(&resp1.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let batch1 = pull_rows(resp1).await;
         assert_eq!(batch1.len(), 2);
 
         let body = serde_json::json!({
@@ -663,10 +666,79 @@ mod tests {
             )
             .await
             .unwrap();
-        let batch2: Vec<serde_json::Value> =
-            serde_json::from_slice(&resp2.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let batch2 = pull_rows(resp2).await;
         assert_eq!(batch2.len(), 1, "should only get the new changeset");
         assert_eq!(batch2[0]["payload_b64"], "p3");
+    }
+
+    /// da-od2t: a pull states the highest `seq` the relay holds for the
+    /// *calling* device, so a client can tell that the relay it is
+    /// talking to no longer has changesets it already pushed. It counts
+    /// the caller's own rows (which the row list deliberately excludes)
+    /// and is 0 when the relay holds none.
+    #[tokio::test]
+    async fn pull_reports_the_callers_own_high_seq() {
+        let state = test_state();
+        let (_, token) = make_test_jwt(&state);
+
+        let pull = |device: &'static str| {
+            let state = state.clone();
+            let token = token.clone();
+            async move {
+                let resp = build_app(state)
+                    .oneshot(
+                        Request::builder()
+                            .method("GET")
+                            .uri(format!(
+                                "/v0/pull?since=0&device={device}&cluster_id=test-cluster&generation=0"
+                            ))
+                            .header("Authorization", format!("Bearer {token}"))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), StatusCode::OK);
+                json_body(resp).await
+            }
+        };
+
+        // A relay holding nothing for this device reports 0 — which is
+        // what a replacement reports to a client that has pushed before.
+        assert_eq!(pull("device-1").await["device_high_seq"], 0);
+
+        for seq in 1..=2 {
+            let body = serde_json::json!({
+                "device_id": "device-1",
+                "payload_b64": format!("p{seq}"),
+                "cluster_id": "test-cluster",
+                "generation": 0,
+                "predicted_seq": seq,
+            });
+            let resp = build_app(state.clone())
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v0/push")
+                        .header("Authorization", format!("Bearer {}", token))
+                        .header("Content-Type", "application/json")
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+
+        let mine = pull("device-1").await;
+        assert_eq!(mine["device_high_seq"], 2, "counts the caller's own rows");
+        assert_eq!(
+            mine["changesets"].as_array().unwrap().len(),
+            0,
+            "which the row list still excludes",
+        );
+        // Per-device: a peer's rows are not this device's high seq.
+        assert_eq!(pull("device-2").await["device_high_seq"], 0);
     }
 
     /// da-3huo: an expired device-code grant is reclaimed by the next
@@ -1308,16 +1380,16 @@ mod tests {
                     .await
                     .unwrap();
                 assert_eq!(resp.status(), StatusCode::OK);
-                json_body(resp).await
+                pull_rows(resp).await
             }
         };
 
         let alice_rows = pull(alice_token, "alice-dev-2").await;
-        assert_eq!(alice_rows.as_array().unwrap().len(), 1);
+        assert_eq!(alice_rows.len(), 1);
         assert_eq!(alice_rows[0]["payload_b64"], "QUxJQ0U");
 
         let bob_rows = pull(bob_token, "bob-dev-2").await;
-        assert_eq!(bob_rows.as_array().unwrap().len(), 1);
+        assert_eq!(bob_rows.len(), 1);
         assert_eq!(bob_rows[0]["payload_b64"], "Qk9C");
     }
 
@@ -1453,8 +1525,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(pull.status(), StatusCode::OK);
-        let rows: Vec<serde_json::Value> =
-            serde_json::from_slice(&pull.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let rows = pull_rows(pull).await;
         assert_eq!(rows.len(), 1, "rejected push must not be stored");
         assert_eq!(rows[0]["payload_b64"], "AA");
     }
@@ -1565,10 +1636,7 @@ mod tests {
                     .unwrap(),
             )
         };
-        let rows = |resp: axum::response::Response| async {
-            let bytes = resp.into_body().collect().await.unwrap().to_bytes();
-            serde_json::from_slice::<Vec<serde_json::Value>>(&bytes).unwrap()
-        };
+        let rows = |resp: axum::response::Response| async { pull_rows(resp).await };
 
         let page = rows(pull("&limit=2").await.unwrap()).await;
         assert_eq!(page.len(), 2, "the page is capped at the requested limit");

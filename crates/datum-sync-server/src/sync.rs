@@ -9,7 +9,7 @@ use std::sync::Arc;
 use crate::{
     cluster, db,
     error::AppError,
-    models::{AuthenticatedUser, Changeset, PushRequest, PushResponse},
+    models::{AuthenticatedUser, Changeset, PullResponse, PushRequest, PushResponse},
     AppState,
 };
 
@@ -128,7 +128,7 @@ pub async fn pull(
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<AuthenticatedUser>,
     Query(q): Query<PullQuery>,
-) -> Result<Json<Vec<Changeset>>, AppError> {
+) -> Result<Json<PullResponse>, AppError> {
     let conn = state.db.lock().unwrap();
 
     let (server_generation, gen_started_at) =
@@ -176,5 +176,17 @@ pub async fn pull(
         )
         .collect();
 
-    Ok(Json(changesets))
+    // da-od2t: state what we still hold for the *caller's* device. A pull
+    // is the one call every client makes whether or not it has anything to
+    // send, so it is where a client with a full push watermark and nothing
+    // pending can still learn that this relay has lost its history — a
+    // replaced server, or one restored from a backup predating those
+    // pushes. `peek_next_seq` is the authoritative next value; the highest
+    // held is one below it, and 0 when we hold none.
+    let device_high_seq = db::peek_next_seq(&conn, &q.device, Some(&q.cluster_id))? - 1;
+
+    Ok(Json(PullResponse {
+        device_high_seq,
+        changesets,
+    }))
 }

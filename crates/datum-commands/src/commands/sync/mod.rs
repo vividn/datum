@@ -108,6 +108,11 @@ pub struct SyncOutcome {
     /// the relay's authoritative seq (da-ca4q). The CLI prints this as a
     /// stderr warning; the library never prints (da-60gf).
     pub seq_rebased: Option<datum_sync_client::sync_once::SeqRebase>,
+    /// `Some` when this cycle found the relay no longer holding
+    /// changesets this device already pushed — a replaced relay — and
+    /// re-sent the whole local history (da-od2t). Printed, because a
+    /// replaced relay left silently under-populated is the defect.
+    pub relay_rewound: Option<datum_sync_client::sync_once::RelayRewind>,
 }
 
 fn run_sync(args: SyncArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
@@ -129,7 +134,15 @@ fn run_sync(args: SyncArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
         &mut StdIoPrompter,
     )?;
 
-    if let Some(r) = &outcome.seq_rebased {
+    if let Some(r) = &outcome.relay_rewound {
+        eprintln!(
+            "warning: the sync server is missing {} change{} this device \
+             already pushed — it was replaced or restored from an older \
+             backup; re-sent this device's full history",
+            r.missing,
+            plural(r.missing as usize),
+        );
+    } else if let Some(r) = &outcome.seq_rebased {
         eprintln!(
             "warning: sync seq diverged for device {} \
              (predicted {}, relay expected {}); re-based and retried",
@@ -326,6 +339,7 @@ fn run_sync_inner_with_recovery(
         superseded_skipped: report.pull.superseded_skipped,
         dry_run,
         seq_rebased: report.push.seq_rebased,
+        relay_rewound: report.pull.relay_rewound.or(report.push.relay_rewound),
     })
 }
 

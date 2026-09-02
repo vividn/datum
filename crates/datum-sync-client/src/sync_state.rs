@@ -259,6 +259,69 @@ pub fn set_device_seq(db: &Db, new_seq: u64) -> Result<()> {
     Ok(())
 }
 
+/// Force `push_mark` to an exact value, bypassing the monotonic guard in
+/// [`advance_push_mark`]. Used ONLY by the replaced-relay recovery
+/// (da-od2t): the watermark's whole meaning is "the relay already has
+/// everything up to here", so once the relay demonstrably does not, the
+/// watermark is not stale — it is wrong, and rewinding it is the repair.
+pub fn reset_push_mark(db: &Db, new_seq: u64) -> Result<()> {
+    let now_ms = Utc::now().timestamp_millis();
+    db.conn().execute(
+        "INSERT INTO sync_state (db_id, push_mark, last_push_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(db_id) DO UPDATE SET
+            push_mark    = excluded.push_mark,
+            last_push_at = excluded.last_push_at",
+        params![DEFAULT_DB_ID, new_seq as i64, now_ms],
+    )?;
+    Ok(())
+}
+
+/// React to the relay stating that the highest per-device `seq` it holds
+/// for us is `relay_high_seq` (da-od2t).
+///
+/// A relay below our own `device_seq` has lost changesets we already
+/// pushed — it was replaced, or restored from a backup predating them.
+/// Nothing local is wrong, but three watermarks now lie:
+///
+/// - `device_seq` claims a push counter the relay never reached,
+/// - `push_mark` claims the relay holds our history up to that point,
+/// - `pull_seq` claims a relay-global row id the restarted id space has
+///   not issued yet, so every re-pushed peer row would sort below it.
+///
+/// Rewinding all three is what makes a relay genuinely replaceable: the
+/// next push re-sends this device's whole history rather than declining
+/// to re-send what the relay is silently missing. Re-pushing and
+/// re-pulling are idempotent (content-hash dedup + LWW apply), so the
+/// only cost of a false positive is bandwidth.
+///
+/// Returns `Some(missing)` — how many of our pushes the relay has lost —
+/// when a rewind happened, `None` when the relay is level or ahead.
+pub fn rewind_for_replaced_relay(db: &Db, relay_high_seq: u64) -> Result<Option<u64>> {
+    let local = get_device_seq(db)?;
+    if relay_high_seq >= local {
+        return Ok(None);
+    }
+    let conn = db.conn();
+    conn.execute("BEGIN", [])?;
+    let inner: Result<()> = (|| {
+        set_device_seq(db, relay_high_seq)?;
+        reset_push_mark(db, 0)?;
+        reset_pull_seq(db, 0)?;
+        Ok(())
+    })();
+    match inner {
+        Ok(()) => {
+            conn.execute("COMMIT", [])?;
+            Ok(Some(local - relay_high_seq))
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
 fn read_seq_column(db: &Db, col: &str) -> Result<u64> {
     let sql = format!("SELECT {col} FROM sync_state WHERE db_id = ?1",);
     let got: Option<i64> = db
@@ -469,6 +532,34 @@ mod tests {
         // And resets to 0 (the canonical recovery case — re-pull
         // everything at the new generation).
         reset_pull_seq(&db, 0).unwrap();
+        assert_eq!(get_pull_seq(&db).unwrap(), 0);
+    }
+
+    /// da-od2t: a relay that reports a lower per-device high seq than we
+    /// hold has lost pushes we made, so all three watermarks rewind and
+    /// the next push re-sends the whole history. A relay that is level
+    /// or ahead leaves them untouched.
+    #[test]
+    fn rewind_for_replaced_relay_only_fires_when_the_relay_is_behind() {
+        let db = fresh_db();
+        advance_device_seq(&db, 3).unwrap();
+        advance_push_mark(&db, 1_700_000_000_000).unwrap();
+        advance_pull_seq(&db, 42).unwrap();
+
+        // Level: nothing to repair.
+        assert_eq!(rewind_for_replaced_relay(&db, 3).unwrap(), None);
+        assert_eq!(get_push_mark(&db).unwrap(), 1_700_000_000_000);
+        assert_eq!(get_pull_seq(&db).unwrap(), 42);
+
+        // Ahead (a peer pushed under our device_id, or we crashed before
+        // recording our own push): still not a replaced relay.
+        assert_eq!(rewind_for_replaced_relay(&db, 9).unwrap(), None);
+        assert_eq!(get_device_seq(&db).unwrap(), 3);
+
+        // Behind: the relay is missing 3 of our pushes.
+        assert_eq!(rewind_for_replaced_relay(&db, 0).unwrap(), Some(3));
+        assert_eq!(get_device_seq(&db).unwrap(), 0);
+        assert_eq!(get_push_mark(&db).unwrap(), 0);
         assert_eq!(get_pull_seq(&db).unwrap(), 0);
     }
 

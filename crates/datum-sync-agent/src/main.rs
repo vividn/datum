@@ -303,6 +303,13 @@ fn do_push(target: &SyncTarget) -> Result<usize> {
         &db,
         false,
     )?;
+    if let Some(r) = &out.relay_rewound {
+        warn!(
+            db = %target.name, missing = r.missing,
+            "sync server is missing changes this device already pushed \
+             (replaced or restored relay); re-sent the full local history"
+        );
+    }
     if let Some(r) = &out.seq_rebased {
         warn!(
             db = %target.name, device_id = %r.device_id,

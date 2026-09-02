@@ -211,6 +211,23 @@ pub struct SeqRebase {
     pub predicted: u64,
     /// Authoritative seq the relay expected; the retry used this value.
     pub expected: u64,
+    /// The re-base was *downward*: the relay's next seq sat below what
+    /// this device had already pushed, so the relay has lost rows rather
+    /// than merely disagreed about the next one (da-od2t). The push
+    /// rewound its watermarks and replayed the whole local history.
+    pub relay_rewound: bool,
+}
+
+/// Emitted when a run discovered that the relay no longer holds
+/// changesets this device already pushed — a replaced relay, or one
+/// restored from a backup predating them (da-od2t). The run rewound its
+/// watermarks and re-sent the device's whole history rather than leaving
+/// the cluster silently short. Library code never prints; the CLI turns
+/// this into a warning and the daemon logs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RelayRewind {
+    /// How many of this device's pushes the relay was missing.
+    pub missing: u64,
 }
 
 /// Result of a push run — how many rows went up the wire this time.
@@ -225,6 +242,9 @@ pub struct PushOutcome {
     /// warning; daemon: tracing). Holds the most recent re-base of the
     /// run.
     pub seq_rebased: Option<SeqRebase>,
+    /// `Some` when the push found the relay behind this device's own
+    /// seq and re-sent the whole local history (da-od2t).
+    pub relay_rewound: Option<RelayRewind>,
 }
 
 /// Result of a pull run.
@@ -241,6 +261,11 @@ pub struct PullOutcome {
     /// generation (da-pjhg). Counted rather than dropped silently — a
     /// device that ignores incoming data should say how much.
     pub superseded_skipped: usize,
+    /// `Some` when the pull found the relay behind this device's own
+    /// seq and rewound the watermarks so the push phase re-sends the
+    /// whole local history (da-od2t). Pull is where a device with
+    /// nothing pending learns this at all.
+    pub relay_rewound: Option<RelayRewind>,
 }
 
 /// Tally of a full [`sync_once`] cycle.
@@ -353,6 +378,9 @@ pub fn push_once_with(
     // count, without committing anything to the DB).
     let mut watermark = sync_state::get_push_mark(db)?;
     let mut outcome = PushOutcome::default();
+    // Set once, by the first page whose ack revealed a relay behind our
+    // own seq (da-od2t); cleared when the walk restarts from zero.
+    let mut replay_from_zero = false;
 
     loop {
         // `max_ms` is the largest `modify_time_ms` over exactly the packed
@@ -376,6 +404,19 @@ pub fn push_once_with(
                 &local_cluster,
                 local_generation,
             )?;
+            if seq_rebased.as_ref().is_some_and(|r| r.relay_rewound)
+                && outcome.relay_rewound.is_none()
+            {
+                // `push_mark` is 0 now; the whole local history is pending
+                // again, so re-walk it from the start after this page.
+                replay_from_zero = true;
+                outcome.relay_rewound = Some(RelayRewind {
+                    missing: seq_rebased
+                        .as_ref()
+                        .map(|r| r.predicted.saturating_sub(r.expected))
+                        .unwrap_or(0),
+                });
+            }
             if seq_rebased.is_some() {
                 outcome.seq_rebased = seq_rebased;
             }
@@ -400,6 +441,18 @@ pub fn push_once_with(
             entries: entry_count,
             total: outcome.pushed,
         });
+
+        // da-od2t: `push_page` rewound `push_mark` to 0 because the relay
+        // turned out not to hold our history. Restart the walk from there
+        // instead of advancing past a page the relay never had — once per
+        // run, since the relay is level with us from here on. Re-sending
+        // the page we just sent is harmless: apply is content-addressed
+        // and last-write-wins.
+        if replay_from_zero {
+            replay_from_zero = false;
+            watermark = 0;
+            continue;
+        }
 
         // Advance past the page we just sent. A cursor that doesn't move
         // (no packed row carried a usable epoch-ms metric) would re-send
@@ -482,6 +535,14 @@ fn push_page(
                 ),
                 other => anyhow::Error::new(other),
             })?;
+            // da-od2t: `expected - 1` is the highest seq the relay still
+            // holds for us. Below our own `device_seq` it has *lost*
+            // pushes we made (replaced relay, or one restored from a
+            // backup predating them) rather than merely disagreed about
+            // the next one — so rewind the watermarks before adopting
+            // its seq, and let the caller replay the whole history.
+            let relay_rewound =
+                sync_state::rewind_for_replaced_relay(db, expected.saturating_sub(1))?;
             // The relay is authoritative here and `expected` may sit
             // *below* our stored value (relay reset / older-backup
             // restore), so force-set past the monotonic guard.
@@ -495,6 +556,7 @@ fn push_page(
                     device_id: device_id.to_string(),
                     predicted,
                     expected,
+                    relay_rewound: relay_rewound.is_some(),
                 }),
             ))
         }
@@ -570,9 +632,13 @@ pub fn pull_once_with(
     let mut current_generation = local_generation;
     // 1-based changeset counter across the whole run, for within-page progress.
     let mut changesets = 0usize;
+    // da-od2t: the relay states what it holds for *us* on every pull, so
+    // one check per run is enough — and pull is the only call a device
+    // with nothing pending makes at all.
+    let mut relay_checked = dry_run;
 
     loop {
-        let rows = session.run(client, |bearer| {
+        let page = session.run(client, |bearer| {
             pull_batch(
                 client,
                 server,
@@ -584,6 +650,24 @@ pub fn pull_once_with(
                 page_rows,
             )
         })?;
+
+        // A relay holding fewer of our pushes than we made has lost them:
+        // it was replaced, or restored from a backup predating them. Its
+        // row-id space restarted too, so the rewind takes `pull_seq` back
+        // to 0 and this run re-reads the cluster from the beginning; the
+        // push phase then re-sends our whole history instead of declining
+        // to re-send what the relay is silently missing.
+        if !relay_checked {
+            relay_checked = true;
+            let relay_high = page.device_high_seq.max(0) as u64;
+            if let Some(missing) = sync_state::rewind_for_replaced_relay(db, relay_high)? {
+                outcome.relay_rewound = Some(RelayRewind { missing });
+                since = 0;
+                continue;
+            }
+        }
+
+        let rows = page.rows;
         if rows.is_empty() {
             break;
         }

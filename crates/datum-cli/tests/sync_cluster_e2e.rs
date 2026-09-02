@@ -60,20 +60,25 @@ use sync_support::{env_lock, StubRelay};
 // threads, so we serialise on the same mutex sync_cluster_ops.rs uses).
 // ──────────────────────────────────────────────────────────────────────────
 
-struct TwoClientEnv {
+struct ClientEnv {
     _tmp: TempDir,
     _guard: std::sync::MutexGuard<'static, ()>,
     home_a: PathBuf,
     cfg_a: PathBuf,
     home_b: PathBuf,
     cfg_b: PathBuf,
+    /// A third install, used only by the scenarios that need a device
+    /// joining a cluster *after* the others have been syncing — the
+    /// honest way to measure what the relay actually holds.
+    home_c: PathBuf,
+    cfg_c: PathBuf,
     orig_home: Option<String>,
     orig_cfg_home: Option<String>,
     orig_db: Option<String>,
     orig_cfg: Option<String>,
 }
 
-impl TwoClientEnv {
+impl ClientEnv {
     fn new() -> Self {
         let guard = env_lock();
         let tmp = TempDir::new().expect("mk tmp");
@@ -87,10 +92,11 @@ impl TwoClientEnv {
         let cfg_a = tmp.path().join("device-A").join("config");
         let home_b = tmp.path().join("device-B").join("data");
         let cfg_b = tmp.path().join("device-B").join("config");
-        std::fs::create_dir_all(&home_a).unwrap();
-        std::fs::create_dir_all(&cfg_a).unwrap();
-        std::fs::create_dir_all(&home_b).unwrap();
-        std::fs::create_dir_all(&cfg_b).unwrap();
+        let home_c = tmp.path().join("device-C").join("data");
+        let cfg_c = tmp.path().join("device-C").join("config");
+        for dir in [&home_a, &cfg_a, &home_b, &cfg_b, &home_c, &cfg_c] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
         Self {
             _tmp: tmp,
             _guard: guard,
@@ -98,6 +104,8 @@ impl TwoClientEnv {
             cfg_a,
             home_b,
             cfg_b,
+            home_c,
+            cfg_c,
             orig_home,
             orig_cfg_home,
             orig_db,
@@ -117,9 +125,14 @@ impl TwoClientEnv {
         std::env::set_var("DATUM_HOME", &self.home_b);
         std::env::set_var("DATUM_CONFIG_HOME", &self.cfg_b);
     }
+
+    fn use_c(&self) {
+        std::env::set_var("DATUM_HOME", &self.home_c);
+        std::env::set_var("DATUM_CONFIG_HOME", &self.cfg_c);
+    }
 }
 
-impl Drop for TwoClientEnv {
+impl Drop for ClientEnv {
     fn drop(&mut self) {
         for (key, prev) in [
             ("DATUM_HOME", &self.orig_home),
@@ -171,15 +184,11 @@ fn configure_default_server(server: &str) {
 /// device joins by unwrapping the same wrapped copy from the relay.
 /// Distinct device_id / token / state stay isolated via their
 /// per-DATUM_HOME paths.
-fn provision_client(
-    env: &TwoClientEnv,
-    which: &str,
-    relay: &StubRelay,
-    master_key: &[u8; 32],
-) -> Db {
+fn provision_client(env: &ClientEnv, which: &str, relay: &StubRelay, master_key: &[u8; 32]) -> Db {
     match which {
         "A" => env.use_a(),
         "B" => env.use_b(),
+        "C" => env.use_c(),
         other => panic!("unknown client tag: {other}"),
     }
     write_token_for(
@@ -290,7 +299,7 @@ fn cluster_count_on_server(relay: &StubRelay) -> i64 {
 /// shared user.
 #[test]
 fn s1_two_client_baseline_converges_under_one_cluster() {
-    let env = TwoClientEnv::new();
+    let env = ClientEnv::new();
     let relay = StubRelay::start();
     let key = [0x11u8; 32];
     let db_a = provision_client(&env, "A", &relay, &key);
@@ -339,7 +348,7 @@ fn s1_two_client_baseline_converges_under_one_cluster() {
 /// mismatch" line the underlying protocol speaks.
 #[test]
 fn s2_purge_cluster_propagates_via_generation_mismatch() {
-    let env = TwoClientEnv::new();
+    let env = ClientEnv::new();
     let relay = StubRelay::start();
     let key = [0x21u8; 32];
     let db_a = provision_client(&env, "A", &relay, &key);
@@ -405,7 +414,7 @@ fn s2_purge_cluster_propagates_via_generation_mismatch() {
 /// load-bearing assertion.
 #[test]
 fn s3_restore_cluster_propagates_via_generation_mismatch() {
-    let env = TwoClientEnv::new();
+    let env = ClientEnv::new();
     let relay = StubRelay::start();
     let key = [0x31u8; 32];
     let db_a = provision_client(&env, "A", &relay, &key);
@@ -453,7 +462,7 @@ fn s3_restore_cluster_propagates_via_generation_mismatch() {
 /// the server tracks watermarks per (cluster_id, device_id) pair.
 #[test]
 fn s4_multi_db_per_user_isolates_clusters() {
-    let env = TwoClientEnv::new();
+    let env = ClientEnv::new();
     let relay = StubRelay::start();
     let key = [0x41u8; 32];
     // Re-purpose the two DATUM_HOMEs as two "DB installs" for the same
@@ -527,7 +536,7 @@ fn s4_multi_db_per_user_isolates_clusters() {
 ///      `set_cluster_id`), then pulls and converges on A's data.
 #[test]
 fn s6_db_name_default_isolates_then_cluster_override_merges() {
-    let env = TwoClientEnv::new();
+    let env = ClientEnv::new();
     let relay = StubRelay::start();
     let key = [0x61u8; 32];
 
@@ -602,7 +611,7 @@ fn s6_db_name_default_isolates_then_cluster_override_merges() {
 /// row set matches the post-purge state A wrote.
 #[test]
 fn s5_peer_recovers_from_fork_via_purge_then_sync() {
-    let env = TwoClientEnv::new();
+    let env = ClientEnv::new();
     let relay = StubRelay::start();
     let key = [0x51u8; 32];
     let db_a = provision_client(&env, "A", &relay, &key);
@@ -739,7 +748,7 @@ fn s5_peer_recovers_from_fork_via_purge_then_sync() {
 /// anything, it has round-tripped its data through the relay.
 #[test]
 fn s7_purge_cluster_leaves_both_devices_empty_after_sync() {
-    let env = TwoClientEnv::new();
+    let env = ClientEnv::new();
     let relay = StubRelay::start();
     let key = [0x71u8; 32];
     let db_a = provision_client(&env, "A", &relay, &key);
@@ -818,7 +827,7 @@ fn s7_purge_cluster_leaves_both_devices_empty_after_sync() {
 /// 409s on every subsequent push.
 #[test]
 fn s7_mixed_generation_batch_ignores_the_old_rows_and_never_rewinds() {
-    let env = TwoClientEnv::new();
+    let env = ClientEnv::new();
     let relay = StubRelay::start();
     let key = [0x72u8; 32];
     let db_a = provision_client(&env, "A", &relay, &key);
@@ -893,7 +902,7 @@ fn s7_mixed_generation_batch_ignores_the_old_rows_and_never_rewinds() {
 /// re-merge its own pre-restore rows nor the cluster's.
 #[test]
 fn s7_restore_bump_reconciles_to_the_restored_snapshot() {
-    let env = TwoClientEnv::new();
+    let env = ClientEnv::new();
     let relay = StubRelay::start();
     let key = [0x73u8; 32];
     let db_a = provision_client(&env, "A", &relay, &key);
@@ -945,5 +954,149 @@ fn s7_restore_bump_reconciles_to_the_restored_snapshot() {
         !fields.contains(&"a-pre-restore".to_string())
             && !fields.contains(&"b-pre-restore".to_string()),
         "neither side's pre-restore rows may be merged back over the snapshot; got {fields:?}",
+    );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// SCENARIO 8 — a replaced relay (da-od2t)
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Replace the relay's storage the way spinning up a fresh server does:
+/// same URL, same user, same auth — but no cluster row, no devices, no
+/// changesets, and a row-id space that restarts at 1 (hence the
+/// `sqlite_sequence` reset; a bare DELETE leaves AUTOINCREMENT's
+/// high-water mark behind and the replacement would not be fresh).
+///
+/// Keeping the `users` row and the JWT secret is what makes this a
+/// *replaced server* rather than a different account: the first version
+/// of this scenario used a second `StubRelay` and its precondition assert
+/// caught that each relay mints its own user uuid, so it would have
+/// measured "the client moved accounts".
+fn wipe_relay_storage(relay: &StubRelay) {
+    let conn = relay.state.db.lock().unwrap();
+    conn.execute_batch(
+        "DELETE FROM changesets;
+         DELETE FROM clusters;
+         DELETE FROM devices;
+         DELETE FROM sqlite_sequence WHERE name = 'changesets';",
+    )
+    .expect("wipe relay storage");
+}
+
+/// vividn's spec: "spin up a new fresh server, connect the clients and sync
+/// just works again."
+///
+/// The half that used to fail was not "no client loses data" — nobody was
+/// ever prompted and no row was ever dropped. It was the other half: each
+/// client's push watermark still claimed the wiped relay held its history,
+/// so nobody re-sent it. Both syncs returned Ok and the cluster was
+/// silently short, which a device joining later would inherit as an
+/// incomplete history with nothing anywhere reporting a problem.
+///
+/// So the assertion that matters is made by a *third* device joining
+/// after the replacement: what it pulls is what the cluster actually
+/// holds.
+///
+/// Two internal controls keep this from passing vacuously:
+///   1. the wipe is asserted to have removed the cluster row, so a no-op
+///      wipe cannot pass;
+///   2. B holds a row A never pulled, so the cluster can only come back
+///      complete if *each* client re-sends its own history — one client
+///      re-pushing everything it happens to have is not enough.
+#[test]
+fn s8_replaced_server_must_not_cost_clients_their_history() {
+    let env = ClientEnv::new();
+    let relay = StubRelay::start();
+    let key = [0x81u8; 32];
+    let db_a = provision_client(&env, "A", &relay, &key);
+    let db_b = provision_client(&env, "B", &relay, &key);
+
+    // Baseline: A and B converge on two rows through the relay.
+    env.use_a();
+    db_a.insert_entry(&make_entry("coffee", 0, "dev-A"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_a).expect("A sync");
+    env.use_b();
+    db_b.insert_entry(&make_entry("mood", 60, "dev-B")).unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_b).expect("B sync");
+    env.use_a();
+    run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_a).expect("A sync");
+
+    // Control 2: B pushes a row A never pulls. After this the cluster's
+    // full history exists on no single device.
+    env.use_b();
+    db_b.insert_entry(&make_entry("walk", 120, "dev-B"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_b)
+        .expect("B pushes walk");
+    assert_eq!(live_rows(&db_a), 2, "A holds coffee + mood, not walk");
+    assert_eq!(live_rows(&db_b), 3, "B holds all three");
+
+    let cluster_id = sync_state::get_cluster_id(&db_a).unwrap().unwrap();
+    assert_eq!(cluster_count_on_server(&relay), 1);
+    assert_eq!(read_server_cluster_generation(&relay, &cluster_id), 0);
+    let user_before = relay.user_id;
+
+    // ── the server is replaced ────────────────────────────────────────
+    wipe_relay_storage(&relay);
+
+    // Control 1: the wipe really did remove the cluster row, so what
+    // follows measures a fresh relay and not a no-op.
+    assert_eq!(
+        cluster_count_on_server(&relay),
+        0,
+        "the replacement must have no cluster row",
+    );
+    assert_eq!(relay.changeset_count(), 0, "and no changesets");
+    assert_eq!(
+        relay.user_id, user_before,
+        "same URL, same account — a replaced server, not a different one",
+    );
+
+    // ── connect the clients and sync ──────────────────────────────────
+    env.use_a();
+    let a_out = run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_a)
+        .expect("A syncs against the replacement");
+    env.use_b();
+    let b_out = run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_b)
+        .expect("B syncs against the replacement");
+
+    // "No client loses data" — the half that already held.
+    assert_eq!(live_rows(&db_a), 2, "A kept its rows");
+    assert_eq!(live_rows(&db_b), 3, "B kept its rows");
+
+    // The replacement is not silent about it: each client reports the
+    // relay it found missing its pushes.
+    assert!(
+        a_out.relay_rewound.is_some(),
+        "A must report the replaced relay, not sync silently",
+    );
+    assert!(
+        b_out.relay_rewound.is_some(),
+        "B must report the replaced relay, not sync silently",
+    );
+
+    // "Sync just works again" — the half that failed. A device joining
+    // after the replacement is the honest measure of what the cluster
+    // holds, and it must find the whole history.
+    let db_c = provision_client(&env, "C", &relay, &key);
+    env.use_c();
+    run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_c)
+        .expect("a device joining after the replacement");
+
+    assert_eq!(
+        live_fields(&db_c),
+        vec!["coffee".to_string(), "mood".to_string(), "walk".to_string()],
+        "the replaced relay must carry the cluster's whole history",
+    );
+    assert_eq!(
+        live_hashes(&db_c),
+        live_hashes(&db_b),
+        "the joining device must converge on the cluster's full row set",
+    );
+    assert_eq!(
+        sync_state::get_cluster_id(&db_c).unwrap().as_deref(),
+        Some(cluster_id.as_str()),
+        "and under the same cluster it always had",
     );
 }

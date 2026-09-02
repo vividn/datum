@@ -354,17 +354,20 @@ row id strictly greater than `since`.
 Response (200):
 
 ```json
-[
-  {
-    "id": 128,
-    "device_id": "other-device-uuid",
-    "seq": 7,
-    "payload_b64": "...",
-    "uploaded_at": "2026-04-21T16:30:00Z",
-    "cluster_id": "<cluster identifier>",
-    "generation": 0
-  }
-]
+{
+  "device_high_seq": 4,
+  "changesets": [
+    {
+      "id": 128,
+      "device_id": "other-device-uuid",
+      "seq": 7,
+      "payload_b64": "...",
+      "uploaded_at": "2026-04-21T16:30:00Z",
+      "cluster_id": "<cluster identifier>",
+      "generation": 0
+    }
+  ]
+}
 ```
 
 - `id` is the relay-global monotonic row id — the ordering key and the
@@ -381,8 +384,54 @@ Response (200):
   [`pull_seq`](../crates/datum-sync-client/src/sync_state.rs) to the last
   processed `id` only after a batch has been fully applied to the local DB,
   then re-ask from that `id` until a page comes back empty (or short).
-- Empty response = nothing new; the client keeps its `pull_seq`.
+- Empty `changesets` = nothing new; the client keeps its `pull_seq`.
+- `device_high_seq` is the highest `seq` the relay currently holds for the
+  **calling** device in this cluster (`0` when it holds none). See
+  §Replaced relays.
 - A generation disagreement returns **409 GenerationMismatch**.
+
+### Replaced relays
+
+> "Sync servers should be very replaceable. If something goes wrong, you
+> should be able to spin up a new fresh server, connect the clients and
+> sync just works again."
+
+A relay holds no authority over history: it is transport, and a blank one
+must be re-populated **by** the clients. But a client's `push_mark` means
+"the relay already has everything up to here", so a client pointed at a
+replaced relay would decline to re-send precisely the history the relay is
+missing. Every sync returns Ok and the cluster is silently short — and a
+device joining later inherits that incomplete history (da-od2t).
+
+The relay states what it still holds for the caller's own device, so a
+client can tell:
+
+- on pull, as `device_high_seq`;
+- on push, as the `expected` of a **409 SeqMismatch** (`expected - 1` is
+  the same number).
+
+When that value sits **below** the client's own `device_seq`, the relay
+has lost changesets the client already pushed — it was replaced, or
+restored from a backup predating them. The client MUST then rewind, in one
+transaction:
+
+| Watermark    | To               | Why |
+|--------------|------------------|-----|
+| `device_seq` | the relay's value | the relay is authoritative for its own counter |
+| `push_mark`  | `0`               | re-send this device's whole history |
+| `pull_seq`   | `0`              | the relay's global row-id space restarted too, so re-read the cluster from the beginning |
+
+Both re-push and re-pull are idempotent (content-hash dedup, LWW apply),
+so the only cost of a false positive is bandwidth. Every device does this
+independently, which is what makes the cluster whole again rather than
+merely whole-on-one-device.
+
+This is deliberately **not** a generation bump. A bump means "what came
+before is void" and discards; a replaced relay means "the transport lost
+its copy" and re-populates. Nothing is deleted and no user is prompted —
+but the client MUST report the rewind (the CLI warns on stderr, the daemon
+logs it), because a relay silently missing history is the defect this
+guards against.
 
 ### Sequence-number semantics
 
@@ -414,7 +463,7 @@ for the accessors:
 | Column               | Meaning                                                          |
 |----------------------|------------------------------------------------------------------|
 | `db_id`              | Local sync identity. One row per DB (default: `"local"`).        |
-| `push_mark`           | Highest local `modified_at` epoch-ms included in a push (watermark). |
+| `push_mark`           | Highest local `modified_at` epoch-ms included in a push (watermark). Rewound to 0 on a replaced relay (§Replaced relays). |
 | `device_seq`        | This device's per-device push counter (the predicted `seq`).     |
 | `pull_seq`           | Highest relay-global `id` successfully pulled.                   |
 | `cluster_id`         | Cluster this DB is bound to (echoed by the relay; nullable until first sync). |

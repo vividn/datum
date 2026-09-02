@@ -7,8 +7,10 @@
 //!   per-device `seq` (`MAX(seq)+1`) and echoes it; the client predicts the
 //!   same value (`device_seq+1`) at encrypt time because `seq` is AAD-bound.
 //! - `GET /v0/pull?since=<id>&device=<id>&cluster_id=<c>&generation=<g>` —
-//!   returns peers' changesets ordered by the relay-global `id` (`since` is an
-//!   `id`, not a `seq`). The caller's own device is excluded server-side.
+//!   returns `{device_high_seq, changesets}`: peers' changesets ordered by
+//!   the relay-global `id` (`since` is an `id`, not a `seq`, and the
+//!   caller's own device is excluded server-side), plus the highest `seq`
+//!   the relay still holds for the caller's own device (da-od2t).
 //!
 //! The payload is the raw bytes of an [`EncryptedBlob`] (nonce ‖ ciphertext ‖ tag),
 //! base64 url-safe no-pad encoded. This module knows nothing about plaintext
@@ -20,7 +22,7 @@
 
 use anyhow::Context;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use datum_sync_protocol::messages::sync::{Changeset as WireChangeset, PushRequest, PushResponse};
+use datum_sync_protocol::messages::sync::{PullResponse, PushRequest, PushResponse};
 use datum_sync_protocol::SyncProtocolError;
 use datum_sync_protocol::PROTOCOL_VERSION_PATH;
 use reqwest::blocking::Client;
@@ -62,6 +64,18 @@ pub struct PulledChangeset {
     pub cluster_id: String,
     /// Cluster generation when the row was accepted.
     pub generation: u64,
+}
+
+/// One page of `GET /v0/pull`: the peers' rows, plus what the relay
+/// still holds for the *calling* device.
+#[derive(Debug, Clone)]
+pub struct PullPage {
+    /// Highest per-device `seq` the relay holds for this device in this
+    /// cluster (`0` when it holds none). A local `device_seq` above this
+    /// means the relay has lost changesets we already pushed — see
+    /// [`crate::sync_state::rewind_for_replaced_relay`].
+    pub device_high_seq: i64,
+    pub rows: Vec<PulledChangeset>,
 }
 
 /// POST a single encrypted changeset blob to the relay. Returns the
@@ -160,7 +174,7 @@ fn parse_sync_conflict(body: &str, context: &str) -> HttpError {
 /// Fetch up to `limit` changesets the relay has with global id > `since`
 /// that were authored by a device other than `device_id`. Rows are
 /// returned in ascending relay-global `id` order (`since` is an `id`, not
-/// a `seq`). Empty vec means nothing new; a full page means the caller
+/// a `seq`). No rows means nothing new; a full page means the caller
 /// should ask again from the last `id` it applied (da-5ua6 — a peer's
 /// whole history must not arrive in one response).
 ///
@@ -178,7 +192,7 @@ pub fn pull_batch(
     cluster_id: &str,
     generation: u64,
     limit: usize,
-) -> Result<Vec<PulledChangeset>, HttpError> {
+) -> Result<PullPage, HttpError> {
     let query: Vec<(&str, String)> = vec![
         ("since", since.to_string()),
         ("device", device_id.to_string()),
@@ -207,12 +221,12 @@ pub fn pull_batch(
             "pull failed: {status} {text}"
         )));
     }
-    let rows: Vec<WireChangeset> = resp
+    let page: PullResponse = resp
         .json()
         .context("parse pull response")
         .map_err(HttpError::other)?;
-    let mut out = Vec::with_capacity(rows.len());
-    for row in rows {
+    let mut out = Vec::with_capacity(page.changesets.len());
+    for row in page.changesets {
         let payload = URL_SAFE_NO_PAD
             .decode(row.payload_b64.as_bytes())
             .with_context(|| {
@@ -232,5 +246,8 @@ pub fn pull_batch(
             generation: row.generation,
         });
     }
-    Ok(out)
+    Ok(PullPage {
+        device_high_seq: page.device_high_seq,
+        rows: out,
+    })
 }

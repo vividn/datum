@@ -82,6 +82,25 @@ pub struct Changeset {
     pub generation: u64,
 }
 
+/// `GET /v0/pull` response body.
+///
+/// The rows are wrapped rather than returned bare so the relay can state,
+/// on every pull, what it still holds for the *calling* device
+/// (`device_high_seq`). That single number is how a client discovers that
+/// the relay it is talking to no longer has changesets the client already
+/// pushed — a replaced server, or one restored from a backup predating
+/// those pushes. See `docs/sync-protocol.md` §Replaced relays.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullResponse {
+    /// Highest per-device `seq` the relay currently holds for the calling
+    /// device within the pulled cluster; `0` when it holds none. A client
+    /// whose local `device_seq` is *above* this has pushed rows the relay
+    /// has lost.
+    pub device_high_seq: i64,
+    /// Peers' changesets, ascending by relay-global `id`.
+    pub changesets: Vec<Changeset>,
+}
+
 /// Argon2id KDF parameters used to derive a key-encryption key from a
 /// user passphrase. Field names + base64 variant are wire-locked by
 /// `docs/sync-protocol.md` — do not rename without bumping the protocol
@@ -176,6 +195,23 @@ mod tests {
         let back: Changeset = serde_json::from_str(&json).unwrap();
         assert_eq!(back.cluster_id, "c-1");
         assert_eq!(back.generation, 3);
+    }
+
+    #[test]
+    fn pull_response_carries_the_callers_device_high_seq() {
+        let resp = PullResponse {
+            device_high_seq: 4,
+            changesets: vec![],
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"device_high_seq\":4"), "wire key: {json}");
+        let back: PullResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.device_high_seq, 4);
+        assert!(back.changesets.is_empty());
+
+        // The field is required: a bare array (the pre-da-od2t shape) is
+        // no longer a valid pull response.
+        assert!(serde_json::from_str::<PullResponse>("[]").is_err());
     }
 
     #[test]

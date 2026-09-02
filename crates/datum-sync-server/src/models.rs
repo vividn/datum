@@ -16,7 +16,7 @@ pub use datum_sync_protocol::messages::auth::{
     DeviceCodeResponse, PollResponse, RefreshTokenRequest,
 };
 pub use datum_sync_protocol::messages::sync::{
-    Changeset, KdfParams, PushRequest, PushResponse, WrappedKey,
+    Changeset, KdfParams, PullResponse, PushRequest, PushResponse, WrappedKey,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
