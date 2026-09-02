@@ -22,7 +22,7 @@ use datum_core::db::{
 };
 use datum_core::entry::{Entry, Verb};
 use datum_core::test_util::{entry_builder, fresh_db};
-use datum_core::time::DatumTime;
+use datum_core::time::{DatumTime, Zone};
 use serde_json::{json, Value as JsonValue};
 
 // ─── da-adoi: test-side snapshot builder ─────────────────────────────────────
@@ -409,17 +409,15 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
     let now = DatumTime::now();
     // Pin the date to today in the local zone, then strip the clock to
     // start-of-day — mirrors what the insert path stores for `-D` rows.
-    let local_today = now
-        .utc
-        .with_timezone(&chrono::Local)
-        .date_naive()
+    let zone = Zone::host();
+    let local_today = zone
+        .local_naive(now.utc)
+        .date()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let local_today_utc = local_today
-        .and_local_timezone(chrono::Local)
-        .single()
-        .expect("ambiguous local time")
-        .with_timezone(&chrono::Utc);
+    // Start-of-day is a boundary, resolved the same way `strip_to_start_of_day`
+    // resolves it, so this expectation cannot drift from the insert path.
+    let local_today_utc = zone.resolve(local_today).for_boundary();
     let day_start = DatumTime {
         utc: local_today_utc,
         offset_minutes: now.offset_minutes,

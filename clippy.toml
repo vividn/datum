@@ -1,0 +1,13 @@
+# Local wall-clock → UTC conversion has exactly one sanctioned implementation:
+# `datum_parse::time::resolve` (da-ztae). Documentation does not keep that true
+# — this codebase has proof. `stats` grew its own 14-line `parse_since` while
+# three careful parsers sat one crate away (da-rye2), and `coerce.rs` ignored a
+# field the parser had already filled in (da-svvy). Both authors could have
+# known and did not.
+#
+# So the guarantee is a lint, not a note: reinventing the conversion fails CI.
+# `resolve.rs` itself carries a scoped `#[allow]` — it is the wrapper.
+disallowed-methods = [
+    { path = "chrono::TimeZone::from_local_datetime", reason = "use datum_parse::time::Zone::resolve, then Resolved::for_boundary() or ::for_logging() (da-ztae) — .single() silently drops the two DST cases" },
+    { path = "chrono::NaiveDateTime::and_local_timezone", reason = "use datum_parse::time::Zone::resolve, then Resolved::for_boundary() or ::for_logging() (da-ztae) — .single() silently drops the two DST cases" },
+]

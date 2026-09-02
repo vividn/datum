@@ -22,6 +22,7 @@ mod common;
 use chrono::{Duration, Utc};
 use common::run_cli;
 use datum_core::test_util::fresh_db;
+use datum_core::time::Zone;
 use datum_core::{assert_count, assert_entry_matches};
 use serde_json::json;
 
@@ -88,14 +89,15 @@ fn date_and_time_flags_set_absolute_time() {
     assert_entry_matches!(entry, field: "event", verb: "point");
 
     let ts = entry.occur_time.as_ref().unwrap().utc;
-    let expected_local = chrono::NaiveDate::from_ymd_opt(2021, 8, 23)
-        .unwrap()
-        .and_hms_opt(12, 0, 0)
-        .unwrap()
-        .and_local_timezone(chrono::Local)
+    let expected_utc = Zone::host()
+        .resolve(
+            chrono::NaiveDate::from_ymd_opt(2021, 8, 23)
+                .unwrap()
+                .and_hms_opt(12, 0, 0)
+                .unwrap(),
+        )
         .single()
         .expect("2021-08-23 12:00 is unambiguous in every zone");
-    let expected_utc = expected_local.with_timezone(&Utc);
     assert_eq!(
         ts, expected_utc,
         "time_start must resolve to local 2021-08-23 12:00",

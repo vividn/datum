@@ -8,9 +8,9 @@
 //! all three query surfaces for free.
 
 use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
-use datum_parse::time::TimeCtx;
+use chrono::{DateTime, NaiveDate, Utc};
 use datum_parse::time::{parse_date_arg, parse_duration, parse_time_arg, TimeBuilder};
+use datum_parse::time::{TimeCtx, Zone};
 
 /// Which end of the window a bound is being parsed for. Only matters for
 /// date-only inputs, which name a whole local day: `--since 2026-06-01`
@@ -85,26 +85,20 @@ fn day_edge(date: NaiveDate, edge: Edge) -> Result<DateTime<Utc>> {
         Edge::Until => date.succ_opt().context("date overflow")?,
     };
     let naive = date.and_hms_opt(0, 0, 0).unwrap();
-    Ok(Local
-        .from_local_datetime(&naive)
-        .single()
-        // Name the date. A bare "ambiguous local midnight" says something is
-        // wrong and nothing about which day to look at -- and this fires once
-        // or twice a year per zone, so the message is all the evidence anyone
-        // will have (Copilot, PR #85).
-        .with_context(|| {
-            format!(
-                "{date} has no unambiguous local midnight in this timezone \
-                 (a DST transition falls on it); pass an explicit time"
-            )
-        })?
-        .with_timezone(&Utc))
+    // da-ztae: the one sanctioned local→UTC conversion. `for_boundary` picks
+    // the FIRST of an ambiguous pair and clamps a nonexistent instant to the
+    // transition, so consecutive day edges always abut — no interval skipped,
+    // none double-counted. That is precisely what a range boundary wants, and
+    // it replaces the hand-rolled `Local.from_local_datetime(..).single()` the
+    // disallowed-methods lint now forbids.
+    Ok(Zone::host().resolve(naive).for_boundary())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Duration;
+    use chrono::Local;
 
     /// Assert `actual` is within a second of `expected` — the bounds that
     /// resolve against "now" are re-read from the clock inside the parser.

@@ -21,6 +21,7 @@ use datum_core::db::Db;
 use datum_core::entry::Entry;
 use datum_core::field_spec::FieldSpec;
 use datum_core::integrity::ListFilter;
+use datum_core::time::Zone;
 use datum_layout::dayview::{
     compute_dayview, DayviewConfig, DayviewDayInput, DayviewFieldInput, Orientation,
 };
@@ -363,23 +364,24 @@ fn resolve_date_arg(s: &str, today: NaiveDate) -> Result<NaiveDate> {
     Ok(today + chrono::Duration::days(parsed.days_offset))
 }
 
-/// Local-day bounds in UTC ms. Local-time DST gaps/duplicates are resolved
-/// by `Local::from_local_datetime`'s `single` heuristic; we fall back to
-/// the earliest match if ambiguous.
+/// Local-day bounds in UTC ms: `[local midnight, next local midnight)`.
+///
+/// Both ends go through [`Resolved::for_boundary`] (da-ztae), which takes
+/// the earlier instant of a fall-back overlap and clamps a spring-forward
+/// gap to the transition, so one day's end is exactly the next day's start.
+/// The end is the *next day's midnight* rather than `start + 24h`: on a DST
+/// day the local day is 23 or 25 hours long, and adding a fixed day either
+/// spilled an hour of the neighbour into this column or dropped one.
 fn local_day_bounds_ms(date: NaiveDate) -> Result<(i64, i64)> {
-    let start_naive = date
-        .and_hms_opt(0, 0, 0)
-        .context("local midnight not representable")?;
-    let start = Local
-        .from_local_datetime(&start_naive)
-        .single()
-        .or_else(|| Local.from_local_datetime(&start_naive).earliest())
-        .context("ambiguous local midnight")?;
-    let end = start + chrono::Duration::days(1);
-    Ok((
-        start.with_timezone(&Utc).timestamp_millis(),
-        end.with_timezone(&Utc).timestamp_millis(),
-    ))
+    let zone = Zone::host();
+    let midnight = |d: NaiveDate| -> Result<i64> {
+        let naive = d
+            .and_hms_opt(0, 0, 0)
+            .context("local midnight not representable")?;
+        Ok(zone.resolve(naive).for_boundary().timestamp_millis())
+    };
+    let next = date.succ_opt().context("date out of range")?;
+    Ok((midnight(date)?, midnight(next)?))
 }
 
 /// Format `date` as datum's 3-line label `["ccc", "LLL dd", "yyyy"]`. The

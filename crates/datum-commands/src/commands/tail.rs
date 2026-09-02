@@ -1,7 +1,8 @@
 //! `datum tail` — list the most recent entries.
 
 use anyhow::Result;
-use chrono::{Local, TimeZone, Utc};
+use chrono::Utc;
+use datum_core::time::Zone;
 use datum_core::{
     db::{Db, ListParams, TimeMetric},
     entry::Entry,
@@ -406,58 +407,34 @@ fn build_window(args: &TailArgs) -> Result<TailWindow> {
 }
 
 /// Compute the ±1-day-padded local-day bounds for `utc` in the user-
-/// supplied IANA zone, or fall back to the host's `Local` zone when the
-/// flag is absent. Returns `(start_utc, end_utc)`. Errors only when the
-/// IANA name fails to parse — `resolve_timezone` already validates the
-/// spec upstream, so this is a defence-in-depth bail.
+/// supplied IANA zone, or in the host's zone when the flag is absent.
+/// Returns `(start_utc, end_utc)`. Errors only when the IANA name fails to
+/// parse — `resolve_timezone` already validates the spec upstream, so that
+/// is a defence-in-depth bail.
+///
+/// One body serves both zones (da-ztae). It used to be two, and they had
+/// drifted: the explicit-`-z` branch bailed on a DST seam while the host
+/// branch `unwrap()`ed and panicked. Both ends are window bounds, so
+/// [`Resolved::for_boundary`] is the policy — it always yields an instant.
 fn day_bounds_utc(
     utc: chrono::DateTime<Utc>,
     tz_name: Option<&str>,
 ) -> Result<(chrono::DateTime<Utc>, chrono::DateTime<Utc>)> {
-    if let Some(name) = tz_name {
-        let tz: chrono_tz::Tz = name
-            .parse()
-            .map_err(|_| anyhow::anyhow!("Unknown timezone: {name}"))?;
-        let local = utc.with_timezone(&tz);
-        let day = local.date_naive();
-        let start = tz
-            .from_local_datetime(
-                &(day - chrono::Duration::days(1))
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap(),
-            )
-            .single()
-            .ok_or_else(|| anyhow::anyhow!("ambiguous local time in zone {name}"))?;
-        let end = tz
-            .from_local_datetime(
-                &(day + chrono::Duration::days(1))
-                    .and_hms_opt(23, 59, 59)
-                    .unwrap(),
-            )
-            .single()
-            .ok_or_else(|| anyhow::anyhow!("ambiguous local time in zone {name}"))?;
-        Ok((start.with_timezone(&Utc), end.with_timezone(&Utc)))
-    } else {
-        let local = utc.with_timezone(&Local);
-        let day = local.date_naive();
-        let start = Local
-            .from_local_datetime(
-                &(day - chrono::Duration::days(1))
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap(),
-            )
-            .single()
-            .unwrap();
-        let end = Local
-            .from_local_datetime(
-                &(day + chrono::Duration::days(1))
-                    .and_hms_opt(23, 59, 59)
-                    .unwrap(),
-            )
-            .single()
-            .unwrap();
-        Ok((start.with_timezone(&Utc), end.with_timezone(&Utc)))
-    }
+    let zone = match tz_name {
+        Some(name) => Zone::iana(name).map_err(|_| anyhow::anyhow!("Unknown timezone: {name}"))?,
+        None => Zone::host(),
+    };
+    let day = zone.local_naive(utc).date();
+    let start = (day - chrono::Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let end = (day + chrono::Duration::days(1))
+        .and_hms_opt(23, 59, 59)
+        .unwrap();
+    Ok((
+        zone.resolve(start).for_boundary(),
+        zone.resolve(end).for_boundary(),
+    ))
 }
 
 #[cfg(test)]

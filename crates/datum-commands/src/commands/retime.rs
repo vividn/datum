@@ -14,7 +14,7 @@
 //!   current occur_time instead.
 
 use anyhow::{Context, Result};
-use chrono::{Local, Utc};
+use datum_core::time::Zone;
 use datum_core::{
     db::{Db, RetimeFilter},
     entry::Entry,
@@ -267,11 +267,10 @@ fn parse_time_bound(s: &str) -> Result<chrono::DateTime<chrono::Utc>> {
         let naive = d
             .and_hms_opt(0, 0, 0)
             .ok_or_else(|| anyhow::anyhow!("bad date: {s}"))?;
-        let local = naive
-            .and_local_timezone(Local)
-            .single()
-            .ok_or_else(|| anyhow::anyhow!("ambiguous local time for {s}"))?;
-        return Ok(local.with_timezone(&Utc));
+        // A selection bound, not a logged time: `for_boundary` always yields
+        // an instant, so `--after 2024-11-03` no longer refuses on the two
+        // days a year local midnight is ambiguous (da-ztae).
+        return Ok(Zone::host().resolve(naive).for_boundary());
     }
     anyhow::bail!("expected YYYY-MM-DD or RFC3339, got '{s}'")
 }

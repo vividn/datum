@@ -27,7 +27,9 @@ use chrono_tz::Tz;
 
 use crate::error::{ParseError, Result};
 use crate::input::flag_registry::{FlagAction, FlagSpec};
-use crate::time::{parse_date_arg, parse_time_arg, DatumTime, Direction, TimeCtx, Uncertainty};
+use crate::time::{
+    parse_date_arg, parse_time_arg, DatumTime, Direction, TimeCtx, Uncertainty, Zone,
+};
 
 /// Parsed shape of the timing flag group.
 #[derive(Debug, Clone, Default)]
@@ -447,40 +449,21 @@ fn split_number_unit(s: &str) -> (&str, &str) {
 /// da-vfbq) still has a local clock; it just has no DST rules. Falling back
 /// to the offset keeps every clock/date operation working on such a time
 /// instead of erroring on a name that was never there.
-enum Zone {
-    Iana(Tz),
-    Fixed(chrono::FixedOffset),
-}
-
 fn zone_of(name: Option<&str>, t: &DatumTime) -> Result<Zone> {
     match name {
-        Some(name) => name
-            .parse()
-            .map(Zone::Iana)
-            .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {name}"))),
+        Some(name) => Zone::iana(name),
         None => Ok(Zone::Fixed(*t.local_time().offset())),
     }
 }
 
+/// These four setters all take a time the *user typed*, so they resolve
+/// under [`Resolved::for_logging`]: a wall clock that does not exist, or one
+/// that happened twice, is the user's error to see rather than ours to
+/// silently move (da-ztae).
 fn set_naive_datetime(cur: DatumTime, naive: chrono::NaiveDateTime) -> Result<DatumTime> {
-    match zone_of(cur.timezone.as_deref(), &cur)? {
-        Zone::Iana(tz) => set_naive_datetime_in(cur, naive, tz),
-        Zone::Fixed(off) => set_naive_datetime_in(cur, naive, off),
-    }
-}
-
-fn set_naive_datetime_in<Z: TimeZone>(
-    cur: DatumTime,
-    naive: chrono::NaiveDateTime,
-    tz: Z,
-) -> Result<DatumTime> {
-    let utc = tz
-        .from_local_datetime(&naive)
-        .single()
-        .ok_or_else(|| {
-            ParseError::InvalidTime(format!("Ambiguous/non-existent local datetime: {naive}"))
-        })?
-        .with_timezone(&Utc);
+    let utc = zone_of(cur.timezone.as_deref(), &cur)?
+        .resolve(naive)
+        .for_logging()?;
     Ok(DatumTime { utc, ..cur })
 }
 
@@ -489,26 +472,14 @@ fn set_clock(
     abs: chrono::NaiveTime,
     direction: Option<Direction>,
 ) -> Result<DatumTime> {
-    match zone_of(cur.timezone.as_deref(), &cur)? {
-        Zone::Iana(tz) => set_clock_in(cur, abs, direction, tz),
-        Zone::Fixed(off) => set_clock_in(cur, abs, direction, off),
-    }
-}
-
-fn set_clock_in<Z: TimeZone>(
-    cur: DatumTime,
-    abs: chrono::NaiveTime,
-    direction: Option<Direction>,
-    tz: Z,
-) -> Result<DatumTime> {
-    let now_local = cur.utc.with_timezone(&tz);
-    let mut local_dt = now_local.date_naive().and_time(abs);
+    let zone = zone_of(cur.timezone.as_deref(), &cur)?;
+    let now_naive = zone.local_naive(cur.utc);
+    let mut local_dt = now_naive.date().and_time(abs);
     // Direction-suffix disambiguation: shift by ±1 day when the candidate
     // sits on the wrong side of "now". Tie-break (candidate == now) goes
     // *with* the requested direction — `+` even at exact equality picks
     // the future, `-` picks the past.
     if let Some(dir) = direction {
-        let now_naive = now_local.naive_local();
         match dir {
             Direction::Future if local_dt <= now_naive => {
                 local_dt += chrono::Duration::days(1);
@@ -519,33 +490,14 @@ fn set_clock_in<Z: TimeZone>(
             _ => {}
         }
     }
-    let utc = tz
-        .from_local_datetime(&local_dt)
-        .single()
-        .ok_or_else(|| {
-            ParseError::InvalidTime(format!("Ambiguous/non-existent local time: {abs}"))
-        })?
-        .with_timezone(&Utc);
+    let utc = zone.resolve(local_dt).for_logging()?;
     Ok(DatumTime { utc, ..cur })
 }
 
 fn set_date(cur: DatumTime, abs: chrono::NaiveDate, tz_name: Option<&str>) -> Result<DatumTime> {
-    match zone_of(tz_name, &cur)? {
-        Zone::Iana(tz) => set_date_in(cur, abs, tz),
-        Zone::Fixed(off) => set_date_in(cur, abs, off),
-    }
-}
-
-fn set_date_in<Z: TimeZone>(cur: DatumTime, abs: chrono::NaiveDate, tz: Z) -> Result<DatumTime> {
-    let local = cur.utc.with_timezone(&tz).time();
-    let local_dt = abs.and_time(local);
-    let utc = tz
-        .from_local_datetime(&local_dt)
-        .single()
-        .ok_or_else(|| {
-            ParseError::InvalidTime(format!("Ambiguous/non-existent local datetime: {local_dt}"))
-        })?
-        .with_timezone(&Utc);
+    let zone = zone_of(tz_name, &cur)?;
+    let local_dt = abs.and_time(zone.local_naive(cur.utc).time());
+    let utc = zone.resolve(local_dt).for_logging()?;
     Ok(DatumTime { utc, ..cur })
 }
 

@@ -8,6 +8,9 @@
 //! * [`precision`] — `PrecisionUnit` (formerly in `datum-core::entry`).
 //! * [`uncertainty`] — `Uncertainty` struct + `±N[unit]` suffix parsing.
 //! * [`datum_time`] — `DatumTime` (UTC + offset + IANA name).
+//! * [`resolve`] — the one local→UTC resolution utility (`Zone`, `Resolved`,
+//!   `ZoneTimeline`). Every wall-clock→instant conversion goes through it;
+//!   `clippy.toml` disallows the chrono calls it wraps.
 //! * [`parse_date_str`] — `-d` / `--date` argument parsing (`DateArg`).
 //! * [`parse_time_str`] — `-t` / `--time` argument parsing (`TimeArg`).
 //! * [`parse_duration_str`] — `--dur` argument parsing.
@@ -28,6 +31,7 @@ pub mod parse_date_str;
 pub mod parse_duration_str;
 pub mod parse_time_str;
 pub mod precision;
+pub mod resolve;
 pub mod uncertainty;
 
 pub use builder::TimeBuilder;
@@ -39,6 +43,7 @@ pub use parse_duration_str::{
 };
 pub use parse_time_str::{count_stacked_flag, parse_time_arg, TimeArg};
 pub use precision::PrecisionUnit;
+pub use resolve::{Resolved, Zone, ZoneSegment, ZoneTimeline};
 pub use uncertainty::{
     parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
 };

@@ -36,6 +36,7 @@ mod time;
 mod tombstone;
 mod types;
 mod view;
+mod zone_timeline;
 
 use std::cell::RefCell;
 

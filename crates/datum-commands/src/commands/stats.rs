@@ -21,9 +21,10 @@
 use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
-use chrono::{DateTime, Duration, Local, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
 use datum_core::time::DatumTime;
+use datum_parse::time::Zone;
 use serde_json::Value as JsonValue;
 
 use crate::args::StatsArgs;
@@ -290,11 +291,11 @@ fn first_of_month(year: i32, month: u32) -> Result<DateTime<Utc>> {
 
 fn local_midnight(date: NaiveDate) -> Result<DateTime<Utc>> {
     let naive = date.and_hms_opt(0, 0, 0).unwrap();
-    Ok(Local
-        .from_local_datetime(&naive)
-        .single()
-        .context("ambiguous local midnight")?
-        .with_timezone(&Utc))
+    // da-ztae: the one sanctioned local→UTC conversion. `for_boundary` takes
+    // the first of an ambiguous pair and clamps a nonexistent instant to the
+    // transition, so month and day edges abut exactly — nothing skipped, nothing
+    // counted twice. Replaces the hand-rolled `.single()` the lint now forbids.
+    Ok(Zone::host().resolve(naive).for_boundary())
 }
 
 // ─── Block math ─────────────────────────────────────────────────────────────

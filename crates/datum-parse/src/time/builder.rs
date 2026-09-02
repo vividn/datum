@@ -9,6 +9,8 @@ use crate::time::parse_duration_str::quick_precision_for_count;
 use crate::time::parse_time_str::TimeArg;
 #[cfg(feature = "native")]
 use crate::time::precision::PrecisionUnit;
+#[cfg(feature = "native")]
+use crate::time::resolve::Zone;
 use crate::time::uncertainty::{Direction, Uncertainty};
 
 /// Build a `DatumTime` from the combination of -y stacks, -q stacks,
@@ -208,56 +210,57 @@ impl TimeBuilder {
 
     #[cfg(feature = "native")]
     pub fn build(self) -> DatumTime {
-        if let Some(tz_name) = self.timezone.as_deref() {
+        // Both paths end at a *named* IANA zone: `-z` supplies one, and the
+        // host zone is the name `DatumTime` records anyway. Naming the host
+        // zone instead of reaching for `chrono::Local` collapses what were
+        // two generic instantiations into one body, so there is no second
+        // place for a DST policy to drift (da-ztae).
+        let name = match self.timezone.as_deref() {
             // Panic-safe: resolve_timezone() already validated the name
             // before it got here. A bad name at this point means the caller
             // skipped validation — surface it loudly rather than silently
-            // falling back to Local.
-            let tz: chrono_tz::Tz = tz_name
-                .parse()
-                .expect("TimeBuilder: timezone field must be a validated IANA name");
-            let name = tz_name.to_string();
-            self.build_in_tz(tz, name)
-        } else {
-            let name = crate::time::clock::host_iana_tz_name();
-            self.build_in_tz(chrono::Local, name)
-        }
+            // falling back to the host zone.
+            Some(tz_name) => tz_name.to_string(),
+            None => crate::time::clock::host_iana_tz_name(),
+        };
+        let zone =
+            Zone::iana(&name).expect("TimeBuilder: timezone field must be a validated IANA name");
+        self.build_in_zone(zone, name)
     }
 
-    /// Compose the stacked flags into a `DatumTime` anchored in an arbitrary
-    /// [`chrono::TimeZone`]. Both the explicit-`-z` (`chrono_tz::Tz`) and the
-    /// default-host (`chrono::Local`) paths run through this one body, so the
-    /// six resolution steps — base, minute/day offsets, date override, time
-    /// override with direction, and the final UTC/offset computation — stay
-    /// in lockstep. In particular, DST-overlap and DST-gap handling is
-    /// identical regardless of whether `--timezone` was supplied.
+    /// Compose the stacked flags into a `DatumTime` anchored in `zone`.
+    ///
+    /// Every local→UTC step goes through [`Zone::resolve`] under the
+    /// [`Resolved::for_boundary`] policy: these are composed *shifts* of a
+    /// moment and one must always come out. The `.single()` guards this
+    /// replaces silently discarded the entire `-d`/`-t` override whenever
+    /// the resulting wall clock landed on a DST seam, which is the failure
+    /// mode da-ztae exists to remove.
     #[cfg(feature = "native")]
-    fn build_in_tz<T: chrono::TimeZone>(self, tz: T, timezone_name: String) -> DatumTime {
-        use chrono::Offset;
-
+    fn build_in_zone(self, zone: Zone, timezone_name: String) -> DatumTime {
         // ISO-8601 overrides establish the base instant; otherwise we anchor
         // on "now" in the effective zone.
-        let mut dt = if let Some(instant) = self.iso_instant_override {
-            instant.with_timezone(&tz)
+        let mut utc = if let Some(instant) = self.iso_instant_override {
+            instant
         } else if let Some(naive) = self.iso_naive_override {
-            resolve_naive_in_tz(naive, tz.clone(), &timezone_name)
+            zone.resolve(naive).for_boundary()
         } else {
-            Utc::now().with_timezone(&tz)
+            Utc::now()
         };
 
-        dt -= chrono::Duration::minutes(self.minutes_back);
-        dt -= chrono::Duration::days(self.days_back);
-        dt += self.time_offset; // signed `-t ±N` shift (future positive)
+        utc -= chrono::Duration::minutes(self.minutes_back);
+        utc -= chrono::Duration::days(self.days_back);
+        utc += self.time_offset; // signed `-t ±N` shift (future positive)
 
         if let Some(date) = self.date_override {
-            let time = self.time_override.unwrap_or_else(|| dt.time());
-            if let Some(new_dt) = date.and_time(time).and_local_timezone(tz.clone()).single() {
-                dt = new_dt;
-            }
+            let time = self
+                .time_override
+                .unwrap_or_else(|| zone.local_naive(utc).time());
+            utc = zone.resolve(date.and_time(time)).for_boundary();
         } else if let Some(time) = self.time_override {
-            let mut local_dt = dt.date_naive().and_time(time);
+            let now_naive = zone.local_naive(utc);
+            let mut local_dt = now_naive.date().and_time(time);
             if let Some(dir) = self.time_direction {
-                let now_naive = dt.naive_local();
                 match dir {
                     Direction::Future if local_dt <= now_naive => {
                         local_dt += chrono::Duration::days(1);
@@ -268,104 +271,44 @@ impl TimeBuilder {
                     _ => {}
                 }
             }
-            if let Some(new_dt) = local_dt.and_local_timezone(tz.clone()).single() {
-                dt = new_dt;
-            }
+            utc = zone.resolve(local_dt).for_boundary();
         }
 
-        let utc = dt.with_timezone(&Utc);
-        let offset_minutes = dt.offset().fix().local_minus_utc() / 60;
         DatumTime {
             utc,
-            offset_minutes,
+            offset_minutes: zone.offset_at(utc).local_minus_utc() / 60,
             timezone: Some(timezone_name),
         }
     }
 }
 
 /// Rewind a built `DatumTime` to 00:00:00 of the same calendar day in its
-/// own zone. Preserves the IANA name and refreshes `offset_minutes` because
+/// own zone. Preserves the IANA name and refreshes `offset_minutes`, because
 /// midnight may sit on the far side of a DST transition from the original
-/// time. Ambiguous midnights (DST fall-back) pick the earlier instant; the
-/// spring-forward gap at midnight is essentially nonexistent in real zones
-/// but is panicked on for surface area parity with `resolve_naive_in_tz`.
+/// time.
+///
+/// Midnight is a *day boundary*, so [`Resolved::for_boundary`] is exactly
+/// the policy wanted: a fall-back overlap takes the earlier instant and a
+/// spring-forward gap clamps to the transition, which is what makes
+/// consecutive days abut with no hole and no double-count. Zones that shift
+/// across midnight exist (Chile, Cuba, Lord Howe), so the old `panic!` on
+/// that branch was reachable.
 #[cfg(feature = "native")]
 fn strip_to_start_of_day(dt: DatumTime) -> DatumTime {
-    match dt.timezone.as_deref() {
-        Some(name) => {
-            let tz: chrono_tz::Tz = name
-                .parse()
-                .expect("strip_to_start_of_day: DatumTime.timezone must be a validated IANA name");
-            strip_in_zone(dt, tz)
-        }
-        // No stored zone: the fixed offset is all we know about local time,
-        // and it has no DST transition for midnight to land on the far side
-        // of, so the day boundary is unambiguous.
-        None => {
-            let offset = *dt.local_time().offset();
-            strip_in_zone(dt, offset)
-        }
-    }
-}
-
-#[cfg(feature = "native")]
-fn strip_in_zone<Z>(dt: DatumTime, tz: Z) -> DatumTime
-where
-    Z: chrono::TimeZone + std::fmt::Display,
-{
-    use chrono::offset::LocalResult;
-    use chrono::Offset;
-    let local = dt.utc.with_timezone(&tz);
-    let midnight = local
-        .date_naive()
+    // A `DatumTime` with no zone name still has its stored offset, which has
+    // no transitions — `Zone::of` yields that, so midnight resolves either way.
+    let zone = Zone::of(&dt)
+        .expect("strip_to_start_of_day: DatumTime.timezone must be a validated IANA name");
+    let midnight = zone
+        .local_naive(dt.utc)
+        .date()
         .and_hms_opt(0, 0, 0)
         .expect("00:00:00 is always a valid time");
-    let local_midnight = match midnight.and_local_timezone(tz.clone()) {
-        LocalResult::Single(t) => t,
-        // Earlier instant, selected by UTC like `resolve_naive_in_tz` rather
-        // than by tuple position (see its note on impl-dependent ordering).
-        LocalResult::Ambiguous(a, b) => a.min(b),
-        LocalResult::None => {
-            panic!("strip_to_start_of_day: midnight {midnight} does not exist in {tz} (DST gap)")
-        }
-    };
+    let utc = zone.resolve(midnight).for_boundary();
     DatumTime {
-        utc: local_midnight.with_timezone(&Utc),
-        offset_minutes: local_midnight.offset().fix().local_minus_utc() / 60,
+        utc,
+        offset_minutes: zone.offset_at(utc).local_minus_utc() / 60,
         timezone: dt.timezone,
-    }
-}
-
-/// Resolve a no-zone ISO-8601 datetime into a concrete moment by reading
-/// it as wall-clock in the supplied zone. Picks the earliest valid instant
-/// when the local time falls in a DST overlap, which matches what users
-/// expect from "the first time the clock read 01:30" on fall-back days.
-/// Spring-forward gaps fall through to a panic with a clear message — they're
-/// rare, and silently shifting the user's input by an hour is worse than
-/// failing loudly. Generic over the zone so the explicit-`-z` and host-local
-/// paths share one DST contract; `zone_name` only feeds the gap panic since
-/// [`chrono::Local`] has no useful `Display`.
-///
-/// The two `Ambiguous` instants are selected by UTC instant, not by tuple
-/// position: `chrono_tz::Tz` and `chrono::Local` order the pair *oppositely*
-/// (the former yields the earlier instant first, the latter the later), so
-/// keying on position would silently pick the wrong side on the host-local
-/// path. `DateTime` orders by instant, so `min` is the genuinely-earlier one.
-#[cfg(feature = "native")]
-fn resolve_naive_in_tz<T: chrono::TimeZone>(
-    naive: NaiveDateTime,
-    tz: T,
-    zone_name: &str,
-) -> chrono::DateTime<T> {
-    use chrono::offset::LocalResult;
-    match naive.and_local_timezone(tz) {
-        LocalResult::Single(dt) => dt,
-        LocalResult::Ambiguous(a, b) => a.min(b),
-        LocalResult::None => {
-            panic!(
-                "TimeBuilder: ISO-8601 wall clock {naive} does not exist in {zone_name} (DST gap)"
-            )
-        }
     }
 }
 
@@ -568,5 +511,87 @@ mod tests {
         assert_eq!(precision, Uncertainty::exact());
         let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
         assert_eq!(local.time(), NaiveTime::from_hms_opt(14, 37, 0).unwrap());
+    }
+
+    /// The bug `.single()` used to cause: when the requested wall clock
+    /// lands in a spring-forward gap, the *entire* `-d`/`-t` override was
+    /// silently discarded and the entry kept "now". Under the boundary
+    /// policy it clamps to the transition instead — the user's date is
+    /// honoured, and it is a movement of minutes, not of months (da-ztae).
+    #[test]
+    fn date_and_time_landing_in_a_dst_gap_is_no_longer_discarded() {
+        // 2024-03-10 02:30 does not exist in Chicago; the clock jumps
+        // 01:59:59 CST → 03:00:00 CDT.
+        let b = TimeBuilder::now()
+            .with_timezone(Some("America/Chicago".into()))
+            .with_date_arg(DateArg {
+                days_offset: 0,
+                absolute: Some(NaiveDate::from_ymd_opt(2024, 3, 10).unwrap()),
+                uncertainty: None,
+                direction: None,
+            })
+            .with_time_arg(TimeArg {
+                date: None,
+                absolute: Some(NaiveTime::from_hms_opt(2, 30, 0).unwrap()),
+                iso_instant: None,
+                iso_naive: None,
+                offset: None,
+                uncertainty: None,
+                direction: None,
+            });
+        let dt = b.build();
+        assert_eq!(
+            dt.utc,
+            "2024-03-10T08:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+            "clamped to the transition, not left at `now`"
+        );
+    }
+
+    /// The other half: a wall clock the fall-back overlap repeats resolves
+    /// to the earlier of the two instants rather than being dropped.
+    #[test]
+    fn date_and_time_in_a_dst_overlap_takes_the_earlier_instant() {
+        let b = TimeBuilder::now()
+            .with_timezone(Some("America/Chicago".into()))
+            .with_date_arg(DateArg {
+                days_offset: 0,
+                absolute: Some(NaiveDate::from_ymd_opt(2024, 11, 3).unwrap()),
+                uncertainty: None,
+                direction: None,
+            })
+            .with_time_arg(TimeArg {
+                date: None,
+                absolute: Some(NaiveTime::from_hms_opt(1, 30, 0).unwrap()),
+                iso_instant: None,
+                iso_naive: None,
+                offset: None,
+                uncertainty: None,
+                direction: None,
+            });
+        assert_eq!(
+            b.build().utc,
+            "2024-11-03T06:30:00Z".parse::<DateTime<Utc>>().unwrap()
+        );
+    }
+
+    /// `strip_to_start_of_day` used to `panic!` when midnight itself was in
+    /// the gap. Santiago springs forward *at* midnight, so that branch was
+    /// reachable by anyone logging `-D` from Chile on the day.
+    #[test]
+    fn start_of_day_survives_a_zone_whose_midnight_does_not_exist() {
+        // 2024-09-08 00:00 does not exist in Santiago: 23:59:59 -04 on the
+        // 7th is followed by 01:00:00 -03 on the 8th.
+        let noon = DatumTime::from_utc_and_tz(
+            "2024-09-08T16:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+            "America/Santiago",
+        )
+        .unwrap();
+        let start = strip_to_start_of_day(noon);
+        assert_eq!(
+            start.utc,
+            "2024-09-08T04:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+            "clamped to the transition — the first instant of the local day"
+        );
+        assert_eq!(start.offset_minutes, -180, "post-transition offset (-03)");
     }
 }

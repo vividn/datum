@@ -2,20 +2,19 @@
 
 mod common;
 
-use chrono::{Local, TimeZone, Utc};
+use chrono::{Local, Utc};
 use common::run_cli;
 use datum_core::entry::Verb;
 use datum_core::test_util::{entry_builder, fresh_db};
+use datum_core::time::Zone;
 
 /// A UTC timestamp at local noon today — guaranteed to land in the same
 /// civic day under any timezone CI runs in.
 fn local_noon_today_utc() -> chrono::DateTime<Utc> {
     let today = Local::now().date_naive();
-    Local
-        .from_local_datetime(&today.and_hms_opt(12, 0, 0).unwrap())
-        .single()
-        .unwrap()
-        .with_timezone(&Utc)
+    Zone::host()
+        .resolve(today.and_hms_opt(12, 0, 0).unwrap())
+        .for_boundary()
 }
 
 #[test]
