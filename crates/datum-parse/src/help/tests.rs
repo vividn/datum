@@ -567,7 +567,7 @@ USAGE:
 
 OPTIONS:
       --group-by <KEY>  state|verb|field
-      --since <TIME>    RFC3339 / YYYY-MM-DD / duration offset (1d, 30m, 2h)
+      --since <TIME>    Duration ago (1d, 30m, 1:30), YYYY-MM-DD, or any -t time
       --json            Machine-readable output
 ";
 

@@ -783,9 +783,12 @@ pub struct StatsArgs {
     pub selector: Option<String>,
     /// Shorthand whole-period slice: `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`.
     pub slice: Option<String>,
-    /// Inclusive lower bound (RFC3339 / `YYYY-MM-DD` / duration offset).
+    /// Inclusive lower bound: an unsigned duration read as "that long
+    /// ago" (`1d`, `30m`, `1:30`), a calendar date, or anything `-t`
+    /// takes (`now`, `9:15am`, RFC3339, `-30`).
     pub since: Option<String>,
-    /// Upper bound. A bare `YYYY-MM-DD` covers the whole named day.
+    /// Upper bound, same grammar. A bare `YYYY-MM-DD` covers the whole
+    /// named day.
     pub until: Option<String>,
     /// `--include-false` — keep the `false` (closed / stopped) state in the
     /// ratio denominator. Off by default: on a real db the closed state is

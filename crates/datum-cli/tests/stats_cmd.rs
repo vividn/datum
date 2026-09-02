@@ -157,6 +157,42 @@ fn stats_shorthand_slice_matches_since_until() {
 }
 
 #[test]
+fn stats_bounds_speak_the_shared_time_grammar() {
+    // da-rye2: `--since`/`--until` route through the shared parser rather
+    // than a private reimplementation, so the compact `<mmm><day>` date
+    // shorthand every logging command takes now works here too — and
+    // resolves to exactly the same window as the ISO spelling.
+    let _g = freeze_time("2026-06-20T12:00:00Z");
+    let db = fresh_db();
+    seed_activity(&db);
+
+    let compact = compute_stats(
+        &StatsArgs {
+            since: Some("jun1-2026".to_string()),
+            until: Some("jun30-2026".to_string()),
+            ..selector("activity")
+        },
+        &db,
+    )
+    .unwrap();
+    let iso = compute_stats(
+        &StatsArgs {
+            since: Some("2026-06-01".to_string()),
+            until: Some("2026-06-30".to_string()),
+            ..selector("activity")
+        },
+        &db,
+    )
+    .unwrap();
+
+    assert_eq!(compact, iso);
+    assert!(
+        compact.total_count > 0,
+        "the window must actually cover June"
+    );
+}
+
+#[test]
 fn stats_stored_dur_block_does_not_gap_fill() {
     // A discrete block with a stored `dur` is measured by that span; the gap
     // to the next entry is NOT attributed to it (unlike a bare switch).

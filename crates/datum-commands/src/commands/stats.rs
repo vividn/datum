@@ -28,7 +28,7 @@ use serde_json::Value as JsonValue;
 
 use crate::args::StatsArgs;
 use crate::commands::field_visuals::state_label;
-use crate::commands::ids::parse_since;
+use crate::commands::time_bounds::{parse_since, parse_until};
 use crate::render::action::format_duration;
 
 /// Per-state slice of a field's rollup.
@@ -281,20 +281,6 @@ fn parse_slice(s: &str) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
         return Ok((local_midnight(date)?, local_midnight(next)?));
     }
     bail!("invalid time-slice '{s}' (expected YYYY, YYYY-MM, or YYYY-MM-DD)")
-}
-
-/// Parse `--until` into a UTC upper bound. A bare `YYYY-MM-DD` is inclusive
-/// of the whole named day (upper = next local midnight); an RFC3339 instant
-/// is used verbatim.
-fn parse_until(s: &str) -> Result<DateTime<Utc>> {
-    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
-        return Ok(dt.with_timezone(&Utc));
-    }
-    if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        let next = date.succ_opt().context("date overflow")?;
-        return local_midnight(next);
-    }
-    bail!("invalid --until '{s}' (expected RFC3339 or YYYY-MM-DD)")
 }
 
 fn first_of_month(year: i32, month: u32) -> Result<DateTime<Utc>> {

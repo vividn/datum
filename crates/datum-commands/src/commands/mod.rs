@@ -49,6 +49,7 @@ pub mod sync;
 pub mod tail;
 pub mod tail_state;
 pub mod tail_tui;
+pub mod time_bounds;
 pub mod track;
 pub mod undo;
 pub mod update;
