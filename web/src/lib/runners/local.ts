@@ -1,13 +1,14 @@
 // The TypeScript runner — the seam's default implementation.
 //
 // It covers the log verbs (`occur`, `switch`, `start`, `stop`, `add`,
-// `note`) against the OPFS database, which is what the app needs to be
-// useful today. Every other datum command returns
+// `note`) against the OPFS database, plus `spec set` for the widget bar
+// and bare `tail` so the tail pane has something to render — which is
+// what the app needs to be useful today. Every other datum command returns
 // `EXIT_UNKNOWN_COMMAND`: this is a stand-in for the real CLI, not a second
 // implementation of it, and da-1vat retires the whole file by compiling
 // `datum-cli` to wasm and installing it via `setRunner`.
 
-import { insertEntry, getFieldSpecs, saveFieldSpec } from '../db.js';
+import { insertEntry, getRecentEntries, getFieldSpecs, saveFieldSpec } from '../db.js';
 import { parseArgv } from '../parse.js';
 import { generateId, buildSlug, contentHash } from '../entryId.js';
 import { deriveStoredVerb } from '../verb.js';
@@ -25,8 +26,12 @@ export function deviceId(): string {
 	return minted;
 }
 
+/** `datum tail`'s default row count (`tail_state.rs`: `count.unwrap_or(10)`). */
+const TAIL_COUNT = 10;
+
 export async function localRun(argv: string[]): Promise<RunResult> {
 	if (argv[0] === 'spec' && argv[1] === 'set') return specSet(argv);
+	if (argv.length === 1 && argv[0] === 'tail') return tail();
 
 	const parsed = parseArgv(argv);
 	if (!parsed) {
@@ -56,6 +61,28 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 	}
 
 	return { argv, code: 0, stdout: entryLine(entry), stderr: '' };
+}
+
+/**
+ * The tail pane's stand-in for `datum tail`.
+ *
+ * Bare `tail` only. Field filters, `-n`, `--table` and the metric columns
+ * are the real CLI's job — answering them here would grow a second datum
+ * in TypeScript, which is the thing da-hrz0 says not to do — so
+ * `tail mood` falls through to the unknown-command message like every
+ * other command the stand-in doesn't cover.
+ *
+ * Oldest at the top, newest at the bottom, the way `tail` prints.
+ */
+async function tail(): Promise<RunResult> {
+	const entries = await getRecentEntries(TAIL_COUNT);
+	entries.reverse();
+	return {
+		argv: ['tail'],
+		code: 0,
+		stdout: entries.map(entryLine).join('\n'),
+		stderr: ''
+	};
 }
 
 async function buildEntry(
