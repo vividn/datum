@@ -126,7 +126,14 @@ export function parseArgv(tokens: string[]): ParsedInput | null {
 
 	let state: unknown;
 	if (stateTokens.length === 0) {
-		state = undefined;
+		// Action-driven state canonicalization, mirroring `log_core.rs`
+		// (da-8y2q.2): with no explicit state, `stop` means "the field has
+		// ended" → false, and `start`/`switch` mean "transition to active"
+		// → true. Without this the verb derives to `point` and a field's
+		// on/off history — every duration datum computes — never exists.
+		if (verb === 'stop') state = false;
+		else if (verb === 'start' || verb === 'switch') state = true;
+		else state = undefined;
 	} else if (stateTokens.length === 1) {
 		state = parseValue(stateTokens[0]);
 	} else {

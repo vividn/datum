@@ -22,7 +22,6 @@
 		{
 			"argv": ["start", "work", "-t", "0800"],
 			"time": "clock",
-			"divergence": "the browser logs a bare point with no state; the CLI logs verb=switch state=true, which is what makes a field's on/off history exist at all (da-fjx1)",
 			"cli": {
 				"code": 0,
 				"entry": {
@@ -40,7 +39,6 @@
 		{
 			"argv": ["stop", "work", "-t", "1200"],
 			"time": "clock",
-			"divergence": "the browser logs a bare point with no state; the CLI logs verb=switch state=false, so nothing in the browser closes the block a `start` opened (da-fjx1)",
 			"cli": {
 				"code": 0,
 				"entry": {
@@ -215,7 +213,7 @@
 		{
 			"argv": ["occur", "coffee", "-y"],
 			"time": "day",
-			"divergence": "-y is a whole day back in the CLI — midnight, P1D uncertainty; the browser's interim parser does not implement it at all (da-fjx1)",
+			"divergence": "-y is a whole day back in the CLI — midnight, P1D uncertainty; the browser's interim parser does not implement it at all, so the flag is not merely ignored: it falls through to the state slot and is stored as state=\"-y\" with verb=switch (da-fjx1)",
 			"cli": {
 				"code": 0,
 				"entry": {
