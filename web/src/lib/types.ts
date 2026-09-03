@@ -69,6 +69,8 @@ export interface ParsedInput {
 	/** ISO-8601 duration, already normalized from `dur=30m` / `dur=1:30`. */
 	dur?: string;
 	timeOffset?: number; // minutes offset from now
+	/** Whole days back (`-y`): midnight in the local zone, P1D uncertainty. */
+	dayOffset?: number;
 	timeAbsolute?: string; // HH:MM
 }
 

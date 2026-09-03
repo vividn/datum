@@ -213,7 +213,6 @@
 		{
 			"argv": ["occur", "coffee", "-y"],
 			"time": "day",
-			"divergence": "-y is a whole day back in the CLI — midnight, P1D uncertainty; the browser's interim parser does not implement it at all, so the flag is not merely ignored: it falls through to the state slot and is stored as state=\"-y\" with verb=switch (da-fjx1)",
 			"cli": {
 				"code": 0,
 				"entry": {
@@ -232,7 +231,6 @@
 		{
 			"argv": ["occur", "coffee", "-yy"],
 			"time": "day",
-			"divergence": "-yy is two whole days back in the CLI; the browser's interim parser maps it to 60 minutes (da-fjx1)",
 			"cli": {
 				"code": 0,
 				"entry": {

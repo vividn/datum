@@ -101,7 +101,17 @@ async function buildEntry(
 ): Promise<Entry> {
 	const now = new Date();
 	let entryTime = now;
-	if (parsed.timeOffset !== undefined) {
+	// A whole-day flag records a date, not an instant: the time-of-day is
+	// stripped in the local zone and the entry carries P1D, the way
+	// `build_with_uncertainty` treats a date-only input
+	// (crates/datum-parse/src/time/builder.rs).
+	let uncertainty: string | undefined;
+	if (parsed.dayOffset !== undefined) {
+		entryTime = new Date(now);
+		entryTime.setDate(entryTime.getDate() + parsed.dayOffset);
+		entryTime.setHours(0, 0, 0, 0);
+		uncertainty = 'P1D';
+	} else if (parsed.timeOffset !== undefined) {
 		entryTime = new Date(now.getTime() + parsed.timeOffset * 60 * 1000);
 	} else if (parsed.timeAbsolute) {
 		const [hStr, mStr] = parsed.timeAbsolute.match(/^(\d{2})(\d{2})$/)?.slice(1) ?? [];
@@ -142,6 +152,7 @@ async function buildEntry(
 		data: parsed.data,
 		verb: deriveStoredVerb(state, parsed.dur, undefined),
 		occurTime,
+		occurTimeUncertainty: uncertainty,
 		createTime: now.toISOString(),
 		modifyTime: now.toISOString(),
 		deviceId: deviceId(),

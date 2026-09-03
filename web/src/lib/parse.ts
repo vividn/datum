@@ -44,6 +44,7 @@ export function parseArgv(tokens: string[]): ParsedInput | null {
 	let unit: string | undefined;
 	let dur: string | undefined;
 	let timeOffset: number | undefined;
+	let dayOffset: number | undefined;
 	let timeAbsolute: string | undefined;
 	let i = 0;
 
@@ -77,8 +78,12 @@ export function parseArgv(tokens: string[]): ParsedInput | null {
 			i++;
 			continue;
 		}
-		if (tok === '-yy') {
-			timeOffset = -60;
+		// `-y` is a whole day back, not a minute offset: midnight in the
+		// local zone with P1D uncertainty, and stacking adds a day each
+		// (`is_only_date` in crates/datum-parse/src/time/builder.rs).
+		const yesterdays = /^-(y+)$/.exec(tok);
+		if (yesterdays) {
+			dayOffset = -yesterdays[1].length;
 			i++;
 			continue;
 		}
@@ -157,6 +162,7 @@ export function parseArgv(tokens: string[]): ParsedInput | null {
 		data: Object.keys(data).length > 0 ? data : undefined,
 		dur,
 		timeOffset,
+		dayOffset,
 		timeAbsolute
 	};
 }
