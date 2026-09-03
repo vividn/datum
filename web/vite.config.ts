@@ -1,10 +1,16 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig, type Plugin, type ViteDevServer, type PreviewServer } from 'vite';
 
-// OPFS-backed SQLite needs SharedArrayBuffer, which the browser only hands
-// to a cross-origin-isolated document — so the document response has to
-// carry both of these headers or `db.ts` silently falls back to an
-// in-memory database and nothing the user logs survives a reload.
+// Cross-origin isolation, which the browser grants a document only when
+// its response carries both of these headers.
+//
+// The database no longer depends on it: SQLite runs in a worker now
+// ($lib/db.worker.ts) and the SAH-pool VFS needs only that worker's sync
+// access handle, so entries persist with or without isolation (verified
+// against a plain static server sending neither header). The headers stay
+// for what isolation still buys — SharedArrayBuffer and Atomics, which the
+// plain OPFS VFS wants and a threaded wasm CLI (da-1vat) will need — and
+// the deployment should keep sending them.
 const CROSS_ORIGIN_ISOLATION = {
 	'Cross-Origin-Opener-Policy': 'same-origin',
 	'Cross-Origin-Embedder-Policy': 'require-corp'
@@ -19,7 +25,7 @@ const CROSS_ORIGIN_ISOLATION = {
  * installed here runs ahead of both.
  *
  * The production bundle is static, so the deployment — Scaleway bucket
- * behind Cloudflare — has to emit the same two headers.
+ * behind Cloudflare — should emit the same two headers.
  */
 function crossOriginIsolation(): Plugin {
 	const install = (server: ViteDevServer | PreviewServer) => {
@@ -44,6 +50,12 @@ function crossOriginIsolation(): Plugin {
 
 export default defineConfig({
 	plugins: [sveltekit(), crossOriginIsolation()],
+	// The database worker ($lib/db.worker.ts) imports sqlite-wasm
+	// dynamically, and Vite's default worker format — iife — cannot
+	// code-split. It is a module worker anyway; say so.
+	worker: {
+		format: 'es'
+	},
 	optimizeDeps: {
 		exclude: ['@sqlite.org/sqlite-wasm']
 	}

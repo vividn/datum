@@ -1,14 +1,18 @@
-import { SCHEMA } from './schema.generated.js';
+// The main thread's handle on the database.
+//
+// SQLite itself lives in $lib/db.worker.ts, because OPFS is reachable only
+// from a dedicated worker (da-5iqw). This file is the client side of that:
+// one statement out, rows back. Its exported functions were already async,
+// so nothing calling them had to change when the database moved.
+
+import type { DbCommand, DbResponse, Row, StorageKind } from './dbProtocol.js';
 import type { Entry, FieldSpec, StoredVerb } from './types.js';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SqliteDb = any;
+export type { StorageKind };
 
-let dbInstance: SqliteDb | null = null;
-let initPromise: Promise<SqliteDb> | null = null;
-
-/** Where the open database actually lives. Null until [`initDb`] resolves. */
-export type StorageKind = 'opfs' | 'memory';
+let worker: Worker | null = null;
+let nextId = 0;
+const pending = new Map<number, (response: DbResponse) => void>();
 let storage: StorageKind | null = null;
 
 /**
@@ -22,61 +26,52 @@ export function storageKind(): StorageKind | null {
 	return storage;
 }
 
-export async function initDb(): Promise<SqliteDb> {
-	if (dbInstance) return dbInstance;
-	if (initPromise) return initPromise;
-
-	initPromise = (async () => {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const sqlite3InitModule = ((await import('@sqlite.org/sqlite-wasm')) as any).default;
-		const sqlite3 = await sqlite3InitModule({
-			print: console.log,
-			printErr: console.error
-		});
-
-		const db = await openPersistent(sqlite3);
-
-		db.exec(SCHEMA);
-		dbInstance = db;
-		return db;
-	})();
-
-	return initPromise;
+/**
+ * Start the worker, lazily.
+ *
+ * Lazily because this module is imported during prerendering, where there
+ * is no `Worker` — every caller reaches the database from `onMount` or a
+ * later event, so the worker is only ever constructed in the browser.
+ */
+function ensureWorker(): Worker {
+	if (worker) return worker;
+	const started = new Worker(new URL('./db.worker.ts', import.meta.url), { type: 'module' });
+	started.onmessage = (event: MessageEvent<DbResponse>) => {
+		const settle = pending.get(event.data.id);
+		pending.delete(event.data.id);
+		settle?.(event.data);
+	};
+	// A worker that fails to load answers nothing, so its requests would
+	// hang forever. Fail them loudly and drop the worker, so the next call
+	// gets a fresh one instead of talking to a corpse.
+	started.onerror = (event) => {
+		for (const [id, settle] of [...pending]) {
+			pending.delete(id);
+			settle({ id, ok: false, error: `database worker failed: ${event.message}` });
+		}
+		if (worker === started) worker = null;
+	};
+	worker = started;
+	return started;
 }
 
-/**
- * Open the on-device database, preferring durable storage.
- *
- * The SAH-pool VFS, not `oo1.OpfsDb`: the plain OPFS VFS needs
- * `Atomics.wait()`, so it only runs in a Worker. Both need a
- * cross-origin-isolated document — see the COOP/COEP headers in
- * vite.config.ts, which the deployment must send too.
- *
- * On the main thread this currently always falls back: every OPFS VFS
- * needs `FileSystemFileHandle.createSyncAccessHandle`, which the platform
- * exposes to dedicated workers only, so the pool install fails with
- * "Missing required OPFS APIs". Real persistence needs SQLite moved into a
- * Worker (da-5iqw); the feature detection stays so this starts working the
- * moment it runs somewhere the handle exists.
- *
- * The in-memory fallback keeps the app usable meanwhile. It loses
- * everything on reload, so it warns and records `memory` as the storage
- * kind rather than letting the UI imply durability it doesn't have.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function openPersistent(sqlite3: any): Promise<SqliteDb> {
-	if (typeof sqlite3.installOpfsSAHPoolVfs === 'function') {
-		try {
-			const pool = await sqlite3.installOpfsSAHPoolVfs({});
-			storage = 'opfs';
-			return new pool.OpfsSAHPoolDb('/datum.db');
-		} catch (e) {
-			console.warn('OPFS SAH pool unavailable:', e);
-		}
-	}
-	console.warn('no durable storage available — entries will not survive a reload');
-	storage = 'memory';
-	return new sqlite3.oo1.DB(':memory:', 'c');
+/** Send one request to the worker and resolve with the rows it returns. */
+function send(command: DbCommand): Promise<Row[]> {
+	const id = ++nextId;
+	const started = ensureWorker();
+	return new Promise<Row[]>((resolve, reject) => {
+		pending.set(id, (response) => {
+			if (!response.ok) return reject(new Error(response.error));
+			storage = response.storage;
+			resolve(response.rows);
+		});
+		started.postMessage({ ...command, id });
+	});
+}
+
+/** Open the database (idempotent) and record where it landed. */
+export async function initDb(): Promise<void> {
+	await send({ op: 'open' });
 }
 
 function rowToEntry(row: Record<string, unknown>): Entry {
@@ -107,8 +102,8 @@ function rowToEntry(row: Record<string, unknown>): Entry {
 }
 
 export async function insertEntry(entry: Entry): Promise<void> {
-	const db = await initDb();
-	db.exec({
+	await send({
+		op: 'exec',
 		sql: `INSERT INTO entries (
 			hid, slug, content_hash, field,
 			state, dur, following_state, verb, data,
@@ -149,65 +144,52 @@ export async function insertEntry(entry: Entry): Promise<void> {
 }
 
 export async function getEntriesForField(field: string, limit = 50): Promise<Entry[]> {
-	const db = await initDb();
-	const rows: Record<string, unknown>[] = [];
-	db.exec({
+	const rows = await send({
+		op: 'exec',
 		sql: `SELECT * FROM entries
 		      WHERE field = $field AND deleted_at IS NULL
 		      ORDER BY occur_time DESC
 		      LIMIT $limit`,
-		bind: { $field: field, $limit: limit },
-		rowMode: 'object',
-		callback: (row: Record<string, unknown>) => rows.push(row)
+		bind: { $field: field, $limit: limit }
 	});
 	return rows.map(rowToEntry);
 }
 
 export async function getEntriesInRange(start: Date, end: Date): Promise<Entry[]> {
-	const db = await initDb();
-	const rows: Record<string, unknown>[] = [];
-	db.exec({
+	const rows = await send({
+		op: 'exec',
 		sql: `SELECT * FROM entries
 		      WHERE occur_time >= $start AND occur_time <= $end
 		        AND deleted_at IS NULL
 		      ORDER BY occur_time DESC`,
-		bind: { $start: start.toISOString(), $end: end.toISOString() },
-		rowMode: 'object',
-		callback: (row: Record<string, unknown>) => rows.push(row)
+		bind: { $start: start.toISOString(), $end: end.toISOString() }
 	});
 	return rows.map(rowToEntry);
 }
 
 export async function getRecentEntries(limit = 20): Promise<Entry[]> {
-	const db = await initDb();
-	const rows: Record<string, unknown>[] = [];
-	db.exec({
+	const rows = await send({
+		op: 'exec',
 		sql: `SELECT * FROM entries
 		      WHERE deleted_at IS NULL
 		      ORDER BY occur_time DESC
 		      LIMIT $limit`,
-		bind: { $limit: limit },
-		rowMode: 'object',
-		callback: (row: Record<string, unknown>) => rows.push(row)
+		bind: { $limit: limit }
 	});
 	return rows.map(rowToEntry);
 }
 
 export async function getAllFields(): Promise<string[]> {
-	const db = await initDb();
-	const fields: string[] = [];
-	db.exec({
-		sql: `SELECT DISTINCT field FROM entries WHERE deleted_at IS NULL ORDER BY field`,
-		rowMode: 'object',
-		callback: (row: Record<string, unknown>) => fields.push(row.field as string)
+	const rows = await send({
+		op: 'exec',
+		sql: `SELECT DISTINCT field FROM entries WHERE deleted_at IS NULL ORDER BY field`
 	});
-	return fields;
+	return rows.map((row) => row.field as string);
 }
 
 export async function getLatestPerField(): Promise<Entry[]> {
-	const db = await initDb();
-	const rows: Record<string, unknown>[] = [];
-	db.exec({
+	const rows = await send({
+		op: 'exec',
 		sql: `SELECT e.* FROM entries e
 		      INNER JOIN (
 		        SELECT field, MAX(occur_time) AS max_time
@@ -216,9 +198,7 @@ export async function getLatestPerField(): Promise<Entry[]> {
 		        GROUP BY field
 		      ) latest ON e.field = latest.field AND e.occur_time = latest.max_time
 		      WHERE e.deleted_at IS NULL
-		      ORDER BY e.field`,
-		rowMode: 'object',
-		callback: (row: Record<string, unknown>) => rows.push(row)
+		      ORDER BY e.field`
 	});
 	return rows.map(rowToEntry);
 }
@@ -232,21 +212,17 @@ export async function getLatestPerField(): Promise<Entry[]> {
  * what the log shows rather than guessing from the field's name.
  */
 export async function getFieldSpecs(): Promise<Map<string, FieldSpec>> {
-	const db = await initDb();
+	const rows = await send({ op: 'exec', sql: `SELECT field, spec_json FROM field_specs` });
 	const specs = new Map<string, FieldSpec>();
-	db.exec({
-		sql: `SELECT field, spec_json FROM field_specs`,
-		rowMode: 'object',
-		callback: (row: Record<string, unknown>) => {
-			try {
-				specs.set(row.field as string, JSON.parse(row.spec_json as string) as FieldSpec);
-			} catch {
-				// A spec row we can't parse is a spec we don't have. Skipping it
-				// costs one widget its declared shape; throwing would cost the
-				// whole bar.
-			}
+	for (const row of rows) {
+		try {
+			specs.set(row.field as string, JSON.parse(row.spec_json as string) as FieldSpec);
+		} catch {
+			// A spec row we can't parse is a spec we don't have. Skipping it
+			// costs one widget its declared shape; throwing would cost the
+			// whole bar.
 		}
-	});
+	}
 	return specs;
 }
 
@@ -258,8 +234,8 @@ export async function getFieldSpecs(): Promise<Map<string, FieldSpec>> {
  * truth as the blob.
  */
 export async function saveFieldSpec(spec: FieldSpec): Promise<void> {
-	const db = await initDb();
-	db.exec({
+	await send({
+		op: 'exec',
 		sql: `INSERT OR REPLACE INTO field_specs (field, spec_json, kit_id, tags, render_json)
 		      VALUES ($field, $spec_json, NULL, $tags, $render_json)`,
 		bind: {
@@ -279,25 +255,24 @@ export async function saveFieldSpec(spec: FieldSpec): Promise<void> {
  * meaning from the field's name.
  */
 export async function getObservedStates(): Promise<Map<string, unknown[]>> {
-	const db = await initDb();
-	const observed = new Map<string, unknown[]>();
-	db.exec({
+	const rows = await send({
+		op: 'exec',
 		sql: `SELECT DISTINCT field, state FROM entries
 		      WHERE deleted_at IS NULL AND state IS NOT NULL
-		      ORDER BY field`,
-		rowMode: 'object',
-		callback: (row: Record<string, unknown>) => {
-			const field = row.field as string;
-			let value: unknown;
-			try {
-				value = JSON.parse(row.state as string);
-			} catch {
-				return;
-			}
-			const seen = observed.get(field);
-			if (seen) seen.push(value);
-			else observed.set(field, [value]);
-		}
+		      ORDER BY field`
 	});
+	const observed = new Map<string, unknown[]>();
+	for (const row of rows) {
+		const field = row.field as string;
+		let value: unknown;
+		try {
+			value = JSON.parse(row.state as string);
+		} catch {
+			continue;
+		}
+		const seen = observed.get(field);
+		if (seen) seen.push(value);
+		else observed.set(field, [value]);
+	}
 	return observed;
 }
