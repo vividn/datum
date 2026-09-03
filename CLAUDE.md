@@ -164,7 +164,12 @@ Two regions of the app are datum's own Rust compiled to
   is the browser half; there is no TypeScript parser any more.
 - **the dayview / nowview panes** — `crates/datum-layout` via
   `crates/datum-layout-wasm` (da-6h6p), reached from
-  `web/src/lib/layout.ts`.
+  `web/src/lib/layout.ts`. Rows in, SVG out: which mark each entry makes
+  is the wasm crate's `marks.rs` dispatching on the CLI's own verb→shape
+  table (`datum_parse::shape`, moved out of `datum-core` by da-t7ud so
+  wasm can reach it), and the colours and geometry were already Rust's.
+  `crates/datum-commands/src/render/wasm_parity.rs` holds that walk — and
+  the colour helpers — against `field_visuals::render_field_visuals`.
 
 Both use the same five-function C ABI, loaded by `web/src/lib/wasm.ts`.
 Neither needs wasm-bindgen, and neither may acquire an import: a module

@@ -24,7 +24,10 @@ pub struct TrackedField {
 /// Sentinel state value representing an ignored field. Stored as the JSON
 /// string `"IGNORED"` in `entries.value`. The renderer's
 /// `render::characters::IGNORED_STATE` constant carries the same literal.
-pub const IGNORED_STATE_VALUE: &str = "IGNORED";
+///
+/// Defined in `datum_parse::shape` beside the truth table that reads it
+/// (da-t7ud) and re-exported here so this stays a `db::types` path.
+pub use datum_parse::shape::IGNORED_STATE_VALUE;
 
 /// Which timestamp to sort/filter entries by in [`super::Db::list_entries`].
 ///

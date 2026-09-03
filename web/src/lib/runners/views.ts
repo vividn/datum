@@ -9,13 +9,14 @@
 // already does for the CLI's SVG stdout.
 //
 // This file is the part the CLI does against SQLite and the browser does
-// against SQLite-wasm: pick the window, pull the entries, group them by
-// field. The marks each entry makes are $lib/visuals.ts; every colour and
-// every pixel is Rust's.
+// against SQLite-wasm: pick the window, pull the rows, group them by
+// field. Which mark each row makes is `crates/datum-layout-wasm`'s marks
+// walk, dispatching on the CLI's own verb→shape table (da-t7ud); it used
+// to be a hand-written copy in $lib/visuals.ts. Every colour and every
+// pixel was already Rust's.
 
 import { getEntriesInRange, getAllFields, getFieldSpecs, getStateEntriesAt } from '../db.js';
-import { renderLayout, type FieldReq, type FieldStyle } from '../layout.js';
-import { effectiveState, fieldMarks, firstSwitchMs, styleOf } from '../visuals.js';
+import { renderLayout, type EntryReq, type FieldReq, type FieldStyle } from '../layout.js';
 import type { Entry } from '../types.js';
 import type { RunResult } from '../run.js';
 
@@ -60,26 +61,37 @@ function clockLabel(date: Date): string {
 	return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-/** Group entries by field, oldest first — the order the walk needs. */
-function byField(entries: Entry[]): Map<string, Entry[]> {
-	const out = new Map<string, Entry[]>();
+/** A stored row, as the layout module reads one. */
+function toEntryReq(entry: Entry): EntryReq {
+	const occurMs = Date.parse(entry.occurTime.utc);
+	return {
+		occur_ms: Number.isFinite(occurMs) ? occurMs : null,
+		verb: entry.verb,
+		dur: entry.dur,
+		state: entry.state,
+		following_state: entry.followingState,
+		slug: entry.slug
+	};
+}
+
+/** Group rows by field. Ordering within a field is the walk's own job. */
+function byField(entries: Entry[]): Map<string, EntryReq[]> {
+	const out = new Map<string, EntryReq[]>();
 	for (const entry of entries) {
 		const list = out.get(entry.field);
-		if (list) list.push(entry);
-		else out.set(entry.field, [entry]);
-	}
-	for (const list of out.values()) {
-		list.sort((a, b) => Date.parse(a.occurTime.utc) - Date.parse(b.occurTime.utc));
+		if (list) list.push(toEntryReq(entry));
+		else out.set(entry.field, [toEntryReq(entry)]);
 	}
 	return out;
 }
 
+/**
+ * Every field's stored spec, passed through untouched: the Rust side
+ * reads the drawn keys out of the same blob the CLI deserializes.
+ */
 async function stylesByField(): Promise<Record<string, FieldStyle>> {
 	const styles: Record<string, FieldStyle> = {};
-	for (const [field, spec] of await getFieldSpecs()) {
-		const style = styleOf(spec);
-		if (style) styles[field] = style;
-	}
+	for (const [field, spec] of await getFieldSpecs()) styles[field] = spec;
 	return styles;
 }
 
@@ -103,24 +115,23 @@ export async function dayview(argv: string[]): Promise<RunResult> {
 	const dayEnd = new Date(dayStart);
 	dayEnd.setDate(dayEnd.getDate() + 1);
 
-	const startMs = dayStart.getTime();
-	const endMs = dayEnd.getTime();
-	const nowMs = now.getTime();
-
-	const entries = await getEntriesInRange(new Date(startMs - DAYVIEW_BUFFER_MS), dayEnd);
+	const entries = await getEntriesInRange(
+		new Date(dayStart.getTime() - DAYVIEW_BUFFER_MS),
+		dayEnd
+	);
 	const fields: FieldReq[] = [];
-	for (const [field, list] of byField(entries)) {
-		// The last switch of the day runs to the end of the day, or to now
-		// if the day hasn't finished yet — a state doesn't extend into the
-		// future.
-		fields.push(fieldMarks(field, list, startMs, endMs, Math.min(endMs, nowMs)));
-	}
+	for (const [field, list] of byField(entries)) fields.push({ field, entries: list });
 
 	const svg = await renderLayout({
 		view: 'dayview',
-		now_ms: nowMs,
+		now_ms: now.getTime(),
 		days: [
-			{ label_lines: dayLabel(dayStart), start_ms: startMs, end_ms: endMs, fields }
+			{
+				label_lines: dayLabel(dayStart),
+				start_ms: dayStart.getTime(),
+				end_ms: dayEnd.getTime(),
+				fields
+			}
 		],
 		styles: await stylesByField()
 	});
@@ -137,12 +148,9 @@ export async function dayview(argv: string[]): Promise<RunResult> {
  */
 export async function nowview(argv: string[]): Promise<RunResult> {
 	const now = new Date();
-	const endMs = now.getTime();
-	const startMs = endMs - HISTORY_MINUTES * 60 * 1000;
-	const fetchStart = new Date(startMs - NOWVIEW_BUFFER_MS);
+	const fetchStart = new Date(now.getTime() - HISTORY_MINUTES * 60 * 1000 - NOWVIEW_BUFFER_MS);
 
-	const entries = await getEntriesInRange(fetchStart, now);
-	const grouped = byField(entries);
+	const grouped = byField(await getEntriesInRange(fetchStart, now));
 	// A field whose open state predates the fetch window has no entry in
 	// it at all, and would silently lose its band. `build_dayview_fields`
 	// seeds every tracked field for the same reason.
@@ -151,33 +159,23 @@ export async function nowview(argv: string[]): Promise<RunResult> {
 	}
 
 	// The two state oracles the panel and the lead-in need, each one query
-	// over the whole store rather than over the fetched window.
-	const leadState = new Map<string, unknown>();
-	for (const entry of await getStateEntriesAt(fetchStart)) {
-		leadState.set(entry.field, effectiveState(entry, fetchStart.getTime()));
-	}
-	const panelStates: Record<string, unknown> = {};
-	for (const entry of await getStateEntriesAt(now)) {
-		panelStates[entry.field] = effectiveState(entry, endMs);
-	}
-
-	const fields: FieldReq[] = [];
-	for (const [field, list] of grouped) {
-		const leadEnd = firstSwitchMs(list) ?? endMs;
-		const state = leadState.get(field);
-		const lead =
-			leadEnd > fetchStart.getTime() && state !== undefined
-				? { startMs: fetchStart.getTime(), endMs: leadEnd, state }
-				: undefined;
-		fields.push(fieldMarks(field, list, startMs, endMs, endMs, lead));
-	}
+	// over the whole store rather than over the fetched window. The
+	// trailing-edge rule that turns a winning row into a state is Rust's
+	// (`db::now::effective_state`), so the rows go across as they are.
+	const rowsAt = async (at: Date): Promise<Record<string, EntryReq>> => {
+		const out: Record<string, EntryReq> = {};
+		for (const entry of await getStateEntriesAt(at)) out[entry.field] = toEntryReq(entry);
+		return out;
+	};
 
 	const svg = await renderLayout({
 		view: 'nowview',
-		now_ms: endMs,
-		fields,
+		now_ms: now.getTime(),
+		fetch_start_ms: fetchStart.getTime(),
+		fields: [...grouped].map(([field, entries]) => ({ field, entries })),
 		styles: await stylesByField(),
-		panel_states: panelStates,
+		lead_entries: await rowsAt(fetchStart),
+		panel_entries: await rowsAt(now),
 		clock: clockLabel(now)
 	});
 	return svgResult(argv, svg);

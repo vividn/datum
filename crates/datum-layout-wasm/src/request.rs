@@ -1,10 +1,13 @@
 //! The request the browser sends and the SVG that comes back.
 //!
 //! One JSON object in, one JSON object out — pure, and testable on the
-//! host without a browser. The caller supplies *data* (which entries fall
-//! in the window, which value belongs on a block, which spec overrides a
-//! colour); every rule about geometry and colour lives here or in
-//! `datum-layout`, so the browser never re-derives a number the CLI owns.
+//! host without a browser. The caller supplies *rows* — which entries fall
+//! in the window, which spec blob belongs to which field, and the two
+//! things only a database can answer (the state prevailing at the window's
+//! left edge, and the state prevailing now). Everything after that is
+//! datum's own: [`crate::marks`] decides what each entry draws, this module
+//! resolves the colours, and `datum-layout` places the pixels. The browser
+//! re-derives nothing.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -22,55 +25,15 @@ use crate::colors::{
     field_hex, is_unrendered_switch_value, state_label, state_value_colors, state_value_hex,
     FieldStyle, BLACK_HEX, DEFAULT_FIELD_HEIGHT,
 };
+use crate::marks::{effective_state, field_marks, EntryReq, Fallback, FieldMarks, LeadingRegion};
 
-/// Which colour to use when a value resolves to nothing. The two dot
-/// fallbacks in `field_visuals::render_field_visuals` differ, and only the
-/// caller — which knows the verb — can pick between them.
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Fallback {
-    /// The field's own colour (a dot whose fg is the field, or whose bg
-    /// comes from `following_state`).
-    #[default]
-    Field,
-    /// Black — a dot with no prevailing state underneath it.
-    Black,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct BlockReq {
-    pub start_ms: i64,
-    pub end_ms: i64,
-    /// The state value this block is filled from. Absent → the field colour.
-    #[serde(default)]
-    pub state: Option<JsonValue>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct PointReq {
-    pub time_ms: i64,
-    /// Foreground value; absent → `fg_fallback`.
-    #[serde(default)]
-    pub fg: Option<JsonValue>,
-    #[serde(default)]
-    pub fg_fallback: Fallback,
-    /// Background value (the state underneath the dot); absent → `bg_fallback`.
-    #[serde(default)]
-    pub bg: Option<JsonValue>,
-    #[serde(default)]
-    pub bg_fallback: Fallback,
-    /// The label shown on hover. Absent → derived from `fg`.
-    #[serde(default)]
-    pub state_label: Option<JsonValue>,
-}
-
+/// One field and the entries it drew from, oldest-first order not
+/// required — [`field_marks`] is given them sorted.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FieldReq {
     pub field: String,
     #[serde(default)]
-    pub blocks: Vec<BlockReq>,
-    #[serde(default)]
-    pub points: Vec<PointReq>,
+    pub entries: Vec<EntryReq>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -134,15 +97,25 @@ pub enum Request {
     },
     Nowview {
         now_ms: i64,
+        /// Where the caller's query started, which is earlier than the
+        /// visible window so a band opened before it still draws. The
+        /// leading region runs from here.
+        fetch_start_ms: i64,
         #[serde(default)]
         fields: Vec<FieldReq>,
         #[serde(default)]
         styles: BTreeMap<String, FieldStyle>,
-        /// The prevailing state per field at `now_ms`, for the panel to the
-        /// right of the now-line. A field absent from the map, or mapped to
-        /// null, renders as a name with no state.
+        /// Per field, the entry that decides its state at `fetch_start_ms`
+        /// — one row from `Db::batch_state_at`'s query. The trailing-edge
+        /// rule that turns it into a state is applied here, not by the
+        /// caller. A field with no such row draws no leading band.
         #[serde(default)]
-        panel_states: BTreeMap<String, JsonValue>,
+        lead_entries: BTreeMap<String, EntryReq>,
+        /// The same, at `now_ms`, for the panel to the right of the
+        /// now-line. A field absent from the map, or whose state resolves
+        /// to nothing, renders as a name with no state.
+        #[serde(default)]
+        panel_entries: BTreeMap<String, EntryReq>,
         /// The `HH:MM` clock painted at the now-line. The browser owns this
         /// because it owns the viewer's timezone.
         #[serde(default)]
@@ -199,12 +172,25 @@ fn render(request: Request) -> Response {
             let config = DayviewConfig {
                 days: days
                     .into_iter()
-                    .map(|d| DayviewDayInput {
-                        label_lines: d.label_lines,
-                        start_ms: d.start_ms,
-                        end_ms: d.end_ms,
-                        has_error: d.has_error,
-                        fields: build_fields(d.fields, &styles),
+                    .map(|d| {
+                        // `build_day_fields`: a still-open switch region
+                        // stops at the end of the day, or at the now-line
+                        // when the day has not finished — a state does not
+                        // extend into the future.
+                        let window = Window {
+                            start_ms: d.start_ms,
+                            end_ms: d.end_ms,
+                            fallback_end_ms: d.end_ms.min(now_ms),
+                            lead_start_ms: d.start_ms,
+                        };
+                        let fields = build_fields(d.fields, &styles, &window, &BTreeMap::new());
+                        DayviewDayInput {
+                            label_lines: d.label_lines,
+                            start_ms: d.start_ms,
+                            end_ms: d.end_ms,
+                            has_error: d.has_error,
+                            fields,
+                        }
                     })
                     .collect(),
                 now_ms,
@@ -225,9 +211,11 @@ fn render(request: Request) -> Response {
         }
         Request::Nowview {
             now_ms,
+            fetch_start_ms,
             fields,
             styles,
-            panel_states,
+            lead_entries,
+            panel_entries,
             clock,
             options,
         } => {
@@ -244,7 +232,21 @@ fn render(request: Request) -> Response {
                     .time_axis_height
                     .unwrap_or(defaults.time_axis_height),
             };
-            let config = nowview_config(build_fields(fields, &styles), now_ms, &geometry);
+            // The visible window is the history the geometry asks for,
+            // ending at the now-line — `nowview_config`'s own scope.
+            let window_start_ms = now_ms - (geometry.history_minutes * 60_000.0) as i64;
+            let window = Window {
+                start_ms: window_start_ms,
+                end_ms: now_ms,
+                fallback_end_ms: now_ms,
+                lead_start_ms: fetch_start_ms,
+            };
+            let fields = build_fields(fields, &styles, &window, &lead_entries);
+            let panel_states: BTreeMap<String, JsonValue> = panel_entries
+                .iter()
+                .map(|(field, entry)| (field.clone(), effective_state(entry, now_ms)))
+                .collect();
+            let config = nowview_config(fields, now_ms, &geometry);
             let layout = compute_dayview(&config);
             let panel = build_panel(&layout, &panel_states, &styles);
             Response::ok(render_nowview_svg(&layout, &clock, &panel))
@@ -252,17 +254,63 @@ fn render(request: Request) -> Response {
     }
 }
 
-/// Resolve each field's colours and cross-axis position. Mirrors
-/// `dayview::build_day_fields` minus the database: fields whose blocks and
-/// points both come out empty are dropped rather than drawn as empty bands.
-fn build_fields(
+/// One field's marks: sort its entries the way the walk requires, and
+/// resolve the leading band from the row the caller's database picked.
+fn marks_for(
+    field: &FieldReq,
+    window: &Window,
+    lead_entries: &BTreeMap<String, EntryReq>,
+) -> FieldMarks {
+    let mut entries = field.entries.clone();
+    entries.sort_by_key(|e| e.occur_ms.unwrap_or(i64::MIN));
+    let lead = lead_entries.get(&field.field).map(|e| LeadingRegion {
+        start_ms: window.lead_start_ms,
+        state: Some(effective_state(e, window.lead_start_ms)),
+    });
+    field_marks(
+        &entries,
+        window.start_ms,
+        window.end_ms,
+        window.fallback_end_ms,
+        lead.as_ref(),
+    )
+}
+
+/// The stretch of time one surface draws, and the two edges a band can
+/// run to when nothing else stops it.
+pub struct Window {
+    /// The visible window; marks outside it are clipped away.
+    pub start_ms: i64,
+    pub end_ms: i64,
+    /// Where a still-open switch region ends.
+    pub fallback_end_ms: i64,
+    /// Where a leading band starts — the left edge of the caller's query,
+    /// which reaches back before `start_ms`. Only nowview hands one in.
+    pub lead_start_ms: i64,
+}
+
+/// Turn each field's entries into marks, resolve their colours, and place
+/// the field on the cross axis. Mirrors `dayview::build_day_fields` minus
+/// the database: fields whose blocks and points both come out empty are
+/// dropped rather than drawn as empty bands.
+///
+/// `pub` so `crates/datum-commands/src/render/wasm_parity.rs` can hold the
+/// whole browser-side path — the walk and the colours both — against
+/// `field_visuals::render_field_visuals`.
+pub fn build_fields(
     fields: Vec<FieldReq>,
     styles: &BTreeMap<String, FieldStyle>,
+    window: &Window,
+    lead_entries: &BTreeMap<String, EntryReq>,
 ) -> Vec<DayviewFieldInput> {
     let mut out = Vec::with_capacity(fields.len());
     for f in fields {
         let style = styles.get(&f.field);
-        let blocks: Vec<DayviewBlock> = f
+        let marks = marks_for(&f, window, lead_entries);
+        if marks.is_empty() {
+            continue;
+        }
+        let blocks: Vec<DayviewBlock> = marks
             .blocks
             .into_iter()
             .map(|b| DayviewBlock {
@@ -272,7 +320,7 @@ fn build_fields(
                 state_label: state_label(b.state.as_ref()),
             })
             .collect();
-        let points: Vec<DayviewPoint> = f
+        let points: Vec<DayviewPoint> = marks
             .points
             .into_iter()
             .map(|p| DayviewPoint {
@@ -282,9 +330,6 @@ fn build_fields(
                 state_label: state_label(p.state_label.as_ref().or(p.fg.as_ref())),
             })
             .collect();
-        if blocks.is_empty() && points.is_empty() {
-            continue;
-        }
         let y_frac = style
             .and_then(|s| s.y)
             .unwrap_or_else(|| crate::colors::hash_y(&f.field));

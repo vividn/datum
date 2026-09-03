@@ -326,6 +326,55 @@ describe('the visual views', () => {
 		});
 	});
 
+	test('a switch, an occur and a switch to nothing draw band, dot and nothing', async () => {
+		// The three shapes `render_shape` distinguishes, asserted through
+		// the seam. Until da-t7ud this dispatch was a hand-written copy of
+		// the table in the browser ($lib/visuals.ts); it is now the CLI's
+		// own, so what this test guards is that the wiring reaches it.
+		await withApp(async ({ run }) => {
+			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-10'])).code, OK);
+			assert.equal((await run(['occur', 'coffee', '-t', '-5'])).code, OK);
+			// A switch to `false` terminates a state without opening one.
+			assert.equal((await run(['switch', 'sleep', 'false', '-t', '-5'])).code, OK);
+
+			const drawn = await run(['nowview']);
+			assert.equal(drawn.code, OK, drawn.stderr);
+
+			// A band: a filled rect in the state's own colour.
+			assert.match(
+				drawn.stdout,
+				new RegExp(`<rect[^>]*fill="${colorOf('happy')}"`),
+				`no band for the switch: ${drawn.stdout}`
+			);
+			// A dot: a circle in the field's colour, over black — nothing
+			// was prevailing under it.
+			assert.match(
+				drawn.stdout,
+				new RegExp(`<circle[^>]*fill="${colorOf('coffee')}"`),
+				`no dot for the occur: ${drawn.stdout}`
+			);
+			// And nothing at all for the terminating switch — `sleep` has
+			// no other mark, so the field is dropped rather than drawn.
+			assert.doesNotMatch(drawn.stdout, /data-field="sleep"/);
+		});
+	});
+
+	test('a block hangs back from its occur time rather than starting at it', async () => {
+		await withApp(async ({ run }) => {
+			// `start`/`stop` is a block: occur_time is its trailing edge.
+			assert.equal((await run(['start', 'work', '-t', '-20'])).code, OK);
+			assert.equal((await run(['stop', 'work', '-t', '-5'])).code, OK);
+
+			const drawn = await run(['nowview']);
+			assert.equal(drawn.code, OK, drawn.stderr);
+			assert.match(
+				drawn.stdout,
+				new RegExp(`<rect[^>]*fill="${colorOf('work')}"`),
+				`no band for the block: ${drawn.stdout}`
+			);
+		});
+	});
+
 	test("dayview's window flags are still the real CLI's job", async () => {
 		await withApp(async ({ run }) => {
 			// Answering `--n-days` here would mean growing a second datum in

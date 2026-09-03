@@ -31,6 +31,7 @@
 //! host. See `web/src/lib/layout.ts` for the other half.
 
 pub mod colors;
+pub mod marks;
 pub mod request;
 
 pub use request::render_json;
@@ -130,19 +131,22 @@ mod tests {
 
     #[test]
     fn dayview_paints_a_switch_block_in_the_state_colour() {
+        // The now-line an hour past the switch: a still-open region runs to
+        // `min(day_end, now)`, so a switch at the now-line draws nothing.
         let svg = svg_of(json!({
             "view": "dayview",
-            "now_ms": 1_700_000_000_000i64,
+            "now_ms": 1_700_001_000_000i64,
             "days": [{
                 "label_lines": ["Mon", "Apr 27"],
                 "start_ms": 1_699_999_000_000i64,
                 "end_ms": 1_700_003_000_000i64,
                 "fields": [{
                     "field": "mood",
-                    "blocks": [{
-                        "start_ms": 1_700_000_000_000i64,
-                        "end_ms": 1_700_001_000_000i64,
-                        "state": "happy"
+                    "entries": [{
+                        "occur_ms": 1_700_000_000_000i64,
+                        "verb": "switch",
+                        "state": "happy",
+                        "slug": "mood:2023-11-14T22:13Z"
                     }]
                 }]
             }]
@@ -167,7 +171,7 @@ mod tests {
             "days": [{
                 "start_ms": 0,
                 "end_ms": 86_400_000i64,
-                "fields": [{ "field": "ghost" }]
+                "fields": [{ "field": "ghost", "entries": [] }]
             }]
         }));
         assert!(!svg.contains("ghost"), "empty field drawn: {svg}");
@@ -178,16 +182,20 @@ mod tests {
         let svg = svg_of(json!({
             "view": "nowview",
             "now_ms": 1_700_000_000_000i64,
+            "fetch_start_ms": 1_699_992_800_000i64,
             "clock": "14:32",
             "fields": [{
                 "field": "focus",
-                "blocks": [{
-                    "start_ms": 1_699_999_800_000i64,
-                    "end_ms": 1_700_000_000_000i64,
-                    "state": "deep"
+                "entries": [{
+                    "occur_ms": 1_699_999_800_000i64,
+                    "verb": "switch",
+                    "state": "deep",
+                    "slug": "focus:2023-11-14T22:10Z"
                 }]
             }],
-            "panel_states": { "focus": "deep" }
+            "panel_entries": {
+                "focus": { "occur_ms": 1_699_999_800_000i64, "verb": "switch", "state": "deep" }
+            }
         }));
         assert!(svg.contains("14:32"), "clock missing from {svg}");
         assert!(svg.contains("deep"), "panel state missing from {svg}");

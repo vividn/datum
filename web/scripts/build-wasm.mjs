@@ -27,7 +27,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..');
 
 const MODULES = [
-	{ crate: 'datum-layout-wasm', artifact: 'datum_layout_wasm.wasm', out: 'datum-layout.wasm' },
+	{
+		crate: 'datum-layout-wasm',
+		artifact: 'datum_layout_wasm.wasm',
+		out: 'datum-layout.wasm',
+		// Same reason as below: both crates reach `datum-parse`, whose
+		// `native` feature is default-on for host builds and compiles out
+		// for the browser.
+		noDefaultFeatures: true
+	},
 	{
 		crate: 'datum-parse-wasm',
 		artifact: 'datum_parse_wasm.wasm',

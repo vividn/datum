@@ -211,8 +211,9 @@ export async function getLatestPerField(): Promise<Entry[]> {
  * ordering: `occur_time DESC, slug DESC`, live rows only
  * (`STATE_ORDER_NEWEST_FIRST` / `STATE_PARTICIPATION_SQL` in
  * crates/datum-core/src/db/types.rs). The trailing-edge rule that turns
- * the winning row into a state is `effectiveState` in $lib/visuals.ts,
- * held apart the same way Rust holds it apart.
+ * the winning row into a state is Rust's `db::now::effective_state`,
+ * reached through `crates/datum-layout-wasm` (da-t7ud) — held apart from
+ * this query the same way Rust holds it apart.
  */
 export async function getStateEntriesAt(at: Date): Promise<Entry[]> {
 	const rows = await send({

@@ -14,7 +14,6 @@ pub mod kit_color;
 pub mod kit_color_rule;
 pub mod last_docs;
 pub mod migrations;
-pub mod shape;
 pub mod slug;
 pub mod state;
 pub mod sync_state;
@@ -32,4 +31,4 @@ pub mod test_util;
 /// They are defined there, not here, because they are pure — no database,
 /// no I/O — and the browser reaches them through `datum-parse-wasm`
 /// (da-7scm). One definition per rule; this crate is one of its callers.
-pub use datum_parse::{dur, time, verb};
+pub use datum_parse::{dur, shape, time, verb};

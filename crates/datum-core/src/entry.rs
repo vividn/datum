@@ -35,46 +35,11 @@ where
     Ok(Option::<String>::deserialize(deserializer)?.filter(|s| !s.is_empty()))
 }
 
-/// Legacy shape classifier kept on the public surface as a compatibility
-/// shim for sub-bead 1: callers that were matching on
-/// `entry.entry_shape` still compile, but the value is derived from
-/// `dur` rather than stored. Sub-beads 2/5/8 replace shape-based
-/// switches with the verb-based truth table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-#[derive(Default)]
-pub enum EntryShape {
-    /// `dur is NULL`.
-    #[default]
-    Point,
-    /// `dur is set` (non-NULL, non-zero).
-    Block,
-    /// Pre-pivot only. Never derived from a v=20 entry. Kept so legacy
-    /// match arms still type-check.
-    Ongoing,
-}
-
-impl std::fmt::Display for EntryShape {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EntryShape::Point => write!(f, "point"),
-            EntryShape::Block => write!(f, "block"),
-            EntryShape::Ongoing => write!(f, "ongoing"),
-        }
-    }
-}
-
-impl std::str::FromStr for EntryShape {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "point" => Ok(EntryShape::Point),
-            "block" => Ok(EntryShape::Block),
-            "ongoing" => Ok(EntryShape::Ongoing),
-            _ => Err(format!("Unknown entry_shape: '{s}'")),
-        }
-    }
-}
+/// The dur-derived shape classifier. Defined in `datum-parse` alongside
+/// the verb→visual truth table that reads it, because both are pure and
+/// the browser needs them (da-t7ud); re-exported here so
+/// `datum_core::entry::EntryShape` stays the path callers use.
+pub use datum_parse::shape::EntryShape;
 
 /// Length of the stored `hid` column (base36 characters).
 pub use datum_parse::entry_id::HID_LEN;
@@ -385,11 +350,7 @@ impl Entry {
     /// `Ongoing` is never produced from a v=20 entry — open blocks are
     /// expressed via `verb`, not shape.
     pub fn shape(&self) -> EntryShape {
-        match self.dur.as_ref() {
-            None => EntryShape::Point,
-            Some(d) if d.is_zero_span() || d.is_moment() || d.is_unknown() => EntryShape::Point,
-            Some(_) => EntryShape::Block,
-        }
+        EntryShape::from_dur(self.dur.as_ref())
     }
 
     /// Recompute the content_hash from the entry's current fields.

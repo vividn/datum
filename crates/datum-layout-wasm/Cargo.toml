@@ -9,8 +9,18 @@ edition.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Forwarded straight to `datum-parse`, and default-on for the same reason
+# it is default-on there: with `native` off, a host build compiles out
+# local-timezone detection and every host time silently resolves to UTC.
+# The browser build turns it off together with the wasm target:
+# `cargo build -p datum-layout-wasm --target wasm32-unknown-unknown --no-default-features`
+default = ["native"]
+native = ["datum-parse/native"]
+
 [dependencies]
 datum-layout = { path = "../datum-layout" }
+datum-parse = { path = "../datum-parse", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 md-5 = { workspace = true }

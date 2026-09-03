@@ -19,11 +19,81 @@
 //! add one match arm and new shapes add one variant. Renderers consume
 //! [`render_shape`] (and the helpers [`is_switching_verb`] /
 //! [`is_unrendered_switch_value`]) instead of re-implementing the tree.
+//!
+//! Lives in `datum-parse` rather than `datum-core` for the reason
+//! [`crate::verb`] does: it is pure, and the browser needs it (da-t7ud).
+//! `datum-core` pulls rusqlite and cannot reach `wasm32-unknown-unknown`,
+//! so a table left there is a table the PWA has to hand-copy — and
+//! `web/src/lib/visuals.ts` was that copy. `datum-core` re-exports this
+//! module, [`EntryShape`] and [`IGNORED_STATE_VALUE`], so
+//! `datum_core::shape::render_shape` and `datum_core::entry::EntryShape`
+//! remain the paths every other caller uses.
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::db::IGNORED_STATE_VALUE;
-use crate::entry::{EntryShape, Verb};
+use crate::dur::Dur;
+use crate::verb::Verb;
+
+/// The sentinel state meaning "this field is deliberately not tracked".
+/// Stored as a plain string in the `state` column; it terminates a state
+/// region rather than opening one (see [`is_unrendered_switch_value`]).
+pub const IGNORED_STATE_VALUE: &str = "IGNORED";
+
+/// Legacy shape classifier kept on the public surface as a compatibility
+/// shim for sub-bead 1: callers that were matching on
+/// `entry.entry_shape` still compile, but the value is derived from
+/// `dur` rather than stored. Sub-beads 2/5/8 replace shape-based
+/// switches with the verb-based truth table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[derive(Default)]
+pub enum EntryShape {
+    /// `dur is NULL`.
+    #[default]
+    Point,
+    /// `dur is set` (non-NULL, non-zero).
+    Block,
+    /// Pre-pivot only. Never derived from a v=20 entry. Kept so legacy
+    /// match arms still type-check.
+    Ongoing,
+}
+
+impl EntryShape {
+    /// An entry's shape, which is a fact about its duration and nothing
+    /// else: a span that covers time is a block, everything else — no
+    /// duration, a moment, a zero span, an unknown one — is a point.
+    /// `Entry::shape()` is this function.
+    pub fn from_dur(dur: Option<&Dur>) -> Self {
+        match dur {
+            None => EntryShape::Point,
+            Some(d) if d.is_zero_span() || d.is_moment() || d.is_unknown() => EntryShape::Point,
+            Some(_) => EntryShape::Block,
+        }
+    }
+}
+
+impl std::fmt::Display for EntryShape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EntryShape::Point => write!(f, "point"),
+            EntryShape::Block => write!(f, "block"),
+            EntryShape::Ongoing => write!(f, "ongoing"),
+        }
+    }
+}
+
+impl std::str::FromStr for EntryShape {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "point" => Ok(EntryShape::Point),
+            "block" => Ok(EntryShape::Block),
+            "ongoing" => Ok(EntryShape::Ongoing),
+            _ => Err(format!("Unknown entry_shape: '{s}'")),
+        }
+    }
+}
 
 /// Visual category an entry's *primary* element renders as.
 ///
