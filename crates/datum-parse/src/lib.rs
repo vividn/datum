@@ -29,6 +29,18 @@
 //! `iana-time-zone` for local-timezone detection. Callers targeting
 //! WASM must supply a timezone explicitly.
 
+// Turning `native` off on a host target compiles cleanly and yields a binary
+// with dead zone detection — every local time silently resolved to UTC, and
+// nothing anywhere said so. `--no-default-features` is for wasm; on any other
+// target it is a mistake, so make it one (da-2pgd).
+#[cfg(all(not(feature = "native"), not(target_arch = "wasm32")))]
+compile_error!(
+    "datum-parse: the `native` feature is required off wasm — without it local \
+     timezone detection is compiled out and every host time resolves to UTC. \
+     Disable default features only together with \
+     `--target wasm32-unknown-unknown`."
+);
+
 pub mod alias;
 pub mod cli;
 pub mod error;

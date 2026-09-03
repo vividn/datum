@@ -68,10 +68,20 @@ impl Zone {
     /// The host's zone, resolved the same way [`DatumTime::now`] resolves it
     /// (honouring `TZ`), so a boundary computed here and a timestamp written
     /// there agree.
+    ///
+    /// A host that cannot name its zone still knows its *offset*, so the
+    /// fallback is [`Zone::Fixed`] around the live offset — not `UTC`, which
+    /// would move every boundary on such a host by however far it sits from
+    /// Greenwich (da-2pgd).
     #[cfg(feature = "native")]
     pub fn host() -> Self {
-        Zone::iana(&crate::time::clock::host_iana_tz_name())
-            .unwrap_or(Zone::Fixed(chrono::offset::Utc.fix()))
+        match crate::time::clock::host_iana_tz_name() {
+            // `host_iana_tz_name` only ever returns names that parse.
+            Some(name) => {
+                Zone::iana(&name).unwrap_or_else(|_| Zone::Fixed(crate::time::clock::host_offset()))
+            }
+            None => Zone::Fixed(crate::time::clock::host_offset()),
+        }
     }
 
     /// A name for error messages: the IANA name, or the offset spelled out.

@@ -215,21 +215,34 @@ impl TimeBuilder {
 
     #[cfg(feature = "native")]
     pub fn build(self) -> DatumTime {
-        // Both paths end at a *named* IANA zone: `-z` supplies one, and the
-        // host zone is the name `DatumTime` records anyway. Naming the host
+        // Both paths end at one `Zone`: `-z` supplies a name, and the host
+        // zone is the name `DatumTime` records anyway. Resolving through a
         // zone instead of reaching for `chrono::Local` collapses what were
         // two generic instantiations into one body, so there is no second
         // place for a DST policy to drift (da-ztae).
-        let name = match self.timezone.as_deref() {
+        let (zone, name) = match self.timezone.as_deref() {
             // Panic-safe: resolve_timezone() already validated the name
             // before it got here. A bad name at this point means the caller
             // skipped validation — surface it loudly rather than silently
             // falling back to the host zone.
-            Some(tz_name) => tz_name.to_string(),
-            None => crate::time::clock::host_iana_tz_name(),
+            Some(tz_name) => (
+                Zone::iana(tz_name)
+                    .expect("TimeBuilder: timezone field must be a validated IANA name"),
+                Some(tz_name.to_string()),
+            ),
+            None => match crate::time::clock::host_iana_tz_name() {
+                Some(name) => (
+                    Zone::iana(&name).expect("host zone name must be a valid IANA name"),
+                    Some(name),
+                ),
+                // A host that cannot name its zone still reports the right
+                // offset, and an offset with no name is precisely what
+                // `DatumTime::timezone` documents `None` for. Requiring a
+                // name here is what made an unnameable host record UTC —
+                // wrong instant, not merely a wrong label (da-2pgd).
+                None => (Zone::Fixed(crate::time::clock::host_offset()), None),
+            },
         };
-        let zone =
-            Zone::iana(&name).expect("TimeBuilder: timezone field must be a validated IANA name");
         self.build_in_zone(zone, name)
     }
 
@@ -242,7 +255,7 @@ impl TimeBuilder {
     /// the resulting wall clock landed on a DST seam, which is the failure
     /// mode da-ztae exists to remove.
     #[cfg(feature = "native")]
-    fn build_in_zone(self, zone: Zone, timezone_name: String) -> DatumTime {
+    fn build_in_zone(self, zone: Zone, timezone_name: Option<String>) -> DatumTime {
         // ISO-8601 overrides establish the base instant; otherwise we anchor
         // on "now" in the effective zone.
         let mut utc = if let Some(instant) = self.iso_instant_override {
@@ -282,7 +295,7 @@ impl TimeBuilder {
         DatumTime {
             utc,
             offset_minutes: zone.offset_at(utc).local_minus_utc() / 60,
-            timezone: Some(timezone_name),
+            timezone: timezone_name,
             uncertainty: None,
         }
     }
@@ -324,11 +337,24 @@ mod tests {
     use super::*;
     use crate::time::date::DateArg;
     use crate::time::time::TimeArg;
-    use chrono::{NaiveDate, NaiveTime};
+    use chrono::{FixedOffset, NaiveDate, NaiveTime};
 
     /// The ISO form a date-only entry lands on `DatumTime::uncertainty`.
     fn p1d() -> Option<String> {
         Some("P1D".to_string())
+    }
+
+    /// da-2pgd: a host whose zone cannot be *named* still has an offset, and
+    /// that offset must survive into the row. Before this, the nameless case
+    /// resolved through `Zone::iana("UTC")`, so the stored instant moved by
+    /// the host's whole distance from Greenwich and the row then claimed UTC
+    /// as though it had been told.
+    #[test]
+    fn a_nameless_zone_keeps_its_offset_and_claims_no_name() {
+        let zone = Zone::Fixed(FixedOffset::east_opt(2 * 3600).unwrap());
+        let dt = TimeBuilder::now().build_in_zone(zone, None);
+        assert_eq!(dt.timezone, None);
+        assert_eq!(dt.offset_minutes, 120);
     }
 
     /// `with_full_day(true)` collapses the base instant to midnight in the
