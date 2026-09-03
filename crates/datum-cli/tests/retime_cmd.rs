@@ -108,3 +108,22 @@ fn retime_comma_with_missing_token_errors() {
         "missing token should surface in the error: {msg}"
     );
 }
+
+/// da-bgq2: a retime that moved nothing is an error, not a success with a
+/// `Retimed 0` line. The bulk-filter path is the way to get here — a
+/// field with no live timed rows selects nothing at all.
+#[test]
+fn retime_bulk_filter_matching_nothing_errors() {
+    let db = fresh_db();
+    entry_builder("coffee")
+        .time_start_utc(utc("2024-01-01T08:00:00Z"))
+        .state(json!(1))
+        .insert(&db);
+
+    let err = run_cli(&["retime", "--field", "tea", "--offset", "1h"], &db)
+        .expect_err("a filter that matches no rows must not report success");
+    assert!(
+        format!("{err:?}").contains("no entries retimed"),
+        "unexpected error: {err:?}"
+    );
+}

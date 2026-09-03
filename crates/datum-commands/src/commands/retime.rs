@@ -23,7 +23,8 @@ use datum_core::{
 };
 
 use crate::args::RetimeArgs;
-use crate::commands::helpers::{resolve_batch, BatchMode};
+use crate::commands::helpers::{load_registry_opt, resolve_batch, BatchMode};
+use crate::render::{show_retime, OutputArgs};
 
 pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // da-rorg: slug defaults to `_LAST` (matching update/merge/delete/
@@ -127,25 +128,14 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // `-r -t <N>`. Applied as a pure duration shift; we don't need to
     // re-anchor a TimeBuilder for the minutes-only case.
     if let Some(mins) = args.bare_offset_min {
-        let offset = chrono::Duration::minutes(mins);
-        let mut n = 0;
-        for filter in &filters {
-            n += db.update_times(filter, offset)?;
-        }
-        report_shift(n, offset);
-        return Ok(());
+        return shift(db, &filters, chrono::Duration::minutes(mins));
     }
 
     // Path 2 — explicit ISO duration via --offset.
     if let Some(offset_str) = args.offset.as_deref() {
         let offset = datum_core::time::parse_duration(offset_str)
             .with_context(|| format!("Invalid --offset value '{offset_str}'"))?;
-        let mut n = 0;
-        for filter in &filters {
-            n += db.update_times(filter, offset)?;
-        }
-        report_shift(n, offset);
-        return Ok(());
+        return shift(db, &filters, offset);
     }
 
     // Path 3a — `-r/--relative` resolves the time-args as a pure
@@ -156,40 +146,43 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // -d YYYY-MM-DD) are not meaningful as deltas; reject them with
     // a directive error rather than guessing.
     if args.relative {
-        let delta = relative_delta(&args.time)?;
-        let mut n = 0;
-        for filter in &filters {
-            n += db.update_times(filter, delta)?;
-        }
-        report_shift(n, delta);
-        return Ok(());
+        return shift(db, &filters, relative_delta(&args.time)?);
     }
 
     // Path 3b — absolute target. No time-args still computes a target
     // (TimeBuilder::now() with nothing applied = exact "now"), which
     // is the default "set to now" path the bead asks for.
     let new_time = build_absolute(&args)?;
-    let mut n = 0;
+    let mut moved = Vec::new();
     for filter in &filters {
-        n += db.set_start_time(filter, &new_time)?;
+        moved.extend(db.set_start_time(filter, &new_time)?);
     }
-    // da-r8xj: the entry was just set to a time the user expressed in
-    // local terms — echo it back through the shared local formatter, not
-    // raw UTC.
-    println!(
-        "✓ Retimed {n} → {}{}",
-        crate::render::action::format_timestamp(
-            &new_time,
-            &crate::render::action::now_local(),
-            None
-        ),
-        // The uncertainty travels on the time now, so echo it only when the
-        // user actually stated one — an absent value is "unknown", not "0".
-        match new_time.uncertainty.as_deref() {
-            Some(u) => format!(" (±{u})"),
-            None => String::new(),
-        },
-    );
+    report(db, &moved)
+}
+
+/// Apply a pure duration shift across every filter and report it.
+fn shift(db: &Db, filters: &[RetimeFilter], offset: chrono::Duration) -> Result<()> {
+    let mut moved = Vec::new();
+    for filter in filters {
+        moved.extend(db.update_times(filter, offset)?);
+    }
+    report(db, &moved)
+}
+
+/// da-bgq2: one RETIME line per moved row — the same one-action-line-per-
+/// entry shape `del` renders — rather than a count and a raw second-offset.
+/// A retime that matched nothing is an error, not a silent success: the
+/// only ways to get here empty are a bulk filter that selected no rows and
+/// a target that is timeless (never a retime target).
+fn report(db: &Db, moved: &[datum_core::db::Retimed]) -> Result<()> {
+    if moved.is_empty() {
+        anyhow::bail!("no entries retimed");
+    }
+    let registry = load_registry_opt(db);
+    let output = OutputArgs::default();
+    for r in moved {
+        show_retime(&r.entry, &r.before, registry.as_ref(), &output);
+    }
     Ok(())
 }
 
@@ -253,12 +246,6 @@ fn build_absolute(args: &RetimeArgs) -> Result<DatumTime> {
         builder = builder.with_timezone(Some(resolved));
     }
     Ok(builder.build_with_uncertainty())
-}
-
-fn report_shift(n: usize, offset: chrono::Duration) {
-    let secs = offset.num_seconds();
-    let sign = if secs >= 0 { "+" } else { "-" };
-    println!("✓ Retimed {n} ({sign}{}s)", secs.abs());
 }
 
 /// Parse a `--after` / `--before` argument to a UTC timestamp.

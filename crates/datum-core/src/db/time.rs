@@ -18,11 +18,13 @@ use crate::error::{DatumError, Result};
 use crate::field_spec::DEFAULT_ID_DELIMITER;
 
 use super::row_mapper::row_to_entry;
-use super::types::RetimeFilter;
+use super::types::{RetimeFilter, Retimed};
 use super::Db;
 
 impl Db {
-    /// Retime matching rows to a fresh absolute `occur_time`.
+    /// Retime matching rows to a fresh absolute `occur_time`. Returns one
+    /// [`Retimed`] per moved row — the entry plus the time it came from, so
+    /// the caller can render `before ⟶ after`.
     ///
     /// The new time carries its own uncertainty (`DatumTime::uncertainty`,
     /// an ISO-8601 ± radius), so retiming replaces both together and cannot
@@ -36,34 +38,44 @@ impl Db {
         &self,
         filter: &RetimeFilter,
         new_start: &crate::time::DatumTime,
-    ) -> Result<usize> {
+    ) -> Result<Vec<Retimed>> {
         let entries = select_retime_targets(self, filter)?;
         let tx = self.conn.unchecked_transaction()?;
-        let mut count = 0usize;
+        let mut moved = Vec::with_capacity(entries.len());
         for mut e in entries {
             let old_slug = e.slug.clone();
+            // Targets always carry an occur_time (the selector excludes
+            // timeless rows), so the `before` half of the pair is always
+            // there to render.
+            let before = e.occur_time.take();
             e.occur_time = Some(new_start.clone());
-            self.save_existing_entry_with_auto_reinterp_kind_in_tx(
+            let (saved, _) = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
                 &old_slug,
                 e,
                 DEFAULT_ID_DELIMITER,
                 crate::history::ChangeKind::Retime,
             )?;
-            count += 1;
+            if let Some(before) = before {
+                moved.push(Retimed {
+                    before,
+                    entry: saved,
+                });
+            }
         }
         tx.commit()?;
-        Ok(count)
+        Ok(moved)
     }
 
     /// Shift matching rows' `occur_time` by `offset`. Atomic over the
     /// batch, same as [`Self::set_start_time`] (da-sunq).
-    pub fn update_times(&self, filter: &RetimeFilter, offset: Duration) -> Result<usize> {
+    pub fn update_times(&self, filter: &RetimeFilter, offset: Duration) -> Result<Vec<Retimed>> {
         let entries = select_retime_targets(self, filter)?;
         let tx = self.conn.unchecked_transaction()?;
-        let mut count = 0usize;
+        let mut moved = Vec::with_capacity(entries.len());
         for e in entries {
             let old_slug = e.slug.clone();
             let mut shifted = e;
+            let before = shifted.occur_time.clone();
             if let Some(t) = shifted.occur_time.as_mut() {
                 t.utc += offset;
                 // A raw `utc` mutation desyncs `offset_minutes` (see the
@@ -72,16 +84,21 @@ impl Db {
                 // slugs correctly. Propagates on unknown-tz.
                 t.refresh_offset()?;
             }
-            self.save_existing_entry_with_auto_reinterp_kind_in_tx(
+            let (saved, _) = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
                 &old_slug,
                 shifted,
                 DEFAULT_ID_DELIMITER,
                 crate::history::ChangeKind::Retime,
             )?;
-            count += 1;
+            if let Some(before) = before {
+                moved.push(Retimed {
+                    before,
+                    entry: saved,
+                });
+            }
         }
         tx.commit()?;
-        Ok(count)
+        Ok(moved)
     }
 }
 
@@ -312,6 +329,47 @@ mod tests {
         );
     }
 
+    /// da-bgq2: the retime paths report the move, not a count — each
+    /// moved row comes back paired with the `occur_time` it left, which
+    /// is what the RETIME line renders as `before ⟶ after`.
+    #[test]
+    fn retime_reports_before_and_after_per_row() {
+        let db = Db::open_in_memory().unwrap();
+        let e = Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(seed_dt("2024-01-01T08:00:00Z")),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e).unwrap();
+
+        let filter = RetimeFilter {
+            slug_or_hid: Some(&e.hid),
+            ..Default::default()
+        };
+        let moved = db.update_times(&filter, Duration::hours(1)).unwrap();
+        assert_eq!(moved.len(), 1);
+        assert_eq!(moved[0].entry.hid, e.hid);
+        assert_eq!(moved[0].before.utc, seed_dt("2024-01-01T08:00:00Z").utc);
+        assert_eq!(
+            moved[0].entry.occur_time.as_ref().unwrap().utc,
+            seed_dt("2024-01-01T09:00:00Z").utc,
+        );
+
+        let target = seed_dt("2024-02-01T07:00:00Z");
+        let moved = db.set_start_time(&filter, &target).unwrap();
+        assert_eq!(moved.len(), 1);
+        assert_eq!(
+            moved[0].before.utc,
+            seed_dt("2024-01-01T09:00:00Z").utc,
+            "the absolute path reports where the row came from too",
+        );
+        assert_eq!(moved[0].entry.occur_time.as_ref().unwrap().utc, target.utc);
+    }
+
     /// da-sunq: a mid-batch failure must roll back the whole batch.
     /// Two rows of one field retimed to the same absolute instant — the
     /// second row trips the partial UNIQUE index on (field, occur_time),
@@ -375,8 +433,8 @@ mod tests {
             ..Default::default()
         };
         let new_start = seed_dt("2026-05-01T10:00:00Z");
-        let n = db.set_start_time(&filter, &new_start).unwrap();
-        assert_eq!(n, 1, "only the timed row is a retime target");
+        let moved = db.set_start_time(&filter, &new_start).unwrap();
+        assert_eq!(moved.len(), 1, "only the timed row is a retime target");
 
         let unset_after = db.get_entry(timeless_slug.as_str()).unwrap();
         assert!(unset_after.occur_time.is_none());

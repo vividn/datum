@@ -7,6 +7,7 @@
 
 use chrono::{DateTime, Utc};
 
+use crate::entry::Entry;
 use crate::ids::{Hid, Slug};
 
 /// Projection of a field's tracking state for the `now` view.
@@ -202,6 +203,16 @@ pub struct RetimeFilter<'a> {
     pub field: Option<&'a str>,
     pub after_utc: Option<DateTime<Utc>>,
     pub before_utc: Option<DateTime<Utc>>,
+}
+
+/// One retimed row: the entry as it stands after the move, paired with the
+/// `occur_time` it carried before. Retime's renderer prints the pair as
+/// `before ⟶ after`, so the shift has to travel back out of the db layer
+/// rather than collapsing to a count.
+#[derive(Debug, Clone)]
+pub struct Retimed {
+    pub before: crate::time::DatumTime,
+    pub entry: Entry,
 }
 
 /// Row reported by [`super::Db::find_time_end_before_start`].

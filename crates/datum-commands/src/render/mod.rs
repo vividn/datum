@@ -98,6 +98,7 @@ pub enum Outcome {
     Exists,
     OWrite,
     Rename,
+    Retime,
     NoDiff,
     Failed,
 }
@@ -111,6 +112,7 @@ impl Outcome {
             Outcome::Exists => "EXISTS",
             Outcome::OWrite => "OWRITE",
             Outcome::Rename => "RENAME",
+            Outcome::Retime => "RETIME",
             Outcome::NoDiff => "NODIFF",
             Outcome::Failed => "FAILED",
         }
@@ -122,7 +124,7 @@ impl Outcome {
             Outcome::Create => "\x1b[32m",                   // green
             Outcome::Delete | Outcome::Failed => "\x1b[31m", // red
             Outcome::Exists => "\x1b[33m",                   // yellow
-            Outcome::Update | Outcome::Rename => "\x1b[36m", // cyan
+            Outcome::Update | Outcome::Rename | Outcome::Retime => "\x1b[36m", // cyan
             Outcome::OWrite => "\x1b[34m",                   // blue
             Outcome::NoDiff => "\x1b[38;2;255;165;0m",       // orange
         }
@@ -419,6 +421,54 @@ pub fn show_rename(before_id: &str, after_id: &str, args: &OutputArgs) {
     let before_colored = paint(code, before_id);
     let after_colored = paint("\x1b[32m", after_id); // green for new id
     println!("{tag} {before_colored} ⟶ {after_colored}");
+}
+
+/// Datum's RETIME output: the entry's stable hid, then the time it moved
+/// from ⟶ the time it now carries. Mirrors [`show_rename`] — retime moves a
+/// time the way rename moves an id, so it reports the same before/after
+/// shape rather than a bare count. One line per entry, so a batch retime
+/// reads like a batch delete (one action line per row).
+pub fn show_retime(
+    entry: &Entry,
+    before: &DatumTime,
+    registry: Option<&SpecRegistry>,
+    args: &OutputArgs,
+) {
+    if args.silent() || args.show == Show::Format {
+        return;
+    }
+    println!(
+        "{}",
+        format_retime_line(entry, before, registry, &self::action::now_local())
+    );
+}
+
+/// The [`show_retime`] line, as a string (`now` injected so tests are
+/// deterministic).
+fn format_retime_line(
+    entry: &Entry,
+    before: &DatumTime,
+    registry: Option<&SpecRegistry>,
+    now: &DatumTime,
+) -> String {
+    let code = Outcome::Retime.ansi_color();
+    let spec = registry.and_then(|r| r.fields.get(&entry.field));
+    let after = entry
+        .occur_time
+        .as_ref()
+        .map(|t| self::action::format_timestamp(t, now, entry.occur_uncertainty()))
+        .unwrap_or_default();
+    format!(
+        "{} {} {} {} ⟶ {}",
+        paint_action(Outcome::Retime),
+        paint(code, &short_hid(&entry.hid)),
+        self::action::format_field_cell(&entry.field, spec),
+        paint(
+            code,
+            &self::action::format_timestamp(before, now, before.uncertainty.as_deref(),)
+        ),
+        paint("\x1b[32m", &after), // green for the new time
+    )
 }
 
 // ─── Table output (tail / head / grep) ───────────────────────────────────────
@@ -1591,6 +1641,34 @@ mod tests {
     fn sample_entry(field: &str, verb: Verb, value: Option<JsonValue>) -> Entry {
         let t = DatumTime::now();
         Entry::new(field, verb, value, None, Some(t), None, "d1")
+    }
+
+    /// da-bgq2: a retime reports the move itself — `RETIME <hid> <field>
+    /// <before> ⟶ <after>` — the same before/after shape RENAME uses, not
+    /// a count of touched rows.
+    #[test]
+    fn retime_line_shows_before_and_after() {
+        let now = DatumTime::now();
+        let before = DatumTime {
+            utc: "2024-01-01T08:00:00Z".parse().unwrap(),
+            offset_minutes: 0,
+            timezone: Some("UTC".to_string()),
+            uncertainty: None,
+        };
+        let mut entry = sample_entry("coffee", Verb::Point, None);
+        entry.occur_time = Some(DatumTime {
+            utc: "2024-01-01T09:00:00Z".parse().unwrap(),
+            ..before.clone()
+        });
+
+        let line = strip_ansi(&format_retime_line(&entry, &before, None, &now));
+        assert_eq!(
+            line,
+            format!(
+                "RETIME {} coffee 2024-01-01 08:00:00+0 ⟶ 2024-01-01 09:00:00+0",
+                short_hid(&entry.hid)
+            ),
+        );
     }
 
     // ─── S4 visual parity tests ──────────────────────────────────────────────
