@@ -1,5 +1,5 @@
 {
-	"comment": ["What the real datum CLI stores for a given argv — the other half of tests/parity.test.mjs.", "Regenerate with `npm run test:fixtures` (needs a built `datum` binary); the `argv`,", "`time` and `divergence` fields are authored by hand and survive a regeneration."],
+	"comment": ["What the real datum CLI stores for a given argv — the other half of tests/parity.test.mjs.", "Regenerate with `npm run test:fixtures` (needs a built `datum` binary); the `argv`", "and `time` fields are authored by hand and survive a regeneration."],
 	"capturedWith": "datum 0.1.0",
 	"cases": [
 		{
@@ -177,7 +177,6 @@
 		{
 			"argv": ["occur", "coffee", "-q"],
 			"time": "relative",
-			"divergence": "-q is 5 minutes back in the CLI and 15 in the browser's interim parser (da-fjx1)",
 			"cli": {
 				"code": 0,
 				"entry": {
@@ -195,7 +194,6 @@
 		{
 			"argv": ["occur", "coffee", "-qq"],
 			"time": "relative",
-			"divergence": "-qq is 10 minutes back in the CLI and 30 in the browser's interim parser (da-fjx1)",
 			"cli": {
 				"code": 0,
 				"entry": {
@@ -241,6 +239,98 @@
 					"data": null,
 					"time": {
 						"daysBefore": 2,
+						"midnight": true
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "weight", "amount=75.2kg", "-t", "0920"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "weight",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": {
+						"amount": {
+							"u": "kg",
+							"v": 75.2
+						}
+					},
+					"time": {
+						"clock": "09:20"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["stop", "work", "30m", "-t", "1300"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "work",
+					"verb": "block",
+					"state": false,
+					"dur": "PT30M",
+					"data": null,
+					"time": {
+						"clock": "13:00"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["switch", "mood", "low", "-qqqq"],
+			"time": "relative",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "mood",
+					"verb": "switch",
+					"state": "low",
+					"dur": null,
+					"data": null,
+					"time": {
+						"minutesBefore": 20
+					}
+				}
+			}
+		},
+		{
+			"argv": ["start", "work", "-y"],
+			"time": "day",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "work",
+					"verb": "switch",
+					"state": true,
+					"dur": null,
+					"data": null,
+					"time": {
+						"daysBefore": 1,
+						"midnight": true
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "coffee", "-d", "-1"],
+			"time": "day",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "coffee",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": null,
+					"time": {
+						"daysBefore": 1,
 						"midnight": true
 					}
 				}

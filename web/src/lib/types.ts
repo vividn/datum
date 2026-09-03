@@ -13,11 +13,6 @@ export interface DatumTime {
 // `entries.verb` column in crates/datum-core/src/schema.sql.
 export type StoredVerb = 'point' | 'switch' | 'block' | 'block-switch' | 'point-switch';
 
-// Input verb vocabulary the parser accepts. The stored verb is derived
-// from the (state, dur, following_state) shape at insert time; the input
-// verb is decorative and lives in `rawInput`.
-export type InputVerb = 'occur' | 'switch' | 'start' | 'stop' | 'add' | 'note';
-
 /**
  * A number carrying a unit, as datum annotates one: `{"v": 75.2, "u": "kg"}`.
  * Built by `coerce.rs` on the Rust side (crates/datum-parse/src/input/
@@ -57,21 +52,6 @@ export interface Entry {
 	modifyTime: string;
 	deviceId: string;
 	rawInput: string;
-}
-
-export interface ParsedInput {
-	verb: InputVerb;
-	field: string;
-	state?: unknown;
-	/** Unit for a numeric `state`; folded into an [`Annotated`] at insert. */
-	unit?: string;
-	data?: Record<string, unknown>;
-	/** ISO-8601 duration, already normalized from `dur=30m` / `dur=1:30`. */
-	dur?: string;
-	timeOffset?: number; // minutes offset from now
-	/** Whole days back (`-y`): midnight in the local zone, P1D uncertainty. */
-	dayOffset?: number;
-	timeAbsolute?: string; // HH:MM
 }
 
 /**

@@ -12,12 +12,14 @@
 // verb, state, duration, data, time — and nothing per-write; see
 // support/semantics.mjs for why.
 //
-// A case with a `divergence` note is one the browser gets wrong today. It
-// still runs, reported as a todo rather than a failure, because the
-// interim TypeScript runner is being replaced wholesale by the real CLI
-// compiled to wasm (da-1vat) and fixing it there would be an investment in
-// code with no future. These cases are the acceptance criteria for that
-// swap: when it lands they should pass, and the note comes out.
+// Every case is a hard assertion. There used to be a `divergence` escape
+// hatch here — a note saying "the browser gets this one wrong, report it as
+// a todo" — and it accumulated: `-q` off by a factor of three, `-y` read as
+// minutes, `-y` stored as a state. da-7scm removed the thing those notes
+// were describing. The browser now runs datum's own parser
+// (`crates/datum-parse-wasm`), so a divergence is a bug in one shared
+// implementation rather than drift between two, and there is nothing left
+// for an annotation to excuse.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';

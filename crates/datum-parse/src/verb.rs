@@ -3,12 +3,73 @@
 //! da-5ns sub-bead 2. Truth table is normative — see the bead description
 //! for the matrix. Insert/update wiring lives in sub-bead 3; the
 //! `dm check verbs` drift detector lives in sub-bead 7.
+//!
+//! Lives in `datum-parse` rather than `datum-core` because it is pure —
+//! no database, no I/O — and the browser needs it (da-7scm). `datum-core`
+//! re-exports the whole module, so `datum_core::verb::derive_verb` and
+//! `datum_core::entry::Verb` remain the paths every other caller uses.
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::dur::Dur;
-use crate::entry::Verb;
-use crate::error::{DatumError, Result};
+use crate::error::{ParseError, Result};
+
+/// The verb classifies an entry's (state, dur, following_state) shape.
+/// Stored as plain text in the `verb` column (the SQL CHECK does not
+/// constrain values; `dm check verbs` (sub-bead 7) detects drift
+/// between stored and re-derived verbs).
+///
+/// Storage-only — five canonical shapes derived from the truth table by
+/// [`derive_verb`]. Command intent (Occur/Start/Stop/Add) is expressed at
+/// the parse boundary via `datum_core::action::Action`; the legacy v19
+/// variants were dropped in da-8y2q.2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[derive(Default)]
+pub enum Verb {
+    /// Single point-in-time event with no state change (`dur is NULL,
+    /// state is null/true, following_state is NULL`).
+    #[default]
+    Point,
+    /// Transition to a new state (`dur is NULL, state is set,
+    /// following_state is NULL`).
+    Switch,
+    /// Duration block (`dur is set/positive, following_state is NULL`).
+    Block,
+    /// Block + switch at the trailing edge (`dur is set/positive,
+    /// following_state is set`).
+    BlockSwitch,
+    /// Point + switch at the same instant (`dur is "PT0S",
+    /// following_state is set`).
+    PointSwitch,
+}
+
+impl std::fmt::Display for Verb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Verb::Point => write!(f, "point"),
+            Verb::Switch => write!(f, "switch"),
+            Verb::Block => write!(f, "block"),
+            Verb::BlockSwitch => write!(f, "block-switch"),
+            Verb::PointSwitch => write!(f, "point-switch"),
+        }
+    }
+}
+
+impl std::str::FromStr for Verb {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "point" => Ok(Verb::Point),
+            "switch" => Ok(Verb::Switch),
+            "block" => Ok(Verb::Block),
+            "block-switch" => Ok(Verb::BlockSwitch),
+            "point-switch" => Ok(Verb::PointSwitch),
+            _ => Err(format!("Unknown verb: '{s}'")),
+        }
+    }
+}
 
 /// Classify (state, dur, following_state) and return the input state
 /// unchanged.
@@ -51,7 +112,7 @@ pub fn derive_verb(
         // truth table does not distinguish them when state is absent).
         (false, DurKind::None, false) => Verb::Point,
         (false, DurKind::None, true) => {
-            return Err(DatumError::Other(
+            return Err(ParseError::InvalidArg(
                 "following_state with no state and no duration is not a valid shape".to_string(),
             ));
         }
@@ -61,7 +122,7 @@ pub fn derive_verb(
         // state=set rows.
         (true, DurKind::None, false) => Verb::Switch,
         (true, DurKind::None, true) => {
-            return Err(DatumError::Other(
+            return Err(ParseError::InvalidArg(
                 "following_state requires a duration when state is set".to_string(),
             ));
         }
@@ -87,7 +148,7 @@ fn classify_dur(d: &Dur) -> Result<DurKind> {
         return Ok(DurKind::None);
     };
     if secs < 0 {
-        return Err(DatumError::Other(format!(
+        return Err(ParseError::InvalidArg(format!(
             "negative duration not allowed: {}",
             d.to_storage_string()
         )));

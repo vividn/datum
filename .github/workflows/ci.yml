@@ -94,7 +94,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
   wasm-check:
-    name: WASM check (datum-sync-client)
+    name: WASM check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -102,11 +102,29 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install --no-self-update
 
+      - name: Add the wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
 
       - name: cargo check datum-sync-client (wasm32, --no-default-features --features wasm)
         run: cargo check -p datum-sync-client --target wasm32-unknown-unknown --no-default-features --features wasm
+
+      # The two modules datum.day loads. Their artifacts are committed (the
+      # web job has no Rust toolchain), so what this catches is the crates
+      # ceasing to build for wasm at all — which is how a stale artifact
+      # starts. `npm run build:wasm` rebuilds and re-commits them.
+      #
+      # `build`, not `check`: the failure mode these have is a *link*-time
+      # one. A dependency that reaches for the browser's clock (chrono's
+      # `wasmbind`, say) adds a wasm-bindgen import, and a module with
+      # imports will not load from the bare `WebAssembly.instantiate` the
+      # browser side uses. `cargo check` sees none of that.
+      - name: cargo build the browser modules (wasm32)
+        run: |
+          cargo build -p datum-layout-wasm --target wasm32-unknown-unknown --profile wasm-release
+          cargo build -p datum-parse-wasm --target wasm32-unknown-unknown --profile wasm-release --no-default-features
 
   honesty:
     name: Honesty gates (da-8y2q.7)

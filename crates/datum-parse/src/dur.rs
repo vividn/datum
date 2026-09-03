@@ -20,8 +20,8 @@
 //! `DatumTime::uncertainty` on the occur side. One concept, one name, one
 //! home, on both halves of the time model.
 
+use crate::time::{format_iso_duration, parse_iso_duration};
 use chrono::Duration;
-use datum_parse::time::{format_iso_duration, parse_iso_duration};
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 
 /// The duration itself, without its uncertainty.
@@ -48,7 +48,7 @@ pub struct Dur {
     /// `span`, and say so where they do it.
     ///
     /// Deliberately **absent from the `content_hash` preimage** — see the
-    /// note on [`crate::entry::compute_hash`].
+    /// note on [`crate::entry_id::content_hash`].
     pub uncertainty: Option<String>,
 }
 

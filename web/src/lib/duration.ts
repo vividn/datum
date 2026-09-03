@@ -1,14 +1,18 @@
-// Duration parsing: a datum duration argument → an ISO-8601 string.
+// A stored `dur` → seconds, for drawing it.
 //
-// `entries.dur` stores ISO-8601 (schema.sql), but nobody types that. The
-// CLI accepts `30m`, `1h30m`, `1:30`, a bare `5` (minutes) and ISO itself
-// — see `parse_duration` in crates/datum-parse/src/time/dur.rs, which this
-// mirrors. The widget bar's `dur` bubble and a hand-typed `dur=1:30` land
-// in the same place, so they have to read the same way.
+// Reading a duration *argument* is the parser's job, and the parser is
+// datum's own: `dur=30m`, `dur=1:30` and `dur=PT30M` all reach the entry
+// through `crates/datum-parse` compiled to wasm (da-7scm), so nothing here
+// interprets what a user typed. What is left is the display side — the
+// dayview and tail panes need a block's width, and `entries.dur` holds
+// ISO-8601 (schema.sql).
 //
-// The colon form is anchored by part count and the two-part case is
-// HH:MM, not MM:SS: `1:30` is an hour and a half, matching the Rust
-// contract exactly (it is a deliberate divergence from datum-v2).
+// The non-ISO forms are still accepted below because `durationSeconds` is
+// also handed values that came from elsewhere in the app; the colon form is
+// anchored by part count and its two-part case is HH:MM, not MM:SS, so
+// `1:30` is an hour and a half — matching `parse_duration` in
+// crates/datum-parse/src/time/dur.rs exactly (a deliberate divergence from
+// datum-v2).
 
 const UNIT_SECONDS: Record<string, number> = {
 	s: 1,
@@ -31,7 +35,7 @@ const UNIT_SECONDS: Record<string, number> = {
 	days: 86400
 };
 
-/** Parse a duration argument to whole seconds, or null if it isn't one. */
+/** Parse a duration to whole seconds, or null if it isn't one. */
 export function durationSeconds(input: string): number | null {
 	const s = input.trim();
 	if (s === '') return null;
@@ -39,16 +43,6 @@ export function durationSeconds(input: string): number | null {
 	if (s.startsWith('P') || s.startsWith('-P')) return isoSeconds(s);
 	if (s.includes(':')) return colonSeconds(s);
 	return compoundSeconds(s);
-}
-
-/**
- * Normalize a duration argument to the ISO-8601 string the entry stores.
- * Returns null when the argument isn't a duration at all, so a caller can
- * fall back to treating the token as something else.
- */
-export function toIsoDuration(input: string): string | null {
-	const secs = durationSeconds(input);
-	return secs === null ? null : isoFromSeconds(secs);
 }
 
 function colonSeconds(s: string): number | null {
@@ -94,23 +88,4 @@ function isoSeconds(s: string): number | null {
 	if (!d && !h && !min && !sec) return null;
 	const total = Number(d ?? 0) * 86400 + Number(h ?? 0) * 3600 + Number(min ?? 0) * 60 + Number(sec ?? 0);
 	return sign === '-' ? -total : total;
-}
-
-/** Seconds → the canonical ISO-8601 form (`PT1H30M`). */
-export function isoFromSeconds(total: number): string {
-	const sign = total < 0 ? '-' : '';
-	let rest = Math.abs(total);
-	const days = Math.floor(rest / 86400);
-	rest -= days * 86400;
-	const hours = Math.floor(rest / 3600);
-	rest -= hours * 3600;
-	const minutes = Math.floor(rest / 60);
-	const seconds = Number((rest - minutes * 60).toFixed(3));
-
-	const time =
-		(hours ? `${hours}H` : '') + (minutes ? `${minutes}M` : '') + (seconds ? `${seconds}S` : '');
-	// PT0S rather than a bare "P": a zero duration is still a duration, and
-	// `deriveStoredVerb` distinguishes zero from absent.
-	if (!days && !time) return `${sign}PT0S`;
-	return `${sign}P${days ? `${days}D` : ''}${time ? `T${time}` : ''}`;
 }

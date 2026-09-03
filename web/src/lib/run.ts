@@ -3,9 +3,12 @@
 // Every datum command the web app runs goes through `run(argv)` and comes
 // back as a [`RunResult`] — an exit code plus captured stdout/stderr. The UI
 // never reaches into the parser or the database directly, so swapping the
-// implementation swaps nothing else: da-1vat replaces the TypeScript runner
-// in `./runners/local.ts` with the real CLI compiled to wasm by calling
+// implementation swaps nothing else: da-1vat replaces the local runner in
+// `./runners/local.ts` with the real CLI compiled to wasm by calling
 // `setRunner`, and the panes, widget bar and REPL keep working unchanged.
+// The seam has already carried one such swap — da-7scm replaced the
+// hand-written TypeScript parser behind it with `datum-parse` compiled to
+// wasm, and no component changed.
 //
 // `argv` carries the command words *without* the program name, matching what
 // the native REPL hands the parser (`crates/datum-cli/src/repl.rs` prepends
@@ -29,7 +32,15 @@ export type CommandRunner = (argv: string[]) => Promise<RunResult>;
 export const EXIT_ERROR = 1;
 /** A duplicate / "already have this" outcome (`EXIT_DUPLICATE` in main.rs). */
 export const EXIT_DUPLICATE = 11;
-/** No runner knows this command — the shell convention for "not found". */
+/**
+ * A real datum command the browser has not reached yet — the shell
+ * convention for "not found".
+ *
+ * Distinct from [`EXIT_ERROR`], which is what a word datum has never heard
+ * of gets: since da-7scm the browser runs datum's own parser, so an unknown
+ * subcommand is the parser's error and comes back exactly as the CLI
+ * reports it. 127 is the runner's gap; 1 is datum's answer.
+ */
 export const EXIT_UNKNOWN_COMMAND = 127;
 
 // Null until the first `run`, which lazily imports the TypeScript runner.

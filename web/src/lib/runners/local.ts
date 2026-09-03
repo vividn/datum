@@ -1,18 +1,21 @@
-// The TypeScript runner — the seam's default implementation.
+// The local runner — the seam's default implementation.
 //
-// It covers the log verbs (`occur`, `switch`, `start`, `stop`, `add`,
-// `note`) against the OPFS database, plus `spec set` for the widget bar
-// and bare `tail` so the tail pane has something to render — which is
-// what the app needs to be useful today. Every other datum command returns
-// `EXIT_UNKNOWN_COMMAND`: this is a stand-in for the real CLI, not a second
-// implementation of it, and da-1vat retires the whole file by compiling
-// `datum-cli` to wasm and installing it via `setRunner`.
+// It covers the log verbs against the OPFS database, plus `spec set` for
+// the widget bar and bare `tail` so the tail pane has something to render
+// — which is what the app needs to be useful today. Every other datum
+// command returns `EXIT_UNKNOWN_COMMAND`: this is a stand-in for the real
+// CLI, not a second implementation of it, and da-1vat retires the whole
+// file by compiling `datum-cli` to wasm and installing it via `setRunner`.
+//
+// The *parsing* is already not a stand-in. da-7scm moved it into
+// `datum-parse` compiled to wasm, so this file no longer decides what an
+// argv means or what row it produces: it hands argv to `../parser.js` and
+// stores what comes back. What is left here is the database call and the
+// two commands the parser does not own.
 
 import { insertEntry, getRecentEntries, getFieldSpecs, saveFieldSpec } from '../db.js';
-import { parseArgv } from '../parse.js';
-import { generateId, buildSlug, contentHash } from '../entryId.js';
-import { deriveStoredVerb } from '../verb.js';
-import { EXIT_DUPLICATE, EXIT_UNKNOWN_COMMAND, type RunResult } from '../run.js';
+import { parseArgv } from '../parser.js';
+import { EXIT_DUPLICATE, EXIT_ERROR, EXIT_UNKNOWN_COMMAND, type RunResult } from '../run.js';
 import { isAnnotated, type DefaultAction, type Entry, type FieldSpec } from '../types.js';
 
 const DEVICE_ID_KEY = 'datum-device-id';
@@ -43,17 +46,21 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 	if (argv.length === 1 && argv[0] === 'dayview') return (await views()).dayview(argv);
 	if (argv.length === 1 && argv[0] === 'nowview') return (await views()).nowview(argv);
 
-	const parsed = parseArgv(argv);
-	if (!parsed) {
+	const parsed = await parseArgv(argv, deviceId());
+	if (parsed.unsupported !== undefined) {
 		return {
 			argv,
 			code: EXIT_UNKNOWN_COMMAND,
 			stdout: '',
-			stderr: `datum: ${argv[0]}: not available yet in the browser (needs the wasm CLI)`
+			stderr: `datum: ${argv[0]}: ${parsed.unsupported}`
 		};
 	}
+	if (parsed.error !== undefined || parsed.entry === undefined) {
+		// The parser's own message, verbatim — what `datum` would have said.
+		return { argv, code: EXIT_ERROR, stdout: '', stderr: `error: ${parsed.error}` };
+	}
 
-	const entry = await buildEntry(parsed, argv.join(' '));
+	const entry = parsed.entry;
 	try {
 		await insertEntry(entry);
 	} catch (e) {
@@ -92,71 +99,6 @@ async function tail(): Promise<RunResult> {
 		code: 0,
 		stdout: entries.map(entryLine).join('\n'),
 		stderr: ''
-	};
-}
-
-async function buildEntry(
-	parsed: NonNullable<ReturnType<typeof parseArgv>>,
-	rawInput: string
-): Promise<Entry> {
-	const now = new Date();
-	let entryTime = now;
-	// A whole-day flag records a date, not an instant: the time-of-day is
-	// stripped in the local zone and the entry carries P1D, the way
-	// `build_with_uncertainty` treats a date-only input
-	// (crates/datum-parse/src/time/builder.rs).
-	let uncertainty: string | undefined;
-	if (parsed.dayOffset !== undefined) {
-		entryTime = new Date(now);
-		entryTime.setDate(entryTime.getDate() + parsed.dayOffset);
-		entryTime.setHours(0, 0, 0, 0);
-		uncertainty = 'P1D';
-	} else if (parsed.timeOffset !== undefined) {
-		entryTime = new Date(now.getTime() + parsed.timeOffset * 60 * 1000);
-	} else if (parsed.timeAbsolute) {
-		const [hStr, mStr] = parsed.timeAbsolute.match(/^(\d{2})(\d{2})$/)?.slice(1) ?? [];
-		if (hStr && mStr) {
-			entryTime = new Date(now);
-			entryTime.setHours(parseInt(hStr), parseInt(mStr), 0, 0);
-		}
-	}
-
-	// A unit rides inside the value, `{"v": 75.2, "u": "kg"}` — there is no
-	// `unit` column in schema.sql. Same annotation `coerce.rs` builds for a
-	// `weight=75.2kg` data token on the Rust side.
-	const state =
-		parsed.unit !== undefined && typeof parsed.state === 'number'
-			? { v: parsed.state, u: parsed.unit }
-			: parsed.state;
-
-	const occurTime = {
-		utc: entryTime.toISOString(),
-		offsetMinutes: -now.getTimezoneOffset(),
-		timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-	};
-
-	return {
-		hid: generateId(),
-		slug: buildSlug(parsed.field, occurTime),
-		contentHash: await contentHash(
-			parsed.field,
-			occurTime,
-			state,
-			parsed.dur,
-			undefined,
-			parsed.data
-		),
-		field: parsed.field,
-		state,
-		dur: parsed.dur,
-		data: parsed.data,
-		verb: deriveStoredVerb(state, parsed.dur, undefined),
-		occurTime,
-		occurTimeUncertainty: uncertainty,
-		createTime: now.toISOString(),
-		modifyTime: now.toISOString(),
-		deviceId: deviceId(),
-		rawInput
 	};
 }
 

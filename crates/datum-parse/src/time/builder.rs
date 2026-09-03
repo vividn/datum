@@ -3,13 +3,10 @@
 use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
 
 use crate::time::date::DateArg;
-#[cfg(feature = "native")]
 use crate::time::datum_time::DatumTime;
 use crate::time::dur::quick_uncertainty_for_count;
-#[cfg(feature = "native")]
 use crate::time::resolve::Zone;
 use crate::time::time::TimeArg;
-#[cfg(feature = "native")]
 use crate::time::uncertainty::UncertaintyUnit;
 use crate::time::uncertainty::{Direction, Uncertainty};
 
@@ -179,6 +176,26 @@ impl TimeBuilder {
     /// [`build`]: Self::build
     #[cfg(feature = "native")]
     pub fn build_with_uncertainty(self) -> DatumTime {
+        let (zone, name) = self.host_zone();
+        self.build_with_uncertainty_at(Utc::now(), zone, name)
+    }
+
+    /// [`build_with_uncertainty`] against an explicit anchor.
+    ///
+    /// The two things the native path reads from the host — the wall clock
+    /// and the effective zone — arrive as arguments here, so the whole
+    /// composition runs on `wasm32-unknown-unknown` where neither exists.
+    /// This is the entry point `datum-parse-wasm` calls, and the native
+    /// one delegates to it, so the browser and the CLI compose stacked
+    /// flags through the same body (da-7scm).
+    ///
+    /// [`build_with_uncertainty`]: Self::build_with_uncertainty
+    pub fn build_with_uncertainty_at(
+        self,
+        now: DateTime<Utc>,
+        zone: Zone,
+        timezone_name: Option<String>,
+    ) -> DatumTime {
         let only_date = self.is_only_date();
         let base = self.uncertainty();
         let uncertainty = if only_date {
@@ -189,7 +206,7 @@ impl TimeBuilder {
         } else {
             base
         };
-        let dt = self.build();
+        let dt = self.build_at(now, zone, timezone_name);
         let mut dt = if only_date {
             strip_to_start_of_day(dt)
         } else {
@@ -215,12 +232,21 @@ impl TimeBuilder {
 
     #[cfg(feature = "native")]
     pub fn build(self) -> DatumTime {
-        // Both paths end at one `Zone`: `-z` supplies a name, and the host
-        // zone is the name `DatumTime` records anyway. Resolving through a
-        // zone instead of reaching for `chrono::Local` collapses what were
-        // two generic instantiations into one body, so there is no second
-        // place for a DST policy to drift (da-ztae).
-        let (zone, name) = match self.timezone.as_deref() {
+        let (zone, name) = self.host_zone();
+        self.build_at(Utc::now(), zone, name)
+    }
+
+    /// The effective zone for a native build: `-z` when supplied, else the
+    /// host's.
+    ///
+    /// Both paths end at one `Zone`: `-z` supplies a name, and the host
+    /// zone is the name `DatumTime` records anyway. Resolving through a
+    /// zone instead of reaching for `chrono::Local` collapses what were
+    /// two generic instantiations into one body, so there is no second
+    /// place for a DST policy to drift (da-ztae).
+    #[cfg(feature = "native")]
+    fn host_zone(&self) -> (Zone, Option<String>) {
+        match self.timezone.as_deref() {
             // Panic-safe: resolve_timezone() already validated the name
             // before it got here. A bad name at this point means the caller
             // skipped validation — surface it loudly rather than silently
@@ -242,11 +268,11 @@ impl TimeBuilder {
                 // wrong instant, not merely a wrong label (da-2pgd).
                 None => (Zone::Fixed(crate::time::clock::host_offset()), None),
             },
-        };
-        self.build_in_zone(zone, name)
+        }
     }
 
-    /// Compose the stacked flags into a `DatumTime` anchored in `zone`.
+    /// Compose the stacked flags into a `DatumTime` anchored at `now` in
+    /// `zone`.
     ///
     /// Every local→UTC step goes through [`Zone::resolve`] under the
     /// [`Resolved::for_boundary`] policy: these are composed *shifts* of a
@@ -254,16 +280,20 @@ impl TimeBuilder {
     /// replaces silently discarded the entire `-d`/`-t` override whenever
     /// the resulting wall clock landed on a DST seam, which is the failure
     /// mode da-ztae exists to remove.
-    #[cfg(feature = "native")]
-    fn build_in_zone(self, zone: Zone, timezone_name: Option<String>) -> DatumTime {
+    pub fn build_at(
+        self,
+        now: DateTime<Utc>,
+        zone: Zone,
+        timezone_name: Option<String>,
+    ) -> DatumTime {
         // ISO-8601 overrides establish the base instant; otherwise we anchor
-        // on "now" in the effective zone.
+        // on the caller's "now" in the effective zone.
         let mut utc = if let Some(instant) = self.iso_instant_override {
             instant
         } else if let Some(naive) = self.iso_naive_override {
             zone.resolve(naive).for_boundary()
         } else {
-            Utc::now()
+            now
         };
 
         utc -= chrono::Duration::minutes(self.minutes_back);
@@ -312,7 +342,6 @@ impl TimeBuilder {
 /// consecutive days abut with no hole and no double-count. Zones that shift
 /// across midnight exist (Chile, Cuba, Lord Howe), so the old `panic!` on
 /// that branch was reachable.
-#[cfg(feature = "native")]
 fn strip_to_start_of_day(dt: DatumTime) -> DatumTime {
     // A `DatumTime` with no zone name still has its stored offset, which has
     // no transitions — `Zone::of` yields that, so midnight resolves either way.
@@ -352,7 +381,7 @@ mod tests {
     #[test]
     fn a_nameless_zone_keeps_its_offset_and_claims_no_name() {
         let zone = Zone::Fixed(FixedOffset::east_opt(2 * 3600).unwrap());
-        let dt = TimeBuilder::now().build_in_zone(zone, None);
+        let dt = TimeBuilder::now().build_at(Utc::now(), zone, None);
         assert_eq!(dt.timezone, None);
         assert_eq!(dt.offset_minutes, 120);
     }

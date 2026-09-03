@@ -11,9 +11,13 @@ Core purpose: let users manually log data about their own lives and review it as
 
 ```
 crates/
-  datum-core/         # Rust library: data model, SQLite, time parsing, field specs
+  datum-core/         # Rust library: data model, SQLite, field specs
+  datum-parse/        # Pure: argv + time parsing, verb truth table, entry identity
+  datum-parse-wasm/   # datum-parse for the browser (argv -> the row to insert)
   datum-cli/          # `datum` binary: clap CLI, commands, output formatting
   datum-commands/     # Command-layer crate: typed + string APIs, dispatched by datum-cli
+  datum-layout/       # Pure: dayview/nowview geometry + SVG render
+  datum-layout-wasm/  # datum-layout for the browser
   datum-sync-client/  # Sync client library: wire protocol, crypto, HTTP (WASM-split)
   datum-sync-server/  # Relay server: Rust + axum, E2E-encrypted sync backend
   datum-sync-agent/   # Background sync daemon (planned)
@@ -150,20 +154,39 @@ npm test                               # the seam suite (builds first)
 npm run test:fixtures                  # recapture the CLI-parity fixtures
 ```
 
-The dayview and nowview panes are `crates/datum-layout` compiled to
-`wasm32-unknown-unknown` (`crates/datum-layout-wasm`), so the browser runs
-datum's own compute+render rather than a second implementation of it. The
-module is committed at `web/static/datum-layout.wasm` the way the fixtures
-are, so the web CI job needs no Rust toolchain — rebuild and commit it
-with `npm run build:wasm` whenever `datum-layout` or `datum-layout-wasm`
-changes.
+Two regions of the app are datum's own Rust compiled to
+`wasm32-unknown-unknown`, not a second implementation of it:
+
+- **the parser** — `crates/datum-parse` via `crates/datum-parse-wasm`
+  (da-7scm). argv in, the row to insert out: time flags, `KEY=VALUE`
+  grammar, duration spellings, the verb truth table, the slug and the
+  content hash all come from the CLI's own code. `web/src/lib/parser.ts`
+  is the browser half; there is no TypeScript parser any more.
+- **the dayview / nowview panes** — `crates/datum-layout` via
+  `crates/datum-layout-wasm` (da-6h6p), reached from
+  `web/src/lib/layout.ts`.
+
+Both use the same five-function C ABI, loaded by `web/src/lib/wasm.ts`.
+Neither needs wasm-bindgen, and neither may acquire an import: a module
+with imports will not load from the bare `WebAssembly.instantiate` the
+browser side uses (this is why the workspace turns off chrono's
+`wasmbind`). Both artifacts are committed under `web/static/` the way the
+fixtures are, so the web CI job needs no Rust toolchain — rebuild and
+commit them with `npm run build:wasm` whenever the crates behind them
+change.
+
+What the browser still assembles itself is the small DB-free part of
+`log_core` (`crates/datum-parse-wasm/src/log.rs`), and
+`crates/datum-commands/tests/wasm_parse_parity.rs` drives the real
+`log_entry` and that module over the same argv matrix so the two cannot
+drift. Log shapes it does not assemble — `add`/`note`, `-K`, `-R`, `,`
+chains — report themselves rather than storing something else.
 
 `web/tests` drives the built app in a real browser and asserts through
 `run(argv)` — the one seam every region of the app goes through — rather
-than through the interim TypeScript runner behind it, which da-1vat
-deletes. `tests/parity.test.mjs` compares what a given argv stores in the
-browser against what the real `datum` binary stored for the same argv;
-cases the browser gets wrong today carry a `divergence` note in
-`tests/fixtures/cli-parity.json` and report as todo rather than failing.
-Needs a headless browser once: `npx playwright install --only-shell
-chromium`.
+than through the local runner behind it, which da-1vat deletes.
+`tests/parity.test.mjs` compares what a given argv stores in the browser
+against what the real `datum` binary stored for the same argv, and every
+case is a hard assertion: since the parser is shared there is nothing for
+a per-case exemption to excuse. Needs a headless browser once: `npx
+playwright install --only-shell chromium`.

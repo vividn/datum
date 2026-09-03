@@ -60,6 +60,10 @@ datum-core = { path = "../datum-core", features = ["test-util"] }
 # Test-only, and the direction is deliberate: the browser's copy of the
 # colour rules is held to this crate's original (src/render/wasm_parity.rs).
 datum-layout-wasm = { path = "../datum-layout-wasm" }
+# Same direction, same reason: the browser's copy of the write-path
+# assembly is held to this crate's original
+# (tests/wasm_parse_parity.rs).
+datum-parse-wasm = { path = "../datum-parse-wasm" }
 datum-test-util = { path = "../datum-test-util" }
 rusqlite = { workspace = true }
 # Re-exported via `datum_parse::alias::shell_split` for the e2e harness;

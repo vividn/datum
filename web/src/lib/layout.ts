@@ -6,7 +6,8 @@
 // compiled to wasm (da-1vat); they need the layout crate, which is a
 // ~250 KB module with no imports. `crates/datum-layout-wasm` is that
 // crate behind a five-function C ABI, and this file is the other half of
-// it (da-6h6p).
+// it (da-6h6p). The ABI plumbing itself lives in `./wasm.ts`, shared with
+// the parser module.
 //
 // Data in, SVG out. Everything about *how* a day is drawn — colours,
 // geometry, the axis, the clip to the visible window — stays in Rust,
@@ -14,7 +15,7 @@
 // only what it alone knows: which entries are in the window, and what the
 // viewer's clock says.
 
-import { base } from '$app/paths';
+import { jsonModule } from './wasm.js';
 
 /** A block: a filled span. `state` picks the fill; absent → field colour. */
 export interface BlockReq {
@@ -74,37 +75,10 @@ export type LayoutRequest =
 			options?: Record<string, unknown>;
 	  };
 
-/** The module's exports — see the ABI note in datum-layout-wasm/src/lib.rs. */
-interface LayoutExports {
-	memory: WebAssembly.Memory;
-	alloc(len: number): number;
-	dealloc(ptr: number, len: number): void;
-	render(ptr: number, len: number): number;
-	response_len(): number;
-	response_clear(): void;
-}
-
-/** Instantiated once and reused: the module is pure and holds no state. */
-let loading: Promise<LayoutExports> | null = null;
-
-function load(): Promise<LayoutExports> {
-	// No imports to satisfy — a `wasm32-unknown-unknown` cdylib with no
-	// `extern` calls has no import section — so instantiate takes {}.
-	loading ??= fetch(`${base}/datum-layout.wasm`)
-		.then((response) => {
-			if (!response.ok) throw new Error(`datum-layout.wasm: HTTP ${response.status}`);
-			return response.arrayBuffer();
-		})
-		.then((bytes) => WebAssembly.instantiate(bytes, {}))
-		.then((result) => result.instance.exports as unknown as LayoutExports)
-		.catch((e) => {
-			// A failed load must not poison every later attempt: the pane
-			// shows the error and the next refresh tries again.
-			loading = null;
-			throw e;
-		});
-	return loading;
-}
+const call = jsonModule<LayoutRequest, { svg?: string; error?: string }>(
+	'datum-layout.wasm',
+	'render'
+);
 
 /**
  * Render one request to an SVG document.
@@ -114,26 +88,8 @@ function load(): Promise<LayoutExports> {
  * so a shape the browser got wrong reads as a message, not a dead pane.
  */
 export async function renderLayout(request: LayoutRequest): Promise<string> {
-	const wasm = await load();
-	const body = new TextEncoder().encode(JSON.stringify(request));
-
-	const ptr = wasm.alloc(body.length);
-	try {
-		// A fresh view every time: `alloc` can grow the memory, which
-		// detaches any ArrayBuffer taken before it.
-		new Uint8Array(wasm.memory.buffer, ptr, body.length).set(body);
-		const out = wasm.render(ptr, body.length);
-		const len = wasm.response_len();
-		const text = new TextDecoder().decode(
-			new Uint8Array(wasm.memory.buffer, out, len).slice()
-		);
-		wasm.response_clear();
-
-		const parsed = JSON.parse(text) as { svg?: string; error?: string };
-		if (parsed.error !== undefined) throw new Error(parsed.error);
-		if (parsed.svg === undefined) throw new Error('layout returned neither an svg nor an error');
-		return parsed.svg;
-	} finally {
-		wasm.dealloc(ptr, body.length);
-	}
+	const parsed = await call(request);
+	if (parsed.error !== undefined) throw new Error(parsed.error);
+	if (parsed.svg === undefined) throw new Error('layout returned neither an svg nor an error');
+	return parsed.svg;
 }

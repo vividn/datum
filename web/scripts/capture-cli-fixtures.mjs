@@ -9,10 +9,9 @@
 // backup` (the CLI's own JSONL dump), and the comparable semantics are
 // recorded.
 //
-// The authored half of each case — `argv`, `time`, `divergence` — is read
-// from the existing file and written back untouched, so re-capturing
-// refreshes the CLI's answers without losing the notes about where the
-// browser currently disagrees.
+// The authored half of each case — `argv` and `time` — is read from the
+// existing file and written back untouched, so re-capturing refreshes the
+// CLI's answers without rewriting the cases.
 //
 // Usage:  npm run test:fixtures        [DATUM_BIN=/path/to/datum]
 

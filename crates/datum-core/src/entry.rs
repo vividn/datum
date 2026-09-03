@@ -11,67 +11,17 @@ use chrono::{DateTime, Utc};
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
-use sha2::{Digest, Sha256};
+
+use datum_parse::entry_id;
 
 use crate::dur::Dur;
 use crate::ids::{Hid, Slug};
 use crate::time::DatumTime;
 
-/// The verb classifies an entry's (state, dur, following_state) shape.
-/// Stored as plain text in the `verb` column (the SQL CHECK does not
-/// constrain values; `dm check verbs` (sub-bead 7) detects drift
-/// between stored and re-derived verbs).
-///
-/// Storage-only — five canonical shapes derived from the truth table by
-/// [`crate::verb::derive_verb`]. Command intent (Occur/Start/Stop/Add) is
-/// expressed at the parse boundary via [`crate::action::Action`]; the
-/// legacy v19 variants were dropped in da-8y2q.2.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[derive(Default)]
-pub enum Verb {
-    /// Single point-in-time event with no state change (`dur is NULL,
-    /// state is null/true, following_state is NULL`).
-    #[default]
-    Point,
-    /// Transition to a new state (`dur is NULL, state is set,
-    /// following_state is NULL`).
-    Switch,
-    /// Duration block (`dur is set/positive, following_state is NULL`).
-    Block,
-    /// Block + switch at the trailing edge (`dur is set/positive,
-    /// following_state is set`).
-    BlockSwitch,
-    /// Point + switch at the same instant (`dur is "PT0S",
-    /// following_state is set`).
-    PointSwitch,
-}
-
-impl std::fmt::Display for Verb {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Verb::Point => write!(f, "point"),
-            Verb::Switch => write!(f, "switch"),
-            Verb::Block => write!(f, "block"),
-            Verb::BlockSwitch => write!(f, "block-switch"),
-            Verb::PointSwitch => write!(f, "point-switch"),
-        }
-    }
-}
-
-impl std::str::FromStr for Verb {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "point" => Ok(Verb::Point),
-            "switch" => Ok(Verb::Switch),
-            "block" => Ok(Verb::Block),
-            "block-switch" => Ok(Verb::BlockSwitch),
-            "point-switch" => Ok(Verb::PointSwitch),
-            _ => Err(format!("Unknown verb: '{s}'")),
-        }
-    }
-}
+/// The stored-shape classifier — re-exported from `datum-parse` so
+/// `entry::Verb` remains a valid path. Definition (and the truth table
+/// that derives it) live in `datum_parse::verb`.
+pub use datum_parse::verb::Verb;
 
 /// Granularity at which an uncertainty is meaningful — re-exported from
 /// `datum-parse` so `entry::UncertaintyUnit` remains a valid path.
@@ -127,7 +77,7 @@ impl std::str::FromStr for EntryShape {
 }
 
 /// Length of the stored `hid` column (base36 characters).
-pub const HID_LEN: usize = 12;
+pub use datum_parse::entry_id::HID_LEN;
 
 /// Length of the short hid displayed in action output and used by `%uid%`.
 pub const SHORT_HID_LEN: usize = 5;
@@ -138,17 +88,8 @@ pub const SHORT_HID_LEN: usize = 5;
 /// column so an accidental collision simply forces a regeneration.
 pub fn new_hid() -> Hid {
     let mut rng = rand::thread_rng();
-    let s: String = (0..HID_LEN)
-        .map(|_| {
-            let n = rng.gen_range(0..36u8);
-            if n < 10 {
-                (b'0' + n) as char
-            } else {
-                (b'a' + (n - 10)) as char
-            }
-        })
-        .collect();
-    Hid(s)
+    let bytes: [u8; HID_LEN] = std::array::from_fn(|_| rng.gen());
+    Hid(entry_id::hid_from_bytes(&bytes))
 }
 
 /// An entry is the core data unit. All user-logged data becomes an Entry.
@@ -490,68 +431,7 @@ impl Entry {
     }
 }
 
-/// The columns that constitute an entry's *content* for dedup, replay
-/// detection and the sync tiebreaker.
-///
-/// vividn's ruling (da-4vyw): the hash covers **the fact asserted**, not the
-/// annotations around it. In: `field`, `occur_time` (UTC instant only),
-/// `dur`, `state`, `data`, `following_state`, and whether the row is
-/// deleted. Out: `lat`/`lon`/`location`, `occur_time_offset`/`_tz` (the
-/// instant is the fact, the offset is how it was rendered), the two
-/// uncertainties, `user_asserted_last_state`, `extra_metadata`, and every
-/// identity/provenance column.
-///
-/// **Uncertainty is out on purpose (da-b8rs), not by oversight.** Two
-/// entries that differ only in how precisely the time or duration is known
-/// describe the *same event*: `coffee ±5m` and `coffee ±1m` at the same
-/// instant are one coffee. Hashing the uncertainty would split them into
-/// two rows that never dedup and never converge. Where two devices really
-/// do disagree, the LWW merge surfaces it as a conflict for the user to
-/// settle — which is the outcome vividn asked for. Do not "fix" this by
-/// adding uncertainty to `parts` below.
-///
-/// `following_state` closes a second hole as a side effect: `verb` is
-/// derived from `(state, dur, following_state)`, so with all three hashed
-/// a verb difference can no longer hide behind an equal hash.
-///
-/// Adding a field is one line here, one line in [`compute_hash`]'s `parts`,
-/// and one migration that rewrites every stored row — see
-/// `migrations::m32_to_33_content_hash_v33`.
-pub(crate) struct HashInputs<'a> {
-    pub field: &'a str,
-    pub occur: &'a str,
-    pub dur: &'a str,
-    pub state: &'a str,
-    pub data: &'a str,
-    pub following_state: &'a str,
-    /// **Deleted-ness, not the deletion instant.** `deleted_at` is a
-    /// timestamp, but hashing its value would give two devices that delete
-    /// the same entry independently two different hashes for the same
-    /// outcome — and would change a tombstone's hash if the deletion time
-    /// were ever rewritten. Only the null/non-null distinction is content.
-    pub deleted: bool,
-}
-
-pub(crate) fn compute_hash(inputs: &HashInputs) -> String {
-    let parts: [&str; 7] = [
-        inputs.field,
-        inputs.occur,
-        inputs.dur,
-        inputs.state,
-        inputs.data,
-        inputs.following_state,
-        // A marker rather than the instant — see `HashInputs::deleted`.
-        if inputs.deleted { "deleted" } else { "" },
-    ];
-    let mut h = Sha256::new();
-    for (i, part) in parts.iter().enumerate() {
-        if i > 0 {
-            h.update(b"\x00");
-        }
-        h.update(part.as_bytes());
-    }
-    format!("{:x}", h.finalize())
-}
+pub(crate) use datum_parse::entry_id::{content_hash as compute_hash, HashInputs};
 
 /// Stored `dur` text → seconds. Handles ISO-8601 spans (`PT5M`, `P1D`,
 /// `P3W`) and the sentinel forms `MOMENT` / `UNKNOWN` (both → `None`,
@@ -563,24 +443,12 @@ pub(crate) fn compat_dur_secs(s: &str) -> Option<i64> {
     crate::dur::Dur::parse(s).and_then(|d| d.as_seconds())
 }
 
-/// Default slug. A time-anchored entry slugs `<field>:<occur_time>`;
-/// millisecond precision keeps same-field same-second inserts on distinct
-/// slugs. A timeless entry (no `occur_time`) slugs `<field>:c<create_time>`
-/// (da-r17h) — the `c` marker mirrors the display convention and `create_time`
-/// keeps many-per-field timeless entries apart (the old `<field>:unset` made
-/// every timeless entry collide on the UNIQUE slug). This is the default for
-/// directly-constructed entries; the CLI insert path overrides it with the
-/// field's `id_structure` template.
+/// Default slug for a directly-constructed entry, wrapped into [`Slug`].
+/// The rule itself is [`datum_parse::entry_id::build_slug`]; the CLI
+/// insert path overrides it with the field's `id_structure` template.
 pub fn build_slug(field: &str, time: Option<&DatumTime>, create_time: &DateTime<Utc>) -> Slug {
-    let s = match time {
-        Some(t) => format!("{}:{}", field, t.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ")),
-        None => format!(
-            "{}:c{}",
-            field,
-            create_time.format("%Y-%m-%dT%H:%M:%S%.3fZ")
-        ),
-    };
-    Slug(s)
+    let precision = time.and_then(|t| t.uncertainty.as_deref());
+    Slug(entry_id::build_slug(field, time, precision, create_time))
 }
 
 #[cfg(test)]

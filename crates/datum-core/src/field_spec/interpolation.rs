@@ -19,8 +19,9 @@ use crate::time::DatumTime;
 /// Default delimiter used when `--id-delimiter` is not provided.
 pub const DEFAULT_ID_DELIMITER: &str = ":";
 
-/// `occur_time_precision` value marking a date-only entry (da-fc0l).
-const DATE_ONLY_PRECISION: &str = "P1D";
+// The slug's time tokens are rendered by `datum-parse`, which is where the
+// browser reaches them too (da-7scm).
+use datum_parse::entry_id;
 
 /// Lookup context for [`interpolate`]. Keeps the helper decoupled from the
 /// full [`Entry`] shape so it is easy to test and reuse.
@@ -177,13 +178,7 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
         // UTC stamp the default-slug builder emits.
         "occur_time" => ctx
             .occur_time
-            .map(|t| {
-                if ctx.occur_time_precision == Some(DATE_ONLY_PRECISION) {
-                    t.local_time().format("%Y-%m-%d").to_string()
-                } else {
-                    t.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
-                }
-            })
+            .map(|t| entry_id::render_occur_token(t, ctx.occur_time_precision))
             .unwrap_or_default(),
         // da-xbjy / da-r17h: auto-prefix `c` / `m`, mirroring the display
         // convention (a timeless entry renders `c18:54:59`, a modify-keyed
@@ -191,16 +186,8 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
         // key, and only when the value is non-empty so missing-key delimiter
         // collapsing still works. Slug `field:c<create_time>` thus mirrors
         // the `c<time>` the tail/dayview surfaces show.
-        "create_time" => prefix_when_present(
-            ctx.create_time
-                .map(|t| t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
-            'c',
-        ),
-        "modify_time" => prefix_when_present(
-            ctx.modify_time
-                .map(|t| t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
-            'm',
-        ),
+        "create_time" => prefix_when_present(ctx.create_time.map(entry_id::render_stamp), 'c'),
+        "modify_time" => prefix_when_present(ctx.modify_time.map(entry_id::render_stamp), 'm'),
         _ => lookup_extra_data(ctx.extra_data, key).unwrap_or_default(),
     }
 }

@@ -1,0 +1,25 @@
+[package]
+name = "datum-parse-wasm"
+version.workspace = true
+edition.workspace = true
+
+# `cdylib` is the browser artifact; `rlib` keeps the crate testable on the
+# host and lets `datum-commands` cross-check this crate's assembly against
+# the CLI's own write path (crates/datum-commands/tests/wasm_parse_parity.rs).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Forwarded straight to `datum-parse`, and default-on for the same reason
+# it is default-on there: with `native` off, a host build compiles out
+# local-timezone detection and every host time silently resolves to UTC.
+# The browser build turns it off together with the wasm target:
+# `cargo build -p datum-parse-wasm --target wasm32-unknown-unknown --no-default-features`
+default = ["native"]
+native = ["datum-parse/native"]
+
+[dependencies]
+datum-parse = { path = "../datum-parse", default-features = false }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }

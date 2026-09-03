@@ -15,6 +15,11 @@
 //! * Hand-authored help rendering ([`help`]).
 //! * Public error type ([`error`]) — `ParseError` and the shared
 //!   `Result` alias for callers that want to match on the variants.
+//! * The pure entry-shape rules the storage layer applies but does not
+//!   own: the duration type ([`dur`]), the verb truth table ([`verb`]),
+//!   and entry identity ([`entry_id`] — hid, slug, content hash).
+//!   `datum-core` re-exports all three; they live here so the browser
+//!   can reach them through `datum-parse-wasm` (da-7scm).
 //!
 //! ## WASM-safety
 //!
@@ -43,15 +48,20 @@ compile_error!(
 
 pub mod alias;
 pub mod cli;
+pub mod dur;
+pub mod entry_id;
 pub mod error;
 pub mod help;
 pub mod input;
 pub mod parse;
 pub mod time;
+pub mod verb;
 
 pub use alias::expand::shell_split;
 pub use cli::{Cli, Command};
+pub use dur::{Dur, DurSpan};
 pub use error::{ParseError, Result};
 pub use input::{consolidate_keys, flexible_positional, FlexibleTarget};
 pub use parse::{parse_argv, parse_argv_string};
 pub use time::{DateArg, DatumTime, TimeArg, TimeBuilder, Uncertainty, UncertaintyUnit};
+pub use verb::{derive_verb, Verb};

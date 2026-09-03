@@ -20,6 +20,7 @@ after(stopApp);
 
 /** Exit codes the seam documents (src/lib/run.ts). */
 const OK = 0;
+const ERROR = 1;
 const UNKNOWN_COMMAND = 127;
 
 describe('logging verbs', () => {
@@ -126,19 +127,28 @@ describe('time and duration land on the entry', () => {
 		await withApp(async ({ run, entries }) => {
 			await run(['occur', 'coffee', '-t', '0915']);
 			const [stored] = await entries();
-			assert.equal(stored.dur, undefined);
+			// `MOMENT` is datum's in-column spelling of "no duration, this is
+			// a point" (da-ju71.2): `occur` stamps it so the verb is locked to
+			// `point` whatever shape the state has. The browser stores the
+			// same sentinel the CLI does.
+			assert.equal(stored.dur, 'MOMENT');
 			assert.equal(stored.verb, 'point');
 		});
 	});
 });
 
 describe('failure', () => {
-	test('an unknown command exits nonzero and says something on stderr', async () => {
+	// The two failures are different facts and now report differently
+	// (da-7scm). A word datum has never heard of is the *parser's* error, so
+	// the browser reports what `datum` reports — exit 1, "unknown
+	// subcommand". A real datum command the browser has not reached yet is
+	// the *runner's* gap, and keeps the shell's not-found exit.
+	test('a word datum has never heard of fails the way the CLI fails', async () => {
 		await withApp(async ({ run }) => {
 			const result = await run(['definitelynotacommand']);
-			assert.notEqual(result.code, OK);
-			assert.equal(result.code, UNKNOWN_COMMAND);
-			assert.notEqual(result.stderr, '');
+			assert.equal(result.code, ERROR);
+			assert.match(result.stderr, /unknown subcommand/);
+			assert.match(result.stderr, /definitelynotacommand/);
 			assert.equal(result.stdout, '');
 		});
 	});
