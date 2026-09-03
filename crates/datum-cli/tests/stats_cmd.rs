@@ -192,6 +192,100 @@ fn stats_bounds_speak_the_shared_time_grammar() {
     );
 }
 
+// ─── A block hands the field back (da-mkqo) ─────────────────────────────────
+
+/// The shape of vividn's ledger: a switch, an interrupting block that has
+/// already finished, and the stretch after it that is still the switched
+/// state. `datum end work 12m` writes `following_state IS NULL`, which
+/// means "resume whatever this block interrupted" (da-phoe) — so the
+/// minutes past the block's trailing edge belong to the interrupted state,
+/// not to nothing.
+///
+/// Asserts the TOTAL, not the buckets: `datum = 30m, false = 12m` is
+/// individually plausible and passes on the broken code. The defect is
+/// only visible in what goes MISSING, so the attributed total has to equal
+/// the elapsed span of the window.
+#[test]
+fn stats_attributes_the_span_a_finished_block_handed_back() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    // switch work datum @10:00; end work dur=12m @10:30 → block [10:30, 10:42).
+    entry_builder("work")
+        .verb(Verb::Switch)
+        .state(json!("datum"))
+        .time_start_utc(at("2026-06-15T10:00:00Z"))
+        .insert(&db);
+    entry_builder("work")
+        .verb(Verb::Block)
+        .state(json!(false))
+        .time_start_utc(at("2026-06-15T10:30:00Z"))
+        .time_end_utc(at("2026-06-15T10:42:00Z"))
+        .insert(&db);
+
+    let r = compute_stats(&selector("work"), &db).unwrap();
+
+    // 10:00 → now (12:00) is 2h, and every minute of it is attributed.
+    assert_eq!(
+        r.total_duration_seconds, 7200,
+        "the 78m after the block's trailing edge is not attributed to nothing"
+    );
+    assert_eq!(
+        dur(&r, "datum"),
+        30 * 60 + 78 * 60,
+        "30m before + 78m after"
+    );
+    assert_eq!(dur(&r, "false"), 12 * 60, "the block's own span, no more");
+}
+
+/// Two blocks back to back resume the same interrupted state — a block is
+/// an interruption, so it never becomes the state to come back to.
+#[test]
+fn stats_resumes_past_every_finished_block() {
+    let _g = freeze_time("2026-06-15T11:00:00Z");
+    let db = fresh_db();
+    entry_builder("work")
+        .verb(Verb::Switch)
+        .state(json!("datum"))
+        .time_start_utc(at("2026-06-15T10:00:00Z"))
+        .insert(&db);
+    for (start, end) in [
+        ("2026-06-15T10:10:00Z", "2026-06-15T10:15:00Z"),
+        ("2026-06-15T10:30:00Z", "2026-06-15T10:40:00Z"),
+    ] {
+        entry_builder("work")
+            .verb(Verb::Block)
+            .state(json!(false))
+            .time_start_utc(at(start))
+            .time_end_utc(at(end))
+            .insert(&db);
+    }
+
+    let r = compute_stats(&selector("work"), &db).unwrap();
+
+    assert_eq!(r.total_duration_seconds, 3600, "10:00 → now, all of it");
+    assert_eq!(dur(&r, "false"), 15 * 60, "5m + 10m of blocks");
+    assert_eq!(dur(&r, "datum"), 45 * 60, "the rest resumes datum");
+}
+
+/// With nothing before it, a block has no state to hand back to: the
+/// stretch after its trailing edge stays unattributed rather than
+/// inventing a state. Same answer `now` gives (da-phoe).
+#[test]
+fn stats_resumes_to_nothing_when_a_block_interrupted_nothing() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    entry_builder("work")
+        .verb(Verb::Block)
+        .state(json!(false))
+        .time_start_utc(at("2026-06-15T10:00:00Z"))
+        .time_end_utc(at("2026-06-15T10:12:00Z"))
+        .insert(&db);
+
+    let r = compute_stats(&selector("work"), &db).unwrap();
+
+    assert_eq!(r.total_duration_seconds, 12 * 60, "just the block");
+}
+
 #[test]
 fn stats_stored_dur_block_does_not_gap_fill() {
     // A discrete block with a stored `dur` is measured by that span; the gap

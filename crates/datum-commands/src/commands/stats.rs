@@ -8,8 +8,11 @@
 //! `occur_time` (switch continuity), with the still-open trailing block
 //! running to `now`. An entry that *does* carry a stored `dur` (a discrete
 //! block, e.g. `run 30m`) is measured by that span instead of the
-//! gap-to-next, and its `following_state` (if any) fills the remainder up to
-//! the next entry. Ref algorithm: crew/vremya/scripts/timespent.py.
+//! gap-to-next, and the remainder up to the next entry goes to its
+//! `following_state` — or, when it has none, back to the state the block
+//! interrupted, because a plain block is an interruption and NULL there
+//! means "resume what I was" (da-611d, da-mkqo). Ref algorithm:
+//! crew/vremya/scripts/timespent.py.
 //!
 //! The ratio is a share of *tracked* time, not of wall-clock: the closed
 //! state (`false` — every gap between blocks) and the untracked states
@@ -97,6 +100,7 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
                 dur: e.duration_seconds(),
                 following: state_label(e.following_state.as_ref()),
                 following_class: classify(e.following_state.as_ref()),
+                hands_back: datum_parse::shape::hands_field_back(e.verb),
             })
         })
         .collect();
@@ -104,6 +108,13 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
     let mut dur_by_state: BTreeMap<String, i64> = BTreeMap::new();
     let mut count_by_state: BTreeMap<String, usize> = BTreeMap::new();
     let mut class_by_state: BTreeMap<String, StateClass> = BTreeMap::new();
+
+    // The state the field returns to when a block hands it back: the one
+    // that governed just before the block opened. A block is an
+    // interruption, so it never becomes that state itself — `None` until
+    // some row has actually set a state (a block that interrupted nothing
+    // resumes nothing, the answer `now` gives for the same rows).
+    let mut governing: Option<(&str, StateClass)> = None;
 
     for (i, row) in timeline.iter().enumerate() {
         let next = timeline.get(i + 1).map(|r| r.occur).unwrap_or(now);
@@ -124,11 +135,30 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
         );
         note_class(&mut class_by_state, &row.state, row.class);
 
-        // Block B — with an explicit `dur` and a `following_state`, the field
-        // reverts to that state from the block's end until the next entry.
-        if let (Some(_), Some(fs)) = (row.dur, &row.following) {
-            add_overlap(&mut dur_by_state, fs, block_a_end, next, start, end);
-            note_class(&mut class_by_state, fs, row.following_class);
+        // Block B — what holds from the block's trailing edge until the next
+        // entry. An explicit `following_state` says so outright; a plain
+        // block says it by omission — `following_state IS NULL` means
+        // "resume what I interrupted" (da-611d), so the remainder belongs to
+        // the interrupted state and not to nothing (da-mkqo).
+        if row.dur.is_some() {
+            if let Some(fs) = &row.following {
+                add_overlap(&mut dur_by_state, fs, block_a_end, next, start, end);
+                note_class(&mut class_by_state, fs, row.following_class);
+            } else if row.hands_back {
+                if let Some((resumed, class)) = governing {
+                    add_overlap(&mut dur_by_state, resumed, block_a_end, next, start, end);
+                    note_class(&mut class_by_state, resumed, class);
+                }
+            }
+        }
+
+        // What the NEXT block will resume to. A hand-back row leaves it
+        // untouched, so back-to-back blocks all resume the same state.
+        if !row.hands_back {
+            governing = match &row.following {
+                Some(fs) => Some((fs, row.following_class)),
+                None => Some((&row.state, row.class)),
+            };
         }
 
         // Count the entry itself when its occur instant lands in-window.
@@ -467,6 +497,9 @@ struct TimelineRow {
     dur: Option<i64>,
     following: Option<String>,
     following_class: StateClass,
+    /// Whether this row's trailing edge hands the field back to whatever
+    /// it interrupted, rather than deciding the state past that edge.
+    hands_back: bool,
 }
 
 /// How a state value participates in the ratio denominator.

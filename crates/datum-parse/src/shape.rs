@@ -155,7 +155,7 @@ pub fn render_shape(verb: Verb, entry_shape: EntryShape, value: &Option<JsonValu
     }
 }
 
-// The six predicate helpers below are deliberately written as exhaustive
+// The seven predicate helpers below are deliberately written as exhaustive
 // `match`es rather than `matches!(...)` macros so the compiler forces a
 // decision in *every* helper whenever a new `Verb` is introduced. Together
 // with the exhaustive `render_shape` table above, this is the "single
@@ -216,6 +216,24 @@ pub fn dot_bg_uses_following_state(verb: Verb) -> bool {
     match verb {
         Verb::PointSwitch => true,
         Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::Point => false,
+    }
+}
+
+/// True for verbs that HAND THE FIELD BACK at their trailing edge instead
+/// of deciding its state past that edge.
+///
+/// `datum end work 12m` writes `following_state IS NULL`, and NULL there
+/// is a *specified default* meaning "resume whatever state preceded this
+/// block" (da-611d): a block is an INTERRUPTION, not a switch. Every
+/// reader that walks the "occur_time is the leading edge" convention —
+/// `now` / `state_at` (da-phoe), `stats` (da-mkqo) — asks this question,
+/// so the answer lives here with the rest of the verb dispatch.
+/// [`Verb::BlockSwitch`] / [`Verb::PointSwitch`] carry a real
+/// `following_state` and switch to it, so they never hand back.
+pub fn hands_field_back(verb: Verb) -> bool {
+    match verb {
+        Verb::Block => true,
+        Verb::Switch | Verb::BlockSwitch | Verb::Point | Verb::PointSwitch => false,
     }
 }
 
@@ -418,6 +436,19 @@ mod tests {
         assert!(!opens_secondary_switch_region(Verb::Switch));
         assert!(!opens_secondary_switch_region(Verb::Block));
         assert!(!opens_secondary_switch_region(Verb::Point));
+    }
+
+    #[test]
+    fn only_a_plain_block_hands_the_field_back() {
+        assert!(hands_field_back(Verb::Block));
+        for v in [
+            Verb::Switch,
+            Verb::BlockSwitch,
+            Verb::Point,
+            Verb::PointSwitch,
+        ] {
+            assert!(!hands_field_back(v));
+        }
     }
 
     #[test]

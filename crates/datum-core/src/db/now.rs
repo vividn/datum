@@ -260,9 +260,10 @@ impl StateRow {
     ///
     /// [`Verb::BlockSwitch`] / [`Verb::PointSwitch`] carry a real
     /// `following_state` and switch to it instead ([`effective_state`]),
-    /// so they never hand back.
+    /// so they never hand back — [`crate::shape::hands_field_back`] owns
+    /// that verb split, shared with `stats` (da-mkqo).
     pub(super) fn hands_field_back(&self, at: DateTime<Utc>) -> bool {
-        if self.verb != crate::entry::Verb::Block || self.following_state.is_some() {
+        if !crate::shape::hands_field_back(self.verb) || self.following_state.is_some() {
             return false;
         }
         match (self.occur, self.dur.as_ref().and_then(|d| d.as_seconds())) {
