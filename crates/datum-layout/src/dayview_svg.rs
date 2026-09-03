@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use crate::dayview::{BlockFill, DayviewLayout, Orientation};
+use crate::dayview::{BlockFill, DayviewAxisTick, DayviewLayout, Orientation};
 
 const NOW_LINE_COLOR: &str = "#ffcc00";
 const BG_COLOR: &str = "black";
@@ -28,6 +28,28 @@ const AXIS_COLOR: &str = "white";
 /// Per-stripe width (px) in multi-state diagonal patterns. Matches the
 /// original TS `stripeWidth = 8`.
 const STRIPE_WIDTH_PX: f64 = 8.0;
+
+/// Advance width of one character as a fraction of the font size. The
+/// renderer has no font engine, so axis-label placement (and the geometry
+/// tests that check it) estimate text extents with this ratio.
+pub const CHAR_ADVANCE_RATIO: f64 = 0.6;
+
+/// Estimated rendered width (px) of `label` at `font_size`.
+pub fn text_width(label: &str, font_size: f64) -> f64 {
+    label.chars().count() as f64 * font_size * CHAR_ADVANCE_RATIO
+}
+
+/// Minimum blank space (px) between two adjacent axis labels, and between
+/// a label and whatever an overlay reserves at the end of the axis.
+pub(crate) const AXIS_LABEL_GAP: f64 = 4.0;
+
+/// Knobs the nowview overlay needs the dayview renderer to honour.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DayviewSvgOpts {
+    /// Pixels at the far end of the time axis owned by an overlay drawn on
+    /// top of the axis strip (nowview's clock). Tick labels never enter it.
+    pub axis_end_reserved: f64,
+}
 
 /// SVG (x, y) origin of the data-area within the plot, plus the cross-axis
 /// extent across all stacked days. Pre-computed once per render so all
@@ -70,6 +92,11 @@ fn to_xy(layout: &DayviewLayout, geom: &PlotGeom, time: f64, cross: f64) -> (f64
 
 /// Render `layout` to an SVG document string.
 pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
+    render_dayview_svg_with(layout, DayviewSvgOpts::default())
+}
+
+/// [`render_dayview_svg`] with room left for a caller-drawn overlay.
+pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts) -> String {
     let mut out = String::with_capacity(8192);
     let mut defs = String::new();
     let mut patterns: HashMap<String, String> = HashMap::new();
@@ -236,7 +263,7 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
 
     // Time axis — bottom strip in horizontal, left strip in vertical.
     if layout.time_axis_height > 0.0 {
-        emit_time_axis(&mut out, layout, &geom);
+        emit_time_axis(&mut out, layout, &geom, opts);
     }
 
     // Hourly gridlines spanning the full data area perpendicular to time.
@@ -335,13 +362,96 @@ fn block_rect(
     }
 }
 
-fn emit_time_axis(out: &mut String, layout: &DayviewLayout, geom: &PlotGeom) {
+/// A label candidate along the axis: where its tick sits, how much room
+/// the text needs, and whether the tick is a major one.
+struct LabelSlot {
+    center: f64,
+    extent: f64,
+    is_major: bool,
+}
+
+/// Decide which ticks get a label and where the text sits, given the
+/// `[lo, hi]` range labels may occupy along the label axis.
+///
+/// The tick count is fixed while the render size is not, so a narrow render
+/// packs labels until they collide (da-sv8c). Labels that would cross an
+/// end of the range are inset to sit flush against it; if everything still
+/// doesn't fit, the series is thinned to its major ticks and then greedily
+/// to whatever survives.
+fn fit_axis_labels(slots: &[LabelSlot], lo: f64, hi: f64) -> Vec<(usize, f64)> {
+    let all: Vec<usize> = (0..slots.len()).collect();
+    let placed = greedy_place(&all, slots, lo, hi);
+    if placed.len() == all.len() {
+        return placed;
+    }
+    let majors: Vec<usize> = all.iter().copied().filter(|&i| slots[i].is_major).collect();
+    if majors.is_empty() {
+        return placed;
+    }
+    greedy_place(&majors, slots, lo, hi)
+}
+
+/// Place `candidates` (ascending) in order, insetting each into `[lo, hi]`
+/// and dropping any that still overlaps the one before it.
+fn greedy_place(candidates: &[usize], slots: &[LabelSlot], lo: f64, hi: f64) -> Vec<(usize, f64)> {
+    let mut out = Vec::with_capacity(candidates.len());
+    let mut prev_end = f64::NEG_INFINITY;
+    for &i in candidates {
+        let half = slots[i].extent / 2.0;
+        if slots[i].extent <= 0.0 || hi - lo < slots[i].extent {
+            continue;
+        }
+        let center = slots[i].center.clamp(lo + half, hi - half);
+        if center - half < prev_end + AXIS_LABEL_GAP {
+            continue;
+        }
+        prev_end = center + half;
+        out.push((i, center));
+    }
+    out
+}
+
+fn emit_time_axis(out: &mut String, layout: &DayviewLayout, geom: &PlotGeom, opts: DayviewSvgOpts) {
     let label_size = if layout.time_axis_height > 6.0 {
         (layout.time_axis_height - 6.0).max(6.0)
     } else {
         0.0
     };
     let n = layout.axis_ticks.len();
+    // The trailing tick is the day boundary / the now-line's own position;
+    // its label is never drawn. A strip too thin for text carries no ticks
+    // at all, as before.
+    let labelled: &[DayviewAxisTick] = if label_size > 0.0 {
+        layout.axis_ticks.get(..n.saturating_sub(1)).unwrap_or(&[])
+    } else {
+        &[]
+    };
+    let horizontal = matches!(layout.orientation, Orientation::Horizontal);
+    let axis_origin = if horizontal { geom.data_x } else { geom.data_y };
+    // Along the label axis a horizontal axis is limited by the text's own
+    // width; a vertical one stacks baselines, so a line's height is the
+    // extent that matters.
+    let slots: Vec<LabelSlot> = labelled
+        .iter()
+        .map(|t| LabelSlot {
+            center: axis_origin + t.time_pos,
+            extent: if horizontal {
+                text_width(&t.label, label_size)
+            } else if t.label.is_empty() {
+                0.0
+            } else {
+                label_size
+            },
+            is_major: t.is_major,
+        })
+        .collect();
+    // Labels stay inside the plot group and clear of any end overlay.
+    let placed = fit_axis_labels(
+        &slots,
+        0.0,
+        axis_origin + layout.time_axis_extent - opts.axis_end_reserved.max(0.0),
+    );
+
     match layout.orientation {
         Orientation::Horizontal => {
             // Baseline beneath the day-stack data area.
@@ -354,30 +464,29 @@ fn emit_time_axis(out: &mut String, layout: &DayviewLayout, geom: &PlotGeom) {
                 y = axis_y,
                 c = AXIS_COLOR,
             );
-            if label_size > 0.0 {
-                for (i, tick) in layout.axis_ticks.iter().enumerate() {
-                    if i + 1 == n {
-                        break;
-                    }
-                    let x = geom.data_x + tick.time_pos;
-                    let _ = write!(
-                        out,
-                        r#"<line class="tick" x1="{x}" x2="{x}" y1="{y0}" y2="{y1}" stroke="{c}"/>"#,
-                        x = x,
-                        y0 = axis_y,
-                        y1 = axis_y + 4.0,
-                        c = AXIS_COLOR,
-                    );
-                    let _ = write!(
-                        out,
-                        r#"<text class="tick-label" x="{x}" y="{y}" text-anchor="middle" fill="{c}" font-size="{fs}">{label}</text>"#,
-                        x = x,
-                        y = axis_y + label_size + 2.0,
-                        c = TEXT_COLOR,
-                        fs = label_size,
-                        label = tick.label,
-                    );
-                }
+            let mut placed = placed.iter().peekable();
+            for (i, tick) in labelled.iter().enumerate() {
+                let x = geom.data_x + tick.time_pos;
+                let _ = write!(
+                    out,
+                    r#"<line class="tick" x1="{x}" x2="{x}" y1="{y0}" y2="{y1}" stroke="{c}"/>"#,
+                    x = x,
+                    y0 = axis_y,
+                    y1 = axis_y + 4.0,
+                    c = AXIS_COLOR,
+                );
+                let Some((_, label_x)) = placed.next_if(|(j, _)| *j == i) else {
+                    continue;
+                };
+                let _ = write!(
+                    out,
+                    r#"<text class="tick-label" x="{x}" y="{y}" text-anchor="middle" fill="{c}" font-size="{fs}">{label}</text>"#,
+                    x = label_x,
+                    y = axis_y + label_size + 2.0,
+                    c = TEXT_COLOR,
+                    fs = label_size,
+                    label = tick.label,
+                );
             }
         }
         Orientation::Vertical => {
@@ -391,30 +500,29 @@ fn emit_time_axis(out: &mut String, layout: &DayviewLayout, geom: &PlotGeom) {
                 y1 = geom.data_y + layout.time_axis_extent,
                 c = AXIS_COLOR,
             );
-            if label_size > 0.0 {
-                for (i, tick) in layout.axis_ticks.iter().enumerate() {
-                    if i + 1 == n {
-                        break;
-                    }
-                    let y = geom.data_y + tick.time_pos;
-                    let _ = write!(
-                        out,
-                        r#"<line class="tick" x1="{x0}" x2="{x1}" y1="{y}" y2="{y}" stroke="{c}"/>"#,
-                        x0 = axis_x - 4.0,
-                        x1 = axis_x,
-                        y = y,
-                        c = AXIS_COLOR,
-                    );
-                    let _ = write!(
-                        out,
-                        r#"<text class="tick-label" x="{x}" y="{y}" text-anchor="end" fill="{c}" font-size="{fs}" dy="0.35em">{label}</text>"#,
-                        x = axis_x - 6.0,
-                        y = y,
-                        c = TEXT_COLOR,
-                        fs = label_size,
-                        label = tick.label,
-                    );
-                }
+            let mut placed = placed.iter().peekable();
+            for (i, tick) in labelled.iter().enumerate() {
+                let y = geom.data_y + tick.time_pos;
+                let _ = write!(
+                    out,
+                    r#"<line class="tick" x1="{x0}" x2="{x1}" y1="{y}" y2="{y}" stroke="{c}"/>"#,
+                    x0 = axis_x - 4.0,
+                    x1 = axis_x,
+                    y = y,
+                    c = AXIS_COLOR,
+                );
+                let Some((_, label_y)) = placed.next_if(|(j, _)| *j == i) else {
+                    continue;
+                };
+                let _ = write!(
+                    out,
+                    r#"<text class="tick-label" x="{x}" y="{y}" text-anchor="end" fill="{c}" font-size="{fs}" dy="0.35em">{label}</text>"#,
+                    x = axis_x - 6.0,
+                    y = label_y,
+                    c = TEXT_COLOR,
+                    fs = label_size,
+                    label = tick.label,
+                );
             }
         }
     }

@@ -12,7 +12,7 @@
 use std::fmt::Write;
 
 use crate::dayview::{DayviewLayout, Orientation};
-use crate::dayview_svg::render_dayview_svg;
+use crate::dayview_svg::{render_dayview_svg_with, text_width, DayviewSvgOpts, AXIS_LABEL_GAP};
 use crate::nowview::NowviewPanelEntry;
 
 const TEXT_COLOR: &str = "white";
@@ -37,7 +37,12 @@ pub fn render_nowview_svg(
     current_time_label: &str,
     panel_entries: &[NowviewPanelEntry],
 ) -> String {
-    let mut svg = render_dayview_svg(layout);
+    // The clock is drawn on top of the axis strip at its far end; tell the
+    // axis renderer to keep its tick labels out of that room (da-sv8c).
+    let opts = DayviewSvgOpts {
+        axis_end_reserved: clock_reserved_px(layout, current_time_label),
+    };
+    let mut svg = render_dayview_svg_with(layout, opts);
     let mut overlay = String::new();
     if !panel_entries.is_empty() {
         overlay.push_str(&build_state_panel_overlay(layout, panel_entries));
@@ -49,6 +54,32 @@ pub fn render_nowview_svg(
         inject_inside_plot_group(&mut svg, &overlay);
     }
     svg
+}
+
+/// Font size of the clock overlay. Scales with the time-axis strip but
+/// stays readable when the strip is suppressed (callers may pass
+/// `time_axis_height = 0`).
+fn clock_font_size(layout: &DayviewLayout) -> f64 {
+    if layout.time_axis_height > 0.0 {
+        (layout.time_axis_height + 2.0).min(layout.time_axis_height * 1.2)
+    } else {
+        12.0
+    }
+}
+
+/// Room the clock needs at the far end of the time axis, along the axis's
+/// own label direction: its text width when time runs horizontally, one
+/// line of it when time runs vertically.
+fn clock_reserved_px(layout: &DayviewLayout, label: &str) -> f64 {
+    if label.is_empty() {
+        return 0.0;
+    }
+    let font_size = clock_font_size(layout);
+    AXIS_LABEL_GAP
+        + match layout.orientation {
+            Orientation::Horizontal => text_width(label, font_size),
+            Orientation::Vertical => font_size,
+        }
 }
 
 /// Build the `<text>` overlay placed near the now-line. Anchored to the
@@ -73,13 +104,7 @@ fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
         Orientation::Vertical => (layout.time_axis_height, layout.label_width),
     };
 
-    // Font size scales with the time-axis strip but stays readable when the
-    // strip is suppressed (callers may pass `time_axis_height = 0`).
-    let font_size = if layout.time_axis_height > 0.0 {
-        (layout.time_axis_height + 2.0).min(layout.time_axis_height * 1.2)
-    } else {
-        12.0
-    };
+    let font_size = clock_font_size(layout);
 
     let mut out = String::new();
     let _ = write!(&mut out, r#"<g class="nowview-overlay">"#,);
