@@ -430,7 +430,17 @@ fn run_git(root: &Path, args: &[&str]) -> Result<String> {
 ///   next migration, and one is imminent (the Precision→Uncertainty
 ///   rename). Carving is tracked as its own bead so this bump does not
 ///   quietly become the resolution.
-const MAX_FILE_LOC: usize = 4000;
+/// - 3500 (2026-09-03, `da-tnbn`) — back down, because the carve landed.
+///   `migrations.rs` is now `migrations/`: a registry module, a runner,
+///   the shared rebuild helpers, and one body module per decade of
+///   schema versions. A new migration adds a function to the current era
+///   module and an entry to the registry, and crossing the next multiple
+///   of ten starts a new file — so no file in that tree grows without
+///   bound and the cap is no longer counting down towards a known
+///   collision. 3500 restores the pre-#92 number; the largest remaining
+///   file is `commands/check.rs` at ~3.4k, which is the next real
+///   conversation rather than a reason to keep the headroom.
+const MAX_FILE_LOC: usize = 3500;
 
 /// Top-level entry for `cargo xtask check ...` — two batteries, plus
 /// every gate addressable on its own by name.
@@ -721,13 +731,7 @@ fn check_no_legacy_verbs() -> Result<()> {
     let hits = scan_rs_files_with_path(|path, content| {
         let mut out: Vec<(String, usize)> = Vec::new();
         // Migrations decode persisted-verb strings → carve them out.
-        if path
-            .iter()
-            .any(|p| p == "migrations" || p == "migrations.rs")
-        {
-            return out;
-        }
-        if path.to_string_lossy().ends_with("migrations.rs") {
+        if path.iter().any(|p| p == "migrations") {
             return out;
         }
         for (i, line) in content.lines().enumerate() {
@@ -750,7 +754,7 @@ fn check_no_legacy_verbs() -> Result<()> {
 }
 
 /// Gate further growth in monolithic source files. A handful of
-/// pre-existing offenders (parse.rs, migrations.rs, …) sit just
+/// pre-existing offenders (parse.rs, check.rs, …) sit just
 /// under the cap; the gate exists to catch the next file that
 /// crosses the line, not to retroactively split anything. Crossing
 /// the cap → fail; the offender must either carve up or bump the cap

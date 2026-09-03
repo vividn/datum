@@ -13,6 +13,7 @@ use datum_core::migrations::{
     apply_migrations, apply_migrations_down, read_schema_version, CURRENT_SCHEMA_VERSION,
     MIGRATIONS,
 };
+use rusqlite::Connection;
 
 /// Helper: fresh in-memory DB at v=CURRENT.
 fn fresh_current() -> Db {
@@ -136,4 +137,109 @@ fn down_walk_errors_when_target_above_current() {
         matches!(err, datum_core::error::DatumError::IncompatibleSchema(_)),
         "expected IncompatibleSchema for backwards down-walk, got {err:?}",
     );
+}
+
+// ─── The registry against schema.sql (da-tnbn) ───────────────────────
+//
+// `Db::open` runs the migration registry and *then* replays schema.sql
+// with `CREATE … IF NOT EXISTS`, so a table the registry builds in the
+// wrong shape is not repaired on the way out — it just quietly differs
+// from a freshly-created database for the rest of its life. The test
+// below is the gate against that: walk a database down to v1 and back
+// up using nothing but the registry, and require the result to have the
+// same shape as a database laid down from schema.sql.
+//
+// It is deliberately structural rather than textual. Two comparisons
+// that were considered and rejected:
+//
+//   * comparing `sqlite_master.sql` verbatim — every rebuild-style
+//     migration writes its own DDL formatting, so the test would fail
+//     on whitespace and teach people to ignore it;
+//   * comparing column *order* — `ALTER TABLE ADD COLUMN` appends,
+//     while schema.sql declares columns where they read best, so a
+//     migrated `sync_state` legitimately carries `device_seq` in a
+//     different slot. Nothing selects by ordinal, so order is noise.
+//
+// What is compared is what a query can actually observe: the set of
+// objects, and per column the declared type, NOT NULL, default and
+// primary-key position.
+
+/// One column's observable shape: `name:type:notnull:default:pk`.
+fn columns_of(conn: &Connection, table: &str) -> Vec<String> {
+    // `table_xinfo` rather than `table_info` so generated columns
+    // (`entries.verb`, `dur_seconds`, `modify_time_ms`) are included.
+    let mut cols: Vec<String> = conn
+        .prepare(&format!("PRAGMA table_xinfo('{table}')"))
+        .unwrap()
+        .query_map([], |row| {
+            let name: String = row.get(1)?;
+            let declared_type: String = row.get(2)?;
+            let not_null: i64 = row.get(3)?;
+            let default: Option<String> = row.get(4)?;
+            let pk_position: i64 = row.get(5)?;
+            // 0 = ordinary, 2/3 = VIRTUAL/STORED generated.
+            let kind: i64 = row.get(6)?;
+            Ok(format!(
+                "{name}:{declared_type}:{not_null}:{}:{pk_position}:{kind}",
+                default.unwrap_or_default(),
+            ))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    cols.sort();
+    cols
+}
+
+/// Every schema object, as `"<type> <name>"`, sorted.
+fn objects_of(conn: &Connection) -> Vec<String> {
+    let mut objects: Vec<String> = conn
+        .prepare(
+            "SELECT type || ' ' || name FROM sqlite_master \
+             WHERE name NOT LIKE 'sqlite_%'",
+        )
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    objects.sort();
+    objects
+}
+
+fn tables_of(conn: &Connection) -> Vec<String> {
+    objects_of(conn)
+        .into_iter()
+        .filter_map(|o| o.strip_prefix("table ").map(str::to_owned))
+        .collect()
+}
+
+#[test]
+fn walking_the_registry_up_from_v1_reproduces_the_schema_sql_shape() {
+    let reference = fresh_current();
+    let want_objects = objects_of(reference.conn());
+
+    let walked = fresh_current();
+    let conn = walked.conn();
+    apply_migrations_down(conn, MIGRATIONS, CURRENT_SCHEMA_VERSION, 1).unwrap();
+    apply_migrations(conn, MIGRATIONS, 1, CURRENT_SCHEMA_VERSION).unwrap();
+
+    assert_eq!(
+        objects_of(conn),
+        want_objects,
+        "the registry must build exactly the tables and indexes schema.sql \
+         declares — a step that stopped creating one, or created one \
+         schema.sql does not, shows up here",
+    );
+
+    for table in tables_of(reference.conn()) {
+        assert_eq!(
+            columns_of(conn, &table),
+            columns_of(reference.conn(), &table),
+            "table `{table}` has a different shape after walking the \
+             registry than it does when laid down from schema.sql. \
+             `Db::open` replays schema.sql with CREATE … IF NOT EXISTS, \
+             so this difference would NOT be repaired on a real database",
+        );
+    }
 }

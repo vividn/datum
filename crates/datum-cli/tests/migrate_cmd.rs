@@ -9,7 +9,7 @@
 //! migration — and exercise them through the `datum migrate` command
 //! surface using the P0 harness.
 //!
-//! C7's `#[cfg(test)] mod` in `crates/datum-core/src/migrations.rs`
+//! C7's `#[cfg(test)] mod` in `crates/datum-core/src/migrations/`
 //! already covers framework internals; the tests here stay at the CLI
 //! boundary where possible and use synthetic migration slices only when
 //! the live `MIGRATIONS` registry (empty at v1) cannot exercise the

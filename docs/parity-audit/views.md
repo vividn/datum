@@ -17,7 +17,7 @@ unported datum views are listed with a disposition.
 Reference points:
 * daydumb views: `crates/datum-core/src/views/`
 * daydumb schema: `crates/datum-core/src/schema.sql`
-* daydumb migrations: `crates/datum-core/src/migrations.rs`
+* daydumb migrations: `crates/datum-core/src/migrations/`
 * datum source: `/tmp/datum-survey/src/views/datumViews/`
 
 The pre-R3 daydumb views hand-rolled CouchDB's map/reduce mental model on

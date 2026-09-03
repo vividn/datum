@@ -22,7 +22,7 @@ web/            # SvelteKit PWA: static, OPFS + SQLite WASM, offline-capable
 
 (Flutter/Android/Wear OS clients are planned but the directories don't
 exist yet; legacy datum migration logic lives in
-`crates/datum-core/src/migrations.rs` and `commands/db/import.rs`, not
+`crates/datum-core/src/migrations/` and `commands/db/import.rs`, not
 a top-level `migrations/` folder.)
 
 ## Core principles (never violate these)
