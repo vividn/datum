@@ -16,6 +16,7 @@
 //! - Time-axis strip on the side opposite the date labels (bottom for
 //!   horizontal, left for vertical).
 
+use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::dayview::{BlockFill, DayviewLayout, Orientation};
@@ -24,6 +25,9 @@ const NOW_LINE_COLOR: &str = "#ffcc00";
 const BG_COLOR: &str = "black";
 const TEXT_COLOR: &str = "white";
 const AXIS_COLOR: &str = "white";
+/// Per-stripe width (px) in multi-state diagonal patterns. Matches the
+/// original TS `stripeWidth = 8`.
+const STRIPE_WIDTH_PX: f64 = 8.0;
 
 /// SVG (x, y) origin of the data-area within the plot, plus the cross-axis
 /// extent across all stacked days. Pre-computed once per render so all
@@ -67,6 +71,8 @@ fn to_xy(layout: &DayviewLayout, geom: &PlotGeom, time: f64, cross: f64) -> (f64
 /// Render `layout` to an SVG document string.
 pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
     let mut out = String::with_capacity(8192);
+    let mut defs = String::new();
+    let mut patterns: HashMap<String, String> = HashMap::new();
     let geom = PlotGeom::new(layout);
 
     let _ = write!(
@@ -188,14 +194,16 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
                         if colors.is_empty() {
                             continue;
                         }
-                        push_proportional_segments(
+                        let pattern_id =
+                            stripe_pattern_id(&mut defs, &mut patterns, colors, field.cross_extent);
+                        let _ = write!(
                             &mut out,
-                            layout.orientation,
-                            rect_x,
-                            rect_y,
-                            rect_w,
-                            rect_h,
-                            colors,
+                            r#"<rect class="block multi-state" x="{x}" y="{y}" width="{w}" height="{h}" fill="url(#{pid})"/>"#,
+                            x = rect_x,
+                            y = rect_y,
+                            w = rect_w,
+                            h = rect_h,
+                            pid = pattern_id,
                         );
                     }
                 }
@@ -287,8 +295,18 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
 
     out.push_str("</g>");
 
+    if !defs.is_empty() {
+        out.insert_str(after_first_tag(&out), &format!(r#"<defs>{defs}</defs>"#));
+    }
+
     out.push_str("</svg>");
     out
+}
+
+/// Index of the byte just past the first `>` in `s` — the insertion point
+/// for `<defs>`, immediately after the opening `<svg …>` tag.
+fn after_first_tag(s: &str) -> usize {
+    s.find('>').map(|i| i + 1).unwrap_or(0)
 }
 
 /// Compute the SVG rect (x, y, w, h) for a block given its cross-axis
@@ -426,48 +444,51 @@ fn push_warning_icon(out: &mut String, size: f64) {
     );
 }
 
-/// Emit one `<rect>` per state color, side-by-side along the time axis,
-/// covering the same total area as a single block fill. Per da-9vop, a
-/// parallel state set (`vertical,sit`) renders as proportional segments
-/// (left half / right half / etc.) so each state's color is directly
-/// readable rather than blended into a stripe pattern.
-fn push_proportional_segments(
-    out: &mut String,
-    orientation: Orientation,
-    rect_x: f64,
-    rect_y: f64,
-    rect_w: f64,
-    rect_h: f64,
+/// Return the id of a `<pattern>` in `defs` drawing `colors` as 45°
+/// diagonal stripes, appending the def on first use. Stripes are
+/// `STRIPE_WIDTH_PX` wide, one per state; tile width = `n * stripe`, tile
+/// height = the field's row height. Mirrors the original
+/// `fieldSvgBlocks.ts` lines 105-177.
+///
+/// A parallel state set (`vertical,sit`) MUST NOT render as side-by-side
+/// segments: a split along the time axis is dayview's visual language for a
+/// real state transition, so segments assert the state changed partway
+/// through the block. Stripes interleave the members, which is what
+/// concurrency looks like (da-trrs).
+fn stripe_pattern_id(
+    defs: &mut String,
+    patterns: &mut HashMap<String, String>,
     colors: &[String],
-) {
-    let n = colors.len() as f64;
+    row_height: f64,
+) -> String {
+    // Patterns are `userSpaceOnUse`, so identical (colors, row_height)
+    // blocks can share one def and stay in phase with each other.
+    let key = format!("{}@{row_height}", colors.join(","));
+    if let Some(id) = patterns.get(&key) {
+        return id.clone();
+    }
+    let id = format!("ds-{}", patterns.len());
+    let tile_w = STRIPE_WIDTH_PX * colors.len() as f64;
+    let _ = write!(
+        defs,
+        r#"<pattern id="{id}" patternUnits="userSpaceOnUse" width="{tw}" height="{th}" patternTransform="rotate(45)">"#,
+        id = id,
+        tw = tile_w,
+        th = row_height,
+    );
     for (i, color) in colors.iter().enumerate() {
-        let frac_lo = i as f64 / n;
-        let frac_hi = (i + 1) as f64 / n;
-        let (sx, sy, sw, sh) = match orientation {
-            Orientation::Horizontal => (
-                rect_x + rect_w * frac_lo,
-                rect_y,
-                rect_w * (frac_hi - frac_lo),
-                rect_h,
-            ),
-            Orientation::Vertical => (
-                rect_x,
-                rect_y + rect_h * frac_lo,
-                rect_w,
-                rect_h * (frac_hi - frac_lo),
-            ),
-        };
         let _ = write!(
-            out,
-            r#"<rect class="block multi-state" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"/>"#,
-            x = sx,
-            y = sy,
-            w = sw,
-            h = sh,
+            defs,
+            r#"<rect x="{x}" y="0" width="{w}" height="{h}" fill="{c}"/>"#,
+            x = i as f64 * STRIPE_WIDTH_PX,
+            w = STRIPE_WIDTH_PX,
+            h = row_height,
             c = color,
         );
     }
+    defs.push_str("</pattern>");
+    patterns.insert(key, id.clone());
+    id
 }
 
 fn escape_xml(s: &str) -> String {
@@ -588,48 +609,46 @@ mod tests {
     }
 
     #[test]
-    fn multi_state_block_renders_proportional_segments() {
-        // da-9vop: parallel state set (`vertical,sit`) renders as N
-        // proportional rect segments side-by-side along the time axis,
-        // each in its own state color. No diagonal-stripe `<pattern>`.
+    fn multi_state_block_emits_diagonal_stripe_pattern() {
+        // da-trrs: a parallel state set renders as 45° stripes, one per
+        // member — never as segments split along the time axis, which is
+        // dayview's language for a real state transition.
         let mut cfg = one_day_with_block(false, Orientation::Horizontal);
         cfg.days[0].fields[0].blocks[0].fill =
             BlockFill::MultiState(vec!["#ff0000".into(), "#00ff00".into(), "#0000ff".into()]);
         let layout = compute_dayview(&cfg);
         let svg = render_dayview_svg(&layout);
-        assert!(!svg.contains("<defs>"), "no pattern defs needed: {svg}");
-        assert!(!svg.contains("<pattern"), "no pattern element: {svg}");
-        assert!(!svg.contains("rotate(45)"));
+        assert!(svg.contains("<defs>"), "pattern defs emitted: {svg}");
+        assert!(svg.contains("<pattern"));
+        assert!(svg.contains(r#"patternTransform="rotate(45)""#));
+        assert!(svg.contains("#ff0000"));
+        assert!(svg.contains("#00ff00"));
+        assert!(svg.contains("#0000ff"));
         assert!(svg.contains("multi-state"));
-        // One rect per state color, each as its own fill (not via url(#…)).
-        assert!(svg.contains(r##"fill="#ff0000""##));
-        assert!(svg.contains(r##"fill="#00ff00""##));
-        assert!(svg.contains(r##"fill="#0000ff""##));
-        // Three multi-state rects (one per segment).
-        assert_eq!(svg.matches(r#"class="block multi-state""#).count(), 3);
+        assert!(svg.contains("url(#"));
+        // Exactly one rect for the block — not one segment per state.
+        assert_eq!(svg.matches(r#"class="block multi-state""#).count(), 1);
+        // Stripes span the whole block; no sub-block split along time.
+        let stripes = svg.matches(r#"<rect x="#).count();
+        assert_eq!(stripes, 3, "one stripe rect per state: {svg}");
     }
 
     #[test]
-    fn multi_state_segments_split_block_horizontally_for_two_states() {
-        // 2 states → left half + right half. The block in `one_day_with_block`
-        // spans 06:00–07:00 (1 hour) on a 24h horizontal layout — so each
-        // segment occupies half the block's time-axis extent.
+    fn identical_multi_state_blocks_share_one_pattern_def() {
+        // Patterns are userSpaceOnUse, so equal (colors, row height) blocks
+        // share a def and stay in phase instead of bloating <defs>.
         let mut cfg = one_day_with_block(false, Orientation::Horizontal);
-        cfg.days[0].fields[0].blocks[0].fill =
-            BlockFill::MultiState(vec!["#aa3333".into(), "#33aa33".into()]);
+        let fill = BlockFill::MultiState(vec!["#aa3333".into(), "#33aa33".into()]);
+        cfg.days[0].fields[0].blocks[0].fill = fill.clone();
+        let mut second = cfg.days[0].fields[0].blocks[0].clone();
+        second.start_ms += 3 * 3_600_000;
+        second.end_ms += 3 * 3_600_000;
+        second.fill = fill;
+        cfg.days[0].fields[0].blocks.push(second);
         let layout = compute_dayview(&cfg);
         let svg = render_dayview_svg(&layout);
-        // First (left) segment uses state[0]'s color, second uses state[1]'s.
-        let first = svg
-            .find(r##"fill="#aa3333""##)
-            .expect("first segment color");
-        let second = svg
-            .find(r##"fill="#33aa33""##)
-            .expect("second segment color");
-        assert!(
-            first < second,
-            "first state must render to the left of the second (horizontal split)",
-        );
+        assert_eq!(svg.matches("<pattern ").count(), 1, "one shared def: {svg}");
+        assert_eq!(svg.matches(r#"class="block multi-state""#).count(), 2);
     }
 
     #[test]
