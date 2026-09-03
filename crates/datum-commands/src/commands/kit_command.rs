@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use datum_core::db::{Db, InstalledKitCommand, ViewResult};
 use datum_core::kit_color_rule::{self, ColorRule, RowLookup};
+use datum_parse::time::{format_human_duration, DurationPrecision};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
@@ -243,17 +244,7 @@ fn format_duration(v: &JsonValue) -> String {
     let Some(secs) = secs_opt else {
         return json_to_plain(v);
     };
-    let abs = secs.abs();
-    let h = abs / 3600;
-    let m = (abs % 3600) / 60;
-    let s = abs % 60;
-    if h > 0 {
-        format!("{h}h{m:02}m")
-    } else if m > 0 {
-        format!("{m}m{s:02}s")
-    } else {
-        format!("{s}s")
-    }
+    format_human_duration(secs, DurationPrecision::Seconds)
 }
 
 /// Resolve a colour name or hex into the closest ANSI sequence. Used
@@ -411,8 +402,8 @@ mod tests {
 
     #[test]
     fn format_duration_renders_hms() {
-        assert_eq!(format_duration(&json!(3725)), "1h02m");
-        assert_eq!(format_duration(&json!(125)), "2m05s");
+        assert_eq!(format_duration(&json!(3725)), "1h2m");
+        assert_eq!(format_duration(&json!(125)), "2m5s");
         assert_eq!(format_duration(&json!(45)), "45s");
     }
 }

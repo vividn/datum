@@ -29,6 +29,7 @@ use datum_core::{
     field_spec::SpecRegistry,
     time::DatumTime,
 };
+use datum_parse::time::{format_human_duration, DurationPrecision};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
@@ -240,7 +241,9 @@ pub(crate) fn extract_with_context_at(
         time_hybrid: hybrid,
         field: Some(self::action::format_field_cell(&entry.field, spec)),
         state: self::action::format_state_group(entry, spec, state_ctx),
-        dur: entry.duration_seconds().map(self::action::format_duration),
+        dur: entry
+            .duration_seconds()
+            .map(|s| format_human_duration(s, DurationPrecision::Seconds)),
     }
 }
 
@@ -1364,26 +1367,16 @@ fn format_ago(secs: i64) -> String {
             format!("in {}", format_span(ahead))
         };
     }
-    if secs < 60 {
-        return format!("{secs}s ago");
-    }
     format!("{} ago", format_span(secs))
 }
 
 /// Coarse minute/hour span shared by the past (`… ago`) and future
-/// (`in …`) renderings of the now-view time column.
+/// (`in …`) renderings of the now-view time column. A relative age is
+/// read at a glance and re-read a minute later, so it names minutes
+/// rather than a seconds field that churns on every redraw — but a
+/// sub-minute span still says `40s`, never `0m`.
 fn format_span(secs: i64) -> String {
-    if secs < 3600 {
-        format!("{}m", secs / 60)
-    } else {
-        let h = secs / 3600;
-        let m = (secs % 3600) / 60;
-        if m == 0 {
-            format!("{h}h")
-        } else {
-            format!("{h}h{m}m")
-        }
-    }
+    format_human_duration(secs, DurationPrecision::Minutes)
 }
 
 /// Pick the right "last seen" stamp for a `datum now` row. Today entries

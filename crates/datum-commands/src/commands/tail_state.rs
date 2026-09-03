@@ -16,7 +16,8 @@ use datum_core::{
 };
 use serde_json::Value as JsonValue;
 
-use crate::render::action::{compress_offset_minutes, format_duration, format_timestamp_ref};
+use crate::render::action::{compress_offset_minutes, format_timestamp_ref};
+use datum_parse::time::{format_human_duration, DurationPrecision};
 
 /// Translate the parser's raw `state_filter` strings (`Vec<String>` from
 /// splitting on `,`) into a canonical JSON value, ready for structural
@@ -222,7 +223,7 @@ fn print_blocks(blocks: &[&StateBlock]) {
             ),
             None => ("ongoing".to_string(), (now.utc - b.start.utc).num_seconds()),
         };
-        let dur = format_duration(dur_secs);
+        let dur = format_human_duration(dur_secs, DurationPrecision::Seconds);
         let state = StateValue::from_json(&b.state)
             .map(|sv| sv.to_string())
             .unwrap_or_default();

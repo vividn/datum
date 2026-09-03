@@ -286,9 +286,92 @@ pub fn format_iso_duration(d: Duration) -> String {
     out
 }
 
+/// How small a unit a human-readable duration is allowed to name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DurationPrecision {
+    /// Seconds are named whenever they are non-zero and the span is under
+    /// an hour: `45s`, `2m5s`, `1h2m`. For a duration something actually
+    /// lasted, where the seconds are information.
+    Seconds,
+    /// Sub-minute detail is dropped once the span reaches a minute:
+    /// `45s`, `2m`, `1h2m`. For relative ages, where a ticking seconds
+    /// field is churn rather than information.
+    Minutes,
+}
+
+/// Format a duration the way a person says it — the counterpart to
+/// [`format_iso_duration`], which is the storage form.
+///
+/// There used to be three copies of this in `datum-commands` rendering
+/// the same input different ways (`1h2m` vs `1h02m`, `4m` vs `2m05s`,
+/// and a third that would have said `0m` for forty seconds had its two
+/// callers not each guarded the sub-minute case themselves). One rule,
+/// chosen deliberately once (da-qpx4):
+///
+/// * **At most the two most significant units**, largest first, and a
+///   zero smaller unit is omitted — `1h`, `1h2m`, `2m`, `2m5s`, `45s`.
+/// * **No zero padding** (`1h2m`, not `1h02m`), which keeps the output
+///   re-parseable by [`parse_duration`]. Columns are aligned by the
+///   caller measuring width, not by padding here.
+/// * **No days unit**: `26h` says more in a stats total than `1d2h`.
+/// * Below a minute the seconds are always named, whatever the
+///   precision — a span never renders as `0m`.
+/// * The sign is dropped; callers that show direction render their own
+///   (`in …` / `… ago`).
+pub fn format_human_duration(secs: i64, precision: DurationPrecision) -> String {
+    let secs = secs.abs();
+    let (h, m, s) = (secs / 3600, (secs % 3600) / 60, secs % 60);
+    match (h, m, s) {
+        (0, 0, s) => format!("{s}s"),
+        (0, m, s) if s > 0 && precision == DurationPrecision::Seconds => format!("{m}m{s}s"),
+        (0, m, _) => format!("{m}m"),
+        (h, 0, _) => format!("{h}h"),
+        (h, m, _) => format!("{h}h{m}m"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn human_duration_names_two_units_unpadded() {
+        use DurationPrecision::Seconds;
+        assert_eq!(format_human_duration(0, Seconds), "0s");
+        assert_eq!(format_human_duration(45, Seconds), "45s");
+        assert_eq!(format_human_duration(125, Seconds), "2m5s");
+        assert_eq!(format_human_duration(240, Seconds), "4m");
+        assert_eq!(format_human_duration(3600, Seconds), "1h");
+        // Seconds fall off above the hour: two units, never three.
+        assert_eq!(format_human_duration(3725, Seconds), "1h2m");
+        assert_eq!(format_human_duration(93_600, Seconds), "26h");
+        // Negative spans render their magnitude.
+        assert_eq!(format_human_duration(-125, Seconds), "2m5s");
+    }
+
+    #[test]
+    fn minute_precision_drops_seconds_but_never_prints_zero_minutes() {
+        use DurationPrecision::Minutes;
+        assert_eq!(format_human_duration(125, Minutes), "2m");
+        // The trap the third copy left for its next caller: forty
+        // seconds is `40s`, not `0m`.
+        assert_eq!(format_human_duration(40, Minutes), "40s");
+        assert_eq!(format_human_duration(3725, Minutes), "1h2m");
+    }
+
+    #[test]
+    fn human_duration_round_trips_through_parse_duration() {
+        for secs in [45_i64, 125, 240, 3600, 3725, 93_600] {
+            let rendered = format_human_duration(secs, DurationPrecision::Seconds);
+            assert_eq!(
+                parse_duration(&rendered).unwrap().num_seconds(),
+                // Seconds are dropped above the hour, so compare against
+                // what the rendering actually claims.
+                if secs >= 3600 { secs - secs % 60 } else { secs },
+                "{rendered}"
+            );
+        }
+    }
 
     #[test]
     fn iso_rejects_unknown_unit() {

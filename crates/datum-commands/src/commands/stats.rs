@@ -32,7 +32,7 @@ use crate::args::{StatsArgs, StatsPeriod};
 use crate::commands::field_visuals::state_label;
 use crate::commands::time_bounds::{parse_since, parse_until};
 use crate::config::resolve_week_start;
-use crate::render::action::format_duration;
+use datum_parse::time::{format_human_duration, DurationPrecision};
 
 /// Per-state slice of a field's rollup.
 #[derive(Debug, Clone, PartialEq)]
@@ -526,7 +526,7 @@ fn within(t: DateTime<Utc>, start: Option<DateTime<Utc>>, end: DateTime<Utc>) ->
 // ─── Rendering ──────────────────────────────────────────────────────────────
 
 fn render_text(r: &StatsResult) -> String {
-    let total_dur = format_duration(r.total_duration_seconds);
+    let total_dur = format_dur(r.total_duration_seconds);
 
     if let Some(sel) = &r.selected_state {
         let s = &r.states[0];
@@ -534,7 +534,7 @@ fn render_text(r: &StatsResult) -> String {
             "{}:{}  ·  {}  {} of {}  ({}×)\n",
             r.field,
             sel,
-            format_duration(s.duration_seconds),
+            format_dur(s.duration_seconds),
             percent(s.ratio),
             r.field,
             s.count,
@@ -548,7 +548,7 @@ fn render_text(r: &StatsResult) -> String {
     let dur_w = r
         .states
         .iter()
-        .map(|s| format_duration(s.duration_seconds).len())
+        .map(|s| format_dur(s.duration_seconds).len())
         .max()
         .unwrap_or(0);
     let cnt_w = r
@@ -564,10 +564,7 @@ fn render_text(r: &StatsResult) -> String {
     let tracked_note = if r.tracked_duration_seconds == r.total_duration_seconds {
         String::new()
     } else {
-        format!(
-            "  ({} tracked)",
-            format_duration(r.tracked_duration_seconds)
-        )
+        format!("  ({} tracked)", format_dur(r.tracked_duration_seconds))
     };
     let mut out = format!(
         "{}  ·  {} over {} entries{}\n\n",
@@ -576,7 +573,7 @@ fn render_text(r: &StatsResult) -> String {
     for s in &r.states {
         out.push_str(&format!(
             "  {:>dur_w$}  {:>6}  {:>cnt_w$}×  {}\n",
-            format_duration(s.duration_seconds),
+            format_dur(s.duration_seconds),
             percent(s.ratio),
             s.count,
             s.state,
@@ -630,6 +627,12 @@ fn render_json(r: &StatsResult) -> String {
             "states": states,
         })
     )
+}
+
+/// Stats durations are wall-clock totals of tracked activity, so they
+/// name their seconds (`2m5s`) rather than rounding them away.
+fn format_dur(secs: i64) -> String {
+    format_human_duration(secs, DurationPrecision::Seconds)
 }
 
 #[cfg(test)]

@@ -38,7 +38,8 @@ pub use context::{DefaultDirection, TimeCtx};
 pub use datum_time::DatumTime;
 pub use parse_date_str::{parse_date_arg, DateArg};
 pub use parse_duration_str::{
-    format_iso_duration, parse_duration, parse_iso_duration, quick_uncertainty_for_count,
+    format_human_duration, format_iso_duration, parse_duration, parse_iso_duration,
+    quick_uncertainty_for_count, DurationPrecision,
 };
 pub use parse_time_str::{count_stacked_flag, parse_time_arg, TimeArg};
 pub use resolve::{Resolved, Zone, ZoneSegment, ZoneTimeline};

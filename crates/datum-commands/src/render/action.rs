@@ -26,6 +26,7 @@ use datum_core::{
     state::FieldStateEvents,
     time::DatumTime,
 };
+use datum_parse::time::{format_human_duration, DurationPrecision};
 use serde_json::Value as JsonValue;
 
 use super::characters::*;
@@ -805,7 +806,7 @@ pub fn format_info_line_at(
         }
     }
     if let Some(secs) = entry.duration_seconds() {
-        parts.push(format_duration(secs));
+        parts.push(format_human_duration(secs, DurationPrecision::Seconds));
     }
     parts.join(" ")
 }
@@ -819,25 +820,6 @@ pub fn render_entry_line(
 ) -> String {
     let spec = registry.and_then(|r| r.fields.get(&entry.field));
     format_info_line(entry, spec, ctx)
-}
-
-// ─── Duration ────────────────────────────────────────────────────────────────
-
-pub(crate) fn format_duration(secs: i64) -> String {
-    let secs = secs.abs();
-    if secs < 60 {
-        format!("{secs}s")
-    } else if secs < 3600 {
-        format!("{}m", secs / 60)
-    } else {
-        let h = secs / 3600;
-        let m = (secs % 3600) / 60;
-        if m == 0 {
-            format!("{h}h")
-        } else {
-            format!("{h}h{m}m")
-        }
-    }
 }
 
 #[cfg(test)]
@@ -889,14 +871,6 @@ mod tests {
             None,
             "compound never stored"
         );
-    }
-
-    #[test]
-    fn format_duration_picks_units() {
-        assert_eq!(format_duration(30), "30s");
-        assert_eq!(format_duration(240), "4m");
-        assert_eq!(format_duration(3600), "1h");
-        assert_eq!(format_duration(3720), "1h2m");
     }
 
     fn dt(y: i32, mo: u32, d: u32) -> DatumTime {
