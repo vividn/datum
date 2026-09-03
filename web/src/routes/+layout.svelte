@@ -7,14 +7,21 @@
 	put while output accumulates above it.
 -->
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import '../app.css';
 	import BetaBanner from '$lib/BetaBanner.svelte';
+	import { installConsole } from '$lib/console.js';
 	import { page } from '$app/stores';
 
 	const links = [
 		{ href: '/', label: 'day' },
 		{ href: '/now', label: 'now' }
 	];
+
+	// `window.datum` — the command seam at the browser's own prompt. Mounted
+	// here rather than at module scope because there is no window during
+	// prerendering. See $lib/console.ts.
+	onMount(() => installConsole(window as unknown as Record<string, unknown>));
 </script>
 
 <div class="shell">

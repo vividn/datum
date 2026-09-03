@@ -1,0 +1,254 @@
+{
+	"comment": ["What the real datum CLI stores for a given argv — the other half of tests/parity.test.mjs.", "Regenerate with `npm run test:fixtures` (needs a built `datum` binary); the `argv`,", "`time` and `divergence` fields are authored by hand and survive a regeneration."],
+	"capturedWith": "datum 0.1.0",
+	"cases": [
+		{
+			"argv": ["occur", "coffee", "-t", "0915"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "coffee",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": null,
+					"time": {
+						"clock": "09:15"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["start", "work", "-t", "0800"],
+			"time": "clock",
+			"divergence": "the browser logs a bare point with no state; the CLI logs verb=switch state=true, which is what makes a field's on/off history exist at all (da-fjx1)",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "work",
+					"verb": "switch",
+					"state": true,
+					"dur": null,
+					"data": null,
+					"time": {
+						"clock": "08:00"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["stop", "work", "-t", "1200"],
+			"time": "clock",
+			"divergence": "the browser logs a bare point with no state; the CLI logs verb=switch state=false, so nothing in the browser closes the block a `start` opened (da-fjx1)",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "work",
+					"verb": "switch",
+					"state": false,
+					"dur": null,
+					"data": null,
+					"time": {
+						"clock": "12:00"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["switch", "mood", "happy", "-t", "0930"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "mood",
+					"verb": "switch",
+					"state": "happy",
+					"dur": null,
+					"data": null,
+					"time": {
+						"clock": "09:30"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["mood", "switch", "sad", "-t", "0945"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "mood",
+					"verb": "switch",
+					"state": "sad",
+					"dur": null,
+					"data": null,
+					"time": {
+						"clock": "09:45"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "nap", "dur=30m", "-t", "1000"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "nap",
+					"verb": "block",
+					"state": null,
+					"dur": "PT30M",
+					"data": null,
+					"time": {
+						"clock": "10:00"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "walk", "dur=1:30", "-t", "1100"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "walk",
+					"verb": "block",
+					"state": null,
+					"dur": "PT1H30M",
+					"data": null,
+					"time": {
+						"clock": "11:00"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "nap", "dur=PT30M", "-t", "1400"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "nap",
+					"verb": "block",
+					"state": null,
+					"dur": "PT30M",
+					"data": null,
+					"time": {
+						"clock": "14:00"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "coffee", "strength=strong", "-t", "0916"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "coffee",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": {
+						"strength": "strong"
+					},
+					"time": {
+						"clock": "09:16"
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "coffee", "-t", "-30"],
+			"time": "relative",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "coffee",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": null,
+					"time": {
+						"minutesBefore": 30
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "coffee", "-q"],
+			"time": "relative",
+			"divergence": "-q is 5 minutes back in the CLI and 15 in the browser's interim parser (da-fjx1)",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "coffee",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": null,
+					"time": {
+						"minutesBefore": 5
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "coffee", "-qq"],
+			"time": "relative",
+			"divergence": "-qq is 10 minutes back in the CLI and 30 in the browser's interim parser (da-fjx1)",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "coffee",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": null,
+					"time": {
+						"minutesBefore": 10
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "coffee", "-y"],
+			"time": "day",
+			"divergence": "-y is a whole day back in the CLI — midnight, P1D uncertainty; the browser's interim parser does not implement it at all (da-fjx1)",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "coffee",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": null,
+					"time": {
+						"daysBefore": 1,
+						"midnight": true
+					}
+				}
+			}
+		},
+		{
+			"argv": ["occur", "coffee", "-yy"],
+			"time": "day",
+			"divergence": "-yy is two whole days back in the CLI; the browser's interim parser maps it to 60 minutes (da-fjx1)",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "coffee",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": null,
+					"time": {
+						"daysBefore": 2,
+						"midnight": true
+					}
+				}
+			}
+		}
+	]
+}

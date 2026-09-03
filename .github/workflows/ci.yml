@@ -140,3 +140,35 @@ jobs:
       # is its hygiene quarter.
       - name: cargo xtask check lint
         run: cargo run -q -p xtask -- check lint
+
+  web:
+    name: Web (datum.day)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      # The suite drives the built app in a real browser, because the
+      # `run(argv)` seam's storage is SQLite-wasm on OPFS inside a dedicated
+      # worker and that exists nowhere else. Only the headless shell is
+      # installed — no headed Chromium, no other engines.
+      - name: Install the headless browser
+        run: npx playwright install --with-deps --only-shell chromium
+
+      # `pretest` builds the app first; the CLI-parity fixtures under
+      # web/tests/fixtures are committed, so this job needs no Rust
+      # toolchain. Regenerate them with `npm run test:fixtures` against a
+      # built `datum` binary when the CLI's stored shape changes.
+      - name: npm test
+        run: npm test

@@ -146,4 +146,16 @@ cargo build --release -p datum-cli   # produces target/release/datum
 
 ```bash
 cd web && npm install && npm run dev   # localhost:5173
+npm test                               # the seam suite (builds first)
+npm run test:fixtures                  # recapture the CLI-parity fixtures
 ```
+
+`web/tests` drives the built app in a real browser and asserts through
+`run(argv)` — the one seam every region of the app goes through — rather
+than through the interim TypeScript runner behind it, which da-1vat
+deletes. `tests/parity.test.mjs` compares what a given argv stores in the
+browser against what the real `datum` binary stored for the same argv;
+cases the browser gets wrong today carry a `divergence` note in
+`tests/fixtures/cli-parity.json` and report as todo rather than failing.
+Needs a headless browser once: `npx playwright install --only-shell
+chromium`.
