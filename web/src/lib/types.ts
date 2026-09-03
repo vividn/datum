@@ -18,6 +18,26 @@ export type StoredVerb = 'point' | 'switch' | 'block' | 'block-switch' | 'point-
 // verb is decorative and lives in `rawInput`.
 export type InputVerb = 'occur' | 'switch' | 'start' | 'stop' | 'add' | 'note';
 
+/**
+ * A number carrying a unit, as datum annotates one: `{"v": 75.2, "u": "kg"}`.
+ * Built by `coerce.rs` on the Rust side (crates/datum-parse/src/input/
+ * data_args/coerce.rs) and stored inside `state` / `data` — there is no
+ * `unit` column in schema.sql, and a bare number is equally valid.
+ */
+export interface Annotated {
+	v: number;
+	u: string;
+}
+
+export function isAnnotated(value: unknown): value is Annotated {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		typeof (value as Annotated).v === 'number' &&
+		typeof (value as Annotated).u === 'string'
+	);
+}
+
 export interface Entry {
 	hid: string;
 	slug: string;
@@ -28,7 +48,6 @@ export interface Entry {
 	followingState?: unknown;
 	verb: StoredVerb;
 	data?: unknown;
-	unit?: string;
 	occurTime: DatumTime;
 	occurTimeUncertainty?: string;
 	lat?: number;
@@ -44,6 +63,7 @@ export interface ParsedInput {
 	verb: InputVerb;
 	field: string;
 	state?: unknown;
+	/** Unit for a numeric `state`; folded into an [`Annotated`] at insert. */
 	unit?: string;
 	data?: Record<string, unknown>;
 	timeOffset?: number; // minutes offset from now

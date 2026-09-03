@@ -1,9 +1,10 @@
 import type { ParsedInput, InputVerb } from './types.js';
 
-const VERBS: InputVerb[] = ['occur', 'switch', 'start', 'stop', 'add', 'note'];
+/** The input verbs the local runner accepts, in either argv position. */
+export const LOG_VERBS: readonly InputVerb[] = ['occur', 'switch', 'start', 'stop', 'add', 'note'];
 
-function isVerb(s: string): s is InputVerb {
-	return (VERBS as string[]).includes(s);
+export function isVerb(s: string): s is InputVerb {
+	return (LOG_VERBS as readonly string[]).includes(s);
 }
 
 function parseValue(s: string): unknown {
@@ -22,14 +23,20 @@ function parseKV(s: string): { key: string; val: unknown } | null {
 	return { key, val };
 }
 
-export function parseInput(input: string): ParsedInput | null {
-	const raw = input.trim();
-	if (!raw) return null;
-
-	const tokens = raw.split(/\s+/);
+/**
+ * Parse a log invocation's argv into a [`ParsedInput`].
+ *
+ * Returns null when argv is not a log invocation at all — no verb in either
+ * of the two positions the CLI accepts one in. The CLI has no bare-field
+ * form (`maybe_swap_field_verb` in crates/datum-parse/src/alias/expand.rs
+ * only swaps when one of the first two tokens is a known subcommand), so
+ * neither does this: `tail` is a command this parser doesn't own, not a
+ * field named "tail".
+ */
+export function parseArgv(tokens: string[]): ParsedInput | null {
 	if (tokens.length === 0) return null;
 
-	let verb: InputVerb = 'occur';
+	let verb: InputVerb;
 	let field = '';
 	const data: Record<string, unknown> = {};
 	const stateTokens: string[] = [];
@@ -50,9 +57,7 @@ export function parseInput(input: string): ParsedInput | null {
 		verb = tokens[1];
 		i = 2;
 	} else {
-		field = tokens[0];
-		verb = 'occur';
-		i = 1;
+		return null;
 	}
 
 	if (!field) return null;

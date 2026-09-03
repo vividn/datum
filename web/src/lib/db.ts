@@ -7,6 +7,21 @@ type SqliteDb = any;
 let dbInstance: SqliteDb | null = null;
 let initPromise: Promise<SqliteDb> | null = null;
 
+/** Where the open database actually lives. Null until [`initDb`] resolves. */
+export type StorageKind = 'opfs' | 'memory';
+let storage: StorageKind | null = null;
+
+/**
+ * Whether entries survive a reload. Null before the database is open.
+ *
+ * The UI states this rather than assuming it — see $lib/BetaBanner.svelte.
+ * A promise the app makes about the user's data has to be read off the
+ * storage that is actually in use.
+ */
+export function storageKind(): StorageKind | null {
+	return storage;
+}
+
 export async function initDb(): Promise<SqliteDb> {
 	if (dbInstance) return dbInstance;
 	if (initPromise) return initPromise;
@@ -19,13 +34,7 @@ export async function initDb(): Promise<SqliteDb> {
 			printErr: console.error
 		});
 
-		let db: SqliteDb;
-		if ('opfs' in sqlite3) {
-			db = new sqlite3.oo1.OpfsDb('/datum.db');
-		} else {
-			console.warn('OPFS not available, using in-memory database');
-			db = new sqlite3.oo1.DB(':memory:', 'c');
-		}
+		const db = await openPersistent(sqlite3);
 
 		db.exec(SCHEMA);
 		dbInstance = db;
@@ -33,6 +42,41 @@ export async function initDb(): Promise<SqliteDb> {
 	})();
 
 	return initPromise;
+}
+
+/**
+ * Open the on-device database, preferring durable storage.
+ *
+ * The SAH-pool VFS, not `oo1.OpfsDb`: the plain OPFS VFS needs
+ * `Atomics.wait()`, so it only runs in a Worker. Both need a
+ * cross-origin-isolated document — see the COOP/COEP headers in
+ * vite.config.ts, which the deployment must send too.
+ *
+ * On the main thread this currently always falls back: every OPFS VFS
+ * needs `FileSystemFileHandle.createSyncAccessHandle`, which the platform
+ * exposes to dedicated workers only, so the pool install fails with
+ * "Missing required OPFS APIs". Real persistence needs SQLite moved into a
+ * Worker (da-5iqw); the feature detection stays so this starts working the
+ * moment it runs somewhere the handle exists.
+ *
+ * The in-memory fallback keeps the app usable meanwhile. It loses
+ * everything on reload, so it warns and records `memory` as the storage
+ * kind rather than letting the UI imply durability it doesn't have.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function openPersistent(sqlite3: any): Promise<SqliteDb> {
+	if (typeof sqlite3.installOpfsSAHPoolVfs === 'function') {
+		try {
+			const pool = await sqlite3.installOpfsSAHPoolVfs({});
+			storage = 'opfs';
+			return new pool.OpfsSAHPoolDb('/datum.db');
+		} catch (e) {
+			console.warn('OPFS SAH pool unavailable:', e);
+		}
+	}
+	console.warn('no durable storage available — entries will not survive a reload');
+	storage = 'memory';
+	return new sqlite3.oo1.DB(':memory:', 'c');
 }
 
 function rowToEntry(row: Record<string, unknown>): Entry {
@@ -46,7 +90,6 @@ function rowToEntry(row: Record<string, unknown>): Entry {
 		followingState: row.following_state ? JSON.parse(row.following_state as string) : undefined,
 		verb: row.verb as StoredVerb,
 		data: row.data ? JSON.parse(row.data as string) : undefined,
-		unit: (row.unit as string | null) ?? undefined,
 		occurTime: {
 			utc: row.occur_time as string,
 			offsetMinutes: (row.occur_time_offset as number | null) ?? 0,
@@ -68,13 +111,13 @@ export async function insertEntry(entry: Entry): Promise<void> {
 	db.exec({
 		sql: `INSERT INTO entries (
 			hid, slug, content_hash, field,
-			state, dur, following_state, verb, data, unit,
+			state, dur, following_state, verb, data,
 			occur_time, occur_time_offset, occur_time_tz, occur_time_uncertainty,
 			lat, lon, location,
 			create_time, modify_time, device_id, raw_input
 		) VALUES (
 			$hid, $slug, $content_hash, $field,
-			$state, $dur, $following_state, $verb, $data, $unit,
+			$state, $dur, $following_state, $verb, $data,
 			$occur_time, $occur_time_offset, $occur_time_tz, $occur_time_uncertainty,
 			$lat, $lon, $location,
 			$create_time, $modify_time, $device_id, $raw_input
@@ -90,7 +133,6 @@ export async function insertEntry(entry: Entry): Promise<void> {
 				entry.followingState !== undefined ? JSON.stringify(entry.followingState) : null,
 			$verb: entry.verb,
 			$data: entry.data !== undefined ? JSON.stringify(entry.data) : null,
-			$unit: entry.unit ?? null,
 			$occur_time: entry.occurTime.utc,
 			$occur_time_offset: entry.occurTime.offsetMinutes,
 			$occur_time_tz: entry.occurTime.timezone ?? null,

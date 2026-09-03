@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { initDb, getLatestPerField } from '$lib/db.js';
+	import { formatValue } from '$lib/runners/local.js';
 	import type { Entry } from '$lib/types.js';
 
 	let entries: Entry[] = [];
@@ -24,11 +25,8 @@
 		return d.toLocaleDateString();
 	}
 
-	function formatValue(entry: Entry): string {
-		if (entry.state === undefined) return '';
-		let s = JSON.stringify(entry.state);
-		if (entry.unit) s += ` ${entry.unit}`;
-		return s;
+	function stateOf(entry: Entry): string {
+		return entry.state === undefined ? '' : formatValue(entry.state);
 	}
 </script>
 
@@ -46,7 +44,7 @@
 					<div class="field-name">{entry.field}</div>
 					<div class="field-value">
 						{#if entry.state !== undefined}
-							<span class="value">{formatValue(entry)}</span>
+							<span class="value">{stateOf(entry)}</span>
 						{:else}
 							<span class="verb">{entry.verb}</span>
 						{/if}
