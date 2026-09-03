@@ -766,8 +766,40 @@ pub struct CountArgs {
     pub json: bool,
 }
 
-/// `datum stats <field[:state]> [SLICE] [--since T] [--until T] [--json]`
-/// — count / total-duration / per-state-ratio rollup over a time slice.
+/// Which whole calendar period a `--today` / `--week` / `--month` style
+/// flag names. The in-progress periods (`Today`, `Week`, `Month`) run
+/// from their start to *now*; the closed ones (`LastWeek`, `LastMonth`)
+/// are bounded at both ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatsPeriod {
+    /// `--today` — this local day so far.
+    Today,
+    /// `--week` — since the start of this week (see the `week_start` config key).
+    Week,
+    /// `--last-week` — the whole of the previous week.
+    LastWeek,
+    /// `--month` — since the first of this month.
+    Month,
+    /// `--last-month` — the whole of the previous calendar month.
+    LastMonth,
+}
+
+impl StatsPeriod {
+    /// The flag that spells this period, for error messages.
+    pub fn flag(self) -> &'static str {
+        match self {
+            StatsPeriod::Today => "--today",
+            StatsPeriod::Week => "--week",
+            StatsPeriod::LastWeek => "--last-week",
+            StatsPeriod::Month => "--month",
+            StatsPeriod::LastMonth => "--last-month",
+        }
+    }
+}
+
+/// `datum stats <field[:state]> [SLICE] [PERIOD] [-t/-d/-q/-y] [--since T]
+/// [--until T] [--json]` — count / total-duration / per-state-ratio
+/// rollup over a time slice.
 ///
 /// The selector is a whole field (`activity` → every state) or a single
 /// `field:state` (`activity:coding`). SLICE is a shorthand whole-period
@@ -788,8 +820,15 @@ pub struct StatsArgs {
     /// takes (`now`, `9:15am`, RFC3339, `-30`).
     pub since: Option<String>,
     /// Upper bound, same grammar. A bare `YYYY-MM-DD` covers the whole
-    /// named day.
+    /// named day. Refines the end of whichever start the other flags
+    /// name, so `-y --until now` opens up a bounded day.
     pub until: Option<String>,
+    /// `--today` / `--week` / `--last-week` / `--month` / `--last-month`.
+    pub period: Option<StatsPeriod>,
+    /// `-y/-q/-d/-t/-z` — the shared timing flags. A date-only reading
+    /// (`-d`, `-y`) names that whole day; anything carrying a clock time
+    /// (`-t`, `-q`) is a lower bound, exactly like `--since`.
+    pub time: TimeArgs,
     /// `--include-false` — keep the `false` (closed / stopped) state in the
     /// ratio denominator. Off by default: on a real db the closed state is
     /// every gap between blocks and swamps the ratio column (da-icba).

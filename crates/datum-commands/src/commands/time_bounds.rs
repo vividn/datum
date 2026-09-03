@@ -9,7 +9,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
-use datum_parse::time::{parse_date_arg, parse_duration, parse_time_arg, TimeBuilder};
+use datum_parse::time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder};
 use datum_parse::time::{TimeCtx, Zone};
 
 /// Which end of the window a bound is being parsed for. Only matters for
@@ -64,7 +64,10 @@ pub(crate) fn parse_until(s: &str) -> Result<DateTime<Utc>> {
 fn parse_bound(s: &str, edge: Edge) -> Result<DateTime<Utc>> {
     if !s.starts_with(['+', '-']) {
         if let Ok(dur) = parse_duration(s) {
-            return Ok(Utc::now() - dur);
+            // Through `DatumTime::now`, like every other clock read in the
+            // codebase — `Utc::now()` would ignore an installed clock and
+            // make `--since 1h` disagree with `-t -60` under a test clock.
+            return Ok(DatumTime::now().utc - dur);
         }
     }
     if let Some(date) = parse_date_arg(s, TimeCtx::now())

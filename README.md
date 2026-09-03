@@ -291,6 +291,12 @@ Notable env vars:
 | `DATUM_DEVICE_ID`       | Override the per-device id stamped on entries.         |
 | `DATUM_EDITOR`          | Editor for `datum edit` (falls back to `EDITOR`).      |
 | `DATUM_COLOR`           | `0` disables colour; otherwise auto-detect from TTY.   |
+| `DATUM_WEEK_START`      | Weekday a week opens on (`monday`…`sunday`, or `1`-`7`). |
+
+`week_start` (env `DATUM_WEEK_START`, toml `week_start = "monday"`) says
+which weekday opens a week for `datum stats --week` / `--last-week`. A
+weekday name is canonical; an ISO number (`1` = Monday … `7` = Sunday) is
+also accepted. The default is Monday.
 
 The default database lives at `$DATUM_HOME/default.db` (creating the
 directory if needed). The active DB can also be overridden per-invocation

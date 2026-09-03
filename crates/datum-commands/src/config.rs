@@ -10,6 +10,7 @@
 //! source tracking for `datum config show`.
 
 use anyhow::{Context, Result};
+use chrono::Weekday;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -397,6 +398,12 @@ pub struct RawConfig {
     /// `false` disables them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notifications: Option<bool>,
+    /// Which weekday opens a week, for `stats --week` / `--last-week`.
+    /// A weekday name (`"monday"`, `"sun"`) or an ISO number (`1` =
+    /// Monday … `7` = Sunday). `DATUM_WEEK_START` overrides it; the
+    /// built-in default is Monday.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub week_start: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync: Option<SyncSection>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -429,6 +436,10 @@ pub struct Config {
     pub default_field: SourcedValue<Option<String>>,
     pub editor: SourcedValue<String>,
     pub id_delimiter: SourcedValue<String>,
+    /// Raw (unparsed) `week_start`, so `config show` can display a value
+    /// even when it is misspelled — [`resolve_week_start`] is where a bad
+    /// one is rejected, and only for the commands that need a week.
+    pub week_start: SourcedValue<String>,
     /// Path of the toml file that was loaded (or the path we looked at if
     /// missing). Useful for `config show` diagnostics.
     pub toml_path: PathBuf,
@@ -637,12 +648,21 @@ impl Config {
             SourcedValue::new(id_delimiter_default(), Source::Default)
         };
 
+        let week_start = if let Some(v) = read_env("DATUM_WEEK_START") {
+            SourcedValue::new(v, Source::Env)
+        } else if let Some(v) = raw.week_start.clone() {
+            SourcedValue::new(v, Source::Toml)
+        } else {
+            SourcedValue::new(week_start_default().to_string(), Source::Default)
+        };
+
         Ok(Config {
             db_path,
             device_id,
             default_field,
             editor,
             id_delimiter,
+            week_start,
             toml_path,
             toml_loaded,
         })
@@ -673,8 +693,65 @@ impl Config {
                 self.id_delimiter.value.clone(),
                 self.id_delimiter.source,
             ),
+            (
+                "week_start",
+                self.week_start.value.clone(),
+                self.week_start.source,
+            ),
         ]
     }
+}
+
+/// The weekday a week opens on when nothing says otherwise. Monday — the
+/// ISO week start, and what `date`/`chrono` call weekday 1.
+pub fn week_start_default() -> Weekday {
+    Weekday::Mon
+}
+
+/// Read a `week_start` value: a weekday name (`"monday"`, `"Mon"`, any
+/// case) or an ISO number (`1` = Monday … `7` = Sunday).
+///
+/// The name is canonical — errors and `datum config show` speak names —
+/// but a number is accepted because plenty of config formats spell a
+/// weekday that way.
+pub fn parse_week_start(s: &str) -> Result<Weekday> {
+    let t = s.trim();
+    if let Ok(n) = t.parse::<u8>() {
+        return match n {
+            1 => Ok(Weekday::Mon),
+            2 => Ok(Weekday::Tue),
+            3 => Ok(Weekday::Wed),
+            4 => Ok(Weekday::Thu),
+            5 => Ok(Weekday::Fri),
+            6 => Ok(Weekday::Sat),
+            7 => Ok(Weekday::Sun),
+            _ => anyhow::bail!(
+                "invalid week_start '{s}': a number must be 1-7 (1 = monday … 7 = sunday)"
+            ),
+        };
+    }
+    t.parse::<Weekday>().map_err(|_| {
+        anyhow::anyhow!(
+            "invalid week_start '{s}': expected a weekday name \
+             (monday … sunday, or the three-letter form) or 1-7"
+        )
+    })
+}
+
+/// Resolve the effective week start for a single invocation, layering
+/// `DATUM_WEEK_START` env > `datumrc.toml` > Monday. Standalone for the
+/// same reason as [`resolve_id_delimiter`]: materializing a full
+/// [`Config`] would lazily generate a device id as a side effect.
+pub fn resolve_week_start() -> Result<Weekday> {
+    if let Some(v) = read_env("DATUM_WEEK_START") {
+        return parse_week_start(&v);
+    }
+    if let Ok(raw) = load_raw_config_or_default() {
+        if let Some(v) = raw.week_start {
+            return parse_week_start(&v);
+        }
+    }
+    Ok(week_start_default())
 }
 
 /// Resolve the effective slug `id_delimiter` for a single invocation,
@@ -765,5 +842,40 @@ mod tests {
         // argv[0] is the binary name; a literal `--db` there shouldn't
         // confuse the scan.
         assert_eq!(pre_scan_db_flag(&argv(&["--db", "occur", "msg"])), None);
+    }
+
+    #[test]
+    fn week_start_accepts_weekday_names_in_any_case() {
+        for (input, expected) in [
+            ("monday", Weekday::Mon),
+            ("Monday", Weekday::Mon),
+            ("MON", Weekday::Mon),
+            ("sun", Weekday::Sun),
+            ("  saturday  ", Weekday::Sat),
+        ] {
+            assert_eq!(parse_week_start(input).unwrap(), expected, "{input}");
+        }
+    }
+
+    #[test]
+    fn week_start_accepts_iso_numbers() {
+        // ISO: 1 = Monday … 7 = Sunday.
+        assert_eq!(parse_week_start("1").unwrap(), Weekday::Mon);
+        assert_eq!(parse_week_start("7").unwrap(), Weekday::Sun);
+    }
+
+    #[test]
+    fn week_start_rejects_nonsense_by_name() {
+        // The name is canonical, so the error says so rather than echoing
+        // a number range the user didn't use.
+        for bad in ["0", "8", "funday", ""] {
+            let err = parse_week_start(bad).unwrap_err().to_string();
+            assert!(err.contains("week_start"), "{bad}: {err}");
+        }
+    }
+
+    #[test]
+    fn week_start_defaults_to_monday() {
+        assert_eq!(week_start_default(), Weekday::Mon);
     }
 }

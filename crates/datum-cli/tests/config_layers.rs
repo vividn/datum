@@ -4,6 +4,7 @@
 //! and all `DATUM_*` env vars so config resolution is fully isolated.
 //! Serialized by a process-wide mutex because env is shared state.
 
+use chrono::Weekday;
 use datum_cli::config::{self, Config, Source};
 use datum_test_util::env_lock;
 use std::path::Path;
@@ -15,6 +16,7 @@ const KEYS_TO_CLEAR: &[&str] = &[
     "DATUM_DEFAULT_FIELD",
     "DATUM_EDITOR",
     "DATUM_ID_DELIMITER",
+    "DATUM_WEEK_START",
     "VISUAL",
     "EDITOR",
 ];
@@ -242,4 +244,42 @@ fn empty_toml_is_ok() {
     assert!(cfg.toml_loaded);
     // Everything falls through to defaults.
     assert_eq!(cfg.editor.source, Source::Default);
+}
+
+#[test]
+fn week_start_defaults_then_layers_toml_under_env() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _g = sandbox(tmp.path());
+
+    // Default: Monday, and `config show` says so.
+    assert_eq!(config::resolve_week_start().unwrap(), Weekday::Mon);
+    let cfg = Config::load(None).unwrap();
+    assert_eq!(cfg.week_start.value, "Mon");
+    assert_eq!(cfg.week_start.source, Source::Default);
+
+    write_toml(tmp.path(), "week_start = \"sunday\"\n");
+    assert_eq!(config::resolve_week_start().unwrap(), Weekday::Sun);
+    let cfg = Config::load(None).unwrap();
+    assert_eq!(cfg.week_start.value, "sunday");
+    assert_eq!(cfg.week_start.source, Source::Toml);
+
+    std::env::set_var("DATUM_WEEK_START", "3");
+    assert_eq!(config::resolve_week_start().unwrap(), Weekday::Wed);
+    let cfg = Config::load(None).unwrap();
+    assert_eq!(cfg.week_start.source, Source::Env);
+    std::env::remove_var("DATUM_WEEK_START");
+}
+
+#[test]
+fn a_misspelled_week_start_still_shows_in_config_show() {
+    // `config show` is where a user goes to diagnose a bad value, so it
+    // must render one rather than fail; only the commands that need a
+    // week reject it.
+    let tmp = tempfile::tempdir().unwrap();
+    let _g = sandbox(tmp.path());
+    write_toml(tmp.path(), "week_start = \"funday\"\n");
+
+    let cfg = Config::load(None).unwrap();
+    assert_eq!(cfg.week_start.value, "funday");
+    assert!(config::resolve_week_start().is_err());
 }

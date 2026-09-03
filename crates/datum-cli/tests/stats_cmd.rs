@@ -8,7 +8,7 @@ mod common;
 
 use chrono::{DateTime, Utc};
 use common::run_cli;
-use datum_cli::args::StatsArgs;
+use datum_cli::args::{StatsArgs, StatsPeriod};
 use datum_commands::commands::stats::compute_stats;
 use datum_core::entry::Verb;
 use datum_core::test_util::{entry_builder, freeze_time, fresh_db};
@@ -380,4 +380,299 @@ fn stats_flags_parse_and_dispatch() {
     seed_with_closed(&db);
     run_cli(&["stats", "activity", "--include-false"], &db).unwrap();
     run_cli(&["stats", "activity", "--include-untracked", "--json"], &db).unwrap();
+}
+
+// ─── Period flags and the shared timing flags (da-rf57) ─────────────────────
+
+/// Seed with an explicit IANA zone so the window boundaries these tests
+/// assert on are the database's own zone (`Db::zone_timeline`), not the
+/// host's — otherwise every "local midnight" below would move with `TZ`.
+fn seed_utc_zoned(db: &datum_core::db::Db, rows: &[(&str, &str)]) {
+    for (t, state) in rows {
+        entry_builder("activity")
+            .verb(Verb::Switch)
+            .state(json!(state))
+            .time_start(datum_core::time::DatumTime::from_utc_and_tz(at(t), "UTC").unwrap())
+            .insert(db);
+    }
+}
+
+/// coding runs from 23:00 the previous day, so the block straddles
+/// midnight in both directions: 1h of it belongs to the 14th, and it is
+/// still open at `now` on the 15th.
+fn seed_across_midnight(db: &datum_core::db::Db) {
+    seed_utc_zoned(
+        db,
+        &[
+            ("2026-06-14T20:00:00Z", "meeting"),
+            ("2026-06-14T23:00:00Z", "coding"),
+        ],
+    );
+}
+
+/// Total measured duration over one period window.
+fn period_total(db: &datum_core::db::Db, period: StatsPeriod) -> i64 {
+    compute_stats(
+        &StatsArgs {
+            period: Some(period),
+            ..selector("activity")
+        },
+        db,
+    )
+    .unwrap()
+    .total_duration_seconds
+}
+
+fn dur(r: &datum_commands::commands::stats::StatsResult, state: &str) -> i64 {
+    r.states
+        .iter()
+        .find(|s| s.state == state)
+        .map(|s| s.duration_seconds)
+        .unwrap_or(0)
+}
+
+#[test]
+fn today_runs_to_now_and_clips_the_block_that_crossed_midnight() {
+    let _g = freeze_time("2026-06-15T09:00:00Z");
+    let db = fresh_db();
+    seed_across_midnight(&db);
+
+    let r = compute_stats(
+        &StatsArgs {
+            period: Some(StatsPeriod::Today),
+            ..selector("activity")
+        },
+        &db,
+    )
+    .unwrap();
+
+    // Nine hours of today have happened; the denominator is those, not 24h.
+    assert_eq!(r.total_duration_seconds, 9 * 3600);
+    assert_eq!(
+        dur(&r, "coding"),
+        9 * 3600,
+        "only today's share of the block"
+    );
+    assert_eq!(
+        dur(&r, "meeting"),
+        0,
+        "yesterday's block is out of the window"
+    );
+    assert_eq!(r.total_count, 0, "neither entry *occurs* today");
+}
+
+#[test]
+fn a_bare_date_flag_is_that_day_alone() {
+    // vividn's rule: a DATE is bounded. `-y` on the 15th is the whole of the
+    // 14th — not "since the 14th", which would sweep today in too.
+    let _g = freeze_time("2026-06-15T09:00:00Z");
+    let db = fresh_db();
+    seed_across_midnight(&db);
+
+    let mut args = selector("activity");
+    args.time.yesterday = 1;
+    let r = compute_stats(&args, &db).unwrap();
+
+    assert_eq!(
+        r.total_duration_seconds,
+        4 * 3600,
+        "20:00→24:00 on the 14th"
+    );
+    assert_eq!(dur(&r, "meeting"), 3 * 3600);
+    assert_eq!(dur(&r, "coding"), 3600, "clipped at the 15th's midnight");
+    assert_eq!(r.total_count, 2, "both entries occur on the 14th");
+}
+
+#[test]
+fn until_reopens_a_dates_closed_end() {
+    // The documented escape hatch for "since two days ago": `-yy --until now`.
+    let _g = freeze_time("2026-06-15T09:00:00Z");
+    let db = fresh_db();
+    seed_across_midnight(&db);
+
+    let mut args = selector("activity");
+    args.time.yesterday = 1;
+    args.until = Some("now".to_string());
+    let r = compute_stats(&args, &db).unwrap();
+
+    assert_eq!(
+        r.total_duration_seconds,
+        13 * 3600,
+        "20:00 on the 14th through 09:00 on the 15th"
+    );
+    assert_eq!(dur(&r, "coding"), 10 * 3600, "no longer cut at midnight");
+}
+
+#[test]
+fn a_clock_time_is_a_lower_bound_like_since() {
+    // `-t` and `-q` name a moment, so they behave exactly as `--since`
+    // does — open-ended, ending at now.
+    let _g = freeze_time("2026-06-15T09:00:00Z");
+    let db = fresh_db();
+    seed_across_midnight(&db);
+
+    let mut by_time = selector("activity");
+    by_time.time.time = Some("2026-06-14T22:00:00Z".to_string());
+    let mut by_quick = selector("activity");
+    by_quick.time.quick = 2; // 10 minutes back
+
+    let since_time = compute_stats(
+        &StatsArgs {
+            since: Some("2026-06-14T22:00:00Z".to_string()),
+            ..selector("activity")
+        },
+        &db,
+    )
+    .unwrap();
+    let since_quick = compute_stats(
+        &StatsArgs {
+            since: Some("10m".to_string()),
+            ..selector("activity")
+        },
+        &db,
+    )
+    .unwrap();
+
+    assert_eq!(compute_stats(&by_time, &db).unwrap(), since_time);
+    assert_eq!(compute_stats(&by_quick, &db).unwrap(), since_quick);
+    assert_eq!(since_quick.total_duration_seconds, 600);
+}
+
+#[test]
+fn a_date_plus_a_time_is_a_lower_bound_not_a_day() {
+    // `-d ... -t ...` composes into a moment, so the day-bounding rule
+    // does not apply — the window runs to now.
+    let _g = freeze_time("2026-06-15T09:00:00Z");
+    let db = fresh_db();
+    seed_across_midnight(&db);
+
+    let mut args = selector("activity");
+    // `-z UTC` so the composed wall-clock reading is the seed's own zone,
+    // whatever `TZ` the test host happens to be in.
+    args.time.timezone = Some("UTC".to_string());
+    args.time.date = Some("2026-06-14".to_string());
+    args.time.time = Some("22:00".to_string());
+    let r = compute_stats(&args, &db).unwrap();
+
+    assert_eq!(r.total_duration_seconds, 11 * 3600, "22:00 through now");
+}
+
+#[test]
+fn closed_periods_stop_where_the_open_ones_start() {
+    let _g = freeze_time("2026-06-17T09:00:00Z"); // a Wednesday
+    let db = fresh_db();
+    seed_utc_zoned(&db, &[("2026-05-20T10:00:00Z", "coding")]);
+
+    // A single open block runs from May 20 to now, so each window's total
+    // is exactly its own length — the periods measure themselves.
+    assert_eq!(period_total(&db, StatsPeriod::Today), 9 * 3600);
+    assert_eq!(
+        period_total(&db, StatsPeriod::Month),
+        16 * 86400 + 9 * 3600,
+        "June 1 through now"
+    );
+    assert_eq!(
+        period_total(&db, StatsPeriod::LastMonth),
+        11 * 86400 + 14 * 3600,
+        "May 20 10:00 (the block's start) through June 1 — not through now"
+    );
+}
+
+#[test]
+fn the_week_flags_read_the_week_start_config() {
+    let _g = freeze_time("2026-06-17T09:00:00Z"); // a Wednesday
+    let db = fresh_db();
+    seed_utc_zoned(&db, &[("2026-05-20T10:00:00Z", "coding")]);
+
+    // `week_start` is user config, so pin it — env is process-wide, hence
+    // the lock the config tests use.
+    let _env = datum_test_util::env_lock();
+    std::env::set_var("DATUM_WEEK_START", "monday");
+    assert_eq!(
+        period_total(&db, StatsPeriod::Week),
+        2 * 86400 + 9 * 3600,
+        "Monday midnight through Wednesday 09:00"
+    );
+    assert_eq!(
+        period_total(&db, StatsPeriod::LastWeek),
+        7 * 86400,
+        "a whole closed week"
+    );
+
+    std::env::set_var("DATUM_WEEK_START", "sunday");
+    assert_eq!(
+        period_total(&db, StatsPeriod::Week),
+        3 * 86400 + 9 * 3600,
+        "a Sunday week opened a day earlier"
+    );
+    assert_eq!(period_total(&db, StatsPeriod::LastWeek), 7 * 86400);
+
+    std::env::set_var("DATUM_WEEK_START", "funday");
+    let err = compute_stats(
+        &StatsArgs {
+            period: Some(StatsPeriod::Week),
+            ..selector("activity")
+        },
+        &db,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("week_start"), "{err}");
+    std::env::remove_var("DATUM_WEEK_START");
+}
+
+#[test]
+fn one_window_start_at_a_time() {
+    let db = fresh_db();
+    let mut both = selector("activity");
+    both.period = Some(StatsPeriod::Today);
+    both.since = Some("1d".to_string());
+    let err = compute_stats(&both, &db).unwrap_err().to_string();
+    assert!(err.contains("one window start"), "{err}");
+
+    let mut flags_and_slice = selector("activity");
+    flags_and_slice.slice = Some("2026-06".to_string());
+    flags_and_slice.time.yesterday = 1;
+    assert!(compute_stats(&flags_and_slice, &db).is_err());
+}
+
+#[test]
+fn an_inverted_window_is_an_error_not_a_zero() {
+    // A zero total is indistinguishable from "you did nothing", which is
+    // the wrong answer to give for a backwards range.
+    let _g = freeze_time("2026-06-15T09:00:00Z");
+    let db = fresh_db();
+    seed_across_midnight(&db);
+
+    let args = StatsArgs {
+        since: Some("2026-06-15T08:00:00Z".to_string()),
+        until: Some("2026-06-15T07:00:00Z".to_string()),
+        ..selector("activity")
+    };
+    let err = compute_stats(&args, &db).unwrap_err().to_string();
+    assert!(err.contains("empty window"), "{err}");
+}
+
+#[test]
+fn period_and_timing_flags_parse_and_dispatch() {
+    let _g = freeze_time("2026-06-15T09:00:00Z");
+    let db = fresh_db();
+    seed_across_midnight(&db);
+    for flag in [
+        "--today",
+        "--week",
+        "--last-week",
+        "--month",
+        "--last-month",
+    ] {
+        run_cli(&["stats", "activity", flag], &db).unwrap_or_else(|e| panic!("{flag}: {e}"));
+    }
+    run_cli(&["stats", "activity", "-y"], &db).unwrap();
+    run_cli(&["stats", "activity", "-yy", "--until", "now"], &db).unwrap();
+    run_cli(&["stats", "activity", "-qq", "--json"], &db).unwrap();
+    run_cli(&["stats", "activity", "-t", "8:00"], &db).unwrap();
+    run_cli(&["stats", "activity", "-d", "2026-06-14", "-z", "UTC"], &db).unwrap();
+
+    // Two different period flags contradict rather than refine.
+    assert!(run_cli(&["stats", "activity", "--today", "--week"], &db).is_err());
 }
