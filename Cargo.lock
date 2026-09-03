@@ -527,6 +527,7 @@ dependencies = [
  "crossterm",
  "datum-core",
  "datum-layout",
+ "datum-layout-wasm",
  "datum-parse",
  "datum-sync-client",
  "datum-test-util",
@@ -572,6 +573,16 @@ name = "datum-layout"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "datum-layout-wasm"
+version = "0.1.0"
+dependencies = [
+ "datum-layout",
+ "md-5",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

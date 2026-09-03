@@ -17,6 +17,9 @@ import { isAnnotated, type DefaultAction, type Entry, type FieldSpec } from '../
 
 const DEVICE_ID_KEY = 'datum-device-id';
 
+/** Loaded on demand: the layout module is 250 KB nobody pays for to log. */
+const views = () => import('./views.js');
+
 /** This browser's device id, minted on first use and kept in localStorage. */
 export function deviceId(): string {
 	const existing = localStorage.getItem(DEVICE_ID_KEY);
@@ -32,6 +35,13 @@ const TAIL_COUNT = 10;
 export async function localRun(argv: string[]): Promise<RunResult> {
 	if (argv[0] === 'spec' && argv[1] === 'set') return specSet(argv);
 	if (argv.length === 1 && argv[0] === 'tail') return tail();
+	// The two visual views are datum's own compute and render, reached
+	// through the layout module rather than reimplemented (da-6h6p) — so
+	// they live behind the seam like everything else, and their stdout is
+	// the same SVG document the CLI writes. Bare only: the window and
+	// geometry flags belong to the real CLI.
+	if (argv.length === 1 && argv[0] === 'dayview') return (await views()).dayview(argv);
+	if (argv.length === 1 && argv[0] === 'nowview') return (await views()).nowview(argv);
 
 	const parsed = parseArgv(argv);
 	if (!parsed) {

@@ -16,7 +16,11 @@ pub mod characters;
 pub mod colors;
 pub mod show_all;
 pub(crate) mod state_truncate;
+
+// Holds `datum-layout-wasm`'s colour derivation to this module's (da-6h6p).
 pub mod term_layout;
+#[cfg(test)]
+mod wasm_parity;
 
 pub use self::action::{
     format_info_line, format_info_line_at, format_relative_day_prefix, format_state_group,

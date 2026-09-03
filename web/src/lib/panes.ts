@@ -31,9 +31,13 @@ export const DAYVIEW: PaneSpec = {
 	empty: 'nothing to draw yet'
 };
 
+// `nowview`, not `now`: the CLI splits them by output device — `now`
+// paints a band on the terminal, `nowview` writes the SVG — and a browser
+// pane is the second of those. The pane shows what the CLI would write to
+// a .svg file, which is a better picture than the terminal's.
 export const NOWVIEW: PaneSpec = {
 	title: 'nowview',
-	argv: ['now'],
+	argv: ['nowview'],
 	empty: 'no field has a state yet'
 };
 

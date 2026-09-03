@@ -204,6 +204,33 @@ export async function getLatestPerField(): Promise<Entry[]> {
 }
 
 /**
+ * The entry that decides each field's state at `at` — one row per field,
+ * the newest at-or-before that instant.
+ *
+ * The browser's copy of `Db::batch_state_at`'s query, down to its
+ * ordering: `occur_time DESC, slug DESC`, live rows only
+ * (`STATE_ORDER_NEWEST_FIRST` / `STATE_PARTICIPATION_SQL` in
+ * crates/datum-core/src/db/types.rs). The trailing-edge rule that turns
+ * the winning row into a state is `effectiveState` in $lib/visuals.ts,
+ * held apart the same way Rust holds it apart.
+ */
+export async function getStateEntriesAt(at: Date): Promise<Entry[]> {
+	const rows = await send({
+		op: 'exec',
+		sql: `SELECT * FROM (
+		        SELECT *, ROW_NUMBER() OVER (
+		          PARTITION BY field ORDER BY occur_time DESC, slug DESC
+		        ) AS rn
+		        FROM entries
+		        WHERE occur_time IS NOT NULL AND deleted_at IS NULL
+		          AND occur_time <= $at
+		      ) WHERE rn = 1`,
+		bind: { $at: at.toISOString() }
+	});
+	return rows.map(rowToEntry);
+}
+
+/**
  * Every stored field spec, keyed by field.
  *
  * The spec is the field's declared shape — what the widget bar reads to

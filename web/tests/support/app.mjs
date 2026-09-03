@@ -158,6 +158,21 @@ function app(page, errors) {
 				.locator('.body')
 				.innerText(),
 
+		/**
+		 * The SVG a pane is showing, as its markup.
+		 *
+		 * The visual panes' stdout is an SVG document, which CliOutput
+		 * renders through a data-URL `<img>` — so this is the same string
+		 * `run(argv)` returned, read back off the screen.
+		 */
+		async paneSvg(title) {
+			const src = await page
+				.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
+				.locator('img.svg')
+				.getAttribute('src');
+			return decodeURIComponent(src.replace(/^data:image\/svg\+xml,/, ''));
+		},
+
 		/** Reload the page and wait for the app to come back up. */
 		async reload() {
 			await page.reload();

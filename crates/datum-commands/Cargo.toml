@@ -57,6 +57,9 @@ resvg = { version = "0.47", default-features = false, features = ["text", "syste
 
 [dev-dependencies]
 datum-core = { path = "../datum-core", features = ["test-util"] }
+# Test-only, and the direction is deliberate: the browser's copy of the
+# colour rules is held to this crate's original (src/render/wasm_parity.rs).
+datum-layout-wasm = { path = "../datum-layout-wasm" }
 datum-test-util = { path = "../datum-test-util" }
 rusqlite = { workspace = true }
 # Re-exported via `datum_parse::alias::shell_split` for the e2e harness;

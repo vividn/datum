@@ -5,3 +5,6 @@ dist/
 
 # codegen output (regenerated from crates/datum-core/src/schema.sql)
 src/lib/schema.generated.ts
+
+# vite writes these while resolving the config, and deletes them again
+vite.config.ts.timestamp-*

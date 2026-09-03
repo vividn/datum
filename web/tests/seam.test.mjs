@@ -12,6 +12,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
@@ -231,6 +232,98 @@ describe('storage', () => {
 		await withApp(async ({ run, errors }) => {
 			await run(['occur', 'coffee']);
 			assert.deepEqual(errors, []);
+		});
+	});
+});
+
+describe('the visual views', () => {
+	/** The colour datum gives a name: the first three bytes of its md5. */
+	const colorOf = (name) =>
+		'#' + createHash('md5').update(name).digest('hex').slice(0, 6);
+
+	test('dayview draws the day as an SVG, and the pane shows it', async () => {
+		await withApp(async ({ run, reload, paneSvg }) => {
+			const drawn = await run(['dayview']);
+			assert.equal(drawn.code, OK, drawn.stderr);
+			assert.equal(drawn.stderr, '');
+			// The CLI writes an SVG document to stdout for `datum dayview`;
+			// so does the browser, because it is running the same
+			// `compute_dayview` + `render_dayview_svg` the CLI runs.
+			assert.match(drawn.stdout, /^<svg[\s>]/);
+
+			// Today's own label, from the local date — the same three lines
+			// `format_day_label` builds.
+			const today = new Date();
+			const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()];
+			assert.match(drawn.stdout, new RegExp(`>${weekday}<`));
+
+			// And the pane is that command's output. Not byte-for-byte:
+			// dayview paints a now-line, so the pane's own run of the
+			// command a moment later is the same drawing at a later
+			// instant.
+			await reload();
+			const shown = await paneSvg('dayview');
+			assert.match(shown, /^<svg[\s>]/);
+			assert.match(shown, new RegExp(`>${weekday}<`));
+		});
+	});
+
+	test('a switch paints a band in the state colour the CLI would pick', async () => {
+		await withApp(async ({ run }) => {
+			// Five minutes back, so the region runs to now inside both the
+			// day window and nowview's 30-minute one whatever the hour.
+			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-5'])).code, OK);
+
+			const drawn = await run(['nowview']);
+			assert.equal(drawn.code, OK, drawn.stderr);
+			assert.ok(
+				drawn.stdout.includes(colorOf('happy')),
+				`no band in happy's colour (${colorOf('happy')}): ${drawn.stdout}`
+			);
+			// And the field and its state are named, in the panel to the
+			// right of the now-line.
+			assert.match(drawn.stdout, />mood: happy</);
+		});
+	});
+
+	test('nowview carries the clock and the current state', async () => {
+		await withApp(async ({ run, reload, paneSvg }) => {
+			assert.equal((await run(['switch', 'focus', 'deep', '-t', '-5'])).code, OK);
+
+			const drawn = await run(['nowview']);
+			assert.equal(drawn.code, OK, drawn.stderr);
+			// The viewer's own clock — the one thing about the picture the
+			// browser knows and the layout crate cannot.
+			assert.match(drawn.stdout, /<text[^>]*>\d{2}:\d{2}<\/text>/);
+			assert.match(
+				drawn.stdout,
+				/>focus: deep</,
+				'the panel does not show the current state'
+			);
+
+			await reload();
+			assert.match(await paneSvg('nowview'), />focus: deep</);
+		});
+	});
+
+	test('an empty database still draws both views', async () => {
+		await withApp(async ({ run }) => {
+			for (const view of ['dayview', 'nowview']) {
+				const drawn = await run([view]);
+				assert.equal(drawn.code, OK, `${view} → ${drawn.stderr}`);
+				assert.match(drawn.stdout, /^<svg[\s>]/, `${view} drew nothing`);
+			}
+		});
+	});
+
+	test("dayview's window flags are still the real CLI's job", async () => {
+		await withApp(async ({ run }) => {
+			// Answering `--n-days` here would mean growing a second datum in
+			// TypeScript. It reports unknown, the way `tail mood` does.
+			const result = await run(['dayview', '--n-days', '3']);
+			assert.equal(result.code, UNKNOWN_COMMAND);
+			assert.equal(result.stdout, '');
+			assert.notEqual(result.stderr, '');
 		});
 	});
 });

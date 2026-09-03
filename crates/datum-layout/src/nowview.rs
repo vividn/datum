@@ -24,7 +24,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::dayview::DayviewAxisTick;
+use crate::dayview::{
+    DayviewAxisTick, DayviewConfig, DayviewDayInput, DayviewFieldInput, Orientation,
+};
 
 /// One block (closed or ongoing) inside a field row. Consumed by the
 /// terminal renderer in [`crate::nowview_terminal`].
@@ -282,5 +284,153 @@ mod tests {
     fn axis_ticks_empty_for_zero_history() {
         assert!(nowview_axis_ticks(600.0, 0.0).is_empty());
         assert!(nowview_axis_ticks(0.0, 30.0).is_empty());
+    }
+}
+
+// ─── Shared config assembly (CLI + browser) ──────────────────────────────────
+
+/// Default history window (minutes) when the caller passes none.
+pub const DEFAULT_HISTORY_MINUTES: f64 = 30.0;
+/// Default per-day band height for nowview's single day.
+pub const DEFAULT_DAY_HEIGHT: f64 = 250.0;
+/// Default reserved width (px) for the current-state panel rendered to the
+/// right of the now-line (per bead da-34w).
+pub const DEFAULT_PANEL_WIDTH: f64 = 120.0;
+/// Width contribution of the panel toward the auto-sized SVG width when the
+/// caller omits an explicit width. Added on top of
+/// [`default_width_for_history`] so the data area keeps datum's
+/// history-based sizing.
+pub const PANEL_DEFAULT_WIDTH_BUMP: f64 = 120.0;
+
+/// The knobs `datum nowview` exposes that affect geometry. Everything else
+/// nowview needs is derived — that derivation is [`nowview_config`], and it
+/// is shared so the browser draws the same picture the CLI does.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct NowviewGeometry {
+    /// How far back the window reaches from "now".
+    pub history_minutes: f64,
+    /// Total SVG width. `None` → history-sized default plus the panel bump.
+    pub width: Option<f64>,
+    /// Requested total height. `<= 0` → [`DEFAULT_DAY_HEIGHT`] as the band.
+    pub height: f64,
+    pub margin: f64,
+    pub time_axis_height: f64,
+}
+
+impl Default for NowviewGeometry {
+    fn default() -> Self {
+        Self {
+            history_minutes: DEFAULT_HISTORY_MINUTES,
+            width: None,
+            height: 0.0,
+            margin: 2.0,
+            time_axis_height: 22.0,
+        }
+    }
+}
+
+/// Build the [`DayviewConfig`] nowview renders through: one day scoped to
+/// `[now - history, now]`, no date label, relative-minute axis ticks, and a
+/// reservation on the right for the current-state panel.
+///
+/// Pure: `fields` is the only data input, so the CLI (SQLite) and the PWA
+/// (SQLite-wasm) reach the same geometry from their own stores.
+pub fn nowview_config(
+    fields: Vec<DayviewFieldInput>,
+    now_ms: i64,
+    geom: &NowviewGeometry,
+) -> DayviewConfig {
+    let history_minutes = geom.history_minutes;
+    let width = geom
+        .width
+        .unwrap_or_else(|| default_width_for_history(history_minutes) + PANEL_DEFAULT_WIDTH_BUMP);
+    let start_ms = now_ms - (history_minutes * 60_000.0) as i64;
+
+    // da-34w: nowview drops the date label — it's timestamp-focused, not
+    // date-focused. The HH:MM clock overlay near the now-line takes its
+    // place.
+    let day = DayviewDayInput {
+        label_lines: Vec::new(),
+        start_ms,
+        end_ms: now_ms,
+        has_error: false,
+        fields,
+    };
+
+    let panel_width = DEFAULT_PANEL_WIDTH
+        .min((width - 2.0 * geom.margin) * 0.5)
+        .max(0.0);
+
+    // Pre-compute the time-axis extent so the relative-minute tick override
+    // resolves to the same pixel space dayview will use. Mirrors the math in
+    // `dayview::compute_dayview`. Date label is suppressed (label_width = 0)
+    // so the time axis only loses the panel reservation.
+    let plot_width = (width - 2.0 * geom.margin).max(0.0);
+    let time_axis_extent_for_ticks = (plot_width - panel_width).max(0.0);
+    let axis_ticks_override = Some(nowview_axis_ticks(
+        time_axis_extent_for_ticks,
+        history_minutes,
+    ));
+
+    let day_height = if geom.height > 0.0 {
+        // Use the requested height as the per-day band, leaving room for
+        // axis + margins. Floor at a sensible minimum so labels stay
+        // readable.
+        (geom.height - 2.0 * geom.margin - geom.time_axis_height).max(50.0)
+    } else {
+        DEFAULT_DAY_HEIGHT
+    };
+
+    DayviewConfig {
+        days: vec![day],
+        now_ms,
+        width,
+        height: None,
+        day_height,
+        interday_margin: 0.0,
+        time_axis_height: geom.time_axis_height,
+        margin: geom.margin,
+        // Date label suppressed — give all of the cross-perpendicular budget
+        // to the data area (and the panel reservation).
+        label_width: Some(0.0),
+        orientation: Orientation::Horizontal,
+        axis_ticks_override,
+        right_panel_width: panel_width,
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn nowview_config_scopes_the_day_to_the_history_window() {
+        let cfg = nowview_config(Vec::new(), 1_000_000, &NowviewGeometry::default());
+        assert_eq!(cfg.days.len(), 1);
+        assert_eq!(cfg.days[0].end_ms, 1_000_000);
+        assert_eq!(cfg.days[0].start_ms, 1_000_000 - 30 * 60_000);
+        // Date label suppressed, panel reserved, relative ticks installed.
+        assert_eq!(cfg.label_width, Some(0.0));
+        assert!(cfg.right_panel_width > 0.0);
+        assert!(!cfg.axis_ticks_override.as_ref().unwrap().is_empty());
+    }
+
+    #[test]
+    fn nowview_config_derives_width_and_band_height() {
+        let cfg = nowview_config(Vec::new(), 0, &NowviewGeometry::default());
+        assert_eq!(
+            cfg.width,
+            default_width_for_history(DEFAULT_HISTORY_MINUTES) + PANEL_DEFAULT_WIDTH_BUMP
+        );
+        assert_eq!(cfg.day_height, DEFAULT_DAY_HEIGHT);
+
+        let geom = NowviewGeometry {
+            height: 300.0,
+            margin: 2.0,
+            time_axis_height: 22.0,
+            ..NowviewGeometry::default()
+        };
+        let cfg = nowview_config(Vec::new(), 0, &geom);
+        assert_eq!(cfg.day_height, 300.0 - 4.0 - 22.0);
     }
 }

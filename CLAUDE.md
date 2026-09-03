@@ -150,6 +150,14 @@ npm test                               # the seam suite (builds first)
 npm run test:fixtures                  # recapture the CLI-parity fixtures
 ```
 
+The dayview and nowview panes are `crates/datum-layout` compiled to
+`wasm32-unknown-unknown` (`crates/datum-layout-wasm`), so the browser runs
+datum's own compute+render rather than a second implementation of it. The
+module is committed at `web/static/datum-layout.wasm` the way the fixtures
+are, so the web CI job needs no Rust toolchain — rebuild and commit it
+with `npm run build:wasm` whenever `datum-layout` or `datum-layout-wasm`
+changes.
+
 `web/tests` drives the built app in a real browser and asserts through
 `run(argv)` — the one seam every region of the app goes through — rather
 than through the interim TypeScript runner behind it, which da-1vat

@@ -57,6 +57,11 @@
 
 	.svg {
 		display: block;
-		max-width: none;
+		/* Scaled to the pane rather than shown at its own width. A table
+		   must keep its column widths — see the note above — but an SVG
+		   is a drawing: datum sizes the dayview 2000px wide, and shrinking
+		   it loses nothing where scrolling to it would lose the day. */
+		width: 100%;
+		height: auto;
 	}
 </style>

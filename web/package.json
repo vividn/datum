@@ -14,7 +14,8 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "pretest": "npm run build",
     "test": "node --test \"tests/**/*.test.mjs\"",
-    "test:fixtures": "node scripts/capture-cli-fixtures.mjs"
+    "test:fixtures": "node scripts/capture-cli-fixtures.mjs",
+    "build:wasm": "node scripts/build-layout-wasm.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",

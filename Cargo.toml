@@ -4,6 +4,7 @@ members = [
     "crates/datum-cli",
     "crates/datum-commands",
     "crates/datum-layout",
+    "crates/datum-layout-wasm",
     "crates/datum-parity",
     "crates/datum-parse",
     "crates/datum-sync-agent",
@@ -106,3 +107,15 @@ debug = "line-tables-only"
 
 [profile.test]
 debug = "line-tables-only"
+
+# Size-first profile for the browser layout module (da-6h6p). Separate from
+# `release` so the CLI keeps its speed-first build: this one trades a little
+# throughput — irrelevant for a few hundred blocks of geometry — for an
+# artifact small enough to ship in the app shell.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -26,12 +26,10 @@ use datum_core::shape::{
     dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
     is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
 };
-use datum_layout::dayview::{
-    compute_dayview, DayviewBlock, DayviewConfig, DayviewDayInput, DayviewFieldInput, Orientation,
-};
+use datum_layout::dayview::{compute_dayview, DayviewBlock, DayviewFieldInput};
 use datum_layout::nowview::{
-    default_width_for_history, nowview_axis_ticks, NowviewBlock, NowviewField, NowviewPanelEntry,
-    NowviewPoint,
+    nowview_config, NowviewBlock, NowviewField, NowviewGeometry, NowviewPanelEntry, NowviewPoint,
+    DEFAULT_HISTORY_MINUTES,
 };
 use datum_layout::nowview_svg::{render_nowview_svg, with_xml_declaration, wrap_svg_in_html};
 use datum_parse::time::dur::parse_duration;
@@ -44,21 +42,6 @@ use crate::commands::field_visuals::{
 };
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
 use crate::render::term_layout;
-
-/// Default history window when the user omits `--history` (per bead da-6jy
-/// the user feedback was "scoped to last 30min").
-const DEFAULT_HISTORY_MINUTES: f64 = 30.0;
-/// Default per-field band height for the single-day nowview render. Larger
-/// than dayview's 100 px default since nowview shows only one day and gets
-/// the full vertical budget.
-const DEFAULT_DAY_HEIGHT: f64 = 250.0;
-/// Default reserved width (px) for the current-state panel rendered to the
-/// right of the now-line (per bead da-34w).
-const DEFAULT_PANEL_WIDTH: f64 = 120.0;
-/// Width contribution of the panel toward the auto-sized SVG width when the
-/// user omits `--width`. Added on top of [`default_width_for_history`] so
-/// the data area keeps datum's history-based sizing.
-const PANEL_DEFAULT_WIDTH_BUMP: f64 = 120.0;
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
@@ -204,66 +187,23 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         anyhow::bail!("--history must be positive (got {history_minutes} minutes)");
     }
 
-    let width = args
-        .width
-        .unwrap_or_else(|| default_width_for_history(history_minutes) + PANEL_DEFAULT_WIDTH_BUMP);
     let end = Utc::now();
     let end_ms = end.timestamp_millis();
-    let start_ms = end_ms - (history_minutes * 60_000.0) as i64;
-
     let fields = build_dayview_fields(db, end, history_minutes)?;
 
-    // da-34w: nowview drops the date label — it's timestamp-focused, not
-    // date-focused. The HH:MM clock overlay near the now-line takes its
-    // place.
-    let day = DayviewDayInput {
-        label_lines: Vec::new(),
-        start_ms,
-        end_ms,
-        has_error: false,
+    // Geometry lives in `datum_layout::nowview` so the PWA reaches the same
+    // config from its own store (da-6h6p) instead of re-deriving it.
+    let config = nowview_config(
         fields,
-    };
-
-    let panel_width = DEFAULT_PANEL_WIDTH
-        .min((width - 2.0 * args.margin) * 0.5)
-        .max(0.0);
-
-    // Pre-compute the time-axis extent so the relative-minute tick
-    // override resolves to the same pixel space dayview will use. Mirrors
-    // the math in `dayview::compute_dayview`. Date label is suppressed
-    // (label_width = 0) so the time axis only loses the panel reservation.
-    let plot_width = (width - 2.0 * args.margin).max(0.0);
-    let time_axis_extent_for_ticks = (plot_width - panel_width).max(0.0);
-    let axis_ticks_override = Some(nowview_axis_ticks(
-        time_axis_extent_for_ticks,
-        history_minutes,
-    ));
-
-    let day_height = if args.height > 0.0 {
-        // Use the requested height as the per-day band, leaving room for
-        // axis + margins. Floor at a sensible minimum so labels stay
-        // readable.
-        (args.height - 2.0 * args.margin - args.time_axis_height).max(50.0)
-    } else {
-        DEFAULT_DAY_HEIGHT
-    };
-
-    let config = DayviewConfig {
-        days: vec![day],
-        now_ms: end_ms,
-        width,
-        height: None,
-        day_height,
-        interday_margin: 0.0,
-        time_axis_height: args.time_axis_height,
-        margin: args.margin,
-        // Date label suppressed — give all of the cross-perpendicular
-        // budget to the data area (and the panel reservation).
-        label_width: Some(0.0),
-        orientation: Orientation::Horizontal,
-        axis_ticks_override,
-        right_panel_width: panel_width,
-    };
+        end_ms,
+        &NowviewGeometry {
+            history_minutes,
+            width: args.width,
+            height: args.height,
+            margin: args.margin,
+            time_axis_height: args.time_axis_height,
+        },
+    );
 
     let layout = compute_dayview(&config);
     let panel_entries = build_panel_entries(db, end, &layout);

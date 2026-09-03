@@ -1,0 +1,16 @@
+[package]
+name = "datum-layout-wasm"
+version.workspace = true
+edition.workspace = true
+
+# `cdylib` is the browser artifact; `rlib` keeps the crate testable on the
+# host and lets datum-commands cross-check the colour helpers against its
+# own (see crates/datum-commands/src/render/wasm_parity.rs).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+datum-layout = { path = "../datum-layout" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+md-5 = { workspace = true }
