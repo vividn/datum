@@ -11,7 +11,7 @@
 // whenever the layout crates change, and commit the result.
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, statSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,4 +37,7 @@ const built = resolve(
 );
 mkdirSync(dirname(outPath), { recursive: true });
 copyFileSync(built, outPath);
+// cargo marks the module executable and copyFileSync carries that mode
+// across; without this every rebuild shows up as a mode-only diff.
+chmodSync(outPath, 0o644);
 console.log(`wrote ${outPath} (${statSync(outPath).size} bytes)`);
