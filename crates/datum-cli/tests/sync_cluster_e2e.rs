@@ -222,6 +222,7 @@ fn make_entry(field: &str, offset_secs: i64, device: &str) -> Entry {
         utc: at,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     };
     let mut e = Entry::new(
         field,

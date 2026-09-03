@@ -269,6 +269,7 @@ mod tests {
             utc: dt,
             offset_minutes: 0,
             timezone: Default::default(),
+            uncertainty: None,
         };
         Entry::new(
             field.to_string(),
@@ -289,6 +290,7 @@ mod tests {
             utc: dt,
             offset_minutes: 0,
             timezone: Default::default(),
+            uncertainty: None,
         };
         Entry::new(
             field.to_string(),
@@ -840,7 +842,7 @@ mod tests {
     #[test]
     fn dur_taken_from_leftmost_side_in_group() {
         let mut a = entry_at("body", "2026-05-11T12:00:00Z", Some(json!("vertical")));
-        a.dur = Some(Dur::Of(chrono::Duration::seconds(60)));
+        a.dur = Some(Dur::of(chrono::Duration::seconds(60)));
         let b = entry_at("body", "2026-05-11T12:00:00Z", Some(json!("sit")));
         let merged = merge_same_field_groups(vec![a, b]);
         assert_eq!(

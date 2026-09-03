@@ -88,16 +88,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `wake_time=+30`, `nextDate=+3`) can anchor against it inside
     // `handle_data_args`. We deliberately swallow build errors here —
     // an invalid `-t`/`-d` flag surfaces from the downstream
-    // `build_time_with_precision` call below (line ~410) with its full
+    // `build_time_with_uncertainty` call below (line ~410) with its full
     // error message intact; here we only want a clean base when the
     // flags parse, so `-T` and the undo early-return path keep their
     // current "no timestamp" semantics.
     let base_local = if args.time.omit_timestamp {
         None
     } else {
-        build_time_with_precision(&args)
+        build_time_with_uncertainty(&args)
             .ok()
-            .map(|(dt, _)| dt.local_time().naive_local())
+            .map(|dt| dt.local_time().naive_local())
     };
     let parsed = parse_log_args(&args, action, base_local)?;
     let ParsedLogArgs {
@@ -212,8 +212,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     let device = device_id()?;
 
     // `start foo -m` / `switch foo -m` is a momentary dot, not an open block:
-    // stamp dur=MOMENT via the occur model — `(time_start, None)` + `Dur::Moment`
-    // (NOT a `(base, base)` zero-span, which would derive `Dur::Of(PT0S)` and
+    // stamp dur=MOMENT via the occur model — `(time_start, None)` + `Dur::moment()`
+    // (NOT a `(base, base)` zero-span, which would derive `Dur::of(PT0S)` and
     // preempt the Moment, since a moment has no end). `derive_verb` then locks it
     // to `Verb::Point`. An explicit duration overrides it — `dur=` / trailing
     // positional (reserved.dur) or `--dur` (args.duration.duration) — per "set
@@ -221,7 +221,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // by default.)
     // A switch `,`-chain (`switch a -m , b`) carries a `following_state` and
     // must stay a zero-span `Verb::PointSwitch` — `derive_verb` short-circuits
-    // `Dur::Moment` to `Verb::Point` and drops the following_state, so the
+    // `Dur::moment()` to `Verb::Point` and drops the following_state, so the
     // Moment path is only for the non-chain switch (and start). That chain keeps
     // the `(base, base)` branch below.
     let moment_point = args.duration.moment
@@ -230,13 +230,15 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         && args.duration.duration.is_none()
         && reserved.following_state.is_none();
 
-    // Compute time_start, time_end, precision, and (for Action::Add) a shape
-    // override. Skipped entirely for -T — a timeless entry carries no times
-    // and no precision metadata.
-    let (time_start, time_end, base_precision) = if args.time.omit_timestamp {
-        (None, None, None)
+    // Compute time_start, time_end, and (for Action::Add) a shape override.
+    // Skipped entirely for -T — a timeless entry carries no times, and so no
+    // uncertainty either. The time's uncertainty rides on `base_time` and
+    // flows to `entry.occur_time` with it (da-b8rs); every derived time
+    // below is built with `..base_time`, so it carries too.
+    let (time_start, time_end) = if args.time.omit_timestamp {
+        (None, None)
     } else {
-        let (base_time, base_precision) = build_time_with_precision(&args)?;
+        let base_time = build_time_with_uncertainty(&args)?;
 
         // Add/Note are the timeless shape-inferring verbs. They peek for
         // `start_time=` / `end_time=` / `dur=` tokens in extra_data, strip
@@ -327,7 +329,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             (Some(base_time), None)
         };
 
-        (time_start, time_end, Some(base_precision))
+        (time_start, time_end)
     };
 
     // da-8y2q.2: Entry::new_legacy takes a storage Verb but the value is
@@ -366,9 +368,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
         entry.dur = Some(d);
     }
-    if let Some(dp) = reserved.dur_precision {
-        entry.dur_precision = Some(dp);
-    }
     if let Some(fs) = reserved.following_state {
         entry.following_state = Some(fs);
     }
@@ -384,14 +383,25 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.occur_time = Some(parse_reserved_occur_time(&t, &base)?);
     }
 
-    // da-ju71.2: stamp `Dur::Moment` ("MOMENT") to lock the entry to
+    // da-ju71.2: stamp `Dur::moment()` ("MOMENT") to lock the entry to
     // Verb::Point in `derive_verb` regardless of state shape. Two cases:
     // Action::Occur is a point by default (e.g. `occur drive .id=car
     // .role=driver` stays a point, not a switch); and `-m`/`--moment` on
     // switch/start does the same (`moment_point`), so `start foo -m` is a
     // dot rather than an open block. An explicit dur was honored above.
     if entry.dur.is_none() && (matches!(action, Action::Occur) || moment_point) {
-        entry.dur = Some(datum_core::dur::Dur::Moment);
+        entry.dur = Some(datum_core::dur::Dur::moment());
+    }
+
+    // da-b8rs: an uncertainty qualifies the thing it is about, so it is
+    // stamped after every path that can set `dur` — including the MOMENT
+    // default just above. With no duration there is nothing to qualify;
+    // say so rather than storing an orphan value nothing reads.
+    if let Some(u) = reserved.dur_uncertainty {
+        if entry.dur.is_none() {
+            anyhow::bail!("dur_uncertainty= needs a duration: pass dur= or --dur alongside it");
+        }
+        entry.set_dur_uncertainty(Some(u));
     }
 
     // da-8y2q.2: Action-driven state canonicalization (moved out of
@@ -425,14 +435,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
 
-    // Persist the effective precision derived from the -q stack and any
-    // explicit `±N` uncertainty. v=20 storage: the only precision column
-    // on the row is `occur_time_precision` (ISO-8601). Stamp it from the
-    // builder result so date-only events (`-D`, bare `-d`/`-y*`) and
-    // explicit `±N` uncertainties survive the live insert path —
-    // previously only retime + import wrote this column.
-    if let Some(precision) = base_precision {
-        entry.occur_time_precision = precision.to_iso_precision();
+    // An explicit `occur_time_uncertainty=` key overrides whatever the -q
+    // stack or a `±N` suffix put on the time. Same rule as `dur_uncertainty=`
+    // above: a timeless entry has no time to qualify.
+    if let Some(u) = reserved.occur_time_uncertainty {
+        if entry.occur_time.is_none() {
+            anyhow::bail!(
+                "occur_time_uncertainty= needs a time: a timeless entry has no instant to qualify"
+            );
+        }
+        entry.set_occur_uncertainty(Some(u));
     }
 
     if args.no_metadata {
@@ -1404,7 +1416,12 @@ pub(crate) struct ReservedColumns {
     pub(crate) field: Option<String>,
     pub(crate) state: Option<JsonValue>,
     pub(crate) dur: Option<datum_core::dur::Dur>,
-    pub(crate) dur_precision: Option<String>,
+    /// `dur_uncertainty=` — how precisely `dur` is known, as an ISO-8601
+    /// ± radius. Lands inside `entry.dur` (da-b8rs), so it needs a `dur`
+    /// to attach to.
+    pub(crate) dur_uncertainty: Option<String>,
+    /// `occur_time_uncertainty=` — the same, for `occur_time`.
+    pub(crate) occur_time_uncertainty: Option<String>,
     pub(crate) following_state: Option<JsonValue>,
     pub(crate) occur_time: Option<JsonValue>,
 }
@@ -1471,12 +1488,19 @@ pub(crate) fn extract_reserved_columns(
             );
         }
     }
-    if let Some(v) = obj.remove("dur_precision") {
-        // `dur_precision=null` is a sentinel for "clear precision".
+    if let Some(v) = obj.remove("dur_uncertainty") {
+        // `dur_uncertainty=null` is a sentinel for "not stated".
         if v.is_null() || matches!(v.as_str(), Some("null")) {
-            // intentionally drop — leave entry.dur_precision as None.
+            // intentionally drop — leave the uncertainty unstated.
         } else {
-            out.dur_precision = Some(json_to_raw_token(&v));
+            out.dur_uncertainty = Some(json_to_raw_token(&v));
+        }
+    }
+    if let Some(v) = obj.remove("occur_time_uncertainty") {
+        if v.is_null() || matches!(v.as_str(), Some("null")) {
+            // intentionally drop — leave the uncertainty unstated.
+        } else {
+            out.occur_time_uncertainty = Some(json_to_raw_token(&v));
         }
     }
     if let Some(v) = obj.remove("following_state") {
@@ -1653,7 +1677,7 @@ fn looks_like_signed_duration(s: &str) -> bool {
         .any(|c| c.is_ascii_alphabetic() && c != 'e' && c != 'E')
 }
 
-/// Build the log entry's base time together with its effective precision
+/// Build the log entry's base time with its effective uncertainty on it
 /// (implicit from `-q*` stacks or explicit from a `±N` uncertainty suffix).
 /// Reject time-specifying flags when the caller passed `-T/--no-timestamp`.
 /// A timeless entry has no place for time offsets or duration — silently
@@ -1688,9 +1712,7 @@ fn check_no_time_flags(args: &LogArgs) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn build_time_with_precision(
-    args: &LogArgs,
-) -> Result<(DatumTime, datum_core::time::Uncertainty)> {
+pub(crate) fn build_time_with_uncertainty(args: &LogArgs) -> Result<DatumTime> {
     let tz_name = match args.time.timezone.as_deref() {
         Some(spec) => Some(
             resolve_timezone(spec)
@@ -1702,7 +1724,7 @@ pub(crate) fn build_time_with_precision(
     let mut builder = TimeBuilder::now()
         .with_yesterday_count(args.time.yesterday as i64)
         .with_quick_count(args.time.quick as i64)
-        .with_quick_precision(args.time.quick)
+        .with_quick_uncertainty(args.time.quick)
         .with_timezone(tz_name)
         .with_full_day(args.time.full_day);
 
@@ -1715,7 +1737,7 @@ pub(crate) fn build_time_with_precision(
         builder = builder.with_time_arg(ta);
     }
 
-    Ok(builder.build_with_precision())
+    Ok(builder.build_with_uncertainty())
 }
 
 #[cfg(test)]
@@ -1757,7 +1779,7 @@ mod tests {
         let mut args = LogArgs::with_field("sleep");
         args.duration.duration = Some("8h".to_string());
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
-        let (base, _precision) = build_time_with_precision(&args).unwrap();
+        let base = build_time_with_uncertainty(&args).unwrap();
         let dur = parse_duration("8h").unwrap();
         let end_utc = base.utc + dur;
         let diff_secs = (end_utc - base.utc).num_seconds();
@@ -1790,6 +1812,7 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 5, 21, 13, 31, 12).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         // Post-infer normalized form.
         let got = parse_add_time_value(&JsonValue::String("11:00:00".into()), &base).unwrap();
@@ -1814,6 +1837,7 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 5, 21, 13, 31, 12).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let got = parse_add_time_value(&JsonValue::String("-5m".into()), &base).unwrap();
         assert_eq!(

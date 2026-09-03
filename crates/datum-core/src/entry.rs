@@ -73,10 +73,10 @@ impl std::str::FromStr for Verb {
     }
 }
 
-/// Granularity at which a timestamp is meaningful — re-exported from
-/// `datum-parse` so `entry::PrecisionUnit` remains a valid path. Definition
-/// lives in `datum_parse::time::precision`.
-pub use datum_parse::PrecisionUnit;
+/// Granularity at which an uncertainty is meaningful — re-exported from
+/// `datum-parse` so `entry::UncertaintyUnit` remains a valid path.
+/// Definition lives in `datum_parse::time::uncertainty`.
+pub use datum_parse::UncertaintyUnit;
 
 fn deserialize_optional_nonempty_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
@@ -190,18 +190,15 @@ pub struct Entry {
     #[serde(default)]
     pub state: Option<JsonValue>,
     /// Duration intent (da-ju71.3). `None` = column NULL (legacy point /
-    /// no-duration shape; new writes default to `Some(Dur::Moment)` for
-    /// occur). `Some(Dur::Of(PT0S))` = explicit zero span.
+    /// no-duration shape; new writes default to `Some(Dur::moment())` for
+    /// occur). A zero span (`PT0S`) is an explicit zero.
     /// Serializes/deserializes as the storage string (`"MOMENT"`,
     /// `"UNKNOWN"`, or an ISO-8601 duration like `"PT30M"`) so the JSON
-    /// wire format and SQL TEXT column round-trip unchanged.
+    /// wire format and SQL TEXT column round-trip unchanged. The duration's
+    /// uncertainty rides inside it (`Dur::uncertainty`), not in a sibling
+    /// field here — see [`Entry::dur_uncertainty`].
     #[serde(default)]
     pub dur: Option<Dur>,
-    /// ISO-8601 duration string capturing the granularity at which `dur`
-    /// is meaningful (e.g. `"PT1M"` for minute-resolution). `None` =
-    /// unspecified.
-    #[serde(default)]
-    pub dur_precision: Option<String>,
     /// Trailing-edge state for switch-style verbs. Only meaningful when
     /// `dur` is set (the SQL CHECK enforces this).
     #[serde(default)]
@@ -212,13 +209,10 @@ pub struct Entry {
     // --- When ---
     /// When the event occurred. Required at the schema level (occur_time
     /// is NOT NULL). Optional in Rust to keep the construction surface
-    /// uniform — the insert path errors on None.
+    /// uniform — the insert path errors on None. The time's uncertainty
+    /// rides inside it (`DatumTime::uncertainty`), not in a sibling field
+    /// here — see [`Entry::occur_uncertainty`].
     pub occur_time: Option<DatumTime>,
-    /// Single ISO-8601 duration string (e.g. "PT1S", "P1D") capturing
-    /// the granularity at which `occur_time` is meaningful. `None` =
-    /// exact second.
-    #[serde(default)]
-    pub occur_time_precision: Option<String>,
 
     // --- Where ---
     pub lat: Option<f64>,
@@ -338,11 +332,9 @@ impl Entry {
             verb,
             state,
             dur,
-            dur_precision: None,
             following_state: None,
             data,
             occur_time,
-            occur_time_precision: None,
             lat: None,
             lon: None,
             location: None,
@@ -378,11 +370,45 @@ impl Entry {
         let dur = match (start_time.as_ref(), end_time.as_ref()) {
             (Some(s), Some(e)) => {
                 let secs = (e.utc - s.utc).num_seconds().max(0);
-                Some(Dur::Of(chrono::Duration::seconds(secs)))
+                Some(Dur::of(chrono::Duration::seconds(secs)))
             }
             _ => None,
         };
         Self::new(field, verb, value, data, start_time, dur, device_id)
+    }
+
+    /// How precisely `occur_time` is known, as an ISO-8601 ± radius.
+    ///
+    /// `None` when the entry is timeless *or* when the uncertainty is
+    /// unknown — the two are not distinguished here because a time that
+    /// does not exist cannot be known to any precision. Reads the value off
+    /// [`DatumTime::uncertainty`], which is where it lives since da-b8rs;
+    /// the row column is `entries.occur_time_uncertainty`.
+    pub fn occur_uncertainty(&self) -> Option<&str> {
+        self.occur_time.as_ref()?.uncertainty.as_deref()
+    }
+
+    /// Set (or clear) the uncertainty of `occur_time`. A no-op on a
+    /// timeless entry: there is no time for it to qualify.
+    pub fn set_occur_uncertainty(&mut self, iso: Option<String>) {
+        if let Some(t) = self.occur_time.as_mut() {
+            t.uncertainty = iso;
+        }
+    }
+
+    /// How precisely `dur` is known, as an ISO-8601 ± radius. `None` when
+    /// the entry has no duration or the uncertainty is unknown. Stored in
+    /// `entries.dur_uncertainty`.
+    pub fn dur_uncertainty(&self) -> Option<&str> {
+        self.dur.as_ref()?.uncertainty.as_deref()
+    }
+
+    /// Set (or clear) the uncertainty of `dur`. A no-op when the entry has
+    /// no duration.
+    pub fn set_dur_uncertainty(&mut self, iso: Option<String>) {
+        if let Some(d) = self.dur.as_mut() {
+            d.uncertainty = iso;
+        }
     }
 
     /// Short hid — first [`SHORT_HID_LEN`] chars of the stored hid.
@@ -391,7 +417,7 @@ impl Entry {
     }
 
     /// Duration in seconds. Returns `None` for entries without a span
-    /// (`None`, `Dur::Moment`, `Dur::Unknown`).
+    /// (`None`, moment, unknown).
     pub fn duration_seconds(&self) -> Option<i64> {
         self.dur.as_ref()?.as_seconds()
     }
@@ -420,8 +446,7 @@ impl Entry {
     pub fn shape(&self) -> EntryShape {
         match self.dur.as_ref() {
             None => EntryShape::Point,
-            Some(d) if d.is_zero_span() => EntryShape::Point,
-            Some(Dur::Moment) | Some(Dur::Unknown) => EntryShape::Point,
+            Some(d) if d.is_zero_span() || d.is_moment() || d.is_unknown() => EntryShape::Point,
             Some(_) => EntryShape::Block,
         }
     }
@@ -472,9 +497,18 @@ impl Entry {
 /// annotations around it. In: `field`, `occur_time` (UTC instant only),
 /// `dur`, `state`, `data`, `following_state`, and whether the row is
 /// deleted. Out: `lat`/`lon`/`location`, `occur_time_offset`/`_tz` (the
-/// instant is the fact, the offset is how it was rendered),
-/// `occur_time_precision`/`dur_precision`, `user_asserted_last_state`,
-/// `extra_metadata`, and every identity/provenance column.
+/// instant is the fact, the offset is how it was rendered), the two
+/// uncertainties, `user_asserted_last_state`, `extra_metadata`, and every
+/// identity/provenance column.
+///
+/// **Uncertainty is out on purpose (da-b8rs), not by oversight.** Two
+/// entries that differ only in how precisely the time or duration is known
+/// describe the *same event*: `coffee ±5m` and `coffee ±1m` at the same
+/// instant are one coffee. Hashing the uncertainty would split them into
+/// two rows that never dedup and never converge. Where two devices really
+/// do disagree, the LWW merge surfaces it as a conflict for the user to
+/// settle — which is the outcome vividn asked for. Do not "fix" this by
+/// adding uncertainty to `parts` below.
 ///
 /// `following_state` closes a second hole as a side effect: `verb` is
 /// derived from `(state, dur, following_state)`, so with all three hashed
@@ -716,7 +750,7 @@ mod tests {
             Some(serde_json::json!("writing")),
             None,
             Some(fixed_time()),
-            Some(Dur::Of(chrono::Duration::minutes(30))),
+            Some(Dur::of(chrono::Duration::minutes(30))),
             "d",
         );
         e.content_hash = e.expected_content_hash();

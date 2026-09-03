@@ -359,7 +359,7 @@ fn seed_mood_field_spec(db: &Db) {
 e2e_case!(fast, verb_occur_direct: CaseSpec {
     argv: "occur coffee",
     setup: no_setup,
-    // `Action::Occur` with no explicit dur emits `Dur::Moment`
+    // `Action::Occur` with no explicit dur emits `Dur::moment()`
     // ("MOMENT") so the truth table classifies as `Verb::Point`.
     expected: rows(vec![row("coffee").no_state().dur("MOMENT")]),
     freeze_time: Some("09:00"),

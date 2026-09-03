@@ -75,7 +75,7 @@ impl<'a> InterpolationContext<'a> {
             dur: entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
             following_state: entry.following_state.as_ref(),
             occur_time: entry.occur_time.as_ref(),
-            occur_time_precision: entry.occur_time_precision.as_deref(),
+            occur_time_precision: entry.occur_uncertainty(),
             create_time: Some(&entry.create_time),
             modify_time: Some(&entry.modify_time),
         }

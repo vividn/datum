@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 33;
+pub const CURRENT_SCHEMA_VERSION: u32 = 34;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -266,7 +266,54 @@ pub const MIGRATIONS: &[Migration] = &[
         apply: m32_to_33_content_hash_v33,
         down: down_33_to_32_content_hash_v33,
     },
+    Migration {
+        from: 33,
+        to: 34,
+        summary: "entries: rename occur_time_precision -> occur_time_uncertainty and dur_precision -> dur_uncertainty — one name for one concept, now carried on DatumTime/Dur rather than in loose sibling fields (da-b8rs)",
+        apply: m33_to_34_precision_to_uncertainty,
+        down: down_34_to_33_precision_to_uncertainty,
+    },
 ];
+
+/// da-b8rs: `precision` and `uncertainty` were two names for one thing,
+/// split across a crate boundary, which is why nobody could tell whether
+/// uncertainty reached storage. It did — under the other name. Rename both
+/// columns so the store says what the code says.
+///
+/// Pure rename: no data is read, rewritten or dropped, and the values keep
+/// their meaning (an ISO-8601 ± radius, NULL = unknown). Guarded per column
+/// so a re-run — or a fresh DB already laid down from `schema.sql` — is a
+/// no-op.
+///
+/// The risk here is not SQL, it is rollout: `Entry` crosses the sync wire as
+/// serde JSON, no struct sets `deny_unknown_fields`, and so a peer that does
+/// not know a field silently drops it instead of erroring. Upgrade every
+/// device before any device writes the new shape; `ops::parse_payload` reads
+/// the old names for the transition window.
+fn m33_to_34_precision_to_uncertainty(conn: &Connection) -> Result<()> {
+    if has_column(conn, "entries", "occur_time_precision")? {
+        conn.execute_batch(
+            "ALTER TABLE entries RENAME COLUMN occur_time_precision TO occur_time_uncertainty;",
+        )?;
+    }
+    if has_column(conn, "entries", "dur_precision")? {
+        conn.execute_batch("ALTER TABLE entries RENAME COLUMN dur_precision TO dur_uncertainty;")?;
+    }
+    Ok(())
+}
+
+/// Reverse 34→33 — restore the pre-da-b8rs column names. Lossless.
+fn down_34_to_33_precision_to_uncertainty(conn: &Connection) -> Result<()> {
+    if has_column(conn, "entries", "occur_time_uncertainty")? {
+        conn.execute_batch(
+            "ALTER TABLE entries RENAME COLUMN occur_time_uncertainty TO occur_time_precision;",
+        )?;
+    }
+    if has_column(conn, "entries", "dur_uncertainty")? {
+        conn.execute_batch("ALTER TABLE entries RENAME COLUMN dur_uncertainty TO dur_precision;")?;
+    }
+    Ok(())
+}
 
 /// SQL expression deriving epoch-ms from the RFC3339 `modify_time` string.
 /// Kept in one place so the generated column (migration + schema.sql) and any
@@ -533,8 +580,25 @@ fn rehash_all_entries(
     if !has_entries {
         return Ok(());
     }
+    // The live row mapper reads *today's* column names, but this helper
+    // runs mid-walk, against whatever shape the schema has at that step.
+    // da-b8rs renamed the two uncertainty columns at v34, so a v32 DB
+    // being upgraded still calls them `*_precision` here. Alias them
+    // forward for the read; any future rename of a mapped column has to
+    // extend this list or the rehash breaks on real upgrades.
+    let mut select = String::from("SELECT *");
+    for (old, new) in [
+        ("occur_time_precision", "occur_time_uncertainty"),
+        ("dur_precision", "dur_uncertainty"),
+    ] {
+        if !has_column(conn, "entries", new)? && has_column(conn, "entries", old)? {
+            select.push_str(&format!(", {old} AS {new}"));
+        }
+    }
+    select.push_str(" FROM entries");
+
     let rows: Vec<(String, String)> = {
-        let mut stmt = conn.prepare("SELECT * FROM entries")?;
+        let mut stmt = conn.prepare(&select)?;
         let mapped = stmt.query_map([], |row| {
             let entry = crate::db::row_to_entry_public(row)?;
             Ok((entry.hid.to_string(), hash_of(&entry)))
@@ -3606,7 +3670,7 @@ mod tests {
             Some(serde_json::json!("writing")),
             None,
             Some(at("2026-01-02T09:00:00Z")),
-            Some(crate::dur::Dur::Of(chrono::Duration::minutes(30))),
+            Some(crate::dur::Dur::of(chrono::Duration::minutes(30))),
             "dev",
         );
         db.insert_entry(&block).unwrap();
@@ -3617,7 +3681,7 @@ mod tests {
             Some(serde_json::json!("writing")),
             None,
             Some(at("2026-01-02T11:00:00Z")),
-            Some(crate::dur::Dur::Of(chrono::Duration::minutes(30))),
+            Some(crate::dur::Dur::of(chrono::Duration::minutes(30))),
             "dev",
         );
         block_switch.following_state = Some(serde_json::json!("resting"));
@@ -3638,6 +3702,23 @@ mod tests {
         db
     }
 
+    /// Read every row through the live `Entry` mapper while the schema is
+    /// still pre-v34, where the two uncertainty columns carry their
+    /// `*_precision` names. Same aliasing `rehash_all_entries` does, and
+    /// for the same reason: the mapper speaks today's column names, a
+    /// mid-walk schema does not (da-b8rs).
+    fn entries_pre_v34(db: &Db) -> Vec<crate::entry::Entry> {
+        let conn = db.conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT *, occur_time_precision AS occur_time_uncertainty, \
+                 dur_precision AS dur_uncertainty FROM entries",
+            )
+            .unwrap();
+        let rows = stmt.query_map([], crate::db::row_to_entry_public).unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    }
+
     /// da-4vyw acceptance: a v32 database opens, migrates to v33, and every
     /// row's stored `content_hash` equals its `expected_content_hash`
     /// afterwards — the same predicate `datum check` uses, so a migrated DB
@@ -3651,14 +3732,12 @@ mod tests {
         // database written by the previous release.
         migrate_down_to(db.conn(), 32).unwrap();
         assert_eq!(read_schema_version(db.conn()).unwrap(), Some(32));
-        let stale: Vec<String> = db
-            .list_including_deleted()
-            .unwrap()
+        let stale: Vec<String> = entries_pre_v34(&db)
             .iter()
             .map(|e| e.content_hash.clone())
             .collect();
         assert_eq!(stale.len(), 4);
-        for entry in db.list_including_deleted().unwrap() {
+        for entry in entries_pre_v34(&db) {
             assert_ne!(
                 entry.content_hash,
                 entry.expected_content_hash(),

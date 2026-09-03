@@ -590,8 +590,12 @@ independently two different hashes for the same outcome.
 Deliberately **outside** the hash: `lat` / `lon` / `location`;
 `occur_time_offset` / `occur_time_tz` (the instant is the fact, the offset
 is how it was rendered — two devices in different zones logging one moment
-should dedupe); `occur_time_precision` / `dur_precision`;
-`user_asserted_last_state`; `extra_metadata`; and every identity or
+should dedupe); `occur_time_uncertainty` / `dur_uncertainty` — two entries
+that differ only in how precisely a time or duration is known record the
+*same event*, so they must dedup, and a genuine disagreement between
+devices is surfaced by the merge as a conflict rather than silently
+forked into two rows (da-b8rs); `user_asserted_last_state`;
+`extra_metadata`; and every identity or
 provenance column (`hid`, `slug`, `create_time`, `modify_time`,
 `device_id`, `raw_input`, `alias_chain`, `parser_version`, the two
 `*_structure` columns). `verb` is outside it too but is fully determined by
@@ -624,7 +628,9 @@ Segment by segment:
    (`2026-03-16T09:15:00+00:00`, `2026-03-16T09:15:30.500+00:00`). Empty
    for a timeless entry.
 3. **`dur`** — the storage form: an ISO-8601 span (`PT30M`, `P1D`) or the
-   sentinel `MOMENT` / `UNKNOWN`. Empty when unset.
+   sentinel `MOMENT` / `UNKNOWN`. Empty when unset. The duration's
+   uncertainty is **not** part of this segment — see below — so the
+   combined `"PT30M±PT5M"` form never reaches the preimage.
 4. **`state`**, 5. **`data`**, 6. **`following_state`** — compact JSON with
    **no insignificant whitespace** and **object keys sorted ascending by
    their UTF-8 bytes at every level of nesting** (`srcLang` < `tags` <
@@ -728,6 +734,32 @@ The plaintext is the `Changeset` bytes:
 
 Tombstones ride the same channel: entries with `deleted_at` set to a
 non-null ISO 8601 UTC string are soft-deletes.
+
+#### Uncertainty on the wire, and the transition window (da-b8rs)
+
+An entry's two uncertainties — how precisely `occur_time` and `dur` are
+known — live **on the values they describe**: `occur_time.uncertainty` (a
+nested key on the time object) and, in memory, on `dur`. Before da-b8rs
+they were the entry's own top-level `occur_time_precision` and
+`dur_precision` keys.
+
+**A field rename is a rollout problem, not a schema problem.** No struct
+here sets `deny_unknown_fields`, so a peer that does not know a key drops
+it *silently* — no error, no warning, on exactly the axis being renamed.
+For the transition window the client therefore writes **both** shapes and
+reads either:
+
+- `occur_time.uncertainty` is mirrored to a top-level
+  `occur_time_precision`. A pre-da-b8rs peer ignores the nested key and
+  reads the mirror.
+- `dur` goes out **bare** (`"PT1H30M"`) with its uncertainty beside it in
+  `dur_precision`. It is split rather than mirrored because an old peer
+  parses `dur` strictly and would reject the whole changeset on the
+  combined `"PT1H30M±PT5M"` form.
+
+A reader folds whichever shape it finds back onto the time and the
+duration, preferring the new keys when both are present. Upgrade every
+device before dropping the mirror.
 
 A future revision MAY swap the JSON body for cr-sqlite's native binary
 changeset format. The magic prefix is the switch: consumers detect the

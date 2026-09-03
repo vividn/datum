@@ -18,7 +18,7 @@ use crate::error::{DatumError, Result};
 /// entries with `state=None` are valid (the canonical "occur with no
 /// state" shape, locked in by `dur == "MOMENT"`).
 ///
-/// Moment rule (da-ju71.2): when `dur` parses as `Dur::Moment`, the
+/// Moment rule (da-ju71.2): when `dur` parses as `Dur::moment()`, the
 /// verb is `Verb::Point` regardless of state shape. This locks occur
 /// entries to Point even when they carry structured state data.
 ///
@@ -33,12 +33,13 @@ pub fn derive_verb(
     dur: Option<&Dur>,
     following_state: Option<JsonValue>,
 ) -> Result<(Verb, Option<JsonValue>)> {
-    if matches!(dur, Some(Dur::Moment)) {
+    if dur.is_some_and(Dur::is_moment) {
         return Ok((Verb::Point, state));
     }
 
     let dur_kind = match dur {
-        None | Some(Dur::Unknown) => DurKind::None,
+        None => DurKind::None,
+        Some(d) if d.is_unknown() => DurKind::None,
         Some(d) => classify_dur(d)?,
     };
 
@@ -81,9 +82,9 @@ enum DurKind {
 }
 
 fn classify_dur(d: &Dur) -> Result<DurKind> {
-    let secs = match d {
-        Dur::Moment | Dur::Unknown => return Ok(DurKind::None),
-        Dur::Of(span) => span.num_seconds(),
+    let Some(secs) = d.as_seconds() else {
+        // Moment and Unknown are not measurements.
+        return Ok(DurKind::None);
     };
     if secs < 0 {
         return Err(DatumError::Other(format!(
@@ -264,7 +265,7 @@ mod tests {
         assert_eq!(s, Some(JsonValue::Null));
     }
 
-    // ─── Dur::Moment locks Verb::Point (da-ju71.2) ───────────────────
+    // ─── Dur::moment() locks Verb::Point (da-ju71.2) ───────────────────
     // `dur == "MOMENT"` overrides every state-driven path: a Moment
     // entry is always Point, whether state is null, a bare value, or a
     // structured object. State passes through verbatim — no promotion.

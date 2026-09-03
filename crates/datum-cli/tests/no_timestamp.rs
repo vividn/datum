@@ -42,7 +42,7 @@ fn occur_minus_t_is_timeless_point() {
             .map(datum_core::dur::Dur::to_storage_string)
             .as_deref(),
         Some("MOMENT"),
-        "occur emits Dur::Moment"
+        "occur emits Dur::moment()"
     );
 }
 

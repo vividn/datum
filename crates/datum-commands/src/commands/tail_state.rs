@@ -464,8 +464,9 @@ mod tests {
                 utc: occur,
                 offset_minutes: 0,
                 timezone: Some("UTC".into()),
+                uncertainty: None,
             }),
-            Some(Dur::Of(Duration::minutes(dur_mins))),
+            Some(Dur::of(Duration::minutes(dur_mins))),
             "dev",
         );
         e.following_state = Some(json!(following));

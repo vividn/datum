@@ -79,6 +79,7 @@ fn make_entry(field: &str, offset_secs: i64, device: &str) -> Entry {
         utc: at,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     };
     let mut e = Entry::new(
         field,
@@ -519,6 +520,7 @@ fn pull_with_conflict_queues_to_conflict_table() {
             utc: base,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         }),
         None,
         "dev-1",
@@ -539,6 +541,7 @@ fn pull_with_conflict_queues_to_conflict_table() {
             utc: peer_at,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         }),
         None,
         "dev-peer",

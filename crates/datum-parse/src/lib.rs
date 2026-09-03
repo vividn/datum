@@ -4,7 +4,7 @@
 //!
 //! This crate owns:
 //! * Time parsing ([`time`]) — date/time/duration string parsers,
-//!   uncertainty, `DatumTime`, `PrecisionUnit`.
+//!   uncertainty, `DatumTime`, `UncertaintyUnit`.
 //! * Argv parsing primitives ([`input`]) — port of datum's
 //!   `src/input/*.ts` (flexiblePositional, consolidateKeys, dataArgs, …).
 //! * The bespoke CLI parser ([`parse`]) and its intent IR ([`cli`]):
@@ -42,4 +42,4 @@ pub use cli::{Cli, Command};
 pub use error::{ParseError, Result};
 pub use input::{consolidate_keys, flexible_positional, FlexibleTarget};
 pub use parse::{parse_argv, parse_argv_string};
-pub use time::{DateArg, DatumTime, PrecisionUnit, TimeArg, TimeBuilder, Uncertainty};
+pub use time::{DateArg, DatumTime, TimeArg, TimeBuilder, Uncertainty, UncertaintyUnit};

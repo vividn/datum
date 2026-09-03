@@ -87,13 +87,13 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Daydumb today:** `log_entry(Action::Occur, ...)` using `LogArgs`.
   Stores `occur_time` only (no `dur`). State is left null; `derive_verb`
   classifies (state=None, dur=None, fs=None) → `Verb::Point`. `DatumTime
-  { utc, offset, tz, precision }` captures uncertainty (d2). The v=20
-  schema's `occur_time_precision` column carries an ISO-8601 duration
+  { utc, offset, tz, uncertainty }` captures uncertainty (d2). The v=20
+  schema's `occur_time_uncertainty` column carries an ISO-8601 duration
   (e.g. `PT5M` for ±5 minutes), replacing the v=19 (seconds, unit) pair.
 - **Missing in daydumb:** `--no-timestamp` (`-T`) flag has no surface
   equivalent — omitting a time always produces `now()` in daydumb.
-- **Divergences:** daydumb tracks **precision** (day / minute / second)
-  as an explicit `Uncertainty` column; datum stores precision implicitly
+- **Divergences:** daydumb tracks **uncertainty** (day / minute / second)
+  as an explicit column; datum stores precision implicitly
   via truncation.
 - **Tests in datum not in daydumb:** 9 tests (timezone round-trip,
   offset notation, occurTime storage, LastState dedup).

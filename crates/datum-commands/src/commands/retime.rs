@@ -168,23 +168,27 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // Path 3b — absolute target. No time-args still computes a target
     // (TimeBuilder::now() with nothing applied = exact "now"), which
     // is the default "set to now" path the bead asks for.
-    let (new_time, precision) = build_absolute(&args)?;
+    let new_time = build_absolute(&args)?;
     let mut n = 0;
     for filter in &filters {
-        n += db.set_start_time_with_precision(filter, &new_time, &precision)?;
+        n += db.set_start_time(filter, &new_time)?;
     }
     // da-r8xj: the entry was just set to a time the user expressed in
     // local terms — echo it back through the shared local formatter, not
     // raw UTC.
     println!(
-        "✓ Retimed {n} → {} (±{}{})",
+        "✓ Retimed {n} → {}{}",
         crate::render::action::format_timestamp(
             &new_time,
             &crate::render::action::now_local(),
             None
         ),
-        precision.seconds,
-        if precision.seconds == 0 { "" } else { "s" },
+        // The uncertainty travels on the time now, so echo it only when the
+        // user actually stated one — an absent value is "unknown", not "0".
+        match new_time.uncertainty.as_deref() {
+            Some(u) => format!(" (±{u})"),
+            None => String::new(),
+        },
     );
     Ok(())
 }
@@ -228,14 +232,14 @@ fn relative_delta(time: &datum_parse::input::TimeArgs) -> Result<chrono::Duratio
     Ok(delta)
 }
 
-/// Build the absolute target time from `args.time`. `args.time` with
-/// no flags set yields "now" with exact precision, which is the
-/// default-to-now path.
-fn build_absolute(args: &RetimeArgs) -> Result<(DatumTime, datum_core::time::Uncertainty)> {
+/// Build the absolute target time from `args.time`, with its uncertainty
+/// already on it. `args.time` with no flags set yields "now" with no stated
+/// uncertainty, which is the default-to-now path.
+fn build_absolute(args: &RetimeArgs) -> Result<DatumTime> {
     let mut builder = TimeBuilder::now()
         .with_yesterday_count(args.time.yesterday as i64)
         .with_quick_count(args.time.quick as i64)
-        .with_quick_precision(args.time.quick)
+        .with_quick_uncertainty(args.time.quick)
         .with_full_day(args.time.full_day);
     if let Some(d) = &args.time.date {
         builder = builder.with_date_arg(parse_date_arg(d, TimeCtx::now())?);
@@ -248,7 +252,7 @@ fn build_absolute(args: &RetimeArgs) -> Result<(DatumTime, datum_core::time::Unc
             .map_err(|e| anyhow::anyhow!("Invalid -z/--timezone value '{tz}': {e}"))?;
         builder = builder.with_timezone(Some(resolved));
     }
-    Ok(builder.build_with_precision())
+    Ok(builder.build_with_uncertainty())
 }
 
 fn report_shift(n: usize, offset: chrono::Duration) {

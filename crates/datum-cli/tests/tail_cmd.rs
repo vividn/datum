@@ -30,6 +30,7 @@ fn t_at(mins: i64) -> DatumTime {
         utc: anchor() + Duration::minutes(mins),
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     }
 }
 
@@ -533,6 +534,7 @@ fn t12_t_now_excludes_future() {
             utc: future_utc,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         }),
         None,
         "d1",
@@ -589,6 +591,7 @@ fn t14_timezone_aware_day_window() {
         utc: "2024-03-15T22:00:00Z".parse().unwrap(),
         offset_minutes: 13 * 60,
         timezone: Some("Pacific/Auckland".to_string()),
+        uncertainty: None,
     };
     let e = Entry::new("a", Verb::Point, Some(json!(1)), None, Some(t), None, "d1");
     db.insert_entry(&e).unwrap();
@@ -789,6 +792,7 @@ fn tail_z_flag_shifts_day_window_to_supplied_zone() {
         utc: "2024-03-15T22:00:00Z".parse().unwrap(),
         offset_minutes: 13 * 60,
         timezone: Some("Pacific/Auckland".to_string()),
+        uncertainty: None,
     };
     let e = Entry::new("a", Verb::Point, Some(json!(1)), None, Some(t), None, "d1");
     db.insert_entry(&e).unwrap();

@@ -43,6 +43,7 @@ fn fixed_time(h: u32, m: u32, s: u32) -> DatumTime {
         utc,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     }
 }
 
@@ -52,6 +53,7 @@ fn future_time(h: u32, m: u32) -> DatumTime {
         utc,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     }
 }
 
@@ -598,7 +600,7 @@ fn future_timestamp_is_underlined() {
     );
 }
 
-/// da-5uph: an entry with `occur_time_precision = P1D` is a date-only
+/// da-5uph: an entry with `occur_time_uncertainty = P1D` is a date-only
 /// row. `format_info_line` must lead with the bare local date — no
 /// `HH:MM:SS`, no zone offset, no relative-day prefix wrapping the
 /// clock — so the user sees what they logged, not a synthetic
@@ -613,7 +615,7 @@ fn p1d_info_line_is_date_only() {
         Some(fixed_time(0, 0, 0)),
         None,
     );
-    e.occur_time_precision = Some("P1D".to_string());
+    e.set_occur_uncertainty(Some("P1D".to_string()));
     let ctx = RenderContext::default();
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(
@@ -627,7 +629,7 @@ fn p1d_info_line_is_date_only() {
     assert!(out.contains(" birthday "), "field badge present: {out:?}");
 }
 
-/// da-5uph: a row without `occur_time_precision` (i.e. NULL → exact-
+/// da-5uph: a row without `occur_time_uncertainty` (i.e. NULL → exact-
 /// second) keeps the full `HH:MM:SS` + offset rendering — the new
 /// behaviour is scoped to P1D only.
 #[test]

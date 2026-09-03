@@ -441,6 +441,9 @@ mod tests {
             utc: utc("2024-06-15T12:00:00Z"),
             offset_minutes: 330,
             timezone: None,
+            // da-b8rs moved uncertainty onto the value it describes; this test
+            // is about zone resolution and asserts nothing about it.
+            uncertainty: None,
         };
         assert_eq!(
             Zone::of(&unnamed).unwrap(),

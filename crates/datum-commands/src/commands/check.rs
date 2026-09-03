@@ -1591,6 +1591,7 @@ mod tests {
             utc,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         }
     }
 
@@ -1697,6 +1698,7 @@ mod tests {
             utc: t_at("2024-01-15T12:00:00+00:00").utc,
             offset_minutes: 60,
             timezone: None,
+            uncertainty: None,
         };
         let entry = Entry::new_legacy("work", Verb::Switch, None, None, Some(occur), None, "d1");
         db.insert_entry(&entry).unwrap();

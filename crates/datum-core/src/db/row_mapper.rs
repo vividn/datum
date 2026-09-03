@@ -33,9 +33,13 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         .get::<_, Option<String>>("state")?
         .and_then(|s| serde_json::from_str(&s).ok());
 
+    // The two uncertainties are stored beside their subject, not inside
+    // it, so they are read here and folded onto `Dur` / `DatumTime` — the
+    // types that own them (da-b8rs).
     let dur: Option<Dur> = row
         .get::<_, Option<String>>("dur")?
-        .and_then(|s| Dur::parse(&s));
+        .and_then(|s| Dur::parse(&s))
+        .map(|d| d.with_uncertainty(row.get("dur_uncertainty").ok().flatten()));
     let following_state: Option<JsonValue> = row
         .get::<_, Option<String>>("following_state")?
         .and_then(|s| serde_json::from_str(&s).ok());
@@ -48,9 +52,8 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         row.get("occur_time")?,
         row.get("occur_time_offset")?,
         row.get("occur_time_tz")?,
+        row.get("occur_time_uncertainty")?,
     );
-    let occur_time_precision: Option<String> = row.get("occur_time_precision")?;
-    let dur_precision: Option<String> = row.get("dur_precision")?;
 
     let create_time: DateTime<Utc> =
         row.get::<_, String>("create_time")?
@@ -87,11 +90,9 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         verb,
         state,
         dur,
-        dur_precision,
         following_state,
         data,
         occur_time,
-        occur_time_precision,
         lat: row.get("lat")?,
         lon: row.get("lon")?,
         location: row.get("location")?,
@@ -119,6 +120,7 @@ pub(super) fn build_datum_time(
     utc_str: Option<String>,
     offset: Option<i32>,
     tz: Option<String>,
+    uncertainty: Option<String>,
 ) -> Option<DatumTime> {
     let utc_str = utc_str?;
     let utc: DateTime<Utc> = utc_str.parse().ok()?;
@@ -129,5 +131,9 @@ pub(super) fn build_datum_time(
         // Naming a zone the row doesn't carry contradicts the offset stored
         // beside it and lights up `datum check tz` (da-vfbq).
         timezone: tz,
+        // A NULL `occur_time_uncertainty` means the same kind of unknown:
+        // we were not told how precisely the time is known, which is not a
+        // claim that it is exact (da-b8rs).
+        uncertainty,
     })
 }

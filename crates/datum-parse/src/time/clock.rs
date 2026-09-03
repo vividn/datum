@@ -57,6 +57,7 @@ impl Clock for SystemClock {
             utc,
             offset_minutes,
             timezone: Some(timezone),
+            uncertainty: None,
         }
     }
 }

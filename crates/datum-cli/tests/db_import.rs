@@ -46,7 +46,7 @@ fn write_backup(docs: serde_json::Value) -> tempfile::NamedTempFile {
 // state=undefined + dur=undefined + fs=None → derive_verb returns
 // (Verb::Point, None). The null→true promotion was dropped in
 // da-ju71.2; an occur with no state stays state=null. (Import-side
-// emission of `Dur::Moment` for point entries is da-ju71.5, separate
+// emission of `Dur::moment()` for point entries is da-ju71.5, separate
 // bead — until that lands, dur stays NULL here.)
 
 #[test]
@@ -521,7 +521,7 @@ fn import_falls_back_to_create_time_when_modify_time_missing() {
     );
 }
 
-// ─── 12. occurTime.precisionUnit → occur_time_precision (da-5ns.6) ───
+// ─── 12. occurTime.precisionUnit → occur_time_uncertainty (da-5ns.6) ───
 
 #[test]
 fn year_precision_maps_to_iso_p1y() {
@@ -546,7 +546,7 @@ fn year_precision_maps_to_iso_p1y() {
     run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
     assert_eq!(
-        e.occur_time_precision.as_deref(),
+        e.occur_uncertainty(),
         Some("P1Y"),
         "precisionUnit=year → P1Y",
     );
@@ -574,7 +574,7 @@ fn week_precision_maps_to_iso_p1w() {
 
     run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
-    assert_eq!(e.occur_time_precision.as_deref(), Some("P1W"));
+    assert_eq!(e.occur_uncertainty(), Some("P1W"));
 }
 
 #[test]
@@ -606,7 +606,7 @@ fn precision_unit_canon_table_round_trips_all_units() {
         run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
         let e = &db.list_including_deleted().unwrap()[0];
         assert_eq!(
-            e.occur_time_precision.as_deref(),
+            e.occur_uncertainty(),
             Some(iso),
             "precisionUnit={} should map to {}",
             unit,
@@ -629,7 +629,7 @@ fn missing_precision_unit_leaves_column_null() {
     run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
     assert!(
-        e.occur_time_precision.is_none(),
+        e.occur_uncertainty().is_none(),
         "no precisionUnit → column NULL (treated as exact)",
     );
 }

@@ -959,8 +959,9 @@ mod tests {
                 utc: occur,
                 offset_minutes: 0,
                 timezone: Some("UTC".into()),
+                uncertainty: None,
             }),
-            Some(Dur::Of(chrono::Duration::seconds(dur_secs))),
+            Some(Dur::of(chrono::Duration::seconds(dur_secs))),
             "dev",
         );
         e.following_state = Some(json!(following));
@@ -1001,8 +1002,9 @@ mod tests {
                 utc: occur,
                 offset_minutes: 0,
                 timezone: Some("UTC".into()),
+                uncertainty: None,
             }),
-            Some(Dur::Of(chrono::Duration::zero())),
+            Some(Dur::of(chrono::Duration::zero())),
             "dev",
         );
         e.following_state = Some(json!("sad"));
@@ -1036,8 +1038,9 @@ mod tests {
                 utc: occur,
                 offset_minutes: 0,
                 timezone: Some("UTC".into()),
+                uncertainty: None,
             }),
-            Some(Dur::Of(chrono::Duration::seconds(30 * 60))),
+            Some(Dur::of(chrono::Duration::seconds(30 * 60))),
             "dev",
         );
         e.following_state = None;
@@ -1064,8 +1067,9 @@ mod tests {
                 utc: occur,
                 offset_minutes: 0,
                 timezone: Some("UTC".into()),
+                uncertainty: None,
             }),
-            Some(Dur::Moment),
+            Some(Dur::moment()),
             "dev",
         )
     }

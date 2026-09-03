@@ -408,8 +408,11 @@ fn apply_mutation(
     if let Some(d) = reserved.dur {
         updated.dur = Some(d);
     }
-    if let Some(dp) = reserved.dur_precision {
-        updated.dur_precision = Some(dp);
+    if let Some(u) = reserved.dur_uncertainty {
+        if updated.dur.is_none() {
+            anyhow::bail!("dur_uncertainty= needs a duration: set dur= alongside it");
+        }
+        updated.set_dur_uncertainty(Some(u));
     }
     if let Some(fs) = reserved.following_state {
         updated.following_state = Some(fs);
@@ -735,6 +738,7 @@ mod tests {
             utc: t,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let e = Entry::new(field, verb, value, extra, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();

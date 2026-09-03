@@ -277,6 +277,7 @@ mod tests {
             utc: base + chrono::Duration::seconds(secs_offset),
             offset_minutes: 0,
             timezone: Some("UTC".into()),
+            uncertainty: None,
         }
     }
 
@@ -309,7 +310,7 @@ mod tests {
             Some(json!(true)),
             None,
             Some(at(secs_offset)),
-            Some(crate::dur::Dur::Moment),
+            Some(crate::dur::Dur::moment()),
             "d1",
         );
         db.insert_entry(&entry).unwrap();
@@ -324,7 +325,7 @@ mod tests {
             Some(state),
             None,
             Some(at(secs_offset)),
-            Some(crate::dur::Dur::Moment),
+            Some(crate::dur::Dur::moment()),
             "d1",
         );
         db.insert_entry(&entry).unwrap();
@@ -617,7 +618,7 @@ mod tests {
             Some(primary),
             None,
             Some(at(secs_offset)),
-            Some(crate::dur::Dur::Of(chrono::Duration::seconds(dur_secs))),
+            Some(crate::dur::Dur::of(chrono::Duration::seconds(dur_secs))),
             "d1",
         );
         entry.following_state = Some(following);

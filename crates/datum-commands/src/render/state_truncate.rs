@@ -345,6 +345,7 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 5, 22, 14, 30, 0).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         Entry::new(field, Verb::Switch, Some(value), None, Some(t), None, "dev")
     }

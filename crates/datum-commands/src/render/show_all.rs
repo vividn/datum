@@ -32,8 +32,8 @@ const WHEN_COLS: &[&str] = &[
     "occur_time",
     "occur_time_offset",
     "occur_time_tz",
-    "occur_time_precision",
-    "dur_precision",
+    "occur_time_uncertainty",
+    "dur_uncertainty",
 ];
 const WHERE_COLS: &[&str] = &["lat", "lon", "location"];
 const BOOK_COLS: &[&str] = &["create_time", "modify_time", "device_id", "deleted_at"];
@@ -125,7 +125,7 @@ fn render_column(col: &str, e: &Entry) -> String {
         // UTC stamp for what the user logged as a date-only entry.
         "occur_time" => match &e.occur_time {
             Some(t) => {
-                if e.occur_time_precision.as_deref() == Some("P1D") {
+                if e.occur_uncertainty() == Some("P1D") {
                     t.local_time().format("%Y-%m-%d").to_string()
                 } else {
                     t.utc.to_rfc3339()
@@ -141,8 +141,8 @@ fn render_column(col: &str, e: &Entry) -> String {
             Some(t) => render_str_opt(t.timezone.as_deref()),
             None => null_marker(),
         },
-        "occur_time_precision" => render_str_opt(e.occur_time_precision.as_deref()),
-        "dur_precision" => render_str_opt(e.dur_precision.as_deref()),
+        "occur_time_uncertainty" => render_str_opt(e.occur_uncertainty()),
+        "dur_uncertainty" => render_str_opt(e.dur_uncertainty()),
         "lat" => match e.lat {
             Some(v) => v.to_string(),
             None => null_marker(),
@@ -215,11 +215,9 @@ mod tests {
             verb: Verb::Point,
             state: None,
             dur: None,
-            dur_precision: None,
             following_state: None,
             data: None,
             occur_time: None,
-            occur_time_precision: None,
             lat: None,
             lon: None,
             location: None,
@@ -294,7 +292,7 @@ mod tests {
     #[test]
     fn dur_uses_storage_string() {
         let mut e = empty_entry();
-        e.dur = Some(Dur::Moment);
+        e.dur = Some(Dur::moment());
         let plain = strip_ansi(&format_show_all(&e));
         assert!(
             plain.contains("MOMENT"),
@@ -304,7 +302,7 @@ mod tests {
 
     /// da-5uph: a P1D row's `occur_time` renders as `YYYY-MM-DD` in the
     /// entry's local zone — never as the synthetic `00:00:00 UTC` stamp
-    /// the column would emit if it ignored precision.
+    /// the column would emit if it ignored uncertainty.
     #[test]
     fn occur_time_p1d_renders_as_bare_date() {
         let mut e = empty_entry();
@@ -314,8 +312,9 @@ mod tests {
                 .with_timezone(&chrono::Utc),
             offset_minutes: 5 * 60,
             timezone: Some("Asia/Karachi".to_string()),
+            uncertainty: None,
         });
-        e.occur_time_precision = Some("P1D".to_string());
+        e.set_occur_uncertainty(Some("P1D".to_string()));
         let plain = strip_ansi(&format_show_all(&e));
         // Local in +5h is 2026-05-13 — the date the user logged.
         assert!(
@@ -328,27 +327,30 @@ mod tests {
         );
     }
 
-    /// da-i5vs: `dur_precision` is part of the grouped "When" view so
-    /// `-A` surfaces it alongside `occur_time_precision`. NULL when unset.
+    /// da-i5vs: `dur_uncertainty` is part of the grouped "When" view so
+    /// `-A` surfaces it alongside `occur_time_uncertainty`. NULL when unset.
     #[test]
-    fn dur_precision_renders_in_when_group() {
+    fn dur_uncertainty_renders_in_when_group() {
         let mut e = empty_entry();
-        e.dur_precision = Some("PT1M".to_string());
+        // The uncertainty lives on `dur` since da-b8rs, so there has to be
+        // a duration for it to qualify.
+        e.dur = Some(datum_core::dur::Dur::of(chrono::Duration::minutes(30)));
+        e.set_dur_uncertainty(Some("PT1M".to_string()));
         let plain = strip_ansi(&format_show_all(&e));
         assert!(
-            plain.contains("dur_precision"),
-            "dur_precision column missing from -A:\n{plain}"
+            plain.contains("dur_uncertainty"),
+            "dur_uncertainty column missing from -A:\n{plain}"
         );
         assert!(
             plain.contains("PT1M"),
-            "dur_precision value missing from -A:\n{plain}"
+            "dur_uncertainty value missing from -A:\n{plain}"
         );
     }
 
     /// da-ol43: anti-drift guard for the six column lists above. They
     /// hand-mirror the entries-table DDL in
     /// `crates/datum-core/src/schema.sql`, and drift has already happened
-    /// once (da-i5vs: `dur_precision` landed in the schema but was missing
+    /// once (da-i5vs: `dur_uncertainty` landed in the schema but was missing
     /// from the When group). Parse the CREATE TABLE block out of the
     /// embedded schema and assert every stored column appears in exactly
     /// one group — and that the groups list nothing the schema lacks.
@@ -458,7 +460,7 @@ mod tests {
         }
     }
 
-    /// da-5uph: exact-second rows (precision `None` or `PT1S`) keep
+    /// da-5uph: exact-second rows (uncertainty `None` or `PT1S`) keep
     /// rendering as RFC3339 — the change is scoped to `P1D`.
     #[test]
     fn occur_time_non_p1d_keeps_rfc3339() {
@@ -469,6 +471,7 @@ mod tests {
                 .with_timezone(&chrono::Utc),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         });
         let plain = strip_ansi(&format_show_all(&e));
         assert!(

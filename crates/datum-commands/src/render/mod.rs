@@ -199,11 +199,11 @@ pub(crate) fn extract_with_context_at(
         &short_hid(&entry.hid),
     ));
 
-    let occur_precision = entry.occur_time_precision.as_deref();
+    let occur_uncertainty = entry.occur_uncertainty();
     let occur = entry
         .occur_time
         .as_ref()
-        .map(|t| self::action::format_timestamp_ref(t, now, occur_precision, reference_offset));
+        .map(|t| self::action::format_timestamp_ref(t, now, occur_uncertainty, reference_offset));
     let create = Some(self::action::format_timestamp_ref(
         &self::action::synthesize_local_datumtime(entry.create_time),
         now,
@@ -567,7 +567,7 @@ pub fn format_table_with(
             let occur_vote = e
                 .occur_time
                 .as_ref()
-                .filter(|_| e.occur_time_precision.as_deref() != Some("P1D"))
+                .filter(|_| e.occur_uncertainty() != Some("P1D"))
                 .map(|t| (t.offset_minutes, t.utc));
             let host_vote = |utc: chrono::DateTime<chrono::Utc>| {
                 let t = self::action::synthesize_local_datumtime(utc);
@@ -1164,7 +1164,7 @@ pub fn render_snapshot(
                 now,
                 true,
                 &a.entry.verb,
-                a.entry.occur_time_precision.as_deref(),
+                a.entry.occur_uncertainty(),
             ),
         };
         active.push(NowRow {
@@ -1200,6 +1200,7 @@ pub fn render_snapshot(
                         utc: t,
                         offset_minutes: now_dt.offset_minutes,
                         timezone: now_dt.timezone.clone(),
+                        uncertainty: None,
                     };
                     format_now_time(
                         &local_t,
@@ -1207,7 +1208,7 @@ pub fn render_snapshot(
                         now,
                         false,
                         &e.verb,
-                        e.occur_time_precision.as_deref(),
+                        e.occur_uncertainty(),
                     )
                 }
                 None => format_now_time_utc(t, &now_dt, now),
@@ -1338,6 +1339,7 @@ fn format_now_time_utc(
         utc,
         offset_minutes: now_dt.offset_minutes,
         timezone: now_dt.timezone.clone(),
+        uncertainty: None,
     };
     if let Some(prefix) = self::action::format_relative_day_prefix(&t, now_dt) {
         let local = t.local_time();
@@ -1394,12 +1396,12 @@ fn format_now_time(
     now_utc: chrono::DateTime<chrono::Utc>,
     is_active: bool,
     verb: &Verb,
-    precision: Option<&str>,
+    uncertainty: Option<&str>,
 ) -> String {
     // da-5uph: P1D entries have no meaningful time-of-day. Show the bare
     // local date — `@HH:MM` or `Nm ago` makes no sense when the user
     // logged a date-only event.
-    if precision == Some("P1D") {
+    if uncertainty == Some("P1D") {
         return t.local_time().format("%Y-%m-%d").to_string();
     }
     if let Some(prefix) = self::action::format_relative_day_prefix(t, now_dt) {

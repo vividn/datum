@@ -361,6 +361,7 @@ fn render_old_stopped_field_uses_iso_date_prefix() {
         utc: stale_utc,
         offset_minutes: now.offset_minutes,
         timezone: now.timezone.clone(),
+        uncertainty: None,
     };
     let tf = [tracked("nightlight")];
     let mut latest = HashMap::new();
@@ -422,6 +423,7 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
         utc: local_today_utc,
         offset_minutes: now.offset_minutes,
         timezone: now.timezone.clone(),
+        uncertainty: None,
     };
     let tf = [tracked("birthday")];
     let mut latest = HashMap::new();
@@ -429,7 +431,7 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
         .verb(Verb::Point)
         .time_start(day_start)
         .build();
-    e.occur_time_precision = Some("P1D".to_string());
+    e.set_occur_uncertainty(Some("P1D".to_string()));
     latest.insert("birthday".to_string(), e);
 
     let snap = build_snapshot(&tf, &latest, false);

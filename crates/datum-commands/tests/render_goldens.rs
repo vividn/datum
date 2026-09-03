@@ -66,6 +66,7 @@ fn fixed_time(h: u32, m: u32, s: u32) -> DatumTime {
         utc,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     }
 }
 
@@ -78,6 +79,7 @@ fn future_time(h: u32, m: u32) -> DatumTime {
         utc,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     }
 }
 
@@ -90,6 +92,7 @@ fn fixed_now() -> DatumTime {
         utc,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     }
 }
 

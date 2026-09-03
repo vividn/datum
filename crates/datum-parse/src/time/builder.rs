@@ -5,12 +5,12 @@ use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
 #[cfg(feature = "native")]
 use crate::time::datum_time::DatumTime;
 use crate::time::parse_date_str::DateArg;
-use crate::time::parse_duration_str::quick_precision_for_count;
+use crate::time::parse_duration_str::quick_uncertainty_for_count;
 use crate::time::parse_time_str::TimeArg;
 #[cfg(feature = "native")]
-use crate::time::precision::PrecisionUnit;
-#[cfg(feature = "native")]
 use crate::time::resolve::Zone;
+#[cfg(feature = "native")]
+use crate::time::uncertainty::UncertaintyUnit;
 use crate::time::uncertainty::{Direction, Uncertainty};
 
 /// Build a `DatumTime` from the combination of -y stacks, -q stacks,
@@ -33,11 +33,11 @@ pub struct TimeBuilder {
     /// Interpreted as local-in-the-effective-zone (`self.timezone` or
     /// host local) when [`build`] resolves it.
     pub iso_naive_override: Option<NaiveDateTime>,
-    /// Implicit precision produced by `-q*` stacks (None when no `-q` given).
-    /// Overridden by any explicit `±N` attached to a `-d`/`-t` arg.
-    pub quick_precision: Option<Uncertainty>,
-    /// Explicit `±N` supplied via `-d` or `-t`. Beats `quick_precision`.
-    pub explicit_precision: Option<Uncertainty>,
+    /// Implicit uncertainty produced by `-q*` stacks (None when no `-q`
+    /// given). Overridden by any explicit `±N` attached to a `-d`/`-t` arg.
+    pub quick_uncertainty: Option<Uncertainty>,
+    /// Explicit `±N` supplied via `-d` or `-t`. Beats `quick_uncertainty`.
+    pub explicit_uncertainty: Option<Uncertainty>,
     /// Pre-validated IANA timezone name from `-z/--timezone`. When `Some`,
     /// `build()` anchors all date/time math in this zone instead of `Local`.
     /// Callers must resolve numeric/UTC±N forms via
@@ -49,8 +49,8 @@ pub struct TimeBuilder {
     pub time_direction: Option<Direction>,
     /// `-D/--full-day`: collapse the entry to a date-only event. When true
     /// (or when a date is supplied without any time/quick input),
-    /// `build_with_precision` strips the time-of-day to 00:00:00 in the
-    /// effective zone and emits a `P1D` precision.
+    /// `build_with_uncertainty` strips the time-of-day to 00:00:00 in the
+    /// effective zone and emits a `P1D` uncertainty.
     pub full_day: bool,
 }
 
@@ -68,8 +68,8 @@ impl TimeBuilder {
             time_override: None,
             iso_instant_override: None,
             iso_naive_override: None,
-            quick_precision: None,
-            explicit_precision: None,
+            quick_uncertainty: None,
+            explicit_uncertainty: None,
             timezone: None,
             time_direction: None,
             full_day: false,
@@ -84,20 +84,20 @@ impl TimeBuilder {
     }
 
     pub fn with_quick_count(mut self, n: i64) -> Self {
-        // `-q` scales the time offset (5 min per flag). Precision is set
-        // separately by `with_quick_precision` so callers that only want the
+        // `-q` scales the time offset (5 min per flag). Uncertainty is set
+        // separately by `with_quick_uncertainty` so callers that only want the
         // offset can opt out.
         self.minutes_back += n * 5;
         self
     }
 
-    /// Apply the `-q*` precision scaling rule (see `quick_precision_for_count`).
-    /// A zero count leaves precision unchanged.
-    pub fn with_quick_precision(mut self, n: u32) -> Self {
+    /// Apply the `-q*` scaling rule (see `quick_uncertainty_for_count`).
+    /// A zero count leaves the uncertainty unchanged.
+    pub fn with_quick_uncertainty(mut self, n: u32) -> Self {
         if n == 0 {
             return self;
         }
-        self.quick_precision = Some(quick_precision_for_count(n));
+        self.quick_uncertainty = Some(quick_uncertainty_for_count(n));
         self
     }
 
@@ -108,7 +108,7 @@ impl TimeBuilder {
             self.days_back += -arg.days_offset; // -1 means yesterday → days_back += 1
         }
         if let Some(u) = arg.uncertainty {
-            self.explicit_precision = Some(u);
+            self.explicit_uncertainty = Some(u);
         }
         self
     }
@@ -135,13 +135,13 @@ impl TimeBuilder {
             self.time_offset += offset;
         }
         if let Some(u) = arg.uncertainty {
-            self.explicit_precision = Some(u);
+            self.explicit_uncertainty = Some(u);
         }
         self
     }
 
     /// Collapse the entry to a date-only event. Mirrors `-D/--full-day` on
-    /// the CLI. Stays inert until `build_with_precision` reads it.
+    /// the CLI. Stays inert until `build_with_uncertainty` reads it.
     pub fn with_full_day(mut self, full_day: bool) -> Self {
         self.full_day = full_day;
         self
@@ -157,41 +157,46 @@ impl TimeBuilder {
         self
     }
 
-    /// Effective precision — explicit `±` beats implicit `-q` precision.
+    /// Effective uncertainty — explicit `±` beats the implicit `-q` value.
     /// Returns `Uncertainty::exact()` when neither is set.
-    pub fn precision(&self) -> Uncertainty {
-        self.explicit_precision
+    pub fn uncertainty(&self) -> Uncertainty {
+        self.explicit_uncertainty
             .clone()
-            .or_else(|| self.quick_precision.clone())
+            .or_else(|| self.quick_uncertainty.clone())
             .unwrap_or_else(Uncertainty::exact)
     }
 
-    /// Build the DatumTime together with the effective precision. Most
-    /// callers route through this so precision fields land on the entry.
+    /// Build the `DatumTime` with its effective uncertainty already on it.
+    /// Most callers route through this rather than [`build`] so the
+    /// uncertainty travels with the time it belongs to (da-b8rs) instead of
+    /// riding alongside in a second variable.
     ///
     /// When the input describes a date-only event (`full_day` set, or a
-    /// date/`-y` with no time/quick input), the returned precision is
-    /// `P1D` and the time-of-day is stripped to 00:00:00 in the effective
-    /// zone — mirroring datum's `toDatumTime(_, true)`.
+    /// date/`-y` with no time/quick input), the uncertainty is `P1D` and the
+    /// time-of-day is stripped to 00:00:00 in the effective zone — mirroring
+    /// datum's `toDatumTime(_, true)`.
+    ///
+    /// [`build`]: Self::build
     #[cfg(feature = "native")]
-    pub fn build_with_precision(self) -> (DatumTime, Uncertainty) {
+    pub fn build_with_uncertainty(self) -> DatumTime {
         let only_date = self.is_only_date();
-        let base_precision = self.precision();
-        let precision = if only_date {
+        let base = self.uncertainty();
+        let uncertainty = if only_date {
             Uncertainty {
                 seconds: 86_400,
-                unit: PrecisionUnit::Date,
+                unit: UncertaintyUnit::Date,
             }
         } else {
-            base_precision
+            base
         };
         let dt = self.build();
-        let dt = if only_date {
+        let mut dt = if only_date {
             strip_to_start_of_day(dt)
         } else {
             dt
         };
-        (dt, precision)
+        dt.uncertainty = uncertainty.to_iso();
+        dt
     }
 
     /// True when the inputs describe a date-only event: explicit `full_day`,
@@ -204,7 +209,7 @@ impl TimeBuilder {
             || self.iso_naive_override.is_some()
             || self.minutes_back != 0
             || self.time_offset != Duration::zero()
-            || self.quick_precision.is_some();
+            || self.quick_uncertainty.is_some();
         self.full_day || (date_or_yesterday && !time_or_quick)
     }
 
@@ -278,6 +283,7 @@ impl TimeBuilder {
             utc,
             offset_minutes: zone.offset_at(utc).local_minus_utc() / 60,
             timezone: Some(timezone_name),
+            uncertainty: None,
         }
     }
 }
@@ -309,6 +315,7 @@ fn strip_to_start_of_day(dt: DatumTime) -> DatumTime {
         utc,
         offset_minutes: zone.offset_at(utc).local_minus_utc() / 60,
         timezone: dt.timezone,
+        uncertainty: dt.uncertainty,
     }
 }
 
@@ -319,15 +326,13 @@ mod tests {
     use crate::time::parse_time_str::TimeArg;
     use chrono::{NaiveDate, NaiveTime};
 
-    fn p1d() -> Uncertainty {
-        Uncertainty {
-            seconds: 86_400,
-            unit: PrecisionUnit::Date,
-        }
+    /// The ISO form a date-only entry lands on `DatumTime::uncertainty`.
+    fn p1d() -> Option<String> {
+        Some("P1D".to_string())
     }
 
     /// `with_full_day(true)` collapses the base instant to midnight in the
-    /// configured zone and reports `P1D` precision. No anchor is set so the
+    /// configured zone and reports `P1D` uncertainty. No anchor is set so the
     /// builder falls through to "now" — the assertions only depend on the
     /// stripping, not on the wall clock at test time.
     #[test]
@@ -336,8 +341,8 @@ mod tests {
             .with_timezone(Some("America/Chicago".into()))
             .with_full_day(true);
 
-        let (dt, precision) = b.build_with_precision();
-        assert_eq!(precision, p1d());
+        let dt = b.build_with_uncertainty();
+        assert_eq!(dt.uncertainty, p1d());
         let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
         assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
         assert_eq!(dt.timezone.as_deref(), Some("America/Chicago"));
@@ -354,8 +359,8 @@ mod tests {
                 uncertainty: None,
                 direction: None,
             });
-        let (dt, precision) = b.build_with_precision();
-        assert_eq!(precision, p1d());
+        let dt = b.build_with_uncertainty();
+        assert_eq!(dt.uncertainty, p1d());
         let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
         assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
         assert_eq!(
@@ -365,7 +370,7 @@ mod tests {
     }
 
     /// `-y` (yesterday) alone is also a date-only event. Uses an implicit
-    /// "now" anchor so we assert only the stripping + precision, not the
+    /// "now" anchor so we assert only the stripping + uncertainty, not the
     /// resulting calendar date.
     #[test]
     fn yesterday_alone_strips_time_and_emits_p1d() {
@@ -373,14 +378,14 @@ mod tests {
             .with_timezone(Some("America/Chicago".into()))
             .with_yesterday_count(1);
 
-        let (dt, precision) = b.build_with_precision();
-        assert_eq!(precision, p1d());
+        let dt = b.build_with_uncertainty();
+        assert_eq!(dt.uncertainty, p1d());
         let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
         assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
     }
 
     /// `--full-day` overrides any explicit clock input — the time is still
-    /// stripped and precision is still `P1D`.
+    /// stripped and uncertainty is still `P1D`.
     #[test]
     fn full_day_wins_over_clock() {
         let b = TimeBuilder::now()
@@ -402,8 +407,8 @@ mod tests {
             })
             .with_full_day(true);
 
-        let (dt, precision) = b.build_with_precision();
-        assert_eq!(precision, p1d());
+        let dt = b.build_with_uncertainty();
+        assert_eq!(dt.uncertainty, p1d());
         let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
         assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
         assert_eq!(
@@ -487,9 +492,9 @@ mod tests {
     }
 
     /// `-d` paired with `-t` is NOT a date-only event — the explicit time
-    /// must be preserved and the precision falls back to exact.
+    /// must be preserved and the uncertainty falls back to exact.
     #[test]
-    fn date_plus_time_keeps_clock_and_exact_precision() {
+    fn date_plus_time_keeps_clock_and_exact_uncertainty() {
         let b = TimeBuilder::now()
             .with_timezone(Some("America/Chicago".into()))
             .with_date_arg(DateArg {
@@ -507,8 +512,10 @@ mod tests {
                 uncertainty: None,
                 direction: None,
             });
-        let (dt, precision) = b.build_with_precision();
-        assert_eq!(precision, Uncertainty::exact());
+        let dt = b.build_with_uncertainty();
+        // Exact is rendered as absent: `None` on the field, NULL in the
+        // column (see `Uncertainty::to_iso`).
+        assert_eq!(dt.uncertainty, None);
         let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
         assert_eq!(local.time(), NaiveTime::from_hms_opt(14, 37, 0).unwrap());
     }

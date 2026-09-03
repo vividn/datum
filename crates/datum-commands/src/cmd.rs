@@ -795,6 +795,7 @@ mod tests {
             utc,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         Entry::new_legacy(
             field,
@@ -848,6 +849,7 @@ mod tests {
             utc: t,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let e = Entry::new_legacy(field, verb, value, extra, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();
@@ -1104,6 +1106,7 @@ mod tests {
                 utc: t,
                 offset_minutes: 0,
                 timezone: Some("UTC".to_string()),
+                uncertainty: None,
             };
             let e = Entry::new_legacy(
                 "gym",
@@ -1368,11 +1371,13 @@ mod tests {
             utc: base + chrono::Duration::seconds(start_secs),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let end = DatumTime {
             utc: base + chrono::Duration::seconds(end_secs),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         Entry::new_legacy(
             field,
@@ -1607,6 +1612,7 @@ mod tests {
             utc,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         Entry::new_legacy(field, Verb::Point, None, None, Some(t), None, device)
     }
@@ -1922,6 +1928,7 @@ mod tests {
             utc: t,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let e = Entry::new(
             "mood",
@@ -1965,6 +1972,7 @@ mod tests {
             utc: t,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let e = Entry::new(
             "focus",

@@ -4,8 +4,8 @@
 use chrono::Duration;
 
 use crate::error::{ParseError, Result};
-use crate::time::precision::PrecisionUnit;
 use crate::time::uncertainty::Uncertainty;
+use crate::time::uncertainty::UncertaintyUnit;
 
 /// Parse a duration string into a `chrono::Duration`.
 /// Supports:
@@ -156,19 +156,19 @@ fn parse_compound_duration(s: &str) -> Result<Duration> {
     Ok(Duration::seconds(total_secs))
 }
 
-/// Precision produced by `n` stacked `-q` flags. The offset scaling is
-/// linear (5 min per flag), but precision is capped at 150s (±2.5m) for the
+/// Uncertainty produced by `n` stacked `-q` flags. The offset scaling is
+/// linear (5 min per flag), but uncertainty is capped at 150s (±2.5m) for the
 /// first four and steps up to 300s (±5m) once the user stacks 5+ `-q`s —
 /// at that point the stacked offset is coarse enough that 5-min-resolution
-/// is more honest than claiming 2.5-min precision.
-pub fn quick_precision_for_count(n: u32) -> Uncertainty {
+/// is more honest than claiming 2.5-min uncertainty.
+pub fn quick_uncertainty_for_count(n: u32) -> Uncertainty {
     if n == 0 {
         return Uncertainty::exact();
     }
     let seconds = if n >= 5 { 300 } else { 150 };
     Uncertainty {
         seconds,
-        unit: PrecisionUnit::Minute,
+        unit: UncertaintyUnit::Minute,
     }
 }
 

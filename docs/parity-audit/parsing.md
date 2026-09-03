@@ -27,7 +27,7 @@ The R2 bead lands incrementally:
 
 | Step | Scope | Status |
 |---|---|---|
-| 1/N | New `datum-parse/` crate; move `time.rs` → split `time/` submodules; `PrecisionUnit` moved from `datum-core::entry`; WASM build verified; **this audit** | **done** |
+| 1/N | New `datum-parse/` crate; move `time.rs` → split `time/` submodules; `PrecisionUnit` (now `UncertaintyUnit`) moved from `datum-core::entry`; WASM build verified; **this audit** | **done** |
 | 2/N | `datum-parse` input/ + alias/ module scaffold; port `consolidate_keys` + `flexible_positional` with full TS-parity tests; stubs for the rest pointing back at this audit | **done** |
 | 2b/N | Port `data_args`, `time_args`, `duration_args`, `field_args`, `output_args`, `quick_id_arg` from TS + tests | **done** |
 | 3/N | Replace clap in `datum-commands::args`; remove `clap` workspace dep; `CommandIntent` + bespoke `--help` in `datum-parse`; alias expansion migrates into `datum-parse::alias` | **done** (commit 74fac61, da-jzj — clap removed from the entire workspace) |
@@ -218,7 +218,7 @@ Argparse wrapper for the timing flags (`-d -y -t -q -z -D -T`).
   `time`, `timezone`, `full_day`, `omit_timestamp`). The stacked-flag
   pre-pass turns `-yy`/`-qqq` into `-y -y`/`-q -q -q`, and the
   bespoke parser counts the repetitions natively. Composition happens
-  in `datum-commands/src/cmd.rs` (`build_time_with_precision`).
+  in `datum-commands/src/cmd.rs` (`build_time_with_uncertainty`).
 - **Target (step 2/N):** `datum_parse::input::time_args::TimeArgs`
   with a `build(now_fn: impl Fn() -> DatumTime) -> (DatumTime,
   Uncertainty, TimeFromArgs)` method. The `now_fn` injection is what

@@ -159,6 +159,7 @@ fn every_pair_has_a_roundtrip_test() {
         (30, 31),
         (31, 32),
         (32, 33),
+        (33, 34),
     ];
     assert_eq!(
         covered.len(),
@@ -349,8 +350,8 @@ fn roundtrip_v8_to_v9_track_ignore_unification() {
              occur_time           TEXT NOT NULL,
              occur_time_offset    INTEGER,
              occur_time_tz        TEXT,
-             occur_time_precision TEXT,
-             dur_precision        TEXT,
+             occur_time_uncertainty TEXT,
+             dur_uncertainty      TEXT,
              lat             REAL,
              lon             REAL,
              location        TEXT,
@@ -1709,7 +1710,7 @@ fn roundtrip_v32_to_v33_content_hash_rehash() {
         4,
         "v33 must give every semantically distinct row its own hash"
     );
-    for entry in db.list_including_deleted().unwrap() {
+    for entry in entries_at_v33(conn) {
         assert_eq!(
             entry.content_hash,
             entry.expected_content_hash(),
@@ -1731,4 +1732,85 @@ fn roundtrip_v32_to_v33_content_hash_rehash() {
             .unwrap();
         assert_eq!(restored, v32_hash(row.occur), "{} not restored", row.hid);
     }
+}
+
+/// Read every row through the live `Entry` mapper while the schema is at
+/// v33 — where the two uncertainty columns still carry their pre-da-b8rs
+/// names. Aliasing them forward is what `rehash_all_entries` does for the
+/// same reason: the mapper always speaks today's column names, and a
+/// mid-walk schema does not.
+fn entries_at_v33(conn: &Connection) -> Vec<datum_core::entry::Entry> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT *, occur_time_precision AS occur_time_uncertainty, \
+             dur_precision AS dur_uncertainty FROM entries",
+        )
+        .unwrap();
+    let rows = stmt
+        .query_map([], datum_core::db::row_to_entry_public)
+        .unwrap();
+    rows.map(|r| r.unwrap()).collect()
+}
+
+/// da-b8rs: v33→v34 renames the two uncertainty columns. A rename must be
+/// *lossless in both directions* — the values are the whole point, and a
+/// rename that quietly emptied them would look identical to a successful
+/// one at the schema level. Assert the stored values survive the round
+/// trip, not just the column names.
+#[test]
+fn roundtrip_v33_to_v34_precision_to_uncertainty_rename() {
+    let db = fresh_at(33);
+    let conn = db.conn();
+
+    assert!(column_exists(conn, "entries", "occur_time_precision"));
+    assert!(column_exists(conn, "entries", "dur_precision"));
+    assert!(!column_exists(conn, "entries", "occur_time_uncertainty"));
+    assert!(!column_exists(conn, "entries", "dur_uncertainty"));
+
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, verb, dur, occur_time,
+             occur_time_precision, dur_precision,
+             create_time, modify_time, device_id)
+         VALUES
+            ('hp', 'f:p', 'cp', 'f', 'point', 'PT1H30M',
+             '2026-05-01T00:00:00Z', 'PT5M', 'PT1M',
+             '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z', 'd')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 33);
+
+    assert!(!column_exists(conn, "entries", "occur_time_precision"));
+    assert!(!column_exists(conn, "entries", "dur_precision"));
+    assert!(column_exists(conn, "entries", "occur_time_uncertainty"));
+    assert!(column_exists(conn, "entries", "dur_uncertainty"));
+
+    let (occur_u, dur_u): (Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT occur_time_uncertainty, dur_uncertainty FROM entries WHERE hid = 'hp'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(occur_u.as_deref(), Some("PT5M"), "values ride the rename");
+    assert_eq!(dur_u.as_deref(), Some("PT1M"), "values ride the rename");
+
+    apply_one_down(conn, 34);
+
+    assert!(column_exists(conn, "entries", "occur_time_precision"));
+    assert!(column_exists(conn, "entries", "dur_precision"));
+    assert!(!column_exists(conn, "entries", "occur_time_uncertainty"));
+    assert!(!column_exists(conn, "entries", "dur_uncertainty"));
+
+    let (occur_p, dur_p): (Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT occur_time_precision, dur_precision FROM entries WHERE hid = 'hp'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(occur_p.as_deref(), Some("PT5M"), "down is lossless too");
+    assert_eq!(dur_p.as_deref(), Some("PT1M"), "down is lossless too");
 }

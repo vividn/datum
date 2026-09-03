@@ -971,7 +971,7 @@ pub(crate) fn close_older_at(
         return Ok(());
     };
     let secs = (end.utc - start.utc).num_seconds().max(0);
-    let new_dur = crate::dur::Dur::Of(chrono::Duration::seconds(secs));
+    let new_dur = crate::dur::Dur::of(chrono::Duration::seconds(secs));
 
     let mut updated = older.clone();
     updated.dur = Some(new_dur);
@@ -1050,6 +1050,7 @@ mod tests {
             utc: Utc::now() - Duration::seconds(seconds_ago),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         }
     }
 

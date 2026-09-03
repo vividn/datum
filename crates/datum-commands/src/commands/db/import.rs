@@ -88,8 +88,11 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             Some(v) => Some(v.clone()),
         };
 
-        let occur_time = parse_datum_time(&data["occurTime"]);
-        let occur_time_precision = parse_datum_precision(&data["occurTime"]);
+        let occur_uncertainty = parse_datum_uncertainty(&data["occurTime"]);
+        let occur_time = parse_datum_time(&data["occurTime"]).map(|mut t| {
+            t.uncertainty = occur_uncertainty;
+            t
+        });
 
         // ─── dur ────────────────────────────────────────────────────
         // Per da-5ns.6:
@@ -102,7 +105,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         let raw_dur = data.get("dur");
         let dur_in: Option<datum_core::dur::Dur> = match raw_dur {
             None => None,
-            Some(v) if v.is_null() => Some(datum_core::dur::Dur::Of(chrono::Duration::zero())),
+            Some(v) if v.is_null() => Some(datum_core::dur::Dur::of(chrono::Duration::zero())),
             Some(JsonValue::String(s)) => {
                 if let Some(d) = datum_core::dur::Dur::parse(s) {
                     Some(d)
@@ -117,9 +120,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             }
             Some(v) => {
                 if let Some(secs) = v.as_i64() {
-                    Some(datum_core::dur::Dur::Of(chrono::Duration::seconds(secs)))
+                    Some(datum_core::dur::Dur::of(chrono::Duration::seconds(secs)))
                 } else if let Some(secs) = v.as_f64() {
-                    Some(datum_core::dur::Dur::Of(chrono::Duration::seconds(
+                    Some(datum_core::dur::Dur::of(chrono::Duration::seconds(
                         secs as i64,
                     )))
                 } else {
@@ -225,7 +228,6 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         );
         entry.create_time = created_at;
         entry.modify_time = modified_at;
-        entry.occur_time_precision = occur_time_precision;
         entry.id_structure = meta
             .get("idStructure")
             .and_then(|v| v.as_str())
@@ -266,7 +268,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         let is_block = match entry.dur.as_ref() {
             None => false,
             Some(d) if d.is_zero_span() => false,
-            Some(datum_core::dur::Dur::Moment) | Some(datum_core::dur::Dur::Unknown) => false,
+            Some(d) if d.is_moment() || d.is_unknown() => false,
             Some(_) => true,
         };
         if is_block {
@@ -487,20 +489,21 @@ fn parse_datum_time(v: &JsonValue) -> Option<DatumTime> {
         utc,
         offset_minutes,
         timezone,
+        uncertainty: None,
     })
 }
 
-/// Map a legacy datum `occurTime` block to a single ISO-8601 precision
-/// string for the new schema's `occur_time_precision` column.
+/// Map a legacy datum `occurTime` block to a single ISO-8601 uncertainty
+/// string for `DatumTime::uncertainty` (column `occur_time_uncertainty`).
 ///
-/// Legacy datum stored precision as a `(precision, precisionUnit)` pair on
-/// the time block. The v=20 schema collapses that into one column. Per
-/// the da-5ns.6 canon table:
+/// Legacy datum stored this as a `(precision, precisionUnit)` pair on the
+/// time block. The v=20 schema collapses that into one column. Per the
+/// da-5ns.6 canon table:
 ///   year → P1Y, month → P1M, day → P1D, week → P1W,
 ///   hour → PT1H, minute → PT1M, second → PT1S
 /// Anything else (including absent, "exact", or unrecognized units) →
-/// `None` (treated as exact-second).
-fn parse_datum_precision(occur_block: &JsonValue) -> Option<String> {
+/// `None`, i.e. unknown — the legacy backup did not tell us.
+fn parse_datum_uncertainty(occur_block: &JsonValue) -> Option<String> {
     let unit = occur_block.get("precisionUnit")?.as_str()?;
     match unit {
         "year" => Some("P1Y".to_string()),

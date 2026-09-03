@@ -53,7 +53,7 @@ fn derive_verb_for_storage(
 /// Recompute the content_hash from the columns about to be persisted so
 /// the stored value always agrees with `Entry::expected_content_hash`
 /// applied to the row after load. da-r569: callers like `log_entry` mutate
-/// the entry post-`Entry::new` (`Dur::Moment` for `occur`, state
+/// the entry post-`Entry::new` (`Dur::moment()` for `occur`, state
 /// canonicalization for switch family); without this, the precomputed
 /// `entry.content_hash` is stale by the time the row reaches the bind.
 ///
@@ -647,7 +647,7 @@ fn insert_entry_in_tx(
     crate::slug::validate_field_name(&entry.field)?;
     // da-r569: canonicalize content_hash so the dedup lookup uses the same
     // value `try_insert` / `raw_overwrite_mutables` will persist. Live
-    // writes mutate the entry post-`Entry::new` (`Dur::Moment` for occur,
+    // writes mutate the entry post-`Entry::new` (`Dur::moment()` for occur,
     // state canonicalization for switch family); without this the in-memory
     // `entry.content_hash` is stale and the dedup misses a true content
     // duplicate, routing the write into a slug-UNIQUE collision rather than
@@ -936,8 +936,8 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         r#"INSERT INTO entries (
             hid, slug, content_hash, field,
             verb, state, dur, following_state, data,
-            occur_time, occur_time_offset, occur_time_tz, occur_time_precision,
-            dur_precision,
+            occur_time, occur_time_offset, occur_time_tz, occur_time_uncertainty,
+            dur_uncertainty,
             lat, lon, location,
             create_time, modify_time, device_id,
             deleted_at, id_structure, field_structure,
@@ -968,8 +968,8 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         occur_str,
         occur_offset,
         occur_tz,
-        entry.occur_time_precision,
-        entry.dur_precision,
+        entry.occur_uncertainty(),
+        entry.dur_uncertainty(),
         entry.lat,
         entry.lon,
         entry.location.as_deref(),
@@ -1066,8 +1066,8 @@ fn raw_overwrite_mutables(
             occur_time = ?9,
             occur_time_offset = ?10,
             occur_time_tz = ?11,
-            occur_time_precision = ?12,
-            dur_precision = ?13,
+            occur_time_uncertainty = ?12,
+            dur_uncertainty = ?13,
             lat = ?14,
             lon = ?15,
             location = ?16,
@@ -1092,8 +1092,8 @@ fn raw_overwrite_mutables(
             occur_str,
             occur_offset,
             occur_tz,
-            entry.occur_time_precision,
-            entry.dur_precision,
+            entry.occur_uncertainty(),
+            entry.dur_uncertainty(),
             entry.lat,
             entry.lon,
             entry.location.as_deref(),
@@ -1156,8 +1156,8 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
             occur_time = ?10,
             occur_time_offset = ?11,
             occur_time_tz = ?12,
-            occur_time_precision = ?13,
-            dur_precision = ?14,
+            occur_time_uncertainty = ?13,
+            dur_uncertainty = ?14,
             lat = ?15,
             lon = ?16,
             location = ?17,
@@ -1184,8 +1184,8 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         occur_str,
         occur_offset,
         occur_tz,
-        entry.occur_time_precision,
-        entry.dur_precision,
+        entry.occur_uncertainty(),
+        entry.dur_uncertainty(),
         entry.lat,
         entry.lon,
         entry.location.as_deref(),
@@ -1249,8 +1249,8 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             occur_time = ?9,
             occur_time_offset = ?10,
             occur_time_tz = ?11,
-            occur_time_precision = ?12,
-            dur_precision = ?13,
+            occur_time_uncertainty = ?12,
+            dur_uncertainty = ?13,
             lat = ?14,
             lon = ?15,
             location = ?16,
@@ -1278,8 +1278,8 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             occur_str,
             occur_offset,
             occur_tz,
-            entry.occur_time_precision,
-            entry.dur_precision,
+            entry.occur_uncertainty(),
+            entry.dur_uncertainty(),
             entry.lat,
             entry.lon,
             entry.location.as_deref(),
@@ -1318,7 +1318,7 @@ mod tests {
     use crate::test_util::{entry_builder, fresh_db};
 
     /// da-r569 regression: an insert that mutates the entry post-`Entry::new`
-    /// (here: stamping `Dur::Moment` after construction, the pattern
+    /// (here: stamping `Dur::moment()` after construction, the pattern
     /// `log_entry` uses for `Action::Occur`) must store a content_hash that
     /// agrees with `Entry::expected_content_hash` applied to the row after
     /// load. Otherwise `datum check` flags every fresh occur entry.
@@ -1327,9 +1327,9 @@ mod tests {
         let db = fresh_db();
         let mut entry = entry_builder("testhash").verb(Verb::Point).build();
         // Replicate the `log_entry` post-construction mutation. The hash
-        // computed by `Entry::new` was for `dur=None`; `Dur::Moment` here
+        // computed by `Entry::new` was for `dur=None`; `Dur::moment()` here
         // would silently invalidate it pre-fix.
-        entry.dur = Some(Dur::Moment);
+        entry.dur = Some(Dur::moment());
         db.insert_entry(&entry).unwrap();
 
         let stored = db.get_entry(&entry.slug).unwrap();
@@ -1349,7 +1349,7 @@ mod tests {
     fn dedup_matches_after_post_construction_mutation() {
         let db = fresh_db();
         let mut first = entry_builder("testhash").verb(Verb::Point).build();
-        first.dur = Some(Dur::Moment);
+        first.dur = Some(Dur::moment());
         db.insert_entry(&first).unwrap();
 
         let mut second = first.clone();

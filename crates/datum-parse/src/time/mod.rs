@@ -5,8 +5,8 @@
 //!
 //! * [`context`] — `TimeCtx` / `DefaultDirection`: what ambiguous input
 //!   resolves against.
-//! * [`precision`] — `PrecisionUnit` (formerly in `datum-core::entry`).
-//! * [`uncertainty`] — `Uncertainty` struct + `±N[unit]` suffix parsing.
+//! * [`uncertainty`] — `Uncertainty` + `UncertaintyUnit` (the granularity
+//!   label formerly called `PrecisionUnit`) + `±N[unit]` suffix parsing.
 //! * [`datum_time`] — `DatumTime` (UTC + offset + IANA name).
 //! * [`resolve`] — the one local→UTC resolution utility (`Zone`, `Resolved`,
 //!   `ZoneTimeline`). Every wall-clock→instant conversion goes through it;
@@ -30,7 +30,6 @@ pub mod human_time;
 pub mod parse_date_str;
 pub mod parse_duration_str;
 pub mod parse_time_str;
-pub mod precision;
 pub mod resolve;
 pub mod uncertainty;
 
@@ -39,13 +38,13 @@ pub use context::{DefaultDirection, TimeCtx};
 pub use datum_time::DatumTime;
 pub use parse_date_str::{parse_date_arg, DateArg};
 pub use parse_duration_str::{
-    format_iso_duration, parse_duration, parse_iso_duration, quick_precision_for_count,
+    format_iso_duration, parse_duration, parse_iso_duration, quick_uncertainty_for_count,
 };
 pub use parse_time_str::{count_stacked_flag, parse_time_arg, TimeArg};
-pub use precision::PrecisionUnit;
 pub use resolve::{Resolved, Zone, ZoneSegment, ZoneTimeline};
 pub use uncertainty::{
     parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
+    UncertaintyUnit,
 };
 
 pub use crate::input::time_args::resolve_timezone;

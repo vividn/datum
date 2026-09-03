@@ -124,10 +124,10 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     }
 
     // Dur: reserved `dur=` wins; Action::Occur with no explicit dur
-    // gets `Dur::Moment` (da-ju71.2 lock).
+    // gets `Dur::moment()` (da-ju71.2 lock).
     let mut dur = reserved.dur;
     if matches!(action, Action::Occur) && dur.is_none() {
-        dur = Some(Dur::Moment);
+        dur = Some(Dur::moment());
     }
 
     Ok(Some(ReparsedShape {

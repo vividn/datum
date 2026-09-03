@@ -155,6 +155,7 @@ mod tests {
                 utc: utc("2024-03-05T18:00:00Z"),
                 offset_minutes: -360,
                 timezone: None,
+                uncertainty: None,
             })
             .insert(&db);
         logged_in(&db, "2024-05-05T18:00:00Z", "America/Chicago");

@@ -113,6 +113,7 @@ fn make_occur(field: &str, offset_secs: i64, device: &str) -> Entry {
         utc: at,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     };
     // v3 (da-5ns): an "occur"-style entry has state=None, dur=None →
     // derive_verb returns Point. Carrying a state=1 here would make
@@ -133,6 +134,7 @@ fn make_switch(field: &str, state: &str, offset_secs: i64, device: &str) -> Entr
         utc: at,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     };
     let mut e = Entry::new_legacy(
         field,
@@ -164,11 +166,13 @@ fn make_block(
         utc: start,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     };
     let t_end = DatumTime {
         utc: end,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     };
     let data = serde_json::json!({
         "weight": {"v": weight_kg, "u": "kg"},
@@ -899,6 +903,7 @@ fn s8_conflict_surface_and_resolve() {
             utc: base,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         }),
         None,
         "dev-A",
@@ -917,6 +922,7 @@ fn s8_conflict_surface_and_resolve() {
             utc: b_at,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         }),
         None,
         "dev-B",

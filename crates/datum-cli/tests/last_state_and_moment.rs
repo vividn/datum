@@ -193,7 +193,7 @@ fn switch_moment_records_point_in_time() {
     // zero-span PT0S. A moment anchors a time but has no end.
     e.occur_time.as_ref().expect("time_start set");
     assert!(
-        matches!(e.dur, Some(datum_core::dur::Dur::Moment)),
+        e.dur.as_ref().is_some_and(datum_core::dur::Dur::is_moment),
         "--moment must set dur to MOMENT, got {:?}",
         e.dur
     );
@@ -208,7 +208,7 @@ fn switch_moment_records_point_in_time() {
     run_cli(&["switch", "mood", "happy", "-m"], &db2).expect("short -m");
     let e2 = &db2.entries_for_field("mood", None).unwrap()[0];
     assert!(
-        matches!(e2.dur, Some(datum_core::dur::Dur::Moment)),
+        e2.dur.as_ref().is_some_and(datum_core::dur::Dur::is_moment),
         "short -m must set dur to MOMENT, got {:?}",
         e2.dur
     );

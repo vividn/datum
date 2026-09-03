@@ -43,7 +43,7 @@ fn occur_creates_entry_with_time_start() {
 
     assert_count!(db, "field", 1);
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    // da-ju71.2: occur with no explicit dur emits Dur::Moment, locking
+    // da-ju71.2: occur with no explicit dur emits Dur::moment(), locking
     // the verb to Point regardless of state shape.
     assert_entry_matches!(entry, field: "field", verb: "point");
 
@@ -314,14 +314,15 @@ fn stacked_negative_offsets_subtract_correctly() {
     );
 }
 
-/// da-iyv3: live insert wires `args.time.full_day` through `TimeBuilder`
-/// and stamps the resulting precision onto `entry.occur_time_precision`.
+/// da-iyv3: live insert wires `args.time.full_day` through `TimeBuilder`,
+/// which puts the resulting uncertainty on the `DatumTime` itself
+/// (column `occur_time_uncertainty`).
 ///   * `-D` → P1D + today 00:00 local
 ///   * `-d -1` (no time) → P1D + yesterday 00:00 local
-///   * `-d -1 -t 14:00` → precision NULL + yesterday 14:00 local
+///   * `-d -1 -t 14:00` → uncertainty NULL + yesterday 14:00 local
 ///   * `-D -t 14:00` → P1D + today 00:00 (full-day wins over clock)
 #[test]
-fn full_day_writes_precision_and_strips_clock() {
+fn full_day_writes_uncertainty_and_strips_clock() {
     use chrono::{Local, NaiveTime};
 
     let db = fresh_db();
@@ -331,9 +332,9 @@ fn full_day_writes_precision_and_strips_clock() {
     let e = &db.entries_for_field("today_full", None).unwrap()[0];
     let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
     assert_eq!(
-        e.occur_time_precision.as_deref(),
+        e.occur_uncertainty(),
         Some("P1D"),
-        "-D stamps occur_time_precision=P1D",
+        "-D stamps occur_time_uncertainty=P1D",
     );
     assert_eq!(
         local.time(),
@@ -351,20 +352,20 @@ fn full_day_writes_precision_and_strips_clock() {
     let e = &db.entries_for_field("yest_full", None).unwrap()[0];
     let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
     assert_eq!(
-        e.occur_time_precision.as_deref(),
+        e.occur_uncertainty(),
         Some("P1D"),
         "-d -1 (no clock input) is a date-only event",
     );
     assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
 
-    // -d -1 -t 14:00 → no precision (exact), yesterday 14:00 local.
+    // -d -1 -t 14:00 → no uncertainty stated, yesterday 14:00 local.
     run_cli(&["occur", "yest_clock", "-d", "-1", "-t", "14:00"], &db)
         .expect("occur -d -1 -t 14:00");
     let e = &db.entries_for_field("yest_clock", None).unwrap()[0];
     let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
     assert!(
-        e.occur_time_precision.is_none(),
-        "explicit -t restores exact precision (NULL)",
+        e.occur_uncertainty().is_none(),
+        "explicit -t states no uncertainty (NULL)",
     );
     assert_eq!(local.time(), NaiveTime::from_hms_opt(14, 0, 0).unwrap());
 
@@ -374,7 +375,7 @@ fn full_day_writes_precision_and_strips_clock() {
     let e = &db.entries_for_field("full_overrides_clock", None).unwrap()[0];
     let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
     assert_eq!(
-        e.occur_time_precision.as_deref(),
+        e.occur_uncertainty(),
         Some("P1D"),
         "-D wins over clock per builder rule",
     );
@@ -673,7 +674,7 @@ fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
             .map(datum_core::dur::Dur::to_storage_string)
             .as_deref(),
         Some("MOMENT"),
-        "occur with no explicit --dur emits Dur::Moment",
+        "occur with no explicit --dur emits Dur::moment()",
     );
     assert_eq!(
         entry.verb,
@@ -839,22 +840,25 @@ fn switch_dry_run_does_not_insert() {
     assert_count!(db, "project", 0);
 }
 
-/// da-i5vs acceptance: `dm occur foo dur_precision=PT30M dur=PT1H30M`
-/// routes both reserved keys to columns. `dur` ends up as the ISO-8601
-/// duration; `dur_precision` lands on `Entry.dur_precision` rather than
-/// `data`.
+/// da-i5vs acceptance, renamed by da-b8rs: `dm occur foo
+/// dur_uncertainty=PT30M dur=PT1H30M` routes both reserved keys to
+/// columns. `dur` ends up as the ISO-8601 duration; the uncertainty lands
+/// on `entry.dur` (column `dur_uncertainty`) rather than in `data`.
 #[test]
-fn occur_routes_dur_precision_reserved_key_to_column() {
+fn occur_routes_dur_uncertainty_reserved_key_to_column() {
     let db = fresh_db();
-    run_cli(&["occur", "foo", "dur_precision=PT30M", "dur=PT1H30M"], &db)
-        .expect("occur with reserved keys must dispatch");
+    run_cli(
+        &["occur", "foo", "dur_uncertainty=PT30M", "dur=PT1H30M"],
+        &db,
+    )
+    .expect("occur with reserved keys must dispatch");
 
     assert_count!(db, "foo", 1);
     let entry = &db.entries_for_field("foo", None).unwrap()[0];
     assert_eq!(
-        entry.dur_precision.as_deref(),
+        entry.dur_uncertainty(),
         Some("PT30M"),
-        "dur_precision= must land on the column, not data",
+        "dur_uncertainty= must land on the column, not data",
     );
     assert_eq!(
         entry
@@ -871,11 +875,41 @@ fn occur_routes_dur_precision_reserved_key_to_column() {
                 .data
                 .as_ref()
                 .and_then(|d| d.as_object())
-                .map(|o| o.contains_key("dur_precision"))
+                .map(|o| o.contains_key("dur_uncertainty"))
                 .unwrap_or(false),
-        "dur_precision must NOT leak into data: {:?}",
+        "dur_uncertainty must NOT leak into data: {:?}",
         entry.data,
     );
+}
+
+/// da-b8rs: an uncertainty qualifies something. With no duration on the
+/// entry there is nothing for `dur_uncertainty=` to be *about*, and the old
+/// loose column would have stored it anyway — an orphan value no reader
+/// could interpret. Fail instead of writing it.
+#[test]
+fn dur_uncertainty_without_a_duration_is_rejected() {
+    let db = fresh_db();
+    let err = run_cli(&["start", "foo", "dur_uncertainty=PT30M"], &db)
+        .expect_err("dur_uncertainty= with no duration must fail");
+    assert!(
+        err.to_string().contains("needs a duration"),
+        "unhelpful error: {err}"
+    );
+    assert_count!(db, "foo", 0);
+}
+
+/// The same rule on the occur side: `-T` makes a timeless entry, which has
+/// no instant for an uncertainty to qualify.
+#[test]
+fn occur_time_uncertainty_without_a_time_is_rejected() {
+    let db = fresh_db();
+    let err = run_cli(&["add", "foo", "-T", "occur_time_uncertainty=PT5M"], &db)
+        .expect_err("occur_time_uncertainty= on a timeless entry must fail");
+    assert!(
+        err.to_string().contains("needs a time"),
+        "unhelpful error: {err}"
+    );
+    assert_count!(db, "foo", 0);
 }
 
 /// da-i5vs: bare `unit=foo` is no longer a reserved column key — the

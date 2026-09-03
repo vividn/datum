@@ -104,6 +104,7 @@ fn with_mocked_today(today: NaiveDate, f: impl FnOnce()) {
         utc,
         offset_minutes: 0,
         timezone: Some("UTC".into()),
+        uncertainty: None,
     };
     let prev = install(Arc::new(MockClock::new(dt)));
     f();

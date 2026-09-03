@@ -134,6 +134,7 @@ mod tests {
             utc,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         Entry::new_legacy(
             field,

@@ -12,7 +12,7 @@
 mod common;
 
 use common::run_cli;
-use datum_core::entry::{PrecisionUnit, CURRENT_PARSER_VERSION};
+use datum_core::entry::{UncertaintyUnit, CURRENT_PARSER_VERSION};
 use datum_core::test_util::fresh_db;
 
 /// `-K KEY -K KEY jake berlin` → slug `person:jake__berlin`.
@@ -107,37 +107,37 @@ fn dash_k_affects_data_not_slug() {
 }
 
 /// `datum retime <id> -t <new>±<unc>` re-parses the new time and overwrites
-/// precision fields regardless of the entry's previous precision.
+/// the uncertainty regardless of what the entry carried before.
 #[test]
-fn retime_overwrites_precision_from_new_input() {
+fn retime_overwrites_uncertainty_from_new_input() {
     let db = fresh_db();
-    // Seed an entry with a well-known precision (exact — `occur_time_precision`
-    // unset / NULL).
+    // Seed an entry with a well-known uncertainty (exact — column NULL).
     run_cli(&["occur", "coffee", "-t", "12:00"], &db).expect("seed entry");
     let seeded = &db.entries_for_field("coffee", None).unwrap()[0];
-    // v3 (da-5ns): `occur_time_precision` is a single ISO-8601 duration
-    // string (NULL == exact), replacing the v=19 (seconds, unit) pair.
+    // v3 (da-5ns): the uncertainty is a single ISO-8601 duration string
+    // (NULL == not stated), replacing the v=19 (seconds, unit) pair. Since
+    // da-b8rs it lives on `occur_time` itself, column
+    // `occur_time_uncertainty`.
     assert!(
-        seeded.occur_time_precision.is_none(),
-        "exact precision is NULL on the v=20 column; got {:?}",
-        seeded.occur_time_precision,
+        seeded.occur_uncertainty().is_none(),
+        "an exact time states no uncertainty; got {:?}",
+        seeded.occur_uncertainty(),
     );
     let slug = seeded.slug.clone();
     let hid = seeded.hid.clone();
 
-    // Retime with a ±5m uncertainty on the fresh input — precision replaces,
-    // not merges. da-ivld: id_structure defaults to `%occur_time%`, so the
+    // Retime with a ±5m uncertainty on the fresh input — it replaces, not
+    // merges. da-ivld: id_structure defaults to `%occur_time%`, so the
     // retime auto-rekeys the slug; look the row back up by stable hid.
     run_cli(&["retime", &slug, "-t", "13:00±5m"], &db).expect("retime -t");
 
     let after = db.get_entry(&hid).unwrap();
-    let _ = PrecisionUnit::Exact; // keep the import live for the legacy reference below.
-    let precision = after
-        .occur_time_precision
-        .as_deref()
-        .expect("retime sets occur_time_precision");
+    let _ = UncertaintyUnit::Exact; // keep the import live for the reference below.
+    let uncertainty = after
+        .occur_uncertainty()
+        .expect("retime sets occur_time_uncertainty");
     assert_eq!(
-        precision, "PT5M",
+        uncertainty, "PT5M",
         "5-minute uncertainty serializes as ISO-8601 PT5M",
     );
 }

@@ -349,7 +349,10 @@ fn switch_moment_produces_point_in_time_entry() {
     // Point. A moment has no end, so computed_end_time() is None.
     assert_entry_matches!(entry, field: "project", verb: "point", state: "household");
     assert!(
-        matches!(entry.dur, Some(datum_core::dur::Dur::Moment)),
+        entry
+            .dur
+            .as_ref()
+            .is_some_and(datum_core::dur::Dur::is_moment),
         "-m must set dur to MOMENT, got {:?}",
         entry.dur
     );

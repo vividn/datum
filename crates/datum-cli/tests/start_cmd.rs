@@ -181,7 +181,10 @@ fn start_moment_records_point_dot() {
     let entry = &db.entries_for_field("meeting", None).unwrap()[0];
     assert_entry_matches!(entry, field: "meeting", verb: "point");
     assert!(
-        matches!(entry.dur, Some(datum_core::dur::Dur::Moment)),
+        entry
+            .dur
+            .as_ref()
+            .is_some_and(datum_core::dur::Dur::is_moment),
         "-m must set dur to MOMENT, got {:?}",
         entry.dur
     );
@@ -213,7 +216,10 @@ fn start_moment_yields_to_explicit_dur() {
     let entry = &db.entries_for_field("meeting", None).unwrap()[0];
     assert!(entry.dur.is_some(), "explicit dur must be kept");
     assert!(
-        !matches!(entry.dur, Some(datum_core::dur::Dur::Moment)),
+        !entry
+            .dur
+            .as_ref()
+            .is_some_and(datum_core::dur::Dur::is_moment),
         "explicit dur must win over -m, got {:?}",
         entry.dur
     );

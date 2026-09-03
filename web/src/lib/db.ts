@@ -52,7 +52,7 @@ function rowToEntry(row: Record<string, unknown>): Entry {
 			offsetMinutes: (row.occur_time_offset as number | null) ?? 0,
 			timezone: (row.occur_time_tz as string | null) ?? undefined
 		},
-		occurTimePrecision: (row.occur_time_precision as string | null) ?? undefined,
+		occurTimeUncertainty: (row.occur_time_uncertainty as string | null) ?? undefined,
 		lat: (row.lat as number | null) ?? undefined,
 		lon: (row.lon as number | null) ?? undefined,
 		location: (row.location as string | null) ?? undefined,
@@ -69,13 +69,13 @@ export async function insertEntry(entry: Entry): Promise<void> {
 		sql: `INSERT INTO entries (
 			hid, slug, content_hash, field,
 			state, dur, following_state, verb, data, unit,
-			occur_time, occur_time_offset, occur_time_tz, occur_time_precision,
+			occur_time, occur_time_offset, occur_time_tz, occur_time_uncertainty,
 			lat, lon, location,
 			create_time, modify_time, device_id, raw_input
 		) VALUES (
 			$hid, $slug, $content_hash, $field,
 			$state, $dur, $following_state, $verb, $data, $unit,
-			$occur_time, $occur_time_offset, $occur_time_tz, $occur_time_precision,
+			$occur_time, $occur_time_offset, $occur_time_tz, $occur_time_uncertainty,
 			$lat, $lon, $location,
 			$create_time, $modify_time, $device_id, $raw_input
 		)`,
@@ -94,7 +94,7 @@ export async function insertEntry(entry: Entry): Promise<void> {
 			$occur_time: entry.occurTime.utc,
 			$occur_time_offset: entry.occurTime.offsetMinutes,
 			$occur_time_tz: entry.occurTime.timezone ?? null,
-			$occur_time_precision: entry.occurTimePrecision ?? null,
+			$occur_time_uncertainty: entry.occurTimeUncertainty ?? null,
 			$lat: entry.lat ?? null,
 			$lon: entry.lon ?? null,
 			$location: entry.location ?? null,

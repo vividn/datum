@@ -626,13 +626,17 @@ pub(crate) fn format_field_badge(field: &str, spec: Option<&FieldSpec>) -> Strin
 /// `2026-04-15`, etc.) is prepended so day-axis context isn't lost when
 /// scanning across rows.
 ///
-/// `precision` is the row's `occur_time_precision`. When it is `Some("P1D")`
+/// `uncertainty` is the row's `occur_time_uncertainty`. When it is `Some("P1D")`
 /// the row is a date-only entry (per da-fc0l) and the stamp degrades to the
 /// bare local date `YYYY-MM-DD` — no clock, no offset, no relative-day
 /// prefix. Any other value renders the full datetime; non-`P1D` values are
 /// `±N` uncertainties (da-lkji) and append a gray `±N<unit>` suffix.
-pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime, precision: Option<&str>) -> String {
-    format_timestamp_ref(t, now, precision, None)
+pub(crate) fn format_timestamp(
+    t: &DatumTime,
+    now: &DatumTime,
+    uncertainty: Option<&str>,
+) -> String {
+    format_timestamp_ref(t, now, uncertainty, None)
 }
 
 /// As [`format_timestamp`] but with an optional table-header reference
@@ -647,13 +651,13 @@ pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime, precision: Option
 pub(crate) fn format_timestamp_ref(
     t: &DatumTime,
     now: &DatumTime,
-    precision: Option<&str>,
+    uncertainty: Option<&str>,
     reference_offset: Option<i32>,
 ) -> String {
     // Render in the row's own timezone — "today" is the row's local day,
     // not the host's. See da-n1q acceptance criteria.
     let local = t.local_time();
-    let composed = if precision == Some("P1D") {
+    let composed = if uncertainty == Some("P1D") {
         // da-5uph: P1D rows have no meaningful time-of-day. Show the bare
         // local date; no relative-day prefix needed since the date itself
         // is on-screen.
@@ -666,16 +670,13 @@ pub(crate) fn format_timestamp_ref(
             local.second()
         );
         let offset = compress_offset_minutes(t.offset_minutes);
-        let uncertainty = format_uncertainty_suffix(precision)
+        let suffix = format_uncertainty_suffix(uncertainty)
             .map(|u| paint(GRAY_FG, &u))
             .unwrap_or_default();
         let stamp = match reference_offset {
-            Some(r) if r == t.offset_minutes => format!("{base}{uncertainty}"),
-            Some(_) => format!(
-                "{}{base}{uncertainty}",
-                paint(GRAY_FG, &format!("({offset})"))
-            ),
-            None => format!("{base}{}{uncertainty}", paint(GRAY_FG, &offset)),
+            Some(r) if r == t.offset_minutes => format!("{base}{suffix}"),
+            Some(_) => format!("{}{base}{suffix}", paint(GRAY_FG, &format!("({offset})"))),
+            None => format!("{base}{}{suffix}", paint(GRAY_FG, &offset)),
         };
         match format_relative_day_prefix(t, now) {
             Some(prefix) => format!("{} {stamp}", paint(GRAY_FG, &prefix)),
@@ -701,6 +702,7 @@ pub(crate) fn synthesize_local_datumtime(utc: chrono::DateTime<Utc>) -> DatumTim
         utc,
         offset_minutes,
         timezone: Some("Local".to_string()),
+        uncertainty: None,
     }
 }
 
@@ -718,13 +720,13 @@ pub(crate) fn compress_offset_minutes(minutes: i32) -> String {
     }
 }
 
-/// Render the stored `occur_time_precision` (ISO-8601, as written by
-/// `Uncertainty::to_iso_precision`) as the display suffix body — `PT3M` →
+/// Render the stored `occur_time_uncertainty` (ISO-8601, as written by
+/// `Uncertainty::to_iso`) as the display suffix body — `PT3M` →
 /// `±3m`, `PT90S` → `±90s`, `P2D` → `±2d` (da-lkji). `P1D` is the
 /// date-only marker (da-5uph), never an uncertainty, so it returns `None`;
 /// so do unparseable or compound forms.
-fn format_uncertainty_suffix(precision: Option<&str>) -> Option<String> {
-    let iso = precision?;
+fn format_uncertainty_suffix(uncertainty: Option<&str>) -> Option<String> {
+    let iso = uncertainty?;
     if iso == "P1D" {
         return None;
     }
@@ -780,9 +782,9 @@ pub fn format_info_line_at(
     now: &DatumTime,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
-    let precision = entry.occur_time_precision.as_deref();
+    let uncertainty = entry.occur_uncertainty();
     if let Some(t) = &entry.occur_time {
-        parts.push(format_timestamp(t, now, precision));
+        parts.push(format_timestamp(t, now, uncertainty));
     } else {
         // Hybrid fallback: row has no occur_time, so render create_time
         // prefixed by a gray 'c' — same convention the table renderer
@@ -903,6 +905,7 @@ mod tests {
             utc,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         }
     }
 
@@ -972,11 +975,13 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 4, 21, 22, 0, 0).unwrap(),
             offset_minutes: 12 * 60,
             timezone: Some("Pacific/Auckland".to_string()),
+            uncertainty: None,
         };
         let now_in_utc = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 0, 0, 0).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         // Per UTC: target (Apr 21) is "yesterday" relative to now (Apr 22).
         // Per target's local clock: both are Apr 22 → today, no prefix.
@@ -1013,11 +1018,13 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 15, 30).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let now = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 17, 0, 0).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let out = format_timestamp(&target, &now, None);
         assert!(
@@ -1028,7 +1035,7 @@ mod tests {
         std::env::remove_var("NO_COLOR");
     }
 
-    /// da-5uph: P1D precision degrades the stamp to a bare local date.
+    /// da-5uph: a P1D uncertainty degrades the stamp to a bare local date.
     /// No clock, no offset suffix, no relative-day prefix.
     #[test]
     fn timestamp_p1d_renders_as_bare_local_date() {
@@ -1040,6 +1047,7 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 0, 0, 0).unwrap(),
             offset_minutes: 5 * 60,
             timezone: Some("Asia/Karachi".to_string()),
+            uncertainty: None,
         };
         let now = dt(2026, 4, 22);
         let out = format_timestamp(&target, &now, Some("P1D"));
@@ -1053,25 +1061,27 @@ mod tests {
         std::env::remove_var("NO_COLOR");
     }
 
-    /// da-5uph: precision other than `P1D` (including `None`) keeps the
+    /// da-5uph: an uncertainty other than `P1D` (including `None`) keeps the
     /// full datetime rendering.
     #[test]
-    fn timestamp_non_p1d_precision_keeps_clock() {
+    fn timestamp_non_p1d_uncertainty_keeps_clock() {
         std::env::set_var("DATUM_COLOR", "0");
         std::env::set_var("NO_COLOR", "1");
         let target = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 15, 30).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let now = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 17, 0, 0).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let out_none = format_timestamp(&target, &now, None);
         assert!(out_none.starts_with("09:15:30"), "got {out_none:?}");
-        // da-lkji: a non-P1D precision keeps the clock AND surfaces the
+        // da-lkji: a non-P1D uncertainty keeps the clock AND surfaces the
         // stored uncertainty as a trailing `±N<unit>`.
         let out_sec = format_timestamp(&target, &now, Some("PT1S"));
         assert_eq!(
@@ -1095,6 +1105,7 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 20, 55, 0).unwrap(),
             offset_minutes: 120,
             timezone: Some("Europe/Berlin".to_string()),
+            uncertainty: None,
         };
         assert_eq!(
             format_timestamp_ref(&same, &now, None, Some(120)),
@@ -1104,6 +1115,7 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 8, 15, 0).unwrap(),
             offset_minutes: 60,
             timezone: Some("Europe/London".to_string()),
+            uncertainty: None,
         };
         assert_eq!(
             format_timestamp_ref(&other, &now, None, Some(120)),
@@ -1136,6 +1148,7 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 10, 0, 0).unwrap(),
             offset_minutes: -4 * 60,
             timezone: Some("America/New_York".to_string()),
+            uncertainty: None,
         };
         // "now" is in Berlin — used to verify the relative-day calc
         // also uses the row's local calendar, not the host's.
@@ -1143,6 +1156,7 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 10, 0, 0).unwrap(),
             offset_minutes: 2 * 60,
             timezone: Some("Europe/Berlin".to_string()),
+            uncertainty: None,
         };
         let out = format_timestamp(&ny_target, &berlin_now, None);
         assert!(
@@ -1168,6 +1182,7 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 0, 0).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         Entry::new(
             field.to_string(),
@@ -1234,6 +1249,7 @@ mod tests {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 0, 0).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         Entry::new(
             field.to_string(),

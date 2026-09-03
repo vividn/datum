@@ -8,8 +8,9 @@ use crate::error::{ParseError, Result};
 
 /// A timestamp with full timezone metadata, as stored in the database.
 ///
-/// The three fields are **not independent**: `offset_minutes` is the signed
-/// UTC offset (in minutes) of `utc` resolved at `timezone`. Construct via
+/// `utc`, `offset_minutes` and `timezone` are **not independent**:
+/// `offset_minutes` is the signed UTC offset (in minutes) of `utc` resolved
+/// at `timezone`. Construct via
 /// [`DatumTime::from_utc_and_tz`] to compute it correctly. Directly mutating
 /// `utc` or `timezone` without also updating `offset_minutes` desynchronizes
 /// the struct — [`DatumTime::local_time`] then returns the wrong wall-clock
@@ -33,6 +34,24 @@ pub struct DatumTime {
     /// whole of what we know, and consumers that need a zone fall back to
     /// that fixed offset.
     pub timezone: Option<String>,
+    /// How precisely this instant is known, as the ISO-8601 duration of the
+    /// ± radius (`"PT5M"` for `±5m`, `"P1D"` for a date-only entry). Written
+    /// by `TimeBuilder::build_with_uncertainty` from a `-q` stack or an
+    /// explicit `±N`, and stored in `entries.occur_time_uncertainty`.
+    ///
+    /// `None` means *unknown* — we were not told how precisely the time is
+    /// known — which is **not** the claim "this time is exact". Same rule as
+    /// `timezone` above, for the same reason: naming a precision we were not
+    /// given invents history. Renderers that need a floor may *choose* to
+    /// treat unknown as second-exact, but they choose it locally and say so;
+    /// the field itself makes no such claim.
+    ///
+    /// Deliberately **absent from the `content_hash` preimage** — see the
+    /// note on `datum_core::entry::compute_hash`.
+    ///
+    /// [`Uncertainty::to_iso`]: crate::time::Uncertainty::to_iso
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uncertainty: Option<String>,
 }
 
 impl DatumTime {
@@ -50,6 +69,7 @@ impl DatumTime {
             utc,
             offset_minutes,
             timezone: Some(timezone.to_string()),
+            uncertainty: None,
         })
     }
 
@@ -154,6 +174,7 @@ mod tests {
             utc: at("2024-01-15T12:00:00Z"),
             offset_minutes: 330, // UTC+05:30, zone unknown
             timezone: None,
+            uncertainty: None,
         };
         assert_eq!(t.expected_offset_minutes().unwrap(), None);
         t.refresh_offset().unwrap();

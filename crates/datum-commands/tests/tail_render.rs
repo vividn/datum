@@ -26,6 +26,7 @@ fn dt(y: i32, mo: u32, d: u32, h: u32, m: u32) -> DatumTime {
         utc,
         offset_minutes: 0,
         timezone: Some("UTC".to_string()),
+        uncertainty: None,
     }
 }
 
@@ -458,6 +459,7 @@ fn dt_off(y: i32, mo: u32, d: u32, h: u32, m: u32, offset_minutes: i32, tz: &str
         utc: Utc.with_ymd_and_hms(y, mo, d, h, m, 0).unwrap(),
         offset_minutes,
         timezone: Some(tz.to_string()),
+        uncertainty: None,
     }
 }
 
@@ -481,7 +483,7 @@ fn tail_table_offset_in_header_prefix_only_when_differing() {
         None,
         dt_off(2026, 4, 22, 19, 0, 120, "Europe/Berlin"),
     );
-    uncertain.occur_time_precision = Some("PT3M".to_string());
+    uncertain.set_occur_uncertainty(Some("PT3M".to_string()));
     let off_offset = entry_at(
         "coffee",
         Verb::Point,
@@ -555,7 +557,7 @@ fn tail_table_offset_prefix_and_uncertainty_suffix_are_grey() {
         None,
         dt_off(2026, 4, 22, 19, 0, 120, "Europe/Berlin"),
     );
-    uncertain.occur_time_precision = Some("PT3M".to_string());
+    uncertain.set_occur_uncertainty(Some("PT3M".to_string()));
     let off_offset = entry_at(
         "coffee",
         Verb::Point,

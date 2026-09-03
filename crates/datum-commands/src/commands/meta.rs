@@ -35,7 +35,7 @@ fn add_note(field: &str, text: &str, db: &Db) -> Result<()> {
     // back as point-in-time annotations. The user-facing temporal meaning
     // still lives in `create_time`, which equals this `occur_time` at insert.
     //
-    // `Dur::Moment` locks the row to `Verb::Point` regardless of state
+    // `Dur::moment()` locks the row to `Verb::Point` regardless of state
     // shape so the verb classifier doesn't promote it to a switch.
     let mut entry = Entry::new(
         field,
@@ -43,7 +43,7 @@ fn add_note(field: &str, text: &str, db: &Db) -> Result<()> {
         Some(JsonValue::String(text.to_string())),
         None,
         Some(DatumTime::now()),
-        Some(Dur::Moment),
+        Some(Dur::moment()),
         device_id()?,
     );
     let mut meta_obj = serde_json::Map::new();

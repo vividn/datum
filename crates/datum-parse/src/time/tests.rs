@@ -203,7 +203,7 @@ fn parse_uncertainty_plus_minus_unicode() {
     let u = t.uncertainty.expect("uncertainty");
     // Bare number defaults to minutes.
     assert_eq!(u.seconds, 5 * 60);
-    assert_eq!(u.unit, PrecisionUnit::Minute);
+    assert_eq!(u.unit, UncertaintyUnit::Minute);
 }
 
 #[test]
@@ -215,7 +215,7 @@ fn parse_uncertainty_plus_hyphen_ascii() {
     );
     let u = t.uncertainty.expect("uncertainty");
     assert_eq!(u.seconds, 5 * 60);
-    assert_eq!(u.unit, PrecisionUnit::Minute);
+    assert_eq!(u.unit, UncertaintyUnit::Minute);
 }
 
 #[test]
@@ -223,19 +223,19 @@ fn parse_uncertainty_with_units() {
     // seconds
     let u = parse_uncertainty("30s").unwrap();
     assert_eq!(u.seconds, 30);
-    assert_eq!(u.unit, PrecisionUnit::Second);
+    assert_eq!(u.unit, UncertaintyUnit::Second);
     // minutes (explicit)
     let u = parse_uncertainty("5m").unwrap();
     assert_eq!(u.seconds, 300);
-    assert_eq!(u.unit, PrecisionUnit::Minute);
+    assert_eq!(u.unit, UncertaintyUnit::Minute);
     // hours
     let u = parse_uncertainty("2h").unwrap();
     assert_eq!(u.seconds, 7200);
-    assert_eq!(u.unit, PrecisionUnit::Hour);
+    assert_eq!(u.unit, UncertaintyUnit::Hour);
     // days
     let u = parse_uncertainty("1d").unwrap();
     assert_eq!(u.seconds, 86400);
-    assert_eq!(u.unit, PrecisionUnit::Date);
+    assert_eq!(u.unit, UncertaintyUnit::Date);
 }
 
 #[test]
@@ -245,14 +245,14 @@ fn parse_combined_time_and_uncertainty() {
     assert_eq!(t.offset, Some(Duration::minutes(5)));
     let u = t.uncertainty.unwrap();
     assert_eq!(u.seconds, 120);
-    assert_eq!(u.unit, PrecisionUnit::Minute);
+    assert_eq!(u.unit, UncertaintyUnit::Minute);
 
     // relative negative offset + ascii +- with second unit
     let t = parse_time_arg("-30+-10s", TimeCtx::now()).unwrap();
     assert_eq!(t.offset, Some(Duration::minutes(-30)));
     let u = t.uncertainty.unwrap();
     assert_eq!(u.seconds, 10);
-    assert_eq!(u.unit, PrecisionUnit::Second);
+    assert_eq!(u.unit, UncertaintyUnit::Second);
 
     // date + day uncertainty via the date parser
     let d = parse_date_arg("2024-03-16±1d", TimeCtx::now()).unwrap();
@@ -262,39 +262,39 @@ fn parse_combined_time_and_uncertainty() {
     );
     let u = d.uncertainty.unwrap();
     assert_eq!(u.seconds, 86400);
-    assert_eq!(u.unit, PrecisionUnit::Date);
+    assert_eq!(u.unit, UncertaintyUnit::Date);
 }
 
 #[test]
-fn q_flags_do_not_increase_precision_below_five_qs() {
+fn q_flags_do_not_increase_uncertainty_below_five_qs() {
     for n in 1..=4u32 {
-        let u = quick_precision_for_count(n);
-        assert_eq!(u.seconds, 150, "n={n}: expected 150s precision");
-        assert_eq!(u.unit, PrecisionUnit::Minute);
+        let u = quick_uncertainty_for_count(n);
+        assert_eq!(u.seconds, 150, "n={n}: expected 150s uncertainty");
+        assert_eq!(u.unit, UncertaintyUnit::Minute);
     }
 }
 
 #[test]
-fn five_plus_q_flags_escalate_precision() {
+fn five_plus_q_flags_escalate_uncertainty() {
     for n in 5..=10u32 {
-        let u = quick_precision_for_count(n);
-        assert_eq!(u.seconds, 300, "n={n}: expected 300s precision");
-        assert_eq!(u.unit, PrecisionUnit::Minute);
+        let u = quick_uncertainty_for_count(n);
+        assert_eq!(u.seconds, 300, "n={n}: expected 300s uncertainty");
+        assert_eq!(u.unit, UncertaintyUnit::Minute);
     }
 }
 
 #[test]
 #[cfg(feature = "native")]
-fn explicit_uncertainty_overrides_q_precision() {
+fn explicit_uncertainty_overrides_quick_uncertainty() {
     let t = parse_time_arg("+5±30s", TimeCtx::now()).unwrap();
     let builder = TimeBuilder::now()
         .with_quick_count(3)
-        .with_quick_precision(3)
+        .with_quick_uncertainty(3)
         .with_time_arg(t);
-    let u = builder.precision();
+    let u = builder.uncertainty();
     // Explicit ±30s wins over the -qqq default of 150s/minute.
     assert_eq!(u.seconds, 30);
-    assert_eq!(u.unit, PrecisionUnit::Second);
+    assert_eq!(u.unit, UncertaintyUnit::Second);
 }
 
 #[test]
@@ -370,7 +370,7 @@ fn iso_datetime_with_uncertainty_suffix() {
     assert!(t.iso_instant.is_some());
     let u = t.uncertainty.expect("uncertainty");
     assert_eq!(u.seconds, 300);
-    assert_eq!(u.unit, PrecisionUnit::Minute);
+    assert_eq!(u.unit, UncertaintyUnit::Minute);
 }
 
 // ── Compact <mmm><day> shorthand ────────────────────────────────────────
@@ -386,6 +386,7 @@ fn with_mocked_today<F: FnOnce()>(today: chrono::NaiveDate, f: F) {
         utc,
         offset_minutes: 0,
         timezone: Some("UTC".into()),
+        uncertainty: None,
     };
     install(Arc::new(MockClock::new(dt)));
     f();

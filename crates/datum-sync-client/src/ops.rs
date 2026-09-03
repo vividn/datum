@@ -78,7 +78,9 @@ pub fn pack_changeset_page(
 ) -> Result<(Changeset, Option<u64>)> {
     let (entries, max_ms) = select_entries_since(db, since_modify_ms, limit)?;
     let payload = ChangesetPayloadV1 { entries };
-    let json = serde_json::to_vec(&payload)?;
+    let mut doc = serde_json::to_value(&payload)?;
+    add_legacy_uncertainty_mirror(&mut doc);
+    let json = serde_json::to_vec(&doc)?;
     let mut bytes = Vec::with_capacity(CHANGESET_MAGIC_V1.len() + json.len());
     bytes.extend_from_slice(CHANGESET_MAGIC_V1);
     bytes.extend_from_slice(&json);
@@ -134,7 +136,90 @@ fn payload_json(bytes: &[u8]) -> Result<&[u8]> {
 }
 
 fn parse_payload(bytes: &[u8]) -> Result<ChangesetPayloadV1> {
-    Ok(serde_json::from_slice(payload_json(bytes)?)?)
+    let mut doc: serde_json::Value = serde_json::from_slice(payload_json(bytes)?)?;
+    adopt_legacy_uncertainty(&mut doc);
+    Ok(serde_json::from_value(doc)?)
+}
+
+/// The one place foreign changeset JSON becomes `Entry`s, and so the one
+/// place the pre-da-b8rs wire shape has to be understood.
+///
+/// Before da-b8rs an entry carried `occur_time_precision` and
+/// `dur_precision` as its own top-level keys; now the same values live on
+/// the time and the duration they describe. Serde ignores fields it does
+/// not recognise — nothing in this crate or `datum-core` sets
+/// `deny_unknown_fields` — so without this fold a peer running a newer
+/// build would read an older peer's payload and *silently* drop the
+/// uncertainty, with no error to notice. Fold it instead.
+///
+/// Only fills a gap: an entry that already states its uncertainty in the
+/// new place keeps it.
+fn adopt_legacy_uncertainty(doc: &mut serde_json::Value) {
+    let Some(entries) = doc.get_mut("entries").and_then(|e| e.as_array_mut()) else {
+        return;
+    };
+    for entry in entries {
+        let Some(obj) = entry.as_object_mut() else {
+            continue;
+        };
+        if let Some(legacy) = obj.remove("occur_time_precision") {
+            if let Some(occur) = obj.get_mut("occur_time").and_then(|t| t.as_object_mut()) {
+                if !occur.contains_key("uncertainty") && !legacy.is_null() {
+                    occur.insert("uncertainty".to_string(), legacy);
+                }
+            }
+        }
+        if let Some(legacy) = obj.remove("dur_precision") {
+            let (Some(unc), Some(dur)) = (legacy.as_str(), obj.get("dur").and_then(|d| d.as_str()))
+            else {
+                continue;
+            };
+            if !dur.contains('±') {
+                let folded = format!("{dur}±{unc}");
+                obj.insert("dur".to_string(), serde_json::Value::String(folded));
+            }
+        }
+    }
+}
+
+/// Write the pre-da-b8rs shape alongside the new one so a peer that has
+/// not upgraded yet still reads both uncertainties.
+///
+/// `occur_time.uncertainty` is *mirrored* to a top-level
+/// `occur_time_precision`: an old peer ignores the nested key and reads the
+/// mirror. `dur` is *split* rather than mirrored — an old peer parses `dur`
+/// strictly and would reject the whole changeset on the `±` form, so the
+/// column value goes out bare with the uncertainty beside it in
+/// `dur_precision`. [`adopt_legacy_uncertainty`] puts both back.
+///
+/// Delete this (and its counterpart) once every device is upgraded; until
+/// then the ordering constraint is the point — a rename in a synced store
+/// is a rollout problem, not a schema problem.
+fn add_legacy_uncertainty_mirror(doc: &mut serde_json::Value) {
+    let Some(entries) = doc.get_mut("entries").and_then(|e| e.as_array_mut()) else {
+        return;
+    };
+    for entry in entries {
+        let Some(obj) = entry.as_object_mut() else {
+            continue;
+        };
+        let occur_unc = obj
+            .get("occur_time")
+            .and_then(|t| t.get("uncertainty"))
+            .cloned();
+        if let Some(u) = occur_unc {
+            obj.insert("occur_time_precision".to_string(), u);
+        }
+        let split = obj
+            .get("dur")
+            .and_then(|d| d.as_str())
+            .and_then(|d| d.split_once('±'))
+            .map(|(span, unc)| (span.to_string(), unc.to_string()));
+        if let Some((span, unc)) = split {
+            obj.insert("dur".to_string(), serde_json::Value::String(span));
+            obj.insert("dur_precision".to_string(), serde_json::Value::String(unc));
+        }
+    }
 }
 
 /// Decode the entry list from a packed changeset, validating the envelope
@@ -578,8 +663,8 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
         r#"INSERT INTO entries (
             hid, slug, content_hash, field,
             verb, state, dur, following_state, data,
-            occur_time, occur_time_offset, occur_time_tz, occur_time_precision,
-            dur_precision,
+            occur_time, occur_time_offset, occur_time_tz, occur_time_uncertainty,
+            dur_uncertainty,
             lat, lon, location,
             create_time, modify_time, device_id,
             deleted_at, id_structure, field_structure,
@@ -615,8 +700,8 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             occur_time      = excluded.occur_time,
             occur_time_offset = excluded.occur_time_offset,
             occur_time_tz   = excluded.occur_time_tz,
-            occur_time_precision = excluded.occur_time_precision,
-            dur_precision   = excluded.dur_precision,
+            occur_time_uncertainty = excluded.occur_time_uncertainty,
+            dur_uncertainty = excluded.dur_uncertainty,
             lat             = excluded.lat,
             lon             = excluded.lon,
             location        = excluded.location,
@@ -646,8 +731,8 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             occur_str,
             occur_offset,
             occur_tz,
-            entry.occur_time_precision,
-            entry.dur_precision,
+            entry.occur_uncertainty(),
+            entry.dur_uncertainty(),
             entry.lat,
             entry.lon,
             entry.location.as_deref(),
@@ -672,6 +757,86 @@ mod tests {
     use chrono::{Duration, TimeZone, Utc};
     use datum_core::entry::{Entry, Verb};
     use datum_core::time::DatumTime;
+
+    // ─── da-b8rs: precision → uncertainty is a wire-format change ────────
+
+    /// A pre-da-b8rs peer ships both uncertainties as its own top-level
+    /// keys. Nothing sets `deny_unknown_fields`, so without the fold they
+    /// would be dropped in silence — the exact failure mode the rename
+    /// risks. Both must land in their new homes.
+    #[test]
+    fn legacy_wire_uncertainty_is_adopted() {
+        let mut doc = serde_json::json!({
+            "entries": [{
+                "occur_time": {"utc": "2026-04-21T12:00:00Z", "offset_minutes": 0},
+                "occur_time_precision": "PT5M",
+                "dur": "PT1H30M",
+                "dur_precision": "PT1M",
+            }]
+        });
+        adopt_legacy_uncertainty(&mut doc);
+        let e = &doc["entries"][0];
+        assert_eq!(e["occur_time"]["uncertainty"], "PT5M");
+        assert_eq!(e["dur"], "PT1H30M±PT1M");
+        assert!(e.get("occur_time_precision").is_none());
+        assert!(e.get("dur_precision").is_none());
+    }
+
+    /// The fold fills a gap; it never overwrites a value already stated in
+    /// the new place, so a new-shaped payload that also carries the legacy
+    /// mirror round-trips unchanged.
+    #[test]
+    fn legacy_wire_fold_does_not_overwrite_new_shape() {
+        let mut doc = serde_json::json!({
+            "entries": [{
+                "occur_time": {"utc": "2026-04-21T12:00:00Z", "uncertainty": "PT5M"},
+                "occur_time_precision": "PT99M",
+                "dur": "PT1H30M±PT1M",
+                "dur_precision": "PT99M",
+            }]
+        });
+        adopt_legacy_uncertainty(&mut doc);
+        assert_eq!(doc["entries"][0]["occur_time"]["uncertainty"], "PT5M");
+        assert_eq!(doc["entries"][0]["dur"], "PT1H30M±PT1M");
+    }
+
+    /// What a pre-da-b8rs peer sees on the wire: `dur` bare (it parses that
+    /// column strictly and would reject a `±` form outright) with the
+    /// uncertainty beside it, and `occur_time_precision` mirrored back to
+    /// the top level.
+    #[test]
+    fn legacy_wire_mirror_is_readable_by_an_old_peer() {
+        let mut doc = serde_json::json!({
+            "entries": [{
+                "occur_time": {"utc": "2026-04-21T12:00:00Z", "uncertainty": "PT5M"},
+                "dur": "PT1H30M±PT1M",
+            }]
+        });
+        add_legacy_uncertainty_mirror(&mut doc);
+        let e = &doc["entries"][0];
+        assert_eq!(e["occur_time_precision"], "PT5M");
+        assert_eq!(e["dur"], "PT1H30M");
+        assert_eq!(e["dur_precision"], "PT1M");
+    }
+
+    /// End to end through the real envelope: a packed changeset survives
+    /// the mirror-then-fold round trip with both uncertainties intact.
+    #[test]
+    fn packed_changeset_round_trips_both_uncertainties() {
+        let db = fresh_db();
+        let mut e = make_entry("coffee", 0);
+        e.set_occur_uncertainty(Some("PT5M".to_string()));
+        e.dur = Some(datum_core::dur::Dur::of(Duration::minutes(90)));
+        e.set_dur_uncertainty(Some("PT1M".to_string()));
+        db.insert_entry(&e).unwrap();
+
+        let cs = pack_changeset(&db, 0).unwrap();
+        let back = changeset_entries(cs.as_bytes()).unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].occur_uncertainty(), Some("PT5M"));
+        assert_eq!(back[0].dur_uncertainty(), Some("PT1M"));
+        assert_eq!(back[0].dur.as_ref().unwrap().to_storage_string(), "PT1H30M");
+    }
 
     fn fresh_db() -> Db {
         Db::open_in_memory().unwrap()
@@ -702,6 +867,7 @@ mod tests {
             utc: at,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let mut e = Entry::new(
             field,
@@ -1427,6 +1593,7 @@ mod tests {
             utc: at,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let mut local = Entry::new(
             "coffee",
@@ -1434,7 +1601,7 @@ mod tests {
             Some(serde_json::json!("on")),
             None,
             Some(t),
-            Some(datum_core::dur::Dur::Of(Duration::minutes(30))),
+            Some(datum_core::dur::Dur::of(Duration::minutes(30))),
             "dev-1",
         );
         local.create_time = at;

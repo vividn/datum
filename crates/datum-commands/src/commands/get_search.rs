@@ -205,6 +205,7 @@ mod tests {
             utc: Utc.timestamp_opt(secs, 0).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         }
     }
 
@@ -221,7 +222,7 @@ mod tests {
     }
 
     fn block(field: &str, state: JsonValue, dur_secs: i64) -> Entry {
-        let dur = Dur::Of(chrono::Duration::seconds(dur_secs));
+        let dur = Dur::of(chrono::Duration::seconds(dur_secs));
         Entry::new(
             field,
             Verb::Block,

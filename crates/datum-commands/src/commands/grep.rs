@@ -102,6 +102,7 @@ mod tests {
             utc,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         Entry::new_legacy(field, Verb::Point, Some(value), extra, Some(t), None, "d1")
     }
@@ -308,6 +309,7 @@ mod tests {
             utc,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         db.insert_entry(&Entry::new_legacy(
             "plan",

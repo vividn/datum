@@ -65,7 +65,7 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
         Some(JsonValue::String(comment.clone()))
     };
 
-    // `Dur::Moment` locks the row to Verb::Point regardless of state
+    // `Dur::moment()` locks the row to Verb::Point regardless of state
     // shape so the verb classifier doesn't promote it. Matches the
     // pattern `datum meta` uses.
     let mut entry = Entry::new(
@@ -74,7 +74,7 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
         value,
         None,
         Some(occur_time.clone()),
-        Some(Dur::Moment),
+        Some(Dur::moment()),
         device_id()?,
     );
     entry.extra_metadata = Some(JsonValue::Object(meta_obj));

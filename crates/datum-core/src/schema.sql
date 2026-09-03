@@ -50,14 +50,17 @@ CREATE TABLE IF NOT EXISTS entries (
     occur_time           TEXT,                   -- ISO 8601 UTC; NULL = timeless (bare `add`), da-lxyw
     occur_time_offset    INTEGER,                -- UTC offset in minutes
     occur_time_tz        TEXT,                   -- IANA timezone name
-    -- Single ISO-8601 duration string (e.g. "PT1S", "PT1M", "PT1H",
-    -- "P1D", "P1W"). Replaces the v3-era (precision INTEGER seconds,
-    -- precision_unit TEXT) pair.
-    occur_time_precision TEXT,
-    -- ISO 8601 duration string capturing the granularity at which
-    -- `dur` is meaningful (e.g. "PT1M" for minute-resolution). NULL =
-    -- unspecified; the renderer falls back to the full `dur` value.
-    dur_precision        TEXT,
+    -- How precisely `occur_time` is known: a single ISO-8601 duration
+    -- string giving the ± radius (e.g. "PT1S", "PT1M", "PT1H", "P1D",
+    -- "P1W"). Replaces the v3-era (precision INTEGER seconds,
+    -- precision_unit TEXT) pair; named `occur_time_precision` before
+    -- da-b8rs. NULL = unknown, which is NOT the claim "exact" — same rule
+    -- as occur_time_tz above.
+    occur_time_uncertainty TEXT,
+    -- How precisely `dur` is known, same ISO-8601 ± radius (e.g. "PT1M"
+    -- for minute-resolution). NULL = unknown; the renderer falls back to
+    -- the full `dur` value. Named `dur_precision` before da-b8rs.
+    dur_uncertainty      TEXT,
 
     -- Where
     lat             REAL,

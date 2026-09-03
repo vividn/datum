@@ -9,7 +9,7 @@ SQLite, reqwest, or other native-only dependencies.
 
 | Module      | What it owns                                                       |
 |-------------|--------------------------------------------------------------------|
-| [`time`]    | Date/time/duration parsing, [`DatumTime`](time::DatumTime), [`PrecisionUnit`](time::PrecisionUnit), uncertainty. |
+| [`time`]    | Date/time/duration parsing, [`DatumTime`](time::DatumTime), [`UncertaintyUnit`](time::UncertaintyUnit), uncertainty. |
 | [`input`]   | Argv primitives — `flexible_positional`, `consolidate_keys`, `data_args`. Direct port of datum's `src/input/*.ts`. |
 | [`parse`]   | The bespoke argv parser. Owns the `datum` binary's CLI surface; emits the intent IR ([`cli`]). |
 | [`cli`]     | The intent IR ([`Cli`](cli::Cli), [`Command`](cli::Command)) consumed by `datum-commands`. |

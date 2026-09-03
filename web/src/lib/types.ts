@@ -30,7 +30,7 @@ export interface Entry {
 	data?: unknown;
 	unit?: string;
 	occurTime: DatumTime;
-	occurTimePrecision?: string;
+	occurTimeUncertainty?: string;
 	lat?: number;
 	lon?: number;
 	location?: string;

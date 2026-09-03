@@ -61,17 +61,17 @@ pub(crate) struct UserEditableEntry {
     #[serde(default)]
     state: Option<JsonValue>,
     #[serde(default)]
+    /// Carries its own uncertainty in the string (`"PT30M±PT5M"`) — there
+    /// is no separate `dur_precision` key since da-b8rs.
     dur: Option<datum_core::dur::Dur>,
-    #[serde(default)]
-    dur_precision: Option<String>,
     #[serde(default)]
     following_state: Option<JsonValue>,
     #[serde(default)]
     data: Option<JsonValue>,
     #[serde(default)]
+    /// Carries its own `"uncertainty"` key — there is no separate
+    /// `occur_time_precision` key since da-b8rs.
     occur_time: Option<DatumTime>,
-    #[serde(default)]
-    occur_time_precision: Option<String>,
     #[serde(default)]
     lat: Option<f64>,
     #[serde(default)]
@@ -91,11 +91,9 @@ impl UserEditableEntry {
             verb: e.verb,
             state: e.state.clone(),
             dur: e.dur.clone(),
-            dur_precision: e.dur_precision.clone(),
             following_state: e.following_state.clone(),
             data: e.data.clone(),
             occur_time: e.occur_time.clone(),
-            occur_time_precision: e.occur_time_precision.clone(),
             lat: e.lat,
             lon: e.lon,
             location: e.location.clone(),
@@ -114,11 +112,9 @@ impl UserEditableEntry {
         e.verb = self.verb;
         e.state = self.state;
         e.dur = self.dur;
-        e.dur_precision = self.dur_precision;
         e.following_state = self.following_state;
         e.data = self.data;
         e.occur_time = self.occur_time;
-        e.occur_time_precision = self.occur_time_precision;
         e.lat = self.lat;
         e.lon = self.lon;
         e.location = self.location;
@@ -307,7 +303,6 @@ mod tests {
             "following_state": e.following_state,
             "data": e.data,
             "occur_time": serde_json::to_value(&e.occur_time).unwrap(),
-            "occur_time_precision": e.occur_time_precision,
             "lat": e.lat,
             "lon": e.lon,
             "location": e.location,
@@ -353,6 +348,7 @@ mod tests {
             utc: t,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let e = Entry::new_legacy(field, verb, value, extra, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();
@@ -616,6 +612,7 @@ mod tests {
             utc: new_time,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let payload = editor_payload(&before, |doc| {
             doc["occur_time"] = serde_json::to_value(&new_dt).unwrap();

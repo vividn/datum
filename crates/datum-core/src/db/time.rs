@@ -16,37 +16,33 @@ use chrono::Duration;
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 use crate::field_spec::DEFAULT_ID_DELIMITER;
-use crate::time::Uncertainty;
 
 use super::row_mapper::row_to_entry;
 use super::types::RetimeFilter;
 use super::Db;
 
 impl Db {
-    /// Retime matching rows to a fresh absolute `occur_time` + precision.
+    /// Retime matching rows to a fresh absolute `occur_time`.
     ///
-    /// The precision is rendered into a single ISO-8601 duration string
-    /// (e.g. `PT1S`, `PT1M`, `P1D`) via [`Uncertainty::to_iso_precision`]
-    /// and stored in `occur_time_precision` — the v=20 schema collapsed
-    /// the (precision_seconds, precision_unit) pair into one column.
+    /// The new time carries its own uncertainty (`DatumTime::uncertainty`,
+    /// an ISO-8601 ± radius), so retiming replaces both together and cannot
+    /// leave a stale uncertainty describing a time that no longer exists —
+    /// which is the whole point of da-b8rs putting it there.
     ///
     /// da-sunq: the whole batch runs in one transaction — a mid-batch
     /// failure (rekey collision, disk error) rolls back every
     /// already-shifted row, so a partial shift is never visible.
-    pub fn set_start_time_with_precision(
+    pub fn set_start_time(
         &self,
         filter: &RetimeFilter,
         new_start: &crate::time::DatumTime,
-        precision: &Uncertainty,
     ) -> Result<usize> {
         let entries = select_retime_targets(self, filter)?;
-        let precision_iso = precision.to_iso_precision();
         let tx = self.conn.unchecked_transaction()?;
         let mut count = 0usize;
         for mut e in entries {
             let old_slug = e.slug.clone();
             e.occur_time = Some(new_start.clone());
-            e.occur_time_precision = precision_iso.clone();
             self.save_existing_entry_with_auto_reinterp_kind_in_tx(
                 &old_slug,
                 e,
@@ -60,7 +56,7 @@ impl Db {
     }
 
     /// Shift matching rows' `occur_time` by `offset`. Atomic over the
-    /// batch, same as [`Self::set_start_time_with_precision`] (da-sunq).
+    /// batch, same as [`Self::set_start_time`] (da-sunq).
     pub fn update_times(&self, filter: &RetimeFilter, offset: Duration) -> Result<usize> {
         let entries = select_retime_targets(self, filter)?;
         let tx = self.conn.unchecked_transaction()?;
@@ -90,7 +86,7 @@ impl Db {
 }
 
 /// Select live rows matching the retime filter. Shared between the
-/// absolute (`set_start_time_with_precision`) and offset (`update_times`)
+/// absolute (`set_start_time`) and offset (`update_times`)
 /// paths so the SQL surface stays in one place.
 ///
 /// Timeless rows (`occur_time IS NULL`, slug `field:c<create_time>`) are
@@ -132,6 +128,7 @@ mod tests {
     use crate::entry::Verb;
     use crate::ids::Slug;
     use crate::time::DatumTime;
+    use crate::time::Uncertainty;
     use chrono::{DateTime, Utc};
 
     fn seed_dt(rfc: &str) -> DatumTime {
@@ -140,6 +137,7 @@ mod tests {
             utc,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         }
     }
 
@@ -182,7 +180,7 @@ mod tests {
         assert!(db.get_entry(stamped_slug.as_str()).is_err());
     }
 
-    /// `set_start_time_with_precision` (the `--time` retime path) must
+    /// `set_start_time` (the `--time` retime path) must
     /// also trigger slug re-interpolation against the templated id.
     #[test]
     fn set_start_time_rekeys_when_template_references_occur_time() {
@@ -210,12 +208,13 @@ mod tests {
             slug_or_hid: Some(stamped_slug.as_str()),
             ..Default::default()
         };
-        let precision = Uncertainty {
+        let mut new_start = new_start;
+        new_start.uncertainty = Uncertainty {
             seconds: 60,
-            unit: crate::time::PrecisionUnit::Minute,
-        };
-        db.set_start_time_with_precision(&filter, &new_start, &precision)
-            .unwrap();
+            unit: crate::time::UncertaintyUnit::Minute,
+        }
+        .to_iso();
+        db.set_start_time(&filter, &new_start).unwrap();
 
         let by_hid = db.get_entry(&hid).unwrap();
         assert_eq!(by_hid.slug.as_str(), "coffee:2026-05-01T10:00:00.000Z");
@@ -332,7 +331,7 @@ mod tests {
             ..Default::default()
         };
         let new_start = seed_dt("2026-05-01T10:00:00Z");
-        let err = db.set_start_time_with_precision(&filter, &new_start, &Uncertainty::exact());
+        let err = db.set_start_time(&filter, &new_start);
         assert!(
             err.is_err(),
             "second row must collide on (field, occur_time)"
@@ -376,9 +375,7 @@ mod tests {
             ..Default::default()
         };
         let new_start = seed_dt("2026-05-01T10:00:00Z");
-        let n = db
-            .set_start_time_with_precision(&filter, &new_start, &Uncertainty::exact())
-            .unwrap();
+        let n = db.set_start_time(&filter, &new_start).unwrap();
         assert_eq!(n, 1, "only the timed row is a retime target");
 
         let unset_after = db.get_entry(timeless_slug.as_str()).unwrap();
@@ -475,7 +472,7 @@ mod tests {
             DatumTime::from_utc_and_tz("2024-03-31T00:30:00Z".parse().unwrap(), "Europe/Berlin")
                 .unwrap();
         let mut e = Entry::new("focus", Verb::Point, None, None, Some(start), None, "d1");
-        e.dur = Some(crate::dur::Dur::Of(chrono::Duration::hours(2)));
+        e.dur = Some(crate::dur::Dur::of(chrono::Duration::hours(2)));
 
         let end = e.computed_end_time().unwrap();
         assert_eq!(end.offset_minutes, 120, "end offset must re-derive to CEST");

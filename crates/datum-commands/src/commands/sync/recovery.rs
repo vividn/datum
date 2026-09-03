@@ -204,6 +204,7 @@ mod tests {
             utc: at,
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
+            uncertainty: None,
         };
         let mut e = Entry::new(
             field,
