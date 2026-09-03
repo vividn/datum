@@ -13,8 +13,8 @@ use datum_cli::config::{auth_token_path, master_key_path, server_host_from_url};
 use datum_cli::sync::{run_sync_with_client, AuthToken, Direction, SyncOutcome};
 use datum_core::db::Db;
 use datum_core::entry::{Entry, Verb};
+use datum_core::sync_state;
 use datum_core::time::DatumTime;
-use datum_sync_client::sync_state;
 use tempfile::TempDir;
 
 use sync_support::{env_lock, ScopedEnv, StubRelay};

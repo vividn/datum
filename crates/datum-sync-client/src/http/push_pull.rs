@@ -73,7 +73,7 @@ pub struct PullPage {
     /// Highest per-device `seq` the relay holds for this device in this
     /// cluster (`0` when it holds none). A local `device_seq` above this
     /// means the relay has lost changesets we already pushed — see
-    /// [`crate::sync_state::rewind_for_replaced_relay`].
+    /// `datum_core::sync_state::rewind_for_replaced_relay`.
     pub device_high_seq: i64,
     pub rows: Vec<PulledChangeset>,
 }

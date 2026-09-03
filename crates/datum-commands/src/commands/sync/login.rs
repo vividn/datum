@@ -9,9 +9,10 @@
 
 use anyhow::{Context, Result};
 use datum_core::db::Db;
+use datum_core::sync_state;
 use datum_sync_client::http::{run_device_flow, DeviceFlowPrompter};
 use datum_sync_client::protocol::messages::AuthToken;
-use datum_sync_client::{sync_state, PersistedAuthToken};
+use datum_sync_client::PersistedAuthToken;
 use reqwest::blocking::Client;
 use std::time::Duration;
 

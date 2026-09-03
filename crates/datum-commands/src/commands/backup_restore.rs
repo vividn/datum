@@ -328,7 +328,7 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
 /// state. No-op when the local DB has no `sync_state.cluster_id` —
 /// nothing has ever been synced, so there are no peers to invalidate.
 fn bump_cluster_after_restore(db: &Db) -> Result<()> {
-    use datum_sync_client::sync_state;
+    use datum_core::sync_state;
 
     let Some(cluster_id) = sync_state::get_cluster_id(db).ok().flatten() else {
         eprintln!(

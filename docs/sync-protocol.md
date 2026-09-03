@@ -204,7 +204,7 @@ Every push and pull is scoped to a **cluster** at a specific
   differently-named DBs stay isolated. `datum sync login --cluster <name>`
   overrides the default. The server echoes the accepted `cluster_id`; the
   client persists it (see `set_cluster_id` /
-  [`default_cluster_id`](../crates/datum-sync-client/src/sync_state.rs), da-3fnd).
+  [`default_cluster_id`](../crates/datum-core/src/sync_state.rs), da-3fnd).
 - **`generation`** — a counter the server holds authoritatively per
   cluster. It is bumped whenever a cluster is **reinitialised**: a factory
   reset, or a restore-from-encrypted-backup. Bumping invalidates every
@@ -381,7 +381,7 @@ Response (200):
   is absent — pull is paged for the same reason push is (da-5ua6), so a
   peer's whole history is never one response.
 - Clients advance
-  [`pull_seq`](../crates/datum-sync-client/src/sync_state.rs) to the last
+  [`pull_seq`](../crates/datum-core/src/sync_state.rs) to the last
   processed `id` only after a batch has been fully applied to the local DB,
   then re-ask from that `id` until a page comes back empty (or short).
 - Empty `changesets` = nothing new; the client keeps its `pull_seq`.
@@ -457,7 +457,7 @@ without the prediction half — accurate as far as it went, but it hid why
 the client maintains its own `device_seq` and why a mismatch is fatal.)
 
 The `sync_state` table in `datum-core`'s schema mirrors these concerns —
-see [`crates/datum-sync-client/src/sync_state.rs`](../crates/datum-sync-client/src/sync_state.rs)
+see [`crates/datum-core/src/sync_state.rs`](../crates/datum-core/src/sync_state.rs)
 for the accessors:
 
 | Column               | Meaning                                                          |

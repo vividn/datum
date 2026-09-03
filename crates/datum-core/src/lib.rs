@@ -18,6 +18,7 @@ pub mod migrations;
 pub mod shape;
 pub mod slug;
 pub mod state;
+pub mod sync_state;
 pub mod verb;
 pub mod views;
 

@@ -22,12 +22,12 @@
 
 use anyhow::Result;
 use datum_core::db::Db;
-use datum_sync_client::sync_state;
+use datum_core::sync_state;
 use std::path::PathBuf;
 
 use crate::commands::sync::Prompter;
 
-pub use datum_sync_client::sync_state::UnsyncedPartition;
+pub use datum_core::sync_state::UnsyncedPartition;
 
 /// What the recovery actually did. Returned to the caller so it can
 /// re-issue the sync request that mismatched and report a summary.
@@ -192,8 +192,8 @@ mod tests {
     use crate::commands::sync::TestPrompter;
     use chrono::{TimeZone, Utc};
     use datum_core::entry::{Entry, Verb};
+    use datum_core::sync_state;
     use datum_core::time::DatumTime;
-    use datum_sync_client::sync_state;
 
     /// Build an Entry with `modify_time` (and `create_time`) pinned to a
     /// specific epoch-ms so partitioning around `generation_started_at`

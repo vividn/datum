@@ -18,7 +18,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Local, Utc};
 use datum_core::db::Db;
-use datum_sync_client::sync_state;
+use datum_core::sync_state;
 
 use crate::args::SyncStatusArgs;
 use crate::commands::sync::daemon_status;

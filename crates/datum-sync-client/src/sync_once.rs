@@ -59,7 +59,7 @@ use crate::crypto::changeset::{decrypt_changeset, encrypt_changeset, Changeset, 
 use crate::http::session::{Session, SessionError};
 use crate::http::{pull_batch, push_blob, PulledChangeset, PushAck};
 use crate::ops::{apply_changeset, changeset_entries, pack_changeset_page};
-use crate::sync_state;
+use datum_core::sync_state;
 
 /// Direction of a sync cycle. `Both` is the default for `datum sync` with
 /// no flags; the daemon's scheduler issues `PushOnly` and `PullOnly`

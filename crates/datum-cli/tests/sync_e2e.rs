@@ -224,7 +224,7 @@ fn open_db(name: &str) -> Db {
     std::fs::create_dir_all(&home).unwrap();
     let path = std::path::Path::new(&home).join(format!("{name}.db"));
     let db = Db::open(path.to_str().unwrap()).unwrap();
-    datum_sync_client::sync_state::set_cluster_id(&db, "e2e-shared").unwrap();
+    datum_core::sync_state::set_cluster_id(&db, "e2e-shared").unwrap();
     db
 }
 
@@ -305,7 +305,7 @@ fn s1_local_first_then_server_adoption_with_ciphertext_check() {
     // Decrypt with the cluster the local bound into the AAD at push time
     // (da-3nkx) — read it back from sync_state rather than hardcoding, so
     // this mirrors the production pull path (which uses the row's cluster_id).
-    let cluster = datum_sync_client::sync_state::get_cluster_id(&db)
+    let cluster = datum_core::sync_state::get_cluster_id(&db)
         .unwrap()
         .expect("cluster_id recorded after push");
     let cs = decrypt_changeset(&blob, &master_key, device_id, *seq as u64, &cluster)
@@ -827,7 +827,7 @@ fn s7_server_restart_mid_sync() {
     // Watermarks must NOT have advanced on a failed push, otherwise the
     // retry would skip rows.
     assert_eq!(
-        datum_sync_client::sync_state::get_device_seq(&db).unwrap(),
+        datum_core::sync_state::get_device_seq(&db).unwrap(),
         0,
         "push_mark must not advance on a failed upload"
     );

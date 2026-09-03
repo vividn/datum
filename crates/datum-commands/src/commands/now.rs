@@ -187,9 +187,7 @@ fn emit_stale_sync_warning(cli_db: Option<&str>, db: &Db) {
     }
 
     let daemon_running = crate::commands::sync::daemon_status::read().is_running();
-    let last_pull = datum_sync_client::sync_state::get_last_pull_at(db)
-        .ok()
-        .flatten();
+    let last_pull = datum_core::sync_state::get_last_pull_at(db).ok().flatten();
     let label = db_name.as_deref().unwrap_or("main");
 
     match (daemon_running, last_pull) {

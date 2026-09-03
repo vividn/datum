@@ -17,8 +17,8 @@
 //!   the rows each page packed. This is an epoch-ms value, NOT a
 //!   seq: "seq" in this crate means either the per-device push counter bound
 //!   into AAD or the server-assigned global row id used as pull watermark.
-//! - [`crate::sync_state::advance_push_mark`] /
-//!   [`crate::sync_state::advance_pull_seq`] record the latest seq the
+//! - [`datum_core::sync_state::advance_push_mark`] /
+//!   [`datum_core::sync_state::advance_pull_seq`] record the latest seq the
 //!   relay accepted on a push and the latest server-assigned global seq
 //!   consumed on a pull.
 

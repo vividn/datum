@@ -9,16 +9,15 @@ path = "src/lib.rs"
 
 [features]
 # Default: desktop/server build — full sync client including HTTP and DB-bound
-# operations (changeset pack/apply, watermark storage).
+# operations (changeset pack/apply).
 default = ["http", "db"]
 
 # `http`: pulls in `reqwest` blocking. NOT WASM-safe. Enables the device-code
 # OAuth flow and the `/v1/keys/wrapped` + `/v1/push` + `/v1/pull` HTTP clients.
 http = ["dep:reqwest"]
 
-# `db`: enables pack/apply over `datum_core::db::Db` plus the on-device
-# `sync_state` watermark table helpers. Pulls in `datum-core`. NOT required
-# for WASM builds that don't bundle the native sqlite layer.
+# `db`: enables pack/apply over `datum_core::db::Db`. Pulls in `datum-core`.
+# NOT required for WASM builds that don't bundle the native sqlite layer.
 db = ["dep:datum-core", "dep:rusqlite"]
 
 # `wasm`: marker feature. Selecting it should be paired with
@@ -42,7 +41,7 @@ rand = { workspace = true }
 base64 = { workspace = true }
 url = { workspace = true }
 
-# `db` feature: on-device pack/apply + watermarks
+# `db` feature: on-device pack/apply
 datum-core = { path = "../datum-core", optional = true }
 rusqlite = { workspace = true, optional = true }
 chrono = { workspace = true }

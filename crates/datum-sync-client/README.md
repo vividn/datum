@@ -17,7 +17,9 @@ Sync runs as a state machine:
    pull watermark, decrypt, dedupe by `content_hash`, apply via
    [`ops::apply_changeset`].
 3. **Watermarks** — per-device monotonic sequence numbers stored in
-   the local `sync_state` table; stash + restore on retry.
+   the local `sync_state` table; stash + restore on retry. The table is
+   local db state, so its accessors live in `datum_core::sync_state`,
+   not here (da-9d6j).
 
 Conflict resolution is delegated to `datum-core`'s `conflicts` module;
 this crate only ferries opaque blobs.
@@ -30,7 +32,6 @@ this crate only ferries opaque blobs.
 | [`crypto`]   | (none)           | ✓         |
 | [`config`]   | (none)           | ✓         |
 | [`ops`]      | `db`             | native only (rusqlite) |
-| [`sync_state`] | `db`           | native only (rusqlite) |
 | [`http`]     | `http`           | no (reqwest blocking)  |
 
 A future PWA build depends on this crate with `--no-default-features

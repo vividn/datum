@@ -6,13 +6,15 @@
 //! - `pull_seq` — the largest global seq returned by the relay in a
 //!   pull response, so we can ask for "newer than this" next time.
 //!
-//! Gated by the `db` feature: these helpers target the rusqlite-backed
-//! `Db` in `datum-core`. WASM builds that run their own SQLite layer
-//! reimplement the same logic against their runtime.
+//! This is local database state, not a network concern: every helper
+//! here reads and writes the user's own `sync_state` table and speaks to
+//! nothing. It lives beside the rest of the db layer so a command that
+//! renders a local view (`datum now` reading `last_pull_at`) doesn't
+//! reach through an HTTP client crate to read its own table (da-9d6j).
 
+use crate::db::Db;
+use crate::error::{DatumError, Result};
 use chrono::{DateTime, TimeZone, Utc};
-use datum_core::db::Db;
-use datum_core::error::{DatumError, Result};
 use rusqlite::{params, OptionalExtension};
 
 /// Default `db_id` when the caller doesn't distinguish identities. One row
@@ -129,10 +131,7 @@ pub fn export_pre_reinit_unsynced_to_jsonl(
          WHERE modify_time_ms > ?1 AND modify_time_ms < ?2 \
          ORDER BY modify_time_ms",
     )?;
-    let rows = stmt.query_map(
-        params![push_mark, gen_ms],
-        datum_core::db::row_to_entry_public,
-    )?;
+    let rows = stmt.query_map(params![push_mark, gen_ms], crate::db::row_to_entry_public)?;
     // 0600 on Unix + `create_new` (O_EXCL) so the export isn't
     // group/world-readable and we never silently overwrite an existing
     // file (Copilot review on PR #8). The caller's filename embeds

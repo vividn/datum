@@ -10,7 +10,7 @@ use std::io::{BufRead, IsTerminal, Write};
 
 use anyhow::Result;
 use datum_core::db::Db;
-use datum_sync_client::sync_state;
+use datum_core::sync_state;
 
 use crate::args::DbCommand;
 use crate::args::DbPurgeArgs;

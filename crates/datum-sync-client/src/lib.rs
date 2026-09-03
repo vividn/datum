@@ -20,7 +20,6 @@
 //! | `config`        | (none)            | ✓         |
 //! | `auth`          | (none)            | ✓ (serde token shapes; fs I/O lives in callers) |
 //! | `ops`           | `db`              | native only (rusqlite) |
-//! | `sync_state`    | `db`              | native only (rusqlite) |
 //! | `http`          | `http`            | no (reqwest blocking) |
 //! | `sync_once`     | `http` + `db`     | native only |
 //!
@@ -35,9 +34,6 @@ pub mod protocol;
 
 #[cfg(feature = "db")]
 pub mod ops;
-
-#[cfg(feature = "db")]
-pub mod sync_state;
 
 #[cfg(feature = "http")]
 pub mod http;

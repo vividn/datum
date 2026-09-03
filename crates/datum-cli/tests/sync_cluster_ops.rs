@@ -23,8 +23,8 @@ use datum_commands::commands::backup_restore;
 use datum_commands::commands::db::purge_with_io;
 use datum_core::db::Db;
 use datum_core::entry::{Entry, Verb};
+use datum_core::sync_state;
 use datum_core::time::DatumTime;
-use datum_sync_client::sync_state;
 use std::io::Cursor;
 use tempfile::TempDir;
 
