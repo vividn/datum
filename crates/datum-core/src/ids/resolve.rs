@@ -35,12 +35,15 @@
 //! fallback for commands like `undo` / `history` stays in the command
 //! layer's wrapper.
 
+use std::collections::HashMap;
+
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
 use crate::db::{row_to_entry_public, Db};
 use crate::entry::Entry;
 use crate::error::{DatumError, PrefixCandidate, Result};
+use crate::ids::Hid;
 use crate::last_docs::{get_last_docs, within_protection_window, PROTECTION_WINDOW_MINUTES};
 
 /// `_LAST` — resolves to whatever hids the last-accessed pointer holds,
@@ -52,6 +55,17 @@ pub const LAST_WITH_PROTECTION_TOKEN: &str = "_LAST_WITH_PROTECTION";
 
 /// Maximum number of candidates surfaced on an ambiguous resolution.
 const AMBIGUOUS_CANDIDATE_CAP: usize = 16;
+
+/// How deep [`quick_ordinals`] counts. Two digits is where the shorthand
+/// stops being something anyone reaches for — past `_99` the hid sitting
+/// in the next column is the handle you'd actually type — so the display
+/// surfaces stop offering a short form there.
+pub const QUICK_ORDINAL_CAP: usize = 99;
+
+/// The order `_`, `__`, `_4`, … count in: most recent first. Shared by the
+/// resolvers below and by [`quick_ordinals`], so what `tail` displays and
+/// what `_N` resolves to can't drift apart.
+const NTH_ORDER: &str = "ORDER BY occur_time DESC, slug DESC";
 
 /// Resolve a quickId pattern to zero or more live entries.
 ///
@@ -229,10 +243,9 @@ fn nth_live_entry(db: &Db, ordinal: usize) -> Result<Option<Entry>> {
     let offset = ordinal.saturating_sub(1) as i64;
     db.conn()
         .query_row(
-            "SELECT * FROM entries
-             WHERE deleted_at IS NULL
-             ORDER BY occur_time DESC, slug DESC
-             LIMIT 1 OFFSET ?1",
+            &format!(
+                "SELECT * FROM entries WHERE deleted_at IS NULL {NTH_ORDER} LIMIT 1 OFFSET ?1"
+            ),
             params![offset],
             row_to_entry_public,
         )
@@ -244,15 +257,43 @@ fn nth_live_entry_for_field(db: &Db, field: &str, ordinal: usize) -> Result<Opti
     let offset = ordinal.saturating_sub(1) as i64;
     db.conn()
         .query_row(
-            "SELECT * FROM entries
-             WHERE field = ?1 AND deleted_at IS NULL
-             ORDER BY occur_time DESC, slug DESC
-             LIMIT 1 OFFSET ?2",
+            &format!(
+                "SELECT * FROM entries WHERE field = ?1 AND deleted_at IS NULL \
+                 {NTH_ORDER} LIMIT 1 OFFSET ?2"
+            ),
             params![field, offset],
             row_to_entry_public,
         )
         .optional()
         .map_err(DatumError::Db)
+}
+
+/// Hid → `_N` ordinal for the [`QUICK_ORDINAL_CAP`] most recent live
+/// entries.
+///
+/// The `_N` shorthands resolve but were invisible: nothing told the user
+/// that the row in front of them is the one `_3` names. The listing
+/// surfaces (`tail`, `head`, `grep`) call this once per batch and label
+/// the rows they recognise; a row outside the map has no short form worth
+/// showing and is referenced by its hid.
+///
+/// One query, same `ORDER BY` as [`nth_live_entry`], so a printed `_3` is
+/// the row `_3` resolves to — ordinals are global and count every live
+/// entry, including the ones the caller's own filters hide, so a filtered
+/// listing shows gaps rather than a renumbered 1..n that wouldn't resolve.
+///
+/// The `entries_occur_time` partial index covers this exact ordering, so
+/// the scan stops after [`QUICK_ORDINAL_CAP`] rows.
+pub fn quick_ordinals(db: &Db) -> Result<HashMap<Hid, usize>> {
+    let mut stmt = db.conn().prepare(&format!(
+        "SELECT hid FROM entries WHERE deleted_at IS NULL {NTH_ORDER} LIMIT {QUICK_ORDINAL_CAP}"
+    ))?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    let mut out = HashMap::new();
+    for (i, hid) in rows.enumerate() {
+        out.insert(Hid(hid.map_err(DatumError::Db)?), i + 1);
+    }
+    Ok(out)
 }
 
 /// Does the pattern contain a wildcard (`*` or `?`)?
@@ -739,6 +780,67 @@ mod tests {
         let matches = resolve_quickid(&db, "book:gol*").unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].slug, "book:golden");
+    }
+
+    // ─── quick_ordinals: what the listing prints must be what `_N`
+    //     resolves to (da-8sx8) ─────────────────────────────────────────
+
+    #[test]
+    fn quick_ordinals_agree_with_the_resolver() {
+        // The whole point of the map: a row labelled `_3` in `tail` must
+        // be the row `_3` resolves to. Walk every ordinal and check both
+        // directions against the live resolver.
+        let db = fresh_db();
+        seed(&db, "mood", 5);
+        seed(&db, "coffee", 4);
+
+        let map = quick_ordinals(&db).unwrap();
+        assert_eq!(map.len(), 9);
+        for (hid, ordinal) in &map {
+            let resolved = resolve_quickid_single(&db, &format!("_{ordinal}")).unwrap();
+            assert_eq!(&resolved.hid, hid, "_{ordinal} should name {hid:?}");
+        }
+    }
+
+    #[test]
+    fn quick_ordinals_skip_tombstones_and_renumber() {
+        // A deleted row leaves the ordering entirely — the rows below it
+        // shift up, exactly as the resolver's `LIMIT 1 OFFSET` does.
+        let db = fresh_db();
+        let entries = seed(&db, "mood", 3);
+        let newest = entries.last().unwrap();
+        db.soft_delete_entry(newest.slug.as_str())
+            .expect("soft_delete_entry");
+
+        let map = quick_ordinals(&db).unwrap();
+        assert!(!map.contains_key(&newest.hid));
+        assert_eq!(map.get(&entries[1].hid), Some(&1));
+        assert_eq!(map.get(&entries[0].hid), Some(&2));
+    }
+
+    #[test]
+    fn quick_ordinals_stop_at_the_cap() {
+        // Rows past the cap get no short form; the display falls back to
+        // the hid for them.
+        let db = fresh_db();
+        // `seed`'s minute-per-row clock can't reach past 59; step by a
+        // `Duration` instead so the run stays strictly increasing.
+        let base = at(2026, 5, 1, 12, 0);
+        let entries: Vec<Entry> = (0..QUICK_ORDINAL_CAP as i64 + 2)
+            .map(|i| {
+                entry_builder("tick")
+                    .time_start_utc(base + chrono::Duration::minutes(i))
+                    .insert(&db)
+            })
+            .collect();
+
+        let map = quick_ordinals(&db).unwrap();
+        assert_eq!(map.len(), QUICK_ORDINAL_CAP);
+        assert_eq!(map.get(&entries.last().unwrap().hid), Some(&1));
+        // Oldest two rows fall off the end.
+        assert_eq!(map.get(&entries[0].hid), None);
+        assert_eq!(map.get(&entries[1].hid), None);
+        assert_eq!(map.get(&entries[2].hid), Some(&QUICK_ORDINAL_CAP));
     }
 
     #[test]

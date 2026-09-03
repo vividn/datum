@@ -93,7 +93,11 @@ One-line summaries of the model:
   field's value. `datum now` consults this.
 - **Slug vs. hid** — `slug` is the human-readable id (`mood:2026-04-29T09:15Z`).
   `hid` is the short hash you see in `datum tail`; both resolve to the
-  same entry.
+  same entry. `datum tail` also prints an `_n` column: `_1` is the most
+  recent entry, `_2` the one before it, and so on, so `datum del _3`
+  names the row you just read. Ordinals count every live entry, so a
+  field-filtered listing shows gaps — `_3` always means the same row it
+  does everywhere else.
 - **Intent** — the original argv is captured and replayed under a
   pinned `parser_version`, so a future parser fix can retroactively
   correct old entries without losing what the user actually typed.

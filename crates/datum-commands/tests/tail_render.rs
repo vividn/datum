@@ -348,6 +348,79 @@ fn tail_state_repeat_no_marker_when_prior_field_ended() {
     );
 }
 
+// ─── da-8sx8: the `_N` quickId column ───────────────────────────────────────
+
+/// Render a table with no width budget, one context per entry.
+fn render_table_with_ctxs(entries: &[Entry], ctxs: &[RenderContext]) -> String {
+    let args = TableArgs {
+        metric: TimeMetricCol::Occur,
+        ..Default::default()
+    };
+    let now = dt(2026, 5, 22, 17, 0);
+    strip_ansi(&format_table_with(entries, Some(ctxs), Some(&now), None, &args).unwrap_or_default())
+}
+
+#[test]
+fn tail_table_shows_quick_ordinals() {
+    let _g = no_color_scope();
+    let entries = [
+        entry_at("mood", Verb::Point, None, dt(2026, 5, 22, 9, 15)),
+        entry_at("coffee", Verb::Point, None, dt(2026, 5, 22, 10, 15)),
+    ];
+    let ctxs = [
+        RenderContext {
+            quick_ordinal: Some(7),
+            ..Default::default()
+        },
+        RenderContext {
+            quick_ordinal: Some(2),
+            ..Default::default()
+        },
+    ];
+    let table = render_table_with_ctxs(&entries, &ctxs);
+    let mut lines = table.lines();
+    assert!(
+        lines.next().unwrap_or("").contains("_n"),
+        "header carries the column: {table:?}"
+    );
+    assert!(lines.next().unwrap_or("").contains("_7"), "{table:?}");
+    assert!(lines.next().unwrap_or("").contains("_2"), "{table:?}");
+}
+
+#[test]
+fn tail_table_omits_quick_column_without_ordinals() {
+    // Preview surfaces (`get` / `del` / `update`) pass contexts with no
+    // ordinal — the column must disappear rather than render blank.
+    let _g = no_color_scope();
+    let entries = [entry_at("mood", Verb::Point, None, dt(2026, 5, 22, 9, 15))];
+    let ctxs = [RenderContext::default()];
+    let table = render_table_with_ctxs(&entries, &ctxs);
+    assert!(!table.contains("_n"), "no ordinals, no column: {table:?}");
+}
+
+#[test]
+fn tail_table_leaves_gaps_for_rows_past_the_cap() {
+    // A row the map doesn't cover keeps its hid and an empty `_n` cell;
+    // the rows around it keep their own ordinals.
+    let _g = no_color_scope();
+    let entries = [
+        entry_at("mood", Verb::Point, None, dt(2026, 5, 22, 9, 15)),
+        entry_at("mood", Verb::Point, None, dt(2026, 5, 22, 10, 15)),
+    ];
+    let ctxs = [
+        RenderContext::default(),
+        RenderContext {
+            quick_ordinal: Some(1),
+            ..Default::default()
+        },
+    ];
+    let table = render_table_with_ctxs(&entries, &ctxs);
+    let mut lines = table.lines();
+    assert!(lines.next().unwrap_or("").contains("_n"), "{table:?}");
+    assert!(!lines.next().unwrap_or("").contains('_'), "{table:?}");
+    assert!(lines.next().unwrap_or("").contains("_1"), "{table:?}");
+}
+
 // ─── da-ftw3: per-state and per-field truncation in the table path ──────────
 
 fn render_table(entries: &[Entry], total_width: usize) -> String {

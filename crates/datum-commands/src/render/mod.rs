@@ -514,7 +514,7 @@ pub struct TableArgs {
     pub max_total_width: Option<usize>,
 }
 
-/// Render entries as a table with `time | field | state | dur | hid` columns
+/// Render entries as a table with `time | field | state | dur | _n | hid` columns
 /// (plus any extra `columns`). Empty result → `[No data]`. Silenced by
 /// `--show none`.
 pub fn print_table(entries: &[Entry], registry: Option<&SpecRegistry>, args: &TableArgs) {
@@ -582,6 +582,10 @@ pub fn format_table_with(
         field_name: String,
         state: String,
         dur: String,
+        /// da-8sx8: the `_N` quickId shorthand for this row, or empty when
+        /// the row is past `QUICK_ORDINAL_CAP` / the caller supplied no
+        /// ordinals. Empty for every row → the column drops out.
+        quick: String,
         hid: String,
         extras: Vec<String>,
     }
@@ -673,6 +677,10 @@ pub fn format_table_with(
             .iter()
             .map(|col| extract_column(e, col))
             .collect();
+        let quick = ctx
+            .and_then(|c| c.quick_ordinal)
+            .map(|n| paint(GRAY_FG, &format!("_{n}")))
+            .unwrap_or_default();
         rows.push(Row {
             time,
             time_metric_prefix: prefix,
@@ -680,6 +688,7 @@ pub fn format_table_with(
             field_name: e.field.clone(),
             state: ex.state.unwrap_or_default(),
             dur: ex.dur.unwrap_or_default(),
+            quick,
             hid: ex.hid.unwrap_or_default(),
             extras,
         });
@@ -691,6 +700,7 @@ pub fn format_table_with(
     let show_field = any(|r| &r.field);
     let show_state = any(|r| &r.state);
     let show_dur = any(|r| &r.dur);
+    let show_quick = any(|r| &r.quick);
     let show_hid = any(|r| &r.hid);
 
     // Column widths (visual, ANSI-aware).
@@ -718,6 +728,7 @@ pub fn format_table_with(
         "s"
     };
     let dur_header = "dur";
+    let quick_header = "_n";
     let hid_header = "hid";
 
     // da-lkji: the time column right-aligns on the `HH:MM:SS` core; the
@@ -762,6 +773,10 @@ pub fn format_table_with(
         .chain(rows.iter().map(|r| vw(&r.dur)))
         .max()
         .unwrap_or(0);
+    let quick_w = std::iter::once(quick_header.len())
+        .chain(rows.iter().map(|r| vw(&r.quick)))
+        .max()
+        .unwrap_or(0);
     let hid_w = std::iter::once(hid_header.len())
         .chain(rows.iter().map(|r| vw(&r.hid)))
         .max()
@@ -793,6 +808,7 @@ pub fn format_table_with(
                 show_time.then_some(time_w),
                 show_field.then_some(fw),
                 show_dur.then_some(dur_w),
+                show_quick.then_some(quick_w),
                 show_hid.then_some(hid_w),
             ]
             .into_iter()
@@ -839,6 +855,9 @@ pub fn format_table_with(
         }
         if show_dur {
             push_cell(&mut header, dur_header, dur_w, false);
+        }
+        if show_quick {
+            push_cell(&mut header, quick_header, quick_w, false);
         }
         if show_hid {
             push_cell(&mut header, hid_header, hid_w, false);
@@ -911,6 +930,9 @@ pub fn format_table_with(
         }
         if show_dur {
             push_cell(&mut line, &r.dur, dur_w, false);
+        }
+        if show_quick {
+            push_cell(&mut line, &r.quick, quick_w, false);
         }
         if show_hid {
             push_cell(&mut line, &r.hid, hid_w, false);

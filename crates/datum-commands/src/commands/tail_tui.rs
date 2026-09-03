@@ -40,7 +40,7 @@ use crossterm::{
 };
 use datum_core::{db::Db, entry::Entry, field_spec::SpecRegistry, time::DatumTime};
 
-use super::render_helpers::build_render_contexts;
+use super::render_helpers::build_table_contexts;
 use super::tail::{split_columns, tail_params};
 use crate::args::OutputFlagsExt;
 use crate::render::term_layout::{truncate_visible, visible_width};
@@ -412,7 +412,7 @@ fn render_lines(
         max_total_width: Some(cols as usize),
     };
     let now = DatumTime::now();
-    let ctxs = build_render_contexts(buffer, db);
+    let ctxs = build_table_contexts(buffer, db);
     let text = match format_table_with(buffer, Some(&ctxs), Some(&now), registry, &tbl) {
         Some(t) => t,
         None => return (None, Vec::new()),

@@ -17,7 +17,7 @@ use regex_lite::Regex;
 use crate::{
     args::{GrepArgs, OutputFlagsExt},
     commands::{
-        edit::UserEditableEntry, helpers::load_registry_opt, render_helpers::build_render_contexts,
+        edit::UserEditableEntry, helpers::load_registry_opt, render_helpers::build_table_contexts,
     },
     render::{print_table_with, TableArgs, TimeMetricCol},
 };
@@ -40,7 +40,7 @@ pub fn grep(args: GrepArgs, db: &Db) -> Result<()> {
         max_total_width: None,
     };
     let now = DatumTime::now();
-    let ctxs = build_render_contexts(&matches, db);
+    let ctxs = build_table_contexts(&matches, db);
     print_table_with(&matches, Some(&ctxs), Some(&now), registry.as_ref(), &tbl);
     Ok(())
 }

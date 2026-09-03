@@ -76,6 +76,22 @@ pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCon
         .collect()
 }
 
+/// [`build_render_contexts`] plus the `_N` quickId ordinals (da-8sx8).
+///
+/// Used by the listing surfaces — `tail` / `head` / `grep` / the tail TUI —
+/// where `_N` is a navigational aid: the reader sees which row `_3` names
+/// without counting. The single-row preview surfaces (`get`, `del`,
+/// `update`) deliberately stay on the plain builder; an ordinal is a
+/// property of the current listing, not of the entry.
+pub(crate) fn build_table_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
+    let mut ctxs = build_render_contexts(entries, db);
+    let ordinals = datum_core::ids::quick_ordinals(db).unwrap_or_default();
+    for (ctx, e) in ctxs.iter_mut().zip(entries) {
+        ctx.quick_ordinal = ordinals.get(&e.hid).copied();
+    }
+    ctxs
+}
+
 /// The latest probe time the batch will issue for this entry. Block rows
 /// probe at `end_time`; everything else at `start_time`, falling back to
 /// `create_time` for state-affecting rows that lack a start.
@@ -90,4 +106,51 @@ fn probe_upper_bound(entry: &Entry) -> Option<chrono::DateTime<Utc>> {
         .as_ref()
         .map(|t| t.utc)
         .or(Some(entry.create_time))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use datum_core::test_util::{entry_builder, fresh_db};
+
+    /// The wiring proof for da-8sx8: what a listing prints as `_N` is
+    /// what `_N` resolves to. The renderer only ever sees the ordinal
+    /// this helper attaches, so agreement here is agreement on screen.
+    #[test]
+    fn table_contexts_carry_resolvable_quick_ordinals() {
+        let db = fresh_db();
+        let base: chrono::DateTime<Utc> = "2026-05-01T12:00:00Z".parse().unwrap();
+        let entries: Vec<Entry> = (0..4)
+            .map(|i| {
+                entry_builder("mood")
+                    .time_start_utc(base + chrono::Duration::minutes(i))
+                    .insert(&db)
+            })
+            .collect();
+
+        // Newest-first, the order `tail` renders in reverse of.
+        let listed: Vec<Entry> = entries.iter().rev().cloned().collect();
+        let ctxs = build_table_contexts(&listed, &db);
+
+        for (e, ctx) in listed.iter().zip(&ctxs) {
+            let n = ctx
+                .quick_ordinal
+                .expect("every seeded row is within the cap");
+            let resolved =
+                datum_core::ids::resolve_quickid_single(&db, &format!("_{n}")).expect("resolve");
+            assert_eq!(resolved.hid, e.hid, "_{n} must name the row it labels");
+        }
+        assert_eq!(ctxs[0].quick_ordinal, Some(1));
+        assert_eq!(ctxs[3].quick_ordinal, Some(4));
+    }
+
+    /// The plain builder leaves the ordinal unset, so the preview
+    /// surfaces (`get` / `del` / `update`) keep their column-free table.
+    #[test]
+    fn plain_contexts_have_no_quick_ordinal() {
+        let db = fresh_db();
+        let e = entry_builder("mood").insert(&db);
+        let ctxs = build_render_contexts(std::slice::from_ref(&e), &db);
+        assert_eq!(ctxs[0].quick_ordinal, None);
+    }
 }

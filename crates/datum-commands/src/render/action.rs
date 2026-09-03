@@ -108,6 +108,10 @@ pub struct RenderContext {
     pub is_first_occurrence: bool,
     pub ongoing_state: Option<JsonValue>,
     pub is_state_repeat: bool,
+    /// da-8sx8: the row's `_N` quickId ordinal, when it has one. Only the
+    /// listing surfaces fill this (see `build_table_contexts`); everywhere
+    /// else it stays `None` and the table's `_n` column drops out.
+    pub quick_ordinal: Option<usize>,
 }
 
 /// Which renderer is asking for the context. Per da-9p2u: pick the
@@ -186,6 +190,7 @@ impl RenderContext {
             is_first_occurrence,
             ongoing_state,
             is_state_repeat,
+            quick_ordinal: None,
         }
     }
 }

@@ -80,7 +80,8 @@ datum dayview                       # render a day as an SVG timeline ("data as 
 An **entry** has a `field` (what is tracked), a `state` (JSON value), an optional
 ISO-8601 `dur`, an `occur_time`, and a `slug` — the human-readable id, `field:<time>`
 for a time-anchored entry or `field:c<create_time>` for a timeless `note`/`-T` one
-(the short `hid` in `datum tail` resolves to the same entry). You choose the CLI verb;
+(the short `hid` in `datum tail` resolves to the same entry, as does the `_n`
+ordinal beside it — `_1` is the newest entry, `_2` the one before it). You choose the CLI verb;
 datum *derives* the storage classifier (point / switch / block / block-switch /
 point-switch) from the (state, dur) it produces.
 

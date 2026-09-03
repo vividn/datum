@@ -11,7 +11,7 @@ use datum_core::{
 
 use crate::args::{OutputFlagsExt, TailArgs};
 use crate::commands::helpers::load_registry_opt;
-use crate::commands::render_helpers::build_render_contexts;
+use crate::commands::render_helpers::build_table_contexts;
 use crate::render::term_layout::{detect_cols, detect_rows, is_stdout_tty};
 use crate::render::{print_table_with, TableArgs, TimeMetricCol};
 
@@ -64,7 +64,7 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
         max_total_width,
     };
     let now = DatumTime::now();
-    let ctxs = build_render_contexts(&entries, db);
+    let ctxs = build_table_contexts(&entries, db);
     print_table_with(&entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl);
 
     if let Some(secs) = args.watch {
@@ -181,7 +181,7 @@ fn watch_repaint_loop(
             max_total_width,
         };
         let now = DatumTime::now();
-        let ctxs = build_render_contexts(&entries, db);
+        let ctxs = build_table_contexts(&entries, db);
         print_table_with(&entries, Some(&ctxs), Some(&now), registry, &tbl);
     }
 }
