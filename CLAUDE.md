@@ -50,8 +50,8 @@ a top-level `migrations/` folder.)
 All four combinations are valid:
 - `time_start` only — open/ongoing event
 - `time_start` + `time_end` — complete block, dur derived
-- `time_start` + `--dur` — end derived
-- `time_end` + `--dur` — start derived
+- `time_start` + a duration — end derived
+- `time_end` + a duration — start derived
 
 ### Unit annotation in extra_data
 Both forms valid:
@@ -72,7 +72,11 @@ CLI parses `weight=75.2kg` → annotated form automatically.
   direction, and applies to `apr29`-style dates too)
 - `-t` accepts anything `-d` does — day words, weekdays, `2024-03-16` —
   so a caller holding "either a time or a date" needs only one flag
-- `--dur 30m` = duration (30 min, 1:30, 2h, ISO PT30M all work)
+- a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
+  (`1:30`, `2h`, ISO `PT30M` all work). It anchors the block AT the entry's
+  time and runs forward. There is no `--dur` flag — da-azqq removed it
+  because it ran the block backward from `-t` where the other two spellings
+  ran forward; `crates/datum-cli/tests/dur_flag_removed.rs` keeps it gone
 
 ### Syntax variants (both must work)
 - `datum switch mood happy`  ← verb-first

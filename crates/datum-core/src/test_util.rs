@@ -389,7 +389,7 @@ pub fn freeze_time(s: &str) -> TimeGuard {
 }
 
 /// Step the current mock clock forward (or backward, with a leading `-`).
-/// The string is parsed via the same duration parser as `--dur`, plus an
+/// The string is parsed via the CLI's duration parser, plus an
 /// optional leading `+`/`-` for sign.
 ///
 /// Examples: `"5m"`, `"+5m"`, `"-1h"`, `"30s"`, `"PT15M"`.

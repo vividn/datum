@@ -130,9 +130,9 @@ fn switch_block_resumes_prior_state() {
     // the (-5min) block fixture sits cleanly after it.
     run_color(&db, &["switch", "emotion", "sad", "-yy"]);
 
-    // Now: 5-minute happy block. `--dur 5m` closes the block at end_time
+    // Now: 5-minute happy block. A trailing `5m` closes the block at end_time
     // = now, with start_time = now - 5min.
-    let out = run_color(&db, &["switch", "emotion", "happy", "--dur", "5m"]);
+    let out = run_color(&db, &["switch", "emotion", "happy", "5m"]);
     let line = info_line(&out);
 
     // LEAD = sad colour, state cell = happy colour, TRAIL = sad colour
@@ -208,7 +208,7 @@ fn block_on_ignored_field_uses_empty_trail_slot() {
     run_color(&db, &["switch", "task", "IGNORED", "-yy"]);
 
     // 5-minute block on an IGNORED field.
-    let out = run_color(&db, &["switch", "task", "doing", "--dur", "5m"]);
+    let out = run_color(&db, &["switch", "task", "doing", "5m"]);
     let line = info_line(&out);
 
     // LEAD = IGNORED-grey (IGNORED collapses), state cell = doing,
@@ -234,7 +234,7 @@ fn rendered_rows_carry_no_arrow_glyphs() {
     // Exercise the verbs that previously emitted arrows.
     run_color(&db, &["switch", "f", "a", "-yy"]);
     let switch_out = run_color(&db, &["switch", "f", "b"]);
-    let block_out = run_color(&db, &["switch", "f", "c", "--dur", "5m"]);
+    let block_out = run_color(&db, &["switch", "f", "c", "5m"]);
     let start_out = run_color(&db, &["start", "g"]);
     let stop_out = run_color(&db, &["stop", "g"]);
 

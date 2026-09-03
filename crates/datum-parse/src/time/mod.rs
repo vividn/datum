@@ -13,7 +13,7 @@
 //!   `clippy.toml` disallows the chrono calls it wraps.
 //! * [`date`] — `-d` / `--date` argument parsing (`DateArg`).
 //! * [`time`] — `-t` / `--time` argument parsing (`TimeArg`).
-//! * [`dur`] — `--dur` argument parsing.
+//! * [`dur`] — duration-argument parsing.
 //! * [`builder`] — `TimeBuilder` composes stacked flags into a `DatumTime`.
 //! * [`human_time`] — doc-anchor stub; canonical impl is
 //!   `datum_commands::render::action::format_timestamp`.

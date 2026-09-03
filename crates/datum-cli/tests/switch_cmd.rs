@@ -14,10 +14,11 @@
 //!   * daydumb has no `-T` / `--omit-timestamp`. Switch entries always anchor
 //!     `time_start`. The three TS cases that hinge on "no occurTime" become
 //!     structural checks that daydumb anchors time regardless.
-//!   * daydumb has no positional-duration slot. Duration is supplied only via
-//!     `--dur`. Positionals after the state value append into `value` (as an
-//!     array); none are silently re-interpreted as a duration. The "skip
-//!     duration with `.` or `''`" TS case has no analogue to port.
+//!   * a duration is spelled as a trailing positional (`switch project
+//!     household 10m`) or as `dur=10m` — da-azqq retired the `--dur` flag
+//!     that used to be the only spelling. Other positionals after the state
+//!     value append into `value` (as an array). The "skip duration with `.`
+//!     or `''`" TS case has no analogue to port.
 //!   * daydumb has no "required keys" (`-k KEY` without `=VALUE`) concept.
 //!     `-k` always takes `KEY=VALUE`.
 //!   * daydumb does NOT parse `.key=value` as complex-state dot syntax. A
@@ -62,7 +63,7 @@ fn switch_creates_entry_with_state() {
         .utc;
     assert!(
         entry.dur.is_none(),
-        "bare switch (no --dur, no --moment) does not derive time_end",
+        "bare switch (no duration, no --moment) does not derive time_end",
     );
     assert_eq!(
         db.get_active_state("field", ts).unwrap(),
@@ -252,14 +253,14 @@ fn switch_without_state_promotes_to_true() {
 
 /// TS #8: "records a block of state when specifying duration".
 ///
-/// `switch ... --dur 10m` emits a closed block: `time_end = time_start +
-/// 10m`. During the block, state is the switched-to value; at `time_end`,
-/// state reverts to `false`.
+/// `switch ... 10m` emits a closed block: `time_end = time_start + 10m`.
+/// During the block, state is the switched-to value; at `time_end`, state
+/// reverts to `false`.
 #[test]
 fn switch_dur_creates_forward_block_ending_false() {
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "household", "--dur", "10m"], &db).expect("switch --dur 10m");
+    run_cli(&["switch", "project", "household", "10m"], &db).expect("switch household 10m");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     // v3 (da-5ns): state="household" + dur=positive → derive_verb returns Block.
@@ -287,37 +288,25 @@ fn switch_dur_creates_forward_block_ending_false() {
 
 /// TS #9: "records a hole of time in the state when given a negative duration".
 ///
-/// Datum's negative duration produced a backward block. Under v3
-/// (da-5ns), the CLI insert path clamps the time delta to zero in
-/// `Entry::new_legacy` — `(end - start).num_seconds().max(0)` —
-/// collapsing `--dur=-10m` to `dur="PT0S"`. With state="household" set
-/// (positional → state) and dur=Zero, derive_verb returns Point. The
-/// "backward hole" semantic is no longer expressible at the CLI; users
-/// who want a hole must run `start <field> -t=-Nm` then a `stop`.
+/// Datum's negative duration produced a backward block. Daydumb has no
+/// backward block, and since da-azqq it does not quietly pretend
+/// otherwise: `--dur` was the one spelling that reached the time-delta
+/// path, where `Entry::new_legacy` clamped `(end - start)` to zero and
+/// collapsed the entry to a `Verb::Point`. The surviving spellings both
+/// land on `entry.dur`, where `derive_verb` rejects a negative duration
+/// outright. Users who want a hole run `start <field> -t=-Nm` then `stop`.
 #[test]
-fn switch_negative_dur_collapses_to_point() {
+fn switch_negative_dur_is_rejected() {
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "household", "--dur=-10m"], &db).expect("switch --dur=-10m");
-
-    let entry = &db.entries_for_field("project", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "project", verb: "point", state: "household");
-    assert_eq!(
-        entry.duration_seconds(),
-        Some(0),
-        "negative dur clamps to zero seconds in Entry::new_legacy",
+    let err = run_cli(&["switch", "project", "household", "dur=-10m"], &db)
+        .expect_err("a negative duration has no meaning on entry.dur");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("negative duration"),
+        "error should name the negative duration, got: {msg}",
     );
-
-    let ts = entry.occur_time.as_ref().unwrap().utc;
-    // da-a0n3: a Point with a real state is a moment-switch — a genuine
-    // zero-length transition whose state prevails from occur_time on.
-    // The compile oracle now agrees with the SQL oracle (`state_at`)
-    // here; only occur-shaped Points (state absent or literal `true`)
-    // still compile to Bool(false).
-    assert_eq!(
-        db.get_active_state("project", ts).unwrap(),
-        json!("household")
-    );
+    assert_count!(db, "project", 0);
 }
 
 /// TS #10: "when --moment/-m is specified, dur is null and there is no
@@ -369,8 +358,8 @@ fn switch_moment_produces_point_in_time_entry() {
 /// duration argument".
 ///
 /// Divergence: daydumb has no `-T` / `--omit-timestamp`. The salvageable
-/// assertion: `-k` keys attach cleanly to `extra_data`, and without `--dur`
-/// no `time_end` is derived.
+/// assertion: `-k` keys attach cleanly to `extra_data`, and without a
+/// duration no `time_end` is derived.
 #[test]
 fn switch_extras_do_not_imply_duration() {
     let db = fresh_db();
@@ -385,7 +374,7 @@ fn switch_extras_do_not_imply_duration() {
     assert_entry_matches!(entry, field: "project", verb: "switch", state: "household");
     assert!(
         entry.dur.is_none(),
-        "no --dur ⇒ no time_end (moment-like default)",
+        "no duration ⇒ no time_end (moment-like default)",
     );
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["skillPoints"], json!(3));
@@ -393,10 +382,11 @@ fn switch_extras_do_not_imply_duration() {
 
 /// TS #12: "can skip the duration if the duration is given as . or ''".
 ///
-/// Divergence: daydumb has no positional duration slot. Duration is ONLY
-/// supplied via `--dur`, so there is nothing to "skip". The portable
-/// assertion: `-k KEY=VALUE` attaches without producing an implicit duration,
-/// matching datum's outcome (`optional=50`, no `dur`).
+/// Divergence: daydumb's duration slot only ever swallows a *trailing bare*
+/// positional, so a `-k KEY=VALUE` is never a candidate and there is nothing
+/// to "skip". The portable assertion: `-k KEY=VALUE` attaches without
+/// producing an implicit duration, matching datum's outcome (`optional=50`,
+/// no `dur`).
 #[test]
 fn switch_extras_never_produce_implicit_duration() {
     let db = fresh_db();
@@ -411,7 +401,7 @@ fn switch_extras_never_produce_implicit_duration() {
     assert_entry_matches!(entry, field: "project", verb: "switch", state: "household");
     assert!(
         entry.dur.is_none(),
-        "no --dur ⇒ no time_end; `-k KEY=VALUE` never becomes a duration",
+        "no duration ⇒ no time_end; `-k KEY=VALUE` never becomes a duration",
     );
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["optional"], json!(50));
@@ -478,8 +468,11 @@ fn switch_does_not_auto_record_last_state_in_extra_data() {
 /// Divergence: daydumb has no "required keys" concept (`-k key` without
 /// `=value`) and no complex-state synthesis. The portable assertion: the
 /// flat key/value surface still round-trips — multiple `-k KEY=VALUE`
-/// flags attach cleanly, `--dur` produces the expected block — and none
-/// of that silently mutates into a structured `state` object.
+/// flags attach cleanly, a duration produces the expected block — and none
+/// of that silently mutates into a structured `state` object. The duration
+/// is spelled `dur=5m` rather than as a trailing bare positional because
+/// the open `-k` slots come first in slot order and would swallow it;
+/// da-azqq removed `--dur`, the flag that used to sidestep that.
 #[test]
 fn switch_multiple_keys_attach_without_complex_state_synthesis() {
     let db = fresh_db();
@@ -493,12 +486,11 @@ fn switch_multiple_keys_attach_without_complex_state_synthesis() {
             "author=kenneth grahame",
             "-k",
             "genre=fiction",
-            "--dur",
-            "5m",
+            "dur=5m",
         ],
         &db,
     )
-    .expect("switch with multiple -k keys + --dur");
+    .expect("switch with multiple -k keys + dur=");
 
     let entry = &db.entries_for_field("book", None).unwrap()[0];
     // v3: state=set + dur=positive → derive_verb returns Block.
@@ -621,8 +613,8 @@ fn switch_trailing_bare_positional_becomes_duration_default_minutes() {
     );
 }
 
-/// da-ffp6: `switch project ai 30m` → state=ai, dur=30min. Suffixed
-/// duration form parses just like a `--dur` value.
+/// da-ffp6: `switch project ai 30m` → state=ai, dur=30min. The suffixed
+/// duration form parses like any other duration argument.
 #[test]
 fn switch_trailing_positional_with_unit_suffix_becomes_duration() {
     let db = fresh_db();
@@ -635,8 +627,8 @@ fn switch_trailing_positional_with_unit_suffix_becomes_duration() {
     assert_eq!(e.duration_seconds(), Some(30 * 60));
 }
 
-/// da-ffp6: `switch project ai 1:30` → state=ai, dur=1h30m. Colon-separated
-/// HH:MM form parses just like `--dur 1:30`.
+/// da-ffp6: `switch project ai 1:30` → state=ai, dur=1h30m. The
+/// colon-separated HH:MM form parses like any other duration argument.
 #[test]
 fn switch_trailing_positional_colon_form_becomes_duration() {
     let db = fresh_db();
@@ -705,19 +697,27 @@ fn switch_trailing_non_duration_positional_rejected() {
     );
 }
 
-/// da-ffp6: trailing duration positional + explicit `--dur` is a conflict
-/// (better to fail loudly than to silently pick a winner).
+/// da-ffp6: two durations reaching the entry by different routes is a
+/// conflict (better to fail loudly than to silently pick a winner).
+///
+/// da-azqq removed `--dur`, which used to be the second route. The one
+/// that remains is the `,`-chain: `switch body end 5m , sit` peels its
+/// `5m` into `args.duration` before the slot machinery runs, so an
+/// explicit `dur=` alongside it is a genuine double-specification —
+/// unlike `ai 3 dur=5m`, where both spellings fill the same `dur=` slot
+/// and the explicit one simply wins.
 #[test]
-fn switch_trailing_duration_conflicts_with_explicit_dur_flag() {
+fn switch_chain_duration_conflicts_with_explicit_dur_key() {
     let db = fresh_db();
 
-    let err = run_cli(&["switch", "project", "ai", "3", "--dur", "5m"], &db)
-        .expect_err("trailing dur + --dur should conflict")
+    let err = run_cli(&["switch", "body", "end", "5m", "dur=10m", ",", "sit"], &db)
+        .expect_err("chain-peeled dur + dur= should conflict")
         .to_string();
     assert!(
-        err.contains("--dur") || err.contains("conflict"),
+        err.contains("specified twice") || err.contains("conflict"),
         "error should mention the conflict: {err}",
     );
+    assert_count!(db, "body", 0);
 }
 
 /// da-ooe2: only one trailing duration positional permitted. The state slot

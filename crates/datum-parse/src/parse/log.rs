@@ -15,7 +15,7 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     for spec in input::time_args::FLAG_SPECS {
         r.push(lift(|p: &mut LogArgs| &mut p.time, spec));
     }
-    // Duration concern (--dur, -m).
+    // Duration concern (-m, plus the `--dur` tombstone; da-azqq).
     for spec in input::duration_args::FLAG_SPECS {
         r.push(lift(|p: &mut LogArgs| &mut p.duration, spec));
     }

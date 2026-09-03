@@ -262,7 +262,7 @@ pub struct LogArgs {
     pub rest: Vec<String>,
     /// `-y/-q/-d/-t/-z/-T/-D` — composed timing concern.
     pub time: TimeArgs,
-    /// `--dur` / `-m/--moment` — composed duration concern.
+    /// `-m/--moment` + the resolved duration — composed duration concern.
     pub duration: DurationArgs,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,

@@ -674,7 +674,7 @@ fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
             .map(datum_core::dur::Dur::to_storage_string)
             .as_deref(),
         Some("MOMENT"),
-        "occur with no explicit --dur emits Dur::moment()",
+        "occur with no explicit duration emits Dur::moment()",
     );
     assert_eq!(
         entry.verb,

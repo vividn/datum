@@ -7,7 +7,7 @@
 //! each entry's block runs from its `occur_time` to the next entry's
 //! `occur_time` (switch continuity), with the still-open trailing block
 //! running to `now`. An entry that *does* carry a stored `dur` (a discrete
-//! block, e.g. `run --dur 30m`) is measured by that span instead of the
+//! block, e.g. `run 30m`) is measured by that span instead of the
 //! gap-to-next, and its `following_state` (if any) fills the remainder up to
 //! the next entry. Ref algorithm: crew/vremya/scripts/timespent.py.
 //!

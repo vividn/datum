@@ -67,7 +67,6 @@ const VALUE_FLAGS: &[&str] = &[
     "--time",
     "-z",
     "--timezone",
-    "--dur",
     "--id",
     "--id-delimiter",
     "--alias",

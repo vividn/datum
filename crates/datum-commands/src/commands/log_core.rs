@@ -215,7 +215,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // (NOT a `(base, base)` zero-span, which would derive `Dur::of(PT0S)` and
     // preempt the Moment, since a moment has no end). `derive_verb` then locks it
     // to `Verb::Point`. An explicit duration overrides it — `dur=` / trailing
-    // positional (reserved.dur) or `--dur` (args.duration.duration) — per "set
+    // positional (reserved.dur), or the switch-chain's peeled dur
+    // (args.duration.duration) — per "set
     // dur to MOMENT unless explicitly set otherwise (dur=3)". (Occur is a point
     // by default.)
     // A switch `,`-chain (`switch a -m , b`) carries a `following_state` and
@@ -294,36 +295,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             // (no chain) takes the dur=MOMENT path instead (see `moment_point`).
             (Some(base_time.clone()), Some(base_time))
         } else if let Some(dur_str) = &args.duration.duration {
+            // The only remaining producer of `args.duration.duration` is the
+            // switch `,`-chain peel in `extract_switch_then_chain` (da-azqq
+            // retired `--dur`, the flag that used to fill it from argv). Like
+            // every other spelling of a duration, the block is anchored AT the
+            // entry's time and runs forward.
             let dur = parse_duration(dur_str)?;
-            match action {
-                Action::Start => {
-                    // start --dur: time_start=base, time_end=base+dur
-                    let end_utc = base_time.utc + dur;
-                    let time_end = DatumTime {
-                        utc: end_utc,
-                        ..base_time.clone()
-                    };
-                    (Some(base_time), Some(time_end))
-                }
-                Action::Stop => {
-                    // stop --dur: time_end=base, time_start=base-dur
-                    let start_utc = base_time.utc - dur;
-                    let time_start = DatumTime {
-                        utc: start_utc,
-                        ..base_time.clone()
-                    };
-                    (Some(time_start), Some(base_time))
-                }
-                _ => {
-                    // occur/switch/add/block with --dur: set time_end=time_start+dur
-                    let end_utc = base_time.utc + dur;
-                    let time_end = DatumTime {
-                        utc: end_utc,
-                        ..base_time.clone()
-                    };
-                    (Some(base_time), Some(time_end))
-                }
-            }
+            let time_end = DatumTime {
+                utc: base_time.utc + dur,
+                ..base_time.clone()
+            };
+            (Some(base_time), Some(time_end))
         } else {
             (Some(base_time), None)
         };
@@ -356,14 +338,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
     if let Some(d) = reserved.dur {
         // da-ooe2: an explicit duration (trailing positional or `dur=<v>`,
-        // both resolved through the injected `dur=` slot) plus a `--dur`
-        // flag is a double-specification — fail loudly rather than silently
-        // letting one win. The switch `,`-chain peels its dur into the flag
-        // and leaves the slot unfilled, so this never trips on a chain.
+        // both resolved through the injected `dur=` slot) plus the
+        // switch-chain's peeled duration is a double-specification — fail
+        // loudly rather than silently letting one win. The `,`-chain peels
+        // its dur out of `args.rest` and leaves the slot unfilled, so this
+        // never trips on a well-formed chain.
         if args.duration.duration.is_some() {
-            anyhow::bail!(
-                "duration specified twice: trailing positional / `dur=` conflicts with --dur"
-            );
+            anyhow::bail!("duration specified twice: trailing positional / `dur=` conflicts with the `,`-chain duration");
         }
         entry.dur = Some(d);
     }
@@ -398,7 +379,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // say so rather than storing an orphan value nothing reads.
     if let Some(u) = reserved.dur_uncertainty {
         if entry.dur.is_none() {
-            anyhow::bail!("dur_uncertainty= needs a duration: pass dur= or --dur alongside it");
+            anyhow::bail!(
+                "dur_uncertainty= needs a duration: pass dur=<D> (or a trailing duration) alongside it"
+            );
         }
         entry.set_dur_uncertainty(Some(u));
     }
@@ -1057,7 +1040,7 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
     // `state=false`). The chain path can't go through that rewrite
     // without losing the chain, so translate the keyword to the
     // reserved `state=` column AND eagerly peel the duration positional
-    // into the `--dur` flag — the `state=true` slot would otherwise
+    // into `args.duration` — the `state=true` slot would otherwise
     // reassign the next bare positional as state (it doesn't know `state=…` is
     // already in flight).
     // da-vh30: under `-I`/`--string-state` the bare positionals ARE the
@@ -1089,7 +1072,7 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
             let dur_token = args.rest.remove(dur_idx);
             if args.duration.duration.is_some() {
                 anyhow::bail!(
-                    "switch: `{keyword}`-chain duration positional `{dur_token}` conflicts with --dur"
+                    "switch: `{keyword}`-chain duration positional `{dur_token}` conflicts with an already-peeled duration"
                 );
             }
             args.duration.duration = Some(dur_token);
@@ -1679,9 +1662,11 @@ fn looks_like_signed_duration(s: &str) -> bool {
 /// Build the log entry's base time with its effective uncertainty on it
 /// (implicit from `-q*` stacks or explicit from a `±N` uncertainty suffix).
 /// Reject time-specifying flags when the caller passed `-T/--no-timestamp`.
-/// A timeless entry has no place for time offsets or duration — silently
-/// discarding them would mask a user misconception, so we bail with a list
-/// of the offending flags.
+/// A timeless entry has no place for a clock offset — silently discarding
+/// one would mask a user misconception, so we bail with a list of the
+/// offending flags. (A *duration* is fine on a timeless entry — "this takes
+/// 30m" is a property of the thing, not of a moment — so `dur=`/the trailing
+/// positional are not listed here. The retired `--dur` used to be; da-azqq.)
 fn check_no_time_flags(args: &LogArgs) -> Result<()> {
     let mut bad: Vec<&str> = Vec::new();
     if args.time.time.is_some() {
@@ -1689,9 +1674,6 @@ fn check_no_time_flags(args: &LogArgs) -> Result<()> {
     }
     if args.time.date.is_some() {
         bad.push("-d/--date");
-    }
-    if args.duration.duration.is_some() {
-        bad.push("--dur");
     }
     if args.time.timezone.is_some() {
         bad.push("-z/--timezone");
@@ -1777,7 +1759,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut args = LogArgs::with_field("sleep");
         args.duration.duration = Some("8h".to_string());
-        // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
+        // Just verify the dur parsing logic: an 8h duration → end = start + 8h
         let base = build_time_with_uncertainty(&args).unwrap();
         let dur = parse_duration("8h").unwrap();
         let end_utc = base.utc + dur;

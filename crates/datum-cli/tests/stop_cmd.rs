@@ -2,9 +2,10 @@
 //!
 //! Ports the 8 cases from `endCmd.test.ts` in the original datum project,
 //! adapted to daydumb's flag-based model:
-//!   * daydumb lacks `--moment` on stop and positional duration — duration
-//!     is supplied only via `--dur`. "Moment" semantics are the default for
-//!     stop (no `--dur` ⇒ no `time_end`). `-T` (omit-timestamp) IS supported
+//!   * daydumb lacks `--moment` on stop; a duration is spelled as a
+//!     trailing positional (`stop dance 5m`) or as `dur=5m`, da-azqq having
+//!     retired the `--dur` flag. "Moment" semantics are the default for
+//!     stop (no duration ⇒ no `time_end`). `-T` (omit-timestamp) IS supported
 //!     and yields a timeless entry (`occur_time` NULL, slug `field:c<create_time>`);
 //!     see `no_timestamp.rs` for the cross-verb coverage.
 //!   * "Required keys" (`-k key`) is datum-specific; daydumb's `-k` always
@@ -28,8 +29,8 @@ use serde_json::json;
 ///
 /// daydumb records a `Verb::Switch` entry; state compilation emits a `false`
 /// event at `time_end` (or `time_start` when `time_end` is missing). A bare
-/// `stop` has no `--dur`, so `time_end` is `None` and the `false` event
-/// lands at `time_start`.
+/// `stop` carries no duration, so `time_end` is `None` and the `false`
+/// event lands at `time_start`.
 #[test]
 fn stop_records_false_state_at_time_start() {
     let db = fresh_db();
@@ -42,7 +43,7 @@ fn stop_records_false_state_at_time_start() {
     let ts = entry.occur_time.as_ref().expect("stop anchors occur_time");
     assert!(
         entry.dur.is_none(),
-        "bare stop (no --dur) must not derive time_end",
+        "bare stop (no duration) must not derive time_end",
     );
 
     // State compiles to `false` at time_start.
@@ -90,24 +91,26 @@ fn stop_last_state_captures_prior_switch_state() {
 /// TS #3: "can create a hole of time when duration is present".
 ///
 /// Datum's `endCmd("dance 5")` took a positional duration and produced a
-/// backward "hole" spanning `[occurTime-5, occurTime]` during which state
-/// was false, with state returning to true afterwards. Daydumb's
-/// `stop --dur 5m` also emits a closed block with `time_start=base-dur`
-/// and `time_end=base`, but state compilation is simpler: `Verb::Switch`
-/// emits a single `false` event at `time_end`, so daydumb does NOT restore
-/// the prior state after the hole. The portable assertion is structural —
-/// the stop entry carries both time bounds and the correct duration sign.
+/// backward "hole" spanning `[occurTime-5, occurTime]`, with state
+/// returning to true afterwards. Daydumb's `stop dance 5m` also emits a
+/// closed block, but it runs FORWARD from the entry's time — the block is
+/// `[base, base+dur]`. That is the da-azqq resolution: `--dur` was the one
+/// spelling that ran backward on stop, so `end work 12m -t 14:00` and
+/// `end work dur=12m -t 14:00` disagreed with it by twelve minutes. The
+/// flag went; the forward reading survives, and `datum stop --help` says
+/// so. State compilation stays simple: `Verb::Block` with state=false
+/// governs the span, so daydumb does NOT restore the prior state after it.
 #[test]
-fn stop_dur_produces_closed_backward_block() {
+fn stop_dur_produces_closed_forward_block() {
     let db = fresh_db();
 
     // Anchor a prior open block so the stop sits inside real state history.
     run_cli(&["start", "dance", "-t=-20"], &db).expect("anchor start");
-    run_cli(&["stop", "dance", "--dur", "5m"], &db).expect("stop --dur 5m");
+    run_cli(&["stop", "dance", "5m"], &db).expect("stop dance 5m");
 
     let entries = db.entries_for_field("dance", None).unwrap();
     assert_eq!(entries.len(), 2);
-    // stop --dur 5m: state=false (action canonicalization) + dur=positive
+    // stop dance 5m: state=false (action canonicalization) + dur=positive
     // → Verb::Block; the anchor `start` (no dur) is Verb::Switch.
     let stop = entries
         .iter()
@@ -117,16 +120,16 @@ fn stop_dur_produces_closed_backward_block() {
     let ts = stop
         .occur_time
         .as_ref()
-        .expect("stop --dur anchors occur_time")
+        .expect("stop anchors occur_time at the entry's time")
         .utc;
     let te = stop
         .computed_end_time()
-        .expect("stop --dur derives end time")
+        .expect("stop derives end time from the duration")
         .utc;
     assert_eq!(
         (te - ts).num_seconds(),
         5 * 60,
-        "stop --dur 5m spans 5 minutes: time_start=base-dur, time_end=base",
+        "stop dance 5m spans 5 minutes FORWARD: time_start=base, time_end=base+dur",
     );
     assert_eq!(stop.duration_seconds(), Some(5 * 60));
 
@@ -145,7 +148,7 @@ fn stop_dur_produces_closed_backward_block() {
 /// duration positional argument".
 ///
 /// Daydumb has no `--moment` on stop — but the default `stop` behavior is
-/// already moment-like: without `--dur`, no `time_end` is derived. The
+/// already moment-like: without a duration, no `time_end` is derived. The
 /// portable observation: `-k skillPoints=3` attaches extra data, and no
 /// duration is inferred.
 #[test]
@@ -157,7 +160,10 @@ fn stop_without_dur_is_moment_like() {
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
     assert!(entry.occur_time.is_some());
-    assert!(entry.dur.is_none(), "no --dur ⇒ no dur (moment semantics)",);
+    assert!(
+        entry.dur.is_none(),
+        "no duration ⇒ no dur (moment semantics)",
+    );
     let extra = entry.data.as_ref().expect("extra_data with skillPoints");
     assert_eq!(extra["skillPoints"], json!(3));
 }
@@ -223,18 +229,18 @@ fn stop_explicit_dur_with_key() {
 
 /// TS #7: "throws an error if the duration supplied is invalid".
 ///
-/// Datum surfaces `BadDurationError`; daydumb's `parse_duration` returns
-/// a `DatumError::InvalidTime`, which bubbles through `cmd::dispatch` as
-/// an `anyhow::Error`.
+/// Datum surfaces `BadDurationError`; daydumb rejects the value while
+/// coercing the reserved `dur` column, and the failure bubbles through
+/// `cmd::dispatch` as an `anyhow::Error`.
 #[test]
 fn stop_invalid_dur_is_rejected() {
     let db = fresh_db();
 
-    let err = run_cli(&["stop", "field", "--dur", "30asd"], &db)
+    let err = run_cli(&["stop", "field", "dur=30asd"], &db)
         .expect_err("30asd must fail duration parsing");
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("Invalid time") || msg.contains("duration"),
+        msg.contains("dur") || msg.contains("duration"),
         "error should describe duration parse failure, got: {msg}",
     );
     assert_count!(db, "field", 0);
@@ -244,7 +250,7 @@ fn stop_invalid_dur_is_rejected() {
 /// duration comes before keys".
 ///
 /// Daydumb has no "required keys" concept, but the test's essence — that
-/// `--dur` + `-k` together still produce `verb=stop` with both the
+/// a duration + `-k` together still produce `verb=stop` with both the
 /// derived time block and the extra key present — ports cleanly. Under
 /// da-r6ds, `stop` hard-sets `state=false` and never coerces a bare
 /// positional into state, so `reqVal1` slot-fills the `-k req1=extra`
@@ -255,18 +261,10 @@ fn stop_dur_plus_extra_still_marks_verb_stop() {
     let db = fresh_db();
 
     run_cli(
-        &[
-            "stop",
-            "field",
-            "reqVal1",
-            "--dur",
-            "30m",
-            "-k",
-            "req1=extra",
-        ],
+        &["stop", "field", "reqVal1", "dur=30m", "-k", "req1=extra"],
         &db,
     )
-    .expect("stop --dur 30m -k ... dispatch");
+    .expect("stop field reqVal1 dur=30m -k ... dispatch");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "block", state: false);
@@ -300,7 +298,7 @@ fn stop_end_alias_equivalence() {
     assert_eq!(s.verb, e.verb, "end must dispatch to Verb::Switch");
     assert!(matches!(s.verb, Verb::Switch));
     assert!(matches!(e.verb, Verb::Switch));
-    // Neither form should derive a time_end (no --dur given).
+    // Neither form should derive a time_end (no duration given).
     assert!(s.dur.is_none());
     assert!(e.dur.is_none());
 }

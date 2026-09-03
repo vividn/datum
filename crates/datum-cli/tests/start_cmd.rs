@@ -2,7 +2,8 @@
 //!
 //! Ports the 10 cases from `startCmd.test.ts` in the original datum project,
 //! adapted to daydumb's flag-based model:
-//!   * daydumb supplies positional duration via `--dur`; `-m`/`--moment`
+//!   * daydumb supplies the duration as a trailing positional or `dur=<D>`
+//!     (da-azqq retired the `--dur` flag); `-m`/`--moment`
 //!     forces a zero-duration point (`dur=MOMENT`). A bare `start` with
 //!     neither opens an ongoing block (no `time_end`). `-T` (omit timestamp)
 //!     IS supported — it yields a timeless entry (`occur_time` NULL, slug
@@ -98,13 +99,14 @@ fn start_after_switch_preserves_prior_state() {
 /// TS #3: "has an optional duration arg that creates a block of time where
 /// state was true".
 ///
-/// Datum accepts a positional duration (`start dance 5`); daydumb uses the
-/// `--dur` flag. The semantic is identical: `time_end = time_start + dur`.
+/// Datum accepts a positional duration (`start dance 5`) and so does
+/// daydumb (da-azqq retired the `--dur` flag that used to spell it). The
+/// semantic is identical: `time_end = time_start + dur`.
 #[test]
-fn dur_flag_sets_time_end_for_closed_block() {
+fn trailing_duration_sets_time_end_for_closed_block() {
     let db = fresh_db();
 
-    run_cli(&["start", "dance", "--dur", "5m"], &db).expect("start --dur 5m");
+    run_cli(&["start", "dance", "5m"], &db).expect("start dance 5m");
 
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
     // Start with a closed duration → shape=block, generated verb='block'.
@@ -118,38 +120,31 @@ fn dur_flag_sets_time_end_for_closed_block() {
 /// TS #4: "creates a hole of time where state was false when duration is
 /// negative".
 ///
-/// Datum's negative duration created a backward block. Under v3
-/// (da-5ns), the storage layer's `derive_verb` rejects negative
-/// durations, but the CLI insert path clamps the time-end delta to zero
-/// in `Entry::new_legacy` (entry.rs: `(e.utc - s.utc).num_seconds().max(0)`),
-/// which collapses to `dur="PT0S"`. With state=true (Action::Start
-/// canonicalization) and dur=Zero this derives `Verb::Point`.
+/// Datum's negative duration created a backward block. Daydumb has no
+/// backward block: the surviving spellings (trailing positional, `dur=`)
+/// both land on `entry.dur`, where `derive_verb` rejects a negative
+/// duration outright. da-azqq removed `--dur`, the one spelling that
+/// reached the time-delta path and silently clamped to `dur="PT0S"` —
+/// so what used to collapse to a `Verb::Point` now fails loudly.
 #[test]
-fn negative_dur_collapses_to_point() {
+fn negative_dur_is_rejected() {
     let db = fresh_db();
 
-    // An earlier `start` anchors the field so the collapsed entry sits
-    // alongside real state history.
     run_cli(&["start", "dance", "-t=-20"], &db).expect("anchor start");
-    run_cli(&["start", "dance", "--dur=-5m"], &db).expect("collapsed start");
-
-    let entries = db.entries_for_field("dance", None).unwrap();
-    assert_eq!(entries.len(), 2);
-
-    let collapsed = entries
-        .iter()
-        .find(|e| e.duration_seconds() == Some(0))
-        .expect("negative-dur entry collapses to zero-second dur");
+    let err = run_cli(&["start", "dance", "dur=-5m"], &db)
+        .expect_err("a negative duration has no meaning on entry.dur");
+    let msg = format!("{err:#}");
     assert!(
-        matches!(collapsed.verb, Verb::Point),
-        "state=true + dur=Zero → Point",
+        msg.contains("negative duration"),
+        "error should name the negative duration, got: {msg}",
     );
+    assert_count!(db, "dance", 1);
 }
 
 /// TS #5: "when --moment is specified, dur is null and there is no duration
 /// positional argument".
 ///
-/// This covers the bare `start` (no `-m`, no `--dur`): it opens an ongoing
+/// This covers the bare `start` (no `-m`, no duration): it opens an ongoing
 /// block (verb=switch, no `time_end`). For the `-m` point-dot behavior see
 /// `start_moment_records_point_dot` below. `-k` flags accept `KEY=VALUE` (a
 /// datum divergence: datum's `-k` takes a key name and pulls the value from
@@ -163,7 +158,10 @@ fn start_without_dur_is_moment_like() {
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
     assert!(entry.occur_time.is_some());
-    assert!(entry.dur.is_none(), "no --dur ⇒ no dur (moment semantics)",);
+    assert!(
+        entry.dur.is_none(),
+        "no duration ⇒ no dur (moment semantics)",
+    );
     let extra = entry.data.as_ref().expect("extra_data with skillPoints");
     assert_eq!(extra["skillPoints"], json!(3));
 }
@@ -279,11 +277,11 @@ fn non_duration_positional_is_rejected() {
 fn invalid_dur_is_rejected() {
     let db = fresh_db();
 
-    let err = run_cli(&["start", "field", "--dur", "30asd"], &db)
-        .expect_err("30asd must fail duration parsing");
+    let err =
+        run_cli(&["start", "field", "30asd"], &db).expect_err("30asd must fail duration parsing");
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("Invalid time") || msg.contains("duration"),
+        msg.contains("dur") || msg.contains("duration"),
         "error should describe duration parse failure, got: {msg}",
     );
     assert_count!(db, "field", 0);
@@ -293,19 +291,21 @@ fn invalid_dur_is_rejected() {
 /// duration comes after required keys".
 ///
 /// Daydumb has no "required keys" concept, but the test's essence — that
-/// `--dur` + `-k` together still produce a closed block with both the
+/// a duration + `-k` together still produce a closed block with both the
 /// derived `time_end` and the key present in `data` — ports cleanly. Under
-/// the data-model-v2 schema, `start --dur` produces `verb='block'` rather
-/// than `start` (shape=block wins in the generated verb CASE).
+/// the data-model-v2 schema, a durationed `start` produces `verb='block'`
+/// rather than `start` (shape=block wins in the generated verb CASE).
+///
+/// Spelled `dur=30m`, not as a trailing bare positional: the `-k req1=`
+/// slot is declared before the auto-injected `dur=` slot, so a bare `30m`
+/// would slot-fill `req1` instead. da-azqq removed `--dur`, the flag that
+/// used to sidestep slot order; `dur=` is the spelling that still can.
 #[test]
 fn dur_plus_extra_still_marks_verb_start() {
     let db = fresh_db();
 
-    run_cli(
-        &["start", "field", "--dur", "30m", "-k", "req1=reqVal1"],
-        &db,
-    )
-    .expect("start --dur 30m -k req1=reqVal1");
+    run_cli(&["start", "field", "dur=30m", "-k", "req1=reqVal1"], &db)
+        .expect("start field dur=30m -k req1=reqVal1");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "block");
@@ -500,9 +500,9 @@ fn start_explicit_dur_slot_declaration() {
     assert_eq!(entry.duration_seconds(), Some(30 * 60));
 }
 
-/// `dm stop abc 3` mirrors start: trailing numeric is duration. For stop,
-/// `--dur` interprets the entry as `time_start = base - dur`, so the bare
-/// `3` must take the same code path.
+/// `dm stop abc 3` mirrors start: a trailing numeric is the duration, and
+/// on stop it anchors the block AT the entry's time and runs forward — the
+/// same code path (`entry.dur`) both spellings take.
 #[test]
 fn stop_bare_numeric_positional_is_duration() {
     let db = fresh_db();
@@ -513,18 +513,26 @@ fn stop_bare_numeric_positional_is_duration() {
     assert_eq!(entry.duration_seconds(), Some(3 * 60));
 }
 
-/// Trailing duration positional + explicit `--dur` is a conflict — better
-/// to fail loudly than to silently pick a winner. Mirrors switch's rule.
+/// The two surviving spellings are two ways of filling ONE slot, so
+/// naming both is an override, not a conflict: the explicit `dur=5m`
+/// wins and the bare `3` has nowhere else to go.
+///
+/// This test used to assert a conflict, because `--dur` was a genuinely
+/// separate channel that could disagree with the slot. da-azqq removed it;
+/// the last channel that can still collide is the switch `,`-chain's
+/// peeled duration, covered by
+/// `switch_cmd::switch_chain_duration_conflicts_with_explicit_dur_key`.
 #[test]
-fn start_trailing_duration_conflicts_with_dur_flag() {
+fn start_explicit_dur_key_overrides_trailing_positional() {
     let db = fresh_db();
 
-    let err = run_cli(&["start", "abc", "3", "--dur", "5m"], &db)
-        .expect_err("trailing dur + --dur should conflict");
-    let msg = err.to_string();
+    run_cli(&["start", "abc", "3", "dur=5m"], &db)
+        .expect("dur= and a bare positional share a slot");
+
+    let entry = &db.entries_for_field("abc", None).unwrap()[0];
+    assert_eq!(entry.duration_seconds(), Some(5 * 60));
     assert!(
-        msg.contains("--dur") || msg.contains("conflict"),
-        "error should mention conflict: {msg}",
+        entry.data.is_none(),
+        "the bare `3` filled the same `dur=` slot; it must not survive as data",
     );
-    assert_count!(db, "abc", 0);
 }

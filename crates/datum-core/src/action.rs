@@ -31,7 +31,7 @@ pub enum Action {
     Stop,
     /// `datum switch <field> <state>` — record a state transition.
     Switch,
-    /// `datum block <field> --dur <d>` — record a duration block.
+    /// `datum block <field> <d>` — record a duration block.
     Block,
     /// `datum add <field>` — timeless, shape-inferring verb that derives
     /// the entry's shape from temporal hints in `extra_data`. da-r17h:

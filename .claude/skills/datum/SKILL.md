@@ -59,8 +59,9 @@ An entry logs *now* unless you place it:
 
 - `-y` = 1 day ago, `-yy` = 2 (stackable); `-d -1` = yesterday, `-d +1` = tomorrow.
 - `-q` = 5 min ago (stackable); `-t -8` = 8 min ago; `-t 1513` = 15:13 today; `-t 9:15am`.
-- `--dur 30m` (also `1:30`, `2h`, ISO `PT30M`) sets a duration; combine with `-t` to
-  derive the missing end/start.
+- A duration is a trailing positional (`datum end work 30m`) or `dur=30m` — also
+  `1:30`, `2h`, ISO `PT30M`. There is no `--dur` flag. Combined with `-t`, the block
+  starts at `-t` and runs forward: `datum end work 12m -t 14:00` is 14:00–14:12.
 
 ## Reading it back
 

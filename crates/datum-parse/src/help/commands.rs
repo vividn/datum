@@ -84,16 +84,6 @@ const LOG_FLAGS: &[FlagSpec] = &[
         left_override: None,
     },
     FlagSpec {
-        short: None,
-        long: "dur",
-        takes_value: true,
-        value_hint: Some("VAL"),
-        value_optional: false,
-        summary: "Duration (30m, 1:30=1h30m, 2h, PT30M)",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
         short: Some('z'),
         long: "timezone",
         takes_value: true,
@@ -980,8 +970,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         category: Category::Logging,
         summary: "log an entry",
         top_summary: Some("Begin a duration-tracked activity"),
-        long_description: None,
-        usage: &["datum start <FIELD> [VALUE | KEY=VALUE]..."],
+        long_description: Some(
+            "A trailing duration (`datum start work 25m`, or `dur=25m`) closes the \
+             block: it begins at the entry's time — now, or wherever `-t`/`-d` put \
+             it — and runs forward from there.",
+        ),
+        usage: &[
+            "datum start <FIELD> [VALUE | KEY=VALUE]... [DUR]",
+            "  DUR (or dur=DUR) runs FORWARD from the entry's time",
+        ],
         args: NO_ARGS,
         flags: LOG_FLAGS,
         examples: NO_EXAMPLES,
@@ -995,8 +992,16 @@ pub const COMMANDS: &[CommandSpec] = &[
         category: Category::Logging,
         summary: "log an entry",
         top_summary: Some("End a duration-tracked activity (alias: end)"),
-        long_description: None,
-        usage: &["datum stop <FIELD> [VALUE | KEY=VALUE]..."],
+        long_description: Some(
+            "A trailing duration (`datum end work 12m`, or `dur=12m`) is how long the \
+             break runs: `-t` is when you stopped, and the span runs FORWARD from \
+             there. `end work 12m -t 14:00` is a break from 14:00 to 14:12.",
+        ),
+        usage: &[
+            "datum stop <FIELD> [VALUE | KEY=VALUE]... [DUR]",
+            "  DUR (or dur=DUR) runs FORWARD from the entry's time:",
+            "  `datum end work 12m -t 14:00` is a break from 14:00 to 14:12",
+        ],
         args: NO_ARGS,
         flags: LOG_FLAGS,
         examples: NO_EXAMPLES,

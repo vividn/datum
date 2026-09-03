@@ -286,7 +286,7 @@ fn normalize_object(obj: &Map<String, Value>) -> Value {
 /// Compile the active state at time `at` from a set of entries for a single field.
 ///
 /// State-change events are derived from each entry:
-/// - `switch`: emits (time_start, value). If time_end is set (e.g. --dur), also
+/// - `switch`: emits (time_start, value). If time_end is set (e.g. a duration), also
 ///   emits (time_end, false) — the block ends, state reverts to "off".
 /// - `start`: emits (time_start, true). time_end analogous to switch.
 /// - `stop`: emits (time_end or time_start, false).
@@ -593,7 +593,7 @@ fn verb_state_events(
             }
         }
         Verb::Block => {
-            // A stateless block (`occur --dur`, legacy start/stop spans)
+            // A stateless block (`occur … dur=`, legacy start/stop spans)
             // means "active": state=true, but it isn't a state the user
             // named — annotation for ordinal purposes.
             let (v, kind) = match state {

@@ -187,13 +187,11 @@ fn minus_t_with_d_flag_errors() {
     assert!(format!("{err:#}").contains("-d"), "got: {err:#}");
 }
 
-#[test]
-fn minus_t_with_dur_errors() {
-    let db = fresh_db();
-    let err = run_cli(&["start", "sleep", "-T", "--dur", "30m"], &db)
-        .expect_err("-T + --dur must reject");
-    assert!(format!("{err:#}").contains("--dur"));
-}
+// da-azqq removed `--dur`, and with it the only duration this guard could
+// see (the `-T` check runs before the dur= slot is filled). A timeless entry
+// carrying a duration is legal — "this takes 30m" is a property of the thing,
+// not of a moment — so `start sleep -T 30m` writes rather than rejects. The
+// flag's death is covered by `dur_flag_removed.rs`.
 
 #[test]
 fn minus_t_with_y_flag_errors() {

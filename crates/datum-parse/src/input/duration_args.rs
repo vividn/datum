@@ -19,22 +19,38 @@
 //!
 //! See `docs/parity-audit/parsing.md` ("`durationArgs.ts`") for the spec.
 
+use crate::error::ParseError;
 use crate::input::flag_registry::{FlagAction, FlagSpec};
+
+/// Rejection text for the retired `--dur` flag. Names both surviving
+/// spellings and the `-t` anchoring that the flag got wrong, so the
+/// message teaches the replacement instead of just refusing.
+pub const DUR_FLAG_REMOVED: &str = "`--dur` was removed. Write the duration as a trailing positional (`datum end work 12m`) or as `dur=12m`. On end/stop those anchor the block AT `-t` and run forward, where `--dur` ran backward from it.";
 
 /// Canonical flag set for the duration concern.
 ///
-/// `--dur` carries the positional duration value (datum's TS shape uses a
-/// proper positional, but the bespoke parser exposes it as `--dur` so it
-/// composes with the rest of the flag stream); `-m`/`--moment` is the
-/// "no duration" override.
+/// `-m`/`--moment` is the "no duration" override. The duration itself is
+/// spelled as a trailing positional or `dur=<D>` — never as a flag; see
+/// [`DUR_FLAG_REMOVED`] for why `--dur` is a tombstone rather than absent.
 pub static FLAG_SPECS: &[FlagSpec<DurationArgs>] = &[
+    // `--dur` was REMOVED on 2026-09-02 (da-azqq). Do not restore it.
+    //
+    // Two spellings for the same duration already existed — the trailing
+    // positional (`datum end work 12`) and the reserved key (`dur=12`) —
+    // and `--dur` did not merely duplicate them: on `stop`/`end` it
+    // anchored the block on the OPPOSITE side of `-t`, so `end work
+    // --dur 12m -t 14:00` wrote 13:48 where `end work 12 -t 14:00`
+    // writes 14:00. Two spellings of "a 12 minute break" landed twelve
+    // minutes apart.
+    //
+    // The spec stays here as a tombstone so the flag fails loudly with
+    // the two surviving forms named, instead of falling through to a
+    // generic "unknown flag". `crates/datum-cli/tests/dur_flag_removed.rs`
+    // is the test that keeps it gone.
     FlagSpec {
         short: None,
         long: Some("dur"),
-        action: FlagAction::Value(|a, v| {
-            a.duration = Some(v.to_string());
-            Ok(())
-        }),
+        action: FlagAction::Value(|_a, _v| Err(ParseError::InvalidArg(DUR_FLAG_REMOVED.into()))),
     },
     FlagSpec {
         short: Some('m'),
@@ -92,6 +108,32 @@ impl DurationArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// da-azqq companion to `datum-cli/tests/dur_flag_removed.rs`: the
+    /// `--dur` spec must stay a *rejection*, not quietly become a setter
+    /// again. A CLI test alone would still pass if someone re-registered
+    /// the flag under a different concern's registry, so guard the spec
+    /// itself here.
+    #[test]
+    fn dur_spec_is_a_rejection_not_a_setter() {
+        let dur = FLAG_SPECS
+            .iter()
+            .find(|s| s.long == Some("dur"))
+            .expect("the `--dur` tombstone must stay, so the failure names the replacements");
+        let FlagAction::Value(f) = dur.action else {
+            panic!("`--dur` must stay a value-consuming rejection, not a switch");
+        };
+        let mut args = DurationArgs::default();
+        let err = f(&mut args, "12m").expect_err("`--dur` must reject its value");
+        assert!(
+            err.to_string().contains("`--dur` was removed"),
+            "got: {err}"
+        );
+        assert_eq!(
+            args.duration, None,
+            "a rejected `--dur` must not have written a duration"
+        );
+    }
 
     #[test]
     fn empty_duration_args_is_absent() {

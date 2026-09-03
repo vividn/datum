@@ -107,17 +107,17 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   timeArgs + data args.
 - **Daydumb today:** `log_entry(Action::Start, ...)` with `LogArgs`.
   Action canonicalization sets state=true on entries that don't supply
-  one explicitly. `--dur` sets `dur = ISO 8601 duration` from
-  `time_start` forward; without `--dur` the row's storage verb derives
-  to `Verb::Switch` (state=set, dur=null). With `--dur` it derives to
+  one explicitly. A duration — a trailing positional (`start work 25m`)
+  or `dur=25m`; da-azqq retired the `--dur` flag — sets `dur = ISO 8601
+  duration` from `time_start` forward. Without one the row's storage verb
+  derives to `Verb::Switch` (state=set, dur=null); with one it derives to
   `Verb::Block`.
-- **Missing in daydumb:** positional duration — daydumb requires the
-  `--dur` flag.
+- **Missing in daydumb:** nothing significant.
 - **Divergences:** none of note.
 - **Tests in datum not in daydumb:** 10 tests (duration formats, time
   offsets, timezone). Covered by `start_cmd.rs`.
-- **Ideas / cleanup:** consider accepting a bare trailing duration
-  argument in the bespoke parser (R2) for datum-compatibility.
+- **Ideas / cleanup:** none outstanding — da-ooe2 added the bare trailing
+  duration positional, and da-azqq removed the flag it replaced.
 
 ### end / stop
 
@@ -125,9 +125,11 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Daydumb today:** `log_entry(Action::Stop, ...)` with `LogArgs`.
   Action canonicalization sets state=false. `--last-state` closes the
   most recent open block and records its prior state; errors if no
-  open block exists. `--dur` sets `time_start = time_end - dur`
-  (backward direction). Bare stop derives to `Verb::Switch`; stop with
-  `--dur` derives to `Verb::Block`.
+  open block exists. A duration (`end work 12m`, or `dur=12m`) anchors
+  the block AT the entry's time and runs FORWARD: `end work 12m -t 14:00`
+  is 14:00–14:12. da-azqq removed `--dur`, which ran backward from `-t`
+  and so disagreed with the two spellings that remain. Bare stop derives
+  to `Verb::Switch`; stop with a duration derives to `Verb::Block`.
 - **Missing in daydumb:** nothing significant.
 - **Divergences:** daydumb's `--last-state` error is explicit; datum
   silently skips or guesses when no open block.
@@ -145,8 +147,8 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   produces a zero-duration entry (`occur_time == computed_end_time`,
   storage verb `Verb::Point`). `--last-state` dedupes when new state ==
   current (errors on redundant transitions). State normalization via
-  `datum_core::state::normalize_state`. Without `--dur` derives to
-  `Verb::Switch`; with `--dur` derives to `Verb::Block`; with `--dur`
+  `datum_core::state::normalize_state`. Without a duration derives to
+  `Verb::Switch`; with one derives to `Verb::Block`; with a duration
   + `following_state=` derives to `Verb::BlockSwitch`.
 - **Missing in daydumb:** explicit manual prior-state override (datum's
   `-L`).

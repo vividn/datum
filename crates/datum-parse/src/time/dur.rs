@@ -1,4 +1,4 @@
-//! Parse `--dur` durations, plus the ISO-8601 duration helper and the
+//! Parse duration arguments, plus the ISO-8601 duration helper and the
 //! `split_unit` lexer used by both duration and uncertainty parsing.
 
 use chrono::Duration;
@@ -33,7 +33,7 @@ use crate::time::uncertainty::UncertaintyUnit;
 /// So the rightmost field is *minutes* for the 2-part form but *seconds* for
 /// the 3- and 4-part forms. This is intentional: people read a bare `1:30`
 /// stopwatch-style as one-thirty (an hour and a half), which is the common
-/// `--dur` case, while the longer forms want second-precision.
+/// bare-duration case, while the longer forms want second-precision.
 ///
 /// This is a deliberate divergence from datum-v2, whose colon form was
 /// *seconds*-anchored across all part counts

@@ -49,7 +49,7 @@ should deliver it.
 | `--lenient` / `--strict` / `-R` / `-S` / `-C` remainder modes | ✓ | ✓ (step 2b/N) | ✓ | — |
 | `-b/--base-data` (JSON object) | ✓ | ✗ | — | — |
 | `-d` / `-t` / `-y*` / `-q*` / `-z` / `-D` / `-T` | ✓ | ✓ (datum-parse) | ✓ | `-yy`/`-qqq` shorthand via pre-pass; `±N[unit]` uncertainty suffix (D2) |
-| `--dur` (duration) | `duration` positional | `--dur` flag | ✓ | explicit flag vs positional |
+| duration | `duration` positional | trailing positional or `dur=` | ✓ | da-ooe2 added the positional; da-azqq removed the `--dur` flag it replaced |
 | `-m/--moment` | ✓ | ✓ | ✓ | — |
 | field/verb order-swap | ✗ | ✓ | — | `datum <field> <verb>` ↔ `datum <verb> <field>` |
 | alias pre-pass in DB | ✗ | ✓ | — | DB-backed CLI aliases (D3) |
@@ -386,7 +386,7 @@ package for named units (`5min`, `2h`, `1d`, `5ms`, ...).
   field is always seconds and `1:30` = **1 min 30 sec**. Daydumb
   reads the 2-part form as `HH:MM` instead, so `1:30` = **1h 30m** —
   60× longer for the same input. This is deliberate: a bare `1:30`
-  reads stopwatch-style as one-thirty, the common `--dur` case. The
+  reads stopwatch-style as one-thirty, the common duration case. The
   3- and 4-part forms stay seconds-anchored (`HH:MM:SS`,
   `DD:HH:MM:SS`), matching v2, so the rightmost field is minutes for
   the 2-part form but seconds for 3+ parts. Migration risk is low —

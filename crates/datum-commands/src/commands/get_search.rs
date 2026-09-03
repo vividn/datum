@@ -15,7 +15,7 @@
 //!   `count=5` matches `5` and `5.0` both.
 //! * **Gt/Lt/Gte/Lte** — numeric only. A non-numeric LHS or RHS fails
 //!   the match (no implicit string ordering). RHS duration literals use
-//!   the same dialect as `--dur` / `--since` (`4h`, `30m`, `1:30`,
+//!   the same dialect as a duration argument / `--since` (`4h`, `30m`, `1:30`,
 //!   `PT4H`), so `dur>4h` works everywhere the rest of the tool taught it.
 //! * **Regex** — `/…/`-delimited values strip their slashes; bare
 //!   values compile verbatim. Match is "contains" via `Regex::is_match`.
@@ -182,7 +182,7 @@ fn parse_number(s: &str) -> Option<f64> {
         return Some(n);
     }
     // Duration literals → seconds, in the same dialect every other time
-    // surface accepts (`--dur`, `--since`, `--window`): `4h`, `30m`,
+    // surface accepts (`dur=`, `--since`, `--window`): `4h`, `30m`,
     // `1:30`, `PT4H` all work without converting to seconds first.
     datum_core::time::parse_duration(s)
         .ok()
@@ -276,7 +276,7 @@ mod tests {
     }
 
     /// da-65fd: the RHS also accepts the CLI shorthand dialect every
-    /// other time surface takes (`--dur`, `--since`): `4h`, `30m`,
+    /// other time surface takes (`dur=`, `--since`): `4h`, `30m`,
     /// `1:30` — not just ISO-8601.
     #[test]
     fn dur_compares_against_cli_shorthand() {

@@ -140,7 +140,6 @@ OPTIONS:
   -q                    Go back 5 min (stackable: -qq=10 min, ...)
   -d, --date <VAL>      Date override (offset, YYYY-MM-DD, sunday, apr29)
   -t, --time <VAL>      Time override (offset, HH:MM, 9:15am, or a date)
-      --dur <VAL>       Duration (30m, 1:30=1h30m, 2h, PT30M)
   -z, --timezone <TZ>   Timezone (IANA or UTC offset)
   -D, --full-day        Date-only entry (no clock time)
   -u, --undo            Undo: delete most recent matching entry
@@ -214,9 +213,14 @@ fn log_help_matches_parser_registry() {
     use crate::parse::log_args_registry;
     use std::collections::HashMap;
 
-    // Pure spelling-aliases of a documented flag that intentionally stay out
-    // of `--help`. `--dryrun` is just `--dry-run` without the hyphen.
-    const PARSER_ONLY: &[&str] = &["dryrun"];
+    // Flags the parser knows about but `--help` intentionally omits.
+    // `--dryrun` is a pure spelling-alias of `--dry-run`. `--dur` is a
+    // tombstone: da-azqq removed the flag, and the registry keeps a
+    // rejecting spec only so the failure names the two surviving
+    // spellings instead of a bare "unknown flag" (see
+    // `input/duration_args.rs` and `datum-cli/tests/dur_flag_removed.rs`).
+    // Documenting a flag that always errors would be worse than hiding it.
+    const PARSER_ONLY: &[&str] = &["dryrun", "dur"];
 
     // Identity key: the short letter (`-y`) when present, else the long name
     // (`dur`). Short-first so the `-y`/`-q` rows — documented short-only even
@@ -293,7 +297,10 @@ fn snapshot_end_alias_substitutes_verb() {
         )
         .replace(
             "  datum add <FIELD> -K <KEY> [KEY=VALUE]...\n  datum add <FIELD> --id <VALUE>\n",
-            "  datum end <FIELD> [VALUE | KEY=VALUE]...\n",
+            // `stop`'s USAGE carries the second line da-azqq added: with
+            // `--dur` gone, the trailing duration is the only spelling on
+            // this verb and the help has to say which side of `-t` it falls.
+            "  datum end <FIELD> [VALUE | KEY=VALUE]... [DUR]\n    DUR (or dur=DUR) runs FORWARD from the entry's time:\n    `datum end work 12m -t 14:00` is a break from 14:00 to 14:12\n",
         );
     assert_eq!(s, expected);
 }
