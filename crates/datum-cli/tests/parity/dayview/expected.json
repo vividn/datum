@@ -180,16 +180,16 @@
                 "Single": "#d48788"
               },
               "state_label": "meeting",
-              "time_extent": 159.66666666666674,
-              "time_offset": 638.6666666666666
+              "time_extent": 159.66666666666663,
+              "time_offset": 798.3333333333334
             },
             {
               "fill": {
                 "Single": "#af67ca"
               },
               "state_label": "emails",
-              "time_extent": 159.66666666666674,
-              "time_offset": 958.0
+              "time_extent": 159.66666666666652,
+              "time_offset": 1117.6666666666667
             }
           ],
           "cross_extent": 12.0,
@@ -206,7 +206,7 @@
               },
               "state_label": "true",
               "time_extent": 79.83333333333337,
-              "time_offset": 638.6666666666666
+              "time_offset": 718.5
             }
           ],
           "cross_extent": 12.0,

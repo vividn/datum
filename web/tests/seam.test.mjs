@@ -359,9 +359,10 @@ describe('the visual views', () => {
 		});
 	});
 
-	test('a block hangs back from its occur time rather than starting at it', async () => {
+	test('a block runs forward from its occur time rather than back from it', async () => {
 		await withApp(async ({ run }) => {
-			// `start`/`stop` is a block: occur_time is its trailing edge.
+			// `start`/`stop` is a block: occur_time is its leading edge, and
+			// the duration runs forward from it (da-a8rs).
 			assert.equal((await run(['start', 'work', '-t', '-20'])).code, OK);
 			assert.equal((await run(['stop', 'work', '-t', '-5'])).code, OK);
 

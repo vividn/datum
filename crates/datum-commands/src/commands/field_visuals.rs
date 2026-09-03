@@ -115,6 +115,15 @@ pub(crate) fn dur_seconds(entry: &Entry) -> Option<i64> {
     entry.duration_seconds().map(|s| s.max(0))
 }
 
+/// The instant a row's span ends: `occur + dur`, or `occur` when the row
+/// carries no duration. This is where a compound switching verb's
+/// `following_state` takes over — the same trailing event
+/// [`datum_core::state`] compiles at `occur + dur` (da-a8rs). For a
+/// point-switch, `dur` is a zero span, so the trailing edge is `occur`.
+pub(crate) fn trailing_edge_ms(entry: &Entry, occur_ms: i64) -> i64 {
+    occur_ms + dur_seconds(entry).unwrap_or(0) * 1000
+}
+
 /// Verb-driven render of one field's blocks and points in the dayview shape.
 ///
 /// Used by `datum dayview` for each calendar day, and by `datum nowview`'s
@@ -122,7 +131,7 @@ pub(crate) fn dur_seconds(entry: &Entry) -> Option<i64> {
 /// (per da-6jy nowview reuses the dayview pipeline).
 ///
 /// Spec mapping (per da-5ns.5):
-/// - **Block**: emit a colored block for `[occur - dur, occur]` using
+/// - **Block**: emit a colored block for `[occur, occur + dur]` using
 ///   `state` as the fill.
 /// - **Block-switch**: same block, AND open a new switch region at
 ///   `occur` colored `following_state` until the next switching event.
@@ -218,27 +227,36 @@ pub(crate) fn render_field_visuals(
             }
         }
         // Secondary trailing switch region for compound switching verbs
-        // (BlockSwitch, PointSwitch): a band from `occur_time` colored by
-        // `following_state`.
+        // (BlockSwitch, PointSwitch): a band from the row's trailing edge
+        // (`occur + dur`) colored by `following_state`. A block-switch's
+        // following state begins where its block ends; a point-switch has
+        // a zero span, so the band still opens at `occur`. A block that
+        // runs past the next switching event leaves the band no room —
+        // emit nothing rather than an inverted span.
         if opens_secondary_switch_region(verb) {
-            push_switch_region(
-                &mut blocks,
-                entry.following_state.as_ref(),
-                occur_ms,
-                switch_region_ends[idx],
-                field,
-                spec,
-                day_start_ms,
-                day_end_ms,
-            );
+            let band_start_ms = trailing_edge_ms(entry, occur_ms);
+            if band_start_ms < switch_region_ends[idx] {
+                push_switch_region(
+                    &mut blocks,
+                    entry.following_state.as_ref(),
+                    band_start_ms,
+                    switch_region_ends[idx],
+                    field,
+                    spec,
+                    day_start_ms,
+                    day_end_ms,
+                );
+            }
         }
     }
     (blocks, points)
 }
 
-/// Emit a block clipped to the day window for a `[occur - dur, occur]`
-/// interval (Block / BlockSwitch). No-op if `dur` is missing or the block
-/// falls entirely outside the visible window.
+/// Emit a block clipped to the day window for a `[occur, occur + dur]`
+/// interval (Block / BlockSwitch). `occur_time` is the block's LEADING
+/// edge — the same convention `datum_core::state` reads it by, where a
+/// block's trailing event lands at `occur + dur` (da-a8rs). No-op if `dur`
+/// is missing or the block falls entirely outside the visible window.
 pub(crate) fn push_block_window(
     blocks: &mut Vec<DayviewBlock>,
     entry: &Entry,
@@ -254,8 +272,8 @@ pub(crate) fn push_block_window(
     if dur_secs == 0 {
         return;
     }
-    let start_ms = occur_ms - dur_secs * 1000;
-    let end_ms = occur_ms;
+    let start_ms = occur_ms;
+    let end_ms = occur_ms + dur_secs * 1000;
     if end_ms <= day_start_ms || start_ms >= day_end_ms {
         return;
     }
@@ -499,9 +517,9 @@ mod tests {
     // These construct Entry structs directly and call the pure render
     // function. State_at queries are satisfied by an empty in-memory Db.
 
-    /// Block at [occur - dur, occur] — `occur_time` is the trailing edge.
+    /// Block at [occur, occur + dur] — `occur_time` is the leading edge.
     #[test]
-    fn block_renders_at_occur_minus_dur_to_occur() {
+    fn block_renders_at_occur_to_occur_plus_dur() {
         let db = Db::open_in_memory().unwrap();
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 12, 30, 0).unwrap();
         let entries = vec![stub_entry(
@@ -525,22 +543,19 @@ mod tests {
             render_field_visuals(&entries, "lunch", None, day_start, day_end, &ends, &db);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].start_ms,
-            occur.timestamp_millis() - 30 * 60 * 1000
-        );
-        assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
+        assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
+        assert_eq!(blocks[0].end_ms, occur.timestamp_millis() + 30 * 60 * 1000);
         assert_eq!(blocks[0].state_label.as_deref(), Some("eating"));
     }
 
-    /// Block whose `[occur - dur, occur]` interval crosses the day boundary.
+    /// Block whose `[occur, occur + dur]` interval crosses the day boundary.
     /// The renderer emits the block; the layout clips it to the visible
     /// window (verified separately in `dayview.rs::tests::blocks_clip_to_day_window`).
     #[test]
     fn block_crossing_day_boundary_emits_full_interval() {
         let db = Db::open_in_memory().unwrap();
-        // 2-hour block ending at 01:00 on day-2 → spans the prior midnight.
-        let occur = Utc.with_ymd_and_hms(2026, 4, 28, 1, 0, 0).unwrap();
+        // 2-hour block starting at 23:00 on day-1 → spans into day-2.
+        let occur = Utc.with_ymd_and_hms(2026, 4, 27, 23, 0, 0).unwrap();
         let entries = vec![stub_entry(
             "sleep",
             Verb::Block,
@@ -561,17 +576,19 @@ mod tests {
         let (blocks, _points) =
             render_field_visuals(&entries, "sleep", None, day_start, day_end, &ends, &db);
         assert_eq!(blocks.len(), 1);
-        let expected_start = occur.timestamp_millis() - 2 * 60 * 60 * 1000;
-        assert_eq!(blocks[0].start_ms, expected_start);
-        assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
+        assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
+        assert_eq!(
+            blocks[0].end_ms,
+            occur.timestamp_millis() + 2 * 60 * 60 * 1000
+        );
         // Block start sits in the prior day — confirms the renderer doesn't
         // self-clip; the layout owns clipping.
         assert!(blocks[0].start_ms < day_start);
     }
 
-    /// Block-switch emits the leading block AND opens a new switch region
-    /// at occur_time colored by `following_state`. With visibly distinct
-    /// colors, the two emitted regions must hold distinct fills.
+    /// Block-switch emits the block AND opens a new switch region at the
+    /// block's trailing edge, colored by `following_state`. With visibly
+    /// distinct colors, the two emitted regions must hold distinct fills.
     #[test]
     fn block_switch_emits_block_plus_following_region_with_distinct_colors() {
         let db = Db::open_in_memory().unwrap();
@@ -597,15 +614,16 @@ mod tests {
             render_field_visuals(&entries, "mood", None, day_start, day_end, &ends, &db);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 2);
-        // Block: [occur - 1h, occur] colored "groggy".
-        assert_eq!(
-            blocks[0].start_ms,
-            occur.timestamp_millis() - 60 * 60 * 1000
-        );
-        assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
+        // Block: [occur, occur + 1h] colored "groggy".
+        assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
+        assert_eq!(blocks[0].end_ms, occur.timestamp_millis() + 60 * 60 * 1000);
         assert_eq!(blocks[0].state_label.as_deref(), Some("groggy"));
-        // Following region: [occur, day_end] colored "focused".
-        assert_eq!(blocks[1].start_ms, occur.timestamp_millis());
+        // Following region opens where the block ends, not where it starts:
+        // [occur + 1h, day_end] colored "focused".
+        assert_eq!(
+            blocks[1].start_ms,
+            occur.timestamp_millis() + 60 * 60 * 1000
+        );
         assert_eq!(blocks[1].end_ms, day_end);
         assert_eq!(blocks[1].state_label.as_deref(), Some("focused"));
         // Distinct colors: state ("groggy") and following_state ("focused")
@@ -689,16 +707,74 @@ mod tests {
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, _points) =
             render_field_visuals(&entries, "mood", None, day_start, day_end, &ends, &db);
-        // 3 blocks expected: leading "groggy" block, "focused" region from
-        // 9:00→14:00, and the "tired" switch region from 14:00→day_end.
+        // 3 blocks expected: the "groggy" block 9:00→9:30, the "focused"
+        // region from its trailing edge 9:30→14:00, and the "tired" switch
+        // region from 14:00→day_end.
         assert_eq!(blocks.len(), 3);
         // Find the focused region.
         let focused = blocks
             .iter()
             .find(|b| b.state_label.as_deref() == Some("focused"))
             .expect("focused region present");
-        assert_eq!(focused.start_ms, bs_occur.timestamp_millis());
+        assert_eq!(
+            focused.start_ms,
+            bs_occur.timestamp_millis() + 30 * 60 * 1000
+        );
         assert_eq!(focused.end_ms, switch_occur.timestamp_millis());
+    }
+
+    /// A block that runs past the next switching event leaves its
+    /// `following_state` band no room. Moving the band to the block's
+    /// trailing edge (da-a8rs) made this reachable; the band is dropped
+    /// rather than emitted backwards.
+    #[test]
+    fn block_switch_outlasting_the_next_switch_emits_no_following_band() {
+        let db = Db::open_in_memory().unwrap();
+        // Block-switch 9:00 + 2h → trailing edge 11:00, but the next
+        // switch lands at 10:00.
+        let bs_occur = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
+        let switch_occur = Utc.with_ymd_and_hms(2026, 4, 27, 10, 0, 0).unwrap();
+        let entries = vec![
+            stub_entry(
+                "mood",
+                Verb::BlockSwitch,
+                bs_occur,
+                Some("PT2H"),
+                Some(JsonValue::String("groggy".into())),
+                Some(JsonValue::String("focused".into())),
+            ),
+            stub_entry(
+                "mood",
+                Verb::Switch,
+                switch_occur,
+                None,
+                Some(JsonValue::String("tired".into())),
+                None,
+            ),
+        ];
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let ends = switch_region_end_ms(&entries, day_end);
+        let (blocks, _points) =
+            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends, &db);
+        // The block and the "tired" region — no "focused" band at all.
+        assert_eq!(blocks.len(), 2);
+        assert!(
+            !blocks
+                .iter()
+                .any(|b| b.state_label.as_deref() == Some("focused")),
+            "a band with no room must not be drawn"
+        );
+        assert!(
+            blocks.iter().all(|b| b.end_ms > b.start_ms),
+            "no block may run backwards"
+        );
     }
 
     /// Block-switch where `following_state` is the "ended" sentinel (false /

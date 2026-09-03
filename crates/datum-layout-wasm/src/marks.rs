@@ -66,6 +66,12 @@ impl EntryReq {
     fn shape(&self) -> EntryShape {
         EntryShape::from_dur(self.parsed_dur().as_ref())
     }
+
+    /// Where the row's span ends: `occur + dur`, or `occur` with no
+    /// duration — `field_visuals::trailing_edge_ms`.
+    fn trailing_edge_ms(&self, occur_ms: i64) -> i64 {
+        occur_ms + self.dur_seconds().unwrap_or(0) * 1000
+    }
 }
 
 /// Which colour to use when a value resolves to nothing. The two dot
@@ -262,14 +268,14 @@ pub fn field_marks(
         match render_shape(verb, entry.shape(), &entry.state) {
             RenderShape::Hidden | RenderShape::Marker => {}
             RenderShape::Region if is_block_verb(verb) => {
-                // A block is `[occur - dur, occur]`: occur_time is its
-                // trailing edge, not its start.
+                // A block is `[occur, occur + dur]`: occur_time is its
+                // leading edge, and the duration runs forward from it.
                 if let Some(secs) = entry.dur_seconds().filter(|s| *s > 0) {
-                    let start_ms = at - secs * 1000;
-                    if at > window_start_ms && start_ms < window_end_ms {
+                    let end_ms = at + secs * 1000;
+                    if end_ms > window_start_ms && at < window_end_ms {
                         marks.blocks.push(BlockMark {
-                            start_ms,
-                            end_ms: at,
+                            start_ms: at,
+                            end_ms,
                             state: entry.state.clone(),
                         });
                     }
@@ -314,16 +320,23 @@ pub fn field_marks(
         }
 
         // The trailing region a compound switching verb opens: a band from
-        // occur_time coloured by `following_state`.
+        // the row's trailing edge (`occur + dur`) coloured by
+        // `following_state` — where a block-switch's block ends, and
+        // `occur` itself for a zero-span point-switch. A block running past
+        // the next switching event leaves the band no room, so it draws
+        // nothing rather than an inverted span.
         if opens_secondary_switch_region(verb) {
-            push_region(
-                &mut marks.blocks,
-                entry.following_state.as_ref(),
-                at,
-                ends[idx],
-                window_start_ms,
-                window_end_ms,
-            );
+            let band_start_ms = entry.trailing_edge_ms(at);
+            if band_start_ms < ends[idx] {
+                push_region(
+                    &mut marks.blocks,
+                    entry.following_state.as_ref(),
+                    band_start_ms,
+                    ends[idx],
+                    window_start_ms,
+                    window_end_ms,
+                );
+            }
         }
     }
 
@@ -415,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn a_block_hangs_back_from_its_occur_time() {
+    fn a_block_runs_forward_from_its_occur_time() {
         let mut e = entry(Verb::Block, 3_600_000, Some(json!("work")));
         e.dur = Some("PT30M".into());
         let marks = field_marks(&[e], 0, DAY, DAY, None);
@@ -423,7 +436,7 @@ mod tests {
         assert_eq!(marks.blocks.len(), 1);
         assert_eq!(
             (marks.blocks[0].start_ms, marks.blocks[0].end_ms),
-            (3_600_000 - 1_800_000, 3_600_000)
+            (3_600_000, 3_600_000 + 1_800_000)
         );
     }
 

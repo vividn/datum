@@ -38,7 +38,7 @@ use serde_json::Value as JsonValue;
 use crate::args::NowviewArgs;
 use crate::commands::field_visuals::{
     canonical_verb, dur_seconds, occur_time_ms, occur_time_ms_opt, push_switch_region,
-    render_field_visuals, rgb_to_hex, state_label, switch_region_end_ms,
+    render_field_visuals, rgb_to_hex, state_label, switch_region_end_ms, trailing_edge_ms,
 };
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
 use crate::render::term_layout;
@@ -726,7 +726,7 @@ fn render_field_visuals_terminal(
             push_switch_region_terminal(
                 &mut blocks,
                 entry.following_state.as_ref(),
-                occur_ms,
+                trailing_edge_ms(entry, occur_ms),
                 switch_region_ends[idx],
                 field,
                 spec,
@@ -749,7 +749,8 @@ fn push_block_terminal(
     if dur_secs == 0 {
         return;
     }
-    let start_ms = occur_ms - dur_secs * 1000;
+    let start_ms = occur_ms;
+    let end_ms = occur_ms + dur_secs * 1000;
     let colors = match entry.state.as_ref() {
         Some(v) => {
             let rgbs = state_value_colors(v, field, spec);
@@ -763,7 +764,7 @@ fn push_block_terminal(
     };
     blocks.push(NowviewBlock {
         start_ms,
-        end_ms: occur_ms,
+        end_ms,
         colors,
         state_label: state_label(entry.state.as_ref()),
     });
@@ -1014,9 +1015,9 @@ mod tests {
         assert!(fields.iter().all(|f| f.field != "background_telemetry"));
     }
 
-    /// Terminal-shape Block emits one closed segment at [occur - dur, occur].
+    /// Terminal-shape Block emits one closed segment at [occur, occur + dur].
     #[test]
-    fn terminal_block_renders_at_occur_minus_dur_to_occur() {
+    fn terminal_block_renders_at_occur_to_occur_plus_dur() {
         use chrono::TimeZone;
         let db = Db::open_in_memory().unwrap();
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 12, 30, 0).unwrap();
@@ -1036,11 +1037,8 @@ mod tests {
         let (blocks, points) = render_field_visuals_terminal(&entries, "lunch", None, &ends, &db);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].start_ms,
-            occur.timestamp_millis() - 30 * 60 * 1000
-        );
-        assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
+        assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
+        assert_eq!(blocks[0].end_ms, occur.timestamp_millis() + 30 * 60 * 1000);
     }
 
     /// Terminal-shape PointSwitch emits a dot AND opens a switch region.

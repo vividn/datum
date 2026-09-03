@@ -222,3 +222,140 @@ fn dayview_html_output_wraps_svg() {
     assert!(html.contains("<svg "));
     assert!(html.contains("</svg>"));
 }
+
+// ─── da-a8rs: where a block LANDS, not just how wide it is ──────────────
+//
+// Nothing checked a rendered block's position until this bead: dur-blocks
+// drew a whole duration early (`[occur - dur, occur]`) and every existing
+// assertion — extent, colour, count — still passed. The arithmetic below
+// is the check that was missing: `time_offset / time_axis_extent * 24` is
+// the hour a block starts at, and it must be the hour it was logged at.
+
+/// Yesterday's local date, `YYYY-MM-DD`. Both tests below log with `-y`
+/// and render that day explicitly: a switch region ends at
+/// `min(day_end, now)`, so a band logged "today" has no extent yet when
+/// the suite runs before the logged hour. A finished day has no such
+/// dependence on the wall clock.
+fn yesterday() -> String {
+    (Local::now().date_naive() - chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
+/// Render yesterday to JSON and return `(time_axis_extent, blocks)` for
+/// `field`, each block as its `(time_offset, time_extent)`.
+fn dayview_blocks(db: &datum_core::db::Db, field: &str) -> (f64, Vec<(f64, f64)>) {
+    let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    let day = yesterday();
+    run_cli(
+        &[
+            "dayview",
+            "--start-date",
+            &day,
+            "--end-date",
+            &day,
+            "--width",
+            "2400",
+            "--json",
+            "-o",
+            &path,
+        ],
+        db,
+    )
+    .expect("dayview --json dispatch");
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let axis = json["time_axis_extent"].as_f64().expect("time_axis_extent");
+    let blocks = json["days"][0]["fields"]
+        .as_array()
+        .expect("fields array")
+        .iter()
+        .find(|f| f["field"].as_str() == Some(field))
+        .unwrap_or_else(|| panic!("field {field} rendered"))["blocks"]
+        .as_array()
+        .expect("blocks array")
+        .iter()
+        .map(|b| {
+            (
+                b["time_offset"].as_f64().unwrap(),
+                b["time_extent"].as_f64().unwrap(),
+            )
+        })
+        .collect();
+    (axis, blocks)
+}
+
+/// Hours-from-midnight a pixel offset stands for on a 24-hour axis.
+fn hours(px: f64, axis: f64) -> f64 {
+    px / axis * 24.0
+}
+
+/// `occur nap dur=2h -t 1400` draws at 14:00, not 12:00. `occur_time` is
+/// the block's LEADING edge — the duration runs forward from it, the same
+/// way `datum_core::state` puts a block's trailing event at `occur + dur`.
+#[test]
+fn dur_block_draws_at_its_own_hour_not_a_duration_early() {
+    let db = fresh_db();
+    run_cli(&["occur", "nap", "dur=2h", "-y", "-t", "1400"], &db).expect("occur with dur");
+
+    let (axis, blocks) = dayview_blocks(&db, "nap");
+    assert_eq!(blocks.len(), 1, "one block for one dur-bearing entry");
+    let (offset, extent) = blocks[0];
+    assert!(
+        (hours(offset, axis) - 14.0).abs() < 0.02,
+        "block starts at 14:00, drew at {:.2}:00",
+        hours(offset, axis)
+    );
+    assert!(
+        (hours(extent, axis) - 2.0).abs() < 0.02,
+        "block spans 2h, spanned {:.2}h",
+        hours(extent, axis)
+    );
+}
+
+/// A block-switch's following-state band opens where the block ENDS. With
+/// the block at [09:00, 10:00), the "focused" band runs 10:00 → midnight —
+/// the two never overlap.
+#[test]
+fn block_switch_following_band_opens_at_the_blocks_trailing_edge() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "switch",
+            "mood",
+            "groggy",
+            "following_state=focused",
+            "dur=1h",
+            "-y",
+            "-t",
+            "0900",
+        ],
+        &db,
+    )
+    .expect("block-switch with dur");
+
+    let (axis, blocks) = dayview_blocks(&db, "mood");
+    assert_eq!(blocks.len(), 2, "the block plus its following band");
+    let mut spans: Vec<(f64, f64)> = blocks
+        .iter()
+        .map(|(o, e)| (hours(*o, axis), hours(o + e, axis)))
+        .collect();
+    spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    assert!(
+        (spans[0].0 - 9.0).abs() < 0.02 && (spans[0].1 - 10.0).abs() < 0.02,
+        "block is [09:00, 10:00), drew [{:.2}, {:.2}]",
+        spans[0].0,
+        spans[0].1
+    );
+    assert!(
+        (spans[1].0 - 10.0).abs() < 0.02,
+        "following band opens at 10:00, opened at {:.2}",
+        spans[1].0
+    );
+    assert!(
+        (spans[1].1 - 24.0).abs() < 0.02,
+        "the band runs to midnight, ended at {:.2}",
+        spans[1].1
+    );
+}

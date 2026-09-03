@@ -107,7 +107,7 @@ pub enum RenderShape {
     /// [`Verb::Point`] (with a time) and [`Verb::PointSwitch`] (the dot;
     /// the trailing region is secondary).
     Dot,
-    /// Colored region. Either a duration block from `[occur - dur, occur]`
+    /// Colored region. Either a duration block from `[occur, occur + dur]`
     /// ([`Verb::Block`], [`Verb::BlockSwitch`]'s primary block) or a switch
     /// region from `[occur, next-switching-event]` ([`Verb::Switch`]).
     /// Renderers determine the bounds from the verb.
@@ -173,7 +173,7 @@ pub fn is_switching_verb(verb: Verb) -> bool {
 }
 
 /// True for verbs whose primary visual is a dur-derived colored block over
-/// `[occur - dur, occur]`, with `entry.state` as the fill. [`Verb::Block`]
+/// `[occur, occur + dur]`, with `entry.state` as the fill. [`Verb::Block`]
 /// and [`Verb::BlockSwitch`] fall here; [`Verb::BlockSwitch`]'s trailing
 /// switch region is secondary and detected separately via
 /// [`opens_secondary_switch_region`].
