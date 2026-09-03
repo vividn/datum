@@ -14,6 +14,7 @@
 //! | `_`                 | Most recently-touched live entry globally.  |
 //! | `__` … `_____…`     | 2nd / 3rd / Nth most-recent (count of `_`). |
 //! | `_4`, `_10`, …      | Nth most-recent (single `_` + decimal).     |
+//! | `_2-_10`            | Every entry in that run of ordinals.        |
 //! | `<field>:_`         | Most recent live entry for `<field>`.       |
 //! | `<field>:__`, `_4`  | Field-scoped Nth most-recent.               |
 //! | `book:gol*`         | Slug wildcard. `*` → any chars, `?` → one.  |
@@ -70,7 +71,8 @@ const NTH_ORDER: &str = "ORDER BY occur_time DESC, slug DESC";
 /// Resolve a quickId pattern to zero or more live entries.
 ///
 /// Precedence:
-/// 1. Underscore shorthands (`_`, `__`, `_4`, and the `<field>:` variants).
+/// 1. Underscore shorthands (`_`, `__`, `_4`, the `_2-_10` range, and
+///    the `<field>:` variants of each).
 /// 2. Exact slug or hid match.
 /// 3. Slug wildcard expansion (when the pattern contains `*` or `?`).
 /// 4. Hid/slug prefix match (the pre-existing C3 behaviour).
@@ -104,25 +106,25 @@ pub fn resolve_quickid(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
         return Ok(out);
     }
 
-    // `<field>:_+` / `<field>:_<digits>` — Nth most recent entry within
-    // a single field. Checked before the bare-underscore path so a
-    // pattern with a colon never falls into the global-Nth branch.
+    // `<field>:_+` / `<field>:_<digits>` / `<field>:_A-_B` — Nth most
+    // recent entry (or run of them) within a single field. Checked
+    // before the bare-underscore path so a pattern with a colon never
+    // falls into the global-Nth branch.
     if let Some(idx) = pattern.find(':') {
         let field = &pattern[..idx];
         let suffix = &pattern[idx + 1..];
         if !field.is_empty() {
-            if let Some(ordinal) = parse_underscore_ordinal(suffix) {
-                return Ok(nth_live_entry_for_field(db, field, ordinal)?
-                    .into_iter()
-                    .collect());
+            if let Some((from, to)) = parse_underscore_span(suffix) {
+                return live_entry_range(db, Some(field), from, to);
             }
         }
     }
 
-    // Bare `_+` / `_<digits>` — Nth most recent entry across every field.
-    // `_LAST` already handled above so it never reaches here.
-    if let Some(ordinal) = parse_underscore_ordinal(pattern) {
-        return Ok(nth_live_entry(db, ordinal)?.into_iter().collect());
+    // Bare `_+` / `_<digits>` / `_A-_B` — Nth most recent entry (or run
+    // of them) across every field. `_LAST` already handled above so it
+    // never reaches here.
+    if let Some((from, to)) = parse_underscore_span(pattern) {
+        return live_entry_range(db, None, from, to);
     }
 
     // Exact match always wins. Using the live-only `get_entry` here keeps
@@ -239,33 +241,49 @@ pub fn parse_underscore_ordinal(s: &str) -> Option<usize> {
     None
 }
 
-fn nth_live_entry(db: &Db, ordinal: usize) -> Result<Option<Entry>> {
-    let offset = ordinal.saturating_sub(1) as i64;
-    db.conn()
-        .query_row(
-            &format!(
-                "SELECT * FROM entries WHERE deleted_at IS NULL {NTH_ORDER} LIMIT 1 OFFSET ?1"
-            ),
-            params![offset],
-            row_to_entry_public,
-        )
-        .optional()
-        .map_err(DatumError::Db)
+/// Parse an underscore-shorthand *range* (`_2-_10`) into an inclusive
+/// ordinal span (da-6n25).
+///
+/// Both endpoints use the grammar of [`parse_underscore_ordinal`], so
+/// `_2-_10`, `__-__________` and `_2-__________` all name the same run.
+/// The endpoints are normalized ascending: `_10-_2` names that same run,
+/// because "everything between these two rows" is what the user means
+/// whichever end they type first.
+///
+/// Returns `None` unless the whole pattern is exactly two ordinals joined
+/// by one `-`, so slugs carrying dashes (`mood:2024-03-16T09:15Z`) and
+/// half-written ranges (`_2-`) fall through to the matchers below.
+fn parse_underscore_range(s: &str) -> Option<(usize, usize)> {
+    let (lo, hi) = s.split_once('-')?;
+    let a = parse_underscore_ordinal(lo)?;
+    let b = parse_underscore_ordinal(hi)?;
+    Some((a.min(b), a.max(b)))
 }
 
-fn nth_live_entry_for_field(db: &Db, field: &str, ordinal: usize) -> Result<Option<Entry>> {
-    let offset = ordinal.saturating_sub(1) as i64;
-    db.conn()
-        .query_row(
-            &format!(
-                "SELECT * FROM entries WHERE field = ?1 AND deleted_at IS NULL \
-                 {NTH_ORDER} LIMIT 1 OFFSET ?2"
-            ),
-            params![field, offset],
-            row_to_entry_public,
-        )
-        .optional()
-        .map_err(DatumError::Db)
+/// A lone ordinal and a range are the same shape — a span of the recency
+/// ordering — so the resolver parses them together and runs one query.
+fn parse_underscore_span(s: &str) -> Option<(usize, usize)> {
+    parse_underscore_ordinal(s)
+        .map(|n| (n, n))
+        .or_else(|| parse_underscore_range(s))
+}
+
+/// Live entries whose recency ordinals fall in the inclusive `from..=to`
+/// span, newest first, optionally scoped to one field.
+///
+/// A span running past the end of the store yields the rows that do
+/// exist rather than failing: `_8-_20` on a twelve-entry store is five
+/// entries, and the batch commands print every row they touch.
+fn live_entry_range(db: &Db, field: Option<&str>, from: usize, to: usize) -> Result<Vec<Entry>> {
+    let offset = from.saturating_sub(1) as i64;
+    let limit = (to.saturating_sub(from) as i64).saturating_add(1);
+    let mut stmt = db.conn().prepare(&format!(
+        "SELECT * FROM entries
+         WHERE deleted_at IS NULL AND (?1 IS NULL OR field = ?1)
+         {NTH_ORDER} LIMIT ?2 OFFSET ?3"
+    ))?;
+    let rows = stmt.query_map(params![field, limit, offset], row_to_entry_public)?;
+    rows.map(|r| r.map_err(DatumError::Db)).collect()
 }
 
 /// Hid → `_N` ordinal for the [`QUICK_ORDINAL_CAP`] most recent live
@@ -277,7 +295,7 @@ fn nth_live_entry_for_field(db: &Db, field: &str, ordinal: usize) -> Result<Opti
 /// the rows they recognise; a row outside the map has no short form worth
 /// showing and is referenced by its hid.
 ///
-/// One query, same `ORDER BY` as [`nth_live_entry`], so a printed `_3` is
+/// One query, same `ORDER BY` as [`live_entry_range`], so a printed `_3` is
 /// the row `_3` resolves to — ordinals are global and count every live
 /// entry, including the ones the caller's own filters hide, so a filtered
 /// listing shows gaps rather than a renumbered 1..n that wouldn't resolve.
@@ -563,6 +581,154 @@ mod tests {
         let _ = seed(&db, "g", 5);
         let err = resolve_quickid_single(&db, "f:___").unwrap_err();
         assert!(matches!(err, DatumError::NotFound(_)));
+    }
+
+    // ─── `_A-_B` range family (da-6n25) ──────────────────────────────────
+
+    #[test]
+    fn range_parse_accepts_both_endpoint_spellings() {
+        // Either endpoint may be written in the count form or the
+        // numeric form; both name the same span.
+        assert_eq!(parse_underscore_range("_2-_10"), Some((2, 10)));
+        assert_eq!(parse_underscore_range("__-__________"), Some((2, 10)));
+        assert_eq!(parse_underscore_range("_2-__________"), Some((2, 10)));
+        assert_eq!(parse_underscore_range("_-_3"), Some((1, 3)));
+    }
+
+    #[test]
+    fn range_parse_normalizes_reversed_endpoints() {
+        // "everything between these two rows" is the intent whichever
+        // end the user types first.
+        assert_eq!(parse_underscore_range("_10-_2"), Some((2, 10)));
+        assert_eq!(parse_underscore_range("_3-_3"), Some((3, 3)));
+    }
+
+    #[test]
+    fn range_parse_rejects_non_ranges() {
+        // Half-written ranges, junk endpoints, and a three-part chain all
+        // fall through to the matchers below rather than guessing.
+        assert_eq!(parse_underscore_range("_2-"), None);
+        assert_eq!(parse_underscore_range("-_2"), None);
+        assert_eq!(parse_underscore_range("_2-_0"), None);
+        assert_eq!(parse_underscore_range("_2-foo"), None);
+        assert_eq!(parse_underscore_range("_1-_2-_3"), None);
+        // The dashes in a date-shaped slug must not read as a range.
+        assert_eq!(parse_underscore_range("2024-03-16T09:15Z"), None);
+    }
+
+    #[test]
+    fn range_span_still_covers_the_lone_ordinal() {
+        // A single ordinal is the degenerate span, so both spellings go
+        // through the one query.
+        assert_eq!(parse_underscore_span("_3"), Some((3, 3)));
+        assert_eq!(parse_underscore_span("___"), Some((3, 3)));
+        assert_eq!(parse_underscore_span("_2-_4"), Some((2, 4)));
+        assert_eq!(parse_underscore_span("nope"), None);
+    }
+
+    #[test]
+    fn bare_range_resolves_the_run_newest_first() {
+        let db = fresh_db();
+        let entries = seed(&db, "mood", 6);
+        // `_2-_4`: the 2nd, 3rd and 4th most recent, newest first.
+        let got = resolve_quickid(&db, "_2-_4").unwrap();
+        let slugs: Vec<_> = got.iter().map(|e| e.slug.clone()).collect();
+        assert_eq!(
+            slugs,
+            vec![
+                entries[4].slug.clone(),
+                entries[3].slug.clone(),
+                entries[2].slug.clone(),
+            ],
+        );
+    }
+
+    #[test]
+    fn reversed_range_resolves_the_same_run() {
+        let db = fresh_db();
+        let _ = seed(&db, "mood", 6);
+        let forward = resolve_quickid(&db, "_2-_4").unwrap();
+        let reversed = resolve_quickid(&db, "_4-_2").unwrap();
+        let fwd: Vec<_> = forward.iter().map(|e| e.slug.clone()).collect();
+        let rev: Vec<_> = reversed.iter().map(|e| e.slug.clone()).collect();
+        assert_eq!(fwd, rev);
+    }
+
+    #[test]
+    fn range_spilling_past_the_end_yields_what_exists() {
+        // `_4-_20` on a six-entry store is three rows, not an error —
+        // the batch commands print every row they touch.
+        let db = fresh_db();
+        let entries = seed(&db, "mood", 6);
+        let got = resolve_quickid(&db, "_4-_20").unwrap();
+        let slugs: Vec<_> = got.iter().map(|e| e.slug.clone()).collect();
+        assert_eq!(
+            slugs,
+            vec![
+                entries[2].slug.clone(),
+                entries[1].slug.clone(),
+                entries[0].slug.clone(),
+            ],
+        );
+    }
+
+    #[test]
+    fn range_entirely_past_the_end_is_empty() {
+        let db = fresh_db();
+        let _ = seed(&db, "mood", 3);
+        assert!(resolve_quickid(&db, "_10-_20").unwrap().is_empty());
+        // And the single-match resolver reports that as NotFound.
+        let err = resolve_quickid_single(&db, "_10-_20").unwrap_err();
+        assert!(matches!(err, DatumError::NotFound(_)));
+    }
+
+    #[test]
+    fn field_scoped_range_stays_inside_its_field() {
+        let db = fresh_db();
+        let f_entries = seed(&db, "f", 5);
+        let _g_entries = seed(&db, "g", 5);
+        let got = resolve_quickid(&db, "f:_2-_3").unwrap();
+        let slugs: Vec<_> = got.iter().map(|e| e.slug.clone()).collect();
+        assert_eq!(
+            slugs,
+            vec![f_entries[3].slug.clone(), f_entries[2].slug.clone()],
+        );
+        assert!(got.iter().all(|e| e.field == "f"));
+    }
+
+    #[test]
+    fn range_skips_tombstoned_rows() {
+        // Ordinals count live entries only, so tombstoning a row inside
+        // the run pulls the next live one in behind it.
+        let db = fresh_db();
+        let entries = seed(&db, "mood", 5);
+        db.soft_delete_entry(&entries[3].slug)
+            .expect("soft_delete the 2nd-most-recent");
+        let got = resolve_quickid(&db, "_2-_3").unwrap();
+        let slugs: Vec<_> = got.iter().map(|e| e.slug.clone()).collect();
+        assert_eq!(
+            slugs,
+            vec![entries[2].slug.clone(), entries[1].slug.clone()],
+        );
+    }
+
+    #[test]
+    fn degenerate_range_matches_the_lone_ordinal() {
+        let db = fresh_db();
+        let _ = seed(&db, "mood", 5);
+        let one = resolve_quickid_single(&db, "_3").unwrap();
+        let span = resolve_quickid_single(&db, "_3-_3").unwrap();
+        assert_eq!(one.slug, span.slug);
+    }
+
+    #[test]
+    fn dashed_slug_is_not_stolen_by_the_range_parser() {
+        // A real slug carries dashes. The range branch must not swallow
+        // it before the exact-match branch gets a look.
+        let db = fresh_db();
+        let e = controlled(&db, "mood:2024-03-16T09:15Z", "abcdefghijkl", "mood");
+        let got = resolve_quickid_single(&db, "mood:2024-03-16T09:15Z").unwrap();
+        assert_eq!(got.hid, e.hid);
     }
 
     // ─── Tombstone fallthrough ───────────────────────────────────────────

@@ -97,7 +97,12 @@ One-line summaries of the model:
   recent entry, `_2` the one before it, and so on, so `datum del _3`
   names the row you just read. Ordinals count every live entry, so a
   field-filtered listing shows gaps — `_3` always means the same row it
-  does everywhere else.
+  does everywhere else. Two ordinals joined by a dash name the whole run
+  between them, so `datum del _2-_10` acts on nine rows in one go
+  (`_10-_2` is the same run, `mood:_1-_3` counts inside one field, and a
+  range running off the end acts on the rows that exist). The command
+  prints one action record per entry it touched, so you see exactly what
+  the range caught.
 - **Intent** — the original argv is captured and replayed under a
   pinned `parser_version`, so a future parser fix can retroactively
   correct old entries without losing what the user actually typed.
