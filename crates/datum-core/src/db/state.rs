@@ -33,7 +33,14 @@ impl Db {
     /// da-2i8g: when the winning row is a block-switch / point-switch
     /// whose trailing edge (`occur_time + dur`) is at or before `t`, the
     /// row's `following_state` is the effective value — same rule as
-    /// `now` ([`super::now::effective_state`]).
+    /// `now`.
+    ///
+    /// da-phoe: when the winning row is instead a plain BLOCK past its
+    /// trailing edge, it has HANDED THE FIELD BACK — `following_state IS
+    /// NULL` means "resume whatever preceded me" — so the read walks
+    /// behind it to the row that actually decides the state. Both rules
+    /// live in [`super::now::resolve_effective`], which `now` reads
+    /// through too, so the two oracles cannot diverge.
     ///
     /// `Ok(None)` means the field has no qualifying entries at or before
     /// `t`, which callers should treat as IGNORED (the default for unseen
@@ -56,7 +63,40 @@ impl Db {
         fields: &[&str],
         t: DateTime<Utc>,
     ) -> Result<std::collections::HashMap<String, JsonValue>> {
-        let mut out: std::collections::HashMap<String, JsonValue> =
+        // One row per field answers the common case — and is the whole
+        // of the pre-da-phoe cost. A field whose newest row is a block
+        // that has already handed the field back needs the row behind
+        // it, so those fields (only) are re-read to depth.
+        let mut rows = self.state_rows_at(fields, t, 1)?;
+        let deep: Vec<&str> = fields
+            .iter()
+            .copied()
+            .filter(|f| {
+                rows.get(*f)
+                    .and_then(|r| r.first())
+                    .is_some_and(|row| row.hands_field_back(t))
+            })
+            .collect();
+        if !deep.is_empty() {
+            rows.extend(self.state_rows_at(&deep, t, super::now::RESUME_LOOKBACK)?);
+        }
+        Ok(rows
+            .into_iter()
+            .map(|(field, rows)| (field, super::now::resolve_effective(&rows, t).state))
+            .collect())
+    }
+
+    /// The newest `depth` state-participating rows for every field in
+    /// `fields`, evaluated at `t`, newest first — the column-level input
+    /// [`super::now::resolve_effective`] reads. Fields with no
+    /// qualifying entry are absent from the map.
+    fn state_rows_at(
+        &self,
+        fields: &[&str],
+        t: DateTime<Utc>,
+        depth: usize,
+    ) -> Result<std::collections::HashMap<String, Vec<super::now::StateRow>>> {
+        let mut out: std::collections::HashMap<String, Vec<super::now::StateRow>> =
             std::collections::HashMap::with_capacity(fields.len());
         if fields.is_empty() {
             return Ok(out);
@@ -66,11 +106,11 @@ impl Db {
         let placeholders = std::iter::repeat_n("?", fields.len())
             .collect::<Vec<_>>()
             .join(",");
-        // da-2i8g: the winning row's verb / occur_time / dur /
-        // following_state come along so the trailing-edge rule
-        // ([`super::now::effective_state`]) can swap in the
-        // `following_state` of a block-switch / point-switch whose
-        // trailing edge is at or before `t`.
+        // da-2i8g: each row's verb / occur_time / dur / following_state
+        // come along so the trailing-edge rules can be applied in Rust —
+        // `dur` is an ISO-8601 string, which SQL cannot add to a time.
+        // Rows arrive newest first (`rn` ascending) so the resolver can
+        // walk back from the winner.
         let sql = format!(
             "SELECT field, state, verb, occur_time, dur, following_state FROM (
                 SELECT field, state, verb, occur_time, dur, following_state,
@@ -82,7 +122,7 @@ impl Db {
                 WHERE field IN ({placeholders})
                   AND {STATE_PARTICIPATION_SQL}
                   AND {endbound} <= ?
-            ) WHERE rn = 1"
+            ) WHERE rn <= {depth} ORDER BY rn"
         );
         let mut bindings: Vec<String> = fields.iter().map(|s| s.to_string()).collect();
         bindings.push(cutoff);
@@ -114,19 +154,17 @@ impl Db {
                 None => None,
                 Some(s) => Some(serde_json::from_str(&s)?),
             };
-            let fs: Option<JsonValue> = match following {
+            let following_state: Option<JsonValue> = match following {
                 None => None,
                 Some(s) => Some(serde_json::from_str(&s)?),
             };
-            let json = super::now::effective_state(
+            out.entry(field).or_default().push(super::now::StateRow {
                 verb,
-                state.as_ref(),
-                occur_utc,
-                dur.as_ref(),
-                fs.as_ref(),
-                t,
-            );
-            out.insert(field, json);
+                state,
+                occur: occur_utc,
+                dur,
+                following_state,
+            });
         }
         Ok(out)
     }
@@ -674,6 +712,131 @@ mod tests {
         assert_eq!(
             db.state_at("body", at(100 + 7200).utc).unwrap(),
             Some(json!("lying"))
+        );
+    }
+
+    // ─── da-phoe: a block hands the field back to what preceded it ───
+
+    /// Mirror `datum end work 12m`: a positive `dur` with a state and no
+    /// `following_state` re-derives as [`Verb::Block`] on insert.
+    fn push_block(db: &Db, field: &str, state: serde_json::Value, dur_secs: i64, secs_offset: i64) {
+        let entry = Entry::new(
+            field,
+            Verb::Block,
+            Some(state),
+            None,
+            Some(at(secs_offset)),
+            Some(crate::dur::Dur::of(chrono::Duration::seconds(dur_secs))),
+            "d1",
+        );
+        db.insert_entry(&entry).unwrap();
+    }
+
+    #[test]
+    fn state_at_resumes_the_state_a_block_interrupted() {
+        // vividn's ledger in miniature: `switch work datum`, then a 12-min
+        // break. Probe the WHOLE span, because the defect was only ever
+        // visible in the stretch that went missing — the block's own
+        // 12 minutes always read correctly.
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "work", json!("datum"), 100);
+        push_block(&db, "work", json!(false), 720, 1000);
+
+        let state = |offset: i64| db.state_at("work", at(offset).utc).unwrap();
+        assert_eq!(state(50), None, "before anything was logged");
+        assert_eq!(state(500), Some(json!("datum")), "before the block");
+        assert_eq!(state(1000), Some(json!(false)), "the block's leading edge");
+        assert_eq!(state(1700), Some(json!(false)), "inside the block");
+        assert_eq!(
+            state(1720),
+            Some(json!("datum")),
+            "AT the trailing edge the field is handed back"
+        );
+        assert_eq!(
+            state(50_000),
+            Some(json!("datum")),
+            "and stays handed back — this is the stretch that used to \
+             read `false` forever, so every minute of it went uncounted"
+        );
+    }
+
+    #[test]
+    fn state_at_walks_back_past_a_run_of_blocks() {
+        // Two breaks in a row: the read has to walk past BOTH to reach
+        // the switch that still governs.
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "work", json!("datum"), 100);
+        push_block(&db, "work", json!(false), 720, 1000);
+        push_block(&db, "work", json!(false), 600, 3000);
+        assert_eq!(
+            db.state_at("work", at(3300).utc).unwrap(),
+            Some(json!(false)),
+            "inside the second block"
+        );
+        assert_eq!(
+            db.state_at("work", at(50_000).utc).unwrap(),
+            Some(json!("datum")),
+            "past both"
+        );
+    }
+
+    #[test]
+    fn state_at_stops_walking_at_the_first_row_that_governs() {
+        // A block hands the field back to the row before it — not to the
+        // oldest row it can find. A newer switch after the block wins
+        // outright, and the block resumes the state it interrupted, not
+        // an earlier one.
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "work", json!("email"), 100);
+        push_switch(&db, "work", json!("datum"), 500);
+        push_block(&db, "work", json!(false), 720, 1000);
+        assert_eq!(
+            db.state_at("work", at(2000).utc).unwrap(),
+            Some(json!("datum")),
+            "resumes the state the block interrupted"
+        );
+        push_switch(&db, "work", json!("lunch"), 3000);
+        assert_eq!(
+            db.state_at("work", at(50_000).utc).unwrap(),
+            Some(json!("lunch")),
+            "a later switch supersedes the resumed state"
+        );
+    }
+
+    #[test]
+    fn state_at_block_with_nothing_before_it_resumes_no_state() {
+        // There is no state to hand back to, so the honest answer is
+        // "tracked, no current state" — `Null`, and NOT absent, which
+        // callers read as IGNORED.
+        let db = Db::open_in_memory().unwrap();
+        push_block(&db, "work", json!(false), 720, 1000);
+        assert_eq!(
+            db.state_at("work", at(1700).utc).unwrap(),
+            Some(json!(false)),
+            "inside the block"
+        );
+        assert_eq!(
+            db.state_at("work", at(2000).utc).unwrap(),
+            Some(JsonValue::Null),
+            "past it: no prior state to resume"
+        );
+        let fields = db.get_tracked_fields(at(2000).utc).unwrap();
+        let work = fields.iter().find(|f| f.field == "work").unwrap();
+        assert!(!work.ignored, "a `Null` resume is tracked, not ignored");
+    }
+
+    #[test]
+    fn state_at_block_switch_switches_where_a_block_hands_back() {
+        // The whole point of the `following_state` column: `Some(x)`
+        // means "switch to x at the trailing edge", NULL means "resume".
+        // Same two rows, one column apart, two different answers.
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "work", json!("datum"), 100);
+        push_compound_switch(&db, "work", json!(false), 720, json!("email"), 1000);
+        assert_eq!(
+            db.state_at("work", at(50_000).utc).unwrap(),
+            Some(json!("email")),
+            "a stated following_state is not a resume"
         );
     }
 

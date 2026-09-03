@@ -301,6 +301,85 @@ fn render_separator_divides_active_from_stopped() {
     );
 }
 
+// ─── da-phoe: `now` after a block that has handed the field back ─────────────
+
+/// `datum end work 12m` writes a block with `following_state` NULL, which
+/// means "resume whatever state preceded me". `now` read that NULL as
+/// "the field is off, and stays off", so from the end of the break
+/// onwards the field's real state was invisible — and every minute of it
+/// was attributed to nothing.
+///
+/// The whole span is probed, not just the end: the block's own 12
+/// minutes always read correctly, and the defect lives entirely in the
+/// stretch that goes MISSING after them.
+#[test]
+fn now_resumes_the_state_a_block_interrupted() {
+    let db = fresh_db();
+    run_cli(&["switch", "work", "datum", "-t", "-180"], &db).expect("switch dispatch");
+    run_cli(&["end", "work", "12m", "-t", "-60"], &db).expect("end dispatch");
+
+    let now = chrono::Utc::now();
+    let snapshot = |mins: i64| {
+        db.current_now(&datum_core::db::NowFilter {
+            include_tracked_false: true,
+            include_ignored: true,
+            snapshot_time: Some(now + Duration::minutes(mins)),
+        })
+        .expect("current_now")
+    };
+    let active_state = |mins: i64| {
+        snapshot(mins)
+            .active
+            .into_iter()
+            .find(|r| r.field == "work")
+            .map(|r| r.state)
+    };
+
+    assert_eq!(
+        active_state(-120),
+        Some(json!("datum")),
+        "before the break, work is datum"
+    );
+    assert_eq!(active_state(-55), None, "during the break, work is off");
+    assert!(
+        snapshot(-55)
+            .tracked_false
+            .iter()
+            .any(|r| r.field == "work"),
+        "during the break the field is tracked-but-false, not missing"
+    );
+    assert_eq!(
+        active_state(-30),
+        Some(json!("datum")),
+        "the block hands the field back at its trailing edge"
+    );
+    assert_eq!(
+        active_state(0),
+        Some(json!("datum")),
+        "and it is still datum now — this is the stretch that used to \
+         read `work (off)` for the rest of the day"
+    );
+
+    // The resumed span begins when the block ENDED, not when the
+    // governing switch was logged three hours ago.
+    let block = db.entries_for_field("work", Some(1)).expect("rows")[0].clone();
+    let resumed_at = block.occur_time.expect("block occur").utc + Duration::minutes(12);
+    let row = snapshot(0)
+        .active
+        .into_iter()
+        .find(|r| r.field == "work")
+        .expect("work is active");
+    assert_eq!(
+        row.since,
+        Some(resumed_at),
+        "`since` is the resume boundary, not the block's leading edge"
+    );
+    assert_eq!(
+        row.verb, "switch",
+        "the governing row is the switch the block interrupted"
+    );
+}
+
 // ─── End-to-end: `datum now` through the shared CLI harness ──────────────────
 
 #[test]

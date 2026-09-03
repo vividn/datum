@@ -1259,15 +1259,16 @@ pub fn render_snapshot(
 
     for f in &snapshot.tracked_false {
         // da-mpod: tracked-but-false rows render dim with a small dot
-        // and the `(off)` label, plus the field's last-event time so
-        // the user can tell at a glance when the state was last
-        // toggled. The `since` and `last_event` fields are equal for
-        // this snapshot variant — pick `last_event` for the wall
-        // clock and fall back to `since`.
+        // and the `(off)` label, plus the time the state was last
+        // toggled so the user can tell at a glance how long it has been
+        // off. That is `since`; it usually equals `last_event`, and
+        // da-phoe is where they part — a block that has handed the
+        // field back is the last event, but the state it handed back to
+        // began at the block's trailing edge.
         let fansi = colors::resolve_rgb(f.color.as_deref(), &f.field).fg();
         let state_rendered = "(off)".to_string();
         let state_vw = "(off)".len();
-        let time_str = match f.last_event.or(f.since) {
+        let time_str = match f.since.or(f.last_event) {
             None => "(no entries)".to_string(),
             Some(t) => match f.entry.as_ref() {
                 // Reuse the entry-aware formatter so P1D rows surface

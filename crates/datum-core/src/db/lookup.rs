@@ -268,35 +268,41 @@ impl Db {
         field: &str,
         snapshot_time: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<Option<Entry>> {
+        Ok(self
+            .entries_for_now(field, snapshot_time, 1)?
+            .into_iter()
+            .next())
+    }
+
+    /// The newest `limit` state-participating entries for a field, newest
+    /// first — [`Db::latest_entry_for_now`] with room to look further
+    /// back. `now` reads one row in the common case and asks for more
+    /// only when that row is a block that has already handed the field
+    /// back and the resumed state lies behind it (da-phoe).
+    pub fn entries_for_now(
+        &self,
+        field: &str,
+        snapshot_time: Option<chrono::DateTime<chrono::Utc>>,
+        limit: usize,
+    ) -> Result<Vec<Entry>> {
         let expr = time_expr_endbound();
-        match snapshot_time {
-            None => {
-                let sql = format!(
-                    "SELECT * FROM entries
-                     WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
-                     ORDER BY {STATE_ORDER_NEWEST_FIRST}
-                     LIMIT 1",
-                );
-                self.conn
-                    .query_row(&sql, params![field], row_to_entry)
-                    .optional()
-                    .map_err(DatumError::Db)
-            }
-            Some(t) => {
-                let cutoff = t.to_rfc3339();
-                let sql = format!(
-                    "SELECT * FROM entries
-                     WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
-                       AND {expr} <= ?2
-                     ORDER BY {STATE_ORDER_NEWEST_FIRST}
-                     LIMIT 1",
-                );
-                self.conn
-                    .query_row(&sql, params![field, cutoff], row_to_entry)
-                    .optional()
-                    .map_err(DatumError::Db)
-            }
-        }
+        let (bound, cutoff) = match snapshot_time {
+            None => (String::new(), None),
+            Some(t) => (format!("AND {expr} <= ?2"), Some(t.to_rfc3339())),
+        };
+        let sql = format!(
+            "SELECT * FROM entries
+             WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
+               {bound}
+             ORDER BY {STATE_ORDER_NEWEST_FIRST}
+             LIMIT {limit}",
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = match &cutoff {
+            None => stmt.query_map(params![field], row_to_entry)?,
+            Some(c) => stmt.query_map(params![field, c], row_to_entry)?,
+        };
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 }
 

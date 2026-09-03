@@ -49,10 +49,11 @@ pub struct NowFieldActive {
 }
 
 /// Tracked-but-currently-false row. `since` is when the field entered its
-/// current state and equals `last_event` here — the most recent
-/// state-bearing entry both established the false state and is the last
-/// event. They are exposed as distinct keys so future versions can
-/// distinguish the two without a schema break.
+/// current state; `last_event` is the newest state-bearing entry's own
+/// time. They usually coincide — that entry both established the state
+/// and is the last event — and da-phoe is the case they split: a block
+/// that has handed the field back is the last event, but the state it
+/// handed back to began at the block's trailing edge.
 #[derive(Debug, Clone, Serialize)]
 pub struct NowFieldTrackedFalse {
     pub field: String,
@@ -110,61 +111,64 @@ impl Db {
         let mut ignored = Vec::new();
 
         for tf in tracked {
+            // da-2i8g: a block-switch / point-switch carries a
+            // `following_state` that takes effect at `occur_time + dur`.
+            // da-phoe: a plain block instead HANDS THE FIELD BACK there,
+            // so the row that decides the state may be behind it.
+            // [`resolve_effective`] applies both rules.
+            let (mut entries, eff) = self.resolved_now(&tf.field, filter, now)?;
+
             if tf.ignored {
-                if !filter.include_ignored {
-                    continue;
+                if filter.include_ignored {
+                    ignored.push(NowFieldIgnored {
+                        field: tf.field,
+                        since: eff.since,
+                        color: tf.color,
+                    });
                 }
-                let entry = self.latest_entry_for_now(&tf.field, filter.snapshot_time)?;
-                let since = entry.as_ref().and_then(entry_event_time);
-                ignored.push(NowFieldIgnored {
-                    field: tf.field,
-                    since,
-                    color: tf.color,
-                });
                 continue;
             }
 
-            let entry = self.latest_entry_for_now(&tf.field, filter.snapshot_time)?;
-            match entry {
-                None => {
-                    if filter.include_tracked_false {
-                        tracked_false.push(NowFieldTrackedFalse {
-                            field: tf.field,
-                            since: None,
-                            last_event: None,
-                            color: tf.color,
-                            entry: None,
-                        });
-                    }
+            if entries.is_empty() {
+                if filter.include_tracked_false {
+                    tracked_false.push(NowFieldTrackedFalse {
+                        field: tf.field,
+                        since: None,
+                        last_event: None,
+                        color: tf.color,
+                        entry: None,
+                    });
                 }
-                Some(e) => {
-                    // da-2i8g: block-switch / point-switch carry a
-                    // `following_state` that takes effect at
-                    // `occur_time + dur`. If the snapshot moment is
-                    // past that boundary, the *following* state is the
-                    // effective current state — not the primary
-                    // `value` from the row.
-                    let state = effective_state_from_entry(&e, now);
-                    let since = entry_event_time(&e);
-                    if is_truthy(&state) {
-                        active.push(NowFieldActive {
-                            field: tf.field,
-                            state,
-                            since,
-                            verb: e.verb.to_string(),
-                            color: tf.color,
-                            entry: e,
-                        });
-                    } else if filter.include_tracked_false {
-                        tracked_false.push(NowFieldTrackedFalse {
-                            field: tf.field,
-                            since,
-                            last_event: since,
-                            color: tf.color,
-                            entry: Some(e),
-                        });
-                    }
-                }
+                continue;
+            }
+
+            // `since` is when the CURRENT state began — the resume
+            // boundary when a block handed the field back — while
+            // `last_event` stays the newest row's own time. That is the
+            // split these two keys were declared separately for.
+            let last_event = entries.first().and_then(entry_event_time);
+            // The governing row established the state: the row a block
+            // interrupted, not the block. With nothing behind the block
+            // the field holds no state and the newest row is still the
+            // one worth showing.
+            let e = entries.swap_remove(eff.governing.unwrap_or(0));
+            if is_truthy(&eff.state) {
+                active.push(NowFieldActive {
+                    field: tf.field,
+                    state: eff.state,
+                    since: eff.since,
+                    verb: e.verb.to_string(),
+                    color: tf.color,
+                    entry: e,
+                });
+            } else if filter.include_tracked_false {
+                tracked_false.push(NowFieldTrackedFalse {
+                    field: tf.field,
+                    since: eff.since,
+                    last_event,
+                    color: tf.color,
+                    entry: Some(e),
+                });
             }
         }
 
@@ -180,28 +184,165 @@ impl Db {
             ignored,
         })
     }
+
+    /// The rows behind a field's state at `now`, newest first, together
+    /// with the resolution over them. Reads ONE row — the common case,
+    /// and the whole of the pre-da-phoe cost — and looks further back
+    /// only when that row is a block that has already handed the field
+    /// back, so the state to resume lies behind it.
+    fn resolved_now(
+        &self,
+        field: &str,
+        filter: &NowFilter,
+        now: DateTime<Utc>,
+    ) -> Result<(Vec<Entry>, Effective)> {
+        let mut entries = self.entries_for_now(field, filter.snapshot_time, 1)?;
+        if entries
+            .first()
+            .is_some_and(|e| StateRow::from_entry(e).hands_field_back(now))
+        {
+            entries = self.entries_for_now(field, filter.snapshot_time, RESUME_LOOKBACK)?;
+        }
+        let rows: Vec<StateRow> = entries.iter().map(StateRow::from_entry).collect();
+        let effective = resolve_effective(&rows, now);
+        Ok((entries, effective))
+    }
 }
 
-/// Resolve the *effective* state of an entry at `at`, honouring
-/// `following_state` for block-switch / point-switch when the moment
-/// has crossed the trailing edge. For all other verbs (and for
-/// block-switch rows whose trailing edge is still in the future), the
-/// primary `value` column is the state.
-fn effective_state_from_entry(e: &Entry, at: DateTime<Utc>) -> JsonValue {
-    effective_state(
-        e.verb,
-        e.state.as_ref(),
-        e.occur_time.as_ref().map(|t| t.utc),
-        e.dur.as_ref(),
-        e.following_state.as_ref(),
-        at,
-    )
+/// How many rows a state read may walk back through to find the state a
+/// block handed the field back to. Each completed block immediately
+/// preceding the read consumes one; a real ledger never stacks anywhere
+/// near this many back to back, and past the limit the read reports "no
+/// state" rather than inventing one.
+pub(super) const RESUME_LOOKBACK: usize = 64;
+
+/// One state-bearing row, in as much of it as the state oracles read.
+/// The shared input of [`resolve_effective`] so `now` (which holds whole
+/// [`Entry`]s) and [`Db::batch_state_at`] (which selects six columns)
+/// resolve through the SAME code and cannot drift (da-phoe).
+pub(super) struct StateRow {
+    pub verb: crate::entry::Verb,
+    pub state: Option<JsonValue>,
+    pub occur: Option<DateTime<Utc>>,
+    pub dur: Option<crate::dur::Dur>,
+    pub following_state: Option<JsonValue>,
 }
 
-/// Column-level form of [`effective_state_from_entry`], shared with
-/// [`Db::batch_state_at`] so the `now` and `state_at` oracles apply the
-/// SAME trailing-edge rule to the winning row (da-2i8g).
-pub(super) fn effective_state(
+impl StateRow {
+    pub(super) fn from_entry(e: &Entry) -> Self {
+        StateRow {
+            verb: e.verb,
+            state: e.state.clone(),
+            occur: e.occur_time.as_ref().map(|t| t.utc),
+            dur: e.dur.clone(),
+            following_state: e.following_state.clone(),
+        }
+    }
+
+    /// `occur + dur` for a row that spans one, i.e. where its own region
+    /// ends. `None` for a point or an unparseable `dur`.
+    fn trailing_edge(&self) -> Option<DateTime<Utc>> {
+        let occur = self.occur?;
+        let secs = self.dur.as_ref()?.as_seconds()?;
+        Some(occur + chrono::Duration::seconds(secs))
+    }
+
+    /// Does this row hand the field back once its trailing edge is past?
+    ///
+    /// da-611d: a block is an INTERRUPTION, not a switch. `end work 12`
+    /// writes `following_state IS NULL`, and NULL there is a *specified
+    /// default* meaning "resume whatever state preceded this block" —
+    /// the common case, because the state to come back to is simply the
+    /// prior one and does not need restating. So past `occur + dur` this
+    /// row is no longer the one that decides the state: the row before
+    /// it is. Reading NULL as "the field is now `false` forever" is what
+    /// left every minute after vividn's break attributed to nothing.
+    ///
+    /// [`Verb::BlockSwitch`] / [`Verb::PointSwitch`] carry a real
+    /// `following_state` and switch to it instead ([`effective_state`]),
+    /// so they never hand back.
+    pub(super) fn hands_field_back(&self, at: DateTime<Utc>) -> bool {
+        if self.verb != crate::entry::Verb::Block || self.following_state.is_some() {
+            return false;
+        }
+        match (self.occur, self.dur.as_ref().and_then(|d| d.as_seconds())) {
+            // A zero-span row occupies no time, so it interrupts nothing.
+            (Some(occur), Some(secs)) if secs > 0 => at >= occur + chrono::Duration::seconds(secs),
+            _ => false,
+        }
+    }
+
+    /// When this row's effective state at `at` took effect: its trailing
+    /// edge once a compound switch has crossed it, otherwise `occur`.
+    fn effective_since(&self, at: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        if crate::shape::opens_secondary_switch_region(self.verb) && self.following_state.is_some()
+        {
+            if let Some(trailing) = self.trailing_edge() {
+                if at >= trailing {
+                    return Some(trailing);
+                }
+            }
+        }
+        self.occur
+    }
+}
+
+/// What a field's rows say it holds at one instant.
+pub(super) struct Effective {
+    pub state: JsonValue,
+    /// When the field entered `state` — the resume boundary when a block
+    /// handed it back, otherwise the governing row's own event time.
+    pub since: Option<DateTime<Utc>>,
+    /// Index into the input rows of the row that established `state`.
+    /// `None` when every row handed the field back and nothing preceded
+    /// them: the field holds no state at all.
+    pub governing: Option<usize>,
+}
+
+/// Resolve the state a field holds at `at` from its rows, NEWEST FIRST.
+///
+/// Walks back past every block that has already handed the field back
+/// ([`StateRow::hands_field_back`]) to the row that actually decides the
+/// state, then reads that row with [`effective_state`]. One row in is
+/// the common case and behaves exactly as before da-phoe.
+pub(super) fn resolve_effective(rows: &[StateRow], at: DateTime<Utc>) -> Effective {
+    // The NEWEST completed block fixes when the resumed span began;
+    // older ones ended before it and are already covered.
+    let mut resumed_at: Option<DateTime<Utc>> = None;
+    for (i, row) in rows.iter().enumerate() {
+        if row.hands_field_back(at) {
+            resumed_at = resumed_at.or_else(|| row.trailing_edge());
+            continue;
+        }
+        return Effective {
+            state: effective_state(
+                row.verb,
+                row.state.as_ref(),
+                row.occur,
+                row.dur.as_ref(),
+                row.following_state.as_ref(),
+                at,
+            ),
+            since: resumed_at.max(row.effective_since(at)),
+            governing: Some(i),
+        };
+    }
+    // Nothing preceded the block(s): there is no state to resume to.
+    // `Null` is "tracked, no current state" — the honest answer, and the
+    // one a timeline resolver derives for the same rows.
+    Effective {
+        state: JsonValue::Null,
+        since: resumed_at,
+        governing: None,
+    }
+}
+
+/// Read ONE row's state at `at`, honouring `following_state` for
+/// block-switch / point-switch when the moment has crossed the trailing
+/// edge (da-2i8g). For all other verbs (and for block-switch rows whose
+/// trailing edge is still in the future), the primary `value` column is
+/// the state.
+fn effective_state(
     verb: crate::entry::Verb,
     state: Option<&JsonValue>,
     occur_utc: Option<DateTime<Utc>>,
