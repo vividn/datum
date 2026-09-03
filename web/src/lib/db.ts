@@ -1,5 +1,5 @@
 import { SCHEMA } from './schema.generated.js';
-import type { Entry, StoredVerb } from './types.js';
+import type { Entry, FieldSpec, StoredVerb } from './types.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SqliteDb = any;
@@ -221,4 +221,83 @@ export async function getLatestPerField(): Promise<Entry[]> {
 		callback: (row: Record<string, unknown>) => rows.push(row)
 	});
 	return rows.map(rowToEntry);
+}
+
+/**
+ * Every stored field spec, keyed by field.
+ *
+ * The spec is the field's declared shape — what the widget bar reads to
+ * decide whether a press means `occur`, `start` or `switch` (da-nz29). A
+ * field with no row here has no declared shape; the caller falls back to
+ * what the log shows rather than guessing from the field's name.
+ */
+export async function getFieldSpecs(): Promise<Map<string, FieldSpec>> {
+	const db = await initDb();
+	const specs = new Map<string, FieldSpec>();
+	db.exec({
+		sql: `SELECT field, spec_json FROM field_specs`,
+		rowMode: 'object',
+		callback: (row: Record<string, unknown>) => {
+			try {
+				specs.set(row.field as string, JSON.parse(row.spec_json as string) as FieldSpec);
+			} catch {
+				// A spec row we can't parse is a spec we don't have. Skipping it
+				// costs one widget its declared shape; throwing would cost the
+				// whole bar.
+			}
+		}
+	});
+	return specs;
+}
+
+/**
+ * Write a field spec, replacing any existing row for the field.
+ *
+ * `tags` and `render_json` are mirrors of keys inside `spec_json` (see
+ * schema.sql) — kept in step here so a SQL-level filter reads the same
+ * truth as the blob.
+ */
+export async function saveFieldSpec(spec: FieldSpec): Promise<void> {
+	const db = await initDb();
+	db.exec({
+		sql: `INSERT OR REPLACE INTO field_specs (field, spec_json, kit_id, tags, render_json)
+		      VALUES ($field, $spec_json, NULL, $tags, $render_json)`,
+		bind: {
+			$field: spec.field,
+			$spec_json: JSON.stringify(spec),
+			$tags: JSON.stringify(spec.tags ?? []),
+			$render_json: spec.render !== undefined ? JSON.stringify(spec.render) : null
+		}
+	});
+}
+
+/**
+ * The distinct states each field has actually been logged with.
+ *
+ * Evidence, not declaration: used only where a field has no spec, so the
+ * bar can tell a two-state mood field from a point field without inventing
+ * meaning from the field's name.
+ */
+export async function getObservedStates(): Promise<Map<string, unknown[]>> {
+	const db = await initDb();
+	const observed = new Map<string, unknown[]>();
+	db.exec({
+		sql: `SELECT DISTINCT field, state FROM entries
+		      WHERE deleted_at IS NULL AND state IS NOT NULL
+		      ORDER BY field`,
+		rowMode: 'object',
+		callback: (row: Record<string, unknown>) => {
+			const field = row.field as string;
+			let value: unknown;
+			try {
+				value = JSON.parse(row.state as string);
+			} catch {
+				return;
+			}
+			const seen = observed.get(field);
+			if (seen) seen.push(value);
+			else observed.set(field, [value]);
+		}
+	});
+	return observed;
 }

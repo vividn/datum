@@ -66,6 +66,38 @@ export interface ParsedInput {
 	/** Unit for a numeric `state`; folded into an [`Annotated`] at insert. */
 	unit?: string;
 	data?: Record<string, unknown>;
+	/** ISO-8601 duration, already normalized from `dur=30m` / `dur=1:30`. */
+	dur?: string;
 	timeOffset?: number; // minutes offset from now
 	timeAbsolute?: string; // HH:MM
+}
+
+/**
+ * The intent verbs a field spec may carry as its default.
+ *
+ * Serialized kebab-case, mirroring `Action` in
+ * crates/datum-core/src/action.rs. `occur` is the variant's `#[default]`,
+ * so a field with no spec at all behaves as a point field.
+ */
+export type DefaultAction = 'occur' | 'start' | 'stop' | 'switch' | 'block' | 'add' | 'note';
+
+/**
+ * The slice of a stored field spec the web app reads.
+ *
+ * Field specs live in `field_specs.spec_json` (schema.sql) as one JSON blob
+ * so the shape can evolve without migrations; this interface names only the
+ * keys the widget bar needs and passes the rest through untouched, so a
+ * spec written by the CLI survives a round trip through the browser.
+ *
+ * The JSON key is `default_verb`, not `default_action` — kept for wire
+ * compatibility with stored rows (see `FieldSpec` in
+ * crates/datum-core/src/field_spec/spec.rs).
+ */
+export interface FieldSpec {
+	field: string;
+	default_verb?: DefaultAction;
+	/** Allowed states for a switch field. Absent/null = unconstrained. */
+	allowed_states?: string[] | null;
+	color?: string | null;
+	[key: string]: unknown;
 }

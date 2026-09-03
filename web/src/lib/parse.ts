@@ -1,3 +1,4 @@
+import { toIsoDuration } from './duration.js';
 import type { ParsedInput, InputVerb } from './types.js';
 
 /** The input verbs the local runner accepts, in either argv position. */
@@ -41,6 +42,7 @@ export function parseArgv(tokens: string[]): ParsedInput | null {
 	const data: Record<string, unknown> = {};
 	const stateTokens: string[] = [];
 	let unit: string | undefined;
+	let dur: string | undefined;
 	let timeOffset: number | undefined;
 	let timeAbsolute: string | undefined;
 	let i = 0;
@@ -89,13 +91,30 @@ export function parseArgv(tokens: string[]): ParsedInput | null {
 			}
 		}
 		if (tok === '-t' && i + 1 < tokens.length) {
-			timeAbsolute = tokens[i + 1];
+			const arg = tokens[i + 1];
+			// `-t -8` is eight minutes ago and `-t +5` five ahead; an unsigned
+			// argument is a clock time (`-t 1513`). The sign is what separates
+			// them — see the time-flag table in CLAUDE.md.
+			if (/^[+-]\d+$/.test(arg)) timeOffset = parseInt(arg, 10);
+			else timeAbsolute = arg;
 			i += 2;
 			continue;
 		}
 
 		const kv = parseKV(tok);
 		if (kv) {
+			// `dur=` is the entry's duration, not an extra_data key: it decides
+			// the stored verb (point vs block) rather than riding along beside
+			// it. `30m`, `1:30` and `PT30M` all normalize to the same ISO
+			// string the `dur` column holds.
+			if (kv.key === 'dur') {
+				const iso = toIsoDuration(String(kv.val));
+				if (iso !== null) {
+					dur = iso;
+					i++;
+					continue;
+				}
+			}
 			data[kv.key] = kv.val;
 			i++;
 			continue;
@@ -129,6 +148,7 @@ export function parseArgv(tokens: string[]): ParsedInput | null {
 		state,
 		unit,
 		data: Object.keys(data).length > 0 ? data : undefined,
+		dur,
 		timeOffset,
 		timeAbsolute
 	};

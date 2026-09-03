@@ -10,36 +10,70 @@
 	touching this file.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import Pane from '$lib/Pane.svelte';
-	import { initDb, getRecentEntries } from '$lib/db.js';
+	import WidgetBar from '$lib/WidgetBar.svelte';
+	import { initDb, getRecentEntries, getAllFields, getFieldSpecs, getObservedStates } from '$lib/db.js';
 	import { entryLine } from '$lib/runners/local.js';
-	import { runLine } from '$lib/run.js';
+	import { run } from '$lib/run.js';
+	import { shellSplit } from '$lib/shellSplit.js';
+	import { widgetsFor, type Widget } from '$lib/widgets.js';
 	import type { RunResult } from '$lib/run.js';
 	import type { Entry } from '$lib/types.js';
 
+	/** How many past commands the REPL keeps on screen. */
+	const HISTORY_MAX = 20;
+
 	let input = '';
 	let ready = false;
-	let last: RunResult | null = null;
+	let history: RunResult[] = [];
+	let log: HTMLElement;
 	let recent: Entry[] = [];
+	let widgets: Widget[] = [];
 
 	onMount(async () => {
 		await initDb();
 		ready = true;
-		recent = await getRecentEntries(50);
+		await refresh();
 	});
+
+	async function refresh() {
+		const [fields, specs, observed] = await Promise.all([
+			getAllFields(),
+			getFieldSpecs(),
+			getObservedStates()
+		]);
+		widgets = widgetsFor(fields, specs, observed);
+		recent = await getRecentEntries(50);
+	}
+
+	/**
+	 * The app's one path to datum: everything the user does — typing a line,
+	 * pressing a widget — becomes an argv, runs, and lands in the REPL log.
+	 *
+	 * The log echoes `result.argv`, the array the runner actually received,
+	 * so a widget press teaches exactly the command it ran (da-nz29). A
+	 * prettier string rebuilt from the press could drift from it; this
+	 * cannot.
+	 */
+	async function execute(argv: string[]) {
+		const result = await run(argv);
+		history = [...history, result].slice(-HISTORY_MAX);
+		await refresh();
+		await tick();
+		if (log) log.scrollTop = log.scrollHeight;
+		return result;
+	}
 
 	async function submit() {
 		if (!input.trim()) return;
-		last = await runLine(input);
-		if (last.code === 0) input = '';
-		recent = await getRecentEntries(50);
+		const result = await execute(shellSplit(input));
+		if (result.code === 0) input = '';
 	}
 </script>
 
 <div class="frame">
-	<!-- widget bar: da-nz29 fills this region -->
-	<div class="widgets"></div>
+	<WidgetBar {widgets} disabled={!ready} on:run={(e) => execute(e.detail)} />
 
 	<div class="panes">
 		<Pane title="dayview">
@@ -62,10 +96,21 @@
 		</Pane>
 	</div>
 
-	<!-- REPL: one line in, one RunResult out. da-1x72 grows history + hints. -->
+	<!--
+		REPL: one line in, one RunResult out — and every command the widget
+		bar runs echoed here beside the ones the user typed, so the bar
+		teaches the CLI instead of hiding it.
+	-->
 	<form class="repl" on:submit|preventDefault={submit}>
-		{#if last && (last.stderr || last.stdout)}
-			<output class:failed={last.code !== 0}>{last.stderr || last.stdout}</output>
+		{#if history.length > 0}
+			<div class="history" bind:this={log}>
+				{#each history as result, i (i)}
+					<div class="echo"><span class="prompt">❯</span> {result.argv.join(' ')}</div>
+					{#if result.stderr || result.stdout}
+						<output class:failed={result.code !== 0}>{result.stderr || result.stdout}</output>
+					{/if}
+				{/each}
+			</div>
 		{/if}
 		<div class="line">
 			<span class="prompt">❯</span>
@@ -88,12 +133,6 @@
 		grid-template-rows: auto minmax(0, 1fr) auto;
 		gap: 0.75rem;
 		height: 100%;
-	}
-
-	.widgets {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.4rem;
 	}
 
 	.panes {
@@ -133,6 +172,21 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.3rem;
+	}
+
+	.history {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		/* Capped and self-scrolling: a long session's echoes must not push
+		   the input line off the bottom of the frame. */
+		max-height: 8rem;
+		overflow-y: auto;
+	}
+
+	.echo {
+		font-size: 0.85rem;
+		color: #c8c8e8;
 	}
 
 	output {

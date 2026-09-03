@@ -7,12 +7,12 @@
 // implementation of it, and da-1vat retires the whole file by compiling
 // `datum-cli` to wasm and installing it via `setRunner`.
 
-import { insertEntry } from '../db.js';
+import { insertEntry, getFieldSpecs, saveFieldSpec } from '../db.js';
 import { parseArgv } from '../parse.js';
 import { generateId, buildSlug, contentHash } from '../entryId.js';
 import { deriveStoredVerb } from '../verb.js';
 import { EXIT_DUPLICATE, EXIT_UNKNOWN_COMMAND, type RunResult } from '../run.js';
-import { isAnnotated, type Entry } from '../types.js';
+import { isAnnotated, type DefaultAction, type Entry, type FieldSpec } from '../types.js';
 
 const DEVICE_ID_KEY = 'datum-device-id';
 
@@ -26,6 +26,8 @@ export function deviceId(): string {
 }
 
 export async function localRun(argv: string[]): Promise<RunResult> {
+	if (argv[0] === 'spec' && argv[1] === 'set') return specSet(argv);
+
 	const parsed = parseArgv(argv);
 	if (!parsed) {
 		return {
@@ -93,14 +95,15 @@ async function buildEntry(
 			parsed.field,
 			occurTime,
 			state,
-			undefined,
+			parsed.dur,
 			undefined,
 			parsed.data
 		),
 		field: parsed.field,
 		state,
+		dur: parsed.dur,
 		data: parsed.data,
-		verb: deriveStoredVerb(state, undefined, undefined),
+		verb: deriveStoredVerb(state, parsed.dur, undefined),
 		occurTime,
 		createTime: now.toISOString(),
 		modifyTime: now.toISOString(),
@@ -135,4 +138,80 @@ export function entryLine(entry: Entry): string {
 export function formatValue(value: unknown): string {
 	if (isAnnotated(value)) return `${value.v}${value.u}`;
 	return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+/** The `--default-verb` values `spec set` accepts, per `DEFAULT_VERB_CHOICES`. */
+const DEFAULT_VERB_CHOICES: readonly DefaultAction[] = ['occur', 'start', 'switch', 'add'];
+
+/**
+ * `spec set <FIELD> [--default-verb V] [--state S]… [--color C]`.
+ *
+ * The subset of the real command the widget bar needs: a field's declared
+ * shape and its states. Existing keys on the spec are preserved, and
+ * repeated `--state` flags *replace* the allowed set rather than appending
+ * — both matching `spec_set` in
+ * crates/datum-commands/src/commands/spec.rs.
+ */
+async function specSet(argv: string[]): Promise<RunResult> {
+	const fail = (message: string): RunResult => ({
+		argv,
+		code: 1,
+		stdout: '',
+		stderr: `error: ${message}`
+	});
+
+	let field: string | undefined;
+	let defaultVerb: DefaultAction | undefined;
+	let color: string | undefined;
+	const states: string[] = [];
+
+	const rest = argv.slice(2);
+	for (let i = 0; i < rest.length; i++) {
+		// Both spellings the CLI's flag splitter accepts: `--state=happy`
+		// and `--state happy`.
+		const [flag, attached] = splitFlag(rest[i]);
+		if (flag === null) {
+			if (field !== undefined) return fail(`unexpected argument: '${rest[i]}'`);
+			field = rest[i];
+			continue;
+		}
+		const value = attached ?? rest[++i];
+		if (value === undefined) return fail(`--${flag} needs a value`);
+		switch (flag) {
+			case 'default-verb':
+				if (!(DEFAULT_VERB_CHOICES as readonly string[]).includes(value)) {
+					return fail(`--default-verb must be one of ${DEFAULT_VERB_CHOICES.join(' | ')}`);
+				}
+				defaultVerb = value as DefaultAction;
+				break;
+			case 'state':
+				states.push(value);
+				break;
+			case 'color':
+				color = value;
+				break;
+			default:
+				return fail(`unknown flag: --${flag} (not available yet in the browser)`);
+		}
+	}
+
+	if (field === undefined) return fail('missing <FIELD>');
+
+	const existing = (await getFieldSpecs()).get(field);
+	const spec: FieldSpec = { ...(existing ?? {}), field };
+	if (defaultVerb !== undefined) spec.default_verb = defaultVerb;
+	else spec.default_verb ??= 'occur';
+	if (states.length > 0) spec.allowed_states = states;
+	if (color !== undefined) spec.color = color;
+
+	await saveFieldSpec(spec);
+	return { argv, code: 0, stdout: `✓ Spec saved for '${field}'`, stderr: '' };
+}
+
+/** `--flag=value` → `['flag', 'value']`, `--flag` → `['flag', null]`, else `[null, null]`. */
+function splitFlag(token: string): [string | null, string | null] {
+	if (!token.startsWith('--')) return [null, null];
+	const body = token.slice(2);
+	const eq = body.indexOf('=');
+	return eq < 0 ? [body, null] : [body.slice(0, eq), body.slice(eq + 1)];
 }
