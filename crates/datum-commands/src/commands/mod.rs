@@ -47,6 +47,7 @@ pub mod stats;
 pub mod switch;
 pub mod sync;
 pub mod tail;
+pub mod tail_json;
 pub mod tail_state;
 pub mod tail_tui;
 pub mod time_bounds;

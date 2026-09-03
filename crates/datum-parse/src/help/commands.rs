@@ -445,6 +445,16 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: Some("    --show-meta       (alias: --show-all-metadata)"),
     },
+    FlagSpec {
+        short: None,
+        long: "json",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Named rows for scripts (JSON Lines under --watch)",
+        long_description: None,
+        left_override: None,
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1037,7 +1047,9 @@ pub const COMMANDS: &[CommandSpec] = &[
         top_summary: None,
         long_description: Some(
             "Structured-state entries show their id only on the chip line \
-             (`{id}`); use `datum get` for the full structure.",
+             (`{id}`); use `datum get` for the full structure.\n\n\
+             The table's columns are a display choice and do change — do not \
+             position-parse them from a script. Pass --json for named fields.",
         ),
         usage: &["datum tail [FIELD]"],
         args: NO_ARGS,

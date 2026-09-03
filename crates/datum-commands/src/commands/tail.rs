@@ -12,6 +12,7 @@ use datum_core::{
 use crate::args::{OutputFlagsExt, TailArgs};
 use crate::commands::helpers::load_registry_opt;
 use crate::commands::render_helpers::build_table_contexts;
+use crate::commands::tail_json::{tail_rows, TailDocument};
 use crate::render::term_layout::{detect_cols, detect_rows, is_stdout_tty};
 use crate::render::{print_table_with, TableArgs, TimeMetricCol};
 
@@ -22,6 +23,15 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
     // guarantees `state_filter` is only set alongside exactly one field.
     if let Some(state) = args.state_filter.as_deref() {
         if let Some(field) = args.fields.first() {
+            // The block form renders derived spans, not entries, so the
+            // per-entry row shape below doesn't describe it. Say so rather
+            // than emit rows the caller didn't ask for (da-c7uw).
+            if args.json {
+                anyhow::bail!(
+                    "--json is not supported with the `field:state` block form; \
+                     run `datum tail {field} --json` and group the rows, or drop --json"
+                );
+            }
             return crate::commands::tail_state::tail_state(
                 field,
                 state,
@@ -36,6 +46,13 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
         .metric
         .parse()
         .map_err(|e: String| anyhow::anyhow!(e))?;
+    // da-c7uw: `--json` replaces the table entirely. It deliberately
+    // skips the terminal-fitting plumbing below — structured output that
+    // changed its row count with the window size would be a worse
+    // contract than the table it replaces.
+    if args.json {
+        return tail_json(&args, metric, db);
+    }
     // da-5025: when stdout is a real terminal AND the user didn't pin
     // `-n`, expand the query to fill the visible window so the default
     // tail actually uses the screen. Piped / redirected output stays on
@@ -83,6 +100,49 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// `--json`: the tail rows as named objects, wrapped in an object under
+/// `rows` so later additions (a count, the resolved window) stay additive
+/// rather than breaking the readers this flag exists to protect.
+///
+/// With `--watch` the document repeats as JSON Lines — compact, one per
+/// line, only when the frame actually changed. A streaming consumer gets
+/// an event feed instead of the table path's clear-screen escapes.
+fn tail_json(args: &TailArgs, metric: TimeMetricCol, db: &Db) -> Result<()> {
+    let watching = args.watch.is_some();
+    let emit = |entries: &[Entry]| -> Result<()> {
+        // The same contexts the table renderer gets, so the `_n` a row
+        // reports here is the `_n` a row would show there.
+        let ctxs = build_table_contexts(entries, db);
+        let payload = TailDocument {
+            rows: tail_rows(entries, Some(&ctxs), metric),
+        };
+        if watching {
+            println!("{}", serde_json::to_string(&payload)?);
+        } else {
+            println!("{}", serde_json::to_string_pretty(&payload)?);
+        }
+        Ok(())
+    };
+
+    let entries = tail_entries_with_default_count(args, None, db)?;
+    emit(&entries)?;
+    let Some(secs) = args.watch else {
+        return Ok(());
+    };
+    let interval = watch_interval(secs);
+    let mut last_sig = frame_signature(false, &entries);
+    loop {
+        std::thread::sleep(interval);
+        let entries = tail_entries_with_default_count(args, None, db)?;
+        let sig = frame_signature(false, &entries);
+        if sig == last_sig {
+            continue;
+        }
+        last_sig = sig;
+        emit(&entries)?;
+    }
 }
 
 /// Per-frame fingerprint used by the watch loop to suppress idle

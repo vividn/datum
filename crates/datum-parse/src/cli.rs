@@ -390,6 +390,12 @@ pub struct TailArgs {
     /// them — they're review markers / out-of-band notes, not tracked
     /// data. See da-ghlx.
     pub show_meta: bool,
+    /// `--json` (da-c7uw) — emit one named object per row instead of the
+    /// human table. The table's column set is a display decision and has
+    /// changed under scripts that position-parsed it; this is the shape
+    /// consumers are meant to read. With `--watch` the rows stream as
+    /// JSON Lines, one document per changed frame.
+    pub json: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }
@@ -408,6 +414,7 @@ impl Default for TailArgs {
             watch: None,
             table: false,
             show_meta: false,
+            json: false,
             output: OutputArgs::default(),
         }
     }

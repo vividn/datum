@@ -836,6 +836,48 @@ fn tail_show_meta_flag_parses_short_and_long_forms() {
 }
 
 #[test]
+fn tail_json_flag_parses_and_defaults_off() {
+    // da-c7uw: `--json` is the supported consumer surface, so it has to
+    // reach `TailArgs` from argv — the whole point is that a script can
+    // ask for it instead of scraping the table.
+    use datum_cli::args::{Cli, CliExt, Command};
+    let cli = Cli::try_parse_argv(["datum", "tail", "--json"]).unwrap();
+    match cli.command {
+        Command::Tail(a) => assert!(a.json),
+        _ => panic!("expected Tail"),
+    }
+    // Head routes through the same args, so it gets the flag for free.
+    let cli = Cli::try_parse_argv(["datum", "head", "--json"]).unwrap();
+    match cli.command {
+        Command::Head(a) => assert!(a.json),
+        _ => panic!("expected Head"),
+    }
+    let cli = Cli::try_parse_argv(["datum", "tail"]).unwrap();
+    match cli.command {
+        Command::Tail(a) => assert!(!a.json),
+        _ => panic!("expected Tail"),
+    }
+}
+
+/// The `field:state` form renders derived blocks, not entries, so the
+/// row shape `--json` documents doesn't describe it. Refuse rather than
+/// hand back rows the caller didn't ask for (da-c7uw).
+#[test]
+fn tail_json_refuses_the_block_form() {
+    let db = fresh_db();
+    insert(&db, "activity", Verb::Switch, 60);
+    let mut args = tail_args();
+    args.fields = vec!["activity".to_string()];
+    args.state_filter = Some(vec!["start".to_string()]);
+    args.json = true;
+    let err = datum_commands::commands::tail::tail(args, &db).unwrap_err();
+    assert!(
+        err.to_string().contains("--json is not supported"),
+        "expected a refusal naming --json, got: {err}"
+    );
+}
+
+#[test]
 fn tail_hides_flag_and_meta_rows_by_default_and_shows_with_flag() {
     // da-ghlx: end-to-end through tail_entries: a flagged row is
     // hidden by default; `--show-meta` brings it back into the tail.

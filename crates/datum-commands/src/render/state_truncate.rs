@@ -281,7 +281,7 @@ fn paint_chip(item: &JsonValue, body: &str, field: &str, spec: Option<&FieldSpec
 
 /// Best-effort label for a state value — the plain text that goes into
 /// the chip body before painting.
-fn state_label(item: &JsonValue) -> String {
+pub(crate) fn state_label(item: &JsonValue) -> String {
     match item {
         JsonValue::Bool(true) => "start".to_string(),
         JsonValue::Bool(false) => "end".to_string(),

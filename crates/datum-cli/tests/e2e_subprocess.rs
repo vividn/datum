@@ -567,3 +567,36 @@ fn subprocess_unwritable_backup_refuses_to_migrate() {
         .expect("count entries");
     assert_eq!(rows, 1, "the user's row must survive a refused migration");
 }
+
+/// da-c7uw: the whole point of `tail --json` is what a *script* reads off
+/// stdout, so the assertion has to happen on the other side of the process
+/// boundary — the in-process harness never sees the printed document.
+///
+/// This is the exact shape that broke: a guard asking "is this field still
+/// open?" read the state out of a fixed column, a new column slid in, and
+/// it silently started reading the wrong cell. Named fields make that
+/// class of break impossible — the guard asks for `state_label` and gets
+/// the state no matter how the table is laid out.
+#[test]
+fn subprocess_tail_json_is_readable_without_counting_columns() {
+    let env = Env::new();
+    assert_ok(&env.run(&["start", "activity", "-t", "0900"]), "start");
+    assert_ok(&env.run(&["end", "activity", "-t", "0930"]), "end");
+
+    let out = env.run(&["tail", "activity", "--json"]);
+    assert_ok(&out, "tail --json");
+    let doc: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("tail --json must print parseable JSON");
+
+    let rows = doc["rows"].as_array().expect("rows array");
+    assert_eq!(rows.len(), 2, "both rows: {doc}");
+    // Newest last, as the table renders them.
+    assert_eq!(rows[0]["state_label"], "start");
+    assert_eq!(rows[1]["state_label"], "end");
+    assert_eq!(rows[1]["field"], "activity");
+    // The hid is the full, prefix-addressable id — a consumer can hand it
+    // straight back to the CLI rather than re-deriving one from the table.
+    let hid = rows[1]["hid"].as_str().expect("hid string");
+    let back = env.run(&["get", hid]);
+    assert_ok(&back, "get by the hid tail --json reported");
+}

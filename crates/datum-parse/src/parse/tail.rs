@@ -23,6 +23,7 @@ pub(crate) struct TailExtras {
     table: bool,
     watch: Option<f64>,
     show_meta: bool,
+    json: bool,
 }
 
 pub(crate) fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
@@ -78,6 +79,12 @@ pub(crate) fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
     }));
     r.push(local_switch(None, Some("show-all-metadata"), |p| {
         p.extras.show_meta = true;
+        Ok(())
+    }));
+    // da-c7uw: structured rows, so consumers stop position-parsing the
+    // human table.
+    r.push(local_switch(None, Some("json"), |p| {
+        p.extras.json = true;
         Ok(())
     }));
     // `-w/--watch` is special — bare or attached or detached non-flag value.
@@ -136,6 +143,7 @@ pub(crate) fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
         watch: composed.extras.watch,
         table: composed.extras.table,
         show_meta: composed.extras.show_meta,
+        json: composed.extras.json,
         output: composed.output,
     })
 }
