@@ -244,6 +244,20 @@ fn max_scroll(body_len: usize, view_h: usize) -> usize {
     body_len.saturating_sub(view_h)
 }
 
+/// The buffer slice the viewport actually paints.
+///
+/// da-z2u5: the table formatter sizes every column over exactly the rows
+/// it is handed, so it must be handed the visible window and nothing
+/// more. Feeding it the whole history buffer let a dated row parked
+/// hundreds of lines off-screen widen the time column — and shift every
+/// row the user could actually see — for as long as it stayed in the
+/// buffer.
+fn visible_window<T>(buffer: &[T], scroll: usize, view_h: usize) -> &[T] {
+    let start = scroll.min(buffer.len());
+    let end = start.saturating_add(view_h).min(buffer.len());
+    &buffer[start..end]
+}
+
 /// Viewport scroll state — deliberately terminal-agnostic so the scroll /
 /// follow / new-below arithmetic is unit-testable without a TTY.
 ///
@@ -358,8 +372,18 @@ fn render_frame(
     cols: u16,
     rows: u16,
 ) -> io::Result<()> {
-    let (header, body) = render_lines(buffer, db, metric, registry, output, columns, cols);
     let view_h = view_height(rows);
+    let (header, body) = render_lines(
+        buffer,
+        state.scroll,
+        view_h,
+        db,
+        metric,
+        registry,
+        output,
+        columns,
+        cols,
+    );
     let width = cols as usize;
 
     let mut out = io::stdout().lock();
@@ -372,7 +396,7 @@ fn render_frame(
     for r in 0..view_h {
         let row = (r + 1) as u16;
         queue!(out, cursor::MoveTo(0, row), Clear(ClearType::CurrentLine))?;
-        if let Some(line) = body.get(state.scroll + r) {
+        if let Some(line) = body.get(r) {
             queue!(out, Print(truncate_visible(line, width)), ResetColor)?;
         }
     }
@@ -390,13 +414,17 @@ fn render_frame(
     out.flush()
 }
 
-/// Render the buffer to a header line + body lines via the shared table
-/// formatter. The table emits exactly one line per entry, so `body[i]`
-/// corresponds to `buffer[i]` — the invariant the scroll/anchor math
-/// relies on. An empty buffer yields no header and a single `[No data]`
-/// body line.
+/// Render the visible window to a header line + body lines via the shared
+/// table formatter. Only [`visible_window`] is handed to the formatter,
+/// so the column widths — and the header they size — describe the rows on
+/// screen and nothing else (da-z2u5). The table emits exactly one line
+/// per entry, so `body[i]` is the *r*-th painted row. An empty window
+/// yields no header and a single `[No data]` body line.
+#[allow(clippy::too_many_arguments)]
 fn render_lines(
     buffer: &[Entry],
+    scroll: usize,
+    view_h: usize,
     db: &Db,
     metric: TimeMetricCol,
     registry: Option<&SpecRegistry>,
@@ -411,14 +439,15 @@ fn render_lines(
         suppress_header: false,
         max_total_width: Some(cols as usize),
     };
+    let window = visible_window(buffer, scroll, view_h);
     let now = DatumTime::now();
-    let ctxs = build_table_contexts(buffer, db);
-    let text = match format_table_with(buffer, Some(&ctxs), Some(&now), registry, &tbl) {
+    let ctxs = build_table_contexts(window, db);
+    let text = match format_table_with(window, Some(&ctxs), Some(&now), registry, &tbl) {
         Some(t) => t,
         None => return (None, Vec::new()),
     };
     let mut lines = text.lines().map(|l| l.to_string());
-    if buffer.is_empty() {
+    if window.is_empty() {
         // `[No data]` — no header row.
         (None, lines.collect())
     } else {
@@ -508,9 +537,85 @@ fn restore_terminal() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use datum_core::test_util::{entry_builder, freeze_time, fresh_db};
 
     fn slugs(n: usize) -> Vec<String> {
         (0..n).map(|i| format!("f:{i:04}")).collect()
+    }
+
+    /// The window is the half-open `[scroll, scroll + view_h)` slice,
+    /// clamped to the buffer — never longer than a screenful, and never
+    /// past the end.
+    #[test]
+    fn visible_window_is_one_screenful_clamped_to_the_buffer() {
+        let buf: Vec<usize> = (0..10).collect();
+        assert_eq!(visible_window(&buf, 0, 4), &[0, 1, 2, 3]);
+        assert_eq!(visible_window(&buf, 6, 4), &[6, 7, 8, 9]);
+        // Short buffer / oversized viewport: everything, no panic.
+        assert_eq!(visible_window(&buf, 8, 4), &[8, 9]);
+        assert_eq!(visible_window(&buf, 0, 99), &buf[..]);
+        // Out-of-range scroll clamps to empty rather than panicking.
+        assert!(visible_window(&buf, 99, 4).is_empty());
+        assert!(visible_window::<usize>(&[], 0, 4).is_empty());
+    }
+
+    fn leading_spaces(line: &str) -> usize {
+        line.chars().take_while(|c| *c == ' ').count()
+    }
+
+    /// da-z2u5: a dated row sitting off-screen in the history buffer must
+    /// not widen the time column of the rows on screen. Rendering the
+    /// whole buffer pads every same-day row across the date's width;
+    /// rendering the visible window alone does not.
+    #[test]
+    fn off_screen_dated_rows_do_not_shift_visible_rows() {
+        let _clock = freeze_time("2026-05-01T12:00:00Z");
+        let db = fresh_db();
+        let today: chrono::DateTime<chrono::Utc> = "2026-05-01T09:00:00Z".parse().unwrap();
+
+        // Row 0 is weeks old, so its time cell carries a date. Rows 1..
+        // are all from today and render a bare clock.
+        let mut buffer = vec![entry_builder("mood")
+            .time_start_utc("2026-03-16T09:15:00Z".parse().unwrap())
+            .insert(&db)];
+        buffer.extend((0..8).map(|i| {
+            entry_builder("mood")
+                .time_start_utc(today + chrono::Duration::minutes(i))
+                .insert(&db)
+        }));
+
+        let output = OutputArgs::default();
+        let render = |scroll: usize, view_h: usize| {
+            render_lines(
+                &buffer,
+                scroll,
+                view_h,
+                &db,
+                TimeMetricCol::Hybrid,
+                None,
+                &output,
+                &[],
+                80,
+            )
+            .1
+        };
+
+        // A viewport tall enough to include the dated row: it pads every
+        // same-day row across the width of its date.
+        let all = render(0, buffer.len());
+        let padded = leading_spaces(&all[1]);
+
+        // Scrolled one row past it: the dated row is off-screen and stops
+        // paying for its width.
+        let windowed = render(1, 4);
+        assert_eq!(windowed.len(), 4, "one body line per windowed entry");
+        assert!(
+            leading_spaces(&windowed[0]) < padded,
+            "the off-screen dated row still shifts the visible rows: \
+             {:?} vs {:?}",
+            windowed[0],
+            all[1],
+        );
     }
 
     /// A fresh state follows: recompute pins to the bottom and seeds the
