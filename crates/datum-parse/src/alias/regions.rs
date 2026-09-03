@@ -31,7 +31,7 @@
 //!   the first.
 
 use crate::error::{ParseError, Result};
-use crate::time::parse_duration_str::parse_duration;
+use crate::time::dur::parse_duration;
 
 /// The boundary / trailing-region token. Typeable user grammar, but
 /// mostly emitted by the alias expander at every resolve.

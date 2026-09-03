@@ -43,7 +43,7 @@ pub struct DateArg {
 /// reference. Absent a marker, `ctx.default_direction` decides. Fully
 /// pinned forms (ISO dates, compact dates with explicit year) ignore the
 /// marker; day words and relative offsets do too.
-pub fn parse_date_arg(s: &str, ctx: TimeCtx) -> Result<DateArg> {
+pub fn parse_date(s: &str, ctx: TimeCtx) -> Result<DateArg> {
     let (s_no_dir, direction) = split_direction_suffix(s)?;
     let (primary, uncert_body) = split_uncertainty(s_no_dir);
     let uncertainty = uncert_body.map(parse_uncertainty).transpose()?;
@@ -456,9 +456,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_date_arg_compact_comma_year() {
+    fn parse_date_compact_comma_year() {
         // Regression for da-3405: `-d oct10,2022` should resolve to 2022-10-10.
-        let arg = parse_date_arg("oct10,2022", TimeCtx::now()).expect("parse oct10,2022");
+        let arg = parse_date("oct10,2022", TimeCtx::now()).expect("parse oct10,2022");
         assert_eq!(arg.days_offset, 0);
         assert_eq!(arg.absolute, NaiveDate::from_ymd_opt(2022, 10, 10));
         assert!(arg.uncertainty.is_none());

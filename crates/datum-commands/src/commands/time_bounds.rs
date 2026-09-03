@@ -1,7 +1,7 @@
 //! Shared `--since` / `--until` bound parsing for the query commands
 //! (`count`, `ids`, `stats`).
 //!
-//! These flags name a *moment*, so they defer to [`parse_time_arg`] — the
+//! These flags name a *moment*, so they defer to [`parse_time`] — the
 //! parser behind `-t` and every logging command — rather than the private
 //! reimplementation each command used to carry (da-rye2). Routing them
 //! here means every future addition to the shared time vocabulary reaches
@@ -9,7 +9,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
-use datum_parse::time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder};
+use datum_parse::time::{parse_date, parse_duration, parse_time, DatumTime, TimeBuilder};
 use datum_parse::time::{TimeCtx, Zone};
 
 /// Which end of the window a bound is being parsed for. Only matters for
@@ -53,11 +53,11 @@ pub(crate) fn parse_until(s: &str) -> Result<DateTime<Utc>> {
 ///      excluded — `-30` / `+2h` is `-t`'s own spelling for a relative
 ///      offset, so it resolves in tier 3 and the sign points the same
 ///      way on every surface.
-///   2. A calendar date via [`parse_date_arg`] — `2026-06-01`, `apr29`.
+///   2. A calendar date via [`parse_date`] — `2026-06-01`, `apr29`.
 ///      Resolved to the local midnight that opens (`Since`) or closes
 ///      (`Until`) that day. Only the absolute forms: a bare integer is a
 ///      day offset to `-d`, and tier 1 has already claimed it.
-///   3. The shared `-t` grammar via [`parse_time_arg`] — `now`, clock
+///   3. The shared `-t` grammar via [`parse_time`] — `now`, clock
 ///      times (`9:15am`, `21:30`), signed offsets (`-30`, `+2h`),
 ///      ISO-8601 datetimes with or without a zone suffix, and every word
 ///      the shared vocabulary learns from here on.
@@ -70,14 +70,11 @@ fn parse_bound(s: &str, edge: Edge) -> Result<DateTime<Utc>> {
             return Ok(DatumTime::now().utc - dur);
         }
     }
-    if let Some(date) = parse_date_arg(s, TimeCtx::now())
-        .ok()
-        .and_then(|d| d.absolute)
-    {
+    if let Some(date) = parse_date(s, TimeCtx::now()).ok().and_then(|d| d.absolute) {
         return day_edge(date, edge);
     }
-    let arg = parse_time_arg(s, TimeCtx::now())
-        .map_err(|e| anyhow!("invalid {} '{s}': {e}", edge.flag()))?;
+    let arg =
+        parse_time(s, TimeCtx::now()).map_err(|e| anyhow!("invalid {} '{s}': {e}", edge.flag()))?;
     Ok(TimeBuilder::now().with_time_arg(arg).build().utc)
 }
 

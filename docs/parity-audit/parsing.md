@@ -232,7 +232,7 @@ positional and sets `dur = null`.
 - **Daydumb today:** `LogArgs::duration: Option<String>` and
   `moment: bool`. Duration parsing uses
   `datum_core::time::parse_duration` (now in
-  `datum_parse::time::parse_duration_str`).
+  `datum_parse::time::dur`).
 - **Target (step 2/N):** `datum_parse::input::duration_args::DurationArgs`
   with a `build() -> DurationIntent { None | Some(Duration) }`.
 
@@ -305,8 +305,8 @@ optional `am`/`pm` meridian, `+N`/`-N` relative durations (delegates
 to `parseDurationStr`), ISO-8601 parse, and a chrono-node natural-
 language fallback.
 
-- **Daydumb today:** `parse_time_arg` in
-  `datum_parse::time::parse_time_str`. Covers: "now", `+N`/`-N`
+- **Daydumb today:** `parse_time` in
+  `datum_parse::time::time`. Covers: "now", `+N`/`-N`
   minutes, 4-digit HHMM, absolute HH:MM[:SS], am/pm meridian, full
   ISO-8601 datetime (`2024-03-16T15:30:00Z`, `±HH:MM` offsets,
   fractional seconds, no-tz local form — shipped in da-nnr), plus
@@ -322,7 +322,7 @@ language fallback.
 - **Added in daydumb:**
   - `±N[unit]` uncertainty suffix (not in datum).
   - Date fallback (da-0gs4): input that names a *day* rather than a
-    clock time is handed to `parse_date_arg` and returned in
+    clock time is handed to `parse_date` and returned in
     `TimeArg::date`, so `-t sunday` / `-t yesterday` / `-t 2024-03-16`
     work and a caller wanting "either a time or a date" makes one call.
     The `2500` rejection below happens first and is final, so an
@@ -345,8 +345,8 @@ language fallback.
 Handles: `[+-]N` relative day offsets, ISO date, chrono-node
 natural-language fallback.
 
-- **Daydumb today:** `parse_date_arg` in
-  `datum_parse::time::parse_date_str`. Covers relative integer
+- **Daydumb today:** `parse_date` in
+  `datum_parse::time::date`. Covers relative integer
   offsets, `%Y-%m-%d` ISO, compact `<mmm><day>`, the day words
   `today` / `yesterday` / `tomorrow`, and weekday names (`sunday`,
   `sun`). **Missing:** chrono-node fallback — the word list is a
@@ -369,7 +369,7 @@ Handles: `[+-]` sign prefix, ISO-8601 duration (`PT5M`), colon-split
 package for named units (`5min`, `2h`, `1d`, `5ms`, ...).
 
 - **Daydumb today:** `parse_duration` in
-  `datum_parse::time::parse_duration_str`. Covers ISO-8601 (partial
+  `datum_parse::time::dur`. Covers ISO-8601 (partial
   — `P` with day/month/year, `PT` with H/M/S), colon-split up to
   4 parts, and named-unit suffixes (`s/sec`, `m/min`, `h/hr`,
   `d/day`).
@@ -509,9 +509,9 @@ submodule:
 | `input/__test__/flexiblePositional.test.ts` | 71 | `datum-parse/src/input/flexible_positional.rs` tests | step 2/N |
 | `input/__test__/mainArgs.test.ts` | 202 | `datum-parse/tests/parse_argv.rs` | step 3/N |
 | `input/__test__/timeArgs.test.ts` | 394 | `datum-parse/src/input/time_args.rs` tests | step 2/N |
-| `time/__test__/parseTimeStr.test.ts` | 186 | `datum-parse/src/time/parse_time_str.rs` tests (expand existing) | step 2/N |
-| `time/__test__/parseDateStr.test.ts` | 102 | `datum-parse/src/time/parse_date_str.rs` tests | step 2/N |
-| `time/__test__/parseDurationStr.test.ts` | 53 | `datum-parse/src/time/parse_duration_str.rs` tests | step 2/N |
+| `time/__test__/parseTimeStr.test.ts` | 186 | `datum-parse/src/time/time.rs` tests (expand existing) | step 2/N |
+| `time/__test__/parseDateStr.test.ts` | 102 | `datum-parse/src/time/date.rs` tests | step 2/N |
+| `time/__test__/parseDurationStr.test.ts` | 53 | `datum-parse/src/time/dur.rs` tests | step 2/N |
 | `time/__test__/datumTime.test.ts` | 34 | `datum-parse/src/time/datum_time.rs` tests | step 2/N |
 | `time/__test__/getOccurTime.test.ts` | 84 | N/A — redundant with `TimeArgs::build()`; not ported | — |
 | `time/__test__/humanTime.test.ts` | 93 | `datum-commands/src/render/` tests (canonical impl lives there) | step 2/N |

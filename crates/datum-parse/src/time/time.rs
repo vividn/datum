@@ -4,8 +4,8 @@ use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
 
 use crate::error::{ParseError, Result};
 use crate::time::context::TimeCtx;
-use crate::time::parse_date_str::{parse_date_arg, DateArg};
-use crate::time::parse_duration_str::parse_duration;
+use crate::time::date::{parse_date, DateArg};
+use crate::time::dur::parse_duration;
 use crate::time::uncertainty::{
     parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
 };
@@ -59,7 +59,7 @@ pub fn count_stacked_flag(s: &str, ch: char) -> Option<usize> {
 /// plus an optional trailing uncertainty `±N[unit]` / `+-N[unit]`.
 ///
 /// Anything that names a *day* rather than a clock time falls through to
-/// [`parse_date_arg`] and comes back in [`TimeArg::date`] — so `sunday`,
+/// [`parse_date`] and comes back in [`TimeArg::date`] — so `sunday`,
 /// `yesterday` and `apr29` are accepted here too, and a caller wanting
 /// "either a time or a date" needs only this one call.
 ///
@@ -68,7 +68,7 @@ pub fn count_stacked_flag(s: &str, ch: char) -> Option<usize> {
 /// offsets require an explicit leading sign (`+2500` / `-2500`). That
 /// rejection is final: it must not reach the date fallback, where `2500`
 /// would read as a 2500-day offset.
-pub fn parse_time_arg(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
+pub fn parse_time(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
     // Direction suffix (`+` / `-`) sits at the very tail, after any
     // uncertainty marker. Strip it first so `3±5m+` and `3+` both work.
     let (s_no_dir, direction) = split_direction_suffix(s)?;
@@ -224,7 +224,7 @@ pub fn parse_time_arg(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
 
     // Not a clock time — try it as a date. The original `s` goes in so
     // the date parser re-reads the direction/uncertainty suffixes itself.
-    if let Ok(date) = parse_date_arg(s, ctx) {
+    if let Ok(date) = parse_date(s, ctx) {
         return Ok(TimeArg {
             offset: None,
             absolute: None,

@@ -1,4 +1,4 @@
-# Full ISO-8601 datetime parsing via `parse_time_arg`.
+# Full ISO-8601 datetime parsing via `parse_time`.
 # Format: kind <TAB> input <TAB> expected
 #
 # kind=instant → `iso_instant` populated; expected is the UTC RFC3339 form.

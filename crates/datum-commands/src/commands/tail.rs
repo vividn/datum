@@ -6,7 +6,7 @@ use datum_core::time::Zone;
 use datum_core::{
     db::{Db, ListParams, TimeMetric},
     entry::Entry,
-    time::{parse_date_arg, parse_time_arg, resolve_timezone, DatumTime, TimeBuilder, TimeCtx},
+    time::{parse_date, parse_time, resolve_timezone, DatumTime, TimeBuilder, TimeCtx},
 };
 
 use crate::args::{OutputFlagsExt, TailArgs};
@@ -392,10 +392,10 @@ fn build_window(args: &TailArgs) -> Result<TailWindow> {
         .with_quick_count(args.time.quick as i64)
         .with_timezone(tz_name.clone());
     if let Some(d) = &args.time.date {
-        builder = builder.with_date_arg(parse_date_arg(d, TimeCtx::now())?);
+        builder = builder.with_date_arg(parse_date(d, TimeCtx::now())?);
     }
     if let Some(t) = &args.time.time {
-        builder = builder.with_time_arg(parse_time_arg(t, TimeCtx::now())?);
+        builder = builder.with_time_arg(parse_time(t, TimeCtx::now())?);
     }
     let point = builder.build();
     let (day_start_utc, day_end_utc) = day_bounds_utc(point.utc, tz_name.as_deref())?;

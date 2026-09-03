@@ -2,13 +2,13 @@
 
 use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
 
+use crate::time::date::DateArg;
 #[cfg(feature = "native")]
 use crate::time::datum_time::DatumTime;
-use crate::time::parse_date_str::DateArg;
-use crate::time::parse_duration_str::quick_uncertainty_for_count;
-use crate::time::parse_time_str::TimeArg;
+use crate::time::dur::quick_uncertainty_for_count;
 #[cfg(feature = "native")]
 use crate::time::resolve::Zone;
+use crate::time::time::TimeArg;
 #[cfg(feature = "native")]
 use crate::time::uncertainty::UncertaintyUnit;
 use crate::time::uncertainty::{Direction, Uncertainty};
@@ -322,8 +322,8 @@ fn strip_to_start_of_day(dt: DatumTime) -> DatumTime {
 #[cfg(all(test, feature = "native"))]
 mod tests {
     use super::*;
-    use crate::time::parse_date_str::DateArg;
-    use crate::time::parse_time_str::TimeArg;
+    use crate::time::date::DateArg;
+    use crate::time::time::TimeArg;
     use chrono::{NaiveDate, NaiveTime};
 
     /// The ISO form a date-only entry lands on `DatumTime::uncertainty`.

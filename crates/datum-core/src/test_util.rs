@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
 use datum_parse::time::clock::{self, MockClock};
-use datum_parse::time::{parse_duration, parse_time_arg, TimeBuilder, TimeCtx};
+use datum_parse::time::{parse_duration, parse_time, TimeBuilder, TimeCtx};
 
 use crate::action::Action;
 use crate::db::Db;
@@ -370,7 +370,7 @@ impl Drop for TimeGuard {
 /// [`MockClock`] frozen at that instant on the current thread, and return a
 /// guard that resets the clock on drop.
 ///
-/// Accepted forms (full list lives in [`parse_time_arg`]):
+/// Accepted forms (full list lives in [`parse_time`]):
 /// - ISO instants: `"2026-01-15T12:00:00Z"`, `"2026-01-15T12:00:00+02:00"`
 /// - ISO naive datetimes: `"2026-01-15T12:00:00"` (resolved as local)
 /// - Wall-clock times for "today": `"1530"`, `"15:30"`, `"3:30pm"`
@@ -423,7 +423,7 @@ pub fn reset_time() {
 }
 
 fn parse_test_time(s: &str) -> DatumTime {
-    let arg = parse_time_arg(s, TimeCtx::now())
+    let arg = parse_time(s, TimeCtx::now())
         .unwrap_or_else(|e| panic!("set_time: cannot parse time {s:?}: {e}"));
     TimeBuilder::now().with_time_arg(arg).build()
 }

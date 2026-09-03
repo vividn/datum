@@ -923,7 +923,7 @@ pub enum DayviewOrientation {
 #[derive(Debug)]
 pub struct DayviewArgs {
     /// `--start-date` — inclusive start (ISO `YYYY-MM-DD` or relative
-    /// offset like `-3` or `0`). Resolved via `parse_date_arg`.
+    /// offset like `-3` or `0`). Resolved via `parse_date`.
     pub start_date: Option<String>,
     /// `--end-date`/`-d` — inclusive end. Default: today.
     pub end_date: Option<String>,

@@ -17,7 +17,7 @@ use datum_core::{
     db::Db,
     dur::Dur,
     entry::{Entry, Verb},
-    time::{parse_date_arg, parse_time_arg, TimeBuilder, TimeCtx},
+    time::{parse_date, parse_time, TimeBuilder, TimeCtx},
 };
 use serde_json::Value as JsonValue;
 
@@ -39,10 +39,10 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
         .with_yesterday_count(time.yesterday as i64)
         .with_quick_count(time.quick as i64);
     if let Some(d) = time.date.as_deref() {
-        builder = builder.with_date_arg(parse_date_arg(d, TimeCtx::now())?);
+        builder = builder.with_date_arg(parse_date(d, TimeCtx::now())?);
     }
     if let Some(t) = time.time.as_deref() {
-        builder = builder.with_time_arg(parse_time_arg(t, TimeCtx::now())?);
+        builder = builder.with_time_arg(parse_time(t, TimeCtx::now())?);
     }
     let occur_time = builder.build();
 

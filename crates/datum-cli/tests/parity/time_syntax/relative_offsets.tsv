@@ -1,8 +1,8 @@
 # Relative day/time offsets — datum-compat surface.
 # Format: kind <TAB> input <TAB> expected
 #
-# kind=date  → days_offset for `parse_date_arg(input)`. Bare `+N`/`-N`/`0`.
-# kind=time  → offset (minutes) for `parse_time_arg(input)`. Bare `+N`/`-N`.
+# kind=date  → days_offset for `parse_date(input)`. Bare `+N`/`-N`/`0`.
+# kind=time  → offset (minutes) for `parse_time(input)`. Bare `+N`/`-N`.
 #
 # These cases lock the bare-integer relative-offset semantics that datum
 # inherits from luxon's `Duration.fromObject({ days|minutes: N })`.

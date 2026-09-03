@@ -1,4 +1,4 @@
-# Absolute time forms accepted by `parse_time_arg`.
+# Absolute time forms accepted by `parse_time`.
 # Format: input <TAB> expected_HMS
 #
 # expected_HMS is the parsed `NaiveTime` formatted as `HH:MM:SS`.

@@ -17,7 +17,7 @@
 //!   explicit non-port — daydumb returns `InvalidTime` for those
 //!   forms, and callers can pre-process NL inputs before handing off.
 //!   Single-word day forms (`yesterday`, `sunday`) are *not* part of the
-//!   non-port: `parse_date_arg` handles them from a bounded vocabulary,
+//!   non-port: `parse_date` handles them from a bounded vocabulary,
 //!   and `-t` reaches them through its date fallback (da-0gs4).
 //!
 //! See `docs/parity-audit/parsing.md` ("`timeArgs.ts`") for the spec.
@@ -27,9 +27,7 @@ use chrono_tz::Tz;
 
 use crate::error::{ParseError, Result};
 use crate::input::flag_registry::{FlagAction, FlagSpec};
-use crate::time::{
-    parse_date_arg, parse_time_arg, DatumTime, Direction, TimeCtx, Uncertainty, Zone,
-};
+use crate::time::{parse_date, parse_time, DatumTime, Direction, TimeCtx, Uncertainty, Zone};
 
 /// Parsed shape of the timing flag group.
 #[derive(Debug, Clone, Default)]
@@ -319,7 +317,7 @@ fn apply_time_arg(
     // against the running `cur`, so `-t` reads relative to whatever the
     // earlier flags already established rather than to wall-clock now.
     let ctx = TimeCtx::at(cur.local_time().naive_local());
-    if let Ok(arg) = parse_time_arg(s, ctx) {
+    if let Ok(arg) = parse_time(s, ctx) {
         if let Some(u) = arg.uncertainty {
             *uncertainty = Some(u);
         }
@@ -388,7 +386,7 @@ fn apply_date_arg(
     tz_name: Option<&str>,
 ) -> Result<DatumTime> {
     let ctx = TimeCtx::at(cur.local_time().naive_local());
-    if let Ok(arg) = parse_date_arg(s, ctx) {
+    if let Ok(arg) = parse_date(s, ctx) {
         if let Some(u) = arg.uncertainty {
             *uncertainty = Some(u);
         }

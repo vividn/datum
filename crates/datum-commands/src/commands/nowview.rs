@@ -34,7 +34,7 @@ use datum_layout::nowview::{
     NowviewPoint,
 };
 use datum_layout::nowview_svg::{render_nowview_svg, with_xml_declaration, wrap_svg_in_html};
-use datum_parse::time::parse_duration_str::parse_duration;
+use datum_parse::time::dur::parse_duration;
 use serde_json::Value as JsonValue;
 
 use crate::args::NowviewArgs;

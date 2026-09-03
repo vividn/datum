@@ -16,8 +16,7 @@ use serde_json::{Map, Value};
 use crate::error::{ParseError, Result};
 use crate::input::data_args::Compat;
 use crate::time::{
-    format_iso_duration, parse_date_arg, parse_duration, parse_time_arg, DateArg, DefaultDirection,
-    TimeCtx,
+    format_iso_duration, parse_date, parse_duration, parse_time, DateArg, DefaultDirection, TimeCtx,
 };
 
 use super::classify::{path_is_date, path_is_duration, path_is_time};
@@ -67,7 +66,7 @@ pub(super) fn infer_typed_value(
     // a week out.
     if path_is_time(path) {
         let ctx = time_ctx(compat);
-        if let Ok(t) = parse_time_arg(value, ctx) {
+        if let Ok(t) = parse_time(value, ctx) {
             if let Some(abs) = t.absolute {
                 return Ok(Some(Value::String(abs.format("%H:%M:%S").to_string())));
             }
@@ -77,7 +76,7 @@ pub(super) fn infer_typed_value(
             // and would be broken by truncating to time-of-day. Users who want
             // just the time-of-day write `wake_time=08:15`.
             // Relative offset (`+30`, `-15`, `+1h`, `-90m`) resolves against
-            // the entry's effective occur-time. `parse_time_arg` now handles
+            // the entry's effective occur-time. `parse_time` now handles
             // decimal/unit forms directly, so this is the single relative
             // branch — bare `1h` (no sign) still falls through to the
             // unit-annotation extension. With no base anchor (reparse/update
@@ -107,7 +106,7 @@ pub(super) fn infer_typed_value(
     // Date-like key → parse as date. Relative day offsets (`nextDate=+3`)
     // resolve against `compat.base_local.date()` when supplied.
     if path_is_date(path) {
-        if let Ok(d) = parse_date_arg(value, time_ctx(compat)) {
+        if let Ok(d) = parse_date(value, time_ctx(compat)) {
             if let Some(day) = resolve_date_arg(&d, compat) {
                 return Ok(Some(Value::String(day.format("%Y-%m-%d").to_string())));
             }

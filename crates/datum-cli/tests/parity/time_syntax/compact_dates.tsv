@@ -3,7 +3,7 @@
 # Direction marker is one of: none, future, past — passed through the
 # trailing `+`/`-` suffix on the input.
 #
-# Goldens are deterministic — daydumb's parse_date_arg is given a mocked
+# Goldens are deterministic — daydumb's parse_date is given a mocked
 # `today` via MockClock per row, so year-inference is reproducible.
 #
 # Reference: original datum gets compact-date support via chrono-node;

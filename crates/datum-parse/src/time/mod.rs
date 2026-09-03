@@ -11,9 +11,9 @@
 //! * [`resolve`] — the one local→UTC resolution utility (`Zone`, `Resolved`,
 //!   `ZoneTimeline`). Every wall-clock→instant conversion goes through it;
 //!   `clippy.toml` disallows the chrono calls it wraps.
-//! * [`parse_date_str`] — `-d` / `--date` argument parsing (`DateArg`).
-//! * [`parse_time_str`] — `-t` / `--time` argument parsing (`TimeArg`).
-//! * [`parse_duration_str`] — `--dur` argument parsing.
+//! * [`date`] — `-d` / `--date` argument parsing (`DateArg`).
+//! * [`time`] — `-t` / `--time` argument parsing (`TimeArg`).
+//! * [`dur`] — `--dur` argument parsing.
 //! * [`builder`] — `TimeBuilder` composes stacked flags into a `DatumTime`.
 //! * [`human_time`] — doc-anchor stub; canonical impl is
 //!   `datum_commands::render::action::format_timestamp`.
@@ -24,26 +24,30 @@ pub mod builder;
 #[cfg(feature = "native")]
 pub mod clock;
 pub mod context;
+pub mod date;
 pub mod datum_time;
+pub mod dur;
 pub mod get_timezone;
 pub mod human_time;
-pub mod parse_date_str;
-pub mod parse_duration_str;
-pub mod parse_time_str;
 pub mod resolve;
+// `time::time` stutters, but the module is named for its content like its
+// siblings `date` and `dur`, and `pub use` below flattens it — no caller
+// ever writes the doubled path.
+#[allow(clippy::module_inception)]
+pub mod time;
 pub mod uncertainty;
 
-pub use builder::TimeBuilder;
-pub use context::{DefaultDirection, TimeCtx};
-pub use datum_time::DatumTime;
-pub use parse_date_str::{parse_date_arg, DateArg};
-pub use parse_duration_str::{
+pub use self::builder::TimeBuilder;
+pub use self::context::{DefaultDirection, TimeCtx};
+pub use self::date::{parse_date, DateArg};
+pub use self::datum_time::DatumTime;
+pub use self::dur::{
     format_human_duration, format_iso_duration, parse_duration, parse_iso_duration,
     quick_uncertainty_for_count, DurationPrecision,
 };
-pub use parse_time_str::{count_stacked_flag, parse_time_arg, TimeArg};
-pub use resolve::{Resolved, Zone, ZoneSegment, ZoneTimeline};
-pub use uncertainty::{
+pub use self::resolve::{Resolved, Zone, ZoneSegment, ZoneTimeline};
+pub use self::time::{count_stacked_flag, parse_time, TimeArg};
+pub use self::uncertainty::{
     parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
     UncertaintyUnit,
 };

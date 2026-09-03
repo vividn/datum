@@ -4,7 +4,7 @@
 //! Turning one into a date needs two things the string itself can't
 //! supply: a reference moment to measure from, and a direction to search
 //! in when the user gave no trailing `+`/`-` marker. [`TimeCtx`] carries
-//! both, so `parse_time_arg` / `parse_date_arg` stay pure and callers can
+//! both, so `parse_time` / `parse_date` stay pure and callers can
 //! anchor them on something other than the wall clock — a second `-t`
 //! resolving against the first, or a data key resolving against its
 //! entry's occur-time.

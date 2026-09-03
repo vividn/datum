@@ -13,8 +13,7 @@ use datum_core::{
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
     time::{
-        parse_date_arg, parse_duration, parse_time_arg, resolve_timezone, DatumTime, TimeBuilder,
-        TimeCtx,
+        parse_date, parse_duration, parse_time, resolve_timezone, DatumTime, TimeBuilder, TimeCtx,
     },
 };
 use serde_json::Value as JsonValue;
@@ -1729,11 +1728,11 @@ pub(crate) fn build_time_with_uncertainty(args: &LogArgs) -> Result<DatumTime> {
         .with_full_day(args.time.full_day);
 
     if let Some(d) = &args.time.date {
-        let da = parse_date_arg(d, TimeCtx::now())?;
+        let da = parse_date(d, TimeCtx::now())?;
         builder = builder.with_date_arg(da);
     }
     if let Some(t) = &args.time.time {
-        let ta = parse_time_arg(t, TimeCtx::now())?;
+        let ta = parse_time(t, TimeCtx::now())?;
         builder = builder.with_time_arg(ta);
     }
 

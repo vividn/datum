@@ -14,8 +14,8 @@ fn test_stacked_flags() {
 }
 
 #[test]
-fn test_parse_time_arg_hhmm() {
-    let t = parse_time_arg("1513", TimeCtx::now()).unwrap();
+fn test_parse_time_hhmm() {
+    let t = parse_time("1513", TimeCtx::now()).unwrap();
     assert_eq!(
         t.absolute.unwrap(),
         NaiveTime::from_hms_opt(15, 13, 0).unwrap()
@@ -23,10 +23,10 @@ fn test_parse_time_arg_hhmm() {
 }
 
 #[test]
-fn test_parse_time_arg_hhmmss() {
+fn test_parse_time_hhmmss() {
     // da-xvsz: 6-digit forms must parse as HH:MM:SS, not fall through
     // to minute-offset (which would land 153_045 minutes from now).
-    let t = parse_time_arg("153045", TimeCtx::now()).unwrap();
+    let t = parse_time("153045", TimeCtx::now()).unwrap();
     assert_eq!(
         t.absolute.unwrap(),
         NaiveTime::from_hms_opt(15, 30, 45).unwrap()
@@ -35,9 +35,9 @@ fn test_parse_time_arg_hhmmss() {
 }
 
 #[test]
-fn test_parse_time_arg_hmmss_single_hour() {
+fn test_parse_time_hmmss_single_hour() {
     // 5-digit HMMSS — single-digit hour with full MM and SS.
-    let t = parse_time_arg("93045", TimeCtx::now()).unwrap();
+    let t = parse_time("93045", TimeCtx::now()).unwrap();
     assert_eq!(
         t.absolute.unwrap(),
         NaiveTime::from_hms_opt(9, 30, 45).unwrap()
@@ -45,83 +45,65 @@ fn test_parse_time_arg_hmmss_single_hour() {
 }
 
 #[test]
-fn test_parse_time_arg_relative() {
-    let t = parse_time_arg("-8", TimeCtx::now()).unwrap();
+fn test_parse_time_relative() {
+    let t = parse_time("-8", TimeCtx::now()).unwrap();
     assert_eq!(t.offset.unwrap(), Duration::minutes(-8));
-    let t = parse_time_arg("+5", TimeCtx::now()).unwrap();
+    let t = parse_time("+5", TimeCtx::now()).unwrap();
     assert_eq!(t.offset.unwrap(), Duration::minutes(5));
 }
 
 #[test]
-fn test_parse_time_arg_relative_decimal_and_units() {
+fn test_parse_time_relative_decimal_and_units() {
     // da-5722: signed relative offsets must accept decimals and unit
     // suffixes, not just bare integers. The default unit stays minutes.
     assert_eq!(
-        parse_time_arg("-3.5", TimeCtx::now())
-            .unwrap()
-            .offset
-            .unwrap(),
+        parse_time("-3.5", TimeCtx::now()).unwrap().offset.unwrap(),
         Duration::seconds(-210), // 3.5 min in the past
     );
     assert_eq!(
-        parse_time_arg("+3.5", TimeCtx::now())
-            .unwrap()
-            .offset
-            .unwrap(),
+        parse_time("+3.5", TimeCtx::now()).unwrap().offset.unwrap(),
         Duration::seconds(210),
     );
     assert_eq!(
-        parse_time_arg("-0.5", TimeCtx::now())
-            .unwrap()
-            .offset
-            .unwrap(),
+        parse_time("-0.5", TimeCtx::now()).unwrap().offset.unwrap(),
         Duration::seconds(-30),
     );
     assert_eq!(
-        parse_time_arg("-10m", TimeCtx::now())
-            .unwrap()
-            .offset
-            .unwrap(),
+        parse_time("-10m", TimeCtx::now()).unwrap().offset.unwrap(),
         Duration::minutes(-10),
     );
     assert_eq!(
-        parse_time_arg("-1.5h", TimeCtx::now())
-            .unwrap()
-            .offset
-            .unwrap(),
+        parse_time("-1.5h", TimeCtx::now()).unwrap().offset.unwrap(),
         Duration::minutes(-90),
     );
     assert_eq!(
-        parse_time_arg("+100s", TimeCtx::now())
-            .unwrap()
-            .offset
-            .unwrap(),
+        parse_time("+100s", TimeCtx::now()).unwrap().offset.unwrap(),
         Duration::seconds(100),
     );
     // Unsigned decimals are NOT relative offsets (the sign is the opt-in,
     // per da-4h7k) and aren't valid clocks → rejected.
     assert!(matches!(
-        parse_time_arg(".5", TimeCtx::now()),
+        parse_time(".5", TimeCtx::now()),
         Err(ParseError::InvalidTime(_))
     ));
 }
 
 #[test]
-fn test_parse_time_arg_unsigned_invalid_time_errors() {
+fn test_parse_time_unsigned_invalid_time_errors() {
     // da-4h7k: an unsigned integer that isn't a valid clock time must be
     // rejected, not silently treated as a relative minute-offset. `2500`
     // (likely a `2400`/`24:00` typo) used to land 2500 minutes from now.
     assert!(matches!(
-        parse_time_arg("2500", TimeCtx::now()),
+        parse_time("2500", TimeCtx::now()),
         Err(ParseError::InvalidTime(_))
     ));
     assert!(matches!(
-        parse_time_arg("9999", TimeCtx::now()),
+        parse_time("9999", TimeCtx::now()),
         Err(ParseError::InvalidTime(_))
     ));
     // Valid clock-time forms still parse as absolute times.
     assert_eq!(
-        parse_time_arg("0913", TimeCtx::now())
+        parse_time("0913", TimeCtx::now())
             .unwrap()
             .absolute
             .unwrap(),
@@ -129,11 +111,11 @@ fn test_parse_time_arg_unsigned_invalid_time_errors() {
     );
     // The signed form is the explicit opt-in for a (wild) minute offset.
     assert_eq!(
-        parse_time_arg("-2500", TimeCtx::now()).unwrap().offset,
+        parse_time("-2500", TimeCtx::now()).unwrap().offset,
         Some(Duration::minutes(-2500))
     );
     assert_eq!(
-        parse_time_arg("+2500", TimeCtx::now()).unwrap().offset,
+        parse_time("+2500", TimeCtx::now()).unwrap().offset,
         Some(Duration::minutes(2500))
     );
 }
@@ -195,7 +177,7 @@ fn test_parse_duration_invalid() {
 
 #[test]
 fn parse_uncertainty_plus_minus_unicode() {
-    let t = parse_time_arg("1513±5", TimeCtx::now()).unwrap();
+    let t = parse_time("1513±5", TimeCtx::now()).unwrap();
     assert_eq!(
         t.absolute,
         Some(NaiveTime::from_hms_opt(15, 13, 0).unwrap())
@@ -208,7 +190,7 @@ fn parse_uncertainty_plus_minus_unicode() {
 
 #[test]
 fn parse_uncertainty_plus_hyphen_ascii() {
-    let t = parse_time_arg("1513+-5", TimeCtx::now()).unwrap();
+    let t = parse_time("1513+-5", TimeCtx::now()).unwrap();
     assert_eq!(
         t.absolute,
         Some(NaiveTime::from_hms_opt(15, 13, 0).unwrap())
@@ -241,21 +223,21 @@ fn parse_uncertainty_with_units() {
 #[test]
 fn parse_combined_time_and_uncertainty() {
     // relative offset + unicode ± with minute unit
-    let t = parse_time_arg("+5±2m", TimeCtx::now()).unwrap();
+    let t = parse_time("+5±2m", TimeCtx::now()).unwrap();
     assert_eq!(t.offset, Some(Duration::minutes(5)));
     let u = t.uncertainty.unwrap();
     assert_eq!(u.seconds, 120);
     assert_eq!(u.unit, UncertaintyUnit::Minute);
 
     // relative negative offset + ascii +- with second unit
-    let t = parse_time_arg("-30+-10s", TimeCtx::now()).unwrap();
+    let t = parse_time("-30+-10s", TimeCtx::now()).unwrap();
     assert_eq!(t.offset, Some(Duration::minutes(-30)));
     let u = t.uncertainty.unwrap();
     assert_eq!(u.seconds, 10);
     assert_eq!(u.unit, UncertaintyUnit::Second);
 
     // date + day uncertainty via the date parser
-    let d = parse_date_arg("2024-03-16±1d", TimeCtx::now()).unwrap();
+    let d = parse_date("2024-03-16±1d", TimeCtx::now()).unwrap();
     assert_eq!(
         d.absolute,
         Some(chrono::NaiveDate::from_ymd_opt(2024, 3, 16).unwrap())
@@ -286,7 +268,7 @@ fn five_plus_q_flags_escalate_uncertainty() {
 #[test]
 #[cfg(feature = "native")]
 fn explicit_uncertainty_overrides_quick_uncertainty() {
-    let t = parse_time_arg("+5±30s", TimeCtx::now()).unwrap();
+    let t = parse_time("+5±30s", TimeCtx::now()).unwrap();
     let builder = TimeBuilder::now()
         .with_quick_count(3)
         .with_quick_uncertainty(3)
@@ -300,11 +282,11 @@ fn explicit_uncertainty_overrides_quick_uncertainty() {
 #[test]
 fn relative_time_sign_future_vs_past() {
     // `+N` = N minutes in the future
-    let t = parse_time_arg("+5", TimeCtx::now()).unwrap();
+    let t = parse_time("+5", TimeCtx::now()).unwrap();
     assert_eq!(t.offset, Some(Duration::minutes(5)));
 
     // `-N` = N minutes in the past
-    let t = parse_time_arg("-8", TimeCtx::now()).unwrap();
+    let t = parse_time("-8", TimeCtx::now()).unwrap();
     assert_eq!(t.offset, Some(Duration::minutes(-8)));
 }
 
@@ -312,7 +294,7 @@ fn relative_time_sign_future_vs_past() {
 
 #[test]
 fn iso_datetime_z_suffix() {
-    let t = parse_time_arg("2024-03-16T15:30:00Z", TimeCtx::now()).unwrap();
+    let t = parse_time("2024-03-16T15:30:00Z", TimeCtx::now()).unwrap();
     let dt = t.iso_instant.expect("iso_instant");
     assert_eq!(
         dt,
@@ -327,7 +309,7 @@ fn iso_datetime_z_suffix() {
 
 #[test]
 fn iso_datetime_offset_suffix() {
-    let t = parse_time_arg("2024-03-16T15:30:00+02:00", TimeCtx::now()).unwrap();
+    let t = parse_time("2024-03-16T15:30:00+02:00", TimeCtx::now()).unwrap();
     let dt = t.iso_instant.expect("iso_instant");
     // 15:30 at +02:00 ↔ 13:30 UTC.
     assert_eq!(
@@ -340,7 +322,7 @@ fn iso_datetime_offset_suffix() {
 
 #[test]
 fn iso_datetime_high_precision_fractional_seconds() {
-    let t = parse_time_arg("2024-03-16T15:30:00.123456789Z", TimeCtx::now()).unwrap();
+    let t = parse_time("2024-03-16T15:30:00.123456789Z", TimeCtx::now()).unwrap();
     let dt = t.iso_instant.expect("iso_instant");
     // Fractional seconds carry through the parse.
     assert_eq!(
@@ -352,7 +334,7 @@ fn iso_datetime_high_precision_fractional_seconds() {
 
 #[test]
 fn iso_datetime_no_tz_suffix_returns_naive() {
-    let t = parse_time_arg("2024-03-16T15:30:00", TimeCtx::now()).unwrap();
+    let t = parse_time("2024-03-16T15:30:00", TimeCtx::now()).unwrap();
     let naive = t.iso_naive.expect("iso_naive");
     assert_eq!(
         naive,
@@ -366,7 +348,7 @@ fn iso_datetime_no_tz_suffix_returns_naive() {
 
 #[test]
 fn iso_datetime_with_uncertainty_suffix() {
-    let t = parse_time_arg("2024-03-16T15:30:00Z±5m", TimeCtx::now()).unwrap();
+    let t = parse_time("2024-03-16T15:30:00Z±5m", TimeCtx::now()).unwrap();
     assert!(t.iso_instant.is_some());
     let u = t.uncertainty.expect("uncertainty");
     assert_eq!(u.seconds, 300);
@@ -395,9 +377,9 @@ fn with_mocked_today<F: FnOnce()>(today: chrono::NaiveDate, f: F) {
 
 #[test]
 #[cfg(feature = "native")]
-fn parse_date_arg_compact_apr29_uses_current_year_when_passed() {
+fn parse_date_compact_apr29_uses_current_year_when_passed() {
     with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
-        let d = parse_date_arg("apr29", TimeCtx::now()).unwrap();
+        let d = parse_date("apr29", TimeCtx::now()).unwrap();
         assert_eq!(
             d.absolute,
             Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
@@ -407,14 +389,14 @@ fn parse_date_arg_compact_apr29_uses_current_year_when_passed() {
 
 #[test]
 #[cfg(feature = "native")]
-fn parse_date_arg_compact_case_insensitive() {
+fn parse_date_compact_case_insensitive() {
     with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
-        let d = parse_date_arg("APR29", TimeCtx::now()).unwrap();
+        let d = parse_date("APR29", TimeCtx::now()).unwrap();
         assert_eq!(
             d.absolute,
             Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
         );
-        let d = parse_date_arg("Jan5", TimeCtx::now()).unwrap();
+        let d = parse_date("Jan5", TimeCtx::now()).unwrap();
         assert_eq!(
             d.absolute,
             Some(chrono::NaiveDate::from_ymd_opt(2026, 1, 5).unwrap())
@@ -424,9 +406,9 @@ fn parse_date_arg_compact_case_insensitive() {
 
 #[test]
 #[cfg(feature = "native")]
-fn parse_date_arg_compact_jun7_rolls_back_year() {
+fn parse_date_compact_jun7_rolls_back_year() {
     with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
-        let d = parse_date_arg("jun7", TimeCtx::now()).unwrap();
+        let d = parse_date("jun7", TimeCtx::now()).unwrap();
         assert_eq!(
             d.absolute,
             Some(chrono::NaiveDate::from_ymd_opt(2025, 6, 7).unwrap())
@@ -435,13 +417,13 @@ fn parse_date_arg_compact_jun7_rolls_back_year() {
 }
 
 #[test]
-fn parse_date_arg_compact_explicit_year() {
-    let d = parse_date_arg("apr29-2025", TimeCtx::now()).unwrap();
+fn parse_date_compact_explicit_year() {
+    let d = parse_date("apr29-2025", TimeCtx::now()).unwrap();
     assert_eq!(
         d.absolute,
         Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
     );
-    let d = parse_date_arg("apr29@2025", TimeCtx::now()).unwrap();
+    let d = parse_date("apr29@2025", TimeCtx::now()).unwrap();
     assert_eq!(
         d.absolute,
         Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
@@ -449,15 +431,15 @@ fn parse_date_arg_compact_explicit_year() {
 }
 
 #[test]
-fn parse_date_arg_compact_unknown_month_errors() {
-    assert!(parse_date_arg("nope29", TimeCtx::now()).is_err());
+fn parse_date_compact_unknown_month_errors() {
+    assert!(parse_date("nope29", TimeCtx::now()).is_err());
 }
 
 #[test]
 #[cfg(feature = "native")]
-fn parse_date_arg_compact_with_uncertainty_suffix() {
+fn parse_date_compact_with_uncertainty_suffix() {
     with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
-        let d = parse_date_arg("apr29±1d", TimeCtx::now()).unwrap();
+        let d = parse_date("apr29±1d", TimeCtx::now()).unwrap();
         assert_eq!(
             d.absolute,
             Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
@@ -474,7 +456,7 @@ fn parse_date_arg_compact_with_uncertainty_suffix() {
 fn compact_date_future_picks_this_year_when_upcoming() {
     // 2026-04-05: apr29+ still ahead → 2026-04-29.
     with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 4, 5).unwrap(), || {
-        let d = parse_date_arg("apr29+", TimeCtx::now()).unwrap();
+        let d = parse_date("apr29+", TimeCtx::now()).unwrap();
         assert_eq!(
             d.absolute,
             Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
@@ -488,7 +470,7 @@ fn compact_date_future_picks_this_year_when_upcoming() {
 fn compact_date_future_picks_next_year_when_passed() {
     // 2026-05-05: apr29+ already past → 2027-04-29.
     with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
-        let d = parse_date_arg("apr29+", TimeCtx::now()).unwrap();
+        let d = parse_date("apr29+", TimeCtx::now()).unwrap();
         assert_eq!(
             d.absolute,
             Some(chrono::NaiveDate::from_ymd_opt(2027, 4, 29).unwrap())
@@ -503,7 +485,7 @@ fn compact_date_future_at_tie_picks_next_year() {
     with_mocked_today(
         chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap(),
         || {
-            let d = parse_date_arg("apr29+", TimeCtx::now()).unwrap();
+            let d = parse_date("apr29+", TimeCtx::now()).unwrap();
             assert_eq!(
                 d.absolute,
                 Some(chrono::NaiveDate::from_ymd_opt(2027, 4, 29).unwrap())
@@ -517,7 +499,7 @@ fn compact_date_future_at_tie_picks_next_year() {
 fn compact_date_past_picks_this_year_when_already_passed() {
     // 2026-05-05: apr29- already past → 2026-04-29.
     with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
-        let d = parse_date_arg("apr29-", TimeCtx::now()).unwrap();
+        let d = parse_date("apr29-", TimeCtx::now()).unwrap();
         assert_eq!(
             d.absolute,
             Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
@@ -531,7 +513,7 @@ fn compact_date_past_picks_this_year_when_already_passed() {
 fn compact_date_past_picks_last_year_when_upcoming() {
     // 2026-04-05: apr29- not yet → 2025-04-29.
     with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 4, 5).unwrap(), || {
-        let d = parse_date_arg("apr29-", TimeCtx::now()).unwrap();
+        let d = parse_date("apr29-", TimeCtx::now()).unwrap();
         assert_eq!(
             d.absolute,
             Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
@@ -546,7 +528,7 @@ fn compact_date_past_at_tie_picks_last_year() {
     with_mocked_today(
         chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap(),
         || {
-            let d = parse_date_arg("apr29-", TimeCtx::now()).unwrap();
+            let d = parse_date("apr29-", TimeCtx::now()).unwrap();
             assert_eq!(
                 d.absolute,
                 Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
@@ -560,7 +542,7 @@ fn compact_date_past_at_tie_picks_last_year() {
 fn compact_date_explicit_year_ignores_direction() {
     // Year-pinned compact form: direction marker has nothing to disambiguate.
     with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
-        let d = parse_date_arg("apr29-2025+", TimeCtx::now()).unwrap();
+        let d = parse_date("apr29-2025+", TimeCtx::now()).unwrap();
         assert_eq!(
             d.absolute,
             Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
@@ -574,7 +556,7 @@ fn iso_datetime_malformed_errors() {
     // Looks like an ISO datetime (date prefix + T) but the time portion is
     // garbage — we surface a structured error instead of falling through to
     // the time-only branches and returning a confusing message.
-    assert!(parse_time_arg("2024-03-16Tnotatime", TimeCtx::now()).is_err());
+    assert!(parse_time("2024-03-16Tnotatime", TimeCtx::now()).is_err());
 }
 
 // ── direction suffix (`+` / `-`) ─────────────────────────────────────────
@@ -587,21 +569,21 @@ fn iso_datetime_malformed_errors() {
 
 #[test]
 fn time_direction_suffix_plus_on_bare_hour() {
-    let t = parse_time_arg("3+", TimeCtx::now()).unwrap();
+    let t = parse_time("3+", TimeCtx::now()).unwrap();
     assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(3, 0, 0).unwrap()));
     assert_eq!(t.direction, Some(Direction::Future));
 }
 
 #[test]
 fn time_direction_suffix_minus_on_bare_hour() {
-    let t = parse_time_arg("3-", TimeCtx::now()).unwrap();
+    let t = parse_time("3-", TimeCtx::now()).unwrap();
     assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(3, 0, 0).unwrap()));
     assert_eq!(t.direction, Some(Direction::Past));
 }
 
 #[test]
 fn time_direction_suffix_on_hh_mm() {
-    let t = parse_time_arg("18:30+", TimeCtx::now()).unwrap();
+    let t = parse_time("18:30+", TimeCtx::now()).unwrap();
     assert_eq!(
         t.absolute,
         Some(NaiveTime::from_hms_opt(18, 30, 0).unwrap())
@@ -611,17 +593,17 @@ fn time_direction_suffix_on_hh_mm() {
 
 #[test]
 fn time_direction_suffix_on_hhmm_compact() {
-    let t = parse_time_arg("0830-", TimeCtx::now()).unwrap();
+    let t = parse_time("0830-", TimeCtx::now()).unwrap();
     assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(8, 30, 0).unwrap()));
     assert_eq!(t.direction, Some(Direction::Past));
 }
 
 #[test]
 fn time_direction_suffix_on_meridian() {
-    let t = parse_time_arg("9am+", TimeCtx::now()).unwrap();
+    let t = parse_time("9am+", TimeCtx::now()).unwrap();
     assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()));
     assert_eq!(t.direction, Some(Direction::Future));
-    let t = parse_time_arg("9pm-", TimeCtx::now()).unwrap();
+    let t = parse_time("9pm-", TimeCtx::now()).unwrap();
     assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(21, 0, 0).unwrap()));
     assert_eq!(t.direction, Some(Direction::Past));
 }
@@ -630,10 +612,10 @@ fn time_direction_suffix_on_meridian() {
 fn time_direction_suffix_on_relative_form() {
     // A relative offset is already directional; the parser still surfaces
     // the hint, but the apply layer ignores it.
-    let t = parse_time_arg("+5+", TimeCtx::now()).unwrap();
+    let t = parse_time("+5+", TimeCtx::now()).unwrap();
     assert_eq!(t.offset, Some(Duration::minutes(5)));
     assert_eq!(t.direction, Some(Direction::Future));
-    let t = parse_time_arg("-30-", TimeCtx::now()).unwrap();
+    let t = parse_time("-30-", TimeCtx::now()).unwrap();
     assert_eq!(t.offset, Some(Duration::minutes(-30)));
     assert_eq!(t.direction, Some(Direction::Past));
 }
@@ -642,14 +624,14 @@ fn time_direction_suffix_on_relative_form() {
 fn time_direction_suffix_after_uncertainty() {
     // Direction marker must be the *very last* character — strip it before
     // peeling the uncertainty body.
-    let t = parse_time_arg("3±5m+", TimeCtx::now()).unwrap();
+    let t = parse_time("3±5m+", TimeCtx::now()).unwrap();
     assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(3, 0, 0).unwrap()));
     assert_eq!(t.direction, Some(Direction::Future));
     let u = t.uncertainty.expect("uncertainty");
     assert_eq!(u.seconds, 300);
 
     // ASCII `+-` form for uncertainty + trailing `-` direction.
-    let t = parse_time_arg("3+-5m-", TimeCtx::now()).unwrap();
+    let t = parse_time("3+-5m-", TimeCtx::now()).unwrap();
     assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(3, 0, 0).unwrap()));
     assert_eq!(t.direction, Some(Direction::Past));
     let u = t.uncertainty.expect("uncertainty");
@@ -661,10 +643,10 @@ fn time_direction_suffix_on_iso_instant() {
     // Hint is parsed but the apply layer treats pinned instants as
     // already-resolved. Verify it surfaces on the parse shape and the
     // underlying instant is unchanged.
-    let t = parse_time_arg("2024-03-16T15:30:00Z+", TimeCtx::now()).unwrap();
+    let t = parse_time("2024-03-16T15:30:00Z+", TimeCtx::now()).unwrap();
     assert!(t.iso_instant.is_some());
     assert_eq!(t.direction, Some(Direction::Future));
-    let t = parse_time_arg("2024-03-16T15:30:00-", TimeCtx::now()).unwrap();
+    let t = parse_time("2024-03-16T15:30:00-", TimeCtx::now()).unwrap();
     assert!(t.iso_naive.is_some());
     assert_eq!(t.direction, Some(Direction::Past));
 }
@@ -672,40 +654,40 @@ fn time_direction_suffix_on_iso_instant() {
 #[test]
 fn time_direction_suffix_double_marker_errors() {
     // `+-` / `-+` at the tail are explicit conflicts.
-    assert!(parse_time_arg("3+-", TimeCtx::now()).is_err());
-    assert!(parse_time_arg("3-+", TimeCtx::now()).is_err());
-    assert!(parse_time_arg("3++", TimeCtx::now()).is_err());
-    assert!(parse_time_arg("3--", TimeCtx::now()).is_err());
+    assert!(parse_time("3+-", TimeCtx::now()).is_err());
+    assert!(parse_time("3-+", TimeCtx::now()).is_err());
+    assert!(parse_time("3++", TimeCtx::now()).is_err());
+    assert!(parse_time("3--", TimeCtx::now()).is_err());
 }
 
 #[test]
 fn time_direction_bare_marker_errors() {
-    assert!(parse_time_arg("+", TimeCtx::now()).is_err());
-    assert!(parse_time_arg("-", TimeCtx::now()).is_err());
+    assert!(parse_time("+", TimeCtx::now()).is_err());
+    assert!(parse_time("-", TimeCtx::now()).is_err());
 }
 
 #[test]
 fn time_no_direction_on_unsuffixed_input() {
-    let t = parse_time_arg("3", TimeCtx::now()).unwrap();
+    let t = parse_time("3", TimeCtx::now()).unwrap();
     assert_eq!(t.direction, None);
-    let t = parse_time_arg("15:30", TimeCtx::now()).unwrap();
+    let t = parse_time("15:30", TimeCtx::now()).unwrap();
     assert_eq!(t.direction, None);
-    let t = parse_time_arg("+5", TimeCtx::now()).unwrap();
+    let t = parse_time("+5", TimeCtx::now()).unwrap();
     assert_eq!(t.direction, None);
-    let t = parse_time_arg("2024-03-16T15:30:00Z", TimeCtx::now()).unwrap();
+    let t = parse_time("2024-03-16T15:30:00Z", TimeCtx::now()).unwrap();
     assert_eq!(t.direction, None);
 }
 
 #[test]
 fn date_direction_suffix_on_iso_date() {
-    let d = parse_date_arg("2024-03-16+", TimeCtx::now()).unwrap();
+    let d = parse_date("2024-03-16+", TimeCtx::now()).unwrap();
     assert_eq!(
         d.absolute,
         Some(chrono::NaiveDate::from_ymd_opt(2024, 3, 16).unwrap())
     );
     assert_eq!(d.direction, Some(Direction::Future));
 
-    let d = parse_date_arg("2024-03-16-", TimeCtx::now()).unwrap();
+    let d = parse_date("2024-03-16-", TimeCtx::now()).unwrap();
     assert_eq!(
         d.absolute,
         Some(chrono::NaiveDate::from_ymd_opt(2024, 3, 16).unwrap())
@@ -717,17 +699,17 @@ fn date_direction_suffix_on_iso_date() {
 fn date_direction_suffix_on_relative_offset() {
     // Like time, a relative date offset is already directional; parser
     // surfaces the hint, apply layer ignores it.
-    let d = parse_date_arg("+1+", TimeCtx::now()).unwrap();
+    let d = parse_date("+1+", TimeCtx::now()).unwrap();
     assert_eq!(d.days_offset, 1);
     assert_eq!(d.direction, Some(Direction::Future));
-    let d = parse_date_arg("-1-", TimeCtx::now()).unwrap();
+    let d = parse_date("-1-", TimeCtx::now()).unwrap();
     assert_eq!(d.days_offset, -1);
     assert_eq!(d.direction, Some(Direction::Past));
 }
 
 #[test]
 fn date_direction_suffix_after_uncertainty() {
-    let d = parse_date_arg("2024-03-16±1d+", TimeCtx::now()).unwrap();
+    let d = parse_date("2024-03-16±1d+", TimeCtx::now()).unwrap();
     assert_eq!(d.direction, Some(Direction::Future));
     let u = d.uncertainty.expect("uncertainty");
     assert_eq!(u.seconds, 86400);
@@ -735,18 +717,18 @@ fn date_direction_suffix_after_uncertainty() {
 
 #[test]
 fn date_direction_suffix_double_marker_errors() {
-    assert!(parse_date_arg("2024-03-16+-", TimeCtx::now()).is_err());
-    assert!(parse_date_arg("2024-03-16-+", TimeCtx::now()).is_err());
-    assert!(parse_date_arg("+1++", TimeCtx::now()).is_err());
+    assert!(parse_date("2024-03-16+-", TimeCtx::now()).is_err());
+    assert!(parse_date("2024-03-16-+", TimeCtx::now()).is_err());
+    assert!(parse_date("+1++", TimeCtx::now()).is_err());
 }
 
 #[test]
 fn date_no_direction_on_unsuffixed_input() {
-    let d = parse_date_arg("2024-03-16", TimeCtx::now()).unwrap();
+    let d = parse_date("2024-03-16", TimeCtx::now()).unwrap();
     assert_eq!(d.direction, None);
-    let d = parse_date_arg("+1", TimeCtx::now()).unwrap();
+    let d = parse_date("+1", TimeCtx::now()).unwrap();
     assert_eq!(d.direction, None);
-    let d = parse_date_arg("0", TimeCtx::now()).unwrap();
+    let d = parse_date("0", TimeCtx::now()).unwrap();
     assert_eq!(d.direction, None);
 }
 
@@ -754,20 +736,13 @@ fn date_no_direction_on_unsuffixed_input() {
 
 #[test]
 fn date_day_words_are_relative_offsets() {
+    assert_eq!(parse_date("today", TimeCtx::now()).unwrap().days_offset, 0);
     assert_eq!(
-        parse_date_arg("today", TimeCtx::now()).unwrap().days_offset,
-        0
-    );
-    assert_eq!(
-        parse_date_arg("yesterday", TimeCtx::now())
-            .unwrap()
-            .days_offset,
+        parse_date("yesterday", TimeCtx::now()).unwrap().days_offset,
         -1
     );
     assert_eq!(
-        parse_date_arg("Tomorrow", TimeCtx::now())
-            .unwrap()
-            .days_offset,
+        parse_date("Tomorrow", TimeCtx::now()).unwrap().days_offset,
         1
     );
 }
@@ -776,7 +751,7 @@ fn date_day_words_are_relative_offsets() {
 /// direction marker is accepted but inert.
 #[test]
 fn date_day_words_ignore_direction_marker() {
-    let d = parse_date_arg("yesterday-", TimeCtx::now()).unwrap();
+    let d = parse_date("yesterday-", TimeCtx::now()).unwrap();
     assert_eq!(d.days_offset, -1);
     assert_eq!(d.direction, Some(Direction::Past));
     assert!(d.absolute.is_none());
@@ -785,7 +760,7 @@ fn date_day_words_ignore_direction_marker() {
 /// Day words need no clock: they resolve to an offset, not a date.
 #[test]
 fn date_day_words_need_no_reference() {
-    let d = parse_date_arg("yesterday", TimeCtx::default()).unwrap();
+    let d = parse_date("yesterday", TimeCtx::default()).unwrap();
     assert_eq!(d.days_offset, -1);
 }
 
@@ -799,15 +774,15 @@ fn weekday_bare_resolves_to_most_recent_past() {
     let tue = chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
     let ctx = TimeCtx::at(tue.and_hms_opt(12, 0, 0).unwrap());
     assert_eq!(
-        parse_date_arg("sunday", ctx).unwrap().absolute,
+        parse_date("sunday", ctx).unwrap().absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 5, 3)
     );
     assert_eq!(
-        parse_date_arg("sun", ctx).unwrap().absolute,
+        parse_date("sun", ctx).unwrap().absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 5, 3)
     );
     assert_eq!(
-        parse_date_arg("FRIDAY", ctx).unwrap().absolute,
+        parse_date("FRIDAY", ctx).unwrap().absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 5, 1)
     );
 }
@@ -818,7 +793,7 @@ fn weekday_bare_resolves_to_most_recent_past() {
 fn weekday_bare_at_tie_picks_the_reference_day() {
     let tue = chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
     let ctx = TimeCtx::at(tue.and_hms_opt(12, 0, 0).unwrap());
-    assert_eq!(parse_date_arg("tuesday", ctx).unwrap().absolute, Some(tue));
+    assert_eq!(parse_date("tuesday", ctx).unwrap().absolute, Some(tue));
 }
 
 /// A trailing marker is strict in both directions, so on a Tuesday
@@ -828,15 +803,15 @@ fn weekday_direction_marker_is_strict() {
     let tue = chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
     let ctx = TimeCtx::at(tue.and_hms_opt(12, 0, 0).unwrap());
     assert_eq!(
-        parse_date_arg("tuesday-", ctx).unwrap().absolute,
+        parse_date("tuesday-", ctx).unwrap().absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 4, 28)
     );
     assert_eq!(
-        parse_date_arg("tuesday+", ctx).unwrap().absolute,
+        parse_date("tuesday+", ctx).unwrap().absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 5, 12)
     );
     assert_eq!(
-        parse_date_arg("sunday+", ctx).unwrap().absolute,
+        parse_date("sunday+", ctx).unwrap().absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 5, 10)
     );
 }
@@ -848,11 +823,11 @@ fn weekday_nearest_default_picks_the_closer_side() {
     let tue = chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
     let ctx = TimeCtx::at(tue.and_hms_opt(12, 0, 0).unwrap()).facing(DefaultDirection::Nearest);
     assert_eq!(
-        parse_date_arg("sunday", ctx).unwrap().absolute,
+        parse_date("sunday", ctx).unwrap().absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 5, 3)
     );
     assert_eq!(
-        parse_date_arg("friday", ctx).unwrap().absolute,
+        parse_date("friday", ctx).unwrap().absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 5, 8)
     );
 }
@@ -862,7 +837,7 @@ fn weekday_future_default_looks_forward() {
     let tue = chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
     let ctx = TimeCtx::at(tue.and_hms_opt(12, 0, 0).unwrap()).facing(DefaultDirection::Future);
     assert_eq!(
-        parse_date_arg("sunday", ctx).unwrap().absolute,
+        parse_date("sunday", ctx).unwrap().absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 5, 10)
     );
 }
@@ -872,7 +847,7 @@ fn weekday_future_default_looks_forward() {
 #[test]
 fn weekday_without_reference_errors() {
     assert!(matches!(
-        parse_date_arg("sunday", TimeCtx::default()),
+        parse_date("sunday", TimeCtx::default()),
         Err(ParseError::InvalidTime(_))
     ));
 }
@@ -890,18 +865,18 @@ fn compact_date_resolves_against_the_supplied_reference() {
             .unwrap(),
     );
     assert_eq!(
-        parse_date_arg("jun7", ctx).unwrap().absolute,
+        parse_date("jun7", ctx).unwrap().absolute,
         chrono::NaiveDate::from_ymd_opt(2025, 6, 7)
     );
     assert_eq!(
-        parse_date_arg("jun7", ctx.facing(DefaultDirection::Nearest))
+        parse_date("jun7", ctx.facing(DefaultDirection::Nearest))
             .unwrap()
             .absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 6, 7)
     );
 }
 
-// ── parse_time_arg falls back to date parsing ───────────────────────────
+// ── parse_time falls back to date parsing ───────────────────────────
 
 /// Half one of da-0gs4: a caller wanting "either a time or a date" makes
 /// one call. Day-shaped input comes back in `TimeArg::date`.
@@ -910,22 +885,22 @@ fn time_arg_falls_back_to_date_parsing() {
     let tue = chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
     let ctx = TimeCtx::at(tue.and_hms_opt(12, 0, 0).unwrap());
 
-    let t = parse_time_arg("sunday", ctx).unwrap();
+    let t = parse_time("sunday", ctx).unwrap();
     assert_eq!(
         t.date.expect("date fallback").absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 5, 3)
     );
 
-    let t = parse_time_arg("yesterday", ctx).unwrap();
+    let t = parse_time("yesterday", ctx).unwrap();
     assert_eq!(t.date.expect("date fallback").days_offset, -1);
 
-    let t = parse_time_arg("2024-03-16", ctx).unwrap();
+    let t = parse_time("2024-03-16", ctx).unwrap();
     assert_eq!(
         t.date.expect("date fallback").absolute,
         chrono::NaiveDate::from_ymd_opt(2024, 3, 16)
     );
 
-    let t = parse_time_arg("apr29", ctx).unwrap();
+    let t = parse_time("apr29", ctx).unwrap();
     assert_eq!(
         t.date.expect("date fallback").absolute,
         chrono::NaiveDate::from_ymd_opt(2026, 4, 29)
@@ -937,11 +912,11 @@ fn time_arg_falls_back_to_date_parsing() {
 fn time_arg_clock_forms_beat_the_date_fallback() {
     let ctx = TimeCtx::now();
     assert_eq!(
-        parse_time_arg("+1", ctx).unwrap().offset,
+        parse_time("+1", ctx).unwrap().offset,
         Some(Duration::minutes(1))
     );
-    assert!(parse_time_arg("+1", ctx).unwrap().date.is_none());
-    assert!(parse_time_arg("1513", ctx).unwrap().date.is_none());
+    assert!(parse_time("+1", ctx).unwrap().date.is_none());
+    assert!(parse_time("1513", ctx).unwrap().date.is_none());
 }
 
 /// da-4h7k's guard survives the fallback: an out-of-range bare integer
@@ -949,8 +924,8 @@ fn time_arg_clock_forms_beat_the_date_fallback() {
 /// a 2500-day offset.
 #[test]
 fn time_arg_invalid_clock_integer_does_not_reach_date_fallback() {
-    assert!(parse_time_arg("2500", TimeCtx::now()).is_err());
-    assert!(parse_time_arg("9999", TimeCtx::now()).is_err());
+    assert!(parse_time("2500", TimeCtx::now()).is_err());
+    assert!(parse_time("9999", TimeCtx::now()).is_err());
 }
 
 /// Both suffixes survive the hand-off to the date parser, in the usual
@@ -959,7 +934,7 @@ fn time_arg_invalid_clock_integer_does_not_reach_date_fallback() {
 fn time_arg_date_fallback_keeps_direction_and_uncertainty() {
     let tue = chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
     let ctx = TimeCtx::at(tue.and_hms_opt(12, 0, 0).unwrap());
-    let t = parse_time_arg("tuesday±1d-", ctx).unwrap();
+    let t = parse_time("tuesday±1d-", ctx).unwrap();
     assert_eq!(t.direction, Some(Direction::Past));
     assert_eq!(t.uncertainty.expect("uncertainty").seconds, 86_400);
     assert_eq!(

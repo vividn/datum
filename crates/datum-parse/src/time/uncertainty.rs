@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ParseError, Result};
-use crate::time::parse_duration_str::{parse_iso_duration, split_unit};
+use crate::time::dur::{parse_iso_duration, split_unit};
 
 /// Display granularity of an uncertainty. An input of `±5m` is stored as
 /// `seconds = 300` + `unit = Minute` so round-tripping preserves the
