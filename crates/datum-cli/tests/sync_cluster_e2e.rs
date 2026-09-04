@@ -9,8 +9,8 @@
 //! installations ("client A" and "client B").
 //!
 //! Scenario coverage (matches da-35mz's acceptance):
-//! 1. Two-client baseline: both register, push, pull; hash sets
-//!    converge under one shared cluster_id.
+//! 1. Two-client baseline: both register, push, pull; the two row
+//!    sets converge, column for column, under one shared cluster_id.
 //! 2. Purge propagation: A's `db purge --cluster` bumps server
 //!    generation; B's next sync surfaces the "cluster forked"
 //!    message — not the raw protocol mismatch.
@@ -29,6 +29,19 @@
 //!    a batch straddling a bump neither applies its old rows nor
 //!    rewinds the device's generation, and a restore-bump reconciles
 //!    to the restored snapshot instead of re-merging what preceded it.
+//!
+//! Convergence here is asserted on row CONTENT, not row count
+//! (da-0kmn). `live_rows` says two devices hold the same NUMBER of
+//! rows; `assert_same_content` says they hold the same ROWS — every
+//! column of every live entry, keyed on `hid`. Loss shows up in a
+//! count and corruption does not, and corruption is half the question
+//! this suite exists to answer. Scenarios that expect the two sides to
+//! DIFFER assert the specific difference instead (the pull changed
+//! nothing; the one row that crossed is the other device's own,
+//! unchanged). The file's own control,
+//! `content_comparison_sees_the_divergence_counts_and_hashes_cannot`,
+//! is the pair of databases that satisfies every count *and* every
+//! content_hash while holding materially different data.
 //!
 //! Each "client" gets its own DATUM_HOME (so the auto-managed
 //! `device_id` file and the per-host token/master-key live on
@@ -215,24 +228,42 @@ fn open_named_db(home: &Path, file: &str) -> Db {
     Db::open(path.to_str().unwrap()).unwrap()
 }
 
+/// The fixture row every scenario syncs around.
+///
+/// It deliberately carries substance in the columns the `content_hash`
+/// does NOT cover — the zone and its offset, the occur-time uncertainty,
+/// the location triple, `raw_input`. The hash preimage is seven fields
+/// (`field · occur · dur · state · data · following_state ·
+/// deleted-marker`, docs/sync-protocol.md §Content hash); everything else
+/// on the row rides outside it. A fixture that left those columns empty
+/// would let [`assert_same_content`] agree for the same reason
+/// [`live_hashes`] does, and measure nothing the hash had not already
+/// settled.
 fn make_entry(field: &str, offset_secs: i64, device: &str) -> Entry {
     let base = Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap();
     let at = base + Duration::seconds(offset_secs);
-    let t = DatumTime {
-        utc: at,
-        offset_minutes: 0,
-        timezone: Some("UTC".to_string()),
-        uncertainty: None,
-    };
+    // A real zone, not UTC, so `occur_time_offset` and `occur_time_tz`
+    // both hold a value that a mangled round-trip could lose.
+    let mut t = DatumTime::from_utc_and_tz(at, "America/Chicago").expect("known zone");
+    t.uncertainty = Some("PT1M".to_string());
     let mut e = Entry::new(
         field,
         Verb::Point,
         Some(serde_json::json!(1)),
-        None,
+        Some(serde_json::json!({ "cup": { "v": 250, "u": "ml" } })),
         Some(t),
         None,
         device,
     );
+    e.lat = Some(41.8781);
+    e.lon = Some(-87.6298);
+    e.location = Some("Chicago".to_string());
+    e.raw_input = Some(format!("{field} 1"));
+    // `user_asserted_last_state` is the one column left deliberately
+    // unset: sync drops it (da-nwci — `upsert_lww` omits it from both its
+    // INSERT list and its ON CONFLICT SET list), so populating it here
+    // would fail s1 today. Set it to reproduce that bug, and to gain the
+    // regression test once it is fixed.
     e.create_time = at;
     e.modify_time = at;
     e
@@ -270,6 +301,113 @@ fn live_hashes(db: &Db) -> Vec<String> {
         .collect()
 }
 
+/// Every live row in full, as the canonical JSON projection of the
+/// `Entry` it maps to, ordered by `hid` — the identity the merge keys on.
+///
+/// [`live_rows`] proves two devices hold the same NUMBER of rows; this
+/// proves they hold the same ROWS. Loss shows up in a count; corruption
+/// does not — a row that arrives with a mangled state, a lost `dur`, a
+/// dropped data key or a wrong occur_time keeps the count exactly where
+/// it was — and corruption is the half of the question this suite exists
+/// to answer.
+///
+/// [`live_hashes`] is not enough either, and the gap is not incidental:
+/// the `content_hash` preimage is seven fields, and `lat`/`lon`/
+/// `location`, `occur_time_offset`/`occur_time_tz`, both uncertainties,
+/// `verb`, `raw_input`, `alias_chain`, `parser_version`,
+/// `user_asserted_last_state`, `extra_metadata` and the identity columns
+/// are all deliberately outside it (docs/sync-protocol.md §Content hash).
+/// Two rows with equal hashes can still differ in substance.
+///
+/// Projecting through `row_to_entry_public` rather than reading raw
+/// columns is what makes the comparison total *and* fair: total because
+/// every stored column is an `Entry` field, so a column added later is
+/// compared without anyone having to remember this helper; fair because
+/// the mapper applies the column-level normalisations (a `raw_input` of
+/// `""` reads back as `None`) that the local insert path and the sync
+/// apply path spell differently for the same fact.
+fn live_content(db: &Db) -> Vec<serde_json::Value> {
+    let mut stmt = db
+        .conn()
+        .prepare("SELECT * FROM entries WHERE deleted_at IS NULL ORDER BY hid")
+        .unwrap();
+    let rows: Vec<_> = stmt
+        .query_map([], datum_core::db::row_to_entry_public)
+        .unwrap()
+        .map(|e| serde_json::to_value(e.unwrap()).unwrap())
+        .collect();
+    rows
+}
+
+/// The one live row whose `field` is `field`, in full. Panics unless
+/// exactly one matches — the scenarios that assert a *difference* between
+/// two devices name the row they mean, and a helper that quietly picked
+/// the first of several would let the assertion drift off its subject.
+fn row_for(db: &Db, field: &str) -> serde_json::Value {
+    let mut matches: Vec<serde_json::Value> = live_content(db)
+        .into_iter()
+        .filter(|row| row["field"].as_str() == Some(field))
+        .collect();
+    assert_eq!(
+        matches.len(),
+        1,
+        "expected exactly one live `{field}` row, found {}",
+        matches.len(),
+    );
+    matches.pop().unwrap()
+}
+
+/// Assert two devices converged: same rows, keyed on `hid`, equal in
+/// every column.
+///
+/// Reports the first divergence precisely — which entry, which columns,
+/// both values — because a bare `assert_eq!` on two row vectors prints
+/// two walls of JSON and leaves the reader to diff them by eye.
+#[track_caller]
+fn assert_same_content(label_a: &str, db_a: &Db, label_b: &str, db_b: &Db) {
+    let rows_a = live_content(db_a);
+    let rows_b = live_content(db_b);
+    let hids = |rows: &[serde_json::Value]| -> Vec<String> {
+        rows.iter()
+            .map(|r| r["hid"].as_str().unwrap_or("<no hid>").to_string())
+            .collect()
+    };
+    assert_eq!(
+        hids(&rows_a),
+        hids(&rows_b),
+        "{label_a} and {label_b} hold different entries \
+         ({label_a} fields {:?}, {label_b} fields {:?})",
+        live_fields(db_a),
+        live_fields(db_b),
+    );
+    for (a, b) in rows_a.iter().zip(&rows_b) {
+        if a == b {
+            continue;
+        }
+        let (obj_a, obj_b) = (a.as_object().unwrap(), b.as_object().unwrap());
+        let mut keys: Vec<&String> = obj_a.keys().chain(obj_b.keys()).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        let null = serde_json::Value::Null;
+        let diffs: Vec<String> = keys
+            .into_iter()
+            .filter(|k| obj_a.get(*k) != obj_b.get(*k))
+            .map(|k| {
+                format!(
+                    "  {k}: {label_a}={} {label_b}={}",
+                    obj_a.get(k).unwrap_or(&null),
+                    obj_b.get(k).unwrap_or(&null),
+                )
+            })
+            .collect();
+        panic!(
+            "{label_a} and {label_b} disagree on entry {}:\n{}",
+            a["hid"].as_str().unwrap_or("<no hid>"),
+            diffs.join("\n"),
+        );
+    }
+}
+
 fn read_server_cluster_generation(relay: &StubRelay, cluster_id: &str) -> i64 {
     let conn = relay.state.db.lock().unwrap();
     conn.query_row(
@@ -288,6 +426,58 @@ fn cluster_count_on_server(relay: &StubRelay) -> i64 {
         |r| r.get(0),
     )
     .unwrap()
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// THE CONTROL — the divergence a count, and a hash, cannot see
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Two devices, one row each, same `hid`, same count, same
+/// `content_hash` — and a different zone, offset, uncertainty and
+/// location. That is corruption: the row is still there, still the same
+/// entry, and no longer says the same thing. Every count in this file
+/// passes on it, and so does the hash the changeset itself agrees on,
+/// because none of those four columns are in the hash preimage
+/// (docs/sync-protocol.md §Content hash).
+///
+/// This is why [`live_content`] exists, and the guard that keeps it
+/// honest: if the projection ever narrowed back to what the hash already
+/// covers, this test is what would notice.
+#[test]
+fn content_comparison_sees_the_divergence_counts_and_hashes_cannot() {
+    let tmp = TempDir::new().expect("mk tmp");
+    let db_a = open_named_db(tmp.path(), "a.db");
+    let db_b = open_named_db(tmp.path(), "b.db");
+
+    let entry = make_entry("coffee", 0, "dev-A");
+    db_a.insert_entry(&entry).unwrap();
+
+    // The same row as it would look after a lossy round-trip: same
+    // identity, same hashed substance, four columns quietly changed.
+    let mut mangled = entry.clone();
+    mangled.location = Some("Berlin".to_string());
+    let occur = mangled.occur_time.as_mut().unwrap();
+    occur.timezone = Some("Europe/Berlin".to_string());
+    occur.offset_minutes = 120;
+    occur.uncertainty = None;
+    db_b.insert_entry(&mangled).unwrap();
+
+    assert_eq!(live_rows(&db_a), live_rows(&db_b), "the counts agree");
+    assert_eq!(
+        live_hashes(&db_a),
+        live_hashes(&db_b),
+        "and so do the content_hashes",
+    );
+
+    let (a, b) = (live_content(&db_a), live_content(&db_b));
+    assert_eq!(
+        a[0]["hid"], b[0]["hid"],
+        "one entry, not two — so this is \
+         corruption of a row rather than a row gone missing"
+    );
+    assert_ne!(a, b, "and the content comparison is what sees it");
+    assert_ne!(a[0]["location"], b[0]["location"]);
+    assert_ne!(a[0]["occur_time"], b[0]["occur_time"]);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -322,11 +512,7 @@ fn s1_two_client_baseline_converges_under_one_cluster() {
 
     assert_eq!(live_rows(&db_a), 2, "A: own + B's row");
     assert_eq!(live_rows(&db_b), 2, "B: own + A's row");
-    assert_eq!(
-        live_hashes(&db_a),
-        live_hashes(&db_b),
-        "both devices must converge on the same row set"
-    );
+    assert_same_content("A", &db_a, "B", &db_b);
 
     let cid_a = sync_state::get_cluster_id(&db_a).unwrap().unwrap();
     let cid_b = sync_state::get_cluster_id(&db_b).unwrap().unwrap();
@@ -363,6 +549,7 @@ fn s2_purge_cluster_propagates_via_generation_mismatch() {
     env.use_b();
     run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_b).unwrap();
     assert_eq!(live_rows(&db_b), 1, "B pulled A's row");
+    assert_same_content("A", &db_a, "B", &db_b);
 
     let cluster_id = sync_state::get_cluster_id(&db_a).unwrap().unwrap();
     assert_eq!(read_server_cluster_generation(&relay, &cluster_id), 0);
@@ -427,6 +614,7 @@ fn s3_restore_cluster_propagates_via_generation_mismatch() {
     run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_a).unwrap();
     env.use_b();
     run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_b).unwrap();
+    assert_same_content("A", &db_a, "B", &db_b);
     let cluster_id = sync_state::get_cluster_id(&db_a).unwrap().unwrap();
 
     // Simulate `db restore --cluster`'s server-side effect from A.
@@ -510,17 +698,25 @@ fn s4_multi_db_per_user_isolates_clusters() {
     // pull-handler filters by (user_id, cluster_id), so even though
     // both DBs auth as the same user, the cluster_id segregates the
     // changesets.
+    //
+    // The scenario expects the two sides to DIFFER, so the assertion is
+    // the specific difference rather than a count: the pull left the
+    // work DB exactly as it found it, byte for byte, and nothing of
+    // personal's crossed over.
     env.use_b();
+    let work_before = live_content(&db_work);
     run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_work)
         .expect("work pull");
-    let work_fields = live_fields(&db_work);
-    assert!(
-        !work_fields.contains(&"coffee".to_string()),
-        "work cluster must not see personal's coffee; got {work_fields:?}",
+    assert_eq!(
+        live_content(&db_work),
+        work_before,
+        "a pull on the work cluster must change nothing: it holds its own \
+         standup row untouched and none of personal's",
     );
-    assert!(
-        work_fields.contains(&"standup".to_string()),
-        "work cluster still holds its own row; got {work_fields:?}",
+    assert_eq!(
+        live_fields(&db_work),
+        vec!["standup".to_string()],
+        "and the row it holds is still its own",
     );
 }
 
@@ -580,12 +776,16 @@ fn s6_db_name_default_isolates_then_cluster_override_merges() {
     );
 
     // Isolation: beta pulling its own cluster never sees alpha's coffee.
+    // Stated as the specific difference — the pull left beta exactly as
+    // it was — rather than as the absence of one field name.
     env.use_b();
+    let beta_before = live_content(&db_beta);
     run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_beta)
         .expect("beta pull pre-merge");
-    assert!(
-        !live_fields(&db_beta).contains(&"coffee".to_string()),
-        "beta cluster must not see alpha's coffee before merge",
+    assert_eq!(
+        live_content(&db_beta),
+        beta_before,
+        "beta's own cluster holds nothing of alpha's, so the pull changes nothing",
     );
 
     // Merge: re-bind beta.db to cluster `alpha` (the `sync login
@@ -598,6 +798,11 @@ fn s6_db_name_default_isolates_then_cluster_override_merges() {
     assert!(
         merged.contains(&"coffee".to_string()) && merged.contains(&"standup".to_string()),
         "after --cluster alpha, beta holds both rows; got {merged:?}",
+    );
+    assert_eq!(
+        row_for(&db_beta, "coffee"),
+        row_for(&db_alpha, "coffee"),
+        "and the coffee row it gained is alpha's own, unchanged in transit",
     );
 }
 
@@ -730,6 +935,7 @@ fn s5_peer_recovers_from_fork_via_purge_then_sync() {
         "B must NOT re-acquire A's pre-purge row: it was written under \
          the generation the purge retired; got {b_fields:?}",
     );
+    assert_same_content("A", &db_a, "B", &db_b);
     assert_eq!(
         sync_state::get_cluster_id(&db_b).unwrap().as_deref(),
         Some("datum"),
@@ -767,6 +973,7 @@ fn s7_purge_cluster_leaves_both_devices_empty_after_sync() {
     run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_a).unwrap();
     assert_eq!(live_rows(&db_a), 2, "pre-condition: A holds both rows");
     assert_eq!(live_rows(&db_b), 2, "pre-condition: B holds both rows");
+    assert_same_content("A", &db_a, "B", &db_b);
 
     // A purges the cluster.
     let mut stdin = Cursor::new(Vec::<u8>::new());
@@ -818,6 +1025,7 @@ fn s7_purge_cluster_leaves_both_devices_empty_after_sync() {
         "B must converge on the purged cluster's state (empty); got {:?}",
         live_fields(&db_b),
     );
+    assert_same_content("A", &db_a, "B", &db_b);
 }
 
 /// The relay filters a pull by cluster, device and user — never by
@@ -888,6 +1096,13 @@ fn s7_mixed_generation_batch_ignores_the_old_rows_and_never_rewinds() {
         1,
         "an older row in the batch must not drag the device back to its generation",
     );
+    // The two sides differ by exactly one row, so the content claim is
+    // made on the row that did cross: it is A's, unchanged.
+    assert_eq!(
+        row_for(&db_b, "post-bump"),
+        row_for(&db_a, "post-bump"),
+        "the row the gate let through is A's own, not a mangled copy of it",
+    );
 
     // And the watermark moved past the skipped row: a second pull has
     // nothing left to offer, rather than re-fetching it forever.
@@ -955,6 +1170,11 @@ fn s7_restore_bump_reconciles_to_the_restored_snapshot() {
         !fields.contains(&"a-pre-restore".to_string())
             && !fields.contains(&"b-pre-restore".to_string()),
         "neither side's pre-restore rows may be merged back over the snapshot; got {fields:?}",
+    );
+    assert_eq!(
+        row_for(&db_b, "restored"),
+        row_for(&db_a, "restored"),
+        "the snapshot B adopted is A's row, unchanged in transit",
     );
 }
 
@@ -1090,11 +1310,7 @@ fn s8_replaced_server_must_not_cost_clients_their_history() {
         vec!["coffee".to_string(), "mood".to_string(), "walk".to_string()],
         "the replaced relay must carry the cluster's whole history",
     );
-    assert_eq!(
-        live_hashes(&db_c),
-        live_hashes(&db_b),
-        "the joining device must converge on the cluster's full row set",
-    );
+    assert_same_content("C", &db_c, "B", &db_b);
     assert_eq!(
         sync_state::get_cluster_id(&db_c).unwrap().as_deref(),
         Some(cluster_id.as_str()),
