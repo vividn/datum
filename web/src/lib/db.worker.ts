@@ -50,6 +50,28 @@ function openOnce(): Promise<SqliteDb> {
 }
 
 /**
+ * How long the durable open gets before the fallback takes over.
+ *
+ * Generous on purpose: a successful install is sub-second, so anything
+ * near this bound is a browser that is not going to answer at all.
+ */
+const OPEN_DEADLINE_MS = 3000;
+
+/**
+ * `promise`, but rejecting if `ms` pass with nothing settled.
+ *
+ * An install that resolves after expiry is abandoned rather than closed:
+ * there is no handle to close until it settles, and by then the memory
+ * database is the one in use.
+ */
+function withDeadline<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+	const expiry = new Promise<never>((_, reject) => {
+		setTimeout(() => reject(new Error(message)), ms);
+	});
+	return Promise.race([promise, expiry]);
+}
+
+/**
  * Open the on-device database, preferring durable storage.
  *
  * The SAH-pool VFS, not `oo1.OpfsDb`: the plain OPFS VFS needs
@@ -62,12 +84,24 @@ function openOnce(): Promise<SqliteDb> {
  * (the API is younger than the app's floor). It loses everything on reload,
  * so it says so and reports `memory` as the storage kind rather than let
  * the UI imply durability that isn't there — see $lib/BetaBanner.svelte.
+ *
+ * The deadline is what makes that fallback reachable. A browser that will
+ * not hand this worker a sync access handle does not always say so: the
+ * install can simply never settle, and a `catch` cannot fire on a promise
+ * that never rejects, so the page sits at "opening database…" forever
+ * (da-mskb). Expiry is treated exactly as a rejection is — memory, and a
+ * banner that says memory — which turns an unbounded wait into a state the
+ * UI already knows how to show.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function openPersistent(sqlite3: any): Promise<SqliteDb> {
 	if (typeof sqlite3.installOpfsSAHPoolVfs === 'function') {
 		try {
-			const pool = await sqlite3.installOpfsSAHPoolVfs({});
+			const pool: SqliteDb = await withDeadline(
+				sqlite3.installOpfsSAHPoolVfs({}),
+				OPEN_DEADLINE_MS,
+				`no sync access handle within ${OPEN_DEADLINE_MS}ms`
+			);
 			storage = 'opfs';
 			return new pool.OpfsSAHPoolDb('/datum.db');
 		} catch (e) {

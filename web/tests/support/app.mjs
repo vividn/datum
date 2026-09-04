@@ -55,10 +55,14 @@ function baseUrl() {
  * A context per test is a database per test: OPFS is partitioned by
  * context, so tests neither see each other's entries nor collide on the
  * UNIQUE slug of a field logged at the same minute.
+ *
+ * `prepare` gets the context before the first page exists, which is the
+ * only moment an init script can beat the app's own code to the browser.
  */
-export async function withApp(fn) {
+export async function withApp(fn, { prepare } = {}) {
 	const context = await browser.newContext({ timezoneId: TIMEZONE });
 	try {
+		await prepare?.(context);
 		const page = await context.newPage();
 		const app = await open(page);
 		await fn(app);
