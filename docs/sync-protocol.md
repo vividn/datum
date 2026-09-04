@@ -5,8 +5,9 @@
 > iterated. Fields and endpoints MAY change in place until the protocol
 > ships to production; at that point v0 freezes and promotes to a stable,
 > breaking-change-disciplined v1. Until then, treat nothing here as
-> locked — the source of truth is the `datum-sync-protocol` crate, and
-> this document is regenerated from it.
+> locked — the source of truth is this document. The
+> `datum-sync-protocol` crate's wire types are kept in step with it by
+> hand, and the crate's doc comments say so at each wire-locked field.
 
 ## Goals and constraints
 
