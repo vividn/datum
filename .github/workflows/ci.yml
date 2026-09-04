@@ -50,6 +50,30 @@ jobs:
       - name: cargo test --workspace --doc
         run: cargo test --workspace --doc
 
+      # web/scripts/capture-cli-fixtures.mjs imports only node builtins and
+      # the suite's own support module, so this needs no `npm ci`.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The other committed-and-unwatched artifact. web/tests/fixtures is
+      # what the web job compares datum.day against, and it is captured from
+      # the real CLI — so when the CLI's stored shape changes and nobody
+      # re-captures, the web suite goes on passing against a remembered
+      # datum. Re-capture here (`cargo build --workspace` above already
+      # produced target/debug/datum) and fail if anything moved. Same shape
+      # as the wasm comparison in `wasm-check` and as `toolchain-pin`.
+      - name: Re-capture the CLI-parity fixtures and compare with the committed copy
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch web/tests/fixtures/cli-parity.json >/dev/null
+          node web/scripts/capture-cli-fixtures.mjs
+          if [ -n "$(git status --porcelain -- web/tests/fixtures)" ]; then
+            git diff -- web/tests/fixtures
+            echo "::error::web/tests/fixtures/cli-parity.json is out of date with the CLI. Fix: npm run test:fixtures && git add web/tests/fixtures"
+            exit 1
+          fi
+
   e2e-full:
     name: E2E full cohort (da-1wat)
     runs-on: ubuntu-latest
@@ -111,20 +135,49 @@ jobs:
       - name: cargo check datum-sync-client (wasm32, --no-default-features --features wasm)
         run: cargo check -p datum-sync-client --target wasm32-unknown-unknown --no-default-features --features wasm
 
-      # The two modules datum.day loads. Their artifacts are committed (the
-      # web job has no Rust toolchain), so what this catches is the crates
-      # ceasing to build for wasm at all — which is how a stale artifact
-      # starts. `npm run build:wasm` rebuilds and re-commits them.
+      # web/scripts/build-wasm.mjs imports only node builtins, so this needs
+      # no `npm ci` — just an interpreter.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The two modules datum.day loads, rebuilt and compared against the
+      # committed copies.
       #
-      # `build`, not `check`: the failure mode these have is a *link*-time
-      # one. A dependency that reaches for the browser's clock (chrono's
-      # `wasmbind`, say) adds a wasm-bindgen import, and a module with
-      # imports will not load from the bare `WebAssembly.instantiate` the
-      # browser side uses. `cargo check` sees none of that.
-      - name: cargo build the browser modules (wasm32)
+      # Why compare rather than merely build: the artifacts are committed
+      # (the web job has no Rust toolchain) and NOTHING regenerated them.
+      # On 2026-09-04 datum-parse.wasm was 1.706 bytes behind its own
+      # source — the `conflicts` command had landed in Rust that morning and
+      # never reached the browser. Building alone catches only the
+      # precondition for that (the crates ceasing to build for wasm at all),
+      # not the drift itself. This is the same shape as `toolchain-pin` in
+      # the honesty job: name the two things that must agree, fail when they
+      # diverge, and refuse to pass when there is nothing to compare.
+      #
+      # It rebuilds through the script rather than a second copy of the
+      # cargo flags here, so how these are built is written down once. The
+      # script still runs `cargo build`, not `check`, and deliberately: the
+      # other failure mode is a *link*-time one. A dependency that reaches
+      # for the browser's clock (chrono's `wasmbind`, say) adds a
+      # wasm-bindgen import, and a module with imports will not load from
+      # the bare `WebAssembly.instantiate` the browser side uses. `cargo
+      # check` sees none of that.
+      #
+      # The comparison is byte-for-byte and that is safe: the script remaps
+      # the absolute paths rustc bakes into panic payloads, so the output
+      # does not depend on where the repo or the cargo registry lives. See
+      # its comment.
+      - name: Rebuild the browser modules and compare with the committed copies
         run: |
-          cargo build -p datum-layout-wasm --target wasm32-unknown-unknown --profile wasm-release
-          cargo build -p datum-parse-wasm --target wasm32-unknown-unknown --profile wasm-release --no-default-features
+          set -euo pipefail
+          # A gate that finds nothing must not pass.
+          git ls-files --error-unmatch web/static/datum-layout.wasm web/static/datum-parse.wasm >/dev/null
+          node web/scripts/build-wasm.mjs
+          if [ -n "$(git status --porcelain -- web/static)" ]; then
+            git status --short -- web/static
+            echo "::error::web/static/*.wasm is out of date with the crates behind it. Fix: npm run build:wasm && git add web/static/*.wasm"
+            exit 1
+          fi
 
   honesty:
     name: Honesty gates (da-8y2q.7)
@@ -187,6 +240,7 @@ jobs:
       # `pretest` builds the app first; the CLI-parity fixtures under
       # web/tests/fixtures are committed, so this job needs no Rust
       # toolchain. Regenerate them with `npm run test:fixtures` against a
-      # built `datum` binary when the CLI's stored shape changes.
+      # built `datum` binary when the CLI's stored shape changes — and if
+      # you forget, `build-and-test` re-captures them and goes red.
       - name: npm test
         run: npm test

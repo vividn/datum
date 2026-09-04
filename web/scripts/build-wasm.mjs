@@ -20,11 +20,29 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, copyFileSync, mkdirSync, statSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..');
+
+// The bytes must not depend on WHERE the build ran, because CI rebuilds
+// these and compares them against the committed copies (`wasm-check` in
+// .github/workflows/ci.yml). Panic payloads carry `file!()` strings, and
+// for registry dependencies cargo passes those as absolute paths — so
+// without this the artifact encodes `/home/cans/.cargo/...` here and
+// `/home/runner/.cargo/...` on a runner, and the comparison fails for a
+// reason that has nothing to do with drift. rustc already remaps its own
+// standard library to `/rustc/<hash>`; these two flags do the same for
+// the registry and the checkout. Both sides of the comparison run this
+// script, so the flags are the same on both.
+const cargoHome = process.env.CARGO_HOME ?? resolve(homedir(), '.cargo');
+const remap = `--remap-path-prefix=${cargoHome}=/cargo --remap-path-prefix=${repoRoot}=/datum`;
+const env = {
+	...process.env,
+	RUSTFLAGS: process.env.RUSTFLAGS ? `${process.env.RUSTFLAGS} ${remap}` : remap
+};
 
 const MODULES = [
 	{
@@ -58,7 +76,7 @@ for (const { crate, artifact, out, noDefaultFeatures } of MODULES) {
 		'wasm-release'
 	];
 	if (noDefaultFeatures) args.push('--no-default-features');
-	execFileSync('cargo', args, { cwd: repoRoot, stdio: 'inherit' });
+	execFileSync('cargo', args, { cwd: repoRoot, env, stdio: 'inherit' });
 
 	const built = resolve(repoRoot, 'target/wasm32-unknown-unknown/wasm-release', artifact);
 	const outPath = resolve(here, '..', 'static', out);

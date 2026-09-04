@@ -186,6 +186,14 @@ fixtures are, so the web CI job needs no Rust toolchain — rebuild and
 commit them with `npm run build:wasm` whenever the crates behind them
 change.
 
+Forgetting that is not a silent failure any more (da-nig7). CI's
+`wasm-check` job re-runs `build:wasm` and fails on any byte of difference,
+and `build-and-test` does the same for the parity fixtures with
+`npm run test:fixtures`. Both comparisons are byte-for-byte, which the
+wasm build earns by remapping the absolute paths rustc bakes into panic
+payloads — so the artifact does not depend on where the repo or the cargo
+registry lives, and a runner reproduces what your machine produced.
+
 What the browser still assembles itself is the small DB-free part of
 `log_core` (`crates/datum-parse-wasm/src/log.rs`), and
 `crates/datum-commands/tests/wasm_parse_parity.rs` drives the real

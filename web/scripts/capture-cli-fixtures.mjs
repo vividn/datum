@@ -72,6 +72,10 @@ function format(value) {
 }
 
 const fixture = JSON.parse(readFileSync(FIXTURE, 'utf8'));
+// CI re-captures and fails on any diff, so an empty case list would be a
+// green check that compared nothing. A gate that finds nothing must not pass.
+if (!Array.isArray(fixture.cases) || fixture.cases.length === 0)
+	throw new Error(`${FIXTURE} has no cases to capture`);
 const dir = mkdtempSync(join(tmpdir(), 'datum-parity-'));
 try {
 	fixture.cases.forEach((testCase, i) => {
