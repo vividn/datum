@@ -220,6 +220,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Spec(sub) => commands::spec::spec(sub, db),
         Command::Alias(sub) => commands::alias::alias(sub, db),
         Command::Kit(sub) => commands::kit::kit(sub, db),
+        Command::Conflicts(sub) => commands::conflicts::conflicts(sub, db),
         Command::Track(args) => commands::track::track(args, db),
         Command::Ignore(args) => commands::ignore::ignore(args, db),
         Command::Meta(sub) => commands::meta::meta(sub, db),

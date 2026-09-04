@@ -175,7 +175,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `stats` — Count, total duration, and per-state ratio over a time slice
 - `ids` — List entry ids (newest-first by default)
 - `sync` — Push/pull changesets, manage auth & keys
-- `conflicts` — Inspect and resolve sync conflicts
+- `conflicts` — Triage sync conflicts (see `datum check` for integrity findings)
 - `view` — Execute a named SELECT view and render the rows
 
 ## Global Options

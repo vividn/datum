@@ -33,6 +33,7 @@ use crate::cli::*;
 use crate::error::{ParseError, Result};
 
 mod alias;
+mod conflicts;
 mod core;
 mod flag;
 mod get_delete;
@@ -53,6 +54,7 @@ mod update;
 mod views;
 
 use self::alias::*;
+use self::conflicts::*;
 use self::core::*;
 use self::flag::*;
 use self::get_delete::*;
@@ -214,6 +216,7 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
         "spec" => Command::Spec(parse_spec_cmd(rest)?),
         "alias" => Command::Alias(parse_alias_cmd(rest)?),
         "kit" => Command::Kit(parse_kit_cmd(rest)?),
+        "conflicts" => Command::Conflicts(parse_conflicts_cmd(rest)?),
 
         "track" => Command::Track(parse_track_args(rest)?),
         "ignore" => Command::Ignore(parse_ignore_args(rest)?),

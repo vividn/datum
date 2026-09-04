@@ -56,6 +56,9 @@ pub enum Command {
     Spec(SpecCommand),
     Alias(AliasCommand),
     Kit(KitCommand),
+    /// `datum conflicts` — the integrity-warning queue: list, resolve one,
+    /// or run the auto-resolver (da-ttsm).
+    Conflicts(ConflictsCommand),
 
     Track(TrackArgs),
     Ignore(IgnoreArgs),
@@ -671,6 +674,45 @@ pub struct KitExportArgs {
 #[derive(Debug)]
 pub struct KitUninstallArgs {
     pub name: String,
+}
+
+// ─── Conflicts (da-ttsm) ──────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub enum ConflictsCommand {
+    /// `datum conflicts list [--all]` — the sync-conflict queue.
+    /// Pending-only unless `--all`.
+    List(ConflictsListArgs),
+    /// `datum conflicts resolve <HID> (--take-local | --take-remote |
+    /// --keep-both)` — record which side wins and rewrite the entry to
+    /// match.
+    Resolve(ConflictsResolveArgs),
+}
+
+#[derive(Debug, Default)]
+pub struct ConflictsListArgs {
+    /// `--all` — include already-resolved rows (default: pending only).
+    pub all: bool,
+}
+
+/// Which side of a sync conflict the user is keeping. No default — the
+/// parser requires the choice, because guessing one silently discards
+/// somebody's data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictsKeep {
+    /// `--take-local` — restore this device's version.
+    Local,
+    /// `--take-remote` — accept the counterpart's version.
+    Remote,
+    /// `--keep-both` — leave both rows as they are; record the decision.
+    Both,
+}
+
+#[derive(Debug)]
+pub struct ConflictsResolveArgs {
+    /// Warning hid (5-char prefix form accepted) or full id.
+    pub hid: String,
+    pub keep: ConflictsKeep,
 }
 
 // ─── Now / Track / Ignore ─────────────────────────────────────────────────

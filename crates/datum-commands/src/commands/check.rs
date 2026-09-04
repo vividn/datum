@@ -742,14 +742,17 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                 y = if count == 1 { "y" } else { "ies" },
             ),
             IntegrityKind::LwwOverwrite => format!(
-                "{count} local edit{s} {were} overwritten by a newer remote edit during sync",
+                "{count} local edit{s} {were} overwritten by a newer remote edit during sync. \
+                 Both versions are in the conflict row — `datum conflicts` prints them and \
+                 takes the choice.",
                 s = if count == 1 { "" } else { "s" },
                 were = if count == 1 { "was" } else { "were" },
             ),
             IntegrityKind::IdentityCollision => format!(
                 "{count} entr{y} from another device collided with a local entry on slug \
                  or on (field, occur_time). Both were kept — the loser's slug carries its \
-                 hid, and it is tombstoned when the two could not both stay live.",
+                 hid, and it is tombstoned when the two could not both stay live. \
+                 `datum conflicts` prints the pair and takes the choice.",
                 y = if count == 1 { "y" } else { "ies" },
             ),
         };

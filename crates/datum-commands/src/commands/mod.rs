@@ -9,6 +9,7 @@ pub mod alias;
 pub mod backup_restore;
 pub mod check;
 pub mod config;
+pub mod conflicts;
 pub mod count;
 pub mod dayview;
 pub mod db;

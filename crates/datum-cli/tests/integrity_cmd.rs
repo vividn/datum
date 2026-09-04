@@ -3,7 +3,8 @@
 //! `now` overlap banner and the pending-warning header behave as
 //! documented. The `datum integrity` CLI surface was removed in da-z46t;
 //! the remaining DB-level tests cover the detection and (internal)
-//! resolution paths that still back `datum check`.
+//! resolution paths that still back `datum check` — the sync-conflict
+//! CLI (`datum conflicts`) is covered in `conflicts_cmd.rs`.
 
 mod common;
 
@@ -301,10 +302,15 @@ fn now_view_shows_overlap_warning() {
     );
 }
 
-// ─── C4e: list filtering ─────────────────────────────────────────────────────
+// ─── C4e: list filtering (Db layer) ──────────────────────────────────────────
+//
+// These exercise `ListFilter` and `Db::resolve_integrity_warning` directly.
+// They were once named after `datum conflicts` subcommands, which read as
+// coverage of a CLI that did not exist for a month (da-ttsm). The command
+// surface is tested in `conflicts_cmd.rs`, through the binary.
 
 #[test]
-fn conflicts_list_shows_only_unresolved_by_default() {
+fn list_filter_defaults_to_pending_rows() {
     // File two conflicts, resolve one. The default list (no `--all`) must
     // only return the still-pending row.
     let db = fresh_db();
@@ -341,7 +347,7 @@ fn conflicts_list_shows_only_unresolved_by_default() {
 }
 
 #[test]
-fn conflicts_list_all_includes_resolved() {
+fn list_filter_without_pending_includes_resolved_rows() {
     // Same setup as above, but with `pending: None` (the `--all` form)
     // we should see both rows including the resolved one.
     let db = fresh_db();
@@ -376,7 +382,7 @@ fn conflicts_list_all_includes_resolved() {
 // ─── C4e: take_local / take_remote ───────────────────────────────────────────
 
 #[test]
-fn conflicts_resolve_take_local_updates_entry_and_marks_resolved() {
+fn db_resolve_take_local_updates_entry_and_marks_resolved() {
     // File a double-open, resolve `--take local`. The Db API must return
     // the conflict row with `resolution = "take_local"` and the entry
     // matching `local_entry.slug` must equal the snapshot. (For
@@ -415,7 +421,7 @@ fn conflicts_resolve_take_local_updates_entry_and_marks_resolved() {
 }
 
 #[test]
-fn conflicts_resolve_take_remote_updates_entry_and_marks_resolved() {
+fn db_resolve_take_remote_updates_entry_and_marks_resolved() {
     // For sync_pull-style conflicts where remote_entry was applied to
     // the table, `--take remote` is a no-op on data; here we just
     // confirm the resolution string round-trips. The "rewrite a
@@ -454,7 +460,7 @@ fn conflicts_resolve_take_remote_updates_entry_and_marks_resolved() {
 // ─── C4e: --edit ─────────────────────────────────────────────────────────────
 
 #[test]
-fn conflicts_resolve_edit_uses_saved_content() {
+fn db_resolve_edit_uses_saved_content() {
     // The `--edit` flow ultimately calls `db.resolve_integrity_warning_with_edited`
     // with the (possibly mutated) Entry parsed from the editor's saved
     // file. This test exercises that data path directly: build a

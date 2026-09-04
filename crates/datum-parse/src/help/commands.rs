@@ -829,7 +829,7 @@ const CONFIG_BODY: &str = "USAGE:\n  datum config show [--json]\n";
 
 const SYNC_BODY: &str = "USAGE:\n  datum sync [--push | --pull] [--dry-run] [--server URL]\n  datum sync login [--server URL] [--cluster NAME]\n  datum sync config set-server <URL> [--global]\n  datum sync config disable\n  datum sync config show\n  datum sync key (init | unlock | rotate-passphrase | show-fingerprint) [--server URL] [--force]\n  datum sync status [--server URL]\n  datum sync install-daemon [--show | --uninstall]\n";
 
-const CONFLICTS_BODY: &str = "USAGE:\n  datum conflicts list [--kind K] [--all]\n  datum conflicts resolve <HID> (--keep V | --close-older)\n  datum conflicts auto-resolve [--min-age SECS]\n";
+const CONFLICTS_BODY: &str = "USAGE:\n  datum conflicts [list] [--all]\n  datum conflicts resolve <HID> (--take-local | --take-remote | --keep-both)\n\nOPTIONS:\n  -a, --all        Include already-resolved conflicts (default: pending only).\n  --take-local     Restore this device's version of the entry.\n  --take-remote    Accept the other device's version.\n  --keep-both      Leave both rows as they are; record the decision.\n\nSync conflicts are the two things a pull can file when two devices claim\none identity: `lww_overwrite` (a newer remote edit replaced a local one)\nand `identity_collision` (two distinct entries claimed one slug, or one\n(field, occur_time)). The losing version survives only in the conflict\nrow, so someone has to say which side wins — `list` prints both.\n\nEverything else the integrity queue holds — double opens, orphan ends,\noverlaps, repeated states — is reported by `datum check` and resolved by\nfixing the data with `datum edit` / `datum delete`, not from here.\n";
 
 const FLAG_BODY: &str = "USAGE:\n  datum flag <FIELD> [COMMENT...] [-y / -q / -d / -t / -z]\n\nAttaches a 'come back to this' marker to <FIELD>. Stored as a Verb::Point\nentry with `extra_metadata = { flag: true, comment: \"...\" }`. The bare\nform `datum flag <FIELD>` records a marker at now with no comment.\n\nDefault rendering hides flags from `datum tail` and `datum now`; use\n`tail --show-meta` to include them, or `datum check` to surface them as\npending review markers. The shape mirrors `datum meta` (which sets\n`meta: true` instead of `flag: true`).\n";
 
@@ -1515,13 +1515,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "conflicts",
         aliases: &[],
         category: Category::ViewsSync,
-        summary: "inspect and resolve sync conflicts",
+        summary: "triage sync conflicts (see `datum check` for integrity findings)",
         top_summary: None,
         long_description: None,
         usage: &[
-            "datum conflicts list [--kind K] [--all]",
-            "datum conflicts resolve <HID> (--keep V | --close-older)",
-            "datum conflicts auto-resolve [--min-age SECS]",
+            "datum conflicts [list] [--all]",
+            "datum conflicts resolve <HID> (--take-local | --take-remote | --keep-both)",
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
