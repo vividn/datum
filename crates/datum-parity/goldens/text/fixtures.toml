@@ -176,6 +176,7 @@ setup = [
   ["switch", "mood", "happy", "-d", "2024-01-15", "-t", "1000"],
 ]
 query = ["nowview"]
+uncapturable = "nowview renders relative to wall-clock now: the SVG carries the current instant in data-time/data-end-time and derives block geometry from it, so two runs a second apart differ"
 
 [[fixture]]
 name = "nowview_after_state_chain_svg"
@@ -187,6 +188,7 @@ setup = [
   ["switch", "mood", "tired", "-d", "2024-01-15", "-t", "1800"],
 ]
 query = ["nowview"]
+uncapturable = "same as nowview_default_svg — output is a function of now, not of the fixture"
 
 [[fixture]]
 name = "nowview_open_block_svg"
@@ -196,6 +198,7 @@ setup = [
   ["start", "work", "-d", "2024-01-15", "-t", "0930"],
 ]
 query = ["nowview"]
+uncapturable = "same as nowview_default_svg — the open block is drawn from its start to now"
 
 [[fixture]]
 name = "nowview_closed_block_svg"
@@ -206,6 +209,7 @@ setup = [
   ["end",   "work", "-d", "2024-01-15", "-t", "1230"],
 ]
 query = ["nowview"]
+uncapturable = "same as nowview_default_svg — the surrounding timeline is still anchored to now"
 
 # ─── dayview: timeline SVG visualization ─────────────────────────────────────
 

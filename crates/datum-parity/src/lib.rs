@@ -59,7 +59,7 @@ pub mod runtime;
 /// The vividn/datum commit goldens were captured against. Bump in lockstep
 /// with `scripts/setup_datum.sh` and regenerate goldens via
 /// `PARITY_REGEN=1 cargo test --features parity-runtime -p datum-parity`.
-pub const DATUM_PINNED_SHA: &str = "c8599d84baa6d26a633ce375f0a28bb1f2a9294a";
+pub const DATUM_PINNED_SHA: &str = "f5e7c1b82da18fb6f02d21efea67d40f9cf26f1d";
 
 /// Resolve the absolute path of the datum clone managed by
 /// `scripts/setup_datum.sh`. Tests under `parity-runtime` use this to
@@ -72,4 +72,39 @@ pub fn datum_clone_path() -> std::path::PathBuf {
         .join("target")
         .join("parity-cache")
         .join("datum")
+}
+
+#[cfg(test)]
+mod tests {
+    /// The pin lives in two files, and `setup_datum.sh`'s own header
+    /// promises a mismatch is "rejected loudly". Nothing rejected
+    /// anything: the two were free to drift, and a drifted pin means the
+    /// goldens are checked against a revision nobody recorded.
+    ///
+    /// This runs on the default feature set, so it is one of the few
+    /// things about the gated path that a plain `cargo test` still
+    /// guards.
+    #[test]
+    fn pinned_sha_agrees_with_setup_script() {
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("scripts")
+            .join("setup_datum.sh");
+        let body = std::fs::read_to_string(&script)
+            .unwrap_or_else(|e| panic!("read {}: {e}", script.display()));
+        let line = body
+            .lines()
+            .find(|l| l.starts_with("PINNED_SHA="))
+            .unwrap_or_else(|| panic!("no PINNED_SHA= line in {}", script.display()));
+        let sha = line
+            .trim_start_matches("PINNED_SHA=")
+            .trim_matches('"')
+            .trim();
+        assert_eq!(
+            sha,
+            super::DATUM_PINNED_SHA,
+            "setup_datum.sh pins {sha} but DATUM_PINNED_SHA is {}; \
+             bump both together (see README § Pinned SHA)",
+            super::DATUM_PINNED_SHA
+        );
+    }
 }

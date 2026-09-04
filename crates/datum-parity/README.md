@@ -17,7 +17,7 @@ This crate exists to be that reference.
 | mySpec field/state map | `src/myspec.rs` (23 fields, 100+ states) | no |
 | `get` text output | `goldens/text/fixtures.toml` (6 fixtures) | yes |
 | `tail` text output | `goldens/text/fixtures.toml` (7 fixtures) | yes |
-| `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures) | yes |
+| `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures, all `uncapturable` — see da-t5f5) | yes |
 | `dayview` SVG output | `goldens/text/fixtures.toml` (4 fixtures) | yes |
 | `content_hash` preimage | `goldens/hash/content_hash.toml` (6 fixtures) | no |
 | Bug regressions (da-438y, etc.) | `tests/regressions.rs` (5 tests + lock) | no |
@@ -37,6 +37,7 @@ node / pnpm or a clone of vividn/datum.
 ### With the runtime
 
 ```bash
+npm install --global pnpm@11          # the major the pinned lockfile was written by
 bash crates/datum-parity/scripts/setup_datum.sh
 cargo test --features parity-runtime -p datum-parity
 ```
@@ -50,6 +51,27 @@ exits successfully when the clone is ready. The CLI is invoked via
 The `parity-runtime` feature is intentionally off by default: a Rust
 build shouldn't pull a node toolchain into CI unless the parity tests
 are going to actually run.
+
+### The heartbeat (da-g3za)
+
+An off-by-default test isn't merely untested code — it is code whose
+*environment* rots unobserved, and the rot is invisible precisely
+because the gate is doing its job. This crate proved it: between the pin
+(2025-08) and 2026-09 nobody ran the gated suite, and in that window
+pnpm stopped reading `package.json`'s `pnpm` field, so
+`--frozen-lockfile` began refusing the pinned lockfile. The reference
+check didn't go red. It went silent, which looks the same as fine.
+
+`.github/workflows/parity.yml` is the alarm. It runs the gated suite
+
+* weekly (Mondays 06:17 UTC),
+* on `workflow_dispatch`, and
+* on any change to `crates/datum-parity/**`.
+
+It deliberately does **not** gate merges: it clones a third-party repo
+over the network and needs a node toolchain, and making every merge wait
+on that trades one flaky dependency for the whole queue. Its job is to
+make noise within a week of the path breaking, not to be a gate.
 
 ### Updating goldens after a deliberate change
 
@@ -71,6 +93,18 @@ pinned SHA lives in two places that must match:
 
 * `src/lib.rs::DATUM_PINNED_SHA`
 * `scripts/setup_datum.sh::PINNED_SHA`
+
+`pinned_sha_agrees_with_setup_script` (a unit test in `src/lib.rs`, so it
+runs on the default feature set) reads the script and asserts the two
+agree. The script's header always claimed a mismatch was "rejected
+loudly"; nothing rejected anything until that test existed.
+
+`scripts/setup_datum.sh::PNPM_MAJOR` is the other half of the pin. A
+pinned lockfile read by a floating package manager is a pin with one end
+loose — `--frozen-lockfile` compares the lockfile against what the
+*running* pnpm believes the config should be, so the pnpm major belongs
+to the pin. Bump it alongside the SHA when a new datum revision
+regenerates its lockfile.
 
 To bump:
 
@@ -130,8 +164,14 @@ following are deliberate divergences and **not** regressions:
   The color value (`#888888`) is identical; the *name* differs. Parity
   goldens assert the color, not the name.
 * **Timezone display.** Datum displays the offset as `+1` (compressed);
-  daydumb does the same. Both depend on the system TZ database, so
-  fixtures that include timestamps assume a stable TZ across runs.
+  daydumb does the same. Both read the system TZ database, so the zone
+  is pinned rather than assumed: `DatumRuntime::run` forces
+  `TZ=`[`GOLDEN_TZ`] (`Europe/Berlin`) into every spawned datum process.
+  Without it the same fixture renders `+1` on the machine the goldens
+  were captured on and `+0` on a CI runner in UTC — a failure that
+  looks like a parity regression and isn't.
+
+[`GOLDEN_TZ`]: src/runtime.rs
 
 ## Adding fixtures
 
@@ -172,6 +212,21 @@ failure rather than a rubber stamp.
 ### Text goldens (`goldens/text/fixtures.toml`)
 
 Append a `[[fixture]]` block. `name` must be unique and `[a-z0-9_]`.
+Every fixture must end up with a *non-empty* `expected/<name>.txt`, or
+declare why not:
+
+```toml
+uncapturable = "nowview renders relative to wall-clock now"
+```
+
+An empty expected file is a failure, not a skip. It used to be a skip,
+and that is how 10 of the 21 fixtures came to be uncompared while the
+suite reported green — the same shape of silence this crate exists to
+catch. The four `nowview_*` fixtures carry `uncapturable`: nowview's SVG
+embeds the current instant in both its `data-time` attributes and its
+block geometry, so nothing about its output is stable between two runs a
+second apart.
+
 For new entries, populate `expected/<name>.txt` via:
 
 ```bash

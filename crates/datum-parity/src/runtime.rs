@@ -26,11 +26,24 @@
 //! Datum doesn't expose a "fix-now" environment variable, but commands
 //! that take `-t HHMM -d YYYY-MM-DD` use the pinned absolute time
 //! deterministically. Callers must always pass these flags rather than
-//! relying on `now`. Output snapshots that mention "now" (e.g.,
-//! `nowview` headers) substitute the pinned time before comparison.
+//! relying on `now`.
+//!
+//! The *zone* those flags resolve in is pinned too, by [`GOLDEN_TZ`].
+//! Datum prints an entry's UTC offset (`+1` for a January timestamp in
+//! Europe/Berlin), so without the pin the same fixture renders
+//! differently on a contributor's laptop, on a CI runner in UTC, and on
+//! the same machine six months later across a DST boundary. The goldens
+//! were captured in Europe/Berlin; pinning it in the child environment
+//! is what makes "deterministic input" actually mean deterministic.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+
+/// The IANA zone the text goldens were captured in, forced into every
+/// spawned datum process. See the "Time pinning" section above: this is
+/// half of what makes the goldens reproducible, the other half being
+/// the `-d`/`-t` flags every fixture passes.
+pub const GOLDEN_TZ: &str = "Europe/Berlin";
 
 /// Errors surfaced by the runtime.
 #[derive(Debug)]
@@ -122,6 +135,8 @@ impl DatumRuntime {
             .env("DATUM_HOST", host_dir)
             // Suppress pnpm's "Run X" preamble — keep stdout pure datum output.
             .env("npm_config_silent", "1")
+            // Pin the zone datum renders offsets in — see GOLDEN_TZ.
+            .env("TZ", GOLDEN_TZ)
             // Force chalk into truecolor mode (`[48;2;R;G;Bm`) so datum's
             // ANSI matches daydumb's. Without this, chalk auto-detects
             // 256-color (`[48;5;Nm`) when stdout is piped, and goldens

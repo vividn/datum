@@ -1,0 +1,73 @@
+# The cross-runtime parity heartbeat (da-g3za).
+#
+# `crates/datum-parity` exists to check daydumb against the *real* datum
+# (vividn/datum, TypeScript). The one test that consults that reference —
+# `text_goldens_match_live_datum` — sits behind `--features parity-runtime`,
+# off by default so a Rust-only build doesn't pull a node toolchain. That
+# gate is right; what was missing was any path that turned it on. Between
+# 2025-08 and 2026-09 the reference check never ran, and the pinned datum
+# clone's `pnpm install --frozen-lockfile` rotted without anyone noticing,
+# because the failure mode of an unrun test is silence, not red.
+#
+# So this job's job is to make noise. It is deliberately NOT part of `ci.yml`:
+# it depends on a network clone of a third-party repo and a node toolchain, so
+# making it gate every merge would trade one flaky dependency for the whole
+# queue. It runs weekly, on demand, and on changes to the parity crate itself.
+name: Parity
+
+on:
+  schedule:
+    # Mondays, 06:17 UTC. Weekly is enough: the decay this catches takes
+    # months, and a run that fails on Monday is fixed long before the
+    # goldens matter.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - "crates/datum-parity/**"
+      - ".github/workflows/parity.yml"
+  push:
+    branches: [main]
+    paths:
+      - "crates/datum-parity/**"
+      - ".github/workflows/parity.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  parity-runtime:
+    name: Cross-runtime goldens vs. vividn/datum
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install --no-self-update
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Pinned, not `corepack enable`. The pinned datum SHA carries a pinned
+      # lockfile, and `--frozen-lockfile` compares it against whatever pnpm
+      # is on PATH thinks the config should be. That is how this path broke:
+      # pnpm 11 stopped reading package.json's `pnpm` field, so an older
+      # lockfile's `overrides` no longer matched and the frozen install
+      # refused. A floating package manager against a pinned lockfile is a
+      # pin with one end loose.
+      - name: Install the pinned pnpm
+        run: npm install --global pnpm@11
+
+      - name: Clone + install vividn/datum at the pinned SHA
+        run: bash crates/datum-parity/scripts/setup_datum.sh
+
+      - name: cargo test -p datum-parity --features parity-runtime
+        run: cargo test -p datum-parity --features parity-runtime -- --nocapture

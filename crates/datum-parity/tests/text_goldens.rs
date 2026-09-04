@@ -13,9 +13,11 @@
 //!   bead floor) and each parses.
 //! * `text_fixtures_cover_each_surface` confirms ≥1 fixture per CLI
 //!   surface (get/tail/dayview/nowview).
-//! * `text_fixtures_have_expected_outputs` requires every fixture has a
-//!   matching `expected/<name>.txt`. Empty files are allowed —
-//!   `PARITY_REGEN=1` populates them on the first runtime run.
+//! * `text_fixtures_have_expected_outputs` requires every fixture to
+//!   have a *non-empty* `expected/<name>.txt`, unless it declares
+//!   `uncapturable = "<why>"`. An empty expected file used to mean
+//!   "quietly skip me", which is how 10 of 21 fixtures came to be
+//!   uncompared while the suite reported green.
 //!
 //! With `parity-runtime`:
 //! * `text_goldens_match_live_datum` runs each fixture's setup + query
@@ -53,6 +55,18 @@ struct Fixture {
     setup: Vec<Vec<String>>,
     /// The read command whose output we're pinning.
     query: Vec<String>,
+    /// Set when this fixture's output *cannot* be pinned, with the
+    /// reason. A fixture carrying this is excluded from the live
+    /// comparison and its `expected/<name>.txt` may stay empty.
+    ///
+    /// This exists so that "not compared" is a written, reviewable
+    /// claim rather than the default. It used to be the default: an
+    /// empty expected file was skipped with an `eprintln`, which meant
+    /// 10 of 21 fixtures were silently uncompared and nothing said so.
+    /// A golden suite whose skip list is invisible reports the same
+    /// green as one that checks everything.
+    #[serde(default)]
+    uncapturable: Option<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone, Copy)]
@@ -107,6 +121,14 @@ fn text_fixtures_have_unique_names() {
     }
 }
 
+/// Every CLI surface has at least one fixture *declared*.
+///
+/// Declared, not compared: all four `nowview_*` fixtures are
+/// `uncapturable` (nowview's SVG is a function of wall-clock now), so
+/// nowview is the one surface with a fixture and no cross-runtime
+/// assertion behind it. Tightening this to "compared" is da-t5f5 — it
+/// needs a fixable clock in the datum runtime first, and a gate that is
+/// red for a known reason on every run teaches people to ignore it.
 #[test]
 fn text_fixtures_cover_each_surface() {
     let bundle = load_bundle();
@@ -142,6 +164,23 @@ fn text_fixtures_have_expected_outputs() {
             f.name,
             path.display()
         );
+        let empty = fs::metadata(&path).map(|m| m.len() == 0).unwrap_or(true);
+        match (&f.uncapturable, empty) {
+            (None, true) => panic!(
+                "fixture {}: {} is empty, so the live comparison would skip it.\n\
+                 Populate it (PARITY_REGEN=1 with --features parity-runtime), or, if its\n\
+                 output genuinely can't be pinned, say so in fixtures.toml:\n\
+                 \tuncapturable = \"<why>\"",
+                f.name,
+                path.display()
+            ),
+            (Some(reason), _) => assert!(
+                !reason.trim().is_empty(),
+                "fixture {}: uncapturable must state a reason",
+                f.name
+            ),
+            (None, false) => {}
+        }
     }
 }
 
@@ -282,14 +321,29 @@ mod runtime_tests {
         Ok(normalize(&raw))
     }
 
+    /// Whether `PARITY_REGEN` asks for the goldens to be rewritten.
+    ///
+    /// Presence alone is the wrong question: `PARITY_REGEN=0` reads as
+    /// "off" to anyone typing it, and this test *overwrites the
+    /// reference* when it is on. An off-switch that turns the thing on
+    /// is the one mistake a golden harness cannot afford.
+    fn regen_requested() -> bool {
+        std::env::var("PARITY_REGEN")
+            .is_ok_and(|v| !matches!(v.trim(), "" | "0" | "false" | "no" | "off"))
+    }
+
     #[test]
     fn text_goldens_match_live_datum() {
         let runtime = DatumRuntime::new().unwrap_or_else(|e| panic!("DatumRuntime::new: {e}"));
         let bundle = load_bundle();
-        let regen = std::env::var("PARITY_REGEN").is_ok();
+        let regen = regen_requested();
 
         let mut failures = Vec::new();
         for f in &bundle.fixture {
+            if let Some(reason) = &f.uncapturable {
+                eprintln!("[{}] not compared: {reason}", f.name);
+                continue;
+            }
             let got = match run_fixture(&runtime, f) {
                 Ok(s) => s,
                 Err(msg) => {
@@ -316,16 +370,18 @@ mod runtime_tests {
                 }
             };
 
-            // Empty expected file = "fixture defined but not yet
-            // captured". The harness shipped with this state for some
-            // fixtures so that the live test passes against the subset
-            // that's populated. To opt these into the comparison, run
-            // with `PARITY_REGEN=1` once and commit the captures.
+            // An empty expected file used to mean "skip me", which made
+            // the suite green over fixtures it never looked at. A
+            // fixture that can't be compared must say so out loud via
+            // `uncapturable`; anything else with an empty expected is a
+            // failure, not a shrug.
             if want.is_empty() {
-                eprintln!(
-                    "[{}] expected.txt empty; skipping (run with PARITY_REGEN=1 to populate)",
+                failures.push(format!(
+                    "[{}] expected.txt is empty and the fixture is not marked \
+                     `uncapturable`. Populate it with PARITY_REGEN=1, or declare \
+                     why it can't be pinned.",
                     f.name
-                );
+                ));
                 continue;
             }
 
