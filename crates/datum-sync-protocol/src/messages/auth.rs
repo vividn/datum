@@ -1,4 +1,9 @@
 //! Authentication wire types: bearer token + RFC 8628 device-code grant.
+//!
+//! Every type below names the `docs/sync-protocol.md` section that locks
+//! its JSON shape — that document is the contract, these structs follow it
+//! by hand. `messages::pointers` is the test that keeps the naming
+//! exhaustive (da-yvu5).
 
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +24,8 @@ use serde::{Deserialize, Serialize};
 /// `POST /v0/auth/refresh` for a fresh `(token, refresh_token)` pair
 /// when its bearer expires; the old refresh value is single-use and is
 /// invalidated server-side as part of the rotation.
+///
+/// Wire-locked by `docs/sync-protocol.md` §Refresh token rotation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthToken {
     pub token: String,
@@ -41,6 +48,8 @@ pub struct AuthToken {
 
 /// Body for `POST /v0/auth/refresh`. Trades a single-use refresh token
 /// for a fresh bearer + refresh pair.
+///
+/// Wire-locked by `docs/sync-protocol.md` §Refresh token rotation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshTokenRequest {
     pub refresh_token: String,
@@ -48,6 +57,9 @@ pub struct RefreshTokenRequest {
 
 /// Empty body for `POST /v0/auth/device-code`. Kept as a typed struct
 /// rather than `()` so axum's `Json` extractor accepts an empty `{}`.
+///
+/// Wire-locked by `docs/sync-protocol.md` §OAuth device-code flow, which
+/// documents the request body as literally `{}`.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DeviceCodeRequest {}
 
@@ -57,6 +69,8 @@ pub struct DeviceCodeRequest {}
 /// `verification_uri_complete`, `expires_in`, and `interval` are Optional
 /// on the wire to stay forward-compatible with relays that omit them; the
 /// reference server always populates them.
+///
+/// Wire-locked by `docs/sync-protocol.md` §OAuth device-code flow.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceCodeResponse {
     pub device_code: String,
@@ -76,6 +90,8 @@ fn default_poll_interval() -> u64 {
 }
 
 /// Query string for `GET /v0/auth/device-code/poll`.
+///
+/// Wire-locked by `docs/sync-protocol.md` §OAuth device-code flow.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceCodePollQuery {
     pub device_code: String,
@@ -85,6 +101,11 @@ pub struct DeviceCodePollQuery {
 /// endpoint a verification UI invokes after the user enters their
 /// passphrase. Lives in the protocol crate so a future browser flow has
 /// the canonical shape.
+///
+/// NOT wire-locked: `docs/sync-protocol.md` documents no
+/// `/device-code/authorize` endpoint, because the verification UI is
+/// between the relay and its own browser flow rather than between a
+/// client and the relay. This shape may change without a protocol bump.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceCodeAuthorizeRequest {
     pub device_code: String,
@@ -106,6 +127,8 @@ pub struct DeviceCodeAuthorizeRequest {
 /// shape and is RFC 8628 compatible. The benefit of the enum is that
 /// the client gets compile-time exhaustive matching on the response
 /// kind, instead of inspecting which field happens to be Some.
+///
+/// Wire-locked by `docs/sync-protocol.md` §OAuth device-code flow.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PollResponse {

@@ -1,4 +1,9 @@
 //! Push/pull + key-wrap wire types.
+//!
+//! Every type below names the `docs/sync-protocol.md` section that locks
+//! its JSON shape — that document is the contract, these structs follow it
+//! by hand. `messages::pointers` is the test that keeps the naming
+//! exhaustive (da-yvu5).
 
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +19,9 @@ use serde::{Deserialize, Serialize};
 /// roughly `MAX_PULL_ROWS ×` the push body limit's worth of history — big
 /// enough that a normal sync is one request, small enough that a first
 /// sync of a long history is many bounded ones.
+///
+/// Wire-locked by `docs/sync-protocol.md` §`GET /v0/pull`, which states the
+/// same 100.
 pub const MAX_PULL_ROWS: usize = 100;
 
 /// `POST /v0/push` request body.
@@ -21,6 +29,8 @@ pub const MAX_PULL_ROWS: usize = 100;
 /// `payload_b64` is base64 url-safe no-pad of the raw [`crate::crypto`]-
 /// sealed `EncryptedBlob` bytes (`nonce ‖ ciphertext+tag`). The server
 /// stores the string opaquely — it has no key and no schema.
+///
+/// Wire-locked by `docs/sync-protocol.md` §`POST /v0/push`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PushRequest {
     pub device_id: String,
@@ -47,6 +57,8 @@ pub struct PushRequest {
 /// the relay assigned to this changeset, plus the cluster generation the
 /// row was accepted into (lets the client confirm it stayed on the
 /// expected generation across the round-trip).
+///
+/// Wire-locked by `docs/sync-protocol.md` §`POST /v0/push`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PushResponse {
     pub seq: i64,
@@ -67,6 +79,8 @@ pub struct PushResponse {
 /// `cluster_id` + `generation`: rows are scoped to one cluster and one
 /// generation. Pulls filter server-side by cluster; mismatching
 /// generations surface as [`crate::errors::SyncProtocolError::GenerationMismatch`].
+///
+/// Wire-locked by `docs/sync-protocol.md` §`GET /v0/pull`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Changeset {
     /// Server-assigned global monotonic row id (clients use this as
@@ -89,7 +103,10 @@ pub struct Changeset {
 /// (`device_high_seq`). That single number is how a client discovers that
 /// the relay it is talking to no longer has changesets the client already
 /// pushed — a replaced server, or one restored from a backup predating
-/// those pushes. See `docs/sync-protocol.md` §Replaced relays.
+/// those pushes.
+///
+/// Wire-locked by `docs/sync-protocol.md` §`GET /v0/pull`; `device_high_seq`
+/// is specified in §Replaced relays.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullResponse {
     /// Highest per-device `seq` the relay currently holds for the calling
@@ -103,8 +120,8 @@ pub struct PullResponse {
 
 /// Argon2id KDF parameters used to derive a key-encryption key from a
 /// user passphrase. Field names + base64 variant are wire-locked by
-/// `docs/sync-protocol.md` — do not rename without bumping the protocol
-/// version.
+/// `docs/sync-protocol.md` §Wrapped key exchange — do not rename without
+/// bumping the protocol version.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KdfParams {
     /// Memory cost in KiB (typical: 65536 = 64 MiB).

@@ -7,7 +7,11 @@
 > breaking-change-disciplined v1. Until then, treat nothing here as
 > locked — the source of truth is this document. The
 > `datum-sync-protocol` crate's wire types are kept in step with it by
-> hand, and the crate's doc comments say so at each wire-locked field.
+> hand: every one of them carries a doc comment naming the section here
+> that locks its shape, or saying in as many words that this document
+> does not lock it. That is checked, not asserted — the sweep in
+> `crates/datum-sync-protocol/src/messages/pointers.rs` fails the build
+> on a wire type that points nowhere.
 
 ## Goals and constraints
 

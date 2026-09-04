@@ -3,3 +3,7 @@
 
 pub mod auth;
 pub mod sync;
+
+/// Keeps the doc's "each wire type names the spec" claim true (da-yvu5).
+#[cfg(test)]
+mod pointers;
