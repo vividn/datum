@@ -103,7 +103,13 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
 
 - SvelteKit static adapter — no server-side rendering
 - SQLite WASM + OPFS for local storage (same schema as CLI)
-- Service Worker caches app shell for offline use
+- Service Worker caches app shell for offline use — the shell, everything
+  `$service-worker` lists, and Vite's separate worker bundle (the SQLite
+  worker and sqlite3.wasm), which that list does not know about and which
+  the `datum-worker-precache` plugin in `web/vite.config.ts` enumerates
+  instead. `web/tests/offline.test.mjs` reloads the app with the network
+  down and logs an entry, so the precache cannot silently lose a file
+  again (da-d1l9).
 - Background Sync API queues sync when offline
 
 ## Migration from original datum

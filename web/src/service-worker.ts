@@ -4,9 +4,24 @@
 /// <reference lib="webworker" />
 
 import { build, files, version } from '$service-worker';
+import { workerAssets } from '$lib/workerAssets.generated.js';
 
 const CACHE_NAME = `datum-${version}`;
-const ASSETS = [...build, ...files];
+
+// `build` is derived from the client Vite manifest, which does not know
+// about Vite's separate worker bundle — the SQLite worker and sqlite3.wasm
+// live there. `workerAssets` is that bundle, enumerated at build time by
+// the datum-worker-precache plugin in vite.config.ts (da-d1l9).
+// '/' because nothing else caches it: adapter-static is in fallback mode,
+// so no page is prerendered and `$service-worker`'s `prerendered` list is
+// empty. Without it the shell the fetch handler falls back to is never
+// there, and the app does not load offline at all.
+const SHELL = '/';
+
+const ASSETS = [SHELL, ...build, ...files, ...workerAssets];
+
+/** Everything under here is content-hashed, so it is safe to cache forever. */
+const IMMUTABLE = '/_app/immutable/';
 
 self.addEventListener('install', (event: ExtendableEvent) => {
 	event.waitUntil(
@@ -28,24 +43,40 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
 	);
 });
 
+/** Serve from the cache, and fill it on a miss so the next visit is offline-safe. */
+async function cacheFirst(request: Request): Promise<Response> {
+	const cached = await caches.match(request);
+	if (cached) return cached;
+	const response = await fetch(request);
+	if (response.ok) (await caches.open(CACHE_NAME)).put(request, response.clone());
+	return response;
+}
+
 self.addEventListener('fetch', (event: FetchEvent) => {
 	if (event.request.method !== 'GET') return;
 
 	const url = new URL(event.request.url);
 	if (url.origin !== location.origin) return;
 
-	// Cache-first for static assets
-	const isAsset = ASSETS.includes(url.pathname);
-	if (isAsset) {
-		event.respondWith(
-			caches.match(event.request).then((cached) => cached ?? fetch(event.request))
-		);
-	} else {
-		// Network-first for navigation
-		event.respondWith(
-			fetch(event.request).catch(() =>
-				caches.match('/').then((cached) => cached ?? new Response('Offline', { status: 503 }))
-			)
-		);
+	// Cache-first for the shell and every precached asset, and for anything
+	// else the build put under the immutable directory — a hashed name never
+	// means two things. The cache is per build (`version`), so a deploy
+	// installs a new service worker and the shell refreshes with it.
+	if (ASSETS.includes(url.pathname) || url.pathname.startsWith(IMMUTABLE)) {
+		event.respondWith(cacheFirst(event.request));
+		return;
 	}
+
+	// Network-first for navigation, falling back to the cached shell. Only
+	// for navigation: answering a script or wasm request with HTML is worse
+	// than answering it with an error, because the failure it produces
+	// names the wrong thing.
+	event.respondWith(
+		fetch(event.request).catch(async () => {
+			const cached = await caches.match(event.request);
+			if (cached) return cached;
+			if (event.request.mode !== 'navigate') return new Response('Offline', { status: 503 });
+			return (await caches.match(SHELL)) ?? new Response('Offline', { status: 503 });
+		})
+	);
 });
