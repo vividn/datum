@@ -669,7 +669,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             create_time, modify_time, device_id,
             deleted_at, id_structure, field_structure,
             raw_input, alias_chain, parser_version,
-            extra_metadata
+            user_asserted_last_state, extra_metadata
         ) VALUES (
             ?1, ?2, ?3, ?4,
             ?5, ?6, ?7, ?8, ?9,
@@ -679,7 +679,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             ?18, ?19, ?20,
             ?21, ?22, ?23,
             ?24, ?25, ?26,
-            ?27
+            ?27, ?28
         )
         ON CONFLICT(hid) DO UPDATE SET
             -- Merge keys on hid — the primary key, replicated with
@@ -714,6 +714,12 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             raw_input       = excluded.raw_input,
             alias_chain     = excluded.alias_chain,
             parser_version  = excluded.parser_version,
+            -- The `-L/--last-state=<v>` assertion the user typed. It is
+            -- outside the content hash but it is stored verbatim, shown by
+            -- `show --all` and editable by `edit`, so a peer that dropped
+            -- it would render the same entry differently on two devices
+            -- (da-nwci).
+            user_asserted_last_state = excluded.user_asserted_last_state,
             extra_metadata  = excluded.extra_metadata"#,
         params![
             entry.hid,
@@ -745,6 +751,10 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             entry.raw_input,
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
+            entry
+                .user_asserted_last_state
+                .as_ref()
+                .map(|v| v.to_string()),
             entry.extra_metadata.as_ref().map(|v| v.to_string()),
         ],
     )?;

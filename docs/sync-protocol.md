@@ -602,6 +602,13 @@ provenance column (`hid`, `slug`, `create_time`, `modify_time`,
 the hashed `(state, dur, following_state)` triple, so a verb difference
 cannot hide behind an equal hash.
 
+Outside the hash is **not** outside replication. Every column named above
+still crosses the wire and is written by apply; being outside the preimage
+decides only whether two rows *dedupe*, never whether a value survives the
+trip. Dropping one on apply is a silent divergence no hash comparison can
+catch — which is exactly how `user_asserted_last_state` went missing on
+peers until da-nwci.
+
 #### Canonical serialization
 
 Naming the inputs is not enough: `state` and `data` are arbitrary JSON, and

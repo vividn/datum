@@ -261,11 +261,11 @@ fn make_entry(field: &str, offset_secs: i64, device: &str) -> Entry {
     e.lon = Some(-87.6298);
     e.location = Some("Chicago".to_string());
     e.raw_input = Some(format!("{field} 1"));
-    // `user_asserted_last_state` is the one column left deliberately
-    // unset: sync drops it (da-nwci — `upsert_lww` omits it from both its
-    // INSERT list and its ON CONFLICT SET list), so populating it here
-    // would fail s1 today. Set it to reproduce that bug, and to gain the
-    // regression test once it is fixed.
+    // Set, not left unset: the `-L/--last-state=<v>` assertion the user
+    // typed rides the wire and must survive apply on the peer (da-nwci).
+    // It is outside the content hash, so only `assert_same_content` sees
+    // it go missing.
+    e.user_asserted_last_state = Some(serde_json::json!("probe"));
     e.create_time = at;
     e.modify_time = at;
     e
