@@ -1625,8 +1625,12 @@ fn roundtrip_v32_to_v33_content_hash_rehash() {
     // already write v33 ones):
     //
     //   h1 / h3 — identical content, one live and one tombstoned. This is
-    //             the case that would authorise a silent resurrection or
-    //             discard once da-yiq9 lands.
+    //             the case da-yiq9 decided: rows that hash alike are twins
+    //             and fold away silently, so under the v32 hash this pair
+    //             would fold — resurrecting the tombstone or discarding the
+    //             live row, whichever outranked the other. The v33 hash
+    //             covers deleted-ness, so the two no longer agree and take
+    //             the surfaced path instead.
     //   h5 / h6 — identical apart from `following_state`. Both tombstoned,
     //             because the partial UNIQUE on (field, occur_time) will not
     //             let two *live* rows sit at one instant.
