@@ -24,10 +24,6 @@
 		if (diffH < 24) return `${diffH}h ago`;
 		return d.toLocaleDateString();
 	}
-
-	function stateOf(entry: Entry): string {
-		return entry.state === undefined ? '' : formatValue(entry.state);
-	}
 </script>
 
 <div class="now-view">
@@ -42,13 +38,14 @@
 			{#each entries as entry (entry.field)}
 				<div class="field-card">
 					<div class="field-name">{entry.field}</div>
-					<div class="field-value">
-						{#if entry.state !== undefined}
-							<span class="value">{stateOf(entry)}</span>
-						{:else}
-							<span class="verb">{entry.verb}</span>
-						{/if}
-					</div>
+					<!-- An entry with no state has no current value: a point ("I
+					     had a coffee") is an event, not a condition still true.
+					     The card then shows only its name and its time — the
+					     value slot is left out rather than filled with the
+					     stored verb, which is a shape and not a value (da-sgvh). -->
+					{#if entry.state !== undefined}
+						<div class="field-value">{formatValue(entry.state)}</div>
+					{/if}
 					<div class="field-time">{formatTime(entry)}</div>
 				</div>
 			{/each}
@@ -100,11 +97,6 @@
 		font-family: monospace;
 		font-size: 1rem;
 		color: #e0e0ff;
-	}
-
-	.verb {
-		color: #8888aa;
-		font-style: italic;
 	}
 
 	.field-time {
