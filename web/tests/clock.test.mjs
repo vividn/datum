@@ -66,3 +66,37 @@ describe('the clock the web app prints', () => {
 		});
 	});
 });
+
+describe('the date the web app prints', () => {
+	test('an entry older than a day gets a datum date, not the reader\'s', async () => {
+		await withTwelveHourReader(async ({ page, run, entries }) => {
+			// The same pin, on the call *this* bug is made of. `9/4/2026` is
+			// what an en-US browser answers; a runner that already writes
+			// dates the way we want would make everything below vacuous.
+			const asked = await page.evaluate(() => new Date().toLocaleDateString());
+			assert.match(
+				asked,
+				/^\d{1,2}\/\d{1,2}\/\d{4}$/,
+				`locale ${TWELVE_HOUR} did not take: browser said "${asked}"`
+			);
+
+			// Older than 24 hours, or the card reads `just now` and the
+			// branch that formats a date is never reached at all. This is
+			// why a fresh database never shows the bug and a real history
+			// is almost entirely inside it.
+			assert.equal((await run(['occur', 'reading', '-y'])).code, 0);
+			const [stored] = await entries(1);
+			// The zone is UTC (support/app.mjs), so the stored instant's own
+			// date is the date the card owes its reader.
+			const day = stored.occurTime.utc.slice(0, 10);
+
+			await page.locator('header nav a[href="/now"]').click();
+			const card = page.locator('.now-view .field-card', { hasText: 'reading' });
+			await card.waitFor();
+			const shown = (await card.locator('.field-time').textContent()).trim();
+
+			assert.equal(shown, day, `the /now card is on the reader's calendar: "${shown}"`);
+			assert.doesNotMatch(shown, /\//, `the /now card is still locale-formatted: "${shown}"`);
+		});
+	});
+});

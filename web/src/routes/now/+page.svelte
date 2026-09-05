@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { initDb, getLatestPerField } from '$lib/db.js';
 	import { formatValue } from '$lib/runners/local.js';
+	import { dateLabel } from '$lib/clock.js';
 	import type { Entry } from '$lib/types.js';
 
 	let entries: Entry[] = [];
@@ -22,7 +23,15 @@
 		if (diffMin < 60) return `${diffMin}m ago`;
 		const diffH = Math.floor(diffMin / 60);
 		if (diffH < 24) return `${diffH}h ago`;
-		return d.toLocaleDateString();
+		// Past a day the label stops being relative and becomes a date, and
+		// a date is the one clock convention too. `toLocaleDateString()`
+		// asks the *reader's* browser, which on en-US answers `9/4/2026`
+		// beside a `datum` that is ISO-ish everywhere else — the date
+		// sibling of the time bug da-6o81 fixed one directory away. So this
+		// reuses `dateLabel`, the same `YYYY-MM-DD` in the entry's own zone
+		// that the tail prints for a date-only row (da-kb8p), rather than
+		// growing a second date formatter.
+		return dateLabel(entry.occurTime);
 	}
 </script>
 

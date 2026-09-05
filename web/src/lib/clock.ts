@@ -8,9 +8,13 @@
 // beside a nowview axis reading "16:07" — the same instant in two
 // conventions, in one screenshot (da-6o81).
 //
-// So no renderer here calls a locale-sensitive formatter for a time of
-// day. The zone is still the browser's, which is what `getHours` reads;
-// only the convention is pinned.
+// So no renderer anywhere in the app calls a locale-sensitive formatter
+// for an instant — not a time of day, and not a date either: the /now
+// card past 24 hours asked `toLocaleDateString()` and printed `9/4/2026`
+// long after the time half was fixed, because the fix named only the call
+// it had found (da-6eou). Both conventions live here now. The zone is
+// still the browser's, which is what `getHours` reads; only the
+// convention is pinned.
 
 import type { DatumTime } from './types.js';
 
