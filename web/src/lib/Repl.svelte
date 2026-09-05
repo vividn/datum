@@ -115,7 +115,7 @@
 			bind:value={input}
 			on:keydown={recall}
 			{disabled}
-			placeholder={disabled ? 'opening database…' : 'occur coffee 2 cups'}
+			placeholder={disabled ? 'opening database…' : 'occur coffee cups=2'}
 			spellcheck="false"
 			autocapitalize="none"
 			autocomplete="off"
