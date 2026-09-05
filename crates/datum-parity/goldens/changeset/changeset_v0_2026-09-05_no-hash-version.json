@@ -1,0 +1,75 @@
+{
+  "entries": [
+    {
+      "alias_chain": null,
+      "content_hash": "7a32f79ab183dc5156faa33dbef92580dcf4ffcf75a1fb28e16209ecc0b36c57",
+      "create_time": "2026-04-20T22:01:00Z",
+      "data": null,
+      "deleted_at": "2026-04-21T08:00:00Z",
+      "device_id": "dev-beta",
+      "dur": null,
+      "extra_metadata": null,
+      "field": "mood",
+      "field_structure": null,
+      "following_state": null,
+      "hid": "bbbbbbbbbbbb",
+      "id_structure": null,
+      "lat": null,
+      "location": null,
+      "lon": null,
+      "modify_time": "2026-04-21T08:00:00Z",
+      "occur_time": {
+        "offset_minutes": 0,
+        "timezone": "UTC",
+        "utc": "2026-04-20T22:00:00Z"
+      },
+      "parser_version": 2,
+      "slug": "mood:2026-04-20T22:00:00.000Z",
+      "state": 3,
+      "user_asserted_last_state": null,
+      "verb": "switch"
+    },
+    {
+      "alias_chain": [
+        "cof"
+      ],
+      "content_hash": "5f96ac474f554718ca5a97870d499bbfb65e57641af6a7ee87967fe508f84116",
+      "create_time": "2026-04-21T09:16:00Z",
+      "data": {
+        "beans": {
+          "u": "g",
+          "v": 18.5
+        }
+      },
+      "deleted_at": null,
+      "device_id": "dev-alpha",
+      "dur": "PT1H30M",
+      "dur_precision": "PT1M",
+      "extra_metadata": {
+        "_import": "legacy"
+      },
+      "field": "coffee",
+      "field_structure": "%srcLang%",
+      "following_state": "done",
+      "hid": "aaaaaaaaaaaa",
+      "id_structure": "%field%:%uid%",
+      "lat": 41.8781,
+      "location": "kitchen",
+      "lon": -87.6298,
+      "modify_time": "2026-04-21T09:17:00Z",
+      "occur_time": {
+        "offset_minutes": -300,
+        "timezone": "America/Chicago",
+        "uncertainty": "PT5M",
+        "utc": "2026-04-21T09:15:00Z"
+      },
+      "occur_time_precision": "PT5M",
+      "parser_version": 2,
+      "raw_input": "datum start coffee brewing",
+      "slug": "coffee:2026-04-21T09:15:00.000Z",
+      "state": "brewing",
+      "user_asserted_last_state": "idle",
+      "verb": "block-switch"
+    }
+  ]
+}

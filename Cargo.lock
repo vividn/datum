@@ -592,6 +592,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "datum-core",
+ "datum-sync-client",
  "datum-sync-protocol",
  "md-5",
  "proptest",

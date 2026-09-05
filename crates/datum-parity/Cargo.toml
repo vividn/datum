@@ -31,5 +31,12 @@ datum-core = { path = "../datum-core" }
 # `tests/hash_goldens.rs` also pins the wire-declared hash-definition
 # version (da-engu) to the goldens that ARE that definition.
 datum-sync-protocol = { path = "../datum-sync-protocol" }
+# `tests/changeset_goldens.rs` drives the real changeset apply path over the
+# frozen cross-version payloads in `goldens/changeset/` (da-4zoa). Default
+# features off: the goldens exercise `ops`, which needs `db`, and pulling
+# `http` in would drag reqwest into a crate that makes no network calls.
+datum-sync-client = { path = "../datum-sync-client", default-features = false, features = [
+    "db",
+] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

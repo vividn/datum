@@ -314,6 +314,11 @@ fn add_legacy_uncertainty_mirror(doc: &mut serde_json::Value) {
 /// Decode the entry list from a packed changeset, validating the envelope
 /// first. Shared with `sync_once` (conflict snapshot + dry-run counters)
 /// so the crate has exactly one envelope parser.
+///
+/// `sync_once` is the only consumer and it needs `http` too, so a `db`-only
+/// build (which `datum-parity` takes, to reach `apply_changeset` without
+/// dragging reqwest in) has no caller for it.
+#[cfg(any(feature = "http", test))]
 pub(crate) fn changeset_entries(bytes: &[u8]) -> Result<Vec<Entry>> {
     Ok(parse_payload(bytes)?.entries)
 }

@@ -1,0 +1,101 @@
+{
+  "_comment": [
+    "What today's build does with each frozen payload in this directory.",
+    "The payloads are immutable records; these expectations are the reviewed",
+    "reading of them. See README.md for the one legitimate reason to edit a",
+    "block (a column added to Entry after the payload was written) and for why",
+    "nothing may regenerate the payloads themselves.",
+    "Every column the entries table holds must be stated in every row: the test",
+    "denies both unknown and missing keys, so a new column cannot slip in",
+    "un-decided and an old one cannot quietly stop being checked."
+  ],
+  "golden": [
+    {
+      "file": "changeset_v0_2026-09-05_hash-v1.json",
+      "built_at": "1840fb8e (da-engu)",
+      "magic": "DSC1",
+      "note": "The shape a build declaring content_hash definition v1 puts on the wire. Note dur/dur_precision: the current packer SPLITS the duration's uncertainty into the pre-da-b8rs sibling key, because an old peer parses `dur` strictly and would reject the `PT1H30M±PT1M` form outright. So adopt_legacy_uncertainty is not legacy-only code — delete it and today's builds start dropping dur_uncertainty from every sync, which is exactly what this golden goes red on.",
+      "outcome": {
+        "kind": "decodes",
+        "rows": [
+          {
+            "hid": "aaaaaaaaaaaa",
+            "slug": "coffee:2026-04-21T09:15:00.000Z",
+            "content_hash": "5f96ac474f554718ca5a97870d499bbfb65e57641af6a7ee87967fe508f84116",
+            "field": "coffee",
+            "verb": "block-switch",
+            "state": "brewing",
+            "dur": "PT1H30M",
+            "dur_uncertainty": "PT1M",
+            "following_state": "done",
+            "data": { "beans": { "u": "g", "v": 18.5 } },
+            "occur_time": "2026-04-21T09:15:00Z",
+            "occur_offset_minutes": -300,
+            "occur_timezone": "America/Chicago",
+            "occur_uncertainty": "PT5M",
+            "lat": 41.8781,
+            "lon": -87.6298,
+            "location": "kitchen",
+            "create_time": "2026-04-21T09:16:00Z",
+            "modify_time": "2026-04-21T09:17:00Z",
+            "device_id": "dev-alpha",
+            "deleted_at": null,
+            "superseded_by": null,
+            "id_structure": "%field%:%uid%",
+            "field_structure": "%srcLang%",
+            "raw_input": "datum start coffee brewing",
+            "alias_chain": ["cof"],
+            "parser_version": 2,
+            "user_asserted_last_state": "idle",
+            "extra_metadata": { "_import": "legacy" }
+          },
+          {
+            "hid": "bbbbbbbbbbbb",
+            "slug": "mood:2026-04-20T22:00:00.000Z",
+            "content_hash": "7a32f79ab183dc5156faa33dbef92580dcf4ffcf75a1fb28e16209ecc0b36c57",
+            "field": "mood",
+            "verb": "switch",
+            "state": 3,
+            "dur": null,
+            "dur_uncertainty": null,
+            "following_state": null,
+            "data": null,
+            "occur_time": "2026-04-20T22:00:00Z",
+            "occur_offset_minutes": 0,
+            "occur_timezone": "UTC",
+            "occur_uncertainty": null,
+            "lat": null,
+            "lon": null,
+            "location": null,
+            "create_time": "2026-04-20T22:01:00Z",
+            "modify_time": "2026-04-21T08:00:00Z",
+            "device_id": "dev-beta",
+            "deleted_at": "2026-04-21T08:00:00Z",
+            "superseded_by": null,
+            "id_structure": null,
+            "field_structure": null,
+            "raw_input": null,
+            "alias_chain": null,
+            "parser_version": 2,
+            "user_asserted_last_state": null,
+            "extra_metadata": null
+          }
+        ]
+      }
+    },
+    {
+      "file": "changeset_v0_2026-09-05_no-hash-version.json",
+      "built_at": "3a551f94 (da-uxgv, the commit before da-engu)",
+      "magic": "DSC1",
+      "note": "Byte-identical to the golden above but for the absent hash_version, because that is the only thing da-engu changed on the wire. A real pre-declaration payload, and the proof that check_hash_version refuses it rather than merging across an unknown content_hash definition. If this ever flips to `decodes`, someone has loosened the one gate standing between an undeclared peer and a silently wrong (content_hash, device_id) tiebreak.",
+      "outcome": {
+        "kind": "refused",
+        "message_contains": [
+          "predates da-engu",
+          "no flag suppresses this"
+        ],
+        "rows_written": 0
+      }
+    }
+  ]
+}
