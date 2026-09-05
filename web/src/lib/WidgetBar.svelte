@@ -294,7 +294,12 @@
 	.panel {
 		position: absolute;
 		z-index: 10;
-		top: calc(100% + 0.3rem);
+		/* Upward: the bar is the bottom-most row of the frame at every
+		   width, so a panel hung below it opens off the bottom of the
+		   screen — reachable only by a scroll the reader has no reason to
+		   guess at (da-hkpd). Above the bar it is on screen wherever the
+		   bar is. */
+		bottom: calc(100% + 0.3rem);
 		left: 0;
 		display: flex;
 		flex-direction: column;

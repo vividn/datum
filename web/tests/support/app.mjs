@@ -63,9 +63,13 @@ function baseUrl() {
  * machine running the suite happens to have. A test about anything the
  * browser formats by locale must set it, or it asserts about the runner
  * rather than about the app (da-6o81).
+ *
+ * `viewport` is the size of the screen the app is asked to lay itself out
+ * on. The default is Playwright's desktop 1280x720, which is a viewport no
+ * phone has — a layout test must name the one it means (da-hkpd).
  */
-export async function withApp(fn, { prepare, locale } = {}) {
-	const context = await browser.newContext({ timezoneId: TIMEZONE, locale });
+export async function withApp(fn, { prepare, locale, viewport } = {}) {
+	const context = await browser.newContext({ timezoneId: TIMEZONE, locale, viewport });
 	try {
 		await prepare?.(context);
 		const page = await context.newPage();

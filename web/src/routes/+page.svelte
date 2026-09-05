@@ -147,5 +147,20 @@
 			grid-template-columns: minmax(0, 1fr);
 			overflow-y: auto;
 		}
+
+		/* Those row minimums add up to more than a phone's viewport, so
+		   the column really does scroll — and the widget bar, being last,
+		   was the part that started off the bottom of the screen with no
+		   sign that a scroll would find it (da-hkpd). Pin it to the
+		   bottom of the scroller: the panes scroll behind it and the way
+		   to log without typing is on screen at any viewport height. */
+		.widgets {
+			position: sticky;
+			bottom: 0;
+			z-index: 1;
+			padding-top: 0.5rem;
+			background: #0a0a1a;
+			border-top: 1px solid #1e1e38;
+		}
 	}
 </style>
