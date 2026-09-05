@@ -18,9 +18,14 @@
 // varied the axis the bug was found on (viewport height) and left the other
 // one — how much is IN the bar — at a single field. Five ordinary fields wrap
 // the bar to two rows on a phone, and the second row hung below the screen
-// again (da-vyo2). So every case here is run against a POPULATED bar too:
-// reachability is a property of the bar at any height AND any width of
-// contents, and a fixture that logs one thing cannot see half of that.
+// again (da-vyo2). So the cases here run against a POPULATED bar as well as
+// an empty one.
+//
+// And the count that wraps is not a constant: it is what fits across the
+// screen, so it falls as the screen narrows — five fields at 390, four at
+// 320, three at 280. Fixing a width and hunting for the count would just
+// re-learn the width. These log one ordinary handful at every screen in the
+// matrix, which wraps at all of them.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -35,11 +40,18 @@ const PHONE = { width: 390, height: 640 };
 /** The shortest screen worth claiming to support — an SE with chrome. */
 const SHORT = { width: 390, height: 560 };
 
+/** An SE's width, which is still common, and the narrowest phone there is. */
+const NARROW = { width: 320, height: 664 };
+const TINY = { width: 280, height: 664 };
+
+/** Both axes of the bug: how short the screen is and how narrow it is. */
+const SCREENS = [PHONE, SHORT, NARROW, TINY];
+
 /**
- * Enough ordinary fields to wrap the bar onto a second row at 390 wide.
+ * Enough ordinary fields to wrap the bar at every screen in SCREENS.
  *
- * Not an adversarial input — this is a person tracking five things. The
- * count is the point: four fit on one row and pass either way (da-vyo2).
+ * Not an adversarial input — this is a person tracking five things
+ * (da-vyo2).
  */
 const FIELDS = ['coffee', 'mood', 'sleep', 'water', 'run'];
 
@@ -90,6 +102,10 @@ describe('on a phone-sized screen', () => {
 				await assertOnScreen(page, '.bar button.widget', "the coffee field's chip");
 			}, { viewport });
 		});
+	}
+
+	for (const viewport of SCREENS) {
+		const size = `${viewport.width}x${viewport.height}`;
 
 		// The one that da-hkpd's fix and its verification both missed: the
 		// bar was pinned to the bottom, and then wrapped DOWNWARD past it.
