@@ -97,8 +97,15 @@
 			'repl side'
 			'widgets widgets';
 		/* The dayview strip and the widget bar take what they need; the
-		   middle row takes the rest and its panes scroll inside it. */
-		grid-template-rows: minmax(0, auto) minmax(0, 1fr) auto;
+		   middle row takes the rest and its panes scroll inside it.
+
+		   The bar's row is `min-content`, not `auto`, because an `auto`
+		   track's floor is the item's own `min-height` — and once the
+		   tracks overflow the frame there is no free space to grow it
+		   back, so the row stays at that floor while a wrapped bar hangs
+		   out the bottom of it (da-vyo2). A `min-content` track is the
+		   bar's real height however many rows it wraps to. */
+		grid-template-rows: minmax(0, auto) minmax(0, 1fr) min-content;
 		grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
 		gap: 0.75rem;
 		height: 100%;
@@ -129,7 +136,8 @@
 		grid-area: widgets;
 		/* Held open so the panes stop above the bottom edge rather than
 		   growing into the row and snapping back once the bar has
-		   buttons in it. */
+		   buttons in it. A floor only — the row above sizes to the bar,
+		   so this never caps it. */
 		min-height: 2rem;
 	}
 
@@ -143,7 +151,7 @@
 				'repl'
 				'side'
 				'widgets';
-			grid-template-rows: auto minmax(14rem, 2fr) minmax(16rem, 3fr) auto;
+			grid-template-rows: auto minmax(14rem, 2fr) minmax(16rem, 3fr) min-content;
 			grid-template-columns: minmax(0, 1fr);
 			overflow-y: auto;
 		}
@@ -153,7 +161,10 @@
 		   was the part that started off the bottom of the screen with no
 		   sign that a scroll would find it (da-hkpd). Pin it to the
 		   bottom of the scroller: the panes scroll behind it and the way
-		   to log without typing is on screen at any viewport height. */
+		   to log without typing is on screen at any viewport height.
+
+		   Pinning the bar only helps if the bar is all in the row being
+		   pinned; see the row template above for why it was not. */
 		.widgets {
 			position: sticky;
 			bottom: 0;
