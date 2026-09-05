@@ -53,10 +53,14 @@ CREATE TABLE IF NOT EXISTS entries (
     occur_time_offset    INTEGER,                -- UTC offset in minutes
     occur_time_tz        TEXT,                   -- IANA timezone name
     -- How precisely `occur_time` is known: a single ISO-8601 duration
-    -- string giving the ± radius (e.g. "PT1S", "PT1M", "PT1H", "P1D",
-    -- "P1W"). Replaces the v3-era (precision INTEGER seconds,
-    -- precision_unit TEXT) pair; named `occur_time_precision` before
-    -- da-b8rs. NULL = unknown, which is NOT the claim "exact" — same rule
+    -- string giving the ± radius (e.g. "PT1S", "PT1M", "PT1H", "P1W").
+    -- Replaces the v3-era (precision INTEGER seconds, precision_unit
+    -- TEXT) pair; named `occur_time_precision` before da-b8rs.
+    -- "P1D" is the exception: not a radius but the date-only marker —
+    -- the row has a date and no time of day, its instant stripped to
+    -- local midnight — and the code branches on it by name, as
+    -- `datum_parse::entry_id::DATE_ONLY_PRECISION`.
+    -- NULL = unknown, which is NOT the claim "exact" — same rule
     -- as occur_time_tz above.
     occur_time_uncertainty TEXT,
     -- How precisely `dur` is known, same ISO-8601 ± radius (e.g. "PT1M"
