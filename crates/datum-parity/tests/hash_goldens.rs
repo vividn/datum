@@ -25,6 +25,7 @@ use sha2::{Digest, Sha256};
 
 #[derive(Deserialize)]
 struct Goldens {
+    hash_version: u32,
     fixture: Vec<Fixture>,
 }
 
@@ -47,15 +48,17 @@ struct Fixture {
     content_hash: String,
 }
 
-fn goldens() -> Vec<Fixture> {
+fn parse_goldens() -> Goldens {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/goldens/hash/content_hash.toml"
     );
     let text = std::fs::read_to_string(path).expect("read hash goldens");
-    toml::from_str::<Goldens>(&text)
-        .expect("parse hash goldens")
-        .fixture
+    toml::from_str::<Goldens>(&text).expect("parse hash goldens")
+}
+
+fn goldens() -> Vec<Fixture> {
+    parse_goldens().fixture
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -123,4 +126,25 @@ fn core_reproduces_fixture_hashes() {
             f.parts
         );
     }
+}
+
+/// The wire declaration and the definition it names must move together
+/// (da-engu). Peers refuse a changeset whose declared
+/// `CONTENT_HASH_VERSION` is not their own, which is only worth anything
+/// if the number actually tracks the preimage — and the preimage's
+/// definition of record is the golden file above, not a comment.
+///
+/// So changing a digest here without bumping both is the mistake this
+/// catches: it would ship a redefined hash that every peer still declares
+/// as the old one, and the refusal that exists to stop exactly that skew
+/// would wave it through.
+#[test]
+fn declared_hash_version_matches_the_pinned_definition() {
+    assert_eq!(
+        parse_goldens().hash_version,
+        datum_sync_protocol::CONTENT_HASH_VERSION,
+        "the goldens pin the content_hash definition; bump \
+         CONTENT_HASH_VERSION in the same commit that changes them, or \
+         peers will merge across a skew they cannot see",
+    );
 }

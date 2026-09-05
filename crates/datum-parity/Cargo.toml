@@ -28,5 +28,8 @@ regex-lite = { workspace = true }
 # what datum-core actually computes — the goldens are only worth anything
 # if they're bound to the implementation.
 datum-core = { path = "../datum-core" }
+# `tests/hash_goldens.rs` also pins the wire-declared hash-definition
+# version (da-engu) to the goldens that ARE that definition.
+datum-sync-protocol = { path = "../datum-sync-protocol" }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

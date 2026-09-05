@@ -34,6 +34,7 @@ datum-core = { path = "../datum-core", features = ["test-util"] }
 datum-cli = { path = ".", features = ["test-util"] }
 datum-commands = { path = "../datum-commands", features = ["test-util"] }
 datum-sync-client = { path = "../datum-sync-client" }
+datum-sync-protocol = { path = "../datum-sync-protocol" }
 datum-sync-server = { path = "../datum-sync-server" }
 datum-test-util = { path = "../datum-test-util" }
 url = "2"

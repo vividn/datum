@@ -88,6 +88,13 @@ fn expected_entry() -> Entry {
 /// mis-parse (`payload_json`, da-pl2o).
 fn legacy_payload(entry: &Entry) -> Changeset {
     let doc = serde_json::json!({
+        // The peer is old on the axis under test — the uncertainty keys —
+        // and current on every other. `hash_version` is stated because a
+        // changeset that declares none is refused outright (da-engu), and
+        // conflating "predates da-b8rs" with "predates hash versioning"
+        // would make this file test the refusal instead of the fold. The
+        // refusal has its own tests in `datum-sync-client::ops`.
+        "hash_version": datum_sync_protocol::CONTENT_HASH_VERSION,
         "entries": [{
             "hid": entry.hid,
             "slug": entry.slug,

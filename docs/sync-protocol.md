@@ -48,10 +48,14 @@ to `/v1`; from that point breaking changes bump the prefix (`/v2`, …) and
 additive changes (new optional fields, new endpoints) stay on the current
 prefix. That breaking-change discipline kicks in at promotion, not before.
 
-> The changeset payload-format version (the `DSC1` magic / `ChangesetPayloadV1`,
-> see [Encryption](#encryption)) is **orthogonal** to this URL/protocol
-> version. The magic prefix versions the encrypted body; the URL prefix
-> versions the HTTP contract. They move independently.
+> There are **three independent version axes**, and they move separately:
+> the URL prefix versions the HTTP contract; the changeset magic (`DSC1`,
+> see [Encryption](#encryption)) versions the encrypted body's *encoding*;
+> and `hash_version` inside the payload versions the *`content_hash`
+> definition* (see [Content hash](#content-hash)). The third exists
+> because a hash redefinition changes neither the route nor the encoding —
+> the bytes decode perfectly and only the meaning of one field moves, so
+> neither of the other two constants would budge for it (da-engu).
 
 ## Authentication
 
@@ -269,6 +273,19 @@ own value (da-pjhg):
   assigning it puts the device on a dead generation and every later push
   409s. Moving *backwards* is legitimate only in the reinit recovery
   above, where the relay stated the value directly.
+- **A changeset whose `hash_version` is not the client's own MUST NOT be
+  applied** (da-engu), and the refusal MUST reach the user naming both
+  versions and which side is behind — the remedy is upgrading the older
+  device. An absent `hash_version` is a peer that predates the
+  declaration: its definition is *unknown*, which is not the same as
+  matching, and it is refused too. See [Content hash](#content-hash) for
+  what merging across the skew would break.
+- **The incoming `content_hash` MUST be re-derived from the incoming
+  row's own columns on apply**, not stored as sent. With the version
+  check passed the two agree, so this changes no value — it guarantees
+  one: every stored hash matches `expected_content_hash`, so `datum
+  check` stays clean on the receiving device and no row carries a foreign
+  key into the next merge's tiebreak.
 
 > Client-side recovery (watermark reset + re-pull, coordinated with the
 > restore/purge path) is being implemented under da-74xx. This section
@@ -698,7 +715,7 @@ would change the `content_hash` of every entry with a structured `state` or
 asserts on the serialized bytes so that flip fails a test rather than a
 sync.
 
-**Version skew is UNSUPPORTED: upgrade every device in a cluster
+**Version skew is REFUSED, not merged: upgrade every device in a cluster
 together.** The hash definition is part of the merge contract, not a local
 detail. Two clients on different definitions compute different hashes for
 the same logical entry, and then:
@@ -710,11 +727,26 @@ the same logical entry, and then:
   order both sides agree on**, which is precisely the permanent silent
   divergence it exists to prevent (da-22zm).
 
-Nothing on the wire currently detects this — a client cannot tell a peer's
-hash definition from the blob. Making the skew *detected and refused*
-rather than silently divergent means carrying a hash version in the
-protocol; that is filed as da-engu and is not implemented here. Until it
-is, a mixed-version cluster is out of contract.
+Neither failure announces itself, so the detection cannot be quiet either.
+Every changeset therefore declares its definition as `hash_version` in the
+payload (see [Encryption](#encryption)), and a client **MUST refuse** — to
+the user, with no flag that suppresses it — any changeset whose
+`hash_version` is not its own, rather than merging it under this side's
+assumptions (da-engu). The current definition, the one above, is
+`hash_version = 1`; `crates/datum-parity/goldens/hash/content_hash.toml`
+pins both the digests and the number, so a redefinition that forgets to
+bump fails a test instead of shipping.
+
+**Why a version and not just a recomputation.** Re-deriving the incoming
+hash locally detects *that* something disagrees; it cannot say *what*. A
+disagreement has two causes with one symptom — the peer is on a different
+definition (benign: the row's data is fine, upgrade the peer), or the row
+was altered (the data is not fine) — and the two deserve opposite
+responses. Comparing declared versions separates them before looking at
+the bytes, which is why the order is: **check the version first, and only
+then trust the hashes**. Clients do both, which is what makes
+re-derivation on apply (above) a *guarantee* of self-consistency rather
+than a guess about the sender.
 
 **Clock-skew caveat (accepted, not mitigated).** `modify_time` is a raw
 device wall-clock with no logical-clock component. A device whose clock
@@ -776,9 +808,23 @@ The plaintext is the `Changeset` bytes:
 
 ```json
 {
+  "hash_version": 1,
   "entries": [ /* one per changed Entry — see crates/datum-core/src/entry.rs */ ]
 }
 ```
+
+`hash_version` declares which [`content_hash` definition](#content-hash)
+the sender computed this page's hashes under. It rides *inside* the sealed
+payload rather than on the `Changeset` row for three reasons: the relay is
+content-blind and a hash definition is payload semantics, not routing;
+inside the seal it is covered by the GCM tag, so it cannot be stripped or
+rewritten to "same as yours" — which would defeat the refusal it exists to
+produce; and the relay is an append-only log, so a pull page carries rows
+pushed at different times by devices that are not online, leaving no
+session peer whose current definition could stand in for the one these
+bytes were hashed under. The declaration belongs to the bytes. Its cost is
+per *page* — a changeset is up to `DEFAULT_PUSH_PAGE_ENTRIES` entries, not
+one row.
 
 Tombstones ride the same channel: entries with `deleted_at` set to a
 non-null ISO 8601 UTC string are soft-deletes.

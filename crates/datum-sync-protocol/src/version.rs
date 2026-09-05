@@ -26,6 +26,34 @@ pub const PROTOCOL_VERSION: u32 = 0;
 /// body, this versions the HTTP route surface; they move independently.
 pub const PROTOCOL_VERSION_PATH: &str = "v0";
 
+/// Version of the `content_hash` *definition* — which columns feed the
+/// preimage and how they are serialized (`docs/sync-protocol.md`
+/// §Content hash). Declared inside every changeset payload so a peer on a
+/// different definition is refused rather than merged (da-engu).
+///
+/// **A third axis, orthogonal to both above.** [`PROTOCOL_VERSION_PATH`]
+/// versions the HTTP route surface; the changeset magic
+/// ([`crate::crypto::CHANGESET_MAGIC_V1`]) versions the encrypted body's
+/// encoding. This versions the *semantics of one field inside a correctly
+/// decoded payload*: nothing about the route changes, and the bytes parse
+/// perfectly — which is exactly how da-4vyw could redefine the hash
+/// without either of the other two constants moving.
+///
+/// **Do not reach for [`PROTOCOL_VERSION`] instead.** It is `0`, the
+/// pre-production version whose documented policy is that the wire
+/// contract may change *in place*; bumping it for a hash change would
+/// contradict that policy and drag the route surface along. And that same
+/// in-place policy is why the skew bites now: two peers on different
+/// builds both honestly report `v0` and connect, because from the route
+/// surface's point of view nothing differs.
+///
+/// `1` is the da-4vyw definition: `field · occur_time · dur · state ·
+/// data · following_state · deleted-marker`. Bump it in the same commit
+/// that changes the preimage — `datum-parity`'s `hash_goldens` test pins
+/// this constant to the golden file that *is* the definition, so the two
+/// cannot part company.
+pub const CONTENT_HASH_VERSION: u32 = 1;
+
 #[cfg(test)]
 mod tests {
     use super::*;

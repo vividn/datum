@@ -17,6 +17,14 @@
 # `tests/hash_goldens.rs` checks the three against each other AND against
 # `datum_core::entry::Entry::expected_content_hash`, so a drift in either the
 # fixture or the implementation fails.
+#
+# `hash_version` is which definition these fixtures pin — the number peers
+# declare on the wire so a skew is refused rather than silently merged
+# (da-engu). These digests ARE the definition, so changing them is what a
+# bump means: the same test asserts this equals
+# `datum_sync_protocol::CONTENT_HASH_VERSION`, and editing one without the
+# other fails rather than shipping a definition change no peer can see.
+hash_version = 1
 
 [[fixture]]
 name = "flat-point"

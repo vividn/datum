@@ -31,12 +31,31 @@ use serde::{Deserialize, Serialize};
 
 use crate::crypto::changeset::Changeset;
 use datum_sync_protocol::crypto::constants::CHANGESET_MAGIC_V1;
+use datum_sync_protocol::version::CONTENT_HASH_VERSION;
 
 /// Internal v1 payload: a flat list of entries (live + tombstoned).
 /// Tombstones carry `deleted_at = Some(..)`; peers apply them as soft
 /// deletes.
 #[derive(Serialize, Deserialize)]
 struct ChangesetPayloadV1 {
+    /// Which `content_hash` definition the sender computed this page's
+    /// hashes under ([`CONTENT_HASH_VERSION`], da-engu). `None` is a peer
+    /// that predates the declaration entirely — indistinguishable from
+    /// any other unknown definition, and refused the same way by
+    /// [`check_hash_version`].
+    ///
+    /// It rides *inside* the sealed payload, not on the outer
+    /// [`datum_sync_protocol::Changeset`] row, for three reasons. The
+    /// relay is content-blind and a hash definition is payload semantics,
+    /// not routing. Inside the seal the declaration is covered by the GCM
+    /// tag, so it cannot be stripped or rewritten to "same as yours" —
+    /// which would defeat the refusal it exists to produce. And the relay
+    /// is an append-only log: a pull page carries rows pushed at
+    /// different times by devices that are not online, so there is no
+    /// session peer whose current definition could stand in for the one
+    /// these bytes were hashed under. The version belongs to the bytes.
+    #[serde(default)]
+    hash_version: Option<u32>,
     entries: Vec<Entry>,
 }
 
@@ -77,7 +96,10 @@ pub fn pack_changeset_page(
     limit: usize,
 ) -> Result<(Changeset, Option<u64>)> {
     let (entries, max_ms) = select_entries_since(db, since_modify_ms, limit)?;
-    let payload = ChangesetPayloadV1 { entries };
+    let payload = ChangesetPayloadV1 {
+        hash_version: Some(CONTENT_HASH_VERSION),
+        entries,
+    };
     let mut doc = serde_json::to_value(&payload)?;
     add_legacy_uncertainty_mirror(&mut doc);
     let json = serde_json::to_vec(&doc)?;
@@ -107,9 +129,28 @@ pub fn pack_changeset_page(
 /// (`sync_merge`) and surfaced as a `lww_overwrite` integrity warning
 /// (see [`upsert_lww`]).
 pub fn apply_changeset(db: &Db, cs: &Changeset) -> Result<()> {
-    let payload = parse_payload(cs.as_bytes())?;
+    let mut payload = parse_payload(cs.as_bytes())?;
     let tx = db.conn().unchecked_transaction()?;
-    for entry in payload.entries.iter() {
+    for entry in payload.entries.iter_mut() {
+        // Re-derive the incoming hash from the incoming row's own columns
+        // instead of storing what the peer sent (da-engu). [`is_same_event`]
+        // already did this for the twin-folding path and says why; the two
+        // consumers that still read the stored column — the replay
+        // short-circuit and the `(content_hash, device_id)` tiebreaker,
+        // both in [`upsert_lww`] — get the same defence here, at the one
+        // point every incoming row passes.
+        //
+        // Sound because [`check_hash_version`] has already refused any
+        // peer on a different definition, so "re-derived" and "as sent"
+        // are the same value for every changeset that reaches this line.
+        // What it buys is that they are the same value *by construction*:
+        // every stored hash agrees with `expected_content_hash`, so
+        // `datum check` stays clean on the receiving device and no row
+        // carries a foreign key into the next merge's tiebreak. A sender
+        // whose own column had drifted from its columns is repaired on
+        // arrival rather than replicated — that is a `hash_drift` fault on
+        // that device, not something this side can merge its way out of.
+        entry.content_hash = entry.expected_content_hash();
         upsert_lww(&tx, entry)?;
     }
     tx.commit()?;
@@ -138,7 +179,55 @@ fn payload_json(bytes: &[u8]) -> Result<&[u8]> {
 fn parse_payload(bytes: &[u8]) -> Result<ChangesetPayloadV1> {
     let mut doc: serde_json::Value = serde_json::from_slice(payload_json(bytes)?)?;
     adopt_legacy_uncertainty(&mut doc);
-    Ok(serde_json::from_value(doc)?)
+    let payload: ChangesetPayloadV1 = serde_json::from_value(doc)?;
+    check_hash_version(payload.hash_version)?;
+    Ok(payload)
+}
+
+/// Refuse a changeset whose `content_hash` definition is not this
+/// device's (da-engu). Every reader of a packed changeset comes through
+/// [`parse_payload`], so this is the single gate.
+///
+/// **Why refusing is the only safe answer.** Two peers on different
+/// definitions compute different hashes for the same logical entry, and
+/// `content_hash` is load-bearing twice over in the merge: the replay
+/// short-circuit in [`upsert_lww`] stops firing, so rows the device
+/// already holds are re-applied and file spurious `lww_overwrite`
+/// warnings; and the equal-`modify_time` tiebreaker `(content_hash,
+/// device_id)` stops being a total order both sides agree on — the exact
+/// permanent silent divergence da-22zm added it to prevent. Merging
+/// anyway would corrupt the merge quietly; stopping is loud and costs one
+/// upgrade.
+///
+/// The failure it prevents is silent, so the refusal must not be: it is
+/// an error out of the apply path with no flag that suppresses it, and
+/// the message names both versions and which side is behind, because
+/// "upgrade the other device" is the whole remedy.
+fn check_hash_version(theirs: Option<u32>) -> Result<()> {
+    if theirs == Some(CONTENT_HASH_VERSION) {
+        return Ok(());
+    }
+    let (declared, older) = match theirs {
+        // Predates the declaration (da-engu). Its definition is unknown —
+        // it may or may not be pre-da-4vyw — and unknown is not "assume
+        // it matches": assuming is precisely the silent merge this exists
+        // to stop.
+        None => (
+            "declares no content_hash version (it predates da-engu)".to_string(),
+            "the peer",
+        ),
+        Some(v) => (
+            format!("computes content_hash under definition v{v}"),
+            if v < CONTENT_HASH_VERSION {
+                "the peer"
+            } else {
+                "this device"
+            },
+        ),
+    };
+    Err(DatumError::Other(format!(
+        "refusing changeset: the peer {declared}, this device is on          v{CONTENT_HASH_VERSION} — {older} is behind. Upgrade it before          syncing this cluster again. Merging across the skew would pick          the wrong winner in the (content_hash, device_id) tiebreaker and          diverge silently (da-engu); no flag suppresses this."
+    )))
 }
 
 /// The one place foreign changeset JSON becomes `Entry`s, and so the one
@@ -336,7 +425,11 @@ fn merge_rank(e: &Entry) -> (chrono::DateTime<chrono::Utc>, &str, &str, &str) {
 /// whatever the peer sent, and a peer running a pre-da-4vyw client computed
 /// it without `following_state`. Trusting that hash would silently destroy
 /// one of two entries that differ only in `following_state` — precisely the
-/// conflation da-4vyw closed.
+/// conflation da-4vyw closed. da-engu generalised that move to the whole
+/// apply path (see [`apply_changeset`]) and refuses the skew outright, so
+/// re-deriving the incoming side is now belt-and-braces — but this is
+/// still the only place that also re-derives the *local* side, which a
+/// pre-da-engu row may have been stored under.
 ///
 /// `lat`/`lon`/`location` sit outside the hash and vividn was not asked about
 /// them. Two logs at different places are a real difference in a life-log,
@@ -1038,6 +1131,124 @@ mod tests {
         let err = changeset_entries(&bytes).unwrap_err();
         assert!(err.to_string().contains("unknown changeset magic"));
         assert!(changeset_entries(b"DS").is_err(), "short blob must error");
+    }
+
+    // ─── da-engu: a content_hash definition skew is refused ──────────────
+
+    /// A changeset carrying `entry` exactly as given, declaring
+    /// `hash_version = declared` (`None` omits the key, which is what a
+    /// pre-da-engu peer sends).
+    ///
+    /// Built straight from the entry rather than through
+    /// [`changeset_of`], which inserts into a scratch DB first — and
+    /// `insert_entry` canonicalizes `content_hash` on the way in
+    /// (da-r569), so a peer whose hash disagrees with its own columns
+    /// cannot be expressed that way at all.
+    fn changeset_declaring(entry: &Entry, declared: Option<u32>) -> Changeset {
+        let mut doc = serde_json::json!({ "entries": [entry] });
+        if let Some(v) = declared {
+            doc["hash_version"] = serde_json::json!(v);
+        }
+        let mut bytes = CHANGESET_MAGIC_V1.to_vec();
+        bytes.extend_from_slice(&serde_json::to_vec(&doc).unwrap());
+        Changeset::from_bytes(bytes)
+    }
+
+    /// What this device packs must declare the definition it hashes
+    /// under, or the refusal below is a check against nothing.
+    #[test]
+    fn packed_changeset_declares_its_hash_version() {
+        let db = fresh_db();
+        db.insert_entry(&make_entry("coffee", 0)).unwrap();
+        let cs = pack_changeset(&db, 0).unwrap();
+        let doc: serde_json::Value =
+            serde_json::from_slice(payload_json(cs.as_bytes()).unwrap()).unwrap();
+        assert_eq!(doc["hash_version"], serde_json::json!(CONTENT_HASH_VERSION));
+    }
+
+    /// A peer on a different hash definition must be refused, not merged:
+    /// its hashes are a different function of the same rows, so the
+    /// `(content_hash, device_id)` tiebreaker stops being an order both
+    /// sides agree on (da-22zm's silent divergence, re-opened). The
+    /// message has to name both versions and which side is behind —
+    /// "upgrade the other device" is the entire remedy.
+    #[test]
+    fn a_different_hash_version_is_refused_and_says_which_side_is_behind() {
+        let db = fresh_db();
+        let entry = make_entry("coffee", 0);
+
+        for (declared, older) in [(Some(0), "the peer"), (Some(99), "this device")] {
+            let err = apply_changeset(&db, &changeset_declaring(&entry, declared))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("refusing changeset"), "{err}");
+            assert!(err.contains(&format!("v{}", declared.unwrap())), "{err}");
+            assert!(err.contains(&format!("v{CONTENT_HASH_VERSION}")), "{err}");
+            assert!(err.contains(older), "{err}");
+        }
+
+        let count: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "a refused changeset writes nothing");
+    }
+
+    /// A peer that declares nothing predates the declaration, so its
+    /// definition is *unknown* — and unknown must not be read as "assume
+    /// it matches mine", which is the silent merge the version exists to
+    /// stop. It is the older side by construction.
+    #[test]
+    fn an_undeclared_hash_version_is_refused_as_the_older_side() {
+        let db = fresh_db();
+        let cs = changeset_declaring(&make_entry("coffee", 0), None);
+
+        let err = apply_changeset(&db, &cs).unwrap_err().to_string();
+        assert!(err.contains("declares no content_hash version"), "{err}");
+        assert!(err.contains("the peer is behind"), "{err}");
+    }
+
+    /// With the versions agreed, the incoming hash is re-derived rather
+    /// than stored as sent, so every stored hash agrees with
+    /// `expected_content_hash` — `datum check` stays clean on the
+    /// receiving device, and the replay short-circuit in `upsert_lww`
+    /// (which compares stored against incoming) sees a real match on the
+    /// re-delivery the append-only relay guarantees.
+    #[test]
+    fn incoming_hash_is_re_derived_not_trusted() {
+        let db = fresh_db();
+        let mut entry = make_entry("coffee", 0);
+        // A hash the peer's own column disagrees with — what a drifted
+        // sender replicates if the receiver stores the wire value.
+        entry.content_hash = "0".repeat(64);
+        assert_ne!(
+            entry.content_hash,
+            entry.expected_content_hash(),
+            "the fixture must actually carry a wrong hash",
+        );
+        let cs = changeset_declaring(&entry, Some(CONTENT_HASH_VERSION));
+
+        apply_changeset(&db, &cs).unwrap();
+        let stored = row_by_hid(&db, &entry.hid);
+        assert_eq!(
+            stored.content_hash,
+            entry.expected_content_hash(),
+            "the stored hash is derived from the row, not read off the wire",
+        );
+
+        // The replay is now a no-op: same modify_time, and the short-circuit
+        // compares two locally derived hashes instead of one of each.
+        apply_changeset(&db, &cs).unwrap();
+        assert_eq!(
+            db.list_integrity_warnings(&datum_core::integrity::ListFilter {
+                kind: Some(datum_core::integrity::IntegrityKind::LwwOverwrite),
+                pending: Some(true),
+            })
+            .unwrap()
+            .len(),
+            0,
+            "a re-delivered changeset must not read as an overwrite",
+        );
     }
 
     #[test]

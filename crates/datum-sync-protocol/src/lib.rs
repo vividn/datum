@@ -15,7 +15,7 @@
 //! | [`messages::sync`] | `PushRequest`, `PushResponse`, `Changeset`, `WrappedKey`, `KdfParams` |
 //! | [`crypto`]         | `CryptoError`, wire-locked constants (`NONCE_LEN`, `CHANGESET_MAGIC_V1`) |
 //! | [`errors`]         | `SyncProtocolError` — control-plane wire errors (`GenerationMismatch`) |
-//! | [`version`]        | Protocol version constants (`PROTOCOL_VERSION`) |
+//! | [`version`]        | Version constants (`PROTOCOL_VERSION`, `CONTENT_HASH_VERSION`) |
 //!
 //! WebAuthn (register/login) types remain in `datum-sync-server::models`
 //! because they are server-only per the da-6hn duplication map and pulling
@@ -33,4 +33,4 @@ pub use messages::auth::{
     DeviceCodeResponse, PollResponse, RefreshTokenRequest,
 };
 pub use messages::sync::{Changeset, KdfParams, PushRequest, PushResponse, WrappedKey};
-pub use version::{PROTOCOL_VERSION, PROTOCOL_VERSION_PATH};
+pub use version::{CONTENT_HASH_VERSION, PROTOCOL_VERSION, PROTOCOL_VERSION_PATH};

@@ -501,6 +501,7 @@ dependencies = [
  "datum-core",
  "datum-parse",
  "datum-sync-client",
+ "datum-sync-protocol",
  "datum-sync-server",
  "datum-test-util",
  "md-5",
@@ -591,6 +592,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "datum-core",
+ "datum-sync-protocol",
  "md-5",
  "proptest",
  "regex-lite",
