@@ -56,6 +56,14 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 			stderr: `datum: ${argv[0]}: ${unavailable(argv, parsed.unsupported)}`
 		};
 	}
+	if (parsed.output !== undefined) {
+		// `help`, `--version` and friends: the parser signals them as error
+		// variants, but their contract is "render this and exit 0" and the
+		// module has already rendered it. Trailing newline trimmed because
+		// stdout here is unterminated (see `tail`) and the REPL's <pre>
+		// would otherwise show a blank line under every help page.
+		return { argv, code: 0, stdout: parsed.output.replace(/\n+$/, ''), stderr: '' };
+	}
 	if (parsed.error !== undefined || parsed.entry === undefined) {
 		// The parser's own message, verbatim — what `datum` would have said.
 		return { argv, code: EXIT_ERROR, stdout: '', stderr: `error: ${parsed.error}` };

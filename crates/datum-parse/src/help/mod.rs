@@ -43,5 +43,33 @@ pub fn version_banner() -> String {
     format!("datum {DATUM_VERSION}")
 }
 
+/// The text a `--help` / `--version` / `--man` request prints, or `None`
+/// for a [`ParseError`] that is a real error.
+///
+/// Those three variants are errors only in the plumbing sense: their doc
+/// comments say the caller renders the text and exits 0. Deciding that on
+/// the *variant* — never on its `Display` string, which differs between
+/// `help requested` and `help requested for 'occur'` and moves whenever
+/// anyone rewords an `#[error(...)]` — is what this function is for, and
+/// holding the set in one place is what keeps a second caller from
+/// honouring a smaller contract than the CLI does. `datum-cli` prints the
+/// text to stdout; `datum-parse-wasm` hands it to the browser, which used
+/// to glue `error: ` in front of the Display string and drop the help
+/// entirely (da-e0m6).
+pub fn special_output(e: &crate::ParseError) -> Option<String> {
+    use crate::ParseError as E;
+    match e {
+        E::HelpRequested(cmd) => Some(match cmd.as_deref() {
+            Some(c) => command_help(c),
+            None => top_level_help(),
+        }),
+        // The newline `println!` used to add, now part of the text so
+        // every caller writes the same bytes.
+        E::VersionRequested => Some(format!("{}\n", version_banner())),
+        E::ManRequested(cmd) => Some(render_roff(cmd.as_deref())),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests;

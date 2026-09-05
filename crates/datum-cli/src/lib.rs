@@ -27,28 +27,13 @@ use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation, SyncArgs, SyncC
 /// `Some(Ok(()))`. Otherwise return `None` — the caller should
 /// propagate the original error (or apply its own fallbacks first).
 ///
-/// Shared by `run` (the binary entry path) and `repl::run_line` so the
-/// set of cleanly-rendered variants can't drift between them.
+/// The set itself lives in `datum_parse::help::special_output`, which is
+/// where the web runner reaches it too (da-e0m6) — so `run`, `repl::run_line`
+/// and the browser all honour exactly the same contract.
 pub fn render_parse_special(e: &ParseError) -> Option<Result<()>> {
-    match e {
-        ParseError::HelpRequested(cmd) => {
-            let text = match cmd.as_deref() {
-                Some(c) => help::command_help(c),
-                None => help::top_level_help(),
-            };
-            print!("{text}");
-            Some(Ok(()))
-        }
-        ParseError::VersionRequested => {
-            println!("{}", help::version_banner());
-            Some(Ok(()))
-        }
-        ParseError::ManRequested(cmd) => {
-            print!("{}", help::render_roff(cmd.as_deref()));
-            Some(Ok(()))
-        }
-        _ => None,
-    }
+    let text = help::special_output(e)?;
+    print!("{text}");
+    Some(Ok(()))
 }
 
 /// Drive a captured `argv` through the same path the `datum` binary

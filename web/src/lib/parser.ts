@@ -34,16 +34,20 @@ interface ParseRequest {
 }
 
 /**
- * Exactly one of these three is present.
+ * Exactly one of these four is present.
  *
  * `unsupported` is a well-formed command the module does not build an entry
  * for — every other datum command, and the log shapes the web app cannot
- * hold yet. `error` is the CLI's own message for an argv that did not
- * parse, so the browser reports what `datum` would have reported.
+ * hold yet. `output` is a command whose whole answer is text the caller
+ * prints with exit 0 — `--help`, `--version`, `--man`; the module decides
+ * that on the parser's own variant, so the browser never has to recognise
+ * one by its message. `error` is the CLI's own message for an argv that did
+ * not parse, so the browser reports what `datum` would have reported.
  */
 interface ParseResponse {
 	entry?: Entry;
 	unsupported?: string;
+	output?: string;
 	error?: string;
 }
 

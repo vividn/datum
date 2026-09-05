@@ -423,3 +423,68 @@ describe('the visual views', () => {
 		});
 	});
 });
+
+describe('help and version', () => {
+	// The parser signals `--help` and `--version` as ParseError variants —
+	// their doc comments say the caller renders the text and exits 0. The
+	// web runner used to lump them in with real errors, so the first thing
+	// a newcomer types into the REPL answered `error: help requested` and
+	// no help at all (da-e0m6).
+	//
+	// Every spelling, because they are two variants reached down two paths
+	// each, and each assertion is on the TEXT: "no `error:`" would pass
+	// against a runner that printed nothing.
+	test('every spelling of help prints the help, exit 0', async () => {
+		await withApp(async ({ run }) => {
+			for (const argv of [['help'], ['-h'], ['--help']]) {
+				const result = await run(argv);
+				assert.equal(result.code, OK, `${argv.join(' ')} → ${result.stderr}`);
+				assert.equal(result.stderr, '');
+				assert.match(result.stdout, /USAGE:/, `${argv.join(' ')} printed no help`);
+				assert.match(result.stdout, /personal data tracker/);
+			}
+		});
+	});
+
+	test('every spelling of version prints the banner, exit 0', async () => {
+		await withApp(async ({ run }) => {
+			for (const argv of [['--version'], ['-V']]) {
+				const result = await run(argv);
+				assert.equal(result.code, OK, `${argv.join(' ')} → ${result.stderr}`);
+				assert.equal(result.stderr, '');
+				assert.match(result.stdout, /^datum \d/, `${argv.join(' ')} printed no banner`);
+			}
+		});
+	});
+
+	test('help for one command is that command’s page', async () => {
+		await withApp(async ({ run }) => {
+			for (const argv of [
+				['help', 'occur'],
+				['occur', '--help']
+			]) {
+				const result = await run(argv);
+				assert.equal(result.code, OK, `${argv.join(' ')} → ${result.stderr}`);
+				assert.match(result.stdout, /datum occur/, `${argv.join(' ')}: ${result.stdout}`);
+			}
+		});
+	});
+
+	test('the REPL shows the help a user typed, not an error', async () => {
+		await withApp(async ({ page, runLine }) => {
+			// Through the prompt itself: what the bead reported is what a
+			// person sees in the scrollback, and the scrollback paints
+			// stderr as an error.
+			await page.fill('.repl input', 'help');
+			await page.press('.repl input', 'Enter');
+			await page.locator('.repl pre').first().waitFor();
+			const shown = await page.locator('.repl pre').first().innerText();
+			assert.match(shown, /USAGE:/, `the REPL showed: ${shown}`);
+			assert.doesNotMatch(shown, /help requested/);
+			assert.equal(await page.locator('.repl pre.error').count(), 0);
+
+			// And the seam agrees with what the pane rendered.
+			assert.equal((await runLine('help')).stdout.split('\n')[0], shown.split('\n')[0]);
+		});
+	});
+});

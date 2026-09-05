@@ -1,10 +1,11 @@
 //! The JSON contract between the browser and this module.
 //!
-//! One request shape, three response shapes. The response never carries an
+//! One request shape, four response shapes. The response never carries an
 //! exception across the ABI boundary — a malformed request, an unparseable
 //! argv and a command this module does not build an entry for all come back
 //! as JSON, so the caller renders a message instead of hitting a trap.
 
+use datum_parse::help;
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 
@@ -42,6 +43,10 @@ pub struct ParseRequest {
 /// * `{"unsupported": "<reason>"}` — a well-formed command this module does
 ///   not build an entry for. The seam turns this into its
 ///   "not available yet in the browser" exit.
+/// * `{"output": "<text>"}` — the command's own stdout, exit 0. `--help`,
+///   `--version` and `--man` reach the caller as `ParseError` variants
+///   whose documented contract is "render this and exit 0", so they are
+///   rendered here rather than passed off as errors (da-e0m6).
 /// * `{"error": "<message>"}` — the argv did not parse. The message is the
 ///   CLI's own, so the browser reports what `datum` would have reported.
 pub fn parse_json(body: &str) -> String {
@@ -67,7 +72,14 @@ fn response(request: &ParseRequest) -> JsonValue {
     match log::build(&request.argv, &host) {
         Ok(log::Parsed::Entry(entry)) => json!({ "entry": log::entry_to_json(&entry) }),
         Ok(log::Parsed::Unsupported(reason)) => json!({ "unsupported": reason }),
-        Err(e) => json!({ "error": e.to_string() }),
+        // Discriminated on the variant by `special_output`, the same
+        // function `datum-cli` prints through — never on the Display
+        // string, which says three different things for these three
+        // variants and changes whenever the `#[error(...)]` is reworded.
+        Err(e) => match help::special_output(&e) {
+            Some(text) => json!({ "output": text }),
+            None => json!({ "error": e.to_string() }),
+        },
     }
 }
 
@@ -207,6 +219,39 @@ mod tests {
                 out.get("unsupported").is_some(),
                 "expected unsupported for {argv:?}, got {out}"
             );
+        }
+    }
+
+    /// `--help` / `--version` are not errors: their contract is "render
+    /// this and exit 0", and the browser gets the text, not `error:` glued
+    /// to a Display string (da-e0m6). Both spellings of each, because they
+    /// are separate variants with the same bug.
+    #[test]
+    fn help_and_version_come_back_as_output_not_error() {
+        for argv in [vec!["help"], vec!["-h"], vec!["--help"]] {
+            let out = run(&argv);
+            assert!(out.get("error").is_none(), "{argv:?} still errors: {out}");
+            let text = out["output"].as_str().unwrap_or_default();
+            assert!(text.contains("USAGE:"), "no help text for {argv:?}: {out}");
+        }
+        for argv in [vec!["--version"], vec!["-V"]] {
+            let out = run(&argv);
+            assert!(out.get("error").is_none(), "{argv:?} still errors: {out}");
+            let text = out["output"].as_str().unwrap_or_default();
+            assert!(text.starts_with("datum "), "no banner for {argv:?}: {out}");
+        }
+    }
+
+    /// The per-command spellings carry the subcommand, so the text is that
+    /// command's page rather than the top-level one.
+    #[test]
+    fn per_command_help_renders_that_command() {
+        for argv in [vec!["help", "occur"], vec!["occur", "--help"]] {
+            let text = run(&argv)["output"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            assert!(text.contains("datum occur"), "not occur's page: {text}");
         }
     }
 
