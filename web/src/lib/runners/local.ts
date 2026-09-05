@@ -53,7 +53,7 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 			argv,
 			code: EXIT_UNKNOWN_COMMAND,
 			stdout: '',
-			stderr: `datum: ${argv[0]}: ${parsed.unsupported}`
+			stderr: `datum: ${argv[0]}: ${unavailable(argv, parsed.unsupported)}`
 		};
 	}
 	if (parsed.error !== undefined || parsed.entry === undefined) {
@@ -79,6 +79,24 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 	}
 
 	return { argv, code: 0, stdout: entryLine(entry), stderr: '' };
+}
+
+/** The commands above that this file does serve — bare, and only bare. */
+const BARE_ONLY = new Set(['tail', 'dayview', 'nowview']);
+
+/**
+ * What is unavailable, said about the right thing.
+ *
+ * `tail` renders and `tail -n 5` does not, but reporting that as
+ * `tail: not available yet in the browser` makes the *command* the subject
+ * of the sentence when the command works: a reader takes it as "tail is
+ * missing from the web app" and stops trying. For the commands this file
+ * serves bare, the thing that is unavailable is the argument, so name that
+ * instead — the shape the parser's own flag message already uses (da-3k4y).
+ */
+function unavailable(argv: string[], reason: string): string {
+	if (!BARE_ONLY.has(argv[0]) || argv.length < 2) return reason;
+	return `\`${argv[1]}\` is not available yet in the browser`;
 }
 
 /**

@@ -382,6 +382,36 @@ describe('the visual views', () => {
 		});
 	});
 
+	test('an argument this app does not serve names the argument, not the command', async () => {
+		await withApp(async ({ run }) => {
+			// `tail` works here. Some of its arguments do not — and the
+			// message for those used to read `tail: not available yet in the
+			// browser`, which names the command a reader just watched
+			// succeed. They take it as "tail is missing from the web app"
+			// and stop trying (da-3k4y).
+			assert.equal((await run(['tail'])).code, OK);
+
+			// Three arguments down three different paths through the parser:
+			// `-n` is a short tail flag, `--table` a long one, `--oneline`
+			// is not a tail flag at all. One case proves nothing about the
+			// others, so assert the property on each.
+			for (const args of [['-n', '5'], ['--table'], ['--oneline']]) {
+				const label = ['tail', ...args].join(' ');
+				const result = await run(['tail', ...args]);
+				assert.notEqual(result.code, OK, `${label} succeeded`);
+				assert.ok(
+					result.stderr.includes(args[0]),
+					`${label}: the message does not name ${args[0]}: ${result.stderr}`
+				);
+				assert.doesNotMatch(
+					result.stderr,
+					/\btail\b:?\s+(is\s+)?not available/,
+					`${label}: the message calls tail itself unavailable: ${result.stderr}`
+				);
+			}
+		});
+	});
+
 	test("dayview's window flags are still the real CLI's job", async () => {
 		await withApp(async ({ run }) => {
 			// Answering `--n-days` here would mean growing a second datum in
