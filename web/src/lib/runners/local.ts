@@ -13,6 +13,7 @@
 // stores what comes back. What is left here is the database call and the
 // two commands the parser does not own.
 
+import { clockLabel } from '../clock.js';
 import { insertEntry, getRecentEntries, getFieldSpecs, saveFieldSpec } from '../db.js';
 import { parseArgv } from '../parser.js';
 import { EXIT_DUPLICATE, EXIT_ERROR, EXIT_UNKNOWN_COMMAND, type RunResult } from '../run.js';
@@ -107,14 +108,12 @@ async function tail(): Promise<RunResult> {
  *
  * A plain-text stand-in for `render_entry_line`
  * (crates/datum-commands/src/render/action.rs) — same shape (time, field,
- * state) without the field badges and colour the real renderer brings.
+ * state) without the field badges and colour the real renderer brings. The
+ * time is datum's one convention, 24-hour ($lib/clock.ts), which is the
+ * half of that parity claim the reader can see next to the nowview axis.
  */
 export function entryLine(entry: Entry): string {
-	const time = new Date(entry.occurTime.utc).toLocaleTimeString([], {
-		hour: '2-digit',
-		minute: '2-digit'
-	});
-	const parts = [time, entry.field];
+	const parts = [clockLabel(new Date(entry.occurTime.utc)), entry.field];
 	if (entry.state !== undefined) parts.push(`= ${formatValue(entry.state)}`);
 	if (entry.data) {
 		for (const [k, v] of Object.entries(entry.data as Record<string, unknown>)) {

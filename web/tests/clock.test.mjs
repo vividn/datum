@@ -1,0 +1,68 @@
+// One clock convention, under a reader whose locale disagrees with it.
+//
+// The tail pane printed the time through `toLocaleTimeString([])` — `[]`
+// being "ask the browser" — while the nowview axis built `HH:MM` out of
+// `getHours()`. On an en-US machine that put "04:07 PM coffee" beside an
+// axis reading "16:07": the same instant, two conventions, one screenshot
+// (da-6o81). datum is 24-hour everywhere else, including the CLI's own
+// `render_entry_line`, which the web renderer's docstring claims parity
+// with.
+//
+// Why this suite's other 47 tests never saw it: `toLocaleTimeString([])`
+// is exactly the call whose answer depends on the machine running it, and
+// CI's machine is already 24-hour. So a test that does not pin the locale
+// is not a test of this at all — it passes before the fix. This one pins
+// en-US and then *checks that it took*, so the day the pin stops working
+// the test says so rather than going quietly vacuous.
+
+import test, { before, after, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { startApp, stopApp, withApp } from './support/app.mjs';
+
+before(startApp);
+after(stopApp);
+
+/** A locale that renders times as `04:07 PM`. */
+const TWELVE_HOUR = 'en-US';
+
+/** Run `fn` against an app whose reader is on a 12-hour locale. */
+const withTwelveHourReader = (fn) => withApp(fn, { locale: TWELVE_HOUR });
+
+describe('the clock the web app prints', () => {
+	test('a 12-hour reader still gets datum 24-hour time, in every pane', async () => {
+		await withTwelveHourReader(async ({ page, run, reload, paneText, paneSvg }) => {
+			// First: the pin is real. This is the call the bug was made of,
+			// made in the page itself — if it comes back 24-hour here then
+			// the locale did not take and every assertion below is vacuous.
+			const asked = await page.evaluate(() =>
+				new Date(Date.UTC(2026, 8, 5, 16, 7)).toLocaleTimeString([], {
+					hour: '2-digit',
+					minute: '2-digit'
+				})
+			);
+			assert.match(asked, /PM/, `locale ${TWELVE_HOUR} did not take: browser said "${asked}"`);
+
+			// The zone is UTC (support/app.mjs), so 16:07 is 16:07.
+			assert.equal((await run(['occur', 'coffee', '-t', '1607'])).code, 0);
+
+			const tail = await run(['tail']);
+			assert.equal(tail.code, 0, tail.stderr);
+			assert.equal(tail.stdout, '16:07 coffee');
+
+			// And on the screen, which is where the two conventions sat
+			// next to each other. The panes run their command on mount, so
+			// the reload is how they come to know about the entry.
+			await reload();
+			const shown = await paneText('tail');
+			assert.match(shown, /16:07 coffee/);
+			assert.doesNotMatch(shown, /\b[AP]M\b/i, `the tail pane is still 12-hour: ${shown}`);
+
+			// The other half of the screenshot. Its clock was never the
+			// broken one; asserting it here is what makes this a test of
+			// the two panes agreeing rather than of one of them.
+			const now = await paneSvg('nowview');
+			assert.match(now, /<text[^>]*>\d{2}:\d{2}<\/text>/);
+			assert.doesNotMatch(now, /\b[AP]M\b/i, 'the nowview axis went 12-hour');
+		});
+	});
+});

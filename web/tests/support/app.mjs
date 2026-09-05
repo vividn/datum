@@ -58,9 +58,14 @@ function baseUrl() {
  *
  * `prepare` gets the context before the first page exists, which is the
  * only moment an init script can beat the app's own code to the browser.
+ *
+ * `locale` pins the reader's locale, which is otherwise whatever the
+ * machine running the suite happens to have. A test about anything the
+ * browser formats by locale must set it, or it asserts about the runner
+ * rather than about the app (da-6o81).
  */
-export async function withApp(fn, { prepare } = {}) {
-	const context = await browser.newContext({ timezoneId: TIMEZONE });
+export async function withApp(fn, { prepare, locale } = {}) {
+	const context = await browser.newContext({ timezoneId: TIMEZONE, locale });
 	try {
 		await prepare?.(context);
 		const page = await context.newPage();

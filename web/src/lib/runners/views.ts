@@ -15,6 +15,7 @@
 // to be a hand-written copy in $lib/visuals.ts. Every colour and every
 // pixel was already Rust's.
 
+import { clockLabel } from '../clock.js';
 import { getEntriesInRange, getAllFields, getFieldSpecs, getStateEntriesAt } from '../db.js';
 import { renderLayout, type EntryReq, type FieldReq, type FieldStyle } from '../layout.js';
 import type { Entry } from '../types.js';
@@ -55,10 +56,6 @@ function dayLabel(date: Date): string[] {
 		`${MONTHS[date.getMonth()]} ${String(date.getDate()).padStart(2, '0')}`,
 		String(date.getFullYear())
 	];
-}
-
-function clockLabel(date: Date): string {
-	return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
 /** A stored row, as the layout module reads one. */
