@@ -1,0 +1,168 @@
+{
+  "about": [
+    "datum's shell-style tokenizer, as one list of cases read by both sides.",
+    "",
+    "`crates/datum-parse/src/alias/expand.rs::shell_split` and",
+    "`web/src/lib/shellSplit.ts::shellSplit` have to tokenize a REPL line",
+    "identically, or a command means one thing in the terminal and another in",
+    "the browser. They used to diverge at exactly two codepoints, because each",
+    "borrowed its host language's idea of whitespace instead of stating datum's:",
+    "U+0085 NEL is whitespace to Rust and not to JavaScript, U+FEFF is",
+    "whitespace to JavaScript and not to Rust (da-rx63).",
+    "",
+    "Two hand-written test files drift the same way two implementations do, so",
+    "the cases live here and both suites read this file:",
+    "`crates/datum-parse/tests/shell_split_fixture.rs` and",
+    "`web/tests/shellsplit.test.mjs`. Add a case here, not there.",
+    "",
+    "Every non-ASCII character is written as a \\uXXXX escape on purpose: a",
+    "literal invisible character in a fixture is one the next reader cannot see."
+  ],
+  "cases": [
+    {
+      "name": "plain tokens",
+      "line": "occur coffee",
+      "argv": [
+        "occur",
+        "coffee"
+      ]
+    },
+    {
+      "name": "a run of ASCII whitespace is one separator",
+      "line": "occur \t\n  coffee",
+      "argv": [
+        "occur",
+        "coffee"
+      ]
+    },
+    {
+      "name": "single quotes are literal",
+      "line": "note word 'to run'",
+      "argv": [
+        "note",
+        "word",
+        "to run"
+      ]
+    },
+    {
+      "name": "a backslash inside double quotes lets the next character through",
+      "line": "note word \"she said \\\"hi\\\"\"",
+      "argv": [
+        "note",
+        "word",
+        "she said \"hi\""
+      ]
+    },
+    {
+      "name": "a bare backslash escapes the next character",
+      "line": "note word two\\ words",
+      "argv": [
+        "note",
+        "word",
+        "two words"
+      ]
+    },
+    {
+      "name": "an unterminated quote closes at end of line",
+      "line": "note word \"to ru",
+      "argv": [
+        "note",
+        "word",
+        "to ru"
+      ]
+    },
+    {
+      "name": "an empty quoted token is a token",
+      "line": "note word ''",
+      "argv": [
+        "note",
+        "word",
+        ""
+      ]
+    },
+    {
+      "name": "U+0085 NEL separates - Rust said yes, JavaScript said no",
+      "line": "occur\u0085coffee",
+      "argv": [
+        "occur",
+        "coffee"
+      ]
+    },
+    {
+      "name": "U+FEFF leading BOM separates - JavaScript said yes, Rust said no",
+      "line": "\ufeffoccur coffee",
+      "argv": [
+        "occur",
+        "coffee"
+      ]
+    },
+    {
+      "name": "U+FEFF mid-line separates",
+      "line": "occur\ufeffcoffee",
+      "argv": [
+        "occur",
+        "coffee"
+      ]
+    },
+    {
+      "name": "U+00A0 no-break space separates",
+      "line": "occur\u00a0coffee",
+      "argv": [
+        "occur",
+        "coffee"
+      ]
+    },
+    {
+      "name": "U+3000 ideographic space separates",
+      "line": "occur\u3000coffee",
+      "argv": [
+        "occur",
+        "coffee"
+      ]
+    },
+    {
+      "name": "the narrow, medium, ogham and line/paragraph separators separate",
+      "line": "occur\u202fa\u205fb\u1680c\u2028d\u2029e",
+      "argv": [
+        "occur",
+        "a",
+        "b",
+        "c",
+        "d",
+        "e"
+      ]
+    },
+    {
+      "name": "en quad through hair space separate",
+      "line": "occur\u2000a\u2005b\u200ac",
+      "argv": [
+        "occur",
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    {
+      "name": "U+200B zero-width space is not whitespace and stays in its token",
+      "line": "occur cof\u200bfee",
+      "argv": [
+        "occur",
+        "cof\u200bfee"
+      ]
+    },
+    {
+      "name": "whitespace inside quotes is kept, NEL and BOM included",
+      "line": "note word \"a\u0085b\ufeffc\"",
+      "argv": [
+        "note",
+        "word",
+        "a\u0085b\ufeffc"
+      ]
+    },
+    {
+      "name": "a line of nothing but whitespace is no tokens",
+      "line": "  \u0085 \ufeff \u3000 ",
+      "argv": []
+    }
+  ]
+}

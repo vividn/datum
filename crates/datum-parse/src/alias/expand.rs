@@ -597,7 +597,7 @@ fn shell_quote_token(s: &str) -> String {
         return "\"\"".to_string();
     }
     let needs_quoting = s.chars().any(|c| {
-        c.is_whitespace()
+        is_datum_space(c)
             || matches!(
                 c,
                 '\'' | '"'
@@ -629,6 +629,42 @@ fn shell_quote_token(s: &str) -> String {
     }
     out.push('"');
     out
+}
+
+/// datum's whitespace class: the codepoints that separate one argv token
+/// from the next.
+///
+/// Stated here rather than inherited from the host language, because that
+/// is what went wrong. [`shell_split`] and its browser twin
+/// `web/src/lib/shellSplit.ts` are supposed to tokenize a line the same
+/// way, and they disagreed at exactly two codepoints: Rust's
+/// `char::is_whitespace` (Unicode `White_Space`) counts U+0085 NEL, which
+/// JavaScript's `\s` does not, and JavaScript's `\s` counts U+FEFF, which
+/// `White_Space` does not (da-rx63). Neither errored — the same pasted
+/// line simply became different argv on the two clients.
+///
+/// The set is Unicode `White_Space` plus U+FEFF, the byte-order mark, which
+/// rides in on text pasted from a file or a web page and is never part of a
+/// token. U+200B zero-width space is deliberately absent: it is whitespace
+/// to neither language, and it stays inside its token.
+///
+/// `tests/fixtures/shell-split.json` pins the cases, including the two that
+/// diverged, and both this crate's test and the web suite read it.
+fn is_datum_space(c: char) -> bool {
+    matches!(c,
+        '\u{0009}'..='\u{000D}'   // tab, LF, VT, FF, CR
+        | '\u{0020}'              // space
+        | '\u{0085}'              // next line
+        | '\u{00A0}'              // no-break space
+        | '\u{1680}'              // ogham space mark
+        | '\u{2000}'..='\u{200A}' // en quad .. hair space
+        | '\u{2028}'              // line separator
+        | '\u{2029}'              // paragraph separator
+        | '\u{202F}'              // narrow no-break space
+        | '\u{205F}'              // medium mathematical space
+        | '\u{3000}'              // ideographic space
+        | '\u{FEFF}'              // byte-order mark
+    )
 }
 
 /// Canonical shell-style splitter for the `datum-parse` crate. Single
@@ -677,7 +713,7 @@ pub fn shell_split(s: &str) -> Vec<String> {
                         has_tok = true;
                     }
                 }
-                c if c.is_whitespace() => {
+                c if is_datum_space(c) => {
                     if has_tok {
                         out.push(std::mem::take(&mut cur));
                         has_tok = false;
