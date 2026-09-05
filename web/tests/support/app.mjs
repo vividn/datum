@@ -186,6 +186,18 @@ function app(page, errors) {
 			return decodeURIComponent(src.replace(/^data:image\/svg\+xml,/, ''));
 		},
 
+		/**
+		 * Open a second tab of the app, in the SAME browser context.
+		 *
+		 * The same context is the whole point: one origin is one OPFS, so
+		 * two pages here contend for the single-writer SAH pool exactly as
+		 * two real tabs do. Two *contexts* get separate storage and would
+		 * never reproduce it (da-60ww).
+		 */
+		async newTab() {
+			return open(await page.context().newPage());
+		},
+
 		/** Reload the page and wait for the app to come back up. */
 		async reload() {
 			await page.reload();

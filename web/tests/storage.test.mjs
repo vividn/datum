@@ -72,3 +72,42 @@ describe('when durable storage never answers', () => {
 		);
 	});
 });
+
+// What the app does when the database is already open in another tab.
+//
+// The OPFS SAH pool is single-writer and one origin is one OPFS, so the
+// second tab of datum.day cannot have the database — it falls back to
+// memory, safely, and the first tab is never touched. That much was
+// already right. What was wrong was the diagnosis: "entries are held in
+// memory only" is equally true of a browser with no OPFS at all, and only
+// this case has a remedy the reader can act on (da-60ww).
+//
+// The test has to be two pages in ONE context. Two contexts get separate
+// storage, so the second tab would open OPFS happily and the test would
+// pass against a build that never learned to tell the cases apart.
+describe('when another tab already holds the database', () => {
+	test('the second tab names the other tab, and the first keeps its data', async () => {
+		await withApp(async (first) => {
+			assert.doesNotMatch(await first.bannerText(), /memory only/);
+			const logged = await first.run(['occur', 'coffee', '-t', '0700']);
+			assert.equal(logged.code, 0, logged.stderr);
+
+			const second = await first.newTab();
+			const banner = await second.bannerText();
+			// The cause, and the thing to do about it.
+			assert.match(banner, /Another datum\.day tab has the database open/);
+			assert.match(banner, /close it and reload/);
+			// Memory really does mean memory: none of the first tab's data.
+			assert.deepEqual(await second.entries(), []);
+
+			// And the first tab is unharmed — through its own reload, which
+			// is the read that only durable storage can answer.
+			assert.doesNotMatch(await first.bannerText(), /memory only/);
+			await first.reload();
+			assert.deepEqual(
+				(await first.entries()).map((e) => e.field),
+				['coffee']
+			);
+		});
+	});
+});

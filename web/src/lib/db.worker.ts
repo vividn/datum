@@ -81,9 +81,12 @@ function withDeadline<T>(promise: Promise<T>, ms: number, message: string): Prom
  * the deployment manages to send COOP/COEP.
  *
  * The in-memory fallback is for a browser with no sync access handle at all
- * (the API is younger than the app's floor). It loses everything on reload,
- * so it says so and reports `memory` as the storage kind rather than let
- * the UI imply durability that isn't there — see $lib/BetaBanner.svelte.
+ * (the API is younger than the app's floor) and for a second tab, which
+ * cannot have one because the pool is single-writer. It loses everything on
+ * reload, so it says so — and it distinguishes the two, since only the
+ * second tab has a remedy: `memory-other-tab` rather than `memory`, which
+ * the banner turns into "use that tab, or close it and reload this one"
+ * instead of the generic sentence (da-60ww). See $lib/BetaBanner.svelte.
  *
  * The deadline is what makes that fallback reachable. A browser that will
  * not hand this worker a sync access handle does not always say so: the
@@ -106,11 +109,29 @@ async function openPersistent(sqlite3: any): Promise<SqliteDb> {
 			return new pool.OpfsSAHPoolDb('/datum.db');
 		} catch (e) {
 			console.warn('OPFS SAH pool unavailable:', e);
+			storage = heldByAnotherTab(e) ? 'memory-other-tab' : 'memory';
 		}
 	}
-	console.warn('no durable storage available — entries will not survive a reload');
-	storage = 'memory';
+	console.warn(
+		storage === 'memory-other-tab'
+			? 'another datum.day tab holds the database — entries here will not survive a reload'
+			: 'no durable storage available — entries will not survive a reload'
+	);
 	return new sqlite3.oo1.DB(':memory:', 'c');
+}
+
+/**
+ * Whether the pool failed because another page of this origin holds it.
+ *
+ * The pool asks each of its files for a `createSyncAccessHandle` and
+ * rethrows whatever the platform hands back. A handle already held —
+ * by a second tab, since one origin is one OPFS — comes back as
+ * `NoModificationAllowedError`, which is a different fact from "this
+ * browser has no OPFS" and the only one with a remedy the reader can act
+ * on. Anything else keeps the generic diagnosis (da-60ww).
+ */
+function heldByAnotherTab(e: unknown): boolean {
+	return (e as { name?: unknown } | null)?.name === 'NoModificationAllowedError';
 }
 
 ctx.addEventListener('message', (event: MessageEvent<DbRequest>) => {

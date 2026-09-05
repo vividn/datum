@@ -8,8 +8,16 @@
 /** A result row, exactly as sqlite's `rowMode: 'object'` produces it. */
 export type Row = Record<string, unknown>;
 
-/** Where the open database actually lives. */
-export type StorageKind = 'opfs' | 'memory';
+/**
+ * Where the open database actually lives.
+ *
+ * The two memory kinds are the same storage and a different diagnosis.
+ * `memory` is "this browser gave the worker no durable place to put the
+ * database"; `memory-other-tab` is "another page of this origin already
+ * holds it" — the OPFS pool is single-writer — which is the one the reader
+ * can do something about (da-60ww).
+ */
+export type StorageKind = 'opfs' | 'memory' | 'memory-other-tab';
 
 export type DbCommand =
 	/** Open the database if it isn't open yet, and report where it landed. */

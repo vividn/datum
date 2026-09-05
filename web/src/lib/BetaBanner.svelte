@@ -8,6 +8,14 @@
 	opened, not assumed: while storage is in-memory (see `storageKind` in
 	$lib/db.ts) a reload really does discard everything, and a banner that
 	said "stored in this browser" would be a promise the app isn't keeping.
+
+	It also says WHY, where the app knows. "In memory only" covers two
+	unlike situations, and only one of them the reader can undo: OPFS's
+	pool is single-writer, so a second tab of datum.day gets no database
+	while the first holds it. The worker reports that case as its own
+	storage kind, and it earns the sentence that names the remedy — use
+	the other tab, or close it and reload this one (da-60ww).
+
 	Dismissal sticks per browser; this is a warning, not a nag.
 -->
 <script lang="ts">
@@ -40,7 +48,10 @@
 		<span class="tag">beta</span>
 		<p>
 			datum.day is early software.
-			{#if storage === 'memory'}
+			{#if storage === 'memory-other-tab'}
+				Another datum.day tab has the database open, so entries here are held in memory only —
+				reloading this page discards them. Use that tab, or close it and reload this one.
+			{:else if storage === 'memory'}
 				Entries are held in memory only — reloading this page discards them.
 			{:else}
 				Your entries are stored in this browser only: clearing site data deletes them, and there is
