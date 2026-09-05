@@ -11,9 +11,16 @@ use crate::error::{DatumError, PrefixCandidate, Result};
 
 use super::row_mapper::row_to_entry;
 use super::types::{
-    like_prefix_pattern, time_expr_endbound, AMBIGUOUS_PREFIX_CANDIDATE_CAP,
+    like_prefix_pattern, time_expr_endbound, AMBIGUOUS_PREFIX_CANDIDATE_CAP, LIVE_SQL,
     STATE_ORDER_NEWEST_FIRST, STATE_ORDER_OLDEST_FIRST, STATE_PARTICIPATION_SQL,
 };
+
+/// Address one row by slug or hid. A superseded row (da-uxgv) has stepped
+/// out of the live stream but still exists and is still *addressable* — by
+/// its hid, the identity that outlives every edit. Its slug is shared with
+/// the row that won, and there the winner is what the user means.
+const BY_SLUG_OR_HID_SQL: &str =
+    "(slug = ?1 OR hid = ?1) AND deleted_at IS NULL AND (superseded_by IS NULL OR hid = ?1)";
 use super::Db;
 
 impl Db {
@@ -25,9 +32,7 @@ impl Db {
         let raw: Option<Option<String>> = self
             .conn
             .query_row(
-                "SELECT extra_metadata FROM entries
-                 WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NULL
-                 LIMIT 1",
+                &format!("SELECT extra_metadata FROM entries WHERE {BY_SLUG_OR_HID_SQL} LIMIT 1"),
                 params![slug_or_hid],
                 |row| row.get::<_, Option<String>>(0),
             )
@@ -42,8 +47,7 @@ impl Db {
     pub fn set_metadata(&self, slug_or_hid: &str, metadata: Option<&JsonValue>) -> Result<()> {
         let stored = metadata.map(|v| v.to_string());
         let affected = self.conn.execute(
-            "UPDATE entries SET extra_metadata = ?2
-             WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NULL",
+            &format!("UPDATE entries SET extra_metadata = ?2 WHERE {BY_SLUG_OR_HID_SQL}"),
             params![slug_or_hid, stored],
         )?;
         if affected == 0 {
@@ -58,9 +62,7 @@ impl Db {
     pub fn get_entry(&self, slug_or_hid: &str) -> Result<Entry> {
         self.conn
             .query_row(
-                "SELECT * FROM entries
-                 WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NULL
-                 LIMIT 1",
+                &format!("SELECT * FROM entries WHERE {BY_SLUG_OR_HID_SQL} LIMIT 1"),
                 params![slug_or_hid],
                 row_to_entry,
             )
@@ -119,9 +121,7 @@ impl Db {
         let exact = self
             .conn
             .query_row(
-                "SELECT * FROM entries
-                 WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NULL
-                 LIMIT 1",
+                &format!("SELECT * FROM entries WHERE {BY_SLUG_OR_HID_SQL} LIMIT 1"),
                 params![prefix],
                 row_to_entry,
             )
@@ -135,6 +135,7 @@ impl Db {
             "SELECT * FROM entries
              WHERE (slug LIKE ?1 ESCAPE '\\' OR hid LIKE ?1 ESCAPE '\\')
                AND deleted_at IS NULL
+               AND (superseded_by IS NULL OR hid LIKE ?1 ESCAPE '\\')
              ORDER BY slug",
         )?;
         let entries: Vec<Entry> = stmt
@@ -203,7 +204,7 @@ impl Db {
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1
-               AND deleted_at IS NULL
+               AND {LIVE_SQL}
                AND verb IN ('start', 'switch', 'block', 'block-switch')
                AND occur_time <= ?2
              ORDER BY {STATE_ORDER_NEWEST_FIRST}
@@ -238,14 +239,14 @@ impl Db {
         state_json: Option<&JsonValue>,
     ) -> Result<Option<Entry>> {
         let state_text = state_json.map(|s| s.to_string());
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare(&format!(
             r#"SELECT * FROM entries
                WHERE field = ?1
-                 AND deleted_at IS NULL
+                 AND {LIVE_SQL}
                  AND ((?2 IS NULL AND state IS NULL) OR state = ?2)
                ORDER BY occur_time DESC, create_time DESC
-               LIMIT 1"#,
-        )?;
+               LIMIT 1"#
+        ))?;
         let row = stmt
             .query_row(params![field, state_text], row_to_entry)
             .optional()?;

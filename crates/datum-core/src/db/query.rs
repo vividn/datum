@@ -1,19 +1,22 @@
 //! Aggregations and consistency checks: counts, group-bys, distinct-fields,
 //! id projections, time-order checks. Pure read paths.
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use crate::error::{DatumError, Result};
+use crate::ids::Hid;
 
-use super::types::{filtered_where, time_expr_endbound, GroupColumn, TimeOrderIssue};
+use super::types::{filtered_where, time_expr_endbound, GroupColumn, TimeOrderIssue, LIVE_SQL};
 use super::Db;
 
 impl Db {
     /// Count of live (non-tombstoned) entries in the store.
     pub fn count_entries(&self) -> Result<usize> {
         let n: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL",
+            &format!("SELECT COUNT(*) FROM entries WHERE {LIVE_SQL}"),
             [],
             |row| row.get(0),
         )?;
@@ -28,7 +31,7 @@ impl Db {
         let sql = format!(
             "SELECT COUNT(*) FROM entries
              WHERE field = ?1
-               AND deleted_at IS NULL
+               AND {LIVE_SQL}
                AND {} < ?2",
             time_expr_endbound(),
         );
@@ -113,8 +116,7 @@ impl Db {
     /// insert without opening a write transaction.
     pub fn has_entry_with_content_hash(&self, content_hash: &str) -> Result<bool> {
         let n: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM entries
-             WHERE content_hash = ?1 AND deleted_at IS NULL",
+            &format!("SELECT COUNT(*) FROM entries WHERE content_hash = ?1 AND {LIVE_SQL}"),
             params![content_hash],
             |row| row.get(0),
         )?;
@@ -133,13 +135,28 @@ impl Db {
         Ok(Vec::new())
     }
 
+    /// The hids of rows that have at least one supersedee — rows another
+    /// row lost an identity contest to (da-uxgv).
+    ///
+    /// Served entirely by the `entries_superseded_by` partial index, which
+    /// contains *only* conflicted rows. In steady state that index is
+    /// empty, so a listing surface can ask this on every render and pay
+    /// nothing when there is nothing to mark.
+    pub fn hids_with_supersedees(&self) -> Result<HashSet<Hid>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT superseded_by FROM entries WHERE superseded_by IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, Hid>(0))?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
     /// Distinct field names across all live (non-deleted) entries,
     /// alphabetical. The `now` view feeds this into [`Db::state_at`] to
     /// build its row set.
     pub fn distinct_fields(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT field FROM entries WHERE deleted_at IS NULL ORDER BY field",
-        )?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT DISTINCT field FROM entries WHERE {LIVE_SQL} ORDER BY field"
+        ))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }

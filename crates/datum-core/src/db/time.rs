@@ -116,9 +116,17 @@ fn select_retime_targets(db: &Db, filter: &RetimeFilter) -> Result<Vec<Entry>> {
     let mut bindings: Vec<String> = Vec::new();
 
     if let Some(needle) = filter.slug_or_hid {
-        sql.push_str(" AND (slug = ? OR hid = ?)");
+        // da-uxgv: a superseded row is still addressable by its hid, and
+        // retiming one has to keep working — the pointer survives the move
+        // precisely because it is an hid and not a re-derivable key. It is
+        // only kept out of the *bulk* selection below, where "every row in
+        // this window" means the live stream.
+        sql.push_str(" AND (slug = ? OR hid = ?) AND (superseded_by IS NULL OR hid = ?)");
         bindings.push(needle.to_string());
         bindings.push(needle.to_string());
+        bindings.push(needle.to_string());
+    } else {
+        sql.push_str(" AND superseded_by IS NULL");
     }
     if let Some(field) = filter.field {
         sql.push_str(" AND field = ?");
@@ -142,6 +150,7 @@ fn select_retime_targets(db: &Db, filter: &RetimeFilter) -> Result<Vec<Entry>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::lookup::fetch_entry_any;
     use crate::entry::Verb;
     use crate::ids::Slug;
     use crate::time::DatumTime;
@@ -238,10 +247,11 @@ mod tests {
         assert_eq!(by_hid.hid, hid);
     }
 
-    /// Two custom-id rows (`--id brew`) at different instants share one
-    /// natural slug, so a sync merge keeps both and parks the loser under
-    /// `coffee:brew_<hid>` (da-zlug). Seeds that pair.
-    fn seed_parked_pair(db: &Db) -> (Entry, Entry) {
+    /// Two custom-id rows (`--id brew`) at different instants derive one
+    /// natural slug, so a sync merge keeps both and supersedes the loser
+    /// (da-uxgv). Seeds that pair — the loser keeps `coffee:brew`, which is
+    /// what its template says.
+    fn seed_superseded_pair(db: &Db) -> (Entry, Entry) {
         let mut winner = Entry::new(
             "coffee",
             Verb::Point,
@@ -255,7 +265,7 @@ mod tests {
         winner.slug = Slug("coffee:brew".to_string());
         db.insert_entry(&winner).unwrap();
 
-        let mut parked = Entry::new(
+        let mut loser = Entry::new(
             "coffee",
             Verb::Point,
             None,
@@ -264,68 +274,89 @@ mod tests {
             None,
             "d2",
         );
-        parked.id_structure = Some("brew".to_string());
-        parked.slug = crate::slug::parked("coffee:brew", &parked.hid);
-        db.insert_entry(&parked).unwrap();
-        (winner, parked)
+        loser.id_structure = Some("brew".to_string());
+        loser.slug = Slug(format!("coffee:brew-staging-{}", loser.hid));
+        db.insert_entry(&loser).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE entries SET slug = 'coffee:brew', superseded_by = ?2 WHERE hid = ?1",
+                rusqlite::params![loser.hid, winner.hid],
+            )
+            .unwrap();
+        loser.slug = Slug("coffee:brew".to_string());
+        loser.superseded_by = Some(winner.hid.clone());
+        (winner, loser)
     }
 
-    /// da-l4uz: retiming a parked row must not re-derive its slug back onto
-    /// the winner's — that is the collision the merge resolved, and the
-    /// resolution is what two devices agreed on without coordinating.
+    /// da-uxgv, and the reason the pointer is an hid rather than a boolean:
+    /// retiming a superseded row moves its slug, which is precisely the key
+    /// a "who else holds my slug?" rule would have looked the relationship
+    /// up by. The pointer outlives the move, and the row stays set aside.
     #[test]
-    fn retime_keeps_a_parked_row_parked() {
+    fn retime_preserves_supersession_of_the_loser() {
         let db = Db::open_in_memory().unwrap();
-        let (winner, parked) = seed_parked_pair(&db);
+        let (winner, loser) = seed_superseded_pair(&db);
 
         let filter = RetimeFilter {
-            slug_or_hid: Some(parked.slug.as_str()),
+            slug_or_hid: Some(loser.hid.as_str()),
             ..Default::default()
         };
         db.update_times(&filter, Duration::minutes(30)).unwrap();
 
-        let after = db.get_entry(&parked.hid).unwrap();
-        assert_eq!(after.slug, parked.slug, "the park must survive the retime");
+        let after = fetch_entry_any(db.conn(), loser.hid.as_str()).unwrap();
+        assert_eq!(
+            after.superseded_by,
+            Some(winner.hid.clone()),
+            "the relationship must survive the retime",
+        );
         assert_eq!(
             after.occur_time.as_ref().unwrap().utc,
             seed_dt("2024-01-01T09:30:00Z").utc,
             "the retime itself must still apply",
         );
         assert_eq!(
+            after.slug, loser.slug,
+            "a `brew` template does not move with the clock, so the slug stands",
+        );
+        assert_eq!(
             db.get_entry("coffee:brew").unwrap().hid,
             winner.hid,
-            "the winner keeps the contested slug",
+            "and the slug still resolves to the row in the stream",
         );
     }
 
-    /// The park is kept only while someone else holds the natural slug.
-    /// Alone, the row re-derives to the plain slug — the repair a user
-    /// wants once the collision is gone.
+    /// Retiming the *winner* is the harder half of the same rule: the row
+    /// that was beaten is now the only holder of the contested slug, and it
+    /// still must not quietly reappear. Nothing re-derives the pointer, so
+    /// nothing promotes it.
     #[test]
-    fn retime_unparks_when_the_contested_slug_is_free() {
+    fn retime_of_the_winner_does_not_promote_the_loser() {
         let db = Db::open_in_memory().unwrap();
-        let mut lone = Entry::new(
-            "coffee",
-            Verb::Point,
-            None,
-            None,
-            Some(seed_dt("2024-01-01T09:00:00Z")),
-            None,
-            "d2",
-        );
-        lone.id_structure = Some("brew".to_string());
-        lone.slug = crate::slug::parked("coffee:brew", &lone.hid);
-        db.insert_entry(&lone).unwrap();
+        let (winner, loser) = seed_superseded_pair(&db);
 
+        // Give the winner a time-derived template so the retime actually
+        // moves its slug off the contested one.
+        db.conn()
+            .execute(
+                "UPDATE entries SET id_structure = '%occur_time%' WHERE hid = ?1",
+                rusqlite::params![winner.hid],
+            )
+            .unwrap();
         let filter = RetimeFilter {
-            slug_or_hid: Some(lone.slug.as_str()),
+            slug_or_hid: Some(winner.hid.as_str()),
             ..Default::default()
         };
         db.update_times(&filter, Duration::minutes(30)).unwrap();
 
+        let after = fetch_entry_any(db.conn(), loser.hid.as_str()).unwrap();
         assert_eq!(
-            db.get_entry(&lone.hid).unwrap().slug.as_str(),
-            "coffee:brew"
+            after.superseded_by,
+            Some(winner.hid),
+            "the loser stays set aside even with the slug to itself",
+        );
+        assert!(
+            db.get_entry("coffee:brew").is_err(),
+            "and the freed slug resolves to nothing in the live stream",
         );
     }
 

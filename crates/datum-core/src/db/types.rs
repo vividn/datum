@@ -130,7 +130,19 @@ pub(super) fn time_expr_endbound() -> &'static str {
 /// durable timeless predicate (any `occur_time <= ?` bound already
 /// excludes these implicitly — the predicate does real work in the
 /// unbounded readers, e.g. `latest_entry_for_now` with no snapshot time).
-pub(crate) const STATE_PARTICIPATION_SQL: &str = "occur_time IS NOT NULL AND deleted_at IS NULL";
+///
+/// da-uxgv: `superseded_by IS NULL` joins the liveness half. A superseded
+/// row still exists and is still addressable by hid, but a sync merge has
+/// already decided it is not the row that holds this field-instant — letting
+/// it into the timeline would put both sides of one conflict into the state
+/// the user is shown.
+pub(crate) const STATE_PARTICIPATION_SQL: &str =
+    "occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL";
+
+/// The rows in the live stream: not deleted by the user, and not set aside
+/// by a sync merge (da-uxgv). One string so the two halves of "live" can
+/// never drift apart at a call site that remembers only one of them.
+pub(crate) const LIVE_SQL: &str = "deleted_at IS NULL AND superseded_by IS NULL";
 
 /// Canonical newest-first ordering for state reads (da-ylet): latest
 /// `occur_time` wins; ties break on `slug` DESC. Same-instant live ties
@@ -151,7 +163,7 @@ pub(super) fn filtered_where(
     field: Option<&str>,
     since: Option<DateTime<Utc>>,
 ) -> (String, Vec<String>) {
-    let mut parts: Vec<String> = vec!["deleted_at IS NULL".to_string()];
+    let mut parts: Vec<String> = vec![LIVE_SQL.to_string()];
     let mut bindings: Vec<String> = Vec::new();
     if let Some(f) = field {
         parts.push("field = ?".to_string());

@@ -76,6 +76,7 @@ fn fresh_db_matches_schema_sql_shape() {
         "entries_modify_time_ms",
         "entries_occur_time",
         "entries_slug",
+        "entries_superseded_by",
         "entries_verb",
         "entry_history_change_kind",
         "entry_history_entry",

@@ -540,3 +540,17 @@ pub(super) fn has_column(conn: &Connection, table: &str, column: &str) -> Result
         .unwrap_or(0);
     Ok(n > 0)
 }
+
+/// Whether `table` exists. Migration tests stand up partial schemas — just
+/// `field_specs`, say — and expect every later forward step to no-op rather
+/// than hard-fail on a missing table.
+pub(super) fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name=?1",
+            params![table],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    Ok(n > 0)
+}

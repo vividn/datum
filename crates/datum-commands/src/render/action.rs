@@ -112,6 +112,12 @@ pub struct RenderContext {
     /// listing surfaces fill this (see `build_table_contexts`); everywhere
     /// else it stays `None` and the table's `_n` column drops out.
     pub quick_ordinal: Option<usize>,
+    /// da-uxgv: another row lost an identity contest to this one and is
+    /// sitting superseded behind it. The table marks such a row with a
+    /// trailing `*` on its hid, so a conflict is met where the user is
+    /// already looking rather than in a command they have to remember.
+    /// Only the listing surfaces fill this (see `build_table_contexts`).
+    pub has_supersedees: bool,
 }
 
 /// Which renderer is asking for the context. Per da-9p2u: pick the
@@ -191,6 +197,7 @@ impl RenderContext {
             ongoing_state,
             is_state_repeat,
             quick_ordinal: None,
+            has_supersedees: false,
         }
     }
 }

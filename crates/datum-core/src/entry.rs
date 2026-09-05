@@ -77,8 +77,11 @@ pub struct Entry {
     ///
     /// Human-facing, and **mutable**: it is derived from `field` +
     /// `occur_time`, so `retime` rewrites it in place. Do not treat it as an
-    /// identity — a sync merge sets it from the LWW winner, and two distinct
-    /// entries contending for one slug leave the loser at `<slug>_<hid>`.
+    /// identity — a sync merge sets it from the LWW winner. Two distinct
+    /// entries may hold one slug, and that is not corruption: the loser of
+    /// the contest keeps its own derived slug and steps out of the UNIQUE
+    /// index via [`Entry::superseded_by`] (da-uxgv). Nothing but the
+    /// derivation ever writes this column.
     pub slug: Slug,
 
     /// SHA-256 of the identity-defining fields for dedup.
@@ -141,6 +144,26 @@ pub struct Entry {
     /// Soft-delete tombstone. `None` = live row.
     #[serde(default)]
     pub deleted_at: Option<DateTime<Utc>>,
+
+    /// da-uxgv: the hid of the row that beat this one for an identity the
+    /// table can only give to one row — a `slug`, or a live `(field,
+    /// occur_time)`. `None` (the normal case) means this row holds its own
+    /// identity and is in the live stream.
+    ///
+    /// A superseded row is not deleted: it keeps its own naturally-derived
+    /// slug, stays addressable by hid, and stays out of the live stream and
+    /// out of both UNIQUE indexes. Deleting the winner does **not** promote
+    /// it — promotion means clearing this, and is always deliberate.
+    ///
+    /// **Local, and deliberately not on the wire** (`serde(skip)`).
+    /// Supersession is a pure function of the rows a device holds, so every
+    /// device derives the same answer itself; shipping the pointer instead
+    /// would hide a loser on a peer that has not yet received the winner it
+    /// names. It is advisory even locally: it points at the row that won at
+    /// the time, and a later merge can supersede *that* row without
+    /// repointing this one.
+    #[serde(skip)]
+    pub superseded_by: Option<Hid>,
 
     // --- Intent capture ---
     /// Literal argv of the command that produced this entry. `None` for
@@ -250,6 +273,7 @@ impl Entry {
             id_structure: None,
             field_structure: None,
             deleted_at: None,
+            superseded_by: None,
             raw_input: None,
             alias_chain: None,
             parser_version: CURRENT_PARSER_VERSION,

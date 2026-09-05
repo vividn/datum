@@ -237,6 +237,115 @@ pub(super) fn m33_to_34_precision_to_uncertainty(conn: &Connection) -> Result<()
     Ok(())
 }
 
+/// da-uxgv: replace slug-parking with a `superseded_by` pointer.
+///
+/// Three schema moves and one data repair:
+///
+/// * add `entries.superseded_by` — the hid of the row that won an identity
+///   this one also wanted;
+/// * make `entries_slug` partial on `superseded_by IS NULL`, and add the
+///   same term to `entries_field_occurtime`, so the uniqueness belief
+///   becomes "one *live* row per identity" — which is what the hid-keyed
+///   sync merge can actually hold;
+/// * add the reverse-lookup partial index the conflict marker reads.
+///
+/// The indexes are dropped and recreated rather than left alone: `Db::open`
+/// replays `schema.sql` with `CREATE … IF NOT EXISTS`, which would leave an
+/// existing `entries_slug` at its old total definition forever.
+///
+/// The data repair un-parks rows the old mechanism moved (see
+/// [`unpark_rows`]). It is not cosmetic: a parked slug is drift to the
+/// post-da-uxgv `datum check`, and `--fix` would rewrite it straight onto
+/// the winner's slug and trip the UNIQUE index.
+pub(super) fn m34_to_35_superseded_by(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    if !has_column(conn, "entries", "superseded_by")? {
+        conn.execute_batch("ALTER TABLE entries ADD COLUMN superseded_by TEXT;")?;
+    }
+    // The indexes go first: un-parking hands a slug back to a row the
+    // winner already holds, and lifts a tombstone off a row that shares
+    // the winner's `(field, occur_time)`. Both are exactly what the old
+    // total indexes forbid and the new partial ones permit.
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entries_slug;
+         CREATE UNIQUE INDEX entries_slug
+             ON entries (slug)
+             WHERE superseded_by IS NULL;
+         DROP INDEX IF EXISTS entries_field_occurtime;
+         CREATE UNIQUE INDEX entries_field_occurtime
+             ON entries (field, occur_time)
+             WHERE occur_time IS NOT NULL
+               AND deleted_at IS NULL
+               AND superseded_by IS NULL;
+         CREATE INDEX IF NOT EXISTS entries_superseded_by
+             ON entries (superseded_by)
+             WHERE superseded_by IS NOT NULL;",
+    )?;
+    unpark_rows(conn)?;
+    Ok(())
+}
+
+/// Move every row the retired parking mechanism displaced onto the
+/// `superseded_by` pointer.
+///
+/// A parked row is recognised the way `slug::is_parked` recognised it: its
+/// slug is `<base>_<its own hid>`. It is only un-parked when some *other*
+/// row actually holds `<base>` — that other row is the winner the park was
+/// derived against, and without it there is no supersession to record (a
+/// lone parked row is genuine drift, and `datum check` is the right place
+/// to meet it).
+///
+/// Parking also tombstoned the loser when the pair contended for one live
+/// `(field, occur_time)`, stamping `deleted_at` with the *winner's*
+/// `modify_time`. That exact equality is the signature of the park, so it
+/// is the only tombstone lifted here; a tombstone at any other instant is a
+/// deletion the user asked for and stays. Lifting one moves the row's
+/// `content_hash` (deleted-ness is hashed, da-4vyw), so the hash is
+/// recomputed for every row this touches.
+fn unpark_rows(conn: &Connection) -> Result<()> {
+    let rows: Vec<crate::entry::Entry> = {
+        let mut stmt = conn.prepare("SELECT * FROM entries")?;
+        let mapped = stmt.query_map([], crate::db::row_to_entry_public)?;
+        mapped.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let holders: std::collections::HashMap<&str, &crate::entry::Entry> =
+        rows.iter().map(|e| (e.slug.as_str(), e)).collect();
+
+    let mut update = conn.prepare(
+        "UPDATE entries SET slug = ?2, superseded_by = ?3, deleted_at = ?4, content_hash = ?5 \
+         WHERE hid = ?1",
+    )?;
+    for row in &rows {
+        let suffix = format!("_{}", row.hid);
+        let Some(base) = row.slug.as_str().strip_suffix(&suffix) else {
+            continue;
+        };
+        if base.is_empty() {
+            continue;
+        }
+        let Some(winner) = holders.get(base).filter(|w| w.hid != row.hid) else {
+            continue;
+        };
+        let mut unparked = row.clone();
+        unparked.slug = crate::ids::Slug(base.to_string());
+        unparked.superseded_by = Some(winner.hid.clone());
+        if unparked.deleted_at == Some(winner.modify_time) {
+            unparked.deleted_at = None;
+        }
+        unparked.content_hash = unparked.expected_content_hash();
+        update.execute(params![
+            unparked.hid,
+            unparked.slug,
+            unparked.superseded_by,
+            unparked.deleted_at.map(|t| t.to_rfc3339()),
+            unparked.content_hash,
+        ])?;
+    }
+    Ok(())
+}
+
 // ─── Down migrations ─────────────────────────────────────────────────
 //
 // Each forward migration above has a paired `down` here that reverses
@@ -256,6 +365,35 @@ pub(super) fn m33_to_34_precision_to_uncertainty(conn: &Connection) -> Result<()
 //   docstring. The down still runs to make the schema reversible for
 //   round-trip testing; production callers should back up before
 //   walking back across these.
+
+/// Reverse 35→34 — restore the total `entries_slug` UNIQUE index and drop
+/// `superseded_by`.
+///
+/// **Lossy by construction.** The pointer is the only record that a pair
+/// was in contention; the parked slugs it replaced are not reconstructed,
+/// so a database that still holds a superseded row cannot walk back — the
+/// two rows would both claim one slug and the restored total UNIQUE index
+/// would refuse to build. That is the honest failure: the down is for
+/// round-trip testing and for databases with no live conflict, and a
+/// database with one should resolve it before walking back.
+pub(super) fn down_35_to_34_superseded_by(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entries_superseded_by;
+         DROP INDEX IF EXISTS entries_slug;
+         CREATE UNIQUE INDEX entries_slug ON entries (slug);
+         DROP INDEX IF EXISTS entries_field_occurtime;
+         CREATE UNIQUE INDEX entries_field_occurtime
+             ON entries (field, occur_time)
+             WHERE occur_time IS NOT NULL AND deleted_at IS NULL;",
+    )?;
+    if has_column(conn, "entries", "superseded_by")? {
+        conn.execute_batch("ALTER TABLE entries DROP COLUMN superseded_by;")?;
+    }
+    Ok(())
+}
 
 /// Reverse 34→33 — restore the pre-da-b8rs column names. Lossless.
 pub(super) fn down_34_to_33_precision_to_uncertainty(conn: &Connection) -> Result<()> {

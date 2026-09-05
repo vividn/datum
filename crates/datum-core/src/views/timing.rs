@@ -38,7 +38,7 @@ impl View for TimingView {
         let mut sql = String::from(
             "SELECT slug, field, occur_time, occur_time_offset, dur
              FROM entries
-             WHERE deleted_at IS NULL",
+             WHERE deleted_at IS NULL AND superseded_by IS NULL",
         );
         let mut args: Vec<String> = Vec::new();
         if let Some(f) = &field_filter {

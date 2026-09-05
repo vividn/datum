@@ -96,8 +96,8 @@ pub fn pack_changeset_page(
 /// winner. Two entries contending for one slug, or one live `(field,
 /// occur_time)`, split on whether they record the same event (da-yiq9):
 /// identical ones fold into a single row silently, and different ones are
-/// both kept — the loser parked and filed as an `identity_collision`
-/// warning (see [`upsert_lww`]).
+/// both kept — the loser [superseded](supersede_loser) and filed as an
+/// `identity_collision` warning (see [`upsert_lww`]).
 ///
 /// `modify_time` is a raw device wall-clock: a device with a fast clock
 /// wins every tie and a lagging one can silently lose a later edit. This
@@ -379,19 +379,35 @@ fn fold_duplicate(
         "UPDATE entry_history SET entry_hid = ?1, version = version + ?2 WHERE entry_hid = ?3",
         params![winner.hid, offset, loser_hid],
     )?;
+    // da-uxgv: a row this one had beaten points at an hid that is about to
+    // stop existing. Move the pointer onto the survivor — the two describe
+    // the same event, so the loser lost to the same thing either way, and a
+    // pointer at a deleted hid would leave the conflict unnameable.
+    tx.execute(
+        "UPDATE entries SET superseded_by = ?1 WHERE superseded_by = ?2",
+        params![winner.hid, loser_hid],
+    )?;
     tx.execute("DELETE FROM entries WHERE hid = ?1", params![loser_hid])?;
     Ok(())
 }
 
 /// Local rows, other than `entry` itself, that hold an identity `entry`
-/// needs: the same slug (total UNIQUE, tombstones included), or the same
-/// live `(field, occur_time)` (partial UNIQUE, live rows only). This is
-/// the pre-check the merge's identity probe has to be in order to be one —
-/// every constraint the write can trip is looked up here, so the apply
-/// decides a merge rather than meeting a raw SQLite error (da-zlug).
+/// needs: the same slug (UNIQUE over non-superseded rows, tombstones
+/// included), or the same live `(field, occur_time)` (partial UNIQUE, live
+/// non-superseded rows only). This is the pre-check the merge's identity
+/// probe has to be in order to be one — every constraint the write can trip
+/// is looked up here, so the apply decides a merge rather than meeting a raw
+/// SQLite error (da-zlug).
+///
+/// A superseded row holds neither identity, so it is not a blocker (da-uxgv)
+/// — the two `superseded_by IS NULL` terms below are exactly the two index
+/// predicates. That is also what makes **deleting the winner leave the loser
+/// alone**: the winner's tombstone still owns the slug, and its loser, being
+/// superseded, is not a rival that could win it back. Promotion is only ever
+/// a deliberate clearing of the pointer.
 fn find_blockers(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<Vec<Entry>> {
     let mut blockers: Vec<Entry> = tx
-        .prepare("SELECT * FROM entries WHERE slug = ?1 AND hid != ?2")?
+        .prepare("SELECT * FROM entries WHERE slug = ?1 AND hid != ?2 AND superseded_by IS NULL")?
         .query_map(
             params![entry.slug, entry.hid],
             datum_core::db::row_to_entry_public,
@@ -406,7 +422,7 @@ fn find_blockers(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<Vec<En
                 .prepare(
                     "SELECT * FROM entries \
                      WHERE field = ?1 AND occur_time = ?2 \
-                       AND deleted_at IS NULL AND hid != ?3",
+                       AND deleted_at IS NULL AND superseded_by IS NULL AND hid != ?3",
                 )?
                 .query_map(
                     params![entry.field, occur.utc.to_rfc3339(), entry.hid],
@@ -423,109 +439,50 @@ fn find_blockers(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<Vec<En
     Ok(blockers)
 }
 
-/// The shape `loser` takes when parked out of `winner`'s way — a pure
-/// function of the two rows, which is what lets every device reach the same
-/// pair without talking to each other. See [`park_loser`] for the policy;
-/// this is only the derivation, so callers can also ask "is the row I
-/// already hold the parked form of this one?" without writing anything.
-fn parked_shape(loser: &Entry, winner: &Entry) -> Entry {
-    let mut parked = loser.clone();
-    if loser.slug == winner.slug {
-        // The suffix is the loser's own hid — see `slug::parked`. The same
-        // helper tells the slug-re-deriving paths (`retime`, `datum edit`,
-        // `datum check --fix`) that this slug is a park to be preserved
-        // rather than drift to be repaired (da-l4uz).
-        parked.slug = datum_core::slug::parked(&loser.slug, &loser.hid);
-    }
-    if loser.deleted_at.is_none()
-        && winner.deleted_at.is_none()
-        && loser.occur_time.is_some()
-        && loser.field == winner.field
-        && loser.occur_time.as_ref().map(|t| t.utc) == winner.occur_time.as_ref().map(|t| t.utc)
-    {
-        parked.deleted_at = Some(winner.modify_time);
-    }
-    // da-4vyw: deleted-ness is part of `content_hash`, so tombstoning the
-    // loser moves its hash. The column has to follow, or the parked row
-    // reads as drifted to `datum check` and carries a stale key into the
-    // next merge's tiebreak. Still deterministic — both devices derive the
-    // same `deleted_at` and therefore the same hash.
-    parked.content_hash = parked.expected_content_hash();
-    parked
-}
-
-/// Whether the local row `pre` is simply `entry` already parked — i.e. this
-/// pull is a replay of the very changeset `pre` was derived from.
+/// Set `loser` aside for `winner`: point `entries.superseded_by` at the
+/// winner's hid and file the `identity_collision` warning that names the
+/// pair. Both rows survive; the loser keeps its own naturally-derived slug,
+/// its own content, and its addressability by hid — it simply leaves the
+/// live stream, and with it both UNIQUE indexes.
 ///
-/// Parking deliberately does not bump `modify_time`, so a re-pull of a
-/// parked row's origin arrives as an *exact* `modify_time` tie against a
-/// row that no longer matches it byte-for-byte: since da-4vyw the park's
-/// tombstone moves `content_hash`, so the plain equality short-circuit
-/// misses. Re-deriving the park is the precise test — if parking `entry`
-/// against its current blocker reproduces the row we already hold, nothing
-/// has changed and the apply must stop here. Without this the row fights
-/// its own origin: an lww_overwrite warning and a duplicate
-/// identity_collision on every pull, forever.
-fn is_replay_of_park(tx: &rusqlite::Transaction<'_>, pre: &Entry, entry: &Entry) -> Result<bool> {
-    let blockers = find_blockers(tx, entry)?;
-    // Only a rival is ever parked — a twin is folded away instead
-    // (da-yiq9) — so a twin must not be able to stand in as the winner a
-    // park was derived against.
-    let Some(winner) = blockers
-        .iter()
-        .filter(|b| !is_same_event(b, entry))
-        .max_by(|a, b| merge_rank(a).cmp(&merge_rank(b)))
-    else {
-        return Ok(false);
-    };
-    if merge_rank(winner) <= merge_rank(entry) {
-        return Ok(false);
-    }
-    let shape = parked_shape(entry, winner);
-    Ok(shape.slug == pre.slug
-        && shape.deleted_at == pre.deleted_at
-        && shape.content_hash == pre.content_hash)
-}
-
-/// Park `loser` out of `winner`'s way without destroying it: move it to its
-/// [parked slug](datum_core::slug::parked) when the two contend for one
-/// slug, and tombstone it
-/// (`deleted_at` = the winner's `modify_time`, so both devices write the
-/// same value) when they contend for one live `(field, occur_time)`.
+/// This is the whole of what supersession writes, and the shortness is the
+/// point (da-uxgv). Parking, which this replaces, had to rewrite the slug
+/// and sometimes the tombstone, and therefore the `content_hash` those two
+/// feed — which made a re-pull of the loser's own changeset arrive as a
+/// mismatched tie against the row it had produced, needing a whole
+/// re-derive-the-park predicate to recognise. Touching no hashed column
+/// leaves `pre.content_hash == entry.content_hash` a true statement about a
+/// replay, so the plain short-circuit in [`upsert_lww`] does that job again.
 ///
-/// `modify_time` is deliberately NOT bumped. Parking is a pure function of
-/// the two rows, so every device reaches it independently; a bump would
-/// both re-push a row nobody edited and let the parked copy start winning
-/// LWW against its own origin.
+/// `modify_time` is deliberately NOT bumped, for the same reason it was not
+/// under parking: supersession is a pure function of the rows a device
+/// holds, so every device reaches it independently, and a bump would both
+/// re-push a row nobody edited and let the loser start winning LWW against
+/// its own origin. `superseded_by` itself never crosses the wire.
 ///
 /// `write_now` distinguishes the two losers: a local blocker is already a
-/// row and is rewritten here, while a losing *incoming* row is returned for
-/// the caller's own write. Either way the returned entry is the parked
-/// shape, and it is what the warning names.
-fn park_loser(
+/// row and is updated here, while a losing *incoming* row has not been
+/// written yet and is returned in its superseded shape for the caller's own
+/// insert.
+fn supersede_loser(
     tx: &rusqlite::Transaction<'_>,
     loser: &Entry,
     winner: &Entry,
     write_now: bool,
 ) -> Result<Entry> {
-    let parked = parked_shape(loser, winner);
+    let mut superseded = loser.clone();
+    superseded.superseded_by = Some(winner.hid.clone());
     if write_now {
-        // The loser is a row already in the table: rewrite just the identity
-        // columns the parking touches plus the hash they move, snapshotting
-        // the pre-park state so the move is auditable and reversible.
+        // Snapshot the pre-supersession state so the move is auditable and
+        // reversible, then touch the one column it changes.
         history::record(tx, loser, ChangeKind::SyncMerge)?;
         tx.execute(
-            "UPDATE entries SET slug = ?2, deleted_at = ?3, content_hash = ?4 WHERE hid = ?1",
-            params![
-                parked.hid,
-                parked.slug,
-                parked.deleted_at.map(|t| t.to_rfc3339()),
-                parked.content_hash,
-            ],
+            "UPDATE entries SET superseded_by = ?2 WHERE hid = ?1",
+            params![superseded.hid, superseded.superseded_by],
         )?;
     }
-    datum_core::integrity::file_identity_collision(tx, &parked, winner)?;
-    Ok(parked)
+    datum_core::integrity::file_identity_collision(tx, &superseded, winner)?;
+    Ok(superseded)
 }
 
 fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
@@ -560,7 +517,6 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             // (docs/sync-protocol.md §Merge semantics).
             std::cmp::Ordering::Equal => {
                 if pre.content_hash == entry.content_hash
-                    || is_replay_of_park(tx, pre, entry)?
                     || (&pre.content_hash, &pre.device_id) > (&entry.content_hash, &entry.device_id)
                 {
                     return Ok(());
@@ -590,9 +546,9 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
     // decide how to merge them." So split the collision by
     // [`is_same_event`] before deciding what to do with it. A *twin* is one
     // event logged on two devices and folds away silently; a *rival* is two
-    // different facts wearing one identity, and both are kept, parked and
-    // warned about (da-zlug). Twins first — folding one frees the identity
-    // the write below is about to claim.
+    // different facts wearing one identity, and both are kept — the loser
+    // superseded and warned about (da-zlug, da-uxgv). Twins first — folding
+    // one frees the identity the write below is about to claim.
     let blockers = find_blockers(tx, entry)?;
     let (twins, rivals): (Vec<Entry>, Vec<Entry>) = blockers
         .into_iter()
@@ -621,23 +577,41 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
     let top = rivals
         .iter()
         .max_by(|a, b| merge_rank(a).cmp(&merge_rank(b)));
-    let parked;
-    let entry = match top {
-        // Incoming loses: write it in its parked shape rather than dropping
+    // `superseded_by` is local state that does not ride the wire, so the
+    // incoming row always arrives with none and the value to store is
+    // decided here, from the three cases this apply can be in.
+    let mut resolved = entry.clone();
+    match top {
+        // Incoming loses: write it already superseded rather than dropping
         // it, so the device that pulls second holds the same rows as the one
         // that pulled first.
         Some(winner) if merge_rank(winner) > merge_rank(entry) => {
-            parked = park_loser(tx, entry, winner, false)?;
-            &parked
+            resolved = supersede_loser(tx, entry, winner, false)?;
         }
-        // Incoming wins: move every rival out of the way in place.
-        _ => {
+        // Incoming wins over at least one rival: set them aside, and the
+        // incoming row is by definition the one holding the identity now —
+        // so it must not keep a pointer of its own, or an edit that promotes
+        // a former loser would leave both sides of the pair hidden.
+        Some(_) => {
             for rival in &rivals {
-                park_loser(tx, rival, entry, true)?;
+                supersede_loser(tx, rival, entry, true)?;
             }
-            entry
+            resolved.superseded_by = None;
         }
-    };
+        // No contest at all, so this apply decided nothing about
+        // supersession — a pointer the local row already carries stays.
+        //
+        // Keeping it matters because a superseded row can leave the contest
+        // without being promoted: `retime` moves its slug and clears the
+        // collision, and the bead is explicit that the *relationship*
+        // survives that (which is why the pointer is an hid — the one
+        // identity that outlives an edit). Re-deriving from "does anything
+        // still block me?" would silently promote it on the next pull.
+        None => {
+            resolved.superseded_by = existing.as_ref().and_then(|p| p.superseded_by.clone());
+        }
+    }
+    let entry = &resolved;
 
     if existing.is_none() {
         // Fresh row arriving from a peer — the "pre" state is the incoming
@@ -667,7 +641,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             dur_uncertainty,
             lat, lon, location,
             create_time, modify_time, device_id,
-            deleted_at, id_structure, field_structure,
+            deleted_at, superseded_by, id_structure, field_structure,
             raw_input, alias_chain, parser_version,
             user_asserted_last_state, extra_metadata
         ) VALUES (
@@ -677,9 +651,9 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             ?14,
             ?15, ?16, ?17,
             ?18, ?19, ?20,
-            ?21, ?22, ?23,
-            ?24, ?25, ?26,
-            ?27, ?28
+            ?21, ?22, ?23, ?24,
+            ?25, ?26, ?27,
+            ?28, ?29
         )
         ON CONFLICT(hid) DO UPDATE SET
             -- Merge keys on hid — the primary key, replicated with
@@ -709,6 +683,10 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             modify_time     = excluded.modify_time,
             device_id       = excluded.device_id,
             deleted_at      = excluded.deleted_at,
+            -- Local, derived, and never on the wire: the value bound here is
+            -- this apply's own decision (or the pointer the row already
+            -- carried), never something a peer sent (da-uxgv).
+            superseded_by   = excluded.superseded_by,
             id_structure    = excluded.id_structure,
             field_structure = excluded.field_structure,
             raw_input       = excluded.raw_input,
@@ -746,6 +724,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             entry.modify_time.to_rfc3339(),
             entry.device_id,
             entry.deleted_at.map(|t| t.to_rfc3339()),
+            entry.superseded_by,
             entry.id_structure.as_deref(),
             entry.field_structure.as_deref(),
             entry.raw_input,
@@ -1335,12 +1314,13 @@ mod tests {
     }
 
     /// The other half of the inversion: two *different* entries claiming one
-    /// slug. Both are kept — the deterministic loser is parked under a slug
-    /// carrying its own hid, and tombstoned because a live pair cannot share
-    /// `(field, occur_time)` — and one `identity_collision` warning names
-    /// the pair for `datum check` (da-zlug; policy refinement is da-yiq9).
+    /// slug. Both are kept — the deterministic loser is superseded, keeping
+    /// its own naturally-derived slug and its own live-ness — and one
+    /// `identity_collision` warning names the pair for `datum check`
+    /// (da-zlug; policy refinement is da-yiq9; da-uxgv replaced the parking
+    /// this used to assert).
     #[test]
-    fn same_slug_different_hid_keeps_both_and_parks_the_loser() {
+    fn same_slug_different_hid_supersedes_the_loser() {
         use datum_core::integrity::{DetectedBy, IntegrityKind, ListFilter};
 
         let db = fresh_db();
@@ -1358,18 +1338,27 @@ mod tests {
         // Newer incoming wins the contested slug; the local row survives.
         let kept = db.get_entry(&incoming.slug).unwrap();
         assert_eq!(kept.hid, incoming.hid);
-        let parked = row_by_hid(&db, &local.hid);
+        let loser = row_by_hid(&db, &local.hid);
         assert_eq!(
-            parked.slug.as_str(),
-            format!("{}_{}", local.slug, local.hid)
+            loser.superseded_by,
+            Some(incoming.hid.clone()),
+            "the loser names its winner — the one identity that outlives an edit",
         );
         assert_eq!(
-            parked.deleted_at,
-            Some(incoming.modify_time),
-            "tombstoned at the winner's modify_time — the same value on every device"
+            loser.slug, local.slug,
+            "and keeps the slug its own template derives; nothing is smuggled into it",
         );
         assert_eq!(
-            parked.state,
+            loser.deleted_at, None,
+            "supersession is not deletion — the user deleted nothing",
+        );
+        assert_eq!(
+            loser.content_hash,
+            loser.expected_content_hash(),
+            "and no hashed column moved, which is what keeps a replay recognisable",
+        );
+        assert_eq!(
+            loser.state,
             Some(serde_json::json!("local")),
             "not destroyed"
         );
@@ -1386,7 +1375,7 @@ mod tests {
         assert_eq!(warnings[0].remote_entry.as_ref().unwrap().hid, incoming.hid);
     }
 
-    /// The parking rule is a pure function of the two rows, so devices that
+    /// Supersession is a pure function of the two rows, so devices that
     /// meet them in opposite orders land on the same pair of rows — the
     /// divergence guard da-22zm names, applied to the collision the
     /// inversion creates. Re-applying afterwards changes nothing.
@@ -1413,17 +1402,17 @@ mod tests {
         apply_changeset(&db_a, &cs_a).unwrap();
         apply_changeset(&db_b, &cs_b).unwrap();
 
-        let shape = |db: &Db| -> Vec<(String, String, bool)> {
+        let shape = |db: &Db| -> Vec<(String, String, Option<String>)> {
             let mut stmt = db
                 .conn()
-                .prepare("SELECT hid, slug, deleted_at FROM entries ORDER BY hid")
+                .prepare("SELECT hid, slug, superseded_by FROM entries ORDER BY hid")
                 .unwrap();
             let rows = stmt
                 .query_map([], |r| {
                     Ok((
                         r.get::<_, String>(0)?,
                         r.get::<_, String>(1)?,
-                        r.get::<_, Option<String>>(2)?.is_some(),
+                        r.get::<_, Option<String>>(2)?,
                     ))
                 })
                 .unwrap();
@@ -1431,7 +1420,16 @@ mod tests {
         };
         let shape_a = shape(&db_a);
         assert_eq!(shape_a.len(), 2, "both rows kept");
-        assert_eq!(shape_a, shape(&db_b), "same two rows, same two slugs");
+        assert_eq!(
+            shape_a.iter().filter(|(_, _, s)| s.is_none()).count(),
+            1,
+            "exactly one winner in the stream",
+        );
+        assert_eq!(
+            shape_a,
+            shape(&db_b),
+            "same two rows, same slugs, same winner on both devices",
+        );
 
         // Idempotent: the second pass files no further warnings.
         let count = |db: &Db| {
@@ -1450,8 +1448,11 @@ mod tests {
     /// *distinct* slugs (custom `--id` templates) at the same field and
     /// instant trip the partial UNIQUE on `(field, occur_time)`. It is a
     /// merge case like the others, not a constraint error — the loser keeps
-    /// its own slug and is tombstoned. The two must record *different*
+    /// its own slug and is superseded. The two must record *different*
     /// things; identical ones now fold into one row instead (da-yiq9).
+    ///
+    /// da-uxgv: this axis routes through supersession too. Fixing the slug
+    /// contenders alone would have left this one to be rediscovered.
     #[test]
     fn field_occur_time_collision_is_a_merge_not_an_error() {
         use datum_core::integrity::{IntegrityKind, ListFilter};
@@ -1472,9 +1473,13 @@ mod tests {
 
         let kept = db.get_entry(&incoming.slug).unwrap();
         assert_eq!(kept.hid, incoming.hid);
-        let parked = row_by_hid(&db, &local.hid);
-        assert_eq!(parked.slug, local.slug, "no slug contest, no slug change");
-        assert_eq!(parked.deleted_at, Some(incoming.modify_time));
+        let loser = row_by_hid(&db, &local.hid);
+        assert_eq!(loser.slug, local.slug, "no slug contest, no slug change");
+        assert_eq!(loser.superseded_by, Some(incoming.hid.clone()));
+        assert_eq!(
+            loser.deleted_at, None,
+            "the (field, occur_time) axis no longer needs a tombstone either",
+        );
         assert_eq!(
             db.list_integrity_warnings(&ListFilter {
                 kind: Some(IntegrityKind::IdentityCollision),
@@ -1682,11 +1687,12 @@ mod tests {
         );
     }
 
-    /// An incoming row that *loses* the contest is still applied — parked
-    /// rather than dropped, so the two devices hold the same rows and the
-    /// entry is not silently lost on whichever device happens to be second.
+    /// An incoming row that *loses* the contest is still applied — written
+    /// already superseded rather than dropped, so the two devices hold the
+    /// same rows and the entry is not silently lost on whichever device
+    /// happens to be second.
     #[test]
-    fn losing_incoming_row_is_parked_not_discarded() {
+    fn losing_incoming_row_is_superseded_not_discarded() {
         let db = fresh_db();
         let mut local = make_entry("coffee", 0);
         let mut incoming = make_entry("coffee", 0);
@@ -1698,12 +1704,91 @@ mod tests {
         apply_changeset(&db, &changeset_of(&incoming)).unwrap();
 
         assert_eq!(db.get_entry(&local.slug).unwrap().hid, local.hid);
-        let parked = row_by_hid(&db, &incoming.hid);
+        let loser = row_by_hid(&db, &incoming.hid);
+        assert_eq!(loser.superseded_by, Some(local.hid.clone()));
+        assert_eq!(loser.slug, incoming.slug, "its own derived slug, unchanged");
+        assert_eq!(loser.deleted_at, None);
+        assert_eq!(loser.state, Some(serde_json::json!("incoming")));
+    }
+
+    /// vividn's rule, and the surprising direction: *"when a user deletes
+    /// something they expect it to stay deleted."* Tombstoning the winner
+    /// must NOT hand the identity back to the row it beat — a deletion that
+    /// silently resurrects different data is the worst kind of surprise,
+    /// because the tail agrees with the user's model right up until it
+    /// doesn't. Promotion is only ever a deliberate clearing of the pointer.
+    #[test]
+    fn deleting_the_winner_does_not_promote_the_loser() {
+        let db = fresh_db();
+        let mut local = make_entry("coffee", 0);
+        let mut incoming = make_entry("coffee", 0);
+        local.state = Some(serde_json::json!("local"));
+        incoming.state = Some(serde_json::json!("incoming"));
+        incoming.modify_time = local.modify_time + Duration::seconds(60);
+
+        db.insert_entry(&local).unwrap();
+        apply_changeset(&db, &changeset_of(&incoming)).unwrap();
         assert_eq!(
-            parked.slug.as_str(),
-            format!("{}_{}", incoming.slug, incoming.hid)
+            row_by_hid(&db, &local.hid).superseded_by,
+            Some(incoming.hid.clone())
         );
-        assert_eq!(parked.deleted_at, Some(local.modify_time));
-        assert_eq!(parked.state, Some(serde_json::json!("incoming")));
+
+        // The user deletes the winner, and the winner's tombstone comes
+        // back round the relay — the arrival that would re-run the merge.
+        let winner = db.get_entry(&incoming.slug).unwrap();
+        db.soft_delete_entry(&winner.slug).unwrap();
+        let deleted = row_by_hid(&db, &incoming.hid);
+        apply_changeset(&db, &changeset_of(&deleted)).unwrap();
+
+        let loser = row_by_hid(&db, &local.hid);
+        assert_eq!(
+            loser.superseded_by,
+            Some(incoming.hid.clone()),
+            "still set aside",
+        );
+        assert!(
+            db.get_entry(&local.slug).is_err(),
+            "and still out of the live stream — nothing resurfaced",
+        );
+    }
+
+    /// The pointer is local, derived state and never rides the wire: a peer
+    /// must reach its own conclusion from the rows it holds. Shipping it
+    /// would hide a loser on a device that has not yet received the winner
+    /// the pointer names.
+    #[test]
+    fn superseded_by_is_not_on_the_wire() {
+        let db = fresh_db();
+        let mut local = make_entry("coffee", 0);
+        let mut incoming = make_entry("coffee", 0);
+        local.state = Some(serde_json::json!("local"));
+        incoming.state = Some(serde_json::json!("incoming"));
+        incoming.modify_time = local.modify_time + Duration::seconds(60);
+        db.insert_entry(&local).unwrap();
+        apply_changeset(&db, &changeset_of(&incoming)).unwrap();
+
+        let (changeset, _) = pack_changeset_page(&db, 0, 100).unwrap();
+        let json = String::from_utf8(payload_json(changeset.as_bytes()).unwrap().to_vec()).unwrap();
+        assert!(
+            !json.contains("superseded_by"),
+            "the pointer must not be serialized onto the wire: {json}",
+        );
+
+        // A fresh peer receiving only the loser's changeset holds it live —
+        // it has no winner yet, so there is nothing for it to lose to.
+        let peer = fresh_db();
+        let loser = row_by_hid(&db, &local.hid);
+        apply_changeset(&peer, &changeset_of(&loser)).unwrap();
+        assert_eq!(
+            row_by_hid(&peer, &local.hid).superseded_by,
+            None,
+            "a device that has not met the winner does not hide the row",
+        );
+        // …and once the winner arrives, it reaches the same answer alone.
+        apply_changeset(&peer, &changeset_of(&incoming)).unwrap();
+        assert_eq!(
+            row_by_hid(&peer, &local.hid).superseded_by,
+            Some(incoming.hid.clone()),
+        );
     }
 }

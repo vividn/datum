@@ -38,7 +38,7 @@ impl View for StateChangeView {
         let mut sql = String::from(
             "SELECT slug, field, verb, state, occur_time, dur, create_time
              FROM entries
-             WHERE deleted_at IS NULL
+             WHERE deleted_at IS NULL AND superseded_by IS NULL
                AND verb IN ('switch','block','point','block-switch','point-switch')",
         );
         let mut args: Vec<String> = Vec::new();

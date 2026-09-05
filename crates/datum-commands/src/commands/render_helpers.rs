@@ -76,7 +76,8 @@ pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCon
         .collect()
 }
 
-/// [`build_render_contexts`] plus the `_N` quickId ordinals (da-8sx8).
+/// [`build_render_contexts`] plus the `_N` quickId ordinals (da-8sx8) and
+/// the sync-conflict marker (da-uxgv).
 ///
 /// Used by the listing surfaces — `tail` / `head` / `grep` / the tail TUI —
 /// where `_N` is a navigational aid: the reader sees which row `_3` names
@@ -86,8 +87,12 @@ pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCon
 pub(crate) fn build_table_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
     let mut ctxs = build_render_contexts(entries, db);
     let ordinals = datum_core::ids::quick_ordinals(db).unwrap_or_default();
+    // One query for the batch, served by a partial index that holds only
+    // conflicted rows — empty whenever there is no conflict to mark.
+    let conflicted = db.hids_with_supersedees().unwrap_or_default();
     for (ctx, e) in ctxs.iter_mut().zip(entries) {
         ctx.quick_ordinal = ordinals.get(&e.hid).copied();
+        ctx.has_supersedees = conflicted.contains(&e.hid);
     }
     ctxs
 }
@@ -142,6 +147,36 @@ mod tests {
         }
         assert_eq!(ctxs[0].quick_ordinal, Some(1));
         assert_eq!(ctxs[3].quick_ordinal, Some(4));
+    }
+
+    /// da-uxgv: the tail marks the row that *won* a contest, not the row
+    /// that lost it — the loser is out of the stream, so the only place a
+    /// conflict can be shown is on the row the reader can see.
+    #[test]
+    fn table_contexts_mark_a_row_with_supersedees() {
+        let db = fresh_db();
+        let base: chrono::DateTime<Utc> = "2026-05-01T12:00:00Z".parse().unwrap();
+        let winner = entry_builder("mood").time_start_utc(base).insert(&db);
+        let bystander = entry_builder("mood")
+            .time_start_utc(base + chrono::Duration::minutes(5))
+            .insert(&db);
+        let loser = entry_builder("mood")
+            .time_start_utc(base + chrono::Duration::minutes(9))
+            .insert(&db);
+        db.conn()
+            .execute(
+                "UPDATE entries SET superseded_by = ?2 WHERE hid = ?1",
+                rusqlite::params![loser.hid, winner.hid],
+            )
+            .unwrap();
+
+        let listed = vec![winner.clone(), bystander.clone()];
+        let ctxs = build_table_contexts(&listed, &db);
+        assert!(ctxs[0].has_supersedees, "the winner carries the marker");
+        assert!(
+            !ctxs[1].has_supersedees,
+            "an uninvolved row carries nothing",
+        );
     }
 
     /// The plain builder leaves the ordinal unset, so the preview

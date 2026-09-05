@@ -528,30 +528,16 @@ struct SlugReport {
 /// Tombstones are skipped — they are historical rows and re-deriving
 /// their slug would produce a meaningless rekey.
 ///
-/// da-l4uz: a row a sync merge parked (slug suffixed with its own hid so it
-/// and the row that won the slug can both survive, da-zlug) is *not* drift.
-/// Its expected slug is the parked one for as long as the natural slug is
-/// held by someone else — otherwise the repair would rewrite the row back
-/// onto the collision the merge resolved. `--fix` applies the same rule via
-/// `save_existing_entry_with_auto_reinterp`, so the two agree by
-/// construction.
+/// da-uxgv: a row a sync merge set aside is scanned like any other. It
+/// carries its own naturally-derived slug — supersession lives in
+/// `superseded_by`, not in this column — so it drifts exactly when a live
+/// row would and is repaired the same way. There is no knowledge of
+/// supersession in the slug logic at all, which is the point: the retired
+/// parking mechanism needed every re-deriver (`retime`, `datum edit`, this
+/// scan and its `--fix`) taught about a shape it could not recompute
+/// (da-l4uz).
 fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
     let entries = db.list_including_deleted()?;
-    // Who holds which slug. The UNIQUE index over `slug` is total, so
-    // tombstones count as holders — the same rule the write path applies.
-    let holders: std::collections::HashMap<&str, &datum_core::ids::Hid> =
-        entries.iter().map(|e| (e.slug.as_str(), &e.hid)).collect();
-    let park_aware = |expected: String, e: &Entry| -> String {
-        if datum_core::slug::is_parked(e.slug.as_str(), &e.hid)
-            && holders
-                .get(expected.as_str())
-                .is_some_and(|holder| *holder != &e.hid)
-        {
-            datum_core::slug::parked(&expected, &e.hid).into_string()
-        } else {
-            expected
-        }
-    };
 
     let mut drift_count: usize = 0;
     let mut drift_example: Option<IssueExample> = None;
@@ -581,7 +567,7 @@ fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
             let Some((_, body)) = e.slug.as_str().split_once(':') else {
                 continue;
             };
-            let expected = park_aware(format!("{expected_field}:{body}"), e);
+            let expected = format!("{expected_field}:{body}");
             let stored = e.slug.to_string();
             if stored != expected {
                 drift_count += 1;
@@ -600,7 +586,7 @@ fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
             continue;
         };
         let body = field_spec::interpolate(id_tmpl, &ctx, delim);
-        let expected = park_aware(format!("{expected_field}:{body}"), e);
+        let expected = format!("{expected_field}:{body}");
         let stored = e.slug.to_string();
         if stored != expected {
             drift_count += 1;
@@ -2526,10 +2512,11 @@ mod tests {
         assert!(report.fixes.is_empty());
     }
 
-    /// Two custom-id rows (`--id brew`) at different instants share one
-    /// natural slug, so a sync merge keeps both and parks the loser under
-    /// `coffee:brew_<hid>` (da-zlug). Returns (winner, parked).
-    fn seed_parked_pair(db: &Db) -> (Entry, Entry) {
+    /// Two custom-id rows (`--id brew`) at different instants derive one
+    /// natural slug, so a sync merge keeps both and supersedes the loser
+    /// (da-uxgv). Returns (winner, superseded) — and note the loser keeps
+    /// `coffee:brew`, exactly what its template says.
+    fn seed_superseded_pair(db: &Db) -> (Entry, Entry) {
         let mut winner = Entry::new_legacy(
             "coffee",
             Verb::Point,
@@ -2543,7 +2530,7 @@ mod tests {
         winner.slug = Slug("coffee:brew".to_string());
         db.insert_entry(&winner).unwrap();
 
-        let mut parked = Entry::new_legacy(
+        let mut loser = Entry::new_legacy(
             "coffee",
             Verb::Point,
             None,
@@ -2552,59 +2539,49 @@ mod tests {
             None,
             "d2",
         );
-        parked.id_structure = Some("brew".to_string());
-        parked.slug = datum_core::slug::parked("coffee:brew", &parked.hid);
-        db.insert_entry(&parked).unwrap();
-        (winner, parked)
+        loser.id_structure = Some("brew".to_string());
+        loser.slug = Slug(format!("coffee:brew-staging-{}", loser.hid));
+        db.insert_entry(&loser).unwrap();
+        // Both halves of what the merge writes: the pointer, and the slug
+        // the template actually derives. The partial UNIQUE permits the
+        // shared slug precisely because one side is superseded.
+        db.conn()
+            .execute(
+                "UPDATE entries SET slug = 'coffee:brew', superseded_by = ?2 WHERE hid = ?1",
+                rusqlite::params![loser.hid, winner.hid],
+            )
+            .unwrap();
+        loser.slug = Slug("coffee:brew".to_string());
+        loser.superseded_by = Some(winner.hid.clone());
+        (winner, loser)
     }
 
-    /// da-l4uz: a row a sync merge parked is not drift. Its slug is the
-    /// merge's resolution, not corruption — reporting it would send the
-    /// user to `--fix`, which would rewrite the row back onto the winner's
-    /// slug and undo a resolution both devices reached independently.
+    /// da-uxgv: a superseded row keeps its naturally-derived slug, so the
+    /// drift scan has nothing to say about it and `--fix` leaves it alone.
+    /// This is the inversion of da-l4uz's `slug_drift_skips_a_parked_row`:
+    /// the old mechanism needed the scan to know about parking, because the
+    /// slug it stored was not the slug the template derived.
     #[test]
-    fn slug_drift_skips_a_parked_row() {
+    fn slug_drift_is_silent_on_a_superseded_row() {
         let db = Db::open_in_memory().unwrap();
-        let (_, parked) = seed_parked_pair(&db);
+        let (_, superseded) = seed_superseded_pair(&db);
 
         let report = collect_slug_drift(&db, ":").unwrap();
         assert!(
             !report.issues.iter().any(|i| i.category == "slug_drift"),
-            "a parked row must not be reported as drift, got: {:?}",
+            "a superseded row derives its own slug, so it cannot drift, got: {:?}",
             report.issues,
         );
         assert!(report.fixes.is_empty(), "and nothing may be queued for fix");
 
-        // `--fix` leaves the row exactly where the merge put it.
         apply_slug_fixes(&db, &report.fixes, ":").unwrap();
-        assert_eq!(db.get_entry(&parked.hid).unwrap().slug, parked.slug);
-    }
-
-    /// The park is honoured only while another row holds the natural slug.
-    /// A row left parked with nothing to collide with is genuine drift, and
-    /// `--fix` restores its plain slug.
-    #[test]
-    fn slug_fix_unparks_a_row_whose_collision_is_gone() {
-        let db = Db::open_in_memory().unwrap();
-        let mut lone = Entry::new_legacy(
-            "coffee",
-            Verb::Point,
-            None,
-            None,
-            Some(t_at("2024-05-01T09:00:00+00:00")),
-            None,
-            "d2",
-        );
-        lone.id_structure = Some("brew".to_string());
-        lone.slug = datum_core::slug::parked("coffee:brew", &lone.hid);
-        db.insert_entry(&lone).unwrap();
-
-        let report = collect_slug_drift(&db, ":").unwrap();
-        assert_eq!(report.fixes.len(), 1, "an unclaimed park is real drift");
-        apply_slug_fixes(&db, &report.fixes, ":").unwrap();
+        let after = db
+            .get_entry_including_deleted(superseded.hid.as_str())
+            .unwrap();
+        assert_eq!(after.slug, superseded.slug);
         assert_eq!(
-            db.get_entry(&lone.hid).unwrap().slug.as_str(),
-            "coffee:brew"
+            after.superseded_by, superseded.superseded_by,
+            "and the pointer is untouched by the slug pass",
         );
     }
 

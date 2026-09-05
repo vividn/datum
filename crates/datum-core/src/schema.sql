@@ -1,4 +1,6 @@
--- datum SQLite schema (v30 — indexed modify_time_ms for SQL-side sync filtering, da-x3da).
+-- datum SQLite schema (v35 — superseded_by replaces slug-parking as the sync
+-- merge's way of keeping a loser without letting it hold a live identity,
+-- da-uxgv).
 --
 -- Time-shape pivot 2026-05-01: the entries table reverts from the
 -- start_time/end_time/entry_shape/intent shape to the original datum
@@ -75,6 +77,26 @@ CREATE TABLE IF NOT EXISTS entries (
     -- Soft-delete tombstone. NULL = not deleted.
     deleted_at      TEXT,
 
+    -- da-uxgv: the hid of the row that beat this one for an identity the
+    -- table can only give to one row (a slug, or a live (field,
+    -- occur_time)). NULL — the overwhelmingly common case — means the row
+    -- holds its own identity and is in the live stream. Non-NULL means the
+    -- row still exists, still carries its own naturally-derived slug and is
+    -- still addressable by hid, but is excluded from the live stream and
+    -- from both UNIQUE indexes below.
+    --
+    -- Same shape as `deleted_at`, different reason: `deleted_at` is *the
+    -- user deleted this*, `superseded_by` is *a sync merge set this aside*.
+    -- Deleting a winner therefore does NOT promote its loser — promotion is
+    -- clearing this column, never a side effect.
+    --
+    -- The pointer is ADVISORY: slug derives from occur_time, so a retime on
+    -- either row moves the slug, and hid is the only identity that outlives
+    -- an edit — which is why this is an hid and not a bare boolean. It is
+    -- local, derived state and does NOT cross the sync wire; every device
+    -- reaches the same supersession itself from the rows it holds.
+    superseded_by   TEXT,
+
     -- Template metadata (mirrors datum meta.idStructure / meta.fieldStructure).
     id_structure    TEXT,
     field_structure TEXT,
@@ -120,7 +142,16 @@ CREATE TABLE IF NOT EXISTS entries (
 
 -- Unique slug — the human-facing id. Prevents accidental slug collisions on
 -- write and makes slug→hid lookups single-hop.
-CREATE UNIQUE INDEX IF NOT EXISTS entries_slug ON entries (slug);
+--
+-- Partial on `superseded_by IS NULL` (da-uxgv): the belief the table can
+-- actually hold is "one LIVE entry per slug", not "one row per slug". Since
+-- the sync merge keys on `hid`, two rows with different hids can legitimately
+-- want one slug — two devices recording the same field at the same instant,
+-- or one corpus imported twice. The loser keeps its own derived slug and steps
+-- out of this index instead of having merge state smuggled into the slug.
+CREATE UNIQUE INDEX IF NOT EXISTS entries_slug
+    ON entries (slug)
+    WHERE superseded_by IS NULL;
 
 -- da-ga8b: partial UNIQUE on (field, occur_time). Slug uniqueness catches
 -- the default case where occur_time appears in the slug template, but
@@ -129,9 +160,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS entries_slug ON entries (slug);
 -- state-changes for the same field at the same exact instant, which is
 -- undefined. The partial filter excludes tombstones so the soft-delete +
 -- re-insert pattern still works.
+-- da-uxgv: `superseded_by IS NULL` for the same reason as `entries_slug` —
+-- the (field, occur_time) contenders route through supersession too. Custom
+-- ids can make two rows collide on one axis and not the other, so a fix that
+-- covered only slugs would be rediscovered here.
 CREATE UNIQUE INDEX IF NOT EXISTS entries_field_occurtime
     ON entries (field, occur_time)
-    WHERE occur_time IS NOT NULL AND deleted_at IS NULL;
+    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL;
+
+-- Reverse lookup for the conflict marker: "which rows lost to this one?".
+-- Partial, so it contains ONLY conflicted rows — empty in steady state, which
+-- is what lets the tail ask the question on every render for free.
+CREATE INDEX IF NOT EXISTS entries_superseded_by
+    ON entries (superseded_by)
+    WHERE superseded_by IS NOT NULL;
 
 -- Field-scoped tail queries: most reads are "last N entries for field F" so
 -- a composite (field, occur_time DESC) index lets them avoid a sort.

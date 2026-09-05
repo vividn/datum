@@ -36,7 +36,13 @@ const WHEN_COLS: &[&str] = &[
     "dur_uncertainty",
 ];
 const WHERE_COLS: &[&str] = &["lat", "lon", "location"];
-const BOOK_COLS: &[&str] = &["create_time", "modify_time", "device_id", "deleted_at"];
+const BOOK_COLS: &[&str] = &[
+    "create_time",
+    "modify_time",
+    "device_id",
+    "deleted_at",
+    "superseded_by",
+];
 const INTENT_COLS: &[&str] = &[
     "raw_input",
     "alias_chain",
@@ -159,6 +165,10 @@ fn render_column(col: &str, e: &Entry) -> String {
             Some(t) => t.to_rfc3339(),
             None => null_marker(),
         },
+        "superseded_by" => match &e.superseded_by {
+            Some(h) => h.to_string(),
+            None => null_marker(),
+        },
         "raw_input" => render_str_opt(e.raw_input.as_deref()),
         "alias_chain" => render_json_opt(e.alias_chain.as_ref()),
         "parser_version" => e.parser_version.to_string(),
@@ -231,6 +241,7 @@ mod tests {
             id_structure: None,
             field_structure: None,
             deleted_at: None,
+            superseded_by: None,
             raw_input: None,
             alias_chain: None,
             parser_version: 2,

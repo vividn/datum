@@ -34,6 +34,7 @@ const ZONE_CHANGES_SQL: &str = "\
                LAG(occur_time_tz) OVER (ORDER BY occur_time) AS prev_tz
           FROM entries
          WHERE deleted_at IS NULL
+           AND superseded_by IS NULL
            AND occur_time IS NOT NULL
            AND occur_time_tz IS NOT NULL
     )

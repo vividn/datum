@@ -100,6 +100,12 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         modify_time,
         device_id: row.get("device_id")?,
         deleted_at,
+        // Tolerant `get` for the same reason `dur_uncertainty` above is:
+        // the migration runner materializes rows through this mapper
+        // mid-walk, against a schema that predates the column (da-uxgv
+        // adds it at v35). A missing column reads as `None`, which is the
+        // right answer for every DB that has not reached v35 yet.
+        superseded_by: row.get("superseded_by").ok().flatten(),
         id_structure: row.get("id_structure")?,
         field_structure: row.get("field_structure")?,
         // §5 #11: raw_input went from `String` with empty-string sentinel

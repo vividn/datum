@@ -160,6 +160,7 @@ fn every_pair_has_a_roundtrip_test() {
         (31, 32),
         (32, 33),
         (33, 34),
+        (34, 35),
     ];
     assert_eq!(
         covered.len(),
@@ -1813,4 +1814,128 @@ fn roundtrip_v33_to_v34_precision_to_uncertainty_rename() {
         .unwrap();
     assert_eq!(occur_p.as_deref(), Some("PT5M"), "down is lossless too");
     assert_eq!(dur_p.as_deref(), Some("PT1M"), "down is lossless too");
+}
+
+/// da-uxgv: `superseded_by` arrives, both UNIQUE indexes become partial on
+/// it, and the rows the retired parking mechanism displaced are moved onto
+/// the pointer — natural slug restored, park tombstone lifted.
+#[test]
+fn roundtrip_v34_to_v35_superseded_by() {
+    let db = fresh_at(34);
+    let conn = db.conn();
+
+    assert!(!column_exists(conn, "entries", "superseded_by"));
+    assert!(!index_exists(conn, "entries_superseded_by"));
+
+    // The winner, and beside it a row parked out of its way the old way:
+    // slug suffixed with its own hid, tombstoned at the winner's
+    // modify_time because the two also contended for (field, occur_time).
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, verb, occur_time,
+             create_time, modify_time, device_id)
+         VALUES
+            ('winnerhid001', 'coffee:2026-08-13T08:00:00+00:00', 'h1', 'coffee',
+             'point', '2026-08-13T08:00:00+00:00',
+             '2026-08-13T08:00:00Z', '2026-08-13T08:00:00Z', 'dev-a')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, verb, occur_time,
+             create_time, modify_time, device_id, deleted_at)
+         VALUES
+            ('loserhid0002', 'coffee:2026-08-13T08:00:00+00:00_loserhid0002', 'h2',
+             'coffee', 'point', '2026-08-13T08:00:00+00:00',
+             '2026-08-13T07:00:00Z', '2026-08-13T07:00:00Z', 'dev-b',
+             '2026-08-13T08:00:00+00:00')",
+        [],
+    )
+    .unwrap();
+    // A row the user genuinely deleted, whose slug merely ends in its hid:
+    // nobody holds the base, so there is no supersession to record.
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, verb, occur_time,
+             create_time, modify_time, device_id, deleted_at)
+         VALUES
+            ('lonehid00003', 'tea:2026-08-13T09:00:00+00:00_lonehid00003', 'h3',
+             'tea', 'point', '2026-08-13T09:00:00+00:00',
+             '2026-08-13T09:00:00Z', '2026-08-13T09:00:00Z', 'dev-a',
+             '2026-08-13T10:00:00+00:00')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 34);
+
+    assert!(column_exists(conn, "entries", "superseded_by"));
+    assert!(index_exists(conn, "entries_superseded_by"));
+
+    let (slug, superseded_by, deleted_at): (String, Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT slug, superseded_by, deleted_at FROM entries WHERE hid = 'loserhid0002'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        slug, "coffee:2026-08-13T08:00:00+00:00",
+        "the loser gets its naturally-derived slug back",
+    );
+    assert_eq!(
+        superseded_by.as_deref(),
+        Some("winnerhid001"),
+        "and points at the row that holds that slug",
+    );
+    assert_eq!(
+        deleted_at, None,
+        "the park's tombstone is lifted — it was never a user deletion",
+    );
+
+    let (lone_slug, lone_ptr, lone_deleted): (String, Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT slug, superseded_by, deleted_at FROM entries WHERE hid = 'lonehid00003'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        lone_slug, "tea:2026-08-13T09:00:00+00:00_lonehid00003",
+        "a suffixed slug nobody contends for is left alone",
+    );
+    assert_eq!(lone_ptr, None);
+    assert_eq!(
+        lone_deleted.as_deref(),
+        Some("2026-08-13T10:00:00+00:00"),
+        "a real deletion stays deleted",
+    );
+
+    // Both rows now hold one slug, which the partial index permits.
+    let sharing: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE slug = 'coffee:2026-08-13T08:00:00+00:00'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        sharing, 2,
+        "two rows may share a slug once one is superseded"
+    );
+
+    // The down restores the total UNIQUE index, so the superseded row has
+    // to give the slug back first — documented data loss, exercised here
+    // the way a conflict-free database would meet it.
+    conn.execute(
+        "UPDATE entries SET slug = 'coffee:parked', deleted_at = '2026-08-13T08:00:00+00:00' \
+         WHERE hid = 'loserhid0002'",
+        [],
+    )
+    .unwrap();
+    apply_one_down(conn, 35);
+    assert!(!column_exists(conn, "entries", "superseded_by"));
+    assert!(!index_exists(conn, "entries_superseded_by"));
+    assert!(index_exists(conn, "entries_slug"));
 }

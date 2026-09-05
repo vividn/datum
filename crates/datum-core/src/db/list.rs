@@ -8,7 +8,7 @@ use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 
 use super::row_mapper::row_to_entry;
-use super::types::{time_expr, time_expr_endbound, ListParams, TimeMetric};
+use super::types::{time_expr, time_expr_endbound, ListParams, TimeMetric, LIVE_SQL};
 use super::Db;
 
 impl Db {
@@ -16,7 +16,7 @@ impl Db {
     pub fn entries_for_field(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
         let sql = format!(
             "SELECT * FROM entries
-             WHERE field = ?1 AND deleted_at IS NULL
+             WHERE field = ?1 AND {LIVE_SQL}
              ORDER BY {} DESC{}",
             time_expr_endbound(),
             limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
@@ -30,7 +30,7 @@ impl Db {
     pub fn entries_for_field_asc(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
         let sql = format!(
             "SELECT * FROM entries
-             WHERE field = ?1 AND deleted_at IS NULL
+             WHERE field = ?1 AND {LIVE_SQL}
              ORDER BY {} ASC{}",
             time_expr_endbound(),
             limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
@@ -49,7 +49,7 @@ impl Db {
     pub fn list_entries(&self, params: &ListParams) -> Result<Vec<Entry>> {
         let metric_expr: &str = time_expr(params.metric);
 
-        let mut sql = String::from("SELECT * FROM entries WHERE deleted_at IS NULL");
+        let mut sql = format!("SELECT * FROM entries WHERE {LIVE_SQL}");
         let mut bindings: Vec<String> = Vec::new();
 
         // da-5ns / da-r17h: a timeless row (bare `add`/`note`, or any
@@ -129,8 +129,7 @@ impl Db {
         fields: &[&str],
         since: DateTime<Utc>,
     ) -> Result<Vec<Entry>> {
-        let mut sql =
-            String::from("SELECT * FROM entries WHERE deleted_at IS NULL AND create_time > ?");
+        let mut sql = format!("SELECT * FROM entries WHERE {LIVE_SQL} AND create_time > ?");
         let mut bindings: Vec<String> = vec![since.to_rfc3339()];
         if !fields.is_empty() {
             if fields.len() == 1 {
@@ -160,7 +159,9 @@ impl Db {
     {
         let mut stmt = self
             .conn
-            .prepare("SELECT * FROM entries WHERE deleted_at IS NULL ORDER BY slug ASC")
+            .prepare(&format!(
+                "SELECT * FROM entries WHERE {LIVE_SQL} ORDER BY slug ASC"
+            ))
             .map_err(|e| E::from(DatumError::Db(e)))?;
         let rows = stmt
             .query_map([], row_to_entry)
@@ -172,7 +173,8 @@ impl Db {
         Ok(())
     }
 
-    /// Every entry in the store, **including tombstoned rows**, in slug order.
+    /// Every entry in the store, **including tombstoned and superseded
+    /// rows**, in slug order.
     /// Undo uses this to locate deleted entries by slug/hid before restoring
     /// them; `dm check` uses it for bulk integrity scans.
     pub fn list_including_deleted(&self) -> Result<Vec<Entry>> {

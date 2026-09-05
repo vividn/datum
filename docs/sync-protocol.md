@@ -507,9 +507,20 @@ occur_time)` — the constraints slug-keyed merge hid by collapsing both
 sides into a single row. Neither is an error. What happens next depends on
 whether the two record the same thing (da-yiq9):
 
+Both uniqueness beliefs are therefore **partial** on `superseded_by IS
+NULL` (da-uxgv): the table can hold "one *live* entry per slug", not "one
+row per slug", and a client whose schema still says otherwise cannot
+represent the outcome below.
+
+    entries.superseded_by  TEXT    -- winner's hid; NULL normally
+    UNIQUE (slug)                  WHERE superseded_by IS NULL
+    UNIQUE (field, occur_time)     WHERE occur_time IS NOT NULL
+                                     AND deleted_at IS NULL
+                                     AND superseded_by IS NULL
+
 **Same event → folded silently.** Two devices logging one event mint two
-hids for it, and it is not a conflict. Clients MUST fold rather than park
-when the contending rows are *essentially identical*:
+hids for it, and it is not a conflict. Clients MUST fold rather than
+supersede when the contending rows are *essentially identical*:
 
 - The predicate is equal `content_hash` **plus** equal `lat`, `lon` and
   `location` (those three sit outside the hash; two logs of one thing in
@@ -518,12 +529,14 @@ when the contending rows are *essentially identical*:
   pre-da-4vyw client computed it without `following_state`, and trusting it
   would fold away two entries that differ in meaning.
 - The survivor is the greater `(modify_time, content_hash, device_id, hid)`
-  — the same total order the parking path uses — so every device keeps the
+  — the same total order the supersession path uses — so every device keeps the
   same hid without extra traffic, in any arrival order.
 - The loser's hid ceases to exist. Its `entry_history` rows move onto the
   survivor's hid (versions shifted past the survivor's last) so the trail
   is not stranded; the row itself is deleted, with no tombstone — nothing
-  was lost, so there is nothing to replicate.
+  was lost, so there is nothing to replicate. Any row whose
+  `superseded_by` named the folded-away hid is repointed at the survivor,
+  which describes the same event.
 - **No warning, no user action.** The relay re-delivers the folded-away
   changeset forever; every replay re-folds to a no-op write.
 
@@ -533,24 +546,47 @@ neither side is discarded:
 - The winner is the row with the greater `(modify_time, content_hash,
   device_id, hid)` — the equal-`modify_time` tiebreaker below, extended
   with `hid` so the order is total.
-- The loser is **parked, not dropped**: its slug becomes `<slug>_<hid>`
-  when the two contend for a slug, and it is tombstoned with `deleted_at =
-  <winner's modify_time>` when they cannot both be live. Its content is
-  untouched.
-- `modify_time` is not bumped. Parking is a pure function of the two rows,
-  so every device reaches the same pair of rows independently, in any
+- The loser is **superseded, not dropped**: `superseded_by` is set to the
+  winner's hid and *nothing else about the row changes*. It keeps its own
+  naturally-derived slug, its own content, its own live-ness, and its
+  `content_hash`; it stays addressable by hid; it leaves the live stream
+  and both UNIQUE indexes. This replaces the earlier **parking** rule,
+  which moved the loser's slug to `<slug>_<hid>` and tombstoned it —
+  storing merge state in a *derived* column, which every present and
+  future re-deriver then had to be taught about (da-uxgv).
+- `superseded_by` is **local and does NOT cross the wire.** It is a pure
+  function of the rows a device holds, so every device derives the same
+  answer for itself; shipping it would hide a loser on a peer that has not
+  yet received the winner it names. A client MUST ignore the field if a
+  peer sends one, and MUST NOT serialize its own.
+- `modify_time` is not bumped. Supersession is a pure function of the two
+  rows, so every device reaches the same pair independently, in any
   arrival order, with no extra traffic.
-- Because `modify_time` is not bumped, a re-pull of a parked row's *own*
-  changeset arrives as an exact tie against a row that no longer matches it
-  byte-for-byte — the park's tombstone moves `content_hash` (see **Content
-  hash**). Clients MUST re-derive the park before applying such a tie: if
-  parking the incoming row against its current blocker reproduces the row
-  already held, the pull is a replay and MUST be skipped. Skipping it is
-  what stops a parked row from fighting its own origin and re-filing
-  warnings on every pull.
+- Because supersession touches **no hashed column**, a re-pull of a
+  superseded row's own changeset arrives as an exact `modify_time` tie
+  against a row that still matches it byte-for-byte, and the ordinary
+  equal-`content_hash` replay short-circuit skips it. (Parking needed a
+  bespoke "re-derive the park and compare" predicate here precisely
+  because its tombstone moved the hash.)
+- **Deleting the winner does NOT promote the loser.** A tombstoned winner
+  still holds the identity, and a superseded row is not a rival that can
+  win it back — the blocker probe every client runs is filtered on
+  `superseded_by IS NULL`. Promotion means clearing the pointer, and is
+  always a deliberate act. *"When a user deletes something they expect it
+  to stay deleted"*; a deletion that silently resurrects different data is
+  the worst kind of surprise.
+- The pointer is **advisory**. If Y is superseded by X and Z later beats X,
+  Y's pointer is left naming X rather than being repointed: the current
+  winner is always derivable as the max-ranked live row, and the pointer's
+  job is to name the pair for the UI. Retiming either row also leaves it
+  alone — which is why it is an `hid` and not a bare `superseded` boolean.
+  A boolean would have to find the winner by asking *who else holds this
+  slug*, and slug derives from `occur_time`, so one retime evaporates the
+  relationship: hid is the only identity that outlives an edit.
 - One `integrity_warnings` row with `kind = identity_collision` names the
-  pair; `datum check` is where the user meets it. Sync never blocks — the
-  daemon has no one to ask.
+  pair; `datum check` is where the user meets it, and `datum tail` marks
+  the winning row with a `*` so the conflict appears where the user is
+  already looking. Sync never blocks — the daemon has no one to ask.
 
 The split rests entirely on `content_hash` meaning what it says: see
 **Content hash** below for exactly which columns the predicate covers.
@@ -566,8 +602,8 @@ identical row — a replay — and is skipped with no history row or warning).
 Every client MUST implement this tiebreaker identically: without it each
 device keeps its own row on a tie and both consider themselves up to date —
 a permanent, silent divergence that no future sync heals (da-22zm). The
-identity-collision parking above extends the same order with `hid` as a
-final discriminator; clients MUST implement that identically too, for the
+identity-collision supersession above extends the same order with `hid` as
+a final discriminator; clients MUST implement that identically too, for the
 same reason.
 
 **Comparing the ordering keys.** An order is only shared if the *values*

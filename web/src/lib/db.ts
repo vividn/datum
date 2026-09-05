@@ -147,7 +147,7 @@ export async function getEntriesForField(field: string, limit = 50): Promise<Ent
 	const rows = await send({
 		op: 'exec',
 		sql: `SELECT * FROM entries
-		      WHERE field = $field AND deleted_at IS NULL
+		      WHERE field = $field AND deleted_at IS NULL AND superseded_by IS NULL
 		      ORDER BY occur_time DESC
 		      LIMIT $limit`,
 		bind: { $field: field, $limit: limit }
@@ -160,7 +160,7 @@ export async function getEntriesInRange(start: Date, end: Date): Promise<Entry[]
 		op: 'exec',
 		sql: `SELECT * FROM entries
 		      WHERE occur_time >= $start AND occur_time <= $end
-		        AND deleted_at IS NULL
+		        AND deleted_at IS NULL AND superseded_by IS NULL
 		      ORDER BY occur_time DESC`,
 		bind: { $start: start.toISOString(), $end: end.toISOString() }
 	});
@@ -171,7 +171,7 @@ export async function getRecentEntries(limit = 20): Promise<Entry[]> {
 	const rows = await send({
 		op: 'exec',
 		sql: `SELECT * FROM entries
-		      WHERE deleted_at IS NULL
+		      WHERE deleted_at IS NULL AND superseded_by IS NULL
 		      ORDER BY occur_time DESC
 		      LIMIT $limit`,
 		bind: { $limit: limit }
@@ -182,7 +182,9 @@ export async function getRecentEntries(limit = 20): Promise<Entry[]> {
 export async function getAllFields(): Promise<string[]> {
 	const rows = await send({
 		op: 'exec',
-		sql: `SELECT DISTINCT field FROM entries WHERE deleted_at IS NULL ORDER BY field`
+		sql: `SELECT DISTINCT field FROM entries
+		      WHERE deleted_at IS NULL AND superseded_by IS NULL
+		      ORDER BY field`
 	});
 	return rows.map((row) => row.field as string);
 }
@@ -194,10 +196,10 @@ export async function getLatestPerField(): Promise<Entry[]> {
 		      INNER JOIN (
 		        SELECT field, MAX(occur_time) AS max_time
 		        FROM entries
-		        WHERE deleted_at IS NULL
+		        WHERE deleted_at IS NULL AND superseded_by IS NULL
 		        GROUP BY field
 		      ) latest ON e.field = latest.field AND e.occur_time = latest.max_time
-		      WHERE e.deleted_at IS NULL
+		      WHERE e.deleted_at IS NULL AND e.superseded_by IS NULL
 		      ORDER BY e.field`
 	});
 	return rows.map(rowToEntry);
@@ -208,9 +210,10 @@ export async function getLatestPerField(): Promise<Entry[]> {
  * the newest at-or-before that instant.
  *
  * The browser's copy of `Db::batch_state_at`'s query, down to its
- * ordering: `occur_time DESC, slug DESC`, live rows only
- * (`STATE_ORDER_NEWEST_FIRST` / `STATE_PARTICIPATION_SQL` in
- * crates/datum-core/src/db/types.rs). The trailing-edge rule that turns
+ * ordering: `occur_time DESC, slug DESC`, live rows only — neither
+ * tombstoned nor set aside by a sync merge (`STATE_ORDER_NEWEST_FIRST` /
+ * `STATE_PARTICIPATION_SQL` in crates/datum-core/src/db/types.rs, whose
+ * `superseded_by IS NULL` half arrived with da-uxgv). The trailing-edge rule that turns
  * the winning row into a state is Rust's `db::now::effective_state`,
  * reached through `crates/datum-layout-wasm` (da-t7ud) — held apart from
  * this query the same way Rust holds it apart.
@@ -224,6 +227,7 @@ export async function getStateEntriesAt(at: Date): Promise<Entry[]> {
 		        ) AS rn
 		        FROM entries
 		        WHERE occur_time IS NOT NULL AND deleted_at IS NULL
+		          AND superseded_by IS NULL
 		          AND occur_time <= $at
 		      ) WHERE rn = 1`,
 		bind: { $at: at.toISOString() }
@@ -286,7 +290,7 @@ export async function getObservedStates(): Promise<Map<string, unknown[]>> {
 	const rows = await send({
 		op: 'exec',
 		sql: `SELECT DISTINCT field, state FROM entries
-		      WHERE deleted_at IS NULL AND state IS NOT NULL
+		      WHERE deleted_at IS NULL AND superseded_by IS NULL AND state IS NOT NULL
 		      ORDER BY field`
 	});
 	const observed = new Map<string, unknown[]>();

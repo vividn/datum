@@ -203,6 +203,7 @@ fn exact_live_match(db: &Db, pattern: &str) -> Result<Option<Entry>> {
         .query_row(
             "SELECT * FROM entries
              WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NULL
+               AND (superseded_by IS NULL OR hid = ?1)
              LIMIT 1",
             params![pattern],
             row_to_entry_public,
@@ -279,7 +280,8 @@ fn live_entry_range(db: &Db, field: Option<&str>, from: usize, to: usize) -> Res
     let limit = (to.saturating_sub(from) as i64).saturating_add(1);
     let mut stmt = db.conn().prepare(&format!(
         "SELECT * FROM entries
-         WHERE deleted_at IS NULL AND (?1 IS NULL OR field = ?1)
+         WHERE deleted_at IS NULL AND superseded_by IS NULL
+           AND (?1 IS NULL OR field = ?1)
          {NTH_ORDER} LIMIT ?2 OFFSET ?3"
     ))?;
     let rows = stmt.query_map(params![field, limit, offset], row_to_entry_public)?;
@@ -304,7 +306,8 @@ fn live_entry_range(db: &Db, field: Option<&str>, from: usize, to: usize) -> Res
 /// the scan stops after [`QUICK_ORDINAL_CAP`] rows.
 pub fn quick_ordinals(db: &Db) -> Result<HashMap<Hid, usize>> {
     let mut stmt = db.conn().prepare(&format!(
-        "SELECT hid FROM entries WHERE deleted_at IS NULL {NTH_ORDER} LIMIT {QUICK_ORDINAL_CAP}"
+        "SELECT hid FROM entries WHERE deleted_at IS NULL AND superseded_by IS NULL \
+         {NTH_ORDER} LIMIT {QUICK_ORDINAL_CAP}"
     ))?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
     let mut out = HashMap::new();
@@ -348,6 +351,7 @@ fn wildcard_match(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
         "SELECT * FROM entries
          WHERE (slug LIKE ?1 ESCAPE '\\' OR hid LIKE ?1 ESCAPE '\\')
            AND deleted_at IS NULL
+           AND (superseded_by IS NULL OR hid LIKE ?1 ESCAPE '\\')
          ORDER BY occur_time ASC,
                   slug ASC",
     )?;

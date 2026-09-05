@@ -35,7 +35,7 @@ impl View for SubHumanIdView {
         let mut sql = String::from(
             "SELECT slug, substr(hid, 1, ?1) AS short_hid
              FROM entries
-             WHERE deleted_at IS NULL",
+             WHERE deleted_at IS NULL AND superseded_by IS NULL",
         );
         let mut args: Vec<String> = vec![SHORT_HID_LEN.to_string()];
         if let Some(p) = &prefix_filter {

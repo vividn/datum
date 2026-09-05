@@ -108,11 +108,11 @@ pub enum IntegrityKind {
     /// `entries` table can only give to one row: the same `slug`, or the
     /// same live `(field, occur_time)`. Since da-zlug the sync apply merges
     /// on `hid`, so these are genuinely two rows rather than two versions
-    /// of one — both are kept, the deterministic loser is parked (slug
-    /// suffixed with its own hid, and/or tombstoned when the pair cannot
-    /// both be live), and this row names the pair. `local_entry` is the
-    /// parked loser, `remote_entry` the row that kept the identity. Only
-    /// ever filed with `detected_by = sync_pull`.
+    /// of one — both are kept, the deterministic loser is *superseded*
+    /// (`superseded_by` = the winner's hid, da-uxgv), and this row names the
+    /// pair. `local_entry` is the superseded loser, `remote_entry` the row
+    /// that kept the identity. Only ever filed with
+    /// `detected_by = sync_pull`.
     IdentityCollision,
 }
 
@@ -432,7 +432,7 @@ pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
                         ORDER BY {order}
                     ) AS prior_state
              FROM entries
-             WHERE deleted_at IS NULL
+             WHERE deleted_at IS NULL AND superseded_by IS NULL
                AND state IS NOT NULL
                AND occur_time IS NOT NULL
          )
@@ -495,7 +495,7 @@ fn find_recent_state_setter(conn: &Connection, trigger: &Entry) -> Result<Option
     let sql = format!(
         "SELECT * FROM entries
          WHERE field = ?1
-           AND deleted_at IS NULL
+           AND deleted_at IS NULL AND superseded_by IS NULL
            AND verb IN ('switch', 'block-switch', 'point-switch')
            AND occur_time IS NOT NULL
            AND occur_time < ?2
@@ -522,7 +522,7 @@ fn load_blocks_for_field(conn: &Connection, field: &str) -> Result<Vec<Entry>> {
     let sql = format!(
         "SELECT * FROM entries
          WHERE field = ?1
-           AND deleted_at IS NULL
+           AND deleted_at IS NULL AND superseded_by IS NULL
            AND verb IN ('block', 'block-switch')
            AND occur_time IS NOT NULL
            AND dur IS NOT NULL
@@ -654,7 +654,7 @@ fn detect_last_state_mismatch(
     let sql = format!(
         "SELECT * FROM entries
          WHERE field = ?1
-           AND deleted_at IS NULL
+           AND deleted_at IS NULL AND superseded_by IS NULL
            AND verb IN ('switch', 'block', 'block-switch', 'point-switch')
            AND occur_time IS NOT NULL
            AND occur_time <= ?2
@@ -746,20 +746,21 @@ pub fn file_lww_overwrite(
 
 /// File an [`IntegrityKind::IdentityCollision`] warning: two distinct
 /// entries claimed one `slug` (or one live `(field, occur_time)`) during a
-/// sync apply. `parked` is the deterministic loser as it now stands —
-/// suffixed slug, tombstoned if the pair could not both stay live — and
-/// `kept` the row that holds the contested identity. Both rows survive;
-/// this row is what tells the user they need to decide between them
-/// (da-zlug; the merge policy itself is da-yiq9). Call from inside the
-/// apply transaction so the warning lands atomically with the parking.
+/// sync apply. `superseded` is the deterministic loser as it now stands —
+/// same content, same derived slug, `superseded_by` pointing at the winner
+/// — and `kept` the row that holds the contested identity. Both rows
+/// survive; this row is what tells the user they need to decide between
+/// them (da-zlug; the merge policy itself is da-yiq9; da-uxgv replaced
+/// parking with the pointer). Call from inside the apply transaction so the
+/// warning lands atomically with the supersession.
 pub fn file_identity_collision(
     conn: &Connection,
-    parked: &Entry,
+    superseded: &Entry,
     kept: &Entry,
 ) -> Result<IntegrityWarning> {
     file_warning(
         conn,
-        parked,
+        superseded,
         Some(kept),
         DetectedBy::SyncPull,
         IntegrityKind::IdentityCollision,
@@ -793,10 +794,13 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<IntegrityWarni
     // offending entry was deleted. Resolution by id still works: it goes
     // through `get_by_hid_or_id`, which is unfiltered.
     //
-    // `identity_collision` is exempt (da-zlug): its trigger is the row the
-    // sync apply *parked*, and parking tombstones the loser when the pair
-    // cannot both be live. There the tombstone is the finding, not evidence
-    // it went away — suppressing it would hide every collision it reports.
+    // `identity_collision` is exempt (da-zlug, and still exempt after
+    // da-uxgv for a sharper reason): the pair it names *shares one slug*,
+    // which is the whole conflict, so this slug-keyed suppression cannot
+    // tell which side of the pair was tombstoned. Deleting the row that
+    // *won* would otherwise silence the warning about the row that is still
+    // sitting superseded behind it — hiding a conflict the user never
+    // resolved.
     clauses.push(format!(
         "(kind = '{}' OR \
           entry_slug NOT IN (SELECT slug FROM entries WHERE deleted_at IS NOT NULL))",
@@ -987,7 +991,7 @@ pub(crate) fn close_older_at(
             dur = ?3,
             content_hash = ?4,
             modify_time = ?5
-           WHERE slug = ?1 AND deleted_at IS NULL"#,
+           WHERE slug = ?1 AND deleted_at IS NULL AND superseded_by IS NULL"#,
         params![
             older.slug,
             updated.verb.to_string(),
@@ -1007,7 +1011,7 @@ pub fn open_entries_for_field(conn: &Connection, field: &str) -> Result<u32> {
     let mut stmt = conn.prepare(
         r#"SELECT state FROM entries
            WHERE field = ?1
-             AND deleted_at IS NULL
+             AND deleted_at IS NULL AND superseded_by IS NULL
              AND verb = 'switch'
              AND state IS NOT NULL"#,
     )?;

@@ -356,24 +356,10 @@ impl Db {
         };
         updated.content_hash = updated.expected_content_hash();
 
-        // da-l4uz: a sync merge parks a row that lost a slug contest by
-        // suffixing the slug with the row's own hid (`slug::parked`), and
-        // that state lives in the very column re-interpolated above. A plain
-        // re-derive would rewrite the row back onto the slug parking moved it
-        // off — colliding with the winner, or, worse, quietly undoing a
-        // resolution both devices had already agreed on. Keep the park while
-        // the natural slug is still held by another row; drop it once that
-        // slug is free, which is the repair the user actually wants.
-        let new_slug = match new_slug {
-            Some(target)
-                if crate::slug::is_parked(existing_slug, &updated.hid)
-                    && slug_held_by_other(&self.conn, &target, &updated.hid)? =>
-            {
-                Some(crate::slug::parked(&target, &updated.hid))
-            }
-            other => other,
-        };
-
+        // da-uxgv: nothing to un-derive here. A row a sync merge set aside
+        // keeps its own naturally-derived slug — the merge state lives in
+        // `superseded_by`, not in this column — so re-deriving is just
+        // re-deriving, on every row, with no exception to remember.
         let slug_changed = matches!(&new_slug, Some(s) if s != existing_slug);
 
         if slug_changed {
@@ -490,20 +476,6 @@ fn save_existing_entry_with_rekey_kind_in_tx(
     }
 }
 
-/// Whether `slug` already belongs to a row other than `hid`. The UNIQUE
-/// index over `slug` is total, so tombstones hold their slug too and count
-/// as holders here.
-fn slug_held_by_other(conn: &Connection, slug: &Slug, hid: &Hid) -> Result<bool> {
-    Ok(conn
-        .query_row(
-            "SELECT 1 FROM entries WHERE slug = ?1 AND hid != ?2",
-            params![slug, hid],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some())
-}
-
 /// Append a short random base36 suffix to a slug. Used by the
 /// [`ConflictStrategy::Rekey`] path to derive a distinct slug for the new
 /// row when the natural slug already belongs to the existing one.
@@ -573,7 +545,8 @@ fn fetch_field_occur_collider(
     let hid: Option<String> = conn
         .query_row(
             "SELECT hid FROM entries \
-             WHERE field = ?1 AND occur_time = ?2 AND deleted_at IS NULL \
+             WHERE field = ?1 AND occur_time = ?2 \
+               AND deleted_at IS NULL AND superseded_by IS NULL \
              LIMIT 1",
             params![field, occur_time],
             |row| row.get(0),
@@ -663,7 +636,7 @@ fn insert_entry_in_tx(
     let existing: Option<(Slug, Option<String>)> = conn
         .query_row(
             "SELECT slug, data FROM entries
-             WHERE content_hash = ?1 AND deleted_at IS NULL
+             WHERE content_hash = ?1 AND deleted_at IS NULL AND superseded_by IS NULL
              LIMIT 1",
             params![dedup_hash],
             |row| Ok((row.get::<_, Slug>(0)?, row.get::<_, Option<String>>(1)?)),
@@ -808,7 +781,7 @@ fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOut
     let existing_slug: Option<Slug> = {
         let mut stmt = conn.prepare_cached(
             "SELECT slug FROM entries
-             WHERE content_hash = ?1 AND deleted_at IS NULL
+             WHERE content_hash = ?1 AND deleted_at IS NULL AND superseded_by IS NULL
              LIMIT 1",
         )?;
         stmt.query_row(params![dedup_hash], |row| row.get::<_, Slug>(0))
@@ -1009,7 +982,8 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
 pub(super) fn rewrite_entry_to_snapshot(conn: &Connection, snapshot: &Entry) -> Result<()> {
     let pre: Option<Entry> = conn
         .query_row(
-            "SELECT * FROM entries WHERE slug = ?1 AND deleted_at IS NULL",
+            "SELECT * FROM entries WHERE slug = ?1 \
+             AND deleted_at IS NULL AND superseded_by IS NULL",
             params![snapshot.slug],
             row_to_entry,
         )

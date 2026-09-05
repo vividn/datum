@@ -42,6 +42,11 @@ use std::collections::HashMap;
 const RESET: &str = "\x1b[0m";
 const DIM: &str = "\x1b[2m";
 const GRAY_FG: &str = "\x1b[90m";
+/// da-uxgv: the sync-conflict marker's cast — bright yellow, so a `*` on a
+/// hid reads as "look at this" without competing with a state or field
+/// colour. Drops to plain text under `--no-color` / `NO_COLOR` like every
+/// other escape here, since it routes through [`paint`].
+const CONFLICT_FG: &str = "\x1b[93m";
 
 // ─── Public API: Show / OutputArgs / Outcome ─────────────────────────────────
 
@@ -685,6 +690,14 @@ pub fn format_table_with(
             .and_then(|c| c.quick_ordinal)
             .map(|n| paint(GRAY_FG, &format!("_{n}")))
             .unwrap_or_default();
+        // da-uxgv: `*` after the hid means "another row lost an identity
+        // contest to this one and is superseded behind it". vividn asked for
+        // the conflict to be marked where the reader already is; `datum show
+        // <hid> -A` is where the pair itself is inspected.
+        let mut hid = ex.hid.unwrap_or_default();
+        if ctx.is_some_and(|c| c.has_supersedees) {
+            hid.push_str(&paint(CONFLICT_FG, "*"));
+        }
         rows.push(Row {
             time,
             time_metric_prefix: prefix,
@@ -693,7 +706,7 @@ pub fn format_table_with(
             state: ex.state.unwrap_or_default(),
             dur: ex.dur.unwrap_or_default(),
             quick,
-            hid: ex.hid.unwrap_or_default(),
+            hid,
             extras,
         });
     }
