@@ -215,7 +215,10 @@ pub(super) fn m24_to_25_field_occurtime_unique(conn: &Connection) -> Result<()> 
 /// overlap, same-state-repeat, last-state-mismatch) — they are NOT
 /// cross-device sync conflicts. The legacy name conflated the two
 /// concepts; the rename gives integrity warnings their own surface and
-/// frees the `sync_conflicts` name for a future true-sync-conflict table.
+/// frees the `sync_conflicts` name. Nothing ever took it: cross-device
+/// conflicts landed in this same table as the `lww_overwrite` and
+/// `identity_collision` kinds, with the merge marker `superseded_by` a
+/// column on `entries` (da-uxgv).
 ///
 /// Side effects:
 /// - rename the table

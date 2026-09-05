@@ -6,9 +6,15 @@
 //! `block`s — both entries land in the `entries` table and a pending row
 //! is filed here for later review.
 //!
-//! These are *local data-integrity* findings, NOT cross-device sync
-//! conflicts. A real sync-conflict (same entry edited differently on two
-//! devices) will live in a separate table when that surface lands.
+//! Most rows here are *local* findings, but this is also where
+//! cross-device sync conflicts live — there is no separate table for
+//! them. `lww_overwrite` and `identity_collision` are filed by the sync
+//! apply with `detected_by = sync_pull` and triaged by `datum conflicts`;
+//! a merge that cannot give one identity to both rows keeps both and
+//! marks the loser with `superseded_by` on `entries` (da-uxgv) instead of
+//! deleting it. `schema.sql` draws that column apart from `deleted_at`:
+//! `deleted_at` is *the user deleted this*, `superseded_by` is *a sync
+//! merge set this aside*.
 //!
 //! Detection runs post-insert (see [`detect_for_entry`]) and the queue
 //! is reported by `datum check`. Warnings clear naturally when the user
@@ -34,10 +40,14 @@
 //! - `resolution`: NULL while pending; filled on resolve (auto or manual).
 //! - `detected_by`: `local_validator` | `sync_pull`.
 //! - `kind`: `double_open` | `orphan_end` | `overlap`
-//!   | `same_state_repeat` | `last_state_mismatch` | `lww_overwrite`.
+//!   | `same_state_repeat` | `last_state_mismatch` | `lww_overwrite`
+//!   | `identity_collision`.
 //!   `lww_overwrite` rows are filed by the sync-apply path when an
 //!   incoming row wins last-write-wins over an existing local row;
 //!   `local_entry` is the overwritten edit, `remote_entry` the winner.
+//!   `identity_collision` names two distinct rows that claimed one
+//!   identity; `local_entry` is the one now carrying `superseded_by`,
+//!   `remote_entry` the one that kept it.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
