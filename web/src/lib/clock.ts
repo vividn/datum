@@ -12,7 +12,23 @@
 // day. The zone is still the browser's, which is what `getHours` reads;
 // only the convention is pinned.
 
+import type { DatumTime } from './types.js';
+
 /** `HH:MM` in the browser's zone, 24-hour. */
 export function clockLabel(date: Date): string {
 	return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * `YYYY-MM-DD` in the entry's own zone.
+ *
+ * The date is read through the row's stored offset rather than the
+ * browser's, the way the CLI's `format_timestamp_ref` renders in
+ * `t.local_time()`: a date-only entry is anchored at midnight in the zone
+ * it was logged in, so a reader in a zone behind that would otherwise be
+ * shown the day before the one the entry names.
+ */
+export function dateLabel(time: DatumTime): string {
+	const local = new Date(new Date(time.utc).getTime() + time.offsetMinutes * 60_000);
+	return local.toISOString().slice(0, 10);
 }

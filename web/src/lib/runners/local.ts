@@ -13,7 +13,7 @@
 // stores what comes back. What is left here is the database call and the
 // two commands the parser does not own.
 
-import { clockLabel } from '../clock.js';
+import { clockLabel, dateLabel } from '../clock.js';
 import { insertEntry, getRecentEntries, getFieldSpecs, saveFieldSpec } from '../db.js';
 import { parseArgv } from '../parser.js';
 import { EXIT_DUPLICATE, EXIT_ERROR, EXIT_UNKNOWN_COMMAND, type RunResult } from '../run.js';
@@ -129,9 +129,21 @@ async function tail(): Promise<RunResult> {
  * state) without the field badges and colour the real renderer brings. The
  * time is datum's one convention, 24-hour ($lib/clock.ts), which is the
  * half of that parity claim the reader can see next to the nowview axis.
+ *
+ * The stamp is only a clock when the entry has one. `occur coffee -y`
+ * stores midnight as an *anchor* and says so in `occurTimeUncertainty`:
+ * `P1D`, precise to the day. Printing `00:00` for that answers with a
+ * clock time the record disclaims, so a P1D row degrades to its bare date
+ * exactly as `format_timestamp_ref` degrades it (da-kb8p). Only `P1D`
+ * does — every other value, `undefined` included, is a row with a real
+ * time of day.
  */
 export function entryLine(entry: Entry): string {
-	const parts = [clockLabel(new Date(entry.occurTime.utc)), entry.field];
+	const stamp =
+		entry.occurTimeUncertainty === 'P1D'
+			? dateLabel(entry.occurTime)
+			: clockLabel(new Date(entry.occurTime.utc));
+	const parts = [stamp, entry.field];
 	if (entry.state !== undefined) parts.push(`= ${formatValue(entry.state)}`);
 	if (entry.data) {
 		for (const [k, v] of Object.entries(entry.data as Record<string, unknown>)) {
