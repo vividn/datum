@@ -1,25 +1,35 @@
-//! Shared `--since` / `--until` bound parsing for the query commands
-//! (`count`, `ids`, `stats`).
+//! Shared window-bound parsing for the commands that take one: the query
+//! commands' `--since` / `--until` (`count`, `ids`, `stats`) and retime's
+//! `--after` / `--before`.
 //!
 //! These flags name a *moment*, so they defer to [`parse_time`] — the
 //! parser behind `-t` and every logging command — rather than the private
-//! reimplementation each command used to carry (da-rye2). Routing them
-//! here means every future addition to the shared time vocabulary reaches
-//! all three query surfaces for free.
+//! reimplementation each command used to carry (da-rye2, da-yv0i).
+//! Routing them here means every future addition to the shared time
+//! vocabulary reaches all four surfaces for free.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
 use datum_parse::time::{parse_date, parse_duration, parse_time, DatumTime, TimeBuilder};
 use datum_parse::time::{TimeCtx, Zone};
 
-/// Which end of the window a bound is being parsed for. Only matters for
-/// date-only inputs, which name a whole local day: `--since 2026-06-01`
-/// starts at that day's midnight, `--until 2026-06-01` runs through its
-/// end (i.e. the *next* midnight, so the named day is included).
+/// Which flag a bound is being parsed for. It names itself in the error,
+/// and it decides where a date-only input lands — a bare `2026-06-01`
+/// names a whole local day, and only `--until` reaches through to that
+/// day's *closing* midnight so the named day is included.
+///
+/// `--after` / `--before` deliberately open the day like `--since`:
+/// da-yv0i routed them here for the shared vocabulary, not to move the
+/// boundary, and unlike "until" the words *after* and *before* read as
+/// exclusive of the day they name. (`RetimeFilter` also compares with
+/// `<=`, so a closing-midnight `--before` would sweep in an entry sitting
+/// exactly on the next day's midnight.)
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Edge {
     Since,
     Until,
+    After,
+    Before,
 }
 
 impl Edge {
@@ -27,7 +37,15 @@ impl Edge {
         match self {
             Edge::Since => "--since",
             Edge::Until => "--until",
+            Edge::After => "--after",
+            Edge::Before => "--before",
         }
+    }
+
+    /// Whether a date-only input resolves to the midnight that *closes*
+    /// the named day rather than the one that opens it.
+    fn closes_the_day(self) -> bool {
+        matches!(self, Edge::Until)
     }
 }
 
@@ -39,6 +57,16 @@ pub(crate) fn parse_since(s: &str) -> Result<DateTime<Utc>> {
 /// Parse `--until` into a UTC upper bound.
 pub(crate) fn parse_until(s: &str) -> Result<DateTime<Utc>> {
     parse_bound(s, Edge::Until)
+}
+
+/// Parse retime's `--after` into a UTC lower bound.
+pub(crate) fn parse_after(s: &str) -> Result<DateTime<Utc>> {
+    parse_bound(s, Edge::After)
+}
+
+/// Parse retime's `--before` into a UTC upper bound.
+pub(crate) fn parse_before(s: &str) -> Result<DateTime<Utc>> {
+    parse_bound(s, Edge::Before)
 }
 
 /// Resolve a window bound into a UTC instant.
@@ -54,9 +82,10 @@ pub(crate) fn parse_until(s: &str) -> Result<DateTime<Utc>> {
 ///      offset, so it resolves in tier 3 and the sign points the same
 ///      way on every surface.
 ///   2. A calendar date via [`parse_date`] — `2026-06-01`, `apr29`.
-///      Resolved to the local midnight that opens (`Since`) or closes
-///      (`Until`) that day. Only the absolute forms: a bare integer is a
-///      day offset to `-d`, and tier 1 has already claimed it.
+///      Resolved to the local midnight that opens (every edge but
+///      `Until`) or closes (`Until`) that day. Only the absolute forms:
+///      a bare integer is a day offset to `-d`, and tier 1 has already
+///      claimed it.
 ///   3. The shared `-t` grammar via [`parse_time`] — `now`, clock
 ///      times (`9:15am`, `21:30`), signed offsets (`-30`, `+2h`),
 ///      ISO-8601 datetimes with or without a zone suffix, and every word
@@ -80,9 +109,10 @@ fn parse_bound(s: &str, edge: Edge) -> Result<DateTime<Utc>> {
 
 /// The local-midnight instant that opens or closes `date`.
 fn day_edge(date: NaiveDate, edge: Edge) -> Result<DateTime<Utc>> {
-    let date = match edge {
-        Edge::Since => date,
-        Edge::Until => date.succ_opt().context("date overflow")?,
+    let date = if edge.closes_the_day() {
+        date.succ_opt().context("date overflow")?
+    } else {
+        date
     };
     let naive = date.and_hms_opt(0, 0, 0).unwrap();
     // da-ztae: the one sanctioned local→UTC conversion. `for_boundary` picks
@@ -150,6 +180,22 @@ mod tests {
     }
 
     #[test]
+    fn retime_bounds_both_open_the_named_day() {
+        // da-yv0i: `--after`/`--before` came here for the vocabulary, not
+        // for a new boundary. Both keep the opening midnight retime's
+        // private parser used, so `--before 2026-06-01` still excludes
+        // June 1 rather than quietly starting to include it.
+        assert_eq!(
+            parse_after("2026-06-01").unwrap(),
+            local_midnight(2026, 6, 1)
+        );
+        assert_eq!(
+            parse_before("2026-06-01").unwrap(),
+            local_midnight(2026, 6, 1)
+        );
+    }
+
+    #[test]
     fn compact_date_shorthand_is_accepted() {
         // `apr29` reached the query flags for free by routing through the
         // shared date parser — the point of da-rye2.
@@ -213,5 +259,12 @@ mod tests {
         let err = parse_until("zzznotatime").unwrap_err().to_string();
         assert!(err.contains("--until"), "{err}");
         assert!(err.contains("zzznotatime"), "{err}");
+
+        // Same contract for retime's pair — sharing the parser must not
+        // cost them their own names in the error.
+        let err = parse_before("zzznotatime").unwrap_err().to_string();
+        assert!(err.contains("--before"), "{err}");
+        let err = parse_after("zzznotatime").unwrap_err().to_string();
+        assert!(err.contains("--after"), "{err}");
     }
 }

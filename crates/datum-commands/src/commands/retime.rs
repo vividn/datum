@@ -14,7 +14,6 @@
 //!   current occur_time instead.
 
 use anyhow::{Context, Result};
-use datum_core::time::Zone;
 use datum_core::{
     db::{Db, RetimeFilter},
     entry::Entry,
@@ -24,6 +23,7 @@ use datum_core::{
 
 use crate::args::RetimeArgs;
 use crate::commands::helpers::{load_registry_opt, resolve_batch, BatchMode};
+use crate::commands::time_bounds::{parse_after, parse_before};
 use crate::render::{show_retime, OutputArgs};
 
 pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
@@ -92,13 +92,13 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     let after_utc = args
         .after
         .as_deref()
-        .map(parse_time_bound)
+        .map(parse_after)
         .transpose()
         .context("Invalid --after value")?;
     let before_utc = args
         .before
         .as_deref()
-        .map(parse_time_bound)
+        .map(parse_before)
         .transpose()
         .context("Invalid --before value")?;
 
@@ -246,22 +246,4 @@ fn build_absolute(args: &RetimeArgs) -> Result<DatumTime> {
         builder = builder.with_timezone(Some(resolved));
     }
     Ok(builder.build_with_uncertainty())
-}
-
-/// Parse a `--after` / `--before` argument to a UTC timestamp.
-/// Accepts `YYYY-MM-DD` (midnight local) or RFC3339 timestamps.
-fn parse_time_bound(s: &str) -> Result<chrono::DateTime<chrono::Utc>> {
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Ok(dt.with_timezone(&chrono::Utc));
-    }
-    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        let naive = d
-            .and_hms_opt(0, 0, 0)
-            .ok_or_else(|| anyhow::anyhow!("bad date: {s}"))?;
-        // A selection bound, not a logged time: `for_boundary` always yields
-        // an instant, so `--after 2024-11-03` no longer refuses on the two
-        // days a year local midnight is ambiguous (da-ztae).
-        return Ok(Zone::host().resolve(naive).for_boundary());
-    }
-    anyhow::bail!("expected YYYY-MM-DD or RFC3339, got '{s}'")
 }

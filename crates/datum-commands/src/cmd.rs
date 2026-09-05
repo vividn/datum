@@ -1463,6 +1463,46 @@ mod tests {
     }
 
     #[test]
+    fn retime_bounds_speak_the_shared_time_vocabulary() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        // da-yv0i: `--after`/`--before` used to accept only RFC3339 and
+        // `YYYY-MM-DD`, so a word form was a hard error while `--since`
+        // had already learned it. Routed through `commands::time_bounds`,
+        // `yesterday` resolves here too.
+        //
+        // Five days back is before yesterday's opening midnight and "now"
+        // is after it, whatever the local hour — no midnight flake.
+        let now = chrono::Utc::now();
+        let old = make_entry_at_utc("coffee", now - chrono::Duration::days(5), "d1");
+        let old_start = old.occur_time.as_ref().unwrap().utc;
+        let recent = make_entry_at_utc("coffee", now, "d1");
+        let recent_start = recent.occur_time.as_ref().unwrap().utc;
+        db.insert_entry(&old).unwrap();
+        db.insert_entry(&recent).unwrap();
+
+        let args = RetimeArgs {
+            offset: Some("+1h".to_string()),
+            field: Some("coffee".to_string()),
+            after: Some("yesterday".to_string()),
+            ..Default::default()
+        };
+        crate::commands::retime::retime(args, &db).unwrap();
+
+        assert_eq!(
+            db.get_entry(&old.slug).unwrap().occur_time.unwrap().utc,
+            old_start,
+            "five days back is before yesterday's midnight"
+        );
+        assert_eq!(
+            db.get_entry(&recent.slug).unwrap().occur_time.unwrap().utc,
+            recent_start + chrono::Duration::hours(1),
+            "today's row is after yesterday's midnight"
+        );
+    }
+
+    #[test]
     fn retime_negative_offset() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
