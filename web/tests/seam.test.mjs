@@ -13,7 +13,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, TIMEZONE } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -261,10 +261,16 @@ describe('the visual views', () => {
 			// `compute_dayview` + `render_dayview_svg` the CLI runs.
 			assert.match(drawn.stdout, /^<svg[\s>]/);
 
-			// Today's own label, from the local date — the same three lines
-			// `format_day_label` builds.
-			const today = new Date();
-			const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()];
+			// Today's own label — the same three lines `format_day_label`
+			// builds. Which day that is has to be read in the zone the page
+			// runs in, not node's: the browser context is pinned to
+			// TIMEZONE and the host is wherever the test happens to run, so
+			// an expectation off node's clock disagrees with the drawing for
+			// the hours the two zones straddle a midnight (da-2cgd).
+			const weekday = new Intl.DateTimeFormat('en-US', {
+				timeZone: TIMEZONE,
+				weekday: 'short'
+			}).format(new Date());
 			assert.match(drawn.stdout, new RegExp(`>${weekday}<`));
 
 			// And the pane is that command's output. Not byte-for-byte:
