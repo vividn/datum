@@ -424,6 +424,88 @@ describe('the visual views', () => {
 	});
 });
 
+describe('spec', () => {
+	// `spec set` is the one subcommand this app serves — the widget bar's
+	// `+` runs it — and every other one comes back as the runner's gap. The
+	// message for those used to name `spec`, which is the command the
+	// reader just watched the `+` button succeed with: "spec is not
+	// available in the browser" reads as the whole command being missing,
+	// and a reader who believes it stops trying (da-c081, and the same
+	// sentence da-3k4y wrote about `tail -n 5`).
+	//
+	// Worth saying plainly while here: there is no way to remove a field in
+	// the browser today. `spec remove` cannot run, so the honest message
+	// naming `remove` is the entire answer this app has; whether to
+	// implement removal is a separate product call.
+	//
+	// The whole subcommand list from `datum spec --help`, minus `set`. A
+	// fix by name would satisfy `show` and `remove` and leave the rest.
+	const UNSERVED = [
+		['show', 'coffee'],
+		['show', 'coffee', '--text'],
+		['list'],
+		['remove', 'coffee'],
+		['add-state', 'mood', 'happy']
+	];
+
+	test('a spec subcommand this app cannot run names itself, not `spec`', async () => {
+		await withApp(async ({ run }) => {
+			for (const args of UNSERVED) {
+				const label = ['spec', ...args].join(' ');
+				const result = await run(['spec', ...args]);
+				// Non-emptiness first: these printed *nothing at all* in the
+				// report this bead came from, and "no `error:` appears"
+				// would pass against silence.
+				assert.notEqual(
+					result.stdout + result.stderr,
+					'',
+					`${label} answered with nothing at all`
+				);
+				assert.equal(result.code, UNKNOWN_COMMAND, `${label}: ${result.stderr}`);
+				assert.ok(
+					result.stderr.includes(args[0]),
+					`${label}: the message does not name ${args[0]}: ${result.stderr}`
+				);
+				assert.doesNotMatch(
+					result.stderr,
+					/\bspec\b:?\s+(is\s+)?not available/,
+					`${label}: the message calls spec itself unavailable: ${result.stderr}`
+				);
+			}
+		});
+	});
+
+	test('`spec set` still works — it is what the `+` button runs', async () => {
+		await withApp(async ({ run }) => {
+			const saved = await run(['spec', 'set', 'mood', '--state', 'happy']);
+			assert.equal(saved.code, OK, saved.stderr);
+			assert.match(saved.stdout, /mood/);
+			// And the neighbouring subcommands did not take it down with them.
+			assert.equal((await run(['spec', 'set', 'mood', '--color', '#0f0'])).code, OK);
+		});
+	});
+
+	test('typed at the prompt, an unserved subcommand answers on the screen', async () => {
+		// The seam is where the message is made, but the report was of a
+		// blank REPL — so one case walks the whole way a reader does, and
+		// reads the answer back off the scrollback (da-e0m6's trap).
+		await withApp(async ({ submit, page }) => {
+			await submit('spec remove coffee');
+			// The rendered output blocks, not the whole pane: the echoed
+			// `❯ spec remove coffee` above them carries every word of the
+			// command, so a scrollback-wide match proves nothing.
+			const printed = (await page.locator('.repl pre').allInnerTexts()).join('\n');
+			assert.notEqual(printed.trim(), '', 'the prompt answered with nothing at all');
+			assert.match(printed, /remove/, `the answer does not name remove: ${printed}`);
+			assert.doesNotMatch(
+				printed,
+				/\bspec\b:?\s+(is\s+)?not available/,
+				`the answer calls spec itself unavailable: ${printed}`
+			);
+		});
+	});
+});
+
 describe('help and version', () => {
 	// The parser signals `--help` and `--version` as ParseError variants —
 	// their doc comments say the caller renders the text and exits 0. The

@@ -93,8 +93,17 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 	return { argv, code: 0, stdout: entryLine(entry), stderr: '' };
 }
 
-/** The commands above that this file does serve — bare, and only bare. */
-const BARE_ONLY = new Set(['tail', 'dayview', 'nowview']);
+/**
+ * The commands above that this file serves in SOME shape but not in every
+ * shape.
+ *
+ * `tail`, `dayview` and `nowview` bare — `dayview` plus its geometry
+ * flags — and `spec` as `spec set` alone, which is the command the widget
+ * bar's `+` runs. Every other shape of these four reaches the parser and
+ * comes back unsupported, and the message for it must name the ARGUMENT:
+ * see [`unavailable`].
+ */
+const PARTLY_SERVED = new Set(['tail', 'dayview', 'nowview', 'spec']);
 
 /**
  * `dayview`'s two geometry flags, or `null` when argv carries anything else.
@@ -130,11 +139,21 @@ function geometry(rest: string[]): { width?: number; height?: number } | null {
  * `tail: not available yet in the browser` makes the *command* the subject
  * of the sentence when the command works: a reader takes it as "tail is
  * missing from the web app" and stops trying. For the commands this file
- * serves bare, the thing that is unavailable is the argument, so name that
- * instead — the shape the parser's own flag message already uses (da-3k4y).
+ * serves in some shape, the thing that is unavailable is the argument, so
+ * name that instead — the shape the parser's own flag message already uses
+ * (da-3k4y).
+ *
+ * `spec` is the same sentence about a subcommand (da-c081). `spec set`
+ * works and the `+` button runs it, so `spec show` answering
+ * `spec: not available yet in the browser` calls the whole command missing
+ * while the reader is one keystroke from the half that works. Naming the
+ * subcommand — `` `show` `` — says which half. That reading matters most
+ * on `spec remove`, because there is no other way to remove a field in the
+ * browser today: the honest message is all this app can offer, and whether
+ * to implement removal is a separate call.
  */
 function unavailable(argv: string[], reason: string): string {
-	if (!BARE_ONLY.has(argv[0]) || argv.length < 2) return reason;
+	if (!PARTLY_SERVED.has(argv[0]) || argv.length < 2) return reason;
 	return `\`${argv[1]}\` is not available yet in the browser`;
 }
 
