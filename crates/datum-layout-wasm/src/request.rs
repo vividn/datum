@@ -14,8 +14,8 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 use datum_layout::dayview::{
-    compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput, DayviewFieldInput,
-    DayviewPoint, Orientation,
+    compute_dayview, day_height_for_extent, BlockFill, DayviewBlock, DayviewConfig,
+    DayviewDayInput, DayviewFieldInput, DayviewPoint, Orientation,
 };
 use datum_layout::dayview_svg::render_dayview_svg;
 use datum_layout::nowview::{nowview_config, NowviewGeometry, NowviewPanelEntry};
@@ -169,6 +169,30 @@ fn render(request: Request) -> Response {
             options,
         } => {
             let defaults = DayviewConfig::default();
+            let n_days = days.len();
+            let interday_margin = options.interday_margin.unwrap_or(defaults.interday_margin);
+            let time_axis_height = options
+                .time_axis_height
+                .unwrap_or(defaults.time_axis_height);
+            let margin = options.margin.unwrap_or(defaults.margin);
+            let orientation = options.orientation.unwrap_or(defaults.orientation);
+            // A caller that names the box it has to fit — the browser pane
+            // does, which is the whole reason the band is legible there
+            // (da-m0cj) — gets `day_height` derived from it, exactly as
+            // `datum dayview --height` derives it. The days stack along y
+            // in horizontal mode and along x in vertical, so which
+            // dimension bounds the stack follows the orientation.
+            let stack_extent = match orientation {
+                Orientation::Horizontal => options.height,
+                Orientation::Vertical => options.width,
+            };
+            let day_height = match (stack_extent, options.day_height) {
+                (Some(total), None) => {
+                    day_height_for_extent(total, margin, time_axis_height, interday_margin, n_days)
+                        .unwrap_or(defaults.day_height)
+                }
+                _ => options.day_height.unwrap_or(defaults.day_height),
+            };
             let config = DayviewConfig {
                 days: days
                     .into_iter()
@@ -196,14 +220,12 @@ fn render(request: Request) -> Response {
                 now_ms,
                 width: options.width.unwrap_or(defaults.width),
                 height: options.height,
-                day_height: options.day_height.unwrap_or(defaults.day_height),
-                interday_margin: options.interday_margin.unwrap_or(defaults.interday_margin),
-                time_axis_height: options
-                    .time_axis_height
-                    .unwrap_or(defaults.time_axis_height),
-                margin: options.margin.unwrap_or(defaults.margin),
+                day_height,
+                interday_margin,
+                time_axis_height,
+                margin,
                 label_width: None,
-                orientation: options.orientation.unwrap_or(defaults.orientation),
+                orientation,
                 axis_ticks_override: None,
                 right_panel_width: 0.0,
             };

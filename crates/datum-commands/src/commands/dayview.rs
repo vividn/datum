@@ -23,7 +23,8 @@ use datum_core::field_spec::FieldSpec;
 use datum_core::integrity::ListFilter;
 use datum_core::time::Zone;
 use datum_layout::dayview::{
-    compute_dayview, DayviewConfig, DayviewDayInput, DayviewFieldInput, Orientation,
+    compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewFieldInput,
+    Orientation,
 };
 use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
 use datum_parse::cli::DayviewOrientation;
@@ -203,35 +204,20 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
     // If the user gave --height (horizontal mode) or --width (vertical mode)
     // without an explicit --day-height, derive day_height to fit the
     // day-stack axis. Otherwise use the configured day_height.
-    let day_height = match orientation {
-        Orientation::Horizontal => match (args.height, args.day_height) {
-            (Some(total), None) => {
-                let usable = total
-                    - 2.0 * args.margin
-                    - args.time_axis_height
-                    - (n_days - 1) as f64 * DEFAULT_INTERDAY_MARGIN;
-                if usable <= 0.0 || n_days == 0 {
-                    day_height_default
-                } else {
-                    (usable / n_days as f64).max(10.0)
-                }
-            }
-            _ => day_height_default,
-        },
-        Orientation::Vertical => match (args.width, args.day_height) {
-            (Some(total), None) => {
-                let usable = total
-                    - 2.0 * args.margin
-                    - args.time_axis_height
-                    - (n_days - 1) as f64 * DEFAULT_INTERDAY_MARGIN;
-                if usable <= 0.0 || n_days == 0 {
-                    day_height_default
-                } else {
-                    (usable / n_days as f64).max(10.0)
-                }
-            }
-            _ => day_height_default,
-        },
+    let stack_extent = match orientation {
+        Orientation::Horizontal => args.height,
+        Orientation::Vertical => args.width,
+    };
+    let day_height = match (stack_extent, args.day_height) {
+        (Some(total), None) => day_height_for_extent(
+            total,
+            args.margin,
+            args.time_axis_height,
+            DEFAULT_INTERDAY_MARGIN,
+            n_days as usize,
+        )
+        .unwrap_or(day_height_default),
+        _ => day_height_default,
     };
 
     let config = DayviewConfig {

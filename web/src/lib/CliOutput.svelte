@@ -57,11 +57,14 @@
 
 	.svg {
 		display: block;
-		/* Scaled to the pane rather than shown at its own width. A table
-		   must keep its column widths — see the note above — but an SVG
-		   is a drawing: datum sizes the dayview 2000px wide, and shrinking
-		   it loses nothing where scrolling to it would lose the day. */
-		width: 100%;
+		/* Shrink to fit, never stretch. A drawing may be scaled down where
+		   a table may not — scrolling sideways to a day loses the day —
+		   but scaling shrinks the text with it, and at a pane's width that
+		   is what made the dayview's axis illegible (da-m0cj). A pane that
+		   tells datum its size (`sized` in $lib/panes.ts) gets a band that
+		   already fits, and this cap then does nothing; one that does not,
+		   like nowview's 520px canvas, still shrinks to the box. */
+		max-width: 100%;
 		height: auto;
 	}
 </style>

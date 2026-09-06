@@ -7,36 +7,65 @@
 	(da-1vat) upgrades every pane at once without touching this file.
 -->
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
 	import { run, EXIT_UNKNOWN_COMMAND, type RunResult } from './run.js';
-	import type { PaneSpec } from './panes.js';
+	import { paneArgv, type PaneBox, type PaneSpec } from './panes.js';
 
 	export let spec: PaneSpec;
 	/** Any change re-runs the command. The frame bumps it after each run. */
 	export let epoch = 0;
 
 	let result: RunResult | null = null;
-	/** The newest epoch already on screen — see the ordering note below. */
+	/** How many runs have been started, and the newest one on screen. */
+	let started = 0;
 	let shown = -1;
 
-	// Not on mount: the static build prerenders this page, and there is no
-	// database (or `run`) outside the browser.
-	$: if (browser) void refresh(epoch);
+	let body: HTMLDivElement | undefined;
+	/** The body's content box, once measured. See `paneArgv`. */
+	let box: PaneBox | null = null;
 
-	async function refresh(at: number): Promise<void> {
-		const next = await run(spec.argv);
-		// Type fast enough and two refreshes are in flight at once; they can
-		// finish out of order, and the loser would paint the older database
-		// over the newer one. Last epoch wins, not last to return.
+	// The content box, not the element's own width: the body is padded, and
+	// a band authored 19px wider than the box it is shown in is scaled back
+	// down — which is the bug (da-m0cj). ResizeObserver reports the content
+	// box directly, and reports it again on every resize, so the band is
+	// re-drawn at the new size rather than stretched to it.
+	onMount(() => {
+		if (!spec.sized || !body) return;
+		const observer = new ResizeObserver(([entry]) => {
+			// Whole pixels, rounded down: a band a fraction of a pixel wider
+			// than its box is a band the browser scales, and the text with it.
+			const width = Math.floor(entry.contentRect.width);
+			const height = Math.floor(entry.contentRect.height);
+			if (box?.width !== width || box?.height !== height) box = { width, height };
+		});
+		observer.observe(body);
+		return () => observer.disconnect();
+	});
+
+	// Not on mount: the static build prerenders this page, and there is no
+	// database (or `run`) outside the browser. The request is rebuilt from
+	// the epoch and the box together, so a resize re-runs the command the
+	// same way a write does.
+	$: request = { argv: paneArgv(spec, box), epoch };
+	$: if (browser && request.argv) void refresh(request.argv);
+
+	async function refresh(argv: string[]): Promise<void> {
+		const at = ++started;
+		const next = await run(argv);
+		// Type fast enough — or drag the window — and two refreshes are in
+		// flight at once; they can finish out of order, and the loser would
+		// paint the older answer over the newer one. Last started wins, not
+		// last to return.
 		if (at < shown) return;
 		shown = at;
 		result = next;
 	}
 </script>
 
-<Pane title={spec.title}>
+<Pane title={spec.title} bind:body>
 	{#if !result}
 		<p class="quiet">…</p>
 	{:else if result.stdout}

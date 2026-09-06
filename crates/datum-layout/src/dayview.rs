@@ -314,6 +314,37 @@ const LABEL_FONT_PAD: f64 = 6.0;
 /// to a portrait aspect.
 const DEFAULT_VERTICAL_TIME_EXTENT: f64 = 1200.0;
 
+/// Floor for a derived per-day extent — below this a band is a line, not
+/// a row, so a box too small to hold `n_days` gets a scrollable overflow
+/// rather than an invisible day.
+const MIN_DAY_HEIGHT: f64 = 10.0;
+
+/// The per-day cross-axis extent that makes `n_days` days fill `extent`
+/// pixels of the day-stack axis, or `None` when the box leaves no room.
+///
+/// [`compute_dayview`] only ever derives the total from `day_height`,
+/// never the reverse, so a caller that knows the box it must fit resolves
+/// `day_height` here first. That is what `datum dayview --height` does
+/// when no `--day-height` is given; the browser's layout module calls the
+/// same function, so a pane asking for a 102-pixel band gets the geometry
+/// `datum dayview --height 102` writes.
+///
+/// `extent` is the SVG's total height in horizontal mode and its total
+/// width in vertical mode — the axis the days stack along, either way.
+pub fn day_height_for_extent(
+    extent: f64,
+    margin: f64,
+    time_axis_height: f64,
+    interday_margin: f64,
+    n_days: usize,
+) -> Option<f64> {
+    if n_days == 0 {
+        return None;
+    }
+    let usable = extent - 2.0 * margin - time_axis_height - (n_days - 1) as f64 * interday_margin;
+    (usable > 0.0).then(|| (usable / n_days as f64).max(MIN_DAY_HEIGHT))
+}
+
 /// Compute the dayview layout.
 pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
     let n_days = config.days.len().max(1);

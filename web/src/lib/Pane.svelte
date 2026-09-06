@@ -13,7 +13,15 @@
 <script lang="ts">
 	export let title: string;
 
-	let body: HTMLDivElement;
+	/**
+	 * The scrolling body box, bindable.
+	 *
+	 * A pane whose content is drawn rather than written has to be told how
+	 * many pixels it has (da-m0cj), and this element's content box is that
+	 * number — the padded box the content actually lands in, which is not
+	 * what the pane's own border box says.
+	 */
+	export let body: HTMLDivElement | undefined = undefined;
 
 	/** Pin the view to the newest content. The REPL calls this after a run. */
 	export function scrollToBottom(): void {

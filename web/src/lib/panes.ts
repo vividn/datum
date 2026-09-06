@@ -10,6 +10,39 @@ export interface PaneSpec {
 	argv: string[];
 	/** Shown when the command succeeds with no output at all. */
 	empty?: string;
+	/**
+	 * Run the command against the pane's own box, in pixels.
+	 *
+	 * For the drawn panes. `datum dayview` authors a 2000px canvas because
+	 * that is a sensible page to write a .svg to; a pane 345px wide showed
+	 * it scaled to 0.17, which put the hour axis on screen at 1.5px and the
+	 * date stamp at 3.4 — illegible on a laptop too, at 0.70 (da-m0cj). The
+	 * band is drawn at the size it is displayed at instead, which is the
+	 * same reason nowview always read correctly.
+	 */
+	sized?: boolean;
+}
+
+/** A pane's content box, in whole pixels. */
+export interface PaneBox {
+	width: number;
+	height: number;
+}
+
+/**
+ * The argv a pane runs, or `null` when it cannot run yet.
+ *
+ * A sized pane waits for its box: the geometry goes across as `--width`
+ * and `--height`, the CLI's own flags in the CLI's own units, so the pane
+ * asks datum for a band of a given size rather than resizing datum's
+ * answer. Null is "not measured yet", which lasts until the first
+ * observation — the alternative is one render at the 2000px default that
+ * the measurement immediately replaces.
+ */
+export function paneArgv(spec: PaneSpec, box: PaneBox | null): string[] | null {
+	if (!spec.sized) return spec.argv;
+	if (!box || box.width <= 0 || box.height <= 0) return null;
+	return [...spec.argv, '--width', String(box.width), '--height', String(box.height)];
 }
 
 /**
@@ -28,7 +61,8 @@ export const PANE_COLS = 80;
 export const DAYVIEW: PaneSpec = {
 	title: 'dayview',
 	argv: ['dayview'],
-	empty: 'nothing to draw yet'
+	empty: 'nothing to draw yet',
+	sized: true
 };
 
 // `nowview`, not `now`: the CLI splits them by output device — `now`

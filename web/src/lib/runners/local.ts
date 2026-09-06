@@ -42,9 +42,12 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 	// The two visual views are datum's own compute and render, reached
 	// through the layout module rather than reimplemented (da-6h6p) — so
 	// they live behind the seam like everything else, and their stdout is
-	// the same SVG document the CLI writes. Bare only: the window and
-	// geometry flags belong to the real CLI.
-	if (argv.length === 1 && argv[0] === 'dayview') return (await views()).dayview(argv);
+	// the same SVG document the CLI writes. The window flags — `--n-days`,
+	// `--start-date` and the rest — still belong to the real CLI.
+	if (argv[0] === 'dayview') {
+		const box = geometry(argv.slice(1));
+		if (box) return (await views()).dayview(argv, box);
+	}
 	if (argv.length === 1 && argv[0] === 'nowview') return (await views()).nowview(argv);
 
 	const parsed = await parseArgv(argv, deviceId());
@@ -91,6 +94,33 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 
 /** The commands above that this file does serve — bare, and only bare. */
 const BARE_ONLY = new Set(['tail', 'dayview', 'nowview']);
+
+/**
+ * `dayview`'s two geometry flags, or `null` when argv carries anything else.
+ *
+ * The one thing the browser knows that the CLI cannot: how many pixels the
+ * band is actually shown in. `datum dayview` authors a 2000px canvas and
+ * the pane scaled it to fit, which put the hour axis on screen at 1.5px on
+ * a phone and 6.3px on a laptop (da-m0cj) — so the pane says how big its
+ * box is, in the CLI's own flags and units, and datum draws a band that
+ * size. The values come from `paneArgv`, which floors them.
+ *
+ * Both spellings the flag splitter accepts, `--width=345` and
+ * `--width 345`; a flag this file does not serve, or a value that is not a
+ * positive number, falls through to the unknown-command message rather
+ * than being silently dropped.
+ */
+function geometry(rest: string[]): { width?: number; height?: number } | null {
+	const box: { width?: number; height?: number } = {};
+	for (let i = 0; i < rest.length; i++) {
+		const [flag, attached] = splitFlag(rest[i]);
+		if (flag !== 'width' && flag !== 'height') return null;
+		const value = Number(attached ?? rest[++i]);
+		if (!Number.isFinite(value) || value <= 0) return null;
+		box[flag] = value;
+	}
+	return box;
+}
 
 /**
  * What is unavailable, said about the right thing.

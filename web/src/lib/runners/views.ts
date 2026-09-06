@@ -104,8 +104,17 @@ function svgResult(argv: string[], svg: string): RunResult {
  * flags are the real CLI's job, and answering them here would grow a
  * second datum in TypeScript. An argv carrying any of them falls through
  * to the unknown-command message, the way `tail mood` does.
+ *
+ * `geometry` is `--width` and `--height` as the pane measured them, and
+ * goes across untouched: what a total height means for a day's band —
+ * `day_height_for_extent` in `datum-layout` — is the same rule `datum
+ * dayview --height` applies, and it stays in Rust. Empty means the
+ * defaults, which is the 2000px canvas the CLI writes to a file.
  */
-export async function dayview(argv: string[]): Promise<RunResult> {
+export async function dayview(
+	argv: string[],
+	geometry: { width?: number; height?: number } = {}
+): Promise<RunResult> {
 	const now = new Date();
 	const dayStart = new Date(now);
 	dayStart.setHours(0, 0, 0, 0);
@@ -130,7 +139,8 @@ export async function dayview(argv: string[]): Promise<RunResult> {
 				fields
 			}
 		],
-		styles: await stylesByField()
+		styles: await stylesByField(),
+		options: geometry
 	});
 	return svgResult(argv, svg);
 }
