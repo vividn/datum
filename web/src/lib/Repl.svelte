@@ -1,12 +1,13 @@
 <!--
 	The REPL — the day frame's large pane.
 
-	A prompt line at the bottom, scrollback above it. Enter sends the typed
-	line through `run(argv)` (via `runLine`, which shell-splits it the same
-	way the native REPL does) and appends the echoed command plus whatever
-	stdout/stderr came back. Up and down walk the history, shell-style: the
-	draft you were typing is kept and handed back when you walk past the
-	newest entry.
+	A prompt line at the bottom, scrollback above it. Enter shell-splits the
+	typed line the same way the native REPL does, sends it through
+	`run(argv)`, and appends the echoed command plus whatever stdout/stderr
+	came back. A command that draws rather than writes is asked for at the
+	width of the scrollback it lands in — see `fitArgv`. Up and down walk
+	the history, shell-style: the draft you were typing is kept and handed
+	back when you walk past the newest entry.
 
 	`input` is bindable and `runArgv` is exported so the widget bar
 	(da-nz29) lands in here rather than running silently: a press logs and
@@ -15,10 +16,12 @@
 	whole point of the widgets sitting next to a command line.
 -->
 <script lang="ts">
-	import { createEventDispatcher, tick } from 'svelte';
+	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
-	import { run, runLine, type RunResult } from './run.js';
+	import { fitArgv } from './panes.js';
+	import { run, type RunResult } from './run.js';
+	import { shellSplit } from './shellSplit.js';
 
 	/** The text in the prompt. Bind it to type a command in from outside. */
 	export let input = '';
@@ -32,6 +35,24 @@
 	let cursor = -1;
 	let draft = '';
 	let pane: Pane;
+	let body: HTMLDivElement | undefined;
+	/** The scrollback's content width, in whole pixels, once measured. */
+	let width: number | null = null;
+
+	// What a drawn command has to be told (`fitArgv`): the content box, not
+	// the element's own width — the body is padded, and an image a fraction
+	// wider than the box it lands in is an image the browser scales back
+	// down, which is the bug (da-wexl). Only new output is drawn to the new
+	// size; scrollback keeps the size it was drawn at, the way a terminal's
+	// does.
+	onMount(() => {
+		if (!body) return;
+		const observer = new ResizeObserver(([entry]) => {
+			width = Math.floor(entry.contentRect.width);
+		});
+		observer.observe(body);
+		return () => observer.disconnect();
+	});
 
 	async function submit(): Promise<void> {
 		const line = input;
@@ -43,7 +64,9 @@
 		draft = '';
 		cursor = -1;
 		remember(line);
-		await record(line, await runLine(line));
+		// Split here rather than through `runLine`, because the argv is what
+		// gets fitted to the box. The echo above is the line as typed.
+		await record(line, await run(fitArgv(shellSplit(line), width)));
 	}
 
 	/**
@@ -94,7 +117,7 @@
 	}
 </script>
 
-<Pane title="repl" bind:this={pane}>
+<Pane title="repl" bind:this={pane} bind:body>
 	{#if scrollback.length === 0}
 		<p class="quiet">type a command — <code>switch mood happy</code>, <code>tail</code></p>
 	{/if}

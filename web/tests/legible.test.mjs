@@ -1,4 +1,5 @@
-// Whether the dayview band's labels are big enough to read.
+// Whether a drawn view's labels are big enough to read — in the pane it
+// has, and in the REPL it is typed into.
 //
 // They were not, and every earlier pass missed it because the labels are
 // all *there*: 27 `<text>` nodes, the hour row and the three-line date
@@ -9,11 +10,18 @@
 // 1440px laptop, which is 6.28px. Both illegible; the second is the one
 // that makes this not a phone bug (da-m0cj).
 //
-// So the assertion here is not "labels exist" and not "the markup says 9".
-// It is the arithmetic that caught it: the smallest font-size in the SVG
+// Fixing the pane did not fix the REPL — different components, and only
+// one of them was ever measured. `dayview` typed at the prompt still
+// arrived at 0.46 on a laptop and 0.17 on a phone: 4.12px and 1.55px
+// (da-wexl). So each surface is measured on its own here, and nowview
+// rides along because a change to how a drawn view is asked for reaches
+// it too.
+//
+// The assertion is not "labels exist" and not "the markup says 9". It is
+// the arithmetic that caught it: the smallest font-size in the SVG
 // multiplied by the scale the browser is showing that SVG at. Nothing
-// short of that number fails on the build this test was written against —
-// a screenshot did not, twice.
+// short of that number fails on the builds these were written against — a
+// screenshot did not, twice.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -38,11 +46,23 @@ const VIEWPORTS = [
 	{ name: 'a 1440px laptop', viewport: { width: 1440, height: 900 } }
 ];
 
-/** The dayview band as it is actually on screen: its markup and its scale. */
-async function band({ page }) {
-	const img = page
-		.locator('section.pane', { has: page.locator('h2', { hasText: 'dayview' }) })
-		.locator('img.svg');
+/** Enough of a day to draw: a state, a block and a point. */
+const A_DAY = [
+	['switch', 'mood', 'good', '-t', '0930'],
+	['start', 'work', '-t', '0800'],
+	['stop', 'work', '-t', '1200'],
+	['occur', 'coffee', '-t', '0700']
+];
+
+async function logADay(app) {
+	for (const argv of A_DAY) {
+		const result = await app.run(argv);
+		assert.equal(result.code, 0, `${argv.join(' ')} → ${result.stderr}`);
+	}
+}
+
+/** One drawing as it is actually on screen: its markup, and its scale. */
+async function measure(img) {
 	await img.waitFor();
 	const svg = decodeURIComponent(
 		(await img.getAttribute('src')).replace(/^data:image\/svg\+xml,/, '')
@@ -65,35 +85,91 @@ async function band({ page }) {
 	};
 }
 
-describe('the dayview band', () => {
+/** The drawing a pane is showing, by the pane's title. */
+function paneImage({ page }, title) {
+	return page
+		.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
+		.locator('img.svg');
+}
+
+/** The drawing the newest command left in the REPL's scrollback. */
+function replImage({ page }) {
+	return page.locator('.repl img.svg').last();
+}
+
+/** Assert a drawing clears the floor, reporting the arithmetic either way. */
+function assertLegible(shown, where) {
+	const effective = shown.smallest * shown.scale;
+	const sizes = `${where}: ${shown.natural} → ${shown.rendered.toFixed(1)} (×${shown.scale.toFixed(3)}), smallest ${shown.smallest} → ${effective.toFixed(2)}px`;
+	assert.ok(effective >= FLOOR, `smallest text under ${FLOOR}px — ${sizes}`);
+	return sizes;
+}
+
+/**
+ * The band's labels are on it at all.
+ *
+ * Checked alongside every size assertion, because a band that dropped its
+ * axis entirely would satisfy any floor.
+ */
+function assertLabelled(shown, sizes) {
+	assert.equal(shown.dateLines, 3, `date stamp missing — ${sizes}`);
+	assert.ok(shown.ticks >= 4, `only ${shown.ticks} hour labels — ${sizes}`);
+}
+
+describe('a drawn view', () => {
 	for (const { name, viewport } of VIEWPORTS) {
-		test(`is legible on ${name}`, async () => {
+		test(`is legible in the dayview pane on ${name}`, async () => {
 			await withApp(
 				async (app) => {
-					for (const argv of [
-						['switch', 'mood', 'good', '-t', '0930'],
-						['start', 'work', '-t', '0800'],
-						['stop', 'work', '-t', '1200'],
-						['occur', 'coffee', '-t', '0700']
-					]) {
-						const result = await app.run(argv);
-						assert.equal(result.code, 0, `${argv.join(' ')} → ${result.stderr}`);
-					}
+					await logADay(app);
 
-					const shown = await band(app);
-					const effective = shown.smallest * shown.scale;
-					const where = `${viewport.width}px: ${shown.natural} → ${shown.rendered.toFixed(1)} (×${shown.scale.toFixed(3)}), smallest ${shown.smallest} → ${effective.toFixed(2)}px`;
+					const shown = await measure(paneImage(app, 'dayview'));
+					assertLabelled(shown, assertLegible(shown, `dayview pane at ${viewport.width}px`));
+				},
+				{ viewport }
+			);
+		});
 
-					// The labels have to be on the band before their size is
-					// worth measuring — a band that dropped its axis entirely
-					// would satisfy any floor.
-					assert.equal(shown.dateLines, 3, `date stamp missing — ${where}`);
-					assert.ok(shown.ticks >= 4, `only ${shown.ticks} hour labels — ${where}`);
+		test(`is legible as dayview typed into the repl on ${name}`, async () => {
+			await withApp(
+				async (app) => {
+					await logADay(app);
+					await app.submit('dayview');
 
-					assert.ok(effective >= FLOOR, `smallest text under ${FLOOR}px — ${where}`);
+					const shown = await measure(replImage(app));
+					assertLabelled(shown, assertLegible(shown, `dayview in the repl at ${viewport.width}px`));
+				},
+				{ viewport }
+			);
+		});
+
+		// nowview passes on its own — authored at 520px, near the size it
+		// is shown at. It is measured because it shares the REPL's render
+		// path with dayview, so a fix there could take it down silently.
+		test(`is legible as nowview typed into the repl on ${name}`, async () => {
+			await withApp(
+				async (app) => {
+					await logADay(app);
+					await app.submit('nowview');
+
+					assertLegible(await measure(replImage(app)), `nowview in the repl at ${viewport.width}px`);
 				},
 				{ viewport }
 			);
 		});
 	}
+
+	// The screen's needs reach the command as argv or not at all. `datum
+	// dayview` writes a 2000px canvas to a file, and a bare argv through the
+	// seam is that same command — so a surface that wants its own size says
+	// so, rather than the seam deciding for every caller (trap 2 on da-wexl).
+	test('is still the CLI’s 2000px canvas when the argv asks for nothing', async () => {
+		await withApp(async (app) => {
+			await logADay(app);
+			const drawn = await app.run(['dayview']);
+			assert.equal(drawn.code, 0, drawn.stderr);
+			assert.match(drawn.stdout, /<svg[^>]*\swidth="2000"/);
+			assert.match(drawn.stdout, /<svg[^>]*\sviewBox="0 0 2000 /);
+		});
+	});
 });

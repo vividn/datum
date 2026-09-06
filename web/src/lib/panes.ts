@@ -46,6 +46,40 @@ export function paneArgv(spec: PaneSpec, box: PaneBox | null): string[] | null {
 }
 
 /**
+ * The commands whose output must be asked for at the size it is shown at.
+ *
+ * `dayview` alone. It authors a 2000px canvas — the right page to write a
+ * .svg to, and four times the width of any pane or prompt — so wherever it
+ * lands it was scaled, and the text with it. nowview is authored at 520px,
+ * near its display size, which is why it always read correctly.
+ *
+ * The panes say this as `sized` above, because a pane also knows its
+ * height; a line typed at the prompt scrolls, so it only names a width.
+ */
+const SIZED_COMMANDS = new Set(['dayview']);
+
+/**
+ * Fit a typed command to the pixels its output will land in.
+ *
+ * `paneArgv`'s counterpart for the REPL (da-wexl). Fixing the pane left
+ * this path alone — they are different components — so `dayview` typed at
+ * the prompt still went through the seam bare, arrived as the 2000px
+ * canvas and was scaled to 0.46 on a laptop and 0.17 on a phone: the 9px
+ * hour axis at 4.1px and 1.55px.
+ *
+ * Width only: a pane fills a box both ways, but scrollback grows
+ * downward, so the band keeps the height datum derives for it. An argv
+ * that already carries `--width` is left alone — someone who names a size
+ * gets that size — and an unmeasured box (`null`) falls back to datum's
+ * own default rather than guessing one.
+ */
+export function fitArgv(argv: string[], width: number | null): string[] {
+	if (!SIZED_COMMANDS.has(argv[0]) || width === null || width <= 0) return argv;
+	if (argv.some((word) => word === '--width' || word.startsWith('--width='))) return argv;
+	return [...argv, '--width', String(width)];
+}
+
+/**
  * The column count the panes render CLI output at.
  *
  * datum sizes its tables to the terminal (`render/term_layout.rs`: ioctl,
