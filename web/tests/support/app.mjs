@@ -156,8 +156,15 @@ function app(page, errors) {
 				t.replace(/^\s*❯\s*/, '').trim()
 			),
 
-		/** The REPL's rendered stdout/stderr blocks, oldest first. */
-		outputs: () => page.locator('.repl output').allInnerTexts(),
+		/**
+		 * The REPL's rendered stdout/stderr blocks, oldest first.
+		 *
+		 * `pre`, because `pre` is what CliOutput renders. The selector read
+		 * `output`, an element the app has never had, so this always
+		 * answered `[]` — which nothing noticed, a helper that lies being
+		 * silent until someone finally asks it something (da-b049).
+		 */
+		outputs: () => page.locator('.repl pre').allInnerTexts(),
 
 		/**
 		 * What one of the day frame's panes is showing, by its title.

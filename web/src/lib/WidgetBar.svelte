@@ -15,6 +15,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { pressArgv, declareArgv, type Adjust, type Widget, type WidgetShape } from './widgets.js';
+	import { fieldNameHint, suggestFieldName } from './fieldName.js';
 
 	export let widgets: Widget[] = [];
 	export let disabled = false;
@@ -64,6 +65,15 @@
 			: ({ kind: newKind } satisfies WidgetShape);
 
 	$: addArgv = declareArgv(newField.trim() || '<field>', newShape);
+
+	// What the name would do if it were submitted. A field name is one argv
+	// token, and this form used to accept anything: `my coffee` made a chip
+	// that logged but could not be typed, `cups=2` and `-weird` made chips
+	// that errored when pressed (da-b049). `spec set` refuses all three now,
+	// so the form says so first — and offers the nearest name that works,
+	// because "my coffee" is what a person naturally types.
+	$: hint = newField.trim() === '' ? null : fieldNameHint(newField.trim());
+	$: fixed = hint === null ? null : suggestFieldName(newField.trim());
 
 	function panel(widget: Widget, withAdjust: boolean) {
 		adding = false;
@@ -120,7 +130,7 @@
 
 	function declare() {
 		const field = newField.trim();
-		if (!field) return;
+		if (!field || hint !== null) return;
 		const argv = declareArgv(field, newShape);
 		newField = '';
 		newStates = '';
@@ -232,8 +242,17 @@
 				{#if newKind === 'states'}
 					<input bind:value={newStates} placeholder="states, comma-separated" spellcheck="false" />
 				{/if}
-				<button type="submit">track it</button>
-				<code class="preview">{addArgv.join(' ')}</code>
+				<button type="submit" disabled={hint !== null}>track it</button>
+				{#if hint === null}
+					<code class="preview">{addArgv.join(' ')}</code>
+				{:else}
+					<p class="hint">
+						{hint}{#if fixed}
+							<button type="button" class="fix" on:click={() => (newField = fixed ?? '')}
+								>use {fixed}</button
+							>{/if}
+					</p>
+				{/if}
 			</form>
 		{:else}
 			<button class="widget add-button" {disabled} title="track a new field" on:click={() => { close(); adding = true; }}>
@@ -346,6 +365,16 @@
 
 	.commit {
 		align-self: flex-start;
+	}
+
+	.panel button.fix {
+		margin-left: 0.4rem;
+		font-size: 0.75rem;
+	}
+
+	.add button[disabled] {
+		opacity: 0.4;
+		cursor: default;
 	}
 
 	.preview {

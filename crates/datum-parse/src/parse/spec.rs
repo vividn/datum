@@ -279,10 +279,26 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.tags.push(v.to_string());
                 i += 1;
             }
+            // `-weird` is a field name someone typed, not a flag they
+            // misspelled: a leading dash is the only reason it reaches
+            // here, and the field slot is still empty. Report the
+            // field-name rule so the terminal refuses it the same way the
+            // (+) form does — otherwise the three bad names of da-b049 go
+            // on failing in three different ways. A `--long` token is a
+            // real flag typo and keeps its own message.
+            f if pos.is_empty() && !tok.starts_with("--") => {
+                crate::field_name::check(tok)?;
+                return Err(unknown_flag(f));
+            }
             f => return Err(unknown_flag(f)),
         }
     }
     out.field = require_pos(&pos.to_vec(), "<FIELD>")?;
+    // Declaring a field is the one place a name is chosen, so it is the
+    // place to refuse a name nothing can log to (da-b049). Logging stays
+    // permissive — a quoted `occur "my coffee"` still works, so nothing
+    // already in a database becomes unreachable.
+    crate::field_name::check(&out.field)?;
     Ok(out)
 }
 

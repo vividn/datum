@@ -650,7 +650,7 @@ fn shell_quote_token(s: &str) -> String {
 ///
 /// `tests/fixtures/shell-split.json` pins the cases, including the two that
 /// diverged, and both this crate's test and the web suite read it.
-fn is_datum_space(c: char) -> bool {
+pub(crate) fn is_datum_space(c: char) -> bool {
     matches!(c,
         '\u{0009}'..='\u{000D}'   // tab, LF, VT, FF, CR
         | '\u{0020}'              // space

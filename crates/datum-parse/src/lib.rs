@@ -15,6 +15,8 @@
 //! * Hand-authored help rendering ([`help`]).
 //! * Public error type ([`error`]) — `ParseError` and the shared
 //!   `Result` alias for callers that want to match on the variants.
+//! * What a field name may be ([`field_name`]) — the rule `spec set`
+//!   enforces so no field is declared that nothing can log to.
 //! * The pure entry-shape rules the storage layer applies but does not
 //!   own: the duration type ([`dur`]), the verb truth table ([`verb`]),
 //!   and entry identity ([`entry_id`] — hid, slug, content hash).
@@ -51,6 +53,7 @@ pub mod cli;
 pub mod dur;
 pub mod entry_id;
 pub mod error;
+pub mod field_name;
 pub mod help;
 pub mod input;
 pub mod parse;

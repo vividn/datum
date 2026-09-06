@@ -20,6 +20,12 @@ use crate::error::{DatumError, Result};
 /// so a colon in `field` makes the boundary ambiguous. Empty field names
 /// are also rejected — they collapse the slug to `:id` and are never a
 /// user intent.
+///
+/// This is the *storage* guard, and it stays this permissive on purpose:
+/// tightening it would strand entries already written. The stricter rule
+/// for a name being *declared* is `datum_parse::field_name::check`, which
+/// `spec set` runs — it is a superset of this one, so anything that may be
+/// declared may also be stored (da-b049).
 pub fn validate_field_name(field: &str) -> Result<()> {
     if field.is_empty() {
         return Err(DatumError::InvalidFieldSpec(

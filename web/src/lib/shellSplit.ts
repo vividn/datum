@@ -25,8 +25,10 @@
 // rides in on text pasted from a file or a web page and is never part of a
 // token. U+200B zero-width space is deliberately absent: it is whitespace to
 // neither language, and it stays inside its token. The same list, character
-// for character, is `is_datum_space` in expand.rs.
-const DATUM_SPACE =
+// for character, is `is_datum_space` in expand.rs — which is also where the
+// field-name rule reads it from, so `./fieldName.js` imports it here rather
+// than restating it.
+export const DATUM_SPACE =
 	/[\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]/;
 
 export function shellSplit(line: string): string[] {

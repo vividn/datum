@@ -1,0 +1,60 @@
+{
+  "about": [
+    "What a field name may be, as one list of cases read by both sides.",
+    "",
+    "A field name is written as one argv token. `spec set` used to accept",
+    "anything, so datum.day's (+) form could create `my coffee`, `cups=2` and",
+    "`-weird` — names the app then refused to log to, from the chip it had just",
+    "made or from the REPL (da-b049). The rule now lives in",
+    "`crates/datum-parse/src/field_name.rs` and is enforced inside `spec set`'s",
+    "parser, which is the door both the terminal and the browser go through;",
+    "`web/src/lib/fieldName.ts` mirrors it for the (+) form's inline hint.",
+    "",
+    "Two hand-written test files drift the same way two implementations do, so",
+    "the cases live here and both suites read this file:",
+    "`crates/datum-parse/tests/field_name_fixture.rs` and",
+    "`web/tests/fieldname.test.mjs`. Add a case here, not there.",
+    "",
+    "`ok` is whether the name may be declared. `suggest` is the nearest name",
+    "that may be, or null when nothing usable is left; it is checked for every",
+    "case, so a name that is already fine suggests itself.",
+    "",
+    "Visible characters are written literally — the unicode cases exist to say",
+    "that `café` and `日本語` are field names, and escaping them would hide the",
+    "point. Invisible ones are written as \\uXXXX, because a character the next",
+    "reader cannot see is one they cannot check."
+  ],
+  "cases": [
+    { "name": "a plain word", "field": "coffee", "ok": true, "suggest": "coffee" },
+    { "name": "digits", "field": "5", "ok": true, "suggest": "5" },
+    { "name": "an inner hyphen", "field": "deep-work", "ok": true, "suggest": "deep-work" },
+    { "name": "an underscore", "field": "my_coffee", "ok": true, "suggest": "my_coffee" },
+    { "name": "a colon is the slug boundary", "field": "a:b", "ok": false, "suggest": "a_b" },
+
+    { "name": "accented latin", "field": "café", "ok": true, "suggest": "café" },
+    { "name": "cjk", "field": "日本語", "ok": true, "suggest": "日本語" },
+    { "name": "emoji", "field": "emoji☕", "ok": true, "suggest": "emoji☕" },
+    { "name": "accented and hyphenated", "field": "très-bien", "ok": true, "suggest": "très-bien" },
+
+    { "name": "a space", "field": "my coffee", "ok": false, "suggest": "my_coffee" },
+    { "name": "several spaces collapse to one underscore", "field": "a  b", "ok": false, "suggest": "a_b" },
+    { "name": "a no-break space U+00A0", "field": "my\u00A0coffee", "ok": false, "suggest": "my_coffee" },
+    { "name": "a byte-order mark U+FEFF", "field": "my\uFEFFcoffee", "ok": false, "suggest": "my_coffee" },
+    { "name": "a next-line U+0085", "field": "my\u0085coffee", "ok": false, "suggest": "my_coffee" },
+    { "name": "a zero-width space U+200B is not whitespace to datum", "field": "my\u200Bcoffee", "ok": true, "suggest": "my\u200Bcoffee" },
+
+    { "name": "an equals is a data key", "field": "cups=2", "ok": false, "suggest": "cups_2" },
+    { "name": "two equals", "field": "a=b=c", "ok": false, "suggest": "a_b_c" },
+
+    { "name": "a leading dash is a flag", "field": "-weird", "ok": false, "suggest": "weird" },
+    { "name": "a lone dash", "field": "-", "ok": false, "suggest": null },
+    { "name": "a trailing dash is fine", "field": "weird-", "ok": true, "suggest": "weird-" },
+
+    { "name": "a leading comma coerces to an array", "field": ",a", "ok": false, "suggest": "a" },
+    { "name": "an inner comma", "field": "a,b", "ok": false, "suggest": "a_b" },
+    { "name": "a lone comma is the entry chain", "field": ",", "ok": false, "suggest": null },
+
+    { "name": "empty", "field": "", "ok": false, "suggest": null },
+    { "name": "nothing but punctuation", "field": " , = ", "ok": false, "suggest": null }
+  ]
+}

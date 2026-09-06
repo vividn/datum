@@ -14,6 +14,7 @@
 // two commands the parser does not own.
 
 import { clockLabel, dateLabel } from '../clock.js';
+import { fieldNameHint } from '../fieldName.js';
 import { insertEntry, getRecentEntries, getFieldSpecs, saveFieldSpec } from '../db.js';
 import { parseArgv } from '../parser.js';
 import { EXIT_DUPLICATE, EXIT_ERROR, EXIT_UNKNOWN_COMMAND, type RunResult } from '../run.js';
@@ -253,6 +254,16 @@ async function specSet(argv: string[]): Promise<RunResult> {
 	}
 
 	if (field === undefined) return fail('missing <FIELD>');
+
+	// Declaring a field is the one place a name is chosen, so it is the
+	// place to refuse a name nothing can log to: `my coffee`, `cups=2` and
+	// `-weird` were all declarable, and the app then refused to log to the
+	// chip it had just made (da-b049). Refused here rather than in the (+)
+	// form so that typing the command has the same answer as pressing the
+	// button. `datum-parse`'s `spec set` refuses the same names, and
+	// `tests/fixtures/field-name.json` is what holds the two together.
+	const hint = fieldNameHint(field);
+	if (hint !== null) return fail(`cannot declare '${field}': ${hint}`);
 
 	const existing = (await getFieldSpecs()).get(field);
 	const spec: FieldSpec = { ...(existing ?? {}), field };
