@@ -14,7 +14,7 @@
 // another.
 
 import { SCHEMA } from './schema.generated.js';
-import type { DbRequest, DbResponse, Row, StorageKind } from './dbProtocol.js';
+import type { DbMessage, DbRequest, Row, StorageKind } from './dbProtocol.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SqliteDb = any;
@@ -25,12 +25,20 @@ type SqliteDb = any;
  * `postMessage` takes a target origin.
  */
 const ctx = self as unknown as {
-	postMessage(message: DbResponse): void;
+	postMessage(message: DbMessage): void;
 	addEventListener(type: 'message', listener: (event: MessageEvent<DbRequest>) => void): void;
 };
 
 let storage: StorageKind = 'memory';
 let opening: Promise<SqliteDb> | null = null;
+
+/**
+ * The live database. Mutable because a memory database is not the end of the
+ * story: `keepTrying()` reopens durable storage when it becomes available and
+ * moves what was typed in the meantime across, and every later statement has
+ * to land on the new one.
+ */
+let db: SqliteDb = null;
 
 /** Open the database once; every later caller shares the first promise. */
 function openOnce(): Promise<SqliteDb> {
@@ -44,6 +52,11 @@ function openOnce(): Promise<SqliteDb> {
 
 		const opened = await openPersistent(sqlite3);
 		opened.exec(SCHEMA);
+		db = opened;
+		// Degraded is a state to recover FROM, not just to report. A tab that
+		// opened while another held the pool keeps its entries in memory, and
+		// they are lost on reload unless something goes back for them.
+		if (storage !== 'opfs') keepTrying(sqlite3);
 		return opened;
 	})();
 	return opening;
@@ -120,6 +133,148 @@ async function openPersistent(sqlite3: any): Promise<SqliteDb> {
 	return new sqlite3.oo1.DB(':memory:', 'c');
 }
 
+/** Tell the page where the database now lives, unprompted. */
+function announceStorage(): void {
+	ctx.postMessage({ notice: 'storage', storage });
+}
+
+/** How long to wait before the first retry, and the ceiling it backs off to. */
+const RETRY_FIRST_MS = 2000;
+const RETRY_MAX_MS = 30000;
+
+/**
+ * Go back for durable storage until we get it.
+ *
+ * The common degraded case is a second tab: the SAH pool is exclusive per
+ * origin, so tab two opens in memory and stays there for as long as tab one
+ * is open — which is usually the moment someone types the entry they care
+ * about. Closing the first tab should heal the second, and without this it
+ * does not, because the open is attempted exactly once.
+ *
+ * Backs off to a half-minute and then keeps going. It is a `setTimeout` with
+ * no work in it when storage is already durable, so the cost of waiting a
+ * long time is nil, and the alternative is a tab that has silently given up
+ * on the user's data.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function keepTrying(sqlite3: any, delay = RETRY_FIRST_MS): void {
+	setTimeout(() => {
+		void (async () => {
+			let durable: SqliteDb = null;
+			try {
+				if (typeof sqlite3.installOpfsSAHPoolVfs !== 'function') return;
+				// `forceReinitIfPreviouslyFailed` is the entire reason a retry can
+				// work: sqlite-wasm CACHES the install promise per VFS name, so
+				// without it every later call returns the first rejection and
+				// this loop would spin on a stale answer forever. Measured: 45s
+				// of retries, none of which reached OPFS, before this line.
+				const pool: SqliteDb = await withDeadline(
+					sqlite3.installOpfsSAHPoolVfs({ forceReinitIfPreviouslyFailed: true }),
+					OPEN_DEADLINE_MS,
+					`no sync access handle within ${OPEN_DEADLINE_MS}ms`
+				);
+				durable = new pool.OpfsSAHPoolDb('/datum.db');
+			} catch {
+				// Still held, or still unsupported. Either way, try again.
+				keepTrying(sqlite3, Math.min(delay * 2, RETRY_MAX_MS));
+				return;
+			}
+			try {
+				// EVERYTHING FROM HERE IS SYNCHRONOUS, AND THAT IS THE WHOLE
+				// SAFETY ARGUMENT. A worker runs one turn at a time, so with no
+				// `await` between opening the durable database and swapping it
+				// in, no `exec` request can be served against a half-migrated
+				// pair — the move is atomic with respect to the message loop.
+				durable.exec(SCHEMA);
+				const moved = copyAcross(db, durable);
+				const previous = db;
+				db = durable;
+				storage = 'opfs';
+				previous.close();
+				announceStorage();
+				console.info(`durable storage recovered; moved ${moved} rows across`);
+			} catch (e) {
+				// The migration failed, so the memory database is still the one
+				// holding the user's entries and must stay live.
+				console.warn('could not migrate into durable storage:', e);
+				try {
+					durable.close();
+				} catch {
+					/* nothing further to do */
+				}
+				keepTrying(sqlite3, Math.min(delay * 2, RETRY_MAX_MS));
+			}
+		})();
+	}, delay);
+}
+
+/**
+ * Copy every row of every table from one database into another, returning how
+ * many rows moved.
+ *
+ * Reads the table list out of `sqlite_master` rather than naming tables here,
+ * so a schema change cannot leave this silently copying a subset — which is
+ * the failure that would lose exactly the data this function exists to save.
+ *
+ * `INSERT OR IGNORE` because the destination may not be empty: another tab may
+ * have written to it while this one was in memory. On a key collision the
+ * durable row wins, since it is the one that survived a reload; ours is at
+ * worst a duplicate of it.
+ */
+function copyAcross(from: SqliteDb, to: SqliteDb): number {
+	const tables: string[] = [];
+	from.exec({
+		sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+		rowMode: 'object',
+		callback: (row: Row) => tables.push(String(row.name))
+	});
+
+	// All or nothing on the destination. A copy that dies halfway must not
+	// leave the durable database holding some tables and not others, since
+	// the caller keeps the memory database live on failure and will try the
+	// whole copy again.
+	to.exec('BEGIN');
+	let moved = 0;
+	try {
+		for (const table of tables) {
+			// `table_xinfo`, not `SELECT *`: the schema has generated columns,
+			// and SQLite refuses an INSERT that names one ("cannot INSERT into
+			// generated column"). `hidden` is 0 for an ordinary column, 1 for
+			// a hidden virtual-table column, 2 or 3 for generated. Measured:
+			// the first cut of this copied nothing at all, four retries running.
+			const columns: string[] = [];
+			from.exec({
+				sql: `PRAGMA table_xinfo("${table}")`,
+				rowMode: 'object',
+				callback: (c: Row) => {
+					if (c.hidden === 0) columns.push(String(c.name));
+				}
+			});
+			if (columns.length === 0) continue;
+			const quoted = columns.map((c) => `"${c}"`).join(', ');
+			const holes = columns.map(() => '?').join(', ');
+			const rows: Row[] = [];
+			from.exec({
+				sql: `SELECT ${quoted} FROM "${table}"`,
+				rowMode: 'object',
+				callback: (r: Row) => rows.push(r)
+			});
+			for (const row of rows) {
+				to.exec({
+					sql: `INSERT OR IGNORE INTO "${table}" (${quoted}) VALUES (${holes})`,
+					bind: columns.map((c) => row[c])
+				});
+				moved += 1;
+			}
+		}
+		to.exec('COMMIT');
+	} catch (e) {
+		to.exec('ROLLBACK');
+		throw e;
+	}
+	return moved;
+}
+
 /**
  * Whether the pool failed because another page of this origin holds it.
  *
@@ -137,11 +292,13 @@ function heldByAnotherTab(e: unknown): boolean {
 ctx.addEventListener('message', (event: MessageEvent<DbRequest>) => {
 	const request = event.data;
 	openOnce().then(
-		(opened) => {
+		() => {
 			try {
 				const rows: Row[] = [];
+				// `db`, not `opened`: a migration may have swapped the database
+				// under us since this request's `openOnce()` resolved.
 				if (request.op === 'exec') {
-					opened.exec({
+					db.exec({
 						sql: request.sql,
 						bind: request.bind,
 						rowMode: 'object',

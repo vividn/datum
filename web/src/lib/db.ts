@@ -5,7 +5,9 @@
 // one statement out, rows back. Its exported functions were already async,
 // so nothing calling them had to change when the database moved.
 
-import type { DbCommand, DbResponse, Row, StorageKind } from './dbProtocol.js';
+import type { DbCommand, DbResponse, Row, StorageKind,
+	DbMessage
+} from './dbProtocol.js';
 import type { Entry, FieldSpec, StoredVerb } from './types.js';
 
 export type { StorageKind };
@@ -22,6 +24,18 @@ let storage: StorageKind | null = null;
  * A promise the app makes about the user's data has to be read off the
  * storage that is actually in use.
  */
+/**
+ * Called when storage changes underneath the page — which happens when a tab
+ * that opened in memory recovers durable storage and moves its entries there.
+ * Returns its own unsubscribe.
+ */
+export function onStorageChange(watcher: (kind: StorageKind) => void): () => void {
+	watchers.add(watcher);
+	return () => watchers.delete(watcher);
+}
+
+const watchers = new Set<(kind: StorageKind) => void>();
+
 export function storageKind(): StorageKind | null {
 	return storage;
 }
@@ -36,10 +50,16 @@ export function storageKind(): StorageKind | null {
 function ensureWorker(): Worker {
 	if (worker) return worker;
 	const started = new Worker(new URL('./db.worker.ts', import.meta.url), { type: 'module' });
-	started.onmessage = (event: MessageEvent<DbResponse>) => {
-		const settle = pending.get(event.data.id);
-		pending.delete(event.data.id);
-		settle?.(event.data);
+	started.onmessage = (event: MessageEvent<DbMessage>) => {
+		const message = event.data;
+		if ('notice' in message) {
+			storage = message.storage;
+			for (const watcher of watchers) watcher(storage);
+			return;
+		}
+		const settle = pending.get(message.id);
+		pending.delete(message.id);
+		settle?.(message);
 	};
 	// A worker that fails to load answers nothing, so its requests would
 	// hang forever. Fail them loudly and drop the worker, so the next call

@@ -96,7 +96,7 @@ describe('when another tab already holds the database', () => {
 			const banner = await second.bannerText();
 			// The cause, and the thing to do about it.
 			assert.match(banner, /Another datum\.day tab has the database open/);
-			assert.match(banner, /close it and reload/);
+			assert.match(banner, /take the database over on its own/);
 			// Memory really does mean memory: none of the first tab's data.
 			assert.deepEqual(await second.entries(), []);
 
@@ -107,6 +107,43 @@ describe('when another tab already holds the database', () => {
 			assert.deepEqual(
 				(await first.entries()).map((e) => e.field),
 				['coffee']
+			);
+		});
+	});
+});
+
+// The recovery the banner now promises, driven rather than read. This is the
+// test that would have caught both defects the first cut of the feature
+// shipped with a green suite: a retry that could not retry (sqlite-wasm
+// caches the install's rejection) and a copy that could not copy (generated
+// columns). Neither shows unless the other tab actually closes and this one
+// actually reloads.
+describe('when the other tab closes', () => {
+	test('this tab takes the database over on its own, and keeps what was typed', async () => {
+		await withApp(async (first) => {
+			const logged = await first.run(['occur', 'coffee', '-t', '0700']);
+			assert.equal(logged.code, 0, logged.stderr);
+
+			const second = await first.newTab();
+			assert.match(await second.bannerText(), /held in memory only/);
+			assert.equal(await second.page.locator('section.pane.alarm').count(), 1, 'the repl frame shows the alarm');
+			const typed = await second.run(['occur', 'tea', '-t', '0800']);
+			assert.equal(typed.code, 0, typed.stderr);
+
+			await first.page.close();
+
+			// Bounded: the worker retries with backoff, so a healthy build heals
+			// within a few seconds. Never healing is the defect this exists for.
+			await second.page.waitForFunction(() => !document.querySelector('section.pane.alarm'), null, {
+				timeout: 30000
+			});
+
+			// Through a reload, which is the read only durable storage answers:
+			// the entry typed while in memory must have been moved across.
+			await second.reload();
+			assert.deepEqual(
+				(await second.entries()).map((e) => e.field).sort(),
+				['coffee', 'tea']
 			);
 		});
 	});

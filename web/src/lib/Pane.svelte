@@ -12,6 +12,12 @@
 -->
 <script lang="ts">
 	export let title: string;
+	/**
+	 * Draw this pane as unsafe to type into. Used when the database is in
+	 * memory: the frame is the thing someone is looking at while they lose
+	 * data, so it is the thing that has to say so.
+	 */
+	export let alarm = false;
 
 	/**
 	 * The scrolling body box, bindable.
@@ -29,13 +35,25 @@
 	}
 </script>
 
-<section class="pane">
+<section class="pane" class:alarm>
 	<h2>{title}</h2>
 	<div class="body" bind:this={body}><slot /></div>
 	<slot name="footer" />
 </section>
 
 <style>
+	/* Orange rather than red: this is "your data is not safe yet", which is a
+	   warning about the future, not a report of a failure that already
+	   happened. It has to be visible at a glance from across a desk. */
+	.pane.alarm {
+		border-color: #e8820c;
+		box-shadow: 0 0 0 1px #e8820c inset;
+	}
+	.pane.alarm h2 {
+		background: #e8820c;
+		color: #1a1000;
+	}
+
 	.pane {
 		display: flex;
 		flex-direction: column;

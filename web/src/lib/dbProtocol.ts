@@ -27,6 +27,19 @@ export type DbCommand =
 /** A command with the tag that pairs its response to it. */
 export type DbRequest = DbCommand & { id: number };
 
+/**
+ * An unsolicited word from the worker, paired to no request.
+ *
+ * Storage can change after the answer that reported it: a tab that opened in
+ * memory because another held the pool takes the pool over when that tab
+ * closes. The page has to hear about that to stop warning about data it is no
+ * longer at risk of losing, and nothing it asked for would carry the news.
+ */
+export type DbNotice = { notice: 'storage'; storage: StorageKind };
+
 export type DbResponse =
 	| { id: number; ok: true; storage: StorageKind; rows: Row[] }
 	| { id: number; ok: false; error: string };
+
+/** Anything the worker may post: an answer, or news nobody asked for. */
+export type DbMessage = DbResponse | DbNotice;

@@ -16,6 +16,7 @@
 	whole point of the widgets sitting next to a command line.
 -->
 <script lang="ts">
+	import { isDegraded, storage } from '$lib/storageState.js';
 	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
@@ -117,7 +118,7 @@
 	}
 </script>
 
-<Pane title="repl" bind:this={pane} bind:body>
+<Pane title="repl" alarm={isDegraded($storage)} bind:this={pane} bind:body>
 	{#if scrollback.length === 0}
 		<p class="quiet">type a command — <code>switch mood happy</code>, <code>tail</code></p>
 	{/if}
