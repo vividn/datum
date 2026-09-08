@@ -90,6 +90,36 @@ Any S3-compatible object storage. Scaleway Object Storage is the intended one.
 
   The API endpoint has no index document and no SPA fallback, so pointing the CNAME at it
   gives `AccessDenied` XML in place of the app.
+
+- ⚑ **Name the bucket after the domain, and CNAME at the GENERIC endpoint.** Scaleway identifies
+  the bucket from the **Host header**, on the website endpoint as well as the API one. A proxied
+  Cloudflare CNAME forwards the visitor's Host — so if the bucket is named `datum.day`, the Host
+  selects it and nothing else is needed:
+
+  ```
+  CNAME  datum.day  ->  s3-website.fr-par.scw.cloud     (generic — NO bucket prefix, proxied)
+  ```
+
+  **Do not use `<bucket>.s3-website.<region>.scw.cloud` as the CNAME target.** Measured 2026-09-08
+  against the live endpoint:
+
+  ```
+  https://datum.day.s3-website.fr-par.scw.cloud/       TLS FAILS TO VERIFY
+      cert SANs: *.s3-website.fr-par.scw.cloud, *.s3.fr-par.scw.cloud (+ the bare names)
+      a wildcard matches ONE label; `datum.day` is two -> Full (strict) has no valid origin cert
+
+  https://s3-website.fr-par.scw.cloud/  Host: datum.day  -> 404 NoSuchKey: index.html   (correct)
+  https://s3-website.fr-par.scw.cloud/  no Host override -> 301 "Request does not contain a bucket name"
+  ```
+
+  The second pair is the control: same URL, same moment, differing only in the header, so it is the
+  Host that selects the bucket. Pointing at the generic endpoint keeps SNI on a name the wildcard
+  covers, so **Full (strict)** validates.
+
+  *(An earlier draft of this file advised the opposite — a bucket with a neutral name plus an Origin
+  Rule Host override. That works too, and it is strictly more configuration. The TLS objection to a
+  dotted bucket name was correct about the bucket-prefixed hostname and wrong as an argument against
+  the name, because the generic endpoint was never tested.)*
 - SSL/TLS mode **Full (strict)**.
 
 The proxy is not optional-in-practice: it is where the headers get set (step 4).
