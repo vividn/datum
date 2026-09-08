@@ -29,12 +29,12 @@ cd "$(dirname "$0")"
 # Rust and never reached the artifact.
 #
 # Refuse rather than rebuild: refusing keeps the no-toolchain property, and this
-# runs BEFORE npm ci so it costs nothing when it fires.
+# runs BEFORE the install so it costs nothing when it fires.
 #
 # *** DO NOT DELETE THIS AS REDUNDANT WITH CI. *** As of 9454289 the wasm-check
 # job rebuilds and compares BYTES against the committed copies, which is
 # strictly stronger than the mtime test below -- for what is COMMITTED. This
-# check guards a different thing: the DEPLOYER'S WORKING TREE. `npm run build`
+# check guards a different thing: the DEPLOYER'S WORKING TREE. `pnpm run build`
 # below does not rebuild wasm, so someone with uncommitted Rust edits deploys
 # the committed artifact without knowing it, and CI never saw that tree.
 #
@@ -48,7 +48,7 @@ cd "$(dirname "$0")"
 # missing directory returns empty, which reads exactly like "the wasm is fresh".
 [ -f static/datum-parse.wasm ] || {
   echo "REFUSING: static/datum-parse.wasm does not exist; nothing to compare." >&2
-  echo "  Build it first: npm run build:wasm" >&2
+  echo "  Build it first: pnpm run build:wasm" >&2
   exit 1
 }
 [ -d ../crates ] || {
@@ -60,14 +60,20 @@ newest_rust=$(find ../crates -name '*.rs' -newer static/datum-parse.wasm -print 
 if [ -n "$newest_rust" ]; then
   echo "REFUSING: static/*.wasm is older than Rust source ($newest_rust)." >&2
   echo "  The COMMITTED wasm is what gets deployed. Refresh it first:" >&2
-  echo "    npm run build:wasm && git add static/*.wasm" >&2
+  echo "    pnpm run build:wasm && git add static/*.wasm" >&2
   echo "  Or set STALE_WASM_OK=1 to ship the committed one deliberately." >&2
+  echo "" >&2
+  echo "  NOTE: this compares TIMESTAMPS, and a source change does not imply a" >&2
+  echo "  different wasm — a change behind a \`native\` feature gate cannot alter" >&2
+  echo "  a build that excludes it. CI's WASM check rebuilds and compares CONTENT," >&2
+  echo "  so if CI is green on this commit, STALE_WASM_OK=1 is the right answer:" >&2
+  echo "    gh run list -c \$(git rev-parse HEAD) --json name,conclusion" >&2
   [ "${STALE_WASM_OK:-}" = "1" ] || exit 1
 fi
 
 echo "==> building"
-npm ci --silent
-npm run build
+pnpm install --frozen-lockfile --silent
+pnpm run build
 
 DIST=build
 [ -d "$DIST" ] || { echo "no $DIST/ — the build produced nothing" >&2; exit 1; }
