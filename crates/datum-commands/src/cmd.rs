@@ -236,7 +236,12 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
         Command::Db(sub) => commands::db::dispatch(sub, cli.db.as_deref(), db),
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
+        #[cfg(feature = "native")]
         Command::Sync(args) => commands::sync::dispatch(args, cli.db.as_deref(), db),
+        // Sync speaks HTTP, which a wasm build has no client for. Fail loudly
+        // rather than silently succeeding without having synced.
+        #[cfg(not(feature = "native"))]
+        Command::Sync(_) => anyhow::bail!("sync is unavailable in this build"),
         Command::Reparse(args) => commands::reparse::reparse(args, db),
     }
 }

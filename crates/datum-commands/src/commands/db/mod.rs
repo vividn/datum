@@ -14,7 +14,9 @@ use datum_core::sync_state;
 
 use crate::args::DbCommand;
 use crate::args::DbPurgeArgs;
-use crate::commands::sync::cluster_ops;
+// Cluster ops are a sync concern; absent from a wasm build.
+#[cfg(feature = "native")]
+use crate::commands::sync::cluster_ops::bump_generation_for_current_server;
 
 pub mod import;
 
@@ -129,7 +131,7 @@ pub fn purge_with_io(
     if args.cluster {
         match prior_cluster {
             Some(cluster_id) => {
-                match cluster_ops::bump_generation_for_current_server(&cluster_id) {
+                match bump_generation_for_current_server(&cluster_id) {
                     Ok(new_generation) => {
                         // Re-stamp local sync_state so the NEXT push from
                         // this device sends the new generation rather than
@@ -169,4 +171,11 @@ fn current_db_path(db: &Db) -> Result<String> {
         |row| row.get(0),
     )?;
     Ok(path)
+}
+
+// Cluster operations talk to a sync server. Without the sync client there is
+// nothing to talk to, so say so rather than appearing to succeed.
+#[cfg(not(feature = "native"))]
+fn bump_generation_for_current_server(_cluster_id: &str) -> anyhow::Result<u64> {
+    anyhow::bail!("cluster operations require sync, which is unavailable in this build")
 }

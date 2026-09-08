@@ -91,7 +91,10 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
             // alt-screen TUI (key/mouse input + live follow). It owns the
             // screen until the user quits, then restores it. Non-TTY
             // consumers stay on the append/repaint loop below.
+            #[cfg(feature = "native")]
             return crate::commands::tail_tui::run(&args, db, metric, registry.as_ref(), interval);
+            // No TUI without a terminal layer; fall through to the plain
+            // repaint loop, which is what non-TTY consumers already use.
         }
         // da-d6yo: seed the watch loop with the signature of what we
         // just painted so the first tick's no-op render is suppressed.

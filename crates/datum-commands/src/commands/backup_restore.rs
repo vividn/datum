@@ -11,6 +11,8 @@
 //! any failure rolls back to "nothing restored". See `RestoreReport` for the
 //! projected/committed outcome contract.
 
+#[cfg(feature = "native")]
+use crate::commands::sync::cluster_ops::bump_generation_for_current_server;
 use anyhow::{Context, Result};
 use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome},
@@ -336,7 +338,7 @@ fn bump_cluster_after_restore(db: &Db) -> Result<()> {
         );
         return Ok(());
     };
-    match crate::commands::sync::cluster_ops::bump_generation_for_current_server(&cluster_id) {
+    match bump_generation_for_current_server(&cluster_id) {
         Ok(new_generation) => {
             // Stamp the new generation locally so the next push from
             // this device carries it; otherwise we'd hit our own
@@ -1651,4 +1653,11 @@ mod tests {
 
         std::fs::remove_file(&path).ok();
     }
+}
+
+// Cluster operations talk to a sync server. Without the sync client there is
+// nothing to talk to, so say so rather than appearing to succeed.
+#[cfg(not(feature = "native"))]
+fn bump_generation_for_current_server(_cluster_id: &str) -> anyhow::Result<u64> {
+    anyhow::bail!("cluster operations require sync, which is unavailable in this build")
 }

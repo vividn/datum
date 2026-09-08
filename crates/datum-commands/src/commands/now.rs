@@ -186,7 +186,14 @@ fn emit_stale_sync_warning(cli_db: Option<&str>, db: &Db) {
         return;
     }
 
+    #[cfg(feature = "native")]
     let daemon_running = crate::commands::sync::daemon_status::read().is_running();
+    // No sync client in this build, so no daemon can be running.
+    #[cfg(not(feature = "native"))]
+    let daemon_running = false;
+    // `sync_state` reads a local table and moved to datum-core in da-9d6j, so
+    // this line needs no gate — reading the last-pull timestamp never required
+    // an HTTP client, which was that bead's whole point.
     let last_pull = datum_core::sync_state::get_last_pull_at(db).ok().flatten();
     let label = db_name.as_deref().unwrap_or("main");
 

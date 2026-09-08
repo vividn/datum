@@ -8,7 +8,14 @@ name = "datum_commands"
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["native"]
+# Surfaces that cannot exist in a browser, gathered behind one flag so a wasm
+# build is `--no-default-features` rather than a list of exclusions:
+#   crossterm — terminal control, used only by the `tail --watch` TUI
+#   reqwest   — blocking HTTP, used only by the sync client
+# Native builds are unchanged; this feature is on by default. Mirrors the
+# pattern datum-parse already uses for the same reason.
+native = ["dep:crossterm", "dep:reqwest", "dep:datum-sync-client"]
 # Shared test fixtures (TestPrompter, etc.) — also consumed by datum-cli tests.
 test-util = []
 # Marker for the full E2E case cohort (da-1wat). Cases tagged
@@ -27,7 +34,7 @@ png = ["dep:resvg"]
 datum-core = { path = "../datum-core" }
 datum-layout = { path = "../datum-layout" }
 datum-parse = { path = "../datum-parse" }
-datum-sync-client = { path = "../datum-sync-client" }
+datum-sync-client = { path = "../datum-sync-client", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
@@ -41,13 +48,13 @@ tempfile = "3"
 flate2 = { workspace = true }
 tar = { workspace = true }
 toml = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, optional = true }
 rpassword = { workspace = true }
 url = { workspace = true }
 rand = { workspace = true }
 libc = { workspace = true }
 # Alt-screen TUI for `datum tail -w` (da-3l6m): key/mouse events + raw mode.
-crossterm = { workspace = true }
+crossterm = { workspace = true, optional = true }
 # Pure-Rust SVG → PNG rasterization for `datum {dayview,nowview} --output
 # foo.png`. Optional via the `png` feature: ~50 transitive crates + ~1.5 MiB
 # of `.text` drop out under `--no-default-features`. Pulled at the CLI
