@@ -358,6 +358,71 @@ fn m17_to_18_adds_tags_column_with_default_empty_array() {
     assert!(again.is_empty());
 }
 
+/// da-0f8g: a MIGRATED `entry_history.raw_input` must end up nullable, not
+/// just a freshly-created one.
+///
+/// The v31→v32 step drops the NOT NULL by rewriting the stored CREATE TABLE
+/// text, and `swap_column_type` returns `None` when it finds nothing to
+/// rewrite — which the caller turns into `Ok(())`. That silence is deliberate
+/// (it keeps the migration idempotent against partial schemas) and it means a
+/// mismatch here can never go red on its own. So assert the OUTCOME.
+///
+/// The padding matters and is the reason this test exists: `m3_to_4_entry_history`
+/// writes `raw_input` with NINE spaces before the type, while schema.sql uses
+/// seven. A matcher keyed to a particular width passes every fresh-database
+/// test and silently no-ops on every real upgrade.
+#[test]
+fn migrated_entry_history_raw_input_is_nullable() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_meta_table(&conn).unwrap();
+    // Byte-for-byte the shape m3_to_4_entry_history creates — nine spaces.
+    conn.execute_batch(
+        "CREATE TABLE entry_history (
+            entry_hid         TEXT NOT NULL,
+            version           INTEGER NOT NULL,
+            snapshot          TEXT NOT NULL,
+            modify_time       TEXT NOT NULL,
+            raw_input         TEXT NOT NULL,
+            alias_chain       TEXT,
+            device_id         TEXT NOT NULL,
+            change_kind       TEXT NOT NULL,
+            PRIMARY KEY (entry_hid, version)
+         );",
+    )
+    .unwrap();
+    set_schema_version(&conn, 31).unwrap();
+
+    migrate_to_current(&conn).unwrap();
+
+    let sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_schema WHERE type='table' AND name='entry_history'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let clause = sql
+        .lines()
+        .find(|l| l.trim_start().starts_with("raw_input"))
+        .expect("entry_history should still declare raw_input");
+    assert!(
+        !clause.contains("NOT NULL"),
+        "migrated entry_history.raw_input is still NOT NULL: {clause:?}"
+    );
+
+    // And prove it in behaviour, not only in the schema text: a NULL insert
+    // must succeed. The stored CREATE TABLE and the enforced constraint are
+    // two different things — rewriting the text without bumping
+    // schema_version leaves the old constraint live on the connection.
+    conn.execute(
+        "INSERT INTO entry_history
+           (entry_hid, version, snapshot, modify_time, raw_input, device_id, change_kind)
+         VALUES ('h1', 1, '{}', '2026-01-01T00:00:00Z', NULL, 'dev', 'create')",
+        [],
+    )
+    .expect("a migrated entry_history must accept a NULL raw_input");
+}
+
 /// da-2zd: v18→v19 adds the nullable `render_json` column. Existing
 /// rows stay readable as having no render override (NULL = visible
 /// everywhere).
