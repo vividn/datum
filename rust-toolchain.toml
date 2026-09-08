@@ -14,6 +14,14 @@ channel = "1.97.1"
 # `profile` is explicit because rustup's own default is machine-configurable;
 # `default` is what supplies rustdoc for `cargo test --doc`.
 profile = "default"
-components = ["rustfmt", "clippy"]
+# `rust-src` is here for REPRODUCIBILITY, not for tooling, though rust-analyzer
+# also requires it. With rust-src installed rustc reports standard-library
+# locations from the local sysroot; without it, as `/rustc/<commit>/...` -- and
+# the two do not merely spell paths differently, they emit DIFFERENT AMOUNTS of
+# location info (measured 2026-09-08: 12 std references vs 1 in datum-parse.wasm).
+# So `wasm-check`, which rebuilds the committed wasm and compares bytes, can only
+# pass if CI and developers agree on this component. Every developer with a
+# working IDE has it; CI did not, and the committed artifact matched only CI.
+components = ["rustfmt", "clippy", "rust-src"]
 # `wasm-check` builds datum-sync-client for the browser.
 targets = ["wasm32-unknown-unknown"]

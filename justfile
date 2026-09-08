@@ -15,6 +15,14 @@ default:
 
 # --- web app -------------------------------------------------------------
 
+# ~10s warm. The output is byte-reproducible across machines as of the rust-src
+# pin, so a no-op run leaves the tree clean — if it does not, the committed
+# artifact was genuinely behind and wants committing.
+#
+# Rebuild the browser's Rust modules into web/static/.
+wasm:
+    cd {{web}} && {{pm}} run build:wasm
+
 build:
     cd {{web}} && {{pm}} run build
 
