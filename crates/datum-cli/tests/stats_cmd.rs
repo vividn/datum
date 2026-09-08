@@ -482,11 +482,17 @@ fn stats_flags_parse_and_dispatch() {
 /// assert on are the database's own zone (`Db::zone_timeline`), not the
 /// host's — otherwise every "local midnight" below would move with `TZ`.
 fn seed_utc_zoned(db: &datum_core::db::Db, rows: &[(&str, &str)]) {
+    seed_zoned(db, "UTC", rows);
+}
+
+/// The same, in an arbitrary IANA zone — the db's own zone timeline then
+/// decides where local midnight falls, whatever `TZ` the test host is in.
+fn seed_zoned(db: &datum_core::db::Db, tz: &str, rows: &[(&str, &str)]) {
     for (t, state) in rows {
         entry_builder("activity")
             .verb(Verb::Switch)
             .state(json!(state))
-            .time_start(datum_core::time::DatumTime::from_utc_and_tz(at(t), "UTC").unwrap())
+            .time_start(datum_core::time::DatumTime::from_utc_and_tz(at(t), tz).unwrap())
             .insert(db);
     }
 }
@@ -553,6 +559,84 @@ fn today_runs_to_now_and_clips_the_block_that_crossed_midnight() {
         "yesterday's block is out of the window"
     );
     assert_eq!(r.total_count, 0, "neither entry *occurs* today");
+}
+
+/// da-4uaa: `--today` opens at LOCAL midnight, and the two are only
+/// distinguishable in a zone that is not UTC.
+///
+/// Every other period test here seeds `UTC`-stamped rows, which puts local
+/// midnight and UTC midnight on the same instant — so none of them can tell
+/// a local day from a UTC one. These two freeze `now` on the side of
+/// midnight where the local and UTC *dates* disagree, once east of UTC and
+/// once west, because one side alone is not a test: east, a UTC-aligned day
+/// would open a day early and sweep yesterday in; west, it would open
+/// nineteen hours late and hand back a nearly empty report.
+#[test]
+fn today_opens_at_local_midnight_east_of_utc() {
+    // 23:30Z is 00:30 the *next* day in Lisbon (UTC+1 in September).
+    let _g = freeze_time("2026-09-08T23:30:00Z");
+    let db = fresh_db();
+    seed_zoned(
+        &db,
+        "Europe/Lisbon",
+        &[
+            ("2026-09-08T22:50:00Z", "night"),   // 23:50 local, yesterday
+            ("2026-09-08T23:10:00Z", "morning"), // 00:10 local, today
+        ],
+    );
+
+    let r = compute_stats(
+        &StatsArgs {
+            period: Some(StatsPeriod::Today),
+            ..selector("activity")
+        },
+        &db,
+    )
+    .unwrap();
+
+    assert_eq!(
+        r.total_duration_seconds, 1800,
+        "half an hour of local today has happened"
+    );
+    assert_eq!(dur(&r, "morning"), 1200, "00:10 local through now");
+    assert_eq!(dur(&r, "night"), 600, "only its spill past local midnight");
+    assert_eq!(
+        r.total_count, 1,
+        "the 00:10 entry occurs today; the 23:50 one does not"
+    );
+}
+
+#[test]
+fn today_opens_at_local_midnight_west_of_utc() {
+    // 04:30Z is still 23:30 the *previous* day in Chicago (UTC-5 in September).
+    let _g = freeze_time("2026-09-09T04:30:00Z");
+    let db = fresh_db();
+    seed_zoned(
+        &db,
+        "America/Chicago",
+        &[
+            ("2026-09-08T04:50:00Z", "night"),   // 23:50 local, yesterday
+            ("2026-09-08T05:10:00Z", "morning"), // 00:10 local, today
+        ],
+    );
+
+    let r = compute_stats(
+        &StatsArgs {
+            period: Some(StatsPeriod::Today),
+            ..selector("activity")
+        },
+        &db,
+    )
+    .unwrap();
+
+    assert_eq!(
+        r.total_duration_seconds,
+        23 * 3600 + 1800,
+        "the whole local day so far, not the 4h30m since UTC midnight"
+    );
+    assert_eq!(dur(&r, "morning"), 23 * 3600 + 1200);
+    assert_eq!(dur(&r, "night"), 600, "only its spill past local midnight");
+    assert_eq!(r.total_count, 1, "the 00:10 local entry is inside today");
 }
 
 #[test]
