@@ -107,8 +107,8 @@ fn tz_name_from_zoneinfo_path(path: &Path) -> Option<String> {
 /// Say once, on stderr, that the zone name is unknown.
 ///
 /// Three lookups can fail here and the old code reported one word ("UTC"),
-/// which cost a user an afternoon and a maintainer an hour. Once per process,
-/// never on the happy path.
+/// which gave a user no way to tell "the zone is UTC" from "we could not find
+/// out". Once per process, never on the happy path.
 fn warn_zone_unknown_once() {
     static WARNED: AtomicBool = AtomicBool::new(false);
     if !WARNED.swap(true, Ordering::Relaxed) {
