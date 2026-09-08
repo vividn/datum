@@ -170,6 +170,21 @@ one-year immutable cache; HTML and the service worker get `no-cache` so a deploy
 immediately. It also forces `Content-Type: application/wasm`, because a `.wasm` served as
 `application/octet-stream` cannot be stream-compiled.
 
+### Step 3b: the same thing from CI
+
+`.github/workflows/deploy.yml` runs `web/deploy.sh --yes` and then `just verify` on every
+push to `main`, and on demand from the Actions tab. It is **inert until the repository is
+configured** — it reads four values and none of them have defaults:
+
+- a GitHub **Environment** named `production`, holding
+- secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (the same bucket-scoped key as above), and
+- variables `DATUM_DAY_BUCKET` and `DATUM_DAY_ENDPOINT` (variables, not secrets — a bucket
+  name is not a credential, and keeping them readable means a failed run says *which* bucket
+  it tried).
+
+The manual path above keeps working and stays the right one for a rollback, which is a
+checkout of an older `web/` and so has no push behind it to trigger on.
+
 ## Step 4: headers — optional hardening, NOT a gate
 
 **Do not treat this step as blocking.** It is measured above: with no COOP/COEP headers at all,
@@ -232,5 +247,6 @@ destroy anyone's entries.
 - **No sync**, by decision. The app is entirely client-side.
 - **No analytics.** If that changes, note that a third-party script will fail under
   `require-corp` unless it sends CORP headers — another reason isolation is load-bearing.
-- **No CI deploy.** Deployment is a deliberate act while this is pre-v1; automate it once
-  the demo has happened and the shape has settled.
+- **No approval gate on the deploy.** Every push to `main` goes to production (step 3b). That
+  is affordable only because a deploy is a file sync with no state behind it; if that stops
+  being true, the `production` environment is where a required reviewer goes.

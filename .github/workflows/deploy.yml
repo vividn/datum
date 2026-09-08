@@ -1,0 +1,124 @@
+# datum.day is a static bundle in a bucket, so a deploy is a file sync and a
+# rollback is redeploying an earlier tree (web/DEPLOY.md). There is no schema to
+# migrate and no server state a bad deploy could damage — users' entries live in
+# their own browsers — which is why main ships unguarded rather than through a
+# release gate.
+name: Deploy datum.day
+
+on:
+  push:
+    branches: [main]
+  # A deploy is sometimes needed with no commit behind it. The bucket's error
+  # document and its public-read policy are not in this repo, and the verify
+  # step below is how you find out whether a change to either actually landed.
+  workflow_dispatch:
+
+# `aws s3 sync` is not atomic, so two runs overlapping can leave the bucket
+# holding half of each build. They queue instead. cancel-in-progress stays false
+# because cancelling mid-upload produces exactly that mixed bucket and schedules
+# nothing to repair it: waiting is strictly better than a half-written site.
+concurrency:
+  group: deploy-datum-day
+  cancel-in-progress: false
+
+# Nothing here writes to the repo. The only credentials that matter are the
+# bucket's, and they come from the `production` environment below.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build, upload, verify
+    runs-on: ubuntu-latest
+    # Environment-scoped rather than repo-scoped secrets: the bucket key is then
+    # unreachable from every other workflow in this repo, and the environment is
+    # where a required reviewer or a branch restriction goes if this ever wants
+    # one.
+    environment:
+      name: production
+      url: https://datum.day
+    steps:
+      - uses: actions/checkout@v4
+
+      # ubuntu-24.04 ships aws-cli 2.36.35 (checked 2026-09-08 against
+      # actions/runner-images), but `ubuntu-latest` is a moving label and the
+      # preinstalled set moves with it. Asserted rather than assumed, and first:
+      # deploy.sh has this same check, but it fires after the install and the
+      # build, minutes in, and says only "not found".
+      - name: Assert the aws CLI is on the runner
+        run: |
+          aws --version || {
+            echo "::error::No aws CLI on ubuntu-latest. The runner image dropped it — add an install step (web/DEPLOY.md step 0) or pin runs-on to an image that still has it."
+            exit 1
+          }
+
+      # pnpm before setup-node, and `package_json_file` repo-root-relative:
+      # setup-node's `cache: pnpm` needs the binary present to resolve the store
+      # path, and an action's inputs are never reached by a working-directory
+      # default. Identical to ci.yml's web job on purpose — if the two drift,
+      # the thing CI tested is not the thing this uploads.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # For `just verify` below. install-action is already how this repo
+      # installs cargo-nextest, so it is not a new dependency to trust.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      # deploy.sh runs its own `pnpm install` and build, so it is called
+      # directly rather than through `just deploy` — that recipe's `build`
+      # dependency would build a second time, and would do it before any install
+      # has happened.
+      #
+      # STALE_WASM_OK=1, deliberately. deploy.sh refuses when any crates/**/*.rs
+      # is newer than web/static/datum-parse.wasm, and on a fresh checkout every
+      # file is written at checkout time — so what that comparison reports is
+      # the order git happened to write the tree. Measured in a fresh worktree
+      # on 2026-09-08: it does NOT fire, because `crates/` is written before
+      # `web/`. Passing anyway, because a deploy that survives on alphabetical
+      # luck fails the first time a checkout action, a sparse checkout or a
+      # reused workspace changes that order, and it fails as a refusal to ship.
+      #
+      # Suppressing it costs nothing here. What the guard protects is the
+      # DEPLOYER'S WORKING TREE — uncommitted Rust edits shipping the committed
+      # wasm — and a CI checkout has no uncommitted edits by construction. The
+      # artifact's content is covered instead by ci.yml's `WASM check`, which
+      # rebuilds both modules and compares bytes; deploy.sh's own refusal
+      # message names exactly that as the case for this flag. Caveat, because it
+      # is not free: that job runs in parallel with this one, so a commit whose
+      # WASM check goes red is still deployed here.
+      - name: Build and upload
+        env:
+          DATUM_DAY_BUCKET: ${{ vars.DATUM_DAY_BUCKET }}
+          DATUM_DAY_ENDPOINT: ${{ vars.DATUM_DAY_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          STALE_WASM_OK: "1"
+        run: ./web/deploy.sh --yes
+
+      # From outside, over the real CDN, because every failure this can catch
+      # lives between the bucket and the browser and none of them are visible to
+      # a successful upload — a deploy that reports success serves 403s if the
+      # bucket policy is missing. `just verify` rather than a curl copied in
+      # here: it already prints what each code means, and one copy cannot drift
+      # from the other.
+      #
+      # This step is RED TODAY, and should be: /now returned 404 on 2026-09-08
+      # because the bucket's error document is not index.html yet (web/DEPLOY.md
+      # step 1), so every deep link into the app is broken. That is a real
+      # defect in what users get, so it fails the job rather than being
+      # tolerated — the fix is one bucket setting, not a change to this file.
+      - name: Verify the live site
+        run: |
+          just verify || {
+            echo "::error::datum.day is not serving 200 on both / and /now — the codes are printed above. 404 on /now only: the bucket error document is not index.html (web/DEPLOY.md step 1). 403: the objects are not publicly readable. 000: nothing answered at all."
+            exit 1
+          }
