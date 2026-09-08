@@ -33,9 +33,7 @@ after(stopApp);
 /**
  * The floor, in on-screen pixels.
  *
- * nowview clears it already — it is authored near its display size, which
- * is the whole difference — at 10.6px on a phone and 13.8 on a laptop. 9
- * is the dayview's own authored axis size, so meeting the floor is the
+ * 9 is the dayview's own authored axis size, so meeting the floor is the
  * band being shown at the size datum drew it.
  */
 const FLOOR = 9;
@@ -143,9 +141,12 @@ describe('a drawn view', () => {
 			);
 		});
 
-		// nowview passes on its own — authored at 520px, near the size it
-		// is shown at. It is measured because it shares the REPL's render
-		// path with dayview, so a fix there could take it down silently.
+		// nowview used to pass on its own: authored at 520px, it was only
+		// scaled to 0.66 on a phone, so its 14px labels still landed at
+		// 10.6. Only "still legible", though — it WAS being scaled, and
+		// da-45wt stopped scaling it, here as in its pane. It stays
+		// measured because it shares the REPL's render path with dayview,
+		// so a fix there could take it down silently.
 		test(`is legible as nowview typed into the repl on ${name}`, async () => {
 			await withApp(
 				async (app) => {
@@ -163,13 +164,20 @@ describe('a drawn view', () => {
 	// dayview` writes a 2000px canvas to a file, and a bare argv through the
 	// seam is that same command — so a surface that wants its own size says
 	// so, rather than the seam deciding for every caller (trap 2 on da-wexl).
-	test('is still the CLI’s 2000px canvas when the argv asks for nothing', async () => {
-		await withApp(async (app) => {
-			await logADay(app);
-			const drawn = await app.run(['dayview']);
-			assert.equal(drawn.code, 0, drawn.stderr);
-			assert.match(drawn.stdout, /<svg[^>]*\swidth="2000"/);
-			assert.match(drawn.stdout, /<svg[^>]*\sviewBox="0 0 2000 /);
+	// True of nowview since da-45wt made it sized too: a pane and a prompt
+	// now both name a size, and the bare command still means the default.
+	for (const [command, width] of [
+		['dayview', 2000],
+		['nowview', 520]
+	]) {
+		test(`is still the CLI’s ${width}px ${command} canvas when the argv asks for nothing`, async () => {
+			await withApp(async (app) => {
+				await logADay(app);
+				const drawn = await app.run([command]);
+				assert.equal(drawn.code, 0, drawn.stderr);
+				assert.match(drawn.stdout, new RegExp(`<svg[^>]*\\swidth="${width}"`));
+				assert.match(drawn.stdout, new RegExp(`<svg[^>]*\\sviewBox="0 0 ${width} `));
+			});
 		});
-	});
+	}
 });

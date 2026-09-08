@@ -45,11 +45,10 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 	// they live behind the seam like everything else, and their stdout is
 	// the same SVG document the CLI writes. The window flags — `--n-days`,
 	// `--start-date` and the rest — still belong to the real CLI.
-	if (argv[0] === 'dayview') {
+	if (argv[0] === 'dayview' || argv[0] === 'nowview') {
 		const box = geometry(argv.slice(1));
-		if (box) return (await views()).dayview(argv, box);
+		if (box) return (await views())[argv[0]](argv, box);
 	}
-	if (argv.length === 1 && argv[0] === 'nowview') return (await views()).nowview(argv);
 
 	const parsed = await parseArgv(argv, deviceId());
 	if (parsed.unsupported !== undefined) {
@@ -97,23 +96,28 @@ export async function localRun(argv: string[]): Promise<RunResult> {
  * The commands above that this file serves in SOME shape but not in every
  * shape.
  *
- * `tail`, `dayview` and `nowview` bare — `dayview` plus its geometry
- * flags — and `spec` as `spec set` alone, which is the command the widget
- * bar's `+` runs. Every other shape of these four reaches the parser and
+ * `tail` bare, `dayview` and `nowview` bare or plus their geometry flags,
+ * and `spec` as `spec set` alone, which is the command the widget bar's
+ * `+` runs. Every other shape of these four reaches the parser and
  * comes back unsupported, and the message for it must name the ARGUMENT:
  * see [`unavailable`].
  */
 const PARTLY_SERVED = new Set(['tail', 'dayview', 'nowview', 'spec']);
 
 /**
- * `dayview`'s two geometry flags, or `null` when argv carries anything else.
+ * The drawn views' two geometry flags, or `null` when argv carries
+ * anything else — so bare `dayview` and bare `nowview` reach here too,
+ * as an empty box meaning "the defaults".
  *
  * The one thing the browser knows that the CLI cannot: how many pixels the
  * band is actually shown in. `datum dayview` authors a 2000px canvas and
  * the pane scaled it to fit, which put the hour axis on screen at 1.5px on
  * a phone and 6.3px on a laptop (da-m0cj) — so the pane says how big its
  * box is, in the CLI's own flags and units, and datum draws a band that
- * size. The values come from `paneArgv`, which floors them.
+ * size. `nowview` authors 520x276 and was scaled the same way, only in the
+ * dimension nobody measured: `max-width` fits the width and the HEIGHT
+ * then falls where the aspect ratio puts it, 183px into a 94px pane
+ * (da-45wt). The values come from `paneArgv`, which floors them.
  *
  * Both spellings the flag splitter accepts, `--width=345` and
  * `--width 345`; a flag this file does not serve, or a value that is not a

@@ -67,9 +67,20 @@ function baseUrl() {
  * `viewport` is the size of the screen the app is asked to lay itself out
  * on. The default is Playwright's desktop 1280x720, which is a viewport no
  * phone has — a layout test must name the one it means (da-hkpd).
+ *
+ * `device` is one of Playwright's own device profiles, spread in whole —
+ * a phone is not only a small viewport, it is a device pixel ratio, a
+ * touch pointer and overlay scrollbars that take no layout width, and a
+ * test about what overflows on a phone wants all four (da-45wt). An
+ * explicit `viewport` still wins, so a profile can be resized.
  */
-export async function withApp(fn, { prepare, locale, viewport } = {}) {
-	const context = await browser.newContext({ timezoneId: TIMEZONE, locale, viewport });
+export async function withApp(fn, { prepare, locale, viewport, device } = {}) {
+	const context = await browser.newContext({
+		...device,
+		timezoneId: TIMEZONE,
+		locale,
+		...(viewport ? { viewport } : {})
+	});
 	try {
 		await prepare?.(context);
 		const page = await context.newPage();

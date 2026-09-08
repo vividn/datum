@@ -13,12 +13,11 @@ export interface PaneSpec {
 	/**
 	 * Run the command against the pane's own box, in pixels.
 	 *
-	 * For the drawn panes. `datum dayview` authors a 2000px canvas because
+	 * Both drawn panes. `datum dayview` authors a 2000px canvas because
 	 * that is a sensible page to write a .svg to; a pane 345px wide showed
 	 * it scaled to 0.17, which put the hour axis on screen at 1.5px and the
 	 * date stamp at 3.4 — illegible on a laptop too, at 0.70 (da-m0cj). The
-	 * band is drawn at the size it is displayed at instead, which is the
-	 * same reason nowview always read correctly.
+	 * band is drawn at the size it is displayed at instead.
 	 */
 	sized?: boolean;
 }
@@ -48,15 +47,16 @@ export function paneArgv(spec: PaneSpec, box: PaneBox | null): string[] | null {
 /**
  * The commands whose output must be asked for at the size it is shown at.
  *
- * `dayview` alone. It authors a 2000px canvas — the right page to write a
- * .svg to, and four times the width of any pane or prompt — so wherever it
- * lands it was scaled, and the text with it. nowview is authored at 520px,
- * near its display size, which is why it always read correctly.
+ * Both drawn views. A command that authors its own canvas lands wherever
+ * the canvas puts it: `dayview` writes 2000px, four times any pane or
+ * prompt, so it arrived scaled and the text with it. nowview writes 520 —
+ * near a wide pane's width, which is why it always READ correctly at
+ * 1280, and why the size it was wrong at was its HEIGHT (da-45wt).
  *
  * The panes say this as `sized` above, because a pane also knows its
  * height; a line typed at the prompt scrolls, so it only names a width.
  */
-const SIZED_COMMANDS = new Set(['dayview']);
+const SIZED_COMMANDS = new Set(['dayview', 'nowview']);
 
 /**
  * Fit a typed command to the pixels its output will land in.
@@ -79,19 +79,6 @@ export function fitArgv(argv: string[], width: number | null): string[] {
 	return [...argv, '--width', String(width)];
 }
 
-/**
- * The column count the panes render CLI output at.
- *
- * datum sizes its tables to the terminal (`render/term_layout.rs`: ioctl,
- * then `$COLUMNS`, then 80). A browser pane has no terminal, so it claims
- * a fixed width instead of tracking its own pixels — a table that
- * re-columnised on every window drag would be unreadable. The panes are
- * laid out at least this wide and scroll sideways past it; the wasm
- * runner (da-1vat) exports the same number as `$COLUMNS` so the CLI and
- * the pane agree.
- */
-export const PANE_COLS = 80;
-
 export const DAYVIEW: PaneSpec = {
 	title: 'dayview',
 	argv: ['dayview'],
@@ -106,7 +93,8 @@ export const DAYVIEW: PaneSpec = {
 export const NOWVIEW: PaneSpec = {
 	title: 'nowview',
 	argv: ['nowview'],
-	empty: 'no field has a state yet'
+	empty: 'no field has a state yet',
+	sized: true
 };
 
 export const TAIL: PaneSpec = {

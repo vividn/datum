@@ -152,8 +152,17 @@ export async function dayview(
  * writes the SVG when one is; a browser pane has no terminal, so this is
  * the SVG path. The one place the browser knows something the layout
  * cannot: the `HH:MM` clock, which is the viewer's own zone.
+ *
+ * `geometry` is dayview's, for the same reason and by the same route: the
+ * default canvas is 520x276, which fits a wide pane's width and no pane's
+ * height, so the picture overflowed downward (da-45wt). What a requested
+ * height means for the band — `nowview_config`'s axis and margin
+ * subtraction — is `datum nowview --height`'s own rule and stays in Rust.
  */
-export async function nowview(argv: string[]): Promise<RunResult> {
+export async function nowview(
+	argv: string[],
+	geometry: { width?: number; height?: number } = {}
+): Promise<RunResult> {
 	const now = new Date();
 	const fetchStart = new Date(now.getTime() - HISTORY_MINUTES * 60 * 1000 - NOWVIEW_BUFFER_MS);
 
@@ -183,7 +192,8 @@ export async function nowview(argv: string[]): Promise<RunResult> {
 		styles: await stylesByField(),
 		lead_entries: await rowsAt(fetchStart),
 		panel_entries: await rowsAt(now),
-		clock: clockLabel(now)
+		clock: clockLabel(now),
+		options: geometry
 	});
 	return svgResult(argv, svg);
 }
