@@ -56,19 +56,35 @@ cd "$(dirname "$0")"
   echo "  A silent pass here would ship whatever wasm happens to be committed." >&2
   exit 1
 }
-newest_rust=$(find ../crates -name '*.rs' -newer static/datum-parse.wasm -print -quit 2>/dev/null)
-if [ -n "$newest_rust" ]; then
-  echo "REFUSING: static/*.wasm is older than Rust source ($newest_rust)." >&2
-  echo "  The COMMITTED wasm is what gets deployed. Refresh it first:" >&2
-  echo "    pnpm run build:wasm && git add static/*.wasm" >&2
-  echo "  Or set STALE_WASM_OK=1 to ship the committed one deliberately." >&2
-  echo "" >&2
-  echo "  NOTE: this compares TIMESTAMPS, and a source change does not imply a" >&2
-  echo "  different wasm — a change behind a \`native\` feature gate cannot alter" >&2
-  echo "  a build that excludes it. CI's WASM check rebuilds and compares CONTENT," >&2
-  echo "  so if CI is green on this commit, STALE_WASM_OK=1 is the right answer:" >&2
-  echo "    gh run list -c \$(git rev-parse HEAD) --json name,conclusion" >&2
-  [ "${STALE_WASM_OK:-}" = "1" ] || exit 1
+# BUILD the wasm rather than police it. The check below compares TIMESTAMPS,
+# and a source change does not imply a different wasm -- a change behind a
+# `native` feature gate cannot alter a build that excludes it -- so as a gate it
+# refuses correct deploys, which is exactly what it did on 2026-09-08.
+#
+# Building removes the question instead of detecting it. Safe to do here since
+# the rust-src pin (#138): the output is byte-reproducible across machines, so a
+# no-op build leaves the tree clean rather than churning the committed artifact.
+if command -v cargo >/dev/null 2>&1; then
+  echo "==> building wasm"
+  pnpm run build:wasm
+else
+  # The toolchain-free path, which is why the artifacts are committed at all.
+  # HERE the staleness check earns its keep: we are about to ship bytes we did
+  # not just produce, so their age is the only evidence available.
+  echo "==> cargo not found; shipping the COMMITTED wasm" >&2
+  newest_rust=$(find ../crates -name '*.rs' -newer static/datum-parse.wasm -print -quit 2>/dev/null)
+  if [ -n "$newest_rust" ]; then
+    echo "REFUSING: static/*.wasm is older than Rust source ($newest_rust)." >&2
+    echo "  Install a Rust toolchain and re-run, so the deploy builds it, or:" >&2
+    echo "    just wasm && git add web/static/*.wasm" >&2
+    echo "  Or set STALE_WASM_OK=1 to ship the committed one deliberately." >&2
+    echo "" >&2
+    echo "  NOTE: this compares TIMESTAMPS, not content. CI's WASM check rebuilds" >&2
+    echo "  and compares bytes, so if CI is green on this commit the committed" >&2
+    echo "  wasm is current and STALE_WASM_OK=1 is the right answer:" >&2
+    echo "    gh run list -c \$(git rev-parse HEAD) --json name,conclusion" >&2
+    [ "${STALE_WASM_OK:-}" = "1" ] || exit 1
+  fi
 fi
 
 echo "==> building"
