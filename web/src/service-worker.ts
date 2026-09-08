@@ -38,9 +38,19 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
 			for (const key of keys) {
 				if (key !== CACHE_NAME) await caches.delete(key);
 			}
-			await (self as unknown as ServiceWorkerGlobalScope).clients.claim();
 		})
 	);
+
+	// Claimed outside `waitUntil`, and deliberately not awaited. In Firefox this
+	// promise sometimes never settles, and the worker stays in `activating` for as
+	// long as its `waitUntil` is pending — a state in which its clients' fetches
+	// never complete. The visitor types their first command, the lazy fetch of
+	// datum-parse.wasm hangs, and nothing is echoed, stored, or reported.
+	// Measured 2026-09-07 on Playwright's Firefox, fresh profile per trial:
+	// 27 of 62 first commands lost while awaited, 0 of 10 when not. Chromium
+	// never reproduced it. Activation does not depend on the claim, so nothing
+	// here needs to wait for it.
+	void (self as unknown as ServiceWorkerGlobalScope).clients.claim();
 });
 
 /** Serve from the cache, and fill it on a miss so the next visit is offline-safe. */
