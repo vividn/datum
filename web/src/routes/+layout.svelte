@@ -36,6 +36,15 @@
 				</a>
 			{/each}
 		</nav>
+		<!--
+			Which build is actually in front of you. Deliberately dim and last:
+			it is a developer's sanity check during early deployment, not
+			something a reader of the app needs. `title` carries the same thing
+			for a hover, so the visible form can stay short.
+		-->
+		<span class="build" title="datum.day {__DATUM_VERSION__} · commit {__DATUM_COMMIT__}"
+			>{__DATUM_VERSION__} · {__DATUM_COMMIT__}</span
+		>
 	</header>
 
 	<main>
@@ -99,5 +108,16 @@
 		   taller page (e.g. /now) scrolls here instead of spilling. */
 		overflow: auto;
 		padding: 0.75rem;
+	}
+
+	/* Dim on purpose: present for whoever is looking for it, quiet for
+	   everyone else. `ch` units so the two ids do not reflow the nav as the
+	   hash changes between builds. */
+	.build {
+		margin-left: auto;
+		font-size: 0.7rem;
+		font-variant-numeric: tabular-nums;
+		color: color-mix(in srgb, currentColor 35%, transparent);
+		white-space: nowrap;
 	}
 </style>

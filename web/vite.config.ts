@@ -2,6 +2,43 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig, type Plugin, type ViteDevServer, type PreviewServer } from 'vite';
+import { execFileSync } from 'node:child_process';
+
+/**
+ * What is actually running, injected at build time.
+ *
+ * A deployed static bundle is otherwise anonymous: the only way to tell which
+ * commit is live is to compare hashed asset names against a local build, which
+ * is exactly the fiddly step this removes.
+ *
+ * CI's `GITHUB_SHA` wins over `git rev-parse` because a CI checkout can be a
+ * detached merge commit that exists nowhere else — the SHA the workflow was
+ * triggered for is the honest answer. A build from a dirty tree says so, since
+ * a hash that does not describe the working tree is worse than no hash.
+ */
+/** The app's own version, from package.json — one source, not a second copy. */
+function pkgVersion(): string {
+	try {
+		const raw = fs.readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8');
+		return (JSON.parse(raw) as { version?: string }).version ?? '0.0.0';
+	} catch {
+		return '0.0.0';
+	}
+}
+
+function buildVersion(): string {
+	const env = process.env.GITHUB_SHA;
+	if (env) return env.slice(0, 7);
+	try {
+		const sha = execFileSync('git', ['rev-parse', '--short=7', 'HEAD'], { encoding: 'utf8' }).trim();
+		const dirty = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim();
+		return dirty ? `${sha}+` : sha;
+	} catch {
+		// A tarball with no .git, or no git binary. Unknown is honest; a
+		// fabricated or empty string would read as a real build id.
+		return 'unknown';
+	}
+}
 
 // Cross-origin isolation, which the browser grants a document only when
 // its response carries both of these headers.
@@ -101,6 +138,10 @@ function workerPrecache(): Plugin {
 }
 
 export default defineConfig({
+	define: {
+		__DATUM_VERSION__: JSON.stringify(pkgVersion()),
+		__DATUM_COMMIT__: JSON.stringify(buildVersion())
+	},
 	plugins: [sveltekit(), crossOriginIsolation(), workerPrecache()],
 	// The database worker ($lib/db.worker.ts) imports sqlite-wasm
 	// dynamically, and Vite's default worker format — iife — cannot
