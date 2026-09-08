@@ -155,9 +155,9 @@ cargo build --release -p datum-cli   # produces target/release/datum
 ## Web app dev
 
 ```bash
-cd web && npm install && npm run dev   # localhost:5173
-npm test                               # the seam suite (builds first)
-npm run test:fixtures                  # recapture the CLI-parity fixtures
+cd web && pnpm install && pnpm run dev   # localhost:5173
+pnpm test                              # the seam suite (builds first)
+pnpm run test:fixtures                 # recapture the CLI-parity fixtures
 ```
 
 Two regions of the app are datum's own Rust compiled to
@@ -183,13 +183,13 @@ with imports will not load from the bare `WebAssembly.instantiate` the
 browser side uses (this is why the workspace turns off chrono's
 `wasmbind`). Both artifacts are committed under `web/static/` the way the
 fixtures are, so the web CI job needs no Rust toolchain — rebuild and
-commit them with `npm run build:wasm` whenever the crates behind them
+commit them with `pnpm run build:wasm` whenever the crates behind them
 change.
 
 Forgetting that is not a silent failure any more (da-nig7). CI's
 `wasm-check` job re-runs `build:wasm` and fails on any byte of difference,
 and `build-and-test` does the same for the parity fixtures with
-`npm run test:fixtures`. Both comparisons are byte-for-byte, which the
+`pnpm run test:fixtures`. Both comparisons are byte-for-byte, which the
 wasm build earns by remapping the absolute paths rustc bakes into panic
 payloads — so the artifact does not depend on where the repo or the cargo
 registry lives, and a runner reproduces what your machine produced.

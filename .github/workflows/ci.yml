@@ -51,7 +51,7 @@ jobs:
         run: cargo test --workspace --doc
 
       # web/scripts/capture-cli-fixtures.mjs imports only node builtins and
-      # the suite's own support module, so this needs no `npm ci`.
+      # the suite's own support module, so this needs no `pnpm install`.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -70,7 +70,7 @@ jobs:
           node web/scripts/capture-cli-fixtures.mjs
           if [ -n "$(git status --porcelain -- web/tests/fixtures)" ]; then
             git diff -- web/tests/fixtures
-            echo "::error::web/tests/fixtures/cli-parity.json is out of date with the CLI. Fix: npm run test:fixtures && git add web/tests/fixtures"
+            echo "::error::web/tests/fixtures/cli-parity.json is out of date with the CLI. Fix: pnpm run test:fixtures && git add web/tests/fixtures"
             exit 1
           fi
 
@@ -136,7 +136,7 @@ jobs:
         run: cargo check -p datum-sync-client --target wasm32-unknown-unknown --no-default-features --features wasm
 
       # web/scripts/build-wasm.mjs imports only node builtins, so this needs
-      # no `npm ci` — just an interpreter.
+      # no `pnpm install` — just an interpreter.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -175,7 +175,7 @@ jobs:
           node web/scripts/build-wasm.mjs
           if [ -n "$(git status --porcelain -- web/static)" ]; then
             git status --short -- web/static
-            echo "::error::web/static/*.wasm is out of date with the crates behind it. Fix: npm run build:wasm && git add web/static/*.wasm"
+            echo "::error::web/static/*.wasm is out of date with the crates behind it. Fix: pnpm run build:wasm && git add web/static/*.wasm"
             exit 1
           fi
 
@@ -221,26 +221,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm before setup-node: setup-node's `cache: pnpm` needs the binary
+      # present to resolve the store path. Version comes from package.json's
+      # `packageManager` field, so it cannot drift from what runs locally.
+      # `package_json_file` is REQUIRED here and repo-root-relative: the job's
+      # `defaults.run.working-directory: web` applies to `run:` steps only, never
+      # to an action's inputs, so without it the action looks for packageManager
+      # in a root package.json that does not exist and fails with
+      # "No pnpm version is specified".
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: npm ci
-        run: npm ci
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
 
       # The suite drives the built app in a real browser, because the
       # `run(argv)` seam's storage is SQLite-wasm on OPFS inside a dedicated
       # worker and that exists nowhere else. Only the headless shell is
       # installed — no headed Chromium, no other engines.
       - name: Install the headless browser
-        run: npx playwright install --with-deps --only-shell chromium
+        run: pnpm exec playwright install --with-deps --only-shell chromium
 
       # `pretest` builds the app first; the CLI-parity fixtures under
       # web/tests/fixtures are committed, so this job needs no Rust
-      # toolchain. Regenerate them with `npm run test:fixtures` against a
+      # toolchain. Regenerate them with `pnpm run test:fixtures` against a
       # built `datum` binary when the CLI's stored shape changes — and if
       # you forget, `build-and-test` re-captures them and goes red.
-      - name: npm test
-        run: npm test
+      - name: pnpm test
+        run: pnpm test

@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "pretest": "npm run build",
+    "pretest": "pnpm run build",
     "test": "node --test \"tests/**/*.test.mjs\"",
     "test:fixtures": "node scripts/capture-cli-fixtures.mjs",
     "build:wasm": "node scripts/build-wasm.mjs"
@@ -32,5 +32,6 @@
   "dependencies": {
     "@sqlite.org/sqlite-wasm": "3.51.2-build9"
   },
-  "type": "module"
+  "type": "module",
+  "packageManager": "pnpm@11.4.0"
 }
