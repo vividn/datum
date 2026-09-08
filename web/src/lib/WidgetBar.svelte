@@ -262,7 +262,11 @@
 	</div>
 
 	{#if widgets.length === 0}
-		<p class="hint empty">nothing tracked yet — log something below, or add a field with (+)</p>
+		<!-- No direction word here on purpose: this hint said "below" while the
+		     widget bar was at the top of the page (da-nz29), and da-1x72 moved the
+		     bar to the bottom without the copy following. Name the thing, not
+		     where it is. -->
+		<p class="hint empty">nothing tracked yet — type a command to log something, or add a field with (+)</p>
 	{/if}
 </div>
 
