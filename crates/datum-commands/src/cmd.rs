@@ -209,7 +209,12 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Now(args) => commands::now::now(args, cli.db.as_deref(), db),
         Command::Get(args) => commands::get::get(args, db),
         Command::Delete(args) => commands::del::del(args, db),
+        #[cfg(feature = "native")]
         Command::Edit(args) => commands::edit::edit(args, db),
+        // `edit` shells out to $EDITOR over a temp file; a wasm build has
+        // neither. Fail loudly rather than silently reporting success.
+        #[cfg(not(feature = "native"))]
+        Command::Edit(_) => anyhow::bail!("edit is unavailable in this build"),
         Command::Update(args) => commands::update::update(args, db),
         Command::Merge(args) => commands::merge::merge(args, db),
         Command::Rekey(args) => commands::rekey::rekey(args, db),

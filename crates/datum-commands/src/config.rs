@@ -469,6 +469,7 @@ pub fn load_raw_config_or_default() -> Result<RawConfig> {
 /// Persist the raw user config to `datumrc.toml`. Creates the parent
 /// directory if needed. Atomic: temp file + rename, so a crash mid-write
 /// never truncates the existing config.
+#[cfg(feature = "native")]
 pub fn save_raw_config(cfg: &RawConfig) -> Result<()> {
     let path = toml_config_path()?;
     let body = toml::to_string_pretty(cfg).context("Serializing datumrc.toml")?;
@@ -481,6 +482,7 @@ pub fn save_raw_config(cfg: &RawConfig) -> Result<()> {
 /// Creates the parent directory if needed. On unix the temp file gets
 /// `mode` before any bytes land, so the final file never exists with
 /// looser permissions.
+#[cfg(feature = "native")]
 pub fn write_atomic(path: &std::path::Path, body: &[u8], mode: u32) -> Result<()> {
     use std::io::Write;
     let parent = match path.parent() {

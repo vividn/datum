@@ -12,10 +12,18 @@
 //! JSON top-level for any [`SYSTEM_OWNED_KEYS`] entry and fail loud with a
 //! clear "system-owned" message — better signal than a silent no-op.
 
+// `edit()` and the helpers only it calls are `native`-gated below — it
+// spawns $EDITOR over a temp file, which a wasm build cannot do. Their
+// imports carry the same gate so a no-default-features build stays
+// warning-free; what `UserEditableEntry` needs stays ungated, because
+// `commands::grep` reuses that projection.
+#[cfg(feature = "native")]
 use anyhow::{Context, Result};
+#[cfg(feature = "native")]
 use chrono::Utc;
+#[cfg(feature = "native")]
+use datum_core::db::Db;
 use datum_core::{
-    db::Db,
     entry::{Entry, Verb},
     time::DatumTime,
 };
@@ -25,6 +33,7 @@ use serde_json::Value as JsonValue;
 /// Top-level keys on `Entry` that are system-managed and may never be written
 /// via `datum edit`. Injecting any of these into the editor tempfile is a
 /// hard error — see the module docstring (da-5mnz).
+#[cfg(feature = "native")]
 const SYSTEM_OWNED_KEYS: &[&str] = &[
     "extra_metadata",
     "hid",
@@ -40,6 +49,7 @@ const SYSTEM_OWNED_KEYS: &[&str] = &[
     "deleted_at",
 ];
 
+#[cfg(feature = "native")]
 use crate::{
     args::{EditArgs, OutputFlagsExt},
     commands::update_core::{render_outcome, UpdateOutcome},
@@ -107,6 +117,7 @@ impl UserEditableEntry {
     /// extra_metadata, hid, slug, content_hash, create_time, device_id,
     /// parser_version, raw_input, alias_chain, user_asserted_last_state,
     /// deleted_at, etc.
+    #[cfg(feature = "native")]
     fn apply_to(self, e: &mut Entry) {
         e.field = self.field;
         e.verb = self.verb;
@@ -123,6 +134,7 @@ impl UserEditableEntry {
     }
 }
 
+#[cfg(feature = "native")]
 pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
     let existing = crate::commands::helpers::resolve_prefix_or_tombstone(db, &args.id_or_slug)?;
     if existing.deleted_at.is_some() {
@@ -217,6 +229,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
 /// (`code --wait`). The caller appends the tempfile path as the final
 /// argument. Errors only when the editor string is empty after splitting —
 /// otherwise the tempfile itself would be executed as the program.
+#[cfg(feature = "native")]
 fn split_editor(editor: &str) -> Result<(String, Vec<String>)> {
     let mut parts = datum_parse::shell_split(editor);
     if parts.is_empty() {
@@ -226,7 +239,7 @@ fn split_editor(editor: &str) -> Result<(String, Vec<String>)> {
     Ok((program, parts))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod tests {
     //! `datum edit` tests.
     //!
