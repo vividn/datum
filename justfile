@@ -2,9 +2,12 @@
 #
 # The package manager lives in one variable so switching it is one line here
 # plus the lockfile and CI, rather than a sweep across every recipe.
-pm := "npm"
+pm := "pnpm"
 
 web := justfile_directory() / "web"
+
+set shell := ["bash", "-c"]
+set dotenv-load := true
 
 # List the recipes (default when you type bare `just`).
 default:
