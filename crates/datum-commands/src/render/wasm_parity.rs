@@ -4,9 +4,24 @@
 //! owns: the colour rules in `super::colors` (plus `hash_y` from
 //! `datum_core::field_spec`), and the entry→marks walk in
 //! `commands::field_visuals`. Neither can simply call this crate —
-//! `datum-core` pulls rusqlite and cannot reach `wasm32-unknown-unknown` —
+//! `datum-core` pulls rusqlite and is kept out of `wasm32-unknown-unknown` —
 //! so the wasm crate carries its own, and this module holds the two side
 //! by side.
+//!
+//! ⚠ CORRECTED 2026-09-08 — the reason above is stale, the conclusion may not be.
+//! `datum-core` DOES reach `wasm32-unknown-unknown`: it was built for that target
+//! on 2026-09-05 (`cargo build --target wasm32-unknown-unknown -p datum-core`,
+//! exit 0). Declare `getrandom` with a backend, drop rusqlite's `bundled`
+//! feature, and point SQLITE3_LIB_DIR at sqlite-wasm-rs's staged `libsqlite3.a`;
+//! it compiles SQLite's C for this target and ships the musl shim that supplies
+//! the missing libc. → `notes/browser-target-reached-2026-09-05.md` (vremya).
+//!
+//! Keeping a separate copy may still be right, for a reason nobody has measured:
+//! pulling datum-core in pulls SQLite, and a drawing module has no use for a
+//! database. The only size on record for that build is 16.9 MB — a DEV artefact;
+//! nobody has built it under `wasm-release` (opt-level=z, lto, strip), which is
+//! what the shipped 304 KB layout module uses. So the COST is an open question
+//! and the IMPOSSIBILITY is not. Settle it before citing this either way.
 //!
 //! The colour half checks the inputs that matter: an md5-derived field
 //! colour, a named state, the `IGNORED` and boolean sentinels, a parallel

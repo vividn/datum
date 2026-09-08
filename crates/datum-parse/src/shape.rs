@@ -22,12 +22,27 @@
 //!
 //! Lives in `datum-parse` rather than `datum-core` for the reason
 //! [`crate::verb`] does: it is pure, and the browser needs it (da-t7ud).
-//! `datum-core` pulls rusqlite and cannot reach `wasm32-unknown-unknown`,
+//! `datum-core` pulls rusqlite and is kept out of `wasm32-unknown-unknown`,
 //! so a table left there is a table the PWA has to hand-copy — and
 //! `web/src/lib/visuals.ts` was that copy. `datum-core` re-exports this
 //! module, [`EntryShape`] and [`IGNORED_STATE_VALUE`], so
 //! `datum_core::shape::render_shape` and `datum_core::entry::EntryShape`
 //! remain the paths every other caller uses.
+//!
+//! ⚠ CORRECTED 2026-09-08 — the reason above is stale, the conclusion may not be.
+//! `datum-core` DOES reach `wasm32-unknown-unknown`: it was built for that target
+//! on 2026-09-05 (`cargo build --target wasm32-unknown-unknown -p datum-core`,
+//! exit 0). Declare `getrandom` with a backend, drop rusqlite's `bundled`
+//! feature, and point SQLITE3_LIB_DIR at sqlite-wasm-rs's staged `libsqlite3.a`;
+//! it compiles SQLite's C for this target and ships the musl shim that supplies
+//! the missing libc. → `notes/browser-target-reached-2026-09-05.md` (vremya).
+//!
+//! Keeping a separate copy may still be right, for a reason nobody has measured:
+//! pulling datum-core in pulls SQLite, and a drawing module has no use for a
+//! database. The only size on record for that build is 16.9 MB — a DEV artefact;
+//! nobody has built it under `wasm-release` (opt-level=z, lto, strip), which is
+//! what the shipped 304 KB layout module uses. So the COST is an open question
+//! and the IMPOSSIBILITY is not. Settle it before citing this either way.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
