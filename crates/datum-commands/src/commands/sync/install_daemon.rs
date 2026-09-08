@@ -1,5 +1,5 @@
 //! `datum sync install-daemon` — write + enable the per-platform user
-//! service unit that launches `datum-sync-agent` on login.
+//! service unit that launches the sync daemon on login.
 //!
 //! Platforms:
 //!
@@ -11,6 +11,13 @@
 //!
 //! The unit is intentionally dumb: exec the binary on login, restart on
 //! failure. All configuration stays in `datumrc.toml`.
+//!
+//! What it execs is `datum sync agent` — the daemon hosted inside the
+//! `datum` binary — NOT a separately-installed `datum-sync-agent`. A
+//! second binary sits outside whatever upgrades `datum`, so it silently
+//! goes stale: it starts, finds nothing to do under an older config
+//! shape, and idles forever with no error (da-ge3e). One binary cannot
+//! drift from itself.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -44,8 +51,11 @@ impl Platform {
     }
 }
 
+/// Arguments appended to the `datum` binary in the unit's exec line.
+const AGENT_ARGV: [&str; 2] = ["sync", "agent"];
+
 /// Render the textual unit file for `platform`, pointing the ExecStart
-/// at `binary`. Pure function; tests rely on it.
+/// at `datum sync agent`. Pure function; tests rely on it.
 pub fn render_unit(platform: Platform, binary: &Path) -> String {
     match platform {
         Platform::SystemdUser => render_systemd(binary),
@@ -61,13 +71,14 @@ fn render_systemd(binary: &Path) -> String {
          Wants=network-online.target\n\
          \n\
          [Service]\n\
-         ExecStart={exec}\n\
+         ExecStart=\"{exec}\" {args}\n\
          Restart=on-failure\n\
          RestartSec=5s\n\
          \n\
          [Install]\n\
          WantedBy=default.target\n",
         exec = binary.display(),
+        args = AGENT_ARGV.join(" "),
     )
 }
 
@@ -82,6 +93,8 @@ fn render_launchd(binary: &Path) -> String {
     <key>ProgramArguments</key>
     <array>
         <string>{exec}</string>
+        <string>sync</string>
+        <string>agent</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -116,26 +129,22 @@ pub fn unit_path(platform: Platform) -> Result<PathBuf> {
     }
 }
 
-/// Locate the `datum-sync-agent` binary. Order:
-/// 1. `DATUM_SYNC_AGENT_BIN` env override (for tests + packaging),
-/// 2. sibling of the current exe (the common case — `cargo install`
-///    drops both binaries in the same `bin/` dir),
-/// 3. bare name (relies on `$PATH`).
+/// Locate the `datum` binary the unit should exec. Order:
+/// 1. `DATUM_BIN` env override (for tests + packaging),
+/// 2. the currently-running executable — i.e. the very `datum` the user
+///    typed `install-daemon` into, which is the one their upgrade path
+///    maintains.
+///
+/// There is deliberately no `$PATH` fallback: systemd needs an absolute
+/// `ExecStart`, and a unit that resolves through `$PATH` picks up a
+/// different binary than the shell does.
 pub fn resolve_agent_binary() -> PathBuf {
-    if let Ok(v) = std::env::var("DATUM_SYNC_AGENT_BIN") {
+    if let Ok(v) = std::env::var("DATUM_BIN") {
         if !v.is_empty() {
             return PathBuf::from(v);
         }
     }
-    if let Ok(me) = std::env::current_exe() {
-        if let Some(dir) = me.parent() {
-            let candidate = dir.join("datum-sync-agent");
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-    }
-    PathBuf::from("datum-sync-agent")
+    std::env::current_exe().unwrap_or_else(|_| PathBuf::from("datum"))
 }
 
 /// Refuse to install a unit pointing at a binary that can't launch:
@@ -146,19 +155,10 @@ fn validate_agent_binary(binary: &Path) -> Result<()> {
     if binary.is_absolute() && binary.exists() {
         return Ok(());
     }
-    // For the bare-name fallback, report the sibling path we actually probed.
-    let looked_at = if binary.is_absolute() {
-        binary.to_path_buf()
-    } else {
-        std::env::current_exe()
-            .ok()
-            .and_then(|me| me.parent().map(|d| d.join("datum-sync-agent")))
-            .unwrap_or_else(|| binary.to_path_buf())
-    };
     anyhow::bail!(
-        "datum-sync-agent binary not found (looked at {}); build/install it \
-         or set DATUM_SYNC_AGENT_BIN=<absolute path>",
-        looked_at.display(),
+        "datum binary not found at an absolute path (looked at {}); \
+         set DATUM_BIN=<absolute path to datum>",
+        binary.display(),
     );
 }
 
@@ -291,54 +291,92 @@ fn run_cmd(cmd: &str, args: &[&str]) -> Result<()> {
 mod tests {
     use super::*;
     // Tests that mutate process env vars (XDG_CONFIG_HOME, HOME,
-    // DATUM_SYNC_AGENT_BIN) serialize on the shared `env_lock` — plain
+    // DATUM_BIN) serialize on the shared `env_lock` — plain
     // `cargo test` runs tests as threads in one process. nextest isolates
     // per-process, so this is belt-and-braces.
     use datum_test_util::{env_lock, ScopedEnv};
 
+    /// The unit must exec `datum sync agent`, not a standalone
+    /// `datum-sync-agent`: a second binary lives outside whatever
+    /// upgrades `datum` and goes stale unnoticed (da-ge3e).
     #[test]
-    fn systemd_unit_contains_exec_and_install_section() {
-        let binary = PathBuf::from("/usr/local/bin/datum-sync-agent");
+    fn systemd_unit_execs_datum_sync_agent() {
+        let binary = PathBuf::from("/usr/local/bin/datum");
         let body = render_unit(Platform::SystemdUser, &binary);
-        assert!(body.contains("ExecStart=/usr/local/bin/datum-sync-agent"));
+        assert!(
+            body.contains("ExecStart=\"/usr/local/bin/datum\" sync agent"),
+            "unit must exec the datum binary's own agent subcommand:\n{body}"
+        );
+        assert!(
+            !body.contains("/datum-sync-agent\n") && !body.contains("/datum-sync-agent "),
+            "unit must not point at a separately-installed agent binary:\n{body}"
+        );
         assert!(body.contains("[Install]"));
         assert!(body.contains("WantedBy=default.target"));
         assert!(body.contains("Restart=on-failure"));
     }
 
+    /// A `datum` living under a path with a space must still start:
+    /// systemd splits ExecStart on whitespace, so the executable is
+    /// quoted (suspect E of da-ge3e).
+    #[test]
+    fn systemd_exec_path_with_a_space_is_quoted() {
+        let binary = PathBuf::from("/home/vividn/My Tools/datum");
+        let body = render_unit(Platform::SystemdUser, &binary);
+        assert!(
+            body.contains("ExecStart=\"/home/vividn/My Tools/datum\" sync agent"),
+            "a path with a space must stay one argument:\n{body}"
+        );
+    }
+
     #[test]
     fn launchd_plist_contains_exec_and_label() {
-        let binary = PathBuf::from("/opt/datum/datum-sync-agent");
+        let binary = PathBuf::from("/opt/datum/datum");
         let body = render_unit(Platform::LaunchdUser, &binary);
         assert!(body.contains("com.datum.sync-agent"));
-        assert!(body.contains("/opt/datum/datum-sync-agent"));
+        assert!(body.contains("<string>/opt/datum/datum</string>"));
+        assert!(body.contains("<string>sync</string>"));
+        assert!(body.contains("<string>agent</string>"));
         assert!(body.contains("RunAtLoad"));
     }
 
     #[test]
     fn validate_rejects_bare_name_and_missing_paths() {
-        // Bare name (the PATH fallback) — non-absolute, must be rejected.
-        let err = validate_agent_binary(Path::new("datum-sync-agent")).unwrap_err();
-        assert!(err.to_string().contains("DATUM_SYNC_AGENT_BIN"));
+        // Bare name (no absolute path) — systemd can't exec it.
+        let err = validate_agent_binary(Path::new("datum")).unwrap_err();
+        assert!(err.to_string().contains("DATUM_BIN"));
         // Absolute but nonexistent (bad env override) — also rejected,
         // and the message names the path we looked at.
-        let err = validate_agent_binary(Path::new("/nonexistent/datum-sync-agent")).unwrap_err();
-        assert!(err.to_string().contains("/nonexistent/datum-sync-agent"));
-        assert!(err.to_string().contains("DATUM_SYNC_AGENT_BIN"));
+        let err = validate_agent_binary(Path::new("/nonexistent/datum")).unwrap_err();
+        assert!(err.to_string().contains("/nonexistent/datum"));
+        assert!(err.to_string().contains("DATUM_BIN"));
+    }
+
+    /// With no override the unit points at the running executable —
+    /// the `datum` the user actually typed the command into, which is
+    /// the one their upgrade path keeps current.
+    #[test]
+    fn resolve_defaults_to_the_running_binary() {
+        let _guard = env_lock();
+        let _bin = ScopedEnv::remove("DATUM_BIN");
+        assert_eq!(resolve_agent_binary(), std::env::current_exe().unwrap());
+
+        let _set = ScopedEnv::set("DATUM_BIN", "/opt/pkg/datum");
+        assert_eq!(resolve_agent_binary(), PathBuf::from("/opt/pkg/datum"));
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
-    fn install_without_agent_binary_errors_and_writes_no_unit() {
-        // No env override, no sibling binary next to the test executable →
-        // run(false, false) must bail directively BEFORE writing the unit
-        // (and before invoking systemctl/launchctl).
+    fn install_with_unusable_binary_errors_and_writes_no_unit() {
+        // A DATUM_BIN pointing nowhere → run(false, false) must bail
+        // directively BEFORE writing the unit (and before invoking
+        // systemctl/launchctl).
         let _guard = env_lock();
         let tmp = tempfile::tempdir().unwrap();
         // ScopedEnv restores on drop even if an assertion panics, so a
         // failure doesn't leak a deleted tempdir path into sibling tests
         // (plain `cargo test` shares the process).
-        let _bin = ScopedEnv::remove("DATUM_SYNC_AGENT_BIN");
+        let _bin = ScopedEnv::set("DATUM_BIN", "/nonexistent/datum");
         let _xdg = ScopedEnv::set("XDG_CONFIG_HOME", tmp.path());
         let _home = ScopedEnv::set("HOME", tmp.path());
 
@@ -351,7 +389,7 @@ mod tests {
         let unit_written = unit.exists();
         let plist_written = plist.exists();
 
-        assert!(err.to_string().contains("DATUM_SYNC_AGENT_BIN"));
+        assert!(err.to_string().contains("DATUM_BIN"));
         assert!(err.to_string().contains("not found"));
         assert!(!unit_written, "unit file must not be written: {unit:?}");
         assert!(!plist_written, "plist must not be written: {plist:?}");

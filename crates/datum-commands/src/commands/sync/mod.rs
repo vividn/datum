@@ -61,6 +61,15 @@ pub fn dispatch(args: SyncArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
         },
         Some(SyncCommand::Status(a)) => status::run(a, cli_db),
         Some(SyncCommand::InstallDaemon(a)) => install_daemon::run(a.show, a.uninstall),
+        // The daemon runtime lives in `datum-sync-agent`, which depends on
+        // THIS crate — so the `datum` binary intercepts `sync agent` before
+        // dispatch rather than calling down from here (see datum-cli). What
+        // reaches this arm is a chained (`,`) or REPL invocation, where a
+        // process that never returns has no business running anyway.
+        Some(SyncCommand::Agent(_)) => anyhow::bail!(
+            "`datum sync agent` runs a daemon until killed — start it from \
+             the shell on its own, or install it with `datum sync install-daemon`"
+        ),
         None => run_sync(args, cli_db, db),
     }
 }

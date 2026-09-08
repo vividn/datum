@@ -14,6 +14,7 @@
 //!
 //! | Module       | Purpose                                              |
 //! |--------------|------------------------------------------------------|
+//! | `agent`      | The daemon runtime (workers, watcher, shutdown)       |
 //! | `debounce`   | Quiet-window write coalescing                        |
 //! | `backoff`    | Exponential retry schedule (5s → 15s → 60s → 5min)   |
 //! | `scheduler`  | Per-DB next-action policy driving push / pull        |
@@ -23,6 +24,7 @@
 //! | `targets`    | Enumerate auto-sync DBs from `datumrc.toml`          |
 //! | `watcher`    | Per-target fs watcher (parent-dir watch + filter)    |
 
+pub mod agent;
 pub mod backoff;
 pub mod debounce;
 pub mod liveness;

@@ -500,6 +500,7 @@ dependencies = [
  "datum-commands",
  "datum-core",
  "datum-parse",
+ "datum-sync-agent",
  "datum-sync-client",
  "datum-sync-protocol",
  "datum-sync-server",

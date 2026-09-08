@@ -827,7 +827,7 @@ const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n
 
 const CONFIG_BODY: &str = "USAGE:\n  datum config show [--json]\n";
 
-const SYNC_BODY: &str = "USAGE:\n  datum sync [--push | --pull] [--dry-run] [--server URL]\n  datum sync login [--server URL] [--cluster NAME]\n  datum sync config set-server <URL> [--global]\n  datum sync config disable\n  datum sync config show\n  datum sync key (init | unlock | rotate-passphrase | show-fingerprint) [--server URL] [--force]\n  datum sync status [--server URL]\n  datum sync install-daemon [--show | --uninstall]\n";
+const SYNC_BODY: &str = "USAGE:\n  datum sync [--push | --pull] [--dry-run] [--server URL]\n  datum sync login [--server URL] [--cluster NAME]\n  datum sync config set-server <URL> [--global]\n  datum sync config disable\n  datum sync config show\n  datum sync key (init | unlock | rotate-passphrase | show-fingerprint) [--server URL] [--force]\n  datum sync status [--server URL]\n  datum sync install-daemon [--show | --uninstall]\n  datum sync agent [--pid-file PATH] [-v] [--one-shot]\n";
 
 const CONFLICTS_BODY: &str = "USAGE:\n  datum conflicts [list] [--all]\n  datum conflicts resolve <HID> (--take-local | --take-remote | --keep-both)\n\nOPTIONS:\n  -a, --all        Include already-resolved conflicts (default: pending only).\n  --take-local     Restore this device's version of the entry.\n  --take-remote    Accept the other device's version.\n  --keep-both      Leave both rows as they are; record the decision.\n\nSync conflicts are the two things a pull can file when two devices claim\none identity: `lww_overwrite` (a newer remote edit replaced a local one)\nand `identity_collision` (two distinct entries claimed one slug, or one\n(field, occur_time)). The losing version survives only in the conflict\nrow, so someone has to say which side wins — `list` prints both.\n\nEverything else the integrity queue holds — double opens, orphan ends,\noverlaps, repeated states — is reported by `datum check` and resolved by\nfixing the data with `datum edit` / `datum delete`, not from here.\n";
 
@@ -1503,6 +1503,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             "datum sync key (init | unlock | rotate-passphrase | show-fingerprint) [--server URL] [--force]",
             "datum sync status [--server URL]",
             "datum sync install-daemon [--show | --uninstall]",
+            "datum sync agent [--pid-file PATH] [-v] [--one-shot]",
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,

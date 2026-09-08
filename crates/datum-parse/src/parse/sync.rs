@@ -7,7 +7,14 @@ pub(crate) fn parse_sync_args(tail: &[&str]) -> Result<SyncArgs> {
     // Walk flags first; the first positional must be one of the known
     // subcommand names (else it's an unexpected positional error).
     let mut args = SyncArgs::default();
-    const SUBS: &[&str] = &["login", "config", "key", "status", "install-daemon"];
+    const SUBS: &[&str] = &[
+        "login",
+        "config",
+        "key",
+        "status",
+        "install-daemon",
+        "agent",
+    ];
 
     let mut i = 0;
     while i < tail.len() {
@@ -22,6 +29,7 @@ pub(crate) fn parse_sync_args(tail: &[&str]) -> Result<SyncArgs> {
                         "key" => SyncCommand::Key(parse_sync_key(rest)?),
                         "status" => SyncCommand::Status(parse_sync_status(rest)?),
                         "install-daemon" => SyncCommand::InstallDaemon(parse_sync_install(rest)?),
+                        "agent" => SyncCommand::Agent(parse_sync_agent(rest)?),
                         _ => unreachable!(),
                     });
                     return Ok(args);
@@ -117,6 +125,34 @@ pub(crate) fn parse_sync_install(tail: &[&str]) -> Result<SyncInstallDaemonArgs>
         match split_flag(tok) {
             FlagSplit::Long("show") => out.show = true,
             FlagSplit::Long("uninstall") => out.uninstall = true,
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    Ok(out)
+}
+
+pub(crate) fn parse_sync_agent(tail: &[&str]) -> Result<SyncAgentArgs> {
+    let mut out = SyncAgentArgs::default();
+    let mut i = 0;
+    while i < tail.len() {
+        match split_flag(tail[i]) {
+            FlagSplit::Long("pid-file") => {
+                let (v, ni) = take_value(tail, i, None, "--pid-file")?;
+                out.pid_file = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("pid-file", v) => {
+                out.pid_file = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("verbose") | FlagSplit::Short('v') => {
+                out.verbose = true;
+                i += 1;
+            }
+            FlagSplit::Long("one-shot") => {
+                out.one_shot = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }

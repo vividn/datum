@@ -124,6 +124,22 @@ pub enum SyncCommand {
     Key(SyncKeyCommand),
     Status(SyncStatusArgs),
     InstallDaemon(SyncInstallDaemonArgs),
+    /// `datum sync agent` — run the background sync daemon in the
+    /// foreground. This is what the installed service unit execs: one
+    /// binary, kept current by whatever upgrades `datum` (da-ge3e).
+    Agent(SyncAgentArgs),
+}
+
+/// Flags for `datum sync agent`, mirroring the standalone
+/// `datum-sync-agent` binary one-for-one.
+#[derive(Debug, Default)]
+pub struct SyncAgentArgs {
+    /// `--pid-file PATH` — override the single-instance lock location.
+    pub pid_file: Option<String>,
+    /// `-v` / `--verbose` — debug-level logging.
+    pub verbose: bool,
+    /// `--one-shot` — run one poll cycle and exit (smoke tests).
+    pub one_shot: bool,
 }
 
 #[derive(Debug, Default)]

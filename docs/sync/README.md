@@ -16,7 +16,7 @@ threat model, see [`docs/sync-protocol.md`](../sync-protocol.md).
 | [`datum-sync-protocol`](../../crates/datum-sync-protocol/) | Shared wire types — `serde` + `thiserror` only. | WASM-safe. Pulled in by both client and server so the JSON shapes live in exactly one place. |
 | [`datum-sync-client`](../../crates/datum-sync-client/) | The push/pull state machine, on-device crypto (AES-256-GCM, key-wrap), and HTTP. | WASM-safe core; native-only `db` and `http` features gated for the PWA. |
 | [`datum-sync-server`](../../crates/datum-sync-server/) | The relay: HTTP routes, passkey auth, JWT issuance, opaque-blob storage. | Native daemon (axum + tokio + webauthn-rs + rusqlite). |
-| [`datum-sync-agent`](../../crates/datum-sync-agent/) | Background daemon — wraps the client to push-on-write and pull on an interval. | Native daemon (tokio + `notify` filesystem watcher + pid-file). |
+| [`datum-sync-agent`](../../crates/datum-sync-agent/) | Background daemon — wraps the client to push-on-write and pull on an interval. Hosted by the `datum` binary as `datum sync agent`. | Native daemon (tokio + `notify` filesystem watcher + pid-file). |
 
 ### Why four crates instead of one
 
@@ -121,17 +121,21 @@ target list, debounces writes, and runs pushes / pulls without the user
 having a CLI open.
 
 ```bash
-# Build:
-cargo build --release -p datum-sync-agent
-
 # Run in the foreground (for testing):
-datum-sync-agent
+datum sync agent -v
 
-# Install as a systemd user unit (Linux):
-# ~/.config/systemd/user/datum-sync-agent.service
-# (see crates/datum-sync-agent/README.md for the full unit file)
-systemctl --user enable --now datum-sync-agent
+# Install + enable the user service (systemd on Linux, launchd on macOS):
+datum sync install-daemon
+
+# Inspect the unit it would write, without touching anything:
+datum sync install-daemon --show
 ```
+
+The daemon is hosted **inside the `datum` binary** and the unit execs
+`datum sync agent`. There is a standalone `datum-sync-agent` binary
+(`cargo build -p datum-sync-agent`) for smoke tests, but installing it
+is not part of the setup — a second binary lives outside whatever
+upgrades `datum` and silently goes stale (da-ge3e).
 
 The agent uses a pid-file for liveness so `datum sync status` can show
 "agent running" vs "agent dead." On macOS the equivalent is a `launchd`

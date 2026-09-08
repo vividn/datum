@@ -79,6 +79,24 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         return repl::run(cli.db.as_deref());
     }
 
+    // `datum sync agent` runs the background daemon in-process. It is
+    // intercepted here rather than in `datum-commands::commands::sync`
+    // because `datum-sync-agent` depends on that crate; the `datum`
+    // binary is the only place both halves are visible. Hosting the
+    // daemon here is the point: the service unit execs `datum`, so the
+    // daemon can never be an older build than the CLI (da-ge3e).
+    if let Command::Sync(SyncArgs {
+        command: Some(SyncCommand::Agent(a)),
+        ..
+    }) = &cli.command
+    {
+        return datum_sync_agent::agent::run(datum_sync_agent::agent::Options {
+            pid_file: a.pid_file.as_deref().map(std::path::PathBuf::from),
+            verbose: a.verbose,
+            one_shot: a.one_shot,
+        });
+    }
+
     // `datum config show` and the db-independent `sync` subcommands (server
     // config, key files, daemon install, status) run against an in-memory
     // placeholder. But the actual push/pull (`datum sync`, no subcommand)

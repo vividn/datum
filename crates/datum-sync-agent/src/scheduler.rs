@@ -116,33 +116,44 @@ impl Scheduler {
         Action::Sleep(self.sleep_for(now))
     }
 
-    /// Minimum of (pull-timer eta, push-debounce eta, push-backoff eta,
-    /// pull-backoff eta, MAX_IDLE_SLEEP). Used so the worker's select!
-    /// times out at exactly the right moment rather than spinning.
+    /// How long until the *earliest* moment some action can actually
+    /// run: `min(push-ready, pull-ready, MAX_IDLE_SLEEP)`.
+    ///
+    /// A direction is ready at the LATER of its own timer and its
+    /// backoff — both gates have to be open. Taking the earlier of the
+    /// two (as this did before da-ge3e) wakes the worker into a `poll`
+    /// that returns `Sleep` again; and once the timer itself has fired,
+    /// its remaining eta is zero, so the loop spun at the 1ms floor for
+    /// the entire backoff window — up to the 5min cap. Symptom: a CPU-
+    /// burning daemon that still syncs nothing.
     fn sleep_for(&self, now: Instant) -> Duration {
-        let mut deadlines: Vec<Duration> = Vec::new();
+        let push_blocked_for = self
+            .push_backoff
+            .time_until_ready(now)
+            .unwrap_or(Duration::ZERO);
+        let pull_blocked_for = self
+            .pull_backoff
+            .time_until_ready(now)
+            .unwrap_or(Duration::ZERO);
 
-        // Pull timer: how long until `last_pull + pull_interval`.
+        // Push: only pending when a write is waiting to be flushed.
+        let push_ready_in = self
+            .debouncer
+            .time_until_due(now)
+            .map(|eta| eta.max(push_blocked_for));
+
+        // Pull: the interval timer, held off by pull backoff.
         let next_pull_at = self.last_pull + self.pull_interval;
-        deadlines.push(next_pull_at.saturating_duration_since(now));
+        let pull_ready_in = next_pull_at
+            .saturating_duration_since(now)
+            .max(pull_blocked_for);
 
-        // Push debounce: how long until the pending write fires.
-        if let Some(until) = self.debouncer.time_until_due(now) {
-            deadlines.push(until);
+        let mut wait = pull_ready_in.min(MAX_IDLE_SLEEP);
+        if let Some(eta) = push_ready_in {
+            wait = wait.min(eta);
         }
-
-        // Backoff blockers: wait until they clear, otherwise we'd spin.
-        if let Some(until) = self.push_backoff.time_until_ready(now) {
-            deadlines.push(until);
-        }
-        if let Some(until) = self.pull_backoff.time_until_ready(now) {
-            deadlines.push(until);
-        }
-
-        deadlines.push(MAX_IDLE_SLEEP);
-        let min = deadlines.into_iter().min().unwrap_or(MAX_IDLE_SLEEP);
         // Clamp below 1ms to avoid hot spin, still fast enough for tests.
-        min.max(Duration::from_millis(1))
+        wait.max(Duration::from_millis(1))
     }
 }
 
@@ -211,6 +222,50 @@ mod tests {
         s.note_write(base);
         // Advance enough that BOTH pull (30s) and push (1.5s) are ready.
         assert_eq!(s.poll(t(base, 30)), Action::Push);
+    }
+
+    /// A failed push with a write still pending must sleep out the whole
+    /// backoff window, not busy-poll it. Before da-ge3e the sleep was the
+    /// MIN over every gate: the debounce eta was already zero (the write
+    /// was due), so the worker re-polled every 1ms for the full 5s — and
+    /// for the full 5min once the ladder saturated.
+    #[test]
+    fn failed_push_sleeps_out_the_backoff_instead_of_spinning() {
+        let base = Instant::now();
+        let mut s =
+            Scheduler::with_params(base, Duration::from_millis(1500), Duration::from_secs(3600));
+        s.note_write(base);
+        assert_eq!(s.poll(tms(base, 1500)), Action::Push);
+
+        // Push fails at T+1.5s → blocked until T+6.5s. The write is still
+        // pending (note_push_failure deliberately keeps the debounce armed).
+        s.note_push_failure(tms(base, 1500));
+        let Action::Sleep(d) = s.poll(tms(base, 1500)) else {
+            panic!("expected Sleep while pushes are backed off");
+        };
+        assert_eq!(d, Duration::from_secs(5), "must wait out the backoff");
+
+        // Mid-window the remaining wait shrinks but never collapses to the
+        // 1ms spin floor.
+        let Action::Sleep(d) = s.poll(tms(base, 4000)) else {
+            panic!("expected Sleep");
+        };
+        assert_eq!(d, Duration::from_millis(2500));
+    }
+
+    /// Same shape on the pull side: a failed pull past its interval must
+    /// wait out the backoff rather than re-polling every millisecond.
+    #[test]
+    fn failed_pull_sleeps_out_the_backoff_instead_of_spinning() {
+        let base = Instant::now();
+        let mut s =
+            Scheduler::with_params(base, Duration::from_millis(1500), Duration::from_secs(30));
+        assert_eq!(s.poll(t(base, 30)), Action::Pull);
+        s.note_pull_failure(t(base, 30));
+        let Action::Sleep(d) = s.poll(t(base, 30)) else {
+            panic!("expected Sleep while pulls are backed off");
+        };
+        assert_eq!(d, Duration::from_secs(5));
     }
 
     /// A push failure must suppress subsequent Push actions until the

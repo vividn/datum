@@ -86,8 +86,10 @@ impl Debouncer {
         matches!(self.fire_at(), Some(f) if now >= f)
     }
 
-    /// Remaining time until the debounce fires, or `None` if nothing is
-    /// pending / the deadline has already passed.
+    /// Remaining time until the debounce fires; `None` when nothing is
+    /// pending. Already-due returns `Some(Duration::ZERO)`, not `None` —
+    /// callers distinguish "no write waiting" from "a write is waiting
+    /// right now" (the scheduler's sleep math depends on it).
     pub fn time_until_due(&self, now: Instant) -> Option<Duration> {
         self.fire_at().map(|f| f.saturating_duration_since(now))
     }
