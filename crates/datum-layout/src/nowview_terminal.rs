@@ -373,14 +373,19 @@ fn push_flow_data_row(
 }
 
 /// Resolve the color(s) painted for one snapshot/flow cell. Returns the
-/// block-ongoing slice when one covers `end_ms`, else the field's spec
-/// default (already populated by the CLI). Empty → caller draws the
-/// shading fallback.
+/// block-ongoing slice when one is still RUNNING at `end_ms`, else the
+/// field's spec default (already populated by the CLI). Empty → caller
+/// draws the shading fallback.
+///
+/// da-zwct: "still running" is a half-open test — a block that ends AT
+/// the instant is over, and `datum start posture 4` writes exactly that
+/// block (four minutes up to now). Regions that have not ended are given
+/// an end past the window by the caller, so they still qualify.
 fn active_colors(field: &NowviewField, end_ms: i64) -> &[String] {
     let ongoing = field
         .blocks
         .iter()
-        .filter(|b| b.start_ms <= end_ms && b.end_ms >= end_ms)
+        .filter(|b| b.start_ms <= end_ms && b.end_ms > end_ms)
         .max_by_key(|b| b.start_ms);
     match ongoing {
         Some(b) => b.colors.as_slice(),
@@ -567,10 +572,15 @@ fn push_history_row(
 }
 
 fn push_now_row(out: &mut String, field: &NowviewField, end_ms: i64, cols: usize, use_color: bool) {
+    // da-zwct: the now panel paints what is still RUNNING at `end_ms`, a
+    // half-open test — a block that ends AT the instant is over, and
+    // `datum start posture 4` writes exactly that block (the four
+    // minutes up to now). Regions that have not ended are handed an end
+    // past the window by the caller, so they still qualify.
     let active_colors: Option<&[String]> = field
         .blocks
         .iter()
-        .filter(|b| b.start_ms <= end_ms && b.end_ms >= end_ms)
+        .filter(|b| b.start_ms <= end_ms && b.end_ms > end_ms)
         .max_by_key(|b| b.start_ms)
         .map(|b| b.colors.as_slice());
 

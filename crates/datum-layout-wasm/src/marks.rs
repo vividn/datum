@@ -67,10 +67,11 @@ impl EntryReq {
         EntryShape::from_dur(self.parsed_dur().as_ref())
     }
 
-    /// Where the row's span ends: `occur + dur`, or `occur` with no
-    /// duration — `field_visuals::trailing_edge_ms`.
-    fn trailing_edge_ms(&self, occur_ms: i64) -> i64 {
-        occur_ms + self.dur_seconds().unwrap_or(0) * 1000
+    /// Where the row's span BEGINS: `occur − dur`, or `occur` with no
+    /// duration — `field_visuals::leading_edge_ms`. da-zwct: `occur_ms`
+    /// is the row's TRAILING edge, so that one needs no helper.
+    fn leading_edge_ms(&self, occur_ms: i64) -> i64 {
+        occur_ms - self.dur_seconds().unwrap_or(0) * 1000
     }
 }
 
@@ -151,13 +152,16 @@ fn switch_region_ends(entries: &[EntryReq], fallback_end_ms: i64) -> Vec<i64> {
 /// switching verb it is `following_state` that holds, not `state`.
 pub fn effective_state(entry: &EntryReq, at_ms: i64) -> JsonValue {
     if opens_secondary_switch_region(entry.verb) {
-        if let (Some(occur_ms), Some(dur), Some(fs)) = (
+        // da-zwct: the trailing edge is the stored instant itself — the
+        // duration runs back from `occur_ms`, not forward — so crossing
+        // it needs no arithmetic. `parsed_dur` still gates: a row with
+        // no duration column opens no secondary region.
+        if let (Some(occur_ms), Some(_), Some(fs)) = (
             entry.occur_ms,
             entry.parsed_dur(),
             entry.following_state.as_ref(),
         ) {
-            let trailing = occur_ms + dur.as_seconds().unwrap_or(0) * 1000;
-            if at_ms >= trailing {
+            if at_ms >= occur_ms {
                 return fs.clone();
             }
         }
@@ -268,14 +272,15 @@ pub fn field_marks(
         match render_shape(verb, entry.shape(), &entry.state) {
             RenderShape::Hidden | RenderShape::Marker => {}
             RenderShape::Region if is_block_verb(verb) => {
-                // A block is `[occur, occur + dur]`: occur_time is its
-                // leading edge, and the duration runs forward from it.
-                if let Some(secs) = entry.dur_seconds().filter(|s| *s > 0) {
-                    let end_ms = at + secs * 1000;
-                    if end_ms > window_start_ms && at < window_end_ms {
+                // A block is `[occur − dur, occur]`: occur_time is its
+                // TRAILING edge, and the duration is the span it lasted
+                // up to that instant (da-zwct).
+                if entry.dur_seconds().is_some_and(|s| s > 0) {
+                    let start_ms = entry.leading_edge_ms(at);
+                    if at > window_start_ms && start_ms < window_end_ms {
                         marks.blocks.push(BlockMark {
-                            start_ms: at,
-                            end_ms,
+                            start_ms,
+                            end_ms: at,
                             state: entry.state.clone(),
                         });
                     }
@@ -320,13 +325,13 @@ pub fn field_marks(
         }
 
         // The trailing region a compound switching verb opens: a band from
-        // the row's trailing edge (`occur + dur`) coloured by
-        // `following_state` — where a block-switch's block ends, and
-        // `occur` itself for a zero-span point-switch. A block running past
-        // the next switching event leaves the band no room, so it draws
-        // nothing rather than an inverted span.
+        // the row's trailing edge coloured by `following_state`. da-zwct:
+        // that edge is `occur` itself — a block-switch's block ends at
+        // its stored instant, and a point-switch spans nothing. A row
+        // logged at or past the next switching event leaves the band no
+        // room, so it draws nothing rather than an inverted span.
         if opens_secondary_switch_region(verb) {
-            let band_start_ms = entry.trailing_edge_ms(at);
+            let band_start_ms = at;
             if band_start_ms < ends[idx] {
                 push_region(
                     &mut marks.blocks,
@@ -427,8 +432,11 @@ mod tests {
         assert_eq!(marks.points[0].bg, Some(json!("happy")));
     }
 
+    /// da-zwct: `switch work 30m` logged at 01:00 means work was
+    /// happening for the half hour BEFORE 01:00 — the duration precedes
+    /// the stored instant, which is the block's end.
     #[test]
-    fn a_block_runs_forward_from_its_occur_time() {
+    fn a_block_runs_back_from_its_occur_time() {
         let mut e = entry(Verb::Block, 3_600_000, Some(json!("work")));
         e.dur = Some("PT30M".into());
         let marks = field_marks(&[e], 0, DAY, DAY, None);
@@ -436,7 +444,7 @@ mod tests {
         assert_eq!(marks.blocks.len(), 1);
         assert_eq!(
             (marks.blocks[0].start_ms, marks.blocks[0].end_ms),
-            (3_600_000, 3_600_000 + 1_800_000)
+            (3_600_000 - 1_800_000, 3_600_000)
         );
     }
 
@@ -469,9 +477,12 @@ mod tests {
         );
     }
 
+    /// da-zwct: the block-switch's trailing edge IS its `occur_ms` — the
+    /// minute it held `during` ran up to it, and `after` takes over
+    /// there.
     #[test]
     fn effective_state_flips_at_a_block_switchs_trailing_edge() {
-        let mut e = entry(Verb::BlockSwitch, 0, Some(json!("during")));
+        let mut e = entry(Verb::BlockSwitch, 60_000, Some(json!("during")));
         e.dur = Some("PT1M".into());
         e.following_state = Some(json!("after"));
         assert_eq!(effective_state(&e, 59_999), json!("during"));

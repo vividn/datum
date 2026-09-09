@@ -254,3 +254,19 @@ setup = [
   ["occur", "coffee", "-d", "2024-01-15", "-t", "0900"],
 ]
 query = ["dayview", "-d", "2024-01-20"]
+
+# da-zwct: the fixture the dayview set was missing. Every other dayview
+# fixture builds its blocks from `start`/`end` PAIRS, whose two instants
+# say where the block is outright — so none of them could tell a reader
+# that runs a duration forward from a reader that runs it back. This one
+# gives the block as a duration and nothing else: datum's own
+# `durationBlocks` view emits `blockBegin = occurTime - dur`, so the
+# golden draws 12:00–12:30, and daydumb has to land the block there too.
+[[fixture]]
+name = "dayview_duration_block_svg"
+description = "`dayview` SVG for a block given as a duration — occur_time is its END and the 30m precede it (da-zwct)"
+surface = "dayview"
+setup = [
+  ["start", "work", "30", "-d", "2024-01-15", "-t", "1230"],
+]
+query = ["dayview", "-d", "2024-01-15"]

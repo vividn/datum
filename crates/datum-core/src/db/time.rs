@@ -547,29 +547,32 @@ mod tests {
         );
     }
 
-    /// da-2nik companion: `Entry::computed_end_time` bumps `occur_time.utc`
-    /// by the duration to derive the end. A block whose end crosses a DST
-    /// boundary must render with the end's offset, not the start's stale
-    /// one.
+    /// da-2nik companion: `Entry::computed_start_time` walks `occur_time.utc`
+    /// BACK by the duration to derive the start (da-zwct: `occur_time` is a
+    /// block's end). A block whose start crosses a DST boundary must render
+    /// with the start's offset, not the end's stale one.
     #[test]
-    fn computed_end_time_refreshes_offset_across_dst() {
+    fn computed_start_time_refreshes_offset_across_dst() {
         use chrono::Timelike;
 
-        // Start 2024-03-31 01:30 Berlin (CET, UTC+1); 2h block ends
-        // 04:30 Berlin (CEST, UTC+2).
-        let start =
-            DatumTime::from_utc_and_tz("2024-03-31T00:30:00Z".parse().unwrap(), "Europe/Berlin")
+        // The block ENDS 2024-03-31 04:30 Berlin (CEST, UTC+2); the 2h
+        // that precede it start at 01:30 Berlin (CET, UTC+1).
+        let occur =
+            DatumTime::from_utc_and_tz("2024-03-31T02:30:00Z".parse().unwrap(), "Europe/Berlin")
                 .unwrap();
-        let mut e = Entry::new("focus", Verb::Point, None, None, Some(start), None, "d1");
+        let mut e = Entry::new("focus", Verb::Point, None, None, Some(occur), None, "d1");
         e.dur = Some(crate::dur::Dur::of(chrono::Duration::hours(2)));
 
-        let end = e.computed_end_time().unwrap();
-        assert_eq!(end.offset_minutes, 120, "end offset must re-derive to CEST");
-        let local = end.local_time();
+        let start = e.computed_start_time().unwrap();
+        assert_eq!(
+            start.offset_minutes, 60,
+            "start offset must re-derive to CET"
+        );
+        let local = start.local_time();
         assert_eq!(
             (local.hour(), local.minute()),
-            (4, 30),
-            "end wall-clock must be 04:30, not the start's stale-offset 03:30"
+            (1, 30),
+            "start wall-clock must be 01:30, not the end's stale-offset 02:30"
         );
     }
 }

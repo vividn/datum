@@ -127,46 +127,64 @@ impl Db {
         let mut bindings: Vec<String> = fields.iter().map(|s| s.to_string()).collect();
         bindings.push(cutoff);
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), |row| {
-            let field: String = row.get(0)?;
-            let value: Option<String> = row.get(1)?;
-            let verb: crate::entry::Verb =
-                row.get::<_, String>(2)?.parse().map_err(|e: String| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        2,
-                        rusqlite::types::Type::Text,
-                        e.into(),
-                    )
-                })?;
-            let occur_utc: Option<DateTime<Utc>> = row
-                .get::<_, Option<String>>(3)?
-                .and_then(|s| s.parse().ok());
-            let dur: Option<crate::dur::Dur> = row
-                .get::<_, Option<String>>(4)?
-                .as_deref()
-                .and_then(crate::dur::Dur::parse);
-            let following: Option<String> = row.get(5)?;
-            Ok((field, value, verb, occur_utc, dur, following))
-        })?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(bindings.iter()),
+            read_state_columns,
+        )?;
         for r in rows {
-            let (field, value, verb, occur_utc, dur, following) = r.map_err(DatumError::Db)?;
-            let state: Option<JsonValue> = match value {
-                None => None,
-                Some(s) => Some(serde_json::from_str(&s)?),
-            };
-            let following_state: Option<JsonValue> = match following {
-                None => None,
-                Some(s) => Some(serde_json::from_str(&s)?),
-            };
-            out.entry(field).or_default().push(super::now::StateRow {
-                verb,
-                state,
-                occur: occur_utc,
-                dur,
-                following_state,
-            });
+            let (field, row) = decode_state_row(r.map_err(DatumError::Db)?)?;
+            out.entry(field).or_default().push(row);
         }
+        self.append_spanning_blocks(fields, t, &mut out)?;
         Ok(out)
+    }
+
+    /// Append, per field, the dur-bearing rows stored AFTER `t` whose
+    /// span still covers it. da-zwct: a block's `occur_time` is its END,
+    /// so the row holding a field at `t` can sit in `t`'s future and the
+    /// `occur_time <= t` window above would never see it. Mirrors
+    /// [`Db::blocks_spanning`] for the column-level reader; the leading
+    /// edge is re-derived in Rust because `dur` is an ISO-8601 string
+    /// SQL cannot subtract from a time. [`super::now::resolve_effective`]
+    /// re-orders the merged rows on that edge.
+    fn append_spanning_blocks(
+        &self,
+        fields: &[&str],
+        t: DateTime<Utc>,
+        out: &mut std::collections::HashMap<String, Vec<super::now::StateRow>>,
+    ) -> Result<()> {
+        let placeholders = std::iter::repeat_n("?", fields.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let endbound = time_expr_endbound();
+        let sql = format!(
+            "SELECT field, state, verb, occur_time, dur, following_state FROM (
+                SELECT field, state, verb, occur_time, dur, following_state,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY field ORDER BY {endbound} ASC, slug ASC
+                  ) AS rn
+                FROM entries
+                WHERE field IN ({placeholders})
+                  AND {STATE_PARTICIPATION_SQL}
+                  AND dur IS NOT NULL
+                  AND {endbound} > ?
+            ) WHERE rn <= {} ORDER BY rn",
+            super::now::SPAN_LOOKAHEAD,
+        );
+        let mut bindings: Vec<String> = fields.iter().map(|s| s.to_string()).collect();
+        bindings.push(t.to_rfc3339());
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(bindings.iter()),
+            read_state_columns,
+        )?;
+        for r in rows {
+            let (field, row) = decode_state_row(r.map_err(DatumError::Db)?)?;
+            if row.leading_edge().is_some_and(|edge| edge <= t) {
+                out.entry(field).or_default().push(row);
+            }
+        }
+        Ok(())
     }
 
     /// Resolve the `n`th most-recent DISTINCT previous state of `field`,
@@ -299,6 +317,58 @@ impl Db {
         }
         Ok(map)
     }
+}
+
+/// The six columns both state-row readers select, decoded as far as
+/// rusqlite alone can take them. The JSON columns stay as strings here so
+/// a parse failure surfaces as a [`DatumError`] rather than being flattened
+/// into a rusqlite error — [`decode_state_row`] finishes the job.
+type StateColumns = (
+    String,
+    Option<String>,
+    crate::entry::Verb,
+    Option<DateTime<Utc>>,
+    Option<crate::dur::Dur>,
+    Option<String>,
+);
+
+fn read_state_columns(row: &rusqlite::Row) -> rusqlite::Result<StateColumns> {
+    let field: String = row.get(0)?;
+    let value: Option<String> = row.get(1)?;
+    let verb: crate::entry::Verb = row.get::<_, String>(2)?.parse().map_err(|e: String| {
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, e.into())
+    })?;
+    let occur_utc: Option<DateTime<Utc>> = row
+        .get::<_, Option<String>>(3)?
+        .and_then(|s| s.parse().ok());
+    let dur: Option<crate::dur::Dur> = row
+        .get::<_, Option<String>>(4)?
+        .as_deref()
+        .and_then(crate::dur::Dur::parse);
+    let following: Option<String> = row.get(5)?;
+    Ok((field, value, verb, occur_utc, dur, following))
+}
+
+fn decode_state_row(cols: StateColumns) -> Result<(String, super::now::StateRow)> {
+    let (field, value, verb, occur, dur, following) = cols;
+    let state: Option<JsonValue> = match value {
+        None => None,
+        Some(s) => Some(serde_json::from_str(&s)?),
+    };
+    let following_state: Option<JsonValue> = match following {
+        None => None,
+        Some(s) => Some(serde_json::from_str(&s)?),
+    };
+    Ok((
+        field,
+        super::now::StateRow {
+            verb,
+            state,
+            occur,
+            dur,
+            following_state,
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -642,20 +712,22 @@ mod tests {
     /// Compound switch (`switch f primary <dur> , following`): the verb is
     /// re-derived on insert from the (state, dur, following_state) triple —
     /// positive dur → block-switch, zero dur → point-switch.
+    /// da-zwct: `end_offset` is the block's TRAILING edge — the row's
+    /// stored `occur_time` — and `dur_secs` the span before it.
     fn push_compound_switch(
         db: &Db,
         field: &str,
         primary: serde_json::Value,
         dur_secs: i64,
         following: serde_json::Value,
-        secs_offset: i64,
+        end_offset: i64,
     ) {
         let mut entry = Entry::new(
             field,
             Verb::Switch,
             Some(primary),
             None,
-            Some(at(secs_offset)),
+            Some(at(end_offset)),
             Some(crate::dur::Dur::of(chrono::Duration::seconds(dur_secs))),
             "d1",
         );
@@ -667,7 +739,7 @@ mod tests {
     fn state_at_block_switch_honours_following_state_past_trailing_edge() {
         // The da-2i8g repro: `datum switch body sit 30 , vertical`.
         let db = Db::open_in_memory().unwrap();
-        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 100);
+        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 1900);
 
         // Inside the block → primary state.
         assert_eq!(
@@ -707,7 +779,7 @@ mod tests {
         // A newer plain switch wins outright — following_state only
         // applies when the block-switch row itself is the winner.
         let db = Db::open_in_memory().unwrap();
-        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 100);
+        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 1900);
         push_switch(&db, "body", json!("lying"), 100 + 3600);
         assert_eq!(
             db.state_at("body", at(100 + 7200).utc).unwrap(),
@@ -719,13 +791,15 @@ mod tests {
 
     /// Mirror `datum end work 12m`: a positive `dur` with a state and no
     /// `following_state` re-derives as [`Verb::Block`] on insert.
-    fn push_block(db: &Db, field: &str, state: serde_json::Value, dur_secs: i64, secs_offset: i64) {
+    /// da-zwct: `end_offset` is where the block ENDS — its stored
+    /// `occur_time` — and the `dur_secs` it lasted precede that instant.
+    fn push_block(db: &Db, field: &str, state: serde_json::Value, dur_secs: i64, end_offset: i64) {
         let entry = Entry::new(
             field,
             Verb::Block,
             Some(state),
             None,
-            Some(at(secs_offset)),
+            Some(at(end_offset)),
             Some(crate::dur::Dur::of(chrono::Duration::seconds(dur_secs))),
             "d1",
         );
@@ -740,7 +814,7 @@ mod tests {
         // 12 minutes always read correctly.
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "work", json!("datum"), 100);
-        push_block(&db, "work", json!(false), 720, 1000);
+        push_block(&db, "work", json!(false), 720, 1720);
 
         let state = |offset: i64| db.state_at("work", at(offset).utc).unwrap();
         assert_eq!(state(50), None, "before anything was logged");
@@ -766,8 +840,8 @@ mod tests {
         // the switch that still governs.
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "work", json!("datum"), 100);
-        push_block(&db, "work", json!(false), 720, 1000);
-        push_block(&db, "work", json!(false), 600, 3000);
+        push_block(&db, "work", json!(false), 720, 1720);
+        push_block(&db, "work", json!(false), 600, 3600);
         assert_eq!(
             db.state_at("work", at(3300).utc).unwrap(),
             Some(json!(false)),
@@ -789,7 +863,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "work", json!("email"), 100);
         push_switch(&db, "work", json!("datum"), 500);
-        push_block(&db, "work", json!(false), 720, 1000);
+        push_block(&db, "work", json!(false), 720, 1720);
         assert_eq!(
             db.state_at("work", at(2000).utc).unwrap(),
             Some(json!("datum")),
@@ -809,7 +883,7 @@ mod tests {
         // "tracked, no current state" — `Null`, and NOT absent, which
         // callers read as IGNORED.
         let db = Db::open_in_memory().unwrap();
-        push_block(&db, "work", json!(false), 720, 1000);
+        push_block(&db, "work", json!(false), 720, 1720);
         assert_eq!(
             db.state_at("work", at(1700).utc).unwrap(),
             Some(json!(false)),
@@ -832,7 +906,7 @@ mod tests {
         // Same two rows, one column apart, two different answers.
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "work", json!("datum"), 100);
-        push_compound_switch(&db, "work", json!(false), 720, json!("email"), 1000);
+        push_compound_switch(&db, "work", json!(false), 720, json!("email"), 1720);
         assert_eq!(
             db.state_at("work", at(50_000).utc).unwrap(),
             Some(json!("email")),
@@ -851,7 +925,7 @@ mod tests {
             json!("sit"),
             1800,
             json!(IGNORED_STATE_VALUE),
-            100,
+            1900,
         );
         let flag_at = |offset: i64| {
             let fields = db.get_tracked_fields(at(offset).utc).unwrap();
@@ -875,7 +949,7 @@ mod tests {
         // block's primary and `__` the state before the block.
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "body", json!("lying"), 50);
-        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 100);
+        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 1900);
 
         let after = at(100 + 3600).utc;
         assert_eq!(
@@ -897,7 +971,7 @@ mod tests {
         // block's primary and the following_state is NOT yet a candidate.
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "body", json!("lying"), 50);
-        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 100);
+        push_compound_switch(&db, "body", json!("sit"), 1800, json!("vertical"), 1900);
 
         let mid = at(100 + 900).utc;
         assert_eq!(
@@ -919,7 +993,7 @@ mod tests {
         // happened.
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "mood", json!("a"), 100);
-        push_compound_switch(&db, "mood", json!("b"), 100, json!("c"), 200); // trailing c@300
+        push_compound_switch(&db, "mood", json!("b"), 100, json!("c"), 300); // block [200,300], trailing c@300
         push_switch(&db, "mood", json!("d"), 400); // current = d
         let t = probe();
         assert_eq!(

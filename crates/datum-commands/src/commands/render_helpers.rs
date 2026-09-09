@@ -97,15 +97,12 @@ pub(crate) fn build_table_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCont
     ctxs
 }
 
-/// The latest probe time the batch will issue for this entry. Block rows
-/// probe at `end_time`; everything else at `start_time`, falling back to
-/// `create_time` for state-affecting rows that lack a start.
+/// The latest probe time the batch will issue for this entry:
+/// `occur_time`, falling back to `create_time` for state-affecting rows
+/// that lack one. da-zwct: a block's duration precedes `occur_time`, so
+/// the stored instant is already the block's END and no shape needs a
+/// probe later than it.
 fn probe_upper_bound(entry: &Entry) -> Option<chrono::DateTime<Utc>> {
-    if matches!(entry.shape(), datum_core::entry::EntryShape::Block) {
-        if let Some(end) = entry.computed_end_time() {
-            return Some(end.utc);
-        }
-    }
     entry
         .occur_time
         .as_ref()

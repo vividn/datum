@@ -1407,8 +1407,10 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_block("sleep", 0, 3600, "d1");
         let id = e.slug.clone();
-        let t0_start = e.occur_time.as_ref().unwrap().utc;
-        let t0_end = e.computed_end_time().unwrap().utc;
+        // da-zwct: `occur_time` is the block's END; the hour it lasted
+        // precedes it, so `computed_start_time` is the derived edge.
+        let t0_end = e.occur_time.as_ref().unwrap().utc;
+        let t0_start = e.computed_start_time().unwrap().utc;
         let hash_before = e.content_hash.clone();
         db.insert_entry(&e).unwrap();
 
@@ -1416,8 +1418,8 @@ mod tests {
 
         let after = db.get_entry(&id).unwrap();
         let shift = chrono::Duration::minutes(-5);
-        assert_eq!(after.occur_time.as_ref().unwrap().utc, t0_start + shift);
-        assert_eq!(after.computed_end_time().unwrap().utc, t0_end + shift);
+        assert_eq!(after.occur_time.as_ref().unwrap().utc, t0_end + shift);
+        assert_eq!(after.computed_start_time().unwrap().utc, t0_start + shift);
         // content_hash follows the new timestamps; modified_at moves too.
         assert_ne!(after.content_hash, hash_before);
         assert_eq!(after.content_hash, after.expected_content_hash());

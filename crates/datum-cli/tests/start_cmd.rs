@@ -101,7 +101,8 @@ fn start_after_switch_preserves_prior_state() {
 ///
 /// Datum accepts a positional duration (`start dance 5`) and so does
 /// daydumb (da-azqq retired the `--dur` flag that used to spell it). The
-/// semantic is identical: `time_end = time_start + dur`.
+/// semantic is identical: the block LASTED that long up to its
+/// `occur_time`, so `time_start = occur_time - dur` (da-zwct).
 #[test]
 fn trailing_duration_sets_time_end_for_closed_block() {
     let db = fresh_db();
@@ -112,8 +113,8 @@ fn trailing_duration_sets_time_end_for_closed_block() {
     // Start with a closed duration → shape=block, generated verb='block'.
     assert_entry_matches!(entry, field: "dance", verb: "block");
     assert_eq!(entry.duration_seconds(), Some(5 * 60));
-    let ts = entry.occur_time.as_ref().unwrap().utc;
-    let te = entry.computed_end_time().unwrap().utc;
+    let te = entry.occur_time.as_ref().unwrap().utc;
+    let ts = entry.computed_start_time().unwrap().utc;
     assert_eq!((te - ts).num_seconds(), 5 * 60);
 }
 
@@ -190,10 +191,10 @@ fn start_moment_records_point_dot() {
         .occur_time
         .as_ref()
         .expect("a moment still anchors a time");
-    // A MOMENT has no span: no derived end time...
+    // A MOMENT has no span: no derived start time...
     assert!(
-        entry.computed_end_time().is_none(),
-        "MOMENT carries no end time",
+        entry.computed_start_time().is_none(),
+        "MOMENT carries no span to walk back over",
     );
     // ...and it must NOT register as an open block (verb=point, not switch).
     assert!(

@@ -93,15 +93,16 @@ fn stop_last_state_captures_prior_switch_state() {
 /// Datum's `endCmd("dance 5")` took a positional duration and produced a
 /// backward "hole" spanning `[occurTime-5, occurTime]`, with state
 /// returning to true afterwards. Daydumb's `stop dance 5m` also emits a
-/// closed block, but it runs FORWARD from the entry's time — the block is
-/// `[base, base+dur]`. That is the da-azqq resolution: `--dur` was the one
-/// spelling that ran backward on stop, so `end work 12m -t 14:00` and
-/// `end work dur=12m -t 14:00` disagreed with it by twelve minutes. The
-/// flag went; the forward reading survives, and `datum stop --help` says
-/// so. State compilation stays simple: `Verb::Block` with state=false
-/// governs the span, so daydumb does NOT restore the prior state after it.
+/// closed block, and da-zwct puts it where the reference puts it: the
+/// duration is how long the thing LASTED up to the entry's time, so the
+/// block is `[occur - dur, occur]`. da-azqq had already made the three
+/// spellings agree with each other (`end work 12m -t 14:00`,
+/// `end work dur=12m -t 14:00`, and the retired `--dur`); they now agree
+/// with vividn/datum's `durationBlocks` view as well. State compilation
+/// stays simple: `Verb::Block` with state=false governs the span, so
+/// daydumb does NOT restore the prior state after it.
 #[test]
-fn stop_dur_produces_closed_forward_block() {
+fn stop_dur_produces_closed_block_ending_at_occur() {
     let db = fresh_db();
 
     // Anchor a prior open block so the stop sits inside real state history.
@@ -117,19 +118,20 @@ fn stop_dur_produces_closed_forward_block() {
         .find(|e| matches!(e.verb, Verb::Block))
         .expect("stop entry present");
 
-    let ts = stop
+    let te = stop
         .occur_time
         .as_ref()
         .expect("stop anchors occur_time at the entry's time")
         .utc;
-    let te = stop
-        .computed_end_time()
-        .expect("stop derives end time from the duration")
+    let ts = stop
+        .computed_start_time()
+        .expect("stop derives the start from the duration")
         .utc;
     assert_eq!(
         (te - ts).num_seconds(),
         5 * 60,
-        "stop dance 5m spans 5 minutes FORWARD: time_start=base, time_end=base+dur",
+        "stop dance 5m spans the 5 minutes BEFORE the entry's time: \
+         end=occur, start=occur-dur",
     );
     assert_eq!(stop.duration_seconds(), Some(5 * 60));
 

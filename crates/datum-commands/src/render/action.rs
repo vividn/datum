@@ -247,7 +247,10 @@ fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Optio
     if !has_state_badge(entry.verb) {
         return None;
     }
-    let at = entry.occur_time.as_ref()?.utc;
+    // da-zwct: a block's duration PRECEDES `occur_time`, so the state
+    // it walked in on sits just before `occur - dur`. `leading_edge_utc`
+    // is `occur` for every shape that spans nothing.
+    let at = entry.leading_edge_utc()?;
     let probe = at - chrono::Duration::microseconds(1);
     events?.at(probe, Some(&entry.hid))
 }
@@ -257,10 +260,10 @@ fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Opti
         return None;
     }
     if matches!(entry.shape(), EntryShape::Block) {
-        // The probe wants the instant, not a wall-clock: `computed_end_utc`
-        // needs no zone table, where `computed_end_time` links the whole of
-        // chrono-tz to re-derive an offset this path never reads.
-        let end = entry.computed_end_utc()?;
+        // da-zwct: the block's END is the stored `occur_time` itself —
+        // the duration ran up to it — so the trail probe needs no
+        // arithmetic and no zone table at all.
+        let end = entry.occur_time.as_ref()?.utc;
         return events?.at(end, Some(&entry.hid));
     }
     entry_self_trail_state(entry)

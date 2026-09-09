@@ -291,6 +291,11 @@ impl Entry {
     /// `value` → `state`, and otherwise delegates to [`Self::new`].
     /// Sub-bead 8 sweeps remaining call sites onto the v=20
     /// signature; until then this keeps `datum-commands` compiling.
+    ///
+    /// da-zwct: a v=20 block stores its TRAILING edge in `occur_time`
+    /// (the duration precedes it), so a `(start, end)` pair lands as
+    /// `occur_time = end`. With no end — an open block, or a point —
+    /// `start_time` is the row's only instant and becomes `occur_time`.
     #[allow(clippy::too_many_arguments)]
     pub fn new_legacy(
         field: impl Into<String>,
@@ -308,7 +313,8 @@ impl Entry {
             }
             _ => None,
         };
-        Self::new(field, verb, value, data, start_time, dur, device_id)
+        let occur_time = end_time.or(start_time);
+        Self::new(field, verb, value, data, occur_time, dur, device_id)
     }
 
     /// How precisely `occur_time` is known, as an ISO-8601 ± radius.
@@ -356,32 +362,50 @@ impl Entry {
         self.dur.as_ref()?.as_seconds()
     }
 
-    /// The instant a block ends: `occur_time + dur`, in UTC, and nothing
-    /// else. `None` when either is unset (point/switch shapes have no end).
+    /// The instant a block BEGINS: `occur_time - dur`, in UTC, and nothing
+    /// else. `None` when either is unset (point/switch shapes have no span).
+    ///
+    /// `occur_time` is the block's trailing edge and the duration is the
+    /// span that PRECEDES it — the original datum's `durationBlocks` view
+    /// (`blockBegin = occurTime - dur; blockEnd = occurTime`), and what
+    /// `start posture 4` means: posture was happening for the past four
+    /// minutes (da-zwct). Anything that needs a block's END wants
+    /// `occur_time` itself and no arithmetic at all.
     ///
     /// This is the door for anything that only needs the moment — a state
-    /// probe, an overlap test. [`Self::computed_end_time`] is the door for
-    /// anything that will *show* the end: it also re-derives the end's local
-    /// offset from the entry's zone, which needs the IANA table and can fail
-    /// on a zone name the table does not know. A duration is a fixed span of
-    /// seconds, so the instant needs no zone at all.
-    pub fn computed_end_utc(&self) -> Option<DateTime<Utc>> {
+    /// probe, an overlap test. [`Self::computed_start_time`] is the door for
+    /// anything that will *show* the start: it also re-derives the start's
+    /// local offset from the entry's zone, which needs the IANA table and
+    /// can fail on a zone name the table does not know. A duration is a
+    /// fixed span of seconds, so the instant needs no zone at all.
+    pub fn computed_start_utc(&self) -> Option<DateTime<Utc>> {
         let occur = self.occur_time.as_ref()?;
         let secs = self.dur.as_ref()?.as_seconds()?;
-        Some(occur.utc + chrono::Duration::seconds(secs))
+        Some(occur.utc - chrono::Duration::seconds(secs))
     }
 
-    /// Trailing-edge timestamp derived from `occur_time + dur`. `None`
-    /// when either is unset (point/switch shapes have no end). Replaces
-    /// the v=19 `end_time` column-as-field access in tests / render code.
-    pub fn computed_end_time(&self) -> Option<DatumTime> {
+    /// The instant this row's influence begins: [`Self::computed_start_utc`]
+    /// for a row that spans a duration, `occur_time` for one that does not.
+    /// Unlike `computed_start_utc` this answers for EVERY timed row, which
+    /// is what the leading-edge probes and the switch-region walk need — a
+    /// point's leading edge is its own instant.
+    pub fn leading_edge_utc(&self) -> Option<DateTime<Utc>> {
+        let occur = self.occur_time.as_ref()?;
+        let secs = self.dur.as_ref().and_then(|d| d.as_seconds()).unwrap_or(0);
+        Some(occur.utc - chrono::Duration::seconds(secs))
+    }
+
+    /// Leading-edge timestamp derived from `occur_time - dur`. `None`
+    /// when either is unset (point/switch shapes have no span). Replaces
+    /// the v=19 `start_time` column-as-field access in tests / render code.
+    pub fn computed_start_time(&self) -> Option<DatumTime> {
         let occur = self.occur_time.as_ref()?;
         let secs = self.dur.as_ref()?.as_seconds()?;
         let mut e = occur.clone();
-        e.utc += chrono::Duration::seconds(secs);
-        // The `utc` bump desyncs `offset_minutes` (see the DatumTime
-        // doc-comment); re-derive it so an end that crosses a DST
-        // boundary renders the correct wall-clock instead of the start's
+        e.utc -= chrono::Duration::seconds(secs);
+        // The `utc` shift desyncs `offset_minutes` (see the DatumTime
+        // doc-comment); re-derive it so a start that crosses a DST
+        // boundary renders the correct wall-clock instead of the end's
         // stale offset. Render-only path — drop to None on unknown-tz.
         e.refresh_offset().ok()?;
         Some(e)

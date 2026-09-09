@@ -544,15 +544,16 @@ fn load_blocks_for_field(conn: &Connection, field: &str) -> Result<Vec<Entry>> {
 }
 
 /// Find a live Block / BlockSwitch on the same field whose
-/// `[occur, occur+dur]` interval overlaps the trigger's. Touching
+/// `[occur-dur, occur]` interval overlaps the trigger's — `occur_time`
+/// is a block's END and the duration precedes it (da-zwct). Touching
 /// boundaries (one ends exactly when the other starts) do NOT overlap —
 /// a back-to-back schedule is legitimate. Returns the first hit; the
 /// caller files exactly one Overlap row per trigger.
 fn find_overlapping_block<'a>(blocks: &'a [Entry], trigger: &Entry) -> Option<&'a Entry> {
     let occur = trigger.occur_time.as_ref()?;
     let secs = trigger.dur.as_ref()?.as_seconds()?;
-    let trig_start = occur.utc;
-    let trig_end = occur.utc + chrono::Duration::seconds(secs);
+    let trig_end = occur.utc;
+    let trig_start = occur.utc - chrono::Duration::seconds(secs);
 
     blocks.iter().find(|other| {
         if other.hid == trigger.hid {
@@ -564,8 +565,8 @@ fn find_overlapping_block<'a>(blocks: &'a [Entry], trigger: &Entry) -> Option<&'
         let Some(o_secs) = o_dur.as_seconds() else {
             return false;
         };
-        let o_start = o_occur.utc;
-        let o_end = o_occur.utc + chrono::Duration::seconds(o_secs);
+        let o_end = o_occur.utc;
+        let o_start = o_occur.utc - chrono::Duration::seconds(o_secs);
         trig_start < o_end && o_start < trig_end
     })
 }
@@ -586,10 +587,15 @@ fn detect_last_state_mismatch(
     let Some(asserted_raw) = trigger.user_asserted_last_state.as_ref() else {
         return Ok(None);
     };
-    let Some(ts) = &trigger.occur_time else {
+    // da-zwct: `-L` asserts the state the row walked in on, so the probe
+    // sits just before the row's LEADING edge — a duration before
+    // `occur_time` for a block, whose stored instant is its end.
+    let Some(probe) = trigger
+        .leading_edge_utc()
+        .map(|t| t - chrono::Duration::microseconds(1))
+    else {
         return Ok(None);
     };
-    let probe = ts.utc - chrono::Duration::microseconds(1);
     let asserted = crate::state::normalize_state(asserted_raw).to_json();
     let actual = snaps
         .state_at(conn, &trigger.field, probe, trigger.hid.as_str())?
@@ -877,6 +883,7 @@ pub const AUTO_RESOLVE_MIN_AGE_SECS: i64 = 60;
 ///   patterns can be deliberate (e.g. logging a stop on a field tracked
 ///   only via stops, or two adjacent gym sessions).
 pub fn auto_resolve_pending(
+    db: &crate::db::Db,
     conn: &Connection,
     now: DateTime<Utc>,
     min_age_secs: i64,
@@ -898,54 +905,80 @@ pub fn auto_resolve_pending(
         let Some(older) = c.remote_entry.as_ref() else {
             continue;
         };
-        close_older_at(conn, older, c.local_entry.occur_time.as_ref())?;
+        close_older_at(db, older, c.local_entry.occur_time.as_ref())?;
         mark_resolved(conn, &c.id, Resolution::AutoCloseOlder, now)?;
         applied.push(get_by_hid_or_id(conn, &c.id)?.expect("just-resolved row"));
     }
     Ok(applied)
 }
 
-/// Close `older` at `at` by setting its `dur` to `at − older.occur_time`
-/// (clamped non-negative) and re-deriving its verb to `Block`. Records
-/// the pre-update state in `entry_history` so the resolution is
-/// reversible. Silently no-ops when `at` or `older.occur_time` is
-/// missing — the caller's resolver still marks the conflict resolved.
-pub(crate) fn close_older_at(
+/// The instant the row closed at `at` may actually store. `at` itself
+/// whenever it is free, and one millisecond earlier when a live row on
+/// `field` already holds it — da-ga8b gives one instant on a field to one
+/// live row, and the row that closes `older` is usually the very row that
+/// occupies `at` (a double-open closes the older AT the newer's instant).
+/// A millisecond is the slug's own resolution, so the stepped-back end
+/// keys a distinct slug too. Blocks are half-open in every renderer, so
+/// "ends where the next one opens" and "ends the millisecond before" draw
+/// the same picture.
+fn free_end_instant(
     conn: &Connection,
+    field: &str,
+    exclude_hid: &str,
+    at: &crate::time::DatumTime,
+) -> Result<crate::time::DatumTime> {
+    let taken: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM entries \
+          WHERE field = ?1 AND occur_time = ?2 AND hid <> ?3 \
+            AND deleted_at IS NULL AND superseded_by IS NULL)",
+        params![field, at.utc.to_rfc3339(), exclude_hid],
+        |r| r.get(0),
+    )?;
+    if !taken {
+        return Ok(at.clone());
+    }
+    let mut stepped = at.clone();
+    stepped.utc -= chrono::Duration::milliseconds(1);
+    Ok(stepped)
+}
+
+/// Close the open block `older` at `at`: it began at `older.occur_time`
+/// and ends at `at`, which under da-zwct makes `at` the row's new
+/// `occur_time` — a block stores its trailing edge — and `dur` the span
+/// `at − older.occur_time` that precedes it (clamped non-negative).
+/// Records the pre-update state in `entry_history` so the resolution is
+/// reversible, and rekeys a `%occur_time%` slug through the shared
+/// auto-reinterp path, since the row's stored instant moves. Silently
+/// no-ops when `at` or `older.occur_time` is missing — the caller's
+/// resolver still marks the conflict resolved.
+///
+/// Runs inside whatever transaction the caller has already opened on
+/// `db`'s connection and never begins or commits one itself.
+pub(crate) fn close_older_at(
+    db: &crate::db::Db,
     older: &Entry,
     at: Option<&crate::time::DatumTime>,
 ) -> Result<()> {
-    let Some(end) = at else {
+    let Some(at) = at else {
         return Ok(());
     };
     let Some(start) = older.occur_time.as_ref() else {
         return Ok(());
     };
+    let end = free_end_instant(db.conn(), &older.field, older.hid.as_str(), at)?;
     let secs = (end.utc - start.utc).num_seconds().max(0);
-    let new_dur = crate::dur::Dur::of(chrono::Duration::seconds(secs));
 
     let mut updated = older.clone();
-    updated.dur = Some(new_dur);
+    updated.dur = Some(crate::dur::Dur::of(chrono::Duration::seconds(secs)));
+    updated.occur_time = Some(end.clone());
     updated.verb = if secs == 0 { Verb::Point } else { Verb::Block };
     updated.modify_time = Utc::now();
-    updated.content_hash = updated.expected_content_hash();
 
-    crate::history::record(conn, older, crate::history::ChangeKind::UserEdit)?;
-
-    conn.execute(
-        r#"UPDATE entries SET
-            verb = ?2,
-            dur = ?3,
-            content_hash = ?4,
-            modify_time = ?5
-           WHERE slug = ?1 AND deleted_at IS NULL AND superseded_by IS NULL"#,
-        params![
-            older.slug,
-            updated.verb.to_string(),
-            updated.dur.as_ref().map(crate::dur::Dur::to_storage_string),
-            updated.content_hash,
-            updated.modify_time.to_rfc3339(),
-        ],
+    db.save_existing_entry_with_auto_reinterp_kind_in_tx(
+        &older.slug,
+        updated,
+        crate::field_spec::DEFAULT_ID_DELIMITER,
+        crate::history::ChangeKind::UserEdit,
     )?;
     Ok(())
 }

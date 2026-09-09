@@ -452,9 +452,10 @@ impl FieldStateEvents {
                         )
                     })?;
             // da-2i8g sub-bead 5: block-switch / point-switch emit a
-            // trailing event at `occur_time + dur` carrying the
-            // `following_state`. Pull the columns so collect_raw_events
-            // can decide.
+            // trailing event at `occur_time` carrying the
+            // `following_state`, and open at `occur_time - dur`
+            // (da-zwct). Pull the columns so collect_raw_events can
+            // decide.
             let dur: Option<Dur> = row
                 .get::<_, Option<String>>("dur")?
                 .as_deref()
@@ -562,12 +563,14 @@ enum EventKind {
 /// [`entry_transition_events`] and [`collect_raw_events`] so the three
 /// doors cannot drift (da-a0n3).
 ///
-/// da-5ns sub-bead 1: each state-affecting verb emits an event at
-/// `occur` (the row's occur_time). da-2i8g sub-bead 5: block-switch and
-/// point-switch ALSO emit a trailing event at `occur + dur` carrying the
-/// `following_state` value. That trailing event is what makes a
-/// post-block probe see the next state (e.g. after a `sit 30 → vertical`
-/// block, `now` 31 min later reports `vertical`, not `sit`).
+/// da-5ns sub-bead 1: each state-affecting verb emits an event at its
+/// LEADING edge — `occur - dur` for a block (whose stored `occur` is its
+/// END, da-zwct), `occur` for everything else. da-2i8g sub-bead 5:
+/// block-switch and point-switch ALSO emit a trailing event AT `occur`
+/// carrying the `following_state` value. That trailing event is what
+/// makes a post-block probe see the next state (e.g. a `sit 30 →
+/// vertical` block logged at 09:00 held `sit` from 08:30, and `now` at
+/// 09:01 reports `vertical`, not `sit`).
 fn verb_state_events(
     verb: Verb,
     state: Option<&Value>,
@@ -598,17 +601,20 @@ fn verb_state_events(
                 Some(v) => (normalize_state(v).to_json(), EventKind::Transition),
                 None => (Value::Null, EventKind::Annotation),
             };
-            out.push((ts, primary, kind));
-            if let (Some(d), Some(fs)) = (dur, following_state) {
-                // PointSwitch: dur is a zero span; the trailing
-                // event lands at the same occur instant. The
-                // stable sort preserves the push order so the
-                // trailing event still wins on a `<= t` probe.
-                // BlockSwitch: trailing lands at occur + dur.
-                let delta = d.as_seconds().unwrap_or(0);
-                let trailing_ts = ts + chrono::Duration::seconds(delta);
+            // da-zwct: `occur` is the block's END and the duration is the
+            // span before it, so the primary state takes effect at
+            // `occur - dur` and the `following_state` takes over AT
+            // `occur` — the stored instant, no arithmetic.
+            let delta = dur.and_then(|d| d.as_seconds()).unwrap_or(0);
+            let leading_ts = ts - chrono::Duration::seconds(delta);
+            out.push((leading_ts, primary, kind));
+            if let (Some(_), Some(fs)) = (dur, following_state) {
+                // PointSwitch: dur is a zero span; the trailing event
+                // lands at the same occur instant. The stable sort
+                // preserves the push order so the trailing event still
+                // wins on a `<= t` probe.
                 let trailing = normalize_state(fs).to_json();
-                out.push((trailing_ts, trailing, EventKind::Transition));
+                out.push((ts, trailing, EventKind::Transition));
             }
         }
         Verb::Point => {
@@ -635,7 +641,10 @@ fn verb_state_events(
                 Some(v) => (normalize_state(v).to_json(), EventKind::Transition),
                 None => (Value::Bool(true), EventKind::Annotation),
             };
-            out.push((ts, v, kind));
+            // da-zwct: the block ran for `dur` UP TO `occur`, so it opens
+            // at `occur - dur`. An open block (no `dur`) opens at `occur`.
+            let delta = dur.and_then(|d| d.as_seconds()).unwrap_or(0);
+            out.push((ts - chrono::Duration::seconds(delta), v, kind));
         }
     }
 }
@@ -666,10 +675,12 @@ fn collect_raw_events(
 /// State-transition events asserted by a single entry, in emission order:
 /// `(event_time, state)` pairs.
 ///
-/// da-5ns sub-bead 1: each state-affecting verb emits an event at
-/// occur_time. da-2i8g sub-bead 5: block-switch / point-switch
-/// additionally emit a trailing `following_state` event at
-/// occur_time + dur, so a `state_at(t)` probe past the block sees
+/// da-5ns sub-bead 1: each state-affecting verb emits an event at its
+/// LEADING edge — `occur_time` for a point or an open block,
+/// `occur_time - dur` for a block, whose stored instant is its end
+/// (da-zwct). da-2i8g sub-bead 5: block-switch / point-switch
+/// additionally emit a trailing `following_state` event AT
+/// `occur_time`, so a `state_at(t)` probe past the block sees
 /// the next state, not the block's primary.
 ///
 /// Timeless rows (bare `add`/`note`, or `-T`/`--no-timestamp`): the
@@ -1069,6 +1080,10 @@ mod tests {
         e
     }
 
+    /// da-zwct: `switch body sit 30 , vertical` logged at 09:00 means
+    /// the body was SITTING for the half hour BEFORE 09:00 and went
+    /// vertical AT 09:00. So the primary opens at `occur - dur` and the
+    /// follower opens at the stored `occur` itself.
     #[test]
     fn collect_events_emits_following_state_at_end_of_block_switch() {
         let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
@@ -1078,12 +1093,15 @@ mod tests {
         collect_events(&entry, &mut events);
 
         assert_eq!(events.len(), 2, "block-switch emits primary + trailing");
-        assert_eq!(events[0].0, occur, "first event at occur_time");
+        assert_eq!(
+            events[0].0,
+            occur - chrono::Duration::seconds(30 * 60),
+            "the block opens a duration BEFORE occur_time"
+        );
         assert_eq!(events[0].2, json!("sit"));
         assert_eq!(
-            events[1].0,
-            occur + chrono::Duration::seconds(30 * 60),
-            "trailing event at occur_time + dur"
+            events[1].0, occur,
+            "trailing event at occur_time — the block's end IS the stored instant"
         );
         assert_eq!(events[1].2, json!("vertical"));
     }
@@ -1200,6 +1218,8 @@ mod tests {
         assert_eq!(entry_transition_events(&e), vec![(occur, json!("happy"))]);
     }
 
+    /// da-zwct: the block's half hour PRECEDES its stored 09:00, so the
+    /// primary is a candidate from 08:30 and the follower from 09:00.
     #[test]
     fn compound_switch_trailing_event_is_a_transition() {
         let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
@@ -1207,11 +1227,8 @@ mod tests {
         assert_eq!(
             entry_transition_events(&entry),
             vec![
-                (occur, json!("sit")),
-                (
-                    occur + chrono::Duration::seconds(30 * 60),
-                    json!("vertical")
-                ),
+                (occur - chrono::Duration::seconds(30 * 60), json!("sit")),
+                (occur, json!("vertical")),
             ],
             "primary AND following_state are both ordinal candidates"
         );
@@ -1221,10 +1238,11 @@ mod tests {
     fn state_at_after_block_switch_returns_following_state() {
         // End-to-end through FieldStateEvents::at: a probe inside the
         // block sees the primary; a probe after the block sees the
-        // trailing.
+        // trailing. da-zwct: the block is [08:30, 09:00), so "inside" is
+        // before the stored instant and "after" is at or past it.
         let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
-        let mid = occur + chrono::Duration::minutes(15);
-        let after = occur + chrono::Duration::minutes(31);
+        let mid = occur - chrono::Duration::minutes(15);
+        let after = occur + chrono::Duration::minutes(1);
         let entry = block_switch_entry(occur, "sit", 30 * 60, "vertical");
 
         let mut events = Vec::new();

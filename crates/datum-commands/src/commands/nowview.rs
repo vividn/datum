@@ -37,8 +37,8 @@ use serde_json::Value as JsonValue;
 
 use crate::args::NowviewArgs;
 use crate::commands::field_visuals::{
-    canonical_verb, dur_seconds, occur_time_ms, occur_time_ms_opt, push_switch_region,
-    render_field_visuals, rgb_to_hex, state_label, switch_region_end_ms, trailing_edge_ms,
+    canonical_verb, dur_seconds, leading_edge_ms, occur_time_ms, occur_time_ms_opt,
+    push_switch_region, render_field_visuals, rgb_to_hex, state_label, switch_region_end_ms,
 };
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
 use crate::render::term_layout;
@@ -508,7 +508,16 @@ pub(crate) fn build_fields(
         }
         let mut entries_for_field = by_field.remove(&field).unwrap_or_default();
         entries_for_field.sort_by_key(occur_time_ms);
-        let switch_region_ends = switch_region_end_ms(&entries_for_field, day_end_ms);
+        // da-zwct: `day_end_ms` CLIPS an open region; it does not close
+        // one. A block given as a duration, on the other hand, really
+        // does end at its own instant — and for a just-logged
+        // `start posture 4` that instant IS `day_end_ms`. The band's
+        // "what is happening right now" read
+        // ([`datum_layout::nowview_terminal`]) has to tell the two
+        // apart, so an open region's end lands one millisecond past the
+        // window: invisible in the drawing at any width, decisive there.
+        let open_end_ms = day_end_ms + 1;
+        let switch_region_ends = switch_region_end_ms(&entries_for_field, open_end_ms);
 
         // da-ncoa: synthesize the leading region for a state set before
         // the fetch window. Without it the renderer paints the field-
@@ -517,7 +526,7 @@ pub(crate) fn build_fields(
         // state list above still shows it.
         let mut blocks: Vec<NowviewBlock> = Vec::new();
         if let Some((start_ms, end_ms, state)) =
-            leading_state_region(db, &field, &entries_for_field, window_start, day_end_ms)?
+            leading_state_region(db, &field, &entries_for_field, window_start, open_end_ms)?
         {
             push_switch_region_terminal(
                 &mut blocks,
@@ -723,10 +732,13 @@ fn render_field_visuals_terminal(
             }
         }
         if opens_secondary_switch_region(verb) {
+            // da-zwct: the row's trailing edge IS `occur_ms` — a block's
+            // duration runs up to its stored instant, and a point-switch
+            // spans nothing.
             push_switch_region_terminal(
                 &mut blocks,
                 entry.following_state.as_ref(),
-                trailing_edge_ms(entry, occur_ms),
+                occur_ms,
                 switch_region_ends[idx],
                 field,
                 spec,
@@ -749,8 +761,9 @@ fn push_block_terminal(
     if dur_secs == 0 {
         return;
     }
-    let start_ms = occur_ms;
-    let end_ms = occur_ms + dur_secs * 1000;
+    // da-zwct: the block LASTED `dur` up to `occur_ms`.
+    let end_ms = occur_ms;
+    let start_ms = leading_edge_ms(entry, occur_ms);
     let colors = match entry.state.as_ref() {
         Some(v) => {
             let rgbs = state_value_colors(v, field, spec);
@@ -1015,9 +1028,10 @@ mod tests {
         assert!(fields.iter().all(|f| f.field != "background_telemetry"));
     }
 
-    /// Terminal-shape Block emits one closed segment at [occur, occur + dur].
+    /// Terminal-shape Block emits one closed segment at [occur − dur,
+    /// occur] — da-zwct: the duration precedes the stored instant.
     #[test]
-    fn terminal_block_renders_at_occur_to_occur_plus_dur() {
+    fn terminal_block_renders_the_duration_before_its_occur_time() {
         use chrono::TimeZone;
         let db = Db::open_in_memory().unwrap();
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 12, 30, 0).unwrap();
@@ -1037,8 +1051,11 @@ mod tests {
         let (blocks, points) = render_field_visuals_terminal(&entries, "lunch", None, &ends, &db);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
-        assert_eq!(blocks[0].end_ms, occur.timestamp_millis() + 30 * 60 * 1000);
+        assert_eq!(
+            blocks[0].start_ms,
+            occur.timestamp_millis() - 30 * 60 * 1000
+        );
+        assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
     }
 
     /// Terminal-shape PointSwitch emits a dot AND opens a switch region.
@@ -1102,7 +1119,11 @@ mod tests {
         let block = &mood.blocks[0];
         let window_start_ms = (now - chrono::Duration::seconds(240)).timestamp_millis();
         assert_eq!(block.start_ms, window_start_ms);
-        assert_eq!(block.end_ms, now.timestamp_millis());
+        // da-zwct: the switch never ended, so its region runs a
+        // millisecond past the window rather than closing on the
+        // now-line — that is how the band tells "still happening" from
+        // "a block that ended exactly now".
+        assert_eq!(block.end_ms, now.timestamp_millis() + 1);
         assert_eq!(block.state_label.as_deref(), Some("happy"));
         assert_eq!(block.colors, vec!["#112233".to_string()]);
         assert_ne!(block.colors, mood.default_colors);
@@ -1206,6 +1227,73 @@ mod tests {
         assert!(
             fields.iter().all(|f| f.field != "screen"),
             "off-state field must stay hidden",
+        );
+    }
+
+    /// da-zwct, the way vividn reported it: `start posture 4` says posture
+    /// was happening for the past four minutes, so `datum now`'s band
+    /// must paint those four minutes BEHIND the now-line and nothing in
+    /// the five-minute now panel to its right. The forward reading put
+    /// the whole block there.
+    #[test]
+    fn a_just_logged_dur_block_paints_behind_the_now_line() {
+        use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
+
+        let db = Db::open_in_memory().unwrap();
+        let now = chrono::Utc::now();
+        let occur = datum_core::time::DatumTime::from_utc_and_tz(now, "UTC").unwrap();
+        let mut e = datum_core::entry::Entry::new(
+            "posture",
+            Verb::Block,
+            Some(serde_json::json!(true)),
+            None,
+            Some(occur),
+            Some(datum_core::dur::Dur::of(chrono::Duration::minutes(4))),
+            "d1",
+        );
+        e.state = Some(serde_json::json!(true));
+        db.insert_entry(&e).unwrap();
+
+        // The same knobs `cmd_now`'s band uses: an hour of history, a
+        // five-minute now panel.
+        let fields = build_fields(&db, now, 60.0, false).unwrap();
+        let band = render_nowview_terminal(
+            &fields,
+            &TerminalConfig {
+                end_ms: now.timestamp_millis(),
+                history_minutes: 60.0,
+                now_width_minutes: 5.0,
+                cols: 80,
+                rows: 0,
+                use_color: false,
+                current_time_label: "12:00".into(),
+                mode: RenderMode::InlineBand,
+            },
+        );
+
+        let row = band
+            .lines()
+            .find(|l| l.starts_with("posture"))
+            .unwrap_or_else(|| panic!("posture row in:\n{band}"));
+        let (history, now_panel) = row
+            .split_once('│')
+            .unwrap_or_else(|| panic!("band divider in:\n{band}"));
+
+        assert!(
+            history.contains('█'),
+            "the four minutes it lasted must be painted behind the now-line:\n{band}"
+        );
+        assert!(
+            !now_panel.contains('█'),
+            "nothing may be painted after the now-line — the block is over:\n{band}"
+        );
+        // And it is four minutes, not sixty: the history panel is an hour
+        // wide, so all but its last handful of cells stay empty.
+        let filled = history.chars().filter(|c| *c == '█').count();
+        let cells = history.chars().count();
+        assert!(
+            filled * 10 < cells,
+            "four minutes of a sixty-minute panel, got {filled} of {cells} cells:\n{band}"
         );
     }
 }

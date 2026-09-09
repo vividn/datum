@@ -57,6 +57,13 @@ All four combinations are valid:
 - `time_start` + a duration — end derived
 - `time_end` + a duration — start derived
 
+What the row actually stores is `occur_time` + `dur`, and `occur_time` is
+the block's END: the duration is the span that PRECEDES it (da-zwct,
+matching the original datum's `durationBlocks` view). So a `(start, end)`
+pair lands as `occur_time = end`, and a bare `start` with no end — an
+open block — is the one shape whose `occur_time` is its leading edge,
+because it has no other instant to store.
+
 ### Unit annotation in extra_data
 Both forms valid:
 - `"reps": 10` — bare value
@@ -77,10 +84,14 @@ CLI parses `weight=75.2kg` → annotated form automatically.
 - `-t` accepts anything `-d` does — day words, weekdays, `2024-03-16` —
   so a caller holding "either a time or a date" needs only one flag
 - a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
-  (`1:30`, `2h`, ISO `PT30M` all work). It anchors the block AT the entry's
-  time and runs forward. There is no `--dur` flag — da-azqq removed it
-  because it ran the block backward from `-t` where the other two spellings
-  ran forward; `crates/datum-cli/tests/dur_flag_removed.rs` keeps it gone
+  (`1:30`, `2h`, ISO `PT30M` all work). It says how long the thing LASTED,
+  so the block ENDS at the entry's time and the span precedes it —
+  `datum start posture 4` means posture was happening for the past four
+  minutes, and `-t 1400` with `30m` is 13:30–14:00 (da-zwct; the original
+  datum's `durationBlocks` view). There is no `--dur` flag — da-azqq
+  removed it because the three spellings disagreed about which side of
+  `-t` the block fell on; `crates/datum-cli/tests/dur_flag_removed.rs`
+  keeps it gone, and the two survivors now agree with the reference
 
 ### Syntax variants (both must work)
 - `datum switch mood happy`  ← verb-first

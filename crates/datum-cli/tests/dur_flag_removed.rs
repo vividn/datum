@@ -56,9 +56,11 @@ fn dur_flag_is_rejected_on_every_logging_verb() {
 }
 
 /// The reason `--dur` went: the two surviving spellings agree with each
-/// other about `-t`, and it did not. Both anchor the block AT `-t` and
-/// run forward, so `end work 12m -t 14:00` and `end work dur=12m -t
-/// 14:00` are the same twelve minutes.
+/// other about `-t`, and it did not. Both anchor the block AT `-t`, so
+/// `end work 12m -t 14:00` and `end work dur=12m -t 14:00` are the same
+/// twelve minutes. da-zwct settled which twelve: `-t` is the block's END
+/// and the duration is the span that preceded it, so both spell
+/// 13:48–14:00.
 #[test]
 fn both_surviving_spellings_anchor_the_block_at_minus_t() {
     let db = fresh_db();
@@ -72,16 +74,17 @@ fn both_surviving_spellings_anchor_the_block_at_minus_t() {
     assert_eq!(
         positional.occur_time.as_ref().unwrap().utc,
         reserved.occur_time.as_ref().unwrap().utc,
-        "both spellings start the block at -t, not one on each side of it",
+        "both spellings end the block at -t, not one on each side of it",
     );
     assert_eq!(positional.duration_seconds(), Some(12 * 60));
     assert_eq!(reserved.duration_seconds(), Some(12 * 60));
 
-    // And forward, not backward: the block ends after it starts.
-    let ts = positional.occur_time.as_ref().unwrap().utc;
-    let te = positional
-        .computed_end_time()
-        .expect("end time derived")
+    // And it is the twelve minutes BEFORE -t: the derived start precedes
+    // the stored instant (da-zwct).
+    let te = positional.occur_time.as_ref().unwrap().utc;
+    let ts = positional
+        .computed_start_time()
+        .expect("start time derived")
         .utc;
-    assert!(te > ts, "the span runs forward from -t");
+    assert!(ts < te, "the span is the duration leading up to -t");
 }

@@ -475,12 +475,13 @@ mod tests {
     }
 
     #[test]
-    fn blocks_block_switch_opens_follower_at_occur_plus_dur() {
+    fn blocks_block_switch_opens_follower_at_its_occur_time() {
         // The vremya pattern from da-eybr: `switch activity end 14m , researching`
-        // then a plain switch later. Canonically 'end' runs 0–14 and
+        // then a plain switch later. da-zwct: the row stores the block's
+        // END, so logging it at t(14) means 'end' ran 0–14 and
         // 'researching' 14–60; pre-fix, block mode dropped the trailing
         // event so 'end' ran to t(60) and 'researching' never existed.
-        let bs = block_switch("activity", t(0), "end", 14, "researching");
+        let bs = block_switch("activity", t(14), "end", 14, "researching");
         let mut lunch = entry_builder("activity")
             .verb(Verb::Switch)
             .state(json!("lunch"))
@@ -497,12 +498,16 @@ mod tests {
         assert_eq!(
             end_blocks[0].end.as_ref().map(|e| e.utc),
             Some(t(14)),
-            "primary block closes at occur+dur, not at the next entry"
+            "primary block closes at its occur_time, not at the next entry"
         );
 
         let follower = compute_blocks(&entries, &json!("researching"));
         assert_eq!(follower.len(), 1, "follower block exists");
-        assert_eq!(follower[0].start.utc, t(14), "follower opens at occur+dur");
+        assert_eq!(
+            follower[0].start.utc,
+            t(14),
+            "follower opens at the block's occur_time"
+        );
         assert_eq!(follower[0].end.as_ref().map(|e| e.utc), Some(t(60)));
         // Both opener and the primary's closer are the block-switch row itself.
         assert_eq!(follower[0].opener.hid, bs.hid);

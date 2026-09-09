@@ -116,27 +116,46 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
     // resumes nothing, the answer `now` gives for the same rows).
     let mut governing: Option<(&str, StateClass)> = None;
 
+    // Where a row's influence begins: `occur - dur` for a block, whose
+    // stored instant is its END (da-zwct), and `occur` for everything
+    // else. This — not the stored instant — is where the row before it
+    // stops speaking.
+    let leading = |r: &TimelineRow| r.occur - Duration::seconds(r.dur.unwrap_or(0));
+
     for (i, row) in timeline.iter().enumerate() {
-        let next = timeline.get(i + 1).map(|r| r.occur).unwrap_or(now);
-        // Block A — the row's own state. A stored `dur` bounds it (discrete
-        // block); otherwise it runs to the next entry (switch continuity),
-        // or to `now` for the still-open trailing block.
-        let block_a_end = match row.dur {
-            Some(d) => (row.occur + Duration::seconds(d)).min(next),
-            None => next,
+        let next = timeline.get(i + 1).map(&leading).unwrap_or(now);
+        let prev = i.checked_sub(1).map(|j| timeline[j].occur);
+        // Block A — the row's own state. da-zwct: a stored `dur` is how
+        // long the state LASTED up to `row.occur`, so a discrete block is
+        // `[occur - dur, occur]` and never reaches past its own instant;
+        // clamped at the previous entry's trailing edge so a block logged
+        // longer than the gap before it does not claim time another row
+        // already spoke for. Without a `dur` the row runs from its
+        // instant to where the next entry starts speaking (switch
+        // continuity), or to `now` for the still-open trailing block.
+        let (block_a_start, block_a_end) = match row.dur {
+            Some(d) => {
+                let mut from = row.occur - Duration::seconds(d);
+                if let Some(prev) = prev {
+                    from = from.max(prev);
+                }
+                (from, row.occur)
+            }
+            None => (row.occur, next),
         };
         add_overlap(
             &mut dur_by_state,
             &row.state,
-            row.occur,
+            block_a_start,
             block_a_end,
             start,
             end,
         );
         note_class(&mut class_by_state, &row.state, row.class);
 
-        // Block B — what holds from the block's trailing edge until the next
-        // entry. An explicit `following_state` says so outright; a plain
+        // Block B — what holds from the block's trailing edge (`occur`
+        // itself, da-zwct) until the next entry opens. An explicit
+        // `following_state` says so outright; a plain
         // block says it by omission — `following_state IS NULL` means
         // "resume what I interrupted" (da-611d), so the remainder belongs to
         // the interrupted state and not to nothing (da-mkqo).

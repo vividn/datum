@@ -253,11 +253,11 @@ fn switch_without_state_promotes_to_true() {
 
 /// TS #8: "records a block of state when specifying duration".
 ///
-/// `switch ... 10m` emits a closed block: `time_end = time_start + 10m`.
-/// During the block, state is the switched-to value; at `time_end`, state
-/// reverts to `false`.
+/// `switch ... 10m` emits a closed block that LASTED ten minutes up to
+/// the entry's time: `time_end = occur_time`, `time_start = occur - 10m`
+/// (da-zwct). During the block, state is the switched-to value.
 #[test]
-fn switch_dur_creates_forward_block_ending_false() {
+fn switch_dur_creates_block_ending_at_occur() {
     let db = fresh_db();
 
     run_cli(&["switch", "project", "household", "10m"], &db).expect("switch household 10m");
@@ -267,8 +267,8 @@ fn switch_dur_creates_forward_block_ending_false() {
     assert_entry_matches!(entry, field: "project", verb: "block", state: "household");
     assert_eq!(entry.duration_seconds(), Some(10 * 60));
 
-    let ts = entry.occur_time.as_ref().unwrap().utc;
-    let te = entry.computed_end_time().unwrap().utc;
+    let te = entry.occur_time.as_ref().unwrap().utc;
+    let ts = entry.computed_start_time().unwrap().utc;
     assert_eq!((te - ts).num_seconds(), 10 * 60);
 
     // Midway through the block, state is "household".
@@ -335,7 +335,7 @@ fn switch_moment_produces_point_in_time_entry() {
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     // da-64yd: `switch foo -m` yields dur=MOMENT (mirrors `start -m`), not a
     // zero-span PT0S. With state="household" set, derive_verb still returns
-    // Point. A moment has no end, so computed_end_time() is None.
+    // Point. A moment spans nothing, so computed_start_time() is None.
     assert_entry_matches!(entry, field: "project", verb: "point", state: "household");
     assert!(
         entry
@@ -347,8 +347,8 @@ fn switch_moment_produces_point_in_time_entry() {
     );
     entry.occur_time.as_ref().expect("occur_time set");
     assert!(
-        entry.computed_end_time().is_none(),
-        "MOMENT carries no end time",
+        entry.computed_start_time().is_none(),
+        "MOMENT carries no span to walk back over",
     );
     let extra = entry.data.as_ref().expect("skillPoints in extra_data");
     assert_eq!(extra["skillPoints"], json!(3));

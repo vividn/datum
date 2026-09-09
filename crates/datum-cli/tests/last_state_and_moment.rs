@@ -190,16 +190,16 @@ fn switch_moment_records_point_in_time() {
     let e = &entries[0];
 
     // da-64yd: `switch foo -m` records a MOMENT (mirrors `start -m`), not a
-    // zero-span PT0S. A moment anchors a time but has no end.
-    e.occur_time.as_ref().expect("time_start set");
+    // zero-span PT0S. A moment anchors a time but spans nothing.
+    e.occur_time.as_ref().expect("occur_time set");
     assert!(
         e.dur.as_ref().is_some_and(datum_core::dur::Dur::is_moment),
         "--moment must set dur to MOMENT, got {:?}",
         e.dur
     );
     assert!(
-        e.computed_end_time().is_none(),
-        "MOMENT carries no end time"
+        e.computed_start_time().is_none(),
+        "MOMENT carries no span to walk back over"
     );
     assert_eq!(e.verb, Verb::Point);
 
@@ -212,7 +212,7 @@ fn switch_moment_records_point_in_time() {
         "short -m must set dur to MOMENT, got {:?}",
         e2.dur
     );
-    assert!(e2.computed_end_time().is_none());
+    assert!(e2.computed_start_time().is_none());
 }
 
 #[test]

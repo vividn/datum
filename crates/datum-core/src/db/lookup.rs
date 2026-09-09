@@ -170,7 +170,10 @@ impl Db {
     /// recent event's value.
     ///
     /// SQL fetches just the candidate rows (field match, canonical
-    /// participation, `occur_time` ≤ at); compilation runs in Rust.
+    /// participation, `occur_time` ≤ at) plus the blocks still running at
+    /// `at` — da-zwct: a block stores its END, so the row covering `at`
+    /// can sit in its future ([`Db::blocks_spanning`]). Compilation runs
+    /// in Rust and sorts the events, so the two sets just concatenate.
     pub fn get_active_state(&self, field: &str, at: DateTime<Utc>) -> Result<JsonValue> {
         let at_str = at.to_rfc3339();
         let sql = format!(
@@ -183,9 +186,10 @@ impl Db {
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![field, at_str], row_to_entry)?;
-        let entries: Vec<Entry> = rows
+        let mut entries: Vec<Entry> = rows
             .map(|r| r.map_err(DatumError::Db))
             .collect::<Result<Vec<_>>>()?;
+        entries.extend(self.blocks_spanning(field, at)?);
         Ok(crate::state::compile_state(&entries, at))
     }
 
@@ -303,7 +307,42 @@ impl Db {
             None => stmt.query_map(params![field], row_to_entry)?,
             Some(c) => stmt.query_map(params![field, c], row_to_entry)?,
         };
-        rows.map(|r| r.map_err(DatumError::Db)).collect()
+        let mut entries: Vec<Entry> = rows
+            .map(|r| r.map_err(DatumError::Db))
+            .collect::<Result<Vec<_>>>()?;
+        if let Some(t) = snapshot_time {
+            entries.extend(self.blocks_spanning(field, t)?);
+        }
+        Ok(entries)
+    }
+
+    /// Dur-bearing rows stored AFTER `t` whose span still covers it.
+    /// da-zwct: a block's `occur_time` is its END, so the row that holds
+    /// the field at `t` can sit in `t`'s future — the bounded readers
+    /// would miss it entirely. Only the nearest
+    /// [`super::now::SPAN_LOOKAHEAD`] forward blocks are considered; the
+    /// leading edge is re-derived in Rust because `dur` is an ISO-8601
+    /// string SQL cannot subtract from a time.
+    fn blocks_spanning(&self, field: &str, t: chrono::DateTime<chrono::Utc>) -> Result<Vec<Entry>> {
+        let expr = time_expr_endbound();
+        let sql = format!(
+            "SELECT * FROM entries
+             WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
+               AND dur IS NOT NULL AND {expr} > ?2
+             ORDER BY {expr} ASC
+             LIMIT {}",
+            super::now::SPAN_LOOKAHEAD,
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![field, t.to_rfc3339()], row_to_entry)?;
+        let mut out = Vec::new();
+        for r in rows {
+            let e = r.map_err(DatumError::Db)?;
+            if e.leading_edge_utc().is_some_and(|edge| edge <= t) {
+                out.push(e);
+            }
+        }
+        Ok(out)
     }
 }
 

@@ -112,7 +112,7 @@ impl Db {
 
         for tf in tracked {
             // da-2i8g: a block-switch / point-switch carries a
-            // `following_state` that takes effect at `occur_time + dur`.
+            // `following_state` that takes effect at `occur_time`.
             // da-phoe: a plain block instead HANDS THE FIELD BACK there,
             // so the row that decides the state may be behind it.
             // [`resolve_effective`] applies both rules.
@@ -209,6 +209,14 @@ impl Db {
     }
 }
 
+/// How many dur-bearing rows stored AFTER the probe instant a state read
+/// pulls in so a block still running at that instant is seen. da-zwct: a
+/// block's stored `occur` is its END, so the row that covers `at` can sit
+/// in `at`'s future; the nearest few forward blocks are the only ones
+/// whose span can reach back over it (overlapping blocks are an integrity
+/// warning, not a shape the reader has to unravel).
+pub(super) const SPAN_LOOKAHEAD: usize = 8;
+
 /// How many rows a state read may walk back through to find the state a
 /// block handed the field back to. Each completed block immediately
 /// preceding the read consumes one; a real ledger never stacks anywhere
@@ -239,12 +247,22 @@ impl StateRow {
         }
     }
 
-    /// `occur + dur` for a row that spans one, i.e. where its own region
-    /// ends. `None` for a point or an unparseable `dur`.
+    /// Where a row that spans a duration ends — its `occur`, which IS
+    /// the block's trailing edge (da-zwct: the duration precedes it).
+    /// `None` for a point or an unparseable `dur`, so callers that only
+    /// act on real spans keep short-circuiting on it.
     fn trailing_edge(&self) -> Option<DateTime<Utc>> {
         let occur = self.occur?;
-        let secs = self.dur.as_ref()?.as_seconds()?;
-        Some(occur + chrono::Duration::seconds(secs))
+        self.dur.as_ref()?.as_seconds()?;
+        Some(occur)
+    }
+
+    /// Where this row's influence begins: `occur - dur` for a block,
+    /// `occur` for a point or an open block.
+    pub(super) fn leading_edge(&self) -> Option<DateTime<Utc>> {
+        let occur = self.occur?;
+        let secs = self.dur.as_ref().and_then(|d| d.as_seconds()).unwrap_or(0);
+        Some(occur - chrono::Duration::seconds(secs))
     }
 
     /// Does this row hand the field back once its trailing edge is past?
@@ -262,19 +280,23 @@ impl StateRow {
     /// `following_state` and switch to it instead ([`effective_state`]),
     /// so they never hand back — [`crate::shape::hands_field_back`] owns
     /// that verb split, shared with `stats` (da-mkqo).
+    ///
+    /// da-zwct: the trailing edge is `occur` itself, so a completed block
+    /// has already handed the field back by the instant it stores.
     pub(super) fn hands_field_back(&self, at: DateTime<Utc>) -> bool {
         if !crate::shape::hands_field_back(self.verb) || self.following_state.is_some() {
             return false;
         }
         match (self.occur, self.dur.as_ref().and_then(|d| d.as_seconds())) {
             // A zero-span row occupies no time, so it interrupts nothing.
-            (Some(occur), Some(secs)) if secs > 0 => at >= occur + chrono::Duration::seconds(secs),
+            (Some(occur), Some(secs)) if secs > 0 => at >= occur,
             _ => false,
         }
     }
 
     /// When this row's effective state at `at` took effect: its trailing
-    /// edge once a compound switch has crossed it, otherwise `occur`.
+    /// edge once a compound switch has crossed it, otherwise its leading
+    /// edge — `occur - dur` for a block, `occur` for anything else.
     fn effective_since(&self, at: DateTime<Utc>) -> Option<DateTime<Utc>> {
         if crate::shape::opens_secondary_switch_region(self.verb) && self.following_state.is_some()
         {
@@ -284,7 +306,7 @@ impl StateRow {
                 }
             }
         }
-        self.occur
+        self.leading_edge()
     }
 }
 
@@ -306,11 +328,27 @@ pub(super) struct Effective {
 /// ([`StateRow::hands_field_back`]) to the row that actually decides the
 /// state, then reads that row with [`effective_state`]. One row in is
 /// the common case and behaves exactly as before da-phoe.
+///
+/// da-zwct: "newest" is a row's LEADING edge, not its stored instant — a
+/// block's duration precedes `occur`, so a block still running at `at`
+/// stores an instant in `at`'s future while its influence began before
+/// it. The walk re-orders on that edge (stably, so equal edges keep the
+/// query's own newest-first tiebreak), which is the order
+/// [`crate::state`] compiles its events in. `governing` still indexes
+/// `rows` as given.
 pub(super) fn resolve_effective(rows: &[StateRow], at: DateTime<Utc>) -> Effective {
+    let mut order: Vec<usize> = (0..rows.len()).collect();
+    order.sort_by(|a, b| {
+        rows[*b]
+            .leading_edge()
+            .cmp(&rows[*a].leading_edge())
+            .then(a.cmp(b))
+    });
     // The NEWEST completed block fixes when the resumed span began;
     // older ones ended before it and are already covered.
     let mut resumed_at: Option<DateTime<Utc>> = None;
-    for (i, row) in rows.iter().enumerate() {
+    for i in order {
+        let row = &rows[i];
         if row.hands_field_back(at) {
             resumed_at = resumed_at.or_else(|| row.trailing_edge());
             continue;
@@ -354,9 +392,9 @@ fn effective_state(
     // `following_state` takes over past the trailing edge for exactly the
     // verbs that open a secondary switch region — shape.rs owns the set.
     if crate::shape::opens_secondary_switch_region(verb) {
-        if let (Some(occur), Some(dur), Some(fs)) = (occur_utc, dur, following_state) {
-            let delta = dur.as_seconds().unwrap_or(0);
-            let trailing = occur + chrono::Duration::seconds(delta);
+        if let (Some(trailing), Some(_), Some(fs)) = (occur_utc, dur, following_state) {
+            // da-zwct: the trailing edge is the stored `occur` — the
+            // block's duration runs backward from it, not forward.
             if at >= trailing {
                 return fs.clone();
             }

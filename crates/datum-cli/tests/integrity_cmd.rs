@@ -167,13 +167,21 @@ fn auto_resolver_closes_older_open_after_delay() {
     assert_eq!(applied.len(), 1, "auto-resolver applied once");
     assert_eq!(applied[0].kind, IntegrityKind::DoubleOpen);
 
-    // The older ongoing is now a block (has dur). The query order
-    // isn't guaranteed, so identify newer/older by occur_time.
+    // The older ongoing is now a block (has dur). da-zwct: closing it
+    // moves its stored instant to the newer's — a block stores its END —
+    // so occur_time no longer separates the two. Tell them apart by
+    // whether they carry a `dur`.
     let entries = db.entries_for_field("workout", None).unwrap();
-    let mut sorted = entries.clone();
-    sorted.sort_by_key(|e| e.occur_time.as_ref().unwrap().utc);
-    let older = sorted[0].clone();
-    let newer = sorted[1].clone();
+    let older = entries
+        .iter()
+        .find(|e| e.dur.is_some())
+        .expect("the closed older block carries a dur")
+        .clone();
+    let newer = entries
+        .iter()
+        .find(|e| e.dur.is_none())
+        .expect("the newer open row stays dur-less")
+        .clone();
     assert_eq!(
         older.shape(),
         EntryShape::Block,
@@ -183,11 +191,12 @@ fn auto_resolver_closes_older_open_after_delay() {
     assert!(older.dur.is_some(), "older open must have dur");
     assert_eq!(older.verb, Verb::Block, "older's verb re-derives to Block");
     // dur is stored at second precision under v3 (parse_iso_duration
-    // returns whole-second chrono spans), so equality between computed_end and the sub-second
-    // newer.occur_time can be off by < 1s. The contract being tested is that
-    // the older block ends "at the newer's start moment" — verified by
-    // bounding the gap rather than exact equality.
-    let older_end = older.computed_end_time().unwrap().utc;
+    // returns whole-second chrono spans), so the older block's rounded
+    // span can leave its end off the sub-second newer.occur_time by < 1s.
+    // The contract being tested is that the older block ends "at the
+    // newer's start moment" — verified by bounding the gap rather than
+    // exact equality. da-zwct: the end IS the stored occur_time.
+    let older_end = older.occur_time.as_ref().unwrap().utc;
     let newer_start = newer.occur_time.as_ref().unwrap().utc;
     let delta_ms = (older_end - newer_start).num_milliseconds().abs();
     assert!(

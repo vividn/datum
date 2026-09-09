@@ -155,3 +155,74 @@ fn coverage_lock_all_required_bugs_covered() {
     let required = ["da-438y", "da-luc8", "da-ffp6", "da-aw2o", "da-jp0b"];
     assert_eq!(required.len(), 5, "all 5 retro-named bug classes covered");
 }
+
+/// **da-zwct** — every dayview parity fixture built its blocks from
+/// `start`/`end` PAIRS, whose two instants say where the block is
+/// outright. None gave a block as a duration, so nothing in the repo
+/// asserted which way a duration runs, and da-a8rs flipped all three
+/// renderers to run it forward — regenerating the dayview golden that
+/// had encoded the right answer, and passing review because the check
+/// was arithmetic against the model rather than against datum.
+///
+/// `goldens/text/expected/dayview_duration_block_svg.txt` is the missing
+/// fixture, captured from the real vividn/datum for
+/// `start work 30 -d 2024-01-15 -t 1230`. Its block carries
+/// `data-time` / `data-end-time`, so it states the answer in machine-
+/// readable form: the half hour PRECEDES the entry's time. This test
+/// holds daydumb's own model against those two instants.
+#[test]
+fn da_zwct_a_duration_block_precedes_its_occur_time() {
+    use datum_core::dur::Dur;
+    use datum_core::entry::{Entry, Verb};
+    use datum_core::time::DatumTime;
+
+    let svg = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("goldens/text/expected/dayview_duration_block_svg.txt"),
+    )
+    .expect("the captured dayview duration-block golden");
+
+    let attr = |name: &str| -> chrono::DateTime<chrono::Utc> {
+        let needle = format!("{name}=\"");
+        let at = svg.find(&needle).unwrap_or_else(|| {
+            panic!("golden must carry {name} — recapture it with PARITY_REGEN=1")
+        }) + needle.len();
+        let raw = &svg[at..at + svg[at..].find('"').expect("closing quote")];
+        raw.parse()
+            .unwrap_or_else(|e| panic!("{name}={raw:?}: {e}"))
+    };
+    let block_start = attr("data-time");
+    let block_end = attr("data-end-time");
+
+    // What datum was told: the block's own time is 12:30 local (11:30Z
+    // on this fixture's day), and it lasted 30 minutes. What datum drew:
+    assert_eq!(
+        (block_end - block_start).num_minutes(),
+        30,
+        "the golden's block is the 30 minutes the fixture asked for"
+    );
+    assert_eq!(
+        block_end,
+        "2024-01-15T11:30:00Z"
+            .parse::<chrono::DateTime<chrono::Utc>>()
+            .unwrap(),
+        "datum ENDS the block at the entry's own time"
+    );
+
+    // The same row in daydumb's model, and the same two instants out.
+    let occur = DatumTime::from_utc_and_tz(block_end, "UTC").expect("UTC is a known zone");
+    let mut e = Entry::new("work", Verb::Block, None, None, Some(occur), None, "d1");
+    e.dur = Some(Dur::of(chrono::Duration::minutes(30)));
+
+    assert_eq!(
+        e.occur_time.as_ref().unwrap().utc,
+        block_end,
+        "daydumb stores the block's END in occur_time"
+    );
+    assert_eq!(
+        e.computed_start_utc().unwrap(),
+        block_start,
+        "and derives its start by walking the duration BACK — the reading \
+         `durationBlocks.ts` has always had"
+    );
+}

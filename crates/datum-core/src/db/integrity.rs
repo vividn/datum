@@ -66,7 +66,7 @@ impl Db {
             | crate::integrity::Resolution::AutoCloseOlder => {
                 if let Some(older) = warning.remote_entry.as_ref() {
                     crate::integrity::close_older_at(
-                        &tx,
+                        self,
                         older,
                         warning.local_entry.occur_time.as_ref(),
                     )?;
@@ -151,7 +151,7 @@ impl Db {
         min_age_secs: i64,
     ) -> Result<Vec<crate::integrity::IntegrityWarning>> {
         let tx = self.conn.unchecked_transaction()?;
-        let applied = crate::integrity::auto_resolve_pending(&tx, now, min_age_secs)?;
+        let applied = crate::integrity::auto_resolve_pending(self, &tx, now, min_age_secs)?;
         tx.commit()?;
         Ok(applied)
     }

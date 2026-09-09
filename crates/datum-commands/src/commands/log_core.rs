@@ -298,14 +298,18 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             // The only remaining producer of `args.duration.duration` is the
             // switch `,`-chain peel in `extract_switch_then_chain` (da-azqq
             // retired `--dur`, the flag that used to fill it from argv). Like
-            // every other spelling of a duration, the block is anchored AT the
-            // entry's time and runs forward.
+            // every other spelling of a duration, the block ENDS at the
+            // entry's time and the span it lasted precedes it — da-zwct,
+            // and the same "dur only" row of [`AddTemporalHints::resolve`]'s
+            // table. `switch activity end 14m , researching` says the
+            // fourteen minutes just gone were `end`, and `researching`
+            // starts now.
             let dur = parse_duration(dur_str)?;
-            let time_end = DatumTime {
-                utc: base_time.utc + dur,
+            let time_start = DatumTime {
+                utc: base_time.utc - dur,
                 ..base_time.clone()
             };
-            (Some(base_time), Some(time_end))
+            (Some(time_start), Some(base_time))
         } else {
             (Some(base_time), None)
         };

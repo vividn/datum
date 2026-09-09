@@ -291,11 +291,12 @@ fn hours(px: f64, axis: f64) -> f64 {
     px / axis * 24.0
 }
 
-/// `occur nap dur=2h -t 1400` draws at 14:00, not 12:00. `occur_time` is
-/// the block's LEADING edge — the duration runs forward from it, the same
-/// way `datum_core::state` puts a block's trailing event at `occur + dur`.
+/// `occur nap dur=2h -t 1400` draws [12:00, 14:00) — the nap LASTED two
+/// hours up to 14:00. `occur_time` is the block's TRAILING edge and the
+/// duration precedes it, the original datum's `durationBlocks` reading
+/// and the one `datum_core::state` compiles by (da-zwct).
 #[test]
-fn dur_block_draws_at_its_own_hour_not_a_duration_early() {
+fn dur_block_draws_the_two_hours_before_its_occur_time() {
     let db = fresh_db();
     run_cli(&["occur", "nap", "dur=2h", "-y", "-t", "1400"], &db).expect("occur with dur");
 
@@ -303,9 +304,14 @@ fn dur_block_draws_at_its_own_hour_not_a_duration_early() {
     assert_eq!(blocks.len(), 1, "one block for one dur-bearing entry");
     let (offset, extent) = blocks[0];
     assert!(
-        (hours(offset, axis) - 14.0).abs() < 0.02,
-        "block starts at 14:00, drew at {:.2}:00",
+        (hours(offset, axis) - 12.0).abs() < 0.02,
+        "block starts at 12:00 — two hours before its occur_time — drew at {:.2}:00",
         hours(offset, axis)
+    );
+    assert!(
+        (hours(offset + extent, axis) - 14.0).abs() < 0.02,
+        "block ends AT its occur_time 14:00, ended at {:.2}:00",
+        hours(offset + extent, axis)
     );
     assert!(
         (hours(extent, axis) - 2.0).abs() < 0.02,
@@ -314,9 +320,10 @@ fn dur_block_draws_at_its_own_hour_not_a_duration_early() {
     );
 }
 
-/// A block-switch's following-state band opens where the block ENDS. With
-/// the block at [09:00, 10:00), the "focused" band runs 10:00 → midnight —
-/// the two never overlap.
+/// A block-switch's following-state band opens where the block ENDS —
+/// which under da-zwct is the stored `occur_time` itself. Logged at
+/// 09:00 with `dur=1h`, "groggy" held [08:00, 09:00) and the "focused"
+/// band runs 09:00 → midnight; the two never overlap.
 #[test]
 fn block_switch_following_band_opens_at_the_blocks_trailing_edge() {
     let db = fresh_db();
@@ -343,19 +350,75 @@ fn block_switch_following_band_opens_at_the_blocks_trailing_edge() {
         .collect();
     spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     assert!(
-        (spans[0].0 - 9.0).abs() < 0.02 && (spans[0].1 - 10.0).abs() < 0.02,
-        "block is [09:00, 10:00), drew [{:.2}, {:.2}]",
+        (spans[0].0 - 8.0).abs() < 0.02 && (spans[0].1 - 9.0).abs() < 0.02,
+        "block is [08:00, 09:00), drew [{:.2}, {:.2}]",
         spans[0].0,
         spans[0].1
     );
     assert!(
-        (spans[1].0 - 10.0).abs() < 0.02,
-        "following band opens at 10:00, opened at {:.2}",
+        (spans[1].0 - 9.0).abs() < 0.02,
+        "following band opens at 09:00 — the block's occur_time — opened at {:.2}",
         spans[1].0
     );
     assert!(
         (spans[1].1 - 24.0).abs() < 0.02,
         "the band runs to midnight, ended at {:.2}",
         spans[1].1
+    );
+}
+
+/// da-zwct, measured the way vividn measured it: log `start posture 4` and
+/// look at where the drawing puts it. The block must END on the now-line
+/// — the four minutes it lasted lie behind it — where the forward
+/// reading drew it running four minutes into the future.
+#[test]
+fn a_just_logged_dur_block_ends_on_the_now_line() {
+    let db = fresh_db();
+    run_cli(&["start", "posture", "4"], &db).expect("start posture 4");
+
+    let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    run_cli(&["dayview", "--width", "2400", "--json", "-o", &path], &db)
+        .expect("dayview --json dispatch");
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+
+    let axis = json["time_axis_extent"].as_f64().expect("time_axis_extent");
+    let day = json["days"]
+        .as_array()
+        .expect("days array")
+        .last()
+        .expect("today is the last day rendered");
+    let now_pos = day["now_time_pos"]
+        .as_f64()
+        .expect("today carries the now-line");
+    let block = day["fields"]
+        .as_array()
+        .expect("fields array")
+        .iter()
+        .find(|f| f["field"].as_str() == Some("posture"))
+        .expect("posture rendered")["blocks"]
+        .as_array()
+        .expect("blocks array")[0]
+        .clone();
+    let offset = block["time_offset"].as_f64().unwrap();
+    let extent = block["time_extent"].as_f64().unwrap();
+
+    // A second's worth of pixels: the entry is stamped a hair before the
+    // render reads the clock, so the two can't be bit-equal.
+    let one_second = axis / (24.0 * 60.0 * 60.0);
+    assert!(
+        (offset + extent - now_pos).abs() < 2.0 * one_second,
+        "the block must END on the now-line: ends at {}, now-line at {now_pos}",
+        offset + extent,
+    );
+    assert!(
+        offset < now_pos - one_second,
+        "and it must lie BEHIND the now-line, not start on it: starts at {offset}"
+    );
+    assert!(
+        (hours(extent, axis) * 60.0 - 4.0).abs() < 0.05,
+        "four minutes of it, spanned {:.2}m",
+        hours(extent, axis) * 60.0
     );
 }

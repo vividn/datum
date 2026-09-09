@@ -312,6 +312,10 @@ fn render_separator_divides_active_from_stopped() {
 /// The whole span is probed, not just the end: the block's own 12
 /// minutes always read correctly, and the defect lives entirely in the
 /// stretch that goes MISSING after them.
+///
+/// da-zwct: `end work 12m -t -60` means the break ENDED an hour ago and
+/// lasted the twelve minutes before that — the block is [-72, -60], not
+/// [-60, -48].
 #[test]
 fn now_resumes_the_state_a_block_interrupted() {
     let db = fresh_db();
@@ -340,9 +344,9 @@ fn now_resumes_the_state_a_block_interrupted() {
         Some(json!("datum")),
         "before the break, work is datum"
     );
-    assert_eq!(active_state(-55), None, "during the break, work is off");
+    assert_eq!(active_state(-65), None, "during the break, work is off");
     assert!(
-        snapshot(-55)
+        snapshot(-65)
             .tracked_false
             .iter()
             .any(|r| r.field == "work"),
@@ -351,7 +355,8 @@ fn now_resumes_the_state_a_block_interrupted() {
     assert_eq!(
         active_state(-30),
         Some(json!("datum")),
-        "the block hands the field back at its trailing edge"
+        "the block hands the field back at its trailing edge — the \
+         instant it stores"
     );
     assert_eq!(
         active_state(0),
@@ -363,7 +368,9 @@ fn now_resumes_the_state_a_block_interrupted() {
     // The resumed span begins when the block ENDED, not when the
     // governing switch was logged three hours ago.
     let block = db.entries_for_field("work", Some(1)).expect("rows")[0].clone();
-    let resumed_at = block.occur_time.expect("block occur").utc + Duration::minutes(12);
+    // da-zwct: the block's trailing edge IS its stored instant; the
+    // twelve minutes it lasted lie before it, so no arithmetic here.
+    let resumed_at = block.occur_time.expect("block occur").utc;
     let row = snapshot(0)
         .active
         .into_iter()
