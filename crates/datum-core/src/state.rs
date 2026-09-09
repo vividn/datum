@@ -374,6 +374,35 @@ pub struct FieldStateEvents {
 }
 
 impl FieldStateEvents {
+    /// The same events the loaders derive, from rows already in hand — the
+    /// browser's door, which has the field's entries and no connection. Pass
+    /// the field's live rows in any order; the row being rendered may be among
+    /// them, since every probe excludes it by hid. Same collector, same stable
+    /// sort as [`Self::load_for_field_up_to`], so a probe answers the same
+    /// here as against the database.
+    pub fn from_entries<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Self {
+        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)> = Vec::new();
+        let mut rows: Vec<&Entry> = entries.into_iter().collect();
+        // The loaders read oldest-first from SQL and rely on the sort being
+        // stable on top of that; give the same baseline order here.
+        rows.sort_by_key(|e| (e.occur_time.as_ref().map(|t| t.utc), e.create_time));
+        for e in rows {
+            collect_raw_events(
+                &e.hid.0,
+                e.verb,
+                e.state.as_ref(),
+                e.occur_time.as_ref().map(|t| t.utc),
+                None,
+                e.create_time,
+                e.dur.as_ref(),
+                e.following_state.as_ref(),
+                &mut events,
+            );
+        }
+        events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        FieldStateEvents { events }
+    }
+
     #[cfg(feature = "db")]
     /// Load every state-affecting event for `field`. See
     /// [`Self::load_for_field_up_to`] for the bounded variant.
@@ -615,7 +644,6 @@ fn verb_state_events(
 /// tagging each emitted event with its origin `hid` so [`FieldStateEvents`]
 /// can honour `exclude_hid` probes. Delegates to [`verb_state_events`].
 #[allow(clippy::too_many_arguments)]
-#[cfg(feature = "db")]
 fn collect_raw_events(
     hid: &str,
     verb: Verb,

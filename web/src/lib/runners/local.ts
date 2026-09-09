@@ -10,19 +10,31 @@
 // The *parsing* is already not a stand-in. da-7scm moved it into
 // `datum-parse` compiled to wasm, so this file no longer decides what an
 // argv means or what row it produces: it hands argv to `../parser.js` and
-// stores what comes back. What is left here is the database call and the
-// two commands the parser does not own.
+// stores what comes back. The *rendering* is not a stand-in either: what a
+// logged entry echoes is `datum-commands::render` compiled to wasm, through
+// `../renderer.js`. What is left here is the database call and the two
+// commands the parser does not own.
 
-import { clockLabel, dateLabel, startOfDay } from '../clock.js';
+import { startOfDay } from '../clock.js';
 import { fieldNameHint } from '../fieldName.js';
-import { insertEntry, getRecentEntries, getFieldSpecs, saveFieldSpec } from '../db.js';
+import {
+	insertEntry,
+	getEntriesForField,
+	getRecentEntries,
+	getFieldSpecs,
+	saveFieldSpec
+} from '../db.js';
 import { parseArgv } from '../parser.js';
+import { renderLines } from '../renderer.js';
 import { EXIT_DUPLICATE, EXIT_ERROR, EXIT_UNKNOWN_COMMAND, type RunResult } from '../run.js';
 import { isAnnotated, type DefaultAction, type Entry, type FieldSpec } from '../types.js';
 // Type-only, so the 250 KB layout module stays behind `views()` above.
 import type { DayviewOptions } from './views.js';
 
 const DEVICE_ID_KEY = 'datum-device-id';
+
+/** How much of a field's history the renderer is handed to compile state from. */
+const HISTORY_LIMIT = 500;
 
 /** Loaded on demand: the layout module is 250 KB nobody pays for to log. */
 const views = () => import('./views.js');
@@ -80,6 +92,11 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 	}
 
 	const entry = parsed.entry;
+	// The field's history, read before the insert: what the CLI compiles the
+	// prior state from — the `∅` slot, a transition's colours — it compiles
+	// here from these rows. Bounded; a field logged more than this many
+	// times still renders, from its most recent stretch.
+	const history = await getEntriesForField(entry.field, HISTORY_LIMIT);
 	try {
 		await insertEntry(entry);
 	} catch (e) {
@@ -96,7 +113,12 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 		};
 	}
 
-	return { argv, code: 0, stdout: entryLine(entry), stderr: '' };
+	return {
+		argv,
+		code: 0,
+		stdout: (await renderLines(entry, 'create', { history })).join('\n'),
+		stderr: ''
+	};
 }
 
 /**
@@ -224,45 +246,26 @@ function unavailable(argv: string[], reason: string): string {
 async function tail(): Promise<RunResult> {
 	const entries = await getRecentEntries(TAIL_COUNT);
 	entries.reverse();
+	// Each row renders against its field's history — one query per field
+	// shown, the renderer excluding the row itself by hid.
+	const fields = [...new Set(entries.map((e) => e.field))];
+	const histories = new Map(
+		await Promise.all(
+			fields.map(async (field) => [field, await getEntriesForField(field, HISTORY_LIMIT)] as const)
+		)
+	);
+	const lines = await Promise.all(
+		entries.map((e) => renderLines(e, null, { history: histories.get(e.field) ?? [] }))
+	);
 	return {
 		argv: ['tail'],
 		code: 0,
-		stdout: entries.map(entryLine).join('\n'),
+		// One info line per row — the CLI's own — until da-1vat brings its table.
+		stdout: lines.flat().join('\n'),
 		stderr: ''
 	};
 }
 
-/**
- * One line of stdout for a logged entry.
- *
- * A plain-text stand-in for `render_entry_line`
- * (crates/datum-commands/src/render/action.rs) — same shape (time, field,
- * state) without the field badges and colour the real renderer brings. The
- * time is datum's one convention, 24-hour ($lib/clock.ts), which is the
- * half of that parity claim the reader can see next to the nowview axis.
- *
- * The stamp is only a clock when the entry has one. `occur coffee -y`
- * stores midnight as an *anchor* and says so in `occurTimeUncertainty`:
- * `P1D`, precise to the day. Printing `00:00` for that answers with a
- * clock time the record disclaims, so a P1D row degrades to its bare date
- * exactly as `format_timestamp_ref` degrades it (da-kb8p). Only `P1D`
- * does — every other value, `undefined` included, is a row with a real
- * time of day.
- */
-export function entryLine(entry: Entry): string {
-	const stamp =
-		entry.occurTimeUncertainty === 'P1D'
-			? dateLabel(entry.occurTime)
-			: clockLabel(new Date(entry.occurTime.utc));
-	const parts = [stamp, entry.field];
-	if (entry.state !== undefined) parts.push(`= ${formatValue(entry.state)}`);
-	if (entry.data) {
-		for (const [k, v] of Object.entries(entry.data as Record<string, unknown>)) {
-			parts.push(`${k}=${formatValue(v)}`);
-		}
-	}
-	return parts.join(' ');
-}
 
 /** Render a stored value, unwrapping the `{v, u}` unit annotation. */
 export function formatValue(value: unknown): string {

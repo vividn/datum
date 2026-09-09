@@ -102,7 +102,20 @@ function boxes({ page }) {
 						scrollWidth: body.scrollWidth,
 						clientWidth: body.clientWidth,
 						scrollHeight: body.scrollHeight,
-						clientHeight: body.clientHeight
+						clientHeight: body.clientHeight,
+						// How far the CLI text the pane holds reaches into the scroll
+						// box: each `pre` is as wide as its longest line and no wider
+						// (CliOutput.svelte), measured from the box's scroll origin, plus
+						// the box's own end padding, which the scrollable overflow
+						// includes. This is how far the pane may legitimately scroll.
+						textExtent: (() => {
+							const origin = body.getBoundingClientRect().left - body.scrollLeft;
+							const pad = parseFloat(getComputedStyle(body).paddingRight) || 0;
+							const reach = [...body.querySelectorAll('pre')].map(
+								(pre) => pre.getBoundingClientRect().left - origin + pre.scrollWidth
+							);
+							return Math.max(0, ...reach) + pad;
+						})()
 					}
 				];
 			})
@@ -146,9 +159,13 @@ describe('a pane', () => {
 				async (app) => {
 					await logADay(app);
 					for (const [title, box] of Object.entries(await boxes(app))) {
+						// Text the pane HAS may run wider than a phone — the CLI's
+						// `CREATE <hid> <slug>` line does — and then the pane scrolls
+						// to it, by design (CliOutput.svelte: no reflow). What it must
+						// never do is scroll over blank space past its longest line.
 						assert.ok(
-							box.scrollWidth <= box.clientWidth,
-							`${title} on ${name} scrolls sideways: ${box.scrollWidth} of content in ${box.clientWidth}`
+							box.scrollWidth <= Math.max(box.clientWidth, box.textExtent),
+							`${title} on ${name} scrolls sideways over text it hasn't got: ${box.scrollWidth} of content in ${box.clientWidth}, text reaches ${box.textExtent}`
 						);
 					}
 				},

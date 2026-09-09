@@ -162,7 +162,7 @@ fn tail_state_cell_uses_lead_state_trail_group() {
     let ctx = RenderContext {
         lead_state: Some(json!("tired")),
         trail_state: Some(json!("happy")),
-        is_first_occurrence: false,
+        prior_state_ignored: false,
         ..Default::default()
     };
     let group = format_state_group(&e, None, &ctx).expect("state group");

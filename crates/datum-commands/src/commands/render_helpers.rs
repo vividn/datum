@@ -72,7 +72,7 @@ pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCon
     }
     entries
         .iter()
-        .map(|e| RenderContext::from_events(cache.get(&e.field), e, db))
+        .map(|e| RenderContext::from_events(cache.get(&e.field), e))
         .collect()
 }
 

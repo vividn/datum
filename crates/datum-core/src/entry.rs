@@ -356,6 +356,21 @@ impl Entry {
         self.dur.as_ref()?.as_seconds()
     }
 
+    /// The instant a block ends: `occur_time + dur`, in UTC, and nothing
+    /// else. `None` when either is unset (point/switch shapes have no end).
+    ///
+    /// This is the door for anything that only needs the moment — a state
+    /// probe, an overlap test. [`Self::computed_end_time`] is the door for
+    /// anything that will *show* the end: it also re-derives the end's local
+    /// offset from the entry's zone, which needs the IANA table and can fail
+    /// on a zone name the table does not know. A duration is a fixed span of
+    /// seconds, so the instant needs no zone at all.
+    pub fn computed_end_utc(&self) -> Option<DateTime<Utc>> {
+        let occur = self.occur_time.as_ref()?;
+        let secs = self.dur.as_ref()?.as_seconds()?;
+        Some(occur.utc + chrono::Duration::seconds(secs))
+    }
+
     /// Trailing-edge timestamp derived from `occur_time + dur`. `None`
     /// when either is unset (point/switch shapes have no end). Replaces
     /// the v=19 `end_time` column-as-field access in tests / render code.

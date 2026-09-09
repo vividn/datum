@@ -76,8 +76,8 @@ fn action_and_table_agree_across_ignored_transition() {
         "ongoing_state must match across surfaces"
     );
     assert_eq!(
-        action_ctx.is_first_occurrence, table_ctx.is_first_occurrence,
-        "is_first_occurrence must match across surfaces"
+        action_ctx.prior_state_ignored, table_ctx.prior_state_ignored,
+        "prior_state_ignored must match across surfaces"
     );
 
     // Sanity-check the actual lead — the prior tracked state is `work`, so
@@ -122,8 +122,8 @@ fn info_line_and_now_view_return_default_context() {
             "{name} ongoing_state"
         );
         assert_eq!(
-            ctx.is_first_occurrence, default.is_first_occurrence,
-            "{name} is_first_occurrence"
+            ctx.prior_state_ignored, default.prior_state_ignored,
+            "{name} prior_state_ignored"
         );
     }
 }

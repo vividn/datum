@@ -1657,7 +1657,7 @@ mod tests {
         let _guard = ColorGuard::force_on();
         let entry = sample_entry("newfield", Verb::Switch, Some(JsonValue::from("ok")));
         let ctx = self::action::RenderContext {
-            is_first_occurrence: true,
+            prior_state_ignored: true,
             ..Default::default()
         };
         let table_cell = extract_with_context(&entry, None, None, Some(&ctx))

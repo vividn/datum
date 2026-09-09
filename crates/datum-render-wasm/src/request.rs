@@ -11,6 +11,7 @@ use datum_commands::render::action::{format_info_line_at, RenderContext};
 use datum_commands::render::{action_lines_at, Outcome};
 use datum_core::entry::Entry;
 use datum_core::ids::{Hid, Slug};
+use datum_core::state::FieldStateEvents;
 use datum_parse::{DatumTime, Dur, Verb};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
@@ -32,6 +33,14 @@ pub struct RenderRequest {
     pub timezone: Option<String>,
     /// The viewer's UTC offset in minutes, east-positive.
     pub offset_minutes: i32,
+    /// The field's other live entries, as the browser stores them, in any
+    /// order. The renderer compiles the field's state from them the way the
+    /// CLI does from its database — the `∅` slot (prior state absent or
+    /// IGNORED), the LEAD/TRAIL colours of a transition, the dot's ambient
+    /// state. The row itself may be among them; every probe excludes it by
+    /// hid. Empty means a field with no history.
+    #[serde(default)]
+    pub history: Vec<JsonValue>,
 }
 
 /// `{"lines": [...]}` on success, `{"error": "..."}` otherwise. Never panics
@@ -65,9 +74,16 @@ fn render(body: &str) -> Result<Vec<String>, String> {
         Some("failed") => Some(Outcome::Failed),
         Some(other) => return Err(format!("unknown action `{other}`")),
     };
-    // No neighbouring rows are known here, so no lead/trail context: the
-    // same default the CLI uses when it prints a lone action.
-    let ctx = RenderContext::default();
+    // The same context the CLI builds for an action, from the same events —
+    // theirs loaded from SQLite, ours from the rows the browser sent.
+    let history = req
+        .history
+        .iter()
+        .map(entry_from_web)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("history: {e}"))?;
+    let events = FieldStateEvents::from_entries(history.iter());
+    let ctx = RenderContext::from_events(Some(&events), &entry);
     let mut out = Vec::new();
     match outcome {
         Some(action) => {
@@ -188,6 +204,41 @@ mod tests {
         res.get("entry")
             .cloned()
             .expect("the parser built an entry")
+    }
+
+    fn rendered_with(entry: &JsonValue, history: &[JsonValue]) -> String {
+        let req = json!({
+            "entry": entry,
+            "action": null,
+            "now_ms": NOW_MS,
+            "timezone": "Europe/Berlin",
+            "offset_minutes": OFFSET,
+            "history": history,
+        });
+        let res: JsonValue = serde_json::from_str(&render_json(&req.to_string())).unwrap();
+        assert!(res.get("error").is_none(), "render error: {res}");
+        res["lines"][0].as_str().unwrap().to_string()
+    }
+
+    /// The `∅` slot follows the CLI's rule: the field's prior compiled state
+    /// is absent or IGNORED. A field with no history gets it; one with a
+    /// live state does not; one that was ignored gets it back.
+    #[test]
+    fn the_empty_set_marks_an_absent_or_ignored_prior_state() {
+        let coffee = parsed(&["occur", "coffee", "-t", "1200"]);
+        let alone = rendered_with(&coffee, &[]);
+        assert!(alone.ends_with("coffee ∅●"), "{alone}");
+        // The parser fixture mints every hid from the same bytes; the probe
+        // excludes the row's own hid, so history rows need their own.
+        let mut switched_on = parsed(&["switch", "coffee", "brewing", "-t", "1100"]);
+        switched_on["hid"] = json!("hist00000001");
+        let after_state = rendered_with(&coffee, std::slice::from_ref(&switched_on));
+        assert!(after_state.ends_with("coffee ●"), "{after_state}");
+        let mut ignored = parsed(&["switch", "coffee", "IGNORED", "-t", "1130"]);
+        ignored["hid"] = json!("hist00000002");
+        ignored["state"] = json!("IGNORED");
+        let after_ignore = rendered_with(&coffee, &[switched_on, ignored]);
+        assert!(after_ignore.ends_with("coffee ∅●"), "{after_ignore}");
     }
 
     fn rendered(entry: &JsonValue, action: Option<&str>) -> Vec<String> {

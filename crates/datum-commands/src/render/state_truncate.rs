@@ -82,7 +82,7 @@ pub(crate) fn truncate_state_cell(
 /// elaboration belongs in `action.rs` proper.
 fn render_occur_cell(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
     let mut out = String::new();
-    if ctx.is_first_occurrence {
+    if ctx.prior_state_ignored {
         out.push_str(&paint(GRAY_FG, NULL_SET));
     }
     let (fg, bg) = compute_occur_dot_colors(entry, spec, ctx.ongoing_state.as_ref());

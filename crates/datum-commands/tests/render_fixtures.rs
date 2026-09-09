@@ -85,7 +85,7 @@ fn ctx_with(
     RenderContext {
         lead_state: lead,
         trail_state: trail,
-        is_first_occurrence: is_first,
+        prior_state_ignored: is_first,
         ..Default::default()
     }
 }

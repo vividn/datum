@@ -47,14 +47,16 @@ describe('the clock the web app prints', () => {
 
 			const tail = await run(['tail']);
 			assert.equal(tail.code, 0, tail.stderr);
-			assert.equal(tail.stdout, '16:07 coffee');
+			// The CLI's own info line (crates/datum-commands/src/render), via the
+			// wasm renderer: clock with offset, field, and `∅` for a field's first entry.
+			assert.equal(tail.stdout, '16:07:00+0  coffee ∅●');
 
 			// And on the screen, which is where the two conventions sat
 			// next to each other. The panes run their command on mount, so
 			// the reload is how they come to know about the entry.
 			await reload();
 			const shown = await paneText('tail');
-			assert.match(shown, /16:07 coffee/);
+			assert.match(shown, /16:07:00\+0 {2}coffee/);
 			assert.doesNotMatch(shown, /\b[AP]M\b/i, `the tail pane is still 12-hour: ${shown}`);
 
 			// The other half of the screenshot. Its clock was never the

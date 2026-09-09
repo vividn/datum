@@ -20,7 +20,6 @@
 use chrono::{FixedOffset, Local, Timelike, Utc};
 #[cfg(feature = "db")]
 use datum_core::db::Db;
-#[cfg(feature = "db")]
 use datum_core::state::FieldStateEvents;
 use datum_core::{
     entry::{Entry, EntryShape},
@@ -99,9 +98,11 @@ pub(crate) fn now_local() -> DatumTime {
 ///   `Ongoing`, it's the row's own emitted state (the new switch value,
 ///   `Bool(true)` for start, `Bool(false)` for stop). Drives the TRAIL
 ///   slot's bg colour, with the same grey-`∅` fallback.
-/// * `is_first_occurrence` — set by the command layer when a field spec
-///   is being created for the first time. Currently informational; the
-///   LEAD's no-state fallback already conveys the same signal.
+/// * `prior_state_ignored` — the field's compiled state just before this
+///   row is absent or IGNORED: the LEAD slot's grey-`∅` rule, carried to
+///   the bare occur dot, which has no LEAD slot of its own. Derived from
+///   `lead_state` for the state-bearing verbs and from `ongoing_state` for
+///   the dot, never from a row count.
 /// * `ongoing_state` — the field's compiled state at the row's own time,
 ///   excluding the row itself. Drives the bg of an occur dot per
 ///   `da-k5z`. State-transition verbs (switch / start / stop / block) use
@@ -116,7 +117,7 @@ pub(crate) fn now_local() -> DatumTime {
 pub struct RenderContext {
     pub lead_state: Option<JsonValue>,
     pub trail_state: Option<JsonValue>,
-    pub is_first_occurrence: bool,
+    pub prior_state_ignored: bool,
     pub ongoing_state: Option<JsonValue>,
     pub is_state_repeat: bool,
     /// da-8sx8: the row's `_N` quickId ordinal, when it has one. Only the
@@ -154,7 +155,7 @@ impl RenderContext {
     #[cfg(feature = "db")]
     /// Canonical [`RenderContext`] constructor — the single entry point all
     /// renderer surfaces route through. Picks the right lead/trail/ongoing
-    /// probes and `is_first_occurrence` semantics from `surface`.
+    /// probes and `prior_state_ignored` semantics from `surface`.
     ///
     /// `now` is reserved for surface arms that need "is this row in the
     /// future relative to now" semantics (none today). It's accepted so
@@ -175,38 +176,41 @@ impl RenderContext {
             Surface::Action | Surface::Table => {
                 let events =
                     FieldStateEvents::load_for_field(db.conn(), &entry.field).unwrap_or_default();
-                Self::from_events(Some(&events), entry, db)
+                Self::from_events(Some(&events), entry)
             }
         })
     }
 
-    #[cfg(feature = "db")]
     /// Cached variant of [`RenderContext::for_entry`] for batched render
-    /// paths. Reuses a pre-loaded per-field events vector so a `tail` over
+    /// paths, and the whole of the context for callers without a database:
+    /// everything here is derived from the field's state-event history and
+    /// the row. Reuses a pre-loaded per-field events vector so a `tail` over
     /// N rows of the same field issues one state probe instead of N.
     ///
     /// Pass `None` for `events` when the entry's verb doesn't need a
     /// state-history probe (`Add`/`Note`); the helpers degrade to a
     /// default-context build.
-    pub(crate) fn from_events(
-        events: Option<&FieldStateEvents>,
-        entry: &Entry,
-        db: &Db,
-    ) -> RenderContext {
+    pub fn from_events(events: Option<&FieldStateEvents>, entry: &Entry) -> RenderContext {
         let lead_state = compute_lead_state(events, entry);
         let trail_state = compute_trail_state(events, entry);
         let ongoing_state = compute_ongoing_state(events, entry);
-        let probe = entry
-            .occur_time
-            .as_ref()
-            .map(|t| t.utc)
-            .unwrap_or(entry.create_time);
-        let is_first_occurrence = db.count_entries_before(&entry.field, probe).unwrap_or(1) == 0;
+        // The `∅` slot follows one rule on every surface: the field's compiled
+        // state just before this row is absent or IGNORED. The state-bearing
+        // verbs read that off `lead_state` in their LEAD slot; the bare dot
+        // reads the ambient state, so it takes the same predicate from there.
+        let prior = if has_state_badge(entry.verb) {
+            lead_state.as_ref()
+        } else {
+            ongoing_state.as_ref()
+        };
+        let prior_state_ignored = prior.is_none_or(|v| {
+            datum_core::state::normalize_state(v) == datum_core::state::StateValue::Ignored
+        });
         let is_state_repeat = compute_is_state_repeat(lead_state.as_ref(), entry);
         RenderContext {
             lead_state,
             trail_state,
-            is_first_occurrence,
+            prior_state_ignored,
             ongoing_state,
             is_state_repeat,
             quick_ordinal: None,
@@ -215,7 +219,6 @@ impl RenderContext {
     }
 }
 
-#[cfg(feature = "db")]
 /// True when the trigger's emitted state equals `prior` (per
 /// [`datum_core::integrity::states_equal_set_aware`]). Mirrors
 /// `list_repeated_states` so the visual `!` marker fires on exactly the
@@ -238,7 +241,6 @@ pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) ->
     datum_core::state::states_equal_set_aware(&row_norm, &prior_norm)
 }
 
-#[cfg(feature = "db")]
 fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
     // The LEAD/TRAIL slots exist only on the state-badge group, so the
     // gate is exactly `has_state_badge` — shape.rs owns the verb set.
@@ -250,19 +252,20 @@ fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Optio
     events?.at(probe, Some(&entry.hid))
 }
 
-#[cfg(feature = "db")]
 fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
     if !has_state_badge(entry.verb) {
         return None;
     }
     if matches!(entry.shape(), EntryShape::Block) {
-        let end = entry.computed_end_time()?.utc;
+        // The probe wants the instant, not a wall-clock: `computed_end_utc`
+        // needs no zone table, where `computed_end_time` links the whole of
+        // chrono-tz to re-derive an offset this path never reads.
+        let end = entry.computed_end_utc()?;
         return events?.at(end, Some(&entry.hid));
     }
     entry_self_trail_state(entry)
 }
 
-#[cfg(feature = "db")]
 fn compute_ongoing_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
     // Ongoing-state probes apply only to the badge-less verb (the bare
     // dot reads ambient state) — exactly the complement of the badge set.
@@ -306,8 +309,9 @@ pub fn format_state_group(
 
 fn render_occur(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
     let mut out = String::new();
-    // Occur: first-time gets ∅; otherwise no left-char.
-    if ctx.is_first_occurrence {
+    // Occur: `∅` when the field's prior state is absent or IGNORED —
+    // the LEAD slot's rule, applied to the dot; otherwise no left-char.
+    if ctx.prior_state_ignored {
         out.push_str(&paint(GRAY_FG, NULL_SET));
     }
     // Dot: field/state color as fg; bg encodes the field's ambient

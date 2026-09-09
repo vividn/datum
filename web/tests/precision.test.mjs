@@ -53,21 +53,23 @@ describe('the time an entry is rendered with', () => {
 			const tail = await run(['tail']);
 			assert.equal(tail.code, 0, tail.stderr);
 			const lines = tail.stdout.split('\n');
-			assert.equal(lines[0], `${yesterday} coffee`);
-			assert.equal(lines[1], '09:15 tea');
-			// Prefix-matched: the CLI paints a gray `±5m` after this stamp,
-			// which is one of the decorations this stand-in does not carry.
-			// What is asserted is that the clock survived at all.
-			assert.match(lines[2], /^10:00 water\b/, `the ±5m entry lost its clock: ${lines[2]}`);
+			// These are the CLI's own info lines (the wasm renderer): a P1D row
+			// degrades to its bare date, a clock carries its offset, and the
+			// `±5m` the CLI paints after a stamp is carried too.
+			assert.equal(lines[0], `${yesterday}  coffee ∅●`);
+			assert.equal(lines[1], '09:15:00+0  tea ∅●');
+			assert.equal(lines[2], '10:00:00+0±5m  water ∅●', `the ±5m entry lost its clock: ${lines[2]}`);
 
 			// And on the screen, which is where the invented midnight was
 			// read. The panes run their command on mount, so the reload is
 			// how the tail pane comes to know about the entries.
 			await reload();
 			const shown = await paneText('tail');
-			assert.match(shown, new RegExp(`${yesterday} coffee`));
-			assert.doesNotMatch(shown, /00:00/, `a clock the entry disclaims: ${shown}`);
-			assert.match(shown, /09:15 tea/, `the ordinary entry lost its clock: ${shown}`);
+			assert.match(shown, new RegExp(`${yesterday} {2}coffee`));
+			// `10:00:00` is a clock the water entry owns; what must not appear
+			// is midnight invented for the day-precision coffee.
+			assert.doesNotMatch(shown, /00:00:00\+0 {2}coffee/, `a clock the entry disclaims: ${shown}`);
+			assert.match(shown, /09:15:00\+0 {2}tea/, `the ordinary entry lost its clock: ${shown}`);
 		});
 	});
 });
