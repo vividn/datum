@@ -103,6 +103,19 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
 
 - SvelteKit static adapter — no server-side rendering
 - SQLite WASM + OPFS for local storage (same schema as CLI)
+- One connection per origin, not per tab (da-eovo). The OPFS SAH pool is
+  single-writer, so exactly one `db.worker.ts` opens the database — the one
+  that wins `navigator.locks.request('datum-db-owner', …)`, a lock its
+  callback never releases, so it is held for that tab's life. Every other
+  tab's worker opens nothing and relays its `DbRequest`s to the owner over a
+  `BroadcastChannel`, so from `db.ts` upwards nothing changed and two tabs
+  are both durable. Unanswered requests sit in the worker's `inflight` map
+  and are sent again when a new owner announces itself — that queue is what
+  makes "nothing typed is ever lost" true across an owner tab closing. A
+  browser with no `BroadcastChannel` or no Web Locks degrades to the old
+  behaviour (second tab in memory, and it says so), never to a lost row.
+  `web/src/lib/changes.ts` carries the separate "rows changed" signal that
+  makes each tab re-run its panes.
 - Service Worker caches app shell for offline use — the shell, everything
   `$service-worker` lists, and Vite's separate worker bundle (the SQLite
   worker and sqlite3.wasm), which that list does not know about and which

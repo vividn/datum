@@ -9,6 +9,7 @@ import type { DbCommand, DbResponse, Row, StorageKind,
 	DbMessage
 } from './dbProtocol.js';
 import type { Entry, FieldSpec, StoredVerb } from './types.js';
+import { announceChange } from './changes.js';
 
 export type { StorageKind };
 
@@ -161,6 +162,9 @@ export async function insertEntry(entry: Entry): Promise<void> {
 			$raw_input: entry.rawInput
 		}
 	});
+	// Announced AFTER the write resolves, so a listener that re-queries
+	// cannot race the row it came for. Other tabs re-run their panes on this.
+	announceChange();
 }
 
 export async function getEntriesForField(field: string, limit = 50): Promise<Entry[]> {
@@ -297,6 +301,8 @@ export async function saveFieldSpec(spec: FieldSpec): Promise<void> {
 			$render_json: spec.render !== undefined ? JSON.stringify(spec.render) : null
 		}
 	});
+	// A spec change moves the widget bar too, so it is news for every tab.
+	announceChange();
 }
 
 /**

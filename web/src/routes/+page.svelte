@@ -17,7 +17,7 @@
 	the wasm CLI (da-1vat) lands behind them without touching this file.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import CliPane from '$lib/CliPane.svelte';
 	import DayStrip from '$lib/DayStrip.svelte';
 	import Repl from '$lib/Repl.svelte';
@@ -25,6 +25,7 @@
 	import { initDb, getAllFields, getFieldSpecs, getObservedStates } from '$lib/db.js';
 	import { NOWVIEW, TAIL } from '$lib/panes.js';
 	import { widgetsFor, type Widget } from '$lib/widgets.js';
+	import { onExternalChange } from '$lib/changes.js';
 
 	let ready = false;
 	/**
@@ -47,6 +48,16 @@
 		ready = true;
 		await refresh();
 	});
+
+	// Another tab wrote. Same treatment as a local command finishing — bump
+	// the epoch the panes hang off and rebuild the widget bar — so there is
+	// one refresh path rather than two that can disagree.
+	//
+	// Subscribed here rather than from `onMount`: Svelte takes a teardown from
+	// a SYNCHRONOUS onMount only, and an async one returns a promise it cannot
+	// call. Safe during init because BroadcastChannel is undefined server-side,
+	// where `onExternalChange` is a no-op that returns an empty teardown.
+	onDestroy(onExternalChange(() => void ran()));
 
 	/**
 	 * The bar's buttons are built from what has been logged, so a newly

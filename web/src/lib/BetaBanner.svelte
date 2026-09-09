@@ -67,8 +67,9 @@
 			{:else if $storage === null}
 				Checking where your entries are stored…
 			{:else if $storage === 'memory-other-tab'}
-				Another datum.day tab has the database open, so entries here are held in memory only —
-				reloading this page discards them. Use that tab, or close it — this one will take the database over on its own and keep what you typed.
+				The database is still being handed over from a tab that just closed, so entries here are
+				held in memory only for the moment. Nothing to do — this tab takes it over on its own and
+				keeps what you typed.
 			{:else if $storage === 'memory'}
 				Entries are held in memory only — reloading this page discards them.
 			{:else}

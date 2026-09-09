@@ -13,9 +13,15 @@ export type Row = Record<string, unknown>;
  *
  * The two memory kinds are the same storage and a different diagnosis.
  * `memory` is "this browser gave the worker no durable place to put the
- * database"; `memory-other-tab` is "another page of this origin already
- * holds it" — the OPFS pool is single-writer — which is the one the reader
- * can do something about (da-60ww).
+ * database"; `memory-other-tab` is "another page of this origin still holds
+ * it" — the OPFS pool is single-writer.
+ *
+ * Since da-eovo only ONE worker per origin opens the database and the rest
+ * borrow it, so `memory-other-tab` no longer means a second tab: it is the
+ * handoff window, where the tab that just won the lock asks for the pool
+ * before the closing tab's sync access handles are released. It heals by
+ * itself within a retry, which is why the banner tells the reader to wait
+ * rather than to close anything (da-60ww, da-eovo).
  */
 export type StorageKind = 'opfs' | 'memory' | 'memory-other-tab';
 
