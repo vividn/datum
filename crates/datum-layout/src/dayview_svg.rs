@@ -43,12 +43,27 @@ pub fn text_width(label: &str, font_size: f64) -> f64 {
 /// a label and whatever an overlay reserves at the end of the axis.
 pub(crate) const AXIS_LABEL_GAP: f64 = 4.0;
 
+/// What one field's band carries in the strip the layout reserved beside
+/// the data area ([`DayviewLayout::right_panel_width`]). Nowview fills it
+/// with the state each field is in *right now* (da-nk84); the fill is
+/// painted with the field's own blocks, so it reads as the lane running
+/// on past the now-line.
+#[derive(Debug, Clone)]
+pub struct RightPanelFill {
+    pub field: String,
+    pub fill: BlockFill,
+}
+
 /// Knobs the nowview overlay needs the dayview renderer to honour.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct DayviewSvgOpts {
+pub struct DayviewSvgOpts<'a> {
     /// Pixels at the far end of the time axis owned by an overlay drawn on
     /// top of the axis strip (nowview's clock). Tick labels never enter it.
     pub axis_end_reserved: f64,
+    /// Per-field fills for the reserved right panel, matched to bands by
+    /// name. Only the day carrying the now-line gets them; a field absent
+    /// from the slice leaves its strip empty.
+    pub right_panel_fills: &'a [RightPanelFill],
 }
 
 /// SVG (x, y) origin of the data-area within the plot, plus the cross-axis
@@ -96,7 +111,7 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
 }
 
 /// [`render_dayview_svg`] with room left for a caller-drawn overlay.
-pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts) -> String {
+pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>) -> String {
     let mut out = String::with_capacity(8192);
     let mut defs = String::new();
     let mut patterns: HashMap<String, String> = HashMap::new();
@@ -205,34 +220,50 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts) -> 
                     b.time_offset,
                     b.time_extent,
                 );
-                match &b.fill {
-                    BlockFill::Single(color) => {
-                        let _ = write!(
-                            &mut out,
-                            r#"<rect class="block" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"/>"#,
-                            x = rect_x,
-                            y = rect_y,
-                            w = rect_w,
-                            h = rect_h,
-                            c = color,
-                        );
-                    }
-                    BlockFill::MultiState(colors) => {
-                        if colors.is_empty() {
-                            continue;
-                        }
-                        let pattern_id =
-                            stripe_pattern_id(&mut defs, &mut patterns, colors, field.cross_extent);
-                        let _ = write!(
-                            &mut out,
-                            r#"<rect class="block multi-state" x="{x}" y="{y}" width="{w}" height="{h}" fill="url(#{pid})"/>"#,
-                            x = rect_x,
-                            y = rect_y,
-                            w = rect_w,
-                            h = rect_h,
-                            pid = pattern_id,
-                        );
-                    }
+                push_fill_rect(
+                    &mut out,
+                    &mut defs,
+                    &mut patterns,
+                    "block",
+                    &b.fill,
+                    rect_x,
+                    rect_y,
+                    rect_w,
+                    rect_h,
+                    field.cross_extent,
+                );
+            }
+            // The reserved strip beyond the now-line: the lane running on
+            // in whatever state it is in now (da-nk84). Painted with the
+            // field's blocks so gridlines and the now-line still sit over
+            // it, and positioned through `block_rect` so it follows the
+            // orientation like any other block.
+            if layout.right_panel_width > 0.0 && day.now_time_pos.is_some() {
+                if let Some(pf) = opts
+                    .right_panel_fills
+                    .iter()
+                    .find(|r| r.field == field.field)
+                {
+                    let (rect_x, rect_y, rect_w, rect_h) = block_rect(
+                        layout,
+                        &geom,
+                        day.day_offset + field.cross_offset,
+                        field.cross_extent,
+                        layout.time_axis_extent,
+                        layout.right_panel_width,
+                    );
+                    push_fill_rect(
+                        &mut out,
+                        &mut defs,
+                        &mut patterns,
+                        "now-chunk",
+                        &pf.fill,
+                        rect_x,
+                        rect_y,
+                        rect_w,
+                        rect_h,
+                        field.cross_extent,
+                    );
                 }
             }
             for p in &field.points {
@@ -317,6 +348,30 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts) -> 
                 r#"<line class="current-time-line" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="{c}" stroke-width="2" stroke-dasharray="4,2"/>"#,
                 c = NOW_LINE_COLOR,
             );
+
+            // The white axis baseline stops at the now-line, so the strip
+            // beyond it gets the now marker instead — the original datum's
+            // horizontal `current-time-line` (da-nk84). Only the day the
+            // axis strip sits under carries it.
+            let is_axis_day = day.day_offset + layout.day_height >= geom.cross_total - 1e-9;
+            if layout.right_panel_width > 0.0 && is_axis_day && layout.time_axis_height > 0.0 {
+                let far = layout.time_axis_extent + layout.right_panel_width;
+                let (hx1, hy1, hx2, hy2) = match layout.orientation {
+                    Orientation::Horizontal => {
+                        let y = geom.data_y + geom.cross_total;
+                        (geom.data_x + nt, y, geom.data_x + far, y)
+                    }
+                    Orientation::Vertical => {
+                        let x = geom.data_x + geom.cross_total;
+                        (x, geom.data_y + nt, x, geom.data_y + far)
+                    }
+                };
+                let _ = write!(
+                    &mut out,
+                    r#"<line class="current-time-line-far" x1="{hx1}" x2="{hx2}" y1="{hy1}" y2="{hy2}" stroke="{c}" stroke-width="2" stroke-dasharray="4,2"/>"#,
+                    c = NOW_LINE_COLOR,
+                );
+            }
         }
     }
 
@@ -334,6 +389,47 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts) -> 
 /// for `<defs>`, immediately after the opening `<svg …>` tag.
 fn after_first_tag(s: &str) -> usize {
     s.find('>').map(|i| i + 1).unwrap_or(0)
+}
+
+/// Emit one filled rect for a [`BlockFill`], solid or 45°-striped. `class`
+/// names the element (`block` for a lane's own blocks, `now-chunk` for the
+/// strip past the now-line); a striped fill appends its `<pattern>` to
+/// `defs` on first use, keyed so identical fills share one def.
+#[allow(clippy::too_many_arguments)]
+fn push_fill_rect(
+    out: &mut String,
+    defs: &mut String,
+    patterns: &mut HashMap<String, String>,
+    class: &str,
+    fill: &BlockFill,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    cross_extent: f64,
+) {
+    match fill {
+        BlockFill::Single(color) => {
+            let _ = write!(
+                out,
+                r#"<rect class="{cl}" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"/>"#,
+                cl = class,
+                c = color,
+            );
+        }
+        BlockFill::MultiState(colors) => {
+            if colors.is_empty() {
+                return;
+            }
+            let pattern_id = stripe_pattern_id(defs, patterns, colors, cross_extent);
+            let _ = write!(
+                out,
+                r#"<rect class="{cl} multi-state" x="{x}" y="{y}" width="{w}" height="{h}" fill="url(#{pid})"/>"#,
+                cl = class,
+                pid = pattern_id,
+            );
+        }
+    }
 }
 
 /// Compute the SVG rect (x, y, w, h) for a block given its cross-axis
@@ -411,7 +507,12 @@ fn greedy_place(candidates: &[usize], slots: &[LabelSlot], lo: f64, hi: f64) -> 
     out
 }
 
-fn emit_time_axis(out: &mut String, layout: &DayviewLayout, geom: &PlotGeom, opts: DayviewSvgOpts) {
+fn emit_time_axis(
+    out: &mut String,
+    layout: &DayviewLayout,
+    geom: &PlotGeom,
+    opts: DayviewSvgOpts<'_>,
+) {
     let label_size = if layout.time_axis_height > 6.0 {
         (layout.time_axis_height - 6.0).max(6.0)
     } else {

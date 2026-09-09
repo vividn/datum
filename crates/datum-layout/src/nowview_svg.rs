@@ -4,56 +4,71 @@
 //! a single-day [`crate::dayview::DayviewConfig`] scoped to the last
 //! `history_minutes`, calls [`crate::dayview::compute_dayview`], and the
 //! dayview renderer paints field bands + gridlines + the yellow now-line.
-//! This module adds the nowview-specific overlay on top — currently just
-//! the `HH:MM` clock label near the now-line.
+//! This module adds the nowview-specific overlay on top: the strip right
+//! of the now-line, where each field's lane continues in the colour of the
+//! state it is in *now*, and the `HH:MM` clock label under it.
 //!
 //! Pure-Rust, WASM-clean.
 
 use std::fmt::Write;
 
-use crate::dayview::{DayviewLayout, Orientation};
-use crate::dayview_svg::{render_dayview_svg_with, text_width, DayviewSvgOpts, AXIS_LABEL_GAP};
-use crate::nowview::NowviewPanelEntry;
+use crate::dayview::{BlockFill, DayviewLayout, Orientation};
+use crate::dayview_svg::{
+    render_dayview_svg_with, text_width, DayviewSvgOpts, RightPanelFill, AXIS_LABEL_GAP,
+};
+use crate::nowview::NowviewCurrentState;
 
 const TEXT_COLOR: &str = "white";
-/// Side margin (px) between the now-line and the first column of panel
-/// content (and between panel content and the SVG's right edge).
-const PANEL_PAD_PX: f64 = 6.0;
-/// Width (px) of the colored swatch that prefixes each panel row.
-const PANEL_SWATCH_W: f64 = 8.0;
-/// Minimum panel-row font size; rows below this won't render text.
-const PANEL_MIN_FONT: f64 = 7.0;
-/// Cap on panel-row font size so labels stay readable in tall single-day
-/// nowviews where the band height alone would otherwise pick a huge font.
-const PANEL_MAX_FONT: f64 = 14.0;
+/// Below this strip width the clock can't be centred inside the strip
+/// without overflowing the canvas, so it centres on the now-line instead.
+/// Mirrors `isNowWidthSmall` in the original datum's `nowview.ts`.
+const CLOCK_CENTER_MIN_STRIP: f64 = 40.0;
 
 /// Render `layout` (a dayview layout the CLI built for the nowview window)
-/// to an SVG document string and overlay the `current_time_label` near the
-/// now-line plus, when non-empty, a current-state panel right of the
-/// now-line (per bead da-34w). An empty `current_time_label` skips the
-/// clock overlay; an empty `panel_entries` slice skips the panel.
+/// to an SVG document string, then overlay the now strip: one chunk per
+/// field carrying the state it is in at "now", drawn from the now-line to
+/// the right edge, and the `HH:MM` `current_time_label` under them. An
+/// empty `current_time_label` skips the clock; a field whose entry has no
+/// `state_label` — it is in no state right now — gets no chunk.
 pub fn render_nowview_svg(
     layout: &DayviewLayout,
     current_time_label: &str,
-    panel_entries: &[NowviewPanelEntry],
+    current_states: &[NowviewCurrentState],
 ) -> String {
-    // The clock is drawn on top of the axis strip at its far end; tell the
-    // axis renderer to keep its tick labels out of that room (da-sv8c).
+    let fills = now_strip_fills(current_states);
+    // The clock sits in the now strip; it only steals room from the tick
+    // labels when it is wider than the strip (da-sv8c).
     let opts = DayviewSvgOpts {
         axis_end_reserved: clock_reserved_px(layout, current_time_label),
+        right_panel_fills: &fills,
     };
     let mut svg = render_dayview_svg_with(layout, opts);
-    let mut overlay = String::new();
-    if !panel_entries.is_empty() {
-        overlay.push_str(&build_state_panel_overlay(layout, panel_entries));
-    }
     if !current_time_label.is_empty() {
-        overlay.push_str(&build_current_time_overlay(layout, current_time_label));
-    }
-    if !overlay.is_empty() {
+        let overlay = build_current_time_overlay(layout, current_time_label);
         inject_inside_plot_group(&mut svg, &overlay);
     }
     svg
+}
+
+/// Turn the resolved current states into the per-field strip fills the
+/// dayview renderer paints. A field in no state right now (`state_label`
+/// is `None`) gets no chunk — its lane simply stops at the now-line.
+fn now_strip_fills(current_states: &[NowviewCurrentState]) -> Vec<RightPanelFill> {
+    current_states
+        .iter()
+        .filter(|e| e.state_label.is_some())
+        .filter_map(|e| {
+            let fill = match e.colors.as_slice() {
+                [] => return None,
+                [single] => BlockFill::Single(single.clone()),
+                many => BlockFill::MultiState(many.to_vec()),
+            };
+            Some(RightPanelFill {
+                field: e.field.clone(),
+                fill,
+            })
+        })
+        .collect()
 }
 
 /// Font size of the clock overlay. Scales with the time-axis strip but
@@ -67,26 +82,50 @@ fn clock_font_size(layout: &DayviewLayout) -> f64 {
     }
 }
 
-/// Room the clock needs at the far end of the time axis, along the axis's
-/// own label direction: its text width when time runs horizontally, one
-/// line of it when time runs vertically.
+/// Extent the clock takes along the axis's own label direction: its text
+/// width when time runs horizontally, one line of it when time runs
+/// vertically.
+fn clock_extent_px(layout: &DayviewLayout, label: &str) -> f64 {
+    let font_size = clock_font_size(layout);
+    match layout.orientation {
+        Orientation::Horizontal => text_width(label, font_size),
+        Orientation::Vertical => font_size,
+    }
+}
+
+/// Where the clock's centre sits along the time axis: the middle of the
+/// now strip when the strip is wide enough to be worth centring in, the
+/// now-line otherwise — then pulled back so the text never runs off the
+/// plot's far edge.
+fn clock_time_pos(layout: &DayviewLayout, label: &str) -> f64 {
+    let strip = layout.right_panel_width.max(0.0);
+    let far = layout.time_axis_extent + strip;
+    let centred = if strip >= CLOCK_CENTER_MIN_STRIP {
+        layout.time_axis_extent + strip / 2.0
+    } else {
+        layout.time_axis_extent
+    };
+    let half = clock_extent_px(layout, label) / 2.0;
+    centred.min(far - half).max(half.min(centred))
+}
+
+/// Room the clock needs at the far end of the *time axis* — how far it
+/// reaches back past the now-line, which is the only part that can collide
+/// with a tick label. Centred in a roomy strip it reaches back not at all.
 fn clock_reserved_px(layout: &DayviewLayout, label: &str) -> f64 {
     if label.is_empty() {
         return 0.0;
     }
-    let font_size = clock_font_size(layout);
-    AXIS_LABEL_GAP
-        + match layout.orientation {
-            Orientation::Horizontal => text_width(label, font_size),
-            Orientation::Vertical => font_size,
-        }
+    let half = clock_extent_px(layout, label) / 2.0;
+    let overhang = half - (clock_time_pos(layout, label) - layout.time_axis_extent);
+    (AXIS_LABEL_GAP + overhang).max(0.0)
 }
 
-/// Build the `<text>` overlay placed near the now-line. Anchored to the
-/// right edge of the data area (where the now-line sits since
-/// `now_ms == day.end_ms` for the nowview window). Coordinates are in
-/// plot-local space (the renderer's outer `<g class="plot">` translates by
-/// `margin`).
+/// Build the `<text>` overlay placed near the now-line. Centred in the now
+/// strip when the strip is wide enough to hold it, on the now-line itself
+/// otherwise — the original datum's `isNowWidthSmall` rule. Coordinates
+/// are in plot-local space (the renderer's outer `<g class="plot">`
+/// translates by `margin`).
 fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
     let n_days = layout.days.len();
     if n_days == 0 || layout.time_axis_extent <= 0.0 {
@@ -105,15 +144,15 @@ fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
     };
 
     let font_size = clock_font_size(layout);
+    let time_pos = clock_time_pos(layout, label);
 
     let mut out = String::new();
     let _ = write!(&mut out, r#"<g class="nowview-overlay">"#,);
     match layout.orientation {
         Orientation::Horizontal => {
-            // Centered just under the right edge of the data area, at the
-            // mid-line of the time-axis strip (so it reads as the now-line's
-            // clock label).
-            let text_x = data_x + layout.time_axis_extent;
+            // On the mid-line of the time-axis strip, so it reads as the
+            // now-line's clock label.
+            let text_x = data_x + time_pos;
             let text_y = data_y
                 + cross_total
                 + if layout.time_axis_height > 0.0 {
@@ -123,7 +162,7 @@ fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
                 };
             let _ = write!(
                 &mut out,
-                r#"<text class="current-time-text" x="{x}" y="{y}" text-anchor="end" dominant-baseline="middle" fill="{c}" font-size="{fs}" font-weight="bold">{label}</text>"#,
+                r#"<text class="current-time-text" x="{x}" y="{y}" text-anchor="middle" dominant-baseline="middle" fill="{c}" font-size="{fs}" font-weight="bold">{label}</text>"#,
                 x = text_x,
                 y = text_y,
                 c = TEXT_COLOR,
@@ -132,10 +171,10 @@ fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
             );
         }
         Orientation::Vertical => {
-            // Right-anchored against the time-axis strip at the now-line
-            // (which sits at the bottom edge of the data area).
+            // Against the time-axis strip on the left, at the now-line's
+            // own position along the (vertical) time axis.
             let text_x = data_x - 2.0;
-            let text_y = data_y + layout.time_axis_extent + font_size;
+            let text_y = data_y + time_pos + font_size / 2.0;
             let _ = write!(
                 &mut out,
                 r#"<text class="current-time-text" x="{x}" y="{y}" text-anchor="end" fill="{c}" font-size="{fs}" font-weight="bold">{label}</text>"#,
@@ -149,155 +188,6 @@ fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
     }
     out.push_str("</g>");
     out
-}
-
-/// Build the right-of-now-line current-state panel. Each entry is matched
-/// to a rendered field band by name; rows whose field isn't in the layout
-/// are dropped (the dayview pipeline already skipped them). Vertical mode
-/// is unsupported — panel only renders in horizontal mode (the only mode
-/// nowview uses today).
-fn build_state_panel_overlay(layout: &DayviewLayout, entries: &[NowviewPanelEntry]) -> String {
-    if matches!(layout.orientation, Orientation::Vertical) {
-        return String::new();
-    }
-    if layout.right_panel_width <= 0.0 || layout.days.is_empty() {
-        return String::new();
-    }
-    let day = &layout.days[0];
-    if day.fields.is_empty() {
-        return String::new();
-    }
-
-    let panel_x = layout.label_width + layout.time_axis_extent;
-    let usable_w = (layout.right_panel_width - 2.0 * PANEL_PAD_PX).max(0.0);
-    if usable_w <= PANEL_SWATCH_W {
-        return String::new();
-    }
-
-    let mut out = String::new();
-    let _ = write!(&mut out, r#"<g class="nowview-state-panel">"#);
-    for entry in entries {
-        let Some(field) = day.fields.iter().find(|f| f.field == entry.field) else {
-            continue;
-        };
-        let row_top = day.day_offset + field.cross_offset;
-        let row_h = field.cross_extent.max(1.0);
-        let y_center = row_top + row_h / 2.0;
-
-        let font_size = (row_h - 4.0).clamp(PANEL_MIN_FONT, PANEL_MAX_FONT);
-        if font_size < PANEL_MIN_FONT {
-            continue;
-        }
-
-        let swatch_h = (row_h * 0.6).min(font_size).max(4.0);
-        let swatch_x = panel_x + PANEL_PAD_PX;
-        let swatch_y = y_center - swatch_h / 2.0;
-        push_state_swatch(
-            &mut out,
-            &entry.field,
-            &entry.colors,
-            swatch_x,
-            swatch_y,
-            PANEL_SWATCH_W,
-            swatch_h,
-        );
-
-        let text_x = swatch_x + PANEL_SWATCH_W + 4.0;
-        let label = match &entry.state_label {
-            Some(s) => format!("{}: {}", entry.field, s),
-            None => entry.field.clone(),
-        };
-        let _ = write!(
-            &mut out,
-            r#"<text class="state-label" data-field="{f}" x="{x}" y="{y}" dominant-baseline="middle" fill="{c}" font-size="{fs}">{txt}</text>"#,
-            f = escape_xml(&entry.field),
-            x = text_x,
-            y = y_center,
-            c = TEXT_COLOR,
-            fs = font_size,
-            txt = escape_xml(&label),
-        );
-    }
-    out.push_str("</g>");
-    out
-}
-
-/// Per da-9vop the swatch density (cells per side) for the parallel-state
-/// checkerboard. 8 → 8×8 cell grid for 2-state input; for N≥2 states the
-/// cells cycle by `(row + col) % N` so every state is visible and the
-/// pattern reads as a regular tiling.
-const PANEL_SWATCH_CHECKER_CELLS: usize = 8;
-
-/// Push the `<rect class="state-swatch">` element(s). Single-state entries
-/// emit one solid rect (the original behaviour); parallel-state entries
-/// (`switch body vertical,sit`) emit an N×N checkerboard of small rects so
-/// each state's colour is visible inside the swatch (per da-9vop).
-fn push_state_swatch(
-    out: &mut String,
-    field: &str,
-    colors: &[String],
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-) {
-    let escaped_field = escape_xml(field);
-    match colors {
-        [] => {
-            // Defensive: no resolvable colour → no swatch (still emit the
-            // bounding rect transparently so DOM consumers see the slot).
-            let _ = write!(
-                out,
-                r#"<rect class="state-swatch" data-field="{f}" x="{x}" y="{y}" width="{w}" height="{h}" fill="none"/>"#,
-                f = escaped_field,
-                x = x,
-                y = y,
-                w = w,
-                h = h,
-            );
-        }
-        [single] => {
-            let _ = write!(
-                out,
-                r#"<rect class="state-swatch" data-field="{f}" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"/>"#,
-                f = escaped_field,
-                x = x,
-                y = y,
-                w = w,
-                h = h,
-                c = escape_xml(single),
-            );
-        }
-        _ => {
-            let n = PANEL_SWATCH_CHECKER_CELLS;
-            // Wrap every cell in a single grouping rect so DOM consumers
-            // can still address the swatch as one element.
-            let _ = write!(
-                out,
-                r#"<g class="state-swatch state-swatch-checker" data-field="{f}">"#,
-                f = escaped_field,
-            );
-            let cell_w = w / n as f64;
-            let cell_h = h / n as f64;
-            for row in 0..n {
-                for col in 0..n {
-                    let idx = (row + col) % colors.len();
-                    let cx = x + col as f64 * cell_w;
-                    let cy = y + row as f64 * cell_h;
-                    let _ = write!(
-                        out,
-                        r#"<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"/>"#,
-                        x = cx,
-                        y = cy,
-                        w = cell_w,
-                        h = cell_h,
-                        c = escape_xml(&colors[idx]),
-                    );
-                }
-            }
-            out.push_str("</g>");
-        }
-    }
 }
 
 /// Insert `overlay` inside the dayview's `<g class="plot">` group so the
@@ -351,6 +241,57 @@ mod tests {
         DayviewFieldInput, DayviewPoint, Orientation,
     };
     use crate::nowview::nowview_axis_ticks;
+
+    /// The `<g class="field" data-field="…">` slice for one field.
+    fn field_group(svg: &str, field: &str) -> String {
+        let open = format!(r#"<g class="field" data-field="{field}">"#);
+        let start = svg
+            .find(&open)
+            .unwrap_or_else(|| panic!("no band for {field} in: {svg}"))
+            + open.len();
+        let end = svg[start..].find("</g>").expect("band close") + start;
+        svg[start..end].to_string()
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    struct RectBox {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    }
+
+    /// Parse every `<rect class="<class>" …>` in `frag` into boxes, in
+    /// document order. The renderer writes the four attributes in a fixed
+    /// order, which is what makes this scan enough.
+    fn rects(frag: &str, class: &str) -> Vec<RectBox> {
+        let open = format!(r#"<rect class="{class}" "#);
+        let mut out = Vec::new();
+        let mut rest = frag;
+        while let Some(i) = rest.find(&open) {
+            let tag_start = i + open.len();
+            let tag_end = rest[tag_start..].find("/>").expect("rect close") + tag_start;
+            let tag = &rest[tag_start..tag_end];
+            let attr = |name: &str| -> f64 {
+                let key = format!(r#"{name}=""#);
+                let s = tag.find(&key).map(|k| k + key.len()).expect("attr");
+                let e = tag[s..].find('"').expect("attr close") + s;
+                tag[s..e].parse().expect("number")
+            };
+            out.push(RectBox {
+                x: attr("x"),
+                y: attr("y"),
+                w: attr("width"),
+                h: attr("height"),
+            });
+            rest = &rest[tag_end..];
+        }
+        out
+    }
+
+    fn rect_attrs(frag: &str, class: &str) -> Option<RectBox> {
+        rects(frag, class).into_iter().next()
+    }
 
     /// Build a single-day dayview config matching what the nowview command
     /// produces — 30 min window, single day with one block + one point.
@@ -430,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn state_panel_renders_swatch_and_label_per_field() {
+    fn now_strip_paints_one_chunk_per_field_in_a_state() {
         // Build a layout with reserved right-panel width, then assert the
         // overlay matches each entry to the field band by name.
         let now_ms = 1_700_000_000_000_i64;
@@ -491,32 +432,41 @@ mod tests {
             layout.time_axis_extent,
         );
         let entries = vec![
-            NowviewPanelEntry {
+            NowviewCurrentState {
                 field: "mood".into(),
                 state_label: Some("focused".into()),
                 colors: vec!["#abcdef".into()],
             },
-            NowviewPanelEntry {
+            NowviewCurrentState {
                 field: "coffee".into(),
                 state_label: None,
                 colors: vec!["#ff0000".into()],
             },
         ];
         let svg = render_nowview_svg(&layout, "12:00", &entries);
-        assert!(svg.contains(r#"class="nowview-state-panel""#));
-        assert!(svg.contains(r#"class="state-swatch" data-field="mood""#));
-        assert!(svg.contains(r#"class="state-swatch" data-field="coffee""#));
-        assert!(svg.contains("mood: focused"));
-        // Occur-only field with no state label should still show the field
-        // name as a glanceable presence cue.
-        assert!(svg.contains(">coffee<"));
-        // Both swatches use entry colors.
-        assert!(svg.contains("#abcdef"));
-        assert!(svg.contains("#ff0000"));
+        // The strip carries one chunk for the field that is in a state,
+        // spanning the whole reserved panel at that field's band.
+        let mood = field_group(&svg, "mood");
+        let chunk = rect_attrs(&mood, "now-chunk").expect("mood now-chunk");
+        assert!((chunk.x - (layout.label_width + layout.time_axis_extent)).abs() < 1e-6);
+        assert!((chunk.w - layout.right_panel_width).abs() < 1e-6);
+        let band = &layout.days[0]
+            .fields
+            .iter()
+            .find(|f| f.field == "mood")
+            .unwrap();
+        assert!((chunk.y - band.cross_offset).abs() < 1e-6);
+        assert!((chunk.h - band.cross_extent).abs() < 1e-6);
+        assert!(mood.contains(r##"fill="#abcdef""##));
+        // The occur-only field has no state at now: no chunk, and no text.
+        assert!(rect_attrs(&field_group(&svg, "coffee"), "now-chunk").is_none());
+        // No label text anywhere but the axis: the panel is gone.
+        assert!(!svg.contains("mood: focused"));
+        assert!(!svg.contains(">coffee<"));
     }
 
     #[test]
-    fn state_panel_skips_when_field_not_in_layout() {
+    fn now_strip_skips_when_field_not_in_layout() {
         let now_ms = 1_700_000_000_000_i64;
         let history_ms = 30 * 60 * 1000;
         let day = DayviewDayInput {
@@ -553,7 +503,7 @@ mod tests {
             ..Default::default()
         };
         let layout = compute_dayview(&cfg);
-        let entries = vec![NowviewPanelEntry {
+        let entries = vec![NowviewCurrentState {
             field: "ghost".into(),
             state_label: Some("nope".into()),
             colors: vec!["#888888".into()],
@@ -576,12 +526,11 @@ mod tests {
         assert!(html.contains("<svg></svg>"));
     }
 
-    /// Per da-9vop, the following-state swatch for a parallel state set
-    /// renders as an N×N checkerboard (one rect per cell, alternating
-    /// between the supplied colours) wrapped in a single `<g>` so DOM
-    /// consumers can still address it as one swatch.
+    /// Per da-9vop a parallel state set keeps every member's colour; the
+    /// chunk past the now-line shows them as the same 45° stripes dayview
+    /// already paints a parallel-state block with (da-nk84).
     #[test]
-    fn following_state_square_renders_checkerboard_for_parallel_set() {
+    fn now_chunk_stripes_a_parallel_state_set() {
         let now_ms = 1_700_000_000_000_i64;
         let history_ms = 30 * 60 * 1000;
         let day = DayviewDayInput {
@@ -619,33 +568,27 @@ mod tests {
         };
         let layout = compute_dayview(&cfg);
         // Parallel state set: vertical + sit → two-colour swatch.
-        let entries = vec![NowviewPanelEntry {
+        let entries = vec![NowviewCurrentState {
             field: "body".into(),
             state_label: Some("vertical,sit".into()),
             colors: vec!["#aa3333".into(), "#33aa33".into()],
         }];
         let svg = render_nowview_svg(&layout, "12:00", &entries);
-        // Single solid-fill swatch is replaced by a grouping <g> that
-        // contains the per-cell rects.
+        // The chunk is striped the way dayview stripes a parallel-state
+        // block, sharing that machinery rather than inventing a swatch.
         assert!(
-            svg.contains(r#"class="state-swatch state-swatch-checker" data-field="body""#),
-            "expected checker grouping element in: {svg}"
+            field_group(&svg, "body").contains(r#"class="now-chunk multi-state""#),
+            "expected a striped now-chunk in: {svg}"
         );
-        // Both state colours appear at least once each.
+        assert!(svg.contains(r#"patternTransform="rotate(45)""#));
         assert!(svg.contains(r##"fill="#aa3333""##));
         assert!(svg.contains(r##"fill="#33aa33""##));
-        // 8×8 cell grid → 64 small rects, one per cell.
-        let cell_count = svg.matches("<rect x=\"").count();
-        assert!(
-            cell_count >= 64,
-            "expected ≥64 checker cells, got {cell_count} in: {svg}",
-        );
     }
 
-    /// Single-state input continues to render as one solid-fill rect —
-    /// the parallel-state path must not regress the common case.
+    /// Single-state input renders as one solid-fill rect — the
+    /// parallel-state path must not regress the common case.
     #[test]
-    fn following_state_square_single_state_still_solid() {
+    fn now_chunk_single_state_is_solid() {
         let now_ms = 1_700_000_000_000_i64;
         let history_ms = 30 * 60 * 1000;
         let day = DayviewDayInput {
@@ -682,19 +625,19 @@ mod tests {
             ..Default::default()
         };
         let layout = compute_dayview(&cfg);
-        let entries = vec![NowviewPanelEntry {
+        let entries = vec![NowviewCurrentState {
             field: "mood".into(),
             state_label: Some("focused".into()),
             colors: vec!["#abcdef".into()],
         }];
         let svg = render_nowview_svg(&layout, "12:00", &entries);
         assert!(
-            svg.contains(r#"<rect class="state-swatch" data-field="mood""#),
-            "single-state swatch must remain a solid rect: {svg}"
+            field_group(&svg, "mood").contains(r##"<rect class="now-chunk" x="##),
+            "single-state chunk must be a solid rect: {svg}"
         );
         assert!(
-            !svg.contains("state-swatch-checker"),
-            "no checker grouping for single state"
+            !svg.contains("multi-state"),
+            "no stripes for a single state"
         );
     }
 }

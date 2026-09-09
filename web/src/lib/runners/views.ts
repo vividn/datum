@@ -171,7 +171,7 @@ export async function dayview(
 }
 
 /**
- * `datum nowview` — the last 30 minutes, plus the current-state panel.
+ * `datum nowview` — the last 30 minutes, plus each field's current state
  *
  * The CLI prints a terminal band when no `--output-file` is given and
  * writes the SVG when one is; a browser pane has no terminal, so this is
@@ -199,7 +199,7 @@ export async function nowview(
 		if (!grouped.has(field)) grouped.set(field, []);
 	}
 
-	// The two state oracles the panel and the lead-in need, each one query
+	// The two state oracles the now-chunk and the lead-in need, each one query
 	// over the whole store rather than over the fetched window. The
 	// trailing-edge rule that turns a winning row into a state is Rust's
 	// (`db::now::effective_state`), so the rows go across as they are.
@@ -216,7 +216,7 @@ export async function nowview(
 		fields: [...grouped].map(([field, entries]) => ({ field, entries })),
 		styles: await stylesByField(),
 		lead_entries: await rowsAt(fetchStart),
-		panel_entries: await rowsAt(now),
+		current_states: await rowsAt(now),
 		clock: clockLabel(now),
 		options: geometry
 	});

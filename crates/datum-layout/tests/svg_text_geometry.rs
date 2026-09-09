@@ -17,7 +17,7 @@ use datum_layout::dayview::{
     DayviewPoint, Orientation,
 };
 use datum_layout::dayview_svg::{render_dayview_svg, text_width};
-use datum_layout::nowview::{nowview_config, NowviewGeometry, NowviewPanelEntry};
+use datum_layout::nowview::{nowview_config, NowviewCurrentState, NowviewGeometry};
 use datum_layout::nowview_svg::render_nowview_svg;
 
 /// The widths the bead surveyed: 300 and 430 are the panes the PWA renders
@@ -270,12 +270,12 @@ fn nowview_at(width: f64, history_minutes: f64) -> String {
     );
     let layout = compute_dayview(&config);
     let panel = vec![
-        NowviewPanelEntry {
+        NowviewCurrentState {
             field: "mood".into(),
             state_label: Some("good".into()),
             colors: vec!["#44aa77".into()],
         },
-        NowviewPanelEntry {
+        NowviewCurrentState {
             field: "coffee".into(),
             state_label: None,
             colors: vec!["#cc7722".into()],

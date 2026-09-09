@@ -76,8 +76,8 @@ export type LayoutRequest =
 			styles?: Record<string, FieldStyle>;
 			/** Per field, the row deciding its state at `fetch_start_ms`. */
 			lead_entries?: Record<string, EntryReq>;
-			/** The same at `now_ms`, for the panel beside the now-line. */
-			panel_entries?: Record<string, EntryReq>;
+			/** The same at `now_ms`, for the chunk drawn past the now-line. */
+			current_states?: Record<string, EntryReq>;
 			clock: string;
 			options?: Record<string, unknown>;
 	  };

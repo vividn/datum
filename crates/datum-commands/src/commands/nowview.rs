@@ -28,7 +28,7 @@ use datum_core::shape::{
 };
 use datum_layout::dayview::{compute_dayview, DayviewBlock, DayviewFieldInput};
 use datum_layout::nowview::{
-    nowview_config, NowviewBlock, NowviewField, NowviewGeometry, NowviewPanelEntry, NowviewPoint,
+    nowview_config, NowviewBlock, NowviewCurrentState, NowviewField, NowviewGeometry, NowviewPoint,
     DEFAULT_HISTORY_MINUTES,
 };
 use datum_layout::nowview_svg::{render_nowview_svg, with_xml_declaration, wrap_svg_in_html};
@@ -175,7 +175,7 @@ struct NowComputed {
     end_ms: i64,
     history_minutes: f64,
     layout: datum_layout::dayview::DayviewLayout,
-    panel_entries: Vec<NowviewPanelEntry>,
+    current_states: Vec<NowviewCurrentState>,
 }
 
 fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
@@ -206,21 +206,21 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     );
 
     let layout = compute_dayview(&config);
-    let panel_entries = build_panel_entries(db, end, &layout);
+    let current_states = build_current_states(db, end, &layout);
 
     Ok(NowComputed {
         end,
         end_ms,
         history_minutes,
         layout,
-        panel_entries,
+        current_states,
     })
 }
 
 /// Render the nowview SVG, to stdout or `--output-file`.
 fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     let c = compute_now(args, db)?;
-    let svg = render_nowview_svg(&c.layout, &format_local_hh_mm(c.end), &c.panel_entries);
+    let svg = render_nowview_svg(&c.layout, &format_local_hh_mm(c.end), &c.current_states);
 
     match args.output_file.as_deref() {
         None => {
@@ -242,7 +242,7 @@ fn render_json_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     let payload = serde_json::json!({
         "now_ms": c.end_ms,
         "history_minutes": c.history_minutes,
-        "panel": c.panel_entries,
+        "panel": c.current_states,
     });
     let body = serde_json::to_string_pretty(&payload)?;
 
@@ -570,16 +570,16 @@ pub(crate) fn build_fields(
 /// rendered field, looks up the active state at `end` and produces a
 /// (field, label, color) triple. Fields with no resolvable state still
 /// yield a row — the field name alone is a useful presence cue.
-fn build_panel_entries(
+fn build_current_states(
     db: &Db,
     end: DateTime<Utc>,
     layout: &datum_layout::dayview::DayviewLayout,
-) -> Vec<NowviewPanelEntry> {
+) -> Vec<NowviewCurrentState> {
     let day = match layout.days.first() {
         Some(d) => d,
         None => return Vec::new(),
     };
-    let mut out: Vec<NowviewPanelEntry> = Vec::with_capacity(day.fields.len());
+    let mut out: Vec<NowviewCurrentState> = Vec::with_capacity(day.fields.len());
     for f in &day.fields {
         let spec = db.load_spec(&f.field).ok().flatten();
         let state = db.state_at(&f.field, end).ok().flatten();
@@ -604,7 +604,7 @@ fn build_panel_entries(
                 (Some(label), hex)
             }
         };
-        out.push(NowviewPanelEntry {
+        out.push(NowviewCurrentState {
             field: f.field.clone(),
             state_label,
             colors,

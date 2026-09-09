@@ -129,7 +129,16 @@ async function drawn(app, title) {
 	const texts = (cls) =>
 		[...svg.matchAll(new RegExp(`<text class="${cls}"[^>]*>([^<]*)<`, 'g'))].map((m) => m[1]);
 	return {
-		states: texts('state-label'),
+		// Which field is in which state now, since da-nk84: not a labelled
+		// panel row but the chunk each lane carries past the now-line, read
+		// as `field → fill`.
+		states: [...svg.matchAll(/<g class="field" data-field="([^"]*)">(.*?)<\/g>/g)]
+			.map(([, field, group]) => [
+				field,
+				/<rect class="now-chunk[^"]*"[^>]*fill="([^"]*)"/.exec(group)?.[1]
+			])
+			.filter(([, fill]) => fill !== undefined)
+			.map(([field, fill]) => `${field}=${fill}`),
 		ticks: texts('tick-label'),
 		clock: texts('current-time-text'),
 		fonts: [...svg.matchAll(/font-size="([\d.]+)"/g)].map((m) => Number(m[1]))
@@ -210,10 +219,10 @@ describe('a pane', () => {
 	}
 
 	// Fitting the picture to the pane by blanking it would satisfy every
-	// assertion above. The state panel is what nowview is FOR — which
+	// assertion above. The current state is what nowview is FOR — which
 	// field is in which state right now — so it has to carry the same
-	// rows on a phone that it carries on a desktop, plus its clock and an
-	// axis to read the bands against.
+	// chunks past the now-line on a phone that it carries on a desktop,
+	// plus its clock and an axis to read the bands against.
 	//
 	// The axis is counted, not compared: how many ticks fit is a function
 	// of the plot's width, and `nowview_axis_ticks` gets to answer that
@@ -234,24 +243,22 @@ describe('a pane', () => {
 					assert.equal(shown.clock.length, 1, `nowview on ${name} drew no clock`);
 					if (wide === undefined) {
 						wide = shown;
-						assert.ok(wide.states.length > 0, 'nowview drew no state panel even at 1280');
+						assert.ok(wide.states.length > 0, 'nowview drew no current state even at 1280');
 					} else {
 						assert.deepEqual(
 							shown.states,
 							wide.states,
-							`nowview on ${name} lost a panel row: ${JSON.stringify(shown.states)}`
+							`nowview on ${name} lost a current state: ${JSON.stringify(shown.states)}`
 						);
 					}
-					// datum's own floor for a panel label, `PANEL_MIN_FONT`
-					// in nowview_svg.rs. A pane 78px tall is a cramped band
-					// and datum draws it cramped — 7px, where a 1280 pane
-					// gets the full 14. That is the trade the report asked
-					// for: the whole picture small beats half of it bigger
-					// behind a scrollbar. Asserted so a future change that
-					// makes it smaller than datum will ever draw has to say
-					// so out loud.
+					// What is left to read once the panel is gone is the
+					// axis and the clock, and both have to stay legible in a
+					// cramped band: a pane 78px tall gets the picture drawn
+					// small rather than half of it drawn big behind a
+					// scrollbar. Asserted so a change that draws text
+					// smaller than datum ever does has to say so out loud.
 					assert.ok(
-						Math.min(...shown.fonts) >= 7,
+						Math.min(...shown.fonts) >= 6,
 						`nowview on ${name} drew ${Math.min(...shown.fonts)}px text`
 					);
 				},

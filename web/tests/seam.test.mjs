@@ -251,6 +251,38 @@ describe('the visual views', () => {
 	const colorOf = (name) =>
 		'#' + createHash('md5').update(name).digest('hex').slice(0, 6);
 
+	/**
+	 * Every `<rect class="{cls}" …>` inside one field's band, in document
+	 * order. The renderer writes the attributes in a fixed order, which is
+	 * what makes this scan enough.
+	 */
+	const fieldRects = (svg, field, cls) => {
+		const open = `<g class="field" data-field="${field}">`;
+		const start = svg.indexOf(open);
+		if (start < 0) return [];
+		const group = svg.slice(start + open.length, svg.indexOf('</g>', start));
+		const rect = new RegExp(
+			`<rect class="${cls}"[^>]*\\bx="([\\d.-]+)"[^>]*\\bwidth="([\\d.-]+)"[^>]*\\bfill="([^"]*)"`,
+			'g'
+		);
+		return [...group.matchAll(rect)].map((m) => ({
+			x: Number(m[1]),
+			w: Number(m[2]),
+			fill: m[3]
+		}));
+	};
+
+	/** Each field's current-state chunk colour, past the now-line. */
+	const nowChunks = (svg) =>
+		Object.fromEntries(
+			[...svg.matchAll(/<g class="field" data-field="([^"]*)">(.*?)<\/g>/g)]
+				.map(([, field, group]) => [
+					field,
+					/<rect class="now-chunk"[^>]*fill="([^"]*)"/.exec(group)?.[1]
+				])
+				.filter(([, fill]) => fill !== undefined)
+		);
+
 	test('dayview draws the day as an SVG, and the pane shows it', async () => {
 		await withApp(async ({ run, reload, paneSvg }) => {
 			const drawn = await run(['dayview']);
@@ -296,9 +328,13 @@ describe('the visual views', () => {
 				drawn.stdout.includes(colorOf('happy')),
 				`no band in happy's colour (${colorOf('happy')}): ${drawn.stdout}`
 			);
-			// And the field and its state are named, in the panel to the
-			// right of the now-line.
-			assert.match(drawn.stdout, />mood: happy</);
+			// And the lane runs on past the now-line in that same colour:
+			// the chunk that says what the field is in *now* (da-nk84).
+			assert.equal(
+				nowChunks(drawn.stdout).mood,
+				colorOf('happy'),
+				`no now-chunk in happy's colour: ${drawn.stdout}`
+			);
 		});
 	});
 
@@ -311,14 +347,58 @@ describe('the visual views', () => {
 			// The viewer's own clock — the one thing about the picture the
 			// browser knows and the layout crate cannot.
 			assert.match(drawn.stdout, /<text[^>]*>\d{2}:\d{2}<\/text>/);
-			assert.match(
-				drawn.stdout,
-				/>focus: deep</,
-				'the panel does not show the current state'
-			);
+			// The current state is a chunk past the now-line, not a named
+			// panel row — the browser draws the picture the CLI draws
+			// because it runs the CLI's renderer (da-nk84).
+			assert.equal(nowChunks(drawn.stdout).focus, colorOf('deep'));
+			assert.doesNotMatch(drawn.stdout, />focus: deep</, 'the state panel is back');
 
 			await reload();
-			assert.match(await paneSvg('nowview'), />focus: deep</);
+			assert.equal(nowChunks(await paneSvg('nowview')).focus, colorOf('deep'));
+		});
+	});
+
+	// The shape of the picture, asserted in the browser the way
+	// `nowview_lanes_fill_edge_to_edge_and_carry_a_now_chunk` asserts it
+	// for the CLI: nothing is labelled but the axis, each lane tiles the
+	// history window with no gap, and a field in a state gets exactly one
+	// chunk past the now-line while an occur-only field gets none.
+	test('nowview fills each lane to the now-line and labels only the axis', async () => {
+		await withApp(async ({ run }) => {
+			// The first switch is before the window opens, so the lane is
+			// filled from its left edge by the lead-in row alone.
+			assert.equal((await run(['switch', 'mood', 'calm', '-t', '-45'])).code, OK);
+			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-20'])).code, OK);
+			assert.equal((await run(['switch', 'mood', 'sad', '-t', '-5'])).code, OK);
+			assert.equal((await run(['occur', 'coffee', '-t', '-8'])).code, OK);
+
+			const svg = (await run(['nowview'])).stdout;
+
+			for (const cls of [...svg.matchAll(/<text class="([^"]*)"/g)].map((m) => m[1])) {
+				assert.ok(
+					cls === 'tick-label' || cls === 'current-time-text',
+					`nowview labelled a <text class="${cls}">: ${svg}`
+				);
+			}
+
+			const nowX = Number(/<line class="current-time-line" x1="([\d.]+)"/.exec(svg)[1]);
+			const lane = fieldRects(svg, 'mood', 'block');
+			assert.ok(lane.length >= 2, `mood switched inside the window: ${svg}`);
+			let x = 0;
+			for (const rect of lane) {
+				assert.ok(Math.abs(rect.x - x) < 1e-6, `gap before ${rect.x} (expected ${x}): ${svg}`);
+				x = rect.x + rect.w;
+			}
+			assert.ok(Math.abs(x - nowX) < 1e-6, `lane ends at ${x}, not the now-line ${nowX}`);
+
+			// One chunk, in the state it switched INTO — the lane left of
+			// the line still carries what it was.
+			const chunks = fieldRects(svg, 'mood', 'now-chunk');
+			assert.equal(chunks.length, 1);
+			assert.equal(chunks[0].fill, colorOf('sad'));
+			assert.equal(lane.at(-2).fill, colorOf('happy'));
+			// The occur-only field is in no state now, so it gets nothing.
+			assert.deepEqual(fieldRects(svg, 'coffee', 'now-chunk'), []);
 		});
 	});
 

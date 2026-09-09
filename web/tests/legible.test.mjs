@@ -168,7 +168,9 @@ describe('a drawn view', () => {
 	// now both name a size, and the bare command still means the default.
 	for (const [command, width] of [
 		['dayview', 2000],
-		['nowview', 520]
+		// 400 since da-nk84 carved the now strip out of the canvas rather
+		// than adding a panel's width to it.
+		['nowview', 400]
 	]) {
 		test(`is still the CLI’s ${width}px ${command} canvas when the argv asks for nothing`, async () => {
 			await withApp(async (app) => {

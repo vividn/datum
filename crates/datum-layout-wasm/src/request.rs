@@ -18,7 +18,7 @@ use datum_layout::dayview::{
     DayviewDayInput, DayviewFieldInput, DayviewPoint, Orientation,
 };
 use datum_layout::dayview_svg::render_dayview_svg;
-use datum_layout::nowview::{nowview_config, NowviewGeometry, NowviewPanelEntry};
+use datum_layout::nowview::{nowview_config, NowviewCurrentState, NowviewGeometry};
 use datum_layout::nowview_svg::render_nowview_svg;
 
 use crate::colors::{
@@ -111,11 +111,11 @@ pub enum Request {
         /// caller. A field with no such row draws no leading band.
         #[serde(default)]
         lead_entries: BTreeMap<String, EntryReq>,
-        /// The same, at `now_ms`, for the panel to the right of the
+        /// The same, at `now_ms`, for the chunk drawn right of the
         /// now-line. A field absent from the map, or whose state resolves
-        /// to nothing, renders as a name with no state.
+        /// to nothing, gets no chunk (da-nk84).
         #[serde(default)]
-        panel_entries: BTreeMap<String, EntryReq>,
+        current_states: BTreeMap<String, EntryReq>,
         /// The `HH:MM` clock painted at the now-line. The browser owns this
         /// because it owns the viewer's timezone.
         #[serde(default)]
@@ -237,7 +237,7 @@ fn render(request: Request) -> Response {
             fields,
             styles,
             lead_entries,
-            panel_entries,
+            current_states,
             clock,
             options,
         } => {
@@ -264,14 +264,14 @@ fn render(request: Request) -> Response {
                 lead_start_ms: fetch_start_ms,
             };
             let fields = build_fields(fields, &styles, &window, &lead_entries);
-            let panel_states: BTreeMap<String, JsonValue> = panel_entries
+            let now_states: BTreeMap<String, JsonValue> = current_states
                 .iter()
                 .map(|(field, entry)| (field.clone(), effective_state(entry, now_ms)))
                 .collect();
             let config = nowview_config(fields, now_ms, &geometry);
             let layout = compute_dayview(&config);
-            let panel = build_panel(&layout, &panel_states, &styles);
-            Response::ok(render_nowview_svg(&layout, &clock, &panel))
+            let current = build_current_states(&layout, &now_states, &styles);
+            Response::ok(render_nowview_svg(&layout, &clock, &current))
         }
     }
 }
@@ -408,13 +408,13 @@ fn dot_color(
     }
 }
 
-/// One panel row per rendered field, in layout order — the same walk
-/// `nowview::build_panel_entries` does over `layout.days[0].fields`.
-fn build_panel(
+/// One current-state row per rendered field, in layout order — the same
+/// walk the CLI's `build_current_states` does over `layout.days[0].fields`.
+fn build_current_states(
     layout: &datum_layout::dayview::DayviewLayout,
-    panel_states: &BTreeMap<String, JsonValue>,
+    now_states: &BTreeMap<String, JsonValue>,
     styles: &BTreeMap<String, FieldStyle>,
-) -> Vec<NowviewPanelEntry> {
+) -> Vec<NowviewCurrentState> {
     let Some(day) = layout.days.first() else {
         return Vec::new();
     };
@@ -422,7 +422,7 @@ fn build_panel(
         .iter()
         .map(|f| {
             let style = styles.get(&f.field);
-            let state = panel_states.get(&f.field);
+            let state = now_states.get(&f.field);
             let (state_label, colors) = match state {
                 Some(v) if !is_unrendered_switch_value(Some(v)) => {
                     let colors = state_value_colors(v, &f.field, style);
@@ -435,7 +435,7 @@ fn build_panel(
                 }
                 _ => (None, vec![field_hex(&f.field, style)]),
             };
-            NowviewPanelEntry {
+            NowviewCurrentState {
                 field: f.field.clone(),
                 state_label,
                 colors,

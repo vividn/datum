@@ -193,12 +193,15 @@ mod tests {
                     "slug": "focus:2023-11-14T22:10Z"
                 }]
             }],
-            "panel_entries": {
+            "current_states": {
                 "focus": { "occur_ms": 1_699_999_800_000i64, "verb": "switch", "state": "deep" }
             }
         }));
         assert!(svg.contains("14:32"), "clock missing from {svg}");
-        assert!(svg.contains("deep"), "panel state missing from {svg}");
+        assert!(
+            svg.contains(r#"class="now-chunk""#),
+            "no current-state chunk in {svg}"
+        );
     }
 
     #[test]

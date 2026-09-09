@@ -48,7 +48,7 @@ use datum_layout::{
         DayviewFieldInput, DayviewPoint, Orientation,
     },
     dayview_svg::render_dayview_svg,
-    nowview::{nowview_axis_ticks, NowviewPanelEntry},
+    nowview::{nowview_axis_ticks, NowviewCurrentState},
     nowview_svg::render_nowview_svg,
 };
 use serde_json::json;
@@ -817,12 +817,12 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
         right_panel_width: panel_width,
     };
     let layout = compute_dayview(&cfg);
-    let panel_entries = vec![NowviewPanelEntry {
+    let current_states = vec![NowviewCurrentState {
         field: "mood".into(),
         state_label: Some("focused".into()),
         colors: vec!["#4488cc".into()],
     }];
-    let svg = render_nowview_svg(&layout, "14:30", &panel_entries);
+    let svg = render_nowview_svg(&layout, "14:30", &current_states);
     DayviewLayoutResult { svg }
 }
 
@@ -880,12 +880,12 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
         right_panel_width: panel_width,
     };
     let layout = compute_dayview(&cfg);
-    let panel_entries = vec![NowviewPanelEntry {
+    let current_states = vec![NowviewCurrentState {
         field: "mood".into(),
         state_label: Some("focused".into()),
         colors: vec!["#4488cc".into()],
     }];
-    let svg = render_nowview_svg(&layout, "14:30", &panel_entries);
+    let svg = render_nowview_svg(&layout, "14:30", &current_states);
     DayviewLayoutResult { svg }
 }
 

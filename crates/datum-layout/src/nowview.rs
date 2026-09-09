@@ -92,24 +92,25 @@ pub struct NowviewField {
     pub default_colors: Vec<String>,
 }
 
-/// One entry in the current-state panel rendered to the right of the
-/// now-line (per bead da-34w). The CLI resolves the active state per
-/// tracked field at "now" and passes the result as a list of these
-/// entries; the SVG overlay aligns each row to the matching field band.
+/// What each field's lane is showing *right now* — the chunk drawn to the
+/// right of the now-line (da-nk84, superseding the labelled panel of
+/// da-34w). The caller resolves the active state per rendered field at
+/// "now"; the SVG overlay paints one chunk per entry, aligned to that
+/// field's band and running from the now-line to the right edge.
 ///
 /// Per da-9vop, parallel state sets carry every member's colour in
-/// `colors` so the swatch can render as a checkerboard combining each
-/// state's hue rather than borrowing only the first state's colour.
+/// `colors` so the chunk can be striped with each state's hue rather than
+/// borrowing only the first state's colour.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NowviewPanelEntry {
+pub struct NowviewCurrentState {
     pub field: String,
     /// Active state value rendered as text. `None` means the field has no
-    /// state at "now" (e.g. an occur-only field with no recent dot); the
-    /// row still renders the field name as a glanceable presence cue.
+    /// state at "now" (e.g. an occur-only field with no recent dot) — such
+    /// a field gets no chunk. `datum nowview --json` still emits the row.
     pub state_label: Option<String>,
     /// One or more hex fill colours — one per active state member. A
-    /// 1-element vector is a regular solid swatch; a 2+-element vector
-    /// renders as a checkerboard pattern in the SVG overlay.
+    /// 1-element vector paints a solid chunk; a 2+-element vector paints
+    /// the 45° stripes dayview already uses for parallel-state blocks.
     pub colors: Vec<String>,
 }
 
@@ -293,14 +294,13 @@ mod tests {
 pub const DEFAULT_HISTORY_MINUTES: f64 = 30.0;
 /// Default per-day band height for nowview's single day.
 pub const DEFAULT_DAY_HEIGHT: f64 = 250.0;
-/// Default reserved width (px) for the current-state panel rendered to the
-/// right of the now-line (per bead da-34w).
-pub const DEFAULT_PANEL_WIDTH: f64 = 120.0;
-/// Width contribution of the panel toward the auto-sized SVG width when the
-/// caller omits an explicit width. Added on top of
-/// [`default_width_for_history`] so the data area keeps datum's
-/// history-based sizing.
-pub const PANEL_DEFAULT_WIDTH_BUMP: f64 = 120.0;
+/// How much of the picture, in minutes of the same time scale the history
+/// uses, is given to the strip right of the now-line where each field's
+/// current state is drawn. Matches the terminal band's own now panel, and
+/// reproduces the original datum's proportions: a 15m history over a
+/// 400px canvas puts the now-line at x=299, which is where it sits in
+/// `docs/parity-audit/nowview_with_history_reference.png`.
+pub const NOW_WIDTH_MINUTES: f64 = 5.0;
 
 /// The knobs `datum nowview` exposes that affect geometry. Everything else
 /// nowview needs is derived — that derivation is [`nowview_config`], and it
@@ -343,7 +343,7 @@ pub fn nowview_config(
     let history_minutes = geom.history_minutes;
     let width = geom
         .width
-        .unwrap_or_else(|| default_width_for_history(history_minutes) + PANEL_DEFAULT_WIDTH_BUMP);
+        .unwrap_or_else(|| default_width_for_history(history_minutes));
     let start_ms = now_ms - (history_minutes * 60_000.0) as i64;
 
     // da-34w: nowview drops the date label — it's timestamp-focused, not
@@ -357,16 +357,17 @@ pub fn nowview_config(
         fields,
     };
 
-    let panel_width = DEFAULT_PANEL_WIDTH
-        .min((width - 2.0 * geom.margin) * 0.5)
-        .max(0.0);
+    // The now strip is `NOW_WIDTH_MINUTES` of the same scale the history
+    // is drawn at, so the now-line falls where the original datum puts it
+    // and the strip stays proportionate at any width.
+    let plot_width = (width - 2.0 * geom.margin).max(0.0);
+    let now_width = plot_width * NOW_WIDTH_MINUTES / (history_minutes.max(0.0) + NOW_WIDTH_MINUTES);
 
     // Pre-compute the time-axis extent so the relative-minute tick override
     // resolves to the same pixel space dayview will use. Mirrors the math in
     // `dayview::compute_dayview`. Date label is suppressed (label_width = 0)
-    // so the time axis only loses the panel reservation.
-    let plot_width = (width - 2.0 * geom.margin).max(0.0);
-    let time_axis_extent_for_ticks = (plot_width - panel_width).max(0.0);
+    // so the time axis only loses the now-strip reservation.
+    let time_axis_extent_for_ticks = (plot_width - now_width).max(0.0);
     let axis_ticks_override = Some(nowview_axis_ticks(
         time_axis_extent_for_ticks,
         history_minutes,
@@ -395,7 +396,7 @@ pub fn nowview_config(
         label_width: Some(0.0),
         orientation: Orientation::Horizontal,
         axis_ticks_override,
-        right_panel_width: panel_width,
+        right_panel_width: now_width,
     }
 }
 
@@ -409,7 +410,7 @@ mod config_tests {
         assert_eq!(cfg.days.len(), 1);
         assert_eq!(cfg.days[0].end_ms, 1_000_000);
         assert_eq!(cfg.days[0].start_ms, 1_000_000 - 30 * 60_000);
-        // Date label suppressed, panel reserved, relative ticks installed.
+        // Date label suppressed, now strip reserved, relative ticks installed.
         assert_eq!(cfg.label_width, Some(0.0));
         assert!(cfg.right_panel_width > 0.0);
         assert!(!cfg.axis_ticks_override.as_ref().unwrap().is_empty());
@@ -420,7 +421,7 @@ mod config_tests {
         let cfg = nowview_config(Vec::new(), 0, &NowviewGeometry::default());
         assert_eq!(
             cfg.width,
-            default_width_for_history(DEFAULT_HISTORY_MINUTES) + PANEL_DEFAULT_WIDTH_BUMP
+            default_width_for_history(DEFAULT_HISTORY_MINUTES)
         );
         assert_eq!(cfg.day_height, DEFAULT_DAY_HEIGHT);
 
@@ -432,5 +433,20 @@ mod config_tests {
         };
         let cfg = nowview_config(Vec::new(), 0, &geom);
         assert_eq!(cfg.day_height, 300.0 - 4.0 - 22.0);
+    }
+
+    /// The reference picture the original datum renders: a 15m history on
+    /// a 400px canvas puts the now-line at x=299 and leaves 99px of now
+    /// strip. `docs/parity-audit/nowview_with_history_reference.png`.
+    #[test]
+    fn now_strip_reproduces_the_reference_proportions() {
+        let geom = NowviewGeometry {
+            history_minutes: 15.0,
+            width: Some(400.0),
+            ..NowviewGeometry::default()
+        };
+        let cfg = nowview_config(Vec::new(), 0, &geom);
+        assert_eq!(cfg.width, 400.0);
+        assert!((cfg.right_panel_width - 99.0).abs() < 1e-9);
     }
 }
