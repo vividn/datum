@@ -16,10 +16,16 @@ crate-type = ["cdylib", "rlib"]
 # The browser build turns it off together with the wasm target:
 # `cargo build -p datum-parse-wasm --target wasm32-unknown-unknown --no-default-features`
 default = ["native"]
-native = ["datum-parse/native"]
+native = ["datum-parse/native", "datum-core/native"]
 
 [dependencies]
 datum-parse = { path = "../datum-parse", default-features = false }
+# The pure half only — `db` off, so `libsqlite3-sys` never compiles C for
+# wasm32. What this crate needs from it is the alias world: the `Alias` the
+# `aliases` table stores (so the browser's rows have no TypeScript twin),
+# the spec-derived alias index, `alias_effect`, and the `%key%` slug
+# interpolation `--id` templates go through.
+datum-core = { path = "../datum-core", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }

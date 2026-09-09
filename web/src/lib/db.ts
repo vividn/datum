@@ -118,7 +118,9 @@ function rowToEntry(row: Record<string, unknown>): Entry {
 		createTime: row.create_time as string,
 		modifyTime: row.modify_time as string,
 		deviceId: row.device_id as string,
-		rawInput: (row.raw_input as string | null) ?? ''
+		rawInput: (row.raw_input as string | null) ?? '',
+		idStructure: (row.id_structure as string | null) ?? undefined,
+		aliasChain: row.alias_chain ? JSON.parse(row.alias_chain as string) : undefined
 	};
 }
 
@@ -130,13 +132,15 @@ export async function insertEntry(entry: Entry): Promise<void> {
 			state, dur, following_state, verb, data,
 			occur_time, occur_time_offset, occur_time_tz, occur_time_uncertainty,
 			lat, lon, location,
-			create_time, modify_time, device_id, raw_input
+			create_time, modify_time, device_id, raw_input,
+			id_structure, alias_chain
 		) VALUES (
 			$hid, $slug, $content_hash, $field,
 			$state, $dur, $following_state, $verb, $data,
 			$occur_time, $occur_time_offset, $occur_time_tz, $occur_time_uncertainty,
 			$lat, $lon, $location,
-			$create_time, $modify_time, $device_id, $raw_input
+			$create_time, $modify_time, $device_id, $raw_input,
+			$id_structure, $alias_chain
 		)`,
 		bind: {
 			$hid: entry.hid,
@@ -159,7 +163,9 @@ export async function insertEntry(entry: Entry): Promise<void> {
 			$create_time: entry.createTime,
 			$modify_time: entry.modifyTime,
 			$device_id: entry.deviceId,
-			$raw_input: entry.rawInput
+			$raw_input: entry.rawInput,
+			$id_structure: entry.idStructure ?? null,
+			$alias_chain: entry.aliasChain ? JSON.stringify(entry.aliasChain) : null
 		}
 	});
 	// Announced AFTER the write resolves, so a listener that re-queries
@@ -268,7 +274,12 @@ export async function getStateEntriesAt(at: Date): Promise<Entry[]> {
  * what the log shows rather than guessing from the field's name.
  */
 export async function getFieldSpecs(): Promise<Map<string, FieldSpec>> {
-	const rows = await send({ op: 'exec', sql: `SELECT field, spec_json FROM field_specs` });
+	// `rowid` order, because that is the order that decides which spec
+	// wins a derived-alias name two specs both want (`Db::spec_alias_index`).
+	const rows = await send({
+		op: 'exec',
+		sql: `SELECT field, spec_json FROM field_specs ORDER BY rowid`
+	});
 	const specs = new Map<string, FieldSpec>();
 	for (const row of rows) {
 		try {
@@ -303,6 +314,50 @@ export async function saveFieldSpec(spec: FieldSpec): Promise<void> {
 	});
 	// A spec change moves the widget bar too, so it is news for every tab.
 	announceChange();
+}
+
+/**
+ * Every row of the `aliases` table, as stored.
+ *
+ * The `alias_json` column travels as its text: Rust deserialises it into
+ * the same `Alias` that wrote it, so the browser never has an opinion
+ * about the shape inside (da-5kbj). Ordered by name so `alias list` reads
+ * the same twice.
+ */
+export async function getAliasRows(): Promise<{ name: string; alias_json: string }[]> {
+	const rows = await send({
+		op: 'exec',
+		sql: `SELECT name, alias_json FROM aliases ORDER BY name`
+	});
+	return rows.map((row) => ({
+		name: row.name as string,
+		alias_json: row.alias_json as string
+	}));
+}
+
+/**
+ * Upsert one alias row. `kit_id` stays NULL — kits are not a thing in the
+ * browser, and a NULL there is what marks a row as the user's own
+ * (crates/datum-core/src/db/alias.rs `save_alias`, the same statement).
+ */
+export async function saveAlias(name: string, aliasJson: string): Promise<void> {
+	await send({
+		op: 'exec',
+		sql: `INSERT INTO aliases (name, alias_json, kit_id)
+		      VALUES ($name, $alias_json, NULL)
+		      ON CONFLICT(name) DO UPDATE SET alias_json = excluded.alias_json,
+		                                      kit_id = NULL`,
+		bind: { $name: name, $alias_json: aliasJson }
+	});
+}
+
+/** Remove one alias row. */
+export async function deleteAlias(name: string): Promise<void> {
+	await send({
+		op: 'exec',
+		sql: `DELETE FROM aliases WHERE name = $name`,
+		bind: { $name: name }
+	});
 }
 
 /**

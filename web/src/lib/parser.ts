@@ -14,12 +14,15 @@
 // the verb truth table, the slug and the content hash — stays in Rust,
 // where the CLI's copy of the rule already lives. The browser supplies only
 // what it alone knows: the clock, the viewer's timezone, this device's id,
-// and the random bytes a hid is made of.
+// the random bytes a hid is made of — and, since da-5kbj, the rows of its
+// own `aliases` table and its own field specs, so that expanding an alias
+// is `datum-parse`'s job here too and not a second expander in TypeScript.
 
 import { jsonModule } from './wasm.js';
+import { getAliasRows, getFieldSpecs } from './db.js';
 // `?url` so Vite emits it content-hashed under /_app/immutable/ — see wasm.ts.
 import parseWasm from './wasm/datum-parse.wasm?url';
-import type { Entry } from './types.js';
+import type { Entry, FieldSpec } from './types.js';
 
 /** What the module needs from the browser for one `run(argv)`. */
 interface ParseRequest {
@@ -33,6 +36,28 @@ interface ParseRequest {
 	device_id: string;
 	/** 12 bytes from `crypto.getRandomValues`. */
 	hid_bytes: number[];
+	/**
+	 * Every row of the `aliases` table, as stored. The expansion itself —
+	 * the `%key%` regions, `$N` positionals, the hop cap, the cycle check —
+	 * is `datum-parse`'s, so these rows are all the browser contributes.
+	 */
+	aliases: { name: string; alias_json: string }[];
+	/** Every stored field spec, in `rowid` order; the spec-derived aliases
+	 *  (`sleep` → `start sleep`) are built from these, Rust-side. */
+	field_specs: FieldSpec[];
+}
+
+/**
+ * The write a `datum alias` command asks for, plus what it says.
+ *
+ * `save` and `delete` are mutually exclusive and both absent for `alias
+ * list` / `alias show`, which answer with `output` alone.
+ */
+export interface AliasInstruction {
+	save?: { name: string; aliasJson: string };
+	delete?: string;
+	output: string;
+	warning?: string | null;
 }
 
 /**
@@ -48,6 +73,8 @@ interface ParseRequest {
  */
 interface ParseResponse {
 	entry?: Entry;
+	/** A `datum alias` command: the row to write, and what to print. */
+	alias?: AliasInstruction;
 	unsupported?: string;
 	output?: string;
 	error?: string;
@@ -62,7 +89,11 @@ const call = jsonModule<ParseRequest, ParseResponse>(parseWasm, 'parse');
  * not handle and an argv that does not parse both come back as a result the
  * caller renders.
  */
-export function parseArgv(argv: string[], deviceId: string): Promise<ParseResponse> {
+export async function parseArgv(argv: string[], deviceId: string): Promise<ParseResponse> {
+	// The alias world, read fresh for every command: `alias set` in the
+	// REPL must fire on the very next line without a reload, and an alias
+	// synced in from another device the same way.
+	const [aliases, specs] = await Promise.all([getAliasRows(), getFieldSpecs()]);
 	return call({
 		argv,
 		now_ms: Date.now(),
@@ -73,6 +104,8 @@ export function parseArgv(argv: string[], deviceId: string): Promise<ParseRespon
 		timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
 		offset_minutes: -new Date().getTimezoneOffset(),
 		device_id: deviceId,
-		hid_bytes: Array.from(crypto.getRandomValues(new Uint8Array(12)))
+		hid_bytes: Array.from(crypto.getRandomValues(new Uint8Array(12))),
+		aliases,
+		field_specs: [...specs.values()]
 	});
 }

@@ -2,59 +2,46 @@
 //!
 //! Aliases are stored in the database and resolved in the CLI pre-pass
 //! before the parser sees argv (see `crate::args::expand_argv`).
+//!
+//! What each subcommand *decides* — which row to write, which sentence to
+//! print — is `datum_core::field_spec::alias_effect`, which takes the rows
+//! rather than the database. This function is the database half: load the
+//! rows, ask, perform. datum.day asks the same question of the same
+//! function through `datum-parse-wasm` (da-5kbj).
 
 use anyhow::{bail, Result};
-use datum_core::{db::Db, field_spec::Alias};
-use datum_parse::alias::{shell_join, KNOWN_SUBCOMMANDS};
+use datum_core::{
+    db::Db,
+    field_spec::{alias_effect, user_alias_to_save, AliasEffect},
+};
+use datum_parse::alias::shell_join;
 
 use crate::args::AliasCommand;
 
 pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
-    match sub {
-        AliasCommand::Show { name } => {
-            let reg = db.load_registry()?;
-            match reg.aliases.get(&name) {
-                Some(alias) => println!("{name} → datum {}", alias.expands_to),
-                None => println!("No alias '{name}'"),
+    let user = db.list_user_aliases()?;
+    let effect = {
+        let derived = db.spec_alias_index()?;
+        alias_effect(&sub, &user, &derived)
+    };
+    match effect {
+        AliasEffect::Say(text) => println!("{text}"),
+        AliasEffect::Save {
+            alias,
+            text,
+            warning,
+        } => {
+            db.save_alias(&alias)?;
+            println!("{text}");
+            if let Some(w) = warning {
+                eprintln!("{w}");
             }
         }
-        AliasCommand::Set { name, expansion } => {
-            // The direct command overwrites an existing alias silently —
-            // `alias set` IS the explicit edit, unlike the inline
-            // `--alias` flag which requires `--alias-overwrite`.
-            save_user_alias(&name, expansion, true, db)?;
-            println!("✓ Alias '{name}' saved.");
+        AliasEffect::Delete { name, text } => {
+            db.delete_alias(&name)?;
+            println!("{text}");
         }
-        AliasCommand::List => {
-            let reg = db.load_registry()?;
-            if reg.aliases.is_empty() {
-                println!("No aliases defined.");
-            } else {
-                for (name, alias) in &reg.aliases {
-                    println!("  {name} → datum {}", alias.expands_to);
-                }
-            }
-        }
-        AliasCommand::Remove { name } => {
-            if db.delete_alias(&name)? {
-                println!("✓ Alias '{name}' removed");
-            } else {
-                let index = db.spec_alias_index()?;
-                if index.entries.contains_key(&name) {
-                    let field = index
-                        .by_field
-                        .iter()
-                        .find(|(_field, names)| names.contains(&name))
-                        .map(|(field, _names)| field.clone())
-                        .unwrap_or_default();
-                    bail!(
-                        "'{name}' is a derived alias from the '{field}' field spec; \
-                         edit that spec to change it"
-                    );
-                }
-                bail!("no user alias '{name}'");
-            }
-        }
+        AliasEffect::Refuse(message) => bail!(message),
     }
     Ok(())
 }
@@ -72,10 +59,6 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
 ///   alias is still saved (per da-0b4) but won't fire when a verb is
 ///   expected.
 fn save_user_alias(name: &str, expands_to: String, overwrite: bool, db: &Db) -> Result<()> {
-    if name.is_empty() {
-        bail!("alias name must be non-empty");
-    }
-
     if !overwrite {
         if let Some(existing) = db.lookup_alias(name)? {
             bail!(
@@ -86,17 +69,10 @@ fn save_user_alias(name: &str, expands_to: String, overwrite: bool, db: &Db) -> 
         }
     }
 
-    let alias = Alias {
-        name: name.to_string(),
-        expands_to,
-        description: None,
-    };
+    let (alias, warning) = user_alias_to_save(name, expands_to).map_err(|e| anyhow::anyhow!(e))?;
     db.save_alias(&alias)?;
-
-    if KNOWN_SUBCOMMANDS.contains(&name) {
-        eprintln!(
-            "warning: alias '{name}' shadows a built-in subcommand and will not fire when a verb is expected"
-        );
+    if let Some(w) = warning {
+        eprintln!("{w}");
     }
     Ok(())
 }

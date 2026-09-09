@@ -52,6 +52,17 @@ export interface Entry {
 	modifyTime: string;
 	deviceId: string;
 	rawInput: string;
+	/**
+	 * The `%key%` template the slug's body was interpolated from (da-ivld).
+	 * `%occur_time%` unless an alias or a spec supplied one.
+	 */
+	idStructure?: string;
+	/**
+	 * The alias expansions the typed line went through, in order — the
+	 * `alias_chain` column's JSON, as Rust renders it. Absent when nothing
+	 * expanded.
+	 */
+	aliasChain?: { name: string; expansion: string }[];
 }
 
 /**

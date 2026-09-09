@@ -13,9 +13,13 @@
 // backup` (the CLI's own JSONL dump), and the comparable semantics are
 // recorded.
 //
-// The authored half of each case — `argv` and `time` — is read from the
-// existing file and written back untouched, so re-capturing refreshes the
-// CLI's answers without rewriting the cases.
+// The authored half of each case — `setup`, `argv` and `time` — is read
+// from the existing file and written back untouched, so re-capturing
+// refreshes the CLI's answers without rewriting the cases.
+//
+// `setup` is the commands a case needs run first — `alias set`, `spec set`
+// — against its own database, so an aliased argv is compared as one thing
+// the CLI did rather than as two separately-authored fixtures (da-5kbj).
 //
 // Usage:  npm run test:fixtures        [DATUM_BIN=/path/to/datum]
 
@@ -88,6 +92,10 @@ try {
 		// A database per case, so `onlyEntry` is unambiguous and no case can
 		// collide with another on the UNIQUE slug.
 		const db = join(dir, `${i}.db`);
+		for (const argv of testCase.setup ?? []) {
+			const { code } = cli(db, argv);
+			if (code !== 0) throw new Error(`setup \`datum ${argv.join(' ')}\` exited ${code}`);
+		}
 		const { code } = cli(db, testCase.argv);
 		testCase.cli =
 			code === 0

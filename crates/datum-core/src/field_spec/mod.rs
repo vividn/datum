@@ -37,7 +37,10 @@ mod position;
 mod presentation;
 mod spec;
 
-pub use alias::{Alias, DerivedAlias, DerivedAliasKind, SpecRegistry};
+pub use alias::{
+    alias_effect, user_alias_to_save, Alias, AliasEffect, DerivedAlias, DerivedAliasKind,
+    SpecAliasCollision, SpecAliasIndex, SpecRegistry,
+};
 pub use interpolation::{
     contains_template, interpolate, InterpolationContext, DEFAULT_ID_DELIMITER,
 };

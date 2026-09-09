@@ -46,6 +46,13 @@ describe('the same argv stores the same entry as the CLI', () => {
 		const name = 'datum ' + testCase.argv.join(' ');
 		test(name, { todo: testCase.divergence ?? undefined }, async () => {
 			await withApp(async ({ run, entries }) => {
+				// A case's `setup` runs through the same seam the case does,
+				// so the world the browser logs into is one the browser built
+				// — `alias set` in the REPL, not a row written behind it.
+				for (const argv of testCase.setup ?? []) {
+					const prepared = await run(argv);
+					assert.equal(prepared.code, 0, `setup \`datum ${argv.join(' ')}\`: ${prepared.stderr}`);
+				}
 				const result = await run(testCase.argv);
 				assert.equal(
 					result.code === 0,

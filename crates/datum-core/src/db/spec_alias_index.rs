@@ -15,12 +15,10 @@
 //! warning instead of silently losing one entry.
 
 use std::cell::Ref;
-use std::collections::HashMap;
 
 use crate::error::Result;
-use crate::field_spec::{Alias, FieldSpec};
+use crate::field_spec::{FieldSpec, SpecAliasIndex};
 
-use super::types::{SpecAliasCollision, SpecAliasIndex};
 use super::Db;
 
 impl Db {
@@ -63,40 +61,11 @@ fn build_spec_alias_index(db: &Db) -> Result<SpecAliasIndex> {
         .prepare("SELECT spec_json FROM field_specs ORDER BY rowid")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
 
-    let mut entries: HashMap<String, Alias> = HashMap::new();
-    let mut by_field: HashMap<String, Vec<String>> = HashMap::new();
-    let mut entry_owner: HashMap<String, String> = HashMap::new();
-    let mut collisions: Vec<SpecAliasCollision> = Vec::new();
-
+    let mut specs: Vec<FieldSpec> = Vec::new();
     for row in rows {
-        let json = row?;
-        let spec: FieldSpec = serde_json::from_str(&json)?;
-        for d in &spec.derived_aliases {
-            if let Some(existing_owner) = entry_owner.get(&d.name) {
-                collisions.push(SpecAliasCollision {
-                    name: d.name.clone(),
-                    winner: existing_owner.clone(),
-                    loser: spec.field.clone(),
-                });
-                continue;
-            }
-            let alias = Alias {
-                name: d.name.clone(),
-                expands_to: d.expands_to.clone(),
-                description: Some(format!("Derived from {} spec", spec.field)),
-            };
-            entries.insert(d.name.clone(), alias);
-            entry_owner.insert(d.name.clone(), spec.field.clone());
-            by_field
-                .entry(spec.field.clone())
-                .or_default()
-                .push(d.name.clone());
-        }
+        specs.push(serde_json::from_str(&row?)?);
     }
-
-    Ok(SpecAliasIndex {
-        entries,
-        by_field,
-        collisions,
-    })
+    // The indexing itself is pure — the browser runs the same code over the
+    // specs it holds (da-5kbj).
+    Ok(SpecAliasIndex::from_specs(&specs))
 }

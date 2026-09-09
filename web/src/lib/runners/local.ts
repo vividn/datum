@@ -12,7 +12,9 @@
 // argv means or what row it produces: it hands argv to `../parser.js` and
 // stores what comes back. The *rendering* is not a stand-in either: what a
 // logged entry echoes is `datum-commands::render` compiled to wasm, through
-// `../renderer.js`. What is left here is the database call and the two
+// `../renderer.js`. Nor is the *alias* system: da-5kbj sends this database's
+// `aliases` rows into the same module, which expands them and decides what
+// `datum alias` does. What is left here is the database call and the two
 // commands the parser does not own.
 
 import { startOfDay } from '../clock.js';
@@ -22,7 +24,9 @@ import {
 	getEntriesForField,
 	getRecentEntries,
 	getFieldSpecs,
-	saveFieldSpec
+	saveFieldSpec,
+	saveAlias,
+	deleteAlias
 } from '../db.js';
 import { parseArgv } from '../parser.js';
 import { renderLines, tailText } from '../renderer.js';
@@ -88,6 +92,17 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 			stdout: '',
 			stderr: `datum: ${argv[0]}: ${unavailable(argv, parsed.unsupported)}`
 		};
+	}
+	if (parsed.alias !== undefined) {
+		// `datum alias set|remove`: the module decided what to store and
+		// what to say (`datum_core::field_spec::alias_effect`, the same
+		// function the CLI's own `alias` command asks). All that is left
+		// here is the statement — the browser owns the storage, nothing
+		// else (da-5kbj).
+		const { save, delete: remove, output, warning } = parsed.alias;
+		if (save) await saveAlias(save.name, save.aliasJson);
+		if (remove !== undefined) await deleteAlias(remove);
+		return { argv, code: 0, stdout: output, stderr: warning ?? '' };
 	}
 	if (parsed.output !== undefined) {
 		// `help`, `--version` and friends: the parser signals them as error

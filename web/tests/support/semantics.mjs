@@ -4,8 +4,14 @@
 // the timestamps of the write itself are per-write facts that could not
 // match across two implementations and should not have to. What is left is
 // what the user actually asked for — the field, its verb, its value, its
-// duration, its data, and when it happened — which is exactly what has to
-// agree if datum.day IS datum rather than a lookalike.
+// duration, its data, when it happened, the identity it was filed under,
+// and the provenance of the line that wrote it — which is exactly what has
+// to agree if datum.day IS datum rather than a lookalike.
+//
+// The slug carries a clock in the common case (`coffee:2026-03-16T09:15…`),
+// and a clock is a per-write fact, so the time inside it is masked. What
+// survives the mask is the part a case can actually pin: `tx:electricity`
+// when an `--id %comment%` template put the data there (da-5kbj).
 //
 // Both sides normalize through here: the capture script over the CLI's
 // JSONL dump, and the parity test over what the browser stored.
@@ -17,6 +23,9 @@
  * @param {unknown} [raw.state]
  * @param {string} [raw.dur]        ISO-8601, or the CLI's `MOMENT` sentinel
  * @param {unknown} [raw.data]
+ * @param {string} raw.slug         the identity the row was filed under
+ * @param {string} [raw.rawInput]   the line the user typed, pre-expansion
+ * @param {unknown} [raw.aliasChain] the alias expansions it went through
  * @param {string} raw.occurUtc     when the entry says it happened
  * @param {string} raw.createUtc    when it was written
  */
@@ -32,6 +41,9 @@ export function semantics(raw) {
 		// sentinel, so it compares as absent on both sides.
 		dur: raw.dur === 'MOMENT' ? null : (raw.dur ?? null),
 		data: raw.data ?? null,
+		slug: maskClock(raw.slug),
+		rawInput: raw.rawInput ?? null,
+		aliasChain: raw.aliasChain ?? null,
 		time: {
 			/** UTC wall clock, for a case that pinned one with `-t HHMM`. */
 			clock: occur.toISOString().slice(11, 16),
@@ -49,6 +61,19 @@ export function semantics(raw) {
 	};
 }
 
+/**
+ * A slug with any timestamp in it replaced by `<t>`.
+ *
+ * The default id template is `%occur_time%`, so most slugs are a clock —
+ * `coffee:2026-03-16T09:15:00.000Z`, or the bare local date for a
+ * whole-day row. Neither is comparable across two writes, and the case's
+ * `time` block already checks the instant. What the mask leaves behind is
+ * whether the slug's body came from somewhere else.
+ */
+function maskClock(slug) {
+	return String(slug ?? '').replace(/c?\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?/g, '<t>');
+}
+
 /** The CLI's backup JSONL row → [`semantics`]. */
 export function fromBackupRow(row) {
 	return semantics({
@@ -57,6 +82,9 @@ export function fromBackupRow(row) {
 		state: row.state,
 		dur: row.dur,
 		data: row.data,
+		slug: row.slug,
+		rawInput: row.raw_input,
+		aliasChain: row.alias_chain,
 		occurUtc: row.occur_time.utc,
 		createUtc: row.create_time
 	});
@@ -70,6 +98,9 @@ export function fromEntry(entry) {
 		state: entry.state,
 		dur: entry.dur,
 		data: entry.data,
+		slug: entry.slug,
+		rawInput: entry.rawInput,
+		aliasChain: entry.aliasChain,
 		occurUtc: entry.occurTime.utc,
 		createUtc: entry.createTime
 	});

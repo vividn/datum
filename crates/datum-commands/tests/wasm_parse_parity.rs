@@ -46,90 +46,150 @@ enum TimeMode {
 }
 
 struct Case {
+    /// Commands to run against the case's database first — `alias set`,
+    /// `spec set` — so the argv below runs in a world that exists. The
+    /// browser is handed that same world, read back off the same database,
+    /// which is what makes an alias case a parity case rather than two
+    /// separately-authored fixtures (da-5kbj).
+    setup: &'static [&'static [&'static str]],
     argv: &'static [&'static str],
     time: TimeMode,
 }
 
 const CASES: &[Case] = &[
     Case {
+        setup: &[],
         argv: &["occur", "coffee", "-t", "0915"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["start", "work", "-t", "0800"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["stop", "work", "-t", "1200"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["switch", "mood", "happy", "-t", "0930"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["mood", "switch", "sad", "-t", "0945"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["occur", "nap", "dur=30m", "-t", "1000"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["occur", "walk", "dur=1:30", "-t", "1100"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["occur", "nap", "dur=PT30M", "-t", "1400"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["occur", "coffee", "strength=strong", "-t", "0916"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["occur", "weight", "amount=75.2kg", "-t", "0917"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["switch", "project", "household", "-t", "0918"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["stop", "work", "30m", "-t", "1300"],
         time: TimeMode::Clock,
     },
     Case {
+        setup: &[],
         argv: &["occur", "coffee", "-t", "-30"],
         time: TimeMode::Relative,
     },
     Case {
+        setup: &[],
         argv: &["occur", "coffee"],
         time: TimeMode::Relative,
     },
     Case {
+        setup: &[],
         argv: &["occur", "coffee", "-q"],
         time: TimeMode::Relative,
     },
     Case {
+        setup: &[],
         argv: &["occur", "coffee", "-qq"],
         time: TimeMode::Relative,
     },
     Case {
+        setup: &[],
         argv: &["switch", "mood", "low", "-qqqq"],
         time: TimeMode::Relative,
     },
     Case {
+        setup: &[],
         argv: &["occur", "coffee", "-y"],
         time: TimeMode::Day,
     },
     Case {
+        setup: &[],
         argv: &["occur", "coffee", "-yy"],
         time: TimeMode::Day,
     },
     Case {
+        setup: &[],
         argv: &["start", "work", "-y"],
         time: TimeMode::Day,
+    },
+    // Aliases: the expansion, the chain stamped on the row, and vividn's
+    // `--id %comment%` case — the slug comes from the data, not the minute.
+    Case {
+        setup: &[&["alias", "set", "cof", "occur coffee strength=strong"]],
+        argv: &["cof", "-t", "0915"],
+        time: TimeMode::Clock,
+    },
+    Case {
+        setup: &[&["alias", "set", "tx", "occur tx --id %comment%"]],
+        argv: &["tx", "amount=40", "comment=electricity", "-t", "0915"],
+        time: TimeMode::Clock,
+    },
+    // Two hops, and a spec-derived name that is a command on its own.
+    Case {
+        setup: &[
+            &["alias", "set", "a", "b strength=strong"],
+            &["alias", "set", "b", "occur coffee"],
+        ],
+        argv: &["a", "-t", "0915"],
+        time: TimeMode::Clock,
+    },
+    Case {
+        setup: &[&[
+            "spec",
+            "set",
+            "mood",
+            "--default-verb",
+            "switch",
+            "--state",
+            "happy",
+        ]],
+        argv: &["happy", "-t", "0930"],
+        time: TimeMode::Clock,
     },
 ];
 
@@ -145,19 +205,40 @@ struct Row {
     slug: String,
     content_hash: String,
     create_time: String,
+    raw_input: Option<String>,
+    alias_chain: Option<String>,
 }
 
-fn cli_row(argv: &[&str]) -> Row {
+/// The world a case runs in, as the CLI's own tables hold it after
+/// `setup` — and as the browser is handed it.
+struct World {
+    aliases: Vec<datum_core::field_spec::Alias>,
+    specs: Vec<datum_core::field_spec::FieldSpec>,
+}
+
+fn cli_row(case: &Case) -> (Row, World) {
+    let argv = case.argv;
     let db = fresh_db();
+    for setup in case.setup {
+        let mut full: Vec<String> = vec!["datum".to_string()];
+        full.extend(setup.iter().map(|s| s.to_string()));
+        dispatch_argv(full, &db)
+            .unwrap_or_else(|e| panic!("setup `datum {}` failed: {e}", setup.join(" ")));
+    }
     let mut full: Vec<String> = vec!["datum".to_string()];
     full.extend(argv.iter().map(|s| s.to_string()));
     dispatch_argv(full, &db).unwrap_or_else(|e| panic!("`datum {}` failed: {e}", argv.join(" ")));
+
+    let world = World {
+        aliases: db.list_user_aliases().unwrap(),
+        specs: db.load_registry().unwrap().fields.into_values().collect(),
+    };
 
     let mut stmt = db
         .conn()
         .prepare(
             "SELECT field, verb, state, dur, data, occur_time, occur_time_uncertainty, \
-                    slug, content_hash, create_time \
+                    slug, content_hash, create_time, raw_input, alias_chain \
              FROM entries WHERE deleted_at IS NULL",
         )
         .unwrap();
@@ -174,13 +255,15 @@ fn cli_row(argv: &[&str]) -> Row {
                 slug: r.get(7)?,
                 content_hash: r.get(8)?,
                 create_time: r.get(9)?,
+                raw_input: r.get(10)?,
+                alias_chain: r.get(11)?,
             })
         })
         .unwrap()
         .map(|r| r.unwrap())
         .collect::<Vec<_>>();
     assert_eq!(rows.len(), 1, "expected exactly one row for {argv:?}");
-    rows.pop().unwrap()
+    (rows.pop().unwrap(), world)
 }
 
 /// The same argv through the browser's module, anchored on `now`.
@@ -188,7 +271,7 @@ fn cli_row(argv: &[&str]) -> Row {
 /// The zone comes from the same host lookup the CLI's `TimeBuilder` uses,
 /// so the two agree about what "today" and "09:15" mean whatever `TZ` the
 /// test process happens to carry.
-fn browser_entry(argv: &[&str], now: DateTime<Utc>) -> JsonValue {
+fn browser_entry(argv: &[&str], now: DateTime<Utc>, world: &World) -> JsonValue {
     let owned: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
     let tz = clock::host_iana_tz_name();
     let host = Host {
@@ -197,9 +280,17 @@ fn browser_entry(argv: &[&str], now: DateTime<Utc>) -> JsonValue {
         offset_minutes: clock::host_offset().local_minus_utc() / 60,
         device_id: "web-parity",
         hid_bytes: &[0; 12],
+        aliases: &world.aliases,
+        specs: &world.specs,
     };
     match log::build(&owned, &host) {
         Ok(log::Parsed::Entry(e)) => log::entry_to_json(&e),
+        Ok(log::Parsed::Alias(_)) => {
+            panic!(
+                "`datum {}` is an alias command, not an entry",
+                argv.join(" ")
+            )
+        }
         Ok(log::Parsed::Unsupported(reason)) => {
             panic!(
                 "`datum {}` is unsupported in the browser: {reason}",
@@ -236,12 +327,27 @@ fn the_browser_stores_what_the_cli_stores() {
     for case in CASES {
         let argv = case.argv;
         let label = argv.join(" ");
-        let row = cli_row(argv);
+        let (row, world) = cli_row(case);
         // Anchoring on the CLI row's own create_time is what makes a
         // clock-pinned case compare exactly: both sides then resolve
         // "today" and "now" from the same instant.
         let create_time = parse_utc(&row.create_time);
-        let web = browser_entry(argv, create_time);
+        let web = browser_entry(argv, create_time, &world);
+
+        // Provenance: the line the user typed, and the expansions it went
+        // through. Sync carries these and `helpers.rs` re-expands from a
+        // stored chain, so the chain must be the CLI's JSON exactly.
+        assert_eq!(
+            row.raw_input.as_deref(),
+            web.get("rawInput").and_then(JsonValue::as_str),
+            "raw_input differs for `datum {label}`"
+        );
+        same_json(
+            row.alias_chain.as_deref(),
+            web.get("aliasChain"),
+            "alias_chain",
+            argv,
+        );
 
         assert_eq!(
             web["field"],
@@ -330,6 +436,8 @@ fn commands_outside_the_browser_subset_report_themselves() {
             offset_minutes: 0,
             device_id: "web-parity",
             hid_bytes: &[0; 12],
+            aliases: &[],
+            specs: &[],
         };
         assert!(
             matches!(log::build(&owned, &host), Ok(log::Parsed::Unsupported(_))),

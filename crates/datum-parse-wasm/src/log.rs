@@ -33,7 +33,13 @@
 //! the honest answer until the web side can hold a timeless entry.
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use datum_parse::alias::expand::expand_argv_no_alias;
+use datum_core::entry::SHORT_HID_LEN;
+use datum_core::field_spec::{
+    alias_effect, interpolate, Alias, AliasEffect, FieldSpec, InterpolationContext, SpecAliasIndex,
+    DEFAULT_ID_DELIMITER,
+};
+use datum_parse::alias::expand::{expand_argv, AliasStep, MapResolver, ResolvedAlias};
+use datum_parse::alias::shell_split;
 use datum_parse::cli::{Command, LogArgs};
 use datum_parse::entry_id::{self, HashInputs};
 use datum_parse::input::data_args::{handle_data_args, DataArgs};
@@ -44,6 +50,7 @@ use datum_parse::time::{
 use datum_parse::verb::derive_verb;
 use datum_parse::{parse_argv, Dur, ParseError, Result};
 use serde_json::{Map, Value as JsonValue};
+use std::collections::HashMap;
 
 /// The command intents this module builds an entry for. Mirrors the
 /// `Action` variants `log_core` accepts, minus the timeless pair — see the
@@ -80,6 +87,57 @@ pub struct Host<'a> {
     pub device_id: &'a str,
     /// Random bytes for the hid. See [`entry_id::hid_from_bytes`].
     pub hid_bytes: &'a [u8],
+    /// Every row of the caller's `aliases` table, already deserialised
+    /// from its `alias_json` column — the same [`Alias`] the CLI's
+    /// `db/alias.rs` writes, so the shape has no second definition.
+    pub aliases: &'a [Alias],
+    /// Every stored field spec, in `rowid` order: the source of the
+    /// spec-derived aliases (`sleep` → `start sleep`, `happy` → `switch
+    /// mood happy`) and of a field's `id_template`.
+    pub specs: &'a [FieldSpec],
+}
+
+impl Host<'_> {
+    /// The spec-derived alias index over the caller's specs.
+    ///
+    /// Each spec's derived aliases are regenerated rather than read out of
+    /// its cached `derived_aliases` list. The CLI maintains that cache in
+    /// `spec set`'s save hook; the browser's `spec set` does not, and
+    /// [`FieldSpec::regenerate_derived_aliases`] is the very function that
+    /// wrote it — so recomputing agrees with a CLI-written spec and works
+    /// for a browser-written one too.
+    fn derived_index(&self) -> SpecAliasIndex {
+        let mut specs: Vec<FieldSpec> = self.specs.to_vec();
+        for spec in &mut specs {
+            spec.regenerate_derived_aliases();
+        }
+        SpecAliasIndex::from_specs(&specs)
+    }
+
+    /// The alias namespace this invocation expands against: spec-derived
+    /// names first, user/kit rows overwriting them — the precedence
+    /// `Db::lookup_alias` applies.
+    fn alias_map(&self, derived: &SpecAliasIndex) -> HashMap<String, ResolvedAlias> {
+        derived
+            .entries
+            .values()
+            .chain(self.aliases.iter())
+            .map(|a| {
+                (
+                    a.name.clone(),
+                    ResolvedAlias {
+                        expands_to: a.expands_to.clone(),
+                        tokens: shell_split(&a.expands_to),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// The stored spec for `field`, if the caller holds one.
+    fn spec(&self, field: &str) -> Option<&FieldSpec> {
+        self.specs.iter().find(|s| s.field == field)
+    }
 }
 
 /// One entry, in the column shapes the row is stored with.
@@ -102,13 +160,27 @@ pub struct BuiltEntry {
     pub occur_time: DatumTime,
     pub create_time: DateTime<Utc>,
     pub device_id: String,
+    /// The line the user actually typed — before any alias fired.
     pub raw_input: String,
+    /// The alias expansions this invocation went through, in order.
+    /// Rendered onto the `alias_chain` column exactly as
+    /// `IntentContext::alias_chain_json` renders it, because sync carries
+    /// these rows and `helpers.rs` re-expands from a stored chain.
+    pub alias_chain: Vec<AliasStep>,
+    /// The `%key%` template the slug's body was interpolated from
+    /// (da-ivld). Every row carries one; `%occur_time%` is the default.
+    pub id_structure: String,
 }
 
 /// The outcome of one argv.
 pub enum Parsed {
     /// A log command the browser can store.
     Entry(Box<BuiltEntry>),
+    /// `datum alias <sub>`: the row to write against the caller's
+    /// `aliases` table (if any) and the text to print. Decided by
+    /// `datum_core::field_spec::alias_effect` — the same function the CLI's
+    /// own `alias` command asks (da-5kbj).
+    Alias(AliasEffect),
     /// A well-formed command this crate does not build an entry for. The
     /// payload is the reason, for the seam's "not available yet" message.
     Unsupported(String),
@@ -123,19 +195,27 @@ pub fn build(argv: &[String], host: &Host) -> Result<Parsed> {
     let raw_input = argv.join(" ");
 
     // The pre-pass the CLI runs before its parser: terminal-verb override,
-    // field/verb swap (`mood switch happy`), switch-verb promotion, and
-    // stacked short-flag expansion (`-yy` → `-y -y`). Alias expansion is
-    // the one step skipped — it is DB-backed, and the browser has no alias
-    // table yet.
+    // alias expansion, field/verb swap (`mood switch happy`), switch-verb
+    // promotion, and stacked short-flag expansion (`-yy` → `-y -y`).
+    //
+    // Alias expansion used to be the one step skipped, because it is
+    // DB-backed. It is not skipped any more: the caller sends the rows of
+    // its own `aliases` table and its own field specs, this builds the
+    // resolver `expand_argv` asks, and every rule inside — the `%key%`
+    // regions, the positional `$N` substitution, the 16-hop cycle cap, the
+    // terminal-verb and switch-promote overrides — is the CLI's (da-5kbj).
+    let derived = host.derived_index();
+    let map = host.alias_map(&derived);
     let mut full: Vec<String> = Vec::with_capacity(argv.len() + 1);
     full.push("datum".to_string());
     full.extend(argv.iter().cloned());
-    let expanded = expand_argv_no_alias(full);
+    let (expanded, alias_chain) = expand_argv(full, &MapResolver(&map))?;
 
     // A `,` region is a multi-entry write (`switch a , b`) or a switch
     // "then" chain. Both produce more than one row, or a `following_state`
     // peeled by `log_core::extract_switch_then_chain`; neither is assembled
-    // here, so say so rather than dropping half the user's input.
+    // here, so say so rather than dropping half the user's input. Checked
+    // after expansion, because an alias body may carry the comma.
     if expanded.iter().any(|t| t == ",") {
         return Ok(unsupported(
             "`,` chains write more than one entry — not available yet in the browser",
@@ -143,6 +223,12 @@ pub fn build(argv: &[String], host: &Host) -> Result<Parsed> {
     }
 
     let cli = parse_argv(&expanded)?;
+    // `alias` is the one command this module answers without building an
+    // entry: it decides against the rows the caller sent and hands back the
+    // write to perform plus the CLI's own sentence.
+    if let Command::Alias(sub) = &cli.command {
+        return Ok(Parsed::Alias(alias_effect(sub, host.aliases, &derived)));
+    }
     let (action, args) = match cli.command {
         Command::Occur(a) => (Action::Occur, a),
         Command::Start(a) => (Action::Start, a),
@@ -168,7 +254,11 @@ pub fn build(argv: &[String], host: &Host) -> Result<Parsed> {
     }
 
     Ok(Parsed::Entry(Box::new(build_entry(
-        action, &args, host, &raw_input,
+        action,
+        &args,
+        host,
+        &raw_input,
+        alias_chain,
     )?)))
 }
 
@@ -180,7 +270,7 @@ pub fn build(argv: &[String], host: &Host) -> Result<Parsed> {
 /// purpose: they only shape the CLI's *render*, and the browser renders
 /// its own way.
 fn unsupported_flag(args: &LogArgs) -> Option<&'static str> {
-    let checks: [(bool, &'static str); 15] = [
+    let checks: [(bool, &'static str); 14] = [
         (args.undo, "-u/--undo"),
         (!args.keys.is_empty(), "-k"),
         (!args.slug_keys.is_empty(), "-K"),
@@ -189,7 +279,6 @@ fn unsupported_flag(args: &LogArgs) -> Option<&'static str> {
         (args.string_remainder, "-S/--string-remainder"),
         (args.comment_remainder, "-C/--comment-remainder"),
         (args.string_state, "-I/--string-state"),
-        (args.id.is_some(), "--id"),
         (args.last_state.is_some(), "-L/--last-state"),
         (
             args.conflict.is_some() || args.update || args.merge,
@@ -209,7 +298,13 @@ fn unsupported_flag(args: &LogArgs) -> Option<&'static str> {
         .map(|(_, name)| name)
 }
 
-fn build_entry(action: Action, args: &LogArgs, host: &Host, raw_input: &str) -> Result<BuiltEntry> {
+fn build_entry(
+    action: Action,
+    args: &LogArgs,
+    host: &Host,
+    raw_input: &str,
+    alias_chain: Vec<AliasStep>,
+) -> Result<BuiltEntry> {
     let (zone, tz_name) = effective_zone(args.time.timezone.as_deref(), host)?;
     let occur_time = build_time(args, host.now, zone.clone(), tz_name)?;
 
@@ -272,16 +367,40 @@ fn build_entry(action: Action, args: &LogArgs, host: &Host, raw_input: &str) -> 
         deleted: false,
     });
 
-    let slug = entry_id::build_slug(
-        &field,
-        Some(&occur_time),
-        occur_time.uncertainty.as_deref(),
-        &host.now,
+    let hid = entry_id::hid_from_bytes(host.hid_bytes);
+
+    // da-ivld (`log_core`): `id_structure` is the single source of truth
+    // for the slug, which is always `<field>:<interpolate(id_structure)>`.
+    // The precedence, minus the two branches this module refuses (`-K`
+    // and the `id=` positional promotion, both still `unsupported`) and
+    // minus the timeless one (`-T`/`add`/`note`, likewise): the `--id`
+    // template, then the field spec's `id_template`, then `%occur_time%`.
+    let id_structure = args
+        .id
+        .clone()
+        .or_else(|| host.spec(&field).and_then(|s| s.id_template.clone()))
+        .unwrap_or_else(|| "%occur_time%".to_string());
+    let delimiter = args.id_delimiter.as_deref().unwrap_or(DEFAULT_ID_DELIMITER);
+    let body = interpolate(
+        &id_structure,
+        &InterpolationContext {
+            field: &field,
+            extra_data: data.as_ref(),
+            uid: &hid.chars().take(SHORT_HID_LEN).collect::<String>(),
+            state: state.as_ref(),
+            dur: dur_str.clone(),
+            following_state: reserved.following_state.as_ref(),
+            occur_time: Some(&occur_time),
+            occur_time_precision: occur_time.uncertainty.as_deref(),
+            create_time: Some(&host.now),
+            modify_time: Some(&host.now),
+        },
+        delimiter,
     );
 
     Ok(BuiltEntry {
-        hid: entry_id::hid_from_bytes(host.hid_bytes),
-        slug,
+        hid,
+        slug: format!("{field}:{body}"),
         content_hash,
         field,
         verb: verb.to_string(),
@@ -293,6 +412,8 @@ fn build_entry(action: Action, args: &LogArgs, host: &Host, raw_input: &str) -> 
         create_time: host.now,
         device_id: host.device_id.to_string(),
         raw_input: raw_input.to_string(),
+        alias_chain,
+        id_structure,
     })
 }
 
@@ -595,6 +716,34 @@ pub fn entry_to_json(e: &BuiltEntry) -> JsonValue {
         "rawInput".to_string(),
         JsonValue::String(e.raw_input.clone()),
     );
+    out.insert(
+        "idStructure".to_string(),
+        JsonValue::String(e.id_structure.clone()),
+    );
+    // The `alias_chain` column's exact JSON, as
+    // `IntentContext::alias_chain_json` renders it: absent when nothing
+    // expanded, otherwise an array of `{name, expansion}`. Sync carries
+    // these rows and `helpers.rs` re-expands from a stored chain, so the
+    // shape is not the browser's to choose.
+    if !e.alias_chain.is_empty() {
+        out.insert(
+            "aliasChain".to_string(),
+            JsonValue::Array(
+                e.alias_chain
+                    .iter()
+                    .map(|step| {
+                        let mut o = Map::new();
+                        o.insert("name".to_string(), JsonValue::String(step.name.clone()));
+                        o.insert(
+                            "expansion".to_string(),
+                            JsonValue::String(step.expansion.clone()),
+                        );
+                        JsonValue::Object(o)
+                    })
+                    .collect(),
+            ),
+        );
+    }
     JsonValue::Object(out)
 }
 

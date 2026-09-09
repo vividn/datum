@@ -13,6 +13,9 @@
 					"state": null,
 					"dur": null,
 					"data": null,
+					"slug": "coffee:<t>",
+					"rawInput": "occur coffee -t 0915",
+					"aliasChain": null,
 					"time": {
 						"clock": "09:15"
 					}
@@ -30,6 +33,9 @@
 					"state": true,
 					"dur": null,
 					"data": null,
+					"slug": "work:<t>",
+					"rawInput": "start work -t 0800",
+					"aliasChain": null,
 					"time": {
 						"clock": "08:00"
 					}
@@ -47,6 +53,9 @@
 					"state": false,
 					"dur": null,
 					"data": null,
+					"slug": "work:<t>",
+					"rawInput": "stop work -t 1200",
+					"aliasChain": null,
 					"time": {
 						"clock": "12:00"
 					}
@@ -64,6 +73,9 @@
 					"state": "happy",
 					"dur": null,
 					"data": null,
+					"slug": "mood:<t>",
+					"rawInput": "switch mood happy -t 0930",
+					"aliasChain": null,
 					"time": {
 						"clock": "09:30"
 					}
@@ -81,6 +93,9 @@
 					"state": "sad",
 					"dur": null,
 					"data": null,
+					"slug": "mood:<t>",
+					"rawInput": "mood switch sad -t 0945",
+					"aliasChain": null,
 					"time": {
 						"clock": "09:45"
 					}
@@ -98,6 +113,9 @@
 					"state": null,
 					"dur": "PT30M",
 					"data": null,
+					"slug": "nap:<t>",
+					"rawInput": "occur nap dur=30m -t 1000",
+					"aliasChain": null,
 					"time": {
 						"clock": "10:00"
 					}
@@ -115,6 +133,9 @@
 					"state": null,
 					"dur": "PT1H30M",
 					"data": null,
+					"slug": "walk:<t>",
+					"rawInput": "occur walk dur=1:30 -t 1100",
+					"aliasChain": null,
 					"time": {
 						"clock": "11:00"
 					}
@@ -132,6 +153,9 @@
 					"state": null,
 					"dur": "PT30M",
 					"data": null,
+					"slug": "nap:<t>",
+					"rawInput": "occur nap dur=PT30M -t 1400",
+					"aliasChain": null,
 					"time": {
 						"clock": "14:00"
 					}
@@ -151,6 +175,9 @@
 					"data": {
 						"strength": "strong"
 					},
+					"slug": "coffee:<t>",
+					"rawInput": "occur coffee strength=strong -t 0916",
+					"aliasChain": null,
 					"time": {
 						"clock": "09:16"
 					}
@@ -168,6 +195,9 @@
 					"state": null,
 					"dur": null,
 					"data": null,
+					"slug": "coffee:<t>",
+					"rawInput": "occur coffee -t -30",
+					"aliasChain": null,
 					"time": {
 						"minutesBefore": 30
 					}
@@ -185,6 +215,9 @@
 					"state": null,
 					"dur": null,
 					"data": null,
+					"slug": "coffee:<t>",
+					"rawInput": "occur coffee -q",
+					"aliasChain": null,
 					"time": {
 						"minutesBefore": 5
 					}
@@ -202,6 +235,9 @@
 					"state": null,
 					"dur": null,
 					"data": null,
+					"slug": "coffee:<t>",
+					"rawInput": "occur coffee -qq",
+					"aliasChain": null,
 					"time": {
 						"minutesBefore": 10
 					}
@@ -219,6 +255,9 @@
 					"state": null,
 					"dur": null,
 					"data": null,
+					"slug": "coffee:<t>",
+					"rawInput": "occur coffee -y",
+					"aliasChain": null,
 					"time": {
 						"daysBefore": 1,
 						"midnight": true
@@ -237,6 +276,9 @@
 					"state": null,
 					"dur": null,
 					"data": null,
+					"slug": "coffee:<t>",
+					"rawInput": "occur coffee -yy",
+					"aliasChain": null,
 					"time": {
 						"daysBefore": 2,
 						"midnight": true
@@ -260,6 +302,9 @@
 							"v": 75.2
 						}
 					},
+					"slug": "weight:<t>",
+					"rawInput": "occur weight amount=75.2kg -t 0920",
+					"aliasChain": null,
 					"time": {
 						"clock": "09:20"
 					}
@@ -277,6 +322,9 @@
 					"state": false,
 					"dur": "PT30M",
 					"data": null,
+					"slug": "work:<t>",
+					"rawInput": "stop work 30m -t 1300",
+					"aliasChain": null,
 					"time": {
 						"clock": "13:00"
 					}
@@ -294,6 +342,9 @@
 					"state": "low",
 					"dur": null,
 					"data": null,
+					"slug": "mood:<t>",
+					"rawInput": "switch mood low -qqqq",
+					"aliasChain": null,
 					"time": {
 						"minutesBefore": 20
 					}
@@ -311,6 +362,9 @@
 					"state": true,
 					"dur": null,
 					"data": null,
+					"slug": "work:<t>",
+					"rawInput": "start work -y",
+					"aliasChain": null,
 					"time": {
 						"daysBefore": 1,
 						"midnight": true
@@ -329,9 +383,164 @@
 					"state": null,
 					"dur": null,
 					"data": null,
+					"slug": "coffee:<t>",
+					"rawInput": "occur coffee -d -1",
+					"aliasChain": null,
 					"time": {
 						"daysBefore": 1,
 						"midnight": true
+					}
+				}
+			}
+		},
+		{
+			"setup": [
+				["alias", "set", "cof", "occur coffee strength=strong"]
+			],
+			"argv": ["cof", "-t", "0915"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "coffee",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": {
+						"strength": "strong"
+					},
+					"slug": "coffee:<t>",
+					"rawInput": "cof -t 0915",
+					"aliasChain": [
+						{
+							"expansion": "occur coffee strength=strong",
+							"name": "cof"
+						}
+					],
+					"time": {
+						"clock": "09:15"
+					}
+				}
+			}
+		},
+		{
+			"setup": [
+				["alias", "set", "tx", "occur tx --id %comment%"]
+			],
+			"argv": ["tx", "amount=40", "comment=electricity", "-t", "0915"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "tx",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": {
+						"amount": 40,
+						"comment": "electricity"
+					},
+					"slug": "tx:electricity",
+					"rawInput": "tx amount=40 comment=electricity -t 0915",
+					"aliasChain": [
+						{
+							"expansion": "occur tx --id %comment%",
+							"name": "tx"
+						}
+					],
+					"time": {
+						"clock": "09:15"
+					}
+				}
+			}
+		},
+		{
+			"setup": [
+				["alias", "set", "a", "b strength=strong"],
+				["alias", "set", "b", "occur coffee"]
+			],
+			"argv": ["a", "-t", "0915"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "coffee",
+					"verb": "point",
+					"state": null,
+					"dur": null,
+					"data": {
+						"strength": "strong"
+					},
+					"slug": "coffee:<t>",
+					"rawInput": "a -t 0915",
+					"aliasChain": [
+						{
+							"expansion": "b strength=strong",
+							"name": "a"
+						},
+						{
+							"expansion": "occur coffee",
+							"name": "b"
+						}
+					],
+					"time": {
+						"clock": "09:15"
+					}
+				}
+			}
+		},
+		{
+			"setup": [
+				["spec", "set", "mood", "--default-verb", "switch", "--state", "happy"]
+			],
+			"argv": ["happy", "-t", "0930"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "mood",
+					"verb": "switch",
+					"state": "happy",
+					"dur": null,
+					"data": null,
+					"slug": "mood:<t>",
+					"rawInput": "happy -t 0930",
+					"aliasChain": [
+						{
+							"expansion": "switch mood happy",
+							"name": "happy"
+						}
+					],
+					"time": {
+						"clock": "09:30"
+					}
+				}
+			}
+		},
+		{
+			"setup": [
+				["spec", "set", "sleep", "--default-verb", "start"]
+			],
+			"argv": ["sleep", "-t", "2200"],
+			"time": "clock",
+			"cli": {
+				"code": 0,
+				"entry": {
+					"field": "sleep",
+					"verb": "switch",
+					"state": true,
+					"dur": null,
+					"data": null,
+					"slug": "sleep:<t>",
+					"rawInput": "sleep -t 2200",
+					"aliasChain": [
+						{
+							"expansion": "start sleep",
+							"name": "sleep"
+						}
+					],
+					"time": {
+						"clock": "22:00"
 					}
 				}
 			}

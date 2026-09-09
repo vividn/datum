@@ -333,37 +333,11 @@ pub enum AliasConflictReason {
     OwnedByField(String),
 }
 
-/// Lazy index of derived aliases pulled out of every stored
-/// [`crate::field_spec::FieldSpec`]. Populated on first access by
-/// [`super::Db::spec_alias_index`] and invalidated whenever the
-/// `field_specs` table is mutated. Replaces the materialized derived
-/// rows that lived in the `aliases` table pre-v21 (da-8y2q.5).
-#[derive(Debug, Clone, Default)]
-pub struct SpecAliasIndex {
-    /// Map from derived-alias name → resolved [`crate::field_spec::Alias`].
-    /// Cross-spec collisions are resolved deterministically: the spec
-    /// whose `field` name sorts first wins; later collisions are recorded
-    /// in [`SpecAliasIndex::collisions`].
-    pub entries: std::collections::HashMap<String, crate::field_spec::Alias>,
-    /// `field` name → derived-alias names this spec contributed (for
-    /// reverse lookup, e.g. so a spec save's report can ask "which of my
-    /// aliases survived?").
-    pub by_field: std::collections::HashMap<String, Vec<String>>,
-    /// Cross-spec collisions: a spec wanted to register a derived alias
-    /// under a name another spec already owns. The first registrant wins.
-    pub collisions: Vec<SpecAliasCollision>,
-}
-
-/// One cross-spec collision recorded by [`SpecAliasIndex`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpecAliasCollision {
-    /// Alias name that two specs both wanted.
-    pub name: String,
-    /// Field whose derived alias is currently surfaced for `name`.
-    pub winner: String,
-    /// Field whose derived alias was shadowed.
-    pub loser: String,
-}
+// The spec-derived alias index is pure — specs in, names out — so it lives
+// in `field_spec::alias` beside the `Alias` it produces, where the browser
+// can reach it without SQLite (da-5kbj). `Db::spec_alias_index` is the
+// caching read of the `field_specs` table on top of it.
+pub use crate::field_spec::{SpecAliasCollision, SpecAliasIndex};
 
 /// Max number of candidates returned in [`crate::error::DatumError::AmbiguousPrefix`].
 /// A wide-enough error list to disambiguate in practice, but bounded so a
