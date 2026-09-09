@@ -8,6 +8,7 @@ members = [
     "crates/datum-parity",
     "crates/datum-parse",
     "crates/datum-parse-wasm",
+    "crates/datum-render-wasm",
     "crates/datum-sync-agent",
     "crates/datum-sync-client",
     "crates/datum-sync-protocol",

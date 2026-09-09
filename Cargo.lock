@@ -631,6 +631,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "datum-render-wasm"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "datum-commands",
+ "datum-core",
+ "datum-parse",
+ "datum-parse-wasm",
+ "getrandom 0.2.17",
+ "getrandom 0.3.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "datum-sync-agent"
 version = "0.1.0"
 dependencies = [

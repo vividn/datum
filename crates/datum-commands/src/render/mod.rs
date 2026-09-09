@@ -294,6 +294,63 @@ pub fn show_action(
 /// Context-aware variant. Passing a [`RenderContext`] enables the transition
 /// indicator and first-time-tracked marker; `None` yields identical output to
 /// [`show_action`].
+/// What [`show_action_with_context`] prints for one entry, as strings.
+///
+/// The CLI prints these; the browser (`datum-render-wasm`) has no stdout and
+/// asks for them instead. One builder, both callers — so the two can never
+/// disagree about what an action looks like. That disagreement is exactly what
+/// the browser had before: a hand-written TypeScript stand-in that printed
+/// `16:18 mood = happy` where datum prints two lines (da-7scm's other half).
+pub struct ActionLines {
+    /// `CREATE 65nfi mood:2026-09-08T14:17:25.061Z` — action, hid, slug.
+    pub header: String,
+    /// The §2 info line, `16:17:25+2  mood  sad`; empty when there is nothing to say.
+    pub info: String,
+    /// The default show's data view: the structured-state doc line, then the
+    /// user-data block. Empty for a plain string state with no extra data.
+    pub data: Vec<String>,
+}
+
+/// Build [`ActionLines`] against an explicit `now`, so a caller that renders
+/// many rows, or a test, gets deterministic "today" semantics.
+pub fn action_lines_at(
+    entry: &Entry,
+    action: Outcome,
+    registry: Option<&SpecRegistry>,
+    ctx: Option<&RenderContext>,
+    now: &DatumTime,
+) -> ActionLines {
+    let ex = extract_with_context_at(entry, Some(action), registry, ctx, now, None);
+    // Header line: action + hid + slug (datum's user-facing id)
+    let header = [ex.action.as_deref(), ex.hid.as_deref(), ex.slug.as_deref()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    // Info line via the §2 parity renderer: <time> <field-badge>
+    // <left-char><state-badge><right-char> [dur]. Replaces the older
+    // column-style `<time> <field> <prior ▶ current> <dur>` path.
+    let spec = registry.and_then(|r| r.fields.get(&entry.field));
+    let default_ctx = self::action::RenderContext::default();
+    let render_ctx = ctx.unwrap_or(&default_ctx);
+    let info = self::action::format_info_line_at(entry, spec, render_ctx, now);
+
+    // State second line (da-gvj1 rule 3): doc-style renderers expose
+    // structured-state internals on a line below the chip. Tail never
+    // takes this path (see `print_table_with`). Then the user-data block.
+    let mut data = Vec::new();
+    if let Some(v) = entry.state.as_ref() {
+        if let Some(line) = self::blocks::format_state_doc_line(v, &entry.field, spec) {
+            data.push(format!("  {line}"));
+        }
+    }
+    if let Some(extra) = self::blocks::format_data_block(entry) {
+        data.push(extra);
+    }
+    ActionLines { header, info, data }
+}
+
 pub fn show_action_with_context(
     entry: &Entry,
     action: Outcome,
@@ -311,28 +368,18 @@ pub fn show_action_with_context(
         return;
     }
 
-    let ex = extract_with_context(entry, Some(action), registry, ctx);
-    // Header line: action + hid + slug (datum's user-facing id)
-    let header = [ex.action.as_deref(), ex.hid.as_deref(), ex.slug.as_deref()]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(" ");
-    println!("{header}");
+    // `now_local()` is `DatumTime::now()`; the info line always took its
+    // "today" from it and the header never reads `now`, so sourcing both
+    // from the one builder changes nothing about what is printed.
+    let lines = action_lines_at(entry, action, registry, ctx, &self::action::now_local());
+    println!("{}", lines.header);
 
     if args.show == Show::Minimal {
         return;
     }
 
-    // Info line via the §2 parity renderer: <time> <field-badge>
-    // <left-char><state-badge><right-char> [dur]. Replaces the older
-    // column-style `<time> <field> <prior ▶ current> <dur>` path.
-    let spec = registry.and_then(|r| r.fields.get(&entry.field));
-    let default_ctx = self::action::RenderContext::default();
-    let render_ctx = ctx.unwrap_or(&default_ctx);
-    let info = self::action::format_info_line(entry, spec, render_ctx);
-    if !info.is_empty() {
-        println!("{info}");
+    if !lines.info.is_empty() {
+        println!("{}", lines.info);
     }
 
     // The detailed data view (structured-state doc line + columnar data
@@ -347,21 +394,9 @@ pub fn show_action_with_context(
         _ => false,
     };
 
-    // State second line (da-gvj1 rule 3): doc-style renderers expose
-    // structured-state internals on a line below the chip. Tail never
-    // takes this path (see `print_table_with`).
     if show_data_view {
-        if let Some(v) = entry.state.as_ref() {
-            if let Some(line) = self::blocks::format_state_doc_line(v, &entry.field, spec) {
-                println!("  {line}");
-            }
-        }
-    }
-
-    // User-data block
-    if show_data_view {
-        if let Some(extra) = self::blocks::format_data_block(entry) {
-            println!("{extra}");
+        for line in &lines.data {
+            println!("{line}");
         }
     }
     if args.show == Show::All {
