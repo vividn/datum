@@ -67,13 +67,13 @@ impl Db {
     }
 }
 
-/// Group entries by `(field, occur_time)` and merge each group with 2+
+/// Group entries by [`merge_group_key`] and merge each group with 2+
 /// members. Single-member groups pass through unchanged. Group order
 /// matches first-appearance order in the input (left-to-right across
 /// sides), so `_LAST` retains the user's call-site ordering.
 pub fn merge_same_field_groups(entries: Vec<Entry>) -> Vec<Entry> {
-    let mut order: Vec<(String, String)> = Vec::new();
-    let mut groups: HashMap<(String, String), Vec<Entry>> = HashMap::new();
+    let mut order: Vec<(String, String, String)> = Vec::new();
+    let mut groups: HashMap<(String, String, String), Vec<Entry>> = HashMap::new();
 
     for entry in entries {
         let key = merge_group_key(&entry);
@@ -99,18 +99,31 @@ pub fn merge_same_field_groups(entries: Vec<Entry>) -> Vec<Entry> {
 /// An entry without an occur_time produces a sentinel empty string so
 /// rows fall into the same bucket only when they truly share a time.
 ///
+/// da-2fkr: only entries that *assert a state* share a bucket. Folding is
+/// the same belief `entries_field_occurtime` holds — "the state of this
+/// field at this instant is one fact" — so it has to be scoped the way the
+/// index now is ([`Entry::asserts_state`]). Two stateless points at one
+/// instant are two events (`occur tx amount=1 -d D , occur tx amount=2 -d D`
+/// is rent and electricity, not `amount: [1, 2]`), so each keys as its own
+/// group: the third term is that entry's own hid, which nothing else holds.
+///
 /// Public because the commands layer's multi-render path
 /// (`leftmost_output_per_group`) must bucket per-side `OutputArgs` with
 /// the *same* key [`merge_same_field_groups`] uses — one canonical key,
 /// so a future change to the bucketing (say, including verb) cannot
 /// silently desynchronize render pairing from merge grouping.
-pub fn merge_group_key(entry: &Entry) -> (String, String) {
+pub fn merge_group_key(entry: &Entry) -> (String, String, String) {
     let occur = entry
         .occur_time
         .as_ref()
         .map(|t| t.utc.to_rfc3339())
         .unwrap_or_default();
-    (entry.field.clone(), occur)
+    let identity = if entry.asserts_state() {
+        String::new()
+    } else {
+        entry.hid.to_string()
+    };
+    (entry.field.clone(), occur, identity)
 }
 
 /// Fold a 2+-member group into a single merged entry. The leftmost
@@ -282,25 +295,25 @@ mod tests {
         )
     }
 
+    /// Section H's data-merge subject. State-bearing (`switch <field> on
+    /// color=red`), because since da-2fkr only rows that assert a state
+    /// share a merge group at all — the identical `true` state collapses by
+    /// Rule 9 and leaves the data column as the only thing under test.
     fn entry_data(field: &str, time_iso: &str, data: JsonValue) -> Entry {
-        let dt = chrono::DateTime::parse_from_rfc3339(time_iso)
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-        let occur = DatumTime {
-            utc: dt,
-            offset_minutes: 0,
-            timezone: Default::default(),
-            uncertainty: None,
-        };
-        Entry::new(
-            field.to_string(),
-            Verb::Point,
-            None,
-            Some(data),
-            Some(occur),
-            None,
-            "test-device".to_string(),
-        )
+        let mut entry = entry_at(field, time_iso, Some(json!(true)));
+        entry.data = Some(data);
+        entry.content_hash = entry.expected_content_hash();
+        entry
+    }
+
+    /// A stateless point — `occur tx amount=1200 comment=rent -d D`, the
+    /// da-2fkr subject. Two of these at one instant are two events.
+    fn entry_point_data(field: &str, time_iso: &str, data: JsonValue) -> Entry {
+        let mut entry = entry_data(field, time_iso, data);
+        entry.verb = Verb::Point;
+        entry.state = None;
+        entry.content_hash = entry.expected_content_hash();
+        entry
     }
 
     // ── Section G — same-field merge state ───────────────────────────
@@ -364,11 +377,46 @@ mod tests {
         assert_eq!(merged[1].state, Some(json!("b")));
     }
 
+    // ── da-2fkr — only state-bearing rows share a group ──────────────
+
+    #[test]
+    fn stateless_points_at_one_instant_stay_two_rows() {
+        // `occur tx amount=1200 comment=rent -d D , occur tx amount=40
+        // comment=electricity -d D` — rent and electricity, not
+        // `amount: [1200, 40]`.
+        let a = entry_point_data("tx", "2026-09-01T00:00:00Z", json!({"amount": 1200}));
+        let b = entry_point_data("tx", "2026-09-01T00:00:00Z", json!({"amount": 40}));
+        let (a_hid, b_hid) = (a.hid.clone(), b.hid.clone());
+        let merged = merge_same_field_groups(vec![a, b]);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].hid, a_hid);
+        assert_eq!(merged[1].hid, b_hid);
+        assert_eq!(merged[0].data, Some(json!({"amount": 1200})));
+        assert_eq!(merged[1].data, Some(json!({"amount": 40})));
+    }
+
+    #[test]
+    fn stateless_point_does_not_join_a_state_bearing_group() {
+        // The stateless row keys on its own hid, so it neither absorbs nor
+        // is absorbed by the switches beside it — and the switches still
+        // fold together.
+        let a = entry_at("body", "2026-05-11T12:00:00Z", Some(json!("vertical")));
+        let point = entry_point_data("body", "2026-05-11T12:00:00Z", json!({"note": "n"}));
+        let b = entry_at("body", "2026-05-11T12:00:00Z", Some(json!("sit")));
+        let point_hid = point.hid.clone();
+        let merged = merge_same_field_groups(vec![a, point, b]);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].state, Some(json!(["vertical", "sit"])));
+        assert_eq!(merged[0].data, None);
+        assert_eq!(merged[1].hid, point_hid);
+        assert_eq!(merged[1].data, Some(json!({"note": "n"})));
+    }
+
     // ── Section H — same-field merge data ────────────────────────────
 
     #[test]
     fn same_field_data_key_conflict_yields_plain_json_array() {
-        // `occur drink color=red , occur drink color=blue` →
+        // `switch drink on color=red , switch drink on color=blue` →
         // single row with color=[red, blue].
         let a = entry_data("drink", "2026-05-11T12:00:00Z", json!({"color": "red"}));
         let b = entry_data("drink", "2026-05-11T12:00:00Z", json!({"color": "blue"}));

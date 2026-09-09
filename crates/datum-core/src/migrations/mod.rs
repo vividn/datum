@@ -53,7 +53,7 @@ use v31_v40::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 35;
+pub const CURRENT_SCHEMA_VERSION: u32 = 36;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -316,5 +316,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries: add superseded_by and make both UNIQUE indexes partial on it — a sync merge sets the loser aside with a pointer instead of parking merge state in the derived slug (da-uxgv)",
         apply: m34_to_35_superseded_by,
         down: down_35_to_34_superseded_by,
+    },
+    Migration {
+        from: 35,
+        to: 36,
+        summary: "entries: narrow entries_field_occurtime to rows that assert a state — two stateless points at one instant (two transactions dated to one day) are two events, not one undefined state-change (da-2fkr)",
+        apply: m35_to_36_field_occurtime_state_only,
+        down: down_36_to_35_field_occurtime_state_only,
     },
 ];

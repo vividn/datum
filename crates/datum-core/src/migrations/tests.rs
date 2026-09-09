@@ -496,6 +496,38 @@ fn m24_to_25_creates_partial_unique_on_clean_db() {
     assert!(again.is_empty());
 }
 
+/// da-2fkr: the index the registry migrates a database into and the one
+/// `schema.sql` lays down fresh must be one text, byte for byte. `Db::open`
+/// replays `schema.sql` with `CREATE … IF NOT EXISTS`, so a migrated
+/// database whose predicate has drifted keeps the drifted one forever, and
+/// nothing downstream would ever say so — a migrated db would refuse the
+/// second transaction on a day that a fresh one accepts.
+#[test]
+fn migrated_and_fresh_field_occurtime_index_agree() {
+    let fresh = Db::open_in_memory().unwrap();
+    let want = field_occurtime_sql(fresh.conn());
+    assert!(
+        want.contains("state IS NOT NULL"),
+        "the fresh index must be state-scoped: {want}"
+    );
+
+    // Walk a database down past the v35→36 step and back up through the
+    // registry alone; the index must come back identical.
+    let walked = Db::open_in_memory().unwrap();
+    apply_migrations_down(walked.conn(), MIGRATIONS, CURRENT_SCHEMA_VERSION, 34).unwrap();
+    apply_migrations(walked.conn(), MIGRATIONS, 34, CURRENT_SCHEMA_VERSION).unwrap();
+    assert_eq!(field_occurtime_sql(walked.conn()), want);
+}
+
+fn field_occurtime_sql(conn: &rusqlite::Connection) -> String {
+    conn.query_row(
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name='entries_field_occurtime'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .unwrap()
+}
+
 /// da-ga8b: v24→v25 fails cleanly when live rows already collide on
 /// `(field, occur_time)`. The error message lists each offending
 /// group with field, occur_time, and the hids.

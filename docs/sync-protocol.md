@@ -518,11 +518,11 @@ misses the second changeset, calls it a fresh arrival, and inserts it onto
 its own primary key — `UNIQUE constraint failed: entries.hid` (da-zlug). A
 key derived from mutable data cannot be an identity.
 
-**Identity collisions (`slug`, `(field, occur_time)`).** Keying on `hid`
-means two entries can now contend for one slug, or for one live `(field,
-occur_time)` — the constraints slug-keyed merge hid by collapsing both
-sides into a single row. Neither is an error. What happens next depends on
-whether the two record the same thing (da-yiq9):
+**Identity collisions (`slug`, live state-bearing `(field, occur_time)`).**
+Keying on `hid` means two entries can now contend for one slug, or for one
+live state-bearing `(field, occur_time)` — the constraints slug-keyed merge
+hid by collapsing both sides into a single row. Neither is an error. What
+happens next depends on whether the two record the same thing (da-yiq9):
 
 Both uniqueness beliefs are therefore **partial** on `superseded_by IS
 NULL` (da-uxgv): the table can hold "one *live* entry per slug", not "one
@@ -534,6 +534,18 @@ represent the outcome below.
     UNIQUE (field, occur_time)     WHERE occur_time IS NOT NULL
                                      AND deleted_at IS NULL
                                      AND superseded_by IS NULL
+                                     AND state IS NOT NULL
+
+The `state IS NOT NULL` term is normative, not an implementation detail
+(da-2fkr). "The state of this field at this instant" is a single fact, so
+two rows asserting it contend; two rows asserting *no* state are two events
+— two transactions dated to one day, on two devices — and a client that
+superseded one of them would drop half of what the user recorded. A client
+MUST apply the term on **both** sides of its collision probe: a stateless
+incoming row looks for no `(field, occur_time)` rival, and a stateless local
+row is never found as one. Stateless rows that share a *slug* still contend
+by slug, exactly as before; an id template is how a user declares that two
+same-instant events differ.
 
 **Same event → folded silently.** Two devices logging one event mint two
 hids for it, and it is not a conflict. Clients MUST fold rather than

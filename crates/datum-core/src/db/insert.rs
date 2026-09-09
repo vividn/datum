@@ -537,6 +537,10 @@ fn collision_kind(err: &rusqlite::Error) -> Option<CollisionKind> {
 /// collision. Returns `None` if no live row matches (which would mean
 /// the index was tripped by a race the surrounding tx already rolled
 /// back — surface the diagnostic without a hid in that case).
+///
+/// The terms are the index predicate's, `state IS NOT NULL` included
+/// (da-2fkr): a stateless row at that instant is not the collider, because
+/// it is not what the index refused.
 fn fetch_field_occur_collider(
     conn: &Connection,
     field: &str,
@@ -547,6 +551,7 @@ fn fetch_field_occur_collider(
             "SELECT hid FROM entries \
              WHERE field = ?1 AND occur_time = ?2 \
                AND deleted_at IS NULL AND superseded_by IS NULL \
+               AND state IS NOT NULL \
              LIMIT 1",
             params![field, occur_time],
             |row| row.get(0),
@@ -847,8 +852,21 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
                 };
                 match kind {
                     Some(CollisionKind::Slug) => {
+                        // da-2fkr: for a stateless point the slug is now the
+                        // ONLY thing standing between two events at one
+                        // instant, so the message has to name the way out.
+                        // The default template is `%occur_time%`, which two
+                        // transactions dated to one day both resolve to; an
+                        // id template is how the user says they differ, as
+                        // it was in datum v2.
+                        let hint = if entry.asserts_state() {
+                            ""
+                        } else {
+                            "; give the field an id template \
+                             (--id / spec --id-template) if these are different events"
+                        };
                         return Err(DatumError::Duplicate(format!(
-                            "Entry already exists with slug {}",
+                            "Entry already exists with slug {}{hint}",
                             entry.slug
                         )));
                     }
@@ -858,6 +876,8 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
                         // state-changes at the same instant for the same
                         // field are semantically undefined, so surface a
                         // clear diagnostic naming the existing hid.
+                        // da-2fkr narrowed the index to state-bearing rows,
+                        // so reaching here means both sides assert a state.
                         let occur_str = entry
                             .occur_time
                             .as_ref()

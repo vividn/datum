@@ -346,6 +346,41 @@ fn unpark_rows(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// The `entries_field_occurtime` definition as `schema.sql` lays it down on
+/// a fresh database, so the migrated and the fresh index are one text.
+/// `migrations/tests.rs::migrated_and_fresh_field_occurtime_index_agree`
+/// holds the two together.
+const FIELD_OCCURTIME_INDEX_V36: &str = "CREATE UNIQUE INDEX IF NOT EXISTS entries_field_occurtime
+    ON entries (field, occur_time)
+    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+      AND state IS NOT NULL";
+
+/// da-2fkr: narrow `entries_field_occurtime` to rows that assert a state.
+///
+/// da-ga8b built the index to stop "two state-changes for the same field at
+/// the same exact instant", but wrote a predicate that never mentions state,
+/// so it also refused two *stateless* points at one instant — two
+/// transactions dated to one day, which are two events and not one undefined
+/// fact. Adding `state IS NOT NULL` makes the predicate say what the rule
+/// always meant. A stateless pair that shares a slug as well is still
+/// refused by `entries_slug`; an id template (`--id`, `spec --id-template`)
+/// is the user's declaration that the two are different events.
+///
+/// No pre-check: narrowing a UNIQUE predicate can only ever admit rows a
+/// wider one already allowed, so it cannot fail on existing data. The index
+/// is dropped and recreated because `Db::open` replays `schema.sql` with
+/// `CREATE … IF NOT EXISTS`, which would leave an old definition standing
+/// forever (the same reason da-uxgv gives above).
+pub(super) fn m35_to_36_field_occurtime_state_only(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    conn.execute_batch(&format!(
+        "DROP INDEX IF EXISTS entries_field_occurtime;\n{FIELD_OCCURTIME_INDEX_V36};"
+    ))?;
+    Ok(())
+}
+
 // ─── Down migrations ─────────────────────────────────────────────────
 //
 // Each forward migration above has a paired `down` here that reverses
@@ -365,6 +400,57 @@ fn unpark_rows(conn: &Connection) -> Result<()> {
 //   docstring. The down still runs to make the schema reversible for
 //   round-trip testing; production callers should back up before
 //   walking back across these.
+
+/// Reverse 36→35 — restore the state-blind `(field, occur_time)` predicate.
+///
+/// **Pre-check**, the da-ga8b pattern: the wider predicate forbids rows the
+/// narrow one admits, so a database holding two live stateless entries for
+/// one field at one instant cannot walk back. Find them first and fail with
+/// the offending hids named, rather than letting `CREATE INDEX` report a
+/// bare `UNIQUE constraint failed` about rows the operator cannot then
+/// identify. The scan mirrors the v35 predicate exactly (live, non-superseded,
+/// real occur_time) and only groups that are entirely stateless can be new —
+/// a state-bearing collision was already impossible at v36.
+pub(super) fn down_36_to_35_field_occurtime_state_only(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    let collisions: Vec<(String, String, String)> = conn
+        .prepare(
+            "SELECT field, occur_time, GROUP_CONCAT(hid, ',') \
+             FROM entries \
+             WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL \
+             GROUP BY field, occur_time \
+             HAVING COUNT(*) > 1 \
+             ORDER BY field, occur_time",
+        )?
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get(1)?, row.get(2)?))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    if !collisions.is_empty() {
+        let mut diag = String::from(
+            "v36→v35 migration aborted: the pre-da-2fkr index forbids two live entries \
+             for one field at one instant, stateless or not. Resolve the offending rows \
+             (delete or retime one of each group) before re-running:",
+        );
+        for (field, occur_time, hids) in &collisions {
+            diag.push_str(&format!(
+                "\n  field={field} occur_time={occur_time} hids=[{hids}]"
+            ));
+        }
+        return Err(crate::error::DatumError::Other(diag));
+    }
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entries_field_occurtime;
+         CREATE UNIQUE INDEX entries_field_occurtime
+             ON entries (field, occur_time)
+             WHERE occur_time IS NOT NULL
+               AND deleted_at IS NULL
+               AND superseded_by IS NULL;",
+    )?;
+    Ok(())
+}
 
 /// Reverse 35→34 — restore the total `entries_slug` UNIQUE index and drop
 /// `superseded_by`.

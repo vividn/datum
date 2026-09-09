@@ -168,9 +168,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS entries_slug
 -- the (field, occur_time) contenders route through supersession too. Custom
 -- ids can make two rows collide on one axis and not the other, so a fix that
 -- covered only slugs would be rediscovered here.
+-- da-2fkr: `state IS NOT NULL`, because the reason above is about STATE. Two
+-- rows asserting the state of one field at one instant are undefined; two
+-- rows asserting no state at all are two events (two transactions dated to
+-- one day) and both belong. A stateless pair that also shares a slug is still
+-- refused by `entries_slug` — an id template is the user's declaration that
+-- the two differ. The term is the state column, not the verb: a point may
+-- carry a state, and then it is the undefined case too.
 CREATE UNIQUE INDEX IF NOT EXISTS entries_field_occurtime
     ON entries (field, occur_time)
-    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL;
+    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+      AND state IS NOT NULL;
 
 -- Reverse lookup for the conflict marker: "which rows lost to this one?".
 -- Partial, so it contains ONLY conflicted rows — empty in steady state, which

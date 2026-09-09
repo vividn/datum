@@ -101,7 +101,7 @@ fn leftmost_output_per_group(
     outputs: &[OutputArgs],
 ) -> Vec<OutputArgs> {
     use std::collections::HashSet;
-    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut seen: HashSet<(String, String, String)> = HashSet::new();
     let mut group_outputs: Vec<OutputArgs> = Vec::new();
     for (entry, out) in entries.iter().zip(outputs.iter()) {
         if seen.insert(datum_core::db::merge_group_key(entry)) {

@@ -491,11 +491,19 @@ fn fold_duplicate(
 
 /// Local rows, other than `entry` itself, that hold an identity `entry`
 /// needs: the same slug (UNIQUE over non-superseded rows, tombstones
-/// included), or the same live `(field, occur_time)` (partial UNIQUE, live
-/// non-superseded rows only). This is the pre-check the merge's identity
-/// probe has to be in order to be one — every constraint the write can trip
-/// is looked up here, so the apply decides a merge rather than meeting a raw
-/// SQLite error (da-zlug).
+/// included), or the same live state-bearing `(field, occur_time)` (partial
+/// UNIQUE, live non-superseded rows that assert a state only). This is the
+/// pre-check the merge's identity probe has to be in order to be one — every
+/// constraint the write can trip is looked up here, so the apply decides a
+/// merge rather than meeting a raw SQLite error (da-zlug).
+///
+/// da-2fkr: the `(field, occur_time)` probe carries the index's own
+/// `state IS NOT NULL` term, on both sides. Two devices each recording a
+/// transaction dated to one day assert no state, so neither is the other's
+/// blocker: both stay live and no `IdentityCollision` is filed. Reading this
+/// off the index alone would not have been enough — the probe runs first, and
+/// whatever it calls a blocker gets superseded before the write that would
+/// have been allowed is ever attempted.
 ///
 /// A superseded row holds neither identity, so it is not a blocker (da-uxgv)
 /// — the two `superseded_by IS NULL` terms below are exactly the two index
@@ -512,15 +520,17 @@ fn find_blockers(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<Vec<En
         )?
         .collect::<rusqlite::Result<_>>()?;
 
-    // The partial index only covers live rows with a real occur_time, so an
-    // incoming tombstone or a timeless entry can never trip it.
-    if entry.deleted_at.is_none() {
+    // The partial index only covers live, state-bearing rows with a real
+    // occur_time, so an incoming tombstone, a timeless entry, or a stateless
+    // point can never trip it.
+    if entry.deleted_at.is_none() && entry.asserts_state() {
         if let Some(occur) = entry.occur_time.as_ref() {
             let rows: Vec<Entry> = tx
                 .prepare(
                     "SELECT * FROM entries \
                      WHERE field = ?1 AND occur_time = ?2 \
-                       AND deleted_at IS NULL AND superseded_by IS NULL AND hid != ?3",
+                       AND deleted_at IS NULL AND superseded_by IS NULL \
+                       AND state IS NOT NULL AND hid != ?3",
                 )?
                 .query_map(
                     params![entry.field, occur.utc.to_rfc3339(), entry.hid],
@@ -1705,6 +1715,46 @@ mod tests {
             .len(),
             1,
         );
+    }
+
+    /// da-2fkr: the same instant, the same field, and no state on either
+    /// side — two transactions dated to one day. Neither is the other's
+    /// blocker, so both stay live and nothing is filed. The pair is what
+    /// `find_blockers` decides, before the constraint is ever reached, which
+    /// is why narrowing only the index would not have been enough.
+    #[test]
+    fn stateless_same_instant_rows_are_not_blockers() {
+        use datum_core::integrity::{IntegrityKind, ListFilter};
+
+        let db = fresh_db();
+        let mut local = make_entry("tx", 0);
+        let mut incoming = make_entry("tx", 0);
+        local.slug = datum_core::ids::Slug::new("tx:rent");
+        incoming.slug = datum_core::ids::Slug::new("tx:electricity");
+        local.state = None;
+        incoming.state = None;
+        local.data = Some(serde_json::json!({"amount": 1200}));
+        incoming.data = Some(serde_json::json!({"amount": 40}));
+        local.content_hash = local.expected_content_hash();
+        incoming.content_hash = incoming.expected_content_hash();
+        incoming.modify_time = local.modify_time + Duration::seconds(60);
+
+        db.insert_entry(&local).unwrap();
+        apply_changeset(&db, &changeset_of(&incoming)).unwrap();
+
+        for (hid, slug) in [(&local.hid, &local.slug), (&incoming.hid, &incoming.slug)] {
+            let row = row_by_hid(&db, hid);
+            assert_eq!(&row.slug, slug);
+            assert_eq!(row.superseded_by, None, "{slug} must stay live");
+            assert_eq!(row.deleted_at, None);
+        }
+        assert!(db
+            .list_integrity_warnings(&ListFilter {
+                kind: Some(IntegrityKind::IdentityCollision),
+                pending: None,
+            })
+            .unwrap()
+            .is_empty());
     }
 
     /// da-yiq9, the whole point: two devices that independently record the

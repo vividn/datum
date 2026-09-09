@@ -161,6 +161,7 @@ fn every_pair_has_a_roundtrip_test() {
         (32, 33),
         (33, 34),
         (34, 35),
+        (35, 36),
     ];
     assert_eq!(
         covered.len(),
@@ -1942,4 +1943,113 @@ fn roundtrip_v34_to_v35_superseded_by() {
     assert!(!column_exists(conn, "entries", "superseded_by"));
     assert!(!index_exists(conn, "entries_superseded_by"));
     assert!(index_exists(conn, "entries_slug"));
+}
+
+/// da-2fkr: v35→v36 narrows `entries_field_occurtime` to rows that assert a
+/// state. Up: the predicate gains `state IS NOT NULL`, two stateless points
+/// at one instant land, two state-bearing ones still do not. Down: the
+/// predicate loses the term again — and refuses to build over the stateless
+/// pair v36 permitted, naming the hids rather than leaving CREATE INDEX to
+/// complain about rows the operator cannot then find.
+#[test]
+fn roundtrip_v35_to_v36_field_occurtime_state_only() {
+    let db = fresh_at(35);
+    let conn = db.conn();
+
+    assert!(index_exists(conn, "entries_field_occurtime"));
+    assert!(
+        !field_occurtime_sql(conn).contains("state IS NOT NULL"),
+        "v35 predicate is state-blind: {}",
+        field_occurtime_sql(conn),
+    );
+    // At v35 the second transaction on one day is refused.
+    insert_tx(conn, "hidrent00001", "tx:rent", None).unwrap();
+    let err = insert_tx(conn, "hidelec00002", "tx:electricity", None).unwrap_err();
+    assert!(
+        format!("{err}").contains("UNIQUE constraint failed"),
+        "expected the v35 index to refuse it, got: {err}"
+    );
+
+    apply_one_up(conn, 35);
+
+    let up_sql = field_occurtime_sql(conn);
+    assert!(
+        up_sql.contains("state IS NOT NULL"),
+        "v36 predicate must be state-scoped: {up_sql}"
+    );
+    // The same insert now lands, beside the one already there.
+    insert_tx(conn, "hidelec00002", "tx:electricity", None).unwrap();
+    let live: Vec<String> = conn
+        .prepare("SELECT hid FROM entries WHERE field = 'tx' ORDER BY hid")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(live, vec!["hidelec00002", "hidrent00001"]);
+
+    // Two rows that DO assert a state at one instant are still refused —
+    // da-ga8b's case, unchanged.
+    insert_tx(conn, "hidalpha0003", "project:alpha", Some("\"alpha\"")).unwrap();
+    let err = insert_tx(conn, "hidbeta00004", "project:beta", Some("\"beta\"")).unwrap_err();
+    assert!(
+        format!("{err}").contains("UNIQUE constraint failed"),
+        "state-bearing pair must still collide, got: {err}"
+    );
+
+    // Down over the stateless pair v36 allowed: a hid-by-hid diagnostic,
+    // not a bare constraint failure at CREATE INDEX.
+    let err = apply_migrations_down(conn, MIGRATIONS, 36, 35).unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("v36→v35"),
+        "diagnostic must name the step: {msg}"
+    );
+    assert!(
+        msg.contains("hidrent00001") && msg.contains("hidelec00002"),
+        "diagnostic must list the offending hids: {msg}"
+    );
+    assert_eq!(read_schema_version(conn).unwrap(), Some(36));
+    assert!(
+        field_occurtime_sql(conn).contains("state IS NOT NULL"),
+        "the refused down must leave the v36 index standing",
+    );
+
+    // Resolve the pair the way the diagnostic asks, and the down lands.
+    conn.execute("DELETE FROM entries WHERE hid = 'hidelec00002'", [])
+        .unwrap();
+    apply_one_down(conn, 36);
+    assert!(index_exists(conn, "entries_field_occurtime"));
+    assert!(
+        !field_occurtime_sql(conn).contains("state IS NOT NULL"),
+        "down must restore the state-blind predicate",
+    );
+}
+
+fn field_occurtime_sql(conn: &Connection) -> String {
+    conn.query_row(
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name='entries_field_occurtime'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .unwrap()
+}
+
+/// Insert a minimal live entry at `2026-09-01T00:00:00+00:00` for the field
+/// the slug names, with `state` written verbatim (JSON text or NULL).
+fn insert_tx(
+    conn: &Connection,
+    hid: &str,
+    slug: &str,
+    state: Option<&str>,
+) -> rusqlite::Result<usize> {
+    let field = slug.split(':').next().unwrap();
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, state, occur_time,
+             create_time, modify_time, device_id)
+         VALUES (?1, ?2, ?1, ?3, ?4, '2026-09-01T00:00:00+00:00',
+                 '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', 'dev-a')",
+        rusqlite::params![hid, slug, field, state],
+    )
 }

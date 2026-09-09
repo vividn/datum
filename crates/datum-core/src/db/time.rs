@@ -410,8 +410,29 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let t1 = seed_dt("2024-01-01T10:00:00Z");
         let t2 = seed_dt("2024-01-01T11:00:00Z");
-        let a = Entry::new("run", Verb::Point, None, None, Some(t1.clone()), None, "d1");
-        let b = Entry::new("run", Verb::Point, None, None, Some(t2.clone()), None, "d1");
+        // State-bearing (da-2fkr): `(field, occur_time)` is a single fact
+        // only for rows that assert a state, so a switch is what the
+        // batch's second row can still collide against. Two stateless
+        // points retimed onto one instant are two events and both land —
+        // `retime_batch_lands_two_stateless_points_on_one_instant` below.
+        let a = Entry::new(
+            "run",
+            Verb::Switch,
+            None,
+            None,
+            Some(t1.clone()),
+            None,
+            "d1",
+        );
+        let b = Entry::new(
+            "run",
+            Verb::Switch,
+            None,
+            None,
+            Some(t2.clone()),
+            None,
+            "d1",
+        );
         db.insert_entry(&a).unwrap();
         db.insert_entry(&b).unwrap();
 
@@ -432,6 +453,36 @@ mod tests {
         let b_after = db.get_entry(&b.hid).unwrap();
         assert_eq!(a_after.occur_time.as_ref().unwrap().utc, t1.utc);
         assert_eq!(b_after.occur_time.as_ref().unwrap().utc, t2.utc);
+    }
+
+    /// da-2fkr: the same batch, stateless. Two transactions retimed onto one
+    /// day are two events — both move, nothing rolls back, and the rows stay
+    /// distinguishable by hid (their slugs are `%occur_time%`-free here, so
+    /// neither is rewritten).
+    #[test]
+    fn retime_batch_lands_two_stateless_points_on_one_instant() {
+        let db = Db::open_in_memory().unwrap();
+        let t1 = seed_dt("2024-01-01T10:00:00Z");
+        let t2 = seed_dt("2024-01-01T11:00:00Z");
+        let a = Entry::new("tx", Verb::Point, None, None, Some(t1), None, "d1");
+        let b = Entry::new("tx", Verb::Point, None, None, Some(t2), None, "d1");
+        db.insert_entry(&a).unwrap();
+        db.insert_entry(&b).unwrap();
+
+        let filter = RetimeFilter {
+            field: Some("tx"),
+            ..Default::default()
+        };
+        let new_start = seed_dt("2026-05-01T10:00:00Z");
+        let moved = db.set_start_time(&filter, &new_start).unwrap();
+        assert_eq!(moved.len(), 2);
+
+        for hid in [&a.hid, &b.hid] {
+            let after = db.get_entry(hid).unwrap();
+            assert_eq!(after.occur_time.as_ref().unwrap().utc, new_start.utc);
+            assert!(after.deleted_at.is_none());
+            assert_eq!(after.superseded_by, None);
+        }
     }
 
     /// da-sunq item 3 / da-r17h: timeless rows (occur_time NULL, slug

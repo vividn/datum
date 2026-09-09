@@ -8,6 +8,7 @@
 use chrono::Duration;
 use datum_core::db::{Db, ListParams};
 use datum_core::entry::{Entry, Verb};
+use datum_core::ids::Slug;
 use datum_core::test_util::fresh_db;
 use datum_core::time::DatumTime;
 use datum_sync_client::ops::{apply_changeset, pack_changeset};
@@ -155,4 +156,82 @@ fn a_fresh_replica_reconstructs_the_pair_from_the_log() {
         rows.map(|r| r.unwrap()).collect()
     };
     assert_eq!(shape(&replica), shape(&db));
+}
+
+// ─── da-2fkr — the same-instant pair that is NOT a collision ─────────
+
+/// One transaction, as a device would record it: stateless, dated to the
+/// day, and given a distinct slug by the field's `%comment%` id template.
+fn transaction(comment: &str, device: &str) -> Entry {
+    let mut e = Entry::new(
+        "tx",
+        Verb::Point,
+        None,
+        Some(serde_json::json!({ "comment": comment })),
+        Some(at("2026-09-01T00:00:00Z")),
+        None,
+        device,
+    );
+    e.slug = Slug(format!("tx:{comment}"));
+    e.id_structure = Some("%comment%".to_string());
+    e.content_hash = e.expected_content_hash();
+    e
+}
+
+/// da-2fkr, the trap the bead names: narrowing only the index would leave
+/// the sync apply superseding one of two transactions recorded on one day by
+/// two devices — data loss in the reader's eyes. Both devices must end up
+/// holding both rows, both live.
+#[test]
+fn two_devices_two_transactions_on_one_day_both_survive_a_full_sync() {
+    let rent = transaction("rent", "dev-a");
+    let electricity = transaction("electricity", "dev-b");
+    assert_ne!(
+        rent.slug, electricity.slug,
+        "the id template separates them"
+    );
+    assert_eq!(
+        rent.occur_time.as_ref().unwrap().utc,
+        electricity.occur_time.as_ref().unwrap().utc,
+        "and they sit at one instant",
+    );
+
+    let a = fresh_db();
+    a.insert_entry(&rent).unwrap();
+    let b = fresh_db();
+    b.insert_entry(&electricity).unwrap();
+
+    // A full sync: each side receives the other's log.
+    apply_changeset(&a, &pack_changeset(&b, 0).unwrap()).unwrap();
+    apply_changeset(&b, &pack_changeset(&a, 0).unwrap()).unwrap();
+
+    for (name, db) in [("dev-a", &a), ("dev-b", &b)] {
+        let mut stream: Vec<(String, Option<String>)> = db
+            .list_entries(&ListParams::default())
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.slug.to_string(), e.superseded_by.map(|h| h.to_string())))
+            .collect();
+        stream.sort();
+        assert_eq!(
+            stream,
+            vec![
+                ("tx:electricity".to_string(), None),
+                ("tx:rent".to_string(), None),
+            ],
+            "{name} must hold both transactions live and unsuperseded",
+        );
+        assert!(
+            datum_core::integrity::list(
+                db.conn(),
+                &datum_core::integrity::ListFilter {
+                    kind: Some(datum_core::integrity::IntegrityKind::IdentityCollision),
+                    pending: None,
+                },
+            )
+            .unwrap()
+            .is_empty(),
+            "{name} must file no identity_collision",
+        );
+    }
 }

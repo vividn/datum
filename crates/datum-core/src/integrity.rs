@@ -115,7 +115,9 @@ pub enum IntegrityKind {
     LwwOverwrite,
     /// Two *distinct* entries (different `hid`) claim one identity the
     /// `entries` table can only give to one row: the same `slug`, or the
-    /// same live `(field, occur_time)`. Since da-zlug the sync apply merges
+    /// same live *state-bearing* `(field, occur_time)` — two stateless
+    /// points at one instant are two events, not one contested identity, and
+    /// never file this (da-2fkr). Since da-zlug the sync apply merges
     /// on `hid`, so these are genuinely two rows rather than two versions
     /// of one — both are kept, the deterministic loser is *superseded*
     /// (`superseded_by` = the winner's hid, da-uxgv), and this row names the
@@ -698,8 +700,8 @@ pub fn file_lww_overwrite(
 }
 
 /// File an [`IntegrityKind::IdentityCollision`] warning: two distinct
-/// entries claimed one `slug` (or one live `(field, occur_time)`) during a
-/// sync apply. `superseded` is the deterministic loser as it now stands —
+/// entries claimed one `slug` (or one live state-bearing
+/// `(field, occur_time)`, da-2fkr) during a sync apply. `superseded` is the deterministic loser as it now stands —
 /// same content, same derived slug, `superseded_by` pointing at the winner
 /// — and `kept` the row that holds the contested identity. Both rows
 /// survive; this row is what tells the user they need to decide between

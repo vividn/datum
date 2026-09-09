@@ -420,6 +420,25 @@ impl Entry {
         EntryShape::from_dur(self.dur.as_ref())
     }
 
+    /// Does this entry assert a state for its field?
+    ///
+    /// da-2fkr: the answer decides whether the entry has an *identity* at
+    /// `(field, occur_time)` — "the state of `field` at instant T" is a
+    /// single fact, so two rows asserting it are undefined (da-ga8b), while
+    /// two stateless points at one instant are simply two events (two
+    /// transactions on one day) and both belong. The `entries_field_occurtime`
+    /// UNIQUE index, the same-invocation merge and the sync apply are three
+    /// spellings of that one rule; this is the pre-storage spelling.
+    ///
+    /// It mirrors what the storage layer will actually write: a switching
+    /// verb with no explicit state is promoted to `true` on insert, so it
+    /// asserts a state even though `self.state` is `None`. Keyed on the
+    /// state *column*, not on the verb — a point may carry a state, and then
+    /// it is the undefined case too.
+    pub fn asserts_state(&self) -> bool {
+        self.state.is_some() || crate::shape::is_switching_verb(self.verb)
+    }
+
     /// Recompute the content_hash from the entry's current fields.
     pub fn expected_content_hash(&self) -> String {
         let occur_str = self
