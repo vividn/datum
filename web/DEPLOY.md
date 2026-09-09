@@ -80,7 +80,24 @@ Any S3-compatible object storage. Scaleway Object Storage is the intended one.
 `datum.day` is registered. Point it at the bucket through Cloudflare:
 
 - Add `datum.day` to Cloudflare; set the nameservers at the registrar.
-- `CNAME` the apex (and `www`) at the bucket's **website** endpoint, **proxied** (orange cloud).
+- `CNAME` the apex at the bucket's **website** endpoint, **proxied** (orange cloud).
+- `www` is a **redirect, not a second CNAME**. Scaleway selects the bucket from the Host
+  header, so a `www.datum.day` request reaching the bucket answers
+  `NoSuchBucket: www.datum.day` — measured 2026-09-09 14:2x on the live site (HTTP 404, XML
+  body, `server: cloudflare`). Give `www` a proxied DNS record (any target; Cloudflare answers
+  before the origin is reached) and a Redirect Rule:
+
+  ```
+  Rules -> Redirect Rules -> Create
+    when:  Hostname equals www.datum.day
+    then:  Dynamic redirect, expression concat("https://datum.day", http.request.uri.path)
+           status 301, preserve query string
+  ```
+
+  Verify on the deployed site: `curl -sI https://www.datum.day/now | head -3` must show a
+  redirect with `location: https://datum.day/now`. Live since 2026-09-09 15:0x as a **302**;
+  a **301** is the better setting for a permanent www → apex move (browsers cache it, and
+  search engines treat the apex as canonical) — flip it when convenient, nothing depends on it.
 
   ⚠ The website endpoint is not the S3 API endpoint, and the console tends to show you the latter:
 
