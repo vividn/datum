@@ -20,6 +20,42 @@ const SHELL = '/';
 
 const ASSETS = [SHELL, ...build, ...files, ...workerAssets];
 
+/**
+ * The two headers that make a document cross-origin isolated, which is what
+ * gates `SharedArrayBuffer` — and with it the plain OPFS VFS, the one that
+ * lets two tabs hold the database at once.
+ *
+ * Set here, on every same-origin response this worker serves, so isolation is
+ * a property of the app rather than of whichever host happens to serve it. A
+ * plain bucket sends neither; the deployment's Cloudflare rule adds them to
+ * the first load, and this covers every load after. Safe to add blindly
+ * because the app loads nothing cross-origin (measured: zero `src`/`href`
+ * to another origin, zero css imports), so `require-corp` has nothing to
+ * refuse.
+ */
+const ISOLATION: Record<string, string> = {
+	'Cross-Origin-Opener-Policy': 'same-origin',
+	'Cross-Origin-Embedder-Policy': 'require-corp'
+};
+
+/** The same response with the isolation headers on it, when it can be rebuilt. */
+function isolated(response: Response): Response {
+	// An opaque or redirect response cannot be reconstructed — its body and
+	// headers are not readable here — and `new Response` on one throws. Pass
+	// those through; they are not the document, and the document is what has
+	// to carry the headers.
+	if (response.status === 0 || response.type === 'opaque' || response.type === 'opaqueredirect') {
+		return response;
+	}
+	const headers = new Headers(response.headers);
+	for (const [name, value] of Object.entries(ISOLATION)) headers.set(name, value);
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers
+	});
+}
+
 /** Everything under here is content-hashed, so it is safe to cache forever. */
 const IMMUTABLE = '/_app/immutable/';
 
@@ -73,7 +109,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 	// means two things. The cache is per build (`version`), so a deploy
 	// installs a new service worker and the shell refreshes with it.
 	if (ASSETS.includes(url.pathname) || url.pathname.startsWith(IMMUTABLE)) {
-		event.respondWith(cacheFirst(event.request));
+		event.respondWith(cacheFirst(event.request).then(isolated));
 		return;
 	}
 
@@ -82,11 +118,13 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 	// than answering it with an error, because the failure it produces
 	// names the wrong thing.
 	event.respondWith(
-		fetch(event.request).catch(async () => {
-			const cached = await caches.match(event.request);
-			if (cached) return cached;
-			if (event.request.mode !== 'navigate') return new Response('Offline', { status: 503 });
-			return (await caches.match(SHELL)) ?? new Response('Offline', { status: 503 });
-		})
+		fetch(event.request)
+			.catch(async () => {
+				const cached = await caches.match(event.request);
+				if (cached) return cached;
+				if (event.request.mode !== 'navigate') return new Response('Offline', { status: 503 });
+				return (await caches.match(SHELL)) ?? new Response('Offline', { status: 503 });
+			})
+			.then(isolated)
 	);
 });

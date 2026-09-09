@@ -17,7 +17,8 @@ An earlier draft called COOP/COEP a hard requirement and warned that without the
 silently fall back to an in-memory database. **That is wrong.** The app stores through
 SQLite-WASM's `SyncAccessHandlePoolVFS`, which uses OPFS sync access handles inside a Worker and
 needs neither `SharedArrayBuffer` nor cross-origin isolation. The isolation requirement belongs
-to SQLite-WASM's *other* VFS, which this app does not use.
+to SQLite-WASM's *other* VFS — the one that lets **two tabs hold the database at once**, which is
+the reason isolation matters now (see step 4). Single-tab persistence never needed it.
 
 Measured against the real bundle on a plain `python3 -m http.server`, sending no headers at all:
 
@@ -185,16 +186,25 @@ configured** — it reads four values and none of them have defaults:
 The manual path above keeps working and stays the right one for a rollback, which is a
 checkout of an older `web/` and so has no push behind it to trigger on.
 
-## Step 4: headers — optional hardening, NOT a gate
+## Step 4: headers — the app sends them itself; the rule makes the first load isolated too
 
-**Do not treat this step as blocking.** It is measured above: with no COOP/COEP headers at all,
-`crossOriginIsolated` is `false`, persistence still works, and an entry survives a reload. If the
-Cloudflare rule is awkward or you are short of time before a demo, **skip this step and ship.**
+**What isolation gates has changed, so read this even if you read the old version.** With no
+COOP/COEP headers, persistence still works and an entry survives a reload — that measurement stands.
+What isolation buys is **two tabs durable at the same time**: the OPFS pool is exclusive per origin,
+so without it a second tab opens in memory (and, since #146, takes the database over when the first
+tab closes, keeping what was typed). The shared VFS that lets both tabs write at once needs
+`SharedArrayBuffer`, which needs isolation.
 
-What it buys is future headroom, not present correctness: `SharedArrayBuffer` and the
-OPFS-in-a-Worker path (`da-5iqw`) will want isolation, so setting it now costs nothing and saves a
-migration later. Set them at the Cloudflare layer, because object storage generally cannot attach
-arbitrary response headers per object:
+**The app now sends the headers itself.** Its service worker adds both to every response it serves,
+and the page reloads itself once — on a first visit, while the prompt is still empty — when the
+worker takes control. So on a bare bucket the site is isolated from its second document onward,
+with or without anything in Cloudflare. This is measured (`web/tests/isolation.test.mjs`): a plain
+server sending no headers, one reload, `crossOriginIsolated === true`, and a control with service
+workers blocked that stays `false`.
+
+**Still set the Cloudflare rule.** It isolates the *first* document too, so the reload never happens,
+and it covers a visitor whose browser blocks service workers. Object storage cannot attach response
+headers per object, so it goes at the Cloudflare layer:
 
 *Rules → Transform Rules → Modify Response Header → Create*
 
@@ -203,19 +213,20 @@ arbitrary response headers per object:
   - `Cross-Origin-Opener-Policy` = `same-origin`
   - `Cross-Origin-Embedder-Policy` = `require-corp`
 
-If you set them, **verify from outside**, not from the dashboard — a rule can read as active and
-not reach the response:
+**Verify from outside**, not from the dashboard — a rule can read as active and not reach the
+response:
 
 ```sh
 curl -sI https://datum.day/ | grep -i cross-origin
 ```
 
-Both lines should appear. **If they do not, the site is fine** — it is simply not isolated, which is
-the same state the measurement above was taken in. The console check tells you which state you are
-in, and neither state loses data:
+Both lines should appear. `curl` sees only the rule, never the service worker, so an empty result
+means the rule is not reaching the response — the site still isolates itself from the second load,
+but the first-load case is not covered. The check that tells you what a visitor actually gets is in
+the browser, on a second load:
 
 ```js
-crossOriginIsolated   // true if the rule reached the response; false is OK
+crossOriginIsolated   // true from the second load regardless; true on the FIRST only if the rule reached it
 ```
 
 ## Step 5: mark it beta

@@ -21,7 +21,37 @@
 	// `window.datum` — the command seam at the browser's own prompt. Mounted
 	// here rather than at module scope because there is no window during
 	// prerendering. See $lib/console.ts.
-	onMount(() => installConsole(window as unknown as Record<string, unknown>));
+	onMount(() => {
+		installConsole(window as unknown as Record<string, unknown>);
+		reloadOnceForIsolation();
+	});
+
+	/**
+	 * The service worker adds the isolation headers to everything it serves —
+	 * but the first document of a visit was fetched before any worker
+	 * controlled the page, so on a host that sends no headers of its own that
+	 * document is not isolated. Reload once when the worker takes control,
+	 * and only then; from the second load on, isolation is simply there.
+	 *
+	 * Guarded three ways, because a reload is the one thing this page must
+	 * never do twice or at the wrong moment: a session flag so it happens at
+	 * most once per tab; only while the prompt is still empty, so nothing
+	 * typed is lost; and never when already isolated, which is every load on
+	 * a deployment whose host sends the headers itself.
+	 */
+	function reloadOnceForIsolation() {
+		if (crossOriginIsolated || !('serviceWorker' in navigator)) return;
+		const KEY = 'datum-reloaded-for-isolation';
+		const reload = () => {
+			if (sessionStorage.getItem(KEY) === '1') return;
+			const prompt = document.querySelector<HTMLInputElement>('input');
+			if (prompt?.value) return;
+			sessionStorage.setItem(KEY, '1');
+			location.reload();
+		};
+		if (navigator.serviceWorker.controller) reload();
+		else navigator.serviceWorker.addEventListener('controllerchange', reload, { once: true });
+	}
 </script>
 
 <div class="shell">
