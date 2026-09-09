@@ -13,6 +13,8 @@
 
 import { getFieldSpecs } from './db.js';
 import { jsonModule } from './wasm.js';
+// `?url` so Vite emits it content-hashed under /_app/immutable/ — see wasm.ts.
+import renderWasm from './wasm/datum-render.wasm?url';
 import type { Entry, FieldSpec } from './types.js';
 
 /** The CLI's outcomes, named the way `datum-commands` names them. */
@@ -104,9 +106,9 @@ interface TailRowsResponse {
 	error?: string;
 }
 
-const call = jsonModule<RenderRequest, RenderResponse>('datum-render.wasm', 'render');
-const callTail = jsonModule<TailRequest, TailResponse>('datum-render.wasm', 'tail');
-const callTailRows = jsonModule<TailRequest, TailRowsResponse>('datum-render.wasm', 'tail_rows');
+const call = jsonModule<RenderRequest, RenderResponse>(renderWasm, 'render');
+const callTail = jsonModule<TailRequest, TailResponse>(renderWasm, 'tail');
+const callTailRows = jsonModule<TailRequest, TailRowsResponse>(renderWasm, 'tail_rows');
 
 /** What the module needs from the browser and from nowhere else. */
 async function host(): Promise<{

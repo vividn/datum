@@ -1,4 +1,4 @@
-// Build the browser's Rust modules and drop them in static/.
+// Build the browser's Rust modules and drop them in src/lib/wasm/.
 //
 // Two of them, both the same idea: take a crate that is already the CLI's
 // own implementation of something, compile it to `wasm32-unknown-unknown`
@@ -15,6 +15,14 @@
 // CI job stays free of the Rust toolchain. Re-run this (`npm run
 // build:wasm`) whenever the crates behind them change, and commit the
 // result.
+//
+// They land in src/lib/wasm/ rather than static/ because static/ is copied
+// to the site root under the name it has here, and a runtime artifact must
+// not have a stable name: the service worker serves cache-first and the
+// deploy sends a year of `immutable`, so a returning browser ran the new
+// build's JavaScript against the previous build's module until the HTTP
+// cache expired (da-tvg0). From src/ they are `?url` imports, which Vite
+// emits content-hashed under _app/immutable/.
 
 import { execFileSync } from 'node:child_process';
 import { chmodSync, copyFileSync, mkdirSync, statSync } from 'node:fs';
@@ -108,7 +116,7 @@ for (const { crate, artifact, out, noDefaultFeatures } of MODULES) {
 	execFileSync('cargo', args, { cwd: repoRoot, env, stdio: 'inherit' });
 
 	const built = resolve(repoRoot, 'target/wasm32-unknown-unknown/wasm-release', artifact);
-	const outPath = resolve(here, '..', 'static', out);
+	const outPath = resolve(here, '..', 'src', 'lib', 'wasm', out);
 	mkdirSync(dirname(outPath), { recursive: true });
 	copyFileSync(built, outPath);
 	// cargo marks the module executable and copyFileSync carries that mode

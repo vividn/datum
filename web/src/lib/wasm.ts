@@ -16,8 +16,6 @@
 // value because a pointer and a length do not fit in one `i32`. See the
 // crate-level docs in crates/datum-{layout,parse}-wasm/src/lib.rs.
 
-import { base } from '$app/paths';
-
 /** The exports every one of these modules has. */
 interface Abi {
 	memory: WebAssembly.Memory;
@@ -31,7 +29,7 @@ interface Abi {
 /**
  * One instance per artifact, shared by all of its entry points.
  *
- * Keyed by file, not by entry point: `datum-render.wasm` answers `render`,
+ * Keyed by URL, not by entry point: `datum-render.wasm` answers `render`,
  * `tail` and `tail_rows`, and fetching and instantiating the module once
  * per export would be three copies of it in memory for no reason.
  */
@@ -41,21 +39,29 @@ const modules = new Map<string, Promise<Abi>>();
  * One of a module's JSON entry points, instantiated on first call and
  * reused: these modules are pure and hold no state between calls.
  *
- * `file` is the artifact's name under `static/`, `entry` the export that
- * takes the request. Two entry points of the same file share one instance.
+ * `url` is the artifact's built URL — a Vite `?url` import, so it is
+ * content-hashed under `/_app/immutable/` and a new build cannot reuse the
+ * name of an old module's bytes. That is not cosmetic: under a stable name
+ * (`/datum-render.wasm`) the service worker's cache-first rule and
+ * deploy.sh's one-year `immutable` header both handed a returning browser
+ * the PREVIOUS deploy's module to the current deploy's JavaScript, and the
+ * app broke until the HTTP cache expired — a year (da-tvg0).
+ *
+ * `entry` is the export that takes the request. Two entry points of the
+ * same module share one instance.
  */
 export function jsonModule<Request, Response>(
-	file: string,
+	url: string,
 	entry: string
 ): (request: Request) => Promise<Response> {
 	const load = (): Promise<Abi> => {
 		// No imports to satisfy — a `wasm32-unknown-unknown` cdylib with no
 		// `extern` calls has no import section — so instantiate takes {}.
-		let loading = modules.get(file);
+		let loading = modules.get(url);
 		if (!loading) {
-			loading = fetch(`${base}/${file}`)
+			loading = fetch(url)
 				.then((response) => {
-					if (!response.ok) throw new Error(`${file}: HTTP ${response.status}`);
+					if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
 					return response.arrayBuffer();
 				})
 				.then((bytes) => WebAssembly.instantiate(bytes, {}))
@@ -63,10 +69,10 @@ export function jsonModule<Request, Response>(
 				.catch((e) => {
 					// A failed load must not poison later attempts — the pane
 					// shows the error and the next call tries again.
-					modules.delete(file);
+					modules.delete(url);
 					throw e;
 				});
-			modules.set(file, loading);
+			modules.set(url, loading);
 		}
 		return loading;
 	};

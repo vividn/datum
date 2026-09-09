@@ -19,7 +19,7 @@ default:
 # pin, so a no-op run leaves the tree clean — if it does not, the committed
 # artifact was genuinely behind and wants committing.
 #
-# Rebuild the browser's Rust modules into web/static/.
+# Rebuild the browser's Rust modules into web/src/lib/wasm/.
 wasm:
     cd {{web}} && {{pm}} run build:wasm
 

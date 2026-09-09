@@ -17,6 +17,8 @@
 // says.
 
 import { jsonModule } from './wasm.js';
+// `?url` so Vite emits it content-hashed under /_app/immutable/ — see wasm.ts.
+import layoutWasm from './wasm/datum-layout.wasm?url';
 import type { StoredVerb } from './types.js';
 
 /**
@@ -82,10 +84,7 @@ export type LayoutRequest =
 			options?: Record<string, unknown>;
 	  };
 
-const call = jsonModule<LayoutRequest, { svg?: string; error?: string }>(
-	'datum-layout.wasm',
-	'render'
-);
+const call = jsonModule<LayoutRequest, { svg?: string; error?: string }>(layoutWasm, 'render');
 
 /**
  * Render one request to an SVG document.

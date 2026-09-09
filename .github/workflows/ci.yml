@@ -183,11 +183,11 @@ jobs:
         run: |
           set -euo pipefail
           # A gate that finds nothing must not pass.
-          git ls-files --error-unmatch web/static/datum-layout.wasm web/static/datum-parse.wasm >/dev/null
+          git ls-files --error-unmatch web/src/lib/wasm/datum-layout.wasm web/src/lib/wasm/datum-parse.wasm web/src/lib/wasm/datum-render.wasm >/dev/null
           node web/scripts/build-wasm.mjs
-          if [ -n "$(git status --porcelain -- web/static)" ]; then
-            git status --short -- web/static
-            echo "::error::web/static/*.wasm is out of date with the crates behind it. Fix: pnpm run build:wasm && git add web/static/*.wasm"
+          if [ -n "$(git status --porcelain -- web/src/lib/wasm)" ]; then
+            git status --short -- web/src/lib/wasm
+            echo "::error::web/src/lib/wasm/*.wasm is out of date with the crates behind it. Fix: pnpm run build:wasm && git add web/src/lib/wasm/*.wasm"
             exit 1
           fi
 

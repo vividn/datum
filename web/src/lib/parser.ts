@@ -17,6 +17,8 @@
 // and the random bytes a hid is made of.
 
 import { jsonModule } from './wasm.js';
+// `?url` so Vite emits it content-hashed under /_app/immutable/ — see wasm.ts.
+import parseWasm from './wasm/datum-parse.wasm?url';
 import type { Entry } from './types.js';
 
 /** What the module needs from the browser for one `run(argv)`. */
@@ -51,7 +53,7 @@ interface ParseResponse {
 	error?: string;
 }
 
-const call = jsonModule<ParseRequest, ParseResponse>('datum-parse.wasm', 'parse');
+const call = jsonModule<ParseRequest, ParseResponse>(parseWasm, 'parse');
 
 /**
  * Parse one argv into the entry to store.

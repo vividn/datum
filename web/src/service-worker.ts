@@ -59,11 +59,31 @@ function isolated(response: Response): Response {
 /** Everything under here is content-hashed, so it is safe to cache forever. */
 const IMMUTABLE = '/_app/immutable/';
 
+/**
+ * Precache one asset, deciding whether the HTTP cache may answer for it.
+ *
+ * Under `/_app/immutable/` a name means one set of bytes forever, so the
+ * HTTP cache is always right and reusing it costs nothing. Everywhere else
+ * the name is stable and the bytes are not, and the deploy serves those
+ * `no-cache,must-revalidate` — but a browser that once got a long
+ * `max-age` for such a name keeps answering from it, and then THIS
+ * install writes the stale bytes into the NEW cache, where cache-first
+ * hands them to the new build's JavaScript for as long as the entry
+ * lives. That is how datum.day broke for returning browsers after every
+ * deploy (da-tvg0), and `cache: 'reload'` is the sentence that says the
+ * precache goes to the network for anything whose name is not a promise.
+ */
+function precache(cache: Cache, path: string): Promise<void> {
+	return cache.add(
+		path.startsWith(IMMUTABLE) ? new Request(path) : new Request(path, { cache: 'reload' })
+	);
+}
+
 self.addEventListener('install', (event: ExtendableEvent) => {
 	event.waitUntil(
 		caches
 			.open(CACHE_NAME)
-			.then((cache) => cache.addAll(ASSETS))
+			.then((cache) => Promise.all(ASSETS.map((path) => precache(cache, path))))
 			.then(() => (self as unknown as ServiceWorkerGlobalScope).skipWaiting())
 	);
 });

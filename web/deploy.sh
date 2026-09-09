@@ -12,6 +12,35 @@
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY   credentials for that bucket
 set -euo pipefail
 
+# The layout rule the cache headers below rest on: a file whose CONTENT
+# changes must not be served under a name that does not. Every runtime module
+# is a Vite `?url` import now, so the build emits it content-hashed under
+# _app/immutable/ — and a .wasm anywhere else is a deploy error rather than a
+# header choice. It was a header choice once: the three datum modules sat in
+# static/ under stable names and this script sent them a year of `immutable`,
+# so a returning browser ran the new build's JavaScript against the previous
+# build's module until the HTTP cache expired (da-tvg0).
+check_dist() {
+  local dist="$1" stray
+  [ -d "$dist" ] || { echo "REFUSING: no $dist/ to check." >&2; return 1; }
+  stray=$(find "$dist" -name '*.wasm' -not -path "$dist/_app/immutable/*")
+  if [ -n "$stray" ]; then
+    echo "REFUSING: .wasm outside _app/immutable/, so its name is stable and its bytes are not:" >&2
+    echo "$stray" | sed 's/^/  /' >&2
+    echo '  Import it from src/ with ?url so Vite hashes the name (da-tvg0).' >&2
+    return 1
+  fi
+}
+
+# `--check-dist <dir>`: that assertion alone, against an already-built tree.
+# No credentials, no build, no aws — so the test suite can hold a build to the
+# same rule the deploy does, rather than to a copy of it.
+if [ "${1:-}" = "--check-dist" ]; then
+  check_dist "${2:?usage: deploy.sh --check-dist <dist-dir>}"
+  echo "OK: every .wasm under ${2} is content-hashed beneath _app/immutable/"
+  exit 0
+fi
+
 DRY="--dryrun"
 [ "${1:-}" = "--yes" ] && DRY=""
 
@@ -22,7 +51,7 @@ command -v aws >/dev/null || { echo "aws CLI not found; see web/DEPLOY.md" >&2; 
 cd "$(dirname "$0")"
 # The wasm is COMMITTED, not built here -- deliberately, so a deploy needs no
 # Rust toolchain (vividn's concern: "will this continue to work on ci on other
-# servers"). The cost is that static/*.wasm can silently fall behind the Rust it
+# servers"). The cost is that src/lib/wasm/*.wasm can silently fall behind the Rust it
 # was built from, and the deploy would ship a parser that is not main's. Not
 # hypothetical: on 2026-09-04 the committed datum-parse.wasm was 1.317.259 bytes
 # and the same source rebuilt to 1.318.965 -- the conflicts command had landed in
@@ -46,8 +75,8 @@ cd "$(dirname "$0")"
 #
 # Paths are relative to web/ (cd'd above). Floors first, because `find` on a
 # missing directory returns empty, which reads exactly like "the wasm is fresh".
-[ -f static/datum-parse.wasm ] || {
-  echo "REFUSING: static/datum-parse.wasm does not exist; nothing to compare." >&2
+[ -f src/lib/wasm/datum-parse.wasm ] || {
+  echo "REFUSING: src/lib/wasm/datum-parse.wasm does not exist; nothing to compare." >&2
   echo "  Build it first: pnpm run build:wasm" >&2
   exit 1
 }
@@ -72,11 +101,11 @@ else
   # HERE the staleness check earns its keep: we are about to ship bytes we did
   # not just produce, so their age is the only evidence available.
   echo "==> cargo not found; shipping the COMMITTED wasm" >&2
-  newest_rust=$(find ../crates -name '*.rs' -newer static/datum-parse.wasm -print -quit 2>/dev/null)
+  newest_rust=$(find ../crates -name '*.rs' -newer src/lib/wasm/datum-parse.wasm -print -quit 2>/dev/null)
   if [ -n "$newest_rust" ]; then
-    echo "REFUSING: static/*.wasm is older than Rust source ($newest_rust)." >&2
+    echo "REFUSING: src/lib/wasm/*.wasm is older than Rust source ($newest_rust)." >&2
     echo "  Install a Rust toolchain and re-run, so the deploy builds it, or:" >&2
-    echo "    just wasm && git add web/static/*.wasm" >&2
+    echo "    just wasm && git add web/src/lib/wasm/*.wasm" >&2
     echo "  Or set STALE_WASM_OK=1 to ship the committed one deliberately." >&2
     echo "" >&2
     echo "  NOTE: this compares TIMESTAMPS, not content. CI's WASM check rebuilds" >&2
@@ -93,6 +122,7 @@ pnpm run build
 
 DIST=build
 [ -d "$DIST" ] || { echo "no $DIST/ — the build produced nothing" >&2; exit 1; }
+check_dist "$DIST"
 S3="s3://$DATUM_DAY_BUCKET"
 AWS=(aws s3 --endpoint-url "$DATUM_DAY_ENDPOINT")
 
@@ -113,12 +143,23 @@ echo "==> syncing immutable assets"
 # an octet-stream, so a wrong content-type here costs a slow fallback at best
 # and a hard failure at worst. aws-cli guesses from the extension and gets this
 # wrong on some setups, so it is set explicitly rather than trusted.
+#
+# The cache header follows the NAME, not the extension: a year of `immutable`
+# is a promise that this URL will never mean anything else, which only a
+# content hash can keep. `check_dist` above has already refused anything
+# outside _app/immutable/, so the second branch is unreachable today and is
+# here so that the next stable-named asset is merely revalidated rather than
+# frozen for a year.
 echo "==> fixing wasm content-type"
 while IFS= read -r f; do
   rel="${f#"$DIST/"}"
+  case "$rel" in
+    _app/immutable/*) cc="public,max-age=31536000,immutable" ;;
+    *) cc="no-cache,must-revalidate" ;;
+  esac
   "${AWS[@]}" cp "$f" "$S3/$rel" $DRY \
     --content-type application/wasm \
-    --cache-control "public,max-age=31536000,immutable"
+    --cache-control "$cc"
 done < <(find "$DIST" -name '*.wasm')
 
 # HTML and the service worker must NOT be cached, or a deploy is invisible to

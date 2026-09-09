@@ -226,10 +226,18 @@ same protocol, `tail` and `tail_rows`; one instance serves them all).
 None needs wasm-bindgen, and none may acquire an import: a module
 with imports will not load from the bare `WebAssembly.instantiate` the
 browser side uses (this is why the workspace turns off chrono's
-`wasmbind`). All three artifacts are committed under `web/static/` the
-way the fixtures are, so the web CI job needs no Rust toolchain —
+`wasmbind`). All three artifacts are committed under `web/src/lib/wasm/`
+the way the fixtures are, so the web CI job needs no Rust toolchain —
 rebuild and commit them with `pnpm run build:wasm` whenever the crates
-behind them change.
+behind them change. They live under `src/` rather than `static/` so the
+app reaches them as `?url` imports and Vite emits them content-hashed
+under `/_app/immutable/`: a runtime artifact must not have a stable name,
+because the service worker serves precached names cache-first and
+`deploy.sh` marks hashed assets `immutable` for a year, and together those
+handed a returning browser the previous deploy's module to run the current
+deploy's JavaScript against (da-tvg0). `deploy.sh --check-dist <dir>`
+is that rule on its own, and refuses a build with a `.wasm` outside
+`_app/immutable/`.
 
 Forgetting that is not a silent failure any more (da-nig7). CI's
 `wasm-check` job re-runs `build:wasm` and fails on any byte of difference,
