@@ -97,32 +97,59 @@ export function fitArgv(argv: string[], width: number | null): string[] {
 }
 
 /**
- * The data height of one band of the day strip, in pixels.
+ * The day strip's day height at rest, in pixels — datum's `--day-height`.
  *
- * A constant, and the same constant for every band — which is what makes
- * the stack a stack (da-cgyh). `label_width` in `compute_dayview` is
- * derived from the label font size, which is derived from `day_height`;
- * two bands drawn at different heights therefore start their data areas
- * at different x, and their hour gridlines would not line up. Pinning
- * `--day-height` pins all of it, so the same hour is the same column
- * from the oldest band down to today's.
+ * The same value for every band, which is what makes the stack a stack
+ * (da-cgyh). `label_width` in `compute_dayview` is derived from the label
+ * font size, which is derived from `day_height`; two bands drawn at
+ * different heights therefore start their data areas at different x, and
+ * their hour gridlines would not line up. Pinning `--day-height` pins all
+ * of it, so the same hour is the same column from the oldest band down to
+ * today's — and the day-height handle (da-07ij) may move it as far as it
+ * likes so long as it moves EVERY band together.
  *
  * 85 is what the strip has always drawn at: a 9rem pane, less its title
  * bar and padding, less the axis strip and margins datum adds — the
  * height `datum dayview --height` derived for the box the pane had.
  */
-export const BAND_HEIGHT = 85;
+export const DEFAULT_DAY_HEIGHT = 85;
 
 /**
- * The box one band occupies, `BAND_HEIGHT` plus datum's own outer margin
- * top and bottom (`--margin`, default 2 — `DayviewArgs::default`).
+ * How short and how tall the day-height handle may draw a day.
  *
- * Reserved in CSS so the stack's height is known before a band's picture
- * has decoded. Without it the stack grows under the reader a frame after
- * a pull, and the scroll position it was anchored to — yesterday against
- * today — is a scroll position it no longer has.
+ * The floor is the legibility one (da-m0cj), read off the layout's own
+ * arithmetic: `compute_dayview` picks the label font as
+ * `day_height / lines - 6`, capped at 20 and floored at 7, taking the most
+ * lines that clear the floor — so 39 is the shortest day that still fits
+ * datum's three label lines (Wed / Sep 09 / 2026), and 40 is the first
+ * round number above it. Below that the date stamp starts dropping lines,
+ * and the stamp is how a reader tells one band from another.
+ *
+ * The ceiling is a screen: 240px of one day still leaves the REPL and the
+ * widget bar room on a laptop, and the strip caps its own height against
+ * the viewport as well (`maxStack` in DayStrip.svelte).
  */
-export const BAND_BOX = BAND_HEIGHT + 2 * 2;
+export const MIN_DAY_HEIGHT = 40;
+export const MAX_DAY_HEIGHT = 240;
+
+/**
+ * datum's own outer margin, top and bottom (`--margin`, default 2 —
+ * `DayviewArgs::default`), and the hour-axis strip under today's band
+ * (`--time-axis-height`, default 15).
+ *
+ * Named here because the strip reserves each band's box in CSS before its
+ * picture has decoded. Without that the stack grows under the reader a
+ * frame after a drag, and the scroll position it was anchored to —
+ * yesterday against today — is a position it no longer has.
+ */
+const MARGIN = 2;
+const TIME_AXIS = 15;
+
+/** The box a stacked band occupies at `dayHeight`. It has no hour axis. */
+export const bandBox = (dayHeight: number) => dayHeight + 2 * MARGIN;
+
+/** The box today's band occupies at `dayHeight`. It carries the axis. */
+export const todayBox = (dayHeight: number) => dayHeight + 2 * MARGIN + TIME_AXIS;
 
 /**
  * One band of the day strip, as argv.
@@ -134,8 +161,8 @@ export const BAND_BOX = BAND_HEIGHT + 2 * 2;
  * The gridlines are not the axis and are drawn on every band, which is
  * how a reader carries an hour up the stack.
  */
-export function bandArgv(width: number, daysAgo: number): string[] {
-	const argv = ['dayview', '--width', String(width), '--day-height', String(BAND_HEIGHT)];
+export function bandArgv(width: number, daysAgo: number, dayHeight: number): string[] {
+	const argv = ['dayview', '--width', String(width), '--day-height', String(dayHeight)];
 	if (daysAgo === 0) return argv;
 	return [...argv, '--time-axis-height', '0', '--end-date', String(-daysAgo)];
 }
