@@ -15,7 +15,7 @@
 // to be a hand-written copy in $lib/visuals.ts. Every colour and every
 // pixel was already Rust's.
 
-import { clockLabel } from '../clock.js';
+import { clockLabel, startOfDay } from '../clock.js';
 import { getEntriesInRange, getAllFields, getFieldSpecs, getStateEntriesAt } from '../db.js';
 import { renderLayout, type EntryReq, type FieldReq, type FieldStyle } from '../layout.js';
 import type { Entry } from '../types.js';
@@ -98,26 +98,51 @@ function svgResult(argv: string[], svg: string): RunResult {
 }
 
 /**
- * `datum dayview` — today, as the local day runs.
+ * Geometry and window for one dayview band, in the CLI's own flags.
  *
- * Only today: `--n-days`, `--start-date` and the rest of dayview's window
- * flags are the real CLI's job, and answering them here would grow a
- * second datum in TypeScript. An argv carrying any of them falls through
- * to the unknown-command message, the way `tail mood` does.
+ * The three pixel knobs go across untouched: what a total height means
+ * for a day's band — `day_height_for_extent` in `datum-layout` — is the
+ * same rule `datum dayview --height` applies, and it stays in Rust.
+ * Empty means the defaults, which is the 2000px canvas the CLI writes to
+ * a file.
  *
- * `geometry` is `--width` and `--height` as the pane measured them, and
- * goes across untouched: what a total height means for a day's band —
- * `day_height_for_extent` in `datum-layout` — is the same rule `datum
- * dayview --height` applies, and it stays in Rust. Empty means the
- * defaults, which is the 2000px canvas the CLI writes to a file.
+ * `dayStart` is `--end-date` already resolved to a local midnight: which
+ * calendar day a date argument names is the runner's half of the job
+ * (see `localDayStart` in ./local.ts), and everything after it — the
+ * window, the buffer, the label — is the same code today's band runs.
+ */
+export interface DayviewOptions {
+	width?: number;
+	height?: number;
+	day_height?: number;
+	time_axis_height?: number;
+	/** Local midnight of the day to draw. Defaults to today's. */
+	dayStart?: Date;
+}
+
+/**
+ * `datum dayview` — one day, as the local day runs.
+ *
+ * Today by default, and any single day `--end-date` names: the day strip
+ * (da-cgyh) stacks earlier days above today by rendering one band per
+ * day, which is one call here per band. `--n-days` and `--start-date`
+ * are still the real CLI's job — a multi-day window means splitting the
+ * blocks that cross a midnight between two bands, which is
+ * `build_dayview_fields`'s rule and not one to rewrite here. A band is a
+ * single-day window, so it needs none of it: `build_day_fields` clips to
+ * the day it was given, and that is exactly what this function does per
+ * band.
+ *
+ * An argv carrying a flag this file does not serve falls through to the
+ * unknown-command message, the way `tail mood` does.
  */
 export async function dayview(
 	argv: string[],
-	geometry: { width?: number; height?: number } = {}
+	options: DayviewOptions = {}
 ): Promise<RunResult> {
 	const now = new Date();
-	const dayStart = new Date(now);
-	dayStart.setHours(0, 0, 0, 0);
+	const { dayStart: requested, ...geometry } = options;
+	const dayStart = requested ?? startOfDay(now);
 	const dayEnd = new Date(dayStart);
 	dayEnd.setDate(dayEnd.getDate() + 1);
 

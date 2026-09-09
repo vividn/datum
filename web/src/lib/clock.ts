@@ -18,6 +18,17 @@
 
 import type { DatumTime } from './types.js';
 
+/**
+ * The local midnight `date` falls in — the start of the day it is in,
+ * in the browser's own zone, the way `local_day_bounds_ms` takes a
+ * day's start in the host's.
+ */
+export function startOfDay(date: Date): Date {
+	const day = new Date(date);
+	day.setHours(0, 0, 0, 0);
+	return day;
+}
+
 /** `HH:MM` in the browser's zone, 24-hour. */
 export function clockLabel(date: Date): string {
 	return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;

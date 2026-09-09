@@ -13,12 +13,14 @@
 // stores what comes back. What is left here is the database call and the
 // two commands the parser does not own.
 
-import { clockLabel, dateLabel } from '../clock.js';
+import { clockLabel, dateLabel, startOfDay } from '../clock.js';
 import { fieldNameHint } from '../fieldName.js';
 import { insertEntry, getRecentEntries, getFieldSpecs, saveFieldSpec } from '../db.js';
 import { parseArgv } from '../parser.js';
 import { EXIT_DUPLICATE, EXIT_ERROR, EXIT_UNKNOWN_COMMAND, type RunResult } from '../run.js';
 import { isAnnotated, type DefaultAction, type Entry, type FieldSpec } from '../types.js';
+// Type-only, so the 250 KB layout module stays behind `views()` above.
+import type { DayviewOptions } from './views.js';
 
 const DEVICE_ID_KEY = 'datum-device-id';
 
@@ -43,11 +45,16 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 	// The two visual views are datum's own compute and render, reached
 	// through the layout module rather than reimplemented (da-6h6p) — so
 	// they live behind the seam like everything else, and their stdout is
-	// the same SVG document the CLI writes. The window flags — `--n-days`,
-	// `--start-date` and the rest — still belong to the real CLI.
-	if (argv[0] === 'dayview' || argv[0] === 'nowview') {
-		const box = geometry(argv.slice(1));
-		if (box) return (await views())[argv[0]](argv, box);
+	// the same SVG document the CLI writes. Which flags each one answers
+	// is `viewOptions` below; the multi-day window flags, `--n-days` and
+	// `--start-date`, still belong to the real CLI.
+	if (argv[0] === 'dayview') {
+		const options = viewOptions(argv.slice(1), DAYVIEW_FLAGS);
+		if (options) return (await views()).dayview(argv, options);
+	}
+	if (argv[0] === 'nowview') {
+		const options = viewOptions(argv.slice(1), NOWVIEW_FLAGS);
+		if (options) return (await views()).nowview(argv, options);
 	}
 
 	const parsed = await parseArgv(argv, deviceId());
@@ -105,35 +112,77 @@ export async function localRun(argv: string[]): Promise<RunResult> {
 const PARTLY_SERVED = new Set(['tail', 'dayview', 'nowview', 'spec']);
 
 /**
- * The drawn views' two geometry flags, or `null` when argv carries
- * anything else — so bare `dayview` and bare `nowview` reach here too,
- * as an empty box meaning "the defaults".
+ * The flags of the drawn views this file serves, in the CLI's own
+ * spelling — and `null` when argv carries anything else, so a flag the
+ * browser does not answer falls through to the unknown-command message
+ * rather than being silently dropped. Bare `dayview` and bare `nowview`
+ * reach here too, as an empty options object meaning "the defaults".
  *
- * The one thing the browser knows that the CLI cannot: how many pixels the
- * band is actually shown in. `datum dayview` authors a 2000px canvas and
- * the pane scaled it to fit, which put the hour axis on screen at 1.5px on
- * a phone and 6.3px on a laptop (da-m0cj) — so the pane says how big its
- * box is, in the CLI's own flags and units, and datum draws a band that
- * size. `nowview` authors 520x276 and was scaled the same way, only in the
- * dimension nobody measured: `max-width` fits the width and the HEIGHT
- * then falls where the aspect ratio puts it, 183px into a 94px pane
- * (da-45wt). The values come from `paneArgv`, which floors them.
+ * `--width` / `--height` are the one thing the browser knows that the
+ * CLI cannot: how many pixels the band is actually shown in. `datum
+ * dayview` authors a 2000px canvas and the pane scaled it to fit, which
+ * put the hour axis on screen at 1.5px on a phone and 6.3px on a laptop
+ * (da-m0cj) — so the pane says how big its box is, in the CLI's own
+ * flags and units, and datum draws a band that size. `nowview` authors
+ * 520x276 and was scaled the same way, only in the dimension nobody
+ * measured (da-45wt).
+ *
+ * The other three are the day strip's (da-cgyh). It stacks earlier days
+ * above today as one band per day, and a band is one of these calls:
+ * `--end-date -3` is the band three days back, `--day-height` is pinned
+ * to the same number on every band so their hour gridlines land on the
+ * same x, and `--time-axis-height 0` suppresses the axis strip on every
+ * band but today's — the only one whose axis the reader needs.
  *
  * Both spellings the flag splitter accepts, `--width=345` and
- * `--width 345`; a flag this file does not serve, or a value that is not a
- * positive number, falls through to the unknown-command message rather
- * than being silently dropped.
+ * `--width 345`.
  */
-function geometry(rest: string[]): { width?: number; height?: number } | null {
-	const box: { width?: number; height?: number } = {};
+const DAYVIEW_FLAGS = ['width', 'height', 'day-height', 'time-axis-height', 'end-date'];
+const NOWVIEW_FLAGS = ['width', 'height'];
+
+function viewOptions(rest: string[], served: readonly string[]): DayviewOptions | null {
+	const options: DayviewOptions = {};
 	for (let i = 0; i < rest.length; i++) {
 		const [flag, attached] = splitFlag(rest[i]);
-		if (flag !== 'width' && flag !== 'height') return null;
-		const value = Number(attached ?? rest[++i]);
-		if (!Number.isFinite(value) || value <= 0) return null;
-		box[flag] = value;
+		if (flag === null || !served.includes(flag)) return null;
+		const value = attached ?? rest[++i];
+		if (value === undefined) return null;
+		if (flag === 'end-date') {
+			const day = localDayStart(value);
+			if (day === null) return null;
+			options.dayStart = day;
+			continue;
+		}
+		// Every other flag is a pixel count. Only the axis strip may be
+		// zero, and zero is exactly what suppresses it on a stacked band.
+		const n = Number(value);
+		if (!Number.isFinite(n) || n < 0 || (n === 0 && flag !== 'time-axis-height')) return null;
+		if (flag === 'width') options.width = n;
+		else if (flag === 'height') options.height = n;
+		else if (flag === 'day-height') options.day_height = n;
+		else options.time_axis_height = n;
 	}
-	return box;
+	return options;
+}
+
+/**
+ * `--end-date`, as the local midnight the band's day starts at.
+ *
+ * The two spellings `resolve_date_arg` resolves without a calendar
+ * vocabulary: an ISO date, and a signed offset in days from today, so
+ * `-1` is yesterday and `0` is today. Offsets are what the strip asks
+ * for, and they are also what survives a midnight — a band re-renders
+ * against whatever "today" has become rather than against the date it
+ * was first drawn for. Day words and weekday names are `parse_date`'s
+ * larger vocabulary and stay with the real CLI.
+ */
+function localDayStart(value: string): Date | null {
+	const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+	if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+	if (!/^[+-]?\d+$/.test(value)) return null;
+	const day = startOfDay(new Date());
+	day.setDate(day.getDate() + Number(value));
+	return day;
 }
 
 /**

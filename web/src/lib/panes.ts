@@ -1,4 +1,6 @@
-// What the three CLI-render panes run, and how wide they claim to be.
+// What the CLI-render panes run, and how wide they claim to be — plus
+// the day strip's bands, which are the same thing one row down
+// (`bandArgv` at the foot of this file).
 //
 // Each pane is one datum command rendered as text (da-1x72). Deliberately
 // CLI renders for now: the moment a pane becomes an interactive table it
@@ -79,12 +81,49 @@ export function fitArgv(argv: string[], width: number | null): string[] {
 	return [...argv, '--width', String(width)];
 }
 
-export const DAYVIEW: PaneSpec = {
-	title: 'dayview',
-	argv: ['dayview'],
-	empty: 'nothing to draw yet',
-	sized: true
-};
+/**
+ * The data height of one band of the day strip, in pixels.
+ *
+ * A constant, and the same constant for every band — which is what makes
+ * the stack a stack (da-cgyh). `label_width` in `compute_dayview` is
+ * derived from the label font size, which is derived from `day_height`;
+ * two bands drawn at different heights therefore start their data areas
+ * at different x, and their hour gridlines would not line up. Pinning
+ * `--day-height` pins all of it, so the same hour is the same column
+ * from the oldest band down to today's.
+ *
+ * 85 is what the strip has always drawn at: a 9rem pane, less its title
+ * bar and padding, less the axis strip and margins datum adds — the
+ * height `datum dayview --height` derived for the box the pane had.
+ */
+export const BAND_HEIGHT = 85;
+
+/**
+ * The box one band occupies, `BAND_HEIGHT` plus datum's own outer margin
+ * top and bottom (`--margin`, default 2 — `DayviewArgs::default`).
+ *
+ * Reserved in CSS so the stack's height is known before a band's picture
+ * has decoded. Without it the stack grows under the reader a frame after
+ * a pull, and the scroll position it was anchored to — yesterday against
+ * today — is a scroll position it no longer has.
+ */
+export const BAND_BOX = BAND_HEIGHT + 2 * 2;
+
+/**
+ * One band of the day strip, as argv.
+ *
+ * `daysAgo` counts back from today, so 0 is today's band and 1 is
+ * yesterday's. Today's carries the hour axis and the others suppress
+ * theirs with `--time-axis-height 0`: they share one x-axis, and a strip
+ * repeating it under every band would be five copies of the same ruler.
+ * The gridlines are not the axis and are drawn on every band, which is
+ * how a reader carries an hour up the stack.
+ */
+export function bandArgv(width: number, daysAgo: number): string[] {
+	const argv = ['dayview', '--width', String(width), '--day-height', String(BAND_HEIGHT)];
+	if (daysAgo === 0) return argv;
+	return [...argv, '--time-axis-height', '0', '--end-date', String(-daysAgo)];
+}
 
 // `nowview`, not `now`: the CLI splits them by output device — `now`
 // paints a band on the terminal, `nowview` writes the SVG — and a browser

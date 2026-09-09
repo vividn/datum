@@ -19,10 +19,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import CliPane from '$lib/CliPane.svelte';
+	import DayStrip from '$lib/DayStrip.svelte';
 	import Repl from '$lib/Repl.svelte';
 	import WidgetBar from '$lib/WidgetBar.svelte';
 	import { initDb, getAllFields, getFieldSpecs, getObservedStates } from '$lib/db.js';
-	import { DAYVIEW, NOWVIEW, TAIL } from '$lib/panes.js';
+	import { NOWVIEW, TAIL } from '$lib/panes.js';
 	import { widgetsFor, type Widget } from '$lib/widgets.js';
 
 	let ready = false;
@@ -68,7 +69,7 @@
 </script>
 
 <div class="frame">
-	<div class="dayview"><CliPane spec={DAYVIEW} {epoch} /></div>
+	<div class="dayview"><DayStrip {epoch} /></div>
 
 	<div class="repl">
 		<Repl bind:this={repl} bind:input={command} disabled={!ready} on:ran={ran} />
@@ -113,8 +114,10 @@
 
 	.dayview {
 		grid-area: dayview;
-		/* Tall enough to be a strip, short enough to stay one. */
-		max-height: 9rem;
+		/* No cap any more: the strip is a band of a known height plus
+		   however much of the past has been pulled down over it, and the
+		   stack caps itself (STACK_MAX in DayStrip.svelte). A cap here
+		   would clip the days the reader just asked for. */
 		display: grid;
 	}
 
