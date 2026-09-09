@@ -55,8 +55,8 @@
 	//
 	// Subscribed here rather than from `onMount`: Svelte takes a teardown from
 	// a SYNCHRONOUS onMount only, and an async one returns a promise it cannot
-	// call. Safe during init because BroadcastChannel is undefined server-side,
-	// where `onExternalChange` is a no-op that returns an empty teardown.
+	// call. Safe during init because `onExternalChange` opens nothing outside
+	// a browser (see $lib/changes.ts) and returns an empty teardown there.
 	onDestroy(onExternalChange(() => void ran()));
 
 	/**

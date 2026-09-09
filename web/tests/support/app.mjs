@@ -41,6 +41,22 @@ export async function stopApp() {
 	await new Promise((resolve, reject) =>
 		server?.httpServer.close((e) => (e ? reject(e) : resolve()))
 	);
+	// The preview server renders the page in THIS process, so anything the
+	// app opens during its server render — a BroadcastChannel, a Worker — is
+	// a live handle here, and one that nothing closes keeps node alive after
+	// the last test has passed. That is a hang, not a failure, and CI reported
+	// it as neither until the job's own timeout (2026-09-09, the change
+	// channel of da-eovo). Name it, so the next one is a red line, not a
+	// stuck runner.
+	const left = process
+		.getActiveResourcesInfo()
+		.filter((r) => r === 'MessagePort' || r === 'Worker');
+	if (left.length) {
+		throw new Error(
+			`${left.join(', ')} still open after the browser and server closed: ` +
+				'something the page does during its server render is holding the process, and the suite will not exit'
+		);
+	}
 }
 
 function baseUrl() {

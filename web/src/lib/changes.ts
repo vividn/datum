@@ -14,6 +14,8 @@
  * whether the tabs share the owner's connection or fell back to one
  * database each.
  */
+import { browser } from '$app/environment';
+
 const CHANNEL = 'datum-db-changes';
 
 let channel: BroadcastChannel | null = null;
@@ -22,9 +24,14 @@ let self_ = '';
 
 function open(): BroadcastChannel | null {
 	if (channel) return channel;
-	// Absent in a non-browser build, and in a few older engines the app still
-	// runs on. Its absence costs live updates, never correctness.
-	if (typeof BroadcastChannel === 'undefined') return null;
+	// Not "does the constructor exist": node has a global BroadcastChannel
+	// too, and one opened during the server render is a live handle that
+	// keeps the preview process alive after the last test has passed — the
+	// Web job hung on exactly this on 2026-09-09. Outside a browser there is
+	// no other tab to hear from, so nothing is opened. The constructor check
+	// stays for the few older engines the app still runs on; its absence
+	// costs live updates, never correctness.
+	if (!browser || typeof BroadcastChannel === 'undefined') return null;
 	self_ = crypto.randomUUID();
 	channel = new BroadcastChannel(CHANNEL);
 	return channel;

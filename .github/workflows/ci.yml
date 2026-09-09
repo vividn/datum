@@ -27,6 +27,9 @@ jobs:
   build-and-test:
     name: Build + test
     runs-on: ubuntu-latest
+    # Measured on the last green main run (2026-09-09): build-and-test took a few minutes.
+    # A hung step used to run until GitHub's 6-hour default; now it fails here.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -77,6 +80,9 @@ jobs:
   e2e-full:
     name: E2E full cohort (da-1wat)
     runs-on: ubuntu-latest
+    # Measured on the last green main run (2026-09-09): build-and-test took a few minutes.
+    # A hung step used to run until GitHub's 6-hour default; now it fails here.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -102,6 +108,9 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    # Measured on the last green main run (2026-09-09): lint took a few minutes.
+    # A hung step used to run until GitHub's 6-hour default; now it fails here.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -120,6 +129,9 @@ jobs:
   wasm-check:
     name: WASM check
     runs-on: ubuntu-latest
+    # Measured on the last green main run (2026-09-09): wasm-check took a few minutes.
+    # A hung step used to run until GitHub's 6-hour default; now it fails here.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -182,6 +194,9 @@ jobs:
   honesty:
     name: Honesty gates (da-8y2q.7)
     runs-on: ubuntu-latest
+    # Measured on the last green main run (2026-09-09): honesty took a few minutes.
+    # A hung step used to run until GitHub's 6-hour default; now it fails here.
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -215,6 +230,9 @@ jobs:
   web:
     name: Web (datum.day)
     runs-on: ubuntu-latest
+    # Measured on the last green main run (2026-09-09): web took a few minutes.
+    # A hung step used to run until GitHub's 6-hour default; now it fails here.
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: web
