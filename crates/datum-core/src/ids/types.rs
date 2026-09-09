@@ -14,7 +14,9 @@ use std::fmt;
 use std::ops::Deref;
 use std::str::FromStr;
 
+#[cfg(feature = "db")]
 use rusqlite::types::{FromSql, FromSqlResult, ToSqlOutput, ValueRef};
+#[cfg(feature = "db")]
 use rusqlite::ToSql;
 use serde::{Deserialize, Serialize};
 
@@ -146,6 +148,7 @@ macro_rules! impl_string_newtype {
             }
         }
 
+        #[cfg(feature = "db")]
         impl ToSql for $t {
             #[inline]
             fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
@@ -153,6 +156,7 @@ macro_rules! impl_string_newtype {
             }
         }
 
+        #[cfg(feature = "db")]
         impl FromSql for $t {
             #[inline]
             fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {

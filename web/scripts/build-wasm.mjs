@@ -83,6 +83,14 @@ const MODULES = [
 		// timezone detection; the browser build turns it off, which is what
 		// makes `datum-parse` compile for wasm at all.
 		noDefaultFeatures: true
+	},
+	{
+		crate: 'datum-render-wasm',
+		artifact: 'datum_render_wasm.wasm',
+		out: 'datum-render.wasm',
+		// Off: `native` (host-only surfaces) and `db` (SQLite, which would
+		// need a C toolchain for wasm32). The renderer is the pure half.
+		noDefaultFeatures: true
 	}
 ];
 

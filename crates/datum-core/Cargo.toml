@@ -4,10 +4,20 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-default = []
+default = ["db", "native"]
+# Local-clock helpers (`DatumTime::now()`, zone detection) live in datum-parse
+# behind its own `native`; forwarded so a host build of this crate alone keeps
+# them and the browser build drops `iana-time-zone` (which links wasm-bindgen).
+native = ["datum-parse/native"]
+# The SQLite half of the crate: `db`, `migrations`, `history`, `integrity`,
+# `last_docs`, `sync_state`, `views`, id resolution, and the `ToSql`/`FromSql`
+# impls. Default-on; the browser renderer (`datum-render-wasm`) turns it off
+# so that `libsqlite3-sys` never has to compile C for wasm32 — the pure half
+# (entry model, field specs, colours, slugs, state compilation) is all it needs.
+db = ["dep:rusqlite", "dep:rand"]
 # Enables shared test fixtures (entry/spec/alias builders, fresh_db(),
 # assertion macros) for use by integration tests in sibling crates.
-test-util = []
+test-util = ["db"]
 
 [dev-dependencies]
 tempfile = "3"
@@ -16,13 +26,13 @@ tempfile = "3"
 datum-core = { path = ".", features = ["test-util"] }
 
 [dependencies]
-datum-parse = { path = "../datum-parse" }
+datum-parse = { path = "../datum-parse", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rusqlite = { workspace = true }
+rusqlite = { workspace = true, optional = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 sha2 = { workspace = true }
 md-5 = { workspace = true }
-rand = { workspace = true }
+rand = { workspace = true, optional = true }
 toml = { workspace = true }

@@ -18,12 +18,14 @@
 //! examples encoded as fixtures.
 
 use chrono::{FixedOffset, Local, Timelike, Utc};
+#[cfg(feature = "db")]
+use datum_core::db::Db;
+#[cfg(feature = "db")]
+use datum_core::state::FieldStateEvents;
 use datum_core::{
-    db::Db,
     entry::{Entry, EntryShape},
     field_spec::{FieldSpec, SpecRegistry},
     shape::has_state_badge,
-    state::FieldStateEvents,
     time::DatumTime,
 };
 use datum_parse::time::{format_human_duration, DurationPrecision};
@@ -68,11 +70,20 @@ pub fn format_relative_day_prefix(target: &DatumTime, now: &DatumTime) -> Option
     }
 }
 
-/// Convenience: a `DatumTime` snapshot for "now" using the host's local
-/// timezone. Used as the default when callers don't supply their own
-/// reference instant.
+/// The one place the host's clock enters the renderer. Every `…_at`
+/// function takes `now` as a parameter; these conveniences supply it from the
+/// local clock, which exists only with `native` (datum-parse gates
+/// `DatumTime::now()` the same way). The browser build keeps the conveniences
+/// compiling — the command layer around them is compiled out — but must never
+/// reach this: the browser supplies `now` in the request (`datum-render-wasm`).
+#[cfg(feature = "native")]
 pub(crate) fn now_local() -> DatumTime {
     DatumTime::now()
+}
+
+#[cfg(not(feature = "native"))]
+pub(crate) fn now_local() -> DatumTime {
+    unreachable!("the host clock is not available off `native`; callers must use the `_at` variants and pass `now`")
 }
 
 // ─── Render context ──────────────────────────────────────────────────────────
@@ -140,6 +151,7 @@ pub enum Surface {
 }
 
 impl RenderContext {
+    #[cfg(feature = "db")]
     /// Canonical [`RenderContext`] constructor — the single entry point all
     /// renderer surfaces route through. Picks the right lead/trail/ongoing
     /// probes and `is_first_occurrence` semantics from `surface`.
@@ -168,6 +180,7 @@ impl RenderContext {
         })
     }
 
+    #[cfg(feature = "db")]
     /// Cached variant of [`RenderContext::for_entry`] for batched render
     /// paths. Reuses a pre-loaded per-field events vector so a `tail` over
     /// N rows of the same field issues one state probe instead of N.
@@ -202,6 +215,7 @@ impl RenderContext {
     }
 }
 
+#[cfg(feature = "db")]
 /// True when the trigger's emitted state equals `prior` (per
 /// [`datum_core::integrity::states_equal_set_aware`]). Mirrors
 /// `list_repeated_states` so the visual `!` marker fires on exactly the
@@ -221,9 +235,10 @@ pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) ->
     };
     let prior_norm = datum_core::state::normalize_state(prior).to_json();
     let row_norm = datum_core::state::normalize_state(row_state).to_json();
-    datum_core::integrity::states_equal_set_aware(&row_norm, &prior_norm)
+    datum_core::state::states_equal_set_aware(&row_norm, &prior_norm)
 }
 
+#[cfg(feature = "db")]
 fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
     // The LEAD/TRAIL slots exist only on the state-badge group, so the
     // gate is exactly `has_state_badge` — shape.rs owns the verb set.
@@ -235,6 +250,7 @@ fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Optio
     events?.at(probe, Some(&entry.hid))
 }
 
+#[cfg(feature = "db")]
 fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
     if !has_state_badge(entry.verb) {
         return None;
@@ -246,6 +262,7 @@ fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Opti
     entry_self_trail_state(entry)
 }
 
+#[cfg(feature = "db")]
 fn compute_ongoing_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
     // Ongoing-state probes apply only to the badge-less verb (the bare
     // dot reads ambient state) — exactly the complement of the badge set.

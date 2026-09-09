@@ -1,22 +1,29 @@
 #![doc = include_str!("../README.md")]
 
 pub mod action;
+#[cfg(feature = "db")]
 pub mod db;
 pub mod doc_ref;
 pub mod entry;
 pub mod error;
 pub mod field_spec;
+#[cfg(feature = "db")]
 pub mod history;
 pub mod ids;
+#[cfg(feature = "db")]
 pub mod integrity;
 pub mod kit;
 pub mod kit_color;
 pub mod kit_color_rule;
+#[cfg(feature = "db")]
 pub mod last_docs;
+#[cfg(feature = "db")]
 pub mod migrations;
 pub mod slug;
 pub mod state;
+#[cfg(feature = "db")]
 pub mod sync_state;
+#[cfg(feature = "db")]
 pub mod views;
 
 pub use verb::derive_verb;

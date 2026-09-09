@@ -19,7 +19,7 @@ pub(crate) mod state_truncate;
 
 // Holds `datum-layout-wasm`'s colour derivation to this module's (da-6h6p).
 pub mod term_layout;
-#[cfg(test)]
+#[cfg(all(test, feature = "db"))]
 mod wasm_parity;
 
 pub use self::action::{
@@ -28,11 +28,9 @@ pub use self::action::{
 };
 pub use self::colors::{strip_ansi, visible_width};
 
-use datum_core::{
-    entry::{Entry, Verb},
-    field_spec::SpecRegistry,
-    time::DatumTime,
-};
+#[cfg(feature = "db")]
+use datum_core::entry::Verb;
+use datum_core::{entry::Entry, field_spec::SpecRegistry, time::DatumTime};
 use datum_parse::time::{format_human_duration, DurationPrecision};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -186,7 +184,14 @@ pub(crate) fn extract_with_context(
     registry: Option<&SpecRegistry>,
     ctx: Option<&RenderContext>,
 ) -> Extracted {
-    extract_with_context_at(entry, action, registry, ctx, &DatumTime::now(), None)
+    extract_with_context_at(
+        entry,
+        action,
+        registry,
+        ctx,
+        &self::action::now_local(),
+        None,
+    )
 }
 
 /// As [`extract_with_context`] but with an explicit "now" reference instant.
@@ -646,7 +651,7 @@ pub fn format_table_with(
     let now_ref: &DatumTime = match now {
         Some(n) => n,
         None => {
-            now_owned = DatumTime::now();
+            now_owned = self::action::now_local();
             &now_owned
         }
     };
@@ -1156,6 +1161,7 @@ pub fn short_hid_of(hid: &str) -> String {
 
 // ─── Now view (preserved) ────────────────────────────────────────────────────
 
+#[cfg(feature = "db")]
 struct NowRow {
     bullet: &'static str,
     field: String,
@@ -1168,6 +1174,7 @@ struct NowRow {
     is_dim: bool,
 }
 
+#[cfg(feature = "db")]
 fn state_ansi(
     field: &str,
     state: &str,
@@ -1183,6 +1190,7 @@ fn state_ansi(
     colors::md5_rgb(state).fg()
 }
 
+#[cfg(feature = "db")]
 /// S12: render the state column for `datum now`. Scalar values get the
 /// original single-color treatment; arrays become a checkerboard-flavored
 /// sequence of per-element blocks so concurrent states are immediately
@@ -1217,6 +1225,7 @@ fn render_now_state(
     }
 }
 
+#[cfg(feature = "db")]
 fn scalar_text(v: &JsonValue) -> String {
     match v {
         JsonValue::String(s) => s.clone(),
@@ -1224,6 +1233,7 @@ fn scalar_text(v: &JsonValue) -> String {
     }
 }
 
+#[cfg(feature = "db")]
 fn render_now_state_scalar(
     v: &JsonValue,
     field: &str,
@@ -1264,6 +1274,7 @@ fn render_now_state_scalar(
 /// the legacy [`render_now_view`] — the snapshot doesn't (yet) own
 /// per-state colour overrides or the overlap-count map, so callers
 /// supply them.
+#[cfg(feature = "db")]
 pub fn render_snapshot(
     snapshot: &datum_core::db::NowSnapshot,
     state_colors: &HashMap<(String, String), String>,
@@ -1454,6 +1465,7 @@ pub fn render_snapshot(
     out
 }
 
+#[cfg(feature = "db")]
 /// Format an absolute UTC instant for the now-view time column using
 /// the same rules as [`format_now_time`]. Used by the
 /// `tracked_false` / `ignored` snapshot variants where we only have
@@ -1478,6 +1490,7 @@ fn format_now_time_utc(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+#[cfg(feature = "db")]
 fn format_ago(secs: i64) -> String {
     // A negative age means the entry is stamped ahead of now. Sub-minute
     // negatives are clock skew and still read as the present, but anything
@@ -1495,6 +1508,7 @@ fn format_ago(secs: i64) -> String {
     format!("{} ago", format_span(secs))
 }
 
+#[cfg(feature = "db")]
 /// Coarse minute/hour span shared by the past (`… ago`) and future
 /// (`in …`) renderings of the now-view time column. A relative age is
 /// read at a glance and re-read a minute later, so it names minutes
@@ -1504,6 +1518,7 @@ fn format_span(secs: i64) -> String {
     format_human_duration(secs, DurationPrecision::Minutes)
 }
 
+#[cfg(feature = "db")]
 /// Pick the right "last seen" stamp for a `datum now` row. Today entries
 /// keep the existing micro-format (`@HH:MM` for stopped occurs, `Nm ago`
 /// otherwise); rows from a different calendar day show the relative-day

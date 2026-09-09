@@ -14,9 +14,13 @@
 //! string entry points. For R1 the arg structs in `args` double as the
 //! typed API.
 
+#[cfg(feature = "db")]
 pub mod args;
+#[cfg(feature = "db")]
 pub mod cmd;
+#[cfg(feature = "db")]
 pub mod commands;
+#[cfg(feature = "db")]
 pub mod config;
 pub mod render;
 
@@ -35,6 +39,7 @@ pub mod render;
 /// schema stale is the one that migrates, and only that one carries a
 /// report — so covering all the open sites cannot double-print, while
 /// missing one loses the notice entirely.
+#[cfg(feature = "db")]
 pub fn announce_migration(db: &datum_core::db::Db) {
     let Some(report) = db.last_migration() else {
         return;

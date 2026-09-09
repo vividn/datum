@@ -10,11 +10,11 @@ crate-type = ["cdylib", "rlib"]
 default = ["native"]
 # `native` is default-on so a host build keeps the crates' host-only code;
 # the browser build turns it off, which is what makes them compile for wasm.
-native = ["datum-commands/native", "datum-parse/native"]
+native = ["datum-commands/native", "datum-parse/native", "datum-core/native"]
 
 [dependencies]
 datum-commands = { path = "../datum-commands", default-features = false }
-datum-core = { path = "../datum-core" }
+datum-core = { path = "../datum-core", default-features = false }
 datum-parse = { path = "../datum-parse", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -24,16 +24,3 @@ chrono = { workspace = true }
 # The tests feed this crate exactly what the browser feeds it: the entry
 # `datum-parse-wasm` built from an argv. Parse and render meet in one test.
 datum-parse-wasm = { path = "../datum-parse-wasm", default-features = false }
-
-# `datum-commands` reaches `getrandom` 0.3 (through `rand`/`ulid`), which on
-# wasm32-unknown-unknown refuses to build unless told which backend to use.
-# That takes two things, and both are needed: this feature, and
-# `--cfg getrandom_backend="wasm_js"` in RUSTFLAGS (web/scripts/build-wasm.mjs).
-# The feature alone still fails to compile; the cfg alone is ignored.
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.3", features = ["wasm_js"] }
-# And the graph carries getrandom 0.2 as well (a different dependency's pin),
-# whose equivalent switch is spelled `js`. Renamed so both versions can be
-# named here; neither is used by this crate directly — the lines exist only
-# to turn the features on for the crates that do.
-getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }

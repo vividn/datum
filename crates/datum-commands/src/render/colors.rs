@@ -237,6 +237,7 @@ pub(crate) fn structured_state_rgb(
     }
 }
 
+#[cfg(feature = "db")]
 /// Resolve a JSON state value to one [`Rgb`] per parallel-state member.
 ///
 /// Per da-9vop, a parallel state set (`switch body vertical,sit`) lands in

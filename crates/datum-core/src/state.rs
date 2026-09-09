@@ -13,14 +13,17 @@
 //! `note` entries never affect state.
 
 use chrono::{DateTime, Utc};
+#[cfg(feature = "db")]
 use rusqlite::{params, Connection};
 use serde_json::{Map, Value};
 use std::fmt;
 
-use crate::db::IGNORED_STATE_VALUE;
 use crate::dur::Dur;
 use crate::entry::{Entry, Verb};
-use crate::error::{DatumError, Result};
+#[cfg(feature = "db")]
+use crate::error::DatumError;
+use crate::error::Result;
+use crate::shape::IGNORED_STATE_VALUE;
 
 /// Active state type. `Value::Null` represents the "untracked" state.
 pub type ActiveState = Value;
@@ -314,6 +317,7 @@ pub fn compile_state(entries: &[Entry], at: DateTime<Utc>) -> ActiveState {
         .unwrap_or(Value::Null)
 }
 
+#[cfg(feature = "db")]
 /// Compute the active state of `field` strictly before (or at) `time`,
 /// ignoring an entry identified by `exclude_hid` (so detection run on a
 /// just-inserted row can see "the state as it was without this entry").
@@ -370,12 +374,14 @@ pub struct FieldStateEvents {
 }
 
 impl FieldStateEvents {
+    #[cfg(feature = "db")]
     /// Load every state-affecting event for `field`. See
     /// [`Self::load_for_field_up_to`] for the bounded variant.
     pub fn load_for_field(conn: &Connection, field: &str) -> Result<Self> {
         Self::load_for_field_up_to(conn, field, None)
     }
 
+    #[cfg(feature = "db")]
     /// Load state-affecting events for `field`, optionally pruned to entries
     /// that could contribute an event ≤ `max_probe`. Reads only the columns
     /// [`compile_state`] needs.
@@ -609,6 +615,7 @@ fn verb_state_events(
 /// tagging each emitted event with its origin `hid` so [`FieldStateEvents`]
 /// can honour `exclude_hid` probes. Delegates to [`verb_state_events`].
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "db")]
 fn collect_raw_events(
     hid: &str,
     verb: Verb,
@@ -692,6 +699,72 @@ fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Va
     for (ts, state) in entry_state_events(entry) {
         out.push((ts, entry.create_time, state));
     }
+}
+
+/// S12: true when two (normalized) states share at least one element. Scalar
+/// values are treated as one-element sets; `Parallel` values are treated as
+/// sets of their elements. Elements compare via [`StateValue`] structural
+/// equality, so a `Structured({id: "car", role: "driver"})` matches another
+/// `Structured` only when every field agrees — `.id` alone is not enough.
+///
+/// Exported so the renderer can flag a repeated-state switch (`da-qfv0`)
+/// using the same predicate that drives `SameStateRepeat` warning records.
+pub fn states_share_element(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    let sa = state_as_set(a);
+    let sb = state_as_set(b);
+    sa.iter().any(|x| sb.iter().any(|y| x == y))
+}
+
+/// S12: set-aware equality on top of [`StateValue`] PartialEq — `Parallel`
+/// values compare order-insensitive (same multiset of elements), everything
+/// else compares structurally.
+///
+/// Exported so the renderer's `!` marker uses the same predicate as
+/// [`IntegrityKind::SameStateRepeat`] (da-g1b8).
+pub fn states_equal_set_aware(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    let Ok(sva) = StateValue::from_json(a) else {
+        return false;
+    };
+    let Ok(svb) = StateValue::from_json(b) else {
+        return false;
+    };
+    match (&sva, &svb) {
+        (StateValue::Parallel(va), StateValue::Parallel(vb)) => state_multiset_eq(va, vb),
+        _ => sva == svb,
+    }
+}
+
+/// Decompose a state into its element multiset for set-aware comparisons.
+/// `Parallel` flattens to its members; everything else is a one-element set.
+/// On a malformed value (none should reach here in practice — the upstream
+/// shape is already a valid JSON state) the fallback is an empty set so the
+/// element-share / equality predicates short-circuit to "no match".
+fn state_as_set(v: &serde_json::Value) -> Vec<StateValue> {
+    match StateValue::from_json(v) {
+        Ok(StateValue::Parallel(items)) => items,
+        Ok(other) => vec![other],
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Multiset equality for two `Parallel` element vectors. Ours are tiny
+/// (a handful of states), so the O(n²) match-and-mark walk is fine and
+/// avoids needing `Hash` on `StateValue`.
+fn state_multiset_eq(va: &[StateValue], vb: &[StateValue]) -> bool {
+    if va.len() != vb.len() {
+        return false;
+    }
+    let mut used = vec![false; vb.len()];
+    'outer: for x in va {
+        for (i, y) in vb.iter().enumerate() {
+            if !used[i] && x == y {
+                used[i] = true;
+                continue 'outer;
+            }
+        }
+        return false;
+    }
+    true
 }
 
 #[cfg(test)]
