@@ -14,8 +14,10 @@ pub mod action;
 pub(crate) mod blocks;
 pub mod characters;
 pub mod colors;
+pub mod ordinals;
 pub mod show_all;
 pub(crate) mod state_truncate;
+pub mod tail_rows;
 
 // Holds `datum-layout-wasm`'s colour derivation to this module's (da-6h6p).
 pub mod term_layout;
@@ -27,6 +29,7 @@ pub use self::action::{
     render_entry_line, RenderContext, Surface,
 };
 pub use self::colors::{strip_ansi, visible_width};
+pub use self::ordinals::{attach_quick_ordinals, quick_ordinal_map};
 
 #[cfg(feature = "db")]
 use datum_core::entry::Verb;
@@ -587,58 +590,37 @@ pub fn print_table_with(
     }
 }
 
-/// As [`print_table_with`] but returns the rendered text instead of writing
-/// it to stdout. `None` is returned when the table is silenced (`--show
-/// none`); every other path returns `Some` even when the body is empty
-/// (`[No data]` and `Show::Format` still produce a string). Used by
-/// `datum check`'s human renderer to embed the real tail formatter under
-/// each flagged-issue block.
-pub fn format_table_with(
+/// One rendered table row: every cell painted, none padded.
+///
+/// Pulled out of [`format_table_with`] by da-6ec2 so the browser's tail
+/// table can be the same cells in `<td>`s rather than a second derivation
+/// of them — see [`table_columns_with`].
+struct Row {
+    time: String,
+    time_metric_prefix: &'static str,
+    field: String,
+    /// Raw field name (no ANSI). Lets the table apply the field-cap
+    /// truncation (da-ftw3) without re-decoding the painted cell.
+    field_name: String,
+    state: String,
+    dur: String,
+    /// da-8sx8: the `_N` quickId shorthand for this row, or empty when
+    /// the row is past `QUICK_ORDINAL_CAP` / the caller supplied no
+    /// ordinals. Empty for every row → the column drops out.
+    quick: String,
+    hid: String,
+    extras: Vec<String>,
+}
+
+/// Build every row's cells, and the header's reference UTC offset
+/// (da-lkji). The rows come back in `entries` order.
+fn build_rows(
     entries: &[Entry],
     contexts: Option<&[RenderContext]>,
     now: Option<&DatumTime>,
     registry: Option<&SpecRegistry>,
     args: &TableArgs,
-) -> Option<String> {
-    if args.output.silent() {
-        return None;
-    }
-    let mut out = String::new();
-    if entries.is_empty() && args.output.show != Show::Format {
-        out.push_str("[No data]\n");
-        return Some(out);
-    }
-
-    // Custom format short-circuits the table. Per datumv2's `tableOutput`
-    // (da-jose) the presence of a format string alone drives format-only
-    // rows here — unlike the single-doc `show_action` path, a table never
-    // interleaves the format string with stock columns.
-    if let Some(fmt) = &args.output.format_string {
-        for e in entries {
-            out.push_str(&interpolate(fmt, e));
-            out.push('\n');
-        }
-        return Some(out);
-    }
-
-    // Build per-row cells.
-    struct Row {
-        time: String,
-        time_metric_prefix: &'static str,
-        field: String,
-        /// Raw field name (no ANSI). Lets the table apply the field-cap
-        /// truncation (da-ftw3) without re-decoding the painted cell.
-        field_name: String,
-        state: String,
-        dur: String,
-        /// da-8sx8: the `_N` quickId shorthand for this row, or empty when
-        /// the row is past `QUICK_ORDINAL_CAP` / the caller supplied no
-        /// ordinals. Empty for every row → the column drops out.
-        quick: String,
-        hid: String,
-        extras: Vec<String>,
-    }
-
+) -> (Vec<Row>, Option<i32>) {
     let metric_prefix = |metric: TimeMetricCol| -> &'static str {
         match metric {
             TimeMetricCol::Modify => "m",
@@ -750,43 +732,131 @@ pub fn format_table_with(
             extras,
         });
     }
+    (rows, reference_offset)
+}
 
-    // Decide columns: drop empty ones.
-    let any = |f: fn(&Row) -> &str| rows.iter().any(|r| !f(r).is_empty());
-    let show_time = any(|r| &r.time);
-    let show_field = any(|r| &r.field);
-    let show_state = any(|r| &r.state);
-    let show_dur = any(|r| &r.dur);
-    let show_quick = any(|r| &r.quick);
-    let show_hid = any(|r| &r.hid);
+/// Which columns the table shows: a column every row leaves empty drops
+/// out entirely, so `datum tail` on point entries carries no `state` and
+/// `dur` columns at all.
+struct Shown {
+    time: bool,
+    field: bool,
+    state: bool,
+    dur: bool,
+    quick: bool,
+    hid: bool,
+}
+
+impl Shown {
+    fn of(rows: &[Row]) -> Self {
+        let any = |f: fn(&Row) -> &str| rows.iter().any(|r| !f(r).is_empty());
+        Self {
+            time: any(|r| &r.time),
+            field: any(|r| &r.field),
+            state: any(|r| &r.state),
+            dur: any(|r| &r.dur),
+            quick: any(|r| &r.quick),
+            hid: any(|r| &r.hid),
+        }
+    }
+}
+
+/// The header words the table prints. `field` and `state` shrink to `f`
+/// and `s` when no row needs the room, and the time header carries the
+/// listing's reference UTC offset (da-lkji).
+struct Headers {
+    time: String,
+    field: &'static str,
+    state: &'static str,
+}
+
+impl Headers {
+    const DUR: &'static str = "dur";
+    const QUICK: &'static str = "_n";
+    const HID: &'static str = "hid";
+
+    fn of(rows: &[Row], reference_offset: Option<i32>) -> Self {
+        let vw = colors::visible_width;
+        Self {
+            time: match reference_offset {
+                Some(r) => format!(
+                    "time {}",
+                    paint(
+                        GRAY_FG,
+                        &format!("({})", self::action::compress_offset_minutes(r))
+                    )
+                ),
+                None => "time".to_string(),
+            },
+            field: if rows.iter().any(|r| vw(&r.field) >= 5) {
+                "field"
+            } else {
+                "f"
+            },
+            state: if rows.iter().any(|r| vw(&r.state) >= 5) {
+                "state"
+            } else {
+                "s"
+            },
+        }
+    }
+}
+
+/// As [`print_table_with`] but returns the rendered text instead of writing
+/// it to stdout. `None` is returned when the table is silenced (`--show
+/// none`); every other path returns `Some` even when the body is empty
+/// (`[No data]` and `Show::Format` still produce a string). Used by
+/// `datum check`'s human renderer to embed the real tail formatter under
+/// each flagged-issue block.
+pub fn format_table_with(
+    entries: &[Entry],
+    contexts: Option<&[RenderContext]>,
+    now: Option<&DatumTime>,
+    registry: Option<&SpecRegistry>,
+    args: &TableArgs,
+) -> Option<String> {
+    if args.output.silent() {
+        return None;
+    }
+    let mut out = String::new();
+    if entries.is_empty() && args.output.show != Show::Format {
+        out.push_str("[No data]\n");
+        return Some(out);
+    }
+
+    // Custom format short-circuits the table. Per datumv2's `tableOutput`
+    // (da-jose) the presence of a format string alone drives format-only
+    // rows here — unlike the single-doc `show_action` path, a table never
+    // interleaves the format string with stock columns.
+    if let Some(fmt) = &args.output.format_string {
+        for e in entries {
+            out.push_str(&interpolate(fmt, e));
+            out.push('\n');
+        }
+        return Some(out);
+    }
+
+    let (rows, reference_offset) = build_rows(entries, contexts, now, registry, args);
+
+    let Shown {
+        time: show_time,
+        field: show_field,
+        state: show_state,
+        dur: show_dur,
+        quick: show_quick,
+        hid: show_hid,
+    } = Shown::of(&rows);
 
     // Column widths (visual, ANSI-aware).
     let vw = colors::visible_width;
-    // da-lkji: the header carries the reference offset once — `time (+2)`
-    // — so same-offset rows can drop theirs entirely.
-    let time_header = match reference_offset {
-        Some(r) => format!(
-            "time {}",
-            paint(
-                GRAY_FG,
-                &format!("({})", self::action::compress_offset_minutes(r))
-            )
-        ),
-        None => "time".to_string(),
-    };
-    let field_header = if rows.iter().any(|r| vw(&r.field) >= 5) {
-        "field"
-    } else {
-        "f"
-    };
-    let state_header = if rows.iter().any(|r| vw(&r.state) >= 5) {
-        "state"
-    } else {
-        "s"
-    };
-    let dur_header = "dur";
-    let quick_header = "_n";
-    let hid_header = "hid";
+    let Headers {
+        time: time_header,
+        field: field_header,
+        state: state_header,
+    } = Headers::of(&rows, reference_offset);
+    let dur_header = Headers::DUR;
+    let quick_header = Headers::QUICK;
+    let hid_header = Headers::HID;
 
     // da-lkji: the time column right-aligns on the `HH:MM:SS` core; the
     // gray `±N<unit>` uncertainty suffix hangs into a shared right margin
@@ -1001,6 +1071,94 @@ pub fn format_table_with(
         out.push('\n');
     }
     Some(out)
+}
+
+/// One column of the table: its header word and one cell per row.
+///
+/// The pieces [`format_table_with`] pads into a terminal grid, handed over
+/// unpadded for a surface that has a grid of its own (da-6ec2: the tail
+/// pane in the browser is an HTML `<table>`). Every string is painted the
+/// way the table paints it — the colour is the CLI's, not the caller's.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct TableColumn {
+    /// `time` | `field` | `state` | `dur` | `_n` | `hid`, or the name of a
+    /// `--column` extra. Stable across the header's own shrinking: the
+    /// `field` column keys `field` even when its header word reads `f`.
+    pub key: String,
+    /// The header word this column prints, painted.
+    pub header: String,
+    /// One cell per entry, in `entries` order, painted and unpadded.
+    pub cells: Vec<String>,
+}
+
+/// One of the table's stock columns, before the empty ones are dropped:
+/// whether it is shown, its key, its header word, and how to read its cell
+/// off a [`Row`].
+type StockColumn = (bool, &'static str, String, fn(&Row) -> String);
+
+/// The table's columns for `entries` — the same cells [`format_table_with`]
+/// lays out, without the terminal grid.
+///
+/// Column choice is the table's: a column no row fills drops out, and the
+/// `field`/`state` headers shrink to `f`/`s` on the same rule. What does
+/// NOT carry across is `args.max_total_width`: the width budget exists to
+/// stop a terminal row wrapping, and a caller with real columns wraps or
+/// scrolls them itself, so cells come back at their natural width.
+pub fn table_columns_with(
+    entries: &[Entry],
+    contexts: Option<&[RenderContext]>,
+    now: Option<&DatumTime>,
+    registry: Option<&SpecRegistry>,
+    args: &TableArgs,
+) -> Vec<TableColumn> {
+    let (rows, reference_offset) = build_rows(entries, contexts, now, registry, args);
+    let shown = Shown::of(&rows);
+    let headers = Headers::of(&rows, reference_offset);
+    // The CLI's order, which is the reader's: when the row landed, what it
+    // is about, what it says, how long, what to type, what to keep. A
+    // column no row fills is dropped here exactly as the table drops it.
+    let stock: [StockColumn; 6] = [
+        (shown.time, "time", headers.time, |r| {
+            if r.time_metric_prefix.is_empty() {
+                r.time.clone()
+            } else {
+                format!("{}{}", paint(GRAY_FG, r.time_metric_prefix), r.time)
+            }
+        }),
+        (shown.field, "field", headers.field.to_string(), |r| {
+            r.field.clone()
+        }),
+        (shown.state, "state", headers.state.to_string(), |r| {
+            r.state.clone()
+        }),
+        (shown.dur, "dur", Headers::DUR.to_string(), |r| {
+            r.dur.clone()
+        }),
+        (shown.quick, "_n", Headers::QUICK.to_string(), |r| {
+            r.quick.clone()
+        }),
+        (shown.hid, "hid", Headers::HID.to_string(), |r| {
+            r.hid.clone()
+        }),
+    ];
+    let mut out: Vec<TableColumn> = stock
+        .into_iter()
+        .filter(|&(shown, ..)| shown)
+        .map(|(_, key, header, cell)| TableColumn {
+            key: key.to_string(),
+            header,
+            cells: rows.iter().map(cell).collect(),
+        })
+        .collect();
+    // The `--column NAME` extras, after the stock set, as the table puts them.
+    for (i, col) in args.columns.iter().enumerate() {
+        out.push(TableColumn {
+            key: col.clone(),
+            header: col.clone(),
+            cells: rows.iter().map(|r| r.extras[i].clone()).collect(),
+        });
+    }
+    out
 }
 
 /// Visible width of the trailing gray `±N<unit>` uncertainty suffix

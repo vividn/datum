@@ -364,3 +364,79 @@ describe('a pane', () => {
 		);
 	});
 });
+
+// The tail pane is the one pane whose content is a grid, and a grid is
+// the thing a terminal fits by PADDING: `datum tail` aligns its columns
+// to a column count, and the browser showing that padded text scrolled
+// sideways over the spaces (da-6ec2). The pane lays the CLI's own cells
+// out in a real `<table>` instead, so the claim to check is the strict
+// one — it fits, at every width, with a full listing in it.
+describe('the tail pane', () => {
+	/** The four widths the report named, narrowest first. */
+	const WIDTHS = [360, 390, 768, 1280];
+
+	/**
+	 * Ten rows — `datum tail`'s own default count — including a state
+	 * long enough that nothing but wrapping can fit it. Ten is what makes
+	 * this a test of a full pane rather than of an empty one.
+	 */
+	const TEN_ROWS = [
+		'occur coffee -t 0700',
+		'start work -t 0800',
+		'switch mood happy -t 0900',
+		'switch posture standing -t 0930',
+		'occur nap dur=30m -t 1000',
+		'switch mood contemplative-about-the-weather -t 1030',
+		'switch project datum-day-tail-table -t 1100',
+		'occur water -t 1130',
+		'switch posture sitting -t 1200',
+		'stop work -t 1230'
+	];
+
+	for (const width of WIDTHS) {
+		test(`fits ten rows at ${width}px`, async () => {
+			await withApp(
+				async (app) => {
+					for (const line of TEN_ROWS) await app.submit(line);
+					// `submit` returns on the REPL's own echo; the pane's
+					// re-read is still in flight behind it, so a measurement
+					// taken straight after can be of the pane an entry ago.
+					await app.page.waitForFunction(
+						(n) => document.querySelectorAll('section.pane tbody tr').length === n,
+						TEN_ROWS.length
+					);
+					const table = await app.paneTable('tail');
+					assert.equal(table.rows.length, 10, 'the pane is not showing the full listing');
+
+					const box = await app.page.evaluate(() => {
+						const body = [...document.querySelectorAll('section.pane')]
+							.find((p) => p.querySelector('h2').textContent.trim() === 'tail')
+							.querySelector('.body');
+						return { scrollWidth: body.scrollWidth, clientWidth: body.clientWidth };
+					});
+					assert.ok(
+						box.scrollWidth <= box.clientWidth,
+						`the tail pane scrolls sideways at ${width}px: ${box.scrollWidth} of table in ${box.clientWidth}`
+					);
+
+					// Fitting by dropping the columns would satisfy that. The
+					// time column is the one that may never wrap or go — a
+					// clock split across two lines is unreadable, and a row
+					// without one says nothing about when.
+					assert.ok(table.keys.includes('time'), `no time column at ${width}px`);
+					const heights = await app.page.evaluate(() =>
+						[...document.querySelectorAll('section.pane td.time')].map(
+							(td) => td.getClientRects().length
+						)
+					);
+					assert.deepEqual(
+						[...new Set(heights)],
+						[1],
+						`a time cell wrapped at ${width}px: ${JSON.stringify(heights)}`
+					);
+				},
+				{ viewport: { width, height: 900 } }
+			);
+		});
+	}
+});

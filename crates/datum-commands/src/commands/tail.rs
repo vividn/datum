@@ -12,7 +12,7 @@ use datum_core::{
 use crate::args::{OutputFlagsExt, TailArgs};
 use crate::commands::helpers::load_registry_opt;
 use crate::commands::render_helpers::build_table_contexts;
-use crate::commands::tail_json::{tail_rows, TailDocument};
+use crate::render::tail_rows::{tail_rows, TailDocument};
 use crate::render::term_layout::{detect_cols, detect_rows, is_stdout_tty};
 use crate::render::{print_table_with, TableArgs, TimeMetricCol};
 

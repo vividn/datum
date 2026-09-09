@@ -148,6 +148,14 @@ function app(page, errors) {
 		entries: (limit = 50) => page.evaluate((n) => window.datum.entries(n), limit),
 
 		/**
+		 * The tail listing as data: the CLI's rows with the colours it
+		 * would paint them, and its painted columns. What the tail pane
+		 * renders — so a test can hold what is on screen to what datum
+		 * said, rather than to a colour written down here.
+		 */
+		tailRows: () => page.evaluate(() => window.datum.tailRows()),
+
+		/**
 		 * The beta banner's sentence about the data.
 		 *
 		 * The banner reads the storage that actually opened, so this is the
@@ -204,6 +212,46 @@ function app(page, errors) {
 				.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
 				.locator('.body')
 				.innerText(),
+
+		/**
+		 * A pane's table, as the reader sees it: header words and cell text.
+		 *
+		 * The tail pane is an HTML `<table>` of the CLI's own cells
+		 * ($lib/TailTable.svelte), so this is where a test reads what it
+		 * shows. Cell text only — the colour is read separately, off the
+		 * spans, because it is a different claim.
+		 */
+		paneTable: (title) =>
+			page
+				.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
+				.evaluate((pane) => ({
+					headers: [...pane.querySelectorAll('thead th')].map((th) => th.textContent),
+					keys: [...pane.querySelectorAll('thead th')].map((th) => th.dataset.key),
+					rows: [...pane.querySelectorAll('tbody tr')].map((tr) =>
+						[...tr.querySelectorAll('td')].map((td) => td.textContent)
+					)
+				})),
+
+		/**
+		 * The chip colours a pane's table cells are painted with, by column.
+		 *
+		 * One array per row — a cell can carry more than one chip, because
+		 * the CLI's state cell is `[LEAD][state][TRAIL]` and each slot is
+		 * its own painted block. Backgrounds only, in DOM order, as the
+		 * browser reports them.
+		 */
+		paneCellColors: (title, key) =>
+			page
+				.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
+				.evaluate(
+					(pane, column) =>
+						[...pane.querySelectorAll(`tbody td[data-key="${column}"]`)].map((td) =>
+							[...td.querySelectorAll('span')]
+								.map((s) => getComputedStyle(s).backgroundColor)
+								.filter((c) => c !== 'rgba(0, 0, 0, 0)')
+						),
+					key
+				),
 
 		/**
 		 * The SVG a pane is showing, as its markup.

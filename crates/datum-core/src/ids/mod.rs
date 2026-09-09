@@ -12,6 +12,16 @@ pub mod types;
 #[cfg(feature = "db")]
 pub use resolve::{
     contains_wildcard, parse_underscore_ordinal, quick_ordinals, resolve_quickid,
-    resolve_quickid_all, resolve_quickid_single, QUICK_ORDINAL_CAP,
+    resolve_quickid_all, resolve_quickid_single,
 };
 pub use types::{Hid, Slug};
+
+/// How deep the `_N` shorthand counts. Two digits is where it stops being
+/// something anyone reaches for — past `_99` the hid sitting in the next
+/// column is the handle you'd actually type — so the display surfaces stop
+/// offering a short form there.
+///
+/// Ungated, unlike [`quick_ordinals`], because the browser assigns the same
+/// ordinals over the rows it holds rather than over a database (da-6ec2),
+/// and one cap has to govern both.
+pub const QUICK_ORDINAL_CAP: usize = 99;

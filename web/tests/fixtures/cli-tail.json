@@ -1,0 +1,13 @@
+{
+	"comment": ["What the real `datum tail` prints for the `log` sequence below — the CLI half of", "the tail-parity assertion in tests/seam.test.mjs. Regenerate with `npm run", "test:fixtures` (needs a built `datum` binary); `log` is authored by hand and", "survives a regeneration.", "", "Hids are masked (support/tail.mjs) because they are minted per write. Every", "other character — the header, the column order, the alignment, the `_n`", "ordinals, the clock — is compared exactly. Every row is logged at an absolute", "clock time TODAY, so the table a capture in one timezone-pinned run produces is", "the table the browser produces in another."],
+	"capturedWith": "datum 0.1.0",
+	"log": [
+		["occur", "coffee", "-t", "0700"],
+		["start", "work", "-t", "0800"],
+		["switch", "mood", "happy", "-t", "0930"],
+		["switch", "mood", "sad", "-t", "1015"],
+		["occur", "nap", "dur=30m", "-t", "1300"],
+		["stop", "work", "-t", "1700"]
+	],
+	"table": "time (+0)  field   state    dur  _n  hid\n 07:00:00  coffee  ∅●            _6  <hid>\n 08:00:00  work     start        _5  <hid>\n 09:30:00  mood     happy        _4  <hid>\n 10:15:00  mood     sad          _3  <hid>\n 13:00:00  nap              30m  _2  <hid>\n 17:00:00  work     end          _1  <hid>"
+}

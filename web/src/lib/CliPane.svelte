@@ -11,6 +11,7 @@
 	import { browser } from '$app/environment';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
+	import TailTable from './TailTable.svelte';
 	import { run, EXIT_UNKNOWN_COMMAND, type RunResult } from './run.js';
 	import { paneArgv, type PaneBox, type PaneSpec } from './panes.js';
 
@@ -49,7 +50,9 @@
 	// database (or `run`) outside the browser. The request is rebuilt from
 	// the epoch and the box together, so a resize re-runs the command the
 	// same way a write does.
-	$: request = { argv: paneArgv(spec, box), epoch };
+	// The tail table reads its own listing (see TailTable.svelte); every
+	// other pane is one command through the seam.
+	$: request = { argv: spec.view === 'tail-table' ? null : paneArgv(spec, box), epoch };
 	$: if (browser && request.argv) void refresh(request.argv);
 
 	async function refresh(argv: string[]): Promise<void> {
@@ -66,7 +69,12 @@
 </script>
 
 <Pane title={spec.title} bind:body>
-	{#if !result}
+	{#if spec.view === 'tail-table'}
+		<!-- The one pane whose content is a grid: `datum tail` IS a table,
+		     and this lays the CLI's own cells out in a real one rather than
+		     showing the padding a terminal would need (da-6ec2). -->
+		<TailTable {epoch} empty={spec.empty ?? ''} />
+	{:else if !result}
 		<p class="quiet">…</p>
 	{:else if result.stdout}
 		<CliOutput text={result.stdout} />

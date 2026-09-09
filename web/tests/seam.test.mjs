@@ -13,7 +13,15 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { startApp, stopApp, withApp, TIMEZONE } from './support/app.mjs';
+import { comparableTail, rowTexts, stripAnsi } from './support/tail.mjs';
+
+/** What the real `datum tail` printed for the same day. See support/tail.mjs. */
+const tailFixture = JSON.parse(
+	readFileSync(fileURLToPath(new URL('./fixtures/cli-tail.json', import.meta.url)), 'utf8')
+);
 
 before(startApp);
 after(stopApp);
@@ -25,7 +33,7 @@ const UNKNOWN_COMMAND = 127;
 
 describe('logging verbs', () => {
 	test('occur / start / stop / switch each land an entry the tail shows', async () => {
-		await withApp(async ({ run, entries, reload, paneText }) => {
+		await withApp(async ({ run, entries, reload, paneTable }) => {
 			// Distinct times, because a field's slug is its field and its
 			// occur time: `start work` and `stop work` at the same instant
 			// are one slug and the second is a duplicate.
@@ -48,21 +56,29 @@ describe('logging verbs', () => {
 				['coffee', 'mood', 'work', 'work']
 			);
 
-			// `tail` is a command like any other, so the seam answers it.
+			// `tail` is a command like any other, so the seam answers it —
+			// with the CLI's table: a header, then one row per entry.
 			const listed = await run(['tail']);
 			assert.equal(listed.code, OK);
-			const rows = listed.stdout.split('\n').filter(Boolean);
-			assert.equal(rows.length, commands.length);
+			const rows = rowTexts(listed.stdout);
+			assert.equal(rows.length, commands.length + 1, `header plus rows: ${listed.stdout}`);
 			assert.ok(
-				rows.some((row) => row.includes('mood') && row.includes('happy')),
+				rows.slice(1).some((row) => row.includes('mood') && row.includes('happy')),
 				`tail did not show the switch: ${listed.stdout}`
 			);
 
-			// And the tail pane is that command's output: the panes re-run
-			// after a command the *page* ran, so reload to see what a fresh
-			// visit shows.
+			// And the tail pane is that same listing, laid out in a real
+			// table rather than in a terminal's padding — so what is
+			// compared is the cells, not the spaces between them. The
+			// panes re-run after a command the *page* ran, so reload to see
+			// what a fresh visit shows.
 			await reload();
-			assert.equal(await paneText('tail'), listed.stdout);
+			const table = await paneTable('tail');
+			assert.deepEqual(
+				rowTexts([table.headers, ...table.rows].map((cells) => cells.join(' ')).join('\n')),
+				rows,
+				'the pane and the REPL disagree about the same listing'
+			);
 		});
 	});
 
@@ -650,3 +666,75 @@ describe('help and version', () => {
 		});
 	});
 });
+
+describe('the tail is the CLI\'s tail', () => {
+	// The assertion the rest of this file is a proxy for. `datum tail` is a
+	// table — aligned columns, a header carrying the listing's UTC offset,
+	// `_n` ordinals, colour — and da-6ec2's whole claim is that the browser
+	// RENDERS that table rather than deriving one that looks like it. The
+	// only way to check the claim is against the real binary's output, so
+	// the expectation is captured (`npm run test:fixtures`), never written
+	// here: a hand-written table would be a second opinion about the layout,
+	// which is the thing being ruled out.
+	test('prints, character for character, what the binary printed', async () => {
+		assert.ok(tailFixture.capturedWith, 'run `npm run test:fixtures` to capture');
+		await withApp(async ({ run }) => {
+			for (const argv of tailFixture.log) {
+				const result = await run(argv);
+				assert.equal(result.code, OK, `${argv.join(' ')} → ${result.stderr}`);
+			}
+			const listed = await run(['tail']);
+			assert.equal(listed.code, OK, listed.stderr);
+			assert.equal(comparableTail(listed.stdout), tailFixture.table);
+		});
+	});
+
+	// Colour is the readability half of the report: a field badge and a
+	// state chip are how a row is scanned, and the module renders them
+	// only because the request says to (`RenderRequest::color`) — it has
+	// no environment and no terminal to ask.
+	test('paints the field badge, and the pane shows that colour', async () => {
+		await withApp(async ({ run, reload, paneCellColors, tailRows }) => {
+			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
+			assert.equal((await run(['switch', 'mood', 'happy', '-t', '0800'])).code, OK);
+			const listed = await run(['tail']);
+			// md5("coffee") = 24eb05… → rgb(36, 235, 5), the colour
+			// `field_rgb` derives with no spec to override it. Asserted as
+			// the exact escape rather than as "some colour", so a change of
+			// derivation has to say so here.
+			assert.match(listed.stdout, /\x1b\[48;2;36;235;5m/, 'the field badge is unpainted');
+			assert.ok(stripAnsi(listed.stdout).includes('coffee'));
+
+			// And on screen: what the pane paints a cell is what datum said
+			// that cell's colour is — read off the row JSON, not written
+			// down here, so the two cannot drift apart in either direction.
+			await reload();
+			const { rows } = await tailRows();
+			assert.deepEqual(
+				rows.map((row) => row.field),
+				['coffee', 'mood']
+			);
+			assert.deepEqual(
+				await paneCellColors('tail', 'field'),
+				rows.map(({ field_color: c }) => [rgb(c)])
+			);
+			// The state chip too — a different colour from the field's, and
+			// absent where a row carries no state at all. Membership, not
+			// equality: the CLI's state cell is `[LEAD][state][TRAIL]` and
+			// each slot paints its own block, so the chip is one of several.
+			assert.equal(rows[0].state_color, null, 'a point row claimed a state colour');
+			assert.notEqual(rows[1].state_color, rows[1].field_color);
+			const chips = (await paneCellColors('tail', 'state')).at(-1);
+			assert.ok(
+				chips.includes(rgb(rows[1].state_color)),
+				`the state chip is not the colour datum said: ${JSON.stringify(chips)}`
+			);
+		});
+	});
+});
+
+/** `#rrggbb` as the browser reports a computed background. */
+function rgb(hex) {
+	const at = (i) => parseInt(hex.slice(i, i + 2), 16);
+	return `rgb(${at(1)}, ${at(3)}, ${at(5)})`;
+}

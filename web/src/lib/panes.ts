@@ -22,6 +22,21 @@ export interface PaneSpec {
 	 * band is drawn at the size it is displayed at instead.
 	 */
 	sized?: boolean;
+	/**
+	 * Which component shows the command's answer.
+	 *
+	 * `text` — the default — is CLI output rendered as a terminal renders
+	 * it: monospace, whitespace kept, ANSI translated into spans, and an
+	 * SVG document shown as a picture (`CliOutput.svelte`).
+	 *
+	 * `tail-table` is the one pane whose content is a grid rather than a
+	 * block: `datum tail` IS a table, and a terminal draws it by padding
+	 * cells to a column count nobody in a browser has measured. So that
+	 * pane lays the CLI's own cells out in a real `<table>` instead
+	 * (da-6ec2) — the cells, their order, their colours and the header
+	 * words are all datum's; only the geometry is the browser's.
+	 */
+	view?: 'text' | 'tail-table';
 }
 
 /** A pane's content box, in whole pixels. */
@@ -139,5 +154,6 @@ export const NOWVIEW: PaneSpec = {
 export const TAIL: PaneSpec = {
 	title: 'tail',
 	argv: ['tail'],
-	empty: 'nothing logged yet — try `switch mood happy`'
+	empty: 'nothing logged yet — try `switch mood happy`',
+	view: 'tail-table'
 };

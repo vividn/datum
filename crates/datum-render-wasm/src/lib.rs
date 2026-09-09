@@ -18,6 +18,7 @@
 //! ## The ABI
 //!
 //! The same five exports as `datum-parse-wasm` and `datum-layout-wasm`,
+//! carrying the same contract,
 //! for the same reasons (no wasm-bindgen, no imports, a bare
 //! `WebAssembly.instantiate`, a web CI job with no Rust in it):
 //!
@@ -29,15 +30,25 @@
 //! response_clear()           drop it once the caller has copied it out
 //! ```
 //!
+//! …plus two more entry points on the same three-call protocol, because
+//! `tail` lists rows where `render` shows one (da-6ec2):
+//!
+//! ```text
+//! tail(ptr, len) -> ptr        the table `datum tail` would print
+//! tail_rows(ptr, len) -> ptr   those rows as data, and their painted cells
+//! ```
+//!
 //! See `web/src/lib/renderer.ts` for the other half.
 
 pub mod request;
+pub mod tail;
 pub use request::render_json;
+pub use tail::{tail_json, tail_rows_json};
 
-// The five exports below exist only where they are called: in the wasm
-// module. On the host this crate is an rlib whose whole interface is
-// `render_json`, and its tests link `datum-parse-wasm` beside it — which
-// exports the same five `#[no_mangle]` names. Two copies of one C symbol in
+// The exports below exist only where they are called: in the wasm
+// module. On the host this crate is an rlib whose interface is the three
+// `*_json` functions, and its tests link `datum-parse-wasm` beside it —
+// which exports the same `#[no_mangle]` names. Two copies of one C symbol in
 // a binary is a link error, so each export is gated to the target that
 // needs it.
 
@@ -91,6 +102,16 @@ thread_local! {
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub unsafe extern "C" fn render(ptr: *const u8, len: usize) -> *const u8 {
+    respond(ptr, len, render_json)
+}
+
+/// Read the request, run `f`, park the answer for the caller to copy out.
+/// The three entry points differ only in `f`.
+///
+/// # Safety
+/// As [`render`].
+#[cfg(target_arch = "wasm32")]
+unsafe fn respond(ptr: *const u8, len: usize, f: fn(&str) -> String) -> *const u8 {
     let body = if ptr.is_null() || len == 0 {
         String::new()
     } else {
@@ -98,12 +119,33 @@ pub unsafe extern "C" fn render(ptr: *const u8, len: usize) -> *const u8 {
     };
     RESPONSE.with(|slot| {
         let mut slot = slot.borrow_mut();
-        *slot = render_json(&body).into_bytes();
+        *slot = f(&body).into_bytes();
         slot.as_ptr()
     })
 }
 
-/// The length in bytes of the response [`render`] last produced.
+/// List rows as `datum tail` prints them. Same protocol as [`render`].
+///
+/// # Safety
+/// As [`render`].
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub unsafe extern "C" fn tail(ptr: *const u8, len: usize) -> *const u8 {
+    respond(ptr, len, tail_json)
+}
+
+/// The same rows as data, with the columns already painted. Same protocol
+/// as [`render`].
+///
+/// # Safety
+/// As [`render`].
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub unsafe extern "C" fn tail_rows(ptr: *const u8, len: usize) -> *const u8 {
+    respond(ptr, len, tail_rows_json)
+}
+
+/// The length in bytes of the response the last entry point produced.
 #[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub extern "C" fn response_len() -> usize {

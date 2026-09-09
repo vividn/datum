@@ -1,6 +1,10 @@
 #!/usr/bin/env node
-// Capture what the real `datum` CLI stores, one entry per case, into
-// tests/fixtures/cli-parity.json.
+// Capture what the real `datum` CLI does, into tests/fixtures/.
+//
+// Two fixtures, one binary:
+//
+//   cli-parity.json  what the CLI STORES for a given argv, one entry per case
+//   cli-tail.json    what the CLI PRINTS for `datum tail` over a logged day
 //
 // The parity suite's whole claim is that datum.day IS datum rather than a
 // lookalike, and that claim can only be checked against the CLI's actual
@@ -21,8 +25,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { comparable, fromBackupRow } from '../tests/support/semantics.mjs';
+import { comparableTail } from '../tests/support/tail.mjs';
 
 const FIXTURE = fileURLToPath(new URL('../tests/fixtures/cli-parity.json', import.meta.url));
+const TAIL_FIXTURE = fileURLToPath(new URL('../tests/fixtures/cli-tail.json', import.meta.url));
 const repo = fileURLToPath(new URL('../..', import.meta.url));
 
 function datumBinary() {
@@ -91,6 +97,25 @@ try {
 	fixture.capturedWith = cli(join(dir, 'version.db'), ['--version']).stdout.trim() || null;
 	writeFileSync(FIXTURE, format(fixture));
 	console.log(`captured ${fixture.cases.length} cases → ${FIXTURE}`);
+
+	// The tail table: one database, the whole `log` sequence, then the
+	// command. `datum tail` piped (which is what `execFileSync` gives it)
+	// takes the same defaults the browser does — ten rows, no width budget
+	// — so the two tables are comparable character for character.
+	const tail = JSON.parse(readFileSync(TAIL_FIXTURE, 'utf8'));
+	if (!Array.isArray(tail.log) || tail.log.length === 0)
+		throw new Error(`${TAIL_FIXTURE} has nothing to log`);
+	const tailDb = join(dir, 'tail.db');
+	for (const argv of tail.log) {
+		const { code } = cli(tailDb, argv);
+		if (code !== 0) throw new Error(`\`datum ${argv.join(' ')}\` exited ${code}`);
+	}
+	const printed = cli(tailDb, ['tail']);
+	if (printed.code !== 0) throw new Error(`\`datum tail\` exited ${printed.code}`);
+	tail.table = comparableTail(printed.stdout);
+	tail.capturedWith = fixture.capturedWith;
+	writeFileSync(TAIL_FIXTURE, format(tail));
+	console.log(`captured the tail of ${tail.log.length} entries → ${TAIL_FIXTURE}`);
 } finally {
 	rmSync(dir, { recursive: true, force: true });
 }

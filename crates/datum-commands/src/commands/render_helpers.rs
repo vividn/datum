@@ -86,12 +86,17 @@ pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCon
 /// property of the current listing, not of the entry.
 pub(crate) fn build_table_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
     let mut ctxs = build_render_contexts(entries, db);
+    // The ordinal universe is the whole database, not this listing — a
+    // filtered `tail mood` shows gaps rather than a renumbered 1..n that
+    // wouldn't resolve. Attaching it is the shared step (da-6ec2): the
+    // browser computes the same map over the rows it holds
+    // (`render::quick_ordinal_map`) and hangs it on with this function.
     let ordinals = datum_core::ids::quick_ordinals(db).unwrap_or_default();
+    crate::render::attach_quick_ordinals(&mut ctxs, entries, &ordinals);
     // One query for the batch, served by a partial index that holds only
     // conflicted rows — empty whenever there is no conflict to mark.
     let conflicted = db.hids_with_supersedees().unwrap_or_default();
     for (ctx, e) in ctxs.iter_mut().zip(entries) {
-        ctx.quick_ordinal = ordinals.get(&e.hid).copied();
         ctx.has_supersedees = conflicted.contains(&e.hid);
     }
     ctxs
@@ -173,6 +178,34 @@ mod tests {
         assert!(
             !ctxs[1].has_supersedees,
             "an uninvolved row carries nothing",
+        );
+    }
+
+    /// da-6ec2: the pure ordering and the SQL one are the same ordering.
+    /// The browser cannot run `ORDER BY occur_time DESC, slug DESC`, so it
+    /// spells that rule in Rust — and this is what holds the spelling to
+    /// the query it stands in for.
+    #[test]
+    fn the_pure_ordinal_map_agrees_with_the_query() {
+        let db = fresh_db();
+        let base: chrono::DateTime<Utc> = "2026-05-01T12:00:00Z".parse().unwrap();
+        let mut entries: Vec<Entry> = (0..6)
+            .map(|i| {
+                entry_builder(if i % 2 == 0 { "mood" } else { "work" })
+                    .time_start_utc(base + chrono::Duration::minutes(i))
+                    .insert(&db)
+            })
+            .collect();
+        // Two rows at the same instant, so the `slug DESC` tiebreak is
+        // exercised rather than assumed.
+        entries.push(
+            entry_builder("aaa")
+                .time_start_utc(base + chrono::Duration::minutes(5))
+                .insert(&db),
+        );
+        assert_eq!(
+            crate::render::quick_ordinal_map(&entries),
+            datum_core::ids::quick_ordinals(&db).unwrap()
         );
     }
 

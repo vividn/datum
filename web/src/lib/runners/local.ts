@@ -25,7 +25,8 @@ import {
 	saveFieldSpec
 } from '../db.js';
 import { parseArgv } from '../parser.js';
-import { renderLines } from '../renderer.js';
+import { renderLines, tailText } from '../renderer.js';
+import { tailListing } from '../tail.js';
 import { EXIT_DUPLICATE, EXIT_ERROR, EXIT_UNKNOWN_COMMAND, type RunResult } from '../run.js';
 import { isAnnotated, type DefaultAction, type Entry, type FieldSpec } from '../types.js';
 // Type-only, so the 250 KB layout module stays behind `views()` above.
@@ -60,9 +61,6 @@ export function deviceId(): string {
 		return minted();
 	}
 }
-
-/** `datum tail`'s default row count (`tail_state.rs`: `count.unwrap_or(10)`). */
-const TAIL_COUNT = 10;
 
 export async function localRun(argv: string[]): Promise<RunResult> {
 	if (argv[0] === 'spec' && argv[1] === 'set') return specSet(argv);
@@ -246,7 +244,7 @@ function unavailable(argv: string[], reason: string): string {
 }
 
 /**
- * The tail pane's stand-in for `datum tail`.
+ * `datum tail` in the browser.
  *
  * Bare `tail` only. Field filters, `-n`, `--table` and the metric columns
  * are the real CLI's job — answering them here would grow a second datum
@@ -254,27 +252,17 @@ function unavailable(argv: string[], reason: string): string {
  * `tail mood` falls through to the unknown-command message like every
  * other command the stand-in doesn't cover.
  *
- * Oldest at the top, newest at the bottom, the way `tail` prints.
+ * What comes back is the CLI's own table — header, aligned columns, `_n`
+ * ordinals, colours — rendered by `format_table_with` through the wasm
+ * module. The trailing newline goes because stdout here is unterminated
+ * (see the `parsed.output` note above).
  */
 async function tail(): Promise<RunResult> {
-	const entries = await getRecentEntries(TAIL_COUNT);
-	entries.reverse();
-	// Each row renders against its field's history — one query per field
-	// shown, the renderer excluding the row itself by hid.
-	const fields = [...new Set(entries.map((e) => e.field))];
-	const histories = new Map(
-		await Promise.all(
-			fields.map(async (field) => [field, await getEntriesForField(field, HISTORY_LIMIT)] as const)
-		)
-	);
-	const lines = await Promise.all(
-		entries.map((e) => renderLines(e, null, { history: histories.get(e.field) ?? [] }))
-	);
+	const { entries, histories } = await tailListing();
 	return {
 		argv: ['tail'],
 		code: 0,
-		// One info line per row — the CLI's own — until da-1vat brings its table.
-		stdout: lines.flat().join('\n'),
+		stdout: (await tailText(entries, histories)).replace(/\n+$/, ''),
 		stderr: ''
 	};
 }

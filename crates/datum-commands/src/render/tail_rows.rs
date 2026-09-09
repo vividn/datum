@@ -1,5 +1,9 @@
 //! `datum tail --json` — the machine-readable row surface (da-c7uw).
 //!
+//! In `render` rather than beside the command (da-6ec2): it names what a
+//! rendered row SAYS, needs no database to say it, and the browser's tail
+//! table is built from these rows too.
+//!
 //! The human table's column set is a display decision: da-8sx8 slid a `_n`
 //! column in between `state` and `hid` and every script that read the table
 //! positionally started reading the wrong cell — silently, because a
@@ -16,8 +20,8 @@ use datum_core::entry::Entry;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
-use crate::render::state_truncate::state_label;
-use crate::render::{RenderContext, TimeMetricCol};
+use super::state_truncate::state_label;
+use super::{RenderContext, TimeMetricCol};
 
 /// The `--json` document. The rows sit under a key rather than at the top
 /// level so anything later worth reporting alongside them — a count, the

@@ -13,7 +13,9 @@
 use datum_core::field_spec::FieldSpec;
 use md5::{Digest, Md5};
 use serde_json::Value as JsonValue;
+use std::cell::Cell;
 use std::io::IsTerminal;
+use std::marker::PhantomData;
 use unicode_width::UnicodeWidthChar;
 
 use super::characters::IGNORED_STATE;
@@ -62,6 +64,11 @@ impl Rgb {
     }
     pub fn bg(self) -> String {
         format!("\x1b[48;2;{};{};{}m", self.r, self.g, self.b)
+    }
+    /// `#rrggbb`. The same colour the escapes above carry, spelled the way
+    /// a stylesheet wants it — for surfaces that are not a terminal.
+    pub fn hex(self) -> String {
+        format!("#{:02x}{:02x}{:02x}", self.r, self.g, self.b)
     }
 }
 
@@ -219,6 +226,20 @@ pub(crate) fn state_value_rgb(
     }
 }
 
+/// The hex a field's badge is painted with — [`field_rgb`] for a caller
+/// that renders to something other than a terminal (the tail table in the
+/// browser, da-6ec2). One derivation, two spellings.
+pub fn field_hex(field: &str, spec: Option<&FieldSpec>) -> String {
+    field_rgb(field, spec).hex()
+}
+
+/// The hex a state chip is painted with, or `None` where the state paints
+/// none — `Bool(false)`, the "field has ended" sentinel. [`state_value_rgb`]
+/// for a non-terminal caller.
+pub fn state_hex(value: &JsonValue, field: &str, spec: Option<&FieldSpec>) -> Option<String> {
+    state_value_rgb(value, field, spec).map(Rgb::hex)
+}
+
 /// Resolve a structured (`{id, …}`) state to its chip background color.
 /// Hashing the `.id` field alone — independent of `.title`, `.format`,
 /// etc. — gives the visual stability rule 2 of da-gvj1 requires. When the
@@ -265,11 +286,66 @@ pub(crate) fn state_value_colors(
 
 // ─── TTY / color gating ──────────────────────────────────────────────────────
 
+thread_local! {
+    /// The in-thread override, ahead of every environment answer. `0` is
+    /// unset, `1` forced on, `2` forced off — see [`ColorOverride`].
+    ///
+    /// A host with neither an environment nor a terminal cannot say "paint
+    /// this" any other way: `DATUM_COLOR` and `NO_COLOR` are read from a
+    /// process environment the browser does not have, and `is_terminal()` is
+    /// false in wasm however the caller feels about colour. So the wasm
+    /// renderer sets this from its request bit and drops the guard when the
+    /// call returns (`datum-render-wasm`), and the CLI never touches it.
+    ///
+    /// Thread-local, not process-wide: wasm is single-threaded so the two are
+    /// the same there, but a threaded `cargo test` runs renders concurrently,
+    /// and a process-wide gate let one test's forced colour decide what
+    /// another test painted.
+    static COLOR_OVERRIDE: Cell<u8> = const { Cell::new(0) };
+}
+
+/// Force the colour gate on or off for as long as the guard lives.
+///
+/// Scoped to the calling thread, so it is the wasm module's to use (one
+/// call at a time) and not a general-purpose knob: the CLI decides colour
+/// from `DATUM_COLOR` / `NO_COLOR` / the tty, and this sits ahead of all
+/// three. Restores whatever was in force when it drops, so a nested
+/// override — or a panic partway through a render — cannot leave the gate
+/// stuck open for the next call.
+#[must_use = "the override lasts only as long as the guard"]
+pub struct ColorOverride(u8, PhantomData<*const ()>);
+
+impl ColorOverride {
+    /// Force colour on (`true`) or off (`false`) until the guard drops.
+    pub fn set(on: bool) -> Self {
+        let prev = COLOR_OVERRIDE.with(|c| c.replace(if on { 1 } else { 2 }));
+        Self(prev, PhantomData)
+    }
+}
+
+impl Drop for ColorOverride {
+    fn drop(&mut self) {
+        COLOR_OVERRIDE.with(|c| c.set(self.0));
+    }
+}
+
+fn color_override() -> Option<bool> {
+    match COLOR_OVERRIDE.with(Cell::get) {
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
+    }
+}
+
 /// ANSI colors are suppressed when stdout is not a TTY, when `NO_COLOR` is
 /// set, or when the test-only `DATUM_COLOR=0`/`never` override is in force.
 ///
-/// Precedence: `DATUM_COLOR` (explicit) → `NO_COLOR` → TTY detection.
+/// Precedence: [`ColorOverride`] → `DATUM_COLOR` (explicit) → `NO_COLOR` →
+/// TTY detection.
 pub(crate) fn color_enabled() -> bool {
+    if let Some(forced) = color_override() {
+        return forced;
+    }
     color_decision(
         force_color(),
         std::env::var_os("NO_COLOR").is_some(),
@@ -533,5 +609,75 @@ mod tests {
         assert!(!color_enabled());
         let _dc = datum_test_util::ScopedEnv::set("DATUM_COLOR", "0");
         assert!(!color_enabled());
+    }
+
+    /// da-6ec2: the override sits ahead of the whole environment table —
+    /// which is the point of it. `NO_COLOR` is the strongest thing the
+    /// environment says on its own, and a browser that asked for colour
+    /// still gets colour over it; a browser that asked for none gets none
+    /// even where `DATUM_COLOR=always` would have forced it on.
+    ///
+    /// On the shared env lock for the same reason as the test above: it
+    /// mutates process-wide state every other colour test reads.
+    #[test]
+    fn the_override_outranks_no_color_in_both_directions() {
+        let _lock = datum_test_util::env_lock();
+        let _nc = datum_test_util::ScopedEnv::set("NO_COLOR", "1");
+        assert!(!color_enabled(), "NO_COLOR alone still shuts the gate");
+        {
+            let _on = ColorOverride::set(true);
+            assert!(color_enabled(), "the override outranks NO_COLOR");
+        }
+        assert!(!color_enabled(), "and the gate closes again when it drops");
+
+        let _dc = datum_test_util::ScopedEnv::set("DATUM_COLOR", "always");
+        assert!(color_enabled(), "DATUM_COLOR=always reopens it");
+        let _off = ColorOverride::set(false);
+        assert!(!color_enabled(), "the override outranks DATUM_COLOR too");
+    }
+
+    /// The gate is a request bit, not a global left on: a nested guard
+    /// restores what it displaced rather than the unset default, so one
+    /// render cannot change what the render around it paints.
+    #[test]
+    fn a_nested_override_restores_the_one_it_displaced() {
+        let _outer = ColorOverride::set(true);
+        {
+            let _inner = ColorOverride::set(false);
+            assert!(!color_enabled());
+        }
+        assert!(color_enabled(), "the outer override came back");
+    }
+
+    /// da-6ec2: the override is one thread's, not the process's. Wasm is
+    /// single-threaded so the two read alike there, but a threaded
+    /// `cargo test` renders concurrently, and a process-wide gate let one
+    /// test's forced colour decide what another test painted — the flake
+    /// this pins shut.
+    #[test]
+    fn the_override_does_not_reach_another_thread() {
+        let _off = ColorOverride::set(false);
+        assert!(!color_enabled());
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let _on = ColorOverride::set(true);
+                assert!(color_enabled(), "the other thread sets its own gate");
+            });
+        });
+        assert!(!color_enabled(), "and ours never moved");
+    }
+
+    /// The hex spelling is the escape's own colour, for a caller that
+    /// paints with CSS rather than SGR.
+    #[test]
+    fn hex_is_the_colour_the_escapes_carry() {
+        assert_eq!(Rgb::IGNORED.hex(), "#888888");
+        assert_eq!(field_hex("coffee", None), md5_rgb("coffee").hex());
+        assert_eq!(
+            state_hex(&JsonValue::String("happy".into()), "mood", None).as_deref(),
+            Some(&*state_rgb("happy", None).hex())
+        );
+        // `false` is "the field has ended" — no chip, so no colour.
+        assert_eq!(state_hex(&JsonValue::Bool(false), "work", None), None);
     }
 }

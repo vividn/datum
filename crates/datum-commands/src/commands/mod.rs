@@ -51,7 +51,6 @@ pub mod switch;
 #[cfg(feature = "native")]
 pub mod sync;
 pub mod tail;
-pub mod tail_json;
 pub mod tail_state;
 // The `tail --watch` TUI drives a terminal (crossterm); absent from a wasm
 // build. See the `native` feature in Cargo.toml.

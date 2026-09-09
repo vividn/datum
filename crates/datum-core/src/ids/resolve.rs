@@ -44,7 +44,7 @@ use rusqlite::{params, OptionalExtension};
 use crate::db::{row_to_entry_public, Db};
 use crate::entry::Entry;
 use crate::error::{DatumError, PrefixCandidate, Result};
-use crate::ids::Hid;
+use crate::ids::{Hid, QUICK_ORDINAL_CAP};
 use crate::last_docs::{get_last_docs, within_protection_window, PROTECTION_WINDOW_MINUTES};
 
 /// `_LAST` — resolves to whatever hids the last-accessed pointer holds,
@@ -56,12 +56,6 @@ pub const LAST_WITH_PROTECTION_TOKEN: &str = "_LAST_WITH_PROTECTION";
 
 /// Maximum number of candidates surfaced on an ambiguous resolution.
 const AMBIGUOUS_CANDIDATE_CAP: usize = 16;
-
-/// How deep [`quick_ordinals`] counts. Two digits is where the shorthand
-/// stops being something anyone reaches for — past `_99` the hid sitting
-/// in the next column is the handle you'd actually type — so the display
-/// surfaces stop offering a short form there.
-pub const QUICK_ORDINAL_CAP: usize = 99;
 
 /// The order `_`, `__`, `_4`, … count in: most recent first. Shared by the
 /// resolvers below and by [`quick_ordinals`], so what `tail` displays and

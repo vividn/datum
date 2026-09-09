@@ -18,6 +18,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { rowTexts } from './support/tail.mjs';
 
 before(startApp);
 after(stopApp);
@@ -30,7 +31,7 @@ const withTwelveHourReader = (fn) => withApp(fn, { locale: TWELVE_HOUR });
 
 describe('the clock the web app prints', () => {
 	test('a 12-hour reader still gets datum 24-hour time, in every pane', async () => {
-		await withTwelveHourReader(async ({ page, run, reload, paneText, paneSvg }) => {
+		await withTwelveHourReader(async ({ page, run, reload, paneTable, paneSvg }) => {
 			// First: the pin is real. This is the call the bug was made of,
 			// made in the page itself — if it comes back 24-hour here then
 			// the locale did not take and every assertion below is vacuous.
@@ -47,16 +48,21 @@ describe('the clock the web app prints', () => {
 
 			const tail = await run(['tail']);
 			assert.equal(tail.code, 0, tail.stderr);
-			// The CLI's own info line (crates/datum-commands/src/render), via the
-			// wasm renderer: clock with offset, field, and `∅` for a field's first entry.
-			assert.equal(tail.stdout, '16:07:00+0  coffee ∅●');
+			// The CLI's own table (crates/datum-commands/src/render), via the
+			// wasm renderer: a header carrying the listing's UTC offset, then
+			// a 24-hour clock, the field, and `∅` for a field's first entry.
+			assert.deepEqual(rowTexts(tail.stdout), [
+				'time (+0) field s _n hid',
+				'16:07:00 coffee ∅● _1 <hid>'
+			]);
 
 			// And on the screen, which is where the two conventions sat
 			// next to each other. The panes run their command on mount, so
 			// the reload is how they come to know about the entry.
 			await reload();
-			const shown = await paneText('tail');
-			assert.match(shown, /16:07:00\+0 {2}coffee/);
+			const table = await paneTable('tail');
+			assert.deepEqual(table.rows[0][table.keys.indexOf('time')], '16:07:00');
+			const shown = table.rows.flat().join(' ');
 			assert.doesNotMatch(shown, /\b[AP]M\b/i, `the tail pane is still 12-hour: ${shown}`);
 
 			// The other half of the screenshot. Its clock was never the

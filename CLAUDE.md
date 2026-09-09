@@ -193,7 +193,7 @@ pnpm test                              # the seam suite (builds first)
 pnpm run test:fixtures                 # recapture the CLI-parity fixtures
 ```
 
-Two regions of the app are datum's own Rust compiled to
+Three regions of the app are datum's own Rust compiled to
 `wasm32-unknown-unknown`, not a second implementation of it:
 
 - **the parser** — `crates/datum-parse` via `crates/datum-parse-wasm`
@@ -209,15 +209,27 @@ Two regions of the app are datum's own Rust compiled to
   wasm can reach it), and the colours and geometry were already Rust's.
   `crates/datum-commands/src/render/wasm_parity.rs` holds that walk — and
   the colour helpers — against `field_visuals::render_field_visuals`.
+- **what CLI output says** — `datum-commands::render` via
+  `crates/datum-render-wasm`, reached from `web/src/lib/renderer.ts`.
+  The REPL's echo of a logged entry is `action_lines_at` (#153), and the
+  REPL's `tail` is `format_table_with` — the CLI's table, header and
+  alignment and `_n` ordinals and all (da-6ec2). The tail PANE is the
+  same cells before the terminal padding (`table_columns_with`), laid
+  out in an HTML `<table>` by `web/src/lib/TailTable.svelte`: only the
+  geometry is the browser's. Colour cannot come from the environment
+  here — there is none, and no tty — so it is a bit on the request that
+  `render::colors::ColorOverride` forces for the length of one call.
 
-Both use the same five-function C ABI, loaded by `web/src/lib/wasm.ts`.
-Neither needs wasm-bindgen, and neither may acquire an import: a module
+All three use the same five-function C ABI, loaded by
+`web/src/lib/wasm.ts` (the renderer adds two more entry points on the
+same protocol, `tail` and `tail_rows`; one instance serves them all).
+None needs wasm-bindgen, and none may acquire an import: a module
 with imports will not load from the bare `WebAssembly.instantiate` the
 browser side uses (this is why the workspace turns off chrono's
-`wasmbind`). Both artifacts are committed under `web/static/` the way the
-fixtures are, so the web CI job needs no Rust toolchain — rebuild and
-commit them with `pnpm run build:wasm` whenever the crates behind them
-change.
+`wasmbind`). All three artifacts are committed under `web/static/` the
+way the fixtures are, so the web CI job needs no Rust toolchain —
+rebuild and commit them with `pnpm run build:wasm` whenever the crates
+behind them change.
 
 Forgetting that is not a silent failure any more (da-nig7). CI's
 `wasm-check` job re-runs `build:wasm` and fails on any byte of difference,

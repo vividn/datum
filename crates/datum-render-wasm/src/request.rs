@@ -8,8 +8,10 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 use datum_commands::render::action::{format_info_line_at, RenderContext};
+use datum_commands::render::colors::ColorOverride;
 use datum_commands::render::{action_lines_at, Outcome};
 use datum_core::entry::Entry;
+use datum_core::field_spec::{FieldSpec, SpecRegistry};
 use datum_core::ids::{Hid, Slug};
 use datum_core::state::FieldStateEvents;
 use datum_parse::{DatumTime, Dur, Verb};
@@ -41,6 +43,51 @@ pub struct RenderRequest {
     /// hid. Empty means a field with no history.
     #[serde(default)]
     pub history: Vec<JsonValue>,
+    /// Paint the lines.
+    ///
+    /// The gate the CLI reads from `DATUM_COLOR` / `NO_COLOR` / a tty
+    /// (`render::colors::color_enabled`) answers "no" here whatever the
+    /// caller wants: the module has no environment and no terminal. So
+    /// colour is a bit on the request instead, forced for the length of
+    /// this call and released after it — see
+    /// `datum_commands::render::colors::ColorOverride`.
+    #[serde(default)]
+    pub color: bool,
+    /// The field specs the browser holds, as they are stored
+    /// (`field_specs.spec_json`). A field's declared `--color` is its
+    /// colour on the terminal and must be its colour here too. A spec that
+    /// will not parse is skipped: one field loses its declared colour,
+    /// where refusing the request would lose the whole render.
+    #[serde(default)]
+    pub specs: Vec<JsonValue>,
+}
+
+/// The instant the caller says it is, as datum's own time.
+pub(crate) fn now_from(
+    now_ms: i64,
+    timezone: Option<String>,
+    offset_minutes: i32,
+) -> Result<DatumTime, String> {
+    Ok(DatumTime {
+        utc: Utc
+            .timestamp_millis_opt(now_ms)
+            .single()
+            .ok_or("now_ms out of range")?,
+        offset_minutes,
+        timezone,
+        uncertainty: None,
+    })
+}
+
+/// The browser's stored field specs as a registry the renderer can read.
+pub(crate) fn registry_from_web(specs: &[JsonValue]) -> SpecRegistry {
+    let mut registry = SpecRegistry::new();
+    for spec in specs {
+        if let Ok(spec) = serde_json::from_value::<FieldSpec>(spec.clone()) {
+            registry.register_field(spec);
+        }
+    }
+    registry
 }
 
 /// `{"lines": [...]}` on success, `{"error": "..."}` otherwise. Never panics
@@ -55,15 +102,11 @@ pub fn render_json(body: &str) -> String {
 fn render(body: &str) -> Result<Vec<String>, String> {
     let req: RenderRequest = serde_json::from_str(body).map_err(|e| format!("bad request: {e}"))?;
     let entry = entry_from_web(&req.entry)?;
-    let now = DatumTime {
-        utc: Utc
-            .timestamp_millis_opt(req.now_ms)
-            .single()
-            .ok_or("now_ms out of range")?,
-        offset_minutes: req.offset_minutes,
-        timezone: req.timezone.clone(),
-        uncertainty: None,
-    };
+    let now = now_from(req.now_ms, req.timezone.clone(), req.offset_minutes)?;
+    let registry = registry_from_web(&req.specs);
+    // Held for the length of the render and dropped with it: the module is
+    // reused across calls, and a gate left open would paint the next one.
+    let _color = ColorOverride::set(req.color);
     let outcome = match req.action.as_deref() {
         None => None,
         Some("create") => Some(Outcome::Create),
@@ -87,7 +130,7 @@ fn render(body: &str) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     match outcome {
         Some(action) => {
-            let lines = action_lines_at(&entry, action, None, Some(&ctx), &now);
+            let lines = action_lines_at(&entry, action, Some(&registry), Some(&ctx), &now);
             out.push(lines.header);
             if !lines.info.is_empty() {
                 out.push(lines.info);
@@ -95,7 +138,7 @@ fn render(body: &str) -> Result<Vec<String>, String> {
             out.extend(lines.data);
         }
         None => {
-            let info = format_info_line_at(&entry, None, &ctx, &now);
+            let info = format_info_line_at(&entry, registry.fields.get(&entry.field), &ctx, &now);
             if !info.is_empty() {
                 out.push(info);
             }

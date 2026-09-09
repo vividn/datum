@@ -13,6 +13,8 @@
 
 import { run, runLine, setRunner, type CommandRunner, type RunResult } from './run.js';
 import { getRecentEntries } from './db.js';
+import { tailTable, type TailColumn, type TailRow } from './renderer.js';
+import { tailListing } from './tail.js';
 import type { Entry } from './types.js';
 
 export interface DatumConsole {
@@ -24,10 +26,25 @@ export interface DatumConsole {
 	setRunner(next: CommandRunner): CommandRunner | null;
 	/** The most recent entries as stored, newest first. */
 	entries(limit?: number): Promise<Entry[]>;
+	/**
+	 * The tail listing as data — the CLI's own rows (`datum tail --json`'s
+	 * shape) plus the colours it would paint them with, and its columns
+	 * already painted. What the tail pane renders, before it is rendered.
+	 */
+	tailRows(): Promise<{ rows: TailRow[]; columns: TailColumn[] }>;
 }
 
 /** Publish the handle on `target` (the window, in the app). */
 export function installConsole(target: Record<string, unknown>): void {
-	const handle: DatumConsole = { run, runLine, setRunner, entries: getRecentEntries };
+	const handle: DatumConsole = {
+		run,
+		runLine,
+		setRunner,
+		entries: getRecentEntries,
+		tailRows: async () => {
+			const { entries, histories } = await tailListing();
+			return tailTable(entries, histories);
+		}
+	};
 	target.datum = handle;
 }

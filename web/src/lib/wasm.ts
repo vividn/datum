@@ -29,33 +29,45 @@ interface Abi {
 }
 
 /**
- * A module's single JSON entry point, instantiated on first call and
+ * One instance per artifact, shared by all of its entry points.
+ *
+ * Keyed by file, not by entry point: `datum-render.wasm` answers `render`,
+ * `tail` and `tail_rows`, and fetching and instantiating the module once
+ * per export would be three copies of it in memory for no reason.
+ */
+const modules = new Map<string, Promise<Abi>>();
+
+/**
+ * One of a module's JSON entry points, instantiated on first call and
  * reused: these modules are pure and hold no state between calls.
  *
  * `file` is the artifact's name under `static/`, `entry` the export that
- * takes the request. A failed load does not poison later attempts — the
- * pane shows the error and the next call tries again.
+ * takes the request. Two entry points of the same file share one instance.
  */
 export function jsonModule<Request, Response>(
 	file: string,
 	entry: string
 ): (request: Request) => Promise<Response> {
-	let loading: Promise<Abi> | null = null;
-
 	const load = (): Promise<Abi> => {
 		// No imports to satisfy — a `wasm32-unknown-unknown` cdylib with no
 		// `extern` calls has no import section — so instantiate takes {}.
-		loading ??= fetch(`${base}/${file}`)
-			.then((response) => {
-				if (!response.ok) throw new Error(`${file}: HTTP ${response.status}`);
-				return response.arrayBuffer();
-			})
-			.then((bytes) => WebAssembly.instantiate(bytes, {}))
-			.then((result) => result.instance.exports as unknown as Abi)
-			.catch((e) => {
-				loading = null;
-				throw e;
-			});
+		let loading = modules.get(file);
+		if (!loading) {
+			loading = fetch(`${base}/${file}`)
+				.then((response) => {
+					if (!response.ok) throw new Error(`${file}: HTTP ${response.status}`);
+					return response.arrayBuffer();
+				})
+				.then((bytes) => WebAssembly.instantiate(bytes, {}))
+				.then((result) => result.instance.exports as unknown as Abi)
+				.catch((e) => {
+					// A failed load must not poison later attempts — the pane
+					// shows the error and the next call tries again.
+					modules.delete(file);
+					throw e;
+				});
+			modules.set(file, loading);
+		}
 		return loading;
 	};
 

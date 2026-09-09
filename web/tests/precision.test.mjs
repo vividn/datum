@@ -23,13 +23,14 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { rowTexts } from './support/tail.mjs';
 
 before(startApp);
 after(stopApp);
 
 describe('the time an entry is rendered with', () => {
 	test('a date-only entry shows its date; entries that have a clock keep it', async () => {
-		await withApp(async ({ run, entries, reload, paneText }) => {
+		await withApp(async ({ run, entries, reload, paneTable }) => {
 			for (const argv of [
 				['occur', 'coffee', '-y'],
 				['occur', 'tea', '-t', '0915'],
@@ -52,24 +53,26 @@ describe('the time an entry is rendered with', () => {
 
 			const tail = await run(['tail']);
 			assert.equal(tail.code, 0, tail.stderr);
-			const lines = tail.stdout.split('\n');
-			// These are the CLI's own info lines (the wasm renderer): a P1D row
-			// degrades to its bare date, a clock carries its offset, and the
-			// `±5m` the CLI paints after a stamp is carried too.
-			assert.equal(lines[0], `${yesterday}  coffee ∅●`);
-			assert.equal(lines[1], '09:15:00+0  tea ∅●');
-			assert.equal(lines[2], '10:00:00+0±5m  water ∅●', `the ±5m entry lost its clock: ${lines[2]}`);
+			// These are the CLI's own table rows (the wasm renderer): a P1D
+			// row degrades to its bare date, a clock keeps its clock, and
+			// the `±5m` the CLI paints after a stamp is carried too. The
+			// listing's shared UTC offset rides in the header (da-lkji).
+			assert.deepEqual(rowTexts(tail.stdout), [
+				'time (+0) field s _n hid',
+				`${yesterday} coffee ∅● _3 <hid>`,
+				'09:15:00 tea ∅● _2 <hid>',
+				'10:00:00±5m water ∅● _1 <hid>'
+			]);
 
 			// And on the screen, which is where the invented midnight was
 			// read. The panes run their command on mount, so the reload is
 			// how the tail pane comes to know about the entries.
 			await reload();
-			const shown = await paneText('tail');
-			assert.match(shown, new RegExp(`${yesterday} {2}coffee`));
-			// `10:00:00` is a clock the water entry owns; what must not appear
-			// is midnight invented for the day-precision coffee.
-			assert.doesNotMatch(shown, /00:00:00\+0 {2}coffee/, `a clock the entry disclaims: ${shown}`);
-			assert.match(shown, /09:15:00\+0 {2}tea/, `the ordinary entry lost its clock: ${shown}`);
+			const table = await paneTable('tail');
+			const times = table.rows.map((cells) => cells[table.keys.indexOf('time')]);
+			// The date the coffee owns, the clocks the other two own — and
+			// no midnight invented for the day-precision row.
+			assert.deepEqual(times, [yesterday, '09:15:00', '10:00:00±5m']);
 		});
 	});
 });
