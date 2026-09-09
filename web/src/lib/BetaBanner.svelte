@@ -38,13 +38,23 @@
 	// (another tab closes, the pool frees up, the worker migrates across) and
 	// a banner warning about lost data should go away when it stops being
 	// true. `$storage` is the same value the repl frame tints itself from.
+	// A blocked store means the dismissal cannot be remembered, so the
+	// banner shows — which is the right way round for a warning.
 	onMount(() => {
-		show = localStorage.getItem(DISMISS_KEY) !== '1';
+		try {
+			show = localStorage.getItem(DISMISS_KEY) !== '1';
+		} catch {
+			show = true;
+		}
 	});
 
 	function dismiss() {
 		show = false;
-		localStorage.setItem(DISMISS_KEY, '1');
+		try {
+			localStorage.setItem(DISMISS_KEY, '1');
+		} catch {
+			// It goes away for this session and comes back on the next.
+		}
 	}
 
 	// Degraded storage overrides dismissal. Every branch here is one where an

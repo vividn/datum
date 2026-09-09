@@ -47,3 +47,27 @@ export function dateLabel(time: DatumTime): string {
 	const local = new Date(new Date(time.utc).getTime() + time.offsetMinutes * 60_000);
 	return local.toISOString().slice(0, 10);
 }
+
+/** `HH:MM:SS` in the browser's zone, 24-hour — `clockLabel` to the second. */
+export function clockSecondsLabel(date: Date): string {
+	return `${clockLabel(date)}:${String(date.getSeconds()).padStart(2, '0')}`;
+}
+
+/** The `DatumTime` an instant is when read in the browser's own zone. */
+export function localTime(date: Date): DatumTime {
+	return { utc: date.toISOString(), offsetMinutes: -date.getTimezoneOffset() };
+}
+
+/**
+ * When something happened, for a reader watching it happen: the clock
+ * alone while it is still today, the date in front of it once it isn't.
+ *
+ * The second half is the tail's rule for a row older than the day, and it
+ * is `dateLabel` that applies it — the one date renderer, rather than a
+ * second one grown next to it (da-6eou).
+ */
+export function stampLabel(date: Date, now: Date): string {
+	const clock = clockSecondsLabel(date);
+	if (startOfDay(date).getTime() === startOfDay(now).getTime()) return clock;
+	return `${dateLabel(localTime(date))} ${clock}`;
+}

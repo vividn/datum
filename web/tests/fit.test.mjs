@@ -267,6 +267,59 @@ describe('a pane', () => {
 		}
 	});
 
+	// The REPL's prompt line grew two things at once (da-9ozz): a live
+	// clock to the left of the caret, and a scrollback that survives a
+	// reload. Either could take the input's width on a phone — the clock
+	// by sitting beside it, the scrollback by being wide enough to widen
+	// the pane under it. A command line you cannot see what you typed in
+	// is not a command line, so the clock drops its seconds down here and
+	// the input keeps the room.
+	test('keeps the REPL input wide on a 360px phone, ten commands of scrollback and all', async () => {
+		await withApp(
+			async ({ page }) => {
+				const clock = await page.locator('.repl .line .stamp').innerText();
+				assert.match(clock, /^\d{2}:\d{2}$/, `the prompt clock kept its seconds at 360px: ${clock}`);
+
+				const { input, line, pane } = await page.evaluate(() => {
+					const form = document.querySelector('.repl .line');
+					return {
+						input: form.querySelector('input').getBoundingClientRect().width,
+						line: form.getBoundingClientRect().width,
+						pane: document.querySelector('.repl section.pane').getBoundingClientRect().width
+					};
+				});
+				assert.ok(
+					input >= line * 0.6,
+					`the prompt gave the input ${input.toFixed(0)}px of a ${line.toFixed(0)}px line`
+				);
+				assert.ok(line <= pane + 1, `the prompt line runs past its pane: ${line} in ${pane}`);
+			},
+			{
+				viewport: { width: 360, height: 640 },
+				prepare: (context) =>
+					context.addInitScript((key) => {
+						const ranAt = Date.now();
+						localStorage.setItem(
+							key,
+							JSON.stringify({
+								scrollback: Array.from({ length: 10 }, (_, i) => ({
+									line: `occur coffee cups=${i}`,
+									ranAt: ranAt - (10 - i) * 60_000,
+									result: {
+										argv: ['occur', 'coffee', `cups=${i}`],
+										code: 0,
+										stdout: `CREATE 0192f3c4d5e6 coffee:2026-09-09T0${i}:00:00Z`,
+										stderr: ''
+									}
+								})),
+								history: ['occur coffee cups=9']
+							})
+						);
+					}, 'datum.repl.v1')
+			}
+		);
+	});
+
 	// The drawn views are re-REQUESTED at the pane's size rather than
 	// scaled into it, so the size has to be re-asked on every resize and
 	// not only on mount — otherwise a window drag leaves the old canvas
