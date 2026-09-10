@@ -123,8 +123,8 @@ export function initDb(): Promise<void> {
  */
 export async function runCli(argv: string[], env: string[], stdin?: string): Promise<CliResult> {
 	const cli = (await request({ op: 'cli', argv, env, stdin })).cli!;
-	if (cli.changed) {
-		announceChange();
+	if (cli.changed.length) {
+		announceChange(cli.changed);
 		if (cli.storage === 'opfs') for (const watcher of durableWatchers) watcher();
 	}
 	return cli;

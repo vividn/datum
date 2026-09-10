@@ -20,8 +20,11 @@ export interface CliResult {
 	code: number;
 	stdout: string;
 	stderr: string;
-	/** Whether the process committed a write — other tabs refresh on it. */
-	changed: boolean;
+	/**
+	 * The databases the process committed a write to, by name (`datum`,
+	 * `_internal`) — other tabs refresh what reads that one.
+	 */
+	changed: string[];
 	storage: StorageKind;
 	/** Where the time went, in ms; `tries` is how many opens the handles took. */
 	ms: {

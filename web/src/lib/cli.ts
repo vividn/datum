@@ -31,7 +31,7 @@
 
 import { File as MemFile, OpenFile, WASI, type Fd } from '@bjorn3/browser_wasi_shim';
 import cliWasm from './wasm/datum-cli.wasm?url';
-import { DB_FILES, MemoryHandle, opfsDirectory, type Handle } from './wasiFs.js';
+import { DATABASES, DB_FILES, MemoryHandle, opfsDirectory, type Handle } from './wasiFs.js';
 import type { CliResult, StorageKind } from './dbProtocol.js';
 
 /** Where the CLI's files live in OPFS. */
@@ -163,21 +163,25 @@ async function exec(
 ) {
 	const stdout = new MemFile([]);
 	const stderr = new MemFile([]);
-	const db = handles.get(DB_FILES[0])!;
-	// A process that creates the database is not a write of the user's: the
+	// Measured per database, since the change counter is per file: a layout
+	// saved to `_internal` is no reason to re-run the panes on `datum`.
+	// A process that creates a database is not a write of the user's: the
 	// first pane to run makes the schema, and that is no reason to ask the
 	// browser to keep anything, or to tell the other tabs (da-frg2).
-	const existed = db.getSize() > 0;
-	const before = changeCounter(db);
+	const dbs = DATABASES.map((name) => ({ name, db: handles.get(`${name}.db`)! }));
+	const before = dbs.map(({ db }) => db.getSize() > 0 && changeCounter(db));
 	const fds: Fd[] = [
 		new OpenFile(new MemFile(new TextEncoder().encode(stdin))),
 		new OpenFile(stdout),
 		new OpenFile(stderr),
 		opfsDirectory('/data', handles)
 	];
-	// HOME inside the preopen: datum makes its data and config dirs there,
-	// in memory for the length of the process. The database is DATUM_DB.
-	const vars = ['HOME=/data', 'DATUM_DB=/data/datum.db', ...env];
+	// HOME inside the preopen: datum makes its config dir there, in memory
+	// for the length of the process. The database is DATUM_DB — and datum's
+	// data dir is the preopen itself, so `--db <name>` lands on
+	// `/data/<name>.db` by the CLI's own rule, and `--db _internal` is the
+	// other persisted file with nothing here parsing argv for it.
+	const vars = ['HOME=/data', 'DATUM_HOME=/data', 'DATUM_DB=/data/datum.db', ...env];
 	const args = ['datum', ...argv];
 	const wasi = new WASI(args, vars, fds, { debug: false });
 	// The shim (0.4.2, the latest) sizes argv in UTF-16 units and writes it
@@ -212,7 +216,9 @@ async function exec(
 		// Unterminated, as every stdout on the seam is.
 		stdout: decoder.decode(stdout.data).replace(/\n+$/, ''),
 		stderr: decoder.decode(stderr.data).replace(/\n+$/, ''),
-		changed: existed && changeCounter(db) !== before,
+		changed: dbs
+			.filter(({ db }, i) => before[i] !== false && changeCounter(db) !== before[i])
+			.map(({ name }) => name),
 		started,
 		ran,
 		flushed: performance.now()
@@ -246,12 +252,15 @@ function fallToMemory(): void {
 }
 
 /**
- * Go back for the file until we have it, then move what memory holds onto it.
+ * Go back for the files until we have them, then move what memory holds
+ * onto them.
  *
- * The move is two commands of the CLI's own — `db backup -` out of memory,
- * `db restore -` into the file — queued like any other, so no command can
- * run against a half-moved pair. Restore is content-hash idempotent, so rows
- * another tab already has are skipped rather than doubled.
+ * The move is two commands of the CLI's own per database — `db backup -` out
+ * of memory, `db restore -` into the file — queued like any other, so no
+ * command can run against a half-moved pair. Restore is content-hash
+ * idempotent, so rows another tab already has are skipped rather than
+ * doubled. (It moves the live rows: a layout's older versions, kept in the
+ * database's history, stay behind in memory.)
  */
 function keepTrying(delay: number): void {
 	setTimeout(() => {
@@ -260,12 +269,26 @@ function keepTrying(delay: number): void {
 			if (!held) return;
 			try {
 				const module = await compile();
+				// Memory stays the database until every one has moved: half
+				// the data durable is worse than all of it in memory, because
+				// nobody can see which half. A retry after a half-done move
+				// restores the first again, which idempotence makes harmless.
 				const restored = await withFiles(async (handles) => {
-					const backup = await exec(module, held, ['db', 'backup', '-'], lastEnv);
-					if (backup.code !== 0) throw new Error(backup.stderr);
-					const restore = await exec(module, handles, ['db', 'restore', '-'], lastEnv, backup.stdout);
-					if (restore.code !== 0) throw new Error(restore.stderr);
-					return restore.stdout;
+					const said: string[] = [];
+					for (const db of DATABASES) {
+						const backup = await exec(module, held, ['--db', db, 'db', 'backup', '-'], lastEnv);
+						if (backup.code !== 0) throw new Error(backup.stderr);
+						const restore = await exec(
+							module,
+							handles,
+							['--db', db, 'db', 'restore', '-'],
+							lastEnv,
+							backup.stdout
+						);
+						if (restore.code !== 0) throw new Error(restore.stderr);
+						said.push(`${db}: ${restore.stdout}`);
+					}
+					return said.join('; ');
 				});
 				memory = null;
 				console.info(`durable storage recovered: ${restored}`);

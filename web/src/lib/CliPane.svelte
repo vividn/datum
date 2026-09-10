@@ -87,7 +87,7 @@
 		}
 		const at = ++started;
 		const next = await run(argv);
-		if (guard && next.changed) writer = of;
+		if (guard && next.changed?.length) writer = of;
 		if (probing === of) {
 			probing = null;
 			const again = deferred && spec === of && writer !== of;

@@ -12,6 +12,7 @@
 	import BetaBanner from '$lib/BetaBanner.svelte';
 	import { installConsole } from '$lib/console.js';
 	import { downloadBackup } from '$lib/backup.js';
+	import LayoutControls from '$lib/layout/LayoutControls.svelte';
 	import { page } from '$app/stores';
 
 	const links = [
@@ -86,6 +87,7 @@
 				</a>
 			{/each}
 		</nav>
+		<LayoutControls />
 		<button
 			type="button"
 			class="export"

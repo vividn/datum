@@ -18,12 +18,19 @@
 //
 // Every other path lives in memory for the length of one process: the
 // dot-file lock SQLite's WASI build takes (`datum.db.lock`, a directory —
-// WASI has no fcntl locks), and anything datum writes under HOME.
+// WASI has no fcntl locks), and anything else datum writes under HOME.
 
 import { Directory, PreopenDirectory, SyncOPFSFile, wasi, type Inode } from '@bjorn3/browser_wasi_shim';
 
-/** Every file SQLite keeps beside a database in rollback-journal mode. */
-export const DB_FILES = ['datum.db', 'datum.db-journal'];
+/**
+ * The databases that persist: the user's, and `_internal` — the app's own
+ * datum database, which holds the saved layouts (da-wpgy). Any other `--db`
+ * lives in memory for one process, as every other file does.
+ */
+export const DATABASES = ['datum', '_internal'];
+
+/** Every file SQLite keeps for them in rollback-journal mode. */
+export const DB_FILES = DATABASES.flatMap((db) => [`${db}.db`, `${db}.db-journal`]);
 
 /** The part of `FileSystemSyncAccessHandle` the shim uses. */
 export type Handle = ConstructorParameters<typeof SyncOPFSFile>[0];

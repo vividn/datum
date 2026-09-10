@@ -37,23 +37,27 @@ function open(): BroadcastChannel | null {
 	return channel;
 }
 
-/** Say that this tab wrote something. Safe to call when nobody is listening. */
-export function announceChange(): void {
-	open()?.postMessage({ from: self_ });
+/**
+ * Say that this tab wrote to `dbs` (by name: `datum`, `_internal`), or to
+ * all of them when unsaid. Safe to call when nobody is listening.
+ */
+export function announceChange(dbs?: string[]): void {
+	open()?.postMessage({ from: self_, dbs });
 }
 
 /**
- * Run `handler` when ANOTHER tab writes. Returns an unsubscribe.
+ * Run `handler` when ANOTHER tab writes to `db`. Returns an unsubscribe.
  *
  * The `from` check is what stops a write echoing back into the tab that made
  * it and refreshing it a second time — harmless but wasteful, and it would
- * make the refresh count a poor witness in any test.
+ * make the refresh count a poor witness in any test. The `db` check is the
+ * same economy across databases: a saved layout does not re-run the panes.
  */
-export function onExternalChange(handler: () => void): () => void {
+export function onExternalChange(handler: () => void, db = 'datum'): () => void {
 	const c = open();
 	if (!c) return () => {};
 	const listener = (e: MessageEvent) => {
-		if (e.data?.from !== self_) handler();
+		if (e.data?.from !== self_ && (!e.data?.dbs || e.data.dbs.includes(db))) handler();
 	};
 	c.addEventListener('message', listener);
 	return () => c.removeEventListener('message', listener);

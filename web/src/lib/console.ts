@@ -4,7 +4,8 @@
 // $lib/run.ts) plus two reads of what got stored, published on the window
 // so the app can be driven and inspected the way the CLI is — from a
 // prompt. It adds no behaviour: both reads are CLI commands the app already
-// runs, `db backup -` and `tail --json`.
+// runs, `db backup -` and `tail --json`, and `layouts` is the layout store
+// ($lib/layout/store.ts), itself nothing but CLI commands.
 //
 // It is also what web/tests binds to. A stable, named handle is what keeps
 // the tests from reaching into a module graph whose filenames change with
@@ -13,6 +14,7 @@
 import { run, runLine, setRunner, type CommandRunner, type RunResult } from './run.js';
 import { storedEntries, type StoredEntry } from './backup.js';
 import { tailListing, type TailColumn, type TailRow } from './tail.js';
+import * as layouts from './layout/store.js';
 
 export interface DatumConsole {
 	/** Run one command, argv without the program name. */
@@ -25,10 +27,19 @@ export interface DatumConsole {
 	entries(limit?: number): Promise<StoredEntry[]>;
 	/** `datum tail --json`: the rows and the painted columns the tail pane lays out. */
 	tailRows(): Promise<{ rows: TailRow[]; columns: TailColumn[] }>;
+	/** The saved layouts in the `_internal` database: list, load, save, restore. */
+	layouts: typeof layouts;
 }
 
 /** Publish the handle on `target` (the window, in the app). */
 export function installConsole(target: Record<string, unknown>): void {
-	const handle: DatumConsole = { run, runLine, setRunner, entries: storedEntries, tailRows: tailListing };
+	const handle: DatumConsole = {
+		run,
+		runLine,
+		setRunner,
+		entries: storedEntries,
+		tailRows: tailListing,
+		layouts
+	};
 	target.datum = handle;
 }

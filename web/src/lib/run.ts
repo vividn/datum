@@ -21,11 +21,12 @@ export interface RunResult {
 	stdout: string;
 	stderr: string;
 	/**
-	 * Whether the process wrote to the database, by effect: the worker reads
-	 * SQLite's change counter either side of it ($lib/cli.ts), so no list of
-	 * verbs is consulted. Absent where nothing ran.
+	 * The databases the process wrote to (`datum`, `_internal`), by effect:
+	 * the worker reads each file's SQLite change counter either side of it
+	 * ($lib/cli.ts), so no list of verbs is consulted. Absent where nothing
+	 * ran.
 	 */
-	changed?: boolean;
+	changed?: string[];
 }
 
 export type CommandRunner = (argv: string[], stdin?: string) => Promise<RunResult>;
