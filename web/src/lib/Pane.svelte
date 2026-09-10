@@ -36,7 +36,7 @@
 </script>
 
 <section class="pane" class:alarm>
-	<h2>{title}</h2>
+	<h2><slot name="title">{title}</slot></h2>
 	<div class="body" bind:this={body}><slot /></div>
 	<slot name="footer" />
 </section>

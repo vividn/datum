@@ -171,3 +171,33 @@ describe('on a phone-sized screen', () => {
 		}, { viewport: PHONE });
 	});
 });
+
+// The command pane's controls (da-wb2n) are buttons in the tab order, not
+// click targets: from the prompt, Tab reaches ✎, the keyboard types and
+// applies a command, and when that command writes, Tab reaches its ▶.
+describe('by keyboard', () => {
+	/** Tab forward from where focus is until `selector` has it. */
+	async function tabTo(page, selector) {
+		for (let i = 0; i < 40; i++) {
+			if (await page.evaluate((s) => document.activeElement?.matches(s), selector)) return;
+			await page.keyboard.press('Tab');
+		}
+		assert.fail(`Tab never reached ${selector}`);
+	}
+
+	test("the command pane's ✎ and ▶ are reachable", async () => {
+		await withApp(async ({ page }) => {
+			await page.locator('.repl input').focus();
+			await tabTo(page, 'button.edit');
+			await page.keyboard.press('Enter');
+			await page.keyboard.type('occur tea');
+			await page.keyboard.press('Enter');
+			await page.locator('button.play').waitFor();
+			await tabTo(page, 'button.play');
+			await page.keyboard.press('Enter');
+			await page.waitForFunction(
+				async () => (await window.datum.entries(500)).filter((e) => e.field === 'tea').length === 2
+			);
+		});
+	});
+});

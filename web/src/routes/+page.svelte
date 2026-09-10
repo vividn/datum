@@ -8,6 +8,8 @@
 	    |                           |     nowview     |
 	    |           repl            +-----------------+
 	    |                           |      tail       |
+	    |                           +-----------------+
+	    |                           |     command     |
 	    +---------------------------+-----------------+
 	    | widgets: click to log                   (+) |
 	    +---------------------------------------------+
@@ -19,6 +21,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import CliPane from '$lib/CliPane.svelte';
+	import CommandPane from '$lib/CommandPane.svelte';
 	import DayStrip from '$lib/DayStrip.svelte';
 	import Repl from '$lib/Repl.svelte';
 	import WidgetBar from '$lib/WidgetBar.svelte';
@@ -86,6 +89,7 @@
 	<div class="side">
 		<CliPane spec={NOWVIEW} {epoch} />
 		<CliPane spec={TAIL} {epoch} />
+		<CommandPane {epoch} />
 	</div>
 
 	<!--
@@ -135,12 +139,18 @@
 		min-height: 0;
 	}
 
+	/* Each pane has a floor: datum draws nowview no shorter than a 50px
+	   band plus its axis (92px of picture), and 9rem is that plus the
+	   pane's title bar and padding. A screen too short for three panes at
+	   their floor scrolls this column instead of squeezing nowview into a
+	   scrollbar of its own (da-wb2n). */
 	.side {
 		grid-area: side;
 		display: grid;
-		grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+		grid-template-rows: repeat(3, minmax(9rem, 1fr));
 		gap: 0.75rem;
 		min-height: 0;
+		overflow-y: auto;
 	}
 
 	.widgets {
@@ -162,7 +172,7 @@
 				'repl'
 				'side'
 				'widgets';
-			grid-template-rows: auto minmax(14rem, 2fr) minmax(16rem, 3fr) min-content;
+			grid-template-rows: auto minmax(14rem, 2fr) minmax(28.5rem, 4.5fr) min-content;
 			grid-template-columns: minmax(0, 1fr);
 			overflow-y: auto;
 		}

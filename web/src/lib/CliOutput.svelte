@@ -65,7 +65,7 @@
 		   a table may not — scrolling sideways to a day loses the day —
 		   but scaling shrinks the text with it, and at a pane's width that
 		   is what made the dayview's axis illegible (da-m0cj). A pane that
-		   tells datum its size (`sized` in $lib/panes.ts) gets a band that
+		   tells datum its size (`wantsBox` in $lib/panes.ts) gets a band that
 		   already fits, and this cap then does nothing; one that does not,
 		   like nowview's 520px canvas, still shrinks to the box. */
 		max-width: 100%;
