@@ -125,7 +125,18 @@ export async function runCli(argv: string[], env: string[], stdin?: string): Pro
 	const cli = (await request({ op: 'cli', argv, env, stdin })).cli!;
 	if (cli.changed.length) {
 		announceChange(cli.changed);
-		if (cli.storage === 'opfs') for (const watcher of durableWatchers) watcher();
+		if (cli.storage === 'opfs') {
+			// Each watcher on its own: the command has already run, and a hook
+			// that throws (the persistence prompt, or any later one) must not
+			// turn a written row into a rejected promise (review thread on #160).
+			for (const watcher of durableWatchers) {
+				try {
+					watcher();
+				} catch (error) {
+					console.error('durable-write watcher failed', error);
+				}
+			}
+		}
 	}
 	return cli;
 }

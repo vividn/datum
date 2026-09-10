@@ -52,7 +52,8 @@ let asked = false;
  * Firefox may clear it under storage pressure. So the app asks, but only
  * once there is something to lose: after the first entry lands durably, not
  * on an empty page, where Firefox's prompt would be the first thing a visitor
- * sees. A returning visit reads `persisted()` first and does not ask again.
+ * sees. A returning visit reads `persisted()` first: an origin already
+ * granted is never asked again, one not yet granted is asked once per session.
  *
  * Asked from the page, not the worker, so the answer and the banner's
  * sentence come from one place. The request is never awaited by the write:

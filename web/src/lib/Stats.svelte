@@ -58,9 +58,32 @@
 	$: if (browser) void list(epoch);
 	$: if (browser) void refresh(argv, epoch);
 
+	/** Listings started and the newest one on screen — `list`'s own pair. */
+	let listStarted = 0;
+	let listShown = -1;
+
 	async function list(_epoch: number): Promise<void> {
+		// Last started wins here too: two epoch bumps in quick succession put
+		// two listings in flight, and the older answer must not paint over
+		// the newer one (review thread on #165).
+		const at = ++listStarted;
 		const listed = await run(['fields', '--json']);
-		if (listed.code === 0) fields = JSON.parse(listed.stdout);
+		if (at < listShown) return;
+		listShown = at;
+		if (listed.code === 0) fields = parsed(listed.stdout) ?? fields;
+	}
+
+	/**
+	 * The CLI's JSON, or null when it is not JSON. A process killed
+	 * mid-write leaves partial stdout, and a widget that throws on it is a
+	 * blank pane with a console error nobody sees.
+	 */
+	function parsed<T>(text: string): T | null {
+		try {
+			return JSON.parse(text) as T;
+		} catch {
+			return null;
+		}
 	}
 
 	async function refresh(argv: string[] | null, _epoch: number): Promise<void> {
@@ -70,7 +93,7 @@
 		if (at < shown) return;
 		shown = at;
 		result = text;
-		summary = json?.code === 0 ? JSON.parse(json.stdout) : null;
+		summary = json?.code === 0 ? parsed(json.stdout) : null;
 	}
 
 	function set(next: Partial<StatsSettings>): void {

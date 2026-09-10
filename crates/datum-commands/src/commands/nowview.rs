@@ -217,19 +217,27 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     })
 }
 
-/// Render the nowview SVG, to stdout or `--output-file`.
+/// Render the nowview SVG, to stdout (`-o -`) or `--output-file`.
+///
+/// Bare `nowview` is the terminal band, and `nowview()` routes it to
+/// `render_terminal_once` before this is ever reached — so `None` is not a
+/// second spelling of `-o -` here. The SVG on stdout is an explicit ask
+/// (datum.day's nowview pane, da-g8o8); a reader who saw `None` beside
+/// `Some("-")` could take bare `nowview` for an SVG printer, which the help
+/// text says it is not (review thread on #163).
 fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
+    let Some(target) = args.output_file.as_deref() else {
+        return render_terminal_once(args, db);
+    };
     let c = compute_now(args, db)?;
     let svg = render_nowview_svg(&c.layout, &format_local_hh_mm(c.end), &c.current_states);
 
-    match args.output_file.as_deref() {
-        // `-o -`: the SVG on stdout, for a caller that shows pictures rather
-        // than a terminal (datum.day's nowview pane, da-g8o8).
-        None | Some("-") => {
+    match target {
+        "-" => {
             println!("{svg}");
             Ok(())
         }
-        Some(path) => write_output(path, &svg),
+        path => write_output(path, &svg),
     }
 }
 

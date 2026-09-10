@@ -10,7 +10,8 @@
 	said "stored in this browser" would be a promise the app isn't keeping.
 
 	Durable storage is still best-effort until the browser grants the origin
-	persistence, and then it may be cleared under storage pressure. So the
+	persistence: until it does, the data may be cleared under storage
+	pressure; once granted, it is a promise to keep it. So the
 	durable sentence also says what the browser answered (the `persisted`
 	store, da-frg2): a promise when it gave one, and otherwise — refused or
 	unknown — that it may clear the data, naming installation as the lever.
