@@ -39,6 +39,9 @@
 		{ range: 'month', label: 'month' }
 	];
 
+	/** The custom range's two inputs, by the flag each one fills. */
+	const EDGES = ['since', 'until'] as const;
+
 	let fields: FieldListing[] = [];
 	let result: RunResult | null = null;
 	let summary: FieldStats | StateStats | null = null;
@@ -48,7 +51,7 @@
 
 	$: argv = statsArgv(settings);
 	$: custom = typeof settings.range === 'object' ? settings.range : null;
-	$: states = statesOf(fields.find((f) => f.field === settings.field) ?? { field: '', spec: null, states: [] });
+	$: states = statesOf(fields.find((f) => f.field === settings.field));
 	$: tiles = summary ? tilesOf(summary) : [];
 
 	// Not on mount: there is no `run` outside the browser.
@@ -128,18 +131,30 @@
 	<section>
 		<div class="chips range" role="group" aria-label="time range">
 			{#each PERIODS as { range, label } (range)}
-				<button class:on={settings.range === range} aria-pressed={settings.range === range} on:click={() => set({ range })}
-					>{label}</button
+				<button
+					class:on={settings.range === range}
+					aria-pressed={settings.range === range}
+					on:click={() => set({ range })}>{label}</button
 				>
 			{/each}
-			<button class:on={!!custom} aria-pressed={!!custom} on:click={() => set({ range: { since: '', until: '' } })}
-				>custom</button
+			<button
+				class:on={!!custom}
+				aria-pressed={!!custom}
+				on:click={() => set({ range: { since: '', until: '' } })}>custom</button
 			>
 		</div>
 		{#if custom}
 			<div class="custom">
-				<label>since <input type="datetime-local" value={custom.since} on:change={(e) => set({ range: { ...custom, since: e.currentTarget.value } })} /></label>
-				<label>until <input type="datetime-local" value={custom.until} on:change={(e) => set({ range: { ...custom, until: e.currentTarget.value } })} /></label>
+				{#each EDGES as edge (edge)}
+					<label
+						>{edge}
+						<input
+							type="datetime-local"
+							value={custom[edge]}
+							on:change={(e) => set({ range: { ...custom, [edge]: e.currentTarget.value } })}
+						/></label
+					>
+				{/each}
 			</div>
 		{/if}
 

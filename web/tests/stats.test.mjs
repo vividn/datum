@@ -7,10 +7,23 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp as withAnyApp, workerClock } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
+
+// `stats` measures up to now, so two runs a second apart can print two
+// different durations. Every command here sees one fixed clock, which is
+// what lets the widget's run and the test's run of the same argv agree.
+const clock = workerClock(Date.UTC(2026, 8, 10, 15, 0));
+const withApp = (fn, { prepare, ...options } = {}) =>
+	withAnyApp(fn, {
+		...options,
+		prepare: async (context) => {
+			await clock.prepare(context);
+			await prepare?.(context);
+		}
+	});
 
 /** Terminal text as a reader sees it: no colour codes, runs of space as one. */
 const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+/g, ' ').trim();
@@ -148,6 +161,7 @@ describe('/stats', () => {
 			await expectStats(app, ['stats', 'mood:happy', '--week']);
 
 			await app.page.reload();
+			await app.page.waitForFunction(() => typeof window.datum?.run === 'function');
 			await expectStats(app, ['stats', 'mood:happy', '--week']);
 		});
 	});

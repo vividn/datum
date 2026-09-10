@@ -55,7 +55,7 @@ export function statsArgv({ field, state, range }: StatsSettings): string[] | nu
 }
 
 /** The states a field can be narrowed to — the ones the widget bar offers. */
-export function statesOf(listing: FieldListing): string[] {
-	const shape = shapeFor(listing.spec ?? undefined, listing.states);
+export function statesOf(listing: FieldListing | undefined): string[] {
+	const shape = shapeFor(listing?.spec ?? undefined, listing?.states);
 	return shape.kind === 'states' ? shape.states : [];
 }
