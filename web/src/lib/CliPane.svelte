@@ -13,6 +13,7 @@
 	import TailTable from './TailTable.svelte';
 	import { run, type RunResult } from './run.js';
 	import { paneArgv, wantsBox, type PaneBox, type PaneSpec } from './panes.js';
+	import { settle } from './layout/resizing.js';
 
 	export let spec: PaneSpec;
 	/** Any change re-runs the command. The frame bumps it after each run. */
@@ -45,17 +46,29 @@
 	// box directly, and reports it again on every resize, so the band is
 	// re-drawn at the new size rather than stretched to it. Observed whatever
 	// the command, since a typed one can become `dayview` (da-wb2n).
+	//
+	// Through `settle`: the observer fires on every frame of a border drag,
+	// and a redraw per frame was the jitter (da-jgrn). The box lands once
+	// the drag is dropped, or once a burst of resizes has been over for a
+	// beat; until then the last picture stays, scaled to the box.
 	onMount(() => {
 		if (!body) return;
+		const settled = settle<PaneBox>((next) => {
+			if (box?.width !== next.width || box?.height !== next.height) box = next;
+		});
 		const observer = new ResizeObserver(([entry]) => {
 			// Whole pixels, rounded down: a band a fraction of a pixel wider
 			// than its box is a band the browser scales, and the text with it.
-			const width = Math.floor(entry.contentRect.width);
-			const height = Math.floor(entry.contentRect.height);
-			if (box?.width !== width || box?.height !== height) box = { width, height };
+			settled.push({
+				width: Math.floor(entry.contentRect.width),
+				height: Math.floor(entry.contentRect.height)
+			});
 		});
 		observer.observe(body);
-		return () => observer.disconnect();
+		return () => {
+			observer.disconnect();
+			settled.stop();
+		};
 	});
 
 	// Not on mount: the static build prerenders this page, and there is no
@@ -65,8 +78,17 @@
 	// `sized` stays null, and an unchanged null invalidates nothing.
 	// The tail table reads its own listing (see TailTable.svelte); every
 	// other pane is one command through the seam.
-	$: sized = wantsBox(spec.argv) ? box : null;
-	$: request = { argv: spec.view === 'tail-table' ? null : paneArgv(spec.argv, sized), epoch };
+	//
+	// By the spec's WORDS, not the spec: the layout hands a pane its spec
+	// afresh on every change to the tree (a spread prop), and Svelte counts
+	// an object handed over again as changed — so a request built from
+	// `spec` itself re-ran every drawn pane on every nudge of a border
+	// (da-jgrn). Strings and booleans are compared by value, and stay put.
+	$: words = JSON.stringify(spec.argv);
+	$: table = spec.view === 'tail-table';
+	$: drawn = wantsBox(spec.argv);
+	$: sized = drawn ? box : null;
+	$: request = { argv: table ? null : paneArgv(JSON.parse(words) as string[], sized), epoch };
 	$: manual = guard && writer === spec;
 	$: if (browser && request.argv && !manual) void refresh(request.argv);
 

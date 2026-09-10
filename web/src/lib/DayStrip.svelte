@@ -54,6 +54,7 @@
 		bandBox,
 		todayBox
 	} from './panes.js';
+	import { settle } from './layout/resizing.js';
 
 	/** Any change re-runs every band. The frame bumps it after each run. */
 	export let epoch = 0;
@@ -135,18 +136,28 @@
 	// of today by exactly the room that was just made. From here as well
 	// as from `draw`, because a resize inside one day's worth moves the
 	// box without changing how many days are in it.
+	//
+	// Through `settle` (layout/resizing.ts): a border being dragged resizes
+	// the box every frame, and a band per frame per day was the jitter
+	// (da-jgrn). The size lands on the drop, or once a burst of resizes has
+	// been over for a beat; the bands drawn already stay up meanwhile,
+	// scaled as whole pictures so their shared axis moves with its labels.
 	onMount(() => {
-		const observer = new ResizeObserver(([entry]) => {
-			const w = Math.floor(entry.contentRect.width);
-			const h = Math.floor(entry.contentRect.height);
+		const settled = settle<{ w: number; h: number }>(({ w, h }) => {
 			if (w !== width) width = w;
 			if (h !== height) {
 				height = h;
 				void anchor();
 			}
 		});
+		const observer = new ResizeObserver(([entry]) => {
+			settled.push({ w: Math.floor(entry.contentRect.width), h: Math.floor(entry.contentRect.height) });
+		});
 		if (body) observer.observe(body);
-		return () => observer.disconnect();
+		return () => {
+			observer.disconnect();
+			settled.stop();
+		};
 	});
 
 	/** How many draws have been started, and the newest one on screen. */

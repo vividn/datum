@@ -16,6 +16,7 @@
 -->
 <script lang="ts">
 	import { ansiSpans } from './ansi.js';
+	import { resizing } from './layout/resizing.js';
 
 	export let text: string;
 	/** Paint the block as an error (stderr). */
@@ -28,7 +29,11 @@
 </script>
 
 {#if svg}
-	<img class="svg" src={svg} alt="dayview" />
+	<!-- While a border is being dragged the picture is not re-asked for
+	     (layout/resizing.ts); it follows its box as one scaled image
+	     until the drop redraws it — whole, so an axis and its labels
+	     move together (da-jgrn). -->
+	<img class="svg" class:stretch={$resizing} src={svg} alt="dayview" />
 {:else}
 	<pre class:error>{#each spans as span}<span
 				style:color={span.fg}
@@ -70,5 +75,8 @@
 		   like nowview's 520px canvas, still shrinks to the box. */
 		max-width: 100%;
 		height: auto;
+	}
+	.svg.stretch {
+		width: 100%;
 	}
 </style>

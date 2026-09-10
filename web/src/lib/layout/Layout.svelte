@@ -8,12 +8,15 @@
 
 	Borders: pointer events with capture, so a fast drag does not lose the
 	border; `touch-action: none` on the border only, so a finger dragging
-	it is not a scroll. A move applies the new ratios at most four times a
-	second and the drop applies them once more — every CLI pane re-runs a
-	WASI process per size it is shown at, and a drag at pointer rate would
-	be sixty of them a second. The keyboard has the border too: it is
-	focusable, `role="separator"` with the ratio as its value, and the
-	arrows along the split's axis move it by 2%.
+	it is not a scroll. While the border is held the split re-lays out
+	with CSS alone — the ratios being dragged are a local preview on the
+	cells' `--ratio`, and the tree is not written — and the drop applies
+	them once. Every CLI pane re-runs a WASI process per size it is shown
+	at, so the panes are told a drag is on (`resizing`, layout/resizing.ts)
+	and keep their last picture, scaled, until the drop (da-jgrn). The
+	keyboard has the border too: it is focusable, `role="separator"` with
+	the ratio as its value, and the arrows along the split's axis move it
+	by 2%.
 
 	Floors: a child's cell is never narrower or shorter than its floor
 	(`floorOf`: the largest of its tabs' kinds' minimums, plus the frame),
@@ -33,18 +36,25 @@
 	import { apply } from './current.js';
 	import { EMPTY_KIND, floorOf, newWidget, setRatios, setWidget } from './tree.js';
 	import { KINDS, floorOfKind } from './registry.js';
+	import { resizing } from './resizing.js';
 
 	export let pane: PaneNode;
 	export let epoch = 0;
 	/** The root pane's id: the one pane whose last tab cannot be closed. */
 	export let rootId: NodeId;
 
-	/** The border between two children, in pixels — the old grid's gap. */
-	const BORDER = 12;
-	/** What a frame adds around its content: the title bar and the border. */
-	const CHROME = { width: 2, height: 28 };
-	/** How often a drag re-applies the ratios, at most. */
-	const APPLY_EVERY_MS = 250;
+	/**
+	 * The border between two children, in pixels — the gap between panes,
+	 * and the whole of it is the handle. Halved from the old grid's 12
+	 * (vividn: "reduce margins some"), to the floor a finger needs.
+	 */
+	const BORDER = 8;
+	/**
+	 * What a frame adds around its content: its outline (1px a side) and
+	 * the inside half of the title straddling it (PaneFrame.svelte's
+	 * `--inset`).
+	 */
+	const CHROME = { width: 2, height: 20 };
 	/** What one arrow press moves a border. */
 	const NUDGE = 0.02;
 
@@ -75,8 +85,8 @@
 		from: number[];
 		minRatios: number[];
 	} | null = null;
-	let pending: number[] | null = null;
-	let applied = 0;
+	/** The ratios being dragged, shown on the cells and not yet in the tree. */
+	let preview: number[] | null = null;
 
 	function cells(): HTMLElement[] {
 		return splitEl ? [...splitEl.querySelectorAll<HTMLElement>(':scope > .cell')] : [];
@@ -118,7 +128,7 @@
 			from: split.ratios,
 			minRatios: minRatios(split)
 		};
-		applied = performance.now();
+		resizing.set(true);
 		event.preventDefault();
 	}
 
@@ -126,29 +136,30 @@
 		if (!drag || drag.span <= 0) return;
 		const at = split.direction === 'row' ? event.clientX : event.clientY;
 		const delta = ((at - drag.origin) / drag.span) * drag.pair;
-		pending = shifted(drag.from, drag.index, delta);
-		if (performance.now() - applied >= APPLY_EVERY_MS) commit(split);
+		preview = shifted(drag.from, drag.index, delta, drag.minRatios);
 	}
 
+	/** The drop: the tree takes the previewed ratios, once, and the panes redraw. */
 	function up(split: Split) {
-		commit(split);
+		const ratios = preview;
+		const floors = drag?.minRatios;
 		drag = null;
+		preview = null;
+		if (ratios) apply((l) => setRatios(l, split.id, ratios, floors));
+		resizing.set(false);
 	}
 
-	function commit(split: Split) {
-		if (!pending || !drag) return;
-		const ratios = pending;
-		const floors = drag.minRatios;
-		pending = null;
-		applied = performance.now();
-		apply((l) => setRatios(l, split.id, ratios, floors));
-	}
-
-	/** Move `delta` of the split from child `index + 1` to child `index`. */
-	function shifted(ratios: number[], index: number, delta: number): number[] {
+	/**
+	 * Move `delta` of the split from child `index + 1` to child `index`,
+	 * neither side below its floor — so what the drag shows is what the
+	 * drop stores, and the drop moves nothing.
+	 */
+	function shifted(ratios: number[], index: number, delta: number, floors?: number[]): number[] {
 		const next = [...ratios];
 		const pair = next[index] + next[index + 1];
-		next[index] = Math.min(pair, Math.max(0, next[index] + delta));
+		const lo = Math.min(floors?.[index] ?? 0, pair);
+		const hi = Math.max(lo, pair - (floors?.[index + 1] ?? 0));
+		next[index] = Math.min(hi, Math.max(lo, next[index] + delta));
 		next[index + 1] = pair - next[index];
 		return next;
 	}
@@ -159,9 +170,8 @@
 		const delta = event.key === grow ? NUDGE : event.key === shrink ? -NUDGE : 0;
 		if (delta === 0) return;
 		event.preventDefault();
-		const ratios = shifted(split.ratios, index, delta);
 		const floors = minRatios(split);
-		apply((l) => setRatios(l, split.id, ratios, floors));
+		apply((l) => setRatios(l, split.id, shifted(split.ratios, index, delta, floors), floors));
 	}
 </script>
 
@@ -182,7 +192,7 @@
 							role="separator"
 							tabindex="0"
 							aria-orientation={split.direction === 'row' ? 'vertical' : 'horizontal'}
-							aria-valuenow={Math.round(split.ratios[i - 1] * 100)}
+							aria-valuenow={Math.round((preview ?? split.ratios)[i - 1] * 100)}
 							aria-valuemin="0"
 							aria-valuemax="100"
 							aria-label="resize"
@@ -197,7 +207,7 @@
 				<div
 					class="cell {named(child)}"
 					class:fit={fits(child)}
-					style:--ratio={split.ratios[i]}
+					style:--ratio={(preview ?? split.ratios)[i]}
 					style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
 				>
 					<svelte:self pane={child} {epoch} {rootId} />
@@ -270,7 +280,7 @@
 	}
 
 	.border {
-		flex: 0 0 12px;
+		flex: 0 0 8px;
 		touch-action: none;
 		position: relative;
 	}

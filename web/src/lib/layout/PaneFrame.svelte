@@ -2,13 +2,21 @@
 	The frame of one pane: its bar, its tabs, its `…` menu, and the swipe.
 
 	A PANE is the holder (vividn's word); what it holds is in the slot. With
-	one tab the title sits on the frame, as `Pane.svelte`'s `h2` always
-	has; with more, a tab strip takes its place. The bar sits on the edge
-	the pane's `bar` names — top or bottom running across, left or right
-	running DOWN with the words rotated (`writing-mode: vertical-rl`), and
-	on the left turned round so it reads bottom-to-top like a book's spine
-	(vividn, 15:39) — with the title or the tabs gathered along it by
-	`bar.align` and the menu always at the end.
+	one tab there is no bar at all: the title sits ON the frame's outline,
+	small and quiet, straddling the line the way a legend does, and the
+	`…` is a badge right after it, on the same line (vividn, 17:56 — "just
+	overlay the title on the frame, with the nice ... button visible next
+	to it", da-jgrn). With more tabs the tab strip sits there instead and
+	the badge follows the LAST tab. The line is the edge the pane's `bar`
+	names — top or bottom running across, left or right running DOWN with
+	the words rotated (`writing-mode: vertical-rl`), and on the left turned
+	round so it reads bottom-to-top like a book's spine (vividn, 15:39) —
+	with the title or the tabs gathered along it by `bar.align`. The title
+	and the badge hang mostly INSIDE the outline (`--bias` of their height
+	out, the rest in) and the content is padded by the inside part
+	(`--inset`), so nothing is covered; what hangs out is less than the gap
+	between panes, so the badge never lies over a neighbour, and the
+	border between two panes is grabbed right beside it.
 
 	A pane whose tab holds a split rather than a widget is a HOLDER: no
 	border, no background, and — with one untitled tab — a bar that is
@@ -184,8 +192,10 @@
 			{:else if !compact}
 				<h2 bind:this={h2}>{#if !$hosted}{title}{/if}</h2>
 			{/if}
+			<!-- Inside `.along`, after the title or the last tab: the badge
+			     goes where the alignment puts them, and right beside them. -->
+			<PaneMenu {items} label="menu of the {title} pane" />
 		</div>
-		<PaneMenu {items} label="menu of the {title} pane" />
 	</div>
 	<div
 		class="content"
@@ -211,6 +221,12 @@
 		flex: 1;
 		min-width: 0;
 		min-height: 0;
+		/* The title, the tabs and the badge are this tall — 24px, a finger's
+		   floor (reachable.test.mjs) — and hang `--bias` of it outside the
+		   outline; `--inset` is the rest, which the content makes room for. */
+		--row: 24px;
+		--bias: 6px;
+		--inset: calc(var(--row) - var(--bias));
 	}
 
 	.pane {
@@ -219,16 +235,18 @@
 		border-radius: 6px;
 	}
 
-	/* The bar's edge is the flex direction: the bar is always first in the
+	/* A holder has no outline to sit on, so its bar stays a row of its own
+	   — the root's whole cost is one badge-high strip with `…` at its end.
+	   The bar's edge is the flex direction: the bar is always first in the
 	   DOM (so it is first for the keyboard) and the direction puts it on
 	   the edge asked for. */
-	.edge-bottom {
+	.holder.edge-bottom {
 		flex-direction: column-reverse;
 	}
-	.edge-left {
+	.holder.edge-left {
 		flex-direction: row;
 	}
-	.edge-right {
+	.holder.edge-right {
 		flex-direction: row-reverse;
 	}
 
@@ -238,19 +256,54 @@
 		flex: none;
 		min-width: 0;
 		min-height: 0;
-		border-bottom: 1px solid #1e1e38;
 	}
-	.edge-bottom > .titlebar {
-		border-bottom: none;
-		border-top: 1px solid #1e1e38;
+
+	/* On a pane the bar is a LINE, not a box: zero thick, laid along the
+	   outline and moved `--bias` inward, with its items centred on it —
+	   so they straddle the outline, more in than out. It takes no pointer
+	   itself (the border beside it must stay grabbable); its items do. */
+	.pane > .titlebar {
+		position: absolute;
+		z-index: 2;
+		pointer-events: none;
 	}
-	.edge-left > .titlebar {
-		border-bottom: none;
-		border-right: 1px solid #1e1e38;
+	.pane.edge-top > .titlebar {
+		top: var(--bias);
+		left: 0;
+		right: 0;
+		height: 0;
 	}
-	.edge-right > .titlebar {
-		border-bottom: none;
-		border-left: 1px solid #1e1e38;
+	.pane.edge-bottom > .titlebar {
+		bottom: var(--bias);
+		left: 0;
+		right: 0;
+		height: 0;
+	}
+	.pane.edge-left > .titlebar {
+		left: var(--bias);
+		top: 0;
+		bottom: 0;
+		width: 0;
+	}
+	.pane.edge-right > .titlebar {
+		right: var(--bias);
+		top: 0;
+		bottom: 0;
+		width: 0;
+	}
+
+	/* The room the title takes inside, on whichever edge it is on. */
+	.pane.edge-top > .content {
+		padding-top: var(--inset);
+	}
+	.pane.edge-bottom > .content {
+		padding-bottom: var(--inset);
+	}
+	.pane.edge-left > .content {
+		padding-left: var(--inset);
+	}
+	.pane.edge-right > .content {
+		padding-right: var(--inset);
 	}
 
 	/* Along the left and the right the words are rotated. `vertical-rl`
@@ -265,20 +318,19 @@
 		transform: rotate(180deg);
 	}
 
-	.holder > .titlebar {
-		border: none;
-	}
-	.titlebar.compact {
-		/* The root's whole cost: a hairline strip with `…` at its end. */
-		min-height: 0.9rem;
-		font-size: 0.7rem;
-	}
-
 	.along {
 		flex: 1;
 		display: flex;
+		align-items: center;
+		gap: 4px;
 		min-width: 0;
 		min-height: 0;
+		pointer-events: none;
+		/* Off the rounded corners. Logical: along the bar, whichever way it runs. */
+		padding-inline: 0.5rem;
+	}
+	.holder > .titlebar > .along {
+		padding-inline: 0;
 	}
 	.align-start {
 		justify-content: flex-start;
@@ -289,38 +341,53 @@
 	.align-end {
 		justify-content: flex-end;
 	}
+	/* A holder with nothing to say keeps its `…` at the end, as before. */
+	.titlebar.compact > .along {
+		justify-content: flex-end;
+	}
 
 	h2 {
 		margin: 0;
-		padding: 0.35rem 0.6rem;
+		padding: 0 0.4rem;
+		block-size: var(--row);
+		line-height: var(--row);
+		min-inline-size: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		font-size: 0.75rem;
 		font-weight: normal;
 		letter-spacing: 0.06em;
 		color: #7c7cff;
 		white-space: nowrap;
+		pointer-events: auto;
+		/* Its own ground, so the outline stops at the words rather than
+		   running through them. */
+		background: #0d0d1a;
+		border-radius: 6px;
 	}
 
 	.tabs {
 		display: flex;
+		gap: 4px;
 		min-width: 0;
 		min-height: 0;
+		pointer-events: auto;
 	}
 
+	/* Each tab a small pill on the line, the badge's shape and height. */
 	.tabs button {
-		background: none;
-		border: none;
-		border-bottom: 2px solid transparent;
-		padding: 0.3rem 0.6rem;
+		box-sizing: border-box;
+		block-size: var(--row);
+		padding: 0 0.5rem;
+		background: #0d0d1a;
+		border: 1px solid #2a2a4a;
+		border-radius: 6px;
 		font: inherit;
 		font-size: 0.75rem;
 		letter-spacing: 0.06em;
 		color: #55558a;
 		white-space: nowrap;
 		cursor: pointer;
-	}
-	.vertical .tabs button {
-		border-bottom: none;
-		border-left: 2px solid transparent;
 	}
 
 	.tabs button[aria-selected='true'] {

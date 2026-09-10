@@ -1,5 +1,6 @@
 <!--
-	The `…` menu at the end of a pane's bar.
+	The `…` menu of a pane: a badge on the frame's outline, right after the
+	title or the last tab (PaneFrame.svelte), and the menu it opens.
 
 	A real `<button>` and a real menu: the button opens it (click, Enter,
 	Space), arrow keys walk the items, Home/End jump, Escape closes and
@@ -143,22 +144,34 @@
 {/if}
 
 <style>
+	/* A rounded square the size of a fingertip, with its own ground so it
+	   sits ON the outline rather than under it (vividn, 17:56). 24px is the
+	   floor reachable.test.mjs holds it to. It takes the pointer where
+	   the line it sits on does not. */
 	.more {
 		flex: none;
-		background: none;
-		border: none;
-		padding: 0 0.4rem;
+		box-sizing: border-box;
+		inline-size: 24px;
+		block-size: 24px;
+		display: grid;
+		place-items: center;
+		padding: 0;
+		background: #0d0d1a;
+		border: 1px solid #2a2a4a;
+		border-radius: 6px;
 		color: #55558a;
 		font: inherit;
 		font-size: 0.85rem;
 		line-height: 1;
 		cursor: pointer;
+		pointer-events: auto;
 	}
 
 	.more:hover,
 	.more:focus-visible,
 	.more[aria-expanded='true'] {
 		color: #adadff;
+		border-color: #7c7cff;
 	}
 
 	.menu {

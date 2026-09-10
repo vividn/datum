@@ -140,7 +140,8 @@
 		flex: 1;
 		min-height: 0;
 		overflow: auto;
-		padding: 0.5rem 0.6rem;
+		/* A third off 0.5rem 0.6rem (vividn: "reduce margins some", da-jgrn). */
+		padding: 0.33rem 0.4rem;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.85rem;
 		line-height: 1.35;

@@ -193,6 +193,13 @@ describe('by keyboard', () => {
 			await page.keyboard.type('occur tea');
 			await page.keyboard.press('Enter');
 			await page.locator('button.play').waitFor();
+			// Copilot on #167: both are icon-only, so each needs a name and
+			// must not submit a form it might one day sit in.
+			for (const [selector, name] of [['button.play', 'run it'], ['button.edit', 'edit the command']]) {
+				const el = page.locator(selector);
+				assert.equal(await el.getAttribute('aria-label'), name);
+				assert.equal(await el.getAttribute('type'), 'button');
+			}
 			await tabTo(page, 'button.play');
 			await page.keyboard.press('Enter');
 			await page.waitForFunction(
@@ -275,6 +282,31 @@ describe('the layout engine, by keyboard', () => {
 			}
 		}, { viewport: { width: 1280, height: 900 } });
 	});
+
+	// The floors a finger needs, after the margins came down (da-jgrn): a
+	// border is at least 8px across and every `…` badge at least 24px each way.
+	for (const [name, viewport] of [
+		['1280x900', { width: 1280, height: 900 }],
+		['390x844', { width: 390, height: 844 }]
+	]) {
+		test(`every border is ≥ 8px and every … badge ≥ 24px at ${name}`, async () => {
+			await withApp(async ({ page }) => {
+				const sizes = await page.evaluate(() => ({
+					borders: [...document.querySelectorAll('[role="separator"]')].map((el) => {
+						const b = el.getBoundingClientRect();
+						return Math.min(b.width, b.height);
+					}),
+					badges: [...document.querySelectorAll('button.more')].map((el) => {
+						const b = el.getBoundingClientRect();
+						return [b.width, b.height];
+					})
+				}));
+				assert.ok(sizes.borders.length > 0 && sizes.badges.length > 0);
+				for (const across of sizes.borders) assert.ok(across >= 8, `a border is ${across}px across`);
+				for (const [w, h] of sizes.badges) assert.ok(w >= 24 && h >= 24, `a badge is ${w}x${h}`);
+			}, { viewport });
+		});
+	}
 
 	test('an arrow on a focused border moves it by 2%', async () => {
 		await withApp(async ({ page }) => {
