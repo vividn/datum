@@ -26,7 +26,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { comparable, fromEntry } from './support/semantics.mjs';
+import { comparable, fromBackupRow } from './support/semantics.mjs';
 
 const fixture = JSON.parse(
 	readFileSync(fileURLToPath(new URL('./fixtures/cli-parity.json', import.meta.url)), 'utf8')
@@ -63,7 +63,7 @@ describe('the same argv stores the same entry as the CLI', () => {
 
 				const stored = await entries();
 				assert.equal(stored.length, 1, 'expected exactly one entry');
-				assert.deepEqual(comparable(fromEntry(stored[0]), testCase.time), testCase.cli.entry);
+				assert.deepEqual(comparable(fromBackupRow(stored[0]), testCase.time), testCase.cli.entry);
 			});
 		});
 	}

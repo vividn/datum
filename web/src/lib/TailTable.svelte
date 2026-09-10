@@ -8,9 +8,9 @@
 	sat unused (da-6ec2).
 
 	So the geometry — and only the geometry — moves to the browser. The
-	cells come from `table_columns_with` in crates/datum-commands/src/
-	render/mod.rs, which is the same cell-building `format_table_with`
-	pads: the same columns in the same order, the same header words
+	cells come from `datum tail --json`'s `columns`, which is
+	`table_columns_with` in crates/datum-commands/src/render/mod.rs — the
+	same cell-building `format_table_with` pads: the same columns in the same order, the same header words
 	(including the `field`→`f` shrink), the same `_n` ordinals, the same
 	colours, each cell painted with the CLI's own ANSI and rendered
 	through `ansiSpans` exactly as a line of REPL output is. Nothing about
@@ -20,8 +20,7 @@
 -->
 <script lang="ts">
 	import { ansiSpans } from './ansi.js';
-	import { tailTable, type TailColumn, type TailRow } from './renderer.js';
-	import { tailListing } from './tail.js';
+	import { tailListing, type TailColumn, type TailRow } from './tail.js';
 
 	/** Any change re-reads the listing. The pane bumps it after each run. */
 	export let epoch = 0;
@@ -40,8 +39,7 @@
 	async function refresh(_epoch: number): Promise<void> {
 		const at = ++started;
 		try {
-			const listing = await tailListing();
-			const table = await tailTable(listing.entries, listing.histories);
+			const table = await tailListing();
 			// Two refreshes can be in flight at once and finish out of
 			// order; the loser must not paint the older listing over the
 			// newer one. Last started wins, not last to return.

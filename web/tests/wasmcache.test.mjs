@@ -13,9 +13,9 @@
 // an export the old module does not have (da-tvg0).
 //
 // The fix is that a runtime artifact has no stable name any more — the
-// three modules are `?url` imports from src/lib/wasm/, so Vite emits them
-// content-hashed under /_app/immutable/, where a name means one set of
-// bytes forever. These tests hold that: nothing the app fetches is
+// wasm is a `?url` import from src/lib/wasm/ (the CLI, since da-g8o8), so
+// Vite emits it content-hashed under /_app/immutable/, where a name means
+// one set of bytes forever. These tests hold that: nothing the app fetches is
 // stable-named, poisoning the old name changes nothing, the deploy refuses
 // a build that reintroduces one, and the precache stops trusting the HTTP
 // cache for the names that are stable.
@@ -58,7 +58,9 @@ describe('the wasm a returning browser runs', () => {
 				const keys = await caches.keys();
 				for (const key of keys) {
 					const cache = await caches.open(key);
-					for (const name of ['datum-render.wasm', 'datum-parse.wasm', 'datum-layout.wasm']) {
+					// The three modules the app used to fetch by these names, and
+					// the CLI's own name for good measure.
+					for (const name of ['datum-render.wasm', 'datum-parse.wasm', 'datum-layout.wasm', 'datum-cli.wasm']) {
 						await cache.put(
 							`/${name}`,
 							new Response(empty, { headers: { 'content-type': 'application/wasm' } })
@@ -71,14 +73,15 @@ describe('the wasm a returning browser runs', () => {
 
 			await reload();
 
-			// Colour, which is the render module answering `render` with the
-			// paint on: the exact escape, so "no error" cannot pass for it.
+			// Colour, which is the CLI answering with the paint on: the exact
+			// escape, so "no error" cannot pass for it.
 			const listed = await run(['tail']);
 			assert.equal(listed.code, 0, listed.stderr);
 			assert.match(listed.stdout, COFFEE_BADGE, 'the field badge is unpainted');
 
-			// And `tail` itself, which is the export the old module lacks —
-			// read off the pane as header words, not as an absence of errors.
+			// And `tail` itself, which is the export the old render module
+			// lacked — read off the pane as header words, not as an absence
+			// of errors.
 			// The CLI's own header words. `time (+0)` because the harness
 			// pins the reader's zone to UTC.
 			const table = await paneTable('tail');
@@ -98,13 +101,12 @@ describe('the wasm a returning browser runs', () => {
 				if (pathname.endsWith('.wasm')) asked.push(pathname);
 			});
 
-			// A reload re-fetches everything the panes mount with — the
-			// layout module and the render module — and SQLite's own wasm
-			// with them; the command adds the parser.
+			// A reload re-fetches everything the panes mount with, which is
+			// the CLI — the one module every command runs in.
 			await reload();
 			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, 0);
 
-			assert.ok(asked.length >= 4, `only ${asked.length} wasm requests: ${asked.join(', ')}`);
+			assert.ok(asked.length >= 1, `no wasm requests at all`);
 			for (const pathname of asked) {
 				assert.ok(
 					pathname.startsWith('/_app/immutable/'),
@@ -118,9 +120,9 @@ describe('the wasm a returning browser runs', () => {
 					`${pathname} carries no content hash`
 				);
 			}
-			for (const name of ['datum-parse', 'datum-render', 'datum-layout']) {
+			for (const name of ['datum-cli']) {
 				assert.ok(
-					asked.some((pathname) => pathname.includes(`/${name}.`)),
+					asked.some((pathname) => pathname.includes(`/${name}-`)),
 					`${name} was never fetched, so this proves nothing about it: ${asked.join(', ')}`
 				);
 			}

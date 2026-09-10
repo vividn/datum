@@ -1,14 +1,11 @@
 // datum.day's behaviour, expressed through `run(argv)`.
 //
 // Every assertion here is a command sequence and its observable result —
-// never an internal of the runner behind the seam. That is deliberate. The
-// TypeScript runner in src/lib/runners/local.ts is scheduled for deletion
-// (da-1vat replaces it with the real CLI compiled to wasm), so a test that
-// knew how it parsed would be deleted with it. A test that only knows
-// `run(argv)` outlives the swap: the seam is precisely the thing that does
-// not change. Run this suite against the wasm backend on the day it lands
-// and any difference is a real behavioural divergence rather than a
-// rewritten expectation.
+// never an internal of the runner behind the seam. That is deliberate: this
+// suite was written against a TypeScript stand-in and outlived it, because
+// the seam is the thing that did not change when the real CLI arrived
+// behind it (da-g8o8). What changed are the cases that described the
+// stand-in's gaps; those now describe the CLI answering.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,10 +23,10 @@ const tailFixture = JSON.parse(
 before(startApp);
 after(stopApp);
 
-/** Exit codes the seam documents (src/lib/run.ts). */
+/** Exit codes: success, the CLI's generic failure, and its duplicate. */
 const OK = 0;
 const ERROR = 1;
-const UNKNOWN_COMMAND = 127;
+const DUPLICATE = 11;
 
 describe('logging verbs', () => {
 	test('occur / start / stop / switch each land an entry the tail shows', async () => {
@@ -95,8 +92,8 @@ describe('logging verbs', () => {
 		await withApp(async ({ run, entries }) => {
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '0915'])).code, OK);
 			const again = await run(['switch', 'mood', 'sad', '-t', '0915']);
-			assert.notEqual(again.code, OK);
-			assert.match(again.stderr, /already have/);
+			assert.equal(again.code, DUPLICATE, again.stderr);
+			assert.match(again.stderr, /Duplicate entry/);
 			assert.equal((await entries()).length, 1);
 		});
 	});
@@ -109,7 +106,7 @@ describe('time and duration land on the entry', () => {
 			const [stored] = await entries();
 			// The browser context runs in UTC (see support/app.mjs), so the
 			// stored instant's UTC clock is the clock the user typed.
-			assert.match(stored.occurTime.utc, /T09:15:00/);
+			assert.match(stored.occur_time.utc, /T09:15:00/);
 		});
 	});
 
@@ -118,7 +115,7 @@ describe('time and duration land on the entry', () => {
 			const before = Date.now();
 			assert.equal((await run(['occur', 'coffee', '-t', '-30'])).code, OK);
 			const [stored] = await entries();
-			const minutesAgo = (before - Date.parse(stored.occurTime.utc)) / 60000;
+			const minutesAgo = (before - Date.parse(stored.occur_time.utc)) / 60000;
 			assert.ok(
 				minutesAgo > 29 && minutesAgo < 31,
 				`expected ~30 minutes ago, got ${minutesAgo}`
@@ -154,11 +151,7 @@ describe('time and duration land on the entry', () => {
 });
 
 describe('failure', () => {
-	// The two failures are different facts and now report differently
-	// (da-7scm). A word datum has never heard of is the *parser's* error, so
-	// the browser reports what `datum` reports — exit 1, "unknown
-	// subcommand". A real datum command the browser has not reached yet is
-	// the *runner's* gap, and keeps the shell's not-found exit.
+	// A word datum has never heard of is the CLI's own error, exit 1.
 	test('a word datum has never heard of fails the way the CLI fails', async () => {
 		await withApp(async ({ run }) => {
 			const result = await run(['definitelynotacommand']);
@@ -169,13 +162,17 @@ describe('failure', () => {
 		});
 	});
 
-	test('a datum command the browser cannot run yet fails loudly rather than silently', async () => {
+	test('a command the stand-in never had is the CLI’s, and runs', async () => {
 		await withApp(async ({ run, entries }) => {
+			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
 			const result = await run(['grep', 'coffee']);
-			assert.equal(result.code, UNKNOWN_COMMAND);
-			assert.match(result.stderr, /grep/);
-			// And it is a missing command, not a field called "grep".
-			assert.equal((await entries()).length, 0);
+			assert.equal(result.code, OK, result.stderr);
+			assert.match(stripAnsi(result.stdout), /coffee/);
+			// And it is a command, not a field called "grep".
+			assert.deepEqual(
+				(await entries()).map((e) => e.field),
+				['coffee']
+			);
 		});
 	});
 
@@ -338,7 +335,7 @@ describe('the visual views', () => {
 			// day window and nowview's 30-minute one whatever the hour.
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-5'])).code, OK);
 
-			const drawn = await run(['nowview']);
+			const drawn = await run(['nowview', '-o', '-']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 			assert.ok(
 				drawn.stdout.includes(colorOf('happy')),
@@ -358,7 +355,7 @@ describe('the visual views', () => {
 		await withApp(async ({ run, reload, paneSvg }) => {
 			assert.equal((await run(['switch', 'focus', 'deep', '-t', '-5'])).code, OK);
 
-			const drawn = await run(['nowview']);
+			const drawn = await run(['nowview', '-o', '-']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 			// The viewer's own clock — the one thing about the picture the
 			// browser knows and the layout crate cannot.
@@ -388,7 +385,7 @@ describe('the visual views', () => {
 			assert.equal((await run(['switch', 'mood', 'sad', '-t', '-5'])).code, OK);
 			assert.equal((await run(['occur', 'coffee', '-t', '-8'])).code, OK);
 
-			const svg = (await run(['nowview'])).stdout;
+			const svg = (await run(['nowview', '-o', '-'])).stdout;
 
 			for (const cls of [...svg.matchAll(/<text class="([^"]*)"/g)].map((m) => m[1])) {
 				assert.ok(
@@ -420,10 +417,10 @@ describe('the visual views', () => {
 
 	test('an empty database still draws both views', async () => {
 		await withApp(async ({ run }) => {
-			for (const view of ['dayview', 'nowview']) {
-				const drawn = await run([view]);
-				assert.equal(drawn.code, OK, `${view} → ${drawn.stderr}`);
-				assert.match(drawn.stdout, /^<svg[\s>]/, `${view} drew nothing`);
+			for (const argv of [['dayview'], ['nowview', '-o', '-']]) {
+				const drawn = await run(argv);
+				assert.equal(drawn.code, OK, `${argv[0]} → ${drawn.stderr}`);
+				assert.match(drawn.stdout, /^<svg[\s>]/, `${argv[0]} drew nothing`);
 			}
 		});
 	});
@@ -439,7 +436,7 @@ describe('the visual views', () => {
 			// A switch to `false` terminates a state without opening one.
 			assert.equal((await run(['switch', 'sleep', 'false', '-t', '-5'])).code, OK);
 
-			const drawn = await run(['nowview']);
+			const drawn = await run(['nowview', '-o', '-']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 
 			// A band: a filled rect in the state's own colour.
@@ -468,7 +465,7 @@ describe('the visual views', () => {
 			assert.equal((await run(['start', 'work', '-t', '-20'])).code, OK);
 			assert.equal((await run(['stop', 'work', '-t', '-5'])).code, OK);
 
-			const drawn = await run(['nowview']);
+			const drawn = await run(['nowview', '-o', '-']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 			assert.match(
 				drawn.stdout,
@@ -478,65 +475,27 @@ describe('the visual views', () => {
 		});
 	});
 
-	test('an argument this app does not serve names the argument, not the command', async () => {
+	test('the arguments are the CLI’s, and so are the refusals', async () => {
 		await withApp(async ({ run }) => {
-			// `tail` works here. Some of its arguments do not — and the
-			// message for those used to read `tail: not available yet in the
-			// browser`, which names the command a reader just watched
-			// succeed. They take it as "tail is missing from the web app"
-			// and stop trying (da-3k4y).
-			assert.equal((await run(['tail'])).code, OK);
-
-			// Three arguments down three different paths through the parser:
-			// `-n` is a short tail flag, `--table` a long one, `--oneline`
-			// is not a tail flag at all. One case proves nothing about the
-			// others, so assert the property on each.
-			for (const args of [['-n', '5'], ['--table'], ['--oneline']]) {
-				const label = ['tail', ...args].join(' ');
-				const result = await run(['tail', ...args]);
-				assert.notEqual(result.code, OK, `${label} succeeded`);
-				assert.ok(
-					result.stderr.includes(args[0]),
-					`${label}: the message does not name ${args[0]}: ${result.stderr}`
-				);
-				assert.doesNotMatch(
-					result.stderr,
-					/\btail\b:?\s+(is\s+)?not available/,
-					`${label}: the message calls tail itself unavailable: ${result.stderr}`
-				);
+			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
+			for (const argv of [['tail', '-n', '5'], ['dayview', '--n-days', '3']]) {
+				const result = await run(argv);
+				assert.equal(result.code, OK, `${argv.join(' ')}: ${result.stderr}`);
 			}
-		});
-	});
-
-	test("dayview's window flags are still the real CLI's job", async () => {
-		await withApp(async ({ run }) => {
-			// Answering `--n-days` here would mean growing a second datum in
-			// TypeScript. It reports unknown, the way `tail mood` does.
-			const result = await run(['dayview', '--n-days', '3']);
-			assert.equal(result.code, UNKNOWN_COMMAND);
-			assert.equal(result.stdout, '');
-			assert.notEqual(result.stderr, '');
+			assert.match((await run(['dayview', '--n-days', '3'])).stdout, /^<svg[\s>]/);
+			// A flag no command has is refused by name, as the CLI refuses it.
+			const refused = await run(['tail', '--oneline']);
+			assert.equal(refused.code, ERROR);
+			assert.match(refused.stderr, /--oneline/);
 		});
 	});
 });
 
 describe('spec', () => {
-	// `spec set` is the one subcommand this app serves — the widget bar's
-	// `+` runs it — and every other one comes back as the runner's gap. The
-	// message for those used to name `spec`, which is the command the
-	// reader just watched the `+` button succeed with: "spec is not
-	// available in the browser" reads as the whole command being missing,
-	// and a reader who believes it stops trying (da-c081, and the same
-	// sentence da-3k4y wrote about `tail -n 5`).
-	//
-	// Worth saying plainly while here: there is no way to remove a field in
-	// the browser today. `spec remove` cannot run, so the honest message
-	// naming `remove` is the entire answer this app has; whether to
-	// implement removal is a separate product call.
-	//
-	// The whole subcommand list from `datum spec --help`, minus `set`. A
-	// fix by name would satisfy `show` and `remove` and leave the rest.
-	const UNSERVED = [
+	// Every subcommand from `datum spec --help`. The stand-in served `set`
+	// alone, and there was no way to remove a field in the browser; the CLI
+	// serves them all.
+	const SUBCOMMANDS = [
 		['show', 'coffee'],
 		['show', 'coffee', '--text'],
 		['list'],
@@ -544,29 +503,14 @@ describe('spec', () => {
 		['add-state', 'mood', 'happy']
 	];
 
-	test('a spec subcommand this app cannot run names itself, not `spec`', async () => {
+	test('every spec subcommand answers', async () => {
 		await withApp(async ({ run }) => {
-			for (const args of UNSERVED) {
+			assert.equal((await run(['spec', 'set', 'coffee', '--color', '#884400'])).code, OK);
+			for (const args of SUBCOMMANDS) {
 				const label = ['spec', ...args].join(' ');
 				const result = await run(['spec', ...args]);
-				// Non-emptiness first: these printed *nothing at all* in the
-				// report this bead came from, and "no `error:` appears"
-				// would pass against silence.
-				assert.notEqual(
-					result.stdout + result.stderr,
-					'',
-					`${label} answered with nothing at all`
-				);
-				assert.equal(result.code, UNKNOWN_COMMAND, `${label}: ${result.stderr}`);
-				assert.ok(
-					result.stderr.includes(args[0]),
-					`${label}: the message does not name ${args[0]}: ${result.stderr}`
-				);
-				assert.doesNotMatch(
-					result.stderr,
-					/\bspec\b:?\s+(is\s+)?not available/,
-					`${label}: the message calls spec itself unavailable: ${result.stderr}`
-				);
+				assert.equal(result.code, OK, `${label}: ${result.stderr}`);
+				assert.notEqual(result.stdout, '', `${label} answered with nothing at all`);
 			}
 		});
 	});
@@ -581,10 +525,10 @@ describe('spec', () => {
 		});
 	});
 
-	test('typed at the prompt, an unserved subcommand answers on the screen', async () => {
-		// The seam is where the message is made, but the report was of a
-		// blank REPL — so one case walks the whole way a reader does, and
-		// reads the answer back off the scrollback (da-e0m6's trap).
+	test('typed at the prompt, a spec subcommand answers on the screen', async () => {
+		// The report this came from was of a blank REPL — so one case walks
+		// the whole way a reader does, and reads the answer back off the
+		// scrollback (da-e0m6's trap).
 		await withApp(async ({ submit, page }) => {
 			await submit('spec remove coffee');
 			// The rendered output blocks, not the whole pane: the echoed
@@ -705,36 +649,32 @@ describe('the tail is the CLI\'s tail', () => {
 			assert.match(listed.stdout, /\x1b\[48;2;36;235;5m/, 'the field badge is unpainted');
 			assert.ok(stripAnsi(listed.stdout).includes('coffee'));
 
-			// And on screen: what the pane paints a cell is what datum said
-			// that cell's colour is — read off the row JSON, not written
-			// down here, so the two cannot drift apart in either direction.
+			// And on screen: what the pane paints a cell is what datum painted
+			// it — read off `tail --json`'s own columns, not written down
+			// here, so the two cannot drift apart in either direction.
 			await reload();
-			const { rows } = await tailRows();
+			const { rows, columns } = await tailRows();
 			assert.deepEqual(
 				rows.map((row) => row.field),
 				['coffee', 'mood']
 			);
-			assert.deepEqual(
-				await paneCellColors('tail', 'field'),
-				rows.map(({ field_color: c }) => [rgb(c)])
-			);
-			// The state chip too — a different colour from the field's, and
-			// absent where a row carries no state at all. Membership, not
-			// equality: the CLI's state cell is `[LEAD][state][TRAIL]` and
-			// each slot paints its own block, so the chip is one of several.
-			assert.equal(rows[0].state_color, null, 'a point row claimed a state colour');
-			assert.notEqual(rows[1].state_color, rows[1].field_color);
-			const chips = (await paneCellColors('tail', 'state')).at(-1);
-			assert.ok(
-				chips.includes(rgb(rows[1].state_color)),
-				`the state chip is not the colour datum said: ${JSON.stringify(chips)}`
-			);
+			const cells = (key) => columns.find((column) => column.key === key).cells;
+			const painted = async (key) => (await paneCellColors('tail', key)).map(distinct);
+			assert.deepEqual(await painted('field'), cells('field').map(backgrounds));
+			// The state chip too — a different colour from the field's. The
+			// CLI's state cell is `[LEAD][state][TRAIL]` and each slot paints
+			// its own block, so the whole cell is compared, not one chip.
+			assert.deepEqual((await painted('state')).at(-1), backgrounds(cells('state').at(-1)));
+			assert.notDeepEqual(backgrounds(cells('state').at(-1)), backgrounds(cells('field').at(-1)));
 		});
 	});
 });
 
-/** `#rrggbb` as the browser reports a computed background. */
-function rgb(hex) {
-	const at = (i) => parseInt(hex.slice(i, i + 2), 16);
-	return `rgb(${at(1)}, ${at(3)}, ${at(5)})`;
+/** The distinct backgrounds an ANSI-painted cell sets, as the browser reports them. */
+function backgrounds(cell) {
+	return distinct([...cell.matchAll(/\x1b\[48;2;(\d+);(\d+);(\d+)m/g)].map(([, r, g, b]) => `rgb(${r}, ${g}, ${b})`));
+}
+
+function distinct(list) {
+	return [...new Set(list)];
 }

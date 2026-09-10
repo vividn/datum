@@ -2,13 +2,9 @@
 //
 // Every datum command the web app runs goes through `run(argv)` and comes
 // back as a [`RunResult`] — an exit code plus captured stdout/stderr. The UI
-// never reaches into the parser or the database directly, so swapping the
-// implementation swaps nothing else: da-1vat replaces the local runner in
-// `./runners/local.ts` with the real CLI compiled to wasm by calling
-// `setRunner`, and the panes, widget bar and REPL keep working unchanged.
-// The seam has already carried one such swap — da-7scm replaced the
-// hand-written TypeScript parser behind it with `datum-parse` compiled to
-// wasm, and no component changed.
+// never reaches into the database directly: behind the seam is the real
+// `datum` CLI compiled to wasm, one process per command ($lib/runners/
+// wasi.ts, da-g8o8), so what a pane shows is what the CLI printed.
 //
 // `argv` carries the command words *without* the program name, matching what
 // the native REPL hands the parser (`crates/datum-cli/src/repl.rs` prepends
@@ -20,39 +16,24 @@ import { shellSplit } from './shellSplit.js';
 export interface RunResult {
 	/** The argv that produced this result, after shell-splitting. */
 	argv: string[];
-	/** 0 on success. See EXIT_* below. */
+	/** 0 on success; otherwise the CLI's own exit code. */
 	code: number;
 	stdout: string;
 	stderr: string;
 }
 
-export type CommandRunner = (argv: string[]) => Promise<RunResult>;
+export type CommandRunner = (argv: string[], stdin?: string) => Promise<RunResult>;
 
 /** Generic failure, as `datum-cli`'s `main` reports one. */
 export const EXIT_ERROR = 1;
-/** A duplicate / "already have this" outcome (`EXIT_DUPLICATE` in main.rs). */
-export const EXIT_DUPLICATE = 11;
-/**
- * A real datum command the browser has not reached yet — the shell
- * convention for "not found".
- *
- * Distinct from [`EXIT_ERROR`], which is what a word datum has never heard
- * of gets: since da-7scm the browser runs datum's own parser, so an unknown
- * subcommand is the parser's error and comes back exactly as the CLI
- * reports it. 127 is the runner's gap; 1 is datum's answer.
- */
-export const EXIT_UNKNOWN_COMMAND = 127;
 
-// Null until the first `run`, which lazily imports the TypeScript runner.
-// Lazily, for two reasons: it keeps the seam from depending on any one
-// implementation, and installing the wasm runner up front means the
-// TypeScript one is never fetched at all.
+// Null until the first `run`, which imports the CLI runner lazily: this
+// module is imported during prerendering, where there is no worker to run it.
 let runner: CommandRunner | null = null;
 
 /**
  * Install `next` as the active runner and return the one it replaced (null
- * if none had run yet), so a caller can restore it. This is the whole
- * extension point: the wasm CLI arrives as one call here.
+ * if none had run yet), so a caller can restore it. Tests spy through it.
  */
 export function setRunner(next: CommandRunner): CommandRunner | null {
 	const previous = runner;
@@ -60,15 +41,15 @@ export function setRunner(next: CommandRunner): CommandRunner | null {
 	return previous;
 }
 
-/** Run one command. Never rejects — a thrown error becomes a nonzero result. */
-export async function run(argv: string[]): Promise<RunResult> {
+/**
+ * Run one command, with `stdin` on its standard input if it reads any.
+ * Never rejects — a thrown error becomes a nonzero result.
+ */
+export async function run(argv: string[], stdin?: string): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
 	try {
-		// `?wasi` swaps in the real CLI for the length of the da-1vat spike.
-		runner ??= new URLSearchParams(globalThis.location?.search).has('wasi')
-			? (await import('./runners/wasi.js')).wasiRun
-			: (await import('./runners/local.js')).localRun;
-		return await runner(argv);
+		runner ??= (await import('./runners/wasi.js')).wasiRun;
+		return await runner(argv, stdin);
 	} catch (e) {
 		// A runner that throws is a bug in the runner, not in the caller: the
 		// seam still owes the UI a result it can render.

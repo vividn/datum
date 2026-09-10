@@ -3,9 +3,6 @@ build/
 .svelte-kit/
 dist/
 
-# codegen output (regenerated from crates/datum-core/src/schema.sql)
-src/lib/schema.generated.ts
-
 # codegen output (the worker bundle's file names, written by vite.config.ts)
 src/lib/workerAssets.generated.ts
 

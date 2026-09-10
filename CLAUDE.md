@@ -21,7 +21,7 @@ crates/
   datum-sync-client/  # Sync client library: wire protocol, crypto, HTTP (WASM-split)
   datum-sync-server/  # Relay server: Rust + axum, E2E-encrypted sync backend
   datum-sync-agent/   # Background sync daemon (planned)
-web/            # SvelteKit PWA: static, OPFS + SQLite WASM, offline-capable
+web/            # SvelteKit PWA: static, the real CLI as WASI on OPFS, offline-capable
 ```
 
 (Flutter/Android/Wear OS clients are planned but the directories don't
@@ -113,23 +113,24 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
 ## Web app (PWA)
 
 - SvelteKit static adapter — no server-side rendering
-- SQLite WASM + OPFS for local storage (same schema as CLI)
-- One connection per origin, not per tab (da-eovo). The OPFS SAH pool is
-  single-writer, so exactly one `db.worker.ts` opens the database — the one
-  that wins `navigator.locks.request('datum-db-owner', …)`, a lock its
-  callback never releases, so it is held for that tab's life. Every other
-  tab's worker opens nothing and relays its `DbRequest`s to the owner over a
-  `BroadcastChannel`, so from `db.ts` upwards nothing changed and two tabs
-  are both durable. Unanswered requests sit in the worker's `inflight` map
-  and are sent again when a new owner announces itself — that queue is what
-  makes "nothing typed is ever lost" true across an owner tab closing. A
-  browser with no `BroadcastChannel` or no Web Locks degrades to the old
-  behaviour (second tab in memory, and it says so), never to a lost row.
-  `web/src/lib/changes.ts` carries the separate "rows changed" signal that
-  makes each tab re-run its panes.
+- The real `datum` CLI is the only runner (da-g8o8): `datum-cli` built for
+  wasm32-wasip1, one WASI process per command in `web/src/lib/db.worker.ts`
+  (`cli.ts`, `wasiFs.ts`), its SQLite file in OPFS. There is no SQL, parser
+  or renderer in TypeScript — every pane, the widget bar (`fields --json`),
+  the tail table (`tail --json`'s `columns`), /now (`now --bare`) and the
+  export button (`db backup -`) are CLI commands through `run(argv)`.
+- Every process takes the database files for itself (sync access handles
+  opened at start, closed at exit) under the `datum-cli-files` Web Lock, so
+  tabs take turns fairly and none is the owner; the SQLite header's change
+  counter (offset 24) decides whether a process wrote, which is what
+  `web/src/lib/changes.ts` tells the other tabs. A browser that refuses the
+  handles gets a database in memory for the tab, which keeps going back for
+  the file and moves its rows across with `db backup -` / `db restore -`.
+  SQLite runs in rollback-journal mode under the shim (WASI has no WAL); a
+  journal left by a killed process is rolled back by the next one.
 - Service Worker caches app shell for offline use — the shell, everything
-  `$service-worker` lists, and Vite's separate worker bundle (the SQLite
-  worker and sqlite3.wasm), which that list does not know about and which
+  `$service-worker` lists, and Vite's separate worker bundle (the database
+  worker and datum-cli.wasm), which that list does not know about and which
   the `datum-worker-precache` plugin in `web/vite.config.ts` enumerates
   instead. `web/tests/offline.test.mjs` reloads the app with the network
   down and logs an entry, so the precache cannot silently lose a file
@@ -193,72 +194,37 @@ pnpm test                              # the seam suite (builds first)
 pnpm run test:fixtures                 # recapture the CLI-parity fixtures
 ```
 
-Three regions of the app are datum's own Rust compiled to
-`wasm32-unknown-unknown`, not a second implementation of it:
+The browser runs `datum-cli` itself, compiled to wasm32-wasip1 by
+`pnpm run build:cli-wasm` (pinned wasi-sdk and binaryen, fetched into
+`target/toolchains/`) and loaded through `@bjorn3/browser_wasi_shim`. What
+the page supplies is what a shell would: argv, stdin, `TZ`, a device id,
+`DATUM_COLOR=1` (there is no tty), and `HOME`/`DATUM_DB` inside the
+preopened `/data`. The artifact is committed under `web/src/lib/wasm/` the
+way the fixtures are, so the web CI job needs no Rust toolchain — rebuild
+and commit it whenever the CLI's crates change. It lives under `src/`
+rather than `static/` so the app reaches it as a `?url` import and Vite
+emits it content-hashed under `/_app/immutable/`: a runtime artifact must
+not have a stable name, because the service worker serves precached names
+cache-first and `deploy.sh` marks hashed assets `immutable` for a year, and
+together those handed a returning browser the previous deploy's module to
+run the current deploy's JavaScript against (da-tvg0). `deploy.sh
+--check-dist <dir>` is that rule on its own.
 
-- **the parser** — `crates/datum-parse` via `crates/datum-parse-wasm`
-  (da-7scm). argv in, the row to insert out: time flags, `KEY=VALUE`
-  grammar, duration spellings, the verb truth table, the slug and the
-  content hash all come from the CLI's own code. `web/src/lib/parser.ts`
-  is the browser half; there is no TypeScript parser any more.
-- **the dayview / nowview panes** — `crates/datum-layout` via
-  `crates/datum-layout-wasm` (da-6h6p), reached from
-  `web/src/lib/layout.ts`. Rows in, SVG out: which mark each entry makes
-  is the wasm crate's `marks.rs` dispatching on the CLI's own verb→shape
-  table (`datum_parse::shape`, moved out of `datum-core` by da-t7ud so
-  wasm can reach it), and the colours and geometry were already Rust's.
-  `crates/datum-commands/src/render/wasm_parity.rs` holds that walk — and
-  the colour helpers — against `field_visuals::render_field_visuals`.
-- **what CLI output says** — `datum-commands::render` via
-  `crates/datum-render-wasm`, reached from `web/src/lib/renderer.ts`.
-  The REPL's echo of a logged entry is `action_lines_at` (#153), and the
-  REPL's `tail` is `format_table_with` — the CLI's table, header and
-  alignment and `_n` ordinals and all (da-6ec2). The tail PANE is the
-  same cells before the terminal padding (`table_columns_with`), laid
-  out in an HTML `<table>` by `web/src/lib/TailTable.svelte`: only the
-  geometry is the browser's. Colour cannot come from the environment
-  here — there is none, and no tty — so it is a bit on the request that
-  `render::colors::ColorOverride` forces for the length of one call.
+Forgetting to rebuild is not a silent failure (da-nig7). CI's `wasm-check`
+job re-runs `build:cli-wasm` and fails on any byte of difference, and
+`build-and-test` does the same for the fixtures with `pnpm run
+test:fixtures`. Both comparisons are byte-for-byte, which the build earns by
+remapping the absolute paths rustc and clang bake into the bytes.
 
-All three use the same five-function C ABI, loaded by
-`web/src/lib/wasm.ts` (the renderer adds two more entry points on the
-same protocol, `tail` and `tail_rows`; one instance serves them all).
-None needs wasm-bindgen, and none may acquire an import: a module
-with imports will not load from the bare `WebAssembly.instantiate` the
-browser side uses (this is why the workspace turns off chrono's
-`wasmbind`). All three artifacts are committed under `web/src/lib/wasm/`
-the way the fixtures are, so the web CI job needs no Rust toolchain —
-rebuild and commit them with `pnpm run build:wasm` whenever the crates
-behind them change. They live under `src/` rather than `static/` so the
-app reaches them as `?url` imports and Vite emits them content-hashed
-under `/_app/immutable/`: a runtime artifact must not have a stable name,
-because the service worker serves precached names cache-first and
-`deploy.sh` marks hashed assets `immutable` for a year, and together those
-handed a returning browser the previous deploy's module to run the current
-deploy's JavaScript against (da-tvg0). `deploy.sh --check-dist <dir>`
-is that rule on its own, and refuses a build with a `.wasm` outside
-`_app/immutable/`.
-
-Forgetting that is not a silent failure any more (da-nig7). CI's
-`wasm-check` job re-runs `build:wasm` and fails on any byte of difference,
-and `build-and-test` does the same for the parity fixtures with
-`pnpm run test:fixtures`. Both comparisons are byte-for-byte, which the
-wasm build earns by remapping the absolute paths rustc bakes into panic
-payloads — so the artifact does not depend on where the repo or the cargo
-registry lives, and a runner reproduces what your machine produced.
-
-What the browser still assembles itself is the small DB-free part of
-`log_core` (`crates/datum-parse-wasm/src/log.rs`), and
-`crates/datum-commands/tests/wasm_parse_parity.rs` drives the real
-`log_entry` and that module over the same argv matrix so the two cannot
-drift. Log shapes it does not assemble — `add`/`note`, `-K`, `-R`, `,`
-chains — report themselves rather than storing something else.
+(The `datum-parse-wasm`, `datum-layout-wasm` and `datum-render-wasm` crates
+built the three modules the browser ran before the swap; nothing in `web/`
+loads them any more.)
 
 `web/tests` drives the built app in a real browser and asserts through
-`run(argv)` — the one seam every region of the app goes through — rather
-than through the local runner behind it, which da-1vat deletes.
+`run(argv)` — the one seam every region of the app goes through.
 `tests/parity.test.mjs` compares what a given argv stores in the browser
-against what the real `datum` binary stored for the same argv, and every
-case is a hard assertion: since the parser is shared there is nothing for
-a per-case exemption to excuse. Needs a headless browser once: `npx
+against what the native `datum` binary stored for the same argv, and
+`tests/stdout.test.mjs` what a script of commands PRINTS, byte for byte
+after masking hids and write times. Both are hard assertions: the browser
+runs the CLI, so there is nothing for an exemption to excuse. Needs a headless browser once: `npx
 playwright install --only-shell chromium`.

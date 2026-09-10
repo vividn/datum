@@ -1,8 +1,7 @@
-// The environment every committed wasm artifact is built in.
+// The environment the committed wasm artifact is built in.
 //
-// Shared by build-wasm.mjs and build-cli-wasm.mjs, because CI rebuilds both
-// kinds and compares bytes, and the rule that makes that comparison honest
-// is the same for each.
+// Used by build-cli-wasm.mjs, because CI rebuilds the module and compares
+// bytes, and this is the rule that makes that comparison honest.
 
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';

@@ -143,7 +143,11 @@ describe('a field name the (+) form accepts', () => {
 			for (const testCase of refused) {
 				const result = await run(['spec', 'set', testCase.field, '--default-verb', 'occur']);
 				assert.notEqual(result.code, 0, `${testCase.name}: '✓ Spec saved' for a dead field`);
-				assert.match(result.stderr, /field name is one word/, testCase.name);
+				// A lone comma never reaches `spec set` as a name: the CLI
+				// splits its entry chain on it first, and what is left has
+				// no name at all. Refused all the same, in the CLI's words.
+				const rule = testCase.field === ',' ? /missing required positional/ : /field name is one word/;
+				assert.match(result.stderr, rule, testCase.name);
 			}
 			// And through the REPL as a person reaches it, quoted so the line
 			// is one token: the refusal has to be on the screen, not only in

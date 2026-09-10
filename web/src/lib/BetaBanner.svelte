@@ -9,13 +9,6 @@
 	$lib/storageState.ts) a reload really does discard everything, and a banner that
 	said "stored in this browser" would be a promise the app isn't keeping.
 
-	It also says WHY, where the app knows. "In memory only" covers two
-	unlike situations, and only one of them the reader can undo: OPFS's
-	pool is single-writer, so a second tab of datum.day gets no database
-	while the first holds it. The worker reports that case as its own
-	storage kind, and it earns the sentence that names the remedy — use
-	the other tab, or close it -- this one recovers the database on its own (da-60ww).
-
 	Durable storage is still best-effort until the browser grants the origin
 	persistence, and then it may be cleared under storage pressure. So the
 	durable sentence also says what the browser answered (the `persisted`
@@ -41,7 +34,7 @@
 	let show = false;
 
 	// The store, not a one-shot read: storage can recover after this mounts
-	// (another tab closes, the pool frees up, the worker migrates across) and
+	// (the browser hands over the file, the worker moves the entries) and
 	// a banner warning about lost data should go away when it stops being
 	// true. `$storage` is the same value the repl frame tints itself from.
 	// A blocked store means the dismissal cannot be remembered, so the
@@ -82,10 +75,6 @@
 				The database could not be opened, so nothing you log here will be saved.
 			{:else if $storage === null}
 				Checking where your entries are stored…
-			{:else if $storage === 'memory-other-tab'}
-				The database is still being handed over from a tab that just closed, so entries here are
-				held in memory only for the moment. Nothing to do — this tab takes it over on its own and
-				keeps what you typed.
 			{:else if $storage === 'memory'}
 				Entries are held in memory only — reloading this page discards them.
 			{:else}

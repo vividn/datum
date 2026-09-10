@@ -43,13 +43,13 @@ describe('the time an entry is rendered with', () => {
 			// honouring this column, so a test that did not read it would be
 			// asserting against a guess.
 			const [water, tea, coffee] = await entries(3);
-			assert.equal(coffee.occurTimeUncertainty, 'P1D', 'the -y entry lost its day-precision');
-			assert.equal(tea.occurTimeUncertainty, undefined, 'the -t entry gained an uncertainty');
-			assert.equal(water.occurTimeUncertainty, 'PT5M', 'the ±5m entry lost its uncertainty');
+			assert.equal(coffee.occur_time.uncertainty, 'P1D', 'the -y entry lost its day-precision');
+			assert.equal(tea.occur_time.uncertainty, undefined, 'the -t entry gained an uncertainty');
+			assert.equal(water.occur_time.uncertainty, 'PT5M', 'the ±5m entry lost its uncertainty');
 
 			// The zone is UTC (support/app.mjs), so the stored instant's date
 			// is the date the entry names.
-			const yesterday = coffee.occurTime.utc.slice(0, 10);
+			const yesterday = coffee.occur_time.utc.slice(0, 10);
 
 			const tail = await run(['tail']);
 			assert.equal(tail.code, 0, tail.stderr);

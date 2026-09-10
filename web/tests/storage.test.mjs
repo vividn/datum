@@ -14,40 +14,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
-
-/**
- * Run `prelude` inside the database worker, before the app's own module.
- *
- * Nothing here is a mock of the database: OPFS is real and present and
- * `installOpfsSAHPoolVfs` runs its real course — the prelude only decides
- * what the platform hands it. The app's own worker module is then imported
- * for real; the wrapper has to hold the messages the page posts while that
- * import is in flight, since the module registers its listener at the end
- * of it.
- */
-function inWorker(prelude) {
-	return (context) =>
-		context.addInitScript((prelude) => {
-			const Real = Worker;
-			window.Worker = class extends Real {
-				constructor(url, options) {
-					const target = new URL(url, location.href).href;
-					const source = `
-						${prelude}
-						const queued = [];
-						const buffer = (event) => queued.push(event.data);
-						self.addEventListener('message', buffer);
-						import(${JSON.stringify(target)}).then(() => {
-							self.removeEventListener('message', buffer);
-							for (const data of queued) self.dispatchEvent(new MessageEvent('message', { data }));
-						});
-					`;
-					super(URL.createObjectURL(new Blob([source], { type: 'text/javascript' })), options);
-				}
-			};
-		}, prelude);
-}
+import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 
 /** A sync access handle that is never granted and never refused. */
 const NEVER = `FileSystemFileHandle.prototype.createSyncAccessHandle = () => new Promise(() => {});`;
@@ -66,6 +33,43 @@ const notBefore = (until) => `
 		return real.apply(this, args);
 	};
 `;
+
+/**
+ * A sync access handle whose `flush` stalls for `ms` once told to — over the
+ * `datum-test-slow` channel, so the panes that run at load are not the
+ * command that stalls — and says so on the same channel as it starts.
+ *
+ * `flush` is where SQLite's sync lands under the shim, which is the middle
+ * of a write: the journal is on disk and the transaction is not committed.
+ * `once` stalls one flush and then runs at full speed again.
+ */
+const slowFlush = (ms, { once = false } = {}) => `
+	const channel = new BroadcastChannel('datum-test-slow');
+	let slow = false;
+	channel.onmessage = (e) => { if (e.data === 'slow') slow = true; };
+	const flush = FileSystemSyncAccessHandle.prototype.flush;
+	FileSystemSyncAccessHandle.prototype.flush = function (...args) {
+		if (slow) {
+			slow = !${once};
+			channel.postMessage('flushing');
+			const until = performance.now() + ${ms};
+			while (performance.now() < until) {}
+		}
+		return flush.apply(this, args);
+	};
+`;
+
+/** Tell the database worker to stall its next flush; resolve once it has. */
+async function stallNextFlush(page) {
+	await page.evaluate(() => {
+		const channel = new BroadcastChannel('datum-test-slow');
+		window.__flushing = new Promise((resolve) => {
+			channel.onmessage = (e) => e.data === 'flushing' && resolve(true);
+		});
+		channel.postMessage('slow');
+	});
+	return () => page.evaluate(() => window.__flushing);
+}
 
 /** Poll `read` until `ok` accepts what it says, or give up loudly. */
 async function until(read, ok, timeout = 30000) {
@@ -116,8 +120,14 @@ describe('when durable storage arrives late', () => {
 		await withApp(
 			async (app) => {
 				assert.match(await app.bannerText(), /held in memory only/);
-				const typed = await app.run(['occur', 'coffee', '-t', '0700']);
-				assert.equal(typed.code, 0, typed.stderr);
+				for (const time of ['0700', '0800', '0900']) {
+					const typed = await app.run(['occur', 'coffee', '-t', time]);
+					assert.equal(typed.code, 0, typed.stderr);
+				}
+				// The handover is `db backup -` out of memory and `db restore -`
+				// into the file: the same rows, by hid, not three lookalikes.
+				const typed = (await app.entries()).map((e) => e.hid).sort();
+				assert.equal(typed.length, 3);
 
 				// Bounded: the worker retries with backoff, so a healthy build
 				// heals within a few seconds. Never healing is the defect this
@@ -129,10 +139,8 @@ describe('when durable storage arrives late', () => {
 				// Through a reload, which is the read only durable storage
 				// answers: the entry typed while in memory was moved across.
 				await app.reload();
-				assert.deepEqual(
-					(await app.entries()).map((e) => e.field),
-					['coffee']
-				);
+				assert.deepEqual((await app.entries()).map((e) => e.hid).sort(), typed);
+				assert.doesNotMatch(await app.bannerText(), /memory only/);
 			},
 			{ prepare: inWorker(notBefore(heals)) }
 		);
@@ -142,11 +150,9 @@ describe('when durable storage arrives late', () => {
 // Two tabs of datum.day, and the invariant local-first exists for: both
 // write, both stay in sync, nothing typed in either is ever lost (da-eovo).
 //
-// What used to happen instead: the SAH pool is single-writer, so the second
-// tab got no database, opened in memory, showed an orange frame and saw
-// none of the first tab's rows. Now one worker owns the database and the
-// others borrow it over a BroadcastChannel — so the second tab is exactly
-// as durable as the first, and there is no second writer to conflict with.
+// Every command is its own process that takes the database files for its
+// length and lets them go (da-g8o8), so there is no owner tab: both tabs
+// run their own commands against the one file, taking turns.
 //
 // These have to be two pages in ONE browser context. Two contexts get
 // separate storage, so the second tab would open OPFS happily and every
@@ -200,28 +206,30 @@ describe('two tabs', () => {
 		});
 	});
 
-	test('twenty alternating writes all land, once each', async () => {
+	test('forty writes from both tabs at once all land, once each, and check is clean', async () => {
 		await withApp(async (first) => {
 			const second = await first.newTab();
 			const tabs = [first, second];
-			// Fired without awaiting, so both tabs' statements are in the
-			// relay at once — the queue, not a taking-turns discipline, is
-			// what has to keep them apart.
+			// Fired without awaiting, so both tabs' processes contend for the
+			// files at once — each tab's own queue and the turns between
+			// them, not the test, are what keep them apart.
 			const logged = await Promise.all(
-				Array.from({ length: 20 }, (_, i) =>
+				Array.from({ length: 40 }, (_, i) =>
 					tabs[i % 2].run(['occur', 'ping', '-t', `07${String(i).padStart(2, '0')}`])
 				)
 			);
 			logged.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
 
 			// Counted by hid, not by "more than before": a delta-blind probe
-			// cannot tell twenty rows from ten written twice.
+			// cannot tell forty rows from twenty written twice.
 			const third = await second.newTab();
 			for (const tab of [first, second, third]) {
-				const rows = await tab.entries(50);
-				assert.equal(rows.length, 20);
-				assert.equal(new Set(rows.map((e) => e.hid)).size, 20);
+				const rows = await tab.entries(100);
+				assert.equal(rows.length, 40);
+				assert.equal(new Set(rows.map((e) => e.hid)).size, 40);
 			}
+			const check = await third.run(['check']);
+			assert.equal(check.code, 0, check.stdout + check.stderr);
 		});
 	});
 
@@ -251,38 +259,66 @@ describe('two tabs', () => {
 		});
 	});
 
-	test('closing the owning tab leaves the other working, and a new tab sees it all', async () => {
-		await withApp(async (first) => {
-			const second = await first.newTab();
-			await second.submit('occur coffee -t 0700');
+	test('a tab closed mid-write leaves the database whole, and check says so', async () => {
+		await withApp(
+			async (first) => {
+				assert.equal((await first.run(['occur', 'coffee', '-t', '0600'])).code, 0);
 
-			// The first tab won the lock, so it is the one holding the
-			// database. Take it away.
-			await first.page.close();
+				// A long write: one `db restore -` of many rows, which is one
+				// transaction. Made from the CLI's own dump of the row above,
+				// renamed so every copy is a row of its own.
+				const [header, row] = (await first.run(['db', 'backup', '-'])).stdout.split('\n');
+				const template = JSON.parse(row);
+				const copies = Array.from({ length: 500 }, (_, i) =>
+					JSON.stringify({
+						...template,
+						hid: String(i).padStart(12, 'x'),
+						slug: `ping:${i}`,
+						field: 'ping',
+						content_hash: i.toString(16).padStart(64, '0')
+					})
+				);
+				const flushing = await stallNextFlush(first.page);
+				// Not awaited: the page closes under it.
+				void first.run(['db', 'restore', '-'], [header, ...copies].join('\n')).catch(() => {});
+				assert.equal(await flushing(), true);
+				await first.page.close();
 
-			const typed = await second.run(['occur', 'tea', '-t', '0800']);
-			assert.equal(typed.code, 0, typed.stderr);
+				// The journal that write left is still there; the next process
+				// rolls it back before it reads anything.
+				const next = await first.newTab();
+				const check = await next.run(['check']);
+				assert.equal(check.code, 0, check.stdout + check.stderr);
+				assert.deepEqual(
+					(await next.entries(1000)).map((e) => e.field),
+					['coffee']
+				);
+				assert.equal((await next.run(['occur', 'tea', '-t', '0700'])).code, 0);
+			},
+			{ prepare: inWorker(slowFlush(60000)) }
+		);
+	});
 
-			// The handoff is not instant — the closing tab's sync access
-			// handles are released on its own schedule — so wait for the tab
-			// to say it is durable before asking a question only durable
-			// storage can answer.
-			await second.page.waitForFunction(() => !document.querySelector('section.pane.alarm'), null, {
-				timeout: 30000
-			});
-			await second.reload();
-			assert.deepEqual(
-				(await second.entries()).map((e) => e.field).sort(),
-				['coffee', 'tea']
-			);
-
-			const third = await second.newTab();
-			assert.doesNotMatch(await third.bannerText(), /memory only/);
-			assert.deepEqual(
-				(await third.entries()).map((e) => e.field).sort(),
-				['coffee', 'tea']
-			);
-		});
+	// The owner design this replaced sent a request again when 3 s went by
+	// with no answer, and under argv that is a second row — the CLI mints
+	// the hid, so nothing marks the two as one write. Per-command handles
+	// resend nothing; a command slower than that must still land once.
+	test('a command slower than three seconds lands once, not twice', async () => {
+		await withApp(
+			async (app) => {
+				await stallNextFlush(app.page);
+				const started = Date.now();
+				const logged = await app.run(['occur', 'coffee', '-t', '0700']);
+				assert.equal(logged.code, 0, logged.stderr);
+				assert.ok(Date.now() - started > 3000, 'the stall did not happen, so this proves nothing');
+				await new Promise((resolve) => setTimeout(resolve, 3000));
+				assert.deepEqual(
+					(await app.entries()).map((e) => e.field),
+					['coffee']
+				);
+			},
+			{ prepare: inWorker(slowFlush(3500, { once: true })) }
+		);
 	});
 });
 

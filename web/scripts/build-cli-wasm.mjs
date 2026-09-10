@@ -1,10 +1,10 @@
 // Build the real `datum` CLI for wasm32-wasip1 and drop it in src/lib/wasm/.
 //
-// This is route C of da-1vat: the whole CLI, run in the browser one process
-// per command under a WASI shim ($lib/cli.worker.ts). Unlike the three
-// modules build-wasm.mjs makes, it needs a C compiler — rusqlite's `bundled`
-// compiles SQLite's C, and for wasm32-wasip1 that means clang plus a wasi
-// sysroot — and it is shrunk with wasm-opt.
+// This is route C of da-1vat, datum.day's only runner since da-g8o8: the
+// whole CLI, run in the browser one process per command under a WASI shim
+// ($lib/cli.ts). It needs a C compiler — rusqlite's `bundled` compiles
+// SQLite's C, and for wasm32-wasip1 that means clang plus a wasi sysroot —
+// and it is shrunk with wasm-opt.
 //
 // Both toolchains are PINNED releases, downloaded into target/toolchains/
 // and checked against the sha256 below before use. Nothing is installed
@@ -13,8 +13,8 @@
 // tarballs do not exist (they are x86_64-linux), the failure is "the CLI
 // module does not build here", never "the repo does not build".
 //
-// The artifact is committed like the other three; CI's `cli-wasm-check`
-// rebuilds it with the same pins and compares bytes.
+// The artifact is committed; CI's `wasm-check` rebuilds it with the same
+// pins and compares bytes.
 //
 // Usage:  pnpm run build:cli-wasm
 

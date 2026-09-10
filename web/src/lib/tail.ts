@@ -1,47 +1,38 @@
-// The rows `datum tail` lists — the part the CLI does against SQLite.
+// `datum tail --json`: the rows the tail pane lists, and the CLI's own
+// cells for them.
 //
-// ONE function, because the REPL's `tail` and the tail pane are two
-// surfaces of one row set (da-6ec2): the REPL gets the CLI's text table
-// and the pane gets the same rows laid out in a real `<table>`, and they
-// must be the same rows in the same order or the two disagree on screen.
-//
-// Nothing here decides how a row LOOKS. The rows go to
-// `crates/datum-render-wasm`, which renders them with the CLI's own
-// `format_table_with` / `table_columns_with` — see $lib/renderer.ts. This
-// file is only the query, the same way $lib/runners/views.ts is only the
-// query behind the drawn views.
+// The REPL's `tail` and the tail pane are two surfaces of one row set
+// (da-6ec2): the REPL shows the CLI's text table, and the pane lays the
+// same cells out in a real `<table>`. The cells come from the CLI —
+// `table_columns_with`, the cell-building `format_table_with` pads, painted
+// because the page runs it with DATUM_COLOR=1 — so nothing about what a cell
+// SAYS is decided in the browser.
 
-import { getEntriesForField, getRecentEntries } from './db.js';
-import type { Entry } from './types.js';
+import { run } from './run.js';
 
-/** `datum tail`'s default row count (`tail_state.rs`: `count.unwrap_or(10)`). */
-const TAIL_COUNT = 10;
+/** One column of the CLI's table: its header word and one cell per row. */
+export interface TailColumn {
+	/** `time` | `field` | `state` | `dur` | `_n` | `hid`. */
+	key: string;
+	/** The header word the CLI prints, painted. */
+	header: string;
+	/** One painted, unpadded cell per row, in the listing's order. */
+	cells: string[];
+}
 
-/** How much of a field's history the renderer is handed to compile state from. */
-const HISTORY_LIMIT = 500;
+/** One row of `datum tail --json`. Only the keys the app reads are named. */
+export interface TailRow {
+	hid: string;
+	field: string;
+	state_label: string | null;
+	quick_id: string | null;
+	[key: string]: unknown;
+}
 
-/**
- * The rows to list, and the history each one renders against.
- *
- * Oldest at the top, newest at the bottom, the way `tail` prints.
- */
-export async function tailListing(): Promise<{
-	entries: Entry[];
-	histories: Record<string, Entry[]>;
-}> {
-	const entries = await getRecentEntries(TAIL_COUNT);
-	entries.reverse();
-	// Each row renders against its field's history — one query per field
-	// shown, the renderer excluding the row itself by hid. Bounded; a field
-	// logged more than this many times still renders, from its most recent
-	// stretch.
-	const fields = [...new Set(entries.map((e) => e.field))];
-	return {
-		entries,
-		histories: Object.fromEntries(
-			await Promise.all(
-				fields.map(async (field) => [field, await getEntriesForField(field, HISTORY_LIMIT)] as const)
-			)
-		)
-	};
+/** The listing, oldest first, the way `tail` prints. Rejects on a failed command. */
+export async function tailListing(): Promise<{ rows: TailRow[]; columns: TailColumn[] }> {
+	const result = await run(['tail', '--json']);
+	if (result.code !== 0) throw new Error(result.stderr || `tail exited ${result.code}`);
+	const doc = JSON.parse(result.stdout) as { rows?: TailRow[]; columns?: TailColumn[] };
+	return { rows: doc.rows ?? [], columns: doc.columns ?? [] };
 }

@@ -43,13 +43,11 @@ function buildVersion(): string {
 // Cross-origin isolation, which the browser grants a document only when
 // its response carries both of these headers.
 //
-// The database no longer depends on it: SQLite runs in a worker now
-// ($lib/db.worker.ts) and the SAH-pool VFS needs only that worker's sync
-// access handle, so entries persist with or without isolation (verified
-// against a plain static server sending neither header). The headers stay
-// for what isolation still buys — SharedArrayBuffer and Atomics, which the
-// plain OPFS VFS wants and a threaded wasm CLI (da-1vat) will need — and
-// the deployment should keep sending them.
+// The database does not depend on it: the CLI runs in a worker
+// ($lib/db.worker.ts) on that worker's sync access handles, so entries
+// persist with or without isolation. The headers stay for what isolation
+// still buys — SharedArrayBuffer and Atomics, which a threaded wasm CLI
+// would need — and the deployment should keep sending them.
 const CROSS_ORIGIN_ISOLATION = {
 	'Cross-Origin-Opener-Policy': 'same-origin',
 	'Cross-Origin-Embedder-Policy': 'require-corp'
@@ -128,9 +126,6 @@ function workerPrecache(): Plugin {
 		generateBundle(_options, bundle) {
 			const paths = Object.keys(bundle)
 				.filter((name) => name.startsWith(`${WORKER_DIR}/`))
-				// The wasi CLI is behind `?wasi` while da-1vat measures it:
-				// not 1.3 MB gzipped in every visitor's precache for a flag.
-				.filter((name) => !name.includes('/datum-cli-'))
 				.map((name) => `/${name}`)
 				.sort();
 			// Only the client pass emits these; the server pass must not
@@ -146,13 +141,9 @@ export default defineConfig({
 		__DATUM_COMMIT__: JSON.stringify(buildVersion())
 	},
 	plugins: [sveltekit(), crossOriginIsolation(), workerPrecache()],
-	// The database worker ($lib/db.worker.ts) imports sqlite-wasm
-	// dynamically, and Vite's default worker format — iife — cannot
-	// code-split. It is a module worker anyway; say so.
+	// The database worker ($lib/db.worker.ts) is a module worker; Vite's
+	// default worker format — iife — cannot code-split.
 	worker: {
 		format: 'es'
-	},
-	optimizeDeps: {
-		exclude: ['@sqlite.org/sqlite-wasm']
 	}
 });

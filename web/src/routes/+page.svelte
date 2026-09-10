@@ -13,8 +13,8 @@
 	    +---------------------------------------------+
 
 	Every region talks to datum through `run(argv)` in $lib/run.ts and
-	nothing else — no region parses, formats or touches the database — so
-	the wasm CLI (da-1vat) lands behind them without touching this file.
+	nothing else — no region parses, formats or touches the database. Behind
+	the seam is the real CLI (da-g8o8).
 -->
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
@@ -22,9 +22,10 @@
 	import DayStrip from '$lib/DayStrip.svelte';
 	import Repl from '$lib/Repl.svelte';
 	import WidgetBar from '$lib/WidgetBar.svelte';
-	import { initDb, getAllFields, getFieldSpecs, getObservedStates } from '$lib/db.js';
+	import { initDb } from '$lib/db.js';
 	import { NOWVIEW, TAIL } from '$lib/panes.js';
-	import { widgetsFor, type Widget } from '$lib/widgets.js';
+	import { run } from '$lib/run.js';
+	import { widgetsFor, type FieldListing, type Widget } from '$lib/widgets.js';
 	import { onExternalChange } from '$lib/changes.js';
 
 	let ready = false;
@@ -60,17 +61,13 @@
 	onDestroy(onExternalChange(() => void ran()));
 
 	/**
-	 * The bar's buttons are built from what has been logged, so a newly
-	 * tracked field has to grow one — hence a rebuild on the same beat the
-	 * panes refresh on.
+	 * The bar's buttons are built from `datum fields` — what has been logged
+	 * and what has been declared — so a newly tracked field has to grow one:
+	 * hence a rebuild on the same beat the panes refresh on.
 	 */
 	async function refresh(): Promise<void> {
-		const [fields, specs, observed] = await Promise.all([
-			getAllFields(),
-			getFieldSpecs(),
-			getObservedStates()
-		]);
-		widgets = widgetsFor(fields, specs, observed);
+		const listed = await run(['fields', '--json']);
+		if (listed.code === 0) widgets = widgetsFor(JSON.parse(listed.stdout) as FieldListing[]);
 	}
 
 	async function ran(): Promise<void> {

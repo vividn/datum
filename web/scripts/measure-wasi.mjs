@@ -1,7 +1,7 @@
-// Measure route C of da-1vat: the real CLI under WASI, behind `?wasi`.
+// Measure the real CLI under WASI — datum.day's runner since da-g8o8.
 //
 // Latency (cold, warm at 500 entries, CPU-throttled), size, OPFS across a
-// reload, the two multi-tab designs, and stdout parity with the native CLI.
+// reload, two tabs writing at once, and stdout parity with the native CLI.
 // Prints a report; `--json <file>` also writes the raw numbers.
 //
 // Profiles are PERSISTENT and on disk (under target/): Playwright's default
@@ -49,7 +49,7 @@ async function browser({ incognito = false, throttle = 1 } = {}) {
 		dir = mkdtempSync(join(repo, 'target', 'wasi-measure-'));
 		context = await chromium.launchPersistentContext(dir, { timezoneId: 'UTC' });
 	}
-	const tab = async (query = 'wasi', init, path = '/') => {
+	const tab = async (query = '', init, path = '/') => {
 		const page = await context.newPage();
 		if (init) await page.addInitScript(init);
 		if (throttle > 1) {
@@ -84,7 +84,7 @@ async function latency(options) {
 	try {
 		// The bare cold start: the first process a worker ever runs, on a
 		// route with no panes to have compiled the module already.
-		const bare = await b.tab('wasi', null, '/now');
+		const bare = await b.tab('', null, '/now');
 		const firstProcess = await run(bare, ['occur', 'coffee', '-t', '0000']);
 		await bare.close();
 		// The day frame's: its panes run dayview and nowview on mount, so the
@@ -102,7 +102,7 @@ async function latency(options) {
 			['occur', 'coffee'],
 			['tail'],
 			['dayview', '--width', '800', '--height', '200'],
-			['nowview', '--width', '400', '--height', '300']
+			['nowview', '-o', '-', '--width', '400', '--height', '300']
 		]) {
 			const rs = [];
 			for (let i = 0; i < 10; i++) rs.push(await run(page, argv));
@@ -154,12 +154,12 @@ async function durability() {
 	}
 }
 
-/** Two tabs logging as fast as `run()` allows, under one lock design. */
-async function twoTabs(query) {
+/** Two tabs logging as fast as `run()` allows. */
+async function twoTabs() {
 	const b = await browser();
 	try {
-		const [a, c] = [await b.tab(query), await b.tab(query)];
-		// Both tabs start cold; warm them so the race is about the lock.
+		const [a, c] = [await b.tab(), await b.tab()];
+		// Both tabs start cold; warm them so the race is about the files.
 		await Promise.all([run(a, ['--version']), run(c, ['--version'])]);
 		const t = Date.now();
 		const burst = (page, name) =>
@@ -188,7 +188,7 @@ async function twoTabs(query) {
 			rows: { taba: await count('taba'), tabb: await count('tabb') },
 			check: (await run(c, ['check'])).code
 		};
-		// The owner's tab goes away; how long until the other tab is served?
+		// One tab goes away; how long until the other is served?
 		await a.close();
 		const next = await run(c, ['occur', 'after-close']);
 		result.afterFirstTabCloses = { code: next.code, wall: round(next.wall), tries: next.ms.tries };
@@ -215,7 +215,7 @@ async function parity() {
 		['tail'],
 		['tail', '-n', '3'],
 		['dayview', '--width', '600', '--height', '200'],
-		['nowview', '--width', '400', '--height', '300'],
+		['nowview', '-o', '-', '--width', '400', '--height', '300'],
 		['check'],
 		['spec', 'set', 'coffee', '--color', '#884400'],
 		['nosuch']
@@ -248,7 +248,7 @@ async function parity() {
 	const b = await browser();
 	let browserSide;
 	try {
-		const page = await b.tab('wasi', () => localStorage.setItem('datum-device-id', 'web-parity'));
+		const page = await b.tab('', () => localStorage.setItem('datum-device-id', 'web-parity'));
 		browserSide = [];
 		for (const argv of argvs) browserSide.push(await run(page, argv));
 	} finally {
@@ -284,15 +284,17 @@ async function parity() {
 
 function sizes() {
 	const wasm = readFileSync(join(web, 'src/lib/wasm/datum-cli.wasm'));
-	// The chunk the worker loads for $lib/cli.ts: the shim, the OPFS
-	// directory and the runner, which is everything route C adds in JS.
-	const dir = join(web, 'build/_app/immutable/workers/chunks');
-	const chunk = readdirSync(dir)
-		.map((f) => readFileSync(join(dir, f)))
-		.find((bytes) => bytes.includes('datum-cli-'));
+	// Everything the build ships, by kind: what a first visit downloads.
+	const files = readdirSync(join(web, 'build'), { recursive: true, withFileTypes: true })
+		.filter((f) => f.isFile() && /\.(js|wasm|css|html)$/.test(f.name))
+		.map((f) => readFileSync(join(f.parentPath, f.name)));
+	const total = (list) => ({
+		raw: list.reduce((n, b) => n + b.length, 0),
+		gzip: list.reduce((n, b) => n + gzipSync(b).length, 0)
+	});
 	return {
 		cliWasm: { raw: wasm.length, gzip: gzipSync(wasm).length },
-		shimChunk: chunk ? { raw: chunk.length, gzip: gzipSync(chunk).length } : null
+		build: total(files)
 	};
 }
 
@@ -302,8 +304,7 @@ const sections = {
 	latencyThrottled4x: () => latency({ throttle: 4 }),
 	latencyIncognito: () => latency({ incognito: true }),
 	durability,
-	twoTabsOwner: () => twoTabs('wasi'),
-	twoTabsPerCommand: () => twoTabs('wasi=command'),
+	twoTabs,
 	parity
 };
 // `--only parity,size` runs just those.

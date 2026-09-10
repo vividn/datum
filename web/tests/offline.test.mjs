@@ -73,9 +73,7 @@ describe('with no network', () => {
 		const emitted = fs
 			.readdirSync(workers, { recursive: true, withFileTypes: true })
 			.filter((entry) => entry.isFile())
-			.map((entry) => path.posix.join(path.relative(workers, entry.parentPath), entry.name))
-			// Behind `?wasi` while da-1vat measures it; see vite.config.ts.
-			.filter((name) => !name.includes('/datum-cli-'));
+			.map((entry) => path.posix.join(path.relative(workers, entry.parentPath), entry.name));
 		assert.ok(emitted.length > 0, `no worker bundle under ${workers}`);
 
 		const sw = fs.readFileSync(path.join(built, 'service-worker.js'), 'utf8');
@@ -83,10 +81,10 @@ describe('with no network', () => {
 		assert.deepEqual(missing, [], 'not named in the precache list');
 
 		// The two that matter most, named rather than counted: without them
-		// there is no SQLite and no OPFS, so there is no database.
+		// there is no datum and no OPFS, so there is no database.
 		assert.ok(
-			emitted.some((name) => name.endsWith('.wasm')),
-			`no sqlite3 wasm among ${emitted.join(', ')}`
+			emitted.some((name) => /datum-cli-.*\.wasm$/.test(name)),
+			`no datum-cli wasm among ${emitted.join(', ')}`
 		);
 		assert.ok(
 			emitted.some((name) => name.startsWith('db.worker-')),

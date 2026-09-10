@@ -13,8 +13,9 @@
 // survives the mask is the part a case can actually pin: `tx:electricity`
 // when an `--id %comment%` template put the data there (da-5kbj).
 //
-// Both sides normalize through here: the capture script over the CLI's
-// JSONL dump, and the parity test over what the browser stored.
+// Both sides normalize through here, and from the same shape: the capture
+// script reads the native CLI's JSONL dump, and the parity test reads the
+// browser's — `window.datum.entries()` is `db backup -` too.
 
 /**
  * @param {object} raw
@@ -87,22 +88,6 @@ export function fromBackupRow(row) {
 		aliasChain: row.alias_chain,
 		occurUtc: row.occur_time.utc,
 		createUtc: row.create_time
-	});
-}
-
-/** A browser `Entry` (src/lib/types.ts) → [`semantics`]. */
-export function fromEntry(entry) {
-	return semantics({
-		field: entry.field,
-		verb: entry.verb,
-		state: entry.state,
-		dur: entry.dur,
-		data: entry.data,
-		slug: entry.slug,
-		rawInput: entry.rawInput,
-		aliasChain: entry.aliasChain,
-		occurUtc: entry.occurTime.utc,
-		createUtc: entry.createTime
 	});
 }
 

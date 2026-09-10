@@ -146,12 +146,13 @@ describe('a drawn view', () => {
 		// 10.6. Only "still legible", though — it WAS being scaled, and
 		// da-45wt stopped scaling it, here as in its pane. It stays
 		// measured because it shares the REPL's render path with dayview,
-		// so a fix there could take it down silently.
+		// so a fix there could take it down silently. `-o -`, because bare
+		// `nowview` is the CLI's terminal band, not a picture (da-57dj).
 		test(`is legible as nowview typed into the repl on ${name}`, async () => {
 			await withApp(
 				async (app) => {
 					await logADay(app);
-					await app.submit('nowview');
+					await app.submit('nowview -o -');
 
 					assertLegible(await measure(replImage(app)), `nowview in the repl at ${viewport.width}px`);
 				},
@@ -166,16 +167,16 @@ describe('a drawn view', () => {
 	// so, rather than the seam deciding for every caller (trap 2 on da-wexl).
 	// True of nowview since da-45wt made it sized too: a pane and a prompt
 	// now both name a size, and the bare command still means the default.
-	for (const [command, width] of [
-		['dayview', 2000],
+	for (const [argv, width] of [
+		[['dayview'], 2000],
 		// 400 since da-nk84 carved the now strip out of the canvas rather
 		// than adding a panel's width to it.
-		['nowview', 400]
+		[['nowview', '-o', '-'], 400]
 	]) {
-		test(`is still the CLI’s ${width}px ${command} canvas when the argv asks for nothing`, async () => {
+		test(`is still the CLI’s ${width}px ${argv[0]} canvas when the argv asks for nothing`, async () => {
 			await withApp(async (app) => {
 				await logADay(app);
-				const drawn = await app.run([command]);
+				const drawn = await app.run(argv);
 				assert.equal(drawn.code, 0, drawn.stderr);
 				assert.match(drawn.stdout, new RegExp(`<svg[^>]*\\swidth="${width}"`));
 				assert.match(drawn.stdout, new RegExp(`<svg[^>]*\\sviewBox="0 0 ${width} `));

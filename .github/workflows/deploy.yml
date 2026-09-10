@@ -79,7 +79,7 @@ jobs:
       # has happened.
       #
       # STALE_WASM_OK=1, deliberately. deploy.sh refuses when any crates/**/*.rs
-      # is newer than web/static/datum-parse.wasm, and on a fresh checkout every
+      # is newer than web/src/lib/wasm/datum-cli.wasm, and on a fresh checkout every
       # file is written at checkout time — so what that comparison reports is
       # the order git happened to write the tree. Measured in a fresh worktree
       # on 2026-09-08: it does NOT fire, because `crates/` is written before
@@ -91,7 +91,7 @@ jobs:
       # DEPLOYER'S WORKING TREE — uncommitted Rust edits shipping the committed
       # wasm — and a CI checkout has no uncommitted edits by construction. The
       # artifact's content is covered instead by ci.yml's `WASM check`, which
-      # rebuilds both modules and compares bytes; deploy.sh's own refusal
+      # rebuilds the CLI module and compares bytes; deploy.sh's own refusal
       # message names exactly that as the case for this flag. Caveat, because it
       # is not free: that job runs in parallel with this one, so a commit whose
       # WASM check goes red is still deployed here.

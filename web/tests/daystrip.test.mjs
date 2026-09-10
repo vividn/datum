@@ -24,7 +24,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -456,6 +456,8 @@ describe('the day strip', () => {
 		// 10:00 UTC, so the fast-forward below lands after midnight and
 		// inside the next day rather than on its boundary.
 		const noon = Date.UTC(2026, 8, 9, 10, 0, 0);
+		// The CLI draws the bands, in the database worker: its clock too.
+		const clock = workerClock(noon);
 		await withApp(
 			async (app) => {
 				// Deep enough that the stack scrolls, so the jagged line has
@@ -469,6 +471,7 @@ describe('the day strip', () => {
 				// on — so a command is what makes it look at the clock again.
 				const after = noon + 16 * 60 * 60 * 1000;
 				await app.page.clock.setFixedTime(new Date(after));
+				await clock.set(app.page, after);
 				await app.submit('occur coffee');
 
 				await app.page.waitForFunction(
@@ -496,7 +499,12 @@ describe('the day strip', () => {
 				await app.page.locator('.stack').evaluate((el) => (el.scrollTop = 0));
 				await app.page.locator('button.jagged').waitFor();
 			},
-			{ prepare: (context) => context.clock.setFixedTime(new Date(noon)) }
+			{
+				prepare: async (context) => {
+					await context.clock.setFixedTime(new Date(noon));
+					await clock.prepare(context);
+				}
+			}
 		);
 	});
 

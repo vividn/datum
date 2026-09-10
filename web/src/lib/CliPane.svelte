@@ -3,8 +3,7 @@
 
 	Thin on purpose: it runs `spec.argv` through the `run(argv)` seam and
 	shows the text that comes back. No parsing, no formatting, no database
-	— everything it displays was produced by datum itself, so the wasm CLI
-	(da-1vat) upgrades every pane at once without touching this file.
+	— everything it displays was produced by datum itself.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -12,7 +11,7 @@
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
 	import TailTable from './TailTable.svelte';
-	import { run, EXIT_UNKNOWN_COMMAND, type RunResult } from './run.js';
+	import { run, type RunResult } from './run.js';
 	import { paneArgv, type PaneBox, type PaneSpec } from './panes.js';
 
 	export let spec: PaneSpec;
@@ -78,11 +77,6 @@
 		<p class="quiet">…</p>
 	{:else if result.stdout}
 		<CliOutput text={result.stdout} />
-	{:else if result.code === EXIT_UNKNOWN_COMMAND}
-		<!-- The TypeScript stand-in does not answer this command; the real
-		     CLI will. Not an error the reader can do anything about, so it
-		     is worded and coloured as a note. -->
-		<p class="quiet">{result.stderr}</p>
 	{:else if result.stderr}
 		<CliOutput text={result.stderr} error />
 	{:else if spec.empty}

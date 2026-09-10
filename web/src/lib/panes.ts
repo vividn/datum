@@ -76,6 +76,18 @@ export function paneArgv(spec: PaneSpec, box: PaneBox | null): string[] | null {
 const SIZED_COMMANDS = new Set(['dayview', 'nowview']);
 
 /**
+ * Whether `argv` draws a picture: `dayview` always does, and `nowview` when
+ * it is asked for its SVG on stdout (`-o -`) rather than the terminal band
+ * it prints bare (da-57dj).
+ */
+function draws(argv: string[]): boolean {
+	if (!SIZED_COMMANDS.has(argv[0])) return false;
+	if (argv[0] !== 'nowview') return true;
+	return argv.some((word, i) => (word === '-o' || word === '--output-file') && argv[i + 1] === '-') ||
+		argv.includes('--output-file=-');
+}
+
+/**
  * Fit a typed command to the pixels its output will land in.
  *
  * `paneArgv`'s counterpart for the REPL (da-wexl). Fixing the pane left
@@ -91,7 +103,7 @@ const SIZED_COMMANDS = new Set(['dayview', 'nowview']);
  * own default rather than guessing one.
  */
 export function fitArgv(argv: string[], width: number | null): string[] {
-	if (!SIZED_COMMANDS.has(argv[0]) || width === null || width <= 0) return argv;
+	if (!draws(argv) || width === null || width <= 0) return argv;
 	if (argv.some((word) => word === '--width' || word.startsWith('--width='))) return argv;
 	return [...argv, '--width', String(width)];
 }
@@ -167,13 +179,12 @@ export function bandArgv(width: number, daysAgo: number, dayHeight: number): str
 	return [...argv, '--time-axis-height', '0', '--end-date', String(-daysAgo)];
 }
 
-// `nowview`, not `now`: the CLI splits them by output device — `now`
-// paints a band on the terminal, `nowview` writes the SVG — and a browser
-// pane is the second of those. The pane shows what the CLI would write to
-// a .svg file, which is a better picture than the terminal's.
+// `nowview -o -`, not `now` or bare `nowview`: both of those paint a band
+// for a terminal, and a browser pane is a better place for the picture the
+// CLI writes to a .svg file — which `-o -` puts on stdout.
 export const NOWVIEW: PaneSpec = {
 	title: 'nowview',
-	argv: ['nowview'],
+	argv: ['nowview', '-o', '-'],
 	empty: 'no field has a state yet',
 	sized: true
 };

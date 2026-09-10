@@ -129,17 +129,18 @@ jobs:
   wasm-check:
     name: WASM check
     runs-on: ubuntu-latest
-    # Measured on the last green main run (2026-09-09): wasm-check took a few minutes.
-    # A hung step used to run until GitHub's 6-hour default; now it fails here.
-    timeout-minutes: 10
+    # The CLI module compiles SQLite's C for wasm32-wasip1 as well as the
+    # whole CLI, which is minutes, not seconds. A hung step used to run until
+    # GitHub's 6-hour default; now it fails here.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install --no-self-update
 
-      - name: Add the wasm32 target
-        run: rustup target add wasm32-unknown-unknown
+      - name: Add the wasm32 targets
+        run: rustup target add wasm32-unknown-unknown wasm32-wasip1
 
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
@@ -147,85 +148,44 @@ jobs:
       - name: cargo check datum-sync-client (wasm32, --no-default-features --features wasm)
         run: cargo check -p datum-sync-client --target wasm32-unknown-unknown --no-default-features --features wasm
 
-      # web/scripts/build-wasm.mjs imports only node builtins, so this needs
-      # no `pnpm install` — just an interpreter.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      # The two modules datum.day loads, rebuilt and compared against the
-      # committed copies.
-      #
-      # Why compare rather than merely build: the artifacts are committed
-      # (the web job has no Rust toolchain) and NOTHING regenerated them.
-      # On 2026-09-04 datum-parse.wasm was 1.706 bytes behind its own
-      # source — the `conflicts` command had landed in Rust that morning and
-      # never reached the browser. Building alone catches only the
-      # precondition for that (the crates ceasing to build for wasm at all),
-      # not the drift itself. This is the same shape as `toolchain-pin` in
-      # the honesty job: name the two things that must agree, fail when they
-      # diverge, and refuse to pass when there is nothing to compare.
-      #
-      # It rebuilds through the script rather than a second copy of the
-      # cargo flags here, so how these are built is written down once. The
-      # script still runs `cargo build`, not `check`, and deliberately: the
-      # other failure mode is a *link*-time one. A dependency that reaches
-      # for the browser's clock (chrono's `wasmbind`, say) adds a
-      # wasm-bindgen import, and a module with imports will not load from
-      # the bare `WebAssembly.instantiate` the browser side uses. `cargo
-      # check` sees none of that.
-      #
-      # The comparison is byte-for-byte and that is safe: the script remaps
-      # the absolute paths rustc bakes into panic payloads, so the output
-      # does not depend on where the repo or the cargo registry lives. See
-      # its comment.
-      - name: Rebuild the browser modules and compare with the committed copies
-        run: |
-          set -euo pipefail
-          # A gate that finds nothing must not pass.
-          git ls-files --error-unmatch web/src/lib/wasm/datum-layout.wasm web/src/lib/wasm/datum-parse.wasm web/src/lib/wasm/datum-render.wasm >/dev/null
-          node web/scripts/build-wasm.mjs
-          if [ -n "$(git status --porcelain -- web/src/lib/wasm)" ]; then
-            git status --short -- web/src/lib/wasm
-            echo "::error::web/src/lib/wasm/*.wasm is out of date with the crates behind it. Fix: pnpm run build:wasm && git add web/src/lib/wasm/*.wasm"
-            exit 1
-          fi
-
-  # The real CLI for wasm32-wasip1 (da-1vat, route C, behind `?wasi`). Its
-  # own job because it needs a C compiler targeting wasm: the script fetches
-  # a PINNED wasi-sdk and binaryen into target/toolchains/, sha256-checked,
-  # and nothing else in CI or on a contributor's machine ever needs them.
-  # Allowed to fail while route C is a spike.
-  cli-wasm-check:
-    name: CLI WASM check (da-1vat)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install the pinned Rust toolchain
-        run: rustup toolchain install --no-self-update && rustup target add wasm32-wasip1
-
-      - name: Cache cargo registry + target
-        uses: Swatinem/rust-cache@v2
-
+      # The real CLI for wasm32-wasip1 — datum.day's only runner (da-g8o8).
+      # It needs a C compiler targeting wasm: the script fetches a PINNED
+      # wasi-sdk and binaryen into target/toolchains/, sha256-checked, and
+      # nothing else in CI or on a contributor's machine ever needs them.
       - name: Cache the pinned wasi-sdk and binaryen
         uses: actions/cache@v4
         with:
           path: target/toolchains
           key: wasi-toolchains-${{ hashFiles('web/scripts/build-cli-wasm.mjs') }}
 
+      # build-cli-wasm.mjs imports only node builtins, so this needs no
+      # `pnpm install` — just an interpreter.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
+      # The module datum.day loads, rebuilt and compared against the
+      # committed copy.
+      #
+      # Why compare rather than merely build: the artifact is committed (the
+      # web job has no Rust toolchain) and nothing else regenerates it. On
+      # 2026-09-04 the then parser module was 1.706 bytes behind its own
+      # source — the `conflicts` command had landed in Rust that morning and
+      # never reached the browser. Building alone catches only the
+      # precondition for that (the CLI ceasing to build for wasm at all),
+      # not the drift itself.
+      #
+      # The comparison is byte-for-byte and that is safe: the script remaps
+      # the absolute paths rustc and clang bake into the bytes, so the output
+      # does not depend on where the repo or the cargo registry lives.
       - name: Rebuild the CLI module and compare with the committed copy
         run: |
           set -euo pipefail
+          # A gate that finds nothing must not pass.
           git ls-files --error-unmatch web/src/lib/wasm/datum-cli.wasm >/dev/null
           node web/scripts/build-cli-wasm.mjs
-          if [ -n "$(git status --porcelain -- web/src/lib/wasm/datum-cli.wasm)" ]; then
+          if [ -n "$(git status --porcelain -- web/src/lib/wasm)" ]; then
+            git status --short -- web/src/lib/wasm
             echo "::error::web/src/lib/wasm/datum-cli.wasm is out of date with the CLI. Fix: pnpm run build:cli-wasm && git add web/src/lib/wasm/datum-cli.wasm"
             exit 1
           fi

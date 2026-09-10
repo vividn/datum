@@ -1,10 +1,9 @@
 // Where the database lives, as something the UI can react to.
 //
-// `storageKind()` answers for the instant it is called, which was enough when
-// the answer could not change. It can now: a tab that opened in memory because
-// another held the OPFS pool takes the pool over when that tab closes, and
-// moves its entries across. A page that read the kind once goes on warning
-// about data that is no longer at risk.
+// `storageKind()` answers for the instant it is called, and the answer can
+// change: a tab that opened in memory because the browser refused it the file
+// goes back for it, and moves its entries across when it gets it. A page that
+// read the kind once goes on warning about data that is no longer at risk.
 //
 // One store rather than a subscription in each component, because the banner
 // and the repl frame are rendering the SAME fact and should never be able to
@@ -88,5 +87,5 @@ export const persisted = readable<boolean | null>(null, (set) => {
  * the first few hundred milliseconds would teach them to ignore it.
  */
 export function isDegraded(kind: StorageState): boolean {
-	return kind === 'failed' || kind === 'memory' || kind === 'memory-other-tab';
+	return kind === 'failed' || kind === 'memory';
 }

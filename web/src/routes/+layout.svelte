@@ -11,12 +11,31 @@
 	import '../app.css';
 	import BetaBanner from '$lib/BetaBanner.svelte';
 	import { installConsole } from '$lib/console.js';
+	import { downloadBackup } from '$lib/backup.js';
 	import { page } from '$app/stores';
 
 	const links = [
 		{ href: '/', label: 'day' },
 		{ href: '/now', label: 'now' }
 	];
+
+	let exporting = false;
+
+	/**
+	 * `datum db backup -`, handed over as a file: every entry, in the JSONL
+	 * `datum db restore` reads back — the one copy of the data that is not
+	 * in this browser, until there is sync.
+	 */
+	async function exportBackup() {
+		exporting = true;
+		try {
+			await downloadBackup();
+		} catch (e) {
+			alert(`export failed: ${e instanceof Error ? e.message : String(e)}`);
+		} finally {
+			exporting = false;
+		}
+	}
 
 	// `window.datum` — the command seam at the browser's own prompt. Mounted
 	// here rather than at module scope because there is no window during
@@ -66,6 +85,13 @@
 				</a>
 			{/each}
 		</nav>
+		<button
+			type="button"
+			class="export"
+			disabled={exporting}
+			title="download every entry as `datum db backup` JSONL"
+			on:click={exportBackup}>export</button
+		>
 		<!--
 			Which build is actually in front of you. Deliberately dim and last:
 			it is a developer's sanity check during early deployment, not
@@ -140,11 +166,35 @@
 		padding: 0.75rem;
 	}
 
+	.export {
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		font-size: 0.85rem;
+		color: #7c7cff;
+		cursor: pointer;
+	}
+
+	.export:hover:not(:disabled) {
+		color: #adadff;
+	}
+
+	.export:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
 	/* Dim on purpose: present for whoever is looking for it, quiet for
 	   everyone else. `ch` units so the two ids do not reflow the nav as the
 	   hash changes between builds. */
 	.build {
 		margin-left: auto;
+		/* The one item that gives way on a narrow screen, so the header
+		   never pushes the page sideways. */
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		font-size: 0.7rem;
 		font-variant-numeric: tabular-nums;
 		color: color-mix(in srgb, currentColor 35%, transparent);

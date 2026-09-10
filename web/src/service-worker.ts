@@ -101,7 +101,7 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
 	// promise sometimes never settles, and the worker stays in `activating` for as
 	// long as its `waitUntil` is pending — a state in which its clients' fetches
 	// never complete. The visitor types their first command, the lazy fetch of
-	// datum-parse.wasm hangs, and nothing is echoed, stored, or reported.
+	// the wasm it runs in hangs, and nothing is echoed, stored, or reported.
 	// Measured 2026-09-07 on Playwright's Firefox, fresh profile per trial:
 	// 27 of 62 first commands lost while awaited, 0 of 10 when not. Chromium
 	// never reproduced it. Activation does not depend on the claim, so nothing

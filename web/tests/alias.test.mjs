@@ -2,12 +2,11 @@
 //
 // An alias is a name the user gives a command: `alias set cof 'occur
 // coffee strength=strong'`, and from then on `cof` logs a strong coffee.
-// The expansion is not this app's code — it is `datum-parse`'s, reached
-// through `datum-parse.wasm` with the browser's own `aliases` rows and
-// field specs in the request (da-5kbj). So what these tests check is not
-// "does the expansion work" (tests/parity.test.mjs holds that against the
-// real binary, case by case) but the round trip the browser owns: the row
-// is written, it is read back on the very next line, and removing it stops
+// The expansion is not this app's code — the browser runs the CLI, which
+// expands it (da-5kbj, da-g8o8). So what these tests check is not "does the
+// expansion work" (tests/parity.test.mjs holds that against the native
+// binary, case by case) but the round trip in the browser: the row is
+// written, it is read back on the very next line, and removing it stops
 // the name expanding.
 //
 // Everything runs through `run(argv)`, the one seam, so these are the
@@ -42,8 +41,8 @@ describe('aliases in the REPL', () => {
 			// The provenance the CLI stamps: what was typed, and what it
 			// became. Sync carries these columns, so the shape is not the
 			// browser's to choose.
-			assert.equal(stored.rawInput, 'cof -t 0915');
-			assert.deepEqual(stored.aliasChain, [
+			assert.equal(stored.raw_input, 'cof -t 0915');
+			assert.deepEqual(stored.alias_chain, [
 				{ name: 'cof', expansion: 'occur coffee strength=strong' }
 			]);
 		});
@@ -65,7 +64,7 @@ describe('aliases in the REPL', () => {
 				'each row is filed under its comment, not under its minute'
 			);
 			assert.deepEqual(
-				stored.map((e) => e.idStructure),
+				stored.map((e) => e.id_structure),
 				['%comment%', '%comment%']
 			);
 		});
@@ -99,7 +98,7 @@ describe('aliases in the REPL', () => {
 
 			const [stored] = await entries();
 			assert.equal(stored.field, 'coffee');
-			assert.deepEqual(stored.aliasChain, [
+			assert.deepEqual(stored.alias_chain, [
 				{ name: 'a', expansion: 'b strength=strong' },
 				{ name: 'b', expansion: 'occur coffee' }
 			]);

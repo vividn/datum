@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Capture what the real `datum` CLI does, into tests/fixtures/.
 //
-// Two fixtures, one binary:
+// Three fixtures, one binary:
 //
 //   cli-parity.json  what the CLI STORES for a given argv, one entry per case
 //   cli-tail.json    what the CLI PRINTS for `datum tail` over a logged day
+//   cli-stdout.json  what the CLI PRINTS for each command of a script, in
+//                    colour, run in order against one database
 //
 // The parity suite's whole claim is that datum.day IS datum rather than a
 // lookalike, and that claim can only be checked against the CLI's actual
@@ -29,9 +31,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { comparable, fromBackupRow } from '../tests/support/semantics.mjs';
+import { masker } from '../tests/support/stdout.mjs';
 import { comparableTail } from '../tests/support/tail.mjs';
 
 const FIXTURE = fileURLToPath(new URL('../tests/fixtures/cli-parity.json', import.meta.url));
+const STDOUT_FIXTURE = fileURLToPath(new URL('../tests/fixtures/cli-stdout.json', import.meta.url));
 const TAIL_FIXTURE = fileURLToPath(new URL('../tests/fixtures/cli-tail.json', import.meta.url));
 const repo = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -53,9 +57,17 @@ const datum = datumBinary();
 
 /** Run the CLI against `db`, in UTC so a captured clock time is portable. */
 function cli(db, argv) {
+	return cliWith({ ...process.env, DATUM_DB: db, TZ: 'UTC', NO_COLOR: '1' }, argv);
+}
+
+/** The device id the stdout script's browser half runs under too. */
+const STDOUT_DEVICE = 'web-parity';
+
+/** Run the CLI with exactly `env`, plus PATH. */
+function cliWith(env, argv) {
 	try {
 		const stdout = execFileSync(datum, argv, {
-			env: { ...process.env, DATUM_DB: db, TZ: 'UTC', NO_COLOR: '1' },
+			env: { PATH: process.env.PATH, ...env },
 			encoding: 'utf8',
 			stdio: ['ignore', 'pipe', 'pipe']
 		});
@@ -124,6 +136,26 @@ try {
 	tail.capturedWith = fixture.capturedWith;
 	writeFileSync(TAIL_FIXTURE, format(tail));
 	console.log(`captured the tail of ${tail.log.length} entries → ${TAIL_FIXTURE}`);
+
+	// The stdout script: one database and one HOME for the whole run, the
+	// environment the browser's runner gives every process — the zone, a
+	// device id, colour on — and each answer masked where a write mints
+	// something no two runs share (tests/support/stdout.mjs).
+	const script = JSON.parse(readFileSync(STDOUT_FIXTURE, 'utf8'));
+	if (!Array.isArray(script.script) || script.script.length === 0)
+		throw new Error(`${STDOUT_FIXTURE} has no script`);
+	const home = join(dir, 'home');
+	const mask = masker();
+	script.cases = script.script.map((argv) => {
+		const { code, stdout } = cliWith(
+			{ HOME: home, DATUM_DB: join(home, 'datum.db'), DATUM_DEVICE_ID: STDOUT_DEVICE, DATUM_COLOR: '1', TZ: 'UTC' },
+			argv
+		);
+		return { argv, code, stdout: mask(stdout) };
+	});
+	script.capturedWith = fixture.capturedWith;
+	writeFileSync(STDOUT_FIXTURE, format(script));
+	console.log(`captured ${script.cases.length} commands' stdout → ${STDOUT_FIXTURE}`);
 } finally {
 	rmSync(dir, { recursive: true, force: true });
 }

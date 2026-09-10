@@ -9,62 +9,6 @@ export interface DatumTime {
 	timezone?: string;
 }
 
-// Stored verb (shape-derived classifier). Maps 1:1 to the
-// `entries.verb` column in crates/datum-core/src/schema.sql.
-export type StoredVerb = 'point' | 'switch' | 'block' | 'block-switch' | 'point-switch';
-
-/**
- * A number carrying a unit, as datum annotates one: `{"v": 75.2, "u": "kg"}`.
- * Built by `coerce.rs` on the Rust side (crates/datum-parse/src/input/
- * data_args/coerce.rs) and stored inside `state` / `data` — there is no
- * `unit` column in schema.sql, and a bare number is equally valid.
- */
-export interface Annotated {
-	v: number;
-	u: string;
-}
-
-export function isAnnotated(value: unknown): value is Annotated {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		typeof (value as Annotated).v === 'number' &&
-		typeof (value as Annotated).u === 'string'
-	);
-}
-
-export interface Entry {
-	hid: string;
-	slug: string;
-	contentHash: string;
-	field: string;
-	state?: unknown;
-	dur?: string; // ISO-8601 duration string (e.g. "PT30M")
-	followingState?: unknown;
-	verb: StoredVerb;
-	data?: unknown;
-	occurTime: DatumTime;
-	occurTimeUncertainty?: string;
-	lat?: number;
-	lon?: number;
-	location?: string;
-	createTime: string;
-	modifyTime: string;
-	deviceId: string;
-	rawInput: string;
-	/**
-	 * The `%key%` template the slug's body was interpolated from (da-ivld).
-	 * `%occur_time%` unless an alias or a spec supplied one.
-	 */
-	idStructure?: string;
-	/**
-	 * The alias expansions the typed line went through, in order — the
-	 * `alias_chain` column's JSON, as Rust renders it. Absent when nothing
-	 * expanded.
-	 */
-	aliasChain?: { name: string; expansion: string }[];
-}
-
 /**
  * The intent verbs a field spec may carry as its default.
  *
@@ -75,12 +19,8 @@ export interface Entry {
 export type DefaultAction = 'occur' | 'start' | 'stop' | 'switch' | 'block' | 'add' | 'note';
 
 /**
- * The slice of a stored field spec the web app reads.
- *
- * Field specs live in `field_specs.spec_json` (schema.sql) as one JSON blob
- * so the shape can evolve without migrations; this interface names only the
- * keys the widget bar needs and passes the rest through untouched, so a
- * spec written by the CLI survives a round trip through the browser.
+ * The slice of a field spec the web app reads, as `datum fields --json`
+ * reports it — only the keys the widget bar needs are named.
  *
  * The JSON key is `default_verb`, not `default_action` — kept for wire
  * compatibility with stored rows (see `FieldSpec` in

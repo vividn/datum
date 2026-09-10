@@ -75,9 +75,9 @@ cd "$(dirname "$0")"
 #
 # Paths are relative to web/ (cd'd above). Floors first, because `find` on a
 # missing directory returns empty, which reads exactly like "the wasm is fresh".
-[ -f src/lib/wasm/datum-parse.wasm ] || {
-  echo "REFUSING: src/lib/wasm/datum-parse.wasm does not exist; nothing to compare." >&2
-  echo "  Build it first: pnpm run build:wasm" >&2
+[ -f src/lib/wasm/datum-cli.wasm ] || {
+  echo "REFUSING: src/lib/wasm/datum-cli.wasm does not exist; nothing to compare." >&2
+  echo "  Build it first: pnpm run build:cli-wasm" >&2
   exit 1
 }
 [ -d ../crates ] || {
@@ -93,18 +93,22 @@ cd "$(dirname "$0")"
 # Building removes the question instead of detecting it. Safe to do here since
 # the rust-src pin (#138): the output is byte-reproducible across machines, so a
 # no-op build leaves the tree clean rather than churning the committed artifact.
-if command -v cargo >/dev/null 2>&1; then
+#
+# The CLI module needs the wasm32-wasip1 target (and fetches its pinned C
+# toolchain on first use), so a machine without the target takes the
+# committed-artifact path below rather than failing half-way into a build.
+if command -v cargo >/dev/null 2>&1 && rustup target list --installed 2>/dev/null | grep -qx wasm32-wasip1; then
   echo "==> building wasm"
-  pnpm run build:wasm
+  pnpm run build:cli-wasm
 else
   # The toolchain-free path, which is why the artifacts are committed at all.
   # HERE the staleness check earns its keep: we are about to ship bytes we did
   # not just produce, so their age is the only evidence available.
-  echo "==> cargo not found; shipping the COMMITTED wasm" >&2
-  newest_rust=$(find ../crates -name '*.rs' -newer src/lib/wasm/datum-parse.wasm -print -quit 2>/dev/null)
+  echo "==> no cargo with wasm32-wasip1; shipping the COMMITTED wasm" >&2
+  newest_rust=$(find ../crates -name '*.rs' -newer src/lib/wasm/datum-cli.wasm -print -quit 2>/dev/null)
   if [ -n "$newest_rust" ]; then
     echo "REFUSING: src/lib/wasm/*.wasm is older than Rust source ($newest_rust)." >&2
-    echo "  Install a Rust toolchain and re-run, so the deploy builds it, or:" >&2
+    echo "  Install a Rust toolchain with wasm32-wasip1 and re-run, so the deploy builds it, or:" >&2
     echo "    just wasm && git add web/src/lib/wasm/*.wasm" >&2
     echo "  Or set STALE_WASM_OK=1 to ship the committed one deliberately." >&2
     echo "" >&2

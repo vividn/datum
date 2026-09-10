@@ -68,28 +68,28 @@ export function shapeFor(spec: FieldSpec | undefined, observed: unknown[] = []):
 	return { kind: 'point' };
 }
 
+/** One row of `datum fields --json`. */
+export interface FieldListing {
+	field: string;
+	spec: FieldSpec | null;
+	/** The distinct states the field has been logged with. */
+	states: unknown[];
+}
+
 /**
  * The bar's widgets: one per field the user has actually touched.
  *
- * Fields come from the log and from declared specs — the union, so a field
- * declared through (+) has a widget before its first entry and a field
- * logged in the REPL has one without ever needing a spec. An empty
+ * `datum fields` lists the log and the declared specs — the union, so a
+ * field declared through (+) has a widget before its first entry and a
+ * field logged in the REPL has one without ever needing a spec. An empty
  * database yields an empty bar, which is the honest first-run state.
  */
-export function widgetsFor(
-	fields: Iterable<string>,
-	specs: Map<string, FieldSpec>,
-	observed: Map<string, unknown[]>
-): Widget[] {
-	const names = new Set<string>([...fields, ...specs.keys()]);
-	return [...names].sort().map((field) => {
-		const spec = specs.get(field);
-		return {
-			field,
-			shape: shapeFor(spec, observed.get(field)),
-			color: spec?.color ?? undefined
-		};
-	});
+export function widgetsFor(listing: FieldListing[]): Widget[] {
+	return listing.map(({ field, spec, states }) => ({
+		field,
+		shape: shapeFor(spec ?? undefined, states),
+		color: spec?.color ?? undefined
+	}));
 }
 
 /**

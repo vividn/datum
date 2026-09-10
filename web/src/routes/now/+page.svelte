@@ -1,64 +1,38 @@
+<!--
+	`datum now --bare`: each tracked field's current state, as the CLI lists it.
+
+	This page used to be a dashboard of its own, read out of the browser's own
+	SQL and formatted here — one card per field, with a value slot the page
+	filled by its own rules (da-sgvh). With the CLI as the only runner
+	(da-g8o8) it shows what `datum now` says, the terminal's answer to the
+	same question: a point has no state, so it is not listed, and a stopped
+	block is not a current state either.
+-->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { initDb, getLatestPerField } from '$lib/db.js';
-	import { formatValue } from '$lib/runners/local.js';
-	import { dateLabel } from '$lib/clock.js';
-	import type { Entry } from '$lib/types.js';
+	import CliOutput from '$lib/CliOutput.svelte';
+	import { initDb } from '$lib/db.js';
+	import { run, type RunResult } from '$lib/run.js';
 
-	let entries: Entry[] = [];
-	let loading = true;
+	let result: RunResult | null = null;
 
 	onMount(async () => {
 		await initDb();
-		entries = await getLatestPerField();
-		loading = false;
+		result = await run(['now', '--bare']);
 	});
-
-	function formatTime(entry: Entry): string {
-		const d = new Date(entry.occurTime.utc);
-		const now = new Date();
-		const diffMs = now.getTime() - d.getTime();
-		const diffMin = Math.floor(diffMs / 60000);
-		if (diffMin < 1) return 'just now';
-		if (diffMin < 60) return `${diffMin}m ago`;
-		const diffH = Math.floor(diffMin / 60);
-		if (diffH < 24) return `${diffH}h ago`;
-		// Past a day the label stops being relative and becomes a date, and
-		// a date is the one clock convention too. `toLocaleDateString()`
-		// asks the *reader's* browser, which on en-US answers `9/4/2026`
-		// beside a `datum` that is ISO-ish everywhere else — the date
-		// sibling of the time bug da-6o81 fixed one directory away. So this
-		// reuses `dateLabel`, the same `YYYY-MM-DD` in the entry's own zone
-		// that the tail prints for a date-only row (da-kb8p), rather than
-		// growing a second date formatter.
-		return dateLabel(entry.occurTime);
-	}
 </script>
 
 <div class="now-view">
 	<h2>now</h2>
 
-	{#if loading}
-		<p class="loading">loading...</p>
-	{:else if entries.length === 0}
-		<p class="empty">No data yet. Start logging from the <a href="/">main page</a>.</p>
+	{#if !result}
+		<p class="quiet">loading...</p>
+	{:else if result.stdout}
+		<CliOutput text={result.stdout} />
+	{:else if result.stderr}
+		<CliOutput text={result.stderr} error={result.code !== 0} />
 	{:else}
-		<div class="grid">
-			{#each entries as entry (entry.field)}
-				<div class="field-card">
-					<div class="field-name">{entry.field}</div>
-					<!-- An entry with no state has no current value: a point ("I
-					     had a coffee") is an event, not a condition still true.
-					     The card then shows only its name and its time — the
-					     value slot is left out rather than filled with the
-					     stored verb, which is a shape and not a value (da-sgvh). -->
-					{#if entry.state !== undefined}
-						<div class="field-value">{formatValue(entry.state)}</div>
-					{/if}
-					<div class="field-time">{formatTime(entry)}</div>
-				</div>
-			{/each}
-		</div>
+		<p class="quiet">No field has a state yet. Start logging from the <a href="/">main page</a>.</p>
 	{/if}
 </div>
 
@@ -71,47 +45,12 @@
 		font-weight: normal;
 	}
 
-	.loading, .empty {
+	.quiet {
 		color: #444466;
 		font-family: monospace;
 	}
 
-	.empty a {
+	.quiet a {
 		color: #7c7cff;
-	}
-
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-		gap: 0.75rem;
-	}
-
-	.field-card {
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
-		border-radius: 6px;
-		padding: 0.75rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.field-name {
-		font-family: monospace;
-		font-size: 0.85rem;
-		color: #7c7cff;
-	}
-
-	.field-value {
-		font-family: monospace;
-		font-size: 1rem;
-		color: #e0e0ff;
-	}
-
-	.field-time {
-		font-family: monospace;
-		font-size: 0.75rem;
-		color: #444466;
-		margin-top: auto;
 	}
 </style>

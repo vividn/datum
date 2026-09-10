@@ -26,6 +26,63 @@ export const TIMEZONE = 'UTC';
 let server;
 let browser;
 
+/**
+ * Run `prelude` inside the database worker, before the app's own module.
+ *
+ * Nothing here is a mock of the database: OPFS is real and present and the
+ * CLI runs its real course — the prelude only decides what the platform
+ * hands it. The app's own worker module is then imported
+ * for real; the wrapper has to hold the messages the page posts while that
+ * import is in flight, since the module registers its listener at the end
+ * of it.
+ */
+export function inWorker(prelude) {
+	return (context) =>
+		context.addInitScript((prelude) => {
+			const Real = Worker;
+			window.Worker = class extends Real {
+				constructor(url, options) {
+					const target = new URL(url, location.href).href;
+					const source = `
+						${prelude}
+						const queued = [];
+						const buffer = (event) => queued.push(event.data);
+						self.addEventListener('message', buffer);
+						import(${JSON.stringify(target)}).then(() => {
+							self.removeEventListener('message', buffer);
+							for (const data of queued) self.dispatchEvent(new MessageEvent('message', { data }));
+						});
+					`;
+					super(URL.createObjectURL(new Blob([source], { type: 'text/javascript' })), options);
+				}
+			};
+		}, prelude);
+}
+
+/**
+ * Pin the database worker's clock to `ms`, and return a setter that moves it.
+ *
+ * Playwright's `context.clock` fakes the page and not its workers, and the
+ * CLI runs in a worker: a test that fakes the day has to fake it there too,
+ * or datum draws the real one. The setter goes over a BroadcastChannel,
+ * which the worker hears before the next command it is sent.
+ */
+export function workerClock(ms) {
+	return {
+		prepare: inWorker(`
+			let fixed = ${ms};
+			new BroadcastChannel('datum-test-clock').onmessage = (e) => { fixed = e.data; };
+			const Real = Date;
+			self.Date = class extends Real {
+				constructor(...args) { args.length ? super(...args) : super(fixed); }
+				static now() { return fixed; }
+			};
+		`),
+		set: (page, to) =>
+			page.evaluate((to) => new BroadcastChannel('datum-test-clock').postMessage(to), to)
+	};
+}
+
 /** Build-independent: `npm test` runs `vite build` first (see package.json). */
 export async function startApp() {
 	server = await preview({
@@ -90,8 +147,7 @@ function baseUrl() {
  * test about what overflows on a phone wants all four (da-45wt). An
  * explicit `viewport` still wins, so a profile can be resized.
  *
- * `query` is appended to the URL — `?wasi` puts the real CLI behind the seam
- * (da-1vat).
+ * `query` is appended to the URL.
  */
 export async function withApp(fn, { prepare, locale, viewport, device, query = '' } = {}) {
 	const context = await browser.newContext({
@@ -141,13 +197,13 @@ function app(page, errors, query) {
 		/** Uncaught errors the page threw, in order. */
 		errors,
 
-		/** The seam. One command in, one RunResult out. */
-		run: (argv) => page.evaluate((a) => window.datum.run(a), argv),
+		/** The seam. One command in — and its stdin, if any — one RunResult out. */
+		run: (argv, stdin) => page.evaluate(([a, s]) => window.datum.run(a, s), [argv, stdin]),
 
 		/** The seam's line form, as the REPL feeds it. */
 		runLine: (line) => page.evaluate((l) => window.datum.runLine(l), line),
 
-		/** What actually got stored, newest first. */
+		/** What actually got stored, newest first: the CLI's `db backup -` rows. */
 		entries: (limit = 50) => page.evaluate((n) => window.datum.entries(n), limit),
 
 		/**
