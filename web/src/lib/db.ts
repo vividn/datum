@@ -37,6 +37,18 @@ export function onStorageChange(watcher: (kind: StorageKind) => void): () => voi
 
 const watchers = new Set<(kind: StorageKind) => void>();
 
+/**
+ * Called after each entry that lands in durable storage — never for one held
+ * in memory, where there is nothing a browser could be asked to keep
+ * (da-frg2). Returns its own unsubscribe.
+ */
+export function onDurableWrite(watcher: () => void): () => void {
+	durableWatchers.add(watcher);
+	return () => durableWatchers.delete(watcher);
+}
+
+const durableWatchers = new Set<() => void>();
+
 export function storageKind(): StorageKind | null {
 	return storage;
 }
@@ -171,6 +183,7 @@ export async function insertEntry(entry: Entry): Promise<void> {
 	// Announced AFTER the write resolves, so a listener that re-queries
 	// cannot race the row it came for. Other tabs re-run their panes on this.
 	announceChange();
+	if (storage === 'opfs') for (const watcher of durableWatchers) watcher();
 }
 
 export async function getEntriesForField(field: string, limit = 50): Promise<Entry[]> {

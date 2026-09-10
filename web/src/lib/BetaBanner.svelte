@@ -16,6 +16,12 @@
 	storage kind, and it earns the sentence that names the remedy — use
 	the other tab, or close it -- this one recovers the database on its own (da-60ww).
 
+	Durable storage is still best-effort until the browser grants the origin
+	persistence, and then it may be cleared under storage pressure. So the
+	durable sentence also says what the browser answered (the `persisted`
+	store, da-frg2): a promise when it gave one, and otherwise — refused or
+	unknown — that it may clear the data, naming installation as the lever.
+
 	Dismissal sticks per browser; this is a warning, not a nag — but it
 	dismisses the BETA notice only. While storage is degraded the banner is
 	the only thing telling you that what you type is about to be lost, and a
@@ -25,7 +31,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { storage } from '$lib/storageState.js';
+	import { persisted, storage } from '$lib/storageState.js';
 
 	const DISMISS_KEY = 'datum-beta-banner-dismissed';
 
@@ -83,8 +89,9 @@
 			{:else if $storage === 'memory'}
 				Entries are held in memory only — reloading this page discards them.
 			{:else}
-				Your entries are stored in this browser only: clearing site data deletes them, and there is
-				no sync yet.
+				Your entries are stored in this browser only: clearing site data deletes them, there is no
+				sync yet, and {#if $persisted}the browser has promised to keep them.{:else}the browser may
+					clear them if space runs short — install the app to keep them.{/if}
 			{/if}
 		</p>
 		{#if !degraded}

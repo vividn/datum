@@ -285,3 +285,116 @@ describe('two tabs', () => {
 		});
 	});
 });
+
+// Asking the browser to keep it (da-frg2). Eviction is per origin, and an
+// origin's storage is best-effort until the browser grants persistence — so
+// the app asks, once, after the first entry lands durably, and the banner
+// says what the browser answered.
+//
+// Chromium only: it is the one browser the harness launches, so these say
+// nothing about Firefox's prompt.
+
+/**
+ * Count the page's calls to `navigator.storage.persist()`, keeping the
+ * browser's answer. `answer: 'throw'` makes it throw instead; `answer: true`
+ * grants, which headless Chromium itself does not (it answers false).
+ */
+const spyOnPersist =
+	({ answer } = {}) =>
+	(context) =>
+		context.addInitScript((answer) => {
+			const real = StorageManager.prototype.persist;
+			window.__persistCalls = 0;
+			StorageManager.prototype.persist = function () {
+				window.__persistCalls++;
+				if (answer === 'throw') throw new DOMException('refused by the test', 'NotAllowedError');
+				return (window.__persistAnswer = answer === true ? Promise.resolve(true) : real.call(this));
+			};
+		}, answer);
+
+const persistCalls = (app) => app.page.evaluate(() => window.__persistCalls);
+
+const DURABLE =
+	'datum.day is early software. Your entries are stored in this browser only: ' +
+	'clearing site data deletes them, there is no sync yet, and';
+const KEPT = `${DURABLE} the browser has promised to keep them.`;
+const MAY_CLEAR = `${DURABLE} the browser may clear them if space runs short — install the app to keep them.`;
+
+describe('asking the browser to keep it', () => {
+	test('nothing is asked before the first write', async () => {
+		await withApp(
+			async (app) => {
+				assert.equal(await app.page.evaluate(() => navigator.storage.persisted()), false);
+				assert.equal(await persistCalls(app), 0);
+				assert.equal(await app.bannerText(), MAY_CLEAR);
+			},
+			{ prepare: spyOnPersist() }
+		);
+	});
+
+	test('the first durable write asks once, and the banner says what was granted', async () => {
+		await withApp(
+			async (app) => {
+				for (const [i, time] of ['0700', '0701', '0702'].entries()) {
+					const logged = await app.run(['occur', 'coffee', '-t', time]);
+					assert.equal(logged.code, 0, logged.stderr);
+					assert.equal(await persistCalls(app), 1, `after write ${i + 1}`);
+				}
+				// Headless Chromium may answer either way, so the claim is the
+				// correspondence: the sentence is the one for what it answered.
+				const granted = await app.page.evaluate(async () => {
+					await window.__persistAnswer;
+					return navigator.storage.persisted();
+				});
+				await until(app.bannerText, (t) => t === (granted ? KEPT : MAY_CLEAR));
+			},
+			{ prepare: spyOnPersist() }
+		);
+	});
+
+	test('a granted request is what the banner promises', async () => {
+		await withApp(
+			async (app) => {
+				assert.equal(await app.bannerText(), MAY_CLEAR);
+				const logged = await app.run(['occur', 'coffee', '-t', '0700']);
+				assert.equal(logged.code, 0, logged.stderr);
+				await until(app.bannerText, (t) => t === KEPT);
+			},
+			{ prepare: spyOnPersist({ answer: true }) }
+		);
+	});
+
+	test('nothing is asked while entries are held in memory', async () => {
+		await withApp(
+			async (app) => {
+				const logged = await app.run(['occur', 'coffee', '-t', '0700']);
+				assert.equal(logged.code, 0, logged.stderr);
+				assert.equal(await persistCalls(app), 0);
+				assert.match(await app.bannerText(), /held in memory only/);
+			},
+			{
+				prepare: async (context) => {
+					await inWorker(NEVER)(context);
+					await spyOnPersist()(context);
+				}
+			}
+		);
+	});
+
+	test('a persist that throws does not fail the write', async () => {
+		await withApp(
+			async (app) => {
+				const logged = await app.run(['occur', 'coffee', '-t', '0700']);
+				assert.equal(logged.code, 0, logged.stderr);
+				assert.deepEqual(
+					(await app.entries()).map((e) => e.field),
+					['coffee']
+				);
+				assert.equal(await persistCalls(app), 1);
+				assert.equal(await app.bannerText(), MAY_CLEAR);
+				assert.deepEqual(app.errors, []);
+			},
+			{ prepare: spyOnPersist({ answer: 'throw' }) }
+		);
+	});
+});

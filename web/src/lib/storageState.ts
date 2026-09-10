@@ -12,7 +12,13 @@
 
 import { readable } from 'svelte/store';
 import { browser } from '$app/environment';
-import { initDb, onStorageChange, storageKind, type StorageKind } from '$lib/db.js';
+import {
+	initDb,
+	onDurableWrite,
+	onStorageChange,
+	storageKind,
+	type StorageKind
+} from '$lib/db.js';
 
 /**
  * `null` is "not determined yet"; `'failed'` is "we tried and it did not
@@ -33,6 +39,45 @@ export const storage = readable<StorageState>(null, (set) => {
 		() => set('failed')
 	);
 	return onStorageChange(set);
+});
+
+/** Whether this tab has asked for persistence yet; once per session. */
+let asked = false;
+
+/**
+ * Whether the browser has promised not to evict this origin's storage
+ * (da-frg2). `null` is unknown or unsupported.
+ *
+ * Eviction is per origin — OPFS, IndexedDB and the cache share one bucket
+ * and one policy — and until the origin is granted persistence, Chromium and
+ * Firefox may clear it under storage pressure. So the app asks, but only
+ * once there is something to lose: after the first entry lands durably, not
+ * on an empty page, where Firefox's prompt would be the first thing a visitor
+ * sees. A returning visit reads `persisted()` first and does not ask again.
+ *
+ * Asked from the page, not the worker, so the answer and the banner's
+ * sentence come from one place. The request is never awaited by the write:
+ * `persist()` may wait on a human.
+ */
+export const persisted = readable<boolean | null>(null, (set) => {
+	if (!browser || !('storage' in navigator && 'persist' in navigator.storage)) return;
+	const manager = navigator.storage;
+	let known: boolean | null = null;
+	// `then` rather than `await`: a `persist` that throws synchronously is
+	// caught the same way as one that rejects.
+	const settle = (ask: () => Promise<boolean>) =>
+		Promise.resolve()
+			.then(ask)
+			.then(
+				(answer) => set((known = answer)),
+				() => set((known = null))
+			);
+	settle(() => manager.persisted());
+	return onDurableWrite(() => {
+		if (asked || known) return;
+		asked = true;
+		settle(() => manager.persist());
+	});
 });
 
 /**
