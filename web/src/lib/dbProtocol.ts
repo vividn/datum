@@ -25,10 +25,38 @@ export type Row = Record<string, unknown>;
  */
 export type StorageKind = 'opfs' | 'memory' | 'memory-other-tab';
 
+/**
+ * How the wasi CLI holds its database files (da-1vat, see $lib/cli.ts):
+ * for the owner worker's life, or for one command.
+ */
+export type CliLock = 'owner' | 'command';
+
+/** One CLI process's outcome, plus what the spike measures about it. */
+export interface CliResult {
+	argv: string[];
+	code: number;
+	stdout: string;
+	stderr: string;
+	/** Whether the process committed a write — other tabs refresh on it. */
+	changed: boolean;
+	storage: StorageKind;
+	/** Where the time went, in ms; `tries` is how many opens the handles took. */
+	ms: {
+		compile: number;
+		acquire: number;
+		instantiate: number;
+		run: number;
+		flush: number;
+		tries: number;
+	};
+}
+
 export type DbCommand =
 	/** Open the database if it isn't open yet, and report where it landed. */
 	| { op: 'open' }
-	| { op: 'exec'; sql: string; bind?: Row };
+	| { op: 'exec'; sql: string; bind?: Row }
+	/** Run `datum <argv>` under WASI, the CLI's own database (da-1vat). */
+	| { op: 'cli'; argv: string[]; env: string[]; lock: CliLock };
 
 /** A command with the tag that pairs its response to it. */
 export type DbRequest = DbCommand & { id: number };
@@ -44,7 +72,7 @@ export type DbRequest = DbCommand & { id: number };
 export type DbNotice = { notice: 'storage'; storage: StorageKind };
 
 export type DbResponse =
-	| { id: number; ok: true; storage: StorageKind; rows: Row[] }
+	| { id: number; ok: true; storage: StorageKind; rows: Row[]; cli?: CliResult }
 	| { id: number; ok: false; error: string };
 
 /** Anything the worker may post: an answer, or news nobody asked for. */

@@ -128,6 +128,9 @@ function workerPrecache(): Plugin {
 		generateBundle(_options, bundle) {
 			const paths = Object.keys(bundle)
 				.filter((name) => name.startsWith(`${WORKER_DIR}/`))
+				// The wasi CLI is behind `?wasi` while da-1vat measures it:
+				// not 1.3 MB gzipped in every visitor's precache for a flag.
+				.filter((name) => !name.includes('/datum-cli-'))
 				.map((name) => `/${name}`)
 				.sort();
 			// Only the client pass emits these; the server pass must not

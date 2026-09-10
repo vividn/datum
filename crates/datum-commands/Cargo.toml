@@ -17,7 +17,12 @@ default = ["native", "db"]
 #               buffer `datum edit` hands to $EDITOR
 # Native builds are unchanged; this feature is on by default. Mirrors the
 # pattern datum-parse already uses for the same reason.
-native = ["db", "datum-parse/native", "datum-core/native", "dep:crossterm", "dep:reqwest", "dep:datum-sync-client", "dep:tempfile"]
+native = ["db", "clock", "dep:crossterm", "dep:reqwest", "dep:datum-sync-client", "dep:tempfile"]
+# The host's clock and zone (`DatumTime::now()`), apart from the rest of
+# `native`: the wasm32-wasip1 CLI (da-1vat) has a clock — WASI's
+# `clock_time_get`, and `TZ` from its caller — but no terminal and no HTTP.
+# Off only where there is no clock at all: wasm32-unknown-unknown.
+clock = ["datum-parse/native", "datum-core/native"]
 # The database half: every command, the argv layer that opens a db, and the
 # `now` snapshot renderer. Off, what remains is `render` and `config` — the
 # pure formatting the browser renderer (`datum-render-wasm`) links against.

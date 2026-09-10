@@ -367,6 +367,13 @@ function errorText(e: unknown): string {
 /** Run one statement against the database this worker owns. */
 async function serve(request: DbRequest): Promise<DbResponse> {
 	try {
+		// The wasi CLI keeps its own database (da-1vat): nothing of the SAH
+		// pool's is opened for it, and it is loaded only when asked for.
+		if (request.op === 'cli') {
+			const { runCli } = await import('./cli.js');
+			const cli = await runCli(request.argv, request.env, request.lock);
+			return { id: request.id, ok: true, storage: cli.storage, rows: [], cli };
+		}
 		await openOnce();
 		const rows: Row[] = [];
 		// `db`, not what `openOnce()` resolved to: a migration may have
@@ -403,7 +410,8 @@ function answerPage(response: DbResponse): void {
  * it again.
  */
 function pump(request: DbRequest): void {
-	if (owning) {
+	// A CLI command that takes its handles for itself needs no owner.
+	if (owning || (request.op === 'cli' && request.lock === 'command')) {
 		void serve(request).then(answerPage);
 		return;
 	}

@@ -8,7 +8,12 @@ name = "datum_cli"
 path = "src/lib.rs"
 
 [features]
-default = ["png"]
+default = ["png", "native"]
+# Everything that cannot exist under WASI, forwarded to `datum-commands/native`
+# plus the CLI's own two: the REPL's line editor (rustyline -> home, which
+# has no wasi arm) and the in-process sync daemon (tokio, notify, reqwest).
+# `--no-default-features` is the wasm32-wasip1 build the browser runs (da-1vat).
+native = ["datum-commands/native", "dep:rustyline", "dep:datum-sync-agent"]
 # Shared test fixtures (TestPrompter, etc.) for use by integration tests.
 test-util = []
 # Forwards to `datum-commands/png`. Default-on so distributed `datum`
@@ -24,13 +29,13 @@ path = "src/main.rs"
 
 [dependencies]
 datum-core = { path = "../datum-core" }
-datum-commands = { path = "../datum-commands" }
+datum-commands = { path = "../datum-commands", default-features = false, features = ["db", "clock"] }
 datum-parse = { path = "../datum-parse" }
 # `datum sync agent` hosts the sync daemon inside the `datum` binary, so the
 # installed service unit execs a binary the upgrade path already keeps current.
-datum-sync-agent = { path = "../datum-sync-agent" }
+datum-sync-agent = { path = "../datum-sync-agent", optional = true }
 anyhow = { workspace = true }
-rustyline = "18"
+rustyline = { version = "18", optional = true }
 
 [dev-dependencies]
 datum-core = { path = "../datum-core", features = ["test-util"] }

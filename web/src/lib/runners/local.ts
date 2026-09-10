@@ -28,6 +28,7 @@ import {
 	saveAlias,
 	deleteAlias
 } from '../db.js';
+import { deviceId } from '../deviceId.js';
 import { parseArgv } from '../parser.js';
 import { renderLines, tailText } from '../renderer.js';
 import { tailListing } from '../tail.js';
@@ -36,35 +37,11 @@ import { isAnnotated, type DefaultAction, type Entry, type FieldSpec } from '../
 // Type-only, so the 250 KB layout module stays behind `views()` above.
 import type { DayviewOptions } from './views.js';
 
-const DEVICE_ID_KEY = 'datum-device-id';
-
 /** How much of a field's history the renderer is handed to compile state from. */
 const HISTORY_LIMIT = 500;
 
 /** Loaded on demand: the layout module is 250 KB nobody pays for to log. */
 const views = () => import('./views.js');
-
-/**
- * This browser's device id, minted on first use and kept in localStorage.
- *
- * Kept if it can be: a store the browser blocks (a locked-down profile,
- * some private windows) throws on the property itself, and losing the id
- * across reloads is a much smaller thing than every command in the app
- * failing to run.
- */
-let sessionDeviceId: string | undefined;
-export function deviceId(): string {
-	const minted = () => (sessionDeviceId ??= 'web-' + Math.random().toString(36).slice(2, 10));
-	try {
-		const existing = localStorage.getItem(DEVICE_ID_KEY);
-		if (existing) return existing;
-		const id = minted();
-		localStorage.setItem(DEVICE_ID_KEY, id);
-		return id;
-	} catch {
-		return minted();
-	}
-}
 
 export async function localRun(argv: string[]): Promise<RunResult> {
 	if (argv[0] === 'spec' && argv[1] === 'set') return specSet(argv);

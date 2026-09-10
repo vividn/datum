@@ -5,7 +5,7 @@
 // one statement out, rows back. Its exported functions were already async,
 // so nothing calling them had to change when the database moved.
 
-import type { DbCommand, DbResponse, Row, StorageKind,
+import type { CliLock, CliResult, DbCommand, DbResponse, Row, StorageKind,
 	DbMessage
 } from './dbProtocol.js';
 import type { Entry, FieldSpec, StoredVerb } from './types.js';
@@ -89,17 +89,26 @@ function ensureWorker(): Worker {
 }
 
 /** Send one request to the worker and resolve with the rows it returns. */
-function send(command: DbCommand): Promise<Row[]> {
+function request(command: DbCommand): Promise<Extract<DbResponse, { ok: true }>> {
 	const id = ++nextId;
 	const started = ensureWorker();
-	return new Promise<Row[]>((resolve, reject) => {
+	return new Promise((resolve, reject) => {
 		pending.set(id, (response) => {
 			if (!response.ok) return reject(new Error(response.error));
 			storage = response.storage;
-			resolve(response.rows);
+			resolve(response);
 		});
 		started.postMessage({ ...command, id });
 	});
+}
+
+async function send(command: DbCommand): Promise<Row[]> {
+	return (await request(command)).rows;
+}
+
+/** Run `datum <argv>` under WASI in the worker (da-1vat, $lib/cli.ts). */
+export async function runCli(argv: string[], env: string[], lock: CliLock): Promise<CliResult> {
+	return (await request({ op: 'cli', argv, env, lock })).cli!;
 }
 
 /** Open the database (idempotent) and record where it landed. */

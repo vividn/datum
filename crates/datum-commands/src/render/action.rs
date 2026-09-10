@@ -71,18 +71,19 @@ pub fn format_relative_day_prefix(target: &DatumTime, now: &DatumTime) -> Option
 
 /// The one place the host's clock enters the renderer. Every `…_at`
 /// function takes `now` as a parameter; these conveniences supply it from the
-/// local clock, which exists only with `native` (datum-parse gates
-/// `DatumTime::now()` the same way). The browser build keeps the conveniences
-/// compiling — the command layer around them is compiled out — but must never
-/// reach this: the browser supplies `now` in the request (`datum-render-wasm`).
-#[cfg(feature = "native")]
+/// local clock, which exists only with `clock` (datum-parse gates
+/// `DatumTime::now()` behind its `native`). The browser renderer keeps the
+/// conveniences compiling — the command layer around them is compiled out —
+/// but must never reach this: it supplies `now` in the request
+/// (`datum-render-wasm`). The wasip1 CLI has `clock`, so it never does.
+#[cfg(feature = "clock")]
 pub(crate) fn now_local() -> DatumTime {
     DatumTime::now()
 }
 
-#[cfg(not(feature = "native"))]
+#[cfg(not(feature = "clock"))]
 pub(crate) fn now_local() -> DatumTime {
-    unreachable!("the host clock is not available off `native`; callers must use the `_at` variants and pass `now`")
+    unreachable!("the host clock is not available off `clock`; callers must use the `_at` variants and pass `now`")
 }
 
 // ─── Render context ──────────────────────────────────────────────────────────

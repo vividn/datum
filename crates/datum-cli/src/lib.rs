@@ -10,10 +10,12 @@
 pub use datum_commands::args;
 pub use datum_commands::cmd;
 pub use datum_commands::commands::check;
+#[cfg(feature = "native")]
 pub use datum_commands::commands::sync;
 pub use datum_commands::config;
 pub use datum_commands::render as output;
 
+#[cfg(feature = "native")]
 pub mod repl;
 
 use anyhow::Result;
@@ -76,7 +78,11 @@ pub fn run(argv: Vec<String>) -> Result<()> {
 
 fn dispatch_single(cli: Cli) -> Result<()> {
     if matches!(&cli.command, Command::Repl) {
+        #[cfg(feature = "native")]
         return repl::run(cli.db.as_deref());
+        // No line editor under WASI; the browser has its own REPL.
+        #[cfg(not(feature = "native"))]
+        anyhow::bail!("repl is unavailable in this build");
     }
 
     // `datum sync agent` runs the background daemon in-process. It is
@@ -85,6 +91,7 @@ fn dispatch_single(cli: Cli) -> Result<()> {
     // binary is the only place both halves are visible. Hosting the
     // daemon here is the point: the service unit execs `datum`, so the
     // daemon can never be an older build than the CLI (da-ge3e).
+    #[cfg(feature = "native")]
     if let Command::Sync(SyncArgs {
         command: Some(SyncCommand::Agent(a)),
         ..

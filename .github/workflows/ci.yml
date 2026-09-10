@@ -191,6 +191,45 @@ jobs:
             exit 1
           fi
 
+  # The real CLI for wasm32-wasip1 (da-1vat, route C, behind `?wasi`). Its
+  # own job because it needs a C compiler targeting wasm: the script fetches
+  # a PINNED wasi-sdk and binaryen into target/toolchains/, sha256-checked,
+  # and nothing else in CI or on a contributor's machine ever needs them.
+  # Allowed to fail while route C is a spike.
+  cli-wasm-check:
+    name: CLI WASM check (da-1vat)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install --no-self-update && rustup target add wasm32-wasip1
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cache the pinned wasi-sdk and binaryen
+        uses: actions/cache@v4
+        with:
+          path: target/toolchains
+          key: wasi-toolchains-${{ hashFiles('web/scripts/build-cli-wasm.mjs') }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Rebuild the CLI module and compare with the committed copy
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch web/src/lib/wasm/datum-cli.wasm >/dev/null
+          node web/scripts/build-cli-wasm.mjs
+          if [ -n "$(git status --porcelain -- web/src/lib/wasm/datum-cli.wasm)" ]; then
+            echo "::error::web/src/lib/wasm/datum-cli.wasm is out of date with the CLI. Fix: pnpm run build:cli-wasm && git add web/src/lib/wasm/datum-cli.wasm"
+            exit 1
+          fi
+
   honesty:
     name: Honesty gates (da-8y2q.7)
     runs-on: ubuntu-latest

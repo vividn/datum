@@ -64,7 +64,10 @@ export function setRunner(next: CommandRunner): CommandRunner | null {
 export async function run(argv: string[]): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
 	try {
-		runner ??= (await import('./runners/local.js')).localRun;
+		// `?wasi` swaps in the real CLI for the length of the da-1vat spike.
+		runner ??= new URLSearchParams(globalThis.location?.search).has('wasi')
+			? (await import('./runners/wasi.js')).wasiRun
+			: (await import('./runners/local.js')).localRun;
 		return await runner(argv);
 	} catch (e) {
 		// A runner that throws is a bug in the runner, not in the caller: the

@@ -89,8 +89,11 @@ function baseUrl() {
  * touch pointer and overlay scrollbars that take no layout width, and a
  * test about what overflows on a phone wants all four (da-45wt). An
  * explicit `viewport` still wins, so a profile can be resized.
+ *
+ * `query` is appended to the URL — `?wasi` puts the real CLI behind the seam
+ * (da-1vat).
  */
-export async function withApp(fn, { prepare, locale, viewport, device } = {}) {
+export async function withApp(fn, { prepare, locale, viewport, device, query = '' } = {}) {
 	const context = await browser.newContext({
 		...device,
 		timezoneId: TIMEZONE,
@@ -100,7 +103,7 @@ export async function withApp(fn, { prepare, locale, viewport, device } = {}) {
 	try {
 		await prepare?.(context);
 		const page = await context.newPage();
-		const app = await open(page);
+		const app = await open(page, query);
 		await fn(app);
 	} finally {
 		await context.close();
@@ -108,12 +111,12 @@ export async function withApp(fn, { prepare, locale, viewport, device } = {}) {
 }
 
 /** Navigate to the day frame and wait until the database is open. */
-async function open(page) {
+async function open(page, query) {
 	const errors = [];
 	page.on('pageerror', (e) => errors.push(String(e)));
-	await page.goto(baseUrl() + '/');
+	await page.goto(baseUrl() + '/' + query);
 	await ready(page);
-	return app(page, errors);
+	return app(page, errors, query);
 }
 
 async function ready(page) {
@@ -132,7 +135,7 @@ async function ready(page) {
 	);
 }
 
-function app(page, errors) {
+function app(page, errors, query) {
 	return {
 		page,
 		/** Uncaught errors the page threw, in order. */
@@ -277,7 +280,7 @@ function app(page, errors) {
 		 * never reproduce it (da-60ww).
 		 */
 		async newTab() {
-			return open(await page.context().newPage());
+			return open(await page.context().newPage(), query);
 		},
 
 		/** Reload the page and wait for the app to come back up. */

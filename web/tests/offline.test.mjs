@@ -73,7 +73,9 @@ describe('with no network', () => {
 		const emitted = fs
 			.readdirSync(workers, { recursive: true, withFileTypes: true })
 			.filter((entry) => entry.isFile())
-			.map((entry) => path.posix.join(path.relative(workers, entry.parentPath), entry.name));
+			.map((entry) => path.posix.join(path.relative(workers, entry.parentPath), entry.name))
+			// Behind `?wasi` while da-1vat measures it; see vite.config.ts.
+			.filter((name) => !name.includes('/datum-cli-'));
 		assert.ok(emitted.length > 0, `no worker bundle under ${workers}`);
 
 		const sw = fs.readFileSync(path.join(built, 'service-worker.js'), 'utf8');
