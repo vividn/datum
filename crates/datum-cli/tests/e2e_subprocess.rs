@@ -600,3 +600,100 @@ fn subprocess_tail_json_is_readable_without_counting_columns() {
     let back = env.run(&["get", hid]);
     assert_ok(&back, "get by the hid tail --json reported");
 }
+
+/// `tail --json` carries the table's own columns beside the rows (da-g8o8):
+/// one cell per row in row order, so a caller with a grid of its own shows
+/// the CLI's cells rather than re-deriving them.
+#[test]
+fn subprocess_tail_json_carries_the_table_columns() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "coffee", "-t", "0900"]), "occur");
+    assert_ok(
+        &env.run(&["switch", "mood", "happy", "-t", "0930"]),
+        "switch",
+    );
+
+    let out = env.run(&["tail", "--json"]);
+    assert_ok(&out, "tail --json");
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let columns = doc["columns"].as_array().expect("columns array");
+    let column = |key: &str| {
+        columns
+            .iter()
+            .find(|c| c["key"] == key)
+            .unwrap_or_else(|| panic!("no {key} column: {doc}"))["cells"]
+            .clone()
+    };
+    assert_eq!(column("field"), serde_json::json!(["coffee", "mood"]));
+    assert_eq!(column("hid").as_array().unwrap().len(), 2);
+    // DATUM_COLOR=0: the cells are plain.
+    assert!(!out.stdout.contains(&0x1b), "unpainted under DATUM_COLOR=0");
+}
+
+/// `db backup -` is the JSONL document on stdout, and `db restore -` reads
+/// one from stdin — the round trip the browser makes with no filesystem.
+#[test]
+fn subprocess_backup_to_stdout_restores_from_stdin() {
+    let from = Env::new();
+    assert_ok(&from.run(&["occur", "coffee", "-t", "0900"]), "occur");
+    assert_ok(&from.run(&["switch", "mood", "happy"]), "switch");
+    let dump = from.run(&["db", "backup", "-"]);
+    assert_ok(&dump, "db backup -");
+    let text = String::from_utf8(dump.stdout).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(
+        lines.len(),
+        3,
+        "a header and two entries, nothing else: {text}"
+    );
+    assert!(lines[0].contains("daydumb_backup"));
+
+    let to = Env::new();
+    assert_ok(
+        &to.run_with_stdin(&["db", "restore", "-"], &text),
+        "db restore -",
+    );
+    assert_eq!(to.entry_count(), 2);
+}
+
+/// `fields --json`: every field, logged or declared, with its spec and the
+/// states it was logged with.
+#[test]
+fn subprocess_fields_lists_logged_and_declared_fields() {
+    let env = Env::new();
+    assert_ok(
+        &env.run(&["switch", "mood", "happy", "-t", "0900"]),
+        "switch",
+    );
+    assert_ok(&env.run(&["switch", "mood", "sad", "-t", "0930"]), "switch");
+    assert_ok(
+        &env.run(&["spec", "set", "sleep", "--default-verb", "start"]),
+        "spec",
+    );
+
+    let out = env.run(&["fields", "--json"]);
+    assert_ok(&out, "fields --json");
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(doc[0]["field"], "mood");
+    assert_eq!(doc[0]["spec"], serde_json::Value::Null);
+    assert_eq!(doc[0]["states"], serde_json::json!(["happy", "sad"]));
+    assert_eq!(doc[1]["field"], "sleep");
+    assert_eq!(doc[1]["spec"]["default_verb"], "start");
+}
+
+/// `nowview -o -` is the SVG on stdout; bare `nowview` stays the terminal
+/// band (da-57dj). The picture is what a caller with no terminal shows.
+#[test]
+fn subprocess_nowview_dash_output_is_svg_on_stdout() {
+    let env = Env::new();
+    assert_ok(&env.run(&["switch", "mood", "happy"]), "switch");
+    let svg = env.run(&["nowview", "-o", "-", "--width", "400"]);
+    assert_ok(&svg, "nowview -o -");
+    let text = String::from_utf8(svg.stdout).unwrap();
+    assert!(text.trim_start().starts_with("<svg"), "not an SVG: {text}");
+    assert!(text.contains("width=\"400\""), "{text}");
+
+    let band = env.run(&["nowview"]);
+    assert_ok(&band, "nowview");
+    assert!(!String::from_utf8_lossy(&band.stdout).contains("<svg"));
+}

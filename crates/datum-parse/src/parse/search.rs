@@ -205,6 +205,23 @@ pub(crate) fn parse_stats_args(tail: &[&str]) -> Result<StatsArgs> {
     Ok(out)
 }
 
+/// `fields [--json]` — no positionals: it lists every field.
+pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
+    let mut out = FieldsArgs::default();
+    for tok in tail {
+        match split_flag(tok) {
+            FlagSplit::Long("json") => out.json = true,
+            FlagSplit::Positional(s) => {
+                return Err(ParseError::InvalidArg(format!(
+                    "unexpected argument: '{s}'"
+                )))
+            }
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    Ok(out)
+}
+
 pub(crate) fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
     let mut pos: Vec<&str> = Vec::new();
     let mut out = IdsArgs::default();

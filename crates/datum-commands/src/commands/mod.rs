@@ -17,6 +17,7 @@ pub mod del;
 pub mod edit;
 pub mod end;
 pub mod field_visuals;
+pub mod fields;
 pub mod flag;
 pub mod get;
 pub mod get_search;

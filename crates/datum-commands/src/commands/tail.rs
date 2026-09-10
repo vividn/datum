@@ -14,7 +14,7 @@ use crate::commands::helpers::load_registry_opt;
 use crate::commands::render_helpers::build_table_contexts;
 use crate::render::tail_rows::{tail_rows, TailDocument};
 use crate::render::term_layout::{detect_cols, detect_rows, is_stdout_tty};
-use crate::render::{print_table_with, TableArgs, TimeMetricCol};
+use crate::render::{print_table_with, table_columns_with, TableArgs, TimeMetricCol};
 
 pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
     // `field:state` form (da-plbb): block-mode rendering replaces the
@@ -51,7 +51,7 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
     // changed its row count with the window size would be a worse
     // contract than the table it replaces.
     if args.json {
-        return tail_json(&args, metric, db);
+        return tail_json(&args, metric, columns, db);
     }
     // da-5025: when stdout is a real terminal AND the user didn't pin
     // `-n`, expand the query to fill the visible window so the default
@@ -112,14 +112,24 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
 /// With `--watch` the document repeats as JSON Lines — compact, one per
 /// line, only when the frame actually changed. A streaming consumer gets
 /// an event feed instead of the table path's clear-screen escapes.
-fn tail_json(args: &TailArgs, metric: TimeMetricCol, db: &Db) -> Result<()> {
+fn tail_json(args: &TailArgs, metric: TimeMetricCol, columns: Vec<String>, db: &Db) -> Result<()> {
     let watching = args.watch.is_some();
+    let registry = load_registry_opt(db);
+    let tbl = TableArgs {
+        output: args.output()?,
+        metric,
+        columns,
+        suppress_header: false,
+        max_total_width: None,
+    };
     let emit = |entries: &[Entry]| -> Result<()> {
         // The same contexts the table renderer gets, so the `_n` a row
         // reports here is the `_n` a row would show there.
         let ctxs = build_table_contexts(entries, db);
+        let now = DatumTime::now();
         let payload = TailDocument {
             rows: tail_rows(entries, Some(&ctxs), metric),
+            columns: table_columns_with(entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl),
         };
         if watching {
             println!("{}", serde_json::to_string(&payload)?);

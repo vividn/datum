@@ -66,6 +66,7 @@ VIEWS / SYNC:
   count      Count entries (optionally filtered/grouped/since-bounded)
   stats      Count, total duration, and per-state ratio over a time slice
   ids        List entry ids (newest-first by default)
+  fields     List every field: its spec and the states it was logged with
   sync       Push/pull changesets, manage auth & keys
   conflicts  Triage sync conflicts (see `datum check` for integrity findings)
   view       Execute a named SELECT view and render the rows

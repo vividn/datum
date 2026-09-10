@@ -94,6 +94,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "check",
     "count",
     "ids",
+    "fields",
     "update",
     "merge",
     "rekey",

@@ -223,7 +223,9 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     let svg = render_nowview_svg(&c.layout, &format_local_hh_mm(c.end), &c.current_states);
 
     match args.output_file.as_deref() {
-        None => {
+        // `-o -`: the SVG on stdout, for a caller that shows pictures rather
+        // than a terminal (datum.day's nowview pane, da-g8o8).
+        None | Some("-") => {
             println!("{svg}");
             Ok(())
         }

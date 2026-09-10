@@ -86,9 +86,15 @@ fn derive_source_db() -> String {
     }
 }
 
+/// The path that means "not a file": stdout for a backup, stdin for a
+/// restore, always JSONL. What a caller with no filesystem of its own — the
+/// browser, which offers the backup as a download (da-g8o8) — reads and
+/// writes instead.
+const STDIO_PATH: &str = "-";
+
 pub fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
     let out_path = std::path::Path::new(&args.path);
-    if out_path.exists() && !args.overwrite {
+    if args.path != STDIO_PATH && out_path.exists() && !args.overwrite {
         anyhow::bail!(
             "File exists: {} (pass --overwrite to replace)",
             out_path.display()
@@ -103,6 +109,11 @@ pub fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
         entry_count: db.count_entries()?,
     };
 
+    if args.path == STDIO_PATH {
+        // The document is the output, so there is no "✓ Backup" line.
+        write_jsonl(std::io::stdout().lock(), db, &header)?;
+        return Ok(());
+    }
     match detect_backup_format(&args.path) {
         BackupFormat::TarGz => backup_targz(out_path, db, &header),
         BackupFormat::Jsonl => backup_jsonl(out_path, db, &header),
@@ -110,10 +121,17 @@ pub fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
 }
 
 fn backup_jsonl(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Result<()> {
-    use std::io::Write;
     let file = std::fs::File::create(path)
         .with_context(|| format!("Creating backup file: {}", path.display()))?;
-    let mut writer = std::io::BufWriter::new(file);
+    let count = write_jsonl(file, db, header)?;
+    println!("✓ Backup: {} entries → {}", count, path.display());
+    Ok(())
+}
+
+/// The header line, then one entry per line. Returns how many entries.
+fn write_jsonl(out: impl std::io::Write, db: &Db, header: &BackupHeader) -> Result<usize> {
+    use std::io::Write;
+    let mut writer = std::io::BufWriter::new(out);
     writeln!(writer, "{}", serde_json::to_string(header)?)?;
     let mut count = 0usize;
     db.visit_all_entries::<anyhow::Error, _>(|entry| {
@@ -123,8 +141,7 @@ fn backup_jsonl(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Resul
         Ok(())
     })?;
     writer.flush()?;
-    println!("✓ Backup: {} entries → {}", count, path.display());
-    Ok(())
+    Ok(count)
 }
 
 /// RAII guard that removes a temp file when dropped (even on panic/error paths).
@@ -364,6 +381,9 @@ pub(crate) fn cmd_restore_with_report(args: RestoreArgs, db: &Db) -> Result<Rest
         ConflictStrategy::Ignore
     };
 
+    if args.path == STDIO_PATH {
+        return restore_from_reader(std::io::stdin().lock(), db, strategy, args.dry_run);
+    }
     match detect_backup_format(&args.path) {
         BackupFormat::TarGz => restore_targz(&args.path, db, strategy, args.dry_run),
         BackupFormat::Jsonl => restore_jsonl(&args.path, db, strategy, args.dry_run),

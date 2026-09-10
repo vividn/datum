@@ -160,4 +160,21 @@ impl Db {
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
+
+    /// Every distinct `(field, state)` pair among live entries that carry a
+    /// state, ordered by field. The state is the stored JSON, parsed.
+    pub fn distinct_field_states(&self) -> Result<Vec<(String, serde_json::Value)>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT DISTINCT field, state FROM entries \
+             WHERE {LIVE_SQL} AND state IS NOT NULL ORDER BY field, state"
+        ))?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.map(|r| {
+            let (field, state) = r.map_err(DatumError::Db)?;
+            Ok((field, serde_json::from_str(&state)?))
+        })
+        .collect()
+    }
 }

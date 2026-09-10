@@ -726,6 +726,17 @@ const STATS_FLAGS: &[FlagSpec] = &[
     },
 ];
 
+const FIELDS_FLAGS: &[FlagSpec] = &[FlagSpec {
+    short: None,
+    long: "json",
+    takes_value: false,
+    value_hint: None,
+    value_optional: false,
+    summary: "One object per field: `field`, `spec` (or null), `states`",
+    long_description: None,
+    left_override: None,
+}];
+
 const IDS_FLAGS: &[FlagSpec] = &[
     FlagSpec {
         short: Some('n'),
@@ -819,11 +830,11 @@ const CHECK_BODY: &str = "USAGE:\n  datum check [CHECKER]... [--fix] [--json]\n 
 
 const DAYVIEW_BODY: &str = "USAGE:\n  datum dayview [OPTIONS]\n\nOPTIONS:\n  --start-date <DATE>      Start date (ISO YYYY-MM-DD or relative offset like -3, 0)\n  --end-date <DATE>, -d    End date (default: today)\n  --n-days <N>, -n         Number of days (default: 1)\n  --width <N>              SVG width in pixels (default: 2000)\n  --height <N>             Total SVG height (auto from day-height + n-days when unset)\n  --day-height <N>         Per-day band height (default: 100)\n  --time-axis-height <N>   Bottom time-axis strip height (default: 15)\n  --margin <N>             Outer margin (default: 2)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  --json                   Emit layout JSON instead of SVG (debug)\n  -w, --watch              Redraw on a 5-minute poll loop\n";
 
-const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --history <DUR>          History window before \"now\" (e.g. 15m, 1h). Default: 30m.\n  --width <N>              SVG width in pixels (auto-scales with --history when unset)\n  --height <N>             SVG height in pixels (default 300)\n  --margin <N>             Outer margin (default 2)\n  --time-axis-height <N>   Time-axis strip height (default 15)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  -w, --watch              Redraw on DB change (60s idle refresh)\n";
+const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --history <DUR>          History window before \"now\" (e.g. 15m, 1h). Default: 30m.\n  --width <N>              SVG width in pixels (auto-scales with --history when unset)\n  --height <N>             SVG height in pixels (default 300)\n  --margin <N>             Outer margin (default 2)\n  --time-axis-height <N>   Time-axis strip height (default 15)\n  -o, --output-file <PATH> .svg / .png / .html, or - for the SVG on stdout\n                           (default: the terminal band)\n  -w, --watch              Redraw on DB change (60s idle refresh)\n";
 
 const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n";
 
-const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n  datum db backup <PATH> [--overwrite]\n  datum db restore <PATH> [--force] [--dry-run] [--json]\n  datum db migrate (run | status | edit)\n  datum db import [FILE | --from FILE] [--dry-run]\n\nSetup applies any pending schema migrations to the active database. Use\n`datum db purge` to drop and recreate the schema from scratch.\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n\nBackup dumps live entries to JSONL (default) or tar.gz when the path ends in\n.tar.gz / .tgz. Restore replays a backup file into the active database.\n\nMigrate is the schema-migration runner: `run` advances the DB to the binary's\ntarget version, `status` lists applied/pending steps, `edit` is reserved for\nper-entry data migrations (not yet implemented).\n\nImport ingests a legacy datum CouchDB backup JSON (`{ docs: [...] }`) into\nthe active database. Idempotent — re-importing the same backup is a no-op.\n";
+const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n  datum db backup <PATH | -> [--overwrite]\n  datum db restore <PATH | -> [--force] [--dry-run] [--json]\n  datum db migrate (run | status | edit)\n  datum db import [FILE | --from FILE] [--dry-run]\n\nSetup applies any pending schema migrations to the active database. Use\n`datum db purge` to drop and recreate the schema from scratch.\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n\nBackup dumps live entries to JSONL (default) or tar.gz when the path ends in\n.tar.gz / .tgz, or to stdout as JSONL when the path is `-`. Restore replays\na backup file (or JSONL on stdin, for `-`) into the active database.\n\nMigrate is the schema-migration runner: `run` advances the DB to the binary's\ntarget version, `status` lists applied/pending steps, `edit` is reserved for\nper-entry data migrations (not yet implemented).\n\nImport ingests a legacy datum CouchDB backup JSON (`{ docs: [...] }`) into\nthe active database. Idempotent — re-importing the same backup is a no-op.\n";
 
 const CONFIG_BODY: &str = "USAGE:\n  datum config show [--json]\n";
 
@@ -1394,8 +1405,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         usage: &[
             "datum db setup",
             "datum db purge [--yes | -y]",
-            "datum db backup <PATH> [--overwrite]",
-            "datum db restore <PATH> [--force] [--dry-run] [--json]",
+            "datum db backup <PATH | -> [--overwrite]",
+            "datum db restore <PATH | -> [--force] [--dry-run] [--json]",
             "datum db migrate (run | status | edit)",
             "datum db import [FILE | --from FILE] [--dry-run]",
         ],
@@ -1482,6 +1493,21 @@ pub const COMMANDS: &[CommandSpec] = &[
         usage: &["datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug] [--json]"],
         args: NO_ARGS,
         flags: IDS_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 22,
+        body_override: None,
+        display_input_name: false,
+    },
+    CommandSpec {
+        name: "fields",
+        aliases: &[],
+        category: Category::ViewsSync,
+        summary: "list fields with their spec and logged states",
+        top_summary: Some("List every field: its spec and the states it was logged with"),
+        long_description: None,
+        usage: &["datum fields [--json]"],
+        args: NO_ARGS,
+        flags: FIELDS_FLAGS,
         examples: NO_EXAMPLES,
         summary_col: 22,
         body_override: None,

@@ -33,8 +33,8 @@ use crate::render::{OutputArgs, Show};
 pub use pcli::{
     AliasCommand, BackupArgs, CheckArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
     ConflictStrategyArg, ConflictsCommand, ConflictsKeep, ConflictsListArgs, ConflictsResolveArgs,
-    CountArgs, DayviewArgs, DbCommand, DbImportArgs, DbPurgeArgs, DeleteArgs, EditArgs, GetArgs,
-    GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs, KitCommand, KitExportArgs,
+    CountArgs, DayviewArgs, DbCommand, DbImportArgs, DbPurgeArgs, DeleteArgs, EditArgs, FieldsArgs,
+    GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs, KitCommand, KitExportArgs,
     KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs, NowviewArgs, ReparseArgs,
     RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, StatsArgs, StatsPeriod,
     SyncAgentArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand,

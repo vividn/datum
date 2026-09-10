@@ -83,6 +83,9 @@ pub enum Command {
     Count(CountArgs),
     Stats(StatsArgs),
     Ids(IdsArgs),
+    /// `datum fields` — every field the database knows, with its spec and
+    /// the states it has been logged with.
+    Fields(FieldsArgs),
 
     Dayview(DayviewArgs),
     Nowview(NowviewArgs),
@@ -814,6 +817,11 @@ pub struct FlagArgs {
 }
 
 // ─── Grep / Count / Ids / Dayview / Check ────────────────────────────────
+
+#[derive(Debug, Default)]
+pub struct FieldsArgs {
+    pub json: bool,
+}
 
 #[derive(Debug)]
 pub struct GrepArgs {

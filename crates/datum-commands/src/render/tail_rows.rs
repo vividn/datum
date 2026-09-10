@@ -30,6 +30,11 @@ use super::{RenderContext, TimeMetricCol};
 #[derive(Debug, Serialize)]
 pub struct TailDocument {
     pub rows: Vec<TailRow>,
+    /// The table's own columns for the same rows — key, header word, one
+    /// cell per row in `rows` order — painted when colour is on and never
+    /// padded. For a caller with a grid of its own (datum.day's tail pane,
+    /// da-6ec2), which lays these out rather than re-deriving them.
+    pub columns: Vec<super::TableColumn>,
 }
 
 /// One row of `datum tail`, named.
