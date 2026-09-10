@@ -18,32 +18,30 @@
 	`--day-height`, which is what pins `label_width` and so the x of every
 	gridline.
 
-	How many days, and how tall: the reader says both with two handles
-	(da-07ij), and the strip remembers what they said.
+	How many days: as many as the BOX holds (da-zb0d). The strip is a
+	widget of the dashboard, and the pane it sits in is what says how tall
+	it is — so the strip fills its container and `depth` is `the room
+	above today ÷ one band`. It has no handle for its own height, no
+	memory of one, and no cap of its own: a taller pane is more past, and
+	that is the whole control.
 
-	  - The grab bar along the BOTTOM edge sets the strip's height, and
-	    the height is what says how much past there is: `depth` is not a
-	    counter any more, it is `stack ÷ one band`. Dragging down makes
-	    room and the days fall into it; dragging back up to today's own
-	    height leaves today alone.
-	  - The notch in the LEFT margin, on the seam above today's band —
-	    where the date stamps are — sets `--day-height` for EVERY band at
-	    once. The bands are re-drawn at the new size rather than scaled:
-	    a scaled band is a band with an illegible axis (da-m0cj).
-	  - `↻` in the corner puts both back and forgets them.
+	How tall one day is drawn is the widget's SETTING, `dayHeight`: a prop
+	in, and a `change` event out whenever the reader moves it. The notch
+	in the LEFT margin, on the seam above today's band — where the date
+	stamps are — sets it for EVERY band at once (da-07ij); the bands are
+	re-drawn at the new size rather than scaled, because a scaled band is
+	a band with an illegible axis (da-m0cj). `↻` in the corner puts it
+	back. Who remembers the value between visits is the owner's business
+	— the dashboard keeps it in the widget's `settings` in the layout
+	tree — and the strip writes nothing down: when nobody handles the
+	event, the value simply holds for the session.
 
-	Both handles are `role="slider"` buttons, so the keyboard reaches
-	them; in both, ↓ is *more* — more days, taller days — because that is
-	the direction the pointer drags for more, and one widget answering the
-	same key two ways is worse than one that disagrees with a convention.
-
-	The wheel-up and finger-drag pulls this strip used to carry are gone.
-	They were a second way to say the one thing the bottom handle now
-	says, and a finger dragging the strip and a finger dragging the handle
-	are two gestures fighting over one surface.
+	The notch is a `role="slider"` button, so the keyboard reaches it;
+	↓ is *taller*, because that is the direction the pointer drags for
+	more.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import { browser } from '$app/environment';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
@@ -60,21 +58,23 @@
 	/** Any change re-runs every band. The frame bumps it after each run. */
 	export let epoch = 0;
 
+	/**
+	 * How tall one day is drawn, in pixels — datum's `--day-height`.
+	 *
+	 * The one setting the strip has. The owner passes it in and hears
+	 * `change` when the reader moves it (the dashboard stores it in the
+	 * widget's settings); a value the owner never sets is the default.
+	 */
+	export let dayHeight: number = DEFAULT_DAY_HEIGHT;
+
+	const dispatch = createEventDispatcher<{ change: number }>();
+
 	/** The margin between two days, in pixels, matching the CSS below. */
 	const GAP = 5;
-	/** How tall the bottom grab bar is. A finger's worth, not a line's. */
-	const GRAB = 12;
-	/** How far back the strip will reach. Two months is a lot of dragging. */
+	/** How far back the strip will reach, however tall its box. */
 	const MAX_DEPTH = 60;
-	/** Where the two handles' state is kept between visits. */
-	const STORE_KEY = 'datum-daystrip';
 	/** What one press of an arrow key moves the day-height handle. */
 	const HEIGHT_STEP = 5;
-
-	/** How tall one day is drawn, in pixels — datum's `--day-height`. */
-	let dayHeight = DEFAULT_DAY_HEIGHT;
-	/** How many pixels of past the reader has asked for, above today. */
-	let stack = 0;
 
 	/** Each band's render, by how many days back it is. 0 is today's. */
 	let bands: Record<number, RunResult> = {};
@@ -89,36 +89,29 @@
 	});
 
 	const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
-	/** The pixels one more day costs: its own box plus the margin above it. */
-	const unitFor = (height: number) => bandBox(height) + GAP;
+
+	// Whatever the owner hands in — a saved setting from an older layout
+	// included — is drawn at a height datum will draw legibly.
+	$: dayHeight = clamp(Math.round(dayHeight) || DEFAULT_DAY_HEIGHT, MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
 
 	let body: HTMLDivElement | undefined;
 	let stackEl: HTMLDivElement | undefined;
-	/** The band width in whole pixels, once the pane has been measured. */
+	/** The box the pane gives the strip, in whole pixels, once measured. */
 	let width = 0;
+	let height = 0;
 	/** Is yesterday the bottom-most band in view? */
 	let atBottom = true;
-	/** The screen's height, which is what caps how much of it the strip takes. */
-	let screenHeight = 0;
 
-	$: unit = unitFor(dayHeight);
+	/** The pixels one more day costs: its own box plus the margin above it. */
+	$: unit = bandBox(dayHeight) + GAP;
 	/**
-	 * The days the strip is showing: as many as the space asked for holds,
-	 * counting a day that is only half revealed — a band half on screen is
-	 * a band that has to be drawn.
+	 * The days the strip is showing: as many as the room above today
+	 * holds, counting a day that is only partly revealed — a band half on
+	 * screen is a band that has to be drawn, and it is the one the stack
+	 * scrolls up to.
 	 */
-	$: depth = Math.min(MAX_DEPTH, Math.ceil(stack / unit));
-	/**
-	 * How much of that the strip may actually occupy.
-	 *
-	 * Half the screen. The strip's height drives its grid track, so an
-	 * uncapped strip pushes the REPL and then the widget bar — the thing a
-	 * phone user logs with — off the bottom of the screen (da-hkpd). Past
-	 * the cap the days keep coming and the stack scrolls to them, which is
-	 * the same bargain the strip has always made with a deep stack.
-	 */
-	$: maxStack = Math.min(MAX_DEPTH * unit, Math.max(unit, Math.round(screenHeight / 2)));
-	$: shownStack = Math.min(stack, maxStack);
+	$: room = Math.max(0, height - todayBox(dayHeight) - GAP);
+	$: depth = Math.min(MAX_DEPTH, Math.ceil(room / unit));
 
 	/** The height a drag is previewing, or the committed one at rest. */
 	$: shownDayHeight = sizing ? sizing.preview : dayHeight;
@@ -132,41 +125,67 @@
 	 */
 	$: jagged = depth > 0 && !atBottom;
 
-	// The content box, not the element's own width: the body is padded,
+	// The content box, not the element's own size: the body is padded,
 	// and a band authored wider than the box it is shown in is a band the
-	// browser scales, and the text with it (da-m0cj).
+	// browser scales, and the text with it (da-m0cj). The strip is 100%
+	// of that box, so its height is the box's height.
+	//
+	// A taller box is more room above today, so the stack grows: re-anchor
+	// it if the reader was at the bottom, or yesterday drifts off the top
+	// of today by exactly the room that was just made. From here as well
+	// as from `draw`, because a resize inside one day's worth moves the
+	// box without changing how many days are in it.
 	onMount(() => {
-		restore();
-		screenHeight = window.innerHeight;
-		const onResize = () => (screenHeight = window.innerHeight);
-		window.addEventListener('resize', onResize);
-
 		const observer = new ResizeObserver(([entry]) => {
-			const next = Math.floor(entry.contentRect.width);
-			if (next !== width) width = next;
+			const w = Math.floor(entry.contentRect.width);
+			const h = Math.floor(entry.contentRect.height);
+			if (w !== width) width = w;
+			if (h !== height) {
+				height = h;
+				void anchor();
+			}
 		});
 		if (body) observer.observe(body);
-
-		return () => {
-			window.removeEventListener('resize', onResize);
-			observer.disconnect();
-		};
+		return () => observer.disconnect();
 	});
 
 	/** How many draws have been started, and the newest one on screen. */
 	let started = 0;
 	let shown = -1;
 
+	/**
+	 * Every band drawn for the current picture, by day — held as the
+	 * promise, so two draws in flight for the same day share one run.
+	 *
+	 * A band depends on the width, the day height and the epoch, and not
+	 * on how many other bands there are: a taller box asks for one more
+	 * day and must draw ONE more band, not every band again. So the cache
+	 * is keyed by the picture and dropped whole when the picture changes.
+	 */
+	let cache = { key: '', days: new Map<number, Promise<RunResult>>() };
+
 	// Not on mount: the static build prerenders this page, and there is no
 	// database (or `run`) outside the browser.
-	$: request = { width, depth, dayHeight, epoch };
-	$: if (browser && request.width > 0) void draw(request);
+	$: request = { width, dayHeight, epoch };
+	$: if (browser && request.width > 0) void draw(request, depth);
 
-	async function draw(at: { width: number; depth: number; dayHeight: number }): Promise<void> {
+	async function draw(
+		at: { width: number; dayHeight: number; epoch: number },
+		depth: number
+	): Promise<void> {
+		const key = `${at.width}/${at.dayHeight}/${at.epoch}`;
+		if (cache.key !== key) cache = { key, days: new Map() };
+		const drawn = cache.days;
 		const token = ++started;
-		const days = Array.from({ length: at.depth + 1 }, (_, i) => at.depth - i);
-		const results = await Promise.all(days.map((n) => run(bandArgv(at.width, n, at.dayHeight))));
-		// Drag while a resize is in flight and two draws overlap; they can
+		const days = Array.from({ length: depth + 1 }, (_, i) => depth - i);
+		const results = await Promise.all(
+			days.map((n) => {
+				let band = drawn.get(n);
+				if (!band) drawn.set(n, (band = run(bandArgv(at.width, n, at.dayHeight))));
+				return band;
+			})
+		);
+		// A resize while a draw is in flight and two draws overlap; they can
 		// finish out of order, and the loser would paint the older answer
 		// over the newer one. Last started wins, not last to return.
 		if (token < shown) return;
@@ -174,13 +193,6 @@
 		bands = Object.fromEntries(days.map((n, i) => [n, results[i]]));
 		await anchor();
 	}
-
-	// A drag adds room above, so the stack grows: re-anchor it if the
-	// reader was at the bottom, or yesterday drifts off the top of today by
-	// exactly the room that was just made. Watched as well as called from
-	// `draw`, because a drag inside one day's worth moves the box without
-	// changing how many days are in it.
-	$: void shownStack, void anchor();
 
 	async function anchor(): Promise<void> {
 		if (!atBottom) return;
@@ -198,68 +210,18 @@
 		onScroll();
 	}
 
-	// ── what the reader asked for, and remembering it ──────────────────
-
-	/**
-	 * Read the stored strip back, or leave the defaults standing.
-	 *
-	 * Every branch is wrapped: `localStorage` is not a property that always
-	 * answers — a private window, a cleared store and a browser set to
-	 * block site data all reach this code, and two of them throw on the
-	 * ACCESS rather than returning null. A strip that will not draw at all
-	 * because it could not read a preference is a worse strip than one
-	 * drawn at the default.
-	 */
-	function restore(): void {
-		try {
-			const saved = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');
-			if (typeof saved?.dayHeight === 'number')
-				dayHeight = clamp(Math.round(saved.dayHeight), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
-			if (typeof saved?.stack === 'number')
-				stack = clamp(Math.round(saved.stack), 0, MAX_DEPTH * unitFor(dayHeight));
-		} catch {
-			// No store to read. The defaults are already in place.
-		}
-	}
-
-	let pending: ReturnType<typeof setTimeout> | undefined;
-	/** Write on the next quiet moment: a drag is hundreds of changes. */
-	function remember(): void {
-		clearTimeout(pending);
-		pending = setTimeout(() => {
-			try {
-				localStorage.setItem(STORE_KEY, JSON.stringify({ stack, dayHeight }));
-			} catch {
-				// Nowhere to write. This session still works.
-			}
-		}, 150);
-	}
-
-	function reset(): void {
-		stack = 0;
-		dayHeight = DEFAULT_DAY_HEIGHT;
-		// Before the store is cleared, or a drag's debounced write lands on
-		// top of the reset a moment later and undoes it.
-		clearTimeout(pending);
-		try {
-			localStorage.removeItem(STORE_KEY);
-		} catch {
-			// Nothing was stored in the first place.
-		}
-	}
-
-	function setStack(px: number): void {
-		stack = clamp(Math.round(px), 0, MAX_DEPTH * unit);
-		remember();
-	}
+	// ── the day height: what the reader asks for, told to the owner ────
 
 	function setDayHeight(px: number): void {
 		dayHeight = clamp(Math.round(px), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
-		remember();
+		dispatch('change', dayHeight);
 	}
 
-	/** Where a drag started, and what the value was when it did. */
-	let pulling: { y: number; from: number } | null = null;
+	function reset(): void {
+		setDayHeight(DEFAULT_DAY_HEIGHT);
+	}
+
+	/** Where a drag started, what the value was when it did, and its preview. */
 	let sizing: { y: number; from: number; preview: number } | null = null;
 
 	/**
@@ -273,23 +235,11 @@
 	 * handle is a slider, and a slider the keyboard cannot reach after
 	 * being clicked is half a control.
 	 */
-	function take(event: PointerEvent): void {
+	function grabHeight(event: PointerEvent): void {
 		event.preventDefault();
 		const handle = event.currentTarget as HTMLElement;
 		handle.setPointerCapture(event.pointerId);
 		handle.focus();
-	}
-
-	function grab(event: PointerEvent): void {
-		take(event);
-		pulling = { y: event.clientY, from: stack };
-	}
-	function pullTo(event: PointerEvent): void {
-		if (pulling) setStack(pulling.from + (event.clientY - pulling.y));
-	}
-
-	function grabHeight(event: PointerEvent): void {
-		take(event);
 		sizing = { y: event.clientY, from: dayHeight, preview: dayHeight };
 	}
 	function sizeTo(event: PointerEvent): void {
@@ -306,14 +256,6 @@
 	function drop(): void {
 		if (sizing) setDayHeight(sizing.preview);
 		sizing = null;
-		pulling = null;
-	}
-
-	function onGrabKey(event: KeyboardEvent): void {
-		const by = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
-		if (!by) return;
-		event.preventDefault();
-		setStack((depth + by) * unit);
 	}
 
 	function onHeightKey(event: KeyboardEvent): void {
@@ -333,15 +275,9 @@
 		style:--band="{bandBox(shownDayHeight)}px"
 		style:--today="{todayBox(shownDayHeight)}px"
 		style:--gap="{GAP}px"
-		style:--grab="{GRAB}px"
 	>
 		{#if depth > 0}
-			<div
-				class="stack"
-				bind:this={stackEl}
-				on:scroll={onScroll}
-				style:max-height="{shownStack}px"
-			>
+			<div class="stack" bind:this={stackEl} on:scroll={onScroll}>
 				{#each past as daysAgo (daysAgo)}
 					<div class="band" data-days-ago={daysAgo}>
 						{#if bands[daysAgo]}<CliOutput {...picture(bands[daysAgo])} />{/if}
@@ -393,38 +329,29 @@
 			on:keydown={onHeightKey}
 		></button>
 
-		<!-- Drag down for more room, and the days before today fall into it. -->
-		<button
-			class="grip grab"
-			role="slider"
-			aria-label="days shown before today"
-			aria-orientation="vertical"
-			aria-valuemin={0}
-			aria-valuemax={MAX_DEPTH}
-			aria-valuenow={depth}
-			aria-valuetext={depth === 1 ? '1 earlier day' : `${depth} earlier days`}
-			on:pointerdown={grab}
-			on:pointermove={pullTo}
-			on:pointerup={drop}
-			on:pointercancel={drop}
-			on:keydown={onGrabKey}
-		></button>
-
-		<button class="reset" on:click={reset} title="reset to today">
-			<span aria-hidden="true">↻</span><span class="sr">reset to today</span>
+		<button class="reset" on:click={reset} title="reset the day height">
+			<span aria-hidden="true">↻</span><span class="sr">reset the day height</span>
 		</button>
 	</div>
 </Pane>
 
 <style>
+	/* The box is the control: the strip is exactly as tall as the pane's
+	   body, and `depth` is read off that height. */
 	.strip {
 		position: relative;
+		height: 100%;
 		display: flex;
 		flex-direction: column;
 		gap: var(--gap);
 	}
 
+	/* The room above today, whatever is left of the box once today's band
+	   has its floor. The bands in it may run past it by up to one day
+	   (see `depth`), and then it scrolls. */
 	.stack {
+		flex: 1 1 auto;
+		min-height: 0;
 		display: flex;
 		flex-direction: column;
 		gap: var(--gap);
@@ -435,6 +362,13 @@
 	}
 	.stack::-webkit-scrollbar {
 		display: none;
+	}
+	/* Yesterday against today when the stack has room to spare: the
+	   oldest band takes the slack above it. An auto margin rather than
+	   `justify-content: flex-end`, which in a scroll box puts the overflow
+	   past the start edge where no scroll reaches it. */
+	.stack .band:first-child {
+		margin-top: auto;
 	}
 
 	/* Reserved before the picture decodes — see bandBox. A band drawn at
@@ -460,6 +394,7 @@
 		background: none;
 		cursor: pointer;
 		line-height: 0;
+		flex: none;
 	}
 	.jagged svg {
 		display: block;
@@ -499,28 +434,14 @@
 		outline: 1px solid #7c7cff;
 	}
 
-	/* The bottom edge of the strip: full width, and tall enough for a
-	   finger even though the line it draws is two pixels. */
-	.grab {
-		width: 100%;
-		height: var(--grab);
-		flex: none;
-	}
-	.grab::before {
-		width: 44px;
-		height: 2px;
-		margin: 5px auto;
-	}
-
 	/* On the seam above today, in the left margin. Absolute, so the notch
-	   sits IN the 5px margin rather than opening one of its own.
-	   Measured up from the strip's own bottom edge, which is below today's
-	   band by the grab bar and the margin above it — not from today's band,
-	   which is what a bare `--today` would say. */
+	   sits IN the 5px margin rather than opening one of its own. Today's
+	   band is the strip's bottom edge, so the seam's centre is its box
+	   plus half the margin above it. */
 	.day-grip {
 		position: absolute;
 		left: 0;
-		bottom: calc(var(--grab) + var(--gap) * 1.5 + var(--today));
+		bottom: calc(var(--today) + var(--gap) / 2);
 		transform: translateY(50%);
 		width: 30px;
 		height: 13px;

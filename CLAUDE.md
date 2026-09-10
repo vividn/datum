@@ -137,14 +137,16 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   again (da-d1l9).
 - Background Sync API queues sync when offline
 - The dayview strip is a stack of days, not one band (da-cgyh): today is
-  pinned at the bottom and a pull brings the days before it down above,
-  one `dayview` render per band through the seam (`bandArgv` in
-  `web/src/lib/panes.ts`). Every band asks for the same `--width` and
-  `--day-height`, which is what pins `label_width` and so makes the hour
-  gridlines of one band land on those of the next; all but today's
-  suppress the axis strip with `--time-axis-height 0`. When the band
-  above today is not the day before it, a jagged `<button>` between them
-  scrolls yesterday back down.
+  pinned at the bottom and the days before it are stacked above, as many
+  as the strip's box holds (da-zb0d: the height comes from the container,
+  the day height is a `dayHeight` prop with a `change` event, and the
+  strip keeps nothing in `localStorage`), one `dayview` render per band
+  through the seam (`bandArgv` in `web/src/lib/panes.ts`). Every band
+  asks for the same `--width` and `--day-height`, which is what pins
+  `label_width` and so makes the hour gridlines of one band land on those
+  of the next; all but today's suppress the axis strip with
+  `--time-axis-height 0`. When the band above today is not the day before
+  it, a jagged `<button>` between them scrolls yesterday back down.
 
 ## Migration from original datum
 

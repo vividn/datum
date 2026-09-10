@@ -172,7 +172,27 @@ async function open(page, query) {
 	page.on('pageerror', (e) => errors.push(String(e)));
 	await page.goto(baseUrl() + '/' + query);
 	await ready(page);
+	await countRuns(page);
 	return app(page, errors, query);
+}
+
+/**
+ * Count the commands in flight behind the seam, for `idle()`.
+ *
+ * Installed through `setRunner`, the seam's own extension point — the
+ * same hook the wasm CLI arrives through and `spyOnRunner` chains onto —
+ * and after `ready`, so the runner it delegates to has been imported.
+ * Installed on every open rather than on first use: a count that starts
+ * after a command has already begun is a count that reaches zero early.
+ */
+function countRuns(page) {
+	return page.evaluate(() => {
+		window.__datumInflight = 0;
+		const previous = window.datum.setRunner((argv, stdin) => {
+			window.__datumInflight += 1;
+			return previous(argv, stdin).finally(() => (window.__datumInflight -= 1));
+		});
+	});
 }
 
 async function ready(page) {
@@ -318,11 +338,16 @@ function app(page, errors, query) {
 		 * The visual panes' stdout is an SVG document, which CliOutput
 		 * renders through a data-URL `<img>` — so this is the same string
 		 * `run(argv)` returned, read back off the screen.
+		 *
+		 * The last picture in the pane: the day strip stacks the days
+		 * before today above it, as many as its box holds (da-zb0d), and
+		 * today's band is the one under them all. nowview has one.
 		 */
 		async paneSvg(title) {
 			const src = await page
 				.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
 				.locator('img.svg')
+				.last()
 				.getAttribute('src');
 			return decodeURIComponent(src.replace(/^data:image\/svg\+xml,/, ''));
 		},
@@ -343,7 +368,23 @@ function app(page, errors, query) {
 		async reload() {
 			await page.reload();
 			await ready(page);
+			await countRuns(page);
 		},
+
+		/**
+		 * Wait until no command is in flight behind the seam.
+		 *
+		 * A submit bumps the frame's epoch, and every pane re-runs its
+		 * command on it — the strip one per band it holds — behind one
+		 * database lock, so how long the frame takes to settle grows with
+		 * how much of it is drawn. Counting the runs through the seam's own
+		 * extension point (as `spyOnRunner` does) is exact where a quiet
+		 * DOM is a guess: the runs have all started by the time `submit`
+		 * returns, because the REPL renders its echo and only then says
+		 * `ran`, and a pane's screen is a microtask behind its result —
+		 * so a poll that sees zero sees every pane drawn.
+		 */
+		idle: () => page.waitForFunction(() => window.__datumInflight === 0),
 
 		/**
 		 * Record every argv the active runner is handed, then delegate.

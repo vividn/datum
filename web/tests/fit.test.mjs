@@ -75,19 +75,16 @@ const A_DAY = [
  * pane commands it set off are still in flight, so a measurement taken
  * straight after it can be of the pane as it was an entry ago. That is
  * not hypothetical — it read a `work: true` on a `work` this day had
- * already stopped. Settled means two identical reads in a row.
+ * already stopped. Settled used to mean two identical reads 200ms apart,
+ * which held while the frame ran three commands per entry and stopped
+ * holding once the day strip drew a band per day its box holds
+ * (da-zb0d): the runs queue behind one database lock, and a pane can sit
+ * unchanged for longer than that while its turn comes. `idle` counts the
+ * runs themselves.
  */
 async function logADay(app) {
 	for (const line of A_DAY) await app.submit(line);
-	let previous = null;
-	for (;;) {
-		const now = await app.page.evaluate(() =>
-			[...document.querySelectorAll('section.pane .body')].map((b) => b.innerHTML).join(' ')
-		);
-		if (now === previous) return;
-		previous = now;
-		await app.page.waitForTimeout(200);
-	}
+	await app.idle();
 }
 
 /** Every pane's box against what is inside it, by title. */

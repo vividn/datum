@@ -20,13 +20,14 @@
 -->
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { page } from '$app/stores';
 	import CliPane from '$lib/CliPane.svelte';
 	import CommandPane from '$lib/CommandPane.svelte';
 	import DayStrip from '$lib/DayStrip.svelte';
 	import Repl from '$lib/Repl.svelte';
 	import WidgetBar from '$lib/WidgetBar.svelte';
 	import { initDb } from '$lib/db.js';
-	import { NOWVIEW, TAIL } from '$lib/panes.js';
+	import { DEFAULT_DAY_HEIGHT, NOWVIEW, TAIL } from '$lib/panes.js';
 	import { run } from '$lib/run.js';
 	import { widgetsFor, type FieldListing, type Widget } from '$lib/widgets.js';
 	import { onExternalChange } from '$lib/changes.js';
@@ -46,6 +47,16 @@
 	let command = '';
 	let repl: Repl;
 	let widgets: Widget[] = [];
+
+	/**
+	 * The day strip's one setting, held here until the dashboard engine
+	 * (da-jdop) owns the strip and keeps it in the widget's settings
+	 * (da-zb0d). The strip hands it in as a prop and hears `change` when
+	 * the notch moves it; `?dayHeight=` seeds it from the URL, standing in
+	 * for the saved setting the engine will pass. Not remembered between
+	 * visits: that is the layout tree's job, not this page's.
+	 */
+	let dayHeight = Number($page.url.searchParams.get('dayHeight')) || DEFAULT_DAY_HEIGHT;
 
 	onMount(async () => {
 		await initDb();
@@ -80,7 +91,9 @@
 </script>
 
 <div class="frame">
-	<div class="dayview"><DayStrip {epoch} /></div>
+	<div class="dayview" data-day-height={dayHeight}>
+		<DayStrip {epoch} {dayHeight} on:change={(e) => (dayHeight = e.detail)} />
+	</div>
 
 	<div class="repl">
 		<Repl bind:this={repl} bind:input={command} disabled={!ready} on:ran={ran} />
@@ -126,11 +139,15 @@
 
 	.dayview {
 		grid-area: dayview;
-		/* No cap any more: the strip is a band of a known height plus
-		   however much of the past has been pulled down over it, and the
-		   stack caps itself (STACK_MAX in DayStrip.svelte). A cap here
-		   would clip the days the reader just asked for. */
 		display: grid;
+		/* The strip takes its height from its box, not from a handle of
+		   its own (da-zb0d), so until the dashboard engine (da-jdop) puts
+		   it in a pane whose border is the control, this fixed row is the
+		   box: today's band and whatever of the past fits above it.
+		   Enough for today at the default day height on any screen, never
+		   more than a laptop can spare above the REPL. */
+		height: clamp(9rem, 28vh, 20rem);
+		min-height: 0;
 	}
 
 	.repl {

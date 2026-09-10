@@ -1,4 +1,4 @@
-// The day strip: today pinned at the bottom, the past pulled down over it.
+// The day strip: today pinned at the bottom, the past stacked above it.
 //
 // What a reader is doing with this is a comparison — is today like
 // yesterday, like last Tuesday — so the assertions are about the two
@@ -13,13 +13,14 @@
 // currently ON SCREEN — the band above today is not the day before it —
 // so it is asserted against the stack's scroll position, driven both ways.
 //
-// Since da-07ij the two things a reader sets are HEIGHTS, not counts: the
-// grab bar along the bottom edge says how much room the strip has, and
-// how much room it has is how much past it holds; the notch in the left
-// margin says how tall one day is drawn. So the assertions about them are
-// about pixels dragged and pixels rendered — the band's own SVG `height`,
-// not a class name that claims to mean it — and about what comes back
-// after a reload, which is the whole point of remembering them.
+// Since da-zb0d the strip has no handle for its own height: its BOX says
+// how tall it is, and how tall it is says how much past it holds. So the
+// tests size the box the page gives it and read which days appear. The
+// one thing a reader sets on the strip itself is how tall a day is drawn
+// — the notch in the left margin — and that is a prop in and a `change`
+// event out, which is asserted from the outside: what the strip's owner
+// heard, and the band's own SVG `height`, not a class name that claims to
+// mean it. The strip remembers nothing, and that is asserted too.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,9 +29,6 @@ import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
-
-/** Where the strip keeps what the reader asked for (DayStrip.svelte). */
-const STORE_KEY = 'datum-daystrip';
 
 /** datum's 3-line day label, as $lib/runners/views.ts builds one. */
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -94,19 +92,79 @@ const svgHeight = (svg) => Number(svg.match(/<svg[^>]*\sheight="([\d.]+)"/)[1]);
  * The strip's own arithmetic, read off the element it styles.
  *
  * One band's box and the margin below it are what a day COSTS in strip
- * height — so a drag of `box + gap` is a drag of exactly one day, and the
- * test never has to restate a constant that lives in $lib/panes.ts.
+ * height, so the tests never restate a constant that lives in
+ * $lib/panes.ts. `chrome` is what the page's box spends around the strip
+ * — the pane's title bar, borders and padding — which is what separates
+ * the height a test sets from the height the strip gets.
  */
 const metrics = ({ page }) =>
 	page.locator('.strip').evaluate((el) => {
 		const style = getComputedStyle(el);
 		const px = (name) => parseFloat(style.getPropertyValue(name));
-		return { box: px('--band'), gap: px('--gap'), unit: px('--band') + px('--gap') };
+		const box = document.querySelector('.dayview').getBoundingClientRect().height;
+		return {
+			band: px('--band'),
+			today: px('--today'),
+			gap: px('--gap'),
+			unit: px('--band') + px('--gap'),
+			strip: el.clientHeight,
+			chrome: box - el.clientHeight
+		};
 	});
 
-/** What a handle currently says it is set to. */
-const valueOf = async ({ page }, selector) =>
-	Number(await page.locator(selector).getAttribute('aria-valuenow'));
+/** Give the strip's box `px` of height, as the page (and later a pane) does. */
+const setBox = ({ page }, px) =>
+	page.evaluate((h) => {
+		document.querySelector('.dayview').style.height = `${h}px`;
+	}, px);
+
+/**
+ * How many days before today the strip owes at its current height: the
+ * room above today's band, in bands, counting a partly revealed one.
+ */
+async function owed(app) {
+	const m = await metrics(app);
+	return Math.min(60, Math.ceil(Math.max(0, m.strip - m.today - m.gap) / m.unit));
+}
+
+/**
+ * Size the box so the strip shows exactly `days` days before today.
+ *
+ * Half a band more than `days − 1` whole ones, so the top band is only
+ * half revealed: that is what makes the stack scroll, and a scrolling
+ * stack is what the jagged line is about. Zero days is a box exactly
+ * today's height.
+ */
+async function sizeFor(app, days) {
+	const m = await metrics(app);
+	const strip = days === 0 ? m.today : m.today + m.gap + (days - 0.5) * m.unit;
+	await setBox(app, Math.ceil(strip + m.chrome));
+	await waitForDays(app, days);
+}
+
+/**
+ * Wait until the strip shows exactly the days `depth` back to today, each
+ * with its picture — no band more, none without one.
+ */
+const waitForDays = ({ page }, depth) =>
+	page.waitForFunction(
+		(want) =>
+			JSON.stringify(
+				[...document.querySelectorAll('.band')].map((b) => [
+					Number(b.dataset.daysAgo),
+					b.querySelector('img.svg') !== null
+				])
+			) === JSON.stringify(Array.from({ length: want + 1 }, (_, i) => [want - i, true])),
+		depth
+	);
+
+/** What the day-height handle currently says it is set to. */
+const valueOf = async ({ page }) =>
+	Number(await page.locator('button.day-grip').getAttribute('aria-valuenow'));
+
+/** What the strip's owner — the page, for now — last heard from it. */
+const heard = ({ page }) =>
+	page.locator('.dayview').evaluate((el) => Number(el.dataset.dayHeight));
 
 /**
  * Wait until each named band has been re-drawn at the height it is due.
@@ -126,10 +184,6 @@ const waitForHeights = ({ page }, want) =>
 		want
 	);
 
-/** Wait until exactly `n` bands have a picture in them. */
-const waitForBands = ({ page }, n) =>
-	page.waitForFunction((want) => document.querySelectorAll('.band img.svg').length === want, n);
-
 /** Drag a handle by `dy` pixels, as a pointer does: down, move, up. */
 async function dragBy({ page }, selector, dy) {
 	const box = await page.locator(selector).boundingBox();
@@ -140,38 +194,6 @@ async function dragBy({ page }, selector, dy) {
 	await page.mouse.move(x, y + dy, { steps: 8 });
 	await page.mouse.up();
 }
-
-/**
- * Reach back `days` further, by the keyboard.
- *
- * The keyboard rather than a drag wherever the test is about something
- * else: one press is exactly one day's worth of room, so a test about the
- * jagged line is not also a test about how well a mouse lands on a 12px
- * bar.
- */
-async function deepen(app, days) {
-	const have = await app.page.locator('.band img.svg').count();
-	await app.page.locator('button.grab').focus();
-	for (let i = 0; i < days; i++) await app.page.keyboard.press('ArrowDown');
-	await waitForBands(app, have + days);
-}
-
-/** What the strip has written down, or null if it has written nothing. */
-const stored = ({ page }, key = STORE_KEY) =>
-	page.evaluate((k) => {
-		const raw = localStorage.getItem(k);
-		return raw === null ? null : JSON.parse(raw);
-	}, key);
-
-/** Wait out the write debounce: what is on screen is what is written. */
-const waitForStored = ({ page }, want, key = STORE_KEY) =>
-	page.waitForFunction(
-		([k, w]) => {
-			const raw = localStorage.getItem(k);
-			return raw !== null && JSON.parse(raw).dayHeight === w;
-		},
-		[key, want]
-	);
 
 /** The stack's scroll box, as the strip reads it. */
 const stackScroll = ({ page }) =>
@@ -184,25 +206,29 @@ const stackScroll = ({ page }) =>
 /** Whether the jagged line is on screen. */
 const jagged = ({ page }) => page.locator('button.jagged').count();
 
-describe('the day strip', () => {
-	test('the bottom handle drags the days before today into view', async () => {
-		await withApp(async (app) => {
-			// At rest the strip is what the frame has always shown: one
-			// band, today's, with no stack above it at all.
-			assert.equal(await app.page.locator('.band').count(), 1);
-			assert.equal(await app.page.locator('.stack').count(), 0);
+/** Every key in the page's store, so a write anywhere in it shows. */
+const storeKeys = ({ page }) => page.evaluate(() => Object.keys(localStorage).sort());
 
-			const { unit } = await metrics(app);
+describe('the day strip', () => {
+	test('the box says how many days: today, and the past that fits above it', async () => {
+		await withApp(async (app) => {
 			const nowMs = await app.page.evaluate(() => Date.now());
 
-			// Two bands' worth of room, so two more days.
-			await dragBy(app, 'button.grab', 2 * unit);
-			await waitForBands(app, 3);
-			assert.equal(await valueOf(app, 'button.grab'), 2);
+			// A short box: today, and the day or two above it that fit.
+			await setBox(app, 300);
+			const few = await owed(app);
+			assert.ok(few >= 1, `300px holds today and nothing else: ${few} days`);
+			await waitForDays(app, few);
 
-			// And each is the day it claims: the two days immediately before
+			// A tall box: more of them.
+			await setBox(app, 600);
+			const many = await owed(app);
+			assert.ok(many > few, `600px holds no more days than 300px: ${many} vs ${few}`);
+			await waitForDays(app, many);
+
+			// And each is the day it claims: the days immediately before
 			// today, oldest at the top.
-			for (const daysAgo of [2, 1, 0]) {
+			for (let daysAgo = many; daysAgo >= 0; daysAgo--) {
 				assert.deepEqual(
 					dateLines(await band(app, daysAgo)),
 					labelFor(nowMs, daysAgo),
@@ -228,26 +254,83 @@ describe('the day strip', () => {
 				);
 			}
 
-			// Dragged back up to today's own height, the past goes away
-			// again — the handle is a height, not a ratchet.
-			await dragBy(app, 'button.grab', -2 * unit);
-			await waitForBands(app, 1);
-			assert.equal(await valueOf(app, 'button.grab'), 0);
+			// Shrunk back, the days that no longer fit go away — the box is
+			// a height, not a ratchet.
+			await setBox(app, 300);
+			await waitForDays(app, few);
+			assert.equal(await app.page.locator(`.band[data-days-ago="${many}"]`).count(), 0);
+
+			// A box exactly today's height holds today alone.
+			await sizeFor(app, 0);
 			assert.equal(await app.page.locator('.stack').count(), 0);
 		});
 	});
 
+	test('the day height comes in as a prop and goes out as a change', async () => {
+		// What the default is is the strip's business, not this file's, so
+		// it is read off an ordinary app rather than restated here.
+		let fallback;
+		await withApp(async (app) => {
+			fallback = await valueOf(app);
+			assert.equal(await heard(app), fallback);
+		});
+
+		await withApp(
+			async (app) => {
+				// The owner said 120: the handle says so, and every band is
+				// drawn in the box that height gives it — the stacked ones at
+				// the band box, today's at the band box plus the hour axis.
+				assert.equal(await valueOf(app), 120);
+				await sizeFor(app, 2);
+				const m = await metrics(app);
+				assert.ok(m.band > 120, `the band box is not built on the 120 day height: ${m.band}`);
+				for (const daysAgo of [2, 1]) {
+					assert.equal(svgHeight(await band(app, daysAgo)), m.band, `band ${daysAgo}`);
+				}
+				assert.equal(svgHeight(await band(app, 0)), m.today, "today's band");
+
+				// The notch moves it, and the owner hears the new value —
+				// the strip does not keep it to itself.
+				const grow = 30;
+				await dragBy(app, 'button.day-grip', grow);
+				assert.equal(await valueOf(app), 120 + grow);
+				await app.page.waitForFunction((want) => {
+					return Number(document.querySelector('.dayview').dataset.dayHeight) === want;
+				}, 120 + grow);
+				// And every band is re-drawn, not stretched: the picture
+				// datum wrote is the new size. Waited for, because the render
+				// happens on the drop.
+				await waitForHeights(app, {
+					2: m.band + grow,
+					1: m.band + grow,
+					0: m.today + grow
+				});
+
+				// ↻ says the default, to the owner as well.
+				await app.page.locator('button.reset').click();
+				assert.equal(await valueOf(app), fallback);
+				await app.page.waitForFunction(
+					(want) => Number(document.querySelector('.dayview').dataset.dayHeight) === want,
+					fallback
+				);
+				const at = await metrics(app);
+				await waitForHeights(app, { 1: at.band, 0: at.today });
+			},
+			{ query: '?dayHeight=120' }
+		);
+	});
+
 	test('the margin handle re-draws every day at the new height', async () => {
 		await withApp(async (app) => {
-			await deepen(app, 2);
+			// Three, so that two are still there once the days are taller:
+			// the box does not grow with them, so fewer fit.
+			await sizeFor(app, 3);
 			const before = await Promise.all([2, 1, 0].map((n) => band(app, n).then(svgHeight)));
-			const was = await valueOf(app, 'button.day-grip');
+			const was = await valueOf(app);
 			const grow = 30;
 
 			await dragBy(app, 'button.day-grip', grow);
-			assert.equal(await valueOf(app, 'button.day-grip'), was + grow);
-			// Re-drawn, not stretched: the picture datum wrote is the new
-			// size. Waited for, because the render happens on the drop.
+			assert.equal(await valueOf(app), was + grow);
 			await waitForHeights(app, {
 				2: before[0] + grow,
 				1: before[1] + grow,
@@ -280,123 +363,69 @@ describe('the day strip', () => {
 		});
 	});
 
-	test('both handles come back after a reload, and the bands are drawn afresh', async () => {
+	test('the keyboard works the handle and the reset', async () => {
 		await withApp(async (app) => {
-			await deepen(app, 2);
-			const was = await valueOf(app, 'button.day-grip');
-			await app.page.locator('button.day-grip').focus();
-			await app.page.keyboard.press('ArrowDown');
-			const taller = await valueOf(app, 'button.day-grip');
-			assert.ok(taller > was, 'the arrow key did not make the day taller');
-
-			// An entry for YESTERDAY, logged before the reload: after it, the
-			// band a day back has to be a fresh render of the database and
-			// not whatever picture was last drawn.
-			await app.submit('switch mood happy -y');
-			await waitForStored(app, taller);
-
-			await app.reload();
-			await waitForBands(app, 3);
-			assert.equal(await valueOf(app, 'button.grab'), 2, 'the strip forgot how deep it was');
-			assert.equal(
-				await valueOf(app, 'button.day-grip'),
-				taller,
-				'the strip forgot how tall a day was'
-			);
-			assert.ok(
-				(await band(app, 1)).includes(colorOf('happy')),
-				"yesterday's band came back stale — it does not show what was logged into it"
-			);
-		});
-	});
-
-	test('the reset arrow puts the strip back and forgets it', async () => {
-		await withApp(async (app) => {
-			const fallback = await valueOf(app, 'button.day-grip');
-			await deepen(app, 2);
-			await dragBy(app, 'button.day-grip', 40);
-			await waitForStored(app, fallback + 40);
-
-			await app.page.locator('button.reset').click();
-			await waitForBands(app, 1);
-			assert.equal(await app.page.locator('.stack').count(), 0);
-			assert.equal(await valueOf(app, 'button.day-grip'), fallback);
-			// Cleared, not overwritten with the defaults — and the debounced
-			// write from the drag must not land on top of the reset.
-			await app.page.waitForFunction(
-				(k) => localStorage.getItem(k) === null,
-				STORE_KEY
-			);
-
-			// A second visit is the default one, not the one that was reset.
-			await app.reload();
-			assert.equal(await app.page.locator('.band').count(), 1);
-			assert.equal(await valueOf(app, 'button.day-grip'), fallback);
-			assert.equal(await stored(app), null);
-		});
-	});
-
-	test('the keyboard works both handles and the reset', async () => {
-		await withApp(async (app) => {
-			const fallback = await valueOf(app, 'button.day-grip');
-
-			// Down is more, on both handles, because down is the way a
-			// pointer drags for more.
-			await app.page.locator('button.grab').focus();
-			assert.ok(
-				await app.page.evaluate(() => document.activeElement.classList.contains('grab')),
-				'the bottom handle does not take focus'
-			);
-			for (const want of [1, 2, 3]) {
-				await app.page.keyboard.press('ArrowDown');
-				assert.equal(await valueOf(app, 'button.grab'), want);
-			}
-			await waitForBands(app, 4);
-			await app.page.keyboard.press('ArrowUp');
-			await waitForBands(app, 3);
+			const fallback = await valueOf(app);
 
 			await app.page.locator('button.day-grip').focus();
+			assert.ok(
+				await app.page.evaluate(() => document.activeElement.classList.contains('day-grip')),
+				'the handle does not take focus'
+			);
+			// Down is more — taller — because down is the way a pointer
+			// drags for more.
 			await app.page.keyboard.press('ArrowUp');
-			const shorter = await valueOf(app, 'button.day-grip');
+			const shorter = await valueOf(app);
 			assert.ok(shorter < fallback, `up did not shorten the day: ${shorter}`);
 			await app.page.keyboard.press('ArrowDown');
 			await app.page.keyboard.press('ArrowDown');
-			assert.equal(await valueOf(app, 'button.day-grip'), 2 * fallback - shorter);
+			assert.equal(await valueOf(app), 2 * fallback - shorter);
+			assert.equal(await heard(app), 2 * fallback - shorter);
 
 			await app.page.locator('button.reset').press('Enter');
-			await waitForBands(app, 1);
-			assert.equal(await valueOf(app, 'button.day-grip'), fallback);
+			assert.equal(await valueOf(app), fallback);
+			assert.equal(await heard(app), fallback);
 		});
 	});
 
-	test('a browser with no localStorage still draws the strip and works its handles', async () => {
-		// What the defaults are is the strip's business, not this file's, so
-		// they are read off an ordinary app rather than restated here.
+	test('the strip writes nothing down, and draws with the store blocked', async () => {
+		// Whatever is in the store before the handle moves is what is in it
+		// after: the strip has no key of its own, and adds none.
 		let fallback;
 		await withApp(async (app) => {
-			fallback = await valueOf(app, 'button.day-grip');
+			fallback = await valueOf(app);
+			await sizeFor(app, 2);
+			const before = await storeKeys(app);
+
+			await dragBy(app, 'button.day-grip', 20);
+			await app.page.locator('button.day-grip').focus();
+			await app.page.keyboard.press('ArrowDown');
+			const m = await metrics(app);
+			await waitForHeights(app, { 0: m.today });
+			await app.page.locator('button.reset').click();
+			await app.page.waitForFunction(
+				(want) => Number(document.querySelector('.dayview').dataset.dayHeight) === want,
+				fallback
+			);
+			await app.page.waitForTimeout(300);
+
+			assert.deepEqual(await storeKeys(app), before, 'the strip wrote to localStorage');
 		});
 
+		// And a store that throws on the ACCESS — which is what a browser
+		// set to block site data actually does — changes nothing: the strip
+		// draws, and the handle works for the visit.
 		await withApp(
 			async (app) => {
-				assert.equal(await app.page.locator('.band').count(), 1);
-				assert.equal(await app.page.locator('.stack').count(), 0);
-				assert.equal(await valueOf(app, 'button.day-grip'), fallback);
-
-				// The handles still work — the preference is lost at the end
-				// of the visit, not during it.
-				await deepen(app, 1);
-				assert.equal(await valueOf(app, 'button.grab'), 1);
+				await app.page.locator('.band[data-days-ago="0"] img.svg').waitFor();
+				assert.equal(await valueOf(app), fallback);
+				await sizeFor(app, 1);
 				await app.page.locator('button.day-grip').focus();
 				await app.page.keyboard.press('ArrowDown');
-				assert.ok(await valueOf(app, 'button.day-grip') > fallback);
-
+				assert.ok((await valueOf(app)) > fallback);
 				assert.deepEqual(app.errors, [], 'the page threw with storage blocked');
 			},
 			{
-				// Throwing on the ACCESS, which is what a browser set to block
-				// site data actually does — a `getItem` returning null is the
-				// easy half and never caught anything.
 				prepare: (context) =>
 					context.addInitScript(() => {
 						Object.defineProperty(window, 'localStorage', {
@@ -412,10 +441,10 @@ describe('the day strip', () => {
 
 	test('the jagged line says the band above today is not yesterday', async () => {
 		await withApp(async (app) => {
-			// Deeper than the strip will show at once, so there is something
-			// to scroll. Nothing to tear yet: yesterday is at the bottom,
+			// Deeper than the box shows whole, so there is something to
+			// scroll. Nothing to tear yet: yesterday is at the bottom,
 			// against today.
-			await deepen(app, 5);
+			await sizeFor(app, 5);
 
 			const box = await stackScroll(app);
 			assert.ok(box.total > box.client, `the stack does not scroll: ${JSON.stringify(box)}`);
@@ -441,7 +470,7 @@ describe('the day strip', () => {
 				`enter did not bring yesterday back: ${JSON.stringify(back)}`
 			);
 			// The depth is unchanged — the line puts the stack back, it does
-			// not throw away the days that were revealed.
+			// not throw away the days the box holds.
 			assert.equal(await app.page.locator('.band').count(), 6);
 
 			// And the same by pointer, which is the other half of "reachable
@@ -462,7 +491,7 @@ describe('the day strip', () => {
 			async (app) => {
 				// Deep enough that the stack scrolls, so the jagged line has
 				// something to say at the end.
-				await deepen(app, 5);
+				await sizeFor(app, 5);
 				assert.deepEqual(dateLines(await band(app, 0)), labelFor(noon, 0));
 				assert.deepEqual(dateLines(await band(app, 1)), labelFor(noon, 1));
 
@@ -491,8 +520,8 @@ describe('the day strip', () => {
 						`the band ${daysAgo} day(s) back did not follow the new today`
 					);
 				}
-				// The handles kept what they were set to across the rollover.
-				assert.equal(await valueOf(app, 'button.grab'), 5);
+				// The box did not move, so neither did the depth.
+				assert.equal(await app.page.locator('.band').count(), 6);
 				// And the rule still reads off the scroll position, not off
 				// the date it was first drawn for.
 				assert.equal(await jagged(app), 0);
@@ -510,7 +539,7 @@ describe('the day strip', () => {
 
 	test('every band is drawn against the same x-axis as today', async () => {
 		await withApp(async (app) => {
-			await deepen(app, 3);
+			await sizeFor(app, 3);
 
 			// The hour gridlines are the axis as the data area sees it, and
 			// they are drawn on every band — the tick LABELS are today's
@@ -535,15 +564,13 @@ describe('the day strip', () => {
 
 	// The strip is full-width, and the fix for horizontal scrollbars over
 	// it landed the day before this did (1ceada8) — so every depth the
-	// stack can be in is swept, at every width the app is read at.
+	// box can hold is swept, at every width the app is read at.
 	for (const width of [360, 390, 768, 1280]) {
 		test(`never scrolls the page sideways at ${width}px, at any depth`, async () => {
 			await withApp(
 				async (app) => {
-					let depth = 0;
-					for (const want of [0, 1, 5]) {
-						if (want > depth) await deepen(app, want - depth);
-						depth = want;
+					for (const depth of [0, 1, 5]) {
+						await sizeFor(app, depth);
 						const seen = await app.page.evaluate(() => {
 							const el = document.scrollingElement;
 							return { scroll: el.scrollWidth, client: el.clientWidth };
@@ -559,27 +586,25 @@ describe('the day strip', () => {
 		});
 	}
 
-	// The handle can ask for more room than there is, and the strip's
-	// height drives its grid track — so the thing a phone user logs with
-	// is what a strip dragged to its limit would push off the bottom
-	// (da-hkpd). The strip caps itself against the viewport instead.
-	test('a strip asked past its limit leaves the widget bar on screen', async () => {
+	// The strip's row is a fixed height now, so it cannot push the thing a
+	// phone user logs with off the bottom of the screen (da-hkpd) — as
+	// long as that height is one a phone can spare.
+	test("the strip's row leaves the widget bar on screen", async () => {
 		const screen = { width: 360, height: 640 };
 		await withApp(
 			async (app) => {
 				await app.submit('occur coffee');
 				await app.page.locator('.bar button.widget').first().waitFor();
 
-				// Six days is more strip than half this screen, which is
-				// where the strip caps itself — so it is the CAP being
-				// tested and not the reader's restraint.
-				await deepen(app, 6);
-
 				const bar = await app.page.locator('.bar button.widget').first().boundingBox();
 				assert.ok(
 					bar.y + bar.height <= screen.height,
-					`the widget bar is off the bottom at full strip height: ${JSON.stringify(bar)}`
+					`the widget bar is off the bottom: ${JSON.stringify(bar)}`
 				);
+				// And the row is a box today fits in whole, not one it
+				// scrolls inside.
+				const m = await metrics(app);
+				assert.ok(m.strip >= m.today, `today's band does not fit its row: ${JSON.stringify(m)}`);
 			},
 			{ viewport: screen }
 		);

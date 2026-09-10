@@ -83,11 +83,17 @@ async function measure(img) {
 	};
 }
 
-/** The drawing a pane is showing, by the pane's title. */
+/**
+ * The drawing a pane is showing, by the pane's title — the last one in
+ * it, which in the day strip is today's band under the stacked days its
+ * box holds (da-zb0d). The stacked bands are drawn at the same width and
+ * day height, so today's legibility is theirs.
+ */
 function paneImage({ page }, title) {
 	return page
 		.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
-		.locator('img.svg');
+		.locator('img.svg')
+		.last();
 }
 
 /** The drawing the newest command left in the REPL's scrollback. */

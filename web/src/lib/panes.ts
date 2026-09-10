@@ -143,8 +143,8 @@ export const DEFAULT_DAY_HEIGHT = 85;
  * and the stamp is how a reader tells one band from another.
  *
  * The ceiling is a screen: 240px of one day still leaves the REPL and the
- * widget bar room on a laptop, and the strip caps its own height against
- * the viewport as well (`maxStack` in DayStrip.svelte).
+ * widget bar room on a laptop, and the pane the strip sits in is what
+ * caps the strip's own height (da-zb0d).
  */
 export const MIN_DAY_HEIGHT = 40;
 export const MAX_DAY_HEIGHT = 240;
