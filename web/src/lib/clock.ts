@@ -16,7 +16,35 @@
 // still the browser's, which is what `getHours` reads; only the
 // convention is pinned.
 
+import { readable } from 'svelte/store';
 import type { DatumTime } from './types.js';
+
+/**
+ * The time, live: what every prompt's clock shows, and "what today is"
+ * for a command's stamp.
+ *
+ * It ticks per second, and only while someone could be looking at it: a
+ * backgrounded tab that keeps a timer alive is a tab that keeps a phone
+ * awake for a label nobody can read. Coming back visible re-reads the
+ * time first, so the clock is never a second late for the length of a
+ * tick.
+ */
+export const now = readable(new Date(), (set) => {
+	let timer: ReturnType<typeof setInterval> | undefined;
+	const stop = () => clearInterval(timer);
+	const start = () => {
+		stop();
+		set(new Date());
+		timer = setInterval(() => set(new Date()), 1000);
+	};
+	const visibility = () => (document.hidden ? stop() : start());
+	start();
+	document.addEventListener('visibilitychange', visibility);
+	return () => {
+		stop();
+		document.removeEventListener('visibilitychange', visibility);
+	};
+});
 
 /**
  * The local midnight `date` falls in — the start of the day it is in,

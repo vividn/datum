@@ -1,0 +1,111 @@
+// What the prompts remember: every command run, when, and what it printed,
+// plus the recall history Up walks.
+//
+// One store for every prompt on the page (da-0dhc). The REPL shows all of
+// it; the input widget shows the commands and their times and none of what
+// they printed. Both write through `record`, so however many prompts are
+// on screen there is one writer of the localStorage key — two components
+// persisting their own copies would each overwrite the other's commands.
+//
+// It survives a reload, out of `localStorage`, because a terminal you
+// can't scroll back through yesterday is a terminal that forgets what you
+// told it. Restoring is not re-running: what comes back is the text that
+// was printed, never a second execution of the command that printed it.
+
+import { get, writable } from 'svelte/store';
+import { browser } from '$app/environment';
+import type { RunResult } from './run.js';
+
+export type Command = { line: string; ranAt: number; result: RunResult };
+
+export interface ReplState {
+	scrollback: Command[];
+	history: string[];
+}
+
+/**
+ * Where the scrollback is kept, and how many commands of it.
+ *
+ * The version is in the KEY, not in the value: a store written by an
+ * older shape is then not read at all, rather than read and picked
+ * apart. The cap is what stops a terminal left open for a month from
+ * growing without bound — oldest dropped, the way scrollback goes.
+ */
+const STORE_KEY = 'datum.repl.v1';
+const KEEP = 200;
+
+// Read once, when the module loads, so a prompt mounting later — or a
+// second one — finds the scrollback simply there, first paint included.
+export const repl = writable<ReplState>(restore());
+
+/** Read back what a previous session left, or start empty. */
+function restore(): ReplState {
+	try {
+		const raw = localStorage.getItem(STORE_KEY);
+		const saved = raw ? JSON.parse(raw) : null;
+		if (Array.isArray(saved?.scrollback) && Array.isArray(saved?.history)) {
+			return {
+				scrollback: saved.scrollback.filter(
+					(entry: Command) =>
+						typeof entry?.line === 'string' &&
+						typeof entry?.ranAt === 'number' &&
+						typeof entry?.result?.code === 'number'
+				),
+				history: saved.history.filter((line: string) => typeof line === 'string')
+			};
+		}
+	} catch {
+		// A private window, a store the browser blocks, a shape from a
+		// build that is gone: none of them are worth an error in front of
+		// someone trying to type a command. The session works, it just
+		// starts empty.
+	}
+	return { scrollback: [], history: [] };
+}
+
+/**
+ * A command has run: into the scrollback with its result and the instant
+ * it was run, and into the recall history unless it repeats the last one.
+ */
+export function record(line: string, ranAt: number, result: RunResult): void {
+	// Capped here, not only on the way to disk: a tab that stays open all
+	// day would otherwise keep every command in memory and in the DOM while
+	// the store on disk held the last KEEP (review threads on #156, #166).
+	repl.update(({ scrollback, history }) => ({
+		scrollback: [...scrollback, { line, ranAt, result }].slice(-KEEP),
+		history: (history[history.length - 1] === line ? history : [...history, line]).slice(-KEEP)
+	}));
+	save();
+}
+
+let pending: ReturnType<typeof setTimeout> | undefined;
+
+/** Queue a write; commands arrive in bursts and the store is not fast. */
+function save(): void {
+	clearTimeout(pending);
+	pending = setTimeout(persist, 100);
+}
+
+function persist(): void {
+	clearTimeout(pending);
+	const { scrollback, history } = get(repl);
+	let keep = scrollback.slice(-KEEP);
+	for (;;) {
+		try {
+			localStorage.setItem(
+				STORE_KEY,
+				JSON.stringify({ scrollback: keep, history: history.slice(-KEEP) })
+			);
+			return;
+		} catch {
+			// Out of quota — a drawn view's stdout is a whole SVG — or a
+			// store that refuses every write. Shed the oldest half and try
+			// again; when there is nothing left to shed it was the store.
+			if (keep.length === 0) return;
+			keep = keep.slice(Math.ceil(keep.length / 2));
+		}
+	}
+}
+
+// A reload is the one moment a debounced write would lose: flush.
+if (browser) addEventListener('pagehide', persist);

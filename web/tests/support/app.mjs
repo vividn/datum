@@ -196,11 +196,11 @@ function countRuns(page) {
 }
 
 async function ready(page) {
-	// The REPL input is disabled until `initDb()` resolves, so it is the
-	// app's own statement that the database is open. The first one: a
-	// layout may hold two REPLs (da-jdop), and one enabled prompt is the
-	// statement.
-	await page.locator('.repl input:not([disabled])').first().waitFor();
+	// A prompt is disabled until `initDb()` resolves, so an enabled one is
+	// the app's own statement that the database is open. The first one: a
+	// layout may hold two REPLs (da-jdop), and the input widget's prompt at
+	// /input counts too (da-0dhc).
+	await page.locator('.repl input:not([disabled]), .input-widget input:not([disabled])').first().waitFor();
 	await page.waitForFunction(() => typeof window.datum?.run === 'function');
 	// Every pane is a command that runs on mount ($lib/panes.ts) and shows
 	// `…` until it answers. Waiting them out means a command a test runs
@@ -367,6 +367,12 @@ function app(page, errors, query) {
 		 */
 		async newTab() {
 			return open(await page.context().newPage(), query);
+		},
+
+		/** Navigate this tab to `path` — `/`, `/input` — and wait for it to come up. */
+		async goto(path) {
+			await page.goto(baseUrl() + path);
+			await ready(page);
 		},
 
 		/** Reload the page and wait for the app to come back up. */

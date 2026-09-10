@@ -5,9 +5,8 @@
 	typed line the same way the native REPL does, sends it through
 	`run(argv)`, and appends the echoed command plus whatever stdout/stderr
 	came back. A command that draws rather than writes is asked for at the
-	width of the scrollback it lands in — see `fitArgv`. Up and down walk
-	the history, shell-style: the draft you were typing is kept and handed
-	back when you walk past the newest entry.
+	width of the scrollback it lands in — see `fitArgv`. The prompt line
+	itself, Up and down included, is $lib/Prompt.svelte.
 
 	`input` is bindable and `runArgv` is exported so the widget bar
 	(da-nz29) lands in here rather than running silently: a press logs and
@@ -22,18 +21,19 @@
 	that matters; when the command was typed is context. The prompt's own
 	clock is the same label, live.
 
-	And the scrollback survives a reload, out of `localStorage`, because a
-	terminal you can't scroll back through yesterday is a terminal that
-	forgets what you told it. Restoring is not re-running: what comes back
-	is the text that was printed, never a second execution of the command
-	that printed it.
+	The scrollback and the history are not this component's: they are the
+	one store every prompt shares ($lib/replStore.ts, da-0dhc), which is
+	also what keeps them across a reload. A command typed into the input
+	widget is in this scrollback too, output and all.
 -->
 <script lang="ts">
-	import { clockSecondsLabel, stampLabel } from '$lib/clock.js';
+	import { now, stampLabel } from '$lib/clock.js';
+	import { repl, record } from '$lib/replStore.js';
 	import { isDegraded, storage } from '$lib/storageState.js';
 	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
+	import Prompt from './Prompt.svelte';
 	import { fitArgv } from './panes.js';
 	import { run, type RunResult } from './run.js';
 	import { shellSplit } from './shellSplit.js';
@@ -44,121 +44,14 @@
 
 	const dispatch = createEventDispatcher<{ ran: RunResult }>();
 
-	type Command = { line: string; ranAt: number; result: RunResult };
-
-	/**
-	 * Where the scrollback is kept, and how many commands of it.
-	 *
-	 * The version is in the KEY, not in the value: a store written by an
-	 * older shape is then not read at all, rather than read and picked
-	 * apart. The cap is what stops a terminal left open for a month from
-	 * growing without bound — oldest dropped, the way scrollback goes.
-	 */
-	const STORE_KEY = 'datum.repl.v1';
-	const KEEP = 200;
-
-	let scrollback: Command[] = [];
-	let history: string[] = [];
-	/** The live clock beside the prompt; also "what today is" for a stamp. */
-	let now = new Date();
-	/** Index into `history`, or -1 while editing a fresh line. */
-	let cursor = -1;
-	let draft = '';
 	let pane: Pane;
 	let body: HTMLDivElement | undefined;
 	/** The scrollback's content width, in whole pixels, once measured. */
 	let width: number | null = null;
 
-	// The prompt's clock ticks per second, and only while someone could be
-	// looking at it: a backgrounded tab that keeps a timer alive is a tab
-	// that keeps a phone awake for a label nobody can read. Coming back
-	// visible re-reads the time first, so the clock is never a second late
-	// for the length of a tick.
-	onMount(() => {
-		let timer: ReturnType<typeof setInterval> | undefined;
-		const readClock = () => (now = new Date());
-		const start = () => {
-			stop();
-			timer = setInterval(readClock, 1000);
-		};
-		const stop = () => {
-			if (timer !== undefined) clearInterval(timer);
-			timer = undefined;
-		};
-		const visibility = () => {
-			if (document.hidden) return stop();
-			readClock();
-			start();
-		};
-		start();
-		document.addEventListener('visibilitychange', visibility);
-		// A reload is the one moment a debounced write would lose: flush.
-		window.addEventListener('pagehide', persist);
-		return () => {
-			stop();
-			document.removeEventListener('visibilitychange', visibility);
-			window.removeEventListener('pagehide', persist);
-		};
-	});
-
-	// Restore before the first paint, so the scrollback is simply there
-	// rather than appearing a frame later, and pin the view to its end the
-	// way a run does.
-	onMount(async () => {
-		restore();
-		await tick();
-		pane.scrollToBottom();
-	});
-
-	/** Read back what a previous session left, or start empty. */
-	function restore(): void {
-		try {
-			const raw = localStorage.getItem(STORE_KEY);
-			if (!raw) return;
-			const saved = JSON.parse(raw);
-			if (!Array.isArray(saved?.scrollback) || !Array.isArray(saved?.history)) return;
-			scrollback = saved.scrollback.filter(
-				(entry: Command) =>
-					typeof entry?.line === 'string' &&
-					typeof entry?.ranAt === 'number' &&
-					typeof entry?.result?.code === 'number'
-			);
-			history = saved.history.filter((line: string) => typeof line === 'string');
-		} catch {
-			// A private window, a store the browser blocks, a shape from a
-			// build that is gone: none of them are worth an error in front of
-			// someone trying to type a command. The session works, it just
-			// starts empty.
-		}
-	}
-
-	let pending: ReturnType<typeof setTimeout> | undefined;
-
-	/** Queue a write; commands arrive in bursts and the store is not fast. */
-	function save(): void {
-		clearTimeout(pending);
-		pending = setTimeout(persist, 100);
-	}
-
-	function persist(): void {
-		clearTimeout(pending);
-		let keep = scrollback.slice(-KEEP);
-		for (;;) {
-			try {
-				localStorage.setItem(
-					STORE_KEY,
-					JSON.stringify({ scrollback: keep, history: history.slice(-KEEP) })
-				);
-				return;
-			} catch {
-				// Out of quota — a drawn view's stdout is a whole SVG — or a
-				// store that refuses every write. Shed the oldest half and try
-				// again; when there is nothing left to shed it was the store.
-				if (keep.length === 0) return;
-				keep = keep.slice(Math.ceil(keep.length / 2));
-			}
-		}
-	}
+	// The scrollback is restored before the first paint ($lib/replStore.ts);
+	// pin the view to its end the way a run does.
+	onMount(() => pane.scrollToBottom());
 
 	// What a drawn command has to be told (`fitArgv`): the content box, not
 	// the element's own width — the body is padded, and an image a fraction
@@ -175,20 +68,11 @@
 		return () => observer.disconnect();
 	});
 
-	async function submit(): Promise<void> {
-		const line = input;
-		if (!line.trim()) return;
+	async function submit({ detail: line }: CustomEvent<string>): Promise<void> {
 		const ranAt = Date.now();
-
-		// Consume the line the way a shell does — it lives in the
-		// scrollback and in the history now, and Up brings it back.
-		input = '';
-		draft = '';
-		cursor = -1;
-		remember(line);
 		// Split here rather than through `runLine`, because the argv is what
-		// gets fitted to the box. The echo above is the line as typed.
-		await record(line, await run(fitArgv(shellSplit(line), width)), ranAt);
+		// gets fitted to the box. The echo is the line as typed.
+		await land(line, await run(fitArgv(shellSplit(line), width)), ranAt);
 	}
 
 	/**
@@ -201,56 +85,29 @@
 	export async function runArgv(argv: string[]): Promise<RunResult> {
 		const ranAt = Date.now();
 		const result = await run(argv);
-		const line = result.argv.join(' ');
-		remember(line);
-		await record(line, result, ranAt);
+		await land(result.argv.join(' '), result, ranAt);
 		return result;
 	}
 
-	function remember(line: string): void {
-		if (history[history.length - 1] !== line) history = [...history, line];
-	}
-
-	async function record(line: string, result: RunResult, ranAt: number): Promise<void> {
-		scrollback = [...scrollback, { line, ranAt, result }];
-		save();
+	/** Into the shared store, and the view pinned to it. */
+	async function land(line: string, result: RunResult, ranAt: number): Promise<void> {
+		record(line, ranAt, result);
 		await tick();
 		pane.scrollToBottom();
 		dispatch('ran', result);
 	}
-
-	function recall(event: KeyboardEvent): void {
-		if (event.key === 'ArrowUp') {
-			const next = cursor === -1 ? history.length - 1 : cursor - 1;
-			if (next < 0) return;
-			if (cursor === -1) draft = input;
-			event.preventDefault();
-			cursor = next;
-			input = history[cursor];
-		} else if (event.key === 'ArrowDown') {
-			if (cursor === -1) return;
-			event.preventDefault();
-			cursor += 1;
-			if (cursor >= history.length) {
-				cursor = -1;
-				input = draft;
-			} else {
-				input = history[cursor];
-			}
-		}
-	}
 </script>
 
 <Pane title="repl" alarm={isDegraded($storage)} bind:this={pane} bind:body>
-	{#if scrollback.length === 0}
+	{#if $repl.scrollback.length === 0}
 		<p class="quiet">type a command — <code>switch mood happy</code>, <code>tail</code></p>
 	{/if}
-	{#each scrollback as entry, i (i)}
+	{#each $repl.scrollback as entry, i (i)}
 		{#if i > 0}
 			<hr class="rule" />
 		{/if}
 		<div class="head">
-			<span class="stamp">{stampLabel(new Date(entry.ranAt), now)}</span>
+			<span class="stamp">{stampLabel(new Date(entry.ranAt), $now)}</span>
 			<!-- The stamp is a sibling of `.echo`, not a child of it: the
 			     echo's text is the command and nothing else, which is what
 			     every reader of it — a test, a copy-paste — already assumes. -->
@@ -264,27 +121,9 @@
 		{/if}
 	{/each}
 
-	<form slot="footer" class="line" on:submit|preventDefault={submit}>
-		<!-- Live, not restored: the scrollback's stamps are history, this one
-		     is the clock. On a narrow screen the seconds go and the minutes
-		     stay — the input's width is not the clock's to take. -->
-		<span class="stamp"
-			>{clockSecondsLabel(now).slice(0, 5)}<span class="seconds"
-				>{clockSecondsLabel(now).slice(5)}</span
-			></span
-		>
-		<span class="prompt">❯</span>
-		<input
-			type="text"
-			bind:value={input}
-			on:keydown={recall}
-			{disabled}
-			placeholder={disabled ? 'opening database…' : 'occur coffee cups=2'}
-			spellcheck="false"
-			autocapitalize="none"
-			autocomplete="off"
-		/>
-	</form>
+	<svelte:fragment slot="footer">
+		<Prompt bind:input {disabled} on:submit={submit} />
+	</svelte:fragment>
 </Pane>
 
 <style>
@@ -330,39 +169,5 @@
 
 	.prompt {
 		color: #7c7cff;
-	}
-
-	.line {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		border-top: 1px solid #1e1e38;
-		padding: 0.45rem 0.6rem;
-		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-	}
-
-	input {
-		flex: 1;
-		min-width: 0;
-		background: transparent;
-		border: none;
-		outline: none;
-		color: #e0e0ff;
-		font: inherit;
-		font-size: 0.95rem;
-	}
-
-	@media (max-width: 480px) {
-		.line .stamp .seconds {
-			display: none;
-		}
-	}
-
-	input::placeholder {
-		color: #444466;
-	}
-
-	input:disabled {
-		opacity: 0.5;
 	}
 </style>
