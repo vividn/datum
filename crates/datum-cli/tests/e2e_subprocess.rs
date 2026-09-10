@@ -697,3 +697,38 @@ fn subprocess_nowview_dash_output_is_svg_on_stdout() {
     assert_ok(&band, "nowview");
     assert!(!String::from_utf8_lossy(&band.stdout).contains("<svg"));
 }
+
+/// da-mjwq, vividn's line through the real process boundary: `start posture
+/// start_time=4pm 15` is the block 16:00–16:15, so `tail --json` shows the
+/// row `start posture -t 16:15 15` writes — the same in every column but
+/// the hid and the write times (occur_time is the block's END; the
+/// fifteen minutes precede it).
+#[test]
+fn subprocess_start_time_key_row_equals_its_t_twin_in_tail_json() {
+    let row = |args: &[&str]| -> serde_json::Value {
+        let env = Env::new();
+        assert_ok(&env.run(args), "log");
+        let out = env.run(&["tail", "posture", "--json"]);
+        assert_ok(&out, "tail --json");
+        let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let mut row = doc["rows"].as_array().expect("rows")[0].clone();
+        for masked in ["hid", "create_time", "modify_time"] {
+            row[masked] = serde_json::Value::Null;
+        }
+        row
+    };
+    let keyed = row(&["start", "posture", "start_time=4pm", "15"]);
+    let flagged = row(&["start", "posture", "-t", "16:15", "15"]);
+    assert_eq!(keyed, flagged);
+    assert_eq!(keyed["dur"], "PT15M");
+    assert!(
+        keyed["time"].as_str().unwrap().contains("T16:15:00"),
+        "the block ends at 16:15: {}",
+        keyed["time"]
+    );
+    assert_eq!(
+        keyed["data"],
+        serde_json::Value::Null,
+        "the key is consumed"
+    );
+}

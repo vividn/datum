@@ -176,8 +176,20 @@ impl TimeBuilder {
     /// [`build`]: Self::build
     #[cfg(feature = "native")]
     pub fn build_with_uncertainty(self) -> DatumTime {
+        self.build_with_uncertainty_now(crate::time::clock::now().utc)
+    }
+
+    /// [`build_with_uncertainty`] against an explicit wall clock, in the
+    /// host's (or `-z`'s) zone. da-mjwq: two relative times on one line
+    /// (`start_time=-20 end_time=-5`) must share one reading of the clock,
+    /// or the span between them comes out a few milliseconds short and
+    /// truncates to 14m59s.
+    ///
+    /// [`build_with_uncertainty`]: Self::build_with_uncertainty
+    #[cfg(feature = "native")]
+    pub fn build_with_uncertainty_now(self, now: DateTime<Utc>) -> DatumTime {
         let (zone, name) = self.host_zone();
-        self.build_with_uncertainty_at(Utc::now(), zone, name)
+        self.build_with_uncertainty_at(now, zone, name)
     }
 
     /// [`build_with_uncertainty`] against an explicit anchor.
@@ -233,7 +245,7 @@ impl TimeBuilder {
     #[cfg(feature = "native")]
     pub fn build(self) -> DatumTime {
         let (zone, name) = self.host_zone();
-        self.build_at(Utc::now(), zone, name)
+        self.build_at(crate::time::clock::now().utc, zone, name)
     }
 
     /// The effective zone for a native build: `-z` when supplied, else the

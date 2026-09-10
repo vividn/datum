@@ -7,8 +7,9 @@
 //!     because each create_time is distinct.
 //!   * `add` requires an explicit id (a keyed record looked up by *what*).
 //!
-//! Like `add`, it infers occur/start/stop/switch shape from `start=`/`end=`/
-//! `dur=`/`state=` keys, routing through the shared `log_entry` dispatcher.
+//! Like `add`, it infers occur/start/stop/switch shape from `start_time=`/
+//! `end_time=`/`dur=`/`state=` keys, routing through the shared `log_entry`
+//! dispatcher.
 
 use anyhow::Result;
 use datum_core::{action::Action, db::Db};

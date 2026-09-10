@@ -62,8 +62,15 @@ An entry logs *now* unless you place it:
 - `-y` = 1 day ago, `-yy` = 2 (stackable); `-d -1` = yesterday, `-d +1` = tomorrow.
 - `-q` = 5 min ago (stackable); `-t -8` = 8 min ago; `-t 1513` = 15:13 today; `-t 9:15am`.
 - A duration is a trailing positional (`datum end work 30m`) or `dur=30m` — also
-  `1:30`, `2h`, ISO `PT30M`. There is no `--dur` flag. Combined with `-t`, the block
-  starts at `-t` and runs forward: `datum end work 12m -t 14:00` is 14:00–14:12.
+  `1:30`, `2h`, ISO `PT30M`. There is no `--dur` flag. It says how long the thing
+  LASTED, so the block ENDS at `-t` and the span precedes it: `datum end work 12m
+  -t 14:00` is 13:48–14:00 (da-zwct).
+- `start_time=` / `end_time=` place a block outright, with the same values `-t`
+  takes: `start posture start_time=-20 end_time=-5` (a 15-minute block ending five
+  minutes ago), `start posture start_time=4pm 15` (16:00–16:15, the row `-t 16:15
+  15` writes). `end_time=` alone on `start` is `end -t E`; on `switch STATE` it is
+  `end -t E -L=STATE`. The keys are consumed, never stored, and never combine
+  with `-t`.
 
 ## Reading it back
 

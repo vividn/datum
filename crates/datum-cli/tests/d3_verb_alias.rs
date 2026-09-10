@@ -226,19 +226,10 @@ fn fielde_alias_generated_for_start_capable_fields() {
 fn add_with_temporal_keys_resolves_shape_correctly() {
     let db = fresh_db();
 
-    // start_time + end_time → block
-    run_cli(
-        &[
-            "add",
-            "coffee",
-            "start_time=-5m",
-            "end_time=now",
-            "-t",
-            "10:00",
-        ],
-        &db,
-    )
-    .expect("add with start+end");
+    // start_time + end_time → block. da-mjwq: the keys ARE the time — a
+    // `-t` alongside is an error, and each value parses as `-t` would.
+    run_cli(&["add", "coffee", "start_time=9:55", "end_time=10:00"], &db)
+        .expect("add with start+end");
 
     let e = &db.entries_for_field("coffee", None).unwrap()[0];
     assert_eq!(e.shape(), EntryShape::Block);
@@ -259,7 +250,7 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
     // as EntryShape::Point. The observable invariant — start anchored,
     // no end — is what callers actually rely on.
     let db2 = fresh_db();
-    run_cli(&["add", "nap", "start_time=-5m", "-t", "14:00"], &db2).expect("add ongoing");
+    run_cli(&["add", "nap", "start_time=13:55"], &db2).expect("add ongoing");
     let e2 = &db2.entries_for_field("nap", None).unwrap()[0];
     assert!(e2.occur_time.is_some(), "ongoing add anchors occur_time");
     assert!(e2.dur.is_none(), "ongoing add has no dur");

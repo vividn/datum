@@ -10,12 +10,14 @@ use anyhow::Result;
 use datum_core::{
     action::Action,
     db::{Db, InsertOutcome},
+    dur::DurSpan,
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
     time::{
         parse_date, parse_duration, parse_time, resolve_timezone, DatumTime, TimeBuilder, TimeCtx,
     },
 };
+use datum_parse::input::TimeArgs;
 use serde_json::Value as JsonValue;
 
 use crate::{
@@ -54,6 +56,35 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // trailing positional (or an explicit `dur=<v>` anywhere in argv). The
     // switch `,`-chain peel (da-a2o8) is preserved inside the helper.
     prepare_log_args(action, &mut args)?;
+
+    // da-mjwq: on the verbs that can carry a duration, `start_time=` and
+    // `end_time=` are not data — they place the block. Lifted here, before
+    // the data parser's `*time` suffix rule would coerce them to clock
+    // strings, and turned into the `-t` the same line would otherwise
+    // carry: `end_time=` when given (a block's occur_time is its END,
+    // da-zwct), else `start_time=`. The pair and the start+duration forms
+    // move that anchor below, once the `dur=` slot is filled. One time
+    // parser: whatever `-t` accepts (`-20`, `4pm`, `16:15`, an ISO
+    // datetime, `yesterday`, a `±5m` suffix), the keys accept.
+    let lifted = if matches!(
+        action,
+        Action::Add | Action::Note | Action::Start | Action::Switch | Action::Occur
+    ) {
+        lift_time_keys(&mut args.rest)
+    } else {
+        LiftedTimes::default()
+    };
+    if let Some((key, raw)) = lifted.anchor() {
+        if args.time.time.is_some() {
+            anyhow::bail!("-t and {key}= both set the time; use one");
+        }
+        if args.time.omit_timestamp {
+            anyhow::bail!(
+                "-T/--no-timestamp cannot be combined with {key}=: a timeless entry has no instant to place"
+            );
+        }
+        args.time.time = Some(raw.to_string());
+    }
 
     // For switch, walk the bare positionals and reject interior `,,`
     // empty segments before handle_data_args runs. Datum's `infer_type`
@@ -98,6 +129,34 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `following_state=`, `occur_time=`) out of the data blob.
     // Unknown keys (including `value=`) stay in the data payload (da-53rz).
     let mut reserved = extract_reserved_columns(&mut extra_data)?;
+
+    // da-mjwq: `end_time=` alone on `start` closes the field's open block
+    // at E — the action becomes `end` (≡ `end field -t E`), so one alias
+    // `posture → start posture` serves both directions. On `switch` the
+    // state it names is the block being closed: ≡ `end field -t E -L=STATE`,
+    // and `datum check` reports a `last_state_mismatch` when history
+    // disagrees. A duration alongside keeps the verb: that is `-t E <dur>`.
+    let has_dur = reserved.dur.is_some() || args.duration.duration.is_some();
+    let action = if lifted.end.is_some()
+        && lifted.start.is_none()
+        && !has_dur
+        && matches!(action, Action::Start | Action::Switch)
+    {
+        if matches!(action, Action::Switch) {
+            if args.last_state.is_some() {
+                anyhow::bail!("end_time= on switch already asserts the prior state; drop -L");
+            }
+            // The slot's default `true` names nothing; a stated state is
+            // the assertion. Bare `-L` still records the prior state.
+            args.last_state = Some(match reserved.state.take() {
+                Some(s) if s != JsonValue::Bool(true) => switch_state_raw(&s),
+                _ => String::new(),
+            });
+        }
+        Action::Stop
+    } else {
+        action
+    };
 
     // -T/--no-timestamp: skip time-flag computation but keep the action's
     // own state-canonicalization rules (so `switch ... -T` still preserves
@@ -242,29 +301,66 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     let (time_start, time_end) = if args.time.omit_timestamp {
         (None, None)
     } else {
-        let base_time = build_time_with_uncertainty(&args)?;
+        let now = DatumTime::now().utc;
+        let base_time = build_time_from_flags(&args.time, now)?;
 
-        // Add/Note are the timeless shape-inferring verbs. They peek for
-        // `start_time=` / `end_time=` / `dur=` tokens in extra_data, strip
-        // them out, and derive the entry's shape + start/end from their
-        // combination. (da-r17h: `note` is `add` with auto-id, so it shares
-        // the identical timeless temporal resolution.)
-        let add_override: Option<AddTimestampResult> =
-            if matches!(action, Action::Add | Action::Note) {
-                // da-lxyw: did the user pin a time? Any clock/date-modifying flag
-                // (`-t`/`-d`/`-y*`/`-q*`/`-D`) opts a bare `add` back into having
-                // an `occur_time`; with none, the add stays timeless. `-z` alone
-                // only re-zones and `-T` is handled by the omit_timestamp branch.
-                let explicit_time = args.time.time.is_some()
-                    || args.time.date.is_some()
-                    || args.time.yesterday > 0
-                    || args.time.quick > 0
-                    || args.time.full_day;
-                let hints = extract_add_temporal_keys(&mut extra_data, &base_time)?;
-                Some(hints.resolve(&base_time, explicit_time))
-            } else {
-                None
-            };
+        // da-mjwq: the two lifted forms that are not a plain `-t` twin.
+        // `base_time` is the lifted anchor (`end_time=`, else `start_time=`):
+        //   start_time=S end_time=E   → the block S..E: occur_time = E, dur = E − S
+        //   start_time=S + a duration → the block S..S+dur: occur_time = S + dur
+        // `end_time=E` + a duration is `-t E <dur>`, and either key alone
+        // is `-t <key>` — both already what `base_time` says. Under the
+        // reference semantics (da-zwct) the duration PRECEDES occur_time,
+        // so `start posture start_time=4pm 15` is the block 16:00–16:15,
+        // the row `start posture -t 16:15 15` writes.
+        let lifted_span = match (&lifted.start, &lifted.end) {
+            (Some(s), Some(e)) => {
+                if has_dur {
+                    anyhow::bail!(
+                        "start_time= and end_time= already fix the duration; drop the dur"
+                    );
+                }
+                let start = build_time_from_flags(
+                    &TimeArgs {
+                        time: Some(s.clone()),
+                        ..args.time.clone()
+                    },
+                    now,
+                )?;
+                if base_time.utc < start.utc {
+                    anyhow::bail!("end_time={e} is before start_time={s}");
+                }
+                Some((Some(start), Some(base_time.clone())))
+            }
+            (Some(_), None) if has_dur => {
+                let dur = match reserved.dur.as_ref().map(|d| &d.span) {
+                    Some(DurSpan::Of(d)) => *d,
+                    Some(_) => anyhow::bail!(
+                        "start_time= needs a duration with a length to place the block's end"
+                    ),
+                    None => parse_duration(args.duration.duration.as_deref().unwrap_or(""))?,
+                };
+                let end = DatumTime {
+                    utc: base_time.utc + dur,
+                    ..base_time.clone()
+                };
+                Some((Some(base_time.clone()), Some(end)))
+            }
+            _ => None,
+        };
+
+        // da-lxyw: `add`/`note` are the timeless verbs. With no clock- or
+        // date-modifying flag (`-t`/`-d`/`-y*`/`-q*`/`-D` — a lifted key
+        // became a `-t` above) the entry carries no `occur_time`; that
+        // absence is what tells `add` from `occur`. `-z` alone only
+        // re-zones, and `-T` is the branch above. (da-r17h: `note` is `add`
+        // with an auto id, so it shares the rule.)
+        let add_timeless = matches!(action, Action::Add | Action::Note)
+            && args.time.time.is_none()
+            && args.time.date.is_none()
+            && args.time.yesterday == 0
+            && args.time.quick == 0
+            && !args.time.full_day;
 
         // --last-state on Stop: close the most recent open block, recording
         // its prior state as `last_state` metadata. Errors if there's nothing
@@ -287,8 +383,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             }
         }
 
-        let (time_start, time_end) = if let Some(result) = &add_override {
-            (result.start_time.clone(), result.end_time.clone())
+        let (time_start, time_end) = if let Some(span) = lifted_span {
+            span
+        } else if add_timeless {
+            (None, None)
         } else if args.duration.moment
             && matches!(action, Action::Switch)
             && reserved.following_state.is_some()
@@ -1306,94 +1404,60 @@ pub(crate) fn split_numeric_unit(s: &str) -> Option<(&str, &str)> {
     }
 }
 
-/// Temporal hints parsed out of extra_data during a `datum add` invocation.
-/// Present fields drive shape selection; `dur_is_null` is a sentinel for the
-/// explicit `dur=null` case (force-point).
+/// da-mjwq: `start_time=` / `end_time=` lifted off a log line — the raw
+/// tokens, taken out of `args.rest` BEFORE the data parser's `*time`
+/// suffix rule would coerce them to clock strings, so they reach the one
+/// time parser `-t` uses with their day, sign and `±` uncertainty intact.
 #[derive(Debug, Default)]
-struct AddTemporalHints {
-    start_time: Option<DatumTime>,
-    end_time: Option<DatumTime>,
-    dur: Option<chrono::Duration>,
-    dur_is_null: bool,
+struct LiftedTimes {
+    start: Option<String>,
+    end: Option<String>,
 }
 
-/// Shape + timestamp pair produced by resolving [`AddTemporalHints`].
-#[derive(Debug, Clone)]
-struct AddTimestampResult {
-    start_time: Option<DatumTime>,
-    end_time: Option<DatumTime>,
+impl LiftedTimes {
+    /// The key that names the entry's time and its raw value: `end_time=`
+    /// when given (a block's occur_time is its END, da-zwct), else
+    /// `start_time=`. `None` when neither key was on the line.
+    fn anchor(&self) -> Option<(&'static str, &str)> {
+        match (&self.start, &self.end) {
+            (_, Some(e)) => Some(("end_time", e)),
+            (Some(s), None) => Some(("start_time", s)),
+            (None, None) => None,
+        }
+    }
 }
 
-impl AddTemporalHints {
-    /// Apply the D3 decision table to the hints.
-    ///
-    /// Cases (shape | start | end):
-    /// - `dur=null`                         → point | `base`          | None
-    /// - no hints, explicit `-t`            → point | `base`          | None
-    /// - no hints, no explicit `-t`         → point | None            | None
-    /// - start only                         → ongoing | start          | None
-    /// - end only                           → block | `base`           | end
-    /// - start + end                        → block | start            | end
-    /// - dur only                           → block | `base-dur`       | base
-    /// - start + dur                        → block | start            | start+dur
-    /// - end + dur                          → block | end-dur          | end
-    ///
-    /// da-lxyw: `add` is the timeless verb. With no temporal hint at all
-    /// (`no hints` + `explicit_time == false`) the entry carries no
-    /// `occur_time` — the absence of a time is what distinguishes `add`
-    /// from `occur`. A bare `-t` (or `-d`/`-y`/`-q`/`-D`) opts back in.
-    fn resolve(&self, base_time: &DatumTime, explicit_time: bool) -> AddTimestampResult {
-        let mk = |utc: chrono::DateTime<chrono::Utc>| DatumTime {
-            utc,
-            ..base_time.clone()
-        };
-
-        if self.dur_is_null {
-            return AddTimestampResult {
-                start_time: Some(base_time.clone()),
-                end_time: None,
-            };
+/// Take every `start_time=<v>` / `end_time=<v>` token out of the
+/// positionals (the last of a repeated key wins) and return their raw
+/// values. Nothing of the keys stays behind for the data parser.
+fn lift_time_keys(rest: &mut Vec<String>) -> LiftedTimes {
+    let mut lifted = LiftedTimes::default();
+    rest.retain(|tok| match tok.split_once('=') {
+        Some(("start_time", v)) => {
+            lifted.start = Some(v.to_string());
+            false
         }
-
-        match (self.start_time.clone(), self.end_time.clone(), self.dur) {
-            (Some(s), Some(e), _) => AddTimestampResult {
-                start_time: Some(s),
-                end_time: Some(e),
-            },
-            (Some(s), None, Some(d)) => {
-                let end = mk(s.utc + d);
-                AddTimestampResult {
-                    start_time: Some(s),
-                    end_time: Some(end),
-                }
-            }
-            (Some(s), None, None) => AddTimestampResult {
-                start_time: Some(s),
-                end_time: None,
-            },
-            (None, Some(e), Some(d)) => {
-                let start = mk(e.utc - d);
-                AddTimestampResult {
-                    start_time: Some(start),
-                    end_time: Some(e),
-                }
-            }
-            (None, Some(e), None) => AddTimestampResult {
-                start_time: Some(base_time.clone()),
-                end_time: Some(e),
-            },
-            (None, None, Some(d)) => {
-                let start = mk(base_time.utc - d);
-                AddTimestampResult {
-                    start_time: Some(start),
-                    end_time: Some(base_time.clone()),
-                }
-            }
-            (None, None, None) => AddTimestampResult {
-                start_time: explicit_time.then(|| base_time.clone()),
-                end_time: None,
-            },
+        Some(("end_time", v)) => {
+            lifted.end = Some(v.to_string());
+            false
         }
+        _ => true,
+    });
+    lifted
+}
+
+/// The `-L=<v>` spelling of a switch state, so `switch f STATE end_time=E`
+/// can hand its state to the `--last-state` path as the user would have
+/// typed it: a string as itself, a concurrent array joined by `,`.
+fn switch_state_raw(state: &JsonValue) -> String {
+    match state {
+        JsonValue::String(s) => s.clone(),
+        JsonValue::Array(items) => items
+            .iter()
+            .map(switch_state_raw)
+            .collect::<Vec<_>>()
+            .join(","),
+        other => other.to_string(),
     }
 }
 
@@ -1524,41 +1588,6 @@ fn json_to_dur_string(v: &JsonValue) -> Result<String> {
     Ok(json_to_raw_token(v))
 }
 
-/// Extract and remove `start_time=`, `end_time=`, `dur=` keys from the
-/// extra_data payload for a `datum add` invocation. Returns the parsed
-/// values; leaves extra_data with only the remaining kv pairs. If extra_data
-/// becomes empty, it is reset to None.
-fn extract_add_temporal_keys(
-    extra_data: &mut Option<JsonValue>,
-    base_time: &DatumTime,
-) -> Result<AddTemporalHints> {
-    let mut hints = AddTemporalHints::default();
-
-    let obj = match extra_data.as_mut() {
-        Some(JsonValue::Object(m)) => m,
-        _ => return Ok(hints),
-    };
-
-    if let Some(v) = obj.remove("start_time") {
-        hints.start_time = Some(parse_add_time_value(&v, base_time)?);
-    }
-    if let Some(v) = obj.remove("end_time") {
-        hints.end_time = Some(parse_add_time_value(&v, base_time)?);
-    }
-    if let Some(v) = obj.remove("dur") {
-        if v.is_null() || matches!(v.as_str(), Some("null")) {
-            hints.dur_is_null = true;
-        } else {
-            hints.dur = Some(parse_duration(&json_to_raw_token(&v))?);
-        }
-    }
-
-    if obj.is_empty() {
-        *extra_data = None;
-    }
-    Ok(hints)
-}
-
 /// Undo `parse_value_token` for temporal keys: reconstruct the user's raw
 /// token string from its parsed JSON form. Handles unit-annotated objects
 /// (`{"v": 5, "u": "m"}` ← `5m`), numbers, and bare strings.
@@ -1588,16 +1617,16 @@ fn json_to_raw_token(v: &JsonValue) -> String {
     v.to_string()
 }
 
-/// da-5ns.4: parse the reserved `occur_time=` payload from `dm update`. Same
-/// grammar as `start_time=` / `end_time=`: "now", `±N{m,h,s}` offsets, or
-/// RFC3339 timestamps. Exposed crate-private so [`update_core::apply_mutation`]
+/// da-5ns.4: parse the reserved `occur_time=` payload from `dm update`:
+/// "now", `±N{m,h,s}` offsets, clock times, or RFC3339 timestamps. Exposed crate-private so [`update_core::apply_mutation`]
 /// can reuse the parser.
 pub(crate) fn parse_reserved_occur_time(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
     parse_add_time_value(v, base)
 }
 
-/// Parse a `start_time=…` or `end_time=…` value token against a base time.
-/// Accepts:
+/// Parse an `occur_time=…` value token against a base time. (da-mjwq: the
+/// `start_time=` / `end_time=` keys no longer come through here — they are
+/// lifted raw and take the `-t` path, see [`lift_time_keys`].) Accepts:
 ///  * "now" → `base_time`
 ///  * RFC3339 timestamps → absolute
 ///  * clock-time forms (`11:00`, `1:32`, `8`, `5pm`, `9:15am`): parsed via
@@ -1713,7 +1742,16 @@ fn check_no_time_flags(args: &LogArgs, has_dur: bool) -> Result<()> {
 }
 
 pub(crate) fn build_time_with_uncertainty(args: &LogArgs) -> Result<DatumTime> {
-    let tz_name = match args.time.timezone.as_deref() {
+    build_time_from_flags(&args.time, DatumTime::now().utc)
+}
+
+/// The `-t` path proper: the timing flag group resolved against `now`.
+/// da-mjwq: a lifted `start_time=` / `end_time=` goes through here with its
+/// raw value in the `-t` slot, so the keys and the flag cannot disagree —
+/// and both keys of a pair against the same `now`, so `-20` and `-5` are
+/// fifteen minutes apart exactly.
+fn build_time_from_flags(time: &TimeArgs, now: chrono::DateTime<chrono::Utc>) -> Result<DatumTime> {
+    let tz_name = match time.timezone.as_deref() {
         Some(spec) => Some(
             resolve_timezone(spec)
                 .map_err(|e| anyhow::anyhow!("Invalid -z/--timezone value '{spec}': {e}"))?,
@@ -1722,22 +1760,22 @@ pub(crate) fn build_time_with_uncertainty(args: &LogArgs) -> Result<DatumTime> {
     };
 
     let mut builder = TimeBuilder::now()
-        .with_yesterday_count(args.time.yesterday as i64)
-        .with_quick_count(args.time.quick as i64)
-        .with_quick_uncertainty(args.time.quick)
+        .with_yesterday_count(time.yesterday as i64)
+        .with_quick_count(time.quick as i64)
+        .with_quick_uncertainty(time.quick)
         .with_timezone(tz_name)
-        .with_full_day(args.time.full_day);
+        .with_full_day(time.full_day);
 
-    if let Some(d) = &args.time.date {
+    if let Some(d) = &time.date {
         let da = parse_date(d, TimeCtx::now())?;
         builder = builder.with_date_arg(da);
     }
-    if let Some(t) = &args.time.time {
+    if let Some(t) = &time.time {
         let ta = parse_time(t, TimeCtx::now())?;
         builder = builder.with_time_arg(ta);
     }
 
-    Ok(builder.build_with_uncertainty())
+    Ok(builder.build_with_uncertainty_now(now))
 }
 
 #[cfg(test)]

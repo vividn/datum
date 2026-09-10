@@ -92,6 +92,12 @@ CLI parses `weight=75.2kg` → annotated form automatically.
   removed it because the three spellings disagreed about which side of
   `-t` the block fell on; `crates/datum-cli/tests/dur_flag_removed.rs`
   keeps it gone, and the two survivors now agree with the reference
+- `start_time=` / `end_time=` on `add`/`note`/`start`/`switch`/`occur` are
+  lifted onto `occur_time`/`dur` (da-mjwq), parsed exactly as `-t` is: the
+  pair is the block between them, `start_time=S` + a duration ends at
+  `S + dur`, `end_time=E` alone on `start` becomes `end -t E` (on `switch
+  STATE`, `end -t E -L=STATE`). Never combined with `-t`; nothing of the
+  keys stays in `data`
 
 ### Syntax variants (both must work)
 - `datum switch mood happy`  ← verb-first

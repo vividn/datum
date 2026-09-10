@@ -1,7 +1,8 @@
 //! `datum add <field>` — freeform entry; infer shape from keys.
 //!
 //! `add` infers occur/start/stop/switch semantics from the presence of
-//! `start=`, `end=`, `dur=`, or `state=` keys (see D3). Under the hood it
+//! `start_time=`, `end_time=`, `dur=`, or `state=` keys (see D3; the
+//! time keys are lifted through the `-t` path, da-mjwq). Under the hood it
 //! routes through the shared `log_entry` dispatcher.
 
 use anyhow::Result;
