@@ -197,8 +197,10 @@ function countRuns(page) {
 
 async function ready(page) {
 	// The REPL input is disabled until `initDb()` resolves, so it is the
-	// app's own statement that the database is open.
-	await page.locator('.repl input:not([disabled])').waitFor();
+	// app's own statement that the database is open. The first one: a
+	// layout may hold two REPLs (da-jdop), and one enabled prompt is the
+	// statement.
+	await page.locator('.repl input:not([disabled])').first().waitFor();
 	await page.waitForFunction(() => typeof window.datum?.run === 'function');
 	// Every pane is a command that runs on mount ($lib/panes.ts) and shows
 	// `…` until it answers. Waiting them out means a command a test runs
@@ -284,11 +286,14 @@ function app(page, errors, query) {
 		 * What one of the day frame's panes is showing, by its title.
 		 *
 		 * Each pane is one datum command rendered as text ($lib/panes.ts),
-		 * so this is the command's own output as the reader sees it.
+		 * so this is the command's own output as the reader sees it. A
+		 * pane's title is its `data-title` (da-jdop): the h2 when it has one
+		 * tab, the active tab's label when it has several — so a pane
+		 * behind another tab is not "showing" anything, and is not found.
 		 */
 		paneText: (title) =>
 			page
-				.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
+				.locator(`section.pane[data-title="${title}"]`)
 				.locator('.body')
 				.innerText(),
 
@@ -302,7 +307,7 @@ function app(page, errors, query) {
 		 */
 		paneTable: (title) =>
 			page
-				.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
+				.locator(`section.pane[data-title="${title}"]`)
 				.evaluate((pane) => ({
 					headers: [...pane.querySelectorAll('thead th')].map((th) => th.textContent),
 					keys: [...pane.querySelectorAll('thead th')].map((th) => th.dataset.key),
@@ -321,7 +326,7 @@ function app(page, errors, query) {
 		 */
 		paneCellColors: (title, key) =>
 			page
-				.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
+				.locator(`section.pane[data-title="${title}"]`)
 				.evaluate(
 					(pane, column) =>
 						[...pane.querySelectorAll(`tbody td[data-key="${column}"]`)].map((td) =>
@@ -345,7 +350,7 @@ function app(page, errors, query) {
 		 */
 		async paneSvg(title) {
 			const src = await page
-				.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
+				.locator(`section.pane[data-title="${title}"]`)
 				.locator('img.svg')
 				.last()
 				.getAttribute('src');

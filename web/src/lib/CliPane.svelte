@@ -113,7 +113,7 @@
 	{#if manual}
 		<p class="quiet">
 			this command writes — it runs only when you press
-			<button class="play" title="run it" on:click={press}>▶</button>
+			<button type="button" class="play" title="run it" aria-label="run it" on:click={press}>▶</button>
 		</p>
 	{/if}
 	{#if spec.view === 'tail-table'}

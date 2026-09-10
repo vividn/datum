@@ -136,6 +136,20 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   down and logs an entry, so the precache cannot silently lose a file
   again (da-d1l9).
 - Background Sync API queues sync when offline
+- The page is a LAYOUT TREE, not a grid (da-jdop, `web/src/lib/layout/`):
+  panes hold widgets or splits of panes, each pane has tabs, a `…` menu
+  (add tab, split, close, bar edge/align) and draggable borders. The
+  contract is `types.ts`; the pure operations and the canon (no
+  single-child split, no empty pane, ratios sum to 1) are `tree.ts`
+  (`tests/tree.test.mjs`, node); the widget kinds and their components,
+  floors and settings are `registry.ts`; today's page as data is
+  `defaults.ts` (a desktop and a phone tree); the one live store is
+  `current.ts` (`layout` + `apply`), which the header's save/restore
+  controls fill from the draft or the saved layout (da-wpgy). `engine.ts`
+  owns the epoch and routes a widget-bar press through whichever REPL is
+  mounted. `Pane.svelte` inside a frame renders body-only and hands its
+  title slot and alarm up to `PaneFrame.svelte`. Tests find a pane by its
+  `data-title`; the old grid's area names live on as classes of the cells.
 - The dayview strip is a stack of days, not one band (da-cgyh): today is
   pinned at the bottom and the days before it are stacked above, as many
   as the strip's box holds (da-zb0d: the height comes from the container,

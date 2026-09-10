@@ -101,7 +101,7 @@ const metrics = ({ page }) =>
 	page.locator('.strip').evaluate((el) => {
 		const style = getComputedStyle(el);
 		const px = (name) => parseFloat(style.getPropertyValue(name));
-		const box = document.querySelector('.dayview').getBoundingClientRect().height;
+		const box = document.querySelector('.cell.dayview').getBoundingClientRect().height;
 		return {
 			band: px('--band'),
 			today: px('--today'),
@@ -112,10 +112,16 @@ const metrics = ({ page }) =>
 		};
 	});
 
-/** Give the strip's box `px` of height, as the page (and later a pane) does. */
+/**
+ * Give the strip's box `px` of height, as its pane does.
+ *
+ * The box is the pane's cell in the layout tree (da-jdop): a flex item
+ * whose size is its share of the split, so a height alone is ignored
+ * and the basis is what has to be set.
+ */
 const setBox = ({ page }, px) =>
 	page.evaluate((h) => {
-		document.querySelector('.dayview').style.height = `${h}px`;
+		document.querySelector('.cell.dayview').style.flex = `0 0 ${h}px`;
 	}, px);
 
 /**
@@ -162,9 +168,42 @@ const waitForDays = ({ page }, depth) =>
 const valueOf = async ({ page }) =>
 	Number(await page.locator('button.day-grip').getAttribute('aria-valuenow'));
 
-/** What the strip's owner — the page, for now — last heard from it. */
-const heard = ({ page }) =>
-	page.locator('.dayview').evaluate((el) => Number(el.dataset.dayHeight));
+/**
+ * In the page: the strip widget's settings in the live tree — what the
+ * strip's owner, the layout (da-jdop), last heard from it.
+ */
+const stripSettings = () => {
+	const walk = (pane) => {
+		for (const tab of pane.tabs) {
+			if ('children' in tab.content) {
+				const hit = tab.content.children.map(walk).find(Boolean);
+				if (hit) return hit;
+			} else if (tab.content.kind === 'daystrip') return tab.content.settings;
+		}
+	};
+	return walk(window.datum.layout.current().root);
+};
+
+const heard = ({ page }) => page.evaluate(`(${stripSettings})().dayHeight`);
+
+/** Wait until the tree has heard `want`. */
+const heardIs = ({ page }, want) => page.waitForFunction(`(${stripSettings})().dayHeight === ${want}`);
+
+/** Tell the strip's owner a day height, as a saved layout would. */
+const say = ({ page }, dayHeight) =>
+	page.evaluate(
+		`window.datum.layout.apply((tree) => {
+			const copy = structuredClone(tree);
+			const walk = (pane) => {
+				for (const tab of pane.tabs) {
+					if ('children' in tab.content) tab.content.children.forEach(walk);
+					else if (tab.content.kind === 'daystrip') tab.content.settings = { ...tab.content.settings, dayHeight: ${dayHeight} };
+				}
+			};
+			walk(copy.root);
+			return copy;
+		})`
+	);
 
 /**
  * Wait until each named band has been re-drawn at the height it is due.
@@ -206,8 +245,17 @@ const stackScroll = ({ page }) =>
 /** Whether the jagged line is on screen. */
 const jagged = ({ page }) => page.locator('button.jagged').count();
 
-/** Every key in the page's store, so a write anywhere in it shows. */
-const storeKeys = ({ page }) => page.evaluate(() => Object.keys(localStorage).sort());
+/**
+ * Every key in the page's store, so a write anywhere in it shows — save
+ * the layout's own draft, which is the tree remembering what the strip
+ * told it (da-wpgy), and not the strip writing.
+ */
+const storeKeys = ({ page }) =>
+	page.evaluate(() =>
+		Object.keys(localStorage)
+			.filter((key) => !key.startsWith('datum.layout.'))
+			.sort()
+	);
 
 describe('the day strip', () => {
 	test('the box says how many days: today, and the past that fits above it', async () => {
@@ -275,11 +323,15 @@ describe('the day strip', () => {
 			assert.equal(await heard(app), fallback);
 		});
 
-		await withApp(
-			async (app) => {
-				// The owner said 120: the handle says so, and every band is
-				// drawn in the box that height gives it — the stacked ones at
-				// the band box, today's at the band box plus the hour axis.
+		await withApp(async (app) => {
+				// The owner said 120 — through the tree, as a saved layout
+				// does: the handle says so, and every band is drawn in the box
+				// that height gives it — the stacked ones at the band box,
+				// today's at the band box plus the hour axis.
+				await say(app, 120);
+				await app.page.waitForFunction(
+					() => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === 120
+				);
 				assert.equal(await valueOf(app), 120);
 				await sizeFor(app, 2);
 				const m = await metrics(app);
@@ -294,9 +346,7 @@ describe('the day strip', () => {
 				const grow = 30;
 				await dragBy(app, 'button.day-grip', grow);
 				assert.equal(await valueOf(app), 120 + grow);
-				await app.page.waitForFunction((want) => {
-					return Number(document.querySelector('.dayview').dataset.dayHeight) === want;
-				}, 120 + grow);
+				await heardIs(app, 120 + grow);
 				// And every band is re-drawn, not stretched: the picture
 				// datum wrote is the new size. Waited for, because the render
 				// happens on the drop.
@@ -309,15 +359,10 @@ describe('the day strip', () => {
 				// ↻ says the default, to the owner as well.
 				await app.page.locator('button.reset').click();
 				assert.equal(await valueOf(app), fallback);
-				await app.page.waitForFunction(
-					(want) => Number(document.querySelector('.dayview').dataset.dayHeight) === want,
-					fallback
-				);
+				await heardIs(app, fallback);
 				const at = await metrics(app);
 				await waitForHeights(app, { 1: at.band, 0: at.today });
-			},
-			{ query: '?dayHeight=120' }
-		);
+		});
 	});
 
 	test('the margin handle re-draws every day at the new height', async () => {
@@ -403,10 +448,7 @@ describe('the day strip', () => {
 			const m = await metrics(app);
 			await waitForHeights(app, { 0: m.today });
 			await app.page.locator('button.reset').click();
-			await app.page.waitForFunction(
-				(want) => Number(document.querySelector('.dayview').dataset.dayHeight) === want,
-				fallback
-			);
+			await heardIs(app, fallback);
 			await app.page.waitForTimeout(300);
 
 			assert.deepEqual(await storeKeys(app), before, 'the strip wrote to localStorage');

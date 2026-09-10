@@ -201,3 +201,96 @@ describe('by keyboard', () => {
 		});
 	});
 });
+
+// The layout engine's controls (da-jdop): every pane's `…` menu, every
+// item in it, and every draggable border between panes must be reachable
+// by keyboard — a Tab walk from the top of the page lands on each of
+// them, the menu opens on Enter with its first item focused, the arrows
+// walk the items and every one of them is on screen, and an arrow on a
+// focused border moves it.
+describe('the layout engine, by keyboard', () => {
+	/** Tab from the top until nothing new is reached; the elements landed on. */
+	async function tabWalk(page) {
+		await page.evaluate(() => document.body.focus());
+		const seen = new Set();
+		for (let i = 0; i < 80; i++) {
+			await page.keyboard.press('Tab');
+			const id = await page.evaluate(() => {
+				const el = document.activeElement;
+				if (!el || el === document.body) return null;
+				if (!el.dataset.walk) el.dataset.walk = `walk-${Math.random().toString(36).slice(2, 8)}`;
+				return el.dataset.walk;
+			});
+			if (id === null || seen.has(id)) break;
+			seen.add(id);
+		}
+		return seen;
+	}
+
+	test('a Tab walk reaches every … button and every border', async () => {
+		await withApp(async ({ page }) => {
+			const reached = await tabWalk(page);
+			const controls = await page.evaluate(() =>
+				[...document.querySelectorAll('button.more, [role="separator"]')].map((el) => ({
+					walk: el.dataset.walk ?? null,
+					what: el.matches('button.more') ? `menu of ${el.closest('section').dataset.title}` : 'border'
+				}))
+			);
+			assert.ok(controls.some((c) => c.what === 'border'), 'the default layout has no draggable border');
+			for (const control of controls) {
+				assert.ok(control.walk && reached.has(control.walk), `${control.what} is not in the Tab order`);
+			}
+		}, { viewport: { width: 1280, height: 900 } });
+	});
+
+	test('every menu item is on screen and reachable by the arrows', async () => {
+		await withApp(async ({ page }) => {
+			const menus = await page.locator('button.more').count();
+			for (let m = 0; m < menus; m++) {
+				await page.locator('button.more').nth(m).focus();
+				await page.keyboard.press('Enter');
+				const items = page.locator('[role="menu"] button');
+				const count = await items.count();
+				const visited = new Set();
+				for (let i = 0; i < count; i++) {
+					const label = await page.evaluate(() => {
+						const el = document.activeElement;
+						const { top, bottom, left, right } = el.getBoundingClientRect();
+						const ok = top >= 0 && left >= 0 && bottom <= innerHeight && right <= innerWidth;
+						return { text: el.textContent.trim(), role: el.getAttribute('role'), ok, disabled: el.disabled };
+					});
+					assert.ok(label.role?.startsWith('menuitem'), `focus left the menu at ${label.text}`);
+					assert.ok(label.ok, `${label.text} is off-screen`);
+					visited.add(label.text);
+					await page.keyboard.press('ArrowDown');
+				}
+				const enabled = await items.evaluateAll((all) => all.filter((b) => !b.disabled).length);
+				assert.equal(visited.size, enabled, `menu ${m}: the arrows visited ${visited.size} of ${enabled} items`);
+				await page.keyboard.press('Escape');
+				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+				assert.ok(
+					await page.locator('button.more').nth(m).evaluate((el) => el === document.activeElement),
+					'Escape did not hand focus back to the button'
+				);
+			}
+		}, { viewport: { width: 1280, height: 900 } });
+	});
+
+	test('an arrow on a focused border moves it by 2%', async () => {
+		await withApp(async ({ page }) => {
+			const border = page.locator('.split.row > [role="separator"]');
+			await border.focus();
+			const was = Number(await border.getAttribute('aria-valuenow'));
+			await page.keyboard.press('ArrowRight');
+			await page.waitForFunction(
+				(w) => Number(document.querySelector('.split.row > [role="separator"]').getAttribute('aria-valuenow')) === w + 2,
+				was
+			);
+			await page.keyboard.press('ArrowLeft');
+			await page.waitForFunction(
+				(w) => Number(document.querySelector('.split.row > [role="separator"]').getAttribute('aria-valuenow')) === w,
+				was
+			);
+		}, { viewport: { width: 1280, height: 900 } });
+	});
+});

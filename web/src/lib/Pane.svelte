@@ -9,8 +9,20 @@
 
 	The `footer` slot stays put below the scroll — that is where the REPL
 	hangs its prompt line so output can pile up above it.
+
+	Inside the layout engine (da-jdop) the frame is drawn by
+	`layout/PaneFrame.svelte` — the title bar, the tabs, the `…` menu — and
+	this component is asked for its body and footer only: it finds the
+	frame's context and renders as `display: contents`, so the body scrolls
+	inside the frame's content box exactly as it scrolled inside its own.
+	The alarm goes up to the frame the same way. A widget that draws itself
+	through `Pane` (the REPL, a CLI pane, the day strip) needs no change to
+	live in a pane of the dashboard.
 -->
 <script lang="ts">
+	import { getContext } from 'svelte';
+	import type { Writable } from 'svelte/store';
+
 	export let title: string;
 	/**
 	 * Draw this pane as unsafe to type into. Used when the database is in
@@ -33,15 +45,65 @@
 	export function scrollToBottom(): void {
 		if (body) body.scrollTop = body.scrollHeight;
 	}
+
+	/** The layout engine's frame around this pane, when there is one. */
+	const frame = getContext<Frame | undefined>('layout-frame');
+	$: frame?.alarm.set(alarm);
+
+	/** What `layout/PaneFrame.svelte` puts in the context. */
+	interface Frame {
+		alarm: Writable<boolean>;
+		/** The frame's h2, once it exists; the title slot is moved into it. */
+		titleHost: Writable<HTMLElement | null>;
+		/** Told when something has been moved in, so the frame hides its own. */
+		hosted: Writable<boolean>;
+	}
+
+	function portal(node: HTMLElement, frame: Frame) {
+		frame.hosted.set(true);
+		const unsubscribe = frame.titleHost.subscribe((host) => {
+			if (host && node.parentElement !== host) host.appendChild(node);
+		});
+		return {
+			destroy() {
+				unsubscribe();
+				node.remove();
+				frame.hosted.set(false);
+			}
+		};
+	}
 </script>
 
-<section class="pane" class:alarm>
-	<h2><slot name="title">{title}</slot></h2>
+<!--
+	Inside a frame the title slot cannot be rendered here — the frame draws
+	the bar — so it is rendered and then MOVED into the frame's h2 (the
+	`portal` action), where the command pane's ✎ and its editor land in the
+	title bar of a dashboard pane exactly as they did in the grid's.
+-->
+<svelte:element
+	this={frame ? 'div' : 'section'}
+	class:pane={!frame}
+	class:framed={!!frame}
+	class:alarm={!frame && alarm}
+>
+	{#if !frame}
+		<h2><slot name="title">{title}</slot></h2>
+	{:else if $$slots.title}
+		<span class="hosted-title" use:portal={frame}><slot name="title" /></span>
+	{/if}
 	<div class="body" bind:this={body}><slot /></div>
 	<slot name="footer" />
-</section>
+</svelte:element>
 
 <style>
+	.framed {
+		display: contents;
+	}
+
+	.hosted-title {
+		display: contents;
+	}
+
 	/* Orange rather than red: this is "your data is not safe yet", which is a
 	   warning about the future, not a report of a failure that already
 	   happened. It has to be visible at a glance from across a desk. */

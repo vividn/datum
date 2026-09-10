@@ -11,33 +11,14 @@
 -->
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { writable, type Writable } from 'svelte/store';
 	import { onExternalChange } from '$lib/changes.js';
 	import { initDb } from '$lib/db.js';
 	import { loadLayout, restore, saveAs, saveLayout, versions } from './store.js';
 	import { clearDraft, currentName, isModified, loadDraft, saveDraft, setCurrentName } from './draft.js';
-	import { LAYOUT_VERSION, type Layout } from './types.js';
+	import { fallbackLayout as fallback, layout, loaded } from './current.js';
+	import { normalize } from './tree.js';
 
-	/** What a layout with no save starts as. TODO(da-jdop): the engine's default. */
-	function fallback(name: string): Layout {
-		return {
-			version: LAYOUT_VERSION,
-			name,
-			root: {
-				id: 'root',
-				tabs: [{ id: 'tab', content: { id: 'widget', kind: 'daystrip', settings: {} } }],
-				active: 0,
-				bar: { edge: 'top', align: 'start' }
-			}
-		};
-	}
 
-	/**
-	 * The live tree. TODO(da-jdop): the engine (E1) owns it — pass its
-	 * `layout` store from $lib/layout/current.ts once it lands. Until then
-	 * the controls hold a stub that only a draft, or a save, changes.
-	 */
-	export let layout: Writable<Layout> = writable(fallback(currentName()));
 
 	/** What Restore brings back: the last save, or the fallback when none. */
 	let saved = $layout;
@@ -58,8 +39,11 @@
 		await initDb().catch(() => {});
 		const name = currentName();
 		saved = (await loadLayout(name).catch(() => null)) ?? fallback(name);
-		layout.set(loadDraft(name) ?? saved);
+		// The engine's canon over whatever was stored (tree.ts): a draft an
+		// older build wrote is drawn, not thrown.
+		layout.set(normalize(loadDraft(name) ?? saved));
 		ready = true;
+		loaded.set(true);
 	});
 
 	// Another tab saved: the baseline moves, and a tree nobody modified here

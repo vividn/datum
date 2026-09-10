@@ -87,6 +87,22 @@ async function logADay(app) {
 	await app.idle();
 }
 
+/**
+ * Bring a pane to the front, where it is a tab.
+ *
+ * The phone's default layout ($lib/layout/defaults.ts) puts nowview
+ * behind tail as two tabs of one pane, so a phone measures nowview by
+ * showing it first. On a desktop there is no such tab and this is a
+ * no-op. A pane's title is its `data-title` (the h2 with one tab, the
+ * active tab's label with more) — which is what the readers below use.
+ */
+async function show(app, title) {
+	const tab = app.page.locator('[role="tab"]', { hasText: title });
+	if ((await tab.count()) === 0) return;
+	await tab.click();
+	await app.page.locator(`section.pane[data-title="${title}"] img.svg`).waitFor();
+}
+
 /** Every pane's box against what is inside it, by title. */
 function boxes({ page }) {
 	return page.evaluate(() =>
@@ -94,7 +110,7 @@ function boxes({ page }) {
 			[...document.querySelectorAll('section.pane')].map((pane) => {
 				const body = pane.querySelector('.body');
 				return [
-					pane.querySelector('h2').textContent.trim(),
+					pane.dataset.title,
 					{
 						scrollWidth: body.scrollWidth,
 						clientWidth: body.clientWidth,
@@ -148,8 +164,9 @@ describe('a pane', () => {
 			await withApp(
 				async (app) => {
 					await logADay(app);
-					const seen = await boxes(app);
 					for (const title of DRAWN) {
+						await show(app, title);
+						const seen = await boxes(app);
 						const box = seen[title];
 						const said = `${title} on ${name}: ${box.scrollWidth}x${box.scrollHeight} of content in ${box.clientWidth}x${box.clientHeight}`;
 						assert.ok(box.scrollHeight <= box.clientHeight, `scrolls down — ${said}`);
@@ -189,6 +206,7 @@ describe('a pane', () => {
 			await withApp(
 				async (app) => {
 					await logADay(app);
+					await show(app, 'nowview');
 					const sizes = await app.page.evaluate(() =>
 						Object.fromEntries(
 							[...document.querySelectorAll('section.pane')]
@@ -196,7 +214,7 @@ describe('a pane', () => {
 								.map((p) => {
 									const img = p.querySelector('img.svg');
 									return [
-										p.querySelector('h2').textContent.trim(),
+										p.dataset.title,
 										{ natural: img.naturalWidth, shown: img.getBoundingClientRect().width }
 									];
 								})
@@ -232,6 +250,7 @@ describe('a pane', () => {
 			await withApp(
 				async (app) => {
 					await logADay(app);
+					await show(app, 'nowview');
 					const shown = await drawn(app, 'nowview');
 					assert.ok(shown.ticks.length >= 1, `nowview on ${name} drew no axis`);
 					// Counted, not compared: the three screens are three runs
@@ -334,7 +353,7 @@ describe('a pane', () => {
 							[...document.querySelectorAll('section.pane')]
 								.filter((p) => p.querySelector('img.svg'))
 								.map((p) => [
-									p.querySelector('h2').textContent.trim(),
+									p.dataset.title,
 									p.querySelector('img.svg').naturalWidth
 								])
 						)
@@ -348,7 +367,7 @@ describe('a pane', () => {
 							.every(
 								(p) =>
 									p.querySelector('img.svg').naturalWidth !==
-									was[p.querySelector('h2').textContent.trim()]
+									was[p.dataset.title]
 							),
 					before
 				);
@@ -407,7 +426,7 @@ describe('the tail pane', () => {
 
 					const box = await app.page.evaluate(() => {
 						const body = [...document.querySelectorAll('section.pane')]
-							.find((p) => p.querySelector('h2').textContent.trim() === 'tail')
+							.find((p) => p.dataset.title === 'tail')
 							.querySelector('.body');
 						return { scrollWidth: body.scrollWidth, clientWidth: body.clientWidth };
 					});

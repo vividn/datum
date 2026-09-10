@@ -80,8 +80,10 @@
 		{#if draft === null}
 			{spec.title}
 			<button
+				type="button"
 				class="edit"
 				title="edit the command"
+				aria-label="edit the command"
 				bind:this={edit}
 				on:click={() => (draft = line)}
 				>✎</button
