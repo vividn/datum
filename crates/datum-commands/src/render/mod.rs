@@ -2129,4 +2129,36 @@ mod tests {
             }
         }
     }
+
+    /// da-w149: the tail pane's state cell for a timeless note naming a
+    /// state is `¢` and the label in the state's colour as fg — the colour
+    /// the pane reports as `state_color` — with no bg chip.
+    #[test]
+    fn a_timeless_state_notes_cell_is_its_state_colour_as_fg() {
+        let _color = colors::ColorOverride::set(true);
+        let state = serde_json::json!("outside");
+        let mut entry = sample_entry("environment", Verb::Point, Some(state.clone()));
+        entry.occur_time = None;
+        entry.dur = Some(datum_core::dur::Dur::moment());
+        let columns = table_columns_with(
+            std::slice::from_ref(&entry),
+            None,
+            None,
+            None,
+            &TableArgs::default(),
+        );
+        let cell = &columns.iter().find(|c| c.key == "state").unwrap().cells[0];
+        let fg = colors::state_value_rgb(&state, "environment", None)
+            .unwrap()
+            .fg();
+        assert_eq!(
+            *cell,
+            format!(
+                "{}{}",
+                colors::paint(&fg, "¢"),
+                colors::paint(&fg, "outside")
+            )
+        );
+        assert!(!cell.contains("\x1b[48;2;"), "{cell:?}");
+    }
 }

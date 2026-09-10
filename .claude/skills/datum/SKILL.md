@@ -44,10 +44,12 @@ how the entry is identified:
 `-T` / `--no-timestamp` converts any occurred verb into **note-data**: the data
 still lands, but no occurrence is logged and the entry gets a create_time id.
 Canonical use — *chore-shirk*: advance a recurring chore's schedule without
-claiming you did it.
+claiming you did it. On a state verb it is a note *about* a state: the state is
+kept, `dur=MOMENT`, and nothing starts or ends. `-T` with a duration errors.
 
 ```bash
 datum occur chore -T next_date=+3   # bump the next-due date; logs no occurrence
+datum switch environment outside -T # a note about "outside"; the field's state is unchanged
 ```
 
 `-T` (drop the time entirely → timeless) is distinct from `-D` / `--full-day`

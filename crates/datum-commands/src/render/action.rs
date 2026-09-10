@@ -296,7 +296,7 @@ pub fn format_state_group(
     // distinguish timeless points; we gate it here before consulting the
     // verb-keyed renderer split.
     if entry.occur_time.is_none() && !has_state_badge(entry.verb) {
-        return Some(paint(&field_rgb(&entry.field, spec).fg(), NON_OCCUR));
+        return Some(render_timeless(entry, spec));
     }
     // State-bearing verbs render the `[LEAD][cell][TRAIL]` group; the
     // lone non-stateful verb (`Verb::Point`) renders a bare dot. Adding
@@ -309,6 +309,19 @@ pub fn format_state_group(
 }
 
 // ─── Per-verb renderers ──────────────────────────────────────────────────────
+
+/// A timeless point — note-data (`occur f -T`, `switch f s -T`): `¢`, then
+/// the state it names, if any, as the moment-state label. Both are painted
+/// in the state's colour as fg (the field's when the state paints none, or
+/// when there is no state); no LEAD/TRAIL, since nothing transitions (da-w149).
+fn render_timeless(entry: &Entry, spec: Option<&FieldSpec>) -> String {
+    let field_color = || field_rgb(&entry.field, spec);
+    let Some(state) = entry.state.as_ref() else {
+        return paint(&field_color().fg(), NON_OCCUR);
+    };
+    let color = state_value_rgb(state, &entry.field, spec).unwrap_or_else(field_color);
+    paint(&color.fg(), NON_OCCUR) + &render_point_state_label(state, &entry.field, spec)
+}
 
 fn render_occur(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
     let mut out = String::new();

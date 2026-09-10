@@ -2,14 +2,17 @@
 //!
 //! Any log verb (`occur`, `start`, `stop`/`end`, `switch`, `add`/`note`) +
 //! `-T` produces a timeless entry: `occur_time` is NULL and the slug is
-//! `field:c<create_time>` (da-r17h — was `:unset`), no duration is recorded,
-//! and the verb is whatever derive_verb returns for the action's canonical
-//! (state, dur, fs) triple. Distinct create_times keep many-per-field
-//! timeless entries apart. Time-specifying flags mixed with `-T` error out.
+//! `field:c<create_time>` (da-r17h — was `:unset`), and the verb is whatever
+//! derive_verb returns for the action's canonical (state, dur, fs) triple. A
+//! state-bearing verb stamps `dur=MOMENT`, so it is a point naming a state,
+//! not a transition (da-w149). Distinct create_times keep many-per-field
+//! timeless entries apart. Time-specifying flags or a duration mixed with
+//! `-T` error out.
 
 mod common;
 
 use common::run_cli;
+use datum_core::dur::Dur;
 use datum_core::test_util::fresh_db;
 use datum_core::{assert_count, assert_entry_matches};
 
@@ -47,47 +50,47 @@ fn occur_minus_t_is_timeless_point() {
 }
 
 #[test]
-fn start_minus_t_is_timeless_switch() {
+fn start_minus_t_is_timeless_point() {
     let db = fresh_db();
     run_cli(&["start", "sleep", "-T"], &db).expect("start -T");
     let e = &db.entries_for_field("sleep", None).unwrap()[0];
-    // start -T: action canonicalizes state=true, dur=None → Switch.
-    assert_entry_matches!(e, verb: "switch");
+    // start -T: action canonicalizes state=true, dur=MOMENT → Point.
+    assert_entry_matches!(e, verb: "point", state: true);
     assert!(
         slug_is_timeless(e.slug.as_str()),
         "timeless slug: {}",
         e.slug
     );
-    assert!(e.dur.is_none());
+    assert_eq!(e.dur, Some(Dur::moment()));
 }
 
 #[test]
-fn stop_minus_t_is_timeless_switch() {
+fn stop_minus_t_is_timeless_point() {
     let db = fresh_db();
     run_cli(&["stop", "task", "-T"], &db).expect("stop -T");
     let e = &db.entries_for_field("task", None).unwrap()[0];
-    // stop -T: action canonicalizes state=false, dur=None → Switch.
-    assert_entry_matches!(e, verb: "switch");
+    // stop -T: action canonicalizes state=false, dur=MOMENT → Point.
+    assert_entry_matches!(e, verb: "point", state: false);
     assert!(
         slug_is_timeless(e.slug.as_str()),
         "timeless slug: {}",
         e.slug
     );
-    assert!(e.dur.is_none());
+    assert_eq!(e.dur, Some(Dur::moment()));
 }
 
 #[test]
-fn end_minus_t_is_timeless_switch() {
+fn end_minus_t_is_timeless_point() {
     let db = fresh_db();
     run_cli(&["end", "task", "-T"], &db).expect("end -T");
     let e = &db.entries_for_field("task", None).unwrap()[0];
-    assert_entry_matches!(e, verb: "switch");
+    assert_entry_matches!(e, verb: "point", state: false);
     assert!(
         slug_is_timeless(e.slug.as_str()),
         "timeless slug: {}",
         e.slug
     );
-    assert!(e.dur.is_none());
+    assert_eq!(e.dur, Some(Dur::moment()));
 }
 
 #[test]
@@ -96,15 +99,15 @@ fn switch_minus_t_preserves_value() {
     run_cli(&["switch", "mood", "happy", "-T"], &db).expect("switch -T");
     let e = &db.entries_for_field("mood", None).unwrap()[0];
     // The primary value ("happy") still lands on the entry — `-T` only
-    // suppresses the timestamp, not the payload. state="happy", dur=None
-    // → Switch.
-    assert_entry_matches!(e, field: "mood", verb: "switch", state: "happy");
+    // suppresses the timestamp, not the payload. state="happy", dur=MOMENT
+    // → Point.
+    assert_entry_matches!(e, field: "mood", verb: "point", state: "happy");
     assert!(
         slug_is_timeless(e.slug.as_str()),
         "timeless slug: {}",
         e.slug
     );
-    assert!(e.dur.is_none());
+    assert_eq!(e.dur, Some(Dur::moment()));
 }
 
 #[test]
@@ -187,11 +190,25 @@ fn minus_t_with_d_flag_errors() {
     assert!(format!("{err:#}").contains("-d"), "got: {err:#}");
 }
 
-// da-azqq removed `--dur`, and with it the only duration this guard could
-// see (the `-T` check runs before the dur= slot is filled). A timeless entry
-// carrying a duration is legal — "this takes 30m" is a property of the thing,
-// not of a moment — so `start sleep -T 30m` writes rather than rejects. The
-// flag's death is covered by `dur_flag_removed.rs`.
+/// da-w149: `-T` makes note-data, which has no duration — the trailing
+/// positional and `dur=` are refused like the time flags. (The retired
+/// `--dur`'s death is covered by `dur_flag_removed.rs`.)
+#[test]
+fn minus_t_with_a_duration_errors() {
+    let db = fresh_db();
+    for args in [
+        &["start", "sleep", "-T", "30m"][..],
+        &["occur", "coffee", "-T", "dur=5m"][..],
+    ] {
+        let err = run_cli(args, &db).expect_err("-T + a duration must reject");
+        assert_eq!(
+            format!("{err:#}"),
+            "-T makes note-data, which has no duration; drop the duration or drop -T"
+        );
+    }
+    assert_count!(db, "sleep", 0);
+    assert_count!(db, "coffee", 0);
+}
 
 #[test]
 fn minus_t_with_y_flag_errors() {

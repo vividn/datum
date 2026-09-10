@@ -30,18 +30,6 @@ use crate::{
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
 pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()> {
-    // -T/--no-timestamp: skip time-flag computation but keep the action's
-    // own state-canonicalization rules (so `switch ... -T` still preserves
-    // its positional state, `start -T` still records state=true, etc.).
-    // Time-specifying flags are rejected so silent discard can't mask a
-    // user misconception. A timeless entry stores `occur_time = NULL` (the
-    // durable timeless marker) and slugs on `create_time` →
-    // `field:c<create_time>` (da-r17h), so `occur f -T` becomes note-data:
-    // the data lands, no occurrence is logged, and many-per-field works.
-    if args.time.omit_timestamp {
-        check_no_time_flags(&args)?;
-    }
-
     // da-vo0y (review): `-I`/`--string-state` is Switch-only — on other
     // verbs it would silently suppress the injected `dur=` slot and change
     // duration parsing. And on switch it conflicts with the other
@@ -110,6 +98,22 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `following_state=`, `occur_time=`) out of the data blob.
     // Unknown keys (including `value=`) stay in the data payload (da-53rz).
     let mut reserved = extract_reserved_columns(&mut extra_data)?;
+
+    // -T/--no-timestamp: skip time-flag computation but keep the action's
+    // own state-canonicalization rules (so `switch ... -T` still preserves
+    // its positional state, `start -T` still records state=true, etc.).
+    // Time-specifying flags and a duration are rejected so silent discard
+    // can't mask a user misconception. A timeless entry stores
+    // `occur_time = NULL` (the durable timeless marker) and slugs on
+    // `create_time` → `field:c<create_time>` (da-r17h), so `occur f -T`
+    // becomes note-data: the data lands, no occurrence is logged, and
+    // many-per-field works. Checked here, once the `dur=` slot is filled.
+    if args.time.omit_timestamp {
+        check_no_time_flags(
+            &args,
+            reserved.dur.is_some() || args.duration.duration.is_some(),
+        )?;
+    }
 
     // da-5t94: the resolved `field` now flows through the shared peeler.
     // For flex-field verbs the injected `field=` slot lands in
@@ -368,12 +372,20 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
 
     // da-ju71.2: stamp `Dur::moment()` ("MOMENT") to lock the entry to
-    // Verb::Point in `derive_verb` regardless of state shape. Two cases:
+    // Verb::Point in `derive_verb` regardless of state shape. Three cases:
     // Action::Occur is a point by default (e.g. `occur drive .id=car
-    // .role=driver` stays a point, not a switch); and `-m`/`--moment` on
+    // .role=driver` stays a point, not a switch); `-m`/`--moment` on
     // switch/start does the same (`moment_point`), so `start foo -m` is a
-    // dot rather than an open block. An explicit dur was honored above.
-    if entry.dur.is_none() && (matches!(action, Action::Occur) || moment_point) {
+    // dot rather than an open block; and `-T` on a verb with a state is a
+    // note about that state, not a transition (`timeless_state`, da-w149).
+    // An explicit dur was honored above (and `-T` refused one).
+    // A `,`-chain names a transition, which a note cannot carry: leaving it
+    // unstamped keeps `derive_verb`'s refusal of a duration-less chain.
+    let timeless_state = args.time.omit_timestamp
+        && entry.following_state.is_none()
+        && (entry.state.is_some()
+            || matches!(action, Action::Start | Action::Switch | Action::Stop));
+    if entry.dur.is_none() && (matches!(action, Action::Occur) || moment_point || timeless_state) {
         entry.dur = Some(datum_core::dur::Dur::moment());
     }
 
@@ -1668,10 +1680,10 @@ fn looks_like_signed_duration(s: &str) -> bool {
 /// Reject time-specifying flags when the caller passed `-T/--no-timestamp`.
 /// A timeless entry has no place for a clock offset — silently discarding
 /// one would mask a user misconception, so we bail with a list of the
-/// offending flags. (A *duration* is fine on a timeless entry — "this takes
-/// 30m" is a property of the thing, not of a moment — so `dur=`/the trailing
-/// positional are not listed here. The retired `--dur` used to be; da-azqq.)
-fn check_no_time_flags(args: &LogArgs) -> Result<()> {
+/// offending flags. Nor has it a duration (`has_dur`: a `dur=`, the trailing
+/// positional, or a `,`-chain's): `-T` makes note-data, and a state it names
+/// is a moment (da-w149).
+fn check_no_time_flags(args: &LogArgs, has_dur: bool) -> Result<()> {
     let mut bad: Vec<&str> = Vec::new();
     if args.time.time.is_some() {
         bad.push("-t/--time");
@@ -1693,6 +1705,9 @@ fn check_no_time_flags(args: &LogArgs) -> Result<()> {
             "-T/--no-timestamp cannot be combined with time flags: {}",
             bad.join(", ")
         );
+    }
+    if has_dur {
+        anyhow::bail!("-T makes note-data, which has no duration; drop the duration or drop -T");
     }
     Ok(())
 }
