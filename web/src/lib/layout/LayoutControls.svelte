@@ -89,8 +89,10 @@
 
 	const save = () =>
 		act(async () => {
-			await saveLayout($layout);
-			saved = $layout;
+			// The tree as it was when pressed: an edit made meanwhile is not saved.
+			const tree = $layout;
+			await saveLayout(tree);
+			saved = tree;
 		});
 
 	const toggleVersions = () =>
