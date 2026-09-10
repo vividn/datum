@@ -146,6 +146,23 @@ describe('on a phone-sized screen', () => {
 		}, { viewport: PHONE });
 	});
 
+	// The stats widget's own page (da-n7r0): reached by the header's link,
+	// and its pickers on the screen it opens on.
+	for (const viewport of SCREENS) {
+		const size = `${viewport.width}x${viewport.height}`;
+
+		test(`/stats and its pickers are on screen at ${size}`, async () => {
+			await withApp(async ({ page, submit }) => {
+				await track(page, submit, FIELDS);
+				await assertOnScreen(page, 'header nav a[href="/stats"]', 'the stats link');
+				await page.locator('header nav a[href="/stats"]').click();
+				await page.locator('.stats button.field').nth(FIELDS.length - 1).waitFor();
+				await assertOnScreen(page, '.stats button.field', "the first field's chip");
+				await assertOnScreen(page, '.stats .range button', 'the range picker');
+			}, { viewport });
+		});
+	}
+
 	test('the form the + opens is on screen with a wrapped bar', async () => {
 		await withApp(async ({ page, submit }) => {
 			await track(page, submit, FIELDS);

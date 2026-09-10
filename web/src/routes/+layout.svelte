@@ -16,7 +16,8 @@
 
 	const links = [
 		{ href: '/', label: 'day' },
-		{ href: '/now', label: 'now' }
+		{ href: '/now', label: 'now' },
+		{ href: '/stats', label: 'stats' }
 	];
 
 	let exporting = false;
