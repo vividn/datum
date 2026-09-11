@@ -245,17 +245,17 @@ fn occur_flips_state_from_null_to_false() {
         "no entries ⇒ state is null (datum parity)",
     );
 
-    run_cli(&["occur", "event"], &db).expect("first occur");
-    let after_one = db
-        .get_active_state("event", Utc::now() + Duration::seconds(1))
-        .unwrap();
+    // Distinct explicit times: two stateless occurs in one millisecond share
+    // a slug and the second is a duplicate by contract (da-2fkr, da-lq8a).
+    run_cli(&["occur", "event", "-t=-2"], &db).expect("first occur");
+    let after_one = db.get_active_state("event", Utc::now()).unwrap();
     assert_eq!(
         after_one,
         json!(false),
         "occur compiles to state=false at time_start",
     );
 
-    run_cli(&["occur", "event"], &db).expect("second occur");
+    run_cli(&["occur", "event", "-t=-1"], &db).expect("second occur");
     assert_count!(db, "event", 2);
     // Daydumb does not stamp `last_state` on occur entries — the entry's
     // extra_data is None unless the user provided keys.
