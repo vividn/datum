@@ -45,6 +45,8 @@
 	/** What the button shows; the root bar's picker is this menu with a `+` (da-0a5o). */
 	export let glyph = '…';
 	export let title = 'pane menu';
+	/** A faint handle filling its box — the page margin's (da-qk2k) — rather than a badge. */
+	export let faint = false;
 
 	/** `open`: the menu is about to show — a chance to refresh its items. */
 	const dispatch = createEventDispatcher<{ open: void }>();
@@ -213,7 +215,8 @@
 
 <button
 	type="button"
-	class="more"
+	class:more={!faint}
+	class:faint
 	bind:this={button}
 	aria-haspopup="menu"
 	aria-expanded={open}
@@ -332,6 +335,31 @@
 	.more[aria-expanded='true'] {
 		color: #adadff;
 		border-color: #7c7cff;
+	}
+
+	/* The margin's handle: no ground and no outline, only the glyph, barely
+	   there until it is pointed at or focused. Its box is the target. */
+	.faint {
+		inline-size: 100%;
+		block-size: 100%;
+		display: grid;
+		place-items: center;
+		padding: 0;
+		background: none;
+		border: none;
+		color: #7c7cff;
+		opacity: 0.25;
+		font: inherit;
+		font-size: 0.75rem;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.faint:hover,
+	.faint:focus-visible,
+	.faint[aria-expanded='true'] {
+		opacity: 1;
+		outline: none;
 	}
 
 	.menu {

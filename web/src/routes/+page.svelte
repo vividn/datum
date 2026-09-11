@@ -19,9 +19,18 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import Layout from '$lib/layout/Layout.svelte';
-	import { layout, loaded } from '$lib/layout/current.js';
+	import PaneMenu from '$lib/layout/PaneMenu.svelte';
+	import { apply, layout, loaded } from '$lib/layout/current.js';
 	import { epoch, ran } from '$lib/layout/engine.js';
+	import { addEdge } from '$lib/layout/tree.js';
+	import type { BarEdge } from '$lib/layout/types.js';
 	import { onExternalChange } from '$lib/changes.js';
+
+	// The dashboard extends from its edges (da-qk2k): a faint `…` in the
+	// page's margin on each side, whose one item adds a pane spanning that
+	// whole side of the layout in front. None under the lock.
+	const EDGES: BarEdge[] = ['top', 'right', 'bottom', 'left'];
+	$: locked = !!$layout.root.tabs[$layout.root.active]?.locked;
 
 	// Another tab wrote. Same treatment as a local command finishing — bump
 	// the epoch the panes hang off and rebuild the widget bar — so there is
@@ -37,13 +46,64 @@
 <div class="frame">
 	{#if $loaded}
 		<Layout pane={$layout.root} epoch={$epoch} rootId={$layout.root.id} />
+		{#if !locked}
+			{#each EDGES as edge (edge)}
+				<div class="edge {edge}">
+					<PaneMenu
+						faint
+						label="{edge} edge of the dashboard"
+						title="extend the dashboard"
+						items={[{ label: 'Add widget', run: () => apply((l) => addEdge(l, edge)) }]}
+					/>
+				</div>
+			{/each}
+		{/if}
 	{/if}
 </div>
 
 <style>
 	.frame {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+	}
+
+	/* Each handle fills the page's margin (the main's 0.75rem padding,
+	   +layout.svelte) outside the middle of one side of the root's box,
+	   2rem along it — over neither a pane nor the prompt bar. Above the
+	   root's scroller, which reaches out over that margin. */
+	.edge {
+		position: absolute;
+		z-index: 3;
+		display: flex;
+		margin: auto;
+	}
+	.top,
+	.bottom {
+		left: 0;
+		right: 0;
+		width: 2rem;
+		height: 0.75rem;
+	}
+	.top {
+		top: -0.75rem;
+	}
+	.bottom {
+		bottom: -0.75rem;
+	}
+	.left,
+	.right {
+		top: 0;
+		bottom: 0;
+		width: 0.75rem;
+		height: 2rem;
+		writing-mode: vertical-lr;
+	}
+	.left {
+		left: -0.75rem;
+	}
+	.right {
+		right: -0.75rem;
 	}
 </style>

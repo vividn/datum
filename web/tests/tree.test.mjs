@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import {
 	EMPTY_KIND,
+	addEdge,
 	addTab,
 	allIds,
 	canCloseTab,
@@ -203,6 +204,79 @@ describe('setRatios', () => {
 		const split = layout.root.tabs[0].content;
 		const after = findSplit(setRatios(layout, split.id, [0.9, 0.1], [0.7, 0.7]), split.id);
 		assert.deepEqual(after.ratios, [0.5, 0.5]);
+	});
+});
+
+// Extending the dashboard from its edges (da-qk2k): a new pane, the
+// picker, spanning a whole side of the active root tab's content.
+describe('addEdge', () => {
+	/** A root whose tab holds a column of three widget panes. */
+	function column() {
+		const panes = ['strip', 'repl', 'bar'].map((kind) => newPane([widgetTab(kind)]));
+		const split = { ...newSplit('column', panes), ratios: [0.3, 0.6, 0.1] };
+		return { layout: { version: 1, name: 'test', root: newPane([newTab(split)]) }, split, panes };
+	}
+	const sum = (ratios) => ratios.reduce((a, b) => a + b, 0);
+	const unique = (layout) => new Set(allIds(layout)).size === allIds(layout).length;
+	const isFresh = (pane) => pane.tabs.length === 1 && pane.tabs[0].content.kind === EMPTY_KIND;
+
+	test('bottom on a column appends a fifth of it, the others sharing the rest', () => {
+		const { layout, split, panes } = column();
+		const after = addEdge(layout, 'bottom');
+		const got = after.root.tabs[0].content;
+		assert.equal(got.id, split.id, 'the column was replaced rather than joined');
+		assert.equal(got.direction, 'column');
+		assert.deepEqual(got.children.slice(0, 3).map((p) => p.id), panes.map((p) => p.id));
+		assert.ok(isFresh(got.children[3]));
+		assert.equal(got.ratios[3], 0.2);
+		assert.deepEqual(got.ratios.slice(0, 3).map((r) => Math.round(r * 1000) / 1000), [0.24, 0.48, 0.08]);
+		assert.ok(Math.abs(sum(got.ratios) - 1) < 1e-9);
+		assert.ok(isCanonical(after) && unique(after));
+	});
+
+	test('top on a column puts it first', () => {
+		const { layout, panes } = column();
+		const got = addEdge(layout, 'top').root.tabs[0].content;
+		assert.ok(isFresh(got.children[0]));
+		assert.equal(got.ratios[0], 0.2);
+		assert.deepEqual(got.children.slice(1).map((p) => p.id), panes.map((p) => p.id));
+	});
+
+	test('left on a column wraps it into a row [new, holder(column)]', () => {
+		const { layout, split } = column();
+		const after = addEdge(layout, 'left');
+		const got = after.root.tabs[0].content;
+		assert.equal(got.direction, 'row');
+		assert.equal(got.children.length, 2);
+		assert.ok(isFresh(got.children[0]));
+		assert.deepEqual(got.children[1].tabs.map((t) => t.content), [split]);
+		assert.deepEqual(got.ratios, [0.2, 0.8]);
+		assert.ok(isCanonical(after) && unique(after));
+	});
+
+	test('right on a single-widget root wraps it into a row [holder(widget), new]', () => {
+		const layout = single('stats');
+		const widget = layout.root.tabs[0].content;
+		const after = addEdge(layout, 'right');
+		const got = after.root.tabs[0].content;
+		assert.equal(got.direction, 'row');
+		assert.deepEqual(got.children[0].tabs.map((t) => t.content), [widget]);
+		assert.ok(isFresh(got.children[1]));
+		assert.deepEqual(got.ratios, [0.8, 0.2]);
+		assert.ok(isCanonical(after) && unique(after));
+	});
+
+	test('only the active root tab grows; its title, lock and layout stay', () => {
+		const { layout } = column();
+		const other = { ...widgetTab('tail'), title: 'other', layout: 'other', locked: true };
+		const root = { ...layout.root, tabs: [layout.root.tabs[0], other], active: 1 };
+		const after = addEdge({ ...layout, root }, 'bottom');
+		assert.deepEqual(after.root.tabs[0], layout.root.tabs[0]);
+		const { content, ...rest } = after.root.tabs[1];
+		const { content: _, ...was } = other;
+		assert.deepEqual(rest, was);
+		assert.equal(content.direction, 'column');
+		assert.ok(isCanonical(after) && unique(after));
 	});
 });
 
@@ -412,7 +486,7 @@ describe('any sequence of operations', () => {
 		for (let i = 0; i < 1000; i++) {
 			const pane = pick(everyPane(layout));
 			const dir = rand() < 0.5 ? 'row' : 'column';
-			switch (Math.floor(rand() * 6)) {
+			switch (Math.floor(rand() * 7)) {
 				case 0:
 					layout = splitPane(layout, pane.id, dir);
 					break;
@@ -431,6 +505,9 @@ describe('any sequence of operations', () => {
 						layout = setWidget(layout, tab.id, newWidget(pick(['tail', 'nowview', 'repl'])));
 					break;
 				}
+				case 5:
+					layout = addEdge(layout, pick(['top', 'bottom', 'left', 'right']));
+					break;
 				default:
 					layout = setActive(layout, pane.id, Math.floor(rand() * 4));
 			}

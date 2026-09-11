@@ -15,7 +15,7 @@
 // straight into node (which strips the types), so it must not reach for
 // anything that would need a bundler.
 
-import type { Bar, Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
+import type { Bar, BarEdge, Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
 
 /** The kind an empty tab holds: the picker, until a widget is chosen. */
 export const EMPTY_KIND = 'empty';
@@ -237,6 +237,36 @@ export function splitTab(
 					}
 		)
 	);
+}
+
+/** The share a pane added along an edge of the dashboard starts with. */
+export const EDGE_RATIO = 0.2;
+
+/**
+ * Add a pane — one empty tab, the picker — spanning a whole edge of the
+ * active root tab's content (da-qk2k): the dashboard extended from its
+ * side, however split up it already is. A content already split the way
+ * the edge runs takes the new pane as its first or last child; anything
+ * else is wrapped into a new split beside it. The new pane has
+ * `EDGE_RATIO` and the rest share what is left as they shared the whole.
+ */
+export function addEdge(layout: Layout, edge: BarEdge): Layout {
+	const direction: Split['direction'] = edge === 'top' || edge === 'bottom' ? 'column' : 'row';
+	const first = edge === 'top' || edge === 'left';
+	const root = layout.root;
+	const tab = root.tabs[root.active];
+	if (!tab) return layout;
+	const c = tab.content;
+	const split = isSplit(c) && c.direction === direction ? c : newSplit(direction, [newPane([newTab(c)])]);
+	const fresh = newPane();
+	const rest = split.ratios.map((r) => r * (1 - EDGE_RATIO));
+	const content: Split = {
+		...split,
+		children: first ? [fresh, ...split.children] : [...split.children, fresh],
+		ratios: first ? [EDGE_RATIO, ...rest] : [...rest, EDGE_RATIO]
+	};
+	const tabs = root.tabs.map((t, i) => (i === root.active ? { ...t, content } : t));
+	return withRoot(layout, { ...root, tabs });
 }
 
 /** A new empty tab at the end of the pane, made active. */

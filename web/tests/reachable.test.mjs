@@ -244,18 +244,18 @@ describe('the layout engine, by keyboard', () => {
 		return seen;
 	}
 
-	test('a Tab walk reaches every … button, every border and the nowview steps', async () => {
+	test('a Tab walk reaches every … button, every border, the edge handles and the nowview steps', async () => {
 		await withApp(async ({ page }) => {
 			const reached = await tabWalk(page);
 			// The root bar's icons and the beta hint (da-0a5o) are walked too.
 			const controls = await page.evaluate(() =>
-				[...document.querySelectorAll('button.more, [role="separator"], .nowview-steps button, .root-bar .act, .prompt-bar .hint-button')]
+				[...document.querySelectorAll('button.more, button.faint, [role="separator"], .nowview-steps button, .root-bar .act, .prompt-bar .hint-button')]
 					.filter((el) => el.getClientRects().length > 0)
 					.map((el) => ({
 						walk: el.dataset.walk ?? null,
 						what: el.matches('button.more')
 							? `menu of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
-							: el.matches('.nowview-steps button, .act')
+							: el.matches('.nowview-steps button, .act, button.faint')
 								? el.getAttribute('aria-label')
 								: el.matches('.hint-button')
 									? 'the beta hint'
@@ -263,6 +263,8 @@ describe('the layout engine, by keyboard', () => {
 					}))
 			);
 			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');
+			// The margin's handles (da-qk2k), one a side.
+			assert.equal(controls.filter((c) => c.what.endsWith('edge of the dashboard')).length, 4, 'not four edge handles');
 			assert.ok(controls.some((c) => c.what === 'border'), 'the default layout has no draggable border');
 			for (const control of controls) {
 				assert.ok(control.walk && reached.has(control.walk), `${control.what} is not in the Tab order`);
@@ -272,9 +274,11 @@ describe('the layout engine, by keyboard', () => {
 
 	test('every menu item is on screen and reachable by the arrows', async () => {
 		await withApp(async ({ page }) => {
-			const menus = await page.locator('button.more:visible').count();
+			// A pane's `…`, the root bar's, and the margin's handles (da-qk2k).
+			const openers = page.locator('button.more:visible, button.faint');
+			const menus = await openers.count();
 			for (let m = 0; m < menus; m++) {
-				await page.locator('button.more:visible').nth(m).focus();
+				await openers.nth(m).focus();
 				await page.keyboard.press('Enter');
 				const items = page.locator('[role="menu"] button');
 				const count = await items.count();
@@ -296,7 +300,7 @@ describe('the layout engine, by keyboard', () => {
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				assert.ok(
-					await page.locator('button.more:visible').nth(m).evaluate((el) => el === document.activeElement),
+					await openers.nth(m).evaluate((el) => el === document.activeElement),
 					'Escape did not hand focus back to the button'
 				);
 			}
@@ -381,15 +385,15 @@ describe('the layout engine, by keyboard', () => {
 	// no `…` and no border is in the DOM at all, and what is left — the
 	// tabs — is still walked to. The lock is this device's, on the `day`
 	// tab (da-0a5o); the root bar above the layout is not under it.
-	test('a locked layout has no … and no border, and its tabs are still in the Tab order', async () => {
+	test('a locked layout has no …, no border and no edge handle, and its tabs are still in the Tab order', async () => {
 		await withApp(
 			async ({ page }) => {
 				const reached = await tabWalk(page);
 				const controls = await page.evaluate(() => ({
-					hidden: document.querySelectorAll('section.root button.more, section.root [role="separator"]').length,
+					hidden: document.querySelectorAll('section.root button.more, section.root [role="separator"], button.faint').length,
 					tabs: [...document.querySelectorAll('section.root [role="tab"]')].map((el) => el.dataset.walk ?? null)
 				}));
-				assert.equal(controls.hidden, 0, 'a locked layout still offers a … or a border');
+				assert.equal(controls.hidden, 0, 'a locked layout still offers a …, a border or an edge handle');
 				assert.equal(controls.tabs.length, 2);
 				// The active tab is the strip's one stop; the arrows walk the rest.
 				assert.ok(controls.tabs.some((walk) => walk && reached.has(walk)), 'the tab strip is not in the Tab order');
