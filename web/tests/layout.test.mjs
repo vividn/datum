@@ -99,6 +99,23 @@ describe('the default layout', () => {
 		}, DESKTOP);
 	});
 
+	// The root column's ratios are [0.2, 0.7, 0.1] with the content-sized
+	// widget bar holding the 0.1, so the growing cells' flex-grow summed
+	// to 0.9 — and flexbox hands out only that fraction of the free
+	// space, which left a tenth of it empty under the bar (da-6twf).
+	test('fills its column: the last cell reaches the bottom of the split', async () => {
+		await withApp(async ({ page }) => {
+			const { last, split } = await page.evaluate(() => {
+				const el = document.querySelector('[data-split="main"]');
+				return {
+					last: [...el.querySelectorAll(':scope > .cell')].at(-1).getBoundingClientRect().bottom,
+					split: el.getBoundingClientRect().bottom
+				};
+			});
+			assert.ok(Math.abs(split - last) <= 1, `the column ends at ${last}px in a split that ends at ${split}px`);
+		}, DESKTOP);
+	});
+
 	test('a command through the REPL still reaches tail and nowview', async () => {
 		await withApp(async (app) => {
 			await app.submit('switch mood happy');

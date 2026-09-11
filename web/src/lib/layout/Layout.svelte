@@ -108,6 +108,15 @@
 		const c = child.tabs[child.active].content;
 		return !isSplit(c) && !!KINDS[c.kind]?.fit;
 	};
+	/**
+	 * What each cell grows by: its ratio over the children that grow, since
+	 * flexbox hands out only a fraction of the free space when the grows
+	 * sum below 1 — a content-sized child's share would go empty (da-6twf).
+	 */
+	const grown = (split: Split, ratios: number[]): number[] => {
+		const sum = split.children.reduce((s, c, i) => (fits(c) ? s : s + ratios[i]), 0) || 1;
+		return ratios.map((r) => r / sum);
+	};
 	/** The old grid named its areas by what they showed; a cell does too. */
 	const named = (child: PaneNode): string => {
 		const c = child.tabs[child.active].content;
@@ -268,6 +277,7 @@
 	{#if isSplit(content)}
 		{@const split = content}
 		{@const least = pane.id === rootId ? legible(pane, split, drawn) : undefined}
+		{@const grow = grown(split, preview ?? split.ratios)}
 		<div
 			class="split {split.direction}"
 			bind:this={splitEl}
@@ -304,7 +314,7 @@
 					class="cell {named(child)}"
 					class:fit={fits(child)}
 					bind:offsetHeight={drawn[i]}
-					style:--ratio={(preview ?? split.ratios)[i]}
+					style:--ratio={grow[i]}
 					style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
 				>
 					<svelte:self pane={child} {epoch} {rootId} locked={lockedHere} />
