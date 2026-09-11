@@ -2,7 +2,7 @@
 	The fields widget as a widget kind.
 
 	Its own body rather than `Pane.svelte`'s, because the widget's panels
-	hang UPWARD out of it (WidgetBar.svelte, da-hkpd) and a scrolling body
+	hang UPWARD out of it (FieldsWidget.svelte, da-hkpd) and a scrolling body
 	would clip them: this body never scrolls, and the pane takes the
 	widget's height instead (`fit` in registry.ts). A press goes, with the
 	bottom bar's pills after it, to the engine's `press`, which routes it
@@ -10,17 +10,17 @@
 	bar's prompt, unrun.
 -->
 <script lang="ts">
-	import WidgetBar from '$lib/WidgetBar.svelte';
+	import FieldsWidget from '$lib/FieldsWidget.svelte';
 	import { prefill } from '$lib/bar.js';
-	import type { SwitchLabel } from '$lib/widgets.js';
+	import type { SwitchLabel } from '$lib/fields.js';
 	import { fields, pressWithPills, ready } from './engine.js';
 
 	export let switchLabel: SwitchLabel = 'field';
 </script>
 
 <div class="body">
-	<WidgetBar
-		widgets={$fields}
+	<FieldsWidget
+		fields={$fields}
 		disabled={!$ready}
 		{switchLabel}
 		on:run={(e) => void pressWithPills(e.detail)}

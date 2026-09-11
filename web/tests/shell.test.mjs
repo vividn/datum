@@ -173,16 +173,34 @@ describe('a URL', () => {
 	});
 
 	// The widget bar became the fields widget (da-c7u8); its old name is an alias.
-	test('/fields and /widgets open the fields widget alone', async () => {
+	test('/fields, /widgets and /widgetbar open the fields widget alone', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			for (const path of ['/fields', '/widgets']) {
+			for (const path of ['/fields', '/widgets', '/widgetbar']) {
 				await app.goto(path);
 				assert.deepEqual(await rootTabs(page), ['day', 'fields']);
 				assert.equal(await activeRootTab(page), 'fields');
 				await page.locator('section.pane[data-title="fields"] button.track').waitFor();
 				assert.deepEqual(await titles(page), ['fields']);
 			}
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	// The widget's files are called Fields* now (da-850j) but its KIND ID is
+	// `widgetbar` still, because that id is the key in every layout already
+	// saved. This is the JSON an older build wrote: it must still draw.
+	test('a layout saved under the old kind id still opens the fields widget', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await layouts(app, 'saveLayout', {
+				version: 1,
+				name: 'old',
+				root: { id: 'o', tabs: [{ id: 'o-tab', content: { id: 'o-w', kind: 'widgetbar', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } }
+			});
+			await app.goto('/old');
+			assert.deepEqual(await titles(page), ['fields']);
+			await page.locator('section.pane[data-title="fields"] button.track').waitFor();
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});

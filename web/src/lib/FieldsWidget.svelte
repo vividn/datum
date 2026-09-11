@@ -4,7 +4,7 @@
 
 	Track + comes first: the way into the whole app, so it is there on an
 	empty database too. Then the TRACKED fields (a spec exists), each shaped
-	by its kind and painted by what it is now (`lookOf` in widgets.ts): a
+	by its kind and painted by what it is now (`lookOf` in fields.ts): a
 	point is a filled pill; a block is a rectangle, filled while it is on;
 	a switch is a rectangle filled with its current state's colour; a keyed
 	record is its name, underlined, and a click prefills `add <field> ` in
@@ -32,12 +32,12 @@
 		NEUTRAL,
 		type Adjust,
 		type SwitchLabel,
-		type Widget,
-		type WidgetShape
-	} from './widgets.js';
+		type FieldButton,
+		type FieldShape
+	} from './fields.js';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
 
-	export let widgets: Widget[] = [];
+	export let fields: FieldButton[] = [];
 	export let disabled = false;
 	/** How a switch in a state is labelled; see `SwitchLabel`. */
 	export let switchLabel: SwitchLabel = 'field';
@@ -53,7 +53,7 @@
 	const FOR = ['', '5m', '15m', '30m', '1h'];
 
 	let bar: HTMLElement;
-	let open: Widget | null = null;
+	let open: FieldButton | null = null;
 	/** Whether the open panel shows the adjustment bubbles (long press did). */
 	let adjustable = false;
 	let adjust: Adjust = {};
@@ -63,11 +63,11 @@
 
 	let adding = false;
 	let newField = '';
-	let newKind: WidgetShape['kind'] = 'point';
+	let newKind: FieldShape['kind'] = 'point';
 	let newStates = '';
 
-	$: tracked = widgets.filter((w) => w.tracked);
-	$: untracked = widgets.filter((w) => !w.tracked);
+	$: tracked = fields.filter((w) => w.tracked);
+	$: untracked = fields.filter((w) => !w.tracked);
 
 	// A spec's colour is spelled however it was typed (`orange`, `#ffa500`);
 	// the ink rule needs `#rrggbb`, which the browser's own parser gives.
@@ -80,12 +80,12 @@
 		return ctx.fillStyle.startsWith('#') ? ctx.fillStyle : NEUTRAL;
 	}
 
-	function paint(widget: Widget, variant: SwitchLabel) {
-		const look = lookOf(widget, variant, hex);
+	function paint(button: FieldButton, variant: SwitchLabel) {
+		const look = lookOf(button, variant, hex);
 		return { look, style: `--fill: ${look.fill ?? 'transparent'}; --line: ${look.line}; --text: ${look.text}` };
 	}
 
-	function statesOf(shape: WidgetShape): string[] {
+	function statesOf(shape: FieldShape): string[] {
 		return shape.kind === 'states' ? shape.states : [];
 	}
 
@@ -102,8 +102,8 @@
 						.split(',')
 						.map((s) => s.trim())
 						.filter(Boolean)
-				} satisfies WidgetShape)
-			: ({ kind: newKind } as WidgetShape);
+				} satisfies FieldShape)
+			: ({ kind: newKind } as FieldShape);
 
 	$: addArgv = declareArgv(newField.trim() || '<field>', newShape);
 
@@ -116,11 +116,11 @@
 	$: hint = newField.trim() === '' ? null : fieldNameHint(newField.trim());
 	$: fixed = hint === null ? null : suggestFieldName(newField.trim());
 
-	function panel(widget: Widget, withAdjust: boolean) {
+	function panel(button: FieldButton, withAdjust: boolean) {
 		adding = false;
 		adjust = {};
 		adjustable = withAdjust;
-		open = widget;
+		open = button;
 	}
 
 	function close() {
@@ -140,11 +140,11 @@
 		adding = true;
 	}
 
-	function press(widget: Widget) {
+	function press(button: FieldButton) {
 		// A multi-state field can't be logged without picking a state, so a
 		// plain press opens the menu instead of committing (bead item 2).
-		if (widget.shape.kind === 'states') panel(widget, false);
-		else emit(pressArgv(widget));
+		if (button.shape.kind === 'states') panel(button, false);
+		else emit(pressArgv(button));
 	}
 
 	function clearHold() {
@@ -154,26 +154,26 @@
 
 	// Pointer events rather than touch/mouse pairs: one code path reaches
 	// a finger, a stylus and a held mouse button alike.
-	function down(widget: Widget) {
+	function down(button: FieldButton) {
 		held = false;
 		clearHold();
 		holdTimer = setTimeout(() => {
 			holdTimer = null;
 			held = true;
-			panel(widget, true);
+			panel(button, true);
 		}, HOLD_MS);
 	}
 
 	// The click still fires after a long press (and after the keyboard's
 	// Enter/Space, which never sends a pointerdown at all) — swallow the one
 	// that follows a hold, and treat everything else as a short press.
-	function click(widget: Widget) {
+	function click(button: FieldButton) {
 		if (held) {
 			held = false;
 			return;
 		}
-		if (open === widget) close();
-		else press(widget);
+		if (open === button) close();
+		else press(button);
 	}
 
 	function declare() {
@@ -229,51 +229,51 @@
 		{/if}
 	</div>
 
-	{#if widgets.length === 0}
+	{#if fields.length === 0}
 		<!-- No direction word here on purpose: this hint said "below" while the
-		     widget bar was at the top of the page (da-nz29), and da-1x72 moved the
+		     bar was at the top of the page (da-nz29), and da-1x72 moved the
 		     bar to the bottom without the copy following. Name the thing, not
 		     where it is. -->
 		<p class="hint empty">nothing tracked yet — or type a command to log something</p>
 	{/if}
 
-	{#each tracked as widget (widget.field)}
-		{@const { look, style } = paint(widget, switchLabel)}
+	{#each tracked as button (button.field)}
+		{@const { look, style } = paint(button, switchLabel)}
 		<div class="slot">
-			{#if widget.shape.kind === 'record'}
+			{#if button.shape.kind === 'record'}
 				<!-- Not a button: nothing runs. The line goes to the bar's prompt. -->
 				<button
 					class="record"
 					role="link"
-					data-field={widget.field}
+					data-field={button.field}
 					{style}
 					{disabled}
-					title="add {widget.field} … — fills the prompt"
-					on:click={() => dispatch('line', `add ${widget.field} `)}>{widget.field}</button
+					title="add {button.field} … — fills the prompt"
+					on:click={() => dispatch('line', `add ${button.field} `)}>{button.field}</button
 				>
 			{:else}
 				<button
-					class="widget {widget.shape.kind}"
+					class="widget {button.shape.kind}"
 					class:on={look.fill !== null}
-					class:active={open === widget}
+					class:active={open === button}
 					{style}
 					{disabled}
-					data-field={widget.field}
-					aria-haspopup={widget.shape.kind === 'states' ? 'menu' : undefined}
-					aria-expanded={open === widget}
+					data-field={button.field}
+					aria-haspopup={button.shape.kind === 'states' ? 'menu' : undefined}
+					aria-expanded={open === button}
 					title="press to log · hold for when / how long"
-					on:pointerdown={() => down(widget)}
+					on:pointerdown={() => down(button)}
 					on:pointerup={clearHold}
 					on:pointerleave={clearHold}
 					on:pointercancel={clearHold}
-					on:contextmenu|preventDefault={() => panel(widget, true)}
-					on:click={() => click(widget)}
+					on:contextmenu|preventDefault={() => panel(button, true)}
+					on:click={() => click(button)}
 				>
 					{look.label}
 				</button>
 			{/if}
 
-			{#if open === widget}
+			{#if open === button}
 				<div class="panel">
 					{#if adjustable}
 						<div class="bubbles">
@@ -300,17 +300,17 @@
 						</div>
 					{/if}
 
-					{#if widget.shape.kind === 'states'}
-						{#if statesOf(widget.shape).length === 0}
+					{#if button.shape.kind === 'states'}
+						{#if statesOf(button.shape).length === 0}
 							<p class="hint">
-								no states yet — <code>switch {widget.field} &lt;state&gt;</code> in the REPL
+								no states yet — <code>switch {button.field} &lt;state&gt;</code> in the REPL
 							</p>
 						{:else}
 							<div class="states">
-								{#each statesOf(widget.shape) as state (state)}
+								{#each statesOf(button.shape) as state (state)}
 									<button
-										title={pressArgv(widget, adjust, state).join(' ')}
-										on:click={() => emit(pressArgv(widget, adjust, state))}
+										title={pressArgv(button, adjust, state).join(' ')}
+										on:click={() => emit(pressArgv(button, adjust, state))}
 									>
 										{state}
 									</button>
@@ -318,14 +318,14 @@
 							</div>
 						{/if}
 					{:else}
-						<button class="commit" on:click={() => emit(pressArgv(widget, adjust))}>log</button>
+						<button class="commit" on:click={() => emit(pressArgv(button, adjust))}>log</button>
 					{/if}
 
 					<code class="preview"
 						>{pressArgv(
-							widget,
+							button,
 							adjust,
-							widget.shape.kind === 'states' ? '<state>' : undefined
+							button.shape.kind === 'states' ? '<state>' : undefined
 						).join(' ')}</code
 					>
 				</div>
@@ -333,14 +333,14 @@
 		</div>
 	{/each}
 
-	{#each untracked as widget (widget.field)}
-		<span class="untracked" data-field={widget.field}
-			>{widget.field}<button
+	{#each untracked as button (button.field)}
+		<span class="untracked" data-field={button.field}
+			>{button.field}<button
 				class="track-this"
 				{disabled}
-				aria-label="track {widget.field}"
-				title="track {widget.field}"
-				on:click={() => startTracking(widget.field)}>track</button
+				aria-label="track {button.field}"
+				title="track {button.field}"
+				on:click={() => startTracking(button.field)}>track</button
 			></span
 		>
 	{/each}
@@ -373,7 +373,7 @@
 		cursor: pointer;
 	}
 
-	/* Shape by kind, fill by state (lookOf in widgets.ts): the colours
+	/* Shape by kind, fill by state (lookOf in fields.ts): the colours
 	   arrive as --fill / --line / --text. */
 	.widget {
 		background: var(--fill);

@@ -15,7 +15,7 @@
 	import { browser } from '$app/environment';
 	import CliOutput from './CliOutput.svelte';
 	import { run, type RunResult } from './run.js';
-	import type { FieldListing } from './widgets.js';
+	import type { FieldListing } from './fields.js';
 	import {
 		DEFAULT_STATS,
 		statesOf,

@@ -4,7 +4,7 @@
 // Nothing here computes a statistic. The widget is a picker and a frame:
 // the numbers are `datum stats`'s, as text and as `--json`.
 
-import { shapeFor, type FieldListing } from './widgets.js';
+import { shapeFor, type FieldListing } from './fields.js';
 
 /** A named window, or an explicit one (`--since` / `--until`, either may be blank). */
 export type StatsRange = 'all' | 'today' | 'week' | 'month' | { since: string; until: string };

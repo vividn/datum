@@ -516,7 +516,7 @@
 	/* Only the root scrolls. A split whose children's floors do not fit
 	   overflows into it and the page scrolls to the rest — while the
 	   widget bar's panels, which hang upward out of their pane
-	   (WidgetBar.svelte), stay unclipped at every level in between. */
+	   (FieldsWidget.svelte), stay unclipped at every level in between. */
 	.root > .content {
 		overflow: auto;
 	}

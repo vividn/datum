@@ -2,14 +2,14 @@
 // first, each tracked field shaped by its kind and filled by what it is
 // now, the untracked ones dim after them.
 //
-// The logic is pure (`$lib/widgets.ts`) and node loads it as it is; the
+// The logic is pure (`$lib/fields.ts`) and node loads it as it is; the
 // rest is the built app, driven through the bottom bar's prompt — the
 // way a person types — and asserted as computed colours, radii and
 // roles, never as "different from before".
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { inkOver, lookOf, pressArgv, shapeFor, widgetsFor } from '../src/lib/widgets.ts';
+import { inkOver, lookOf, pressArgv, shapeFor, buttonsFor } from '../src/lib/fields.ts';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 
 const spec = (field, rest = {}) => ({ field, ...rest });
@@ -24,7 +24,7 @@ describe('the logic', () => {
 	});
 
 	test('tracked fields first, each group in the CLI order; `now` says what is on', () => {
-		const widgets = widgetsFor(
+		const widgets = buttonsFor(
 			[
 				{ field: 'a', spec: null, states: [] },
 				{ field: 'b', spec: spec('b', { default_verb: 'start' }), states: [] },

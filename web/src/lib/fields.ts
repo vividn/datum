@@ -2,7 +2,7 @@
 // fields get a button, what shape each has, how it is painted, and the
 // exact argv a press composes (da-nz29, da-c7u8).
 //
-// The argv built here is the argv that runs — WidgetBar.svelte hands it
+// The argv built here is the argv that runs — FieldsWidget.svelte hands it
 // straight to `run()` and echoes the result's own `argv` back into the
 // REPL. Nothing reconstructs a "what you could have typed" string from the
 // press, because a reconstruction can drift from the command and the whole
@@ -11,22 +11,22 @@
 import type { FieldSpec } from './types.js';
 
 /**
- * What a press on a widget means, derived from the field's declared shape.
+ * What a press on a button means, derived from the field's declared shape.
  *
  *   point  — a thing that happened:  `occur <field>`
  *   state  — a block, on or off:     `start <field>` / `end <field>`
  *   states — a state among several:  `switch <field> <state>`
  *   record — a keyed record:         `add <field> …`, typed, never pressed
  */
-export type WidgetShape =
+export type FieldShape =
 	| { kind: 'point' }
 	| { kind: 'state' }
 	| { kind: 'states'; states: string[] }
 	| { kind: 'record' };
 
-export interface Widget {
+export interface FieldButton {
 	field: string;
-	shape: WidgetShape;
+	shape: FieldShape;
 	/** A spec exists: the field is tracked, and the bar gives it a button. */
 	tracked: boolean;
 	/** The spec's colour, when it declares one. */
@@ -58,7 +58,7 @@ export interface Adjust {
  * multi-state field, one logged with `true`/`false` is a block, and
  * anything else is a point. The field's *name* is never consulted.
  */
-export function shapeFor(spec: FieldSpec | undefined, observed: unknown[] = []): WidgetShape {
+export function shapeFor(spec: FieldSpec | undefined, observed: unknown[] = []): FieldShape {
 	const strings = [...new Set(observed.filter((v): v is string => typeof v === 'string'))].sort();
 
 	switch (spec?.default_verb) {
@@ -92,13 +92,13 @@ export interface NowActive {
 }
 
 /**
- * The widget's entries: every field `datum fields` lists, the tracked ones
+ * The widget's buttons: every field `datum fields` lists, the tracked ones
  * (a spec exists) first, each group in the CLI's order. `active` is
  * `datum now --json`'s — a field it does not name is off.
  */
-export function widgetsFor(listing: FieldListing[], active: NowActive[] = []): Widget[] {
+export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): FieldButton[] {
 	const now = new Map(active.map((a) => [a.field, a.state]));
-	const all: Widget[] = listing.map(({ field, spec, states }) => {
+	const all: FieldButton[] = listing.map(({ field, spec, states }) => {
 		const state = now.get(field);
 		return {
 			field,
@@ -144,46 +144,46 @@ export interface Look {
 }
 
 /**
- * How a widget is painted now (vividn's rules, da-c7u8): a point is always
+ * How a button is painted now (vividn's rules, da-c7u8): a point is always
  * filled with its field's colour; a block is filled while it is on and
  * outlined otherwise; a switch in a state is filled with that state's
  * colour (the field's, where the state has none) inside the field's
  * outline. `hex` turns a colour as the spec spells it into `#rrggbb`, for
  * the ink rule.
  */
-export function lookOf(widget: Widget, variant: SwitchLabel = 'field', hex: (c: string) => string = (c) => c): Look {
-	const field = hex(widget.color ?? NEUTRAL);
-	const { current, shape } = widget;
-	const off = { fill: null, line: field, text: field, label: widget.field };
-	if (shape.kind === 'point') return { fill: field, line: field, text: inkOver(field), label: widget.field };
+export function lookOf(button: FieldButton, variant: SwitchLabel = 'field', hex: (c: string) => string = (c) => c): Look {
+	const field = hex(button.color ?? NEUTRAL);
+	const { current, shape } = button;
+	const off = { fill: null, line: field, text: field, label: button.field };
+	if (shape.kind === 'point') return { fill: field, line: field, text: inkOver(field), label: button.field };
 	if (shape.kind === 'record' || current === undefined) return off;
-	if (current === true || shape.kind === 'state') return { fill: field, line: field, text: inkOver(field), label: widget.field };
-	const fill = hex(widget.stateColors[current] ?? widget.color ?? NEUTRAL);
+	if (current === true || shape.kind === 'state') return { fill: field, line: field, text: inkOver(field), label: button.field };
+	const fill = hex(button.stateColors[current] ?? button.color ?? NEUTRAL);
 	return variant === 'state'
 		? { fill, line: field, text: inkOver(fill), label: current }
-		: { fill, line: field, text: field, label: widget.field };
+		: { fill, line: field, text: field, label: button.field };
 }
 
 /**
  * Compose the argv one press runs.
  *
- * `state` is required for a multi-state widget and ignored otherwise. A
+ * `state` is required for a multi-state button and ignored otherwise. A
  * block that is on ends; one that is off starts. The adjustments append in
  * the order a person would type them: the time flag, then the duration as
  * a `dur=` token (CLAUDE.md — there is no `--dur` flag, and the keyed form
  * is unambiguous next to a state value in a way the trailing positional
  * isn't).
  */
-export function pressArgv(widget: Widget, adjust: Adjust = {}, state?: string): string[] {
-	const { kind } = widget.shape;
+export function pressArgv(button: FieldButton, adjust: Adjust = {}, state?: string): string[] {
+	const { kind } = button.shape;
 	const argv =
 		kind === 'point'
-			? ['occur', widget.field]
+			? ['occur', button.field]
 			: kind === 'state'
-				? [widget.current ? 'end' : 'start', widget.field]
+				? [button.current ? 'end' : 'start', button.field]
 				: kind === 'record'
-					? ['add', widget.field]
-					: ['switch', widget.field, state ?? ''];
+					? ['add', button.field]
+					: ['switch', button.field, state ?? ''];
 
 	// `-t -15` is fifteen minutes ago; the sign is what makes it an offset
 	// rather than a clock time.
@@ -193,7 +193,7 @@ export function pressArgv(widget: Widget, adjust: Adjust = {}, state?: string): 
 }
 
 /** The argv `spec set` needs to declare a new field of the given shape. */
-export function declareArgv(field: string, shape: WidgetShape): string[] {
+export function declareArgv(field: string, shape: FieldShape): string[] {
 	const argv = ['spec', 'set', field, '--default-verb'];
 	if (shape.kind === 'point') argv.push('occur');
 	else if (shape.kind === 'state') argv.push('start');

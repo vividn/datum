@@ -39,12 +39,12 @@ file in the same commit — a convention nobody can read is a convention nobody 
    24 of 24 `.svelte` files and 34 of 37 `.ts` files do (`changes.ts`, `deviceId.ts` and
    `types.ts` are the gap).
 8. **Pure logic lives beside its markup, in a `.ts` a test can call without a browser**:
-   `widgets.ts`, `stats.ts`, `tail.ts`, `panes.ts`, `bar.ts`, `cursor.ts`, `fileargv.ts`,
+   `fields.ts`, `stats.ts`, `tail.ts`, `panes.ts`, `bar.ts`, `cursor.ts`, `fileargv.ts`,
    `dbio.ts`. The `.svelte` file holds the markup and the wiring.
 9. **One widget kind, one name.** A kind's id in `registry.ts` is a saved-layout key and cannot
-   change without a migration; the title, the file names and the tests should all read as the
-   thing the reader sees. (Today `fields` is also `widgetbar`, `WidgetBar.svelte`,
-   `BarWidget.svelte` and `widgets.ts` — the id stays, the files are being renamed.)
+   change without a migration; the title, the file names and the tests all read as the thing the
+   reader sees. (`fields` is `FieldsWidget.svelte`, `layout/FieldsPane.svelte`, `fields.ts` and
+   `fields.test.mjs` since da-850j; its id is `widgetbar` still, and a comment on the id says so.)
 
 ## Looks
 

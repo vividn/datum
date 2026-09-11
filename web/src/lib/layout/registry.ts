@@ -49,7 +49,7 @@ import Stats from '$lib/Stats.svelte';
 import { DEFAULT_DAY_HEIGHT, MAX_DAY_HEIGHT, MIN_DAY_HEIGHT, NOWVIEW_HISTORY, TAIL, todayBox } from '$lib/panes.js';
 import { DEFAULT_STATS } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
-import BarWidget from './BarWidget.svelte';
+import FieldsPane from './FieldsPane.svelte';
 import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
 import NowviewWidget from './NowviewWidget.svelte';
@@ -143,12 +143,13 @@ export const KINDS: Record<string, WidgetKind> = {
 		onChange: (_, settings) => settings as Record<string, unknown>,
 		legible: { width: 240, height: 140 }
 	},
-	// The fields widget (da-c7u8), titled `fields`; the kind keeps its old
-	// id so the layouts people have saved still name it. How a switch in a
-	// state is labelled is its one setting (`SwitchLabel` in widgets.ts).
+	// The fields widget (da-c7u8), titled `fields`. The id `widgetbar` is the
+	// saved-layout key — every stored layout and draft names it, so it stays;
+	// the widget is called `fields` everywhere else (da-850j). How a switch in
+	// a state is labelled is its one setting (`SwitchLabel` in fields.ts).
 	widgetbar: {
 		meta: meta('widgetbar', 'fields'),
-		component: BarWidget,
+		component: FieldsPane,
 		props: ({ switchLabel }) => ({ switchLabel: switchLabel === 'state' ? 'state' : 'field' }),
 		fit: true,
 		legible: { width: 160, height: 49 }

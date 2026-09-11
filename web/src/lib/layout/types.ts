@@ -13,9 +13,9 @@
 // The dashboard's own top-level tabs are simply the root pane's tabs, and a
 // saved layout can be embedded in any pane as a widget of kind `layout`.
 //
-// (The quick-log bar's buttons are also called "widgets" in `widgets.ts`
-// and `WidgetBar.svelte` — that is the older sense, da-nz29, and it is not
-// this one. The bar as a whole is one widget KIND here.)
+// (The fields widget's own buttons were once called "widgets" too — the
+// older sense, da-nz29; they are `FieldButton`s in `fields.ts` now, and the
+// widget as a whole is one widget KIND here.)
 
 /** Bumped when the shape below changes. A stored tree carries its version. */
 export const LAYOUT_VERSION = 1;

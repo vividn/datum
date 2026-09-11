@@ -21,7 +21,7 @@ import { fileCommand } from '$lib/dbio.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
 import { shellSplit } from '$lib/shellSplit.js';
-import { widgetsFor, type FieldListing, type NowActive, type Widget as FieldWidget } from '$lib/widgets.js';
+import { buttonsFor, type FieldButton, type FieldListing, type NowActive } from '$lib/fields.js';
 
 /** Bumped after every command; the panes re-run theirs when it changes. */
 export const epoch = writable(0);
@@ -30,7 +30,7 @@ export const epoch = writable(0);
 export const ready = writable(false);
 
 /** The fields widget's entries — `datum fields --json` and `now --json`, rebuilt on every beat. */
-export const fields = writable<FieldWidget[]>([]);
+export const fields = writable<FieldButton[]>([]);
 
 export interface ReplLike {
 	runArgv(argv: string[], line?: string): Promise<RunResult>;
@@ -66,7 +66,7 @@ export async function refresh(): Promise<void> {
 	// asked for (a partial write, a crashed process) keeps the bar it had
 	// rather than throwing out of the one refresh path every pane is on.
 	try {
-		fields.set(widgetsFor(JSON.parse(listed.stdout) as FieldListing[], activeOf(now)));
+		fields.set(buttonsFor(JSON.parse(listed.stdout) as FieldListing[], activeOf(now)));
 	} catch {
 		// The bar stays as it was.
 	}
