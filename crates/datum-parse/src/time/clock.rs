@@ -1,7 +1,7 @@
 //! Pluggable wall-clock for `DatumTime::now()`.
 //!
 //! Production code installs nothing, so [`DatumTime::now`] falls through
-//! to [`SystemClock`] (chrono::Local::now). Tests can install a
+//! to [`SystemClock`] (the host's zone, as [`host_iana_tz_name`]). Tests can install a
 //! [`MockClock`] on the current thread via [`install`] / [`uninstall`]
 //! to make timestamps deterministic without rewriting call sites.
 //!
@@ -131,16 +131,21 @@ pub struct SystemClock;
 
 impl Clock for SystemClock {
     fn now(&self) -> DatumTime {
-        let local = chrono::Local::now();
-        let utc = local.with_timezone(&Utc);
-        let offset_minutes = local.offset().local_minus_utc() / 60;
-        DatumTime {
-            utc,
-            offset_minutes,
-            // The offset above is authoritative; the name is a label we only
-            // apply when the host actually gave us one.
-            timezone: host_iana_tz_name(),
-            uncertainty: None,
+        let utc = Utc::now();
+        match host_iana_tz_name() {
+            // The offset is the named zone's, so the two cannot disagree.
+            // `chrono::Local` knows no zone under wasm32-wasip1 and put +0
+            // beside the `TZ` name there (da-y6ej). `host_iana_tz_name` only
+            // returns names that parse.
+            Some(name) => DatumTime::from_utc_and_tz(utc, &name)
+                .expect("host zone name must be a valid IANA name"),
+            // No name: the host's offset is the whole of what we know.
+            None => DatumTime {
+                utc,
+                offset_minutes: host_offset().local_minus_utc() / 60,
+                timezone: None,
+                uncertainty: None,
+            },
         }
     }
 }
@@ -299,6 +304,18 @@ mod tests {
         assert_eq!(
             SystemClock.now().timezone.as_deref(),
             Some("America/New_York")
+        );
+    }
+
+    #[test]
+    fn systemclock_offset_is_the_named_zones() {
+        // da-y6ej: under wasm32-wasip1 `chrono::Local` knows no zone and put
+        // +0 beside the `TZ` name, which `datum check` flags on every row.
+        let _g = TzGuard::set(Some("Europe/Berlin"));
+        let now = SystemClock.now();
+        assert_eq!(
+            now.expected_offset_minutes().unwrap(),
+            Some(now.offset_minutes)
         );
     }
 

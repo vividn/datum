@@ -152,12 +152,19 @@ function baseUrl() {
  *
  * `query` is appended to the URL.
  *
+ * `timezone` is the reader's zone, and so the `TZ` the CLI is handed. UTC
+ * unless a test is about a zone, which UTC's zero offset cannot tell from
+ * no zone at all (da-y6ej).
+ *
  * `engine` is a Playwright browser type — `webkit` — for a test that has
  * to hold on more than chromium. It gets a browser of its own on a fresh
  * profile (`launchPersistentContext`), torn down with the test.
  */
-export async function withApp(fn, { prepare, locale, viewport, device, query = '', engine } = {}) {
-	const options = { ...device, timezoneId: TIMEZONE, locale, ...(viewport ? { viewport } : {}) };
+export async function withApp(
+	fn,
+	{ prepare, locale, viewport, device, query = '', engine, timezone = TIMEZONE } = {}
+) {
+	const options = { ...device, timezoneId: timezone, locale, ...(viewport ? { viewport } : {}) };
 	const profile = engine && (await mkdtemp(join(tmpdir(), 'datum-profile-')));
 	const context = engine
 		? await engine.launchPersistentContext(profile, options)

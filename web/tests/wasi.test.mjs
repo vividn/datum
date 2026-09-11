@@ -9,7 +9,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -95,4 +95,32 @@ describe('the wasi CLI', () => {
 			assert.match(plain(restored.stdout), /1 skipped/);
 		});
 	});
+
+	// `track` and `ignore` stamp their entry with the CLI's own clock rather
+	// than a parsed time, and under WASI that clock had the `TZ` name but
+	// an offset of +0 — an entry `check` then called an ERROR (da-y6ej).
+	for (const [when, ms, offset] of [
+		['September', Date.UTC(2026, 8, 11, 12), 120],
+		['January', Date.UTC(2026, 0, 15, 12), 60]
+	]) {
+		test(`an entry the CLI stamps itself carries its zone's offset, in ${when}`, async () => {
+			const clock = workerClock(ms);
+			await withApp(
+				async (app) => {
+					assert.equal((await app.run(['track', 'x'])).code, 0);
+					assert.equal((await app.run(['ignore', 'y'])).code, 0);
+					const check = await app.run(['check']);
+					assert.doesNotMatch(plain(check.stdout), /tz_offset_mismatch|ERROR/, check.stdout);
+					const stored = (await app.entries())
+						.map(({ field, occur_time: t }) => [field, Date.parse(t.utc), t.offset_minutes, t.timezone])
+						.sort();
+					assert.deepEqual(
+						stored,
+						['x', 'y'].map((field) => [field, ms, offset, 'Europe/Berlin'])
+					);
+				},
+				{ prepare: clock.prepare, timezone: 'Europe/Berlin' }
+			);
+		});
+	}
 });
