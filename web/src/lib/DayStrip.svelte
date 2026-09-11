@@ -36,9 +36,9 @@
 	tree — and the strip writes nothing down: when nobody handles the
 	event, the value simply holds for the session.
 
-	The notch is a `role="slider"` button, so the keyboard reaches it;
-	↓ is *taller*, because that is the direction the pointer drags for
-	more.
+	The notch is a `role="slider"` button, so the keyboard reaches it.
+	Dragging it UP makes a day taller and down shorter (da-hsba), and ↑ / ↓
+	say the same: the pointer and the keys are one convention.
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount, tick } from 'svelte';
@@ -259,7 +259,7 @@
 		// One `dayview` per band per frame is a render loop, and a band
 		// stretched to fit meanwhile is a band whose axis has moved.
 		sizing.preview = clamp(
-			Math.round(sizing.from + (event.clientY - sizing.y)),
+			Math.round(sizing.from + (sizing.y - event.clientY)),
 			MIN_DAY_HEIGHT,
 			MAX_DAY_HEIGHT
 		);
@@ -270,14 +270,18 @@
 	}
 
 	function onHeightKey(event: KeyboardEvent): void {
-		const by = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+		const by = event.key === 'ArrowUp' ? 1 : event.key === 'ArrowDown' ? -1 : 0;
 		if (!by) return;
 		event.preventDefault();
 		setDayHeight(dayHeight + by * HEIGHT_STEP);
 	}
 
-	/** The jagged line's teeth, across a 100-wide viewBox. */
-	const ZIGZAG = Array.from({ length: 26 }, (_, i) => `${i * 4},${i % 2 ? 5 : 1}`).join(' ');
+	/**
+	 * The jagged line's teeth: a vertex every 4 units across a 400-wide
+	 * viewBox, stretched to the strip's width — about 10px a stroke at
+	 * 1000px and 4px on a 390px phone, still a tear rather than a blur.
+	 */
+	const ZIGZAG = Array.from({ length: 101 }, (_, i) => `${i * 4},${i % 2 ? 5 : 1}`).join(' ');
 </script>
 
 <Pane title="dayview" bind:body>
@@ -308,7 +312,7 @@
 				on:click={toYesterday}
 				aria-label="the band above today is not yesterday — bring yesterday back"
 			>
-				<svg viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
+				<svg viewBox="0 0 400 6" preserveAspectRatio="none" aria-hidden="true">
 					<polyline points={ZIGZAG} />
 				</svg>
 			</button>

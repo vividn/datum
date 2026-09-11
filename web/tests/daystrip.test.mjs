@@ -341,10 +341,10 @@ describe('the day strip', () => {
 				}
 				assert.equal(svgHeight(await band(app, 0)), m.today, "today's band");
 
-				// The notch moves it, and the owner hears the new value —
-				// the strip does not keep it to itself.
+				// The notch moves it — up is taller — and the owner hears
+				// the new value: the strip does not keep it to itself.
 				const grow = 30;
-				await dragBy(app, 'button.day-grip', grow);
+				await dragBy(app, 'button.day-grip', -grow);
 				assert.equal(await valueOf(app), 120 + grow);
 				await heardIs(app, 120 + grow);
 				// And every band is re-drawn, not stretched: the picture
@@ -372,9 +372,11 @@ describe('the day strip', () => {
 			await sizeFor(app, 3);
 			const before = await Promise.all([2, 1, 0].map((n) => band(app, n).then(svgHeight)));
 			const was = await valueOf(app);
-			const grow = 30;
+			const grow = 40;
 
-			await dragBy(app, 'button.day-grip', grow);
+			// UP is taller (da-hsba): the pointer moves 40px up, and every
+			// day is drawn 40px taller.
+			await dragBy(app, 'button.day-grip', -grow);
 			assert.equal(await valueOf(app), was + grow);
 			await waitForHeights(app, {
 				2: before[0] + grow,
@@ -405,6 +407,17 @@ describe('the day strip', () => {
 					`band ${[2, 1][i]} is on a different x-axis after a resize`
 				);
 			}
+
+			// And DOWN is shorter, by the same 40, from the same start.
+			await app.page.locator('button.reset').click();
+			await waitForHeights(app, { 2: before[0], 1: before[1], 0: before[2] });
+			await dragBy(app, 'button.day-grip', grow);
+			assert.equal(await valueOf(app), was - grow);
+			await waitForHeights(app, {
+				2: before[0] - grow,
+				1: before[1] - grow,
+				0: before[2] - grow
+			});
 		});
 	});
 
@@ -417,15 +430,15 @@ describe('the day strip', () => {
 				await app.page.evaluate(() => document.activeElement.classList.contains('day-grip')),
 				'the handle does not take focus'
 			);
-			// Down is more — taller — because down is the way a pointer
-			// drags for more.
+			// Up is taller, as it is for the pointer — the two paths are one
+			// convention.
 			await app.page.keyboard.press('ArrowUp');
-			const shorter = await valueOf(app);
-			assert.ok(shorter < fallback, `up did not shorten the day: ${shorter}`);
+			const taller = await valueOf(app);
+			assert.ok(taller > fallback, `up did not make the day taller: ${taller}`);
 			await app.page.keyboard.press('ArrowDown');
 			await app.page.keyboard.press('ArrowDown');
-			assert.equal(await valueOf(app), 2 * fallback - shorter);
-			assert.equal(await heard(app), 2 * fallback - shorter);
+			assert.equal(await valueOf(app), 2 * fallback - taller);
+			assert.equal(await heard(app), 2 * fallback - taller);
 
 			await app.page.locator('button.reset').press('Enter');
 			assert.equal(await valueOf(app), fallback);
@@ -442,9 +455,9 @@ describe('the day strip', () => {
 			await sizeFor(app, 2);
 			const before = await storeKeys(app);
 
-			await dragBy(app, 'button.day-grip', 20);
+			await dragBy(app, 'button.day-grip', -20);
 			await app.page.locator('button.day-grip').focus();
-			await app.page.keyboard.press('ArrowDown');
+			await app.page.keyboard.press('ArrowUp');
 			const m = await metrics(app);
 			await waitForHeights(app, { 0: m.today });
 			await app.page.locator('button.reset').click();
@@ -463,7 +476,7 @@ describe('the day strip', () => {
 				assert.equal(await valueOf(app), fallback);
 				await sizeFor(app, 1);
 				await app.page.locator('button.day-grip').focus();
-				await app.page.keyboard.press('ArrowDown');
+				await app.page.keyboard.press('ArrowUp');
 				assert.ok((await valueOf(app)) > fallback);
 				assert.deepEqual(app.errors, [], 'the page threw with storage blocked');
 			},
@@ -496,6 +509,15 @@ describe('the day strip', () => {
 			// not the day before it, and the strip says so.
 			await app.page.locator('.stack').evaluate((el) => (el.scrollTop = 0));
 			await app.page.locator('button.jagged').waitFor();
+
+			// A fine tear, not a coarse one (da-hsba): at least 100 vertices,
+			// where it once had 26, drawn at the same 6px.
+			const tear = await app.page.locator('button.jagged svg').evaluate((svg) => ({
+				vertices: svg.querySelector('polyline').getAttribute('points').trim().split(/\s+/).length,
+				height: svg.getBoundingClientRect().height
+			}));
+			assert.ok(tear.vertices >= 100, `the jagged line has ${tear.vertices} vertices`);
+			assert.equal(tear.height, 6);
 
 			// It is a button, it takes focus, and the keyboard works it.
 			await app.page.locator('button.jagged').focus();
