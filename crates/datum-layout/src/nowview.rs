@@ -173,36 +173,49 @@ pub fn tick_config(history_minutes: f64) -> TickConfig {
 /// to 0. The `now` tick is included so callers (and dayview's gridlines)
 /// see the right edge marked.
 pub fn nowview_axis_ticks(time_axis_extent: f64, history_minutes: f64) -> Vec<DayviewAxisTick> {
-    if history_minutes <= 0.0 || time_axis_extent <= 0.0 {
+    nowview_axis_ticks_around(time_axis_extent, history_minutes, 0.0)
+}
+
+/// [`nowview_axis_ticks`] for a window reaching `before` minutes back and
+/// `after` minutes on past the line it is about (`--at`, da-pcis): ticks
+/// step out from that line both ways, `-15m` before it and `+15m` after,
+/// and the line's own tick is the one without a label.
+pub fn nowview_axis_ticks_around(
+    time_axis_extent: f64,
+    before: f64,
+    after: f64,
+) -> Vec<DayviewAxisTick> {
+    let span = before + after;
+    if span <= 0.0 || time_axis_extent <= 0.0 {
         return Vec::new();
     }
-    let cfg = tick_config(history_minutes);
-    let mut ticks: Vec<DayviewAxisTick> = Vec::new();
+    let cfg = tick_config(span);
+    let pos = |m: f64| (before + m) / span * time_axis_extent;
+    // The line's own tick (no label — the now-line owns it).
+    let mut ticks = vec![DayviewAxisTick {
+        time_pos: pos(0.0),
+        hour: 0,
+        label: String::new(),
+        is_major: true,
+    }];
 
     // Place every minor stride (which subsumes major positions because
     // major is always a multiple of minor in `tick_config`); flag majors.
     let minor = cfg.minor_minutes.unwrap_or(cfg.major_minutes);
-    let mut m = minor;
-    while m <= history_minutes + 1e-9 {
-        let is_major = (m % cfg.major_minutes).abs() < 1e-6
-            || ((m % cfg.major_minutes) - cfg.major_minutes).abs() < 1e-6;
-        let frac = (history_minutes - m) / history_minutes;
-        let time_pos = frac * time_axis_extent;
-        ticks.push(DayviewAxisTick {
-            time_pos,
-            hour: 0,
-            label: format!("-{}m", m as i64),
-            is_major,
-        });
-        m += minor;
+    for (sign, reach) in [('-', before), ('+', after)] {
+        let mut m = minor;
+        while m <= reach + 1e-9 {
+            let is_major = (m % cfg.major_minutes).abs() < 1e-6
+                || ((m % cfg.major_minutes) - cfg.major_minutes).abs() < 1e-6;
+            ticks.push(DayviewAxisTick {
+                time_pos: pos(if sign == '-' { -m } else { m }),
+                hour: 0,
+                label: format!("{sign}{}m", m as i64),
+                is_major,
+            });
+            m += minor;
+        }
     }
-    // "Now" tick at the right edge (no label — the now-line owns it).
-    ticks.push(DayviewAxisTick {
-        time_pos: time_axis_extent,
-        hour: 0,
-        label: String::new(),
-        is_major: true,
-    });
     // Sort ascending by time_pos so the renderer's "skip last" logic in
     // emit_time_axis (which omits the trailing tick label) drops the now
     // tick rather than a meaningful one.
@@ -315,6 +328,11 @@ pub struct NowviewGeometry {
     pub height: f64,
     pub margin: f64,
     pub time_axis_height: f64,
+    /// Centre the window on the instant instead of ending it there
+    /// (`--at`, da-pcis): half the history either side of the line, and no
+    /// now strip, since the half after the line is drawn from the record.
+    #[serde(default)]
+    pub centred: bool,
 }
 
 impl Default for NowviewGeometry {
@@ -325,6 +343,7 @@ impl Default for NowviewGeometry {
             height: 0.0,
             margin: 2.0,
             time_axis_height: 22.0,
+            centred: false,
         }
     }
 }
@@ -333,6 +352,10 @@ impl Default for NowviewGeometry {
 /// `[now - history, now]`, no date label, relative-minute axis ticks, and a
 /// reservation on the right for the current-state panel.
 ///
+/// `now_ms` is the instant the picture is about — now, or `--at`'s. A
+/// zero history is the snapshot (da-pcis): no time band and no axis, the
+/// whole plot the strip carrying each field's state at that instant.
+///
 /// Pure: `fields` is the only data input, so the CLI (SQLite) and the PWA
 /// (SQLite-wasm) reach the same geometry from their own stores.
 pub fn nowview_config(
@@ -340,19 +363,25 @@ pub fn nowview_config(
     now_ms: i64,
     geom: &NowviewGeometry,
 ) -> DayviewConfig {
-    let history_minutes = geom.history_minutes;
+    let history_minutes = geom.history_minutes.max(0.0);
     let width = geom
         .width
         .unwrap_or_else(|| default_width_for_history(history_minutes));
-    let start_ms = now_ms - (history_minutes * 60_000.0) as i64;
+    let snapshot = history_minutes <= 0.0;
+    let after = if geom.centred {
+        history_minutes / 2.0
+    } else {
+        0.0
+    };
+    let before = history_minutes - after;
 
     // da-34w: nowview drops the date label — it's timestamp-focused, not
     // date-focused. The HH:MM clock overlay near the now-line takes its
     // place.
     let day = DayviewDayInput {
         label_lines: Vec::new(),
-        start_ms,
-        end_ms: now_ms,
+        start_ms: now_ms - (before * 60_000.0) as i64,
+        end_ms: now_ms + (after * 60_000.0) as i64,
         has_error: false,
         fields,
     };
@@ -361,23 +390,29 @@ pub fn nowview_config(
     // is drawn at, so the now-line falls where the original datum puts it
     // and the strip stays proportionate at any width.
     let plot_width = (width - 2.0 * geom.margin).max(0.0);
-    let now_width = plot_width * NOW_WIDTH_MINUTES / (history_minutes.max(0.0) + NOW_WIDTH_MINUTES);
+    let now_width = if geom.centred && !snapshot {
+        0.0
+    } else {
+        plot_width * NOW_WIDTH_MINUTES / (history_minutes + NOW_WIDTH_MINUTES)
+    };
+    let time_axis_height = if snapshot { 0.0 } else { geom.time_axis_height };
 
     // Pre-compute the time-axis extent so the relative-minute tick override
     // resolves to the same pixel space dayview will use. Mirrors the math in
     // `dayview::compute_dayview`. Date label is suppressed (label_width = 0)
     // so the time axis only loses the now-strip reservation.
     let time_axis_extent_for_ticks = (plot_width - now_width).max(0.0);
-    let axis_ticks_override = Some(nowview_axis_ticks(
+    let axis_ticks_override = Some(nowview_axis_ticks_around(
         time_axis_extent_for_ticks,
-        history_minutes,
+        before,
+        after,
     ));
 
     let day_height = if geom.height > 0.0 {
         // Use the requested height as the per-day band, leaving room for
         // axis + margins. Floor at a sensible minimum so labels stay
         // readable.
-        (geom.height - 2.0 * geom.margin - geom.time_axis_height).max(50.0)
+        (geom.height - 2.0 * geom.margin - time_axis_height).max(50.0)
     } else {
         DEFAULT_DAY_HEIGHT
     };
@@ -389,7 +424,7 @@ pub fn nowview_config(
         height: None,
         day_height,
         interday_margin: 0.0,
-        time_axis_height: geom.time_axis_height,
+        time_axis_height,
         margin: geom.margin,
         // Date label suppressed — give all of the cross-perpendicular budget
         // to the data area (and the panel reservation).
@@ -448,5 +483,43 @@ mod config_tests {
         let cfg = nowview_config(Vec::new(), 0, &geom);
         assert_eq!(cfg.width, 400.0);
         assert!((cfg.right_panel_width - 99.0).abs() < 1e-9);
+    }
+
+    /// da-pcis: a zero history is the snapshot — the whole plot is the
+    /// strip, with no axis and no ticks, at the snapshot's own width.
+    #[test]
+    fn zero_history_is_the_snapshot() {
+        let geom = NowviewGeometry {
+            history_minutes: 0.0,
+            ..NowviewGeometry::default()
+        };
+        let cfg = nowview_config(Vec::new(), 1_000_000, &geom);
+        assert_eq!(cfg.width, default_width_for_history(0.0));
+        assert_eq!(cfg.days[0].start_ms, cfg.days[0].end_ms);
+        assert_eq!(cfg.right_panel_width, cfg.width - 2.0 * geom.margin);
+        assert_eq!(cfg.time_axis_height, 0.0);
+        assert!(cfg.axis_ticks_override.unwrap().is_empty());
+    }
+
+    /// da-pcis: `--at` centres the window on the instant, with no strip,
+    /// and the instant's unlabelled tick in the middle of the axis.
+    #[test]
+    fn centred_window_straddles_the_instant() {
+        let geom = NowviewGeometry {
+            width: Some(404.0),
+            centred: true,
+            ..NowviewGeometry::default()
+        };
+        let cfg = nowview_config(Vec::new(), 1_000_000, &geom);
+        assert_eq!(cfg.days[0].start_ms, 1_000_000 - 15 * 60_000);
+        assert_eq!(cfg.days[0].end_ms, 1_000_000 + 15 * 60_000);
+        assert_eq!(cfg.right_panel_width, 0.0);
+        let ticks = cfg.axis_ticks_override.unwrap();
+        let labels: Vec<&str> = ticks.iter().map(|t| t.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            vec!["-15m", "-10m", "-5m", "", "+5m", "+10m", "+15m"]
+        );
+        assert!((ticks[3].time_pos - 200.0).abs() < 1e-9);
     }
 }

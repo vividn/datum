@@ -253,6 +253,7 @@ fn render(request: Request) -> Response {
                 time_axis_height: options
                     .time_axis_height
                     .unwrap_or(defaults.time_axis_height),
+                ..defaults
             };
             // The visible window is the history the geometry asks for,
             // ending at the now-line — `nowview_config`'s own scope.

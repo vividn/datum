@@ -31,8 +31,11 @@ use datum_layout::nowview::{
     nowview_config, NowviewBlock, NowviewCurrentState, NowviewField, NowviewGeometry, NowviewPoint,
     DEFAULT_HISTORY_MINUTES,
 };
-use datum_layout::nowview_svg::{render_nowview_svg, with_xml_declaration, wrap_svg_in_html};
+use datum_layout::nowview_svg::{
+    render_nowview_at_svg, render_nowview_svg, with_xml_declaration, wrap_svg_in_html,
+};
 use datum_parse::time::dur::parse_duration;
+use datum_parse::time::{parse_time, TimeBuilder, TimeCtx};
 use serde_json::Value as JsonValue;
 
 use crate::args::NowviewArgs;
@@ -171,9 +174,13 @@ fn nowview_periodic_refresh(
 /// current-state panel — the shared compute behind both the SVG renderer
 /// ([`render_once`]) and the JSON emitter ([`render_json_once`]).
 struct NowComputed {
-    end: DateTime<Utc>,
-    end_ms: i64,
+    now_ms: i64,
+    /// The instant the picture is about: `--at`'s, or now.
+    anchor: DateTime<Utc>,
+    at: Option<DateTime<Utc>>,
     history_minutes: f64,
+    /// The window's two ends, in ms.
+    window: (i64, i64),
     layout: datum_layout::dayview::DayviewLayout,
     current_states: Vec<NowviewCurrentState>,
 }
@@ -183,35 +190,48 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         Some(s) => duration_minutes(s).with_context(|| format!("invalid --history: '{s}'"))?,
         None => DEFAULT_HISTORY_MINUTES,
     };
-    if history_minutes <= 0.0 {
-        anyhow::bail!("--history must be positive (got {history_minutes} minutes)");
-    }
+    // da-pcis: `--at` names its instant exactly as `-t` does.
+    let at = match args.at.as_deref() {
+        Some(s) => {
+            let arg = parse_time(s, TimeCtx::now())
+                .map_err(|e| anyhow::anyhow!("invalid --at '{s}': {e}"))?;
+            Some(TimeBuilder::now().with_time_arg(arg).build().utc)
+        }
+        None => None,
+    };
 
-    let end = Utc::now();
-    let end_ms = end.timestamp_millis();
-    let fields = build_dayview_fields(db, end, history_minutes)?;
-
+    let now = Utc::now();
+    let anchor = at.unwrap_or(now);
     // Geometry lives in `datum_layout::nowview` so the PWA reaches the same
     // config from its own store (da-6h6p) instead of re-deriving it.
-    let config = nowview_config(
-        fields,
-        end_ms,
-        &NowviewGeometry {
-            history_minutes,
-            width: args.width,
-            height: args.height,
-            margin: args.margin,
-            time_axis_height: args.time_axis_height,
-        },
-    );
+    let geometry = NowviewGeometry {
+        history_minutes,
+        width: args.width,
+        height: args.height,
+        margin: args.margin,
+        time_axis_height: args.time_axis_height,
+        centred: at.is_some(),
+    };
+    let window_end = if geometry.centred {
+        anchor + chrono::Duration::milliseconds((history_minutes * 30_000.0) as i64)
+    } else {
+        anchor
+    };
+    // The snapshot's window is an instant; a minute of lookback still
+    // gives every field in a state a band for its state to be read from.
+    let fields = build_dayview_fields(db, window_end, history_minutes.max(1.0))?;
+    let config = nowview_config(fields, anchor.timestamp_millis(), &geometry);
+    let window = (config.days[0].start_ms, config.days[0].end_ms);
 
     let layout = compute_dayview(&config);
-    let current_states = build_current_states(db, end, &layout);
+    let current_states = build_current_states(db, anchor, &layout);
 
     Ok(NowComputed {
-        end,
-        end_ms,
+        now_ms: now.timestamp_millis(),
+        anchor,
+        at,
         history_minutes,
+        window,
         layout,
         current_states,
     })
@@ -230,7 +250,12 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
         return render_terminal_once(args, db);
     };
     let c = compute_now(args, db)?;
-    let svg = render_nowview_svg(&c.layout, &format_local_hh_mm(c.end), &c.current_states);
+    let clock = format_local_hh_mm(c.anchor);
+    let svg = if c.at.is_some() && c.history_minutes > 0.0 {
+        render_nowview_at_svg(&c.layout, &clock)
+    } else {
+        render_nowview_svg(&c.layout, &clock, &c.current_states)
+    };
 
     match target {
         "-" => {
@@ -242,15 +267,20 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
 }
 
 /// Emit the current-state panel as JSON (`--json`). The shape is
-/// `{ now_ms, history_minutes, panel: [{ field, state_label, colors }] }` —
-/// the resolved per-field state and hex color(s) at "now", without any SVG
+/// `{ now_ms, at_ms, start_ms, end_ms, history_minutes, panel: [{ field,
+/// state_label, colors }] }` — the window's instant (`at_ms` null when it
+/// is now) and ends, and the resolved per-field state and hex color(s) at
+/// that instant, without any SVG
 /// geometry. Consumed by external clients like the Pebble `nowview`
 /// watchface. With `--output-file` the JSON is written there; otherwise to
 /// stdout.
 fn render_json_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     let c = compute_now(args, db)?;
     let payload = serde_json::json!({
-        "now_ms": c.end_ms,
+        "now_ms": c.now_ms,
+        "at_ms": c.at.map(|t| t.timestamp_millis()),
+        "start_ms": c.window.0,
+        "end_ms": c.window.1,
         "history_minutes": c.history_minutes,
         "panel": c.current_states,
     });
@@ -344,7 +374,8 @@ fn rasterize_to_png(svg_xml: &str) -> Result<Vec<u8>> {
 
 /// Convert the user-supplied duration string to absolute minutes. Negative
 /// inputs are normalized to positive (the panel always extends backward
-/// from "now"). 0 minutes is allowed by the parser; the caller rejects.
+/// from "now"). 0 minutes is allowed: `--history 0` is the snapshot, and
+/// `--window` rejects it itself.
 fn duration_minutes(s: &str) -> Result<f64> {
     let dur = parse_duration(s).map_err(|e| anyhow::anyhow!("{e}"))?;
     let secs = dur.num_seconds().abs() as f64;
@@ -363,6 +394,9 @@ pub(crate) fn build_dayview_fields(
 ) -> Result<Vec<DayviewFieldInput>> {
     let day_end_ms = end.timestamp_millis();
     let day_start_ms = day_end_ms - (history_minutes * 60_000.0) as i64;
+    // da-pcis: a window centred on `--at` can reach past now, and the
+    // record holds nothing there — a state still open runs up to now.
+    let open_end_ms = day_end_ms.min(Utc::now().timestamp_millis());
 
     let day_start_utc = Utc
         .timestamp_millis_opt(day_start_ms)
@@ -409,14 +443,14 @@ pub(crate) fn build_dayview_fields(
             }
         }
         entries_for_field.sort_by_key(occur_time_ms);
-        let switch_region_ends = switch_region_end_ms(&entries_for_field, day_end_ms);
+        let switch_region_ends = switch_region_end_ms(&entries_for_field, open_end_ms);
 
         // da-ncoa: synthesize the leading region for a state set before
         // the fetch window — no in-window entry opens it, so without this
         // the band falls back to the field-default color.
         let mut blocks: Vec<DayviewBlock> = Vec::new();
         if let Some((start_ms, end_ms, state)) =
-            leading_state_region(db, &field, &entries_for_field, fetch_start, day_end_ms)?
+            leading_state_region(db, &field, &entries_for_field, fetch_start, open_end_ms)?
         {
             push_switch_region(
                 &mut blocks,

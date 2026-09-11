@@ -530,3 +530,140 @@ fn nowview_chunk_carries_the_state_switched_into_inside_the_window() {
         "the previous state keeps its own colour: {svg}"
     );
 }
+
+// ---------------------------------------------------------------------
+// da-pcis: `--history 0` is the snapshot, and `--at` centres the window
+// on an instant instead of ending it at now.
+// ---------------------------------------------------------------------
+
+/// Run `nowview` with `args` writing to a temp file of `suffix`; its text.
+fn nowview_out(db: &datum_core::db::Db, args: &[&str], suffix: &str) -> String {
+    let tmp = tempfile::NamedTempFile::with_suffix(suffix).unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    let mut argv = vec!["nowview"];
+    argv.extend_from_slice(args);
+    argv.extend_from_slice(&["--output-file", &path]);
+    run_cli(&argv, db).expect("nowview dispatch");
+    std::fs::read_to_string(&path).expect("read output")
+}
+
+#[test]
+fn nowview_history_zero_is_the_snapshot() {
+    let db = fresh_db();
+    let now = Utc::now();
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .state(serde_json::json!("focused"))
+        .time_start_utc(now - Duration::minutes(10))
+        .insert(&db);
+
+    let svg = nowview_out(&db, &["--history", "0"], ".svg");
+    // The state, labelled and in its colour, and the snapshot's own width.
+    assert!(svg.contains(">mood: focused</text>"), "no label in: {svg}");
+    assert_eq!(field_rects(&svg, "mood", "now-chunk").len(), 1, "{svg}");
+    assert!(svg.contains(r#"width="100""#), "{svg}");
+    // No time band: no axis, no ticks, no gridlines, no now-line.
+    for absent in [
+        r#"class="axis""#,
+        r#"class="tick""#,
+        "tick-label",
+        "gridline",
+        "current-time-line",
+    ] {
+        assert!(!svg.contains(absent), "snapshot carries {absent}: {svg}");
+    }
+
+    let v: serde_json::Value =
+        serde_json::from_str(&nowview_out(&db, &["--json", "--history", "0"], ".json")).unwrap();
+    assert_eq!(v["history_minutes"].as_f64(), Some(0.0));
+    assert!(v["at_ms"].is_null());
+    assert_eq!(v["start_ms"], v["end_ms"]);
+    assert_eq!(v["panel"][0]["state_label"], "focused");
+}
+
+/// A switch at 13:50 and one at 14:10, the day before the bead was filed.
+fn two_switch_db() -> datum_core::db::Db {
+    let db = fresh_db();
+    for (state, at) in [
+        ("before", "2026-09-10T13:50:00Z"),
+        ("after", "2026-09-10T14:10:00Z"),
+    ] {
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .state(serde_json::json!(state))
+            .time_start_utc(at.parse().unwrap())
+            .insert(&db);
+    }
+    db
+}
+
+fn ms(iso: &str) -> i64 {
+    iso.parse::<chrono::DateTime<Utc>>()
+        .unwrap()
+        .timestamp_millis()
+}
+
+#[test]
+fn nowview_at_centres_the_window_on_the_instant() {
+    use chrono::Timelike;
+    let db = two_switch_db();
+    let at = "2026-09-10T14:00:00Z";
+
+    let v: serde_json::Value = serde_json::from_str(&nowview_out(
+        &db,
+        &["--json", "--at", at, "--history", "30m"],
+        ".json",
+    ))
+    .unwrap();
+    assert_eq!(v["at_ms"].as_i64(), Some(ms(at)));
+    assert_eq!(v["start_ms"].as_i64(), Some(ms("2026-09-10T13:45:00Z")));
+    assert_eq!(v["end_ms"].as_i64(), Some(ms("2026-09-10T14:15:00Z")));
+    assert_eq!(v["panel"][0]["state_label"], "before");
+
+    let svg = nowview_out(
+        &db,
+        &["--at", at, "--history", "30m", "--width", "404"],
+        ".svg",
+    );
+    // The at-line in the middle (x = width/2 on the page; the plot group
+    // is translated by the 2px margin), both switches drawn either side of
+    // it, and the instant's clock under the line.
+    let line = now_x(&svg) + 2.0;
+    assert!((line - 202.0).abs() <= 1.0, "at-line off centre: {svg}");
+    let blocks = field_rects(&svg, "mood", "block");
+    assert_eq!(blocks.len(), 2, "both switches inside the window: {svg}");
+    assert!(
+        blocks[0].x + 2.0 < line && blocks[1].x + 2.0 > line,
+        "{svg}"
+    );
+    assert!(field_rects(&svg, "mood", "now-chunk").is_empty(), "{svg}");
+    let local = at
+        .parse::<chrono::DateTime<Utc>>()
+        .unwrap()
+        .with_timezone(&chrono::Local);
+    let clock = format!("{}:{:02}", local.hour(), local.minute());
+    assert!(
+        svg.contains(&format!(">{clock}</text>")),
+        "no {clock}: {svg}"
+    );
+
+    // A window with nothing in it is a picture, not an error.
+    let empty = nowview_out(&db, &["--at", "2000-01-01T00:00:00Z"], ".svg");
+    assert!(empty.contains("current-time-line"), "{empty}");
+    assert!(field_rects(&empty, "mood", "block").is_empty(), "{empty}");
+}
+
+#[test]
+fn nowview_snapshot_at_an_instant_shows_the_state_then() {
+    let db = two_switch_db();
+    let args = ["--history", "0", "--at", "2026-09-10T13:55:00Z"];
+
+    let svg = nowview_out(&db, &args, ".svg");
+    assert!(svg.contains(">mood: before</text>"), "{svg}");
+    assert!(!svg.contains("mood: after"), "{svg}");
+
+    let mut json = vec!["--json"];
+    json.extend_from_slice(&args);
+    let v: serde_json::Value = serde_json::from_str(&nowview_out(&db, &json, ".json")).unwrap();
+    assert_eq!(v["panel"][0]["state_label"], "before");
+}

@@ -14,7 +14,8 @@ use std::fmt::Write;
 
 use crate::dayview::{BlockFill, DayviewLayout, Orientation};
 use crate::dayview_svg::{
-    render_dayview_svg_with, text_width, DayviewSvgOpts, RightPanelFill, AXIS_LABEL_GAP,
+    render_dayview_svg, render_dayview_svg_with, text_width, DayviewSvgOpts, RightPanelFill,
+    AXIS_LABEL_GAP,
 };
 use crate::nowview::NowviewCurrentState;
 
@@ -47,7 +48,50 @@ pub fn render_nowview_svg(
         let overlay = build_current_time_overlay(layout, current_time_label);
         inject_inside_plot_group(&mut svg, &overlay);
     }
+    if layout.time_axis_extent <= 0.0 {
+        inject_inside_plot_group(&mut svg, &snapshot_labels(layout, current_states));
+    }
     svg
+}
+
+/// Render a window centred on an instant (`--at`, da-pcis): the dayview
+/// picture with its now-line at the instant, no now strip, and the
+/// instant's `HH:MM` as the axis label under the line — where the labels
+/// either side of it make room for it like any other tick's.
+pub fn render_nowview_at_svg(layout: &DayviewLayout, at_label: &str) -> String {
+    let mut layout = layout.clone();
+    if let Some(tick) = layout.axis_ticks.iter_mut().find(|t| t.label.is_empty()) {
+        tick.label = at_label.to_string();
+    }
+    render_dayview_svg(&layout)
+}
+
+/// The snapshot (a zero history, da-pcis) is all now strip, so with no
+/// time band to read a state off, each chunk carries its field and state.
+fn snapshot_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) -> String {
+    let Some(day) = layout.days.first() else {
+        return String::new();
+    };
+    let mut out = String::from(r#"<g class="nowview-labels">"#);
+    for state in current_states {
+        let Some(label) = &state.state_label else {
+            continue;
+        };
+        let Some(f) = day.fields.iter().find(|f| f.field == state.field) else {
+            continue;
+        };
+        let _ = write!(
+            &mut out,
+            r#"<text class="state-label" x="{x}" y="{y}" dy="0.35em" fill="{c}" stroke="black" stroke-width="2" paint-order="stroke" font-size="{fs}">{t}</text>"#,
+            x = layout.label_width + 3.0,
+            y = day.day_offset + f.cross_offset + f.cross_extent / 2.0,
+            c = TEXT_COLOR,
+            fs = (f.cross_extent * 0.7).min(12.0),
+            t = escape_xml(&format!("{}: {label}", state.field)),
+        );
+    }
+    out.push_str("</g>");
+    out
 }
 
 /// Turn the resolved current states into the per-field strip fills the

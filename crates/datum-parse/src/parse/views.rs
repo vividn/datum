@@ -177,6 +177,15 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
                 out.history = Some(v.to_string());
                 i += 1;
             }
+            FlagSplit::Long("at") => {
+                let (v, ni) = take_value(tail, i, None, "--at")?;
+                out.at = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("at", v) => {
+                out.at = Some(v.to_string());
+                i += 1;
+            }
             FlagSplit::Long("width") => {
                 let (v, ni) = take_value(tail, i, None, "--width")?;
                 out.width = Some(parse_f64(v, "--width")?);

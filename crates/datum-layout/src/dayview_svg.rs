@@ -321,8 +321,9 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
     }
 
     // Per-day now-lines. Emitted last so they sit above gridlines and data.
+    // A plot with no time axis (nowview's snapshot) has no line to draw.
     for day in &layout.days {
-        if let Some(nt) = day.now_time_pos {
+        if let Some(nt) = day.now_time_pos.filter(|_| layout.time_axis_extent > 0.0) {
             let (x1, y1, x2, y2) = match layout.orientation {
                 Orientation::Horizontal => {
                     let x = geom.data_x + nt;
