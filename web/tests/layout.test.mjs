@@ -865,9 +865,10 @@ describe('holders', () => {
 // The lock (da-2a5y): "Layouts should have the ability to be locked,
 // which prevents the resizing of panes […] no splitting, new tabs, or
 // resizing." Where the lock is toggled from is the shell's; here it
-// arrives in the draft, on the root's tab, and covers the whole tree.
+// arrives as this device's lock on the `day` tab (per device, never in
+// the tree — da-0a5o), and covers the whole tree.
 describe('the lock', () => {
-	const locked = (on) => JSON.stringify(lockable(on));
+	const tree = JSON.stringify(lockable());
 
 	/** The cells of the row split, by width. */
 	const cellWidths = (page) =>
@@ -905,7 +906,7 @@ describe('the lock', () => {
 
 				// Unlocked, the controls are back — the one border, and a badge on
 				// each widget pane (the root has none of its own).
-				await page.evaluate((json) => localStorage.setItem('datum.layout.draft.v1.default', json), locked(false));
+				await page.evaluate(() => localStorage.removeItem('datum.layout.locked.v1.day'));
 				await app.reload();
 				assert.equal(await page.locator('.split.row > [role="separator"]').count(), 1);
 				assert.equal(await pane(page, 'repl').locator('button.more').count(), 1);
@@ -913,8 +914,8 @@ describe('the lock', () => {
 				assert.equal(await page.locator('section.root button.more').count(), 2);
 			},
 			// The init script runs on every load, the reload included: it
-			// writes the locked draft once and leaves the unlocked one alone.
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draftOnce, locked(true)) }
+			// writes the draft and the lock once and leaves the unlocked one alone.
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(lockedOnce, tree) }
 		);
 	});
 });
@@ -1198,8 +1199,8 @@ const widgetPane = (id, kind, settings = {}, edge = 'top') => ({
 	bar: { ...bar, edge }
 });
 
-/** A root holder, its one tab locked or not, over [repl | a tabbed tail/nowview pane]. */
-function lockable(locked) {
+/** A root holder over [repl | a tabbed tail/nowview pane]. */
+function lockable() {
 	const tab = {
 		id: 'root-tab',
 		content: {
@@ -1220,8 +1221,7 @@ function lockable(locked) {
 			]
 		}
 	};
-	if (locked) tab.locked = true;
-	return { version: 1, name: 'default', root: { id: 'root', tabs: [tab], active: 0, bar } };
+	return { version: 1, name: 'day', root: { id: 'root', tabs: [tab], active: 0, bar } };
 }
 
 /** A root holder over [the strip at `dayHeight` / the REPL], half and half. */
@@ -1277,6 +1277,8 @@ function draft(json) {
 	localStorage.setItem('datum.layout.draft.v1.day', json);
 }
 
-function draftOnce(json) {
-	if (!localStorage.getItem('datum.layout.draft.v1.default')) localStorage.setItem('datum.layout.draft.v1.default', json);
+function lockedOnce(json) {
+	if (localStorage.getItem('datum.layout.draft.v1.day')) return;
+	localStorage.setItem('datum.layout.draft.v1.day', json);
+	localStorage.setItem('datum.layout.locked.v1.day', '1');
 }

@@ -125,6 +125,8 @@ describe('the shell', () => {
 			assert.equal(await activeRootTab(page), 'nowview');
 			await page.locator('section.pane[data-title="nowview"] img.svg').waitFor();
 			assert.deepEqual(await titles(page), ['nowview']);
+			// Two root tabs are the root bar's alone: the root pane draws no strip of its own.
+			assert.equal(await page.locator('section.root > .titlebar').count(), 0, 'the root drew a second strip');
 
 			await app.reload();
 			assert.deepEqual(await rootTabs(page), ['day', 'nowview']);
