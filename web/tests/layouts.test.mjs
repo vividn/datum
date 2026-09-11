@@ -201,7 +201,9 @@ describe('the internal database', () => {
 			const seen = await second.spyOnRunner();
 			await layouts(first, 'saveLayout', tree('home', 'nowview'));
 			await until(seen, (argvs) => argvs.some(internal));
-			await new Promise((resolve) => setTimeout(resolve, 1000));
+			// Whatever this tab does on the save, it does on hearing it: once
+			// that re-read has answered, a pane that was going to re-run has.
+			await second.idle();
 			assert.deepEqual(
 				(await seen()).filter((argv) => !internal(argv)),
 				[],

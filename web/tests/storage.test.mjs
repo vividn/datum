@@ -314,7 +314,9 @@ describe('two tabs', () => {
 				const logged = await app.run(['occur', 'coffee', '-t', '0700']);
 				assert.equal(logged.code, 0, logged.stderr);
 				assert.ok(Date.now() - started > 3000, 'the stall did not happen, so this proves nothing');
-				await new Promise((resolve) => setTimeout(resolve, 3000));
+				// No wait: a resend at 3 s went out before this answer did, and
+				// the worker runs what it is sent in order, so the read below
+				// comes after anything a resend would have written.
 				assert.deepEqual(
 					(await app.entries()).map((e) => e.field),
 					['coffee']

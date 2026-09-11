@@ -73,7 +73,10 @@ describe("the REPL's prompt, the bottom bar's", () => {
 				});
 				assert.ok(clockRight <= caretLeft, 'the clock is not left of the caret');
 
-				await page.waitForTimeout(1100);
+				await page.waitForFunction(
+					(was) => document.querySelector('.prompt-bar .line .stamp')?.innerText !== was,
+					first
+				);
 				const second = await promptClock(page);
 				assert.match(second, HHMMSS);
 				const moved = apart(first, second);

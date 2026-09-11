@@ -338,8 +338,12 @@
 	}
 
 	/* The margin's handle: no ground and no outline, only the glyph, barely
-	   there until it is pointed at or focused. Its box is the target. */
+	   there until it is pointed at or focused. Its box is the target — and
+	   the glyph's line box, 14px in the 12px margin, is clipped to it, or
+	   the right-hand one reaches 1px past the page and main scrolls
+	   sideways by it (da-5xg3). */
 	.faint {
+		overflow: hidden;
 		inline-size: 100%;
 		block-size: 100%;
 		display: grid;

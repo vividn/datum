@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
+import { settled } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -389,11 +390,16 @@ describe('the icons', () => {
 			assert.deepEqual(await dotted(a.page), ['day']);
 			assert.deepEqual(await dotted(b.page), []);
 
+			const heard = await a.spyOnRunner();
 			await choose(b.page, 'command', 'Close pane');
 			await icon(b.page, 'save').click();
 			await until(() => dotted(b.page), (d) => d.length === 0);
-			// A hears the save: its baseline moves, its edit does not.
-			await new Promise((resolve) => setTimeout(resolve, 1500));
+			// A hears the save — it reads the saved layout back from
+			// `_internal` — and once that has answered, its baseline has
+			// moved and its edit has not.
+			await until(heard, (argvs) => argvs.some((argv) => argv[0] === '--db' && argv[1] === '_internal'));
+			await a.idle();
+			await settled(a.page);
 			assert.deepEqual(await titles(a.page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
 			assert.deepEqual(await dotted(a.page), ['day']);
 			// And a tab that was not edited follows: a third tab, and B itself.

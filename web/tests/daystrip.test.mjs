@@ -560,7 +560,8 @@ describe('the day strip', () => {
 			await waitForHeights(app, { 0: m.today });
 			await app.page.locator('button.reset').click();
 			await heardIs(app, fallback);
-			await app.page.waitForTimeout(300);
+			// Heard, and drawn: the strip has done what it does with it.
+			await app.idle();
 
 			assert.deepEqual(await storeKeys(app), before, 'the strip wrote to localStorage');
 		});

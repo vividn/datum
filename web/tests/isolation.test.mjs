@@ -65,6 +65,17 @@ async function visit(options) {
 	return { context, page, loads: () => loads };
 }
 
+/**
+ * The layout has mounted. `window.datum` is installed by the same onMount
+ * that then decides on the reload (+layout.svelte), synchronously — so a
+ * page where it exists has made that decision, and any reload it asked
+ * for would already have replaced it.
+ */
+async function mounted(page) {
+	await page.waitForLoadState('load');
+	await page.waitForFunction(() => typeof window.datum?.run === 'function');
+}
+
 describe('cross-origin isolation from the service worker, on a host sending no headers', () => {
 	test('the app isolates itself with exactly one reload, and never again', async () => {
 		const { context, page, loads } = await visit({});
@@ -72,8 +83,9 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 		// the process alive and turns a red test into a hung job.
 		try {
 			await page.waitForFunction(() => crossOriginIsolated, null, { timeout: 20000 });
-			// Let anything that was going to happen, happen — then count.
-			await page.waitForTimeout(2500);
+			// The isolated page's mount asks for no reload; once it has
+			// mounted, nothing further is coming — then count.
+			await mounted(page);
 			assert.equal(loads(), 2, 'one initial load plus exactly one reload');
 			assert.ok(await page.evaluate(() => !!navigator.serviceWorker.controller), 'a worker controls the page');
 
@@ -82,7 +94,7 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 			const before = loads();
 			await page.goto(url, { waitUntil: 'load' });
 			assert.equal(await page.evaluate(() => crossOriginIsolated), true);
-			await page.waitForTimeout(2000);
+			await mounted(page);
 			assert.equal(loads(), before + 1, 'no reload the second time');
 		} finally {
 			await context.close();
@@ -92,7 +104,10 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 	test('CONTROL: with service workers blocked, the page stays un-isolated', async () => {
 		const { context, page } = await visit({ serviceWorkers: 'block' });
 		try {
-			await page.waitForTimeout(4000);
+			// A document's isolation is fixed for its life, and with no worker
+			// there is no reload to bring another: the mounted page is the
+			// only one there will be.
+			await mounted(page);
 			assert.equal(
 				await page.evaluate(() => crossOriginIsolated),
 				false,
