@@ -49,7 +49,7 @@
 	import { getContext, setContext } from 'svelte';
 	import { readable, writable, type Readable } from 'svelte/store';
 	import Pane from '$lib/Pane.svelte';
-	import PaneFrame from './PaneFrame.svelte';
+	import PaneFrame, { ROW } from './PaneFrame.svelte';
 	import Picker from './Picker.svelte';
 	import type { NodeId, Pane as PaneNode, Split } from './types.js';
 	import { isSplit } from './types.js';
@@ -69,17 +69,12 @@
 	/**
 	 * The border between two children, in pixels — the gap between panes,
 	 * and the whole of it is the handle. Halved from the old grid's 12
-	 * (vividn: "reduce margins some"), to the floor a finger needs.
+	 * (vividn: "reduce margins some"), to the floor a finger needs. The half
+	 * of a title's row that hangs outside its pane (`ROW / 2`) fits in it.
 	 */
 	const BORDER = 8;
 	/** A widget pane's outline, 1px a side. */
 	const OUTLINE = 2;
-	/**
-	 * The bar's row (PaneFrame's `--row`): the whole of it across a tabbed
-	 * holder's edge, and the inside half of it on a widget pane's, where it
-	 * straddles the outline.
-	 */
-	const ROW = 24;
 	/** What one arrow press moves a border. */
 	const NUDGE = 0.02;
 	/**
@@ -122,7 +117,12 @@
 		const c = child.tabs[child.active].content;
 		return isSplit(c) ? '' : (KINDS[c.kind]?.meta.title ?? c.kind);
 	};
-	/** What a pane's frame adds around its content: see PaneFrame.svelte. */
+	/**
+	 * What a pane's frame adds around its content: see PaneFrame.svelte.
+	 * The bar's row (`ROW`, the frame's `--row`) is the whole of it across
+	 * a tabbed holder's edge, and the inside half of it on a widget pane's,
+	 * where it straddles the outline.
+	 */
 	const chromeOf = (p: PaneNode) => {
 		const widget = !isSplit(p.tabs[p.active].content);
 		const outline = widget ? OUTLINE : 0;

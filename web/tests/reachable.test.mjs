@@ -302,30 +302,38 @@ describe('the layout engine, by keyboard', () => {
 		}, { viewport: { width: 1280, height: 900 } });
 	});
 
-	// The floors a finger needs, after the margins came down (da-jgrn): a
-	// border is at least 8px across and every `…` badge at least 24px each way.
-	for (const [name, viewport] of [
-		['1280x900', { width: 1280, height: 900 }],
-		['390x844', { width: 390, height: 844 }]
+	// The floors a pointer needs, after the margins came down (da-jgrn) and
+	// the title row with them (da-om9v): a border is at least 8px across; a
+	// pane's `…` badge is the title's height (16px) where the pointer is
+	// fine and a fingertip's 24px where it is coarse; the root bar's are
+	// 24px under either.
+	for (const [name, options] of [
+		['1280x900', { viewport: { width: 1280, height: 900 } }],
+		['390x844', { viewport: { width: 390, height: 844 } }],
+		['390x844 under a finger', { viewport: { width: 390, height: 844 }, device: { hasTouch: true, isMobile: true } }]
 	]) {
-		test(`every border is ≥ 8px and every … badge ≥ 24px at ${name}`, async () => {
+		test(`every border is ≥ 8px and every … badge is on its floor at ${name}`, async () => {
 			await withApp(async ({ page }) => {
-				const sizes = await page.evaluate(() => ({
-					borders: [...document.querySelectorAll('[role="separator"]')].map((el) => {
+				const sizes = await page.evaluate(() => {
+					const box = (el) => {
 						const b = el.getBoundingClientRect();
-						return Math.min(b.width, b.height);
-					}),
-					badges: [...document.querySelectorAll('button.more, .root-bar .act')]
-						.filter((el) => el.getClientRects().length > 0)
-						.map((el) => {
-							const b = el.getBoundingClientRect();
-							return [b.width, b.height];
-						})
-				}));
-				assert.ok(sizes.borders.length > 0 && sizes.badges.length > 0);
+						return [b.width, b.height];
+					};
+					const shown = (s) => [...document.querySelectorAll(s)].filter((el) => el.getClientRects().length > 0);
+					return {
+						coarse: matchMedia('(pointer: coarse)').matches,
+						borders: shown('[role="separator"]').map((el) => Math.min(...box(el))),
+						panes: shown('section button.more').map(box),
+						root: shown('.root-bar button.more, .root-bar .act').map(box)
+					};
+				});
+				assert.equal(sizes.coarse, name.endsWith('finger'));
+				assert.ok(sizes.borders.length > 0 && sizes.panes.length > 0 && sizes.root.length > 0);
 				for (const across of sizes.borders) assert.ok(across >= 8, `a border is ${across}px across`);
-				for (const [w, h] of sizes.badges) assert.ok(w >= 24 && h >= 24, `a badge is ${w}x${h}`);
-			}, { viewport });
+				const floor = sizes.coarse ? 24 : 16;
+				for (const [w, h] of sizes.panes) assert.ok(w >= floor && h >= floor, `a pane's badge is ${w}x${h}`);
+				for (const [w, h] of sizes.root) assert.ok(w >= 24 && h >= 24, `a root bar badge is ${w}x${h}`);
+			}, options);
 		});
 	}
 

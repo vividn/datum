@@ -16,10 +16,13 @@
 	in, and the content is padded by nothing: the row lies over the top
 	strip of what is underneath (vividn's third look, da-13bc — "just overlay
 	it directly on the frame […] it can overlap slightly with the underlying
-	display"). The half that hangs out is 12px over an 8px gap, so 4px of
-	the badge lie over the neighbour's outline; the bar itself takes no
-	pointer, so the border between two panes is still grabbed right beside
-	it.
+	display"). The row is as tall as its words and outlined like the frame
+	(vividn's fourth look, da-om9v — "the widget titles bleed too much into
+	other frames"): `ROW`, 16px, so the 8px that hang out fit the 8px gap
+	and nothing lies over the neighbour. The badge is the row's height too,
+	except under a coarse pointer, where a finger needs 24px and 4px of it
+	still reach over. The bar itself takes no pointer, so the border
+	between two panes is still grabbed right beside it.
 
 	A pane whose tab holds a split rather than a widget is a HOLDER: no
 	border, no background, and — with one tab — no bar at all: a box that
@@ -41,6 +44,17 @@
 	only when nothing under the finger scrolls that way, so the strip's
 	stack and a wide tail table keep their own scroll.
 -->
+<script lang="ts" context="module">
+	/**
+	 * The bar's row, in pixels: the title's words (0.75rem at a line of
+	 * 14px) and its 1px outline. The frame's `--row` and Layout.svelte's
+	 * chrome both read it, so the floors follow the row drawn. Half of it
+	 * hangs outside the outline, and must fit the gap between panes
+	 * (Layout.svelte's `BORDER`).
+	 */
+	export const ROW = 16;
+</script>
+
 <script lang="ts">
 	import { setContext } from 'svelte';
 	import { writable } from 'svelte/store';
@@ -231,6 +245,7 @@
 	class:clip={!root && kind !== undefined && !KINDS[kind]?.fit}
 	data-pane={pane.id}
 	data-title={title}
+	style:--row="{ROW}px"
 >
 	{#if !bare}
 	<div class="titlebar">
@@ -283,10 +298,16 @@
 		flex: 1;
 		min-width: 0;
 		min-height: 0;
-		/* The title, the tabs and the badge are all this tall — 24px, a
-		   finger's floor (reachable.test.mjs) — and hang half of it outside
-		   the outline and half over the content (Layout.svelte's chrome). */
-		--row: 24px;
+		/* The title, the tabs and the badge are all `--row` tall (`ROW`, set
+		   on the element) and hang half of it outside the outline and half
+		   over the content (Layout.svelte's chrome). The badge alone keeps a
+		   finger's 24px where the pointer is one (reachable.test.mjs). */
+		--badge: var(--row);
+	}
+	@media (pointer: coarse) {
+		section {
+			--badge: 24px;
+		}
 	}
 
 	.pane {
@@ -397,11 +418,15 @@
 	.align-end {
 		justify-content: flex-end;
 	}
+	/* The words and a line round them, the frame's own: nothing across
+	   the bar but the outline, whichever way the bar runs. */
 	h2 {
+		box-sizing: border-box;
 		margin: 0;
-		padding: 0 0.4rem;
+		padding-block: 0;
+		padding-inline: 0.4rem;
 		block-size: var(--row);
-		line-height: var(--row);
+		line-height: calc(var(--row) - 2px);
 		min-inline-size: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -414,7 +439,8 @@
 		/* Its own ground, so the outline stops at the words rather than
 		   running through them. */
 		background: #0d0d1a;
-		border-radius: 6px;
+		border: 1px solid #2a2a4a;
+		border-radius: 4px;
 	}
 
 	.tabs {
@@ -425,16 +451,18 @@
 		pointer-events: auto;
 	}
 
-	/* Each tab a small pill on the line, the badge's shape and height. */
+	/* Each tab a small pill on the line, the title's shape and height. */
 	.tabs button {
 		box-sizing: border-box;
 		block-size: var(--row);
-		padding: 0 0.5rem;
+		padding-block: 0;
+		padding-inline: 0.5rem;
 		background: #0d0d1a;
 		border: 1px solid #2a2a4a;
-		border-radius: 6px;
+		border-radius: 4px;
 		font: inherit;
 		font-size: 0.75rem;
+		line-height: 1;
 		letter-spacing: 0.06em;
 		color: #55558a;
 		white-space: nowrap;
@@ -461,6 +489,7 @@
 	}
 	.pane.alarm h2 {
 		background: #e8820c;
+		border-color: #e8820c;
 		color: #1a1000;
 	}
 
@@ -492,11 +521,12 @@
 		overflow: auto;
 	}
 	/* The titles along the page's own edges hang half their row outside
-	   their panes, and the scroller would cut that half off: it reaches
-	   out over the page's margin by that much and pads it back, so the
-	   panes stay where they were and their titles are whole. */
+	   their panes — their badges half theirs — and the scroller would cut
+	   that half off: it reaches out over the page's margin by that much
+	   and pads it back, so the panes stay where they were and their titles
+	   are whole. */
 	.holder.root.bare > .content {
-		margin: calc(var(--row) / -2);
-		padding: calc(var(--row) / 2);
+		margin: calc(max(var(--row), var(--badge)) / -2);
+		padding: calc(max(var(--row), var(--badge)) / 2);
 	}
 </style>

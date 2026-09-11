@@ -302,15 +302,17 @@
 {/if}
 
 <style>
-	/* A rounded square the size of a fingertip, with its own ground so it
-	   sits ON the outline rather than under it (vividn, 17:56). 24px is the
-	   floor reachable.test.mjs holds it to. It takes the pointer where
-	   the line it sits on does not. */
+	/* A rounded square with its own ground so it sits ON the outline
+	   rather than under it (vividn, 17:56). On a pane's frame it is the
+	   title's height where the pointer is fine and a fingertip's 24px
+	   where it is not (PaneFrame.svelte's `--badge`); the root bar's are
+	   24px — the floors reachable.test.mjs holds them to. It takes the
+	   pointer where the line it sits on does not. */
 	.more {
 		flex: none;
 		box-sizing: border-box;
-		inline-size: 24px;
-		block-size: 24px;
+		inline-size: var(--badge, 24px);
+		block-size: var(--badge, 24px);
 		display: grid;
 		place-items: center;
 		padding: 0;

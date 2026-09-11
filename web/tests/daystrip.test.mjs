@@ -160,7 +160,7 @@ const owed = async (app) => owedAt(await metrics(app));
  * revealed: that is what makes the stack scroll, and a scrolling stack is
  * what the jagged line is about. Zero days is a box exactly today's
  * height — which is a side bar's floor, not a top bar's: a top bar's
- * title lies over 12px of the content, and its floor keeps them off
+ * title lies over 8px of the content, and its floor keeps them off
  * today (Layout.svelte's `chromeOf`, da-13bc). So for zero days the
  * strip's bar goes on the left first.
  */

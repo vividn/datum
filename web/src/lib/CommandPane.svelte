@@ -112,14 +112,17 @@
 		padding: 0 0.25rem;
 		cursor: pointer;
 	}
+	/* Inside the title's row, whose outline is the field's (da-om9v): no
+	   line of its own, and nothing across the row but the words. */
 	.command {
 		box-sizing: border-box;
 		width: 100%;
+		padding-block: 0;
 		font: inherit;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		color: #c8c8e8;
 		background: #0a0a1a;
-		border: 1px solid #2a2a4a;
+		border: none;
 		border-radius: 4px;
 	}
 </style>

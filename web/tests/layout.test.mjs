@@ -18,7 +18,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -558,13 +558,13 @@ describe('resizing', () => {
 		await withApp(async ({ page }) => {
 			// The tail's badge is centred on its top outline, so half of it
 			// hangs into the gap above — the column border between nowview and
-			// tail — and 4px past it, over nowview's outline (da-13bc).
+			// tail — and no further: 8px of a 16px badge in an 8px gap (da-om9v).
 			const border = pane(page, 'side').locator('.split.column > [role="separator"]').first();
 			const badge = pane(page, 'tail').locator('.titlebar button.more');
 			const [gap, more, tailBefore] = await Promise.all([boxOf(border), boxOf(badge), boxOf(pane(page, 'tail'))]);
 			const middle = more.y + more.height / 2;
 			assert.ok(Math.abs(middle - (tailBefore.y + 0.5)) <= 1, `the badge's middle (${middle}) is not on the outline (${tailBefore.y})`);
-			assert.ok(Math.abs(more.y - (gap.y + gap.height - 12)) <= 1, `the badge's top (${more.y}) is not 12px above the gap's end (${gap.y + gap.height})`);
+			assert.ok(Math.abs(more.y - (gap.y + gap.height - 8)) <= 1, `the badge's top (${more.y}) is not 8px above the gap's end (${gap.y + gap.height})`);
 			const x = more.x + more.width + 6;
 			const y = gap.y + gap.height / 2;
 			await page.mouse.move(x, y);
@@ -737,7 +737,7 @@ describe('the title on the frame', () => {
 			assert.ok(straddlesTop(more, frame), `the badge ${JSON.stringify(more)} is not on the outline`);
 			const apart = more.x - (h2.x + h2.width);
 			assert.ok(apart >= 0 && apart <= 8, `the badge is ${apart}px from the title`);
-			assert.ok(more.width >= 24 && more.height >= 24, `the badge is ${more.width}x${more.height}`);
+			assert.equal(more.height, h2.height, `the badge is ${more.width}x${more.height}, the title ${h2.height} tall`);
 			await tail.locator('button.more').focus();
 			await page.keyboard.press('Enter');
 			await page.locator('[role="menu"]').waitFor();
@@ -777,6 +777,136 @@ describe('the title on the frame', () => {
 			apart = h2.y - (more.y + more.height);
 			assert.ok(apart >= 0 && apart <= 8, `left bar, reading up: the badge is ${apart}px above the title`);
 		}, DESKTOP);
+	});
+});
+
+// vividn's fourth look (da-om9v): "the widget titles bleed too much into
+// other frames". The row is its words and a 1px outline in the frame's
+// colour, and the half of it outside the pane fits the gap: nothing on
+// a pane's bar lies inside a neighbour's border box, whichever edge the
+// bars are on. Measured in screen coordinates, since the left bar is
+// turned round.
+describe('the title row, as tall as its words', () => {
+	/** What sits on a pane's bar, or over its corner, that could reach a neighbour. */
+	const ON_BAR = ':scope > .titlebar :is(h2, [role="tab"], button.more), [role="slider"], .nowview-steps button';
+
+	/** Every piece of `ON_BAR` inside another pane's border box. */
+	const bleeds = (page) =>
+		page.evaluate((selector) => {
+			const panes = [...document.querySelectorAll('section.pane')];
+			const rect = (el) => el.getBoundingClientRect();
+			const into = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+			return panes.flatMap((p) =>
+				[...p.querySelectorAll(selector)]
+					.filter((el) => el.getClientRects().length > 0)
+					.flatMap((el) =>
+						panes
+							.filter((q) => q !== p && !q.contains(el) && into(rect(el), rect(q)))
+							.map((q) => `${p.dataset.title}'s ${el.tagName.toLowerCase()} "${el.textContent.trim()}" in ${q.dataset.title}`)
+					)
+			);
+		}, ON_BAR);
+
+	for (const [name, viewport] of [
+		['1280x800', { width: 1280, height: 800 }],
+		['390x844', { width: 390, height: 844 }]
+	]) {
+		for (const edge of ['top', 'bottom', 'left', 'right']) {
+			test(`no title, tab or … lies over a neighbour, every bar on the ${edge}, at ${name}`, async () => {
+				await withApp(async ({ page }) => {
+					assert.ok((await page.locator('section.pane').count()) >= 3, 'fewer than three panes');
+					// Every pane's bar at once (the menu's own path is tested above).
+					await page.evaluate((edge) =>
+						window.datum.layout.apply((tree) => {
+							const copy = structuredClone(tree);
+							const walk = (pane) => {
+								pane.bar = { ...pane.bar, edge };
+								for (const tab of pane.tabs) if ('children' in tab.content) tab.content.children.forEach(walk);
+							};
+							walk(copy.root);
+							return copy;
+						}),
+						edge
+					);
+					await page.locator(`section.pane.edge-${edge}`).first().waitFor();
+					const astray = await page.locator('section.pane').evaluateAll(
+						(all, edge) => all.filter((p) => !p.classList.contains(`edge-${edge}`)).map((p) => p.dataset.title),
+						edge
+					);
+					assert.deepEqual(astray, [], `not on the ${edge}`);
+					assert.deepEqual(await bleeds(page), []);
+				}, { viewport });
+			});
+		}
+	}
+
+	test('the title is its words and a 1px outline in the frame’s colour; its cross padding is nothing on a left bar', async () => {
+		await withApp(async ({ page }) => {
+			const tail = pane(page, 'tail');
+			const seen = () =>
+				tail.evaluate((p) => {
+					const h2 = p.querySelector(':scope > .titlebar h2');
+					const s = getComputedStyle(h2);
+					const b = h2.getBoundingClientRect();
+					return {
+						font: s.fontSize,
+						rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+						box: [b.width, b.height],
+						border: [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth],
+						colours: [s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor],
+						frame: getComputedStyle(p).borderTopColor,
+						padding: { top: s.paddingTop, bottom: s.paddingBottom, left: s.paddingLeft, right: s.paddingRight }
+					};
+				});
+			const top = await seen();
+			assert.equal(parseFloat(top.font), 0.75 * top.rem);
+			assert.ok(top.box[1] <= 18, `the title is ${top.box[1]}px tall`);
+			assert.deepEqual(top.border, ['1px', '1px', '1px', '1px']);
+			assert.deepEqual(new Set(top.colours), new Set([top.frame]), `the outline is ${top.colours}, the frame ${top.frame}`);
+			assert.deepEqual([top.padding.top, top.padding.bottom], ['0px', '0px']);
+
+			await chooseBar(page, 'tail', 'left');
+			const left = await seen();
+			assert.ok(left.box[0] <= 18, `the left bar's title is ${left.box[0]}px across`);
+			for (const side of ['left', 'right']) assert.ok(parseFloat(left.padding[side]) <= 1, `padding-${side} ${left.padding[side]}`);
+		}, DESKTOP);
+	});
+
+	test('the command pane’s ✎ and its editor fit inside the row, uncut', async () => {
+		await withApp(async ({ page }) => {
+			const command = page.locator('section.pane[data-title="command"]');
+			const fits = () =>
+				command.evaluate((p) => {
+					const h2 = p.querySelector(':scope > .titlebar h2');
+					return { box: h2.getBoundingClientRect().height, inner: h2.clientHeight, needs: h2.scrollHeight };
+				});
+			const shown = await fits();
+			await command.locator('button.edit').click();
+			await command.locator('input.command').waitFor();
+			const editing = await fits();
+			for (const [what, seen] of [['shown', shown], ['editing', editing]]) {
+				assert.ok(seen.box <= 18, `${what}: the title is ${seen.box}px tall`);
+				assert.ok(seen.needs <= seen.inner, `${what}: the title needs ${seen.needs}px and has ${seen.inner}`);
+			}
+		}, DESKTOP);
+	});
+
+	test('alarmed, the title’s outline turns orange with the frame', async () => {
+		// A sync access handle that never answers: the database is held in
+		// memory, and the REPL's frame is alarmed (see storage.test.mjs).
+		const NEVER = `FileSystemFileHandle.prototype.createSyncAccessHandle = () => new Promise(() => {});`;
+		await withApp(
+			async ({ page }) => {
+				const frame = page.locator('section.pane.alarm');
+				await frame.first().waitFor();
+				const colours = await frame.first().evaluate((p) => {
+					const s = getComputedStyle(p.querySelector(':scope > .titlebar h2'));
+					return [s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor];
+				});
+				assert.deepEqual(new Set(colours), new Set(['rgb(232, 130, 12)']));
+			},
+			{ ...DESKTOP, prepare: inWorker(NEVER) }
+		);
 	});
 });
 
@@ -987,9 +1117,10 @@ describe('scrollbars', () => {
 
 /**
  * A top-bar widget pane's frame (Layout.svelte's `chromeOf`, da-13bc):
- * the outline, and the inside half of the title's row across the top.
+ * the outline, and the inside half of the title's 16px row across the
+ * top (da-om9v).
  */
-const CHROME = { width: 2, height: 2 + 12 };
+const CHROME = { width: 2, height: 2 + 8 };
 /** The strip body's padding as the strip's snap counts it (registry.ts). */
 const PADDING = 16;
 const todayBox = (dayHeight) => dayHeight + 2 * 2 + 15; // panes.ts: the day, datum's margins and the hour axis
@@ -1016,7 +1147,7 @@ const cellExtents = (page, direction) =>
 // it is no handle) shrinks to its frame, down a column AND across a row:
 // the section is exactly the frame, and nothing of the widget is painted
 // past it. The title lies OVER the content (da-13bc), so what is left of
-// the content box is the inside half of the title's row — 12px down a
+// the content box is the inside half of the title's row — 8px down a
 // column under a top bar, 0px across a row.
 describe('a widget pane shrinks to its frame', () => {
 	for (const kind of ['daystrip', 'repl', 'nowview', 'tail', 'command', 'stats']) {
@@ -1110,7 +1241,7 @@ describe('the title on the line', () => {
 	// Its kind has no floor (da-zh2o), so what is left of a strip dragged
 	// shut is its frame, and the frame follows the bar's edge: a left-hand
 	// title adds width, not height, so that strip keeps only its outline.
-	test('dragged shut, a left-bar strip keeps its outline and a top-bar one 12px more', async () => {
+	test('dragged shut, a left-bar strip keeps its outline and a top-bar one 8px more', async () => {
 		await withApp(
 			async ({ page }) => {
 				const borders = page.locator('.split.column > [role="separator"]');
