@@ -190,6 +190,11 @@ impl Db {
     /// The whole batch is atomic: if any row errors (other than a
     /// duplicate-handled-as-`Ignored` outcome), the transaction is rolled
     /// back and no rows are persisted.
+    ///
+    /// Conflict detection runs once, after every row is written, through
+    /// [`crate::integrity::detect_for_entries`] (da-ij3x): per row it reads
+    /// the field's whole history, O(N²) over a restore. So each row is
+    /// checked against the whole batch, not only the rows before it.
     pub fn insert_entries_batch(
         &self,
         entries: &[Entry],
@@ -197,9 +202,17 @@ impl Db {
     ) -> Result<Vec<InsertOutcome>> {
         let tx = self.conn.unchecked_transaction()?;
         let mut outcomes = Vec::with_capacity(entries.len());
+        let mut written = Vec::new();
         for entry in entries {
-            outcomes.push(insert_entry_in_tx(&tx, entry, strategy)?);
+            let (outcome, row) = write_entry_in_tx(&tx, entry, strategy)?;
+            outcomes.push(outcome);
+            written.extend(row);
         }
+        crate::integrity::detect_for_entries(
+            &tx,
+            &written,
+            crate::integrity::DetectedBy::LocalValidator,
+        )?;
         tx.commit()?;
         Ok(outcomes)
     }
@@ -615,13 +628,35 @@ pub(super) fn insert_entry_in_tx_pub(
     insert_entry_in_tx(conn, entry, strategy)
 }
 
-/// Per-entry insert logic shared by `insert_entry_with_strategy` (one tx per
-/// call) and `insert_entries_batch` (one tx for the whole batch).
+/// Per-entry insert logic for `insert_entry_with_strategy` (one tx per
+/// call) and the atomic multi-row insert.
 fn insert_entry_in_tx(
     conn: &Connection,
     entry: &Entry,
     strategy: ConflictStrategy,
 ) -> Result<InsertOutcome> {
+    let (outcome, written) = write_entry_in_tx(conn, entry, strategy)?;
+    // D5: post-write conflict detection. Runs inside the same
+    // transaction so the conflict row is atomic with the insert.
+    if let Some(written) = written {
+        crate::integrity::detect_for_entry(
+            conn,
+            &written,
+            crate::integrity::DetectedBy::LocalValidator,
+        )?;
+    }
+    Ok(outcome)
+}
+
+/// [`insert_entry_in_tx`] minus the conflict detection: returns the row it
+/// created or revived, which the caller must hand to
+/// `integrity::detect_for_entry` / `detect_for_entries` once it is in the
+/// table (Update, Merge and Ignore create nothing and return `None`).
+fn write_entry_in_tx(
+    conn: &Connection,
+    entry: &Entry,
+    strategy: ConflictStrategy,
+) -> Result<(InsertOutcome, Option<Entry>)> {
     crate::slug::validate_field_name(&entry.field)?;
     // da-r569: canonicalize content_hash so the dedup lookup uses the same
     // value `try_insert` / `raw_overwrite_mutables` will persist. Live
@@ -648,7 +683,7 @@ fn insert_entry_in_tx(
         )
         .optional()?;
 
-    let outcome = match (existing, strategy) {
+    let written = match (existing, strategy) {
         (None, _) => {
             // No content_hash match — distinct content. da-95ez: if the slug
             // is held *only by a tombstone*, the deleted entry no longer owns
@@ -671,15 +706,11 @@ fn insert_entry_in_tx(
                 )?;
                 raw_overwrite_mutables(conn, &entry.slug, entry, None)?;
                 let revived = fetch_entry_any(conn, &entry.slug)?;
-                crate::integrity::detect_for_entry(
-                    conn,
-                    &revived,
-                    crate::integrity::DetectedBy::LocalValidator,
-                )?;
-                InsertOutcome::Inserted {
-                    slug: revived.slug,
-                    hid: revived.hid,
-                }
+                let outcome = InsertOutcome::Inserted {
+                    slug: revived.slug.clone(),
+                    hid: revived.hid.clone(),
+                };
+                (outcome, Some(revived))
             } else {
                 // A *live* row at this slug means the user is asserting a
                 // different thing at the same identity (same field+instant,
@@ -694,25 +725,19 @@ fn insert_entry_in_tx(
                 let (stored_slug, stored_hid) = raw_insert(conn, entry)?;
                 let inserted = fetch_entry_any(conn, &stored_slug)?;
                 history::record(conn, &inserted, ChangeKind::Create)?;
-                // D5: post-write conflict detection. Runs inside the same
-                // transaction so the conflict row is atomic with the insert.
-                crate::integrity::detect_for_entry(
-                    conn,
-                    &inserted,
-                    crate::integrity::DetectedBy::LocalValidator,
-                )?;
-                InsertOutcome::Inserted {
+                let outcome = InsertOutcome::Inserted {
                     slug: stored_slug,
                     hid: stored_hid,
-                }
+                };
+                (outcome, Some(inserted))
             }
         }
-        (Some((slug, _)), ConflictStrategy::Ignore) => InsertOutcome::Ignored { slug },
+        (Some((slug, _)), ConflictStrategy::Ignore) => (InsertOutcome::Ignored { slug }, None),
         (Some((slug, _)), ConflictStrategy::Update) => {
             let pre = fetch_entry_any(conn, &slug)?;
             history::record(conn, &pre, ChangeKind::UserEdit)?;
             raw_overwrite_mutables(conn, &slug, entry, None)?;
-            InsertOutcome::Updated { slug }
+            (InsertOutcome::Updated { slug }, None)
         }
         (Some((slug, existing_data_json)), ConflictStrategy::Merge) => {
             let pre = fetch_entry_any(conn, &slug)?;
@@ -722,7 +747,7 @@ fn insert_entry_in_tx(
                 .and_then(|s| serde_json::from_str(s).ok());
             let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref());
             raw_overwrite_mutables(conn, &slug, entry, Some(merged))?;
-            InsertOutcome::Merged { slug }
+            (InsertOutcome::Merged { slug }, None)
         }
         (Some((old_slug, _)), ConflictStrategy::Rekey) => {
             // Rekey: insert the incoming row with its own slug. Both rows
@@ -749,20 +774,16 @@ fn insert_entry_in_tx(
             };
             let inserted = fetch_entry_any(conn, &new_slug)?;
             history::record(conn, &inserted, ChangeKind::Create)?;
-            crate::integrity::detect_for_entry(
-                conn,
-                &inserted,
-                crate::integrity::DetectedBy::LocalValidator,
-            )?;
-            InsertOutcome::Rekeyed {
+            let outcome = InsertOutcome::Rekeyed {
                 old_slug,
                 new_slug,
                 new_hid,
-            }
+            };
+            (outcome, Some(inserted))
         }
     };
 
-    Ok(outcome)
+    Ok(written)
 }
 
 /// Bulk-load fast path: dedup-by-content-hash + raw_insert only. Skips
@@ -1410,5 +1431,59 @@ mod tests {
             .insert_entries_bulk(&[entry], ConflictStrategy::Ignore)
             .unwrap_err();
         assert!(matches!(err, DatumError::InvalidFieldSpec(_)));
+    }
+
+    /// da-ij3x: the slug lookups the insert path runs per row
+    /// (`fetch_tombstone_by_slug`, `fetch_entry_any`) must SEARCH an index.
+    /// `entries_slug` is partial on `superseded_by IS NULL`, so before
+    /// `entries_slug_lookup` both planned as `SCAN entries` — once per
+    /// restored row, quadratic over a restore.
+    #[test]
+    fn insert_path_slug_lookups_search_an_index() {
+        let db = fresh_db();
+        for sql in [
+            "SELECT * FROM entries WHERE slug = ?1 AND deleted_at IS NOT NULL LIMIT 1",
+            "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
+        ] {
+            let mut stmt = db
+                .conn()
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .unwrap();
+            let plan: Vec<String> = stmt
+                .query_map(["x"], |r| r.get(3))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect();
+            assert!(
+                !plan.iter().any(|step| step.starts_with("SCAN entries")),
+                "{sql} scans: {plan:?}"
+            );
+        }
+    }
+
+    /// da-ij3x: `insert_entries_batch` detects conflicts once, after the
+    /// whole batch is written, not row by row against the rows before it
+    /// (which read the field's history per row). The proof: an open that
+    /// arrives BEFORE the earlier open it repeats is still a DoubleOpen —
+    /// row by row, the later instant was written first and saw no prior.
+    #[test]
+    fn batch_detects_conflicts_against_the_whole_batch() {
+        use chrono::TimeZone;
+        let db = fresh_db();
+        let open_at = |hour| {
+            entry_builder("posture")
+                .verb(Verb::Switch)
+                .state(serde_json::json!(true))
+                .time_start_utc(Utc.with_ymd_and_hms(2026, 5, 1, hour, 0, 0).unwrap())
+                .build()
+        };
+        let (later, earlier) = (open_at(10), open_at(9));
+        db.insert_entries_batch(&[later.clone(), earlier], ConflictStrategy::Ignore)
+            .unwrap();
+
+        let filed = crate::integrity::list(db.conn(), &Default::default()).unwrap();
+        assert_eq!(filed.len(), 1, "{filed:?}");
+        assert_eq!(filed[0].kind, crate::integrity::IntegrityKind::DoubleOpen);
+        assert_eq!(filed[0].entry_slug, later.slug);
     }
 }

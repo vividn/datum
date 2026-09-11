@@ -157,6 +157,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS entries_slug
     ON entries (slug)
     WHERE superseded_by IS NULL;
 
+-- da-ij3x: the lookup index for slug. The partial UNIQUE above can only
+-- serve a query that itself says `superseded_by IS NULL`, so every other
+-- `slug = ?` — `slug = ? OR hid = ?`, the tombstone probe, the UPDATEs
+-- keyed on slug — was a full table SCAN, once per row on the insert path:
+-- a 20k-row `db restore` took 105 s. This one covers superseded rows too.
+CREATE INDEX IF NOT EXISTS entries_slug_lookup
+    ON entries (slug);
+
 -- da-ga8b: partial UNIQUE on (field, occur_time). Slug uniqueness catches
 -- the default case where occur_time appears in the slug template, but
 -- custom ids (`-K`, `--id`, or `spec.id_template`) can produce distinct
