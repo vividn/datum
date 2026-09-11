@@ -185,7 +185,7 @@ The original datum uses CouchDB JSON documents. Backup format:
 { "backupTime": "...", "docs": [...CouchDB docs...] }
 ```
 Each doc has `data.field`, `data.occurTime`, `data.state`, `data.dur`, `meta.createTime`.
-Migration: `datum db import --from backup.json`
+Migration: `datum db v2import --from backup.json`
 
 ## Running tests
 

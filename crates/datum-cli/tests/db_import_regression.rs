@@ -1,4 +1,4 @@
-//! Regression test for `datum db import` against a committed synthetic
+//! Regression test for `datum db v2import` against a committed synthetic
 //! fixture (da-zio, rewritten for v=20 schema under da-5ns.6).
 //!
 //! Locks the **structural correctness** of legacy-data ingestion against
@@ -65,7 +65,7 @@ const FIXTURE: &str = "tests/fixtures/datum_backup_synthetic.json";
 #[test]
 fn db_import_synthetic_locks_db_shape() {
     let db = fresh_db();
-    run_cli(&["db", "import", FIXTURE], &db).expect("synthetic import");
+    run_cli(&["db", "v2import", FIXTURE], &db).expect("synthetic import");
 
     let entries = db.list_including_deleted().unwrap();
     assert_eq!(entries.len(), 11, "fixture defines 11 importable docs");
@@ -347,12 +347,12 @@ fn db_import_synthetic_locks_db_shape() {
 #[test]
 fn db_import_synthetic_is_idempotent() {
     let db = fresh_db();
-    run_cli(&["db", "import", FIXTURE], &db).expect("first import");
+    run_cli(&["db", "v2import", FIXTURE], &db).expect("first import");
     let n1 = db.list_including_deleted().unwrap().len();
     assert_eq!(n1, 11);
 
     // Second run on the same DB: content_hash dedup must skip every doc.
-    run_cli(&["db", "import", FIXTURE], &db).expect("second import");
+    run_cli(&["db", "v2import", FIXTURE], &db).expect("second import");
     let n2 = db.list_including_deleted().unwrap().len();
     assert_eq!(n2, n1, "re-importing same fixture must not add rows");
 }
@@ -374,7 +374,7 @@ fn db_import_synthetic_summary_reports_correct_counts() {
     let out = std::process::Command::new(bin)
         .env("DATUM_DB", &db_path)
         .env("DATUM_COLOR", "0")
-        .args(["db", "import", FIXTURE])
+        .args(["db", "v2import", FIXTURE])
         .output()
         .expect("run datum binary");
     let _ = std::fs::remove_file(&db_path);
@@ -396,5 +396,56 @@ fn db_import_synthetic_summary_reports_correct_counts() {
     assert!(
         stdout.contains("3 block"),
         "expected '3 block' in stdout, got: {stdout}",
+    );
+}
+
+// ─── `db v2import -`: the backup on stdin (da-podv) ──────────────────────
+
+/// Run the binary against a fresh db, `stdin` piped in.
+fn datum_with_stdin(args: &[&str], stdin: &[u8]) -> std::process::Output {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+        .env("DATUM_DB", dir.path().join("datum.db"))
+        .env("DATUM_COLOR", "0")
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("run datum binary");
+    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn db_v2import_reads_the_backup_from_stdin() {
+    let backup = std::fs::read("tests/fixtures/datum_backup_3days.json").unwrap();
+    for args in [
+        &["db", "v2import", "-"][..],
+        &["db", "v2import", "--from", "-"],
+    ] {
+        let out = datum_with_stdin(args, &backup);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && stdout.contains("120 imported"),
+            "{args:?}: stdout={stdout} stderr={}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+}
+
+#[test]
+fn db_v2import_without_a_file_and_db_import_are_errors() {
+    let out = datum_with_stdin(&["db", "v2import"], b"");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("db v2import requires a backup file"));
+
+    let out = datum_with_stdin(&["db", "import", FIXTURE], b"");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success());
+    assert!(
+        stderr.contains("unknown db subcommand: 'import'") && stderr.contains("v2import"),
+        "stderr={stderr}"
     );
 }

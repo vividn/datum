@@ -1,7 +1,7 @@
 //! `datum db <subcommand>` — DB-lifecycle group.
 //!
 //! Houses every database administration verb: `setup`, `purge`, `backup`,
-//! `restore`, `migrate`, `import`. da-33g consolidated the standalone
+//! `restore`, `migrate`, `v2import`. da-33g consolidated the standalone
 //! `setup` / `backup` / `restore` / `migrate` top-level verbs under here.
 //! da-57t removed the deprecated `setup --force-recreate` alias; `db purge`
 //! is its replacement.
@@ -27,7 +27,7 @@ pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
         DbCommand::Backup(args) => super::backup_restore::cmd_backup(args, db),
         DbCommand::Restore(args) => super::backup_restore::cmd_restore(args, db),
         DbCommand::Migrate(sub) => super::migrate::migrate(sub, db),
-        DbCommand::Import(args) => import::import(args, db),
+        DbCommand::V2import(args) => import::import(args, db),
     }
 }
 

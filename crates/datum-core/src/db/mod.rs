@@ -191,7 +191,7 @@ impl Db {
                 return Err(DatumError::IncompatibleSchema(
                     "legacy entries table with `id` column found; this version drops ULID \
                      and uses slug as PK. Delete the DB and recreate it, or migrate from a \
-                     backup with `datum db import`."
+                     backup with `datum db v2import`."
                         .to_string(),
                 ));
             }

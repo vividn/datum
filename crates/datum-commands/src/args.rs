@@ -540,7 +540,7 @@ impl DbImportArgsExt for DbImportArgs {
             .as_deref()
             .or(self.backup_file_positional.as_deref())
             .ok_or_else(|| {
-                anyhow::anyhow!("db import requires a backup file (pass as positional or --from)")
+                anyhow::anyhow!("db v2import requires a backup file (pass as positional or --from)")
             })
     }
 }

@@ -1,4 +1,4 @@
-//! `datum db import` integration tests (da-a8u, rewritten under da-5ns.6).
+//! `datum db v2import` integration tests (da-a8u, rewritten under da-5ns.6).
 //!
 //! Verifies the v=20 mapping from legacy datum CouchDB-shaped JSON into
 //! the new schema: occur_time / state / dur / following_state / verb.
@@ -64,7 +64,7 @@ fn occur_only_doc_maps_to_state_null() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.list_including_deleted().unwrap();
     assert_eq!(entries.len(), 1);
@@ -99,7 +99,7 @@ fn occur_with_dur_maps_to_block() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.list_including_deleted().unwrap();
     assert_eq!(entries.len(), 1);
@@ -155,7 +155,7 @@ fn switch_doc_with_boolean_state_maps_to_switch() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.list_including_deleted().unwrap();
     assert_eq!(entries.len(), 1);
@@ -192,7 +192,7 @@ fn explicit_dur_null_maps_to_zero_duration() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.list_including_deleted().unwrap();
     assert_eq!(entries.len(), 1);
@@ -234,7 +234,7 @@ fn doc_without_occur_time_maps_to_point() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.list_including_deleted().unwrap();
     assert_eq!(entries.len(), 1);
@@ -264,7 +264,7 @@ fn imported_rows_carry_sentinel_intent_fields() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let e = &db.list_including_deleted().unwrap()[0];
     assert_eq!(
@@ -316,7 +316,7 @@ fn dry_run_does_not_insert() {
     ]));
 
     run_cli(
-        &["db", "import", "--dry-run", f.path().to_str().unwrap()],
+        &["db", "v2import", "--dry-run", f.path().to_str().unwrap()],
         &db,
     )
     .unwrap();
@@ -333,7 +333,7 @@ fn dry_run_does_not_insert() {
 fn import_3day_fixture_produces_blocks_and_points() {
     let db = fresh_db();
     let fixture = "tests/fixtures/datum_backup_3days.json";
-    run_cli(&["db", "import", fixture], &db).expect("import 3day fixture");
+    run_cli(&["db", "v2import", fixture], &db).expect("import 3day fixture");
 
     let entries = db.list_including_deleted().unwrap();
     assert!(
@@ -433,9 +433,9 @@ fn second_import_is_idempotent_via_content_hash() {
         "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "UTC"}}
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let n1 = db.list_including_deleted().unwrap().len();
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let n2 = db.list_including_deleted().unwrap().len();
     assert_eq!(n1, n2, "re-importing same backup must be idempotent");
 }
@@ -460,7 +460,7 @@ fn import_preserves_create_and_modify_times_and_marker() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let e = &db.list_including_deleted().unwrap()[0];
     let expect_create: chrono::DateTime<chrono::Utc> = create_iso.parse().unwrap();
@@ -510,7 +510,7 @@ fn import_falls_back_to_create_time_when_modify_time_missing() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let e = &db.list_including_deleted().unwrap()[0];
     let expect_create: chrono::DateTime<chrono::Utc> = create_iso.parse().unwrap();
@@ -543,7 +543,7 @@ fn year_precision_maps_to_iso_p1y() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
     assert_eq!(
         e.occur_uncertainty(),
@@ -572,7 +572,7 @@ fn week_precision_maps_to_iso_p1w() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
     assert_eq!(e.occur_uncertainty(), Some("P1W"));
 }
@@ -603,7 +603,7 @@ fn precision_unit_canon_table_round_trips_all_units() {
             },
             "meta": {"humanId": "p", "createTime": {"utc": "2025-01-08T00:00:00.000Z", "o": 0, "tz": "UTC"}}
         }]));
-        run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+        run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
         let e = &db.list_including_deleted().unwrap()[0];
         assert_eq!(
             e.occur_uncertainty(),
@@ -626,7 +626,7 @@ fn missing_precision_unit_leaves_column_null() {
         },
         "meta": {"humanId": "z", "createTime": {"utc": "2025-01-08T00:00:00.000Z", "o": 0, "tz": "UTC"}}
     }]));
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
     assert!(
         e.occur_uncertainty().is_none(),
@@ -651,7 +651,7 @@ fn import_preserves_id_structure_from_meta() {
             "idStructure": "%field%:%occurTime%"
         }
     }]));
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
     assert_eq!(
         e.id_structure.as_deref(),
@@ -676,7 +676,7 @@ fn import_preserves_field_structure_from_meta() {
             "fieldStructure": "word_%srcLang%"
         }
     }]));
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
     assert_eq!(e.field, "word_pt");
     assert_eq!(
@@ -701,7 +701,7 @@ fn import_drops_couch_plumbing_fields() {
         },
         "meta": {"humanId": "y", "createTime": {"utc": "2025-01-08T00:00:00.000Z", "o": 0, "tz": "UTC"}}
     }]));
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
     // Neither plumbing field should leak into `data` (which only carries
     // user-payload top-level keys from `data.*`, not from the doc root).
@@ -731,7 +731,7 @@ fn import_routes_extra_data_keys_into_data_blob() {
         },
         "meta": {"humanId": "w", "createTime": {"utc": "2025-01-08T00:00:00.000Z", "o": 0, "tz": "UTC"}}
     }]));
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
     let blob = e.data.as_ref().expect("data blob");
     // Per da-5ns.6: legacy datum's "value" lived as a regular key in data,
@@ -750,7 +750,7 @@ fn import_routes_extra_data_keys_into_data_blob() {
 fn import_3day_fixture_columns_are_well_formed() {
     let db = fresh_db();
     let fixture = "tests/fixtures/datum_backup_3days.json";
-    run_cli(&["db", "import", fixture], &db).expect("import");
+    run_cli(&["db", "v2import", fixture], &db).expect("import");
 
     for e in db.list_including_deleted().unwrap() {
         // No legacy entry can produce a following_state — it's daydumb-new.
@@ -801,7 +801,7 @@ fn skip_log_records_duplicates_and_no_field_docs() {
     run_cli(
         &[
             "db",
-            "import",
+            "v2import",
             "--skip-log",
             &log_path,
             f.path().to_str().unwrap(),
@@ -823,7 +823,7 @@ fn skip_log_records_duplicates_and_no_field_docs() {
     run_cli(
         &[
             "db",
-            "import",
+            "v2import",
             "--skip-log",
             &log_path,
             f.path().to_str().unwrap(),
@@ -858,7 +858,7 @@ fn skip_log_includes_header_and_uses_synthetic_id_when_missing() {
     run_cli(
         &[
             "db",
-            "import",
+            "v2import",
             "--skip-log",
             &log_path,
             f.path().to_str().unwrap(),
@@ -868,7 +868,7 @@ fn skip_log_includes_header_and_uses_synthetic_id_when_missing() {
     .unwrap();
     let body = std::fs::read_to_string(&log_path).unwrap();
     assert!(
-        body.starts_with("# datum db import skip log"),
+        body.starts_with("# datum db v2import skip log"),
         "got:\n{body}"
     );
     assert!(
@@ -898,7 +898,7 @@ fn import_preserves_source_humanid_as_hid() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let e = &db.list_including_deleted().unwrap()[0];
     assert_eq!(
@@ -928,7 +928,7 @@ fn import_without_humanid_generates_fresh_hid() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let e = &db.list_including_deleted().unwrap()[0];
     assert_eq!(
@@ -958,7 +958,7 @@ fn import_with_empty_humanid_generates_fresh_hid() {
             "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
         }
     }]));
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &db.list_including_deleted().unwrap()[0];
     assert_eq!(e.hid.len(), datum_core::entry::HID_LEN);
     assert_ne!(e.hid, "", "empty humanId must not become an empty hid");
@@ -990,7 +990,7 @@ fn import_collision_with_existing_row_errors_and_preserves_existing() {
         }
     }]));
 
-    let err = run_cli(&["db", "import", f.path().to_str().unwrap()], &db)
+    let err = run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db)
         .expect_err("collision must surface as error");
     let msg = format!("{err:#}");
     assert!(
@@ -1037,7 +1037,7 @@ fn import_in_batch_humanid_duplicate_with_distinct_content_errors() {
             "meta": {"humanId": "dup", "createTime": {"utc": "2025-01-08T09:00:00.500Z", "o": 0, "tz": "UTC"}}
         }
     ]));
-    let err = run_cli(&["db", "import", f.path().to_str().unwrap()], &db)
+    let err = run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db)
         .expect_err("in-batch dup with distinct content must error");
     let msg = format!("{err:#}");
     assert!(msg.contains("hid collision"), "got: {msg}");
@@ -1062,12 +1062,12 @@ fn import_reimport_with_same_humanid_and_same_content_is_idempotent() {
         "meta": {"humanId": "stable42", "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "UTC"}}
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let after_first = db.list_including_deleted().unwrap();
     assert_eq!(after_first.len(), 1);
     assert_eq!(after_first[0].hid, "stable42");
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db)
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db)
         .expect("re-import must be idempotent, not a collision error");
     let after_second = db.list_including_deleted().unwrap();
     assert_eq!(
@@ -1099,7 +1099,7 @@ fn import_offset_without_tz_leaves_the_zone_unset() {
         }
     }]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.list_including_deleted().unwrap();
     assert_eq!(entries.len(), 1);
@@ -1149,7 +1149,7 @@ fn import_preserves_a_half_hour_offset() {
         }
     ]));
 
-    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.list_including_deleted().unwrap();
     let occur_of = |field: &str| {

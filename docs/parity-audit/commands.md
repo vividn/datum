@@ -289,7 +289,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Tests in datum not in daydumb:** 4 tests. `restore_cmd.rs` covers
   JSONL + tar.gz paths.
 - **Ideas / cleanup:** wire up a `--dry-run` to mirror the behaviour
-  we already give `db import`.
+  we already give `db v2import`.
 
 ### grep
 
@@ -372,7 +372,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   import: `--from`, `--backup`, `--dry-run`.
 - **Daydumb today:** `MigrateCommand` with `run`, `status`, `edit` —
   schema-migration only, dispatched under `datum db migrate` (da-33g).
-  The legacy `import` verb moved to `datum db import` (da-fab); see the
+  The legacy `import` verb moved to `datum db v2import` (da-fab); see the
   `db` section. `cmd_migrate_edit` is a stub (open `$EDITOR` against the
   migration file).
 - **Missing in daydumb:** interactive migration editing is just a
@@ -382,7 +382,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   `db` (DB-admin verbs), not `migrate` (schema migrations) — semantic
   split landed via da-33g.
 - **Tests in datum not in daydumb:** no dedicated file; the legacy
-  `db import` path is exercised by `db_import.rs` /
+  `db v2import` path is exercised by `db_import.rs` /
   `db_import_regression.rs` and one acceptance check in
   `migrate_cmd.rs`.
 - **Ideas / cleanup:** `status` could print the list of pending
@@ -491,7 +491,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 - **Purpose:** legacy v1 entry shape normalization.
 - **Daydumb:** **not ported.** Legacy entries come in via `datum
-  db import --from <backup.json>` which normalizes on ingest.
+  db v2import --from <backup.json>` which normalizes on ingest.
 
 ---
 

@@ -1,4 +1,4 @@
-//! `datum db import` — bulk-import legacy datum CouchDB backups.
+//! `datum db v2import` — bulk-import legacy datum CouchDB backups.
 //!
 //! Reads a backup JSON file (`{ backupTime, docs: [...] }`), translates each
 //! CouchDB doc into a `datum-core::Entry`, and bulk-loads them with
@@ -29,8 +29,13 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     let dry_run = args.dry_run;
     let skip_log_path = args.skip_log.clone();
 
-    let content = std::fs::read_to_string(&backup_path)
-        .with_context(|| format!("Reading backup file: {}", backup_path))?;
+    // `-` is the JSON on stdin, as for `db restore -` — the web's file dialog.
+    let content = if backup_path == "-" {
+        std::io::read_to_string(std::io::stdin()).context("Reading backup from stdin")?
+    } else {
+        std::fs::read_to_string(&backup_path)
+            .with_context(|| format!("Reading backup file: {}", backup_path))?
+    };
     let backup: serde_json::Value =
         serde_json::from_str(&content).with_context(|| "Parsing backup JSON")?;
 
@@ -455,7 +460,7 @@ fn write_skip_log(
 ) -> std::io::Result<()> {
     use std::io::Write as _;
     let mut f = std::fs::File::create(path)?;
-    writeln!(f, "# datum db import skip log")?;
+    writeln!(f, "# datum db v2import skip log")?;
     writeln!(f, "# backup: {backup_path}")?;
     writeln!(f, "# generated: {}", chrono::Utc::now().to_rfc3339())?;
     writeln!(f, "# format: <reason>\\t<id>\\t<detail>")?;

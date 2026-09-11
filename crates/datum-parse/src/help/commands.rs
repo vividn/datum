@@ -834,7 +834,7 @@ const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --h
 
 const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n";
 
-const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n  datum db backup <PATH | -> [--overwrite]\n  datum db restore <PATH | -> [--force] [--dry-run] [--json]\n  datum db migrate (run | status | edit)\n  datum db import [FILE | --from FILE] [--dry-run]\n\nSetup applies any pending schema migrations to the active database. Use\n`datum db purge` to drop and recreate the schema from scratch.\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n\nBackup dumps live entries to JSONL (default) or tar.gz when the path ends in\n.tar.gz / .tgz, or to stdout as JSONL when the path is `-`. Restore replays\na backup file (or JSONL on stdin, for `-`) into the active database.\n\nMigrate is the schema-migration runner: `run` advances the DB to the binary's\ntarget version, `status` lists applied/pending steps, `edit` is reserved for\nper-entry data migrations (not yet implemented).\n\nImport ingests a legacy datum CouchDB backup JSON (`{ docs: [...] }`) into\nthe active database. Idempotent — re-importing the same backup is a no-op.\n";
+const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n  datum db backup <PATH | -> [--overwrite]\n  datum db restore <PATH | -> [--force] [--dry-run] [--json]\n  datum db migrate (run | status | edit)\n  datum db v2import [FILE | - | --from FILE] [--dry-run]\n\nSetup applies any pending schema migrations to the active database. Use\n`datum db purge` to drop and recreate the schema from scratch.\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n\nBackup dumps live entries to JSONL (default) or tar.gz when the path ends in\n.tar.gz / .tgz, or to stdout as JSONL when the path is `-`. Restore replays\na backup file (or JSONL on stdin, for `-`) into the active database.\n\nMigrate is the schema-migration runner: `run` advances the DB to the binary's\ntarget version, `status` lists applied/pending steps, `edit` is reserved for\nper-entry data migrations (not yet implemented).\n\nV2import ingests a legacy datum CouchDB backup JSON (`{ docs: [...] }`), or\nthat JSON on stdin for `-`, into the active database. Idempotent — re-importing the same backup is a no-op.\n";
 
 const CONFIG_BODY: &str = "USAGE:\n  datum config show [--json]\n";
 
@@ -1400,7 +1400,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "DB-lifecycle subcommands",
-        top_summary: Some("DB-lifecycle (setup, purge, backup, restore, migrate, import)"),
+        top_summary: Some("DB-lifecycle (setup, purge, backup, restore, migrate, v2import)"),
         long_description: None,
         usage: &[
             "datum db setup",
@@ -1408,7 +1408,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             "datum db backup <PATH | -> [--overwrite]",
             "datum db restore <PATH | -> [--force] [--dry-run] [--json]",
             "datum db migrate (run | status | edit)",
-            "datum db import [FILE | --from FILE] [--dry-run]",
+            "datum db v2import [FILE | - | --from FILE] [--dry-run]",
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,

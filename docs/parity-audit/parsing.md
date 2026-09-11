@@ -543,7 +543,7 @@ Deliberately *not* carried forward from datum:
   pre-pass. Users who want a different verb should write a different
   verb.
 - **`v1Cmd`** (datum's legacy-format exporter). Migration goes the
-  other direction (datum JSON → daydumb SQLite via `datum db import`);
+  other direction (datum JSON → daydumb SQLite via `datum db v2import`);
   exporting back out is not a goal.
 
 ---

@@ -241,8 +241,8 @@ pub enum DbCommand {
     Restore(RestoreArgs),
     /// `datum db migrate` — schema migration runner (run/status/edit).
     Migrate(MigrateCommand),
-    /// `datum db import` — load a legacy datum CouchDB backup JSON.
-    Import(DbImportArgs),
+    /// `datum db v2import` — load a legacy datum CouchDB backup JSON.
+    V2import(DbImportArgs),
 }
 
 #[derive(Debug, Default)]

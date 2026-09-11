@@ -487,7 +487,7 @@ mod tests {
         );
 
         // Stamp system-managed provenance directly on the row, mimicking what
-        // `datum db import --from <legacy>` would deposit.
+        // `datum db v2import --from <legacy>` would deposit.
         let original_meta = serde_json::json!({"_import": {"source": "legacy", "v": 1}});
         stamp_extra_metadata(&db, e.slug.as_str(), &original_meta);
         let before = db.get_entry(&e.slug).unwrap();

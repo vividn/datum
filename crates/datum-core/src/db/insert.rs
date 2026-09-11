@@ -204,7 +204,7 @@ impl Db {
         Ok(outcomes)
     }
 
-    /// Bulk-load fast path for one-shot ingestion (e.g. `datum db import`).
+    /// Bulk-load fast path for one-shot ingestion (e.g. `datum db v2import`).
     ///
     /// Like [`Self::insert_entries_batch`], one transaction wraps the whole
     /// batch. Unlike it, this method **skips** per-row work that's only useful
