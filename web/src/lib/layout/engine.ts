@@ -33,7 +33,7 @@ export const ready = writable(false);
 export const fields = writable<FieldWidget[]>([]);
 
 export interface ReplLike {
-	runArgv(argv: string[]): Promise<RunResult>;
+	runArgv(argv: string[], line?: string): Promise<RunResult>;
 }
 
 let repl: ReplLike | null = null;
@@ -94,15 +94,16 @@ export async function ran(): Promise<void> {
 
 /**
  * A command from anywhere but a prompt of its own — a widget-bar press,
- * the bottom bar's line (da-0a5o). Through the REPL when there is one;
- * see above. Without one it is recorded here, so the shared history and
- * the bottom bar's receipt still see it, and the epoch is bumped here.
+ * the bottom bar's line (da-0a5o), which is echoed and recalled as typed.
+ * Through the REPL when there is one; see above. Without one it is
+ * recorded here, so the shared history and the bottom bar's receipt still
+ * see it, and the epoch is bumped here.
  */
-export async function press(argv: string[]): Promise<RunResult> {
-	if (repl) return repl.runArgv(argv);
+export async function press(argv: string[], line?: string): Promise<RunResult> {
+	if (repl) return repl.runArgv(argv, line);
 	const ranAt = Date.now();
 	const result = await (fileCommand(argv) ?? run(argv));
-	record(result.argv.join(' '), ranAt, result);
+	record(line ?? result.argv.join(' '), ranAt, result);
 	await ran();
 	return result;
 }
@@ -111,7 +112,11 @@ export async function press(argv: string[]): Promise<RunResult> {
  * A command from the bottom bar's line or the fields widget, with the
  * bar's pills (a `-t 14:30` cursor) after it — after, because the CLI
  * takes no flag before its verb. The one path both take (da-c7u8), so a
- * pill lands on a press exactly as on a typed line.
+ * pill lands on a press exactly as on a typed line. A typed `line` is
+ * echoed as typed, the pills' text after it.
  */
-export const pressWithPills = (argv: string[]): Promise<RunResult> =>
-	press([...argv, ...get(pills).flatMap((pill) => shellSplit(pill.text))]);
+export const pressWithPills = (argv: string[], line?: string): Promise<RunResult> =>
+	press(
+		[...argv, ...get(pills).flatMap((pill) => shellSplit(pill.text))],
+		line === undefined ? undefined : [line, ...get(pills).map((pill) => pill.text)].join(' ')
+	);

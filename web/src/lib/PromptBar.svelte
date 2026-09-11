@@ -77,7 +77,7 @@
 	}
 
 	async function submit({ detail: typed }: CustomEvent<string>): Promise<void> {
-		await pressWithPills(shellSplit(typed));
+		await pressWithPills(shellSplit(typed), typed);
 	}
 
 	$: degraded = isDegraded($storage);
@@ -152,7 +152,7 @@
 		position: relative;
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
+		gap: 0.5rem;
 		flex-shrink: 0;
 		min-width: 0;
 		padding: 0.55rem 0.9rem;
@@ -279,8 +279,10 @@
 		color: #e0e0ff;
 	}
 
+	/* At least half the bar: the receipt and the build stamp ellipsize
+	   before the line typed into gives up its room. */
 	.prompt {
-		flex: 1;
+		flex: 1 0 50%;
 		min-width: 0;
 	}
 
@@ -288,8 +290,7 @@
 	   widget; here the bar is the rule. */
 	.prompt :global(.line) {
 		border-top: none;
-		padding: 0.7rem 0.3rem;
-		font-size: 1.1rem;
+		padding: 0.7rem 0.2rem;
 	}
 
 	.prompt :global(input) {

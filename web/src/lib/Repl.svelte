@@ -65,19 +65,17 @@
 	/**
 	 * Run an argv — the bottom bar's line, a widget press (da-nz29).
 	 *
-	 * The scrollback echoes `result.argv`, the array the runner actually
-	 * received, so a press teaches exactly the command it ran. A prettier
-	 * string rebuilt from the press could drift from it; this cannot. The
-	 * one exception is the width `fitArgv` adds: that is the box's, not
-	 * the command's, and an Up that brought it back would pin the next run
-	 * to this box. A file command ($lib/dbio.ts) goes the browser's way,
-	 * before any await: its dialog needs the keypress.
+	 * A typed `line` is echoed as typed, quotes and all. A press has no
+	 * line: the scrollback echoes `result.argv`, the array the runner
+	 * actually received, so a press teaches exactly the command it ran. A
+	 * prettier string rebuilt from the press could drift from it; this
+	 * cannot. A file command ($lib/dbio.ts) goes the browser's way, before
+	 * any await: its dialog needs the keypress.
 	 */
-	export async function runArgv(argv: string[]): Promise<RunResult> {
+	export async function runArgv(argv: string[], line?: string): Promise<RunResult> {
 		const ranAt = Date.now();
-		const fitted = fitArgv(argv, width);
-		const result = await (fileCommand(argv) ?? run(fitted));
-		await land((fitted === argv ? result.argv : argv).join(' '), result, ranAt);
+		const result = await (fileCommand(argv) ?? run(fitArgv(argv, width)));
+		await land(line ?? result.argv.join(' '), result, ranAt);
 		return result;
 	}
 
