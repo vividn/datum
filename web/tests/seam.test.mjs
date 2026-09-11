@@ -68,7 +68,8 @@ describe('logging verbs', () => {
 			// table rather than in a terminal's padding — so what is
 			// compared is the cells, not the spaces between them. The
 			// panes re-run after a command the *page* ran, so reload to see
-			// what a fresh visit shows.
+			// what a fresh visit shows. The pane shows the rows its height
+			// holds (da-qrc6), so the screen is tall enough for all four.
 			await reload();
 			const table = await paneTable('tail');
 			assert.deepEqual(
@@ -76,7 +77,7 @@ describe('logging verbs', () => {
 				rows,
 				'the pane and the REPL disagree about the same listing'
 			);
-		});
+		}, { viewport: { width: 1280, height: 900 } });
 	});
 
 	test('field-first argv means the same as verb-first', async () => {

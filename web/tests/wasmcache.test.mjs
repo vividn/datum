@@ -82,10 +82,10 @@ describe('the wasm a returning browser runs', () => {
 			// And `tail` itself, which is the export the old render module
 			// lacked — read off the pane as header words, not as an absence
 			// of errors.
-			// The CLI's own header words. `time (+0)` because the harness
-			// pins the reader's zone to UTC.
+			// The CLI's own header words, whole (da-qrc6). `time (+0)`
+			// because the harness pins the reader's zone to UTC.
 			const table = await paneTable('tail');
-			assert.deepEqual(table.headers, ['time (+0)', 'field', 's', '_n', 'hid']);
+			assert.deepEqual(table.headers, ['time (+0)', 'field', 'state', '_n', 'hid']);
 			assert.deepEqual(
 				table.rows.map((cells) => cells[1]),
 				['coffee']

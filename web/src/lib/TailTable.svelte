@@ -10,19 +10,23 @@
 	So the geometry — and only the geometry — moves to the browser. The
 	cells come from `datum tail --json`'s `columns`, which is
 	`table_columns_with` in crates/datum-commands/src/render/mod.rs — the
-	same cell-building `format_table_with` pads: the same columns in the same order, the same header words
-	(including the `field`→`f` shrink), the same `_n` ordinals, the same
-	colours, each cell painted with the CLI's own ANSI and rendered
-	through `ansiSpans` exactly as a line of REPL output is. Nothing about
-	what a cell SAYS is decided here.
+	same cell-building `format_table_with` pads: the same columns in the
+	same order, the same `_n` ordinals, the same colours, each cell painted
+	with the CLI's own ANSI and rendered through `ansiSpans` exactly as a
+	line of REPL output is. Nothing about what a cell SAYS is decided here.
+	The header words are the CLI's too, always whole: the CLI's `f` and `s`
+	shrinks save a terminal's columns, which a pane does not count (da-qrc6).
 
 	Newest at the bottom, as `datum tail` prints.
 
 	How many rows, and which, is `tail -w`'s answer (da-lan0): the pane's
-	height decides the count — `n = ⌊(box − header) / row⌋`, at least
-	`FLOOR`, so a taller pane shows more of the past and never a gap, and a
-	short one never shows less than a typed `tail` does (da-zfkx) — and the
-	listing is `tail -n <n>`. Scrolling to the top asks for the page above
+	height decides the count — `n = ⌊(box − header) / row⌋`, exactly what
+	fits and nothing else (da-qrc6, overriding da-zfkx's floor of ten), so
+	a taller pane shows more of the past, a short one fewer, and neither a
+	gap nor a scrollbar at rest; a box too short for one row shows the
+	header alone — and the listing is `tail -n <n>`. The header is pinned
+	(a sticky `thead`) as `tail -w` pins it, so it is there at every scroll
+	position. Scrolling to the top asks for the page above
 	it, `tail -n <n+1> -t <oldest shown>` (the CLI's own bound, inclusive, at
 	its own precision; what came back already is dropped by hid), prepended
 	with the reader's place kept. A write lands as the epoch bump does
@@ -56,12 +60,6 @@
 
 	/** Most rows the table holds. Past it, older rows replace newer ones. */
 	const CAP = 300;
-	/**
-	 * Fewest rows asked for: `datum tail`'s own default count. A pane shorter
-	 * than that scrolls, pinned at the newest, and agrees with the REPL's
-	 * `tail` rather than cutting it to the rows that fit (da-zfkx).
-	 */
-	const FLOOR = 10;
 
 	/** One row as laid out: the CLI's cells by column key. */
 	interface Shown {
@@ -84,7 +82,7 @@
 	let shown = -1;
 
 	let tbody: HTMLTableSectionElement | undefined;
-	/** The probe: a header row and two one-line rows, hidden, to measure by. */
+	/** The probe: a header row and a one-line row, hidden, to measure by. */
 	let probeHead: HTMLTableSectionElement | undefined;
 	let probeRows: HTMLTableSectionElement | undefined;
 	/** Where the widget itself last scrolled to: the event that reports it is not the reader's. */
@@ -103,12 +101,15 @@
 	/** The count the box holds, and the slack under it. Null until measured, or while the pane is hidden. */
 	$: fit = measure(box, probeHead, probeRows);
 	$: n = fit?.n ?? null;
-	$: if (n !== null) void refresh(n, epoch);
+	// A box that holds no row still asks for one: its columns are the header.
+	$: if (n !== null) void refresh(Math.max(1, n), epoch);
+	$: visible = n === 0 ? [] : rows;
 
 	/**
-	 * How many rows `box` holds: the header row, then the first row — which
-	 * is taller than the rest by its share of the header's collapsed
-	 * border — then rows of the second's height. And what is left under
+	 * How many rows `box` holds: the header row, then rows of the one-line
+	 * row's height — all alike, since no border is shared between the
+	 * header and the first (the rule under the header is a shadow, so it
+	 * stays pinned with it). And what is left under
 	 * them, which a spacer takes: a scroller cannot scroll past its end,
 	 * so without it a page prepended to a table shorter than its box could
 	 * not keep the reader's row where it was — it would sit the slack
@@ -123,12 +124,12 @@
 		head: HTMLTableSectionElement | undefined,
 		rows: HTMLTableSectionElement | undefined
 	): { n: number; slack: number } | null {
-		if (!box || !head || !rows || rows.rows.length < 2) return null;
-		const [first, second] = [...rows.rows].map((tr) => tr.getBoundingClientRect().height);
-		const headPx = head.getBoundingClientRect().height + (first - second);
-		if (second <= 0 || box.height <= headPx) return null;
-		const n = Math.max(FLOOR, Math.floor((box.height - headPx) / second));
-		return { n, slack: Math.max(0, box.height - headPx - n * second) };
+		if (!box || !head || !rows) return null;
+		const headPx = head.getBoundingClientRect().height;
+		const row = rows.getBoundingClientRect().height;
+		if (row <= 0 || box.height <= headPx) return null;
+		const n = Math.floor((box.height - headPx) / row);
+		return { n, slack: Math.max(0, box.height - headPx - n * row) };
 	}
 
 	/** Scroll to `top` as the widget, not the reader: the event it raises is told apart by where it landed. */
@@ -149,10 +150,9 @@
 	}
 
 	/**
-	 * Take a listing's columns on: new keys join, the newest header word wins
-	 * — unless it is the CLI's shrink of the word held (`f` for `field`, `s`
-	 * for `state`, printed when no row of THAT listing is wide): the merged
-	 * table still holds the rows that earned the whole word.
+	 * Take a listing's columns on: new keys join, the newest header word
+	 * wins, and the CLI's shrink of a word (`f` for `field`, `s` for
+	 * `state`, printed when no row is wide) is the whole word.
 	 */
 	function adopt(columns: TailColumn[], replace: boolean): void {
 		if (replace) {
@@ -160,7 +160,7 @@
 			headers = {};
 		}
 		for (const column of columns) {
-			if (!headers[column.key]?.startsWith(column.header)) headers[column.key] = column.header;
+			headers[column.key] = column.key.startsWith(column.header) ? column.key : column.header;
 			if (!keys.includes(column.key)) keys.push(column.key);
 		}
 		headers = headers;
@@ -188,9 +188,9 @@
 		if (!tr) return;
 		const y = tr.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
 		const top = scroller.scrollTop + (y - a.y);
-		// The slack is measured, the box floored and the first row taller by
-		// its share of the header's border — so a page above can leave the
-		// scroller a pixel or two short of the place; lengthen it, not clamp.
+		// The slack is measured and the box floored, so a page above can
+		// leave the scroller a pixel or two short of the place; lengthen
+		// it, not clamp.
 		const short = top - (scroller.scrollHeight - scroller.clientHeight);
 		if (short > 0) {
 			extra += Math.ceil(short);
@@ -251,7 +251,7 @@
 
 	/** The page above the oldest row on screen, prepended with the place kept. */
 	async function page(): Promise<void> {
-		if (paging || exhausted || n === null || rows.length === 0) return;
+		if (paging || exhausted || !n || rows.length === 0) return;
 		const oldest = rows[0];
 		if (oldest.time === null) return void (exhausted = true);
 		paging = true;
@@ -281,7 +281,7 @@
 
 	/** `↓ new`: back to the live end, fresh. */
 	function jump(): void {
-		if (n !== null) void refresh(n, epoch, true);
+		if (n !== null) void refresh(Math.max(1, n), epoch, true);
 	}
 
 	// The reader's scrolling, on the pane's body. At the top, the page
@@ -351,7 +351,7 @@
      it: it is a ruler, not a row. -->
 <table class="probe" aria-hidden="true">
 	<tfoot bind:this={probeHead}><tr><th>&nbsp;</th></tr></tfoot>
-	<tfoot bind:this={probeRows}><tr><td>&nbsp;</td></tr><tr><td>&nbsp;</td></tr></tfoot>
+	<tfoot bind:this={probeRows}><tr><td>&nbsp;</td></tr></tfoot>
 </table>
 {#if shown < 0}
 	<p class="quiet">…</p>
@@ -376,8 +376,12 @@
 			</tr>
 		</thead>
 		<tbody bind:this={tbody}>
-			{#each rows as row (row.hid)}
-				<tr data-hid={row.hid}>
+			{#each visible as row, i (row.hid)}
+				<tr
+					data-hid={row.hid}
+					class:start={exhausted && i === 0}
+					title={exhausted && i === 0 ? 'the start of the log' : undefined}
+				>
 					{#each keys as key (key)}
 						<td class={key} data-key={key}
 							>{#each ansiSpans(row.cells[key] ?? '') as span}<span
@@ -420,12 +424,24 @@
 		pointer-events: none;
 	}
 
+	/* Pinned, as `tail -w` pins its header. A sticky box stops at the
+	   scroller's padding edge, so it is pulled up by the pane's `.body`
+	   top padding (Pane.svelte) to sit flush with the pane's top, leaving
+	   no strip for the rows scrolled under it to show through. */
+	thead {
+		position: sticky;
+		top: -0.33rem;
+	}
+
 	th {
 		font-weight: normal;
+		/* On the pane's ground, so the rows under it do not show through. */
+		background: #0d0d1a;
 		/* The CLI's header is plain text over the columns; a rule under it
-		   does the work the terminal's blank line does. */
-		border-bottom: 1px solid #2a2a44;
-		padding-bottom: 0.15em;
+		   does the work the terminal's blank line does. A shadow, not a
+		   border: a collapsed border stays with the table, not the header. */
+		box-shadow: inset 0 -1px 0 #2a2a44;
+		padding-bottom: calc(0.15em + 1px);
 	}
 
 	th,
@@ -461,6 +477,12 @@
 	.field,
 	.state {
 		overflow-wrap: anywhere;
+	}
+
+	/* Paged up to the log's first row: a dotted edge over it, drawn as a
+	   background so the row's height, and the count, are untouched. */
+	.start td {
+		background: linear-gradient(to right, #444466 50%, transparent 0) top / 6px 1px repeat-x;
 	}
 
 	/* What the count leaves under the last row: under a page, it is the room

@@ -406,7 +406,9 @@ describe('the tail pane', () => {
 	/**
 	 * Ten rows — `datum tail`'s own default count — including a state
 	 * long enough that nothing but wrapping can fit it. Ten is what makes
-	 * this a test of a full pane rather than of an empty one.
+	 * this a test of a full pane rather than of an empty one, and the pane
+	 * shows the rows its height holds (da-qrc6), so the screen is tall
+	 * enough for ten at every width.
 	 */
 	const TEN_ROWS = [
 		'occur coffee -t 0700',
@@ -463,7 +465,7 @@ describe('the tail pane', () => {
 						`a time cell wrapped at ${width}px: ${JSON.stringify(heights)}`
 					);
 				},
-				{ viewport: { width, height: 900 } }
+				{ viewport: { width, height: 1600 } }
 			);
 		});
 	}
