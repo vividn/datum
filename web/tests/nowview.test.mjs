@@ -51,7 +51,7 @@ describe('the nowview widget', () => {
 			await app.idle();
 			assert.equal(lastHistory(await seen()), '45m');
 
-			await shorter(page).click();
+			// 45m → 30m, 20m, 15m, 10m, 5m, 0.
 			for (let i = 0; i < 6; i++) await shorter(page).click();
 			await says(page, 'now');
 			await app.idle();
