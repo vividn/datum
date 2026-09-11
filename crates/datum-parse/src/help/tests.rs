@@ -55,7 +55,7 @@ ADMIN:
   spec     Manage field specs (schemas)
   alias    Manage aliases
   check    Run database consistency checks
-  db       DB-lifecycle (setup, purge, backup, restore, migrate, import)
+  db       DB-lifecycle (setup, purge, backup, restore, migrate, v2import)
   info     Show health/metadata for DB(s)
   config   Show or manage user configuration
   meta     Attach or list protocol-change notes on a field
