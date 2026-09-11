@@ -24,14 +24,34 @@ export interface TailColumn {
 export interface TailRow {
 	hid: string;
 	field: string;
+	/** The stamp the `time` column shows, RFC 3339; `null` for a timeless row. */
+	time: string | null;
 	state_label: string | null;
 	quick_id: string | null;
 	[key: string]: unknown;
 }
 
+/**
+ * Which page of the listing: how many rows (`-n`), and — for a page above
+ * the one on screen — the stamp they must land at or before (`-t`).
+ *
+ * `before` is a row's own `time` handed straight back: `tail -t` takes an
+ * RFC 3339 instant at the CLI's full precision, and its bound is inclusive
+ * (`<=`, `list.rs`), so the row it names comes back too — the caller drops
+ * what it already holds by hid. Rounding the stamp first would drop rows
+ * between the rounded instant and the real one, so it is not rounded.
+ */
+export interface TailPage {
+	count?: number;
+	before?: string;
+}
+
 /** The listing, oldest first, the way `tail` prints. Rejects on a failed command. */
-export async function tailListing(): Promise<{ rows: TailRow[]; columns: TailColumn[] }> {
-	const result = await run(['tail', '--json']);
+export async function tailListing(page: TailPage = {}): Promise<{ rows: TailRow[]; columns: TailColumn[] }> {
+	const argv = ['tail', '--json'];
+	if (page.count !== undefined) argv.push('-n', String(page.count));
+	if (page.before !== undefined) argv.push('-t', page.before);
+	const result = await run(argv);
 	if (result.code !== 0) throw new Error(result.stderr || `tail exited ${result.code}`);
 	const doc = JSON.parse(result.stdout) as { rows?: TailRow[]; columns?: TailColumn[] };
 	return { rows: doc.rows ?? [], columns: doc.columns ?? [] };
