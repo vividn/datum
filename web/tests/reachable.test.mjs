@@ -234,15 +234,18 @@ describe('the layout engine, by keyboard', () => {
 		return seen;
 	}
 
-	test('a Tab walk reaches every … button and every border', async () => {
+	test('a Tab walk reaches every … button, every border and the nowview steps', async () => {
 		await withApp(async ({ page }) => {
 			const reached = await tabWalk(page);
 			const controls = await page.evaluate(() =>
-				[...document.querySelectorAll('button.more, [role="separator"]')].map((el) => ({
+				[...document.querySelectorAll('button.more, [role="separator"], .nowview-steps button')].map((el) => ({
 					walk: el.dataset.walk ?? null,
-					what: el.matches('button.more') ? `menu of ${el.closest('section').dataset.title}` : 'border'
+					what: el.matches('button.more')
+						? `menu of ${el.closest('section').dataset.title}`
+						: el.getAttribute('aria-label') ?? 'border'
 				}))
 			);
+			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');
 			assert.ok(controls.some((c) => c.what === 'border'), 'the default layout has no draggable border');
 			for (const control of controls) {
 				assert.ok(control.walk && reached.has(control.walk), `${control.what} is not in the Tab order`);

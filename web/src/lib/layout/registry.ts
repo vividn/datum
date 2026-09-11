@@ -35,9 +35,10 @@ import CliPane from '$lib/CliPane.svelte';
 import CommandPane from '$lib/CommandPane.svelte';
 import DayStrip from '$lib/DayStrip.svelte';
 import Stats from '$lib/Stats.svelte';
-import { DEFAULT_DAY_HEIGHT, NOWVIEW, TAIL } from '$lib/panes.js';
+import { DEFAULT_DAY_HEIGHT, NOWVIEW_HISTORY, TAIL } from '$lib/panes.js';
 import { DEFAULT_STATS } from '$lib/stats.js';
 import BarWidget from './BarWidget.svelte';
+import NowviewWidget from './NowviewWidget.svelte';
 import ReplWidget from './ReplWidget.svelte';
 
 export interface WidgetKind {
@@ -75,10 +76,16 @@ export const KINDS: Record<string, WidgetKind> = {
 		onChange: (settings, dayHeight) => ({ ...settings, dayHeight })
 	},
 	repl: { meta: meta('repl', 'repl', 200, 106), component: ReplWidget },
+	// How far back nowview reaches is its setting, which its − / + step
+	// (da-pcis); `at` centres it on an instant, which nothing sets yet.
 	nowview: {
-		meta: meta('nowview', 'nowview', 160, 108),
-		component: CliPane,
-		props: () => ({ spec: NOWVIEW })
+		meta: meta('nowview', 'nowview', 160, 108, { history: NOWVIEW_HISTORY }),
+		component: NowviewWidget,
+		props: ({ history, at }) => ({
+			history: typeof history === 'string' ? history : NOWVIEW_HISTORY,
+			at: typeof at === 'string' ? at : undefined
+		}),
+		onChange: (settings, history) => ({ ...settings, history })
 	},
 	tail: { meta: meta('tail', 'tail', 200, 102), component: CliPane, props: () => ({ spec: TAIL }) },
 	// The command pane (da-wb2n) keeps its line in its own localStorage

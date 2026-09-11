@@ -193,6 +193,19 @@ export const NOWVIEW: PaneSpec = {
 	empty: 'no field has a state yet'
 };
 
+/**
+ * How far back the nowview widget reaches, as its − / + step it (vividn,
+ * 2026-09-11): `0` is the snapshot, each field's state now and no time.
+ */
+export const NOWVIEW_STEPS = ['0', '5m', '10m', '15m', '20m', '30m', '45m', '60m', '90m', '2h', '3h', '6h', '12h'];
+export const NOWVIEW_HISTORY = '30m';
+
+/** NOWVIEW at a window of `history`, centred on `at` when there is one (da-pcis). */
+export const nowviewSpec = (history: string, at?: string): PaneSpec => ({
+	...NOWVIEW,
+	argv: [...NOWVIEW.argv, '--history', history, ...(at ? ['--at', at] : [])]
+});
+
 export const TAIL: PaneSpec = {
 	title: 'tail',
 	argv: ['tail'],
