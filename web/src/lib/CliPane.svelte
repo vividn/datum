@@ -76,8 +76,8 @@
 	// the epoch and the box together, so a resize re-runs a drawn view the
 	// same way a write does — and only a drawn view: for any other command
 	// `sized` stays null, and an unchanged null invalidates nothing.
-	// The tail table reads its own listing, sized to the box (see
-	// TailTable.svelte); every other pane is one command through the seam.
+	// The tail table reads its own listing (see TailTable.svelte); every
+	// other pane is one command through the seam.
 	//
 	// By the spec's WORDS, not the spec: the layout hands a pane its spec
 	// afresh on every change to the tree (a spread prop), and Svelte counts
@@ -142,9 +142,7 @@
 		<!-- The one pane whose content is a grid: `datum tail` IS a table,
 		     and this lays the CLI's own cells out in a real one rather than
 		     showing the padding a terminal would need (da-6ec2). -->
-		<!-- The box says how many rows fit and the body is where the reader
-		     scrolls: `tail -w` in a pane (da-lan0). -->
-		<TailTable {epoch} empty={spec.empty ?? ''} {box} scroller={body} />
+		<TailTable {epoch} empty={spec.empty ?? ''} />
 	{:else if !result}
 		<p class="quiet">…</p>
 	{:else if result.stdout}

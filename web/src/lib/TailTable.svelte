@@ -17,314 +17,44 @@
 	what a cell SAYS is decided here.
 
 	Newest at the bottom, as `datum tail` prints.
-
-	How many rows, and which, is `tail -w`'s answer (da-lan0): the pane's
-	height decides the count — `n = ⌊(box − header) / row⌋`, at least one,
-	so a taller pane shows more of the past and never a gap — and the
-	listing is `tail -n <n>`. Scrolling to the top asks for the page above
-	it, `tail -n <n+1> -t <oldest shown>` (the CLI's own bound, inclusive, at
-	its own precision; what came back already is dropped by hid), prepended
-	with the reader's place kept. A write lands as the epoch bump does
-	today: pinned at the bottom the newest page simply replaces the screen;
-	scrolled up, the place is kept and a quiet `↓ new` at the foot says
-	something landed below. The table holds at most `CAP` rows — past it,
-	the far end goes, and `↓ new` brings the live end back.
-
-	Two things it does NOT decide: the rows (every one is the CLI's), and
-	the row height. That is measured off a hidden one-line probe table in
-	the pane's own font, so the count is right before the first listing is
-	asked for and the table's own height never feeds back into it (a
-	ResizeObserver on the table would). A row whose state wraps is taller
-	than one line, so a pane full of long states overflows and scrolls —
-	never a gap.
 -->
 <script lang="ts">
-	import { onDestroy, tick } from 'svelte';
 	import { ansiSpans } from './ansi.js';
-	import type { PaneBox } from './panes.js';
 	import { tailListing, type TailColumn, type TailRow } from './tail.js';
 
 	/** Any change re-reads the listing. The pane bumps it after each run. */
 	export let epoch = 0;
 	/** Shown when the listing is empty. */
 	export let empty = '';
-	/** The pane's content box, once measured (`CliPane.svelte`'s `box`). */
-	export let box: PaneBox | null = null;
-	/** The pane's scrolling body: where the reader is, and what is pinned. */
-	export let scroller: HTMLElement | undefined = undefined;
 
-	/** Most rows the table holds. Past it, older rows replace newer ones. */
-	const CAP = 300;
-
-	/** One row as laid out: the CLI's cells by column key. */
-	interface Shown {
-		hid: string;
-		time: string | null;
-		cells: Record<string, string>;
-	}
-
-	/** The CLI's column order, for a table merged from more than one listing. */
-	const STOCK = ['time', 'field', 'state', 'dur', '_n', 'hid'];
-	const rank = (key: string) => (STOCK.includes(key) ? STOCK.indexOf(key) : STOCK.length);
-
-	let keys: string[] = [];
-	let headers: Record<string, string> = {};
-	/** Oldest first, newest at the bottom. */
-	let rows: Shown[] = [];
+	let columns: TailColumn[] = [];
+	let rows: TailRow[] = [];
 	let error = '';
 	/** How many reads have been started, and the newest one on screen. */
 	let started = 0;
 	let shown = -1;
 
-	let tbody: HTMLTableSectionElement | undefined;
-	/** The probe: a header row and two one-line rows, hidden, to measure by. */
-	let probeHead: HTMLTableSectionElement | undefined;
-	let probeRows: HTMLTableSectionElement | undefined;
-	/** Where the widget itself last scrolled to: the event that reports it is not the reader's. */
-	let own: number | null = null;
+	$: void refresh(epoch);
 
-	/** Rows landed below the reader's view (or the live end was let go). */
-	let unseen = false;
-	/** The page above came back with nothing new: the listing's beginning. */
-	let exhausted = false;
-	/** Bumped whenever the screen is replaced, so a page in flight for the old one is dropped. */
-	let generation = 0;
-	let paging = false;
-
-	/** The count the box holds, and the slack under it. Null until measured, or while the pane is hidden. */
-	$: fit = measure(box, probeHead, probeRows);
-	$: n = fit?.n ?? null;
-	$: if (n !== null) void refresh(n, epoch);
-
-	/**
-	 * How many rows `box` holds: the header row, then the first row — which
-	 * is taller than the rest by its share of the header's collapsed
-	 * border — then rows of the second's height. And what is left under
-	 * them, which a spacer takes: a scroller cannot scroll past its end,
-	 * so without it a page prepended to a table shorter than its box could
-	 * not keep the reader's row where it was — it would sit the slack
-	 * lower.
-	 */
-	function measure(
-		box: PaneBox | null,
-		head: HTMLTableSectionElement | undefined,
-		rows: HTMLTableSectionElement | undefined
-	): { n: number; slack: number } | null {
-		if (!box || box.height <= 0 || !head || !rows || rows.rows.length < 2) return null;
-		const [first, second] = [...rows.rows].map((tr) => tr.getBoundingClientRect().height);
-		if (second <= 0) return null;
-		const headPx = head.getBoundingClientRect().height + (first - second);
-		const n = Math.max(1, Math.floor((box.height - headPx) / second));
-		return { n, slack: Math.max(0, box.height - headPx - n * second) };
-	}
-
-	/** Scroll to `top` as the widget, not the reader: the event it raises is told apart by where it landed. */
-	function scrollTo(top: number): void {
-		if (!scroller) return;
-		scroller.scrollTop = top;
-		own = scroller.scrollTop;
-	}
-
-	const at = (row: Shown) => (row.time === null ? -Infinity : Date.parse(row.time));
-
-	function toShown(table: { rows: TailRow[]; columns: TailColumn[] }): Shown[] {
-		return table.rows.map((row, i) => ({
-			hid: row.hid,
-			time: row.time,
-			cells: Object.fromEntries(table.columns.map((column) => [column.key, column.cells[i] ?? '']))
-		}));
-	}
-
-	/** Take a listing's columns on: new keys join, the newest header word wins. */
-	function adopt(columns: TailColumn[], replace: boolean): void {
-		if (replace) {
-			keys = [];
-			headers = {};
-		}
-		for (const column of columns) {
-			headers[column.key] = column.header;
-			if (!keys.includes(column.key)) keys.push(column.key);
-		}
-		headers = headers;
-		keys = keys.sort((a, b) => rank(a) - rank(b));
-	}
-
-	const nearBottom = () =>
-		!scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 2;
-
-	/** The first row on screen and where it is, to put it back there after a change. */
-	function anchor(): { hid: string; y: number } | null {
-		if (!scroller || !tbody) return null;
-		const top = scroller.getBoundingClientRect().top;
-		for (const tr of tbody.rows) {
-			const rect = tr.getBoundingClientRect();
-			if (rect.bottom > top) return { hid: tr.dataset.hid ?? '', y: rect.top - top };
-		}
-		return null;
-	}
-
-	async function keep(a: ReturnType<typeof anchor>): Promise<void> {
-		await tick();
-		if (!a || !scroller || !tbody) return;
-		const tr = tbody.querySelector<HTMLTableRowElement>(`tr[data-hid="${a.hid}"]`);
-		if (!tr) return;
-		const y = tr.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-		scrollTo(scroller.scrollTop + (y - a.y));
-	}
-
-	async function refresh(count: number, _epoch: number, force = false): Promise<void> {
-		const started_at = ++started;
-		let table: { rows: TailRow[]; columns: TailColumn[] };
+	async function refresh(_epoch: number): Promise<void> {
+		const at = ++started;
 		try {
-			table = await tailListing({ count });
+			const table = await tailListing();
+			// Two refreshes can be in flight at once and finish out of
+			// order; the loser must not paint the older listing over the
+			// newer one. Last started wins, not last to return.
+			if (at < shown) return;
+			shown = at;
+			({ columns, rows } = table);
+			error = '';
 		} catch (e) {
-			if (started_at < shown) return;
-			shown = started_at;
+			if (at < shown) return;
+			shown = at;
 			error = e instanceof Error ? e.message : String(e);
-			return;
-		}
-		// Two refreshes can be in flight at once and finish out of order;
-		// the loser must not paint the older listing over the newer one.
-		// Last started wins, not last to return.
-		if (started_at < shown) return;
-		shown = started_at;
-		error = '';
-		const page = toShown(table);
-		if (force || rows.length === 0 || nearBottom()) {
-			// Pinned: the screen is the CLI's newest page and nothing else.
-			generation++;
-			rows = page;
-			adopt(table.columns, true);
-			unseen = exhausted = false;
-			await tick();
-			if (scroller) scrollTo(scroller.scrollHeight);
-		} else {
-			// Scrolled up: keep the place. The page is the truth for the
-			// span it covers — a row of ours inside that span but not in
-			// it was deleted or retimed — and what we hold above the span
-			// stays. A page that does not reach down to our newest row
-			// is not contiguous (more than a page landed, or the far end
-			// was let go at the cap): leave the screen, say so below.
-			const a = anchor();
-			const held = new Set(rows.map((row) => row.hid));
-			const fresh = page.some((row) => !held.has(row.hid));
-			const newest = rows[rows.length - 1];
-			const first = page[0];
-			if (first && at(first) <= at(newest)) {
-				const inPage = new Set(page.map((row) => row.hid));
-				rows = [...rows.filter((row) => !inPage.has(row.hid) && at(row) < at(first)), ...page];
-				if (rows.length > CAP) rows = rows.slice(rows.length - CAP);
-				adopt(table.columns, false);
-			}
-			if (fresh) unseen = true;
-			await keep(a);
 		}
 	}
-
-	/** The page above the oldest row on screen, prepended with the place kept. */
-	async function page(): Promise<void> {
-		if (paging || exhausted || n === null || rows.length === 0) return;
-		const oldest = rows[0];
-		if (oldest.time === null) return void (exhausted = true);
-		paging = true;
-		const of = generation;
-		try {
-			// One more than a page: the bound is inclusive, so the oldest row
-			// comes back with the page above it and is dropped again by hid.
-			const table = await tailListing({ count: n + 1, before: oldest.time });
-			if (of !== generation) return;
-			const held = new Set(rows.map((row) => row.hid));
-			const fresh = toShown(table).filter((row) => !held.has(row.hid));
-			if (fresh.length === 0) return void (exhausted = true);
-			const a = anchor();
-			rows = [...fresh, ...rows];
-			if (rows.length > CAP) {
-				rows = rows.slice(0, CAP);
-				unseen = true;
-			}
-			adopt(table.columns, false);
-			await keep(a);
-		} catch {
-			// A page that failed is a page not shown; the table stands.
-		} finally {
-			paging = false;
-		}
-	}
-
-	/** `↓ new`: back to the live end, fresh. */
-	function jump(): void {
-		if (n !== null) void refresh(n, epoch, true);
-	}
-
-	// The reader's scrolling, on the pane's body. At the top, the page
-	// above; at the bottom, nothing is unseen. A table that fits exactly
-	// cannot be scrolled at all, so a wheel or a finger pulling down at the
-	// top asks the same way.
-	let attached: HTMLElement | undefined;
-	$: attach(scroller);
-
-	function attach(el: HTMLElement | undefined): void {
-		if (el === attached) return;
-		detach();
-		attached = el;
-		if (!el) return;
-		el.addEventListener('scroll', onScroll, { passive: true });
-		el.addEventListener('wheel', onWheel, { passive: true });
-		el.addEventListener('touchstart', onTouchStart, { passive: true });
-		el.addEventListener('touchmove', onTouchMove, { passive: true });
-	}
-
-	function detach(): void {
-		if (!attached) return;
-		attached.removeEventListener('scroll', onScroll);
-		attached.removeEventListener('wheel', onWheel);
-		attached.removeEventListener('touchstart', onTouchStart);
-		attached.removeEventListener('touchmove', onTouchMove);
-		attached = undefined;
-	}
-
-	function onScroll(): void {
-		if (!scroller) return;
-		const top = scroller.scrollTop;
-		// Fewer rows than before clamp the scroll on their own, and a
-		// clamp is a scroll event too — so a scroll of ours is known by
-		// where it landed, and a scroll that cannot be a reader's, in a
-		// body with nothing to scroll, is nobody's.
-		const mine = own !== null && top === own;
-		own = null;
-		if (mine) return;
-		if (nearBottom()) unseen = false;
-		if (top <= 0 && scroller.scrollHeight > scroller.clientHeight + 1) void page();
-	}
-
-	function onWheel(e: WheelEvent): void {
-		if (e.deltaY < 0 && scroller && scroller.scrollTop <= 0) void page();
-	}
-
-	let touchY: number | null = null;
-	function onTouchStart(e: TouchEvent): void {
-		touchY = e.touches[0]?.clientY ?? null;
-	}
-	function onTouchMove(e: TouchEvent): void {
-		const y = e.touches[0]?.clientY;
-		if (touchY === null || y === undefined || !scroller) return;
-		if (y - touchY > 24 && scroller.scrollTop <= 0) {
-			touchY = null;
-			void page();
-		}
-	}
-
-	onDestroy(detach);
 </script>
 
-<!-- The probe: what a header row and a one-line row measure in this pane.
-     Hidden, and a `tfoot` rather than a head and a body, so that nothing
-     that reads the table — `thead th`, `tbody tr`, the body's text — sees
-     it: it is a ruler, not a row. -->
-<table class="probe" aria-hidden="true">
-	<tfoot bind:this={probeHead}><tr><th>&nbsp;</th></tr></tfoot>
-	<tfoot bind:this={probeRows}><tr><td>&nbsp;</td></tr><tr><td>&nbsp;</td></tr></tfoot>
-</table>
 {#if shown < 0}
 	<p class="quiet">…</p>
 {:else if error}
@@ -335,9 +65,9 @@
 	<table>
 		<thead>
 			<tr>
-				{#each keys as key (key)}
-					<th class={key} data-key={key}
-						>{#each ansiSpans(headers[key] ?? key) as span}<span
+				{#each columns as column}
+					<th class={column.key} data-key={column.key}
+						>{#each ansiSpans(column.header) as span}<span
 								style:color={span.fg}
 								style:background={span.bg}
 								style:font-weight={span.bold ? 'bold' : null}
@@ -347,12 +77,12 @@
 				{/each}
 			</tr>
 		</thead>
-		<tbody bind:this={tbody}>
-			{#each rows as row (row.hid)}
-				<tr data-hid={row.hid}>
-					{#each keys as key (key)}
-						<td class={key} data-key={key}
-							>{#each ansiSpans(row.cells[key] ?? '') as span}<span
+		<tbody>
+			{#each rows as row, i (row.hid)}
+				<tr>
+					{#each columns as column}
+						<td class={column.key} data-key={column.key}
+							>{#each ansiSpans(column.cells[i] ?? '') as span}<span
 									style:color={span.fg}
 									style:background={span.bg}
 									style:font-weight={span.bold ? 'bold' : null}
@@ -365,12 +95,6 @@
 			{/each}
 		</tbody>
 	</table>
-	<div class="slack" style:height="{fit?.slack ?? 0}px"></div>
-	{#if unseen}
-		<div class="foot">
-			<button type="button" class="new" on:click={jump}>↓ new</button>
-		</div>
-	{/if}
 {/if}
 
 <style>
@@ -381,15 +105,6 @@
 		border-collapse: collapse;
 		font: inherit;
 		text-align: left;
-	}
-
-	.probe {
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: auto;
-		visibility: hidden;
-		pointer-events: none;
 	}
 
 	th {
@@ -433,34 +148,6 @@
 	.field,
 	.state {
 		overflow-wrap: anywhere;
-	}
-
-	/* What the count leaves under the last row: under a page, it is the room
-	   the reader's row needs to stay put. */
-	.slack {
-		width: 100%;
-	}
-
-	/* The `↓ new` marker: no height of its own, so the count is untouched;
-	   stuck to the foot of the scrolling body, at the right. */
-	.foot {
-		position: sticky;
-		bottom: 0;
-		height: 0;
-	}
-
-	.new {
-		position: absolute;
-		right: 0;
-		bottom: 0;
-		font: inherit;
-		font-size: 0.8em;
-		color: #7c7cff;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
-		border-radius: 4px;
-		padding: 0.1em 0.5em;
-		cursor: pointer;
 	}
 
 	.quiet {
