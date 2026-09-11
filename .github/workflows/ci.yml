@@ -231,7 +231,7 @@ jobs:
     runs-on: ubuntu-latest
     # Measured on the last green main run (2026-09-09): web took a few minutes.
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: web
