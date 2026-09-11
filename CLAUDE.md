@@ -22,6 +22,7 @@ crates/
   datum-sync-server/  # Relay server: Rust + axum, E2E-encrypted sync backend
   datum-sync-agent/   # Background sync daemon (planned)
 web/            # SvelteKit PWA: static, the real CLI as WASI on OPFS, offline-capable
+                # its conventions — the seam, the beat, the panes, the tests: docs/web-conventions.md
 ```
 
 (Flutter/Android/Wear OS clients are planned but the directories don't
