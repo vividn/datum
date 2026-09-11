@@ -476,6 +476,46 @@ describe('a write', () => {
 			};
 		});
 
+	// A state long enough to wrap in a narrow pane is lines the one-line
+	// probe does not count: the first ask is the probe's, the screen as
+	// drawn overflows, and the count comes down to what fits — a second
+	// ask, and nothing to scroll at rest.
+	test('long states in a narrow pane: the drawn screen settles the count, no scrollbar at rest', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const LONG = [
+					'switch mood contemplative-about-the-weather -t 0700',
+					'switch project datum-day-tail-table-that-wraps -t 0800',
+					'switch mood restless-in-the-afternoon-light -t 0900',
+					'switch project the-long-and-winding-refactor -t 1000',
+					'switch mood quietly-pleased-with-the-result -t 1100',
+					'switch project another-name-that-wraps-in-a-column -t 1200'
+				];
+				for (const line of LONG) await app.submit(line);
+				await page.waitForFunction(
+					() => {
+						if (window.__datumInflight !== 0) return false;
+						const body = document.querySelector('section.pane[data-title="tail"] .body');
+						const trs = [...body.querySelectorAll('tbody tr')];
+						return trs.at(-1)?.textContent.includes('another-name') && body.scrollHeight <= body.clientHeight + 1;
+					},
+					null,
+					{ timeout: 10_000 }
+				);
+				const g = await geometry(page);
+				const asks = await page.evaluate(() => window.__tailAsks);
+				assert.ok(g.hids.length > 0 && g.hids.length < LONG.length, `${g.hids.length} rows: the pane holds all six, which tests nothing`);
+				assert.ok(asks.some((ask) => ask.n > g.hids.length), `no ask beyond what fits was corrected: ${JSON.stringify(asks)}`);
+				assert.equal(asks.at(-1).n, g.hids.length, `the last ask is not the count shown: ${JSON.stringify(asks)}`);
+				assert.ok(g.last <= g.box + 0.5, `the rows overflow the box (${g.last} of ${g.box}px)`);
+				assert.ok(!g.scrolls, 'a scrollbar at rest');
+				assert.ok(g.headInside, 'the header is not in the pane');
+			},
+			{ viewport: { width: 768, height: 1200 }, prepare: watchAsks }
+		);
+	});
+
 	for (const [width, height] of [
 		[1280, 800],
 		[390, 844]
