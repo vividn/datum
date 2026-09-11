@@ -4,8 +4,13 @@
 // Pills are what the bar is built to receive and nothing here sets: the
 // shared time cursor vividn named next — a click on the dayview loading a
 // `-t 14:30` pill, x-able — puts them here, and a line submitted from the
-// bar is the pills' text followed by what was typed. `setPills` and
-// `removePill` are the whole of the contract.
+// bar, like a press in the fields widget, is what was typed followed by
+// the pills' text (`pressWithPills` in layout/engine.ts: the CLI takes no
+// flag before its verb). `setPills` and `removePill` are the whole of the
+// contract.
+//
+// `prefill` puts a line into the bar's prompt without running it — the
+// fields widget's `add <field> ` (da-c7u8); the bar takes it and clears it.
 //
 // `last` is every command run anywhere — a REPL line, a widget-bar press,
 // the input widget, a command pane's ▶, the bar itself — because every one
@@ -32,6 +37,8 @@ export const pills = writable<Pill[]>([]);
 export const setPills = (next: Pill[]): void => pills.set(next);
 
 export const removePill = (id: string): void => pills.update((all) => all.filter((p) => p.id !== id));
+
+export const prefill = writable<string | null>(null);
 
 export interface LastRun {
 	line: string;

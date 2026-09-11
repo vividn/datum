@@ -1,19 +1,31 @@
 <!--
-	The quick-log bar as a widget kind.
+	The fields widget as a widget kind.
 
-	Its own body rather than `Pane.svelte`'s, because the bar's panels hang
-	UPWARD out of it (WidgetBar.svelte, da-hkpd) and a scrolling body would
-	clip them: this body never scrolls, and the pane takes the bar's height
-	instead (`fit` in registry.ts). A press goes to the engine's `press`,
-	which routes it through whichever REPL is on screen.
+	Its own body rather than `Pane.svelte`'s, because the widget's panels
+	hang UPWARD out of it (WidgetBar.svelte, da-hkpd) and a scrolling body
+	would clip them: this body never scrolls, and the pane takes the
+	widget's height instead (`fit` in registry.ts). A press goes, with the
+	bottom bar's pills after it, to the engine's `press`, which routes it
+	through whichever REPL is on screen; a record's line goes to the bottom
+	bar's prompt, unrun.
 -->
 <script lang="ts">
 	import WidgetBar from '$lib/WidgetBar.svelte';
-	import { fields, press, ready } from './engine.js';
+	import { prefill } from '$lib/bar.js';
+	import type { SwitchLabel } from '$lib/widgets.js';
+	import { fields, pressWithPills, ready } from './engine.js';
+
+	export let switchLabel: SwitchLabel = 'field';
 </script>
 
 <div class="body">
-	<WidgetBar widgets={$fields} disabled={!$ready} on:run={(e) => void press(e.detail)} />
+	<WidgetBar
+		widgets={$fields}
+		disabled={!$ready}
+		{switchLabel}
+		on:run={(e) => void pressWithPills(e.detail)}
+		on:line={(e) => prefill.set(e.detail)}
+	/>
 </div>
 
 <style>

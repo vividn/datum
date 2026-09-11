@@ -32,5 +32,7 @@ export interface FieldSpec {
 	/** Allowed states for a switch field. Absent/null = unconstrained. */
 	allowed_states?: string[] | null;
 	color?: string | null;
+	/** Per-state colours of a switch field, by state name. */
+	state_colors?: Record<string, string>;
 	[key: string]: unknown;
 }

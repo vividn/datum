@@ -1,7 +1,7 @@
 // The widget kinds: what the tree can name, and what draws each one.
 //
 // Everything on the page is a widget (vividn: "They are widgets like
-// anything else yes") — the day strip, the REPL and the quick-log bar
+// anything else yes") — the day strip, the REPL and the fields widget
 // included. A kind is its `WidgetKindMeta` (the contract in types.ts:
 // title and default settings) plus the Svelte component that draws
 // it and, where the component wants something other than `settings`, the
@@ -23,8 +23,8 @@
 // body's 16px of padding — its snap. The REPL: its prompt line (35px) and
 // three lines of scrollback (18.4px each) plus padding, 106px. The tail,
 // and a command pane showing one: its header row and three rows (21.6px
-// each) plus padding, 102px. The bar: one row of chips (29px) plus
-// padding. nowview: datum draws it no shorter than a 50px band plus its
+// each) plus padding, 102px. The fields widget: one row, as tall as its
+// Track + (33px), plus padding. nowview: datum draws it no shorter than a 50px band plus its
 // axis, 92px of picture (da-wb2n), plus padding. Widths are where each
 // stops making sense rather than where it stops rendering: an hour of the
 // strip per 10px, a CLI line, the tail's four columns, four chips. The
@@ -139,11 +139,15 @@ export const KINDS: Record<string, WidgetKind> = {
 		onChange: (_, settings) => settings as Record<string, unknown>,
 		legible: { width: 240, height: 140 }
 	},
+	// The fields widget (da-c7u8), titled `fields`; the kind keeps its old
+	// id so the layouts people have saved still name it. How a switch in a
+	// state is labelled is its one setting (`SwitchLabel` in widgets.ts).
 	widgetbar: {
-		meta: meta('widgetbar', 'widgets'),
+		meta: meta('widgetbar', 'fields'),
 		component: BarWidget,
+		props: ({ switchLabel }) => ({ switchLabel: switchLabel === 'state' ? 'state' : 'field' }),
 		fit: true,
-		legible: { width: 160, height: 45 }
+		legible: { width: 160, height: 49 }
 	},
 	// The input widget (da-0dhc): the prompt line and, given the height, the
 	// history above it — one line's worth is legible.

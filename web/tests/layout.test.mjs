@@ -95,7 +95,7 @@ const activeTab = (page, id) =>
 describe('the default layout', () => {
 	test('shows the strip, the REPL, nowview, tail and the widget bar in panes', async () => {
 		await withApp(async ({ page }) => {
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'fields']);
 		}, DESKTOP);
 	});
 
@@ -134,7 +134,7 @@ describe('the … menu', () => {
 	test('Split | on the tail pane makes two panes, the new one a picker, and the pick renders', async () => {
 		await withApp(async ({ page }) => {
 			await choose(page, 'tail', 'split side by side');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
 			const picker = page.locator('section.pane[data-title="empty"] .picker');
 			// The layouts it could hold come first (`day` is open above this
 			// pane, so it is not offered — da-0a5o), then the kinds.
@@ -145,14 +145,14 @@ describe('the … menu', () => {
 				'tail',
 				'command',
 				'stats',
-				'widgets',
+				'fields',
 				'input'
 			]);
 			await picker.locator('button', { hasText: 'nowview' }).click();
 			// The new pane is titled by its kind and draws: a second nowview
 			// beside the tail, at its own box's size.
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'fields']);
 		}, DESKTOP);
 	});
 
@@ -237,9 +237,9 @@ describe('the … menu', () => {
 	test('closing panes unnests their split', async () => {
 		await withApp(async ({ page }) => {
 			await choose(page, 'command', 'Close pane');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
 			await choose(page, 'nowview', 'Close pane');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
 			// The side column is gone: the pane that held it holds the tail
 			// itself now, as the row's second child.
 			assert.equal(await page.locator('section.pane[data-pane="side"]').getAttribute('data-title'), 'tail');
@@ -317,7 +317,7 @@ describe('the draft', () => {
 	test('a blocked localStorage renders the default with no error', async () => {
 		await withApp(
 			async (app) => {
-				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'widgets']);
+				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'fields']);
 				await choose(app.page, 'tail', 'Add tab');
 				assert.equal(await activeTab(app.page, 'tail'), 'empty');
 				assert.deepEqual(app.errors, []);
@@ -340,7 +340,7 @@ describe('the draft', () => {
 describe('on a phone', () => {
 	test('the mobile default is one column with the bar on screen, tail, nowview and command as tabs', async () => {
 		await withApp(async ({ page }) => {
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
 			const boxes = await page.evaluate(() =>
 				[...document.querySelectorAll('section.pane')].map((p) => {
 					const b = p.getBoundingClientRect();
@@ -816,7 +816,7 @@ describe('review follow-ups', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
-			await page.locator('.bar button.widget', { hasText: 'coffee' }).waitFor();
+			await page.locator('.bar [data-field="coffee"]').waitFor();
 			await page.evaluate(() => {
 				const previous = window.datum.setRunner((argv, stdin) =>
 					argv[0] === 'fields'
@@ -827,7 +827,7 @@ describe('review follow-ups', () => {
 			await app.submit('occur tea');
 			await app.idle();
 			assert.deepEqual(app.errors, []);
-			assert.equal(await page.locator('.bar button.widget', { hasText: 'coffee' }).count(), 1);
+			assert.equal(await page.locator('.bar [data-field="coffee"]').count(), 1);
 		}, DESKTOP);
 	});
 });
@@ -1222,7 +1222,7 @@ describe('the … menu by pointer', () => {
 			for (const b of [side, stack]) assert.ok(b.width >= 24 && b.height >= 24, `a split button is ${b.width}x${b.height}`);
 			await buttons.nth(1).click();
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
 			const [tail, empty] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(page.locator('section.pane[data-title="empty"]'))]);
 			assert.equal(Math.round(empty.x), Math.round(tail.x));
 			assert.equal(Math.round(empty.width), Math.round(tail.width));

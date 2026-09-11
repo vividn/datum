@@ -761,9 +761,9 @@ describe('the day strip', () => {
 		await withApp(
 			async (app) => {
 				await app.submit('occur coffee');
-				await app.page.locator('.bar button.widget').first().waitFor();
+				await app.page.locator('.bar [data-field="coffee"]').waitFor();
 
-				const bar = await app.page.locator('.bar button.widget').first().boundingBox();
+				const bar = await app.page.locator('.bar [data-field="coffee"]').boundingBox();
 				assert.ok(
 					bar.y + bar.height <= screen.height,
 					`the widget bar is off the bottom: ${JSON.stringify(bar)}`

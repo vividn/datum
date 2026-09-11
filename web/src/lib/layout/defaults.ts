@@ -60,7 +60,7 @@ const legibly = (heights: number[], rest: number): number[] =>
 	heights.map((h) => (rest * h) / heights.reduce((a, b) => a + b, 0));
 
 /**
- * The desktop: strip / [REPL | nowview / tail / command] / widget bar.
+ * The desktop: strip / [REPL | nowview / tail / command] / fields.
  *
  * The bar takes the height its chips need (`fit` in registry.ts); the
  * strip (one day, 134) and the middle row (the side column's nowview,
@@ -106,7 +106,7 @@ const tabbed = (id: string, kinds: string[]): Pane => ({
 });
 
 /**
- * A phone: strip / REPL / [tail, nowview, command] as tabs / widget bar,
+ * A phone: strip / REPL / [tail, nowview, command] as tabs / fields,
  * one column — the strip, the REPL and the tabs at their legible 134, 120
  * and 122 (nowview's, the tallest of the three).
  */
@@ -157,7 +157,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	tail: () => only('tail', 'tail'),
 	command: () => only('command', 'command'),
 	stats: () => only('stats', 'stats'),
-	widgets: () => only('widgets', 'widgetbar'),
+	fields: () => only('fields', 'widgetbar'),
 	input: () => only('input', 'input')
 };
 
@@ -168,7 +168,8 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 export const ALIASES: Record<string, string> = {
 	now: 'nowview',
 	daystrip: 'dayview',
-	widgetbar: 'widgets'
+	widgets: 'fields',
+	widgetbar: 'fields'
 };
 
 /** The built-in layout `name` names, if any; `phone` picks `day`'s tree. */

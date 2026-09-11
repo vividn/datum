@@ -93,7 +93,7 @@ describe('the shell', () => {
 			assert.equal(await page.locator('aside.beta').count(), 0, 'the beta banner is still there');
 			assert.deepEqual(await rootTabs(page), ['day']);
 			assert.equal(await activeRootTab(page), 'day');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'fields']);
 
 			const bar = page.locator('.prompt-bar');
 			assert.equal(await bar.locator('.brand').innerText(), 'datum.day');
@@ -117,7 +117,7 @@ describe('the shell', () => {
 	test('+ lists day, the widget kinds and the saved layouts; nowview opens a tab; a reload keeps it, another device starts fresh', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			assert.deepEqual(await offered(page), ['day', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'widgets', 'input']);
+			assert.deepEqual(await offered(page), ['day', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'input']);
 
 			await pick(page, 'nowview');
 			await until(() => rootTabs(page), (t) => t.includes('nowview'));
@@ -138,7 +138,7 @@ describe('the shell', () => {
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
 			// The list is re-read after the save lands, a beat behind the tab.
 			await until(() => offered(page), (o) => o.includes('mine'));
-			assert.deepEqual(await offered(page), ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'widgets', 'input']);
+			assert.deepEqual(await offered(page), ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'input']);
 		}, DESKTOP);
 
 		// Which tabs are open is per device (vividn: the selection is not synced).
@@ -167,6 +167,21 @@ describe('a URL', () => {
 			await app.goto('/now');
 			assert.deepEqual(await rootTabs(page), ['day', 'nowview', 'stats']);
 			assert.equal(await activeRootTab(page), 'nowview');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	// The widget bar became the fields widget (da-c7u8); its old name is an alias.
+	test('/fields and /widgets open the fields widget alone', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const path of ['/fields', '/widgets']) {
+				await app.goto(path);
+				assert.deepEqual(await rootTabs(page), ['day', 'fields']);
+				assert.equal(await activeRootTab(page), 'fields');
+				await page.locator('section.pane[data-title="fields"] button.track').waitFor();
+				assert.deepEqual(await titles(page), ['fields']);
+			}
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -218,7 +233,7 @@ describe('the icons', () => {
 			const quiet = await icon(page, 'save').evaluate((el) => getComputedStyle(el).color);
 
 			await choose(page, 'tail', 'split side by side');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
 			assert.deepEqual(await dotted(page), ['day']);
 			assert.equal(await icon(page, 'save').evaluate((el) => getComputedStyle(el).color), PRONOUNCED);
 			assert.equal(await icon(page, 'restore').evaluate((el) => getComputedStyle(el).color), PRONOUNCED);
@@ -226,7 +241,7 @@ describe('the icons', () => {
 
 			await icon(page, 'restore').click();
 			await until(() => dotted(page), (d) => d.length === 0);
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'fields']);
 			assert.equal(await icon(page, 'save').evaluate((el) => getComputedStyle(el).color), quiet);
 			assert.equal(await icon(page, 'restore').getAttribute('aria-label'), 'restore a version');
 
@@ -243,7 +258,7 @@ describe('the icons', () => {
 			// The save is the tree as shown: the tail's row split, nowview beside it.
 			const kinds = JSON.stringify(saved.root).match(/"kind":"nowview"/g);
 			assert.equal(kinds.length, 2, 'the second nowview was not saved');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'fields']);
 		}, DESKTOP);
 
 		// A second device loads the saved tree.
@@ -255,7 +270,7 @@ describe('the icons', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await choose(page, 'command', 'Close pane');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
 			await icon(page, 'save').click();
 			await until(() => dotted(page), (d) => d.length === 0);
 			const saved = await layouts(app, 'loadLayout', 'day');
@@ -265,7 +280,7 @@ describe('the icons', () => {
 			// save), so what it shows is the save.
 			await page.evaluate(() => localStorage.removeItem('datum.layout.root.v1'));
 			const other = await app.newTab();
-			assert.deepEqual(await titles(other.page), ['dayview', 'repl', 'nowview', 'tail', 'widgets']);
+			assert.deepEqual(await titles(other.page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
 			assert.deepEqual(await dotted(other.page), []);
 			assert.deepEqual(await layouts(other, 'loadLayout', 'day'), saved);
 		}, DESKTOP);
@@ -280,7 +295,7 @@ describe('the icons', () => {
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
 			assert.deepEqual(await rootTabs(page), ['mine']);
 			assert.deepEqual(await dotted(page), []);
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
 			assert.deepEqual(
 				(await layouts(app, 'listLayouts')).map((l) => l.name),
 				['mine']
@@ -290,7 +305,7 @@ describe('the icons', () => {
 			await pick(page, 'day');
 			await until(() => rootTabs(page), (t) => t.includes('day'));
 			assert.deepEqual(await rootTabs(page), ['mine', 'day']);
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'fields']);
 			assert.deepEqual(await dotted(page), []);
 
 			// Both open, both tail panes editable on their own: a split in
@@ -349,7 +364,7 @@ describe('the icons', () => {
 			await choose(page, 'nowview', 'Close pane');
 			await icon(page, 'save').click();
 			await until(() => dotted(page), (d) => d.length === 0);
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
 
 			await icon(page, 'restore').click();
 			const items = page.locator('.root-bar .versions button');
@@ -360,7 +375,7 @@ describe('the icons', () => {
 			);
 			await items.filter({ hasText: /^v1 / }).click();
 			await until(() => titles(page), (t) => t.length === 5);
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
 			assert.deepEqual(await dotted(page), []);
 		}, DESKTOP);
 	});
@@ -379,10 +394,10 @@ describe('the icons', () => {
 			await until(() => dotted(b.page), (d) => d.length === 0);
 			// A hears the save: its baseline moves, its edit does not.
 			await new Promise((resolve) => setTimeout(resolve, 1500));
-			assert.deepEqual(await titles(a.page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'widgets']);
+			assert.deepEqual(await titles(a.page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
 			assert.deepEqual(await dotted(a.page), ['day']);
 			// And a tab that was not edited follows: a third tab, and B itself.
-			assert.deepEqual(await titles(b.page), ['dayview', 'repl', 'nowview', 'tail', 'widgets']);
+			assert.deepEqual(await titles(b.page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
 		}, DESKTOP);
 	});
 });
@@ -392,6 +407,8 @@ describe('the bottom bar', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const input = page.locator('.prompt-bar input');
+			// Tracked, so the fields widget has a button to press (da-c7u8).
+			await app.run(['spec', 'set', 'coffee', '--default-verb', 'occur']);
 			await input.fill('occur coffee');
 			await input.press('Enter');
 			await until(() => receipt(page).innerText(), (t) => t.startsWith('CREATE '));
@@ -407,7 +424,6 @@ describe('the bottom bar', () => {
 
 			// A widget-bar press: the bar's field shows the command for a
 			// beat, and the receipt is the press's.
-			await page.locator('.bar button.widget', { hasText: 'coffee' }).waitFor();
 			await page.locator('.bar button.widget', { hasText: 'coffee' }).click();
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur coffee');
 			await until(() => receipt(page).innerText(), (t) => t.startsWith('CREATE ') && t !== `CREATE ${hid}`);
@@ -439,7 +455,7 @@ describe('the bottom bar', () => {
 		);
 	});
 
-	test('a pill set programmatically shows, its x removes it, and a submit runs pills + typed', async () => {
+	test('a pill set programmatically shows, its x removes it, and a submit runs typed + pills', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
@@ -449,8 +465,9 @@ describe('the bottom bar', () => {
 			const input = page.locator('.prompt-bar input');
 			await input.fill('occur tea');
 			await input.press('Enter');
-			await until(seen, (argvs) => argvs.some((a) => a[0] === '-t'));
-			assert.ok((await seen()).some((a) => JSON.stringify(a) === JSON.stringify(['-t', '0700', 'occur', 'tea'])), JSON.stringify(await seen()));
+			// After, not before: the CLI takes no flag before its verb (da-c7u8).
+			await until(seen, (argvs) => argvs.some((a) => a[0] === 'occur'));
+			assert.ok((await seen()).some((a) => JSON.stringify(a) === JSON.stringify(['occur', 'tea', '-t', '0700'])), JSON.stringify(await seen()));
 			await pill.locator('button[aria-label="remove -t 0700"]').click();
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 0);
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), []);
@@ -480,7 +497,7 @@ describe('the cycle guard', () => {
 			assert.notEqual(tail, JSON.stringify(tree), 'the tail tab was not found to replace');
 			await layouts(app, 'saveLayout', JSON.parse(tail));
 			await app.reload();
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'notice', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'notice', 'command', 'fields']);
 			assert.match(await app.paneText('notice'), /cannot hold itself/);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
@@ -497,7 +514,7 @@ describe('the cycle guard', () => {
 			assert.deepEqual(await picker.locator('button.layout').allInnerTexts(), ['mine'], 'day, open above, must not be offered');
 			await picker.locator('button', { hasText: exactly('mine') }).click();
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'widgets']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'fields']);
 		}, DESKTOP);
 	});
 });
@@ -512,7 +529,7 @@ describe('on a phone', () => {
 			const input = await page.locator('.prompt-bar input').boundingBox();
 			assert.ok(input.width >= 100, `the prompt is ${input.width}px wide`);
 
-			for (const name of ['nowview', 'tail', 'stats', 'command', 'repl', 'widgets', 'input']) {
+			for (const name of ['nowview', 'tail', 'stats', 'command', 'repl', 'fields', 'input']) {
 				await pick(page, name);
 				await until(() => rootTabs(page), (t) => t.includes(name));
 			}

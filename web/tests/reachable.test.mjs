@@ -21,6 +21,10 @@
 // again (da-vyo2). So the cases here run against a POPULATED bar as well as
 // an empty one.
 //
+// The bar is the fields widget now (da-c7u8): Track + first, then a button
+// per TRACKED field — so the handful here is declared with `spec set`,
+// which is what gives a field its button.
+//
 // And the count that wraps is not a constant: it is what fits across the
 // screen, so it falls as the screen narrows — five fields at 390, four at
 // 320, three at 280. Fixing a width and hunting for the count would just
@@ -55,9 +59,9 @@ const SCREENS = [PHONE, SHORT, NARROW, TINY];
  */
 const FIELDS = ['coffee', 'mood', 'sleep', 'water', 'run'];
 
-/** Log `fields` and wait until every one of them has a chip. */
+/** Track `fields` and wait until every one of them has a button. */
 async function track(page, submit, fields) {
-	for (const field of fields) await submit(`occur ${field}`);
+	for (const field of fields) await submit(`spec set ${field} --default-verb occur`);
 	await page.locator('.bar button.widget').nth(fields.length - 1).waitFor();
 }
 
@@ -89,15 +93,15 @@ describe('on a phone-sized screen', () => {
 	for (const viewport of [PHONE, SHORT]) {
 		const size = `${viewport.width}x${viewport.height}`;
 
-		test(`the widget bar's + is on screen at ${size}`, async () => {
+		test(`the fields widget's Track + is on screen at ${size}`, async () => {
 			await withApp(async ({ page }) => {
-				await assertOnScreen(page, '.bar button.add-button', 'the add-a-field (+) button');
+				await assertOnScreen(page, '.bar button.track', 'Track +');
 			}, { viewport });
 		});
 
-		test(`a logged field's chip is on screen at ${size}`, async () => {
+		test(`a tracked field's button is on screen at ${size}`, async () => {
 			await withApp(async ({ page, submit }) => {
-				await submit('occur coffee');
+				await submit('spec set coffee --default-verb occur');
 				await page.locator('.bar button.widget', { hasText: 'coffee' }).waitFor();
 				await assertOnScreen(page, '.bar button.widget', "the coffee field's chip");
 			}, { viewport });
@@ -109,10 +113,10 @@ describe('on a phone-sized screen', () => {
 
 		// The one that da-hkpd's fix and its verification both missed: the
 		// bar was pinned to the bottom, and then wrapped DOWNWARD past it.
-		test(`the + is still on screen with ${FIELDS.length} fields at ${size}`, async () => {
+		test(`Track + is still on screen with ${FIELDS.length} fields at ${size}`, async () => {
 			await withApp(async ({ page, submit }) => {
 				await track(page, submit, FIELDS);
-				await assertOnScreen(page, '.bar button.add-button', 'the add-a-field (+) button');
+				await assertOnScreen(page, '.bar button.track', 'Track +');
 			}, { viewport });
 		});
 
@@ -129,16 +133,16 @@ describe('on a phone-sized screen', () => {
 	// A button whose panel opens off the bottom edge is no more reachable
 	// than a button that is off it: the bar is the frame's bottom row, so
 	// its panels hang upward.
-	test('the form the + opens is on screen', async () => {
+	test('the form Track + opens is on screen', async () => {
 		await withApp(async ({ page }) => {
-			await page.locator('.bar button.add-button').click();
+			await page.locator('.bar button.track').click();
 			await assertOnScreen(page, '.panel.add', "the add-a-field form");
 		}, { viewport: PHONE });
 	});
 
 	test("a field's state menu is on screen", async () => {
 		await withApp(async ({ page, submit }) => {
-			await submit('switch mood happy');
+			await submit('spec set mood --default-verb switch --state happy');
 			const chip = page.locator('.bar button.widget', { hasText: 'mood' });
 			await chip.waitFor();
 			await chip.click();
@@ -168,10 +172,10 @@ describe('on a phone-sized screen', () => {
 		});
 	}
 
-	test('the form the + opens is on screen with a wrapped bar', async () => {
+	test('the form Track + opens is on screen with a wrapped bar', async () => {
 		await withApp(async ({ page, submit }) => {
 			await track(page, submit, FIELDS);
-			await page.locator('.bar button.add-button').click();
+			await page.locator('.bar button.track').click();
 			await assertOnScreen(page, '.panel.add', 'the add-a-field form');
 		}, { viewport: PHONE });
 	});

@@ -1,26 +1,48 @@
 <!--
-	The widget bar — one button per tracked field, and the primary way
-	anything gets logged without typing (da-nz29).
+	The fields widget — every field `datum fields` lists, and the primary
+	way anything gets logged without typing (da-nz29, da-c7u8).
+
+	Track + comes first: the way into the whole app, so it is there on an
+	empty database too. Then the TRACKED fields (a spec exists), each shaped
+	by its kind and painted by what it is now (`lookOf` in widgets.ts): a
+	point is a filled pill; a block is a rectangle, filled while it is on;
+	a switch is a rectangle filled with its current state's colour; a keyed
+	record is its name, underlined, and a click prefills `add <field> ` in
+	the bottom bar rather than running anything. Last, dim, the fields
+	logged without a spec, each with a `track` that opens the form with the
+	name in it — `startTracking` is the one place that form opens from, for
+	the set-up walkthrough to take over.
 
 	Press to log. Press and hold (or right-click, or the menu key) to open
 	the `-t` / `dur` bubbles first. A multi-state field opens its state menu
 	either way.
 
-	The bar never runs anything itself: it composes an argv and dispatches
-	it, and the page runs it through `run()` and echoes the result's own
-	argv into the REPL. That is the teach loop, and it only teaches the
-	truth because the echoed argv IS the executed argv — there is no second
-	string built for display that could drift from it.
+	The widget never runs anything itself: it composes an argv and
+	dispatches it, and the page runs it through `run()` and echoes the
+	result's own argv into the REPL. That is the teach loop, and it only
+	teaches the truth because the echoed argv IS the executed argv — there
+	is no second string built for display that could drift from it.
 -->
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { pressArgv, declareArgv, type Adjust, type Widget, type WidgetShape } from './widgets.js';
+	import {
+		declareArgv,
+		lookOf,
+		pressArgv,
+		NEUTRAL,
+		type Adjust,
+		type SwitchLabel,
+		type Widget,
+		type WidgetShape
+	} from './widgets.js';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
 
 	export let widgets: Widget[] = [];
 	export let disabled = false;
+	/** How a switch in a state is labelled; see `SwitchLabel`. */
+	export let switchLabel: SwitchLabel = 'field';
 
-	const dispatch = createEventDispatcher<{ run: string[] }>();
+	const dispatch = createEventDispatcher<{ run: string[]; line: string }>();
 
 	/** How long a press has to last before it counts as a long press. */
 	const HOLD_MS = 450;
@@ -44,6 +66,25 @@
 	let newKind: WidgetShape['kind'] = 'point';
 	let newStates = '';
 
+	$: tracked = widgets.filter((w) => w.tracked);
+	$: untracked = widgets.filter((w) => !w.tracked);
+
+	// A spec's colour is spelled however it was typed (`orange`, `#ffa500`);
+	// the ink rule needs `#rrggbb`, which the browser's own parser gives.
+	let ctx: CanvasRenderingContext2D | null = null;
+	function hex(color: string): string {
+		ctx ??= document.createElement('canvas').getContext('2d');
+		if (!ctx) return NEUTRAL;
+		ctx.fillStyle = NEUTRAL;
+		ctx.fillStyle = color;
+		return ctx.fillStyle.startsWith('#') ? ctx.fillStyle : NEUTRAL;
+	}
+
+	function paint(widget: Widget, variant: SwitchLabel) {
+		const look = lookOf(widget, variant, hex);
+		return { look, style: `--fill: ${look.fill ?? 'transparent'}; --line: ${look.line}; --text: ${look.text}` };
+	}
+
 	function statesOf(shape: WidgetShape): string[] {
 		return shape.kind === 'states' ? shape.states : [];
 	}
@@ -62,7 +103,7 @@
 						.map((s) => s.trim())
 						.filter(Boolean)
 				} satisfies WidgetShape)
-			: ({ kind: newKind } satisfies WidgetShape);
+			: ({ kind: newKind } as WidgetShape);
 
 	$: addArgv = declareArgv(newField.trim() || '<field>', newShape);
 
@@ -90,6 +131,13 @@
 	function emit(argv: string[]) {
 		close();
 		dispatch('run', argv);
+	}
+
+	/** Open the form that tracks a field, with `field` in it. */
+	function startTracking(field = '') {
+		close();
+		newField = field;
+		adding = true;
 	}
 
 	function press(widget: Widget) {
@@ -149,25 +197,81 @@
 <svelte:window on:pointerdown={onWindowPointerDown} on:keydown={onWindowKeyDown} />
 
 <div class="bar" bind:this={bar}>
-	{#each widgets as widget (widget.field)}
+	<div class="slot">
+		<button class="track add-button" {disabled} title="track a new field" on:click={() => (adding ? close() : startTracking())}>
+			Track +
+		</button>
+		{#if adding}
+			<form class="panel add" on:submit|preventDefault={declare}>
+				<!-- svelte-ignore a11y-autofocus -->
+				<input bind:value={newField} placeholder="field" spellcheck="false" autofocus />
+				<select bind:value={newKind} aria-label="what a press logs">
+					<option value="point">occur — a thing that happened</option>
+					<option value="state">start — a block that begins and ends</option>
+					<option value="states">switch — one of several states</option>
+					<option value="record">add — a record you type</option>
+				</select>
+				{#if newKind === 'states'}
+					<input bind:value={newStates} placeholder="states, comma-separated" spellcheck="false" />
+				{/if}
+				<button type="submit" disabled={hint !== null}>track it</button>
+				{#if hint === null}
+					<code class="preview">{addArgv.join(' ')}</code>
+				{:else}
+					<p class="hint">
+						{hint}{#if fixed}
+							<button type="button" class="fix" on:click={() => (newField = fixed ?? '')}
+								>use {fixed}</button
+							>{/if}
+					</p>
+				{/if}
+			</form>
+		{/if}
+	</div>
+
+	{#if widgets.length === 0}
+		<!-- No direction word here on purpose: this hint said "below" while the
+		     widget bar was at the top of the page (da-nz29), and da-1x72 moved the
+		     bar to the bottom without the copy following. Name the thing, not
+		     where it is. -->
+		<p class="hint empty">nothing tracked yet — or type a command to log something</p>
+	{/if}
+
+	{#each tracked as widget (widget.field)}
+		{@const { look, style } = paint(widget, switchLabel)}
 		<div class="slot">
-			<button
-				class="widget"
-				class:active={open === widget}
-				style={widget.color ? `--field-color: ${widget.color}` : undefined}
-				{disabled}
-				aria-haspopup={widget.shape.kind === 'states' ? 'menu' : undefined}
-				aria-expanded={open === widget}
-				title="press to log · hold for when / how long"
-				on:pointerdown={() => down(widget)}
-				on:pointerup={clearHold}
-				on:pointerleave={clearHold}
-				on:pointercancel={clearHold}
-				on:contextmenu|preventDefault={() => panel(widget, true)}
-				on:click={() => click(widget)}
-			>
-				{widget.field}
-			</button>
+			{#if widget.shape.kind === 'record'}
+				<!-- Not a button: nothing runs. The line goes to the bar's prompt. -->
+				<button
+					class="record"
+					role="link"
+					data-field={widget.field}
+					{style}
+					{disabled}
+					title="add {widget.field} … — fills the prompt"
+					on:click={() => dispatch('line', `add ${widget.field} `)}>{widget.field}</button
+				>
+			{:else}
+				<button
+					class="widget {widget.shape.kind}"
+					class:on={look.fill !== null}
+					class:active={open === widget}
+					{style}
+					{disabled}
+					data-field={widget.field}
+					aria-haspopup={widget.shape.kind === 'states' ? 'menu' : undefined}
+					aria-expanded={open === widget}
+					title="press to log · hold for when / how long"
+					on:pointerdown={() => down(widget)}
+					on:pointerup={clearHold}
+					on:pointerleave={clearHold}
+					on:pointercancel={clearHold}
+					on:contextmenu|preventDefault={() => panel(widget, true)}
+					on:click={() => click(widget)}
+				>
+					{look.label}
+				</button>
+			{/if}
 
 			{#if open === widget}
 				<div class="panel">
@@ -229,45 +333,17 @@
 		</div>
 	{/each}
 
-	<div class="slot">
-		{#if adding}
-			<form class="panel add" on:submit|preventDefault={declare}>
-				<!-- svelte-ignore a11y-autofocus -->
-				<input bind:value={newField} placeholder="field" spellcheck="false" autofocus />
-				<select bind:value={newKind} aria-label="what a press logs">
-					<option value="point">occur — a thing that happened</option>
-					<option value="state">start — a state that begins</option>
-					<option value="states">switch — one of several states</option>
-				</select>
-				{#if newKind === 'states'}
-					<input bind:value={newStates} placeholder="states, comma-separated" spellcheck="false" />
-				{/if}
-				<button type="submit" disabled={hint !== null}>track it</button>
-				{#if hint === null}
-					<code class="preview">{addArgv.join(' ')}</code>
-				{:else}
-					<p class="hint">
-						{hint}{#if fixed}
-							<button type="button" class="fix" on:click={() => (newField = fixed ?? '')}
-								>use {fixed}</button
-							>{/if}
-					</p>
-				{/if}
-			</form>
-		{:else}
-			<button class="widget add-button" {disabled} title="track a new field" on:click={() => { close(); adding = true; }}>
-				+
-			</button>
-		{/if}
-	</div>
-
-	{#if widgets.length === 0}
-		<!-- No direction word here on purpose: this hint said "below" while the
-		     widget bar was at the top of the page (da-nz29), and da-1x72 moved the
-		     bar to the bottom without the copy following. Name the thing, not
-		     where it is. -->
-		<p class="hint empty">nothing tracked yet — type a command to log something, or add a field with (+)</p>
-	{/if}
+	{#each untracked as widget (widget.field)}
+		<span class="untracked" data-field={widget.field}
+			>{widget.field}<button
+				class="track-this"
+				{disabled}
+				aria-label="track {widget.field}"
+				title="track {widget.field}"
+				on:click={() => startTracking(widget.field)}>track</button
+			></span
+		>
+	{/each}
 </div>
 
 <style>
@@ -282,36 +358,97 @@
 		position: relative;
 	}
 
-	.widget {
+	.widget,
+	.track,
+	.record,
+	.track-this {
 		/* A held press must not also select the label or raise the platform's
 		   text callout, on touch least of all. */
 		user-select: none;
 		-webkit-user-select: none;
 		-webkit-touch-callout: none;
 		touch-action: manipulation;
-		background: #0d0d1a;
-		border: 1px solid var(--field-color, #2a2a4a);
-		border-radius: 999px;
-		padding: 0.35rem 0.85rem;
-		color: var(--field-color, #c8c8e8);
+		min-height: 24px;
 		font: inherit;
-		font-size: 0.85rem;
 		cursor: pointer;
 	}
 
-	.widget:hover:not(:disabled),
-	.widget.active {
-		border-color: #7c7cff;
-		color: #e0e0ff;
+	/* Shape by kind, fill by state (lookOf in widgets.ts): the colours
+	   arrive as --fill / --line / --text. */
+	.widget {
+		background: var(--fill);
+		border: 1.5px solid var(--line);
+		border-radius: 3px;
+		padding: 0.35rem 0.85rem;
+		color: var(--text);
+		font-size: 0.85rem;
 	}
 
-	.widget:disabled {
+	.widget.point {
+		border-radius: 999px;
+	}
+
+	.widget:hover:not(:disabled) {
+		filter: brightness(1.2);
+	}
+
+	.widget.active {
+		box-shadow: 0 0 0 2px #e0e0ff;
+	}
+
+	.widget:disabled,
+	.track:disabled,
+	.record:disabled {
 		opacity: 0.4;
 		cursor: default;
 	}
 
-	.add-button {
+	/* The first thing a person meets: larger than the fields, and filled. */
+	.track {
+		background: #7c7cff;
+		border: none;
+		border-radius: 0.5rem;
+		padding: 0.45rem 1.1rem;
+		color: #0a0a1a;
+		font-size: 1rem;
+		font-weight: 700;
+		letter-spacing: 0.02em;
+		box-shadow: 0 0 12px #7c7cff66;
+	}
+
+	.track:hover:not(:disabled) {
+		background: #9a9aff;
+	}
+
+	.record {
+		background: none;
+		border: none;
+		padding: 0.35rem 0.3rem;
+		color: #c8c8e8;
+		font-size: 0.85rem;
+		text-decoration: underline 2px var(--line);
+		text-underline-offset: 0.3em;
+	}
+
+	.untracked {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		color: #55558a;
+		font-size: 0.8rem;
+	}
+
+	.track-this {
+		background: none;
+		border: 1px dashed #3a3a6a;
+		border-radius: 3px;
+		padding: 0 0.35rem;
 		color: #7c7cff;
+		font-size: 0.7rem;
+	}
+
+	.track-this:hover:not(:disabled) {
+		border-color: #7c7cff;
 	}
 
 	.panel {
@@ -410,7 +547,12 @@
 		color: #7c7cff;
 	}
 
+	/* One line beside Track +, cut rather than wrapped. */
 	.empty {
-		align-self: center;
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 </style>

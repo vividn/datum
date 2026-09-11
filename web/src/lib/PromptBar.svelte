@@ -19,7 +19,9 @@
 
 	Before the prompt is the pill slot — `-t 14:30`, x-able — for the time
 	cursor vividn named next. Nothing in the shell sets a pill; a submitted
-	line is the pills' text and then what was typed.
+	line is what was typed and then the pills' text, as a fields-widget
+	press is (`pressWithPills`). A line the fields widget prefills
+	(`prefill`) lands in the field, focused, unrun.
 
 	While storage is degraded the bar's border is the panes' alarm orange
 	and its title is the storage sentence: the warning the banner carried
@@ -27,9 +29,9 @@
 	warning (measured 2026-09-08 — see the old BetaBanner's note).
 -->
 <script lang="ts">
-	import { onDestroy } from 'svelte';
-	import { last, pills, receiptOf, removePill } from '$lib/bar.js';
-	import { press, ready } from '$lib/layout/engine.js';
+	import { onDestroy, tick } from 'svelte';
+	import { last, pills, prefill, receiptOf, removePill } from '$lib/bar.js';
+	import { pressWithPills, ready } from '$lib/layout/engine.js';
 	import Prompt from '$lib/Prompt.svelte';
 	import { shellSplit } from '$lib/shellSplit.js';
 	import { isDegraded, persisted, storage } from '$lib/storageState.js';
@@ -38,6 +40,7 @@
 	const BEAT_MS = 1500;
 
 	let input = '';
+	let field: HTMLElement;
 	let hint = false;
 	let echoed = '';
 	let beat: ReturnType<typeof setTimeout> | undefined;
@@ -45,6 +48,15 @@
 
 	$: receipt = $last ? receiptOf($last.result) : null;
 	$: if ($last) show($last.line);
+	$: if ($prefill !== null) take($prefill);
+
+	async function take(line: string): Promise<void> {
+		prefill.set(null);
+		input = line;
+		echoed = '';
+		await tick();
+		field.querySelector('input')?.focus();
+	}
 
 	/** The line, in the field, for a beat — unless someone is typing there. */
 	function show(line: string): void {
@@ -58,8 +70,7 @@
 	}
 
 	async function submit({ detail: typed }: CustomEvent<string>): Promise<void> {
-		const line = [...$pills.map((p) => p.text), typed].join(' ');
-		await press(shellSplit(line));
+		await pressWithPills(shellSplit(typed));
 	}
 
 	$: degraded = isDegraded($storage);
@@ -117,7 +128,7 @@
 			{/each}
 		</div>
 	{/if}
-	<div class="prompt">
+	<div class="prompt" bind:this={field}>
 		<Prompt bind:input disabled={!$ready} on:submit={submit} />
 	</div>
 	<span class="receipt" class:error={receipt?.error} role="status" title={receipt?.text}
