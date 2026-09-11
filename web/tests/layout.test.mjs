@@ -40,9 +40,25 @@ async function choose(page, id, label) {
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
-/** A menu item's whole label — a checked one carries a ✓ before it. */
-const exactly = (label) =>
-	new RegExp(`^\\s*✓?\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
+/** A menu item's whole label. */
+const exactly = (label) => new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
+
+/** The `Bar ▸` submenu, open. */
+const barMenu = (page) => page.locator('[role="menu"][aria-label="Bar"]');
+
+/** Open a pane's `…` menu, then its `Bar ▸`. */
+async function openBar(page, id) {
+	await pane(page, id).locator('.titlebar button.more').first().click();
+	await page.locator('[role="menu"] button').filter({ hasText: exactly('Bar') }).click();
+	await barMenu(page).waitFor();
+}
+
+/** Choose a `Bar ▸` icon by its word — `left`, `end` — and wait for the menus to close. */
+async function chooseBar(page, id, word) {
+	await openBar(page, id);
+	await barMenu(page).locator(`[aria-label="${word}"]`).click();
+	await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+}
 
 /** The box of a pane's picture, as the picture says it (`naturalWidth`). */
 const canvasWidth = (page, id) =>
@@ -136,9 +152,9 @@ describe('the … menu', () => {
 		}, DESKTOP);
 	});
 
-	test('Bar: left turns the title vertical, reading up; Bar: right reads down', async () => {
+	test('Bar ▸ left turns the title vertical, reading up; Bar ▸ right reads down', async () => {
 		await withApp(async ({ page }) => {
-			await choose(page, 'tail', 'Bar: left');
+			await chooseBar(page, 'tail', 'left');
 			const h2 = pane(page, 'tail').locator('h2');
 			assert.equal(await h2.evaluate((el) => getComputedStyle(el).writingMode), 'vertical-rl');
 			const bar = pane(page, 'tail').locator('.titlebar');
@@ -149,7 +165,7 @@ describe('the … menu', () => {
 			]);
 			assert.ok(barBox.x + barBox.width <= bodyBox.x + 1, 'the bar is on the left of the content');
 
-			await choose(page, 'tail', 'Bar: right');
+			await chooseBar(page, 'tail', 'right');
 			assert.equal(await h2.evaluate((el) => getComputedStyle(el).writingMode), 'vertical-rl');
 			assert.equal(await bar.evaluate((el) => getComputedStyle(el).transform), 'none');
 			const [right, body] = await Promise.all([
@@ -245,7 +261,7 @@ describe('the draft', () => {
 			const { page } = app;
 			await choose(page, 'tail', 'Split |');
 			await page.locator('.picker button', { hasText: 'nowview' }).click();
-			await choose(page, 'strip', 'Bar: left');
+			await chooseBar(page, 'strip', 'left');
 			const arranged = await titles(page);
 			await app.reload();
 			assert.deepEqual(await titles(page), arranged);
@@ -504,6 +520,145 @@ describe('resizing', () => {
 	});
 });
 
+// vividn (da-nk4k): "break out the Bar: and Align: options into a Bar
+// submenu, make the menu horizontal with small icons no text […] 4 icons
+// for the bar placement | 3 icons for alignment. The 3 alignment icons
+// change depending on the bar placement." Read through the frame's
+// classes, the buttons' words and `aria-checked`, and the icons' own
+// rects — never "the menu looks different".
+describe('the Bar submenu', () => {
+	/** The row, left to right: `|` for the separator, else a button's words, check, colour and bar. */
+	const row = (page) =>
+		barMenu(page).evaluate((menu) =>
+			[...menu.children].map((el) => {
+				if (el.getAttribute('role') === 'separator') return '|';
+				const bar = el.querySelector('svg rect:not(.frame)');
+				const [x, y, width, height] = ['x', 'y', 'width', 'height'].map((a) => Number(bar.getAttribute(a)));
+				return {
+					role: el.getAttribute('role'),
+					label: el.getAttribute('aria-label'),
+					title: el.getAttribute('title'),
+					text: el.textContent.trim(),
+					checked: el.getAttribute('aria-checked') === 'true',
+					color: getComputedStyle(el).color,
+					bar: { x, y, width, height }
+				};
+			})
+		);
+	const words = (cells) => cells.map((c) => (c === '|' ? c : c.label));
+	const checked = (cells) => cells.filter((c) => c !== '|' && c.checked).map((c) => c.label);
+
+	test('one Bar item for the seven; it opens four placements | three alignments, the checked ones in the accent', async () => {
+		await withApp(async ({ page }) => {
+			await pane(page, 'tail').locator('.titlebar button.more').click();
+			const items = page.locator('[role="menu"] button');
+			assert.deepEqual((await items.allInnerTexts()).map((l) => l.trim()), ['Add tab', 'Split |', 'Split −', 'Close pane', 'Bar']);
+			assert.equal(await items.filter({ hasText: /Bar:|Align:/ }).count(), 0);
+			await items.filter({ hasText: exactly('Bar') }).click();
+			const cells = await row(page);
+			assert.deepEqual(words(cells), ['top', 'bottom', 'left', 'right', '|', 'start', 'center', 'end']);
+			assert.deepEqual(checked(cells), ['top', 'start']);
+			for (const cell of cells.filter((c) => c !== '|')) {
+				assert.equal(cell.role, 'menuitemradio');
+				assert.equal(cell.text, '', `${cell.label} has words on it`);
+				assert.equal(cell.color, cell.checked ? 'rgb(124, 124, 255)' : 'rgb(85, 85, 138)', cell.label);
+			}
+			assert.deepEqual(
+				cells.slice(0, 4).map((c) => c.title),
+				['bar on the top', 'bar on the bottom', 'bar on the left', 'bar on the right']
+			);
+		}, DESKTOP);
+	});
+
+	test('right moves the frame\'s bar there and turns the alignment icons; the align stays', async () => {
+		await withApp(async ({ page }) => {
+			await openBar(page, 'tail');
+			const before = (await row(page)).slice(5);
+			assert.deepEqual(before.map((c) => c.title), [
+				'align to the start (left)',
+				'align to the center (center)',
+				'align to the end (right)'
+			]);
+			assert.ok(before.every((c) => c.bar.width > c.bar.height), 'along a top bar the marks lie across');
+			await barMenu(page).locator('[aria-label="right"]').click();
+			await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+			assert.match(await pane(page, 'tail').getAttribute('class'), /\bedge-right\b/);
+
+			await openBar(page, 'tail');
+			const cells = await row(page);
+			assert.deepEqual(checked(cells), ['right', 'start']);
+			const after = cells.slice(5);
+			assert.deepEqual(after.map((c) => c.title), [
+				'align to the start (top)',
+				'align to the center (middle)',
+				'align to the end (bottom)'
+			]);
+			assert.ok(after.every((c) => c.bar.height > c.bar.width), 'along a right bar the marks stand up');
+			assert.ok(after[0].bar.y < after[2].bar.y, 'start is drawn above end');
+			await page.keyboard.press('Escape');
+			await page.keyboard.press('Escape');
+		}, DESKTOP);
+	});
+
+	// The left-hand bar is turned round (it reads up), so its start is at
+	// the BOTTOM — and its icon says so, where the title really is.
+	test('on a left bar the start icon and the title are both at the bottom', async () => {
+		await withApp(async ({ page }) => {
+			await chooseBar(page, 'tail', 'left');
+			const [frame, h2] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(pane(page, 'tail').locator('h2'))]);
+			assert.ok(h2.y > frame.y + frame.height / 2, 'align start on a left bar is not at the bottom');
+			await openBar(page, 'tail');
+			const start = (await row(page))[5];
+			assert.equal(start.title, 'align to the start (bottom)');
+			assert.ok(start.bar.y >= 8, `the start mark is at y=${start.bar.y}, not at the bottom`);
+		}, DESKTOP);
+	});
+
+	test('by keyboard: in with ArrowRight, across, Enter chooses; back out with ArrowLeft, Escape, Tab', async () => {
+		await withApp(async ({ page }) => {
+			const more = pane(page, 'tail').locator('.titlebar button.more');
+			const focused = () =>
+				page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim());
+			/** From the badge: open, ArrowDown until `Bar` is focused. */
+			async function toBar() {
+				await page.keyboard.press('Enter');
+				for (let i = 0; i < 8 && (await focused()) !== 'Bar'; i++) await page.keyboard.press('ArrowDown');
+				assert.equal(await focused(), 'Bar');
+			}
+			await more.focus();
+			await toBar();
+			await page.keyboard.press('ArrowRight');
+			assert.equal(await focused(), 'top');
+			for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
+			assert.equal(await focused(), 'right');
+			await page.keyboard.press('Enter');
+			assert.match(await pane(page, 'tail').getAttribute('class'), /\bedge-right\b/);
+			assert.equal(await page.locator('[role="menu"]').count(), 0);
+			assert.ok(await more.evaluate((el) => el === document.activeElement), 'choosing did not hand focus to the badge');
+
+			await toBar();
+			await page.keyboard.press('ArrowRight');
+			await page.keyboard.press('End');
+			assert.equal(await focused(), 'end');
+			await page.keyboard.press('ArrowRight');
+			assert.equal(await focused(), 'top', 'ArrowRight does not wrap');
+			await page.keyboard.press('ArrowLeft');
+			assert.equal(await focused(), 'Bar', 'ArrowLeft on the first did not go back');
+			assert.equal(await barMenu(page).count(), 0);
+			await page.keyboard.press('ArrowRight');
+			await page.keyboard.press('Escape');
+			assert.equal(await focused(), 'Bar', 'Escape did not go back to Bar');
+			await page.keyboard.press('Escape');
+			assert.ok(await more.evaluate((el) => el === document.activeElement), 'Escape twice did not reach the badge');
+
+			await toBar();
+			await page.keyboard.press('ArrowRight');
+			await page.keyboard.press('Tab');
+			assert.equal(await page.locator('[role="menu"]').count(), 0, 'Tab left a menu open');
+		}, DESKTOP);
+	});
+});
+
 // The bar, after vividn's first look (da-jgrn): with one tab no tab strip at
 // all — the title sits on the frame's outline and the `…` is a badge right
 // after it; with more, the strip, and the badge right after the last tab.
@@ -544,11 +699,11 @@ describe('the title on the frame', () => {
 	test('on a vertical bar the badge follows the title along it', async () => {
 		await withApp(async ({ page }) => {
 			const tail = pane(page, 'tail');
-			await choose(page, 'tail', 'Bar: right');
+			await chooseBar(page, 'tail', 'right');
 			let [h2, more] = await Promise.all([boxOf(tail.locator('h2')), boxOf(tail.locator('button.more'))]);
 			let apart = more.y - (h2.y + h2.height);
 			assert.ok(apart >= 0 && apart <= 8, `right bar, reading down: the badge is ${apart}px below the title`);
-			await choose(page, 'tail', 'Bar: left');
+			await chooseBar(page, 'tail', 'left');
 			[h2, more] = await Promise.all([boxOf(tail.locator('h2')), boxOf(tail.locator('button.more'))]);
 			apart = h2.y - (more.y + more.height);
 			assert.ok(apart >= 0 && apart <= 8, `left bar, reading up: the badge is ${apart}px above the title`);
@@ -644,8 +799,8 @@ describe('holders', () => {
 			await holder.locator('> .titlebar button.more').click();
 			const labels = await page.locator('[role="menu"] button').allInnerTexts();
 			assert.deepEqual(
-				labels.map((l) => l.replace(/^\s*✓?\s*/, '').trim()),
-				['Add tab', 'Split Tab |', 'Split Tab −', 'Close tab', 'Bar: top', 'Bar: bottom', 'Bar: left', 'Bar: right', 'Align: start', 'Align: center', 'Align: end']
+				labels.map((l) => l.trim()),
+				['Add tab', 'Split Tab |', 'Split Tab −', 'Close tab', 'Bar']
 			);
 			await page.keyboard.press('Escape');
 		}, DESKTOP);

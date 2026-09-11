@@ -66,6 +66,23 @@
 
 	const EDGES: BarEdge[] = ['top', 'bottom', 'left', 'right'];
 	const ALIGNS: BarAlign[] = ['start', 'center', 'end'];
+	/**
+	 * Where `start`, `center` and `end` put the title along each edge, as
+	 * the eye sees it: the left-hand bar is turned round, so its start is
+	 * at the bottom.
+	 */
+	const SEEN: Record<BarEdge, string[]> = {
+		top: ['left', 'center', 'right'],
+		bottom: ['left', 'center', 'right'],
+		left: ['bottom', 'middle', 'top'],
+		right: ['top', 'middle', 'bottom']
+	};
+	const AT: Record<string, number> = { left: 3, top: 3, center: 5.5, middle: 5.5, right: 8, bottom: 8 };
+	/** The Bar submenu's icon: a thick bar `long` px on `edge` of a 16px square, `at` px along it. */
+	function mark(edge: BarEdge, at = 2, long = 12): number[] {
+		const across = edge === 'top' || edge === 'left' ? 2 : 11;
+		return edge === 'top' || edge === 'bottom' ? [at, across, long, 3] : [across, at, 3, long];
+	}
 	/** A swipe shorter than this is a touch, not a swipe. */
 	const SWIPE_PX = 40;
 
@@ -111,16 +128,28 @@
 			disabled: !canClose,
 			run: () => apply((l) => closeTab(l, pane.id, pane.active))
 		},
-		...EDGES.map((edge) => ({
-			label: `Bar: ${edge}`,
-			checked: pane.bar.edge === edge,
-			run: () => apply((l) => setBar(l, pane.id, { ...pane.bar, edge }))
-		})),
-		...ALIGNS.map((align) => ({
-			label: `Align: ${align}`,
-			checked: pane.bar.align === align,
-			run: () => apply((l) => setBar(l, pane.id, { ...pane.bar, align }))
-		}))
+		{
+			label: 'Bar',
+			sub: [
+				EDGES.map((edge) => ({
+					label: edge,
+					title: `bar on the ${edge}`,
+					icon: mark(edge),
+					checked: pane.bar.edge === edge,
+					run: () => apply((l) => setBar(l, pane.id, { ...pane.bar, edge }))
+				})),
+				ALIGNS.map((align, i) => {
+					const where = SEEN[pane.bar.edge][i];
+					return {
+						label: align,
+						title: `align to the ${align} (${where})`,
+						icon: mark(pane.bar.edge, AT[where], 5),
+						checked: pane.bar.align === align,
+						run: () => apply((l) => setBar(l, pane.id, { ...pane.bar, align }))
+					};
+				})
+			]
+		}
 	];
 
 	const activate = (index: number) => apply((l) => setActive(l, pane.id, index));

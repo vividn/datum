@@ -313,6 +313,44 @@ describe('the layout engine, by keyboard', () => {
 		});
 	}
 
+	// The Bar submenu (da-nk4k) is icons, not words: each a fingertip's 24px
+	// each way and on screen, under a top bar and under a left-hand one —
+	// whose rotation the row, portalled to the body, does not inherit.
+	for (const [name, viewport] of [
+		['1280x900', { width: 1280, height: 900 }],
+		['390x844', { width: 390, height: 844 }]
+	]) {
+		test(`every Bar submenu icon is ≥ 24px and on screen, on a left-hand bar too, at ${name}`, async () => {
+			await withApp(async ({ page }) => {
+				const icons = page.locator('[role="menu"][aria-label="Bar"] button');
+				for (const edge of ['top', 'left']) {
+					await page.locator('button.more').first().click();
+					await page.locator('[role="menu"] button', { hasText: /^\s*Bar\s*$/ }).click();
+					const seen = await icons.evaluateAll((all) =>
+						all.map((el) => {
+							const { top, bottom, left, right, width, height } = el.getBoundingClientRect();
+							return {
+								label: el.getAttribute('aria-label'),
+								width,
+								height,
+								on: top >= 0 && left >= 0 && bottom <= innerHeight && right <= innerWidth,
+								mode: getComputedStyle(el).writingMode
+							};
+						})
+					);
+					assert.equal(seen.length, 7);
+					for (const icon of seen) {
+						assert.ok(icon.width >= 24 && icon.height >= 24, `${edge} bar: ${icon.label} is ${icon.width}x${icon.height}`);
+						assert.ok(icon.on, `${edge} bar: ${icon.label} is off-screen`);
+						assert.equal(icon.mode, 'horizontal-tb', `${edge} bar: ${icon.label}`);
+					}
+					if (edge === 'top') await icons.and(page.locator('[aria-label="left"]')).click();
+					else await page.keyboard.press('Escape');
+				}
+			}, { viewport });
+		});
+	}
+
 	// Locked (da-2a5y), a layout has FEWER targets, not unreachable ones:
 	// no `…` and no border is in the DOM at all, and what is left — the
 	// tabs — is still walked to.

@@ -8,6 +8,13 @@
 	Every item is a `<button role="menuitem">`, so the keyboard reaches all
 	of them (`reachable.test.mjs` is the standard).
 
+	An item with `sub` opens a SUBMENU beside it (click, Enter, Space,
+	ArrowRight): one row of small icon buttons, its groups split by a thin
+	line — the pane's `Bar ▸` (da-nk4k). No words on the buttons, so each
+	carries them as its `aria-label` and `title`. ArrowLeft/ArrowRight walk
+	the row, Home/End jump, Escape — or ArrowLeft on the first — goes back
+	to the item that opened it, and choosing closes both, as choosing does.
+
 	The menu is `position: fixed`, moved out to `document.body` (`portal`)
 	and placed from the button's box when it opens: a pane is a scroll
 	container inside a scroll container, so an absolutely positioned menu
@@ -18,7 +25,10 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 
-	export let items: { label: string; run: () => void; disabled?: boolean; checked?: boolean }[];
+	/** A submenu's button: `icon` is the thick bar `[x, y, w, h]` drawn in a 16px square. */
+	type Choice = { label: string; title: string; icon: number[]; checked: boolean; run: () => void };
+
+	export let items: { label: string; run?: () => void; sub?: Choice[][]; disabled?: boolean }[];
 	/** Names the menu for assistive tech: which pane it belongs to. */
 	export let label: string;
 
@@ -26,6 +36,13 @@
 	let button: HTMLButtonElement;
 	let menu: HTMLDivElement | undefined;
 	let at = { top: 0, left: 0 };
+	/** The open submenu: its item, and the button that opened it. */
+	let sub: { item: (typeof items)[number]; opener: HTMLButtonElement } | null = null;
+	let subMenu: HTMLDivElement | undefined;
+	let subAt = { top: 0, left: 0 };
+
+	/** `start`, moved in so that `size` from it still ends 4px inside `limit`. */
+	const fit = (start: number, size: number, limit: number) => Math.max(4, Math.min(start, limit - size - 4));
 
 	// Placed after it has rendered, so its own size is known: below the
 	// button when there is room, above it when the button is near the
@@ -39,44 +56,98 @@
 		const height = menu?.offsetHeight ?? 0;
 		const below = box.bottom + 2;
 		const top = below + height <= window.innerHeight ? below : Math.max(4, box.top - 2 - height);
-		at = { top, left: Math.max(4, Math.min(box.left, window.innerWidth - width - 4)) };
-		focusItem(0);
+		at = { top, left: fit(box.left, width, window.innerWidth) };
+		focusItem(enabled(menu), 0);
 	}
 
 	function close(returnFocus = true) {
 		if (!open) return;
 		open = false;
+		sub = null;
 		if (returnFocus) button.focus();
 	}
 
-	function enabled(): HTMLButtonElement[] {
-		return menu ? [...menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')] : [];
+	// Beside its item — to the right of the menu when there is room, else
+	// below the item — and, like the menu, never off-screen.
+	async function showSub(item: (typeof items)[number], opener: HTMLButtonElement) {
+		sub = { item, opener };
+		await tick();
+		const box = opener.getBoundingClientRect();
+		const right = (menu?.getBoundingClientRect().right ?? box.right) + 2;
+		const width = subMenu?.offsetWidth ?? 0;
+		const height = subMenu?.offsetHeight ?? 0;
+		const beside = right + width <= window.innerWidth - 4;
+		subAt = {
+			top: fit(beside ? box.top : box.bottom + 2, height, window.innerHeight),
+			left: fit(beside ? right : box.left, width, window.innerWidth)
+		};
+		focusItem(enabled(subMenu), 0);
 	}
 
-	function focusItem(index: number) {
-		const all = enabled();
+	function closeSub() {
+		sub?.opener.focus();
+		sub = null;
+	}
+
+	function enabled(within: HTMLElement | undefined): HTMLButtonElement[] {
+		return within ? [...within.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')] : [];
+	}
+
+	function focusItem(all: HTMLButtonElement[], index: number) {
 		if (all.length === 0) return;
 		all[((index % all.length) + all.length) % all.length].focus();
 	}
 
 	function onMenuKey(event: KeyboardEvent) {
-		const all = enabled();
+		const all = enabled(menu);
 		const here = all.indexOf(document.activeElement as HTMLButtonElement);
 		switch (event.key) {
 			case 'ArrowDown':
-				focusItem(here + 1);
+				focusItem(all, here + 1);
 				break;
 			case 'ArrowUp':
-				focusItem(here - 1);
+				focusItem(all, here - 1);
 				break;
 			case 'Home':
-				focusItem(0);
+				focusItem(all, 0);
 				break;
 			case 'End':
-				focusItem(-1);
+				focusItem(all, -1);
+				break;
+			case 'ArrowRight':
+				if (!sub && all[here]?.hasAttribute('aria-haspopup')) all[here].click();
 				break;
 			case 'Escape':
 				close();
+				break;
+			case 'Tab':
+				close(false);
+				return;
+			default:
+				return;
+		}
+		event.preventDefault();
+	}
+
+	function onSubKey(event: KeyboardEvent) {
+		const all = enabled(subMenu);
+		const here = all.indexOf(document.activeElement as HTMLButtonElement);
+		switch (event.key) {
+			case 'ArrowRight':
+				focusItem(all, here + 1);
+				break;
+			case 'ArrowLeft':
+				if (here <= 0) closeSub();
+				else focusItem(all, here - 1);
+				break;
+			case 'Home':
+				focusItem(all, 0);
+				break;
+			case 'End':
+				focusItem(all, -1);
+				break;
+			case 'Escape':
+				closeSub();
 				break;
 			case 'Tab':
 				close(false);
@@ -92,14 +163,15 @@
 		return { destroy: () => node.remove() };
 	}
 
-	function choose(item: (typeof items)[number]) {
+	function choose(item: { run?: () => void }) {
 		close();
-		item.run();
+		item.run?.();
 	}
 
 	function onWindowPointerDown(event: PointerEvent) {
 		const target = event.target as Node;
-		if (open && !button.contains(target) && !menu?.contains(target)) close(false);
+		const inside = [button, menu, subMenu].some((el) => el?.contains(target));
+		if (open && !inside) close(false);
 	}
 </script>
 
@@ -129,16 +201,51 @@
 		on:keydown={onMenuKey}
 	>
 		{#each items as item (item.label)}
-			<!-- The bar and align items are radio-like choices, and say so. -->
 			<button
 				type="button"
-				role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+				role="menuitem"
+				class:opens={item.sub}
 				disabled={item.disabled}
-				aria-checked={item.checked === undefined ? undefined : item.checked}
-				on:click={() => choose(item)}
+				aria-haspopup={item.sub ? 'menu' : undefined}
+				aria-expanded={item.sub ? sub?.item === item : undefined}
+				on:click={(e) => (!item.sub ? choose(item) : sub ? closeSub() : showSub(item, e.currentTarget))}
 			>
-				<span class="mark">{item.checked ? '✓' : ''}</span>{item.label}
+				{item.label}
 			</button>
+		{/each}
+	</div>
+{/if}
+
+{#if open && sub}
+	<div
+		class="menu icons"
+		role="menu"
+		tabindex="-1"
+		aria-label={sub.item.label}
+		aria-orientation="horizontal"
+		bind:this={subMenu}
+		use:portal
+		style:top="{subAt.top}px"
+		style:left="{subAt.left}px"
+		on:keydown={onSubKey}
+	>
+		{#each sub.item.sub ?? [] as group, g}
+			{#if g > 0}<div class="sep" role="separator" aria-orientation="vertical" />{/if}
+			{#each group as choice (choice.label)}
+				<button
+					type="button"
+					role="menuitemradio"
+					aria-checked={choice.checked}
+					aria-label={choice.label}
+					title={choice.title}
+					on:click={() => choose(choice)}
+				>
+					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+						<rect class="frame" x="1.5" y="1.5" width="13" height="13" rx="2.5" />
+						<rect x={choice.icon[0]} y={choice.icon[1]} width={choice.icon[2]} height={choice.icon[3]} rx="1" />
+					</svg>
+				</button>
+			{/each}
 		{/each}
 	</div>
 {/if}
@@ -216,9 +323,42 @@
 		cursor: default;
 	}
 
-	.mark {
-		display: inline-block;
-		width: 1ch;
+	.menu button.opens::after {
+		content: '▸';
+		margin-inline-start: auto;
+		color: #55558a;
+	}
+
+	/* The submenu: one row of icons, each a fingertip's 24px and more
+	   (reachable.test.mjs), muted until it is the one chosen. */
+	.icons {
+		flex-direction: row;
+		align-items: stretch;
+		gap: 2px;
+		min-width: 0;
+	}
+	.icons button {
+		box-sizing: border-box;
+		inline-size: 28px;
+		block-size: 28px;
+		padding: 0;
+		align-items: center;
+		justify-content: center;
+		color: #55558a;
+	}
+	.icons button[aria-checked='true'] {
 		color: #7c7cff;
+	}
+	.icons svg {
+		fill: currentColor;
+	}
+	.icons .frame {
+		fill: none;
+		stroke: currentColor;
+	}
+	.sep {
+		inline-size: 1px;
+		margin: 4px 3px;
+		background: #2a2a4a;
 	}
 </style>
