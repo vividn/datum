@@ -1068,6 +1068,58 @@ describe('the … menu by pointer', () => {
 		}, DESKTOP);
 	});
 
+	// A finger landing on `Bar` enters it too — Chromium fires a touch
+	// `pointerenter` at the touch's start — and that must not open the
+	// submenu; the tap does (Copilot on #176). A real touch, through CDP.
+	test('a touch entering Bar ▸ does not open it; the tap does', async () => {
+		await withApp(async ({ page }) => {
+			await pane(page, 'repl').locator('.titlebar button.more').tap();
+			const item = barItem(page);
+			await item.evaluate((el) => {
+				window.__entered = [];
+				el.addEventListener('pointerenter', (e) => window.__entered.push(e.pointerType));
+			});
+			const box = await boxOf(item);
+			const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+			const cdp = await page.context().newCDPSession(page);
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
+			await page.waitForTimeout(200);
+			assert.deepEqual(await page.evaluate(() => window.__entered), ['touch'], 'the touch did not enter Bar');
+			assert.equal(await barMenu(page).count(), 0, 'a touch entering Bar opened it');
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+			await cdp.detach();
+			await barMenu(page).waitFor();
+		}, PHONE);
+	});
+
+	// Copilot on #176: the row's own arrows, to both of its ends.
+	test('ArrowRight and ArrowLeft walk the Split row and stop at its ends', async () => {
+		await withApp(async ({ page }) => {
+			const focused = () =>
+				page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim());
+			await pane(page, 'tail').locator('.titlebar button.more').focus();
+			await page.keyboard.press('Enter');
+			await page.keyboard.press('ArrowDown');
+			assert.equal(await focused(), 'split side by side');
+			const walk = [];
+			for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowLeft']) {
+				await page.keyboard.press(key);
+				walk.push(await focused());
+			}
+			assert.deepEqual(walk, [
+				'split side by side',
+				'split top and bottom',
+				'split top and bottom',
+				'split side by side',
+				'split side by side'
+			]);
+			// And ArrowDown from the row's second button goes on to the next item.
+			await page.keyboard.press('ArrowRight');
+			await page.keyboard.press('ArrowDown');
+			assert.equal(await focused(), 'Close pane');
+		}, DESKTOP);
+	});
+
 	test('Split is one line of two buttons, and − splits top and bottom', async () => {
 		await withApp(async ({ page }) => {
 			await pane(page, 'tail').locator('.titlebar button.more').click();
