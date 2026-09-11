@@ -1,9 +1,11 @@
-// The nowview widget's − / + (da-pcis): they step how far back the picture
+// The nowview widget's + / − (da-pcis): they step how far back the picture
 // reaches, down to 0 — the snapshot — and the step is the widget's setting,
-// kept in the draft and in a saved layout.
+// kept in the draft and in a saved layout. They sit at the picture's
+// top-left, + first, with no label: each one's title names where it goes
+// (da-rex1).
 //
-// Delta-blind on purpose: each step is held to the label the widget shows
-// and to the `--history` the seam was handed, never to "the picture changed".
+// Delta-blind on purpose: each step is held to the `--history` the seam was
+// handed and to the buttons' titles, never to "the picture changed".
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,22 +15,19 @@ before(startApp);
 after(stopApp);
 
 const PANE = 'section.pane[data-title="nowview"]';
-const label = (page) => page.locator(`${PANE} .nowview-steps span`).innerText();
 const shorter = (page) => page.locator(`${PANE} button[aria-label="shorter window"]`);
 const longer = (page) => page.locator(`${PANE} button[aria-label="longer window"]`);
 
-/** Wait for the widget to say `text`. */
-const says = (page, text) =>
-	page.waitForFunction(
-		([sel, text]) => document.querySelector(sel)?.textContent === text,
-		[`${PANE} .nowview-steps span`, text]
-	);
+/** Wait for the last nowview the seam was handed (`spyOnRunner`) to be `--history h`. */
+const asked = (page, h) =>
+	page.waitForFunction((h) => {
+		const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
+		return argv?.[argv.indexOf('--history') + 1] === h;
+	}, h);
 
-/** The `--history` of the last nowview the seam was handed. */
-function lastHistory(seen) {
-	const argv = seen.filter((a) => a[0] === 'nowview').at(-1);
-	return argv?.[argv.indexOf('--history') + 1];
-}
+/** The two buttons' titles, + then −. */
+const titles = (page) =>
+	Promise.all([longer(page).getAttribute('title'), shorter(page).getAttribute('title')]);
 
 /** Every nowview widget's settings in a layout tree. */
 function nowviewSettings(node, out = []) {
@@ -40,31 +39,51 @@ function nowviewSettings(node, out = []) {
 }
 
 describe('the nowview widget', () => {
-	test('steps its window with − and +, through the seam, down to the snapshot and up to 12h', async () => {
+	test('sit at the top-left, + then −, with no label', async () => {
+		await withApp(async ({ page }) => {
+			const steps = page.locator(`${PANE} .nowview-steps`);
+			const [box, content] = await Promise.all([
+				steps.boundingBox(),
+				page.locator(`${PANE} .nowview`).boundingBox()
+			]);
+			assert.ok(box.x - content.x <= 8, `steps at ${box.x}, content at ${content.x}`);
+			assert.equal(await steps.locator('span').count(), 0);
+			assert.deepEqual(
+				await steps.locator('button').evaluateAll((bs) => bs.map((b) => [b.textContent, b.ariaLabel])),
+				[
+					['+', 'longer window'],
+					['−', 'shorter window']
+				]
+			);
+		});
+	});
+
+	test('steps its window with + and −, through the seam, down to the snapshot and up to 12h', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			assert.equal(await label(page), '30m');
-			const seen = await app.spyOnRunner();
+			assert.deepEqual(await titles(page), ['longer window (45m)', 'shorter window (20m)']);
+			await app.spyOnRunner();
 
 			await longer(page).click();
-			await says(page, '45m');
-			await app.idle();
-			assert.equal(lastHistory(await seen()), '45m');
+			await asked(page, '45m');
+			assert.deepEqual(await titles(page), ['longer window (60m)', 'shorter window (30m)']);
 
 			// 45m → 30m, 20m, 15m, 10m, 5m, 0.
-			for (let i = 0; i < 6; i++) await shorter(page).click();
-			await says(page, 'now');
+			for (let i = 0; i < 5; i++) await shorter(page).click();
+			await asked(page, '5m');
+			assert.deepEqual(await titles(page), ['longer window (10m)', 'shorter window (now)']);
+			await shorter(page).click();
+			await asked(page, '0');
 			await app.idle();
-			assert.equal(lastHistory(await seen()), '0');
 			assert.ok(await shorter(page).isDisabled(), '− is live at 0');
+			assert.deepEqual(await titles(page), ['longer window (5m)', 'shorter window']);
 			const snapshot = await app.paneSvg('nowview');
 			assert.ok(!snapshot.includes('tick-label') && !snapshot.includes('class="axis"'), snapshot);
 
 			for (let i = 0; i < 12; i++) await longer(page).click();
-			await says(page, '12h');
-			await app.idle();
-			assert.equal(lastHistory(await seen()), '12h');
+			await asked(page, '12h');
 			assert.ok(await longer(page).isDisabled(), '+ is live at 12h');
+			assert.deepEqual(await titles(page), ['longer window', 'shorter window (6h)']);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -72,11 +91,16 @@ describe('the nowview widget', () => {
 	test('the step is kept in the draft and in a saved layout', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			await app.spyOnRunner();
 			await longer(page).click();
-			await says(page, '45m');
+			await asked(page, '45m');
 
 			await app.reload();
-			assert.equal(await label(page), '45m', 'the step did not survive a reload');
+			assert.deepEqual(
+				await titles(page),
+				['longer window (60m)', 'shorter window (30m)'],
+				'the step did not survive a reload'
+			);
 
 			await page.locator('.layout-controls .save:not([disabled])').click();
 			await page.waitForFunction(() => !document.querySelector('.layout-controls.modified'));

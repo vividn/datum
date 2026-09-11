@@ -1,8 +1,10 @@
 <!--
 	The nowview widget (da-pcis): datum's nowview picture through a CliPane,
-	and a − / + in its corner stepping how far back the picture reaches —
-	down to 0, the snapshot of each field's state. The step is the widget's
-	setting, handed out with `change`, so the tree keeps it with the layout.
+	and a + / − over its top-left corner stepping how far back the picture
+	reaches — down to 0, the snapshot of each field's state. The window's size
+	is written nowhere: each button's title names the step it goes to
+	(da-rex1). The step is the widget's setting, handed out with `change`, so
+	the tree keeps it with the layout.
 
 	The controls sit beside the pane, not inside its picture: a redraw
 	replaces the picture, never them.
@@ -22,6 +24,8 @@
 
 	// A history off the list (a hand-written tree) steps from the default.
 	$: i = NOWVIEW_STEPS.indexOf(NOWVIEW_STEPS.includes(history) ? history : NOWVIEW_HISTORY);
+	$: up = NOWVIEW_STEPS[i + 1];
+	$: down = NOWVIEW_STEPS[i - 1];
 	$: spec = nowviewSpec(history, at);
 </script>
 
@@ -30,23 +34,24 @@
 	<div class="nowview-steps">
 		<button
 			type="button"
-			aria-label="shorter window"
-			disabled={i === 0}
-			on:click={() => dispatch('change', NOWVIEW_STEPS[i - 1])}>−</button
+			aria-label="longer window"
+			title={up ? `longer window (${up})` : 'longer window'}
+			disabled={!up}
+			on:click={() => dispatch('change', up)}>+</button
 		>
-		<span aria-live="polite">{history === '0' ? 'now' : history}</span>
 		<button
 			type="button"
-			aria-label="longer window"
-			disabled={i === NOWVIEW_STEPS.length - 1}
-			on:click={() => dispatch('change', NOWVIEW_STEPS[i + 1])}>+</button
+			aria-label="shorter window"
+			title={down ? `shorter window (${down === '0' ? 'now' : down})` : 'shorter window'}
+			disabled={!down}
+			on:click={() => dispatch('change', down)}>−</button
 		>
 	</div>
 </div>
 
 <style>
 	/* The frame's content box, for the pane inside (`display: contents` in a
-	   frame) and for the steps over its top-right corner. */
+	   frame) and for the steps over its top-left corner. */
 	.nowview {
 		position: relative;
 		display: flex;
@@ -59,12 +64,9 @@
 	.nowview-steps {
 		position: absolute;
 		top: 4px;
-		right: 4px;
+		left: 4px;
 		display: flex;
-		align-items: center;
 		gap: 2px;
-		font-size: 0.75rem;
-		color: #7c7cff;
 	}
 
 	/* The … badge's size and colours (PaneMenu.svelte). */
@@ -94,11 +96,5 @@
 	button:disabled {
 		opacity: 0.4;
 		cursor: default;
-	}
-
-	span {
-		padding: 0 0.25rem;
-		background: #0d0d1a;
-		border-radius: 4px;
 	}
 </style>
