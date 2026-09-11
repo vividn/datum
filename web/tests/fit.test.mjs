@@ -406,9 +406,10 @@ describe('the tail pane', () => {
 	/**
 	 * Ten rows — `datum tail`'s own default count — including a state
 	 * long enough that nothing but wrapping can fit it. Ten is what makes
-	 * this a test of a full pane rather than of an empty one, and the pane
-	 * shows the rows its height holds (da-qrc6), so the screen is tall
-	 * enough for ten at every width.
+	 * this a test of a full pane rather than of an empty one. The pane
+	 * shows the rows its height holds, wrapped lines counted (da-qrc6) —
+	 * at 768px, where the tail is a narrow column, that is two or three —
+	 * so the rest are paged in from above, as a reader scrolling up does.
 	 */
 	const TEN_ROWS = [
 		'occur coffee -t 0700',
@@ -428,13 +429,22 @@ describe('the tail pane', () => {
 			await withApp(
 				async (app) => {
 					for (const line of TEN_ROWS) await app.submit(line);
-					// `submit` returns on the REPL's own echo; the pane's
-					// re-read is still in flight behind it, so a measurement
-					// taken straight after can be of the pane an entry ago.
-					await app.page.waitForFunction(
-						(n) => document.querySelectorAll('section.pane tbody tr').length === n,
-						TEN_ROWS.length
-					);
+					await app.idle();
+					// Up to the top and the wheel turned, until all ten are in
+					// the table: each pull asks for the page above.
+					const tail = app.page.locator('section.pane[data-title="tail"] .body');
+					const count = () => app.page.locator('section.pane[data-title="tail"] tbody tr').count();
+					for (let pulls = 0; pulls < 10 && (await count()) < TEN_ROWS.length; pulls++) {
+						const before = await count();
+						await tail.evaluate((body) => (body.scrollTop = 0));
+						const b = await tail.boundingBox();
+						await app.page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+						await app.page.mouse.wheel(0, -120);
+						await app.page.waitForFunction(
+							(n) => document.querySelectorAll('section.pane[data-title="tail"] tbody tr').length > n,
+							before
+						);
+					}
 					const table = await app.paneTable('tail');
 					assert.equal(table.rows.length, 10, 'the pane is not showing the full listing');
 

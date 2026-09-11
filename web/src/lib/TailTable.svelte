@@ -81,6 +81,7 @@
 	let started = 0;
 	let shown = -1;
 
+	let thead: HTMLTableSectionElement | undefined;
 	let tbody: HTMLTableSectionElement | undefined;
 	/** The probe: a header row and a one-line row, hidden, to measure by. */
 	let probeHead: HTMLTableSectionElement | undefined;
@@ -98,11 +99,29 @@
 	/** Room a kept place needed past the slack, until the screen is replaced. */
 	let extra = 0;
 
+	/**
+	 * The count the screen, as drawn, settled on, when the probe's is not
+	 * it: a narrow pane wraps the header's words and the cells that may
+	 * break, and a wrapped line is a line the one-line probe did not count.
+	 * Which rows are shown decides the columns, and so what wraps, so the
+	 * count is found by drawing: `fits`, the most rows drawn that all fit,
+	 * and `over`, the fewest that did not, close in on it, so it cannot
+	 * swing between two. Tried afresh from the probe's count when the box
+	 * or the epoch changes. And the room the last fresh screen left under
+	 * its rows — kept across an epoch, since that screen is still shown.
+	 */
+	const unsettled = { n: null as number | null, fits: 0, over: Infinity };
+	let drawn = { box: null as PaneBox | null, epoch: -1, ...unsettled, slack: Infinity };
+	$: if (box !== drawn.box) drawn = { box, epoch, ...unsettled, slack: Infinity };
+	$: if (epoch !== drawn.epoch) drawn = { ...drawn, epoch, ...unsettled };
+
 	/** The count the box holds, and the slack under it. Null until measured, or while the pane is hidden. */
 	$: fit = measure(box, probeHead, probeRows);
-	$: n = fit?.n ?? null;
-	// A box that holds no row still asks for one: its columns are the header.
-	$: if (n !== null) void refresh(Math.max(1, n), epoch);
+	$: n = fit ? (drawn.n ?? fit.n) : null;
+	$: slack = fit ? Math.min(fit.slack, drawn.slack) : 0;
+	// A box that holds no row still asks for one: its columns are the
+	// header. A new box asks again at the same count: its width rewraps.
+	$: if (n !== null && box) void refresh(Math.max(1, n), epoch);
 	$: visible = n === 0 ? [] : rows;
 
 	/**
@@ -123,13 +142,42 @@
 		box: PaneBox | null,
 		head: HTMLTableSectionElement | undefined,
 		rows: HTMLTableSectionElement | undefined
-	): { n: number; slack: number } | null {
+	): { n: number; slack: number; row: number } | null {
 		if (!box || !head || !rows) return null;
 		const headPx = head.getBoundingClientRect().height;
 		const row = rows.getBoundingClientRect().height;
 		if (row <= 0 || box.height <= headPx) return null;
 		const n = Math.floor((box.height - headPx) / row);
-		return { n, slack: Math.max(0, box.height - headPx - n * row) };
+		return { n, slack: Math.max(0, box.height - headPx - n * row), row };
+	}
+
+	/**
+	 * Measure a fresh screen of `asked` rows as drawn: how many fit under
+	 * the header, newest up. Fewer than are shown, and the count comes
+	 * down to them; all of them with a line's room to spare, and it goes
+	 * up by what the room holds — never past a count that did not fit.
+	 */
+	function redraw(of: number, asked: number): void {
+		if (!box || !fit || !thead || !tbody || of !== drawn.epoch) return;
+		const shown = tbody.rows.length;
+		let room = box.height - thead.getBoundingClientRect().height;
+		let fits = 0;
+		for (const tr of [...tbody.rows].reverse()) {
+			const h = tr.getBoundingClientRect().height;
+			if (h > room + 0.5) break;
+			room -= h;
+			fits++;
+		}
+		let { n, over } = drawn;
+		if (fits < shown) {
+			over = Math.min(over, shown);
+			n = Math.max(drawn.fits, fits);
+		} else if (shown === asked) {
+			// Every row the log had to give is here: room for more is more.
+			n = Math.max(shown, Math.min(over - 1, shown + Math.floor(room / fit.row)));
+		}
+		const most = fits === shown ? Math.max(drawn.fits, shown) : drawn.fits;
+		drawn = { ...drawn, n, over, fits: most, slack: Math.max(0, room) };
 	}
 
 	/** Scroll to `top` as the widget, not the reader: the event it raises is told apart by where it landed. */
@@ -216,6 +264,10 @@
 		if (started_at < shown) return;
 		shown = started_at;
 		error = '';
+		// A write can land anywhere — older than the first row, too — so
+		// the start of the log is known again only by asking: the next
+		// pull at the top.
+		exhausted = false;
 		const page = toShown(table);
 		if (force || rows.length === 0 || nearBottom()) {
 			// Pinned: the screen is the CLI's newest page and nothing else.
@@ -223,7 +275,11 @@
 			extra = 0;
 			rows = page;
 			adopt(table.columns, true);
-			unseen = exhausted = false;
+			unseen = false;
+			await tick();
+			// The screen as drawn can change the room under it; pinned is
+			// pinned under that room, not the one before it.
+			redraw(_epoch, count);
 			await tick();
 			if (scroller) scrollTo(scroller.scrollHeight);
 		} else {
@@ -361,7 +417,7 @@
 	<p class="quiet">{empty}</p>
 {:else}
 	<table>
-		<thead>
+		<thead bind:this={thead}>
 			<tr>
 				{#each keys as key (key)}
 					<th class={key} data-key={key}
@@ -397,7 +453,7 @@
 			{/each}
 		</tbody>
 	</table>
-	<div class="slack" style:height="{(fit?.slack ?? 0) + extra}px"></div>
+	<div class="slack" style:height="{slack + extra}px"></div>
 	{#if unseen}
 		<div class="foot">
 			<button type="button" class="new" on:click={jump}>↓ new</button>

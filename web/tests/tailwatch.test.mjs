@@ -64,6 +64,31 @@ const waitRows = (page, expr, arg = 0) =>
 		[expr, arg]
 	);
 
+/**
+ * Wait until the pane is at rest: nothing in flight behind the seam, and
+ * the rows on screen are the count its box holds now. Polled, with a
+ * deadline: the box can still be settling after the first listing lands
+ * (a phone's layout does), and a measurement taken then is of a pane that
+ * is about to ask again.
+ */
+const atRest = (page) =>
+	page.waitForFunction(
+		() => {
+			if (window.__datumInflight !== 0) return false;
+			const pane = document.querySelector('section.pane[data-title="tail"]');
+			const body = pane?.querySelector('.body');
+			const trs = [...(pane?.querySelectorAll('tbody tr') ?? [])];
+			if (!body || trs.length === 0) return false;
+			const style = getComputedStyle(body);
+			const box = body.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+			const head = pane.querySelector('thead').getBoundingClientRect().height;
+			const row = Math.min(...trs.map((tr) => tr.getBoundingClientRect().height));
+			return trs.length === Math.floor((box - head) / row);
+		},
+		null,
+		{ timeout: 10_000 }
+	);
+
 /** Wait until the tail's first row is not `hid`. */
 const waitTopNot = (page, hid) =>
 	page.waitForFunction(
@@ -153,16 +178,24 @@ describe('rows from height', () => {
 	// About 3, 5, 8 and 20 rows of the default layout's tail pane: its
 	// share of the height grows with the viewport. The count asserted is
 	// read off the box, not these.
-	for (const height of [720, 900, 1200, 2300]) {
-		test(`at ${height}px a pane shows exactly the rows its box holds, newest last, whole header words`, async () => {
+	// And a narrow one: at 768px the tail pane is about 240px wide, where
+	// the header's `field` and `state` break onto two lines and the header
+	// is taller than the one-line probe that first sizes the count.
+	for (const [width, height] of [
+		[1280, 720],
+		[1280, 900],
+		[1280, 1200],
+		[1280, 2300],
+		[768, 1200]
+	]) {
+		test(`at ${width}x${height} a pane shows exactly the rows its box holds, newest last, whole header words`, async () => {
 			await withApp(
 				async (app) => {
 					const { page } = app;
 					await seed(app, 40);
-					await waitRows(page, 'n > 0');
-					await app.idle();
+					await atRest(page);
 					const g = await geometry(page);
-					assertFits(g, `${height}px`);
+					assertFits(g, `${width}x${height}`);
 					assert.ok(g.n < 40, `the pane holds all forty rows (n = ${g.n}), which tests nothing`);
 					assert.equal(g.hids.at(-1), seedHid(39), 'the newest row is not last');
 					assert.deepEqual(g.hids, g.hids.map((_, i) => seedHid(40 - g.n + i)), 'the rows are not the newest n');
@@ -175,7 +208,7 @@ describe('rows from height', () => {
 						'the header words are not the whole words'
 					);
 				},
-				{ viewport: { width: 1280, height } }
+				{ viewport: { width, height } }
 			);
 		});
 	}
@@ -187,8 +220,7 @@ describe('scrolling up', () => {
 			async (app) => {
 				const { page } = app;
 				await seed(app, 60);
-				await waitRows(page, 'n > 0');
-				await app.idle();
+				await atRest(page);
 				const g0 = await geometry(page);
 				assertFits(g0, 'at rest');
 				const n = g0.n;
@@ -240,17 +272,17 @@ describe('scrolling up', () => {
 			async (app) => {
 				const { page } = app;
 				await seed(app, 60);
-				await waitRows(page, 'n > 0');
-				await app.idle();
+				await atRest(page);
 				const g0 = await geometry(page);
 				assertFits(g0, 'at rest');
 
 				// A finger pulling down over the table, as the device's own
-				// input — not a synthetic DOM event.
+				// input — not a synthetic DOM event. From its middle: the
+				// pane's tabs sit on its outline, over the body's top edge.
 				const b = await page.locator('section.pane[data-title="tail"] .body').boundingBox();
 				const cdp = await page.context().newCDPSession(page);
 				const x = b.x + b.width / 2;
-				const y = b.y + 10;
+				const y = b.y + b.height / 2 - 30;
 				await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
 				for (let d = 10; d <= 60; d += 10) {
 					await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + d }] });
@@ -302,8 +334,7 @@ describe('scrolling up', () => {
 			async (app) => {
 				const { page } = app;
 				await seed(app, 320);
-				await waitRows(page, 'n > 0');
-				await app.idle();
+				await atRest(page);
 				// The first page by the wheel: a table that fits has no scroll to set.
 				let count = await rowCount(page);
 				await wheelUp(page);
@@ -337,8 +368,7 @@ describe('a write', () => {
 			async (app) => {
 				const { page } = app;
 				await seed(app, 30);
-				await waitRows(page, 'n > 0');
-				await app.idle();
+				await atRest(page);
 				const g0 = await geometry(page);
 				// A page above, then up to its top: scrolled up, not at the bottom.
 				await wheelUp(page);
@@ -377,6 +407,52 @@ describe('a write', () => {
 		);
 	});
 
+	// The start of the log is what the last pull found, not a fact: a
+	// write older than the first row makes it wrong, so a write forgets it
+	// and the next pull at the top asks again.
+	test('a backdated write below the start of the log is found by the next pull at the top', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seed(app, 20);
+				await atRest(page);
+				let count = await rowCount(page);
+				await wheelUp(page);
+				await waitRows(page, 'n > arg', count);
+				count = await rowCount(page);
+				for (let pages = 0; pages < 10 && count < 20; pages++) {
+					await toTop(page);
+					await waitRows(page, 'n !== arg', count);
+					count = await rowCount(page);
+				}
+				assert.equal(count, 20, 'the whole log is not listed');
+				await wheelUp(page);
+				await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
+				assert.deepEqual((await geometry(page)).start, [seedHid(0)]);
+
+				// A day before the first seed, typed while at the top.
+				await app.submit('occur tea -d 2026-09-09');
+				await app.idle();
+				const tea = (await app.entries(50)).find((entry) => entry.field === 'tea');
+				assert.ok(tea, 'the tea was not stored');
+				const g1 = await geometry(page);
+				assert.equal(g1.start.length, 0, 'the old first row is still marked as the start after a write');
+
+				await wheelUp(page);
+				await waitRows(page, 'n === arg', 21);
+				const g2 = await geometry(page);
+				assert.equal(g2.hids[0], tea.hid, 'the backdated row is not first');
+				await wheelUp(page);
+				await page.waitForFunction(
+					(hid) => document.querySelector('section.pane[data-title="tail"] tbody tr.start')?.dataset.hid === hid,
+					tea.hid,
+					{ timeout: 10_000 }
+				);
+			},
+			{ viewport: { width: 1280, height: 1200 } }
+		);
+	});
+
 	/**
 	 * Every listing the pane asks the CLI for, from the first one on, with
 	 * the pane's content box at the moment of asking. Watched at the
@@ -409,8 +485,7 @@ describe('a write', () => {
 				async (app) => {
 					const { page } = app;
 					await seed(app, 30);
-					await waitRows(page, 'n > 0');
-					await app.idle();
+					await atRest(page);
 					const g0 = await geometry(page);
 					assertFits(g0, 'at rest');
 					assert.deepEqual(g0.hids, g0.hids.map((_, i) => seedHid(30 - g0.n + i)), 'not the newest rows');
@@ -428,11 +503,14 @@ describe('a write', () => {
 					assertFits(g1, 'after the write');
 					assert.equal(await marker(page).count(), 0, '↓ new for a row that is on screen');
 
-					// Asked for what fits, and only once the box was a size.
+					// Asked for what fits the box as it was at the asking — a
+					// phone's box settles after the first listing lands, and the
+					// pane asks again — and only once the box was a size.
 					const asks = await page.evaluate(() => window.__tailAsks);
 					assert.ok(asks.length > 0, 'no listing was asked for');
 					for (const ask of asks) {
-						assert.equal(ask.n, g0.n, `asked for ${ask.n} rows in a box that holds ${g0.n}: ${JSON.stringify(asks)}`);
+						const holds = Math.floor((ask.box - g0.head) / g0.row);
+						assert.equal(ask.n, holds, `asked for ${ask.n} rows in a box that held ${holds}: ${JSON.stringify(asks)}`);
 						assert.ok(ask.box > g0.head, `asked before the box was a size: ${JSON.stringify(asks)}`);
 					}
 				},
