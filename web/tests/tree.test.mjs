@@ -326,7 +326,7 @@ describe('snapsOfKind', () => {
 	test("legibleOfKind is the strip's one day and the measured boxes of the others", async () => {
 		const { legibleOfKind } = await import('../src/lib/layout/registry.ts');
 		assert.deepEqual(legibleOfKind('daystrip', { dayHeight: 120 }), { width: 240, height: todayBox(120) + 16 });
-		assert.deepEqual(legibleOfKind('repl'), { width: 200, height: 106 });
+		assert.deepEqual(legibleOfKind('repl'), { width: 200, height: 71 });
 		assert.deepEqual(legibleOfKind('nope'), { width: 0, height: 0 });
 	});
 

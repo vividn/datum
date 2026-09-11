@@ -20,8 +20,9 @@
 // built app (2026-09-10, Chromium, 0.85rem monospace): the pane's body at
 // the size below which the kind stops being legible. The strip: one whole
 // day at its drawn height (`todayBox(85)`, 104px at the default) plus the
-// body's 16px of padding — its snap. The REPL: its prompt line (35px) and
-// three lines of scrollback (18.4px each) plus padding, 106px. The tail,
+// body's 16px of padding — its snap. The REPL: three lines of scrollback
+// (18.4px each) plus padding, 71px — the bottom bar is its prompt
+// (da-rfs9), so it has no line of its own to keep. The tail,
 // and a command pane showing one: its header row and three rows (21.6px
 // each) plus padding, 102px. The fields widget: one row, as tall as its
 // Track + (33px), plus padding. nowview: datum draws it no shorter than a 50px band plus its
@@ -107,7 +108,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		snap: (settings) => ({ height: [oneDay(settings)] }),
 		legible: (settings) => ({ width: 240, height: oneDay(settings) })
 	},
-	repl: { meta: meta('repl', 'repl'), component: ReplWidget, legible: { width: 200, height: 106 } },
+	repl: { meta: meta('repl', 'repl'), component: ReplWidget, legible: { width: 200, height: 71 } },
 	// How far back nowview reaches is its setting, which its − / + step
 	// (da-pcis); `at` centres it on an instant, which the time cursor
 	// overrides while it is set (NowviewWidget.svelte).

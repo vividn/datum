@@ -19,10 +19,11 @@ before(startApp);
 after(stopApp);
 
 /**
- * Every command the freshly opened REPL shows, as the reader sees it.
+ * Every command the freshly opened page offers, as the reader sees it.
  *
- * The placeholder is the prompt's own hint; the `code` spans are the line
- * above it, which the pane shows only while the scrollback is empty. Both
+ * The placeholder is the bottom bar's prompt's own hint; the `code` spans
+ * are the REPL's line, which the pane shows only while the scrollback is
+ * empty. Both
  * are read from the page rather than from the source, so a hint that moves
  * or gains a sibling is still covered.
  */
@@ -31,7 +32,7 @@ async function hints() {
 	if (!offered) {
 		await withApp(async ({ page }) => {
 			offered = {
-				placeholder: await page.locator('.repl input').getAttribute('placeholder'),
+				placeholder: await page.locator('.prompt-bar input').getAttribute('placeholder'),
 				examples: await page.locator('.repl .quiet code').allInnerTexts()
 			};
 		});

@@ -7,12 +7,9 @@
 	ways: CLI tables are wide, and a pane must be able to scroll sideways
 	without dragging the whole page with it.
 
-	The `footer` slot stays put below the scroll — that is where the REPL
-	hangs its prompt line so output can pile up above it.
-
 	Inside the layout engine (da-jdop) the frame is drawn by
 	`layout/PaneFrame.svelte` — the title bar, the tabs, the `…` menu — and
-	this component is asked for its body and footer only: it finds the
+	this component is asked for its body only: it finds the
 	frame's context and renders as `display: contents`, so the body scrolls
 	inside the frame's content box exactly as it scrolled inside its own.
 	The alarm goes up to the frame the same way. A widget that draws itself
@@ -95,7 +92,6 @@
 		<span class="hosted-title" use:portal={frame}><slot name="title" /></span>
 	{/if}
 	<div class="body" bind:this={body}><slot /></div>
-	<slot name="footer" />
 </svelte:element>
 
 <style>

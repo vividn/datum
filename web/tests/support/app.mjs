@@ -265,10 +265,14 @@ function app(page, errors, query) {
 			return hint.innerText();
 		},
 
-		/** Type a line into the REPL and submit it, as a user does. */
+		/**
+		 * Type a line into the bottom bar and submit it, as a user does,
+		 * and wait for it in the REPL's scrollback — the bar is the REPL's
+		 * prompt (da-rfs9).
+		 */
 		async submit(line) {
 			const before = await page.locator('.repl .echo').count();
-			const input = page.locator('.repl input');
+			const input = page.locator('.prompt-bar input');
 			await input.fill(line);
 			await input.press('Enter');
 			await page.waitForFunction(

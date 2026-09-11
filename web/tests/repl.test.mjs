@@ -1,5 +1,6 @@
 // The REPL as a terminal: a clock, a stamp per command, and a scrollback
-// that is still there tomorrow.
+// that is still there tomorrow. Its prompt is the bottom bar's (da-rfs9):
+// the pane is the scrollback, and nothing in it takes typing.
 //
 // Four things that all look cosmetic and are not (da-9ozz):
 //
@@ -41,8 +42,8 @@ const seconds = (label) => {
 /** How far `later` is after `earlier`, in seconds, across midnight. */
 const apart = (earlier, later) => (seconds(later) - seconds(earlier) + 86400) % 86400;
 
-/** The live clock on the prompt line. */
-const promptClock = (page) => page.locator('.repl .line .stamp').innerText();
+/** The live clock on the prompt line — the bottom bar's. */
+const promptClock = (page) => page.locator('.prompt-bar .line .stamp').innerText();
 
 /** Every scrollback stamp, oldest first. */
 const stamps = (page) => page.locator('.repl .head .stamp').allInnerTexts();
@@ -53,7 +54,7 @@ const brightness = (css) => {
 	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 
-describe('the REPL prompt', () => {
+describe("the REPL's prompt, the bottom bar's", () => {
 	test('carries a clock, left of the caret, that counts up', async () => {
 		// The 12-hour reader again (da-6o81): a clock is exactly the thing
 		// that goes locale-shaped when nobody pins the locale in the test.
@@ -64,7 +65,7 @@ describe('the REPL prompt', () => {
 
 				// Left of the caret, in the DOM and on the screen.
 				const [clockRight, caretLeft] = await page.evaluate(() => {
-					const line = document.querySelector('.repl .line');
+					const line = document.querySelector('.prompt-bar .line');
 					return [
 						line.querySelector('.stamp').getBoundingClientRect().right,
 						line.querySelector('.prompt').getBoundingClientRect().left
@@ -201,7 +202,7 @@ describe('the scrollback across a reload', () => {
 
 			// The recall history came back too, which is the half of this a
 			// scrollback alone would not give you.
-			const input = page.locator('.repl input');
+			const input = page.locator('.prompt-bar input');
 			await input.press('ArrowUp');
 			assert.equal(await input.inputValue(), 'tail');
 

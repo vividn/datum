@@ -285,13 +285,14 @@ describe('a pane', () => {
 	// clock to the left of the caret, and a scrollback that survives a
 	// reload. Either could take the input's width on a phone — the clock
 	// by sitting beside it, the scrollback by being wide enough to widen
-	// the pane under it. A command line you cannot see what you typed in
+	// the page under it. A command line you cannot see what you typed in
 	// is not a command line, so the clock drops its seconds down here and
-	// the input keeps the room.
+	// the input keeps the room. That prompt is the bottom bar's now
+	// (da-rfs9), sharing its row with the brand and the receipt.
 	// And the input widget (da-0dhc) is the same prompt line, its history
 	// taking the place of the scrollback — so it is held to the same width.
 	const PROMPTS = [
-		{ what: 'the REPL input', path: '/', line: '.repl .line', frame: '.repl section.pane' },
+		{ what: "the bottom bar's input", path: '/', line: '.prompt-bar .line', frame: '.prompt-bar' },
 		{ what: "the input widget's input", path: '/input', line: '.input-widget .line', frame: '.input-widget' }
 	];
 

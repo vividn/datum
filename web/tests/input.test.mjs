@@ -83,16 +83,16 @@ describe('a command typed at /input', () => {
 });
 
 describe('the history the widget shares with the REPL', () => {
-	test('goes both ways: Up recalls in either prompt what the other ran', async () => {
+	test("goes both ways: Up recalls in either prompt what the other ran — the widget's and the bottom bar's", async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.goto('/input');
 			await type(page, 'occur tea');
 
 			await app.goto('/day');
-			const repl = page.locator('.repl input');
-			await repl.press('ArrowUp');
-			assert.equal(await repl.inputValue(), 'occur tea');
+			const bar = page.locator('.prompt-bar input');
+			await bar.press('ArrowUp');
+			assert.equal(await bar.inputValue(), 'occur tea');
 			assert.deepEqual(await app.echoes(), ['occur tea']);
 			assert.match(await page.locator('.repl .head .stamp').first().innerText(), HHMMSS);
 

@@ -8,7 +8,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import Repl from '$lib/Repl.svelte';
-	import { ran, ready, registerRepl } from './engine.js';
+	import { ran, registerRepl } from './engine.js';
 
 	let repl: Repl;
 	let unregister: (() => void) | undefined;
@@ -17,4 +17,4 @@
 	onDestroy(() => unregister?.());
 </script>
 
-<Repl bind:this={repl} disabled={!$ready} on:ran={() => void ran()} />
+<Repl bind:this={repl} on:ran={() => void ran()} />

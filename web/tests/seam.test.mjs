@@ -598,8 +598,8 @@ describe('help and version', () => {
 			// Through the prompt itself: what the bead reported is what a
 			// person sees in the scrollback, and the scrollback paints
 			// stderr as an error.
-			await page.fill('.repl input', 'help');
-			await page.press('.repl input', 'Enter');
+			await page.fill('.prompt-bar input', 'help');
+			await page.press('.prompt-bar input', 'Enter');
 			await page.locator('.repl pre').first().waitFor();
 			const shown = await page.locator('.repl pre').first().innerText();
 			assert.match(shown, /USAGE:/, `the REPL showed: ${shown}`);

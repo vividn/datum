@@ -107,7 +107,7 @@ const tabbed = (id: string, kinds: string[]): Pane => ({
 
 /**
  * A phone: strip / REPL / [tail, nowview, command] as tabs / fields,
- * one column — the strip, the REPL and the tabs at their legible 134, 120
+ * one column — the strip, the REPL and the tabs at their legible 134, 85
  * and 122 (nowview's, the tallest of the three).
  */
 export const DEFAULT_LAYOUT_MOBILE: Layout = {
@@ -116,7 +116,7 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', [...legibly([134, 120, 122], 0.9), 0.1], [
+		split('main', 'column', [...legibly([134, 85, 122], 0.9), 0.1], [
 			strip(),
 			widgetPane('repl', 'repl'),
 			tabbed('side', ['tail', 'nowview', 'command']),

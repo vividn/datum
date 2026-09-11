@@ -1,18 +1,17 @@
 <!--
-	The REPL — the day frame's large pane.
+	The REPL — the day frame's large pane: the scrollback, and nothing to
+	type into. The bottom bar's prompt is the page's command line
+	($lib/PromptBar.svelte, da-rfs9: "Remove the input box at the bottom of
+	the REPL widget it is redundant now").
 
-	A prompt line at the bottom, scrollback above it. Enter shell-splits the
-	typed line the same way the native REPL does, sends it through
-	`run(argv)`, and appends the echoed command plus whatever stdout/stderr
-	came back. A command that draws rather than writes is asked for at the
-	width of the scrollback it lands in — see `fitArgv`. The prompt line
-	itself, Up and down included, is $lib/Prompt.svelte.
-
-	`input` is bindable and `runArgv` is exported so the widget bar
-	(da-nz29) lands in here rather than running silently: a press logs and
-	its executed argv joins the scrollback and the recall history, so the
-	next Up brings the command up ready to edit. The teach-loop is the
-	whole point of the widgets sitting next to a command line.
+	`runArgv` is exported so the bar's line and a widget-bar press (da-nz29)
+	land in here rather than running silently: the command runs through
+	`run(argv)`, and the echoed command plus whatever stdout/stderr came
+	back joins the scrollback and the recall history, so the next Up in the
+	bar brings it up ready to edit. The teach-loop is the whole point of
+	the widgets sitting next to a command line. A command that draws rather
+	than writes is asked for at the width of the scrollback it lands in —
+	see `fitArgv`.
 
 	Every command carries the instant it was run (da-9ozz), stamped here at
 	submit rather than carried back in `RunResult` — the seam is `run(argv)`
@@ -34,14 +33,8 @@
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
 	import { fileCommand } from './dbio.js';
-	import Prompt from './Prompt.svelte';
 	import { fitArgv } from './panes.js';
 	import { run, type RunResult } from './run.js';
-	import { shellSplit } from './shellSplit.js';
-
-	/** The text in the prompt. Bind it to type a command in from outside. */
-	export let input = '';
-	export let disabled = false;
 
 	const dispatch = createEventDispatcher<{ ran: RunResult }>();
 
@@ -69,28 +62,22 @@
 		return () => observer.disconnect();
 	});
 
-	async function submit({ detail: line }: CustomEvent<string>): Promise<void> {
-		const ranAt = Date.now();
-		// Split here rather than through `runLine`, because the argv is what
-		// gets fitted to the box. The echo is the line as typed. A file
-		// command ($lib/dbio.ts) goes the browser's way, and before any
-		// await: its dialog needs this keypress.
-		const argv = shellSplit(line);
-		await land(line, await (fileCommand(argv) ?? run(fitArgv(argv, width))), ranAt);
-	}
-
 	/**
-	 * Run an argv from outside the prompt — a widget press (da-nz29).
+	 * Run an argv — the bottom bar's line, a widget press (da-nz29).
 	 *
 	 * The scrollback echoes `result.argv`, the array the runner actually
 	 * received, so a press teaches exactly the command it ran. A prettier
-	 * string rebuilt from the press could drift from it; this cannot.
+	 * string rebuilt from the press could drift from it; this cannot. The
+	 * one exception is the width `fitArgv` adds: that is the box's, not
+	 * the command's, and an Up that brought it back would pin the next run
+	 * to this box. A file command ($lib/dbio.ts) goes the browser's way,
+	 * before any await: its dialog needs the keypress.
 	 */
 	export async function runArgv(argv: string[]): Promise<RunResult> {
 		const ranAt = Date.now();
-		// The bottom bar's line comes through here too ($lib/PromptBar.svelte).
-		const result = await (fileCommand(argv) ?? run(argv));
-		await land(result.argv.join(' '), result, ranAt);
+		const fitted = fitArgv(argv, width);
+		const result = await (fileCommand(argv) ?? run(fitted));
+		await land((fitted === argv ? result.argv : argv).join(' '), result, ranAt);
 		return result;
 	}
 
@@ -125,10 +112,6 @@
 			<CliOutput text={entry.result.stderr} error={entry.result.code !== 0} />
 		{/if}
 	{/each}
-
-	<svelte:fragment slot="footer">
-		<Prompt bind:input {disabled} on:submit={submit} />
-	</svelte:fragment>
 </Pane>
 
 <style>

@@ -494,8 +494,8 @@
 	}
 
 	/* The content box: `Pane.svelte` inside a frame is `display:
-	   contents`, so its scrolling body and its footer are this box's
-	   own flex items — the body takes the room, the footer stays put. */
+	   contents`, so its scrolling body is this box's own flex item and
+	   takes the room. */
 	.content {
 		position: relative;
 		display: flex;

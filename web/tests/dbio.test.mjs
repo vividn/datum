@@ -64,9 +64,9 @@ const LEGACY = fileURLToPath(
 
 const echoes = (page) => page.locator('.repl .echo').count();
 
-/** Type `line` into a prompt and press Enter, without waiting for it to land. */
-async function type(page, line, prompt = '.repl') {
-	const input = page.locator(`${prompt} input`);
+/** Type `line` into the bottom bar and press Enter, without waiting for it to land. */
+async function type(page, line) {
+	const input = page.locator('.prompt-bar input');
 	await input.fill(line);
 	await input.press('Enter');
 }
@@ -233,13 +233,15 @@ for (const engine of [chromium, webkit]) {
 			);
 		});
 
-		test('on a phone the chooser opens from the REPL and from the bottom bar', async () => {
+		// The bottom bar is the page's one prompt (da-rfs9), so it is asked
+		// twice: the second import finds the first's rows.
+		test('on a phone the chooser opens from the bottom bar, every time', async () => {
 			await withApp(
 				async ({ page }) => {
-					for (const [prompt, said] of [['.repl', /120 imported/], ['.prompt-bar', /120 skipped/]]) {
+					for (const said of [/120 imported/, /120 skipped/]) {
 						const [chooser] = await Promise.all([
 							page.waitForEvent('filechooser', { timeout: 5000 }),
-							type(page, 'db v2import', prompt)
+							type(page, 'db v2import')
 						]);
 						await chooser.setFiles(LEGACY);
 						await page.waitForFunction(

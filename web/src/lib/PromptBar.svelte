@@ -12,6 +12,13 @@
 	REPL's); at the right the receipt — the CLI's own first line, cut to
 	its action word and hid — and, dim, which build this is.
 
+	It is the page's one command line and its status line, so it stands
+	out (da-rfs9, vividn: "Make the bottom input bar quite a bit bigger, it
+	needs to stand out, it is the main input and also status bar for the
+	whole app"): about 64px tall where it was 37, the prompt at 1.15rem.
+	The REPL has no prompt of its own any more; what is typed here lands
+	in its scrollback.
+
 	Every command run anywhere shows here as if typed (`last` in
 	$lib/bar.ts, told by `record`): the line sits in the field for a beat
 	and the receipt stays until the next command. That is the teach loop,
@@ -145,10 +152,10 @@
 		position: relative;
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.75rem;
 		flex-shrink: 0;
 		min-width: 0;
-		padding: 0.2rem 0.6rem;
+		padding: 0.55rem 0.9rem;
 		background: #0d0d1a;
 		border-top: 1px solid #2a2a4a;
 	}
@@ -172,7 +179,7 @@
 	.brand {
 		color: #e0e0ff;
 		text-decoration: none;
-		font-size: 0.95rem;
+		font-size: 1.25rem;
 	}
 
 	.tld {
@@ -188,7 +195,7 @@
 	.tag {
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		font-size: 0.65rem;
+		font-size: 0.75rem;
 		color: #0a0a1a;
 		background: #f0b429;
 		border-radius: 3px;
@@ -200,7 +207,7 @@
 		border: none;
 		padding: 0;
 		font: inherit;
-		font-size: 0.8rem;
+		font-size: 0.95rem;
 		line-height: 1;
 		color: #c0a060;
 		cursor: pointer;
@@ -249,7 +256,7 @@
 		border-radius: 999px;
 		color: #adadff;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		font-size: 0.8rem;
+		font-size: 0.95rem;
 		white-space: nowrap;
 	}
 
@@ -277,11 +284,16 @@
 		min-width: 0;
 	}
 
-	/* The prompt line draws its own rule above itself for the REPL's
-	   footer; here the bar is the rule. */
+	/* The prompt line draws its own rule above itself for the input
+	   widget; here the bar is the rule. */
 	.prompt :global(.line) {
 		border-top: none;
-		padding: 0.3rem 0.2rem;
+		padding: 0.7rem 0.3rem;
+		font-size: 1.1rem;
+	}
+
+	.prompt :global(input) {
+		font-size: 1.15rem;
 	}
 
 	.receipt {
@@ -292,7 +304,7 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		font-size: 0.85rem;
+		font-size: 1rem;
 		color: #8888aa;
 	}
 

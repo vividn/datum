@@ -443,6 +443,43 @@ describe('the bottom bar', () => {
 		}, DESKTOP);
 	});
 
+	// The page's one command line and its status line (da-rfs9): tall
+	// enough to stand out — absolute heights, not "bigger than before" —
+	// and the REPL is only the scrollback it types into.
+	test('stands out at 60–72px with a ≥1.05rem prompt; the REPL has no prompt, and the bar and a chip land in its scrollback', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const { height, font, rem } = await page.evaluate(() => ({
+					height: document.querySelector('.prompt-bar').getBoundingClientRect().height,
+					font: parseFloat(getComputedStyle(document.querySelector('.prompt-bar input')).fontSize),
+					rem: parseFloat(getComputedStyle(document.documentElement).fontSize)
+				}));
+				assert.ok(height >= 60 && height <= 72, `the bottom bar is ${height}px tall at 1280x800`);
+				assert.ok(font >= 1.05 * rem, `the prompt's input is ${font}px on a ${rem}px rem`);
+
+				const repl = page.locator('section[data-pane="repl"]');
+				assert.equal(await repl.count(), 1);
+				assert.equal(await repl.locator('input, .line').count(), 0, 'the REPL still has a prompt of its own');
+
+				await app.submit('occur coffee');
+				await until(() => receipt(page).innerText(), (t) => /^CREATE \S+$/.test(t));
+				assert.deepEqual(await app.echoes(), ['occur coffee']);
+				assert.match((await app.outputs()).join('\n'), /CREATE .*coffee/, "the CLI's line is not in the scrollback");
+
+				await app.pressWidget('coffee');
+				assert.deepEqual(await app.echoes(), ['occur coffee', 'occur coffee']);
+
+				await app.submit('tail');
+				const input = page.locator('.prompt-bar input');
+				await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === '');
+				await input.press('ArrowUp');
+				assert.equal(await input.inputValue(), 'tail');
+			},
+			{ viewport: { width: 1280, height: 800 } }
+		);
+	});
+
 	test('memory-only storage turns the bar orange, with the storage sentence as its title', async () => {
 		await withApp(
 			async ({ page }) => {
@@ -526,6 +563,7 @@ describe('on a phone', () => {
 			const screen = await page.evaluate(() => document.documentElement.clientHeight);
 			const bar = await page.locator('.prompt-bar').boundingBox();
 			assert.ok(bar.y >= 0 && bar.y + bar.height <= screen + 1, `the bottom bar is off-screen: ${JSON.stringify(bar)} on ${screen}`);
+			assert.ok(bar.height >= 52, `the bottom bar is ${bar.height}px tall on a phone`);
 			const input = await page.locator('.prompt-bar input').boundingBox();
 			assert.ok(input.width >= 100, `the prompt is ${input.width}px wide`);
 
