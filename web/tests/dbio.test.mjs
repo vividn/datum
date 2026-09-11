@@ -216,7 +216,9 @@ for (const engine of [chromium, webkit]) {
 					assert.equal(await count(app), 123);
 					await app.submit('dayview --start-date 2025-01-01 --end-date 2025-01-03');
 					const drawn = await page.locator('.repl svg.svg').last().evaluate((svg) => svg.outerHTML);
-					assert.match(drawn, /<title>music /);
+					// The imported field draws as a mark: its name is the mark's
+					// `data-title` since the page stopped keeping `<title>` (da-8jb8).
+					assert.match(drawn, /data-title="music /);
 					await choose(page, 'db v2import', LEGACY);
 					assert.match((await app.outputs()).at(-1), /120 skipped/);
 					assert.equal(await count(app), 123);
