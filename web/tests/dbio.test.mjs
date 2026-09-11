@@ -15,10 +15,47 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
+import { fileArgv } from '../src/lib/fileargv.ts';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
+
+// The rewrite keeps every option and its value, in order, and makes only
+// the input source `-` (da-1vz2): read off the CLI's option table, not
+// guessed from the dash.
+describe('fileArgv', () => {
+	const cases = [
+		['db v2import --skip-log skips.txt', ['db', 'v2import', '--skip-log', 'skips.txt', '-'], ['skips.txt']],
+		['db v2import --from backup.json --dry-run', ['db', 'v2import', '--from', '-', '--dry-run'], ['backup.json']],
+		['db v2import --from=backup.json --dry-run', ['db', 'v2import', '--from', '-', '--dry-run'], ['backup.json']],
+		['db v2import backup.json --skip-log=s.txt', ['db', 'v2import', '-', '--skip-log', 's.txt'], ['backup.json', 's.txt']],
+		['db v2import --dry-run', ['db', 'v2import', '--dry-run', '-'], []],
+		['db v2import -', ['db', 'v2import', '-'], []],
+		['db restore --force', ['db', 'restore', '--force', '-'], []],
+		['db restore b.jsonl --dry-run --json', ['db', 'restore', '-', '--dry-run', '--json'], ['b.jsonl']],
+		['db backup --overwrite out.jsonl', ['db', 'backup', '--overwrite', '-'], []],
+		['db backup', ['db', 'backup', '-'], []]
+	];
+	for (const [line, argv, paths] of cases) {
+		test(line, () => {
+			const got = fileArgv(line.split(' '));
+			assert.deepEqual(got.argv, argv);
+			assert.deepEqual(got.paths, paths);
+		});
+	}
+
+	test('backup: the PATH names the download', () => {
+		assert.equal(fileArgv(['db', 'backup', '--overwrite', 'out.jsonl']).name, 'out.jsonl');
+		assert.equal(fileArgv(['db', 'backup']).name, undefined);
+	});
+
+	test('anything else runs as typed', () => {
+		for (const line of ['db purge', 'db setup', 'tail', 'backup x']) {
+			assert.equal(fileArgv(line.split(' ')), null);
+		}
+	});
+});
 
 /** vividn's legacy format: 120 docs over 2025-01-01..03. */
 const LEGACY = fileURLToPath(
@@ -215,3 +252,47 @@ for (const engine of [chromium, webkit]) {
 		});
 	});
 }
+
+test('an option keeps its value, and only the source is the chosen file (da-1vz2)', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			// What the CLI is asked — argv and stdin — through the seam's own hook.
+			await page.evaluate(() => {
+				window.__asked = [];
+				const previous = window.datum.setRunner((argv, stdin) => {
+					if (argv[0] === 'db') window.__asked.push({ argv, stdin });
+					return previous(argv, stdin);
+				});
+			});
+			const asked = () => page.evaluate(() => window.__asked.at(-1));
+			const legacy = await readFile(LEGACY, 'utf8');
+
+			await choose(page, 'db v2import --dry-run', LEGACY);
+			assert.match((await app.outputs()).at(-1), /Migration summary: 120 would import/);
+			assert.equal(await count(app), 0);
+
+			await choose(page, 'db v2import --from backup.json --dry-run', LEGACY);
+			assert.deepEqual(await asked(), { argv: ['db', 'v2import', '--from', '-', '--dry-run'], stdin: legacy });
+			const [summary, note] = (await app.outputs()).slice(-2);
+			assert.match(summary, /Migration summary: 120 would import/);
+			assert.equal(note, 'not a file in the browser: backup.json');
+			assert.equal(await count(app), 0);
+
+			// `--skip-log` keeps its path, so `-` is still the backup.
+			await choose(page, 'db v2import --skip-log skips.txt', LEGACY);
+			assert.deepEqual(await asked(), { argv: ['db', 'v2import', '--skip-log', 'skips.txt', '-'], stdin: legacy });
+			assert.match((await app.outputs()).at(-1), /not a file in the browser: skips\.txt$/);
+			assert.equal(await count(app), 120);
+
+			const [download] = await Promise.all([
+				page.waitForEvent('download', { timeout: 10000 }),
+				app.submit('db backup --overwrite out.jsonl')
+			]);
+			assert.equal(download.suggestedFilename(), 'out.jsonl');
+			assert.deepEqual((await asked()).argv, ['db', 'backup', '--overwrite', '-']);
+			assert.deepEqual(app.errors, []);
+		},
+		{ viewport: { width: 1280, height: 1000 } }
+	);
+});

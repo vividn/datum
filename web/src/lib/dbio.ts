@@ -19,6 +19,7 @@
 
 import ConfirmName from './ConfirmName.svelte';
 import { saveFile } from './backup.js';
+import { fileArgv } from './fileargv.js';
 import { run, type RunResult } from './run.js';
 
 /**
@@ -30,27 +31,22 @@ import { run, type RunResult } from './run.js';
  * (Safari is strictest), and `upload` opens its dialog before its first.
  */
 export function fileCommand(argv: string[]): Promise<RunResult> | null {
-	const [db, sub, ...rest] = argv;
-	if (db !== 'db') return null;
-	// A PATH typed is not a path here — the dialog is the path, or names
-	// the download — so what goes on is the flags, then `-`.
-	const flags = rest.filter((t) => t.startsWith('-') && t !== '-' && !/^--(from|backup)=/.test(t));
-	const path = rest.find((t) => !t.startsWith('-'));
-	switch (sub) {
-		case 'restore':
-		case 'v2import':
-			return upload([db, sub, ...flags, '-']);
-		case 'backup':
-			return download(path);
-		case 'purge':
-			// `--yes` typed by hand is the CLI's contract: straight through.
-			return flags.includes('--yes') || flags.includes('-y') ? null : purge(flags);
-		default:
-			return null;
+	const [db, sub, ...flags] = argv;
+	if (db === 'db' && sub === 'purge') {
+		// `--yes` typed by hand is the CLI's contract: straight through.
+		return flags.includes('--yes') || flags.includes('-y') ? null : purge(flags);
 	}
+	const file = fileArgv(argv);
+	if (!file) return null;
+	const ran = sub === 'backup' ? download(file.name, file.argv) : upload(file.argv);
+	if (!file.paths.length) return ran;
+	// A path typed is not a file here — the dialog is the file, or names
+	// the download — and saying so is one quiet line.
+	const note = `not a file in the browser: ${file.paths.join(', ')}`;
+	return ran.then((r) => ({ ...r, stderr: [r.stderr, note].filter(Boolean).join('\n') }));
 }
 
-/** Run `argv` (ending in `-`) with a file the reader picks as its stdin. */
+/** Run `argv` (its source `-`) with a file the reader picks as its stdin. */
 export function upload(argv: string[]): Promise<RunResult> {
 	const picker = Object.assign(document.createElement('input'), { type: 'file', hidden: true });
 	document.body.append(picker);
@@ -67,8 +63,8 @@ export function upload(argv: string[]): Promise<RunResult> {
 }
 
 /** `db backup -`, handed to the browser as a download; the transcript gets the header. */
-export async function download(name?: string): Promise<RunResult> {
-	const result = await run(['db', 'backup', '-']);
+export async function download(name?: string, argv = ['db', 'backup', '-']): Promise<RunResult> {
+	const result = await run(argv);
 	if (result.code !== 0) return result;
 	// `sv` writes a date as YYYY-MM-DD, in the reader's own day.
 	name = !name || name === '-' ? `datum-${new Date().toLocaleDateString('sv')}.jsonl` : name;
