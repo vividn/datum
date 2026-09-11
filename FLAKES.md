@@ -1,5 +1,11 @@
 # Flake registry
 
+> **Last re-tested 2026-09-12** by can onyx (da-tb9v) — 3 entries checked,
+> 3 removed, 0 surviving. Every entry was re-run 10× under the conditions it
+> named; none reproduced. The registry is empty: a failure you hit today is
+> not a known flake. The removals' evidence is in da-tb9v; the entries
+> themselves are in git (`git log -p FLAKES.md`).
+
 This file catalogues tests in the daydumb workspace that are known to fail
 without indicating a real regression. Polecats and contributors consult it
 during the pre-merge gate (`scripts/check.sh`) so a known-noise failure
@@ -62,49 +68,7 @@ anything fails, look up the failing test name below.
 
 ---
 
-## sync_config_set_server_global
-
-**Test:** `crates/datum-cli/tests/sync_config.rs::sync_config_set_server_global`
-**Type:** FLAKE
-**Symptom:** Fails on first run when prior tests leave stale state in
-the shared global config file.
-**Recommended action:** Retry once. If it fails on retry, the
-underlying test-isolation problem still needs fixing.
-**Last seen:** 2026-04-22
-**Notes:** Observed by refinery during merge of da-wisp-ces (garnet's
-D2 parser MR, commit 70ab3a2). A real fix would use per-test isolated
-config rather than mutating the shared global.
-
-## color_mode_emits_truecolor_backgrounds
-
-**Test:** `crates/datum-commands/tests/render_fixtures.rs::color_mode_emits_truecolor_backgrounds`
-**Type:** BRITTLE_GOLDEN
-**Symptom:** Truecolor escape byte sequence drifts when switch/state
-rendering is touched, even when visual output is unchanged.
-**Recommended action:** Compare visual output (terminal preview /
-manual inspection). If correct, regenerate the golden. Do not revert.
-**Last seen:** 2026-04-28
-**Notes:** Tripped on da-7r4 (topaz, "render Switch entries as coloured
-regions") and da-uuu (obsidian, state.rs perf rework). Polecats
-touching `state.rs`, switch rendering, or color-mode handling should
-run this test early so a regen lands in the same diff.
-
-## render::tests color-env races (parallel chip / same-id color tests)
-
-**Tests:**
-- `crates/datum-commands/src/render/mod.rs::render::tests::parallel_simple_states_chipped_separately_in_main_line`
-- `crates/datum-commands/src/render/mod.rs::render::tests::same_structured_state_id_gets_same_color_across_entries`
-
-**Type:** ENV_DEPENDENT
-**Symptom:** chip output rendered without truecolor escapes (e.g.
-`" vertical,sit "` instead of bg-painted) or two same-id chips
-disagree on background color, when run alongside other render tests
-in parallel.
-**Recommended action:** Retry once; or re-run with `--test-threads=1`.
-Both pass deterministically when single-threaded.
-**Last seen:** 2026-05-13
-**Notes:** Root cause is process-global `std::env::set_var` racing
-between render::tests that toggle `DATUM_COLOR`/`NO_COLOR` via
-`ScopedEnv`. Filed as da-92vv. Tripped on jasper / da-ixrk; no render
-code changed.
-
+_No live entries._ The last three were removed on 2026-09-12 after 10 clean
+runs each (da-tb9v). Add one via the Append protocol above when you see a
+failure retry-pass — and date it, so the next re-test can tell live noise
+from archaeology.
