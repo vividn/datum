@@ -15,6 +15,8 @@ import { run, runLine, setRunner, type CommandRunner, type RunResult } from './r
 import { storedEntries, type StoredEntry } from './backup.js';
 import { tailListing, type TailColumn, type TailRow } from './tail.js';
 import * as layouts from './layout/store.js';
+import * as shell from './layout/shell.js';
+import { pills, removePill, setPills, type Pill } from './bar.js';
 import { get } from 'svelte/store';
 import { apply, layout } from './layout/current.js';
 import type { Layout } from './layout/types.js';
@@ -34,6 +36,10 @@ export interface DatumConsole {
 	layouts: typeof layouts;
 	/** The live tree (da-jdop): what is on screen, and the one way to change it. */
 	layout: { current(): Layout; apply(op: (layout: Layout) => Layout): void };
+	/** The root tabs (da-0a5o): open a layout by name, save, restore, save as, lock. */
+	shell: typeof shell;
+	/** The bottom bar's pills: what the time cursor will set, and a test does. */
+	bar: { pills(): Pill[]; setPills(next: Pill[]): void; removePill(id: string): void };
 }
 
 /** Publish the handle on `target` (the window, in the app). */
@@ -45,7 +51,9 @@ export function installConsole(target: Record<string, unknown>): void {
 		entries: storedEntries,
 		tailRows: tailListing,
 		layouts,
-		layout: { current: () => get(layout), apply }
+		layout: { current: () => get(layout), apply },
+		shell,
+		bar: { pills: () => get(pills), setPills, removePill }
 	};
 	target.datum = handle;
 }

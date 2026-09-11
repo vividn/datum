@@ -113,3 +113,52 @@ export const PHONE_WIDTH = 720;
 
 export const defaultLayoutFor = (phone: boolean): Layout =>
 	phone ? DEFAULT_LAYOUT_MOBILE : DEFAULT_LAYOUT;
+
+// ---- the built-in layouts (da-0a5o) ------------------------------------
+//
+// What the root bar's picker and a URL can name without anything saved:
+// `day` — today's page, the desktop or the phone tree by the screen's
+// width at first load — and one layout per widget kind that is just that
+// widget, named as its pane is titled (`nowview`, `tail`, `stats`, …), so
+// `datum.day/nowview` is the nowview alone. A saved layout of the same
+// name shadows a built-in. vividn's prebuilt layouts (collect / check /
+// analyze) are his to design: one object each, added to `BUILTIN` below.
+
+/** A layout that is one widget, filling the root. */
+const only = (name: string, kind: string, settings: Record<string, unknown> = {}): Layout => ({
+	version: LAYOUT_VERSION,
+	name,
+	root: widgetPane(`${name}-only`, kind, settings)
+});
+
+/** The built-ins by name; `day` is looked up through `builtinLayout`, since it depends on the screen. */
+export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
+	day: (phone) => ({ ...defaultLayoutFor(phone), name: 'day' }),
+	dayview: () => only('dayview', 'daystrip', { dayHeight: DEFAULT_DAY_HEIGHT }),
+	repl: () => only('repl', 'repl'),
+	nowview: () => only('nowview', 'nowview'),
+	tail: () => only('tail', 'tail'),
+	command: () => only('command', 'command'),
+	stats: () => only('stats', 'stats'),
+	widgets: () => only('widgets', 'widgetbar'),
+	input: () => only('input', 'input')
+};
+
+/**
+ * Other spellings a URL may use: the old routes (`/now`) and the widget
+ * kinds whose pane title differs from their kind name.
+ */
+export const ALIASES: Record<string, string> = {
+	now: 'nowview',
+	daystrip: 'dayview',
+	widgetbar: 'widgets'
+};
+
+/** The built-in layout `name` names, if any; `phone` picks `day`'s tree. */
+export function builtinLayout(name: string, phone: boolean): Layout | null {
+	const make = BUILTIN[ALIASES[name] ?? name];
+	return make ? make(phone) : null;
+}
+
+/** The built-in names, `day` first, in the order the picker offers them. */
+export const BUILTIN_NAMES = Object.keys(BUILTIN);

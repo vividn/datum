@@ -36,6 +36,8 @@
 	bar's phone pinning (da-hkpd), now a property of where it sits.
 -->
 <script lang="ts">
+	import { getContext, setContext } from 'svelte';
+	import { readable, writable, type Readable } from 'svelte/store';
 	import Pane from '$lib/Pane.svelte';
 	import PaneFrame from './PaneFrame.svelte';
 	import Picker from './Picker.svelte';
@@ -45,6 +47,7 @@
 	import { EMPTY_KIND, floorOf, newWidget, setRatios, setWidget } from './tree.js';
 	import { KINDS, floorOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
+	import { inlineInto } from './shell.js';
 
 	export let pane: PaneNode;
 	export let epoch = 0;
@@ -72,6 +75,14 @@
 
 	$: active = pane.tabs[pane.active];
 	$: content = active.content;
+
+	// The layouts open above this pane's content (da-0a5o): the ones its
+	// picker must not offer, or `day` could hold `day`. A store, since the
+	// active tab changes and a context is set once.
+	const above = getContext<Readable<string[]> | undefined>('layout-ancestors') ?? readable<string[]>([]);
+	const ancestors = writable<string[]>([]);
+	setContext('layout-ancestors', ancestors);
+	$: ancestors.set(active.layout === undefined ? $above : [...$above, active.layout]);
 	$: kind = isSplit(content) || content.kind === EMPTY_KIND ? undefined : KINDS[content.kind];
 	$: canClose = !(pane.id === rootId && pane.tabs.length === 1);
 	$: lockedHere = locked || !!active.locked;
@@ -244,7 +255,10 @@
 		</div>
 	{:else if content.kind === EMPTY_KIND}
 		{@const tabId = active.id}
-		<Picker on:pick={(e) => apply((l) => setWidget(l, tabId, newWidget(e.detail)))} />
+		<Picker
+			on:pick={(e) => apply((l) => setWidget(l, tabId, newWidget(e.detail)))}
+			on:layout={(e) => void inlineInto(tabId, e.detail)}
+		/>
 	{:else if kind}
 		{@const widget = content}
 		{@const fold = kind.onChange}

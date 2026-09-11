@@ -100,13 +100,9 @@ describe('the date the web app prints', () => {
 			const table = await paneTable('tail');
 			const shown = table.rows[0][table.keys.indexOf('time')];
 			assert.equal(shown, day, `the tail pane is on the reader's calendar: "${shown}"`);
-
-			// And /now, which asked `toLocaleDateString()` once (da-6eou).
-			await page.locator('header nav a[href="/now"]').click();
-			await page.locator('.now-view pre').first().waitFor();
-			const now = await page.locator('.now-view').innerText();
-			assert.match(now, /reading/);
-			assert.doesNotMatch(now, /\d{1,2}\/\d{1,2}\/\d{4}/, `/now is locale-formatted: "${now}"`);
+			// (The /now page that once asked `toLocaleDateString()` — da-6eou —
+			// is gone with the shell, da-0a5o: /now is the nowview widget,
+			// which prints nothing the browser formats.)
 		});
 	});
 });

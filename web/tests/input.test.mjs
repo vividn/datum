@@ -73,7 +73,9 @@ describe('a command typed at /input', () => {
 
 			// Not shown is not dropped: the output is in the REPL's
 			// scrollback, which is what makes the CREATE above a real absence.
-			await app.goto('/');
+			// (`/day`, not `/`: `/` is whichever tab was last active — this
+			// device's choice, da-0a5o — and that is the input tab now.)
+			await app.goto('/day');
 			assert.deepEqual(await app.echoes(), ['occur coffee']);
 			assert.match((await app.outputs()).join('\n'), /CREATE/);
 		});
@@ -87,7 +89,7 @@ describe('the history the widget shares with the REPL', () => {
 			await app.goto('/input');
 			await type(page, 'occur tea');
 
-			await app.goto('/');
+			await app.goto('/day');
 			const repl = page.locator('.repl input');
 			await repl.press('ArrowUp');
 			assert.equal(await repl.inputValue(), 'occur tea');

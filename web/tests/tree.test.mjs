@@ -384,3 +384,42 @@ describe('any sequence of operations', () => {
 		for (const id of ids) assert.match(id, /^[0-9a-z]{8}$/);
 	});
 });
+
+// A tab that holds a layout (da-0a5o, `Tab.layout`) keeps its identity
+// whatever happens under it: the canon allows it a one-child split rather
+// than dissolving the tab into that child's tabs, and gives it a fresh
+// empty tab rather than dropping it when everything under it closes.
+describe('a layout tab', () => {
+	/** A root whose one tab holds layout `day`: a row split of two widget panes. */
+	function held() {
+		const left = newPane([widgetTab('repl')]);
+		const right = newPane([widgetTab('tail')]);
+		const tab = { ...newTab(newSplit('row', [left, right])), layout: 'day' };
+		return { layout: { version: 1, name: 'root', root: newPane([tab]) }, tab, left, right };
+	}
+
+	test('closing one child leaves a one-child split under the tab, which is canonical there', () => {
+		const { layout, tab, right } = held();
+		const after = closeTab(layout, right.id, 0);
+		assert.ok(isCanonical(after));
+		const kept = after.root.tabs[0];
+		assert.equal(kept.id, tab.id, 'the tab dissolved');
+		assert.equal(kept.layout, 'day');
+		assert.equal(kept.content.children.length, 1);
+		assert.deepEqual(kept.content.ratios, [1]);
+		// Without the layout the same close unnests, as before.
+		const plain = { ...layout, root: { ...layout.root, tabs: [{ ...tab, layout: undefined }] } };
+		delete plain.root.tabs[0].layout;
+		assert.deepEqual(kinds(closeTab(plain, right.id, 0).root), ['repl']);
+	});
+
+	test('closing everything under it leaves it an empty tab, not gone', () => {
+		const { layout, tab, left, right } = held();
+		const after = closeTab(closeTab(layout, right.id, 0), left.id, 0);
+		assert.ok(isCanonical(after));
+		assert.equal(after.root.tabs.length, 1);
+		assert.equal(after.root.tabs[0].id, tab.id);
+		assert.equal(after.root.tabs[0].layout, 'day');
+		assert.equal(after.root.tabs[0].content.kind, EMPTY_KIND);
+	});
+});

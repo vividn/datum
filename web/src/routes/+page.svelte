@@ -1,29 +1,27 @@
 <!--
-	The day frame — the shell's single screen.
+	The frame — the shell's single screen (`/`).
 
 	It used to be a CSS grid with four fixed areas, laid out as the
 	wireframe (da-hrz0) drew it. It is a layout tree now (da-jdop): panes
 	holding widgets, split and tabbed and resized from each pane's `…`
 	menu, with today's arrangement as the default (`$lib/layout/defaults`)
-	and the reader's own kept as a draft (`$lib/layout/current`).
+	and the reader's own kept as a draft (`$lib/layout/current`). Its root
+	pane's tabs are the page's top bar (da-0a5o, `$lib/layout/RootBar`),
+	each one a layout, and the shell (`$lib/layout/shell`) fills the tree
+	on boot — from `+layout.svelte`, so `loaded` is already on its way by
+	the time this mounts.
 
 	Every widget still talks to datum through `run(argv)` in $lib/run.ts
-	and nothing else. What this page owns is the boot — open the database —
-	and the one refresh beat: the engine's epoch,
-	bumped after every command here and after every write another tab
-	makes, flows down the tree as a prop to every pane.
+	and nothing else. What this page owns is the one refresh beat: the
+	engine's epoch, bumped after every command here and after every write
+	another tab makes, flows down the tree as a prop to every pane.
 -->
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import Layout from '$lib/layout/Layout.svelte';
 	import { layout, loaded } from '$lib/layout/current.js';
-	import { boot, epoch, ran } from '$lib/layout/engine.js';
+	import { epoch, ran } from '$lib/layout/engine.js';
 	import { onExternalChange } from '$lib/changes.js';
-
-	// The tree itself is filled by the header's layout controls
-	// (LayoutControls.svelte, da-wpgy): this device's draft, else the saved
-	// layout, else today's page. `loaded` is their word that it has been.
-	onMount(boot);
 
 	// Another tab wrote. Same treatment as a local command finishing — bump
 	// the epoch the panes hang off and rebuild the widget bar — so there is
@@ -47,5 +45,17 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+	}
+
+	/* The root pane draws no bar of its own: its tabs are the root bar
+	   above the page. Until the engine's own change lands (da-2a5y, in
+	   flight beside this) the frame still renders one, hidden here — and
+	   the inset the hidden title would have needed goes with it. Remove
+	   both rules once the engine renders the root bare. */
+	.frame :global(section.root > .titlebar) {
+		display: none;
+	}
+	.frame :global(section.root.pane > .content) {
+		padding-top: 0;
 	}
 </style>

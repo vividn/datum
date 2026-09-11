@@ -146,19 +146,24 @@ describe('on a phone-sized screen', () => {
 		}, { viewport: PHONE });
 	});
 
-	// The stats widget's own page (da-n7r0): reached by the header's link,
-	// and its pickers on the screen it opens on.
+	// The stats widget (da-n7r0) as a root tab (da-0a5o): reached by its
+	// URL, its tab on the root bar, and its pickers on the screen it opens on.
 	for (const viewport of SCREENS) {
 		const size = `${viewport.width}x${viewport.height}`;
 
 		test(`/stats and its pickers are on screen at ${size}`, async () => {
-			await withApp(async ({ page, submit }) => {
+			await withApp(async (app) => {
+				const { page, submit } = app;
 				await track(page, submit, FIELDS);
-				await assertOnScreen(page, 'header nav a[href="/stats"]', 'the stats link');
-				await page.locator('header nav a[href="/stats"]').click();
+				await app.goto('/stats');
+				await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'stats' }).waitFor();
+				await assertOnScreen(page, '.root-bar [role="tab"][aria-selected="true"]', 'the stats tab');
 				await page.locator('.stats button.field').nth(FIELDS.length - 1).waitFor();
 				await assertOnScreen(page, '.stats button.field', "the first field's chip");
 				await assertOnScreen(page, '.stats .range button', 'the range picker');
+				// And the bottom bar's prompt, whatever tab is in front.
+				await assertOnScreen(page, '.prompt-bar input', "the bottom bar's prompt");
+				await assertOnScreen(page, '.prompt-bar .hint-button', 'the beta hint');
 			}, { viewport });
 		});
 	}
@@ -237,15 +242,22 @@ describe('the layout engine, by keyboard', () => {
 	test('a Tab walk reaches every … button, every border and the nowview steps', async () => {
 		await withApp(async ({ page }) => {
 			const reached = await tabWalk(page);
+			// The root frame's own badge is hidden until the engine stops
+			// drawing it (da-2a5y): not on screen, not in the walk. The root
+			// bar's icons and the beta hint (da-0a5o) are walked too.
 			const controls = await page.evaluate(() =>
-				[...document.querySelectorAll('button.more, [role="separator"], .nowview-steps button')].map((el) => ({
-					walk: el.dataset.walk ?? null,
-					what: el.matches('button.more')
-						? `menu of ${el.closest('section').dataset.title}`
-						: el.matches('.nowview-steps button')
-							? el.getAttribute('aria-label')
-							: 'border'
-				}))
+				[...document.querySelectorAll('button.more, [role="separator"], .nowview-steps button, .root-bar .act, .prompt-bar .hint-button')]
+					.filter((el) => el.getClientRects().length > 0)
+					.map((el) => ({
+						walk: el.dataset.walk ?? null,
+						what: el.matches('button.more')
+							? `menu of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
+							: el.matches('.nowview-steps button, .act')
+								? el.getAttribute('aria-label')
+								: el.matches('.hint-button')
+									? 'the beta hint'
+									: 'border'
+					}))
 			);
 			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');
 			assert.ok(controls.some((c) => c.what === 'border'), 'the default layout has no draggable border');
@@ -257,9 +269,9 @@ describe('the layout engine, by keyboard', () => {
 
 	test('every menu item is on screen and reachable by the arrows', async () => {
 		await withApp(async ({ page }) => {
-			const menus = await page.locator('button.more').count();
+			const menus = await page.locator('button.more:visible').count();
 			for (let m = 0; m < menus; m++) {
-				await page.locator('button.more').nth(m).focus();
+				await page.locator('button.more:visible').nth(m).focus();
 				await page.keyboard.press('Enter');
 				const items = page.locator('[role="menu"] button');
 				const count = await items.count();
@@ -281,7 +293,7 @@ describe('the layout engine, by keyboard', () => {
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				assert.ok(
-					await page.locator('button.more').nth(m).evaluate((el) => el === document.activeElement),
+					await page.locator('button.more:visible').nth(m).evaluate((el) => el === document.activeElement),
 					'Escape did not hand focus back to the button'
 				);
 			}
@@ -301,10 +313,12 @@ describe('the layout engine, by keyboard', () => {
 						const b = el.getBoundingClientRect();
 						return Math.min(b.width, b.height);
 					}),
-					badges: [...document.querySelectorAll('button.more')].map((el) => {
-						const b = el.getBoundingClientRect();
-						return [b.width, b.height];
-					})
+					badges: [...document.querySelectorAll('button.more, .root-bar .act')]
+						.filter((el) => el.getClientRects().length > 0)
+						.map((el) => {
+							const b = el.getBoundingClientRect();
+							return [b.width, b.height];
+						})
 				}));
 				assert.ok(sizes.borders.length > 0 && sizes.badges.length > 0);
 				for (const across of sizes.borders) assert.ok(across >= 8, `a border is ${across}px across`);

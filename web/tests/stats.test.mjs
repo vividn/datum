@@ -40,10 +40,10 @@ async function seed({ run }) {
 	}
 }
 
-/** Go to /stats the way a reader does: by the header's link. */
-async function openStats(page) {
-	await page.locator('header nav a[href="/stats"]').click();
-	await page.locator('.stats').waitFor();
+/** Go to /stats the way a reader does: by its URL, which opens the stats tab (da-0a5o). */
+async function openStats(app) {
+	await app.goto('/stats');
+	await app.page.locator('section.pane[data-title="stats"]').waitFor();
 }
 
 const field = (page, name) => page.locator('.stats button.field', { hasText: name });
@@ -75,7 +75,7 @@ describe('/stats', () => {
 	test('no field chosen: the field list and a hint, all time selected', async () => {
 		await withApp(async (app) => {
 			await seed(app);
-			await openStats(app.page);
+			await openStats(app);
 			await field(app.page, 'coffee').waitFor();
 			assert.deepEqual(await app.page.locator('.stats button.field').allInnerTexts(), ['coffee', 'mood']);
 			assert.equal(await app.page.locator('.stats section .quiet').innerText(), 'pick a field');
@@ -90,7 +90,7 @@ describe('/stats', () => {
 	test("a field shows the CLI's stats; a state narrows it to field:state", async () => {
 		await withApp(async (app) => {
 			await seed(app);
-			await openStats(app.page);
+			await openStats(app);
 
 			await field(app.page, 'coffee').click();
 			await expectStats(app, ['stats', 'coffee']);
@@ -106,7 +106,7 @@ describe('/stats', () => {
 	test('the range adds its flags: a period, or --since / --until', async () => {
 		await withApp(async (app) => {
 			await seed(app);
-			await openStats(app.page);
+			await openStats(app);
 			await field(app.page, 'coffee').click();
 
 			await app.page.locator('.stats .range button', { hasText: 'today' }).click();
@@ -131,7 +131,7 @@ describe('/stats', () => {
 	test('a write in another tab changes the numbers without a reload', async () => {
 		await withApp(async (app) => {
 			await seed(app);
-			await openStats(app.page);
+			await openStats(app);
 			await field(app.page, 'coffee').click();
 			await expectStats(app, ['stats', 'coffee']);
 			const count = app.page.locator('.stats .tile.entries dd');
@@ -154,7 +154,7 @@ describe('/stats', () => {
 	test('a reload keeps the selection', async () => {
 		await withApp(async (app) => {
 			await seed(app);
-			await openStats(app.page);
+			await openStats(app);
 			await field(app.page, 'mood').click();
 			await app.page.locator('.stats button.state', { hasText: 'happy' }).click();
 			await app.page.locator('.stats .range button', { hasText: 'week' }).click();
@@ -170,7 +170,7 @@ describe('/stats', () => {
 		await withApp(
 			async (app) => {
 				await seed(app);
-				await openStats(app.page);
+				await openStats(app);
 				await field(app.page, 'coffee').waitFor();
 				assert.equal(await app.page.locator('.stats section .quiet').innerText(), 'pick a field');
 
@@ -196,13 +196,16 @@ describe('/stats', () => {
 		await withApp(
 			async (app) => {
 				await seed(app);
-				await openStats(app.page);
+				await openStats(app);
 				await field(app.page, 'coffee').click();
 				await expectStats(app, ['stats', 'coffee']);
 
 				const fit = await app.page.evaluate(() => {
-					const aside = document.querySelector('.stats aside').getBoundingClientRect();
-					const section = document.querySelector('.stats section').getBoundingClientRect();
+					// The widget's own box, not the pane's: the frame around it is
+					// named `.stats` too (PaneFrame.svelte's host class).
+					const widget = document.querySelector('section.pane .stats');
+					const aside = widget.querySelector('aside').getBoundingClientRect();
+					const section = widget.querySelector('section').getBoundingClientRect();
 					const main = document.querySelector('main');
 					return {
 						stacked: aside.bottom <= section.top,

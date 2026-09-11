@@ -38,6 +38,8 @@ import Stats from '$lib/Stats.svelte';
 import { DEFAULT_DAY_HEIGHT, MAX_DAY_HEIGHT, MIN_DAY_HEIGHT, NOWVIEW_HISTORY, TAIL, todayBox } from '$lib/panes.js';
 import { DEFAULT_STATS } from '$lib/stats.js';
 import BarWidget from './BarWidget.svelte';
+import InputWidget from './InputWidget.svelte';
+import Notice from './Notice.svelte';
 import NowviewWidget from './NowviewWidget.svelte';
 import ReplWidget from './ReplWidget.svelte';
 
@@ -59,6 +61,8 @@ export interface WidgetKind {
 	 * depending on the size of the days", da-2a5y).
 	 */
 	floor?: (settings: Record<string, unknown>) => { width: number; height: number };
+	/** Not offered by the picker: a kind the app puts in a tab itself. */
+	hidden?: boolean;
 }
 
 /** The strip body's padding, top and bottom, as its constant floor counts it. */
@@ -118,11 +122,16 @@ export const KINDS: Record<string, WidgetKind> = {
 		props: (settings) => ({ settings: { ...DEFAULT_STATS, ...settings } }),
 		onChange: (_, settings) => settings as Record<string, unknown>
 	},
-	widgetbar: { meta: meta('widgetbar', 'widgets', 160, 45), component: BarWidget, fit: true }
+	widgetbar: { meta: meta('widgetbar', 'widgets', 160, 45), component: BarWidget, fit: true },
+	// The input widget (da-0dhc): the prompt line and, given the height, the
+	// history above it — one line's worth is its floor.
+	input: { meta: meta('input', 'input', 200, 40), component: InputWidget },
+	// What the shell shows in a tab whose layout cannot be inlined (da-0a5o).
+	notice: { meta: meta('notice', 'notice', 120, 40), component: Notice, hidden: true }
 };
 
 /** The kinds the picker offers, in the order it shows them. */
-export const PICKABLE = Object.keys(KINDS);
+export const PICKABLE = Object.keys(KINDS).filter((kind) => !KINDS[kind].hidden);
 
 export const titleOf = (kind: string): string => KINDS[kind]?.meta.title ?? kind;
 

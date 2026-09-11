@@ -1,0 +1,332 @@
+<!--
+	The root tab bar — the page's top bar, in place of the header (da-0a5o).
+
+	The root pane's tabs, each a pill: click or the arrow keys to switch,
+	a dot on one whose tree differs from its save. After them a `+` that
+	opens the picker — `day`, the saved layouts, then a layout per widget
+	kind — and a `…` with what the header used to offer. At the right end
+	the four acts on the ACTIVE tab's layout: save, restore, save as…,
+	lock — real buttons with names, 24px, glyphs drawn inline. While the
+	tab is modified, save and restore stand out (vividn: "Both should become
+	more pronounced when a layout is modified so that the user can decide"),
+	and restore goes back to the last save; with nothing to discard it
+	opens the save's versions instead, and `→ forward` undoes the last
+	restore. The lock is this device's (shell.ts).
+
+	On a phone the tabs scroll sideways rather than wrapping — one row,
+	always — while the `+`, the `…` and the icons stay where they are.
+-->
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { downloadBackup } from '$lib/backup.js';
+	import { layout, loaded } from './current.js';
+	import { BUILTIN_NAMES } from './defaults.js';
+	import PaneMenu from './PaneMenu.svelte';
+	import { titleOf } from './registry.js';
+	import { listLayouts } from './store.js';
+	import { activate, close, modified, open, restore, save, saveAs, toggleLock, versions } from './shell.js';
+	import type { Tab } from './types.js';
+	import { isSplit } from './types.js';
+
+	let busy = false;
+	let error = '';
+	/** The active save's versions, newest first, while the list is open. */
+	let trail: { version: number; modifyTime: string }[] | null = null;
+	/** The saved layouts' names, for the picker. */
+	let saved: string[] = [];
+
+	$: tabs = $layout.root.tabs;
+	$: active = tabs[$layout.root.active] as Tab | undefined;
+	$: name = active?.layout;
+	$: dirty = name !== undefined && $modified.has(name);
+	$: locked = !!active?.locked;
+	$: ready = $loaded && !busy && name !== undefined;
+
+	/** A tab's label: its layout's name; a tab without one, what it shows. */
+	const label = (tab: Tab): string =>
+		tab.layout ?? tab.title ?? (isSplit(tab.content) ? 'split' : titleOf(tab.content.kind));
+
+	onMount(refreshSaved);
+
+	async function refreshSaved(): Promise<void> {
+		saved = (await listLayouts().catch(() => [])).map((l) => l.name);
+	}
+
+	// `day`, the saved layouts, then a layout per widget kind — a saved one
+	// under a built-in's name is listed once, as the layout it shadows.
+	$: choices = [
+		'day',
+		...saved.filter((n) => !BUILTIN_NAMES.includes(n)),
+		...BUILTIN_NAMES.filter((n) => n !== 'day')
+	];
+	$: pickerItems = choices.map((n) => ({ label: n, run: () => void act(() => open(n)) }));
+
+	$: moreItems = [
+		{ label: 'Close tab', disabled: tabs.length < 2, run: () => close($layout.root.active) },
+		{ label: 'export backup…', run: () => void act(downloadBackup) }
+	];
+
+	async function act(job: () => Promise<unknown>): Promise<void> {
+		busy = true;
+		error = '';
+		try {
+			await job();
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			busy = false;
+		}
+	}
+
+	const doSave = () => act(async () => name !== undefined && (await save(name), await refreshSaved()));
+
+	const doRestore = () =>
+		act(async () => {
+			if (name === undefined) return;
+			if (dirty) return restore(name);
+			trail = trail ? null : await versions(name).catch(() => []);
+		});
+
+	const pick = (version?: number) =>
+		act(async () => {
+			if (name !== undefined) await restore(name, version);
+			trail = null;
+		});
+
+	const doSaveAs = () =>
+		act(async () => {
+			if (name === undefined) return;
+			const to = prompt('Save this layout as:', '')?.trim();
+			if (!to) return;
+			await saveAs(name, to);
+			await refreshSaved();
+		});
+
+	/** Arrow keys walk the tabs; the tab focused is the tab shown. */
+	function onTabKey(event: KeyboardEvent, index: number) {
+		const next = event.key === 'ArrowRight' ? index + 1 : event.key === 'ArrowLeft' ? index - 1 : null;
+		if (next === null || next < 0 || next >= tabs.length) return;
+		event.preventDefault();
+		activate(next);
+		(event.currentTarget as HTMLElement).parentElement
+			?.querySelectorAll<HTMLElement>('[role="tab"]')
+			[next]?.focus();
+	}
+</script>
+
+<nav class="root-bar" class:modified={dirty} aria-label="layouts">
+	<div class="tabs" role="tablist" aria-orientation="horizontal">
+		{#each $loaded ? tabs : [] as tab, i (tab.id)}
+			<button
+				type="button"
+				role="tab"
+				class:modified={tab.layout !== undefined && $modified.has(tab.layout)}
+				aria-selected={i === $layout.root.active}
+				tabindex={i === $layout.root.active ? 0 : -1}
+				on:click={() => activate(i)}
+				on:keydown={(e) => onTabKey(e, i)}
+			>
+				{label(tab)}{#if tab.layout !== undefined && $modified.has(tab.layout)}<span class="dot" title="modified">•</span>{/if}
+			</button>
+		{/each}
+	</div>
+	<PaneMenu items={pickerItems} label="open a layout" glyph="+" title="open a layout" on:open={refreshSaved} />
+	<PaneMenu items={moreItems} label="menu of the root bar" />
+	{#if error}<span class="error" role="alert">{error}</span>{/if}
+	<div class="acts">
+		<button type="button" class="act save" disabled={!ready} aria-label="save layout" title="save" on:click={doSave}>
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+		</button>
+		<button
+			type="button"
+			class="act restore"
+			disabled={!ready}
+			aria-label={dirty ? 'restore layout' : 'restore a version'}
+			aria-expanded={dirty ? undefined : trail !== null}
+			title={dirty ? 'restore the last save' : 'versions'}
+			on:click={doRestore}
+		>
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
+		</button>
+		<button type="button" class="act save-as" disabled={!ready} aria-label="save layout as…" title="save as…" on:click={doSaveAs}>
+			<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1M15.5 12.5v6M12.5 15.5h6" /></svg>
+		</button>
+		<button
+			type="button"
+			class="act lock"
+			disabled={!ready}
+			aria-label={locked ? 'unlock layout' : 'lock layout'}
+			aria-pressed={locked}
+			title={locked ? 'unlock' : 'lock'}
+			on:click={() => name !== undefined && toggleLock(name)}
+		>
+			<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" />{#if locked}<path d="M7 11V7a5 5 0 0 1 10 0v4" />{:else}<path d="M7 11V7a5 5 0 0 1 9.9-1" />{/if}</svg>
+		</button>
+		{#if trail && !dirty}
+			<ul class="versions">
+				{#if trail.length}
+					<li><button type="button" on:click={() => pick()}>→ forward</button></li>
+				{:else}
+					<li>not saved yet</li>
+				{/if}
+				{#each trail as v (v.version)}
+					<li>
+						<button type="button" on:click={() => pick(v.version)}
+							>v{v.version} · {new Date(v.modifyTime).toLocaleString()}</button
+						>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</div>
+</nav>
+
+<style>
+	.root-bar {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		flex-shrink: 0;
+		padding: 0.3rem 0.5rem;
+		background: #0d0d1a;
+		border-bottom: 1px solid #2a2a4a;
+		min-width: 0;
+	}
+
+	/* One row, always: the strip scrolls sideways on a phone, and the bar
+	   itself clips nothing — the versions list hangs below it. */
+	.tabs {
+		display: flex;
+		gap: 4px;
+		flex: 0 1 auto;
+		min-width: 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: none;
+	}
+
+	/* The pane frames' own tab pills (PaneFrame.svelte), the same shape. */
+	.tabs button {
+		box-sizing: border-box;
+		block-size: 24px;
+		padding: 0 0.6rem;
+		background: #0d0d1a;
+		border: 1px solid #2a2a4a;
+		border-radius: 6px;
+		font: inherit;
+		font-size: 0.8rem;
+		letter-spacing: 0.06em;
+		color: #55558a;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.tabs button[aria-selected='true'] {
+		color: #7c7cff;
+		border-color: #7c7cff;
+	}
+
+	.tabs button:hover,
+	.tabs button:focus-visible {
+		color: #adadff;
+	}
+
+	.dot {
+		margin-left: 0.3rem;
+		color: #ffd166;
+	}
+
+	.acts {
+		position: relative;
+		display: flex;
+		gap: 4px;
+		margin-left: auto;
+		flex: none;
+	}
+
+	.act {
+		box-sizing: border-box;
+		inline-size: 24px;
+		block-size: 24px;
+		display: grid;
+		place-items: center;
+		padding: 0;
+		background: #0d0d1a;
+		border: 1px solid #2a2a4a;
+		border-radius: 6px;
+		color: #7c7cff;
+		cursor: pointer;
+	}
+
+	.act svg {
+		width: 14px;
+		height: 14px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.act:hover:not(:disabled),
+	.act:focus-visible {
+		color: #adadff;
+		border-color: #7c7cff;
+	}
+
+	.act:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.act[aria-pressed='true'] {
+		color: #ffd166;
+		border-color: #ffd166;
+	}
+
+	/* Modified: the two acts that decide it stand out. */
+	.modified .save,
+	.modified .restore {
+		color: #ffd166;
+		border-color: #ffd166;
+	}
+	.modified .save svg,
+	.modified .restore svg {
+		stroke-width: 3;
+	}
+
+	.versions {
+		position: absolute;
+		top: 100%;
+		right: 0;
+		z-index: 10;
+		margin: 0.3rem 0 0;
+		padding: 0.3rem 0.6rem;
+		list-style: none;
+		background: #0d0d1a;
+		border: 1px solid #2a2a4a;
+		border-radius: 6px;
+		white-space: nowrap;
+		font-size: 0.85rem;
+		color: #55558a;
+	}
+
+	.versions button {
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		color: #7c7cff;
+		cursor: pointer;
+	}
+
+	.versions button:hover {
+		color: #adadff;
+	}
+
+	.error {
+		font-size: 0.75rem;
+		color: #ff7b7b;
+		white-space: nowrap;
+	}
+</style>

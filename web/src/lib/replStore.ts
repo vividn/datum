@@ -15,6 +15,7 @@
 import { get, writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import type { RunResult } from './run.js';
+import { noteRun } from './bar.js';
 
 export type Command = { line: string; ranAt: number; result: RunResult };
 
@@ -75,6 +76,9 @@ export function record(line: string, ranAt: number, result: RunResult): void {
 		scrollback: [...scrollback, { line, ranAt, result }].slice(-KEEP),
 		history: (history[history.length - 1] === line ? history : [...history, line]).slice(-KEEP)
 	}));
+	// The bottom bar's echo and receipt (da-0a5o): told here, so that
+	// every prompt and every press that records is a command the bar shows.
+	noteRun(line, ranAt, result);
 	save();
 }
 

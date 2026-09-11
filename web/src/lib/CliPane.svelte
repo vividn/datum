@@ -11,6 +11,7 @@
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
 	import TailTable from './TailTable.svelte';
+	import { record } from './replStore.js';
 	import { run, type RunResult } from './run.js';
 	import { paneArgv, wantsBox, type PaneBox, type PaneSpec } from './panes.js';
 	import { settle } from './layout/resizing.js';
@@ -125,8 +126,15 @@
 		result = next;
 	}
 
-	function press(): void {
-		if (request.argv) void refresh(request.argv, true);
+	// A press is a command the reader asked for, like a line typed: into
+	// the shared history and the bottom bar's receipt (da-0a5o). The
+	// automatic runs are the pane's own business and record nothing.
+	async function press(): Promise<void> {
+		const argv = request.argv;
+		if (!argv) return;
+		const ranAt = Date.now();
+		await refresh(argv, true);
+		if (result) record(argv.join(' '), ranAt, result);
 	}
 </script>
 

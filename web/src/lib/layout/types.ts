@@ -71,6 +71,11 @@ export interface Tab {
 	/** Nothing under this tab can be split, tabbed or resized (da-2a5y). */
 	locked?: boolean;
 	content: Widget | Split;
+	/**
+	 * The saved layout this tab holds, inlined (da-0a5o): its content IS
+	 * that layout's tree, and the shell saves and restores it by this name.
+	 */
+	layout?: string;
 }
 
 /**

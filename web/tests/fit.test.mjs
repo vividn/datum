@@ -468,3 +468,40 @@ describe('the tail pane', () => {
 		});
 	}
 });
+
+// The shell (da-0a5o): the root bar above and the bottom bar below are on
+// screen at every width, the prompt keeps most of its bar, and nothing —
+// bar, page or body — scrolls sideways. The four widths the tail pane is
+// held to, so the bars are measured where the panes are.
+describe('the shell', () => {
+	for (const width of [360, 390, 768, 1280]) {
+		test(`the root bar and the bottom bar fit at ${width}px`, async () => {
+			await withApp(
+				async (app) => {
+					await logADay(app);
+					const seen = await app.page.evaluate(() => {
+						const box = (s) => document.querySelector(s).getBoundingClientRect();
+						const root = box('.root-bar');
+						const bar = box('.prompt-bar');
+						const input = box('.prompt-bar input');
+						return {
+							screen: { w: document.documentElement.clientWidth, h: document.documentElement.clientHeight },
+							root: { top: root.top, bottom: root.bottom, right: root.right },
+							bar: { top: bar.top, bottom: bar.bottom, right: bar.right, width: bar.width },
+							input: input.width,
+							sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+							mainSideways: document.querySelector('main').scrollWidth - document.querySelector('main').clientWidth
+						};
+					});
+					assert.ok(seen.root.top >= 0 && seen.root.bottom <= seen.screen.h, `the root bar is off-screen: ${JSON.stringify(seen.root)}`);
+					assert.ok(seen.bar.top >= 0 && seen.bar.bottom <= seen.screen.h + 1, `the bottom bar is off-screen: ${JSON.stringify(seen.bar)}`);
+					assert.ok(seen.root.right <= seen.screen.w + 1 && seen.bar.right <= seen.screen.w + 1, 'a bar runs past the screen');
+					assert.equal(seen.sideways, 0, `the page scrolls sideways by ${seen.sideways}px`);
+					assert.equal(seen.mainSideways, 0, `main scrolls sideways by ${seen.mainSideways}px`);
+					assert.ok(seen.input >= seen.bar.width * 0.35, `the prompt has ${seen.input.toFixed(0)}px of a ${seen.bar.width.toFixed(0)}px bar`);
+				},
+				{ viewport: { width, height: 900 } }
+			);
+		});
+	}
+});

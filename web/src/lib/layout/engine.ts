@@ -16,6 +16,7 @@
 
 import { writable } from 'svelte/store';
 import { initDb } from '$lib/db.js';
+import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
 import { widgetsFor, type FieldListing, type Widget as FieldWidget } from '$lib/widgets.js';
 
@@ -77,10 +78,17 @@ export async function ran(): Promise<void> {
 	await refresh();
 }
 
-/** A widget-bar press. Through the REPL when there is one; see above. */
+/**
+ * A command from anywhere but a prompt of its own — a widget-bar press,
+ * the bottom bar's line (da-0a5o). Through the REPL when there is one;
+ * see above. Without one it is recorded here, so the shared history and
+ * the bottom bar's receipt still see it, and the epoch is bumped here.
+ */
 export async function press(argv: string[]): Promise<RunResult> {
 	if (repl) return repl.runArgv(argv);
+	const ranAt = Date.now();
 	const result = await run(argv);
+	record(result.argv.join(' '), ranAt, result);
 	await ran();
 	return result;
 }

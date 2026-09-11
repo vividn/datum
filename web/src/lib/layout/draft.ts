@@ -1,15 +1,19 @@
-// The unsaved draft, and which layout this device shows (da-wpgy).
+// The unsaved draft, which layouts this device has open, and which it has
+// locked (da-wpgy, da-0a5o).
 //
-// Both are per device, never synced — vividn: "Different devices will want
-// different layouts", and of the draft, "I lean per device". So they live in
-// `localStorage`, one draft per layout name, under versioned keys. Every
-// access is guarded: a browser that refuses storage gets no draft and the
-// saved layout, never an error.
+// All per device, never synced — vividn: "Different devices will want
+// different layouts", of the draft "I lean per device", and of the lock
+// (2026-09-11 12:56) that it is the device's, never written to the saved
+// entry. So they live in `localStorage`, one draft and one lock per layout
+// name plus one list of open tabs, under versioned keys. Every access is
+// guarded: a browser that refuses storage gets no draft and the saved
+// layout, never an error.
 
 import type { Layout, Pane } from './types.js';
 
 const DRAFT = 'datum.layout.draft.v1.';
-const CURRENT = 'datum.layout.current.v1';
+const LOCKED = 'datum.layout.locked.v1.';
+const ROOT = 'datum.layout.root.v1';
 
 function get(key: string): string | null {
 	try {
@@ -39,9 +43,29 @@ export function loadDraft(name: string): Layout | null {
 export const saveDraft = (layout: Layout) => set(DRAFT + layout.name, JSON.stringify(layout));
 export const clearDraft = (name: string) => set(DRAFT + name, null);
 
-/** The layout this device shows. */
-export const currentName = () => get(CURRENT) ?? 'default';
-export const setCurrentName = (name: string) => set(CURRENT, name);
+/** Whether this device has `name` locked. */
+export const loadLocked = (name: string) => get(LOCKED + name) === '1';
+export const saveLocked = (name: string, locked: boolean) => set(LOCKED + name, locked ? '1' : null);
+
+/** The root bar as this device left it: the open layouts, and which is active. */
+export interface RootState {
+	names: string[];
+	active: number;
+}
+
+export function loadRoot(): RootState | null {
+	try {
+		const state = JSON.parse(get(ROOT) ?? 'null');
+		if (!Array.isArray(state?.names) || !state.names.every((n: unknown) => typeof n === 'string')) return null;
+		if (state.names.length === 0) return null;
+		const active = Number.isInteger(state.active) ? state.active : 0;
+		return { names: state.names, active: Math.min(Math.max(0, active), state.names.length - 1) };
+	} catch {
+		return null;
+	}
+}
+
+export const saveRoot = (state: RootState) => set(ROOT, JSON.stringify(state));
 
 /** JSON with every object's keys sorted, so key order is never a change. */
 function canonical(value: unknown): string {

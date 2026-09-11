@@ -140,6 +140,15 @@ function canon(pane: Pane): Pane {
 			continue;
 		}
 		const children = tab.content.children.map(canon).filter((child) => child.tabs.length > 0);
+		// A tab holding a layout (da-0a5o) keeps its identity whatever
+		// happens under it: emptied, it goes back to being an empty tab;
+		// down to one child, it keeps that child rather than dissolving into
+		// its tabs — the tab IS the layout, and its name must not vanish.
+		if (tab.layout !== undefined) {
+			if (children.length === 0) tabs.push({ ...tab, content: newWidget(EMPTY_KIND) });
+			else tabs.push({ ...tab, content: { ...tab.content, children, ratios: evenOut(tab.content.ratios, children.length) } });
+			continue;
+		}
 		if (children.length === 0) continue;
 		if (children.length === 1) {
 			tabs.push(...children[0].tabs);
@@ -377,7 +386,7 @@ export function isCanonical(layout: Layout): boolean {
 		for (const tab of pane.tabs) {
 			if (!isSplit(tab.content)) continue;
 			const { children, ratios } = tab.content;
-			if (children.length < 2 || ratios.length !== children.length) return false;
+			if (children.length < (tab.layout === undefined ? 2 : 1) || ratios.length !== children.length) return false;
 			if (Math.abs(ratios.reduce((a, b) => a + b, 0) - 1) > 1e-9) return false;
 		}
 	}

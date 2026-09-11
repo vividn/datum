@@ -106,10 +106,11 @@ describe('the nowview widget', () => {
 				'the step did not survive a reload'
 			);
 
-			await page.locator('.layout-controls .save:not([disabled])').click();
-			await page.waitForFunction(() => !document.querySelector('.layout-controls.modified'));
+			// The root bar's save icon, on the `day` tab (da-0a5o).
+			await page.locator('.root-bar .act.save:not([disabled])').click();
+			await page.waitForFunction(() => !document.querySelector('.root-bar.modified'));
 			const other = await app.newTab();
-			const saved = await other.page.evaluate(() => window.datum.layouts.loadLayout('default'));
+			const saved = await other.page.evaluate(() => window.datum.layouts.loadLayout('day'));
 			assert.deepEqual(
 				nowviewSettings(saved.root).map((s) => s.history),
 				['45m']

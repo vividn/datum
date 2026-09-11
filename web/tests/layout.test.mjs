@@ -119,6 +119,8 @@ describe('the … menu', () => {
 			await choose(page, 'tail', 'split side by side');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'widgets']);
 			const picker = page.locator('section.pane[data-title="empty"] .picker');
+			// The layouts it could hold come first (`day` is open above this
+			// pane, so it is not offered — da-0a5o), then the kinds.
 			assert.deepEqual(await picker.locator('button').allInnerTexts(), [
 				'dayview',
 				'repl',
@@ -126,7 +128,8 @@ describe('the … menu', () => {
 				'tail',
 				'command',
 				'stats',
-				'widgets'
+				'widgets',
+				'input'
 			]);
 			await picker.locator('button', { hasText: 'nowview' }).click();
 			// The new pane is titled by its kind and draws: a second nowview
@@ -195,6 +198,20 @@ describe('the … menu', () => {
 				assert.equal(await root.locator('button.more').count(), 0);
 				assert.equal(await root.locator('h2').count(), 0);
 				assert.equal(await root.locator('> .content').evaluate((el) => getComputedStyle(el).paddingTop), '0px');
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, ONE_PANE) }
+		);
+	});
+
+	test('Close tab is disabled on the last root tab', async () => {
+		await withApp(
+			async ({ page }) => {
+				// The root's tabs are the root bar's (da-0a5o), and the last
+				// of them cannot be closed from its `…`.
+				await page.locator('.root-bar button[aria-label="menu of the root bar"]').click();
+				const close = page.locator('[role="menu"] button').filter({ hasText: exactly('Close tab') });
+				assert.equal(await close.isDisabled(), true);
+				await page.keyboard.press('Escape');
 			},
 			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, ONE_PANE) }
 		);
@@ -475,6 +492,11 @@ describe('resizing', () => {
 		}, DESKTOP);
 	});
 
+	// At 1000px tall, not 900: the row under the strip sits near its floor
+	// (three panes stacked in the side column), so a drag can only take the
+	// strip up to that floor — and whether that is one more band or none
+	// is a threshold a few pixels of chrome move (the shell's bars, da-0a5o,
+	// moved it). A taller screen leaves the strip room for a third band.
 	test('the strip, dragged taller over a second, grows its stack as it goes and draws each new band once', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
@@ -498,7 +520,7 @@ describe('resizing', () => {
 			// one tick is kept through the next.
 			assert.equal(after.dayview, bands - before, 'the strip drew the wrong number of bands');
 			assert.ok(after.nowview - during.nowview <= 1, 'nowview, now shorter, redraws at most once at the drop');
-		}, DESKTOP);
+		}, { viewport: { width: 1280, height: 1000 } });
 	});
 
 	test('a border is grabbed right beside a … badge, which hangs half over the gap', async () => {
@@ -1239,10 +1261,10 @@ const TWO_ROOT_TABS = JSON.stringify({
 	}
 });
 
-/** A draft of one REPL pane, written before the app loads. */
+/** A draft of one REPL pane for the `day` tab, written before the app loads. */
 const ONE_PANE = JSON.stringify({
 	version: 1,
-	name: 'one',
+	name: 'day',
 	root: {
 		id: 'only',
 		tabs: [{ id: 'only-tab', content: { id: 'only-widget', kind: 'repl', settings: {} } }],
@@ -1252,7 +1274,7 @@ const ONE_PANE = JSON.stringify({
 });
 
 function draft(json) {
-	localStorage.setItem('datum.layout.draft.v1.default', json);
+	localStorage.setItem('datum.layout.draft.v1.day', json);
 }
 
 function draftOnce(json) {

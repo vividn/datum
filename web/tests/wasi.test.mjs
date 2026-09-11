@@ -77,7 +77,11 @@ describe('the wasi CLI', () => {
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
 			const [download] = await Promise.all([
 				app.page.waitForEvent('download'),
-				app.page.locator('header button.export').click()
+				(async () => {
+					// In the root bar's `…` since the shell (da-0a5o).
+					await app.page.locator('.root-bar button[aria-label="menu of the root bar"]').click();
+					await app.page.locator('[role="menu"] button', { hasText: 'export backup' }).click();
+				})()
 			]);
 			assert.match(download.suggestedFilename(), /^datum-backup-\d{4}-\d\d-\d\d\.jsonl$/);
 			const text = await readFile(await download.path(), 'utf8');

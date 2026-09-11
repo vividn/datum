@@ -197,10 +197,11 @@ function countRuns(page) {
 
 async function ready(page) {
 	// A prompt is disabled until `initDb()` resolves, so an enabled one is
-	// the app's own statement that the database is open. The first one: a
-	// layout may hold two REPLs (da-jdop), and the input widget's prompt at
-	// /input counts too (da-0dhc).
-	await page.locator('.repl input:not([disabled]), .input-widget input:not([disabled])').first().waitFor();
+	// the app's own statement that the database is open. The bottom bar's
+	// (da-0a5o): it is on every page, whatever layout is in front.
+	await page.locator('.prompt-bar input:not([disabled])').waitFor();
+	// And the shell has filled the tree: the root bar names a tab.
+	await page.locator('.root-bar [role="tab"]').first().waitFor();
 	await page.waitForFunction(() => typeof window.datum?.run === 'function');
 	// Every pane is a command that runs on mount ($lib/panes.ts) and shows
 	// `…` until it answers. Waiting them out means a command a test runs
@@ -237,12 +238,18 @@ function app(page, errors, query) {
 		tailRows: () => page.evaluate(() => window.datum.tailRows()),
 
 		/**
-		 * The beta banner's sentence about the data.
+		 * The beta hint's sentence about the data (da-0a5o: the banner's
+		 * text, behind the ⓘ under the brand in the bottom bar).
 		 *
-		 * The banner reads the storage that actually opened, so this is the
+		 * The hint reads the storage that actually opened, so this is the
 		 * app's own on-screen claim about whether entries survive a reload.
+		 * Opened if it is not, and left open: a poll reads it again.
 		 */
-		bannerText: () => page.locator('aside.beta p').innerText(),
+		async bannerText() {
+			const hint = page.locator('.beta-hint p');
+			if ((await hint.count()) === 0) await page.locator('.prompt-bar .hint-button').click();
+			return hint.innerText();
+		},
 
 		/** Type a line into the REPL and submit it, as a user does. */
 		async submit(line) {
@@ -368,10 +375,16 @@ function app(page, errors, query) {
 			return open(await page.context().newPage(), query);
 		},
 
-		/** Navigate this tab to `path` — `/`, `/input` — and wait for it to come up. */
+		/**
+		 * Navigate this tab to `path` — `/`, `/input` — and wait for it to
+		 * come up. A `/<name>` opens that tab and then the page is `/`
+		 * again, or a notice for a name that is nothing (da-0a5o); either
+		 * is waited for, so the tab is open by the time this returns.
+		 */
 		async goto(path) {
 			await page.goto(baseUrl() + path);
 			await ready(page);
+			await page.waitForFunction(() => location.pathname === '/' || !!document.querySelector('main .notice'));
 		},
 
 		/** Reload the page and wait for the app to come back up. */
