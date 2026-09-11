@@ -133,6 +133,20 @@ describe('hovering the day strip', () => {
 			{ viewport: { width: 390, height: 844 } }
 		);
 	});
+
+	// The past is one picture of many days (da-hnyb): a mark two days back,
+	// in the middle of it, answers as today's do.
+	test('a mark in the past picture shows its time and what it is', async () => {
+		await withDay(async (app) => {
+			const logged = await app.run(['occur', 'coffee', '-d', '-2', '-t', '0930']);
+			assert.equal(logged.code, 0, logged.stderr);
+			await app.reload();
+			await app.page.evaluate(() => (document.querySelector('.cell.dayview').style.flex = '0 0 400px'));
+			const dot = app.page.locator('.band[data-days-ago="1"] circle[data-field="coffee"]');
+			await dot.hover();
+			assert.equal(await app.page.locator('.band[data-days-ago="1"] .tip').innerText(), '09:30 coffee');
+		});
+	});
 });
 
 describe('the SVG alone', () => {

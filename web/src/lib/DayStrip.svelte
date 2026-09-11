@@ -8,15 +8,19 @@
 	K most recent days before today, newest at the bottom, and today's
 	band under it, which never scrolls away.
 
-	Every band is one `dayview` through the `run(argv)` seam, asked for in
-	the CLI's own flags — see `bandArgv` in $lib/panes.ts. One render per
-	day rather than one render of K days: reaching for one more day draws
-	one more band and touches nothing already drawn, and the trap that
-	comes with it — every band carrying its own copy of the hour axis — is
-	answered by `--time-axis-height 0` on all but today's. The bands align
-	because they are all drawn at the same `--width` and the same
-	`--day-height`, which is what pins `label_width` and so the x of every
-	gridline.
+	The past is ONE `dayview` of K days through the `run(argv)` seam (da-hnyb)
+	— see `bandArgv` in $lib/panes.ts — so its hour gridlines run through
+	every day and its ground is one picture, not K boxes with the page
+	showing between them. Today is its own band, with the hour axis the
+	past suppresses (`--time-axis-height 0`). The two align because both
+	are drawn at the same `--width` and the same `--day-height`, which is
+	what pins `label_width` and so the x of every gridline.
+
+	A fortnight to a picture, at most: sixty days in one `dayview` took
+	a second or more in the browser, so a deep past is drawn in pictures of
+	CHUNK days, the newest against today, each shown as it lands. Between
+	two of them the stack leaves the space datum leaves between two days,
+	so a day costs the same wherever it falls.
 
 	How many days: as many as the BOX holds (da-zb0d). The strip is a
 	widget of the dashboard, and the pane it sits in is what says how tall
@@ -52,6 +56,7 @@
 		MAX_DAY_HEIGHT,
 		bandArgv,
 		bandBox,
+		dayPitch,
 		todayBox
 	} from './panes.js';
 	import { settle } from './layout/resizing.js';
@@ -70,15 +75,17 @@
 
 	const dispatch = createEventDispatcher<{ change: number }>();
 
-	/** The margin between two days, in pixels, matching the CSS below. */
+	/** The margin between the past and today, in pixels, matching the CSS below. */
 	const GAP = 5;
 	/** How far back the strip will reach, however tall its box. */
 	const MAX_DEPTH = 60;
+	/** The most days one picture of the past holds — see the note above. */
+	const CHUNK = 14;
 	/** What one press of an arrow key moves the day-height handle. */
 	const HEIGHT_STEP = 5;
 
-	/** Each band's render, by how many days back it is. 0 is today's. */
-	let bands: Record<number, RunResult> = {};
+	/** Each picture on screen, by how many days back its newest day is. 0 is today's. */
+	let shown: Record<number, RunResult> = {};
 
 	/**
 	 * A band's picture — or the message that came instead of one, said
@@ -103,22 +110,29 @@
 	/** Is yesterday the bottom-most band in view? */
 	let atBottom = true;
 
-	/** The pixels one more day costs: its own box plus the margin above it. */
-	$: unit = bandBox(dayHeight) + GAP;
 	/**
 	 * The days the strip is showing: as many as the room above today
-	 * holds, counting a day that is only partly revealed — a band half on
-	 * screen is a band that has to be drawn, and it is the one the stack
-	 * scrolls up to.
+	 * holds, counting a day that is only partly revealed — a day half on
+	 * screen is a day that has to be drawn, and it is the one the stack
+	 * scrolls up to. The first costs its box; each one more, its pitch.
 	 */
 	$: room = Math.max(0, height - todayBox(dayHeight) - GAP);
-	$: depth = Math.min(MAX_DEPTH, Math.ceil(room / unit));
+	$: depth =
+		room > 0
+			? Math.min(MAX_DEPTH, Math.ceil((room - bandBox(dayHeight)) / dayPitch(dayHeight)) + 1)
+			: 0;
 
 	/** The height a drag is previewing, or the committed one at rest. */
 	$: shownDayHeight = sizing ? sizing.preview : dayHeight;
 
-	/** The stack's days, oldest first — top to bottom, as it is drawn. */
-	$: past = Array.from({ length: depth }, (_, i) => depth - i);
+	/**
+	 * The past's pictures, oldest first — top to bottom, as they are drawn:
+	 * a fortnight each counting back from yesterday, the oldest what is left.
+	 */
+	$: chunks = Array.from({ length: Math.ceil(depth / CHUNK) }, (_, i) => {
+		const end = 1 + i * CHUNK;
+		return { end, days: Math.min(CHUNK, depth - end + 1) };
+	}).reverse();
 	/**
 	 * The jagged line shows exactly when the band sitting above today is
 	 * not the day before it — which is to say, when the reader has
@@ -160,49 +174,50 @@
 		};
 	});
 
-	/** How many draws have been started, and the newest one on screen. */
+	/** How many draws have been started, and which one each picture on screen came from. */
 	let started = 0;
-	let shown = -1;
+	const from: Record<number, number> = {};
 
 	/**
-	 * Every band drawn for the current picture, by day — held as the
-	 * promise, so two draws in flight for the same day share one run.
-	 *
-	 * A band depends on the width, the day height and the epoch, and not
-	 * on how many other bands there are: a taller box asks for one more
-	 * day and must draw ONE more band, not every band again. So the cache
-	 * is keyed by the picture and dropped whole when the picture changes.
+	 * Every picture asked for at the current width, day height and epoch,
+	 * by its argv — held as the promise, so two draws in flight for the
+	 * same picture share one run. A taller box asks for one more day and
+	 * re-draws the oldest picture only: today's, and every full fortnight,
+	 * are the same argv as before. Dropped whole when any of the three
+	 * changes.
 	 */
-	let cache = { key: '', days: new Map<number, Promise<RunResult>>() };
+	let cache = { key: '', runs: new Map<string, Promise<RunResult>>() };
 
 	// Not on mount: the static build prerenders this page, and there is no
 	// database (or `run`) outside the browser.
 	$: request = { width, dayHeight, epoch };
-	$: if (browser && request.width > 0) void draw(request, depth);
+	$: if (browser && request.width > 0) draw(request, chunks);
 
-	async function draw(
+	function draw(
 		at: { width: number; dayHeight: number; epoch: number },
-		depth: number
-	): Promise<void> {
+		chunks: { end: number; days: number }[]
+	): void {
 		const key = `${at.width}/${at.dayHeight}/${at.epoch}`;
-		if (cache.key !== key) cache = { key, days: new Map() };
-		const drawn = cache.days;
+		if (cache.key !== key) cache = { key, runs: new Map() };
 		const token = ++started;
-		const days = Array.from({ length: depth + 1 }, (_, i) => depth - i);
-		const results = await Promise.all(
-			days.map((n) => {
-				let band = drawn.get(n);
-				if (!band) drawn.set(n, (band = run(bandArgv(at.width, n, at.dayHeight))));
-				return band;
-			})
-		);
-		// A resize while a draw is in flight and two draws overlap; they can
-		// finish out of order, and the loser would paint the older answer
-		// over the newer one. Last started wins, not last to return.
-		if (token < shown) return;
-		shown = token;
-		bands = Object.fromEntries(days.map((n, i) => [n, results[i]]));
-		await anchor();
+		// Today first, then the past newest first: the worker takes them in
+		// turn, and the picture nearest today is the one being compared.
+		for (const { end, days } of [{ end: 0, days: 1 }, ...[...chunks].reverse()]) {
+			const argv = bandArgv(at.width, at.dayHeight, end, days);
+			const id = argv.join(' ');
+			let pending = cache.runs.get(id);
+			if (!pending) cache.runs.set(id, (pending = run(argv)));
+			void pending.then((result) => {
+				// A resize while a draw is in flight and two draws overlap;
+				// they can finish out of order, and the loser would paint the
+				// older answer over the newer one. Last started wins, picture
+				// by picture — and until it lands, the one on screen stays.
+				if (token < (from[end] ?? 0)) return;
+				from[end] = token;
+				shown = { ...shown, [end]: result };
+				void anchor();
+			});
+		}
 	}
 
 	async function anchor(): Promise<void> {
@@ -277,25 +292,26 @@
 	}
 
 	/**
-	 * The jagged line's teeth: a vertex every 4 units across a 400-wide
-	 * viewBox, stretched to the strip's width — about 10px a stroke at
-	 * 1000px and 4px on a 390px phone, still a tear rather than a blur.
+	 * The jagged line's teeth: a vertex every 2 units across a 400-wide
+	 * viewBox, stretched to the strip's width — about 5px a stroke at
+	 * 1000px and 2px on a 390px phone, still a tear rather than a blur.
 	 */
-	const ZIGZAG = Array.from({ length: 101 }, (_, i) => `${i * 4},${i % 2 ? 5 : 1}`).join(' ');
+	const ZIGZAG = Array.from({ length: 201 }, (_, i) => `${i * 2},${i % 2 ? 5 : 1}`).join(' ');
 </script>
 
 <Pane title="dayview" bind:body>
 	<div
 		class="strip"
 		style:--band="{bandBox(shownDayHeight)}px"
+		style:--unit="{dayPitch(shownDayHeight)}px"
 		style:--today="{todayBox(shownDayHeight)}px"
 		style:--gap="{GAP}px"
 	>
 		{#if depth > 0}
 			<div class="stack" bind:this={stackEl} on:scroll={onScroll}>
-				{#each past as daysAgo (daysAgo)}
-					<div class="band" data-days-ago={daysAgo}>
-						{#if bands[daysAgo]}<CliOutput {...picture(bands[daysAgo])} />{/if}
+				{#each chunks as { end, days } (end)}
+					<div class="band past" data-days-ago={end} data-days={days} style:--days={days}>
+						{#if shown[end]}<CliOutput {...picture(shown[end])} />{/if}
 					</div>
 				{/each}
 			</div>
@@ -319,7 +335,7 @@
 		{/if}
 
 		<div class="band today" data-days-ago="0">
-			{#if bands[0]}<CliOutput {...picture(bands[0])} />{:else}<p class="quiet">…</p>{/if}
+			{#if shown[0]}<CliOutput {...picture(shown[0])} />{:else}<p class="quiet">…</p>{/if}
 		</div>
 
 		<!--
@@ -362,14 +378,15 @@
 	}
 
 	/* The room above today, whatever is left of the box once today's band
-	   has its floor. The bands in it may run past it by up to one day
-	   (see `depth`), and then it scrolls. */
+	   has its floor. The past in it may run past it by up to one day (see
+	   `depth`), and then it scrolls. Between two of its pictures, the
+	   space datum leaves between two days: a day costs one pitch anywhere. */
 	.stack {
 		flex: 1 1 auto;
 		min-height: 0;
 		display: flex;
 		flex-direction: column;
-		gap: var(--gap);
+		gap: calc(var(--unit) - var(--band));
 		overflow-y: auto;
 		/* No scrollbar: it would take layout width from the stack and not
 		   from today's band below it, and the two would stop lining up. */
@@ -379,25 +396,31 @@
 		display: none;
 	}
 	/* Yesterday against today when the stack has room to spare: the
-	   oldest band takes the slack above it. An auto margin rather than
+	   oldest picture takes the slack above it. An auto margin rather than
 	   `justify-content: flex-end`, which in a scroll box puts the overflow
 	   past the start edge where no scroll reaches it. */
 	.stack .band:first-child {
 		margin-top: auto;
 	}
 
-	/* Reserved before the picture decodes — see bandBox. A band drawn at
-	   the previous day height, in the frame between a drop and its
-	   re-render, is clipped rather than allowed to shove the stack. */
 	.band {
-		height: var(--band);
 		flex: none;
 		overflow: hidden;
+	}
+	/* Reserved before the picture decodes — see bandBox and dayPitch. A
+	   picture of the previous depth or day height, in the frame before its
+	   re-render lands, sits against today and is clipped at the top rather
+	   than allowed to shove the stack: here the overflow is meant to be
+	   out of reach. */
+	.band.past {
+		height: calc(var(--band) + (var(--days) - 1) * var(--unit));
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-end;
 	}
 	/* Today's band carries the hour axis. A floor, not a height: the axis
 	   is the one thing in the strip that must never be clipped. */
 	.band.today {
-		height: auto;
 		min-height: var(--today);
 	}
 

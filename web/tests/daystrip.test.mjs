@@ -2,15 +2,20 @@
 //
 // What a reader is doing with this is a comparison — is today like
 // yesterday, like last Tuesday — so the assertions are about the two
-// things a comparison needs and nothing else: that the bands above today
+// things a comparison needs and nothing else: that the days above today
 // are the DAYS they claim to be, and that they are drawn against the same
 // x-axis today is drawn against. A test that counted `<img>` elements
 // before and after would pass on a stack of five copies of today
-// (da-cgyh), so every band here is read by its date stamp, and the
+// (da-cgyh), so every day here is read by its date stamp, and the
 // alignment is read off the gridlines rather than eyeballed.
 //
+// Since da-hnyb the past is ONE picture of many days rather than a band
+// per day — so its gridlines run through and its ground is one — up to a
+// fortnight to a picture. So a day is a date stamp inside a picture, and
+// the pictures are counted, and measured, by what they hold.
+//
 // The jagged line is the third thing: it is a claim about what is
-// currently ON SCREEN — the band above today is not the day before it —
+// currently ON SCREEN — the day above today is not the day before it —
 // so it is asserted against the stack's scroll position, driven both ways.
 //
 // Since da-zb0d the strip has no handle for its own height: its BOX says
@@ -19,8 +24,8 @@
 // one thing a reader sets on the strip itself is how tall a day is drawn
 // — the notch in the left margin — and that is a prop in and a `change`
 // event out, which is asserted from the outside: what the strip's owner
-// heard, and the band's own SVG `height`, not a class name that claims to
-// mean it. The strip remembers nothing, and that is asserted too.
+// heard, and the picture's own SVG `height`, not a class name that claims
+// to mean it. The strip remembers nothing, and that is asserted too.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -69,32 +74,41 @@ function labelFor(nowMs, daysAgo) {
 /** The colour datum gives a name: the first three bytes of its md5. */
 const colorOf = (name) => '#' + createHash('md5').update(name).digest('hex').slice(0, 6);
 
-/** One band's SVG, by how many days back it is. 0 is today's. */
+/**
+ * One picture's SVG, by how many days back its newest day is: 0 is
+ * today's, 1 the past's that ends yesterday.
+ */
 async function band({ page }, daysAgo) {
 	return page
 		.locator(`.band[data-days-ago="${daysAgo}"] svg.svg`)
 		.evaluate((svg) => svg.outerHTML);
 }
 
-/** The three lines of a band's date stamp. */
+/** Every line of a picture's date stamps, top to bottom. */
 const dateLines = (svg) =>
 	[...svg.matchAll(/<text class="date-label"[^>]*>([^<]*)</g)].map((m) => m[1]);
 
-/** Where every hourly gridline sits along the band's x-axis. */
+/** A picture's days, top to bottom, each as the three lines of its date stamp. */
+const days = (svg) => {
+	const lines = dateLines(svg);
+	return Array.from({ length: lines.length / 3 }, (_, i) => lines.slice(3 * i, 3 * i + 3));
+};
+
+/** Where every hourly gridline sits along the picture's x-axis. */
 const gridlines = (svg) =>
 	[...svg.matchAll(/<line class="gridline"[^>]*\sx1="([\d.]+)"/g)].map((m) => Number(m[1]));
 
-/** How tall datum actually drew the band, off the document it wrote. */
+/** How tall datum actually drew the picture, off the document it wrote. */
 const svgHeight = (svg) => Number(svg.match(/<svg[^>]*\sheight="([\d.]+)"/)[1]);
 
 /**
  * The strip's own arithmetic, read off the element it styles.
  *
- * One band's box and the margin below it are what a day COSTS in strip
- * height, so the tests never restate a constant that lives in
- * $lib/panes.ts. `chrome` is what the page's box spends around the strip
- * — the pane's title bar, borders and padding — which is what separates
- * the height a test sets from the height the strip gets.
+ * One day's box, and the pitch each further day adds, are what the past
+ * COSTS in strip height, so the tests never restate a constant that lives
+ * in $lib/panes.ts. `chrome` is what the page's box spends around the
+ * strip — the pane's title bar, borders and padding — which is what
+ * separates the height a test sets from the height the strip gets.
  */
 const metrics = ({ page }) =>
 	page.locator('.strip').evaluate((el) => {
@@ -103,13 +117,19 @@ const metrics = ({ page }) =>
 		const box = document.querySelector('.cell.dayview').getBoundingClientRect().height;
 		return {
 			band: px('--band'),
+			unit: px('--unit'),
 			today: px('--today'),
 			gap: px('--gap'),
-			unit: px('--band') + px('--gap'),
 			strip: el.clientHeight,
 			chrome: box - el.clientHeight
 		};
 	});
+
+/** How tall `days` whole days of the past are: the first one's box and a pitch per day more. */
+const pastHeight = (m, days) => m.band + (days - 1) * m.unit;
+
+/** The same arithmetic with every day drawn `by` pixels taller. */
+const grown = (m, by) => ({ ...m, band: m.band + by, unit: m.unit + by, today: m.today + by });
 
 /**
  * Give the strip's box `px` of height, as its pane does.
@@ -124,22 +144,23 @@ const setBox = ({ page }, px) =>
 	}, px);
 
 /**
- * How many days before today the strip owes at its current height: the
- * room above today's band, in bands, counting a partly revealed one.
+ * How many days before today the strip owes at arithmetic `m`: the room
+ * above today's band, in days, counting a partly revealed one.
  */
-async function owed(app) {
-	const m = await metrics(app);
-	return Math.min(60, Math.ceil(Math.max(0, m.strip - m.today - m.gap) / m.unit));
+function owedAt(m) {
+	const room = Math.max(0, m.strip - m.today - m.gap);
+	return room > 0 ? Math.min(60, Math.ceil((room - m.band) / m.unit) + 1) : 0;
 }
+const owed = async (app) => owedAt(await metrics(app));
 
 /**
  * Size the box so the strip shows exactly `days` days before today.
  *
- * Half a band more than `days − 1` whole ones, so the top band is only
- * half revealed: that is what makes the stack scroll, and a scrolling
- * stack is what the jagged line is about. Zero days is a box exactly
- * today's height — which is a side bar's floor, not a top bar's: a top
- * bar's title lies over 12px of the content, and its floor keeps them off
+ * Half a pitch short of `days` whole ones, so the top day is only partly
+ * revealed: that is what makes the stack scroll, and a scrolling stack is
+ * what the jagged line is about. Zero days is a box exactly today's
+ * height — which is a side bar's floor, not a top bar's: a top bar's
+ * title lies over 12px of the content, and its floor keeps them off
  * today (Layout.svelte's `chromeOf`, da-13bc). So for zero days the
  * strip's bar goes on the left first.
  */
@@ -159,26 +180,35 @@ async function sizeFor(app, days) {
 		await app.page.locator('section.edge-left .strip').waitFor();
 	}
 	const m = await metrics(app);
-	const strip = days === 0 ? m.today : m.today + m.gap + (days - 0.5) * m.unit;
+	const strip = days === 0 ? m.today : m.today + m.gap + pastHeight(m, days) - m.unit / 2;
 	await setBox(app, Math.ceil(strip + m.chrome));
 	await waitForDays(app, days);
 }
 
+/** Size the box so the room above today is exactly `days` whole days. */
+async function sizeWhole(app, days) {
+	const m = await metrics(app);
+	await setBox(app, m.today + m.gap + pastHeight(m, days) + m.chrome);
+	await waitForDays(app, days);
+}
+
 /**
- * Wait until the strip shows exactly the days `depth` back to today, each
- * with its picture — no band more, none without one.
+ * Wait until the strip shows exactly `depth` days before today, and every
+ * picture on it is drawn with as many days as its box claims — no day
+ * more, and none still the depth it was before.
  */
 const waitForDays = ({ page }, depth) =>
-	page.waitForFunction(
-		(want) =>
-			JSON.stringify(
-				[...document.querySelectorAll('.band')].map((b) => [
-					Number(b.dataset.daysAgo),
-					b.querySelector('svg.svg') !== null
-				])
-			) === JSON.stringify(Array.from({ length: want + 1 }, (_, i) => [want - i, true])),
-		depth
-	);
+	page.waitForFunction((want) => {
+		const bands = [...document.querySelectorAll('.band')];
+		const drawn = (b) =>
+			b.querySelectorAll('svg.svg text.date-label').length === 3 * Number(b.dataset.days ?? 1);
+		const past = bands.filter((b) => b.matches('.past'));
+		return (
+			bands.every(drawn) &&
+			bands.at(-1).dataset.daysAgo === '0' &&
+			past.reduce((n, b) => n + Number(b.dataset.days), 0) === want
+		);
+	}, depth);
 
 /** What the day-height handle currently says it is set to. */
 const valueOf = async ({ page }) =>
@@ -222,11 +252,11 @@ const say = ({ page }, dayHeight) =>
 	);
 
 /**
- * Wait until each named band has been re-drawn at the height it is due.
+ * Wait until each named picture has been re-drawn at the height it is due.
  *
- * `want` is keyed by `data-days-ago`, because the heights are NOT all the
- * same number: today's band carries the hour axis and is that much taller
- * than the stacked ones. A single expected height for all of them is a
+ * `want` is keyed by `data-days-ago` — 0 today's, 1 the past's — because
+ * the heights are NOT the same number: the past holds several days and
+ * today carries the hour axis. A single expected height for both is a
  * wait that never ends.
  */
 const waitForHeights = ({ page }, want) =>
@@ -274,7 +304,7 @@ const storeKeys = ({ page }) =>
 	);
 
 describe('the day strip', () => {
-	test('the box says how many days: today, and the past that fits above it', async () => {
+	test('the box says how many days: today, and the past that fits above it, in one picture', async () => {
 		await withApp(async (app) => {
 			const nowMs = await app.page.evaluate(() => Date.now());
 
@@ -290,18 +320,23 @@ describe('the day strip', () => {
 			assert.ok(many > few, `600px holds no more days than 300px: ${many} vs ${few}`);
 			await waitForDays(app, many);
 
-			// And each is the day it claims: the days immediately before
+			// ONE picture for the past, holding every day of it (da-hnyb),
+			// and today's band apart from it.
+			const past = app.page.locator('.stack .band');
+			assert.equal(await past.count(), 1, 'the past is not one picture');
+			assert.equal(Number(await past.getAttribute('data-days')), many);
+
+			// And each day is the day it claims: the days immediately before
 			// today, oldest at the top.
-			for (let daysAgo = many; daysAgo >= 0; daysAgo--) {
-				assert.deepEqual(
-					dateLines(await band(app, daysAgo)),
-					labelFor(nowMs, daysAgo),
-					`the band ${daysAgo} day(s) back is stamped with the wrong date`
-				);
-			}
+			assert.deepEqual(
+				days(await band(app, 1)),
+				Array.from({ length: many }, (_, i) => labelFor(nowMs, many - i)),
+				'the past is stamped with the wrong days'
+			);
+			assert.deepEqual(days(await band(app, 0)), [labelFor(nowMs, 0)]);
 
 			// Today's band is still the live one: an entry logged now lands
-			// in it on the epoch tick, and in none of the others.
+			// in it on the epoch tick, and not in the past.
 			await app.submit('switch mood happy -t -5');
 			const happy = colorOf('happy');
 			await app.page.waitForFunction(
@@ -311,23 +346,95 @@ describe('the day strip', () => {
 						.outerHTML.includes(c),
 				happy
 			);
-			for (const daysAgo of [1, 2]) {
-				assert.ok(
-					!(await band(app, daysAgo)).includes(happy),
-					`the band ${daysAgo} day(s) back drew an entry logged today`
-				);
-			}
+			await app.idle();
+			assert.ok(!(await band(app, 1)).includes(happy), 'the past drew an entry logged today');
 
 			// Shrunk back, the days that no longer fit go away — the box is
 			// a height, not a ratchet.
 			await setBox(app, 300);
 			await waitForDays(app, few);
-			assert.equal(await app.page.locator(`.band[data-days-ago="${many}"]`).count(), 0);
+			assert.equal(days(await band(app, 1)).length, few);
 
 			// A box exactly today's height holds today alone.
 			await sizeFor(app, 0);
 			assert.equal(await app.page.locator('.stack').count(), 0);
 		});
+	});
+
+	test('the past fills a room of whole days exactly, and scrolls in one that is not', async () => {
+		await withApp(async (app) => {
+			// Room for three whole days: the picture is the stack's height,
+			// to the pixel, and there is nothing to scroll.
+			await sizeWhole(app, 3);
+			const m = await metrics(app);
+			const whole = await stackScroll(app);
+			assert.equal(svgHeight(await band(app, 1)), pastHeight(m, 3), 'datum drew the past another height');
+			assert.equal(whole.client, pastHeight(m, 3), `the stack is not three days tall: ${JSON.stringify(whole)}`);
+			assert.equal(whole.total, whole.client, 'three whole days scroll');
+
+			// Half a day less and the top one is partly revealed: the same
+			// three days, and now the stack scrolls to them.
+			await sizeFor(app, 3);
+			const part = await stackScroll(app);
+			assert.equal(part.total, pastHeight(m, 3));
+			assert.ok(part.total > part.client, `the stack does not scroll: ${JSON.stringify(part)}`);
+		});
+	});
+
+	test('one more day re-draws the past one day deeper, and not today', async () => {
+		await withApp(async (app) => {
+			await sizeFor(app, 3);
+			await app.idle();
+			const seen = await app.spyOnRunner();
+
+			await sizeFor(app, 4);
+			await app.idle();
+
+			// Every dayview the strip ran for the taller box, by the days it
+			// asked for and where they ended: the past at four, once, and
+			// today not at all — its picture did not change.
+			const flag = (argv, name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null);
+			const views = (await seen())
+				.filter((argv) => argv[0] === 'dayview')
+				.map((argv) => [flag(argv, '--n-days'), flag(argv, '--end-date')]);
+			assert.deepEqual(views, [['4', '-1']]);
+		});
+	});
+
+	test('a past deeper than a fortnight is a picture a fortnight, a day apart', async () => {
+		await withApp(
+			async (app) => {
+				const nowMs = await app.page.evaluate(() => Date.now());
+				// The shortest day, so sixteen of them fit on the screen.
+				await say(app, 40);
+				await app.page.waitForFunction(
+					() => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === 40
+				);
+				await sizeWhole(app, 16);
+
+				// Yesterday's fortnight against today, the two days before it
+				// above — and every day the one it claims, across the seam.
+				const pictures = await app.page
+					.locator('.stack .band')
+					.evaluateAll((els) => els.map((b) => [Number(b.dataset.daysAgo), Number(b.dataset.days)]));
+				assert.deepEqual(pictures, [
+					[15, 2],
+					[1, 14]
+				]);
+				assert.deepEqual(
+					[...days(await band(app, 15)), ...days(await band(app, 1))],
+					Array.from({ length: 16 }, (_, i) => labelFor(nowMs, 16 - i))
+				);
+
+				// The seam costs what the space between two days costs, so
+				// sixteen whole days still fill the stack to the pixel.
+				const m = await metrics(app);
+				const box = await stackScroll(app);
+				assert.equal(box.total, pastHeight(m, 16));
+				assert.equal(box.total, box.client, 'sixteen whole days scroll');
+			},
+			{ viewport: { width: 1280, height: 1400 } }
+		);
 	});
 
 	test('the day height comes in as a prop and goes out as a change', async () => {
@@ -341,9 +448,9 @@ describe('the day strip', () => {
 
 		await withApp(async (app) => {
 				// The owner said 120 — through the tree, as a saved layout
-				// does: the handle says so, and every band is drawn in the box
-				// that height gives it — the stacked ones at the band box,
-				// today's at the band box plus the hour axis.
+				// does: the handle says so, and both pictures are drawn in the
+				// box that height gives them — the past's two days at a day box
+				// and a pitch, today's at a day box plus the hour axis.
 				await say(app, 120);
 				await app.page.waitForFunction(
 					() => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === 120
@@ -351,10 +458,8 @@ describe('the day strip', () => {
 				assert.equal(await valueOf(app), 120);
 				await sizeFor(app, 2);
 				const m = await metrics(app);
-				assert.ok(m.band > 120, `the band box is not built on the 120 day height: ${m.band}`);
-				for (const daysAgo of [2, 1]) {
-					assert.equal(svgHeight(await band(app, daysAgo)), m.band, `band ${daysAgo}`);
-				}
+				assert.ok(m.band > 120, `the day box is not built on the 120 day height: ${m.band}`);
+				assert.equal(svgHeight(await band(app, 1)), pastHeight(m, 2), 'the past');
 				assert.equal(svgHeight(await band(app, 0)), m.today, "today's band");
 
 				// The notch moves it — up is taller — and the owner hears
@@ -363,21 +468,18 @@ describe('the day strip', () => {
 				await dragBy(app, 'button.day-grip', -grow);
 				assert.equal(await valueOf(app), 120 + grow);
 				await heardIs(app, 120 + grow);
-				// And every band is re-drawn, not stretched: the picture
-				// datum wrote is the new size. Waited for, because the render
-				// happens on the drop.
-				await waitForHeights(app, {
-					2: m.band + grow,
-					1: m.band + grow,
-					0: m.today + grow
-				});
+				// And both are re-drawn, not stretched: the picture datum
+				// wrote is the new size, every day in it taller by `grow`.
+				// Waited for, because the render happens on the drop.
+				const tall = grown(m, grow);
+				await waitForHeights(app, { 1: pastHeight(tall, owedAt(tall)), 0: tall.today });
 
 				// ↻ says the default, to the owner as well.
 				await app.page.locator('button.reset').click();
 				assert.equal(await valueOf(app), fallback);
 				await heardIs(app, fallback);
 				const at = await metrics(app);
-				await waitForHeights(app, { 1: at.band, 0: at.today });
+				await waitForHeights(app, { 1: pastHeight(at, owedAt(at)), 0: at.today });
 		});
 	});
 
@@ -386,54 +488,34 @@ describe('the day strip', () => {
 			// Three, so that two are still there once the days are taller:
 			// the box does not grow with them, so fewer fit.
 			await sizeFor(app, 3);
-			const before = await Promise.all([2, 1, 0].map((n) => band(app, n).then(svgHeight)));
+			const m = await metrics(app);
 			const was = await valueOf(app);
 			const grow = 40;
 
 			// UP is taller (da-hsba): the pointer moves 40px up, and every
-			// day is drawn 40px taller.
+			// day is drawn 40px taller — today's, and each of the past's.
 			await dragBy(app, 'button.day-grip', -grow);
 			assert.equal(await valueOf(app), was + grow);
-			await waitForHeights(app, {
-				2: before[0] + grow,
-				1: before[1] + grow,
-				0: before[2] + grow
-			});
-
-			const after = await Promise.all([2, 1, 0].map((n) => band(app, n)));
-			// Every band grew, by the same amount, including today's — the
-			// two stacked ones drawn to the same height as each other.
-			after.forEach((svg, i) => {
-				assert.equal(
-					svgHeight(svg),
-					before[i] + grow,
-					`band ${[2, 1, 0][i]} did not follow the day height`
-				);
-			});
-			assert.equal(svgHeight(after[0]), svgHeight(after[1]), 'the stacked bands disagree');
+			const up = grown(m, grow);
+			assert.equal(owedAt(up), 2, 'the taller days do not leave two in the box');
+			await waitForHeights(app, { 1: pastHeight(up, 2), 0: up.today });
+			await waitForDays(app, 2);
 
 			// And the thing the stack is for still holds at the new height:
-			// the same hour is the same column, band for band.
-			const today = gridlines(after[2]);
+			// the same hour is the same column in the past as today.
+			const today = gridlines(await band(app, 0));
 			assert.ok(today.length >= 4, `today's band drew ${today.length} gridlines`);
-			for (const i of [0, 1]) {
-				assert.deepEqual(
-					gridlines(after[i]),
-					today,
-					`band ${[2, 1][i]} is on a different x-axis after a resize`
-				);
-			}
+			assert.deepEqual(gridlines(await band(app, 1)), today, 'the past is on a different x-axis after a resize');
 
-			// And DOWN is shorter, by the same 40, from the same start.
+			// And DOWN is shorter, by the same 40, from the same start —
+			// and more days fit.
 			await app.page.locator('button.reset').click();
-			await waitForHeights(app, { 2: before[0], 1: before[1], 0: before[2] });
+			await waitForHeights(app, { 1: pastHeight(m, 3), 0: m.today });
 			await dragBy(app, 'button.day-grip', grow);
 			assert.equal(await valueOf(app), was - grow);
-			await waitForHeights(app, {
-				2: before[0] - grow,
-				1: before[1] - grow,
-				0: before[2] - grow
-			});
+			const down = grown(m, -grow);
+			await waitForHeights(app, { 1: pastHeight(down, owedAt(down)), 0: down.today });
+			await waitForDays(app, owedAt(down));
 		});
 	});
 
@@ -510,7 +592,7 @@ describe('the day strip', () => {
 		);
 	});
 
-	test('the jagged line says the band above today is not yesterday', async () => {
+	test('the jagged line says the day above today is not yesterday', async () => {
 		await withApp(async (app) => {
 			// Deeper than the box shows whole, so there is something to
 			// scroll. Nothing to tear yet: yesterday is at the bottom,
@@ -526,13 +608,13 @@ describe('the day strip', () => {
 			await app.page.locator('.stack').evaluate((el) => (el.scrollTop = 0));
 			await app.page.locator('button.jagged').waitFor();
 
-			// A fine tear, not a coarse one (da-hsba): at least 100 vertices,
-			// where it once had 26, drawn at the same 6px.
+			// A fine tear, not a coarse one: 201 vertices (da-hnyb), where it
+			// once had 26 (da-hsba) and then 101, drawn at the same 6px.
 			const tear = await app.page.locator('button.jagged svg').evaluate((svg) => ({
 				vertices: svg.querySelector('polyline').getAttribute('points').trim().split(/\s+/).length,
 				height: svg.getBoundingClientRect().height
 			}));
-			assert.ok(tear.vertices >= 100, `the jagged line has ${tear.vertices} vertices`);
+			assert.equal(tear.vertices, 201);
 			assert.equal(tear.height, 6);
 
 			// It is a button, it takes focus, and the keyboard works it.
@@ -551,7 +633,7 @@ describe('the day strip', () => {
 			);
 			// The depth is unchanged — the line puts the stack back, it does
 			// not throw away the days the box holds.
-			assert.equal(await app.page.locator('.band').count(), 6);
+			assert.equal(await app.page.locator('.stack .band').getAttribute('data-days'), '5');
 
 			// And the same by pointer, which is the other half of "reachable
 			// by keyboard and by touch".
@@ -565,15 +647,18 @@ describe('the day strip', () => {
 		// 10:00 UTC, so the fast-forward below lands after midnight and
 		// inside the next day rather than on its boundary.
 		const noon = Date.UTC(2026, 8, 9, 10, 0, 0);
-		// The CLI draws the bands, in the database worker: its clock too.
+		// The CLI draws the pictures, in the database worker: its clock too.
 		const clock = workerClock(noon);
+		/** The days `from` back to `to` before `ms`, oldest first, as stamps. */
+		const stamps = (ms, from, to) =>
+			Array.from({ length: from - to + 1 }, (_, i) => labelFor(ms, from - i));
 		await withApp(
 			async (app) => {
 				// Deep enough that the stack scrolls, so the jagged line has
 				// something to say at the end.
 				await sizeFor(app, 5);
-				assert.deepEqual(dateLines(await band(app, 0)), labelFor(noon, 0));
-				assert.deepEqual(dateLines(await band(app, 1)), labelFor(noon, 1));
+				assert.deepEqual(days(await band(app, 0)), stamps(noon, 0, 0));
+				assert.deepEqual(days(await band(app, 1)), stamps(noon, 5, 1));
 
 				// Over the boundary. The strip redraws on the frame's epoch,
 				// which is the same beat today's band has always refreshed
@@ -582,26 +667,18 @@ describe('the day strip', () => {
 				await app.page.clock.setFixedTime(new Date(after));
 				await clock.set(app.page, after);
 				await app.submit('occur coffee');
-
-				await app.page.waitForFunction(
-					(want) =>
-						document
-							.querySelector('.band[data-days-ago="0"] svg.svg')
-							.outerHTML.includes(`>${want}<`),
-					labelFor(after, 0)[1]
-				);
+				await app.idle();
 
 				// Today is the new day; yesterday is the day that was today;
-				// the stack is stamped with the days before that.
-				for (const daysAgo of [0, 1, 2, 3, 4, 5]) {
-					assert.deepEqual(
-						dateLines(await band(app, daysAgo)),
-						labelFor(after, daysAgo),
-						`the band ${daysAgo} day(s) back did not follow the new today`
-					);
-				}
+				// the past is stamped with the days before that.
+				assert.deepEqual(days(await band(app, 0)), stamps(after, 0, 0));
+				assert.deepEqual(
+					days(await band(app, 1)),
+					stamps(after, 5, 1),
+					'the past did not follow the new today'
+				);
 				// The box did not move, so neither did the depth.
-				assert.equal(await app.page.locator('.band').count(), 6);
+				assert.equal(await app.page.locator('.stack .band').getAttribute('data-days'), '5');
 				// And the rule still reads off the scroll position, not off
 				// the date it was first drawn for.
 				assert.equal(await jagged(app), 0);
@@ -617,28 +694,38 @@ describe('the day strip', () => {
 		);
 	});
 
-	test('every band is drawn against the same x-axis as today', async () => {
+	test('the past is drawn against the same x-axis as today, one gap above it', async () => {
 		await withApp(async (app) => {
 			await sizeFor(app, 3);
 
 			// The hour gridlines are the axis as the data area sees it, and
-			// they are drawn on every band — the tick LABELS are today's
-			// alone. Same x, band for band, or the stack is a comparison of
-			// two different rulers.
+			// the past's run through every one of its days — the tick LABELS
+			// are today's alone. The same x in both, or the stack is a
+			// comparison of two different rulers.
 			const today = gridlines(await band(app, 0));
 			assert.ok(today.length >= 4, `today's band drew ${today.length} gridlines`);
-			for (const daysAgo of [1, 2, 3]) {
-				assert.deepEqual(
-					gridlines(await band(app, daysAgo)),
-					today,
-					`the band ${daysAgo} day(s) back is on a different x-axis`
-				);
-			}
+			assert.deepEqual(gridlines(await band(app, 1)), today, 'the past is on a different x-axis');
+
+			// And on the screen, not only in the documents: the first hour
+			// line lands on the same pixel in both, and yesterday's picture
+			// ends the strip's gap above today's.
+			const seen = await app.page.evaluate(() => {
+				const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+				return {
+					lines: [1, 0].map((n) => box(`.band[data-days-ago="${n}"] line.gridline`).x),
+					seam:
+						box('.band[data-days-ago="0"] svg.svg').top -
+						box('.band[data-days-ago="1"] svg.svg').bottom
+				};
+			});
+			const { gap } = await metrics(app);
+			assert.ok(Math.abs(seen.lines[0] - seen.lines[1]) <= 1, `the first hour lines: ${seen.lines}`);
+			assert.ok(Math.abs(seen.seam - gap) <= 1, `yesterday ends ${seen.seam}px above today, not ${gap}`);
 
 			// The axis strip itself is drawn once, under today.
 			const ticks = (svg) => [...svg.matchAll(/class="tick-label"/g)].length;
 			assert.ok(ticks(await band(app, 0)) >= 4, "today's band lost its hour axis");
-			assert.equal(ticks(await band(app, 1)), 0, 'a stacked band repeated the hour axis');
+			assert.equal(ticks(await band(app, 1)), 0, 'the past repeated the hour axis');
 		});
 	});
 

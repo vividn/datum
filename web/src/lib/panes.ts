@@ -1,5 +1,5 @@
 // What the CLI-render panes run, and how wide they claim to be — plus
-// the day strip's bands, which are the same thing one row down
+// the day strip's pictures, which are the same thing one row down
 // (`bandArgv` at the foot of this file).
 //
 // Each pane is one datum command rendered as text (da-1x72). Deliberately
@@ -161,27 +161,32 @@ export const MAX_DAY_HEIGHT = 240;
  */
 const MARGIN = 2;
 const TIME_AXIS = 15;
+/** The space datum leaves between two days of one picture (`DEFAULT_INTERDAY_MARGIN`). */
+const INTERDAY = 15;
 
-/** The box a stacked band occupies at `dayHeight`. It has no hour axis. */
+/** The box one day of the past occupies at `dayHeight`. It has no hour axis. */
 export const bandBox = (dayHeight: number) => dayHeight + 2 * MARGIN;
+
+/** What each further day adds to a picture of the past: a day and the space above it. */
+export const dayPitch = (dayHeight: number) => dayHeight + INTERDAY;
 
 /** The box today's band occupies at `dayHeight`. It carries the axis. */
 export const todayBox = (dayHeight: number) => dayHeight + 2 * MARGIN + TIME_AXIS;
 
 /**
- * One band of the day strip, as argv.
+ * One picture of the day strip, as argv: `days` days whose newest is
+ * `end` days back from today.
  *
- * `daysAgo` counts back from today, so 0 is today's band and 1 is
- * yesterday's. Today's carries the hour axis and the others suppress
- * theirs with `--time-axis-height 0`: they share one x-axis, and a strip
- * repeating it under every band would be five copies of the same ruler.
- * The gridlines are not the axis and are drawn on every band, which is
- * how a reader carries an hour up the stack.
+ * `end` 0 is today's band, which carries the hour axis. The past is drawn
+ * as ONE dayview of several days (da-hnyb), so the hour gridlines run
+ * through it and its ground is one; it suppresses the axis with
+ * `--time-axis-height 0` — it shares today's x-axis, and the ruler is
+ * drawn once, under today.
  */
-export function bandArgv(width: number, daysAgo: number, dayHeight: number): string[] {
+export function bandArgv(width: number, dayHeight: number, end = 0, days = 1): string[] {
 	const argv = ['dayview', '--width', String(width), '--day-height', String(dayHeight)];
-	if (daysAgo === 0) return argv;
-	return [...argv, '--time-axis-height', '0', '--end-date', String(-daysAgo)];
+	if (end === 0) return argv;
+	return [...argv, '--time-axis-height', '0', '--n-days', String(days), '--end-date', String(-end)];
 }
 
 // `nowview -o -`, not `now` or bare `nowview`: both of those paint a band

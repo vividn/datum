@@ -405,7 +405,7 @@ function app(page, errors, query) {
 		 * Wait until no command is in flight behind the seam.
 		 *
 		 * A submit bumps the frame's epoch, and every pane re-runs its
-		 * command on it — the strip one per band it holds — behind one
+		 * command on it — the strip one per picture it holds — behind one
 		 * database lock, so how long the frame takes to settle grows with
 		 * how much of it is drawn. Counting the runs through the seam's own
 		 * extension point (as `spyOnRunner` does) is exact where a quiet
