@@ -389,8 +389,15 @@ const drawnRuns = (argvs) => ({
 	nowview: argvs.filter((a) => a[0] === 'nowview').length
 });
 
-/** The bands the strip is showing — one `dayview` run per redraw. */
-const bandCount = (page) => pane(page, 'strip').locator('svg.svg').count();
+/**
+ * The days of the past the strip is holding. The past is one picture of
+ * several days (da-hnyb) — a fortnight at most each — so the days are what
+ * its pictures claim, not how many there are.
+ */
+const pastDays = (page) =>
+	pane(page, 'strip')
+		.locator('.stack .band')
+		.evaluateAll((els) => els.reduce((n, b) => n + Number(b.dataset.days), 0));
 
 /** A drawn pane's content box, whole pixels down, as `paneArgv` asks for it. */
 const contentWidth = (page, id) =>
@@ -494,31 +501,37 @@ describe('resizing', () => {
 
 	// At 1000px tall, not 900: the row under the strip sits near its floor
 	// (three panes stacked in the side column), so a drag can only take the
-	// strip up to that floor — and whether that is one more band or none
+	// strip up to that floor — and whether that is one more day or none
 	// is a threshold a few pixels of chrome move (the shell's bars, da-0a5o,
-	// moved it). A taller screen leaves the strip room for a third band.
-	test('the strip, dragged taller over a second, grows its stack as it goes and draws each new band once', async () => {
+	// moved it). A taller screen leaves the strip room for a third day.
+	test('the strip, dragged taller over a second, reaches further back as it goes and draws each depth once', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
-			const before = await bandCount(page);
+			const before = await pastDays(page);
 			// The root's column border, under the strip: down is a taller strip.
 			const border = page.locator('section.root > .content > .split.column > [role="separator"]').first();
 			const took = await dragFor(page, border, 0, 200, 1000);
 			const during = drawnRuns(await seen());
-			const mid = await bandCount(page);
-			console.log(`  drag: ${took}ms, dayview ran ${during.dayview}x, nowview ${during.nowview}x; bands ${before} → ${mid}`);
+			const mid = await pastDays(page);
+			console.log(`  drag: ${took}ms, dayview ran ${during.dayview}x, nowview ${during.nowview}x; days ${before} → ${mid}`);
 			assert.ok(mid > before, `the strip held ${before} days before and ${mid} during the drag: it did not grow live`);
 			assert.ok(during.nowview >= 2 && during.nowview <= 6, `nowview ran ${during.nowview} times during a ${took}ms drag`);
 			await page.mouse.up();
 			await app.idle();
 			const after = drawnRuns(await seen());
-			const bands = await bandCount(page);
-			assert.ok(bands > before, `a 200px taller strip holds no more days (${before} → ${bands})`);
-			// One `dayview` per NEW band over the whole drag: the width is what
-			// every band is drawn at, and it did not change, so a band drawn at
-			// one tick is kept through the next.
-			assert.equal(after.dayview, bands - before, 'the strip drew the wrong number of bands');
+			const days = await pastDays(page);
+			assert.ok(days > before, `a 200px taller strip holds no more days (${before} → ${days})`);
+			// Only the past is re-drawn, one picture per depth the drag passed
+			// through and never the same one twice: the width did not change,
+			// so today's picture, and each asked for at an earlier tick, is kept.
+			const views = (await seen()).filter((a) => a[0] === 'dayview').map((a) => a.join(' '));
+			assert.ok(views.every((v) => v.includes('--end-date')), `today was re-drawn: ${views.join(' | ')}`);
+			assert.equal(new Set(views).size, views.length, `a picture was drawn twice: ${views.join(' | ')}`);
+			assert.ok(
+				after.dayview >= 1 && after.dayview <= days - before,
+				`${after.dayview} pictures for ${days - before} more days`
+			);
 			assert.ok(after.nowview - during.nowview <= 1, 'nowview, now shorter, redraws at most once at the drop');
 		}, { viewport: { width: 1280, height: 1000 } });
 	});
