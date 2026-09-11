@@ -426,6 +426,9 @@ describe('a write', () => {
 					count = await rowCount(page);
 				}
 				assert.equal(count, 20, 'the whole log is not listed');
+				// From the top: a pane tall enough to list the log in one pull
+				// never went round the loop, and sits where that pull kept it.
+				await toTop(page);
 				await wheelUp(page);
 				await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
 				assert.deepEqual((await geometry(page)).start, [seedHid(0)]);
