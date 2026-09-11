@@ -178,6 +178,7 @@ fn block(start_ms: i64, end_ms: i64, color: &str, state: &str) -> DayviewBlock {
         end_ms,
         fill: BlockFill::Single(color.into()),
         state_label: Some(state.into()),
+        title: None,
     }
 }
 
@@ -207,6 +208,7 @@ fn day_fields(start_ms: i64, end_ms: i64) -> Vec<DayviewFieldInput> {
                 fg_color: "#cc7722".into(),
                 bg_color: "#000000".into(),
                 state_label: None,
+                title: None,
             }],
         },
         DayviewFieldInput {

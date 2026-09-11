@@ -42,6 +42,7 @@ use crate::args::NowviewArgs;
 use crate::commands::field_visuals::{
     canonical_verb, dur_seconds, leading_edge_ms, occur_time_ms, occur_time_ms_opt,
     push_switch_region, render_field_visuals, rgb_to_hex, state_label, switch_region_end_ms,
+    title_marks,
 };
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
 use crate::render::term_layout;
@@ -464,7 +465,7 @@ pub(crate) fn build_dayview_fields(
             );
         }
 
-        let (entry_blocks, points) = render_field_visuals(
+        let (entry_blocks, mut points) = render_field_visuals(
             &entries_for_field,
             &field,
             spec.as_ref(),
@@ -474,6 +475,12 @@ pub(crate) fn build_dayview_fields(
             db,
         );
         blocks.extend(entry_blocks);
+        title_marks(
+            &field,
+            &mut blocks,
+            &mut points,
+            (fetch_start.timestamp_millis(), open_end_ms),
+        );
 
         if blocks.is_empty() && points.is_empty() {
             continue;

@@ -94,7 +94,7 @@ describe('the nowview widget', () => {
 			async ({ page }) => {
 				const tab = page.locator('[role="tab"]', { hasText: 'nowview' });
 				if (await tab.count()) await tab.click();
-				await page.locator(`${PANE} img.svg`).waitFor();
+				await page.locator(`${PANE} svg.svg`).waitFor();
 				const box = await page.locator(`${PANE} .body`).evaluate((b) => ({
 					scroll: b.scrollWidth,
 					client: b.clientWidth

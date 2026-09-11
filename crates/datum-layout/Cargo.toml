@@ -9,4 +9,5 @@ default = []
 wasm = []
 
 [dependencies]
+chrono = { workspace = true }
 serde = { workspace = true }

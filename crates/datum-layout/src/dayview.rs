@@ -102,6 +102,11 @@ pub struct DayviewBlock {
     pub end_ms: i64,
     pub fill: BlockFill,
     pub state_label: Option<String>,
+    /// What the mark says on hover (da-s5da) — `work: coding 14:00–14:30`.
+    /// The caller writes it, since it owns the clock; the renderer puts it
+    /// in the mark's `<title>`.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 /// Fill mode for a block. Multi-state values (arrays) render as diagonal
@@ -123,6 +128,9 @@ pub struct DayviewPoint {
     pub fg_color: String,
     pub bg_color: String,
     pub state_label: Option<String>,
+    /// As [`DayviewBlock::title`].
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 /// Top-level dayview knobs. Per-day data is in `days`. The `now_ms` field
@@ -251,6 +259,12 @@ pub struct RenderedDay {
     /// the data-area origin. For the last day this extends through the
     /// time-axis tick strip; otherwise stops at the day's far edge.
     pub now_extent_far: f64,
+    /// The day's window in UTC ms — what the time axis spans, from
+    /// [`DayviewDayInput`].
+    #[serde(default)]
+    pub start_ms: i64,
+    #[serde(default)]
+    pub end_ms: i64,
 }
 
 /// One field's positioned blocks + points within a day.
@@ -274,6 +288,13 @@ pub struct RenderedBlock {
     pub time_extent: f64,
     pub fill: BlockFill,
     pub state_label: Option<String>,
+    /// The block's own span in UTC ms, before clipping to the day.
+    #[serde(default)]
+    pub start_ms: i64,
+    #[serde(default)]
+    pub end_ms: i64,
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,6 +307,10 @@ pub struct RenderedPoint {
     pub fg_color: String,
     pub bg_color: String,
     pub state_label: Option<String>,
+    #[serde(default)]
+    pub time_ms: i64,
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -474,6 +499,9 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     time_extent: t_ext,
                     fill: b.fill.clone(),
                     state_label: b.state_label.clone(),
+                    start_ms: b.start_ms,
+                    end_ms: b.end_ms,
+                    title: b.title.clone(),
                 });
             }
 
@@ -500,6 +528,8 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     fg_color: p.fg_color.clone(),
                     bg_color: p.bg_color.clone(),
                     state_label: p.state_label.clone(),
+                    time_ms: p.time_ms,
+                    title: p.title.clone(),
                 });
             }
 
@@ -535,6 +565,8 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             fields,
             now_time_pos,
             now_extent_far,
+            start_ms: day.start_ms,
+            end_ms: day.end_ms,
         });
     }
 
@@ -779,6 +811,7 @@ mod tests {
                         fg_color: "#ff0000".into(),
                         bg_color: "#000000".into(),
                         state_label: None,
+                        title: None,
                     }],
                 },
             ],
@@ -811,6 +844,7 @@ mod tests {
                 end_ms: DAY_START + 2 * HOUR,
                 fill: BlockFill::Single("#abcdef".into()),
                 state_label: None,
+                title: None,
             }],
             points: vec![],
         };
@@ -854,6 +888,7 @@ mod tests {
                     end_ms: DAY_START + 25 * HOUR,
                     fill: BlockFill::Single("#abcdef".into()),
                     state_label: None,
+                    title: None,
                 }],
                 points: vec![],
             }],
@@ -924,6 +959,7 @@ mod tests {
                         "#0000ff".into(),
                     ]),
                     state_label: Some("happy,calm,focused".into()),
+                    title: None,
                 }],
                 points: vec![],
             }],
@@ -1055,6 +1091,7 @@ mod tests {
                     end_ms: DAY_START + 25 * HOUR,
                     fill: BlockFill::Single("#abcdef".into()),
                     state_label: None,
+                    title: None,
                 }],
                 points: vec![],
             }],

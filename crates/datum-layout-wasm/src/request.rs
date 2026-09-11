@@ -341,6 +341,7 @@ pub fn build_fields(
                 end_ms: b.end_ms,
                 fill: block_fill(b.state.as_ref(), &f.field, style),
                 state_label: state_label(b.state.as_ref()),
+                title: None,
             })
             .collect();
         let points: Vec<DayviewPoint> = marks
@@ -351,6 +352,7 @@ pub fn build_fields(
                 fg_color: dot_color(p.fg.as_ref(), p.fg_fallback, &f.field, style),
                 bg_color: dot_color(p.bg.as_ref(), p.bg_fallback, &f.field, style),
                 state_label: state_label(p.state_label.as_ref().or(p.fg.as_ref())),
+                title: None,
             })
             .collect();
         let y_frac = style

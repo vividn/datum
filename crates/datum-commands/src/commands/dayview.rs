@@ -31,7 +31,9 @@ use datum_parse::cli::DayviewOrientation;
 use datum_parse::time::{parse_date, DateArg, TimeCtx};
 
 use crate::args::DayviewArgs;
-use crate::commands::field_visuals::{occur_time_ms, render_field_visuals, switch_region_end_ms};
+use crate::commands::field_visuals::{
+    occur_time_ms, render_field_visuals, switch_region_end_ms, title_marks,
+};
 
 /// Datum default per-day band height (matches dayview.ts:50).
 const DEFAULT_DAY_HEIGHT: f64 = 100.0;
@@ -460,7 +462,7 @@ fn build_day_fields(
         let fallback_end_ms = day_end_ms.min(now_ms);
         let switch_region_ends = switch_region_end_ms(&entries_for_field, fallback_end_ms);
 
-        let (blocks, points) = render_field_visuals(
+        let (mut blocks, mut points) = render_field_visuals(
             &entries_for_field,
             &field,
             spec.as_ref(),
@@ -468,6 +470,12 @@ fn build_day_fields(
             day_end_ms,
             &switch_region_ends,
             db,
+        );
+        title_marks(
+            &field,
+            &mut blocks,
+            &mut points,
+            ((day_start_utc - buffer).timestamp_millis(), fallback_end_ms),
         );
 
         // Per the bead spec: "Empty fields (zero entries in window) are

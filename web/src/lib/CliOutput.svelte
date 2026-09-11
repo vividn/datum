@@ -9,13 +9,15 @@
 	the block is as wide as its longest line and no wider.
 
 	`datum dayview` is the exception that proves the pane is rendering CLI
-	output faithfully: its stdout is an SVG document, so it is shown as an
-	image. Via a data-URL `<img>`, not inline markup — an image-loaded SVG
-	cannot run script, which keeps the runner's stdout from becoming an
-	injection point the day it carries synced data.
+	output faithfully: its stdout is an SVG document, so it is shown as a
+	picture. Inline, so its marks are elements a pointer, a finger and the
+	keyboard can ask what they are (da-s5da, $lib/hover.ts) — and sanitised
+	on the way in, so the runner's stdout does not become an injection
+	point the day it carries synced data.
 -->
 <script lang="ts">
 	import { ansiSpans } from './ansi.js';
+	import { picture } from './hover.js';
 	import { resizing } from './layout/resizing.js';
 
 	export let text: string;
@@ -24,7 +26,7 @@
 
 	const SVG_START = /^\s*(?:<\?xml[\s?]|<svg[\s>])/;
 
-	$: svg = SVG_START.test(text) ? 'data:image/svg+xml,' + encodeURIComponent(text) : null;
+	$: svg = SVG_START.test(text);
 	$: spans = svg ? [] : ansiSpans(text);
 </script>
 
@@ -33,7 +35,7 @@
 	     (layout/resizing.ts); it follows its box as one scaled image
 	     until the drop redraws it — whole, so an axis and its labels
 	     move together (da-jgrn). -->
-	<img class="svg" class:stretch={$resizing} src={svg} alt="dayview" />
+	<div class="picture" class:stretch={$resizing} use:picture={text} />
 {:else}
 	<pre class:error>{#each spans as span}<span
 				style:color={span.fg}
@@ -64,7 +66,7 @@
 		color: #f4645a;
 	}
 
-	.svg {
+	.picture :global(svg.svg) {
 		display: block;
 		/* Shrink to fit, never stretch. A drawing may be scaled down where
 		   a table may not — scrolling sideways to a day loses the day —
@@ -76,7 +78,30 @@
 		max-width: 100%;
 		height: auto;
 	}
-	.svg.stretch {
+	.picture.stretch :global(svg.svg) {
 		width: 100%;
+	}
+
+	/* Gridlines and the now-line are drawn over the marks; a pointer
+	   passes through them to the mark beneath. */
+	.picture :global(line) {
+		pointer-events: none;
+	}
+
+	/* Fixed, so a band that clips its picture does not clip the label. */
+	.picture :global(.tip) {
+		position: fixed;
+		z-index: 10;
+		max-width: calc(100vw - 8px);
+		box-sizing: border-box;
+		padding: 2px 6px;
+		background: #0d0d1a;
+		border: 1px solid #2a2a4a;
+		border-radius: 6px;
+		color: #c8c8e8;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		pointer-events: none;
 	}
 </style>

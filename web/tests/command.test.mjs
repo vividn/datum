@@ -130,7 +130,7 @@ describe('the command pane', () => {
 					app.page.evaluate((pane) => {
 						const body = document.querySelector(`${pane} .body`);
 						const style = getComputedStyle(body);
-						const src = decodeURIComponent(body.querySelector('img.svg')?.src ?? '');
+						const src = body.querySelector('svg.svg')?.outerHTML ?? '';
 						return {
 							svg: Number(src.match(/<svg[^>]*\swidth="([\d.]+)"/)?.[1]),
 							box: Math.floor(
@@ -141,14 +141,12 @@ describe('the command pane', () => {
 				const drawnAt = (box) =>
 					app.page.waitForFunction(
 						([pane, box]) =>
-							decodeURIComponent(document.querySelector(`${pane} img.svg`)?.src ?? '').includes(
-								`width="${box}"`
-							),
+							(document.querySelector(`${pane} svg.svg`)?.outerHTML ?? '').includes(`width="${box}"`),
 						[PANE, box]
 					);
 
 				await setCommand(app.page, 'dayview');
-				await app.page.locator(`${PANE} img.svg`).waitFor();
+				await app.page.locator(`${PANE} svg.svg`).waitFor();
 				let { box } = await widths();
 				await drawnAt(box);
 				const wide = await widths();
@@ -192,7 +190,7 @@ describe('the command pane', () => {
 			assert.equal(await app.page.locator('section.pane pre.error').count(), 1);
 			await app.page
 				.locator('section.pane', { has: app.page.locator('h2', { hasText: 'nowview' }) })
-				.locator('img.svg')
+				.locator('svg.svg')
 				.waitFor();
 
 			// And the pane is still a pane: its command can be changed.

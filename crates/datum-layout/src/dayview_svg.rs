@@ -1,8 +1,11 @@
 //! Pure-Rust SVG renderer for [`DayviewLayout`].
 //!
 //! Produces a self-contained SVG document string. No external CSS/JS,
-//! no popover, no hover (per bead da-vp7 — the SvelteKit frontend handles
-//! interactivity).
+//! no popover (per bead da-vp7 — the SvelteKit frontend handles
+//! interactivity). Each mark carries what it is as data attributes and a
+//! `<title>`, so any SVG viewer names it on hover (da-s5da), and each day
+//! says which span of time its axis covers, for a viewer that maps a
+//! pointer to an instant.
 //!
 //! Visual style mirrors datum's TypeScript dayview output:
 //! - Black background.
@@ -204,7 +207,19 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
 
         // Per-field bands — emitted in plot coords (no per-day transform);
         // helpers map (time, cross) → (x, y) per orientation.
-        let _ = write!(&mut out, r#"<g class="day-data" data-day="{i}">"#, i = i,);
+        // The day's time axis in the root's user units: `data-lo` is
+        // `data-from`, `data-hi` is `data-to`, along `data-axis`.
+        let (axis, lo) = match layout.orientation {
+            Orientation::Horizontal => ("x", layout.margin + geom.data_x),
+            Orientation::Vertical => ("y", layout.margin + geom.data_y),
+        };
+        let _ = write!(
+            &mut out,
+            r#"<g class="day-data" data-day="{i}" data-from="{from}" data-to="{to}" data-axis="{axis}" data-lo="{lo}" data-hi="{hi}">"#,
+            from = iso(day.start_ms),
+            to = iso(day.end_ms),
+            hi = lo + layout.time_axis_extent,
+        );
         for field in &day.fields {
             let _ = write!(
                 &mut out,
@@ -231,6 +246,13 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     rect_w,
                     rect_h,
                     field.cross_extent,
+                    &mark_close(
+                        "rect",
+                        &field.field,
+                        b.state_label.as_deref(),
+                        &[("from", b.start_ms), ("to", b.end_ms)],
+                        b.title.as_deref(),
+                    ),
                 );
             }
             // The reserved strip beyond the now-line: the lane running on
@@ -263,6 +285,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         rect_w,
                         rect_h,
                         field.cross_extent,
+                        "/>",
                     );
                 }
             }
@@ -270,17 +293,26 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 let (cx, cy) = to_xy(layout, &geom, p.time_pos, day.day_offset + p.cross_pos);
                 let outer_r = p.r;
                 let inner_r = (p.r * 0.6).max(0.5);
+                // The outer circle is the mark; the inner one lets the
+                // pointer through to it.
                 let _ = write!(
                     &mut out,
-                    r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}"/>"#,
+                    r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}"{close}"#,
                     cx = cx,
                     cy = cy,
                     r = outer_r,
                     c = p.bg_color,
+                    close = mark_close(
+                        "circle",
+                        &field.field,
+                        p.state_label.as_deref(),
+                        &[("at", p.time_ms)],
+                        p.title.as_deref(),
+                    ),
                 );
                 let _ = write!(
                     &mut out,
-                    r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}"/>"#,
+                    r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"/>"#,
                     cx = cx,
                     cy = cy,
                     r = inner_r,
@@ -395,7 +427,8 @@ fn after_first_tag(s: &str) -> usize {
 /// Emit one filled rect for a [`BlockFill`], solid or 45°-striped. `class`
 /// names the element (`block` for a lane's own blocks, `now-chunk` for the
 /// strip past the now-line); a striped fill appends its `<pattern>` to
-/// `defs` on first use, keyed so identical fills share one def.
+/// `defs` on first use, keyed so identical fills share one def. `close`
+/// ends the tag — `/>`, or a mark's [`mark_close`].
 #[allow(clippy::too_many_arguments)]
 fn push_fill_rect(
     out: &mut String,
@@ -408,12 +441,13 @@ fn push_fill_rect(
     w: f64,
     h: f64,
     cross_extent: f64,
+    close: &str,
 ) {
     match fill {
         BlockFill::Single(color) => {
             let _ = write!(
                 out,
-                r#"<rect class="{cl}" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"/>"#,
+                r#"<rect class="{cl}" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"{close}"#,
                 cl = class,
                 c = color,
             );
@@ -425,12 +459,48 @@ fn push_fill_rect(
             let pattern_id = stripe_pattern_id(defs, patterns, colors, cross_extent);
             let _ = write!(
                 out,
-                r#"<rect class="{cl} multi-state" x="{x}" y="{y}" width="{w}" height="{h}" fill="url(#{pid})"/>"#,
+                r#"<rect class="{cl} multi-state" x="{x}" y="{y}" width="{w}" height="{h}" fill="url(#{pid})"{close}"#,
                 cl = class,
                 pid = pattern_id,
             );
         }
     }
+}
+
+/// The rest of a mark's tag after its geometry (da-s5da): what it is as
+/// data — its field, its state as the CLI prints it (`∅` for none) and its
+/// instants — and a `<title>` child, which any SVG viewer shows on hover
+/// with no script. Closes the `tag` element.
+fn mark_close(
+    tag: &str,
+    field: &str,
+    state: Option<&str>,
+    times: &[(&str, i64)],
+    title: Option<&str>,
+) -> String {
+    let mut out = format!(
+        r#" data-field="{}" data-state="{}""#,
+        escape_xml(field),
+        escape_xml(state.unwrap_or("∅")),
+    );
+    for (name, ms) in times {
+        let _ = write!(out, r#" data-{name}="{}""#, iso(*ms));
+    }
+    match title {
+        Some(t) => {
+            let _ = write!(out, "><title>{}</title></{tag}>", escape_xml(t));
+        }
+        None => out.push_str("/>"),
+    }
+    out
+}
+
+/// An instant as a mark's data carries it: ISO, UTC, to the millisecond —
+/// the way a slug writes it.
+fn iso(ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .unwrap_or_default()
 }
 
 /// Compute the SVG rect (x, y, w, h) for a block given its cross-axis
@@ -737,12 +807,14 @@ mod tests {
                         end_ms: DAY_START + 7 * HOUR,
                         fill: BlockFill::Single("#abcdef".into()),
                         state_label: Some("happy".into()),
+                        title: None,
                     }],
                     points: vec![DayviewPoint {
                         time_ms: DAY_START + 8 * HOUR,
                         fg_color: "#ff0000".into(),
                         bg_color: "#000000".into(),
                         state_label: None,
+                        title: None,
                     }],
                 }],
             }],

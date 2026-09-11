@@ -341,20 +341,19 @@ function app(page, errors, query) {
 		 * The SVG a pane is showing, as its markup.
 		 *
 		 * The visual panes' stdout is an SVG document, which CliOutput
-		 * renders through a data-URL `<img>` — so this is the same string
-		 * `run(argv)` returned, read back off the screen.
+		 * draws inline (da-s5da) — so this is the string `run(argv)`
+		 * returned, read back off the screen as the page holds it.
 		 *
 		 * The last picture in the pane: the day strip stacks the days
 		 * before today above it, as many as its box holds (da-zb0d), and
 		 * today's band is the one under them all. nowview has one.
 		 */
 		async paneSvg(title) {
-			const src = await page
+			return page
 				.locator(`section.pane[data-title="${title}"]`)
-				.locator('img.svg')
+				.locator('svg.svg')
 				.last()
-				.getAttribute('src');
-			return decodeURIComponent(src.replace(/^data:image\/svg\+xml,/, ''));
+				.evaluate((svg) => svg.outerHTML);
 		},
 
 		/**

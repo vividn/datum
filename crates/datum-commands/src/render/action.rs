@@ -714,12 +714,7 @@ pub(crate) fn format_timestamp_ref(
         // is on-screen.
         local.format("%Y-%m-%d").to_string()
     } else {
-        let base = format!(
-            "{:02}:{:02}:{:02}",
-            local.hour(),
-            local.minute(),
-            local.second()
-        );
+        let base = format!("{}:{:02}", clock_label(&local), local.second());
         let offset = compress_offset_minutes(t.offset_minutes);
         let suffix = format_uncertainty_suffix(uncertainty)
             .map(|u| paint(GRAY_FG, &u))
@@ -741,6 +736,12 @@ pub(crate) fn format_timestamp_ref(
         // strip_ansi — return the composed string unchanged.
         composed
     }
+}
+
+/// `HH:MM`, 24-hour: the clock every stamp above starts with, and the one
+/// a dayview/nowview mark's `<title>` reads its span in (da-s5da).
+pub(crate) fn clock_label(local: &impl Timelike) -> String {
+    format!("{:02}:{:02}", local.hour(), local.minute())
 }
 
 /// Wrap a host-local [`chrono::DateTime<Utc>`] (e.g. `create_time`,

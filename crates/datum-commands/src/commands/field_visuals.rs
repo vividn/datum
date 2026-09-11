@@ -17,6 +17,7 @@
 //! push helpers, emitting `NowviewBlock`/`NowviewPoint`) is NOT duplicated —
 //! it exists once in `commands/nowview.rs` and stays there.
 
+use chrono::DateTime;
 use datum_core::db::{Db, IGNORED_STATE_VALUE};
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
@@ -24,9 +25,11 @@ use datum_core::shape::{
     dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
     is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
 };
+use datum_core::time::Zone;
 use datum_layout::dayview::{BlockFill, DayviewBlock, DayviewPoint};
 use serde_json::Value as JsonValue;
 
+use crate::render::action::clock_label;
 use crate::render::colors::{field_rgb, md5_rgb, state_value_rgb, Rgb};
 
 /// Resolve a block's fill from its value. Arrays → multi-state stripes
@@ -223,7 +226,8 @@ pub(crate) fn render_field_visuals(
                         time_ms: occur_ms,
                         fg_color: rgb_to_hex(fg),
                         bg_color: rgb_to_hex(bg),
-                        state_label: state_label(entry.state.as_ref()),
+                        state_label: mark_state(entry.state.as_ref()),
+                        title: None,
                     });
                 }
             }
@@ -286,7 +290,8 @@ pub(crate) fn push_block_window(
         start_ms,
         end_ms,
         fill,
-        state_label: state_label(entry.state.as_ref()),
+        state_label: mark_state(entry.state.as_ref()),
+        title: None,
     });
 }
 
@@ -318,7 +323,8 @@ pub(crate) fn push_switch_region(
         start_ms,
         end_ms: region_end_ms,
         fill,
-        state_label: state_label(value),
+        state_label: mark_state(value),
+        title: None,
     });
 }
 
@@ -331,6 +337,54 @@ pub(crate) fn state_label(v: Option<&JsonValue>) -> Option<String> {
         JsonValue::String(s) => s.clone(),
         other => other.to_string(),
     })
+}
+
+/// A mark's state as the tail prints it — `start` / `end` for a bool, `∅`
+/// for null — so the mark and the row it came from say the same word
+/// (da-s5da). [`state_label`] stays the raw value: `stats` keys on it.
+fn mark_state(v: Option<&JsonValue>) -> Option<String> {
+    v.map(crate::render::state_truncate::state_label)
+}
+
+/// Give each mark the `<title>` a hover shows (da-s5da): `field: state`,
+/// and for a block its span in the tail's clock — `work: coding
+/// 14:00–14:30`. `cut` is where the fetch began and the window stops: a
+/// block starting at the first began before it (`mood: happy …–14:30`,
+/// the leading region nowview synthesizes), and one ending at the second
+/// is still going, as an open state is (`mood: happy 14:00 →`). A dot is
+/// named alone; its time is the viewer's to show.
+pub(crate) fn title_marks(
+    field: &str,
+    blocks: &mut [DayviewBlock],
+    points: &mut [DayviewPoint],
+    cut: (i64, i64),
+) {
+    let zone = Zone::host();
+    let clock = |ms: i64| {
+        DateTime::from_timestamp_millis(ms)
+            .map(|t| clock_label(&zone.local_naive(t)))
+            .unwrap_or_default()
+    };
+    let name = |state: &Option<String>| match state {
+        Some(s) => format!("{field}: {s}"),
+        None => field.to_string(),
+    };
+    for b in blocks {
+        let start = if b.start_ms == cut.0 {
+            "…".to_string()
+        } else {
+            clock(b.start_ms)
+        };
+        let end = if b.end_ms == cut.1 {
+            " →".to_string()
+        } else {
+            format!("–{}", clock(b.end_ms))
+        };
+        b.title = Some(format!("{} {start}{end}", name(&b.state_label)));
+    }
+    for p in points {
+        p.title = Some(name(&p.state_label));
+    }
 }
 
 /// Test helper: build a stub Entry with the desired (verb, occur_time, dur,

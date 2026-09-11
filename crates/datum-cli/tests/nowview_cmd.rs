@@ -101,7 +101,8 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
     // is mid-switch, `coffee` is an occur-only field.
     assert!(!svg.contains("nowview-state-panel"));
     assert!(!svg.contains("state-swatch"));
-    assert!(!svg.contains("mood: focused"));
+    // A mark's hover `<title>` names it (da-s5da); no label is drawn.
+    assert!(!svg.contains(">mood: focused<"));
     assert!(svg.contains(r#"class="now-chunk""#));
 }
 
@@ -385,7 +386,7 @@ fn field_rects(svg: &str, field: &str, class: &str) -> Vec<Rect> {
     let mut rest = group;
     while let Some(i) = rest.find(&tag) {
         let s = i + tag.len();
-        let e = rest[s..].find("/>").expect("rect close") + s;
+        let e = rest[s..].find('>').expect("rect close") + s;
         let attrs = &rest[s..e];
         let get = |name: &str| -> String {
             let key = format!(r#"{name}=""#);

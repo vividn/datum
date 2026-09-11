@@ -24,10 +24,8 @@
 // downward, that is what scrollback is — but its WIDTH must not exceed
 // the pane over text that isn't there.
 //
-// Trap, worth stating because it silently returns nothing: the drawings
-// are `<img src="data:image/svg+xml,…">`, so `querySelectorAll('svg')`
-// finds zero of them while two are on screen. The markup comes off the
-// `src`.
+// The drawings are inline `<svg class="svg">` (da-s5da); their markup is
+// read off the element, their authored width off its `width` attribute.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -100,7 +98,7 @@ async function show(app, title) {
 	const tab = app.page.locator('[role="tab"]', { hasText: title });
 	if ((await tab.count()) === 0) return;
 	await tab.click();
-	await app.page.locator(`section.pane[data-title="${title}"] img.svg`).waitFor();
+	await app.page.locator(`section.pane[data-title="${title}"] svg.svg`).waitFor();
 }
 
 /** Every pane's box against what is inside it, by title. */
@@ -210,12 +208,12 @@ describe('a pane', () => {
 					const sizes = await app.page.evaluate(() =>
 						Object.fromEntries(
 							[...document.querySelectorAll('section.pane')]
-								.filter((p) => p.querySelector('img.svg'))
+								.filter((p) => p.querySelector('svg.svg'))
 								.map((p) => {
-									const img = p.querySelector('img.svg');
+									const img = p.querySelector('svg.svg');
 									return [
 										p.dataset.title,
-										{ natural: img.naturalWidth, shown: img.getBoundingClientRect().width }
+										{ natural: img.width.baseVal.value, shown: img.getBoundingClientRect().width }
 									];
 								})
 						)
@@ -354,9 +352,9 @@ describe('a pane', () => {
 	// scaled into it, so the size has to be re-asked on every resize and
 	// not only on mount — otherwise a window drag leaves the old canvas
 	// stretched, which is half of "sometimes" in the report. The canvas
-	// the browser loaded is the command's own answer, so this reads
-	// `naturalWidth`: a stretched picture keeps its natural size and only
-	// a re-run changes it.
+	// the browser holds is the command's own answer, so this reads the
+	// `width` it declares: a stretched picture keeps its declared size and
+	// only a re-run changes it.
 	test('redraws both views when the window changes, with no reload', async () => {
 		await withApp(
 			async (app) => {
@@ -365,10 +363,10 @@ describe('a pane', () => {
 					app.page.evaluate(() =>
 						Object.fromEntries(
 							[...document.querySelectorAll('section.pane')]
-								.filter((p) => p.querySelector('img.svg'))
+								.filter((p) => p.querySelector('svg.svg'))
 								.map((p) => [
 									p.dataset.title,
-									p.querySelector('img.svg').naturalWidth
+									p.querySelector('svg.svg').width.baseVal.value
 								])
 						)
 					);
@@ -377,10 +375,10 @@ describe('a pane', () => {
 				await app.page.waitForFunction(
 					(was) =>
 						[...document.querySelectorAll('section.pane')]
-							.filter((p) => p.querySelector('img.svg'))
+							.filter((p) => p.querySelector('svg.svg'))
 							.every(
 								(p) =>
-									p.querySelector('img.svg').naturalWidth !==
+									p.querySelector('svg.svg').width.baseVal.value !==
 									was[p.dataset.title]
 							),
 					before

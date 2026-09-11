@@ -62,13 +62,12 @@ async function logADay(app) {
 /** One drawing as it is actually on screen: its markup, and its scale. */
 async function measure(img) {
 	await img.waitFor();
-	const svg = decodeURIComponent(
-		(await img.getAttribute('src')).replace(/^data:image\/svg\+xml,/, '')
-	);
-	// `naturalWidth` is the canvas the SVG declares; the bounding box is
-	// the room it got. Their ratio is what every glyph is multiplied by.
+	const svg = await img.evaluate((el) => el.outerHTML);
+	// The `width` attribute is the canvas the SVG declares; the bounding
+	// box is the room it got. Their ratio is what every glyph is
+	// multiplied by.
 	const { natural, rendered } = await img.evaluate((el) => ({
-		natural: el.naturalWidth,
+		natural: el.width.baseVal.value,
 		rendered: el.getBoundingClientRect().width
 	}));
 	const fonts = [...svg.matchAll(/font-size="([\d.]+)"/g)].map((m) => Number(m[1]));
@@ -92,13 +91,13 @@ async function measure(img) {
 function paneImage({ page }, title) {
 	return page
 		.locator('section.pane', { has: page.locator('h2', { hasText: title }) })
-		.locator('img.svg')
+		.locator('svg.svg')
 		.last();
 }
 
 /** The drawing the newest command left in the REPL's scrollback. */
 function replImage({ page }) {
-	return page.locator('.repl img.svg').last();
+	return page.locator('.repl svg.svg').last();
 }
 
 /** Assert a drawing clears the floor, reporting the arithmetic either way. */

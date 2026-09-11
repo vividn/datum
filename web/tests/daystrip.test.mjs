@@ -71,10 +71,9 @@ const colorOf = (name) => '#' + createHash('md5').update(name).digest('hex').sli
 
 /** One band's SVG, by how many days back it is. 0 is today's. */
 async function band({ page }, daysAgo) {
-	const src = await page
-		.locator(`.band[data-days-ago="${daysAgo}"] img.svg`)
-		.getAttribute('src');
-	return decodeURIComponent(src.replace(/^data:image\/svg\+xml,/, ''));
+	return page
+		.locator(`.band[data-days-ago="${daysAgo}"] svg.svg`)
+		.evaluate((svg) => svg.outerHTML);
 }
 
 /** The three lines of a band's date stamp. */
@@ -158,7 +157,7 @@ const waitForDays = ({ page }, depth) =>
 			JSON.stringify(
 				[...document.querySelectorAll('.band')].map((b) => [
 					Number(b.dataset.daysAgo),
-					b.querySelector('img.svg') !== null
+					b.querySelector('svg.svg') !== null
 				])
 			) === JSON.stringify(Array.from({ length: want + 1 }, (_, i) => [want - i, true])),
 		depth
@@ -217,8 +216,8 @@ const waitForHeights = ({ page }, want) =>
 	page.waitForFunction(
 		(w) =>
 			Object.entries(w).every(([daysAgo, height]) => {
-				const img = document.querySelector(`.band[data-days-ago="${daysAgo}"] img.svg`);
-				return img !== null && decodeURIComponent(img.src).includes(`height="${height}"`);
+				const img = document.querySelector(`.band[data-days-ago="${daysAgo}"] svg.svg`);
+				return img !== null && img.outerHTML.includes(`height="${height}"`);
 			}),
 		want
 	);
@@ -291,8 +290,8 @@ describe('the day strip', () => {
 			await app.page.waitForFunction(
 				(c) =>
 					document
-						.querySelector('.band[data-days-ago="0"] img.svg')
-						.src.includes(encodeURIComponent(c)),
+						.querySelector('.band[data-days-ago="0"] svg.svg')
+						.outerHTML.includes(c),
 				happy
 			);
 			for (const daysAgo of [1, 2]) {
@@ -472,7 +471,7 @@ describe('the day strip', () => {
 		// draws, and the handle works for the visit.
 		await withApp(
 			async (app) => {
-				await app.page.locator('.band[data-days-ago="0"] img.svg').waitFor();
+				await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
 				assert.equal(await valueOf(app), fallback);
 				await sizeFor(app, 1);
 				await app.page.locator('button.day-grip').focus();
@@ -570,8 +569,8 @@ describe('the day strip', () => {
 				await app.page.waitForFunction(
 					(want) =>
 						document
-							.querySelector('.band[data-days-ago="0"] img.svg')
-							.src.includes(encodeURIComponent(`>${want}<`)),
+							.querySelector('.band[data-days-ago="0"] svg.svg')
+							.outerHTML.includes(`>${want}<`),
 					labelFor(after, 0)[1]
 				);
 

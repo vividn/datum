@@ -60,9 +60,9 @@ async function chooseBar(page, id, word) {
 	await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
 }
 
-/** The box of a pane's picture, as the picture says it (`naturalWidth`). */
+/** The box of a pane's picture, as the picture says it (its `width`). */
 const canvasWidth = (page, id) =>
-	pane(page, id).locator('img.svg').evaluate((img) => img.naturalWidth);
+	pane(page, id).locator('svg.svg').evaluate((svg) => svg.width.baseVal.value);
 
 /** A real touch swipe from (x, y) by (dx, dy), through CDP. */
 async function swipe(page, x, y, dx, dy) {
@@ -95,9 +95,9 @@ describe('the default layout', () => {
 			await app.page.waitForFunction(
 				() =>
 					document.querySelector('section[data-pane="tail"] .body')?.textContent.includes('mood') &&
-					decodeURIComponent(
-						document.querySelector('section[data-pane="nowview"] img.svg')?.getAttribute('src') ?? ''
-					).includes('data-field="mood"')
+					(document.querySelector('section[data-pane="nowview"] svg.svg')?.outerHTML ?? '').includes(
+						'data-field="mood"'
+					)
 			);
 		}, DESKTOP);
 	});
@@ -121,7 +121,7 @@ describe('the … menu', () => {
 			await picker.locator('button', { hasText: 'nowview' }).click();
 			// The new pane is titled by its kind and draws: a second nowview
 			// beside the tail, at its own box's size.
-			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('img.svg').waitFor();
+			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'widgets']);
 		}, DESKTOP);
 	});
@@ -228,11 +228,11 @@ describe('a border', () => {
 			);
 			// The picture is re-asked at the narrower box, not squeezed into it.
 			await page.waitForFunction(
-				(was) => document.querySelector('section[data-pane="nowview"] img.svg')?.naturalWidth < was,
+				(was) => document.querySelector('section[data-pane="nowview"] svg.svg')?.width.baseVal.value < was,
 				drawn
 			);
-			const img = pane(page, 'nowview').locator('img.svg');
-			const shown = await img.evaluate((el) => ({ natural: el.naturalWidth, box: el.getBoundingClientRect().width }));
+			const img = pane(page, 'nowview').locator('svg.svg');
+			const shown = await img.evaluate((el) => ({ natural: el.width.baseVal.value, box: el.getBoundingClientRect().width }));
 			assert.ok(Math.abs(shown.natural - shown.box) <= 1, `scaled: ${JSON.stringify(shown)}`);
 		}, DESKTOP);
 	});
@@ -333,7 +333,7 @@ describe('on a phone', () => {
 			// Drawn before the swipe back: while the picture is arriving the
 			// body is briefly wider than its box, and a swipe over a sideways
 			// scroll is — by the rule under test — not a swipe.
-			await pane(page, 'side').locator('img.svg').waitFor();
+			await pane(page, 'side').locator('svg.svg').waitFor();
 			await swipe(page, box.x + box.width * 0.2, mid, 120, 0);
 			await page.waitForFunction(
 				() => document.querySelector('section[data-pane="side"] [role="tab"][aria-selected="true"]')?.textContent === 'tail'
@@ -366,7 +366,7 @@ const drawnRuns = (argvs) => ({
 });
 
 /** The bands the strip is showing — one `dayview` run per redraw. */
-const bandCount = (page) => pane(page, 'strip').locator('img.svg').count();
+const bandCount = (page) => pane(page, 'strip').locator('svg.svg').count();
 
 /** A drawn pane's content box, whole pixels down, as `paneArgv` asks for it. */
 const contentWidth = (page, id) =>
@@ -443,8 +443,8 @@ describe('resizing', () => {
 			// And the picture is the box's size: asked for at the final width,
 			// not the old one stretched to it.
 			assert.equal(await canvasWidth(page, 'nowview'), await contentWidth(page, 'nowview'));
-			const img = pane(page, 'nowview').locator('img.svg');
-			const shown = await img.evaluate((el) => ({ natural: el.naturalWidth, box: el.getBoundingClientRect().width }));
+			const img = pane(page, 'nowview').locator('svg.svg');
+			const shown = await img.evaluate((el) => ({ natural: el.width.baseVal.value, box: el.getBoundingClientRect().width }));
 			assert.ok(Math.abs(shown.natural - shown.box) <= 1, `scaled: ${JSON.stringify(shown)}`);
 		}, DESKTOP);
 	});
