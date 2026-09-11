@@ -6,12 +6,17 @@
 	(da-rex1). The step is the widget's setting, handed out with `change`, so
 	the tree keeps it with the layout.
 
+	While the time cursor is set ($lib/cursor.ts) the window is centred on
+	it, over the `at` a hand-written tree may carry; its dotted line is the
+	picture's own (the `picture` action draws it wherever the cursor falls).
+
 	The controls sit beside the pane, not inside its picture: a redraw
 	replaces the picture, never them.
 -->
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import CliPane from '$lib/CliPane.svelte';
+	import { cursor } from '$lib/cursor.js';
 	import { NOWVIEW_HISTORY, NOWVIEW_STEPS, nowviewSpec } from '$lib/panes.js';
 
 	/** How far back the window reaches: one of NOWVIEW_STEPS. */
@@ -26,7 +31,7 @@
 	$: i = NOWVIEW_STEPS.indexOf(NOWVIEW_STEPS.includes(history) ? history : NOWVIEW_HISTORY);
 	$: up = NOWVIEW_STEPS[i + 1];
 	$: down = NOWVIEW_STEPS[i - 1];
-	$: spec = nowviewSpec(history, at);
+	$: spec = nowviewSpec(history, $cursor?.at.toISOString() ?? at);
 </script>
 
 <div class="nowview">

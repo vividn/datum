@@ -109,7 +109,8 @@ export const KINDS: Record<string, WidgetKind> = {
 	},
 	repl: { meta: meta('repl', 'repl'), component: ReplWidget, legible: { width: 200, height: 106 } },
 	// How far back nowview reaches is its setting, which its − / + step
-	// (da-pcis); `at` centres it on an instant, which nothing sets yet.
+	// (da-pcis); `at` centres it on an instant, which the time cursor
+	// overrides while it is set (NowviewWidget.svelte).
 	nowview: {
 		meta: meta('nowview', 'nowview', { history: NOWVIEW_HISTORY }),
 		component: NowviewWidget,

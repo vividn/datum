@@ -17,11 +17,11 @@
 	and the receipt stays until the next command. That is the teach loop,
 	from wherever the command came.
 
-	Before the prompt is the pill slot — `-t 14:30`, x-able — for the time
-	cursor vividn named next. Nothing in the shell sets a pill; a submitted
-	line is what was typed and then the pills' text, as a fields-widget
-	press is (`pressWithPills`). A line the fields widget prefills
-	(`prefill`) lands in the field, focused, unrun.
+	Before the prompt is the pill slot — `-t 14:30`, x-able — which the time
+	cursor fills ($lib/cursor.ts, da-wnt2) and which stays for the next
+	command; a submitted line is what was typed and then the pills' text,
+	as a fields-widget press is (`pressWithPills`). A line the fields
+	widget prefills (`prefill`) lands in the field, focused, unrun.
 
 	While storage is degraded the bar's border is the panes' alarm orange
 	and its title is the storage sentence: the warning the banner carried
@@ -260,6 +260,12 @@
 		font: inherit;
 		color: #7c7cff;
 		cursor: pointer;
+	}
+
+	/* The time cursor's own blue, as its dotted lines are drawn. */
+	.pill.time {
+		border-color: #7c9cff;
+		color: #7c9cff;
 	}
 
 	.pill button:hover {
