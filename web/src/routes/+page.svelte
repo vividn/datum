@@ -46,16 +46,4 @@
 		flex-direction: column;
 		height: 100%;
 	}
-
-	/* The root pane draws no bar of its own: its tabs are the root bar
-	   above the page. Until the engine's own change lands (da-2a5y, in
-	   flight beside this) the frame still renders one, hidden here — and
-	   the inset the hidden title would have needed goes with it. Remove
-	   both rules once the engine renders the root bare. */
-	.frame :global(section.root > .titlebar) {
-		display: none;
-	}
-	.frame :global(section.root.pane > .content) {
-		padding-top: 0;
-	}
 </style>
