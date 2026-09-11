@@ -156,6 +156,13 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   mounted. `Pane.svelte` inside a frame renders body-only and hands its
   title slot and alarm up to `PaneFrame.svelte`. Tests find a pane by its
   `data-title`; the old grid's area names live on as classes of the cells.
+- The tail pane is `tail -w` (da-lan0, `web/src/lib/TailTable.svelte`):
+  its box decides the row count (`tail -n <n>`, n from a hidden probe
+  row's height, never from the drawn table), scrolling to the top pages
+  the rows above in (`tail -n <n+1> -t <oldest row's own time>`, the
+  CLI's inclusive bound, deduped by hid, capped at 300 rows) with the
+  reader's row anchored, and a write while scrolled up keeps the place
+  and shows `↓ new`. `web/tests/tailwatch.test.mjs` holds it to that.
 - The dayview strip is a stack of days, not one band (da-cgyh): today is
   pinned at the bottom and the days before it are stacked above, as many
   as the strip's box holds (da-zb0d: the height comes from the container,
