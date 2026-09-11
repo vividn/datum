@@ -1,4 +1,5 @@
 //! `datum nowview` CLI integration tests (da-vw4).
+#![allow(clippy::disallowed_types)] // native tests: `chrono::Local` is the host zone the binary reads too
 
 mod common;
 

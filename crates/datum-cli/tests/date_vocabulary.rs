@@ -2,6 +2,7 @@
 //! day words (`today` / `yesterday` / `tomorrow`) and weekday names on
 //! `-d`, plus `-t` falling back to date parsing so both flags accept the
 //! same words.
+#![allow(clippy::disallowed_types)] // native tests: `chrono::Local` is the host zone the binary reads too
 
 mod common;
 

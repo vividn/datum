@@ -17,7 +17,7 @@
 //! See `crates/datum-cli/tests/render_state_group.rs` for the worked
 //! examples encoded as fixtures.
 
-use chrono::{FixedOffset, Local, Timelike, Utc};
+use chrono::{FixedOffset, Timelike, Utc};
 #[cfg(feature = "db")]
 use datum_core::db::Db;
 use datum_core::state::FieldStateEvents;
@@ -25,7 +25,7 @@ use datum_core::{
     entry::{Entry, EntryShape},
     field_spec::{FieldSpec, SpecRegistry},
     shape::has_state_badge,
-    time::DatumTime,
+    time::{DatumTime, Zone},
 };
 use datum_parse::time::{format_human_duration, DurationPrecision};
 use serde_json::Value as JsonValue;
@@ -748,8 +748,7 @@ pub(crate) fn clock_label(local: &impl Timelike) -> String {
 /// `modify_time`) as a [`DatumTime`] anchored to the host's local offset, so
 /// the same renderer used for occur/end times can format it.
 pub(crate) fn synthesize_local_datumtime(utc: chrono::DateTime<Utc>) -> DatumTime {
-    let local = utc.with_timezone(&Local);
-    let offset_minutes = local.offset().local_minus_utc() / 60;
+    let offset_minutes = Zone::host().offset_at(utc).local_minus_utc() / 60;
     DatumTime {
         utc,
         offset_minutes,

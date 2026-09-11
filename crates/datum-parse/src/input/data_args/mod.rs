@@ -1480,7 +1480,7 @@ mod tests {
         let day = chrono::NaiveDate::parse_from_str(&resolved[..10], "%Y-%m-%d")
             .expect("resolved value is a date");
         assert_eq!(day.weekday(), Weekday::Fri);
-        let today = chrono::Local::now().date_naive();
+        let today = crate::time::DatumTime::now().local_time().date_naive();
         assert!(
             (day - today).num_days().abs() <= 3,
             "nearest Friday is within half a week (today={today} got={day})"

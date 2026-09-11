@@ -16,12 +16,12 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
+use chrono::{Datelike, NaiveDate, TimeZone, Utc};
 use datum_core::db::Db;
 use datum_core::entry::Entry;
 use datum_core::field_spec::FieldSpec;
 use datum_core::integrity::ListFilter;
-use datum_core::time::Zone;
+use datum_core::time::{DatumTime, Zone};
 use datum_layout::dayview::{
     compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewFieldInput,
     Orientation,
@@ -49,7 +49,7 @@ pub fn dayview(args: DayviewArgs, db: &Db) -> Result<()> {
         // only when the visible window actually contains "now" (otherwise
         // the now-line isn't visible and there's nothing to advance), and
         // suppressed when we'd be dumping SVG into a terminal.
-        let today = Local::now().date_naive();
+        let today = today();
         let end_date = resolved_end_date(&args, today)?;
         let contains_now = window_contains_today(&args, today, end_date)?;
         let periodic =
@@ -116,9 +116,16 @@ fn dayview_periodic_refresh(
     Some(std::time::Duration::from_secs(60))
 }
 
+/// Today on the reader's clock (`DatumTime::now()`), the zone the day
+/// boundaries below are cut in — not `chrono::Local`, which is UTC in the
+/// browser and made today yesterday until the zone's offset (da-y6qj).
+fn today() -> NaiveDate {
+    DatumTime::now().local_time().date_naive()
+}
+
 fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
     // 1. Resolve the visible day window.
-    let today = Local::now().date_naive();
+    let today = today();
     let end_date = match args.end_date.as_deref() {
         Some(s) => {
             resolve_date_arg(s, today).with_context(|| format!("invalid --end-date: '{s}'"))?

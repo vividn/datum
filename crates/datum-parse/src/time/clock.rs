@@ -64,6 +64,7 @@ pub fn host_iana_tz_name() -> Option<String> {
 /// unnameable host then had no offset either, and every timestamp landed at
 /// UTC. The kernel follows `/etc/localtime` on `open(2)` wherever it points,
 /// so the contents are readable even on hosts whose *path* yields no name.
+#[allow(clippy::disallowed_types)] // the one sanctioned read of `chrono::Local`
 pub fn host_offset() -> FixedOffset {
     chrono::Local::now().offset().fix()
 }

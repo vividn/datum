@@ -18,7 +18,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Local, TimeZone, Timelike, Utc};
+use chrono::{DateTime, TimeZone, Timelike, Utc};
 use datum_core::db::Db;
 use datum_core::entry::Entry;
 use datum_core::field_spec::FieldSpec;
@@ -26,6 +26,7 @@ use datum_core::shape::{
     dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
     is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
 };
+use datum_core::time::Zone;
 use datum_layout::dayview::{compute_dayview, DayviewBlock, DayviewFieldInput};
 use datum_layout::nowview::{
     nowview_config, NowviewBlock, NowviewCurrentState, NowviewField, NowviewGeometry, NowviewPoint,
@@ -867,8 +868,10 @@ fn push_switch_region_terminal(
     });
 }
 
+/// `t` on the reader's clock — the zone `DatumTime::now()` stamps with, which
+/// in the browser is the page's `TZ` (`chrono::Local` is UTC there, da-y6qj).
 pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
-    let local = t.with_timezone(&Local);
+    let local = Zone::host().local_naive(t);
     format!("{}:{:02}", local.hour(), local.minute())
 }
 

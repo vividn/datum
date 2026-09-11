@@ -19,6 +19,7 @@ use anyhow::Result;
 use datum_core::db::Db;
 use datum_core::entry::Entry;
 use datum_core::integrity::{IntegrityKind, IntegrityWarning, ListFilter, Resolution};
+use datum_core::time::Zone;
 
 use crate::args::{ConflictsCommand, ConflictsKeep, ConflictsListArgs, ConflictsResolveArgs};
 
@@ -79,9 +80,8 @@ fn list(args: ConflictsListArgs, db: &Db) -> Result<()> {
             hid = w.hid,
             kind = w.kind.as_str(),
             field = w.local_entry.field,
-            detected = w
-                .detected_at
-                .with_timezone(&chrono::Local)
+            detected = Zone::host()
+                .local_naive(w.detected_at)
                 .format("%Y-%m-%d %H:%M"),
             status = w.resolution.as_deref().unwrap_or("pending"),
         );

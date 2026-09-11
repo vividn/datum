@@ -128,7 +128,6 @@ fn day_edge(date: NaiveDate, edge: Edge) -> Result<DateTime<Utc>> {
 mod tests {
     use super::*;
     use chrono::Duration;
-    use chrono::Local;
 
     /// Assert `actual` is within a second of `expected` — the bounds that
     /// resolve against "now" are re-read from the clock inside the parser.
@@ -230,14 +229,15 @@ mod tests {
 
     #[test]
     fn clock_time_lands_on_today() {
-        let before = Local::now().date_naive();
-        let got = parse_since("9:15am").unwrap().with_timezone(&Local);
+        let today = || DatumTime::now().local_time().date_naive();
+        let before = today();
+        let got = Zone::host().local_naive(parse_since("9:15am").unwrap());
         // Bracket the call: reading the date only afterwards makes this flake
         // when local midnight falls between them (Copilot, PR #85).
         assert!(
-            [before, Local::now().date_naive()].contains(&got.date_naive()),
+            [before, today()].contains(&got.date()),
             "{} matched neither side of the midnight boundary",
-            got.date_naive(),
+            got.date(),
         );
         assert_eq!(
             got.time(),

@@ -11,3 +11,12 @@ disallowed-methods = [
     { path = "chrono::TimeZone::from_local_datetime", reason = "use datum_parse::time::Zone::resolve, then Resolved::for_boundary() or ::for_logging() (da-ztae) — .single() silently drops the two DST cases" },
     { path = "chrono::NaiveDateTime::and_local_timezone", reason = "use datum_parse::time::Zone::resolve, then Resolved::for_boundary() or ::for_logging() (da-ztae) — .single() silently drops the two DST cases" },
 ]
+
+# The reader's zone likewise has one source: `Zone::host()` / `DatumTime::now()`,
+# which honour `TZ`. `chrono::Local` knows no zone under wasm32-wasip1, so in the
+# browser it is UTC — the nowview's clock and the dayview's today read UTC there
+# while every entry was stamped in the page's zone (da-y6qj). `host_offset` in
+# `clock.rs` carries a scoped `#[allow]` — it is the fallback for a nameless host.
+disallowed-types = [
+    { path = "chrono::Local", reason = "use datum_parse::time::Zone::host() or DatumTime::now() (da-y6qj) — chrono::Local is UTC under wasm32-wasip1" },
+]

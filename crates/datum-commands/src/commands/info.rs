@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use datum_core::db::Db;
+use datum_core::time::Zone;
 
 use crate::args::InfoArgs;
 use crate::config;
@@ -140,7 +141,7 @@ fn last_modified(db: &Db) -> Option<String> {
     let iso = s?;
     match chrono::DateTime::parse_from_rfc3339(&iso) {
         Ok(dt) => {
-            let local = dt.with_timezone(&chrono::Local);
+            let local = Zone::host().local_naive(dt.to_utc());
             Some(local.format("%Y-%m-%d %H:%M").to_string())
         }
         Err(_) => Some(iso),

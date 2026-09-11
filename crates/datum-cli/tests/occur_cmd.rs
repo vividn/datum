@@ -16,6 +16,7 @@
 //!   * Datum's `%fieldStructure` interpolated the stored `field` itself;
 //!     daydumb lacks that but does template the slug via `--id`, so the
 //!     "composite field" TS case maps to slug interpolation via `--id`.
+#![allow(clippy::disallowed_types)] // native tests: `chrono::Local` is the host zone the binary reads too
 
 mod common;
 

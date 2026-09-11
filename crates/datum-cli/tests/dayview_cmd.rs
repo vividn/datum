@@ -1,4 +1,5 @@
 //! `datum dayview` CLI tests (datum-parity multi-day visualization).
+#![allow(clippy::disallowed_types)] // native tests: `chrono::Local` is the host zone the binary reads too
 
 mod common;
 

@@ -123,4 +123,31 @@ describe('the wasi CLI', () => {
 			);
 		});
 	}
+
+	// The views read the reader's clock through the same zone: under WASI
+	// `chrono::Local` is UTC, which labelled a 12:26 cursor 10:26 and made
+	// today yesterday from midnight until the zone's offset (da-y6qj).
+	test("the nowview's clock is the zone's", async () => {
+		await withApp(
+			async (app) => {
+				const view = await app.run(['nowview', '-o', '-', '--history', '15m', '--at', '2026-09-11T10:26:00Z']);
+				assert.equal(view.code, 0, view.stderr);
+				const labels = [...view.stdout.matchAll(/class="tick-label"[^>]*>([^<]*)</g)].map((m) => m[1]);
+				assert.ok(labels.includes('12:26') && !labels.includes('10:26'), labels.join(' '));
+			},
+			{ timezone: 'Europe/Berlin' }
+		);
+	});
+
+	test("the dayview's today is the zone's date", async () => {
+		const clock = workerClock(Date.parse('2026-09-12T00:30:00+02:00'));
+		await withApp(
+			async (app) => {
+				const view = await app.run(['dayview', '--n-days', '1']);
+				assert.equal(view.code, 0, view.stderr);
+				assert.match(view.stdout, /data-from="2026-09-11T22:00:00\.000Z"/);
+			},
+			{ prepare: clock.prepare, timezone: 'Europe/Berlin' }
+		);
+	});
 });

@@ -16,9 +16,10 @@
 //! API (C6 territory).
 
 use anyhow::Result;
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Utc};
 use datum_core::db::Db;
 use datum_core::sync_state;
+use datum_core::time::Zone;
 
 use crate::args::SyncStatusArgs;
 use crate::commands::sync::daemon_status;
@@ -71,7 +72,12 @@ fn daemon_line() -> String {
         let pid = state.pid.unwrap_or(0);
         let started = state
             .started_at
-            .map(|t| t.with_timezone(&Local).format("%Y-%m-%d %H:%M").to_string())
+            .map(|t| {
+                Zone::host()
+                    .local_naive(t)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+            })
             .unwrap_or_else(|| "?".to_string());
         format!("● running (pid {pid}) started {started}")
     } else {
@@ -128,7 +134,7 @@ fn fmt_timestamp(ts: Option<DateTime<Utc>>) -> String {
     match ts {
         None => "never                   ".to_string(),
         Some(dt) => {
-            let local = dt.with_timezone(&Local);
+            let local = Zone::host().local_naive(dt);
             let ago = time_ago(dt);
             format!("{} ({ago})", local.format("%Y-%m-%d %H:%M"))
         }
