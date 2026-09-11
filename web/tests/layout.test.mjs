@@ -261,7 +261,9 @@ describe('a border', () => {
 		}, DESKTOP);
 	});
 
-	test('will not drag a child below its floor', async () => {
+	// The kinds have no floor (da-zh2o): the side column, a holder over
+	// nowview and the tail, drags down to its panes' outlines and no further.
+	test('drags the side column down to its panes\' outlines and no further', async () => {
 		await withApp(async ({ page }) => {
 			const border = page.locator('.split.row > [role="separator"]');
 			const box = await border.boundingBox();
@@ -269,12 +271,11 @@ describe('a border', () => {
 			const y = box.y + box.height / 2;
 			await page.mouse.move(x, y);
 			await page.mouse.down();
-			for (let i = 1; i <= 10; i++) await page.mouse.move(x + i * 80, y);
+			for (let i = 1; i <= 20; i++) await page.mouse.move(x + i * 80, y);
 			await page.mouse.up();
 			await page.waitForTimeout(300);
 			const side = await pane(page, 'side').boundingBox();
-			// nowview and tail both floor at 200px of content plus the frame.
-			assert.ok(side.width >= 200, `the side column was dragged to ${side.width}px`);
+			assert.ok(Math.abs(side.width - CHROME.width) <= 1, `the side column was dragged to ${side.width}px`);
 		}, DESKTOP);
 	});
 });
@@ -967,37 +968,74 @@ describe('scrollbars', () => {
 	}
 });
 
-// The strip's floor follows its day height (vividn, da-2a5y: "The height
-// of the dayview frame should have a clamped minimum of the single day
-// height, so it can vary depending on the size of the days"): with 200px
-// days the pane cannot be dragged below one whole day, and with 40px
-// days it can shrink to a strip.
-describe("the strip's floor", () => {
-	/** A top-bar widget pane's chrome (Layout.svelte's `chromeOf`: the outline and half the row) and the strip body's padding. */
-	const CHROME = 2 + 12;
-	const PADDING = 16;
+/**
+ * A top-bar widget pane's frame (Layout.svelte's `chromeOf`, da-13bc):
+ * the outline, and the inside half of the title's row across the top.
+ */
+const CHROME = { width: 2, height: 2 + 12 };
+/** The strip body's padding as the strip's snap counts it (registry.ts). */
+const PADDING = 16;
+const todayBox = (dayHeight) => dayHeight + 2 * 2 + 15; // panes.ts: the day, datum's margins and the hour axis
 
-	for (const dayHeight of [200, 40]) {
-		test(`with ${dayHeight}px days the strip stops at todayBox(${dayHeight}) plus its frame`, async () => {
-			await withApp(
-				async ({ page }) => {
-					const border = page.locator('.split.column > [role="separator"]');
-					const box = await border.boundingBox();
-					const x = box.x + box.width / 2;
-					const y = box.y + box.height / 2;
-					await page.mouse.move(x, y);
-					await page.mouse.down();
-					for (let i = 1; i <= 10; i++) await page.mouse.move(x, y - i * 60);
-					await page.mouse.up();
-					await page.waitForTimeout(300);
-					const cell = await page.locator('.split.column > .cell').first().boundingBox();
-					const today = dayHeight + 2 * 2 + 15; // panes.ts: todayBox = day + margins + the hour axis
-					assert.ok(cell.height >= today + CHROME, `${dayHeight}px days: the strip was dragged to ${cell.height}px, under one day (${today + CHROME})`);
-					assert.ok(cell.height <= today + CHROME + PADDING + 2, `${dayHeight}px days: the strip stopped at ${cell.height}px, well above its floor`);
-				},
-				{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(stripOver(dayHeight))) }
-			);
-		});
+/** Press the pointer on the middle of `border`; the point pressed. */
+async function grab(page, border) {
+	const box = await border.boundingBox();
+	const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	await page.mouse.move(at.x, at.y);
+	await page.mouse.down();
+	return at;
+}
+
+/** The extent, in px, of each cell of the first split along `direction`. */
+const cellExtents = (page, direction) =>
+	page.evaluate(
+		(d) => [...document.querySelectorAll(`.split.${d} > .cell`)].map((c) => c.getBoundingClientRect()[d === 'row' ? 'width' : 'height']),
+		direction
+	);
+
+// vividn's third look (da-zh2o): "let widgets get a lot smaller, until the
+// display is gone and just a frame bar remains". Every kind a border can
+// be dragged beside (the widget bar sizes itself, and the border beside
+// it is no handle) shrinks to its frame, down a column AND across a row:
+// the section is exactly the frame, and nothing of the widget is painted
+// past it. The title lies OVER the content (da-13bc), so what is left of
+// the content box is the inside half of the title's row — 12px down a
+// column under a top bar, 0px across a row.
+describe('a widget pane shrinks to its frame', () => {
+	for (const kind of ['daystrip', 'repl', 'nowview', 'tail', 'command', 'stats']) {
+		for (const direction of ['column', 'row']) {
+			const axis = direction === 'row' ? 'width' : 'height';
+			test(`${kind}, across a ${direction}: only its frame is left, ${CHROME[axis]}px ${axis}`, async () => {
+				await withApp(
+					async ({ page }) => {
+						const at = await grab(page, page.locator(`.split.${direction} > [role="separator"]`));
+						for (let i = 1; i <= 20; i++) {
+							await page.mouse.move(direction === 'row' ? at.x - i * 80 : at.x, direction === 'row' ? at.y : at.y - i * 60);
+						}
+						await page.mouse.up();
+						await page.waitForTimeout(300);
+						const seen = await pane(page, 'a').evaluate((section, row) => {
+							const content = section.querySelector(':scope > .content');
+							const s = getComputedStyle(content);
+							const b = section.getBoundingClientRect();
+							// Halfway into the border gap past the frame, at every layer: nothing of the widget is there.
+							const past = row ? [b.right + 4, b.top + b.height / 2] : [b.left + b.width / 2, b.bottom + 4];
+							return {
+								spills: document.elementsFromPoint(...past).some((el) => section.contains(el)),
+								section: b[row ? 'width' : 'height'],
+								content: row
+									? content.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)
+									: content.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom)
+							};
+						}, direction === 'row');
+						assert.ok(Math.abs(seen.content - (CHROME[axis] - 2)) <= 1, `${kind}: the content box is ${seen.content}px ${axis}, not the title's inside half`);
+						assert.ok(!seen.spills, `${kind}: the widget paints outside its frame`);
+						assert.ok(Math.abs(seen.section - CHROME[axis]) <= 1, `${kind}: the frame is ${seen.section}px ${axis}, not ${CHROME[axis]}`);
+					},
+					{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along(direction, widgetPane('a', kind), widgetPane('b', 'repl')))) }
+				);
+			});
+		}
 	}
 });
 
@@ -1052,33 +1090,26 @@ describe('the title on the line', () => {
 		}, DESKTOP);
 	});
 
-	for (const dayHeight of [200, 40]) {
-		test(`with ${dayHeight}px days a left-bar strip floors at its day, a top-bar one 12px taller`, async () => {
-			await withApp(
-				async ({ page }) => {
-					const borders = page.locator('.split.column > [role="separator"]');
-					for (const i of [0, 1]) {
-						const box = await borders.nth(i).boundingBox();
-						const x = box.x + box.width / 2;
-						const y = box.y + box.height / 2;
-						await page.mouse.move(x, y);
-						await page.mouse.down();
-						for (let step = 1; step <= 10; step++) await page.mouse.move(x, y - step * 60);
-						await page.mouse.up();
-						await page.waitForTimeout(300);
-					}
-					const [left, top] = await page
-						.locator('.split.column > .cell')
-						.evaluateAll((cells) => cells.slice(0, 2).map((c) => c.getBoundingClientRect().height));
-					const today = dayHeight + 2 * 2 + 15; // panes.ts: todayBox = day + margins + the hour axis
-					const floor = today + 16 + 2; // the strip body's padding, and the outline
-					assert.ok(Math.abs(left - floor) <= 0.5, `the left-bar strip stopped at ${left}px, its floor is ${floor}px`);
-					assert.ok(Math.abs(top - left - 12) <= 0.5, `the top-bar strip is ${top}px, the left-bar one ${left}px`);
-				},
-				{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(twoStrips(dayHeight))) }
-			);
-		});
-	}
+	// Its kind has no floor (da-zh2o), so what is left of a strip dragged
+	// shut is its frame, and the frame follows the bar's edge: a left-hand
+	// title adds width, not height, so that strip keeps only its outline.
+	test('dragged shut, a left-bar strip keeps its outline and a top-bar one 12px more', async () => {
+		await withApp(
+			async ({ page }) => {
+				const borders = page.locator('.split.column > [role="separator"]');
+				for (const i of [0, 1]) {
+					const at = await grab(page, borders.nth(i));
+					for (let step = 1; step <= 10; step++) await page.mouse.move(at.x, at.y - step * 60);
+					await page.mouse.up();
+					await page.waitForTimeout(300);
+				}
+				const [left, top] = await cellExtents(page, 'column');
+				assert.ok(Math.abs(left - 2) <= 0.5, `the left-bar strip stopped at ${left}px, its outline is 2px`);
+				assert.ok(Math.abs(top - CHROME.height) <= 0.5, `the top-bar strip stopped at ${top}px, its frame is ${CHROME.height}px`);
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(twoStrips(85))) }
+		);
+	});
 });
 
 // "bar submenu should open immediately on mouse over" and "let's put the
@@ -1209,6 +1240,100 @@ const twoStrips = (dayHeight) => ({
 	}
 });
 
+// "let the height of the dayview get smaller than 1 day, but put a
+// snapping notch at exactly one day" (da-zh2o). The strip's snap is one
+// whole day at its day height, plus its padding and its frame: a pointer
+// within 8px of it lands the border ON it, 12px beyond goes past, and the
+// drop keeps what the drag showed. Measured on the PREVIEW, button down.
+describe("the strip's notch", () => {
+	test('with 85px days the border above the strip lands on one day within ±8px, and passes 12px beyond', async () => {
+		await withApp(
+			async ({ page }) => {
+				const snap = todayBox(85) + PADDING + CHROME.height;
+				const [, strip] = await cellExtents(page, 'column');
+				const at = await grab(page, page.locator('.split.column > [role="separator"]'));
+				// Moving the border down by d shrinks the strip below it by d.
+				const toward = async (extent) => {
+					await page.mouse.move(at.x, at.y + strip - extent);
+					return (await cellExtents(page, 'column'))[1];
+				};
+				for (const off of [8, 4, 0, -4, -8]) {
+					const shown = await toward(snap + off);
+					assert.ok(Math.abs(shown - snap) <= 0.5, `a pointer ${off}px off the notch showed the strip at ${shown}px, not ${snap}`);
+				}
+				for (const off of [12, -12]) {
+					const shown = await toward(snap + off);
+					assert.ok(Math.abs(shown - (snap + off)) <= 1, `a pointer ${off}px off the notch showed the strip at ${shown}px, not ${snap + off}`);
+				}
+				await toward(snap + 5);
+				await page.mouse.up();
+				await page.waitForTimeout(300);
+				const dropped = (await cellExtents(page, 'column'))[1];
+				assert.ok(Math.abs(dropped - snap) <= 0.5, `the drop kept ${dropped}px, not the ${snap}px the drag showed`);
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('strip', 'daystrip', { dayHeight: 85 })))) }
+		);
+	});
+
+	test('two strips in one column each snap to their own day height, 85px and 120px', async () => {
+		await withApp(
+			async ({ page }) => {
+				const [top] = await cellExtents(page, 'column');
+				// The border between the two strips; the REPL below them is what makes the app ready.
+				const at = await grab(page, page.locator('.split.column > [role="separator"]').first());
+				const snapA = todayBox(85) + PADDING + CHROME.height;
+				await page.mouse.move(at.x, at.y - (top - snapA) + 6);
+				const [a] = await cellExtents(page, 'column');
+				assert.ok(Math.abs(a - snapA) <= 0.5, `the 85px strip showed ${a}px, not ${snapA}`);
+				const snapB = todayBox(120) + PADDING + CHROME.height;
+				const [, bottom] = await cellExtents(page, 'column');
+				// The pointer now: at the notch A snapped to, and B is what is left.
+				await page.mouse.move(at.x, at.y - (top - snapA) + (bottom - snapB) - 6);
+				const [, b] = await cellExtents(page, 'column');
+				assert.ok(Math.abs(b - snapB) <= 0.5, `the 120px strip showed ${b}px, not ${snapB}`);
+				await page.mouse.up();
+			},
+			{
+				...DESKTOP,
+				prepare: (context) =>
+					context.addInitScript(draft, JSON.stringify(along('column', widgetPane('a', 'daystrip', { dayHeight: 85 }), widgetPane('b', 'daystrip', { dayHeight: 120 }), widgetPane('repl', 'repl'))))
+			}
+		);
+	});
+
+	// Shorter than one day the strip clips today's band from the top and
+	// keeps its hour axis on screen, and the pane's body does not scroll;
+	// the day-height notch is clamped into the box, so it can still be had.
+	test('in a pane 60px tall the strip clips today\'s band, keeps its axis, and the body does not scroll', async () => {
+		await withApp(
+			async ({ page }) => {
+				const [, strip] = await cellExtents(page, 'column');
+				const at = await grab(page, page.locator('.split.column > [role="separator"]'));
+				await page.mouse.move(at.x, at.y + strip - 60);
+				await page.mouse.up();
+				await page.waitForTimeout(300);
+				assert.ok(Math.abs((await cellExtents(page, 'column'))[1] - 60) <= 1);
+				await pane(page, 'strip').locator('.band.today svg').waitFor();
+				const seen = await pane(page, 'strip').evaluate((section) => {
+					const box = (s) => section.querySelector(s).getBoundingClientRect();
+					const body = section.querySelector('.body');
+					return {
+						scrolls: body.scrollHeight - body.clientHeight,
+						strip: box('.strip'),
+						today: box('.band.today'),
+						grip: box('.day-grip')
+					};
+				});
+				assert.ok(seen.scrolls <= 0, `the body scrolls by ${seen.scrolls}px`);
+				assert.ok(seen.today.top < seen.strip.top - 1, 'today\'s band is not clipped at the top');
+				assert.ok(Math.abs(seen.today.bottom - seen.strip.bottom) <= 1, 'today\'s band, and its axis, left the bottom of the strip');
+				assert.ok(seen.grip.top >= seen.strip.top - 0.5 && seen.grip.bottom <= seen.strip.bottom, 'the day-height notch is outside the strip');
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('strip', 'daystrip')))) }
+		);
+	});
+});
+
 const bar = { edge: 'top', align: 'start' };
 const widgetPane = (id, kind, settings = {}, edge = 'top') => ({
 	id,
@@ -1242,23 +1367,13 @@ function lockable() {
 	return { version: 1, name: 'day', root: { id: 'root', tabs: [tab], active: 0, bar } };
 }
 
-/** A root holder over [the strip at `dayHeight` / the REPL], half and half. */
-const stripOver = (dayHeight) => ({
+/** A root holder over `children` along `direction`, in equal shares. */
+const along = (direction, ...children) => ({
 	version: 1,
 	name: 'default',
 	root: {
 		id: 'root',
-		tabs: [
-			{
-				id: 'root-tab',
-				content: {
-					id: 'col',
-					direction: 'column',
-					ratios: [0.5, 0.5],
-					children: [widgetPane('strip', 'daystrip', { dayHeight }), widgetPane('repl', 'repl')]
-				}
-			}
-		],
+		tabs: [{ id: 'root-tab', content: { id: 'split', direction, ratios: children.map(() => 1 / children.length), children } }],
 		active: 0,
 		bar
 	}

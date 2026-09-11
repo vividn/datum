@@ -157,26 +157,29 @@ describe('a field name the (+) form accepts', () => {
 		});
 	});
 
+	// One app for every name: a fresh app per name was ten cold opens in one
+	// test, which the parallel suite stretched past its two minutes. Each
+	// name's rows are its own, and the total says nothing else was stored.
 	test('every accepted name logs from the chip AND from the keyboard', async () => {
-		for (const testCase of acceptable) {
-			await withApp(async (app) => {
+		await withApp(async (app) => {
+			const stored = async (field) => {
+				const all = await app.entries(100);
+				return { total: all.length, mine: all.filter((e) => e.field === field).length };
+			};
+			for (const [i, testCase] of acceptable.entries()) {
 				await typeIntoTheForm(app.page, testCase.field);
 				await trackIt(app, testCase.field);
 
 				// Surface one: the chip the app just drew.
 				await pressChip(app, testCase.field);
-				const afterPress = await app.entries();
-				assert.equal(afterPress.length, 1, `${testCase.name}: the chip stored nothing`);
-				assert.equal(afterPress[0].field, testCase.field, testCase.name);
+				assert.deepEqual(await stored(testCase.field), { total: 2 * i + 1, mine: 1 }, `${testCase.name}: the chip`);
 
 				// Surface two: the same name typed. Five minutes back, because
 				// the slug is UNIQUE per field per minute.
 				await app.submit(`occur ${testCase.field} -t -5`);
-				const afterTyping = await app.entries();
-				assert.equal(afterTyping.length, 2, `${testCase.name}: typing stored nothing`);
-				assert.equal(afterTyping[0].field, testCase.field, testCase.name);
-			});
-		}
+				assert.deepEqual(await stored(testCase.field), { total: 2 * i + 2, mine: 2 }, `${testCase.name}: typing`);
+			}
+		});
 	});
 
 	test('the fixture still covers the three names the bead was filed about', () => {

@@ -48,7 +48,7 @@
 	import { isSplit } from './types.js';
 	import { apply } from './current.js';
 	import { addTab, closeTab, setActive, setBar, splitPane, splitTab } from './tree.js';
-	import { titleOf } from './registry.js';
+	import { KINDS, titleOf } from './registry.js';
 	import PaneMenu from './PaneMenu.svelte';
 
 	export let pane: Pane;
@@ -228,6 +228,7 @@
 	class:vertical
 	class:root
 	class:bare
+	class:clip={!root && kind !== undefined && !KINDS[kind]?.fit}
 	data-pane={pane.id}
 	data-title={title}
 >
@@ -473,6 +474,14 @@
 		flex: 1;
 		min-width: 0;
 		min-height: 0;
+	}
+
+	/* A pane dragged down to its frame (da-zh2o) shows nothing of its
+	   widget outside it — the body's own padding included. The widget
+	   bar is the exception: it sizes itself, so it is never squeezed, and
+	   its panels hang upward out of its pane. */
+	.clip > .content {
+		overflow: hidden;
 	}
 
 	/* Only the root scrolls. A split whose children's floors do not fit

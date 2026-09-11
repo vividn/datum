@@ -206,6 +206,9 @@ describe('two tabs', () => {
 		});
 	});
 
+	// On the input layout: on the day page every write re-runs the other
+	// tab's five panes, 200 processes the writes queue behind for these
+	// forty, and the parallel suite stretched that pile past two minutes.
 	test('forty writes from both tabs at once all land, once each, and check is clean', async () => {
 		await withApp(async (first) => {
 			const second = await first.newTab();
@@ -230,7 +233,7 @@ describe('two tabs', () => {
 			}
 			const check = await third.run(['check']);
 			assert.equal(check.code, 0, check.stdout + check.stderr);
-		});
+		}, { query: 'input' });
 	});
 
 	// Both tabs logging the same field in the same minute is the one case

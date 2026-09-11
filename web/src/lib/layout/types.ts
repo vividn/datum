@@ -110,16 +110,13 @@ export interface Layout {
  *
  * The component that draws the kind is registered beside this in the
  * engine; this is the part persistence, the picker and the kit tooling can
- * read without importing a component. Sizes are content-box pixels — the
- * floor under which the kind cannot be drawn legibly — and a split will
- * refuse to shrink a pane below the largest floor among its tabs.
+ * read without importing a component. A kind has no floor: a pane shrinks
+ * until only its frame is left (da-zh2o).
  */
 export interface WidgetKindMeta {
 	kind: string;
 	/** The title the pane shows when the tab has none of its own. */
 	title: string;
-	minWidth: number;
-	minHeight: number;
 	/** What a fresh instance starts with. */
 	defaultSettings: Record<string, unknown>;
 }

@@ -368,13 +368,18 @@
 
 <style>
 	/* The box is the control: the strip is exactly as tall as the pane's
-	   body, and `depth` is read off that height. */
+	   body, and `depth` is read off that height. A box shorter than one
+	   day (da-zh2o) cuts today's band from the TOP — the overflow goes
+	   past the start edge — so the hour axis along its bottom is the last
+	   thing to go, and the body never scrolls. */
 	.strip {
 		position: relative;
 		height: 100%;
 		display: flex;
 		flex-direction: column;
+		justify-content: flex-end;
 		gap: var(--gap);
+		overflow: hidden;
 	}
 
 	/* The room above today, whatever is left of the box once today's band
@@ -418,8 +423,8 @@
 		flex-direction: column;
 		justify-content: flex-end;
 	}
-	/* Today's band carries the hour axis. A floor, not a height: the axis
-	   is the one thing in the strip that must never be clipped. */
+	/* Today's band carries the hour axis. A floor, not a height: in a
+	   shorter strip it is clipped whole from the top, never squeezed. */
 	.band.today {
 		min-height: var(--today);
 	}
@@ -475,11 +480,12 @@
 	/* On the seam above today, in the left margin. Absolute, so the notch
 	   sits IN the 5px margin rather than opening one of its own. Today's
 	   band is the strip's bottom edge, so the seam's centre is its box
-	   plus half the margin above it. */
+	   plus half the margin above it — clamped into a strip shorter than
+	   that, so the day height can still be reached, at the top edge. */
 	.day-grip {
 		position: absolute;
 		left: 0;
-		bottom: calc(var(--today) + var(--gap) / 2);
+		bottom: min(calc(var(--today) + var(--gap) / 2), calc(100% - 6.5px));
 		transform: translateY(50%);
 		width: 30px;
 		height: 13px;

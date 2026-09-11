@@ -402,10 +402,11 @@ export interface Floor {
 
 /**
  * The least box a pane can be drawn in: the largest floor among its
- * tabs' kinds (`minOf`, from the registry — given the widget's settings
- * too, since the strip's floor is one whole day at whatever height its
- * days are drawn, da-2a5y), where a tab holding a split needs its
- * children's floors laid along the split's direction with a `border`
+ * tabs' kinds (`minOf`, given the widget's settings — Layout.svelte has
+ * two: the drag's gives none, so a pane drags down to its frame, da-zh2o,
+ * and the root's minimum gives each kind's `legible`), where a tab
+ * holding a split needs its children's floors laid along the split's
+ * direction with a `border`
  * between each pair — plus the frame's own `chrome` (its title bar and
  * border; asked per pane, since a holder draws no bar and a tabbed one
  * a row of its own) on top. The renderer sets this as the pane's
@@ -438,4 +439,31 @@ export function floorOf(
 			? { width: widths.reduce((a, b) => a + b, 0) + gaps, height: Math.max(...heights) }
 			: { width: Math.max(...widths), height: heights.reduce((a, b) => a + b, 0) + gaps };
 	}
+}
+
+/**
+ * The root's least box: its `floorOf` less its own frame, plus what a
+ * column's child is `drawn` taller than its floor — a content-sized one
+ * whose bar wraps. Only ever plus: a child's floor is the largest of its
+ * tabs, so one drawn shorter than that is showing a smaller tab, and the
+ * hidden one keeps its room.
+ */
+export function rootFloorOf(
+	root: Pane,
+	split: Split,
+	minOf: (kind: string, settings: Record<string, unknown>) => Floor,
+	border: number,
+	chrome: (pane: Pane) => Floor,
+	drawn: (child: Pane, index: number) => number
+): Floor {
+	const f = floorOf(root, minOf, border, chrome);
+	const c = chrome(root);
+	const more =
+		split.direction === 'column'
+			? split.children.reduce(
+					(sum, child, i) => sum + Math.max(0, drawn(child, i) - floorOf(child, minOf, border, chrome).height),
+					0
+				)
+			: 0;
+	return { width: f.width - c.width, height: f.height - c.height + more };
 }

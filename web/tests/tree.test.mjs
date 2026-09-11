@@ -8,6 +8,7 @@
 
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
 import {
 	EMPTY_KIND,
 	addTab,
@@ -30,7 +31,8 @@ import {
 	setWidget,
 	splitPane,
 	splitTab,
-	floorOf
+	floorOf,
+	rootFloorOf
 } from '../src/lib/layout/tree.ts';
 import { isModified } from '../src/lib/layout/draft.ts';
 
@@ -260,25 +262,90 @@ describe('setLocked', () => {
 	});
 });
 
-// The floors (da-2a5y): a kind's minimum may follow its settings, and
-// what a frame adds is asked per pane — a holder with one tab draws no
-// bar and so adds nothing.
+// The floors (da-zh2o): the kinds have none, so a pane's floor is its
+// frame — asked per pane, since a holder with one tab draws no bar and
+// adds nothing — and a split's is its children's frames and the borders
+// between them.
 describe('floorOf', () => {
-	const minOf = (kind, settings) =>
-		kind === 'strip' ? { width: 100, height: (settings.dayHeight ?? 50) + 20 } : { width: 40, height: 30 };
+	const none = () => ({ width: 0, height: 0 });
 	const chrome = (pane) => (pane.tabs.length === 1 && 'children' in pane.tabs[0].content ? { width: 0, height: 0 } : { width: 2, height: 20 });
 
-	test('reads the kind\'s floor from the widget\'s settings', () => {
-		const tall = { version: 1, name: 't', root: newPane([newTab(newWidget('strip', { dayHeight: 200 }))]) };
-		assert.deepEqual(floorOf(tall.root, minOf, 8, chrome), { width: 102, height: 240 });
-		const short = { version: 1, name: 't', root: newPane([newTab(newWidget('strip', { dayHeight: 40 }))]) };
-		assert.deepEqual(floorOf(short.root, minOf, 8, chrome), { width: 102, height: 80 });
+	test('is the frame alone for a widget pane, whatever its settings', () => {
+		const strip = { version: 1, name: 't', root: newPane([newTab(newWidget('daystrip', { dayHeight: 200 }))]) };
+		assert.deepEqual(floorOf(strip.root, none, 8, chrome), { width: 2, height: 20 });
 	});
 
-	test('adds no chrome for a holder with one tab, and the frame\'s for a widget pane', () => {
+	test('is the frames and the border between them for a row, and nothing for the holder', () => {
 		const { layout } = pair();
-		// Two 40x30 widget panes side by side, each framed (2x20), one 8px border between.
-		assert.deepEqual(floorOf(layout.root, minOf, 8, chrome), { width: 42 + 8 + 42, height: 50 });
+		assert.deepEqual(floorOf(layout.root, none, 8, chrome), { width: 2 + 8 + 2, height: 20 });
+	});
+
+	// The root's minimum (#180's review): a content-sized pane is counted at
+	// its drawn height where that is MORE than its floor, never less — its
+	// floor is its largest tab's, and a hidden tab keeps its room.
+	test("the root's keeps a fit pane's larger hidden tab, and adds a wrapped bar", () => {
+		const legible = (kind) => ({ repl: { width: 200, height: 106 }, widgetbar: { width: 160, height: 45 }, stats: { width: 240, height: 140 } })[kind];
+		const bar = newPane([widgetTab('widgetbar'), widgetTab('stats')]);
+		const root = newPane([newTab(newSplit('column', [newPane([widgetTab('repl')]), bar]))]);
+		const split = root.tabs[0].content;
+		const at = (px) => rootFloorOf(root, split, legible, 8, chrome, (child) => (child === bar ? px : 0));
+		// repl 106 + its frame 20, the border, stats 140 + its frame 20; the root holder draws no frame.
+		assert.deepEqual(at(45 + 20), { width: 242, height: 126 + 8 + 160 }, 'the bar is drawn, the stats tab hidden');
+		assert.deepEqual(at(200 + 20), { width: 242, height: 126 + 8 + 220 }, 'the bar wraps past it');
+	});
+});
+
+// The strip's snap (da-zh2o): one whole day at the height its days are
+// drawn, plus the body's padding — read from the real registry, whose
+// components node cannot load, so each `.svelte` import is an empty stub
+// and `$lib/x.js` is the source's `x.ts`.
+describe('snapsOfKind', () => {
+	const lib = new URL('../src/lib/', import.meta.url);
+	registerHooks({
+		resolve(specifier, context, next) {
+			if (specifier.endsWith('.svelte')) return { url: 'data:text/javascript,export default {}', shortCircuit: true };
+			if (!/^(\.|\$lib\/)/.test(specifier)) return next(specifier, context);
+			const url = new URL(specifier.replace(/^\$lib\//, lib.href), context.parentURL);
+			return next(url.href.replace(/\.js$/, '.ts'), context);
+		}
+	});
+	const todayBox = (dayHeight) => dayHeight + 2 * 2 + 15; // panes.ts: the day, datum's margins and the hour axis
+
+	test('is one day at the strip\'s day height, plus 16px of padding, and nothing for the others', async () => {
+		const { snapsOfKind } = await import('../src/lib/layout/registry.ts');
+		assert.deepEqual(snapsOfKind('daystrip', { dayHeight: 120 }), { width: [], height: [todayBox(120) + 16] });
+		assert.deepEqual(snapsOfKind('daystrip', { dayHeight: 1000 }).height, [todayBox(240) + 16], 'clamped as the strip draws it');
+		for (const kind of ['repl', 'tail', 'nowview', 'command', 'stats', 'widgetbar', 'nope']) {
+			assert.deepEqual(snapsOfKind(kind), { width: [], height: [] }, kind);
+		}
+	});
+
+	// The page's minimum (da-zh2o, option A): the drag never reads these,
+	// the root does — and with no floor to hold a pane up, the defaults'
+	// ratios must give each pane its legible box when the root is at it.
+	test("legibleOfKind is the strip's one day and the measured boxes of the others", async () => {
+		const { legibleOfKind } = await import('../src/lib/layout/registry.ts');
+		assert.deepEqual(legibleOfKind('daystrip', { dayHeight: 120 }), { width: 240, height: todayBox(120) + 16 });
+		assert.deepEqual(legibleOfKind('repl'), { width: 200, height: 106 });
+		assert.deepEqual(legibleOfKind('nope'), { width: 0, height: 0 });
+	});
+
+	test("the defaults' ratios share the root's minimum as their panes' legible boxes", async () => {
+		const { legibleOfKind, KINDS } = await import('../src/lib/layout/registry.ts');
+		const { DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE } = await import('../src/lib/layout/defaults.ts');
+		const chrome = (pane) => ('children' in pane.tabs[pane.active].content ? { width: 0, height: 0 } : { width: 2, height: 14 });
+		const columns = (pane) =>
+			pane.tabs.flatMap(({ content }) => ('children' in content ? [content, ...content.children.flatMap(columns)] : []));
+		for (const layout of [DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE]) {
+			for (const split of columns(layout.root).filter((s) => s.direction === 'column')) {
+				const shared = split.children.filter((c) => !KINDS[c.tabs[c.active].content.kind]?.fit);
+				const want = shared.map((c) => floorOf(c, legibleOfKind, 8, chrome).height);
+				const share = shared.map((c) => split.ratios[split.children.indexOf(c)]);
+				const total = share.reduce((a, b) => a + b, 0);
+				const room = want.reduce((a, b) => a + b, 0);
+				shared.forEach((c, i) => assert.ok(Math.abs((share[i] / total) * room - want[i]) < 1e-6, `${layout.name}: ${c.id}`));
+			}
+		}
 	});
 });
 

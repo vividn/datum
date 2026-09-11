@@ -3,27 +3,35 @@
 // Everything on the page is a widget (vividn: "They are widgets like
 // anything else yes") — the day strip, the REPL and the quick-log bar
 // included. A kind is its `WidgetKindMeta` (the contract in types.ts:
-// title, floors, default settings) plus the Svelte component that draws
+// title and default settings) plus the Svelte component that draws
 // it and, where the component wants something other than `settings`, the
 // props to hand it. The picker lists `PICKABLE`; the tree's empty tab
 // (`EMPTY_KIND`, tree.ts) is not a kind here — Layout.svelte draws the
 // picker for it.
 //
-// Floors are content-box pixels, measured on the built app (2026-09-10,
-// Chromium, 0.85rem monospace): the pane's body at the size below which
-// the kind stops being legible. The strip: today's band at the default
-// day height plus datum's margins and its hour axis (`todayBox(85)`,
-// 104px) plus the body's 16px of padding — a taller day is more strip,
-// and the strip scrolls in a box shorter than its one band. The REPL: its prompt line (35px) and three lines of
-// scrollback (18.4px each) plus padding, 106px. The tail, and a command
-// pane showing one: its header row and three rows (21.6px each) plus
-// padding, 102px. The
-// bar: one row of chips (29px) plus padding. nowview: datum draws it no
-// shorter than a 50px band plus its axis, 92px of picture (da-wb2n), plus
-// padding. Widths are where each stops
-// making sense rather than where it stops rendering: an hour of the strip
-// per 10px, a CLI line, the tail's four columns, four chips. The frame's
-// own chrome (title bar, border) is added by the renderer, not counted.
+// A kind has no floor (vividn's third look, da-zh2o: "the hard limits kind
+// of interferes with setting stuff up"): a pane shrinks until its content
+// box is gone and only its frame is left. What a kind may declare instead
+// is SNAPS — content-box pixels a border drag is drawn to when it passes
+// within a few pixels of one, and carries on past. The strip snaps at one
+// whole day: today's band with its axis plus the body's padding.
+//
+// What the PAGE keeps is `legible`, content-box pixels measured on the
+// built app (2026-09-10, Chromium, 0.85rem monospace): the pane's body at
+// the size below which the kind stops being legible. The strip: one whole
+// day at its drawn height (`todayBox(85)`, 104px at the default) plus the
+// body's 16px of padding — its snap. The REPL: its prompt line (35px) and
+// three lines of scrollback (18.4px each) plus padding, 106px. The tail,
+// and a command pane showing one: its header row and three rows (21.6px
+// each) plus padding, 102px. The bar: one row of chips (29px) plus
+// padding. nowview: datum draws it no shorter than a 50px band plus its
+// axis, 92px of picture (da-wb2n), plus padding. Widths are where each
+// stops making sense rather than where it stops rendering: an hour of the
+// strip per 10px, a CLI line, the tail's four columns, four chips. The
+// frame's own chrome is added by the renderer, not counted. One reader
+// only: the root's minimum (Layout.svelte), so a screen too small for
+// every pane scrolls the page rather than squeezing them — a drag never
+// sees these numbers.
 //
 // `fit`: the pane takes the height its content asks for rather than a
 // share of the split — the bar, whose height is however many rows its
@@ -31,6 +39,7 @@
 
 import type { ComponentType } from 'svelte';
 import type { WidgetKindMeta } from './types.js';
+import type { Floor } from './tree.js';
 import CliPane from '$lib/CliPane.svelte';
 import CommandPane from '$lib/CommandPane.svelte';
 import DayStrip from '$lib/DayStrip.svelte';
@@ -55,79 +64,92 @@ export interface WidgetKind {
 	onChange?: (settings: Record<string, unknown>, detail: unknown) => Record<string, unknown>;
 	/** Content-sized along a column: see the note above. */
 	fit?: boolean;
-	/**
-	 * A floor that follows the settings, where the constant in `meta` is
-	 * only what the defaults give (vividn: the strip's minimum "can vary
-	 * depending on the size of the days", da-2a5y).
-	 */
-	floor?: (settings: Record<string, unknown>) => { width: number; height: number };
+	/** Content-box sizes a border drag snaps to, from the settings: see the note above. */
+	snap?: (settings: Record<string, unknown>) => { width?: number[]; height?: number[] };
 	/** Not offered by the picker: a kind the app puts in a tab itself. */
 	hidden?: boolean;
+	/** The content box the kind is legible in, fixed or from the settings: see the note above. */
+	legible: Floor | ((settings: Record<string, unknown>) => Floor);
 }
 
-/** The strip body's padding, top and bottom, as its constant floor counts it. */
+/** The strip body's padding, top and bottom, as its snap counts it. */
 const STRIP_PADDING = 16;
+
+/**
+ * One whole day at the height the strip's days are DRAWN — today's band
+ * with its axis, the setting clamped as the strip clamps it — plus the
+ * body's padding.
+ */
+const oneDay = ({ dayHeight }: Record<string, unknown>): number => {
+	const asked = typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT;
+	return todayBox(Math.min(MAX_DAY_HEIGHT, Math.max(MIN_DAY_HEIGHT, asked))) + STRIP_PADDING;
+};
 
 const meta = (
 	kind: string,
 	title: string,
-	minWidth: number,
-	minHeight: number,
 	defaultSettings: Record<string, unknown> = {}
-): WidgetKindMeta => ({ kind, title, minWidth, minHeight, defaultSettings });
+): WidgetKindMeta => ({ kind, title, defaultSettings });
 
 export const KINDS: Record<string, WidgetKind> = {
 	// The strip fills its box and shows as much of the past as fits above
 	// today (da-zb0d); how tall a day is drawn is its one setting, which
 	// its notch changes.
 	daystrip: {
-		meta: meta('daystrip', 'dayview', 240, 120, { dayHeight: DEFAULT_DAY_HEIGHT }),
+		meta: meta('daystrip', 'dayview', { dayHeight: DEFAULT_DAY_HEIGHT }),
 		component: DayStrip,
 		props: ({ dayHeight }) => ({
 			dayHeight: typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT
 		}),
 		onChange: (settings, dayHeight) => ({ ...settings, dayHeight }),
-		// One whole day at the height its days are DRAWN — today's band
-		// with its axis, the setting clamped as the strip clamps it — plus
-		// the body's padding: a pane holding 200px days cannot be dragged
-		// below one of them, and 40px days let it shrink to a strip.
-		floor: ({ dayHeight }) => {
-			const asked = typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT;
-			const drawn = Math.min(MAX_DAY_HEIGHT, Math.max(MIN_DAY_HEIGHT, asked));
-			return { width: 240, height: todayBox(drawn) + STRIP_PADDING };
-		}
+		// A notch, not a wall: shorter, the strip clips today's band from
+		// the top and keeps its axis.
+		snap: (settings) => ({ height: [oneDay(settings)] }),
+		legible: (settings) => ({ width: 240, height: oneDay(settings) })
 	},
-	repl: { meta: meta('repl', 'repl', 200, 106), component: ReplWidget },
+	repl: { meta: meta('repl', 'repl'), component: ReplWidget, legible: { width: 200, height: 106 } },
 	// How far back nowview reaches is its setting, which its − / + step
 	// (da-pcis); `at` centres it on an instant, which nothing sets yet.
 	nowview: {
-		meta: meta('nowview', 'nowview', 160, 108, { history: NOWVIEW_HISTORY }),
+		meta: meta('nowview', 'nowview', { history: NOWVIEW_HISTORY }),
 		component: NowviewWidget,
 		props: ({ history, at }) => ({
 			history: typeof history === 'string' ? history : NOWVIEW_HISTORY,
 			at: typeof at === 'string' ? at : undefined
 		}),
-		onChange: (settings, history) => ({ ...settings, history })
+		onChange: (settings, history) => ({ ...settings, history }),
+		legible: { width: 160, height: 108 }
 	},
-	tail: { meta: meta('tail', 'tail', 200, 102), component: CliPane, props: () => ({ spec: TAIL }) },
+	tail: {
+		meta: meta('tail', 'tail'),
+		component: CliPane,
+		props: () => ({ spec: TAIL }),
+		legible: { width: 200, height: 102 }
+	},
 	// The command pane (da-wb2n) keeps its line in its own localStorage
 	// key for now; making it a widget setting is its own change.
-	command: { meta: meta('command', 'command', 200, 102), component: CommandPane },
+	command: { meta: meta('command', 'command'), component: CommandPane, legible: { width: 200, height: 102 } },
 	// The stats widget (da-n7r0): its settings ARE the widget's settings —
 	// the tree keeps them, and a `change` from the widget writes them back
 	// (Layout.svelte).
 	stats: {
-		meta: meta('stats', 'stats', 240, 140, { ...DEFAULT_STATS }),
+		meta: meta('stats', 'stats', { ...DEFAULT_STATS }),
 		component: Stats,
 		props: (settings) => ({ settings: { ...DEFAULT_STATS, ...settings } }),
-		onChange: (_, settings) => settings as Record<string, unknown>
+		onChange: (_, settings) => settings as Record<string, unknown>,
+		legible: { width: 240, height: 140 }
 	},
-	widgetbar: { meta: meta('widgetbar', 'widgets', 160, 45), component: BarWidget, fit: true },
+	widgetbar: {
+		meta: meta('widgetbar', 'widgets'),
+		component: BarWidget,
+		fit: true,
+		legible: { width: 160, height: 45 }
+	},
 	// The input widget (da-0dhc): the prompt line and, given the height, the
-	// history above it — one line's worth is its floor.
-	input: { meta: meta('input', 'input', 200, 40), component: InputWidget },
+	// history above it — one line's worth is legible.
+	input: { meta: meta('input', 'input'), component: InputWidget, legible: { width: 200, height: 40 } },
 	// What the shell shows in a tab whose layout cannot be inlined (da-0a5o).
-	notice: { meta: meta('notice', 'notice', 120, 40), component: Notice, hidden: true }
+	notice: { meta: meta('notice', 'notice'), component: Notice, hidden: true, legible: { width: 120, height: 40 } }
 };
 
 /** The kinds the picker offers, in the order it shows them. */
@@ -135,12 +157,14 @@ export const PICKABLE = Object.keys(KINDS).filter((kind) => !KINDS[kind].hidden)
 
 export const titleOf = (kind: string): string => KINDS[kind]?.meta.title ?? kind;
 
-/**
- * A kind's floor, from its settings where it declares one and its constant
- * otherwise; an unknown kind (a draft from a newer app) has none.
- */
-export const floorOfKind = (kind: string, settings: Record<string, unknown> = {}) => {
-	const k = KINDS[kind];
-	if (k?.floor) return k.floor(settings);
-	return { width: k?.meta.minWidth ?? 0, height: k?.meta.minHeight ?? 0 };
+/** A kind's snaps, from its settings; a kind that declares none (or an unknown one) has none. */
+export const snapsOfKind = (kind: string, settings: Record<string, unknown> = {}) => {
+	const s = KINDS[kind]?.snap?.(settings);
+	return { width: s?.width ?? [], height: s?.height ?? [] };
+};
+
+/** A kind's legible box, from its settings where it follows them; an unknown kind (a draft from a newer app) has none. */
+export const legibleOfKind = (kind: string, settings: Record<string, unknown> = {}): Floor => {
+	const l = KINDS[kind]?.legible;
+	return typeof l === 'function' ? l(settings) : (l ?? { width: 0, height: 0 });
 };

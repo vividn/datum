@@ -22,14 +22,24 @@
 	flag is threaded down as a prop, and under it every border is `static`
 	(no handle, no keyboard) and every frame draws no `…`.
 
-	Floors: a child's cell is never narrower or shorter than its floor
-	(`floorOf`: the largest of its tabs' kinds' minimums, plus the frame
-	— `chromeOf`: a widget pane's outline and the inside half of its
-	title's row, a tabbed holder's row of tabs, and nothing for a holder
-	with one tab, which draws no bar at all — each on the edge the bar is
-	on, so a left-hand title adds width and no height, da-13bc),
-	so a drag clamps and a split too small for its children overflows to
-	the root's scroll rather than hiding one. A kind that sizes itself
+	Floors: a child's cell is never narrower or shorter than its frame
+	(`floorOf` over `chromeOf`: a widget pane's outline and the inside
+	half of its title's row, a tabbed holder's row of tabs, and nothing
+	for a holder with one tab, which draws no bar at all — each on the
+	edge the bar is on, so a left-hand title adds width and no height,
+	da-13bc) — the kinds have no floor of their own (da-zh2o), so a pane
+	drags down to its frame and a split too small for even that overflows
+	to the root's scroll rather than hiding one.
+	The root's own split takes a second floor, `legible`: every kind's
+	legible box laid out as the tree lays it (the same `floorOf`, with the
+	registry's `legibleOfKind`), so a screen too small for the panes
+	scrolls the page instead of squeezing them. A squeezed pane still
+	counts in that sum and a closed one does not: to fit a phone without
+	scrolling, close a pane; to give a sibling a pane's room, squeeze it.
+	Snaps: a kind may name content sizes (`snapsOfKind` — the strip's is
+	one whole day); a drag whose preview comes within `SNAP_PX` of one,
+	on either side of the border, lands on it, and past that carries on.
+	The arrows do not snap. A kind that sizes itself
 	(`fit`) takes its content's height and no share of the split; the
 	border beside it is a gap, not a handle. The last content-sized child
 	of a column sticks to the bottom of the scroller — which is the widget
@@ -44,8 +54,8 @@
 	import type { NodeId, Pane as PaneNode, Split } from './types.js';
 	import { isSplit } from './types.js';
 	import { apply } from './current.js';
-	import { EMPTY_KIND, floorOf, newWidget, setRatios, setWidget } from './tree.js';
-	import { KINDS, floorOfKind } from './registry.js';
+	import { EMPTY_KIND, floorOf, newWidget, rootFloorOf, setRatios, setWidget } from './tree.js';
+	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
 	import { inlineInto } from './shell.js';
 
@@ -72,6 +82,13 @@
 	const ROW = 24;
 	/** What one arrow press moves a border. */
 	const NUDGE = 0.02;
+	/**
+	 * How near a dragged extent comes to a snap, in whole pixels, before it
+	 * lands on it — to the nearest pixel, since the extent is worked out
+	 * through the pair's ratio and 8 can come back as 8.000001.
+	 */
+	const SNAP_PX = 8;
+	const NONE = { width: 0, height: 0 };
 
 	$: active = pane.tabs[pane.active];
 	$: content = active.content;
@@ -105,7 +122,26 @@
 			? { width: outline + bar, height: outline }
 			: { width: outline, height: outline + bar };
 	};
-	const floor = (child: PaneNode) => floorOf(child, floorOfKind, BORDER, chromeOf);
+	// One function, two callers, two `minOf`s — keep them apart: the drag's
+	// floor is the frame alone, the root's is every pane legible.
+	const floor = (child: PaneNode) => floorOf(child, () => NONE, BORDER, chromeOf);
+	/** Each cell's drawn height: what a content-sized child takes of the root's minimum. */
+	let drawn: number[] = [];
+	/**
+	 * The root split's least box: its panes' legible boxes, and a
+	 * content-sized child at the height it is drawn where that is more —
+	 * the bar wraps to as many rows as its chips need.
+	 */
+	const legible = (root: PaneNode, split: Split, drawn: number[]) =>
+		rootFloorOf(root, split, legibleOfKind, BORDER, chromeOf, (child, i) => (fits(child) ? (drawn[i] ?? 0) : 0));
+	/** A child's snaps as extents along the split: its widget tabs' snaps, plus its frame. */
+	const snapsOf = (child: PaneNode, split: Split): number[] => {
+		const axis = split.direction === 'row' ? 'width' : 'height';
+		const chrome = chromeOf(child)[axis];
+		return child.tabs.flatMap((t) =>
+			isSplit(t.content) ? [] : snapsOfKind(t.content.kind, t.content.settings)[axis].map((s) => s + chrome)
+		);
+	};
 
 	// ---- dragging a border -----------------------------------------------
 
@@ -117,6 +153,8 @@
 		span: number;
 		from: number[];
 		minRatios: number[];
+		/** The first child's extents a drag snaps to: its own snaps and the second's, from the far side. */
+		stops: number[];
 	} | null = null;
 	/** The ratios being dragged, shown on the cells and not yet in the tree. */
 	let preview: number[] | null = null;
@@ -153,13 +191,18 @@
 		border.focus();
 		const boxes = cells();
 		if (!boxes[index] || !boxes[index + 1]) return;
+		const span = extent(boxes[index], split) + extent(boxes[index + 1], split);
 		drag = {
 			index,
 			origin: split.direction === 'row' ? event.clientX : event.clientY,
 			pair: split.ratios[index] + split.ratios[index + 1],
-			span: extent(boxes[index], split) + extent(boxes[index + 1], split),
+			span,
 			from: split.ratios,
-			minRatios: minRatios(split)
+			minRatios: minRatios(split),
+			stops: [
+				...snapsOf(split.children[index], split),
+				...snapsOf(split.children[index + 1], split).map((s) => span - s)
+			]
 		};
 		resizing.set(true);
 		event.preventDefault();
@@ -169,7 +212,14 @@
 		if (!drag || drag.span <= 0) return;
 		const at = split.direction === 'row' ? event.clientX : event.clientY;
 		const delta = ((at - drag.origin) / drag.span) * drag.pair;
-		preview = shifted(drag.from, drag.index, delta, drag.minRatios);
+		const next = shifted(drag.from, drag.index, delta, drag.minRatios);
+		// The two children share the span as they share the pair's ratio.
+		const px = (next[drag.index] / drag.pair) * drag.span;
+		const stop = drag.stops.reduce((a, b) => (Math.abs(b - px) < Math.abs(a - px) ? b : a), Infinity);
+		preview =
+			Math.abs(stop - px) < SNAP_PX + 0.5
+				? shifted(drag.from, drag.index, (stop / drag.span) * drag.pair - drag.from[drag.index], drag.minRatios)
+				: next;
 	}
 
 	/** The drop: the tree takes the previewed ratios, once, and the panes redraw. */
@@ -217,7 +267,14 @@
 >
 	{#if isSplit(content)}
 		{@const split = content}
-		<div class="split {split.direction}" bind:this={splitEl} data-split={split.id}>
+		{@const least = pane.id === rootId ? legible(pane, split, drawn) : undefined}
+		<div
+			class="split {split.direction}"
+			bind:this={splitEl}
+			data-split={split.id}
+			style:min-width={least && `${least.width}px`}
+			style:min-height={least && `${least.height}px`}
+		>
 			{#each split.children as child, i (child.id)}
 				{#if i > 0}
 					{#if lockedHere || fits(split.children[i - 1]) || fits(child)}
@@ -246,6 +303,7 @@
 				<div
 					class="cell {named(child)}"
 					class:fit={fits(child)}
+					bind:offsetHeight={drawn[i]}
 					style:--ratio={(preview ?? split.ratios)[i]}
 					style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
 				>

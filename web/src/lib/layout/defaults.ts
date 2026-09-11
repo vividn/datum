@@ -48,13 +48,26 @@ const split = (
 ): Split => ({ id, direction, ratios, children });
 
 /**
+ * Ratios in proportion to the panes' legible heights (registry.ts's
+ * `legible`, each plus its 14px frame: the outline and the inside half
+ * of the title's row, Layout.svelte's `chromeOf`), sharing `rest` — what
+ * the bar, which takes the height its chips need, leaves. The kinds have
+ * no floor to hold a pane up any more (da-zh2o), so the ratios do: a
+ * screen at the root's minimum draws every pane exactly legible, and a
+ * taller one grows them alike.
+ */
+const legibly = (heights: number[], rest: number): number[] =>
+	heights.map((h) => (rest * h) / heights.reduce((a, b) => a + b, 0));
+
+/**
  * The desktop: strip / [REPL | nowview / tail / command] / widget bar.
  *
  * The bar takes the height its chips need (`fit` in registry.ts); the
- * strip and the middle row share the rest a fifth to seven tenths, which
- * at a laptop's height is today's band with a little of yesterday above
- * it — a taller strip is more past (da-zb0d). The row is the wireframe's
- * 2fr/1fr.
+ * strip (one day, 134) and the middle row (the side column's nowview,
+ * tail and command at 122, 116 and 116, and their two borders: 370)
+ * share the rest, which at a laptop's height is today's band with a
+ * little of yesterday above it — a taller strip is more past (da-zb0d).
+ * The row is the wireframe's 2fr/1fr.
  */
 export const DEFAULT_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -62,7 +75,7 @@ export const DEFAULT_LAYOUT: Layout = {
 	designedFor: 'desktop',
 	root: holder(
 		'root',
-		split('main', 'column', [0.2, 0.7, 0.1], [
+		split('main', 'column', [...legibly([134, 370], 0.9), 0.1], [
 			strip(),
 			holder(
 				'middle',
@@ -70,7 +83,7 @@ export const DEFAULT_LAYOUT: Layout = {
 					widgetPane('repl', 'repl'),
 					holder(
 						'side',
-						split('aside', 'column', [1 / 3, 1 / 3, 1 / 3], [
+						split('aside', 'column', legibly([122, 116, 116], 1), [
 							widgetPane('nowview', 'nowview'),
 							widgetPane('tail', 'tail'),
 							widgetPane('command', 'command')
@@ -92,14 +105,18 @@ const tabbed = (id: string, kinds: string[]): Pane => ({
 	bar
 });
 
-/** A phone: strip / REPL / [tail, nowview, command] as tabs / widget bar, one column. */
+/**
+ * A phone: strip / REPL / [tail, nowview, command] as tabs / widget bar,
+ * one column — the strip, the REPL and the tabs at their legible 134, 120
+ * and 122 (nowview's, the tallest of the three).
+ */
 export const DEFAULT_LAYOUT_MOBILE: Layout = {
 	version: LAYOUT_VERSION,
 	name: 'default-mobile',
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', [0.2, 0.4, 0.3, 0.1], [
+		split('main', 'column', [...legibly([134, 120, 122], 0.9), 0.1], [
 			strip(),
 			widgetPane('repl', 'repl'),
 			tabbed('side', ['tail', 'nowview', 'command']),
