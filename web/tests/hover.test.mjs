@@ -1,6 +1,7 @@
 // Hovering a drawn view (da-s5da): every mark in the dayview and nowview
 // says what it is — the `<title>` the CLI writes — and the page adds the
-// time: a dot's own, or the one under the pointer on a block.
+// time: a dot's own, or the one under the pointer on a block. Inline, the
+// `<title>` is gone and its text is the mark's `data-title` (da-8jb8).
 //
 // Delta-blind on purpose: every label is held to the text of the mark it
 // names and to the time the geometry puts under the pointer, never to "a
@@ -132,6 +133,39 @@ describe('hovering the day strip', () => {
 			},
 			{ viewport: { width: 390, height: 844 } }
 		);
+	});
+
+	// A `<title>` inline is the browser's own tooltip, drawn over the page's
+	// (da-8jb8). Playwright cannot see a native tooltip, so the assertion is
+	// that no picture has a `<title>` left — and that every mark keeps its
+	// text as `data-title` and its accessible name as an equal `aria-label`.
+	test('no picture keeps a <title>; every mark has data-title and an aria-label', async () => {
+		await withDay(async (app) => {
+			// Inside nowview's window, so its picture has a mark too.
+			const logged = await app.run(['occur', 'coffee', '-t', '1455']);
+			assert.equal(logged.code, 0, logged.stderr);
+			await app.reload();
+			await app.page.locator('section.pane[data-title="nowview"] [data-state]').first().waitFor();
+			const pictures = await app.page.locator('.picture').evaluateAll((ps) =>
+				ps.map((p) => ({
+					titles: p.querySelectorAll('svg title').length,
+					marks: [...p.querySelectorAll('[data-state]')].map((m) => [
+						m.getAttribute('data-title'),
+						m.getAttribute('aria-label')
+					])
+				}))
+			);
+			assert.ok(pictures.length >= 2, `${pictures.length} pictures`);
+			for (const { titles, marks } of pictures) {
+				assert.equal(titles, 0);
+				for (const [title, label] of marks) {
+					assert.ok(title, 'a mark with no data-title');
+					assert.equal(label, title);
+				}
+			}
+			const names = pictures.flatMap((p) => p.marks.map(([title]) => title));
+			assert.ok(names.includes('work: start 14:00–14:30'), JSON.stringify(names));
+		});
 	});
 
 	// The past is one picture of many days (da-hnyb): a mark two days back,

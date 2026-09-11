@@ -6,7 +6,9 @@
 // each day group the span of time the day's axis covers (`data-from` →
 // `data-to` over `data-lo` → `data-hi` user units along `data-axis`). The
 // page adds the one thing a picture cannot know, which is where the
-// pointer is — `timeAt` — and shows a label with it.
+// pointer is — `timeAt` — and shows a label with it. The `<title>` does
+// not come along (da-8jb8): inline, it is the browser's own tooltip, drawn
+// over the page's, so `inlineSvg` moves its text onto the mark.
 
 import { clockLabel } from './clock.js';
 
@@ -51,14 +53,14 @@ function drawnStart(mark: Element): Date {
 }
 
 /**
- * The label for a mark: a time, then the mark's `<title>`. A dot's time
+ * The label for a mark: a time, then the mark's title. A dot's time
  * is its own; a block's is the one under `clientX`, or where it is drawn
  * from when there is no pointer — as when it has the keyboard's focus.
  */
 export function tipText(mark: Element, clientX?: number): string {
 	const at = mark.getAttribute('data-at');
 	const when = at ? new Date(at) : clientX === undefined ? drawnStart(mark) : timeAt(mark, clientX);
-	const title = mark.querySelector('title')?.textContent ?? '';
+	const title = mark.getAttribute('data-title') ?? '';
 	return when ? `${clockLabel(when)} ${title}` : title;
 }
 
@@ -66,13 +68,21 @@ export function tipText(mark: Element, clientX?: number): string {
  * `text` as an `<svg>` for the page, or `null` when it is not one. The
  * markup is datum's own, but it carries whatever text was logged, so
  * nothing in it that could run is kept: no script, no foreign content, no
- * `on…` handler, no link that leaves the picture.
+ * `on…` handler, no link that leaves the picture. No `<title>` either: its
+ * text becomes its mark's `data-title` and, as the `<title>` was, its
+ * accessible name.
  */
 export function inlineSvg(text: string): SVGSVGElement | null {
 	const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
 	const svg = doc.documentElement;
 	if (!(svg instanceof SVGSVGElement) || doc.querySelector('parsererror')) return null;
 	for (const el of svg.querySelectorAll('script, foreignObject')) el.remove();
+	for (const title of svg.querySelectorAll('title')) {
+		const mark = title.closest('[data-state]');
+		mark?.setAttribute('data-title', title.textContent ?? '');
+		mark?.setAttribute('aria-label', title.textContent ?? '');
+		title.remove();
+	}
 	for (const el of [svg, ...svg.querySelectorAll('*')]) {
 		for (const { name, value } of [...el.attributes]) {
 			if (/^on/i.test(name) || (/href$/i.test(name) && !value.startsWith('#'))) {
