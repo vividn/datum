@@ -242,7 +242,9 @@ describe('the layout engine, by keyboard', () => {
 					walk: el.dataset.walk ?? null,
 					what: el.matches('button.more')
 						? `menu of ${el.closest('section').dataset.title}`
-						: el.getAttribute('aria-label') ?? 'border'
+						: el.matches('.nowview-steps button')
+							? el.getAttribute('aria-label')
+							: 'border'
 				}))
 			);
 			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');

@@ -212,8 +212,9 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         time_axis_height: args.time_axis_height,
         centred: at.is_some(),
     };
+    // A centred window reaches half the history past the instant.
     let window_end = if geometry.centred {
-        anchor + chrono::Duration::milliseconds((history_minutes * 30_000.0) as i64)
+        anchor + chrono::Duration::milliseconds((history_minutes * 60_000.0 / 2.0) as i64)
     } else {
         anchor
     };
@@ -270,9 +271,8 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
 /// `{ now_ms, at_ms, start_ms, end_ms, history_minutes, panel: [{ field,
 /// state_label, colors }] }` — the window's instant (`at_ms` null when it
 /// is now) and ends, and the resolved per-field state and hex color(s) at
-/// that instant, without any SVG
-/// geometry. Consumed by external clients like the Pebble `nowview`
-/// watchface. With `--output-file` the JSON is written there; otherwise to
+/// that instant, without any SVG geometry. Consumed by external clients
+/// like the Pebble `nowview` watchface. With `--output-file` the JSON is written there; otherwise to
 /// stdout.
 fn render_json_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     let c = compute_now(args, db)?;
