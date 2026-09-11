@@ -650,7 +650,7 @@ pub struct SpecSetArgs {
 pub enum AliasCommand {
     Show { name: String },
     Set { name: String, expansion: String },
-    List,
+    List { json: bool },
     Remove { name: String },
 }
 

@@ -86,6 +86,8 @@ pub struct SpecAliasIndex {
     /// reverse lookup, e.g. so a spec save's report can ask "which of my
     /// aliases survived?").
     pub by_field: HashMap<String, Vec<String>>,
+    /// Derived-alias name → the [`DerivedAliasKind`] it was derived as.
+    pub kinds: HashMap<String, DerivedAliasKind>,
     /// Cross-spec collisions: a spec wanted to register a derived alias
     /// under a name another spec already owns. The first registrant wins.
     pub collisions: Vec<SpecAliasCollision>,
@@ -131,6 +133,7 @@ impl SpecAliasIndex {
                     },
                 );
                 owner.insert(d.name.clone(), spec.field.clone());
+                index.kinds.insert(d.name.clone(), d.kind);
                 index
                     .by_field
                     .entry(spec.field.clone())
@@ -237,7 +240,30 @@ pub fn alias_effect(
                 None => format!("No alias '{name}'"),
             },
         ),
-        AliasCommand::List => {
+        // One object per name in the namespace: a user row as `user`, a
+        // derived one as `derived` with the field and kind it came from.
+        AliasCommand::List { json: true } => AliasEffect::Say(
+            serde_json::Value::Array(
+                namespace(user, derived)
+                    .into_iter()
+                    .map(|(name, expansion)| {
+                        if user.iter().any(|a| a.name == name) {
+                            serde_json::json!({ "name": name, "expansion": expansion, "source": "user" })
+                        } else {
+                            serde_json::json!({
+                                "name": name,
+                                "expansion": expansion,
+                                "source": "derived",
+                                "field": derived.owner_of(name),
+                                "kind": derived.kinds.get(name),
+                            })
+                        }
+                    })
+                    .collect(),
+            )
+            .to_string(),
+        ),
+        AliasCommand::List { json: false } => {
             let all = namespace(user, derived);
             if all.is_empty() {
                 return AliasEffect::Say("No aliases defined.".to_string());

@@ -155,3 +155,45 @@ describe('aliases in the REPL', () => {
 		});
 	});
 });
+
+// The aliases widget (da-x6yj): every alias `alias list --json` lists, the
+// user's first, then the derived ones under their field in its colour.
+describe('the aliases widget', () => {
+	const DESKTOP = { viewport: { width: 1280, height: 900 } };
+	const rows = (page) => page.locator('section.pane[data-title="aliases"] li').allInnerTexts();
+
+	test('picked into a pane, it lists every alias and grows a row on a typed alias set', async () => {
+		await withApp(async ({ page, run }) => {
+			await ok(run, ['spec', 'set', 'coffee', '--default-verb', 'occur', '--color', 'orange']);
+			await ok(run, ['alias', 'set', 'cof', 'occur coffee cups=1']);
+			await page.locator('section[data-pane="tail"] .titlebar button.more').first().click();
+			await page.getByRole('menuitem', { name: 'split side by side', exact: true }).click();
+			await page.locator('section.pane[data-title="empty"] .picker button', { hasText: 'aliases' }).click();
+			await page.locator('section.pane[data-title="aliases"] li').nth(1).waitFor();
+			assert.deepEqual(await rows(page), ['cof → occur coffee cups=1', 'coffee → occur coffee']);
+
+			const input = page.locator('.prompt-bar input');
+			await input.fill('alias set tea "occur tea"');
+			await input.press('Enter');
+			await page.locator('section.pane[data-title="aliases"] li', { hasText: 'tea → occur tea' }).waitFor({ timeout: 2000 });
+			assert.deepEqual(await rows(page), ['cof → occur coffee cups=1', 'tea → occur tea', 'coffee → occur coffee']);
+			// In the field's colour: the fields widget's, read on the beat a typed line runs on.
+			await page.waitForFunction(() =>
+				[...document.querySelectorAll('section.pane[data-title="aliases"] li')].some(
+					(li) => li.textContent === 'coffee → occur coffee' && getComputedStyle(li).color === 'rgb(255, 165, 0)'
+				)
+			);
+		}, DESKTOP);
+	});
+
+	test('datum.day/aliases opens it alone', async () => {
+		await withApp(async (app) => {
+			await app.goto('/aliases');
+			await app.page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'aliases' }).waitFor();
+			assert.deepEqual(
+				await app.page.evaluate(() => [...document.querySelectorAll('section.pane')].map((p) => p.dataset.title)),
+				['aliases']
+			);
+		}, DESKTOP);
+	});
+});

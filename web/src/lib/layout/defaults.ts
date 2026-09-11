@@ -158,6 +158,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	command: () => only('command', 'command'),
 	stats: () => only('stats', 'stats'),
 	fields: () => only('fields', 'widgetbar'),
+	aliases: () => only('aliases', 'aliases'),
 	input: () => only('input', 'input')
 };
 

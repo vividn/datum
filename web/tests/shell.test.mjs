@@ -117,7 +117,7 @@ describe('the shell', () => {
 	test('+ lists day, the widget kinds and the saved layouts; nowview opens a tab; a reload keeps it, another device starts fresh', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			assert.deepEqual(await offered(page), ['day', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'input']);
+			assert.deepEqual(await offered(page), ['day', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases', 'input']);
 
 			await pick(page, 'nowview');
 			await until(() => rootTabs(page), (t) => t.includes('nowview'));
@@ -138,7 +138,7 @@ describe('the shell', () => {
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
 			// The list is re-read after the save lands, a beat behind the tab.
 			await until(() => offered(page), (o) => o.includes('mine'));
-			assert.deepEqual(await offered(page), ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'input']);
+			assert.deepEqual(await offered(page), ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases', 'input']);
 		}, DESKTOP);
 
 		// Which tabs are open is per device (vividn: the selection is not synced).

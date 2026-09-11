@@ -25,7 +25,8 @@
 // (da-rfs9), so it has no line of its own to keep. The tail,
 // and a command pane showing one: its header row and three rows (21.6px
 // each) plus padding, 102px. The fields widget: one row, as tall as its
-// Track + (33px), plus padding. nowview: datum draws it no shorter than a 50px band plus its
+// Track + (33px), plus padding. The aliases list: three of its lines
+// (18.4px each) plus padding, 72px. nowview: datum draws it no shorter than a 50px band plus its
 // axis, 92px of picture (da-wb2n), plus padding. Widths are where each
 // stops making sense rather than where it stops rendering: an hour of the
 // strip per 10px, a CLI line, the tail's four columns, four chips. The
@@ -47,6 +48,7 @@ import DayStrip from '$lib/DayStrip.svelte';
 import Stats from '$lib/Stats.svelte';
 import { DEFAULT_DAY_HEIGHT, MAX_DAY_HEIGHT, MIN_DAY_HEIGHT, NOWVIEW_HISTORY, TAIL, todayBox } from '$lib/panes.js';
 import { DEFAULT_STATS } from '$lib/stats.js';
+import AliasesWidget from './AliasesWidget.svelte';
 import BarWidget from './BarWidget.svelte';
 import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
@@ -151,6 +153,8 @@ export const KINDS: Record<string, WidgetKind> = {
 		fit: true,
 		legible: { width: 160, height: 49 }
 	},
+	// The aliases widget (da-x6yj): every alias, listed.
+	aliases: { meta: meta('aliases', 'aliases'), component: AliasesWidget, legible: { width: 160, height: 72 } },
 	// The input widget (da-0dhc): the prompt line and, given the height, the
 	// history above it — one line's worth is legible.
 	input: { meta: meta('input', 'input'), component: InputWidget, legible: { width: 200, height: 40 } },

@@ -25,7 +25,16 @@ pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
                 .to_string();
             Ok(AliasCommand::Set { name, expansion })
         }
-        "list" => Ok(AliasCommand::List),
+        "list" => {
+            let mut json = false;
+            for tok in rest {
+                match split_flag(tok) {
+                    FlagSplit::Long("json") => json = true,
+                    f => return Err(unknown_flag(f)),
+                }
+            }
+            Ok(AliasCommand::List { json })
+        }
         "remove" => {
             let name = require_pos(rest, "<NAME>")?;
             Ok(AliasCommand::Remove { name })

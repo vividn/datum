@@ -146,6 +146,7 @@ describe('the … menu', () => {
 				'command',
 				'stats',
 				'fields',
+				'aliases',
 				'input'
 			]);
 			await picker.locator('button', { hasText: 'nowview' }).click();
