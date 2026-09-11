@@ -9,11 +9,20 @@
 	of them (`reachable.test.mjs` is the standard).
 
 	An item with `sub` opens a SUBMENU beside it (click, Enter, Space,
-	ArrowRight): one row of small icon buttons, its groups split by a thin
-	line — the pane's `Bar ▸` (da-nk4k). No words on the buttons, so each
-	carries them as its `aria-label` and `title`. ArrowLeft/ArrowRight walk
-	the row, Home/End jump, Escape — or ArrowLeft on the first — goes back
-	to the item that opened it, and choosing closes both, as choosing does.
+	ArrowRight — and a mouse or a pen resting on it, without taking the
+	focus; a touch keeps the tap): one row of small icon buttons, its
+	groups split by a thin line — the pane's `Bar ▸` (da-nk4k). No words
+	on the buttons, so each carries them as its `aria-label` and `title`.
+	ArrowLeft/ArrowRight walk the row, Home/End jump, Escape — or
+	ArrowLeft on the first — goes back to the item that opened it, the
+	pointer entering any other item closes it, and choosing closes both,
+	as choosing does (da-13bc: "bar submenu should open immediately on
+	mouse over").
+
+	An item with `row` is its label and a few short buttons on one line —
+	the pane's `Split | −` (da-13bc). The buttons are menu items like any
+	other, walked by ArrowUp/ArrowDown in order and by ArrowLeft/ArrowRight
+	along the line, and their `title` is their name.
 
 	The menu is `position: fixed`, moved out to `document.body` (`portal`)
 	and placed from the button's box when it opens: a pane is a scroll
@@ -27,8 +36,10 @@
 
 	/** A submenu's button: `icon` is the thick bar `[x, y, w, h]` drawn in a 16px square. */
 	type Choice = { label: string; title: string; icon: number[]; checked: boolean; run: () => void };
+	/** A row's button: `text` is what it shows, `title` its name. */
+	type Short = { text: string; title: string; run: () => void };
 
-	export let items: { label: string; run?: () => void; sub?: Choice[][]; disabled?: boolean }[];
+	export let items: { label: string; run?: () => void; sub?: Choice[][]; row?: Short[]; disabled?: boolean }[];
 	/** Names the menu for assistive tech: which pane it belongs to. */
 	export let label: string;
 
@@ -69,7 +80,7 @@
 
 	// Beside its item — to the right of the menu when there is room, else
 	// below the item — and, like the menu, never off-screen.
-	async function showSub(item: (typeof items)[number], opener: HTMLButtonElement) {
+	async function showSub(item: (typeof items)[number], opener: HTMLButtonElement, focus = true) {
 		sub = { item, opener };
 		await tick();
 		const box = opener.getBoundingClientRect();
@@ -81,12 +92,20 @@
 			top: fit(beside ? box.top : box.bottom + 2, height, window.innerHeight),
 			left: fit(beside ? right : box.left, width, window.innerWidth)
 		};
-		focusItem(enabled(subMenu), 0);
+		if (focus) focusItem(enabled(subMenu), 0);
 	}
 
-	function closeSub() {
-		sub?.opener.focus();
+	function closeSub(returnFocus = true) {
+		if (returnFocus) sub?.opener.focus();
 		sub = null;
+	}
+
+	/** The pointer on an item: a `sub` opens, anything else closes the open one. */
+	function hover(event: PointerEvent, item?: (typeof items)[number]) {
+		if (event.pointerType === 'touch') return;
+		if (item?.sub) {
+			if (sub?.item !== item) showSub(item, event.currentTarget as HTMLButtonElement, false);
+		} else if (sub) closeSub(!!subMenu?.contains(document.activeElement));
 	}
 
 	function enabled(within: HTMLElement | undefined): HTMLButtonElement[] {
@@ -115,8 +134,16 @@
 				focusItem(all, -1);
 				break;
 			case 'ArrowRight':
-				if (!sub && all[here]?.hasAttribute('aria-haspopup')) all[here].click();
+			case 'ArrowLeft': {
+				const el = all[here];
+				const forward = event.key === 'ArrowRight';
+				if (forward && el?.hasAttribute('aria-haspopup')) el.click();
+				else if (el?.parentElement?.classList.contains('row')) {
+					const to = forward ? el.nextElementSibling : el.previousElementSibling;
+					if (to instanceof HTMLButtonElement) to.focus();
+				}
 				break;
+			}
 			case 'Escape':
 				close();
 				break;
@@ -201,17 +228,34 @@
 		on:keydown={onMenuKey}
 	>
 		{#each items as item (item.label)}
-			<button
-				type="button"
-				role="menuitem"
-				class:opens={item.sub}
-				disabled={item.disabled}
-				aria-haspopup={item.sub ? 'menu' : undefined}
-				aria-expanded={item.sub ? sub?.item === item : undefined}
-				on:click={(e) => (!item.sub ? choose(item) : sub ? closeSub() : showSub(item, e.currentTarget))}
-			>
-				{item.label}
-			</button>
+			{#if item.row}
+				<div class="row" role="group" aria-label={item.label}>
+					<span aria-hidden="true">{item.label}</span>
+					{#each item.row as short (short.title)}
+						<button
+							type="button"
+							role="menuitem"
+							aria-label={short.title}
+							title={short.title}
+							on:pointerenter={hover}
+							on:click={() => choose(short)}>{short.text}</button
+						>
+					{/each}
+				</div>
+			{:else}
+				<button
+					type="button"
+					role="menuitem"
+					class:opens={item.sub}
+					disabled={item.disabled}
+					aria-haspopup={item.sub ? 'menu' : undefined}
+					aria-expanded={item.sub ? sub?.item === item : undefined}
+					on:pointerenter={(e) => hover(e, item)}
+					on:click={(e) => (item.sub ? showSub(item, e.currentTarget) : choose(item))}
+				>
+					{item.label}
+				</button>
+			{/if}
 		{/each}
 	</div>
 {/if}
@@ -327,6 +371,27 @@
 		content: '▸';
 		margin-inline-start: auto;
 		color: #55558a;
+	}
+
+	/* A row: its label where an item's words are, its buttons at the end,
+	   each a fingertip's 24px and more (reachable.test.mjs). */
+	.row {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		padding-inline-start: 0.5rem;
+		color: #c8c8e8;
+	}
+	.row span {
+		flex: 1;
+	}
+	.row button {
+		box-sizing: border-box;
+		inline-size: 28px;
+		block-size: 28px;
+		padding: 0;
+		align-items: center;
+		justify-content: center;
 	}
 
 	/* The submenu: one row of icons, each a fingertip's 24px and more

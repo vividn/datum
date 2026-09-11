@@ -61,7 +61,10 @@
 
 	function portal(node: HTMLElement, frame: Frame) {
 		frame.hosted.set(true);
+		// A tabbed frame has no h2: the title waits, hidden, rather than
+		// showing at the top of the content under the tabs.
 		const unsubscribe = frame.titleHost.subscribe((host) => {
+			node.style.display = host ? '' : 'none';
 			if (host && node.parentElement !== host) host.appendChild(node);
 		});
 		return {

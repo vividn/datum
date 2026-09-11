@@ -33,12 +33,22 @@ const titles = (page) =>
 /** A pane, by the id the layout gives it. */
 const pane = (page, id) => page.locator(`section[data-pane="${id}"]`);
 
-/** Open a pane's `…` menu and choose an item by its exact label. */
+/** Open a pane's `…` menu and choose an item by its name — `Add tab`, `split side by side`. */
 async function choose(page, id, label) {
 	await pane(page, id).locator('.titlebar button.more').first().click();
-	await page.locator('[role="menu"] button').filter({ hasText: exactly(label) }).click();
+	await page.getByRole('menuitem', { name: label, exact: true }).click();
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
+
+/** The open `…` menu, one string per line: an item's words, or a row's label and its buttons. */
+const menuLines = (page) =>
+	page.locator('[role="menu"]').first().evaluate((menu) =>
+		[...menu.children].map((el) =>
+			el.getAttribute('role') === 'group'
+				? [el.getAttribute('aria-label'), ...[...el.querySelectorAll('button')].map((b) => b.textContent.trim())].join(' ')
+				: el.textContent.trim()
+		)
+	);
 
 /** A menu item's whole label. */
 const exactly = (label) => new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
@@ -106,7 +116,7 @@ describe('the default layout', () => {
 describe('the … menu', () => {
 	test('Split | on the tail pane makes two panes, the new one a picker, and the pick renders', async () => {
 		await withApp(async ({ page }) => {
-			await choose(page, 'tail', 'Split |');
+			await choose(page, 'tail', 'split side by side');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'widgets']);
 			const picker = page.locator('section.pane[data-title="empty"] .picker');
 			assert.deepEqual(await picker.locator('button').allInnerTexts(), [
@@ -136,10 +146,7 @@ describe('the … menu', () => {
 			assert.equal(await pane(page, 'tail').locator('h2').count(), 0, 'a tabbed pane has no h2');
 			// Split Tab is only offered with 2+ tabs — and here it is.
 			await pane(page, 'tail').locator('.titlebar button.more').click();
-			assert.equal(
-				await page.locator('[role="menu"] button').filter({ hasText: exactly('Split Tab |') }).count(),
-				1
-			);
+			assert.deepEqual(await menuLines(page), ['Add tab', 'Split | −', 'Split Tab | −', 'Close tab', 'Bar']);
 			await page.keyboard.press('Escape');
 		}, DESKTOP);
 	});
@@ -147,7 +154,7 @@ describe('the … menu', () => {
 	test('Split Tab is not offered with one tab', async () => {
 		await withApp(async ({ page }) => {
 			await pane(page, 'tail').locator('.titlebar button.more').click();
-			assert.equal(await page.locator('[role="menu"] button').filter({ hasText: /Split Tab/ }).count(), 0);
+			assert.deepEqual(await menuLines(page), ['Add tab', 'Split | −', 'Close pane', 'Bar']);
 			await page.keyboard.press('Escape');
 		}, DESKTOP);
 	});
@@ -259,7 +266,7 @@ describe('the draft', () => {
 	test('is back after a reload, and a layout with no draft is the default', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await choose(page, 'tail', 'Split |');
+			await choose(page, 'tail', 'split side by side');
 			await page.locator('.picker button', { hasText: 'nowview' }).click();
 			await chooseBar(page, 'strip', 'left');
 			const arranged = await titles(page);
@@ -494,15 +501,17 @@ describe('resizing', () => {
 		}, DESKTOP);
 	});
 
-	test('a border is grabbed right beside a … badge, and the badge stays inside the gap', async () => {
+	test('a border is grabbed right beside a … badge, which hangs half over the gap', async () => {
 		await withApp(async ({ page }) => {
-			// The tail's badge straddles its top outline, into the gap above it
-			// — the column border between nowview and tail.
+			// The tail's badge is centred on its top outline, so half of it
+			// hangs into the gap above — the column border between nowview and
+			// tail — and 4px past it, over nowview's outline (da-13bc).
 			const border = pane(page, 'side').locator('.split.column > [role="separator"]').first();
 			const badge = pane(page, 'tail').locator('.titlebar button.more');
 			const [gap, more, tailBefore] = await Promise.all([boxOf(border), boxOf(badge), boxOf(pane(page, 'tail'))]);
-			assert.ok(more.y > gap.y, `the badge (top ${more.y}) reaches over the gap (top ${gap.y}) into the pane above`);
-			assert.ok(more.y < gap.y + gap.height, 'the badge does not sit on the outline at all');
+			const middle = more.y + more.height / 2;
+			assert.ok(Math.abs(middle - (tailBefore.y + 0.5)) <= 1, `the badge's middle (${middle}) is not on the outline (${tailBefore.y})`);
+			assert.ok(Math.abs(more.y - (gap.y + gap.height - 12)) <= 1, `the badge's top (${more.y}) is not 12px above the gap's end (${gap.y + gap.height})`);
 			const x = more.x + more.width + 6;
 			const y = gap.y + gap.height / 2;
 			await page.mouse.move(x, y);
@@ -552,7 +561,7 @@ describe('the Bar submenu', () => {
 		await withApp(async ({ page }) => {
 			await pane(page, 'tail').locator('.titlebar button.more').click();
 			const items = page.locator('[role="menu"] button');
-			assert.deepEqual((await items.allInnerTexts()).map((l) => l.trim()), ['Add tab', 'Split |', 'Split −', 'Close pane', 'Bar']);
+			assert.deepEqual(await menuLines(page), ['Add tab', 'Split | −', 'Close pane', 'Bar']);
 			assert.equal(await items.filter({ hasText: /Bar:|Align:/ }).count(), 0);
 			await items.filter({ hasText: exactly('Bar') }).click();
 			const cells = await row(page);
@@ -693,6 +702,13 @@ describe('the title on the frame', () => {
 			assert.ok(straddlesTop(last, frame), 'the tabs are not on the outline');
 			const apart = more.x - (last.x + last.width);
 			assert.ok(apart >= 0 && apart <= 8, `the badge is ${apart}px from the last tab`);
+			// No h2 to carry the widget's own title, so it is nowhere: not a
+			// stray line at the top of the content, under the tabs (da-13bc).
+			await tail.locator('[role="tab"]', { hasText: 'tail' }).click();
+			const shown = await tail.locator('> .content').evaluate((el) =>
+				[...el.querySelectorAll('.hosted-title')].filter((s) => getComputedStyle(s).display !== 'none').length
+			);
+			assert.equal(shown, 0, "the tail's title shows in its content");
 		}, DESKTOP);
 	});
 
@@ -786,22 +802,18 @@ describe('holders', () => {
 		}, DESKTOP);
 	});
 
-	test('a holder with two tabs keeps its strip and its …, and its menu offers no Split |', async () => {
+	test('a holder with two tabs keeps its strip and its …, and its menu offers no Split row', async () => {
 		await withApp(async ({ page }) => {
 			// A second tab on the tail, then its first tab split: the tail pane
 			// now holds a split under one tab and the empty tab beside it.
 			await choose(page, 'tail', 'Add tab');
 			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'tail' }).click();
-			await choose(page, 'tail', 'Split Tab |');
+			await choose(page, 'tail', 'split tab side by side');
 			const holder = page.locator('section.holder[data-pane="tail"]');
 			assert.equal(await holder.count(), 1);
 			assert.deepEqual(await holder.locator('> .titlebar [role="tab"]').allInnerTexts(), ['split', 'empty']);
 			await holder.locator('> .titlebar button.more').click();
-			const labels = await page.locator('[role="menu"] button').allInnerTexts();
-			assert.deepEqual(
-				labels.map((l) => l.trim()),
-				['Add tab', 'Split Tab |', 'Split Tab −', 'Close tab', 'Bar']
-			);
+			assert.deepEqual(await menuLines(page), ['Add tab', 'Split Tab | −', 'Close tab', 'Bar']);
 			await page.keyboard.press('Escape');
 		}, DESKTOP);
 	});
@@ -920,8 +932,8 @@ describe('scrollbars', () => {
 // days the pane cannot be dragged below one whole day, and with 40px
 // days it can shrink to a strip.
 describe("the strip's floor", () => {
-	/** A widget pane's chrome (Layout.svelte's CHROME.height) and the strip body's padding. */
-	const CHROME = 20;
+	/** A top-bar widget pane's chrome (Layout.svelte's `chromeOf`: the outline and half the row) and the strip body's padding. */
+	const CHROME = 2 + 12;
 	const PADDING = 16;
 
 	for (const dayHeight of [200, 40]) {
@@ -948,12 +960,168 @@ describe("the strip's floor", () => {
 	}
 });
 
+// vividn's third look (da-13bc): "The pane tile currently still pushes the
+// contents of the pane down, just overlay it directly on the frame (please
+// center on the frame line)" — and, from the floor, "when dayview has the
+// label on the left and right, the minimum is no longer the day height.
+// but slightly larger". Measured in screen coordinates, on all four edges
+// (the left-hand bar is rotated), never "less than before".
+describe('the title on the line', () => {
+	for (const edge of ['top', 'bottom', 'left', 'right']) {
+		test(`bar on the ${edge}: the content has no padding and the title is centred on the outline`, async () => {
+			await withApp(async ({ page }) => {
+				if (edge !== 'top') await chooseBar(page, 'tail', edge);
+				const tail = pane(page, 'tail');
+				const seen = await tail.evaluate((section) => {
+					const s = getComputedStyle(section.querySelector(':scope > .content'));
+					const f = section.getBoundingClientRect();
+					const h = section.querySelector('h2').getBoundingClientRect();
+					return {
+						padding: [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft],
+						// The 1px outline's own middle, on each edge.
+						line: { top: f.top + 0.5, bottom: f.bottom - 0.5, left: f.left + 0.5, right: f.right - 0.5 },
+						middle: { x: h.left + h.width / 2, y: h.top + h.height / 2 }
+					};
+				});
+				assert.deepEqual(seen.padding, ['0px', '0px', '0px', '0px']);
+				const at = edge === 'top' || edge === 'bottom' ? seen.middle.y : seen.middle.x;
+				assert.ok(Math.abs(at - seen.line[edge]) <= 1, `the title's middle is at ${at}, the ${edge} line at ${seen.line[edge]}`);
+			}, DESKTOP);
+		});
+	}
+
+	test("a title on the page's top edge is whole, and the panes start where the page's margin ends", async () => {
+		await withApp(async ({ page }) => {
+			const seen = await page.evaluate(() => {
+				const main = document.querySelector('main');
+				const h2 = document.querySelector('section[data-pane="strip"] h2');
+				const h = h2.getBoundingClientRect();
+				return {
+					clip: document.querySelector('section.root > .content').getBoundingClientRect().top,
+					title: h.top,
+					// The title's topmost row of pixels is the title's, not cut away.
+					hit: document.elementFromPoint(h.left + h.width / 2, h.top + 1) === h2,
+					pane: document.querySelector('section[data-pane="strip"]').getBoundingClientRect().top,
+					margin: main.getBoundingClientRect().top + parseFloat(getComputedStyle(main).paddingTop)
+				};
+			});
+			assert.ok(seen.title >= seen.clip, `the title starts at ${seen.title}, the scroller cuts at ${seen.clip}`);
+			assert.ok(seen.hit, 'the top of the title is covered');
+			assert.equal(seen.pane, seen.margin);
+		}, DESKTOP);
+	});
+
+	for (const dayHeight of [200, 40]) {
+		test(`with ${dayHeight}px days a left-bar strip floors at its day, a top-bar one 12px taller`, async () => {
+			await withApp(
+				async ({ page }) => {
+					const borders = page.locator('.split.column > [role="separator"]');
+					for (const i of [0, 1]) {
+						const box = await borders.nth(i).boundingBox();
+						const x = box.x + box.width / 2;
+						const y = box.y + box.height / 2;
+						await page.mouse.move(x, y);
+						await page.mouse.down();
+						for (let step = 1; step <= 10; step++) await page.mouse.move(x, y - step * 60);
+						await page.mouse.up();
+						await page.waitForTimeout(300);
+					}
+					const [left, top] = await page
+						.locator('.split.column > .cell')
+						.evaluateAll((cells) => cells.slice(0, 2).map((c) => c.getBoundingClientRect().height));
+					const today = dayHeight + 2 * 2 + 15; // panes.ts: todayBox = day + margins + the hour axis
+					const floor = today + 16 + 2; // the strip body's padding, and the outline
+					assert.ok(Math.abs(left - floor) <= 0.5, `the left-bar strip stopped at ${left}px, its floor is ${floor}px`);
+					assert.ok(Math.abs(top - left - 12) <= 0.5, `the top-bar strip is ${top}px, the left-bar one ${left}px`);
+				},
+				{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(twoStrips(dayHeight))) }
+			);
+		});
+	}
+});
+
+// "bar submenu should open immediately on mouse over" and "let's put the
+// two split buttons on the same line" (da-13bc).
+describe('the … menu by pointer', () => {
+	const barItem = (page) => page.getByRole('menuitem', { name: /^Bar/ });
+
+	test('Bar ▸ opens on the pointer with no click, stays open on the way to it, and closes on another item', async () => {
+		await withApp(async ({ page }) => {
+			await pane(page, 'tail').locator('.titlebar button.more').click();
+			await barItem(page).hover();
+			await barMenu(page).waitFor();
+			assert.equal(await barItem(page).getAttribute('aria-expanded'), 'true');
+			await page.getByRole('menuitem', { name: 'Close pane', exact: true }).hover();
+			await barMenu(page).waitFor({ state: 'detached' });
+
+			// From the item onto the submenu, in small steps across the gap.
+			const from = await boxOf(barItem(page));
+			await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+			const icon = barMenu(page).locator('[aria-label="bottom"]');
+			await icon.waitFor();
+			const to = await boxOf(icon);
+			await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
+			assert.equal(await barMenu(page).count(), 1, 'the submenu closed on the way to it');
+			await page.mouse.down();
+			await page.mouse.up();
+			assert.match(await pane(page, 'tail').getAttribute('class'), /\bedge-bottom\b/);
+		}, DESKTOP);
+	});
+
+	test('Split is one line of two buttons, and − splits top and bottom', async () => {
+		await withApp(async ({ page }) => {
+			await pane(page, 'tail').locator('.titlebar button.more').click();
+			const buttons = page.getByRole('group', { name: 'Split' }).getByRole('menuitem');
+			assert.deepEqual(await buttons.evaluateAll((all) => all.map((b) => b.getAttribute('aria-label'))), [
+				'split side by side',
+				'split top and bottom'
+			]);
+			const [side, stack] = await Promise.all([boxOf(buttons.nth(0)), boxOf(buttons.nth(1))]);
+			assert.equal(side.y, stack.y, 'the two are not on one line');
+			for (const b of [side, stack]) assert.ok(b.width >= 24 && b.height >= 24, `a split button is ${b.width}x${b.height}`);
+			await buttons.nth(1).click();
+			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'widgets']);
+			const [tail, empty] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(page.locator('section.pane[data-title="empty"]'))]);
+			assert.equal(Math.round(empty.x), Math.round(tail.x));
+			assert.equal(Math.round(empty.width), Math.round(tail.width));
+			assert.ok(empty.y > tail.y + tail.height, 'the new pane is not under the tail');
+		}, DESKTOP);
+	});
+});
+
+/** A root column of [a left-bar strip / a top-bar strip / the REPL] at `dayHeight`. */
+const twoStrips = (dayHeight) => ({
+	version: 1,
+	name: 'default',
+	root: {
+		id: 'root',
+		tabs: [
+			{
+				id: 'root-tab',
+				content: {
+					id: 'col',
+					direction: 'column',
+					ratios: [0.34, 0.33, 0.33],
+					children: [
+						widgetPane('left', 'daystrip', { dayHeight }, 'left'),
+						widgetPane('top', 'daystrip', { dayHeight }),
+						widgetPane('repl', 'repl')
+					]
+				}
+			}
+		],
+		active: 0,
+		bar
+	}
+});
+
 const bar = { edge: 'top', align: 'start' };
-const widgetPane = (id, kind, settings = {}) => ({
+const widgetPane = (id, kind, settings = {}, edge = 'top') => ({
 	id,
 	tabs: [{ id: `${id}-tab`, content: { id: `${id}-widget`, kind, settings } }],
 	active: 0,
-	bar
+	bar: { ...bar, edge }
 });
 
 /** A root holder, its one tab locked or not, over [repl | a tabbed tail/nowview pane]. */

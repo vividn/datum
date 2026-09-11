@@ -24,9 +24,10 @@
 
 	Floors: a child's cell is never narrower or shorter than its floor
 	(`floorOf`: the largest of its tabs' kinds' minimums, plus the frame
-	— `chromeOf`: a widget pane's outline and inset, a tabbed holder's
-	row of tabs, and nothing for a holder with one tab, which draws no
-	bar at all),
+	— `chromeOf`: a widget pane's outline and the inside half of its
+	title's row, a tabbed holder's row of tabs, and nothing for a holder
+	with one tab, which draws no bar at all — each on the edge the bar is
+	on, so a left-hand title adds width and no height, da-13bc),
 	so a drag clamps and a split too small for its children overflows to
 	the root's scroll rather than hiding one. A kind that sizes itself
 	(`fit`) takes its content's height and no share of the split; the
@@ -58,14 +59,14 @@
 	 * (vividn: "reduce margins some"), to the floor a finger needs.
 	 */
 	const BORDER = 8;
+	/** A widget pane's outline, 1px a side. */
+	const OUTLINE = 2;
 	/**
-	 * What a frame adds around its content: its outline (1px a side) and
-	 * the inside half of the title straddling it (PaneFrame.svelte's
-	 * `--inset`).
+	 * The bar's row (PaneFrame's `--row`): the whole of it across a tabbed
+	 * holder's edge, and the inside half of it on a widget pane's, where it
+	 * straddles the outline.
 	 */
-	const CHROME = { width: 2, height: 20 };
-	/** A tabbed holder's bar: a row of tabs across its edge (PaneFrame's `--row`). */
-	const TAB_ROW = 24;
+	const ROW = 24;
 	/** What one arrow press moves a border. */
 	const NUDGE = 0.02;
 
@@ -86,10 +87,12 @@
 	};
 	/** What a pane's frame adds around its content: see PaneFrame.svelte. */
 	const chromeOf = (p: PaneNode) => {
-		if (!isSplit(p.tabs[p.active].content)) return CHROME;
-		if (p.tabs.length === 1) return { width: 0, height: 0 };
-		const vertical = p.bar.edge === 'left' || p.bar.edge === 'right';
-		return vertical ? { width: TAB_ROW, height: 0 } : { width: 0, height: TAB_ROW };
+		const widget = !isSplit(p.tabs[p.active].content);
+		const outline = widget ? OUTLINE : 0;
+		const bar = widget ? ROW / 2 : p.tabs.length > 1 ? ROW : 0;
+		return p.bar.edge === 'left' || p.bar.edge === 'right'
+			? { width: outline + bar, height: outline }
+			: { width: outline, height: outline + bar };
 	};
 	const floor = (child: PaneNode) => floorOf(child, floorOfKind, BORDER, chromeOf);
 

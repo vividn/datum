@@ -47,6 +47,10 @@ describe('the nowview widget', () => {
 				page.locator(`${PANE} .nowview`).boundingBox()
 			]);
 			assert.ok(box.x - content.x <= 8, `steps at ${box.x}, content at ${content.x}`);
+			// The title lies over the content's top strip (da-13bc): the steps
+			// sit below it, not under it.
+			const title = await page.locator(`${PANE} h2`).boundingBox();
+			assert.ok(box.y >= title.y + title.height, `steps at ${box.y}, the title ends at ${title.y + title.height}`);
 			assert.equal(await steps.locator('span').count(), 0);
 			assert.deepEqual(
 				await steps.locator('button').evaluateAll((bs) => bs.map((b) => [b.textContent, b.ariaLabel])),

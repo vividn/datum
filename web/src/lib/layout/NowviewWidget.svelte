@@ -61,10 +61,11 @@
 		min-height: 0;
 	}
 
+	/* Clear of a title lying over that corner (PaneFrame.svelte). */
 	.nowview-steps {
 		position: absolute;
-		top: 4px;
-		left: 4px;
+		top: calc(4px + var(--under-top, 0px));
+		left: calc(4px + var(--under-left, 0px));
 		display: flex;
 		gap: 2px;
 	}

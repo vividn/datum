@@ -11,12 +11,15 @@
 	names — top or bottom running across, left or right running DOWN with
 	the words rotated (`writing-mode: vertical-rl`), and on the left turned
 	round so it reads bottom-to-top like a book's spine (vividn, 15:39) —
-	with the title or the tabs gathered along it by `bar.align`. The title
-	and the badge hang mostly INSIDE the outline (`--bias` of their height
-	out, the rest in) and the content is padded by the inside part
-	(`--inset`), so nothing is covered; what hangs out is less than the gap
-	between panes, so the badge never lies over a neighbour, and the
-	border between two panes is grabbed right beside it.
+	with the title or the tabs gathered along it by `bar.align`. The title,
+	the tabs and the badge are centred ON the outline, half out and half
+	in, and the content is padded by nothing: the row lies over the top
+	strip of what is underneath (vividn's third look, da-13bc — "just overlay
+	it directly on the frame […] it can overlap slightly with the underlying
+	display"). The half that hangs out is 12px over an 8px gap, so 4px of
+	the badge lie over the neighbour's outline; the bar itself takes no
+	pointer, so the border between two panes is still grabbed right beside
+	it.
 
 	A pane whose tab holds a split rather than a widget is a HOLDER: no
 	border, no background, and — with one tab — no bar at all: a box that
@@ -114,13 +117,23 @@
 		...(holder
 			? []
 			: [
-					{ label: 'Split |', run: () => apply((l) => splitPane(l, pane.id, 'row')) },
-					{ label: 'Split −', run: () => apply((l) => splitPane(l, pane.id, 'column')) }
+					{
+						label: 'Split',
+						row: [
+							{ text: '|', title: 'split side by side', run: () => apply((l) => splitPane(l, pane.id, 'row')) },
+							{ text: '−', title: 'split top and bottom', run: () => apply((l) => splitPane(l, pane.id, 'column')) }
+						]
+					}
 				]),
 		...(many
 			? [
-					{ label: 'Split Tab |', run: () => apply((l) => splitTab(l, pane.id, pane.active, 'row')) },
-					{ label: 'Split Tab −', run: () => apply((l) => splitTab(l, pane.id, pane.active, 'column')) }
+					{
+						label: 'Split Tab',
+						row: [
+							{ text: '|', title: 'split tab side by side', run: () => apply((l) => splitTab(l, pane.id, pane.active, 'row')) },
+							{ text: '−', title: 'split tab top and bottom', run: () => apply((l) => splitTab(l, pane.id, pane.active, 'column')) }
+						]
+					}
 				]
 			: []),
 		{
@@ -270,12 +283,10 @@
 		flex: 1;
 		min-width: 0;
 		min-height: 0;
-		/* The title, the tabs and the badge are this tall — 24px, a finger's
-		   floor (reachable.test.mjs) — and hang `--bias` of it outside the
-		   outline; `--inset` is the rest, which the content makes room for. */
+		/* The title, the tabs and the badge are all this tall — 24px, a
+		   finger's floor (reachable.test.mjs) — and hang half of it outside
+		   the outline and half over the content (Layout.svelte's chrome). */
 		--row: 24px;
-		--bias: 6px;
-		--inset: calc(var(--row) - var(--bias));
 	}
 
 	.pane {
@@ -306,53 +317,49 @@
 		min-height: 0;
 	}
 
-	/* On a pane the bar is a LINE, not a box: zero thick, laid along the
-	   outline and moved `--bias` inward, with its items centred on it —
-	   so they straddle the outline, more in than out. It takes no pointer
-	   itself (the border beside it must stay grabbable); its items do. */
+	/* On a pane the bar is a LINE, not a box: zero thick, laid down the
+	   middle of the 1px outline (half a pixel out from the padding box),
+	   with its items centred on it — so they straddle the outline, as much
+	   out as in. It takes no pointer itself (the border beside it must
+	   stay grabbable); its items do. */
 	.pane > .titlebar {
 		position: absolute;
 		z-index: 2;
 		pointer-events: none;
 	}
 	.pane.edge-top > .titlebar {
-		top: var(--bias);
+		top: -0.5px;
 		left: 0;
 		right: 0;
 		height: 0;
 	}
 	.pane.edge-bottom > .titlebar {
-		bottom: var(--bias);
+		bottom: -0.5px;
 		left: 0;
 		right: 0;
 		height: 0;
 	}
 	.pane.edge-left > .titlebar {
-		left: var(--bias);
+		left: -0.5px;
 		top: 0;
 		bottom: 0;
 		width: 0;
 	}
 	.pane.edge-right > .titlebar {
-		right: var(--bias);
+		right: -0.5px;
 		top: 0;
 		bottom: 0;
 		width: 0;
 	}
 
-	/* The room the title takes inside, on whichever edge it is on — none
-	   where there is no title. */
-	.pane.edge-top:not(.bare) > .content {
-		padding-top: var(--inset);
+	/* How far the title lies over the content on its edge, for a widget
+	   whose own controls sit in that corner to keep clear of it (the
+	   nowview's steps). The display underneath is not moved. */
+	.pane.edge-top:not(.bare) {
+		--under-top: calc(var(--row) / 2);
 	}
-	.pane.edge-bottom:not(.bare) > .content {
-		padding-bottom: var(--inset);
-	}
-	.pane.edge-left:not(.bare) > .content {
-		padding-left: var(--inset);
-	}
-	.pane.edge-right:not(.bare) > .content {
-		padding-right: var(--inset);
+	.pane.edge-left:not(.bare) {
+		--under-left: calc(var(--row) / 2);
 	}
 
 	/* Along the left and the right the words are rotated. `vertical-rl`
@@ -475,5 +482,13 @@
 	   (WidgetBar.svelte), stay unclipped at every level in between. */
 	.root > .content {
 		overflow: auto;
+	}
+	/* The titles along the page's own edges hang half their row outside
+	   their panes, and the scroller would cut that half off: it reaches
+	   out over the page's margin by that much and pads it back, so the
+	   panes stay where they were and their titles are whole. */
+	.holder.root.bare > .content {
+		margin: calc(var(--row) / -2);
+		padding: calc(var(--row) / 2);
 	}
 </style>

@@ -138,9 +138,26 @@ async function owed(app) {
  * Half a band more than `days − 1` whole ones, so the top band is only
  * half revealed: that is what makes the stack scroll, and a scrolling
  * stack is what the jagged line is about. Zero days is a box exactly
- * today's height.
+ * today's height — which is a side bar's floor, not a top bar's: a top
+ * bar's title lies over 12px of the content, and its floor keeps them off
+ * today (Layout.svelte's `chromeOf`, da-13bc). So for zero days the
+ * strip's bar goes on the left first.
  */
 async function sizeFor(app, days) {
+	if (days === 0) {
+		await app.page.evaluate(() =>
+			window.datum.layout.apply((tree) => {
+				const copy = structuredClone(tree);
+				const walk = (pane) => {
+					if (pane.tabs.some((tab) => tab.content.kind === 'daystrip')) pane.bar = { ...pane.bar, edge: 'left' };
+					for (const tab of pane.tabs) if ('children' in tab.content) tab.content.children.forEach(walk);
+				};
+				walk(copy.root);
+				return copy;
+			})
+		);
+		await app.page.locator('section.edge-left .strip').waitFor();
+	}
 	const m = await metrics(app);
 	const strip = days === 0 ? m.today : m.today + m.gap + (days - 0.5) * m.unit;
 	await setBox(app, Math.ceil(strip + m.chrome));
