@@ -123,7 +123,7 @@ describe('the shell', () => {
 			await until(() => rootTabs(page), (t) => t.includes('nowview'));
 			assert.deepEqual(await rootTabs(page), ['day', 'nowview']);
 			assert.equal(await activeRootTab(page), 'nowview');
-			await page.locator('section.pane[data-title="nowview"] img.svg').waitFor();
+			await page.locator('section.pane[data-title="nowview"] svg.svg').waitFor();
 			assert.deepEqual(await titles(page), ['nowview']);
 			// Two root tabs are the root bar's alone: the root pane draws no strip of its own.
 			assert.equal(await page.locator('section.root > .titlebar').count(), 0, 'the root drew a second strip');
@@ -232,7 +232,7 @@ describe('the icons', () => {
 
 			await choose(page, 'tail', 'Split |');
 			await page.locator('.picker button', { hasText: exactly('nowview') }).click();
-			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('img.svg').waitFor();
+			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
 			await icon(page, 'save').click();
 			await until(() => dotted(page), (d) => d.length === 0);
 			assert.deepEqual(
@@ -496,7 +496,7 @@ describe('the cycle guard', () => {
 			await picker.locator('button.layout').first().waitFor();
 			assert.deepEqual(await picker.locator('button.layout').allInnerTexts(), ['mine'], 'day, open above, must not be offered');
 			await picker.locator('button', { hasText: exactly('mine') }).click();
-			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('img.svg').waitFor();
+			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'widgets']);
 		}, DESKTOP);
 	});

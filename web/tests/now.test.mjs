@@ -38,7 +38,7 @@ describe('/now', () => {
 
 			await app.goto('/now');
 			assert.equal(await page.locator('.root-bar [role="tab"][aria-selected="true"]').innerText(), 'nowview');
-			await page.locator('section.pane[data-title="nowview"] img.svg').waitFor();
+			await page.locator('section.pane[data-title="nowview"] svg.svg').waitFor();
 			const svg = await app.paneSvg('nowview');
 			// The field the CLI says has a state is drawn with one past the
 			// now-line (fit.test.mjs reads the same chunk), and the shapes are
