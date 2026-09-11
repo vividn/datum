@@ -30,9 +30,8 @@
 	`section.holder` rather than `section.pane` so that "the panes" — as
 	the test harness and the rest of the app find them — remain exactly
 	the ones with a widget in them. The ROOT pane draws no bar of its own
-	either while it has one tab: the shell draws the root's tabs as the
-	page's top bar (da-0a5o), and until that lands a root with several
-	tabs keeps its strip, or nothing could switch them. And a LOCKED frame
+	at all, however many tabs it has: the shell draws the root's tabs as
+	the page's top bar (da-0a5o). And a LOCKED frame
 	draws no `…` — nothing under a lock can be split, tabbed or resized,
 	and the tabs still switch.
 
@@ -105,8 +104,8 @@
 	$: many = pane.tabs.length > 1;
 	$: vertical = pane.bar.edge === 'left' || pane.bar.edge === 'right';
 	$: title = titleFor(active);
-	/** No bar at all: a lone root's is the shell's, a lone holder's is its children's. */
-	$: bare = !many && (root || holder);
+	/** No bar at all: the root's is the shell's, a lone holder's is its children's. */
+	$: bare = root || (!many && holder);
 
 	const titleFor = (tab: Tab): string =>
 		tab.title ?? (isSplit(tab.content) ? 'split' : titleOf(tab.content.kind));

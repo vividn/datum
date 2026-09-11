@@ -840,12 +840,17 @@ describe('holders', () => {
 		}, DESKTOP);
 	});
 
-	test('a root with two tabs keeps its strip until the shell draws it (Copilot on #172)', async () => {
+	// Copilot on #172: a root with two tabs must keep a strip, or nothing
+	// could switch them. The shell (da-0a5o) draws the page root's tabs as
+	// the root bar, so the page root draws none; a saved layout whose root
+	// has two tabs is inlined whole under its root tab, and keeps its strip.
+	test("a layout's root with two tabs keeps its strip; the page root's strip is the root bar (Copilot on #172)", async () => {
 		await withApp(
 			async ({ page }) => {
-				const root = page.locator('section.root');
-				assert.deepEqual(await root.locator('> .titlebar [role="tab"]').allInnerTexts(), ['repl', 'tail']);
-				await root.locator('> .titlebar [role="tab"]', { hasText: 'tail' }).click();
+				assert.equal(await page.locator('section.root > .titlebar').count(), 0, 'the page root drew a strip');
+				const inner = pane(page, 'root');
+				assert.deepEqual(await inner.locator('> .titlebar [role="tab"]').allInnerTexts(), ['repl', 'tail']);
+				await inner.locator('> .titlebar [role="tab"]', { hasText: 'tail' }).click();
 				assert.deepEqual(await titles(page), ['tail']);
 			},
 			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, TWO_ROOT_TABS) }
@@ -868,7 +873,6 @@ describe('holders', () => {
 // arrives as this device's lock on the `day` tab (per device, never in
 // the tree — da-0a5o), and covers the whole tree.
 describe('the lock', () => {
-	const tree = JSON.stringify(lockable());
 
 	/** The cells of the row split, by width. */
 	const cellWidths = (page) =>
@@ -880,7 +884,8 @@ describe('the lock', () => {
 				const { page } = app;
 				assert.deepEqual(await titles(page), ['repl', 'tail']);
 				assert.equal(await page.locator('[role="separator"]').count(), 0);
-				assert.equal(await page.locator('button.more').count(), 0);
+				// The root bar's `+` and `…` (da-0a5o) are above the layout, not under its lock.
+				assert.equal(await page.locator('section.root button.more').count(), 0);
 				// The gap is still there, as a static border, and dragging across it moves nothing.
 				const gap = page.locator('.split.row > .border.static');
 				assert.equal(await gap.count(), 1);
@@ -915,7 +920,7 @@ describe('the lock', () => {
 			},
 			// The init script runs on every load, the reload included: it
 			// writes the draft and the lock once and leaves the unlocked one alone.
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(lockedOnce, tree) }
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(lockedOnce, JSON.stringify(lockable())) }
 		);
 	});
 });

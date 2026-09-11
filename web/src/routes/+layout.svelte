@@ -81,6 +81,6 @@
 		min-height: 0;
 		/* The frame fills this box exactly and scrolls its own panes. */
 		overflow: auto;
-		padding: 0.5rem 0.75rem;
+		padding: 0.75rem;
 	}
 </style>

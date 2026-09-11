@@ -242,9 +242,7 @@ describe('the layout engine, by keyboard', () => {
 	test('a Tab walk reaches every … button, every border and the nowview steps', async () => {
 		await withApp(async ({ page }) => {
 			const reached = await tabWalk(page);
-			// The root frame's own badge is hidden until the engine stops
-			// drawing it (da-2a5y): not on screen, not in the walk. The root
-			// bar's icons and the beta hint (da-0a5o) are walked too.
+			// The root bar's icons and the beta hint (da-0a5o) are walked too.
 			const controls = await page.evaluate(() =>
 				[...document.querySelectorAll('button.more, [role="separator"], .nowview-steps button, .root-bar .act, .prompt-bar .hint-button')]
 					.filter((el) => el.getClientRects().length > 0)
@@ -338,7 +336,8 @@ describe('the layout engine, by keyboard', () => {
 			await withApp(async ({ page }) => {
 				const icons = page.locator('[role="menu"][aria-label="Bar"] button');
 				for (const edge of ['top', 'left']) {
-					await page.locator('button.more').first().click();
+					// A pane's `…`, not the root bar's `+` or `…` (da-0a5o), which have no Bar.
+					await page.locator('section.pane button.more').first().click();
 					await page.locator('[role="menu"] button', { hasText: /^\s*Bar\s*$/ }).click();
 					const seen = await icons.evaluateAll((all) =>
 						all.map((el) => {
@@ -367,14 +366,15 @@ describe('the layout engine, by keyboard', () => {
 
 	// Locked (da-2a5y), a layout has FEWER targets, not unreachable ones:
 	// no `…` and no border is in the DOM at all, and what is left — the
-	// tabs — is still walked to.
+	// tabs — is still walked to. The lock is this device's, on the `day`
+	// tab (da-0a5o); the root bar above the layout is not under it.
 	test('a locked layout has no … and no border, and its tabs are still in the Tab order', async () => {
 		await withApp(
 			async ({ page }) => {
 				const reached = await tabWalk(page);
 				const controls = await page.evaluate(() => ({
-					hidden: document.querySelectorAll('button.more, [role="separator"]').length,
-					tabs: [...document.querySelectorAll('[role="tab"]')].map((el) => el.dataset.walk ?? null)
+					hidden: document.querySelectorAll('section.root button.more, section.root [role="separator"]').length,
+					tabs: [...document.querySelectorAll('section.root [role="tab"]')].map((el) => el.dataset.walk ?? null)
 				}));
 				assert.equal(controls.hidden, 0, 'a locked layout still offers a … or a border');
 				assert.equal(controls.tabs.length, 2);
@@ -384,7 +384,10 @@ describe('the layout engine, by keyboard', () => {
 			{
 				viewport: { width: 1280, height: 900 },
 				prepare: (context) =>
-					context.addInitScript((json) => localStorage.setItem('datum.layout.draft.v1.default', json), LOCKED)
+					context.addInitScript((json) => {
+						localStorage.setItem('datum.layout.draft.v1.day', json);
+						localStorage.setItem('datum.layout.locked.v1.day', '1');
+					}, LOCKED)
 			}
 		);
 	});
@@ -408,11 +411,11 @@ describe('the layout engine, by keyboard', () => {
 	});
 });
 
-/** A root holder whose one tab is locked, over [the REPL | a tabbed tail/nowview pane]. */
+/** The `day` layout this device locks: a root holder over [the REPL | a tabbed tail/nowview pane]. */
 const bar = { edge: 'top', align: 'start' };
 const LOCKED = JSON.stringify({
 	version: 1,
-	name: 'default',
+	name: 'day',
 	root: {
 		id: 'root',
 		active: 0,
@@ -420,7 +423,6 @@ const LOCKED = JSON.stringify({
 		tabs: [
 			{
 				id: 'root-tab',
-				locked: true,
 				content: {
 					id: 'row',
 					direction: 'row',
