@@ -46,6 +46,7 @@
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
 	import { ansiSpans } from './ansi.js';
+	import AnsiText from './AnsiText.svelte';
 	import type { PaneBox } from './panes.js';
 	import { tailListing, type TailColumn, type TailRow } from './tail.js';
 
@@ -421,12 +422,7 @@
 			<tr>
 				{#each keys as key (key)}
 					<th class={key} data-key={key}
-						>{#each ansiSpans(headers[key] ?? key) as span}<span
-								style:color={span.fg}
-								style:background={span.bg}
-								style:font-weight={span.bold ? 'bold' : null}
-								style:opacity={span.dim ? '0.6' : null}>{span.text}</span
-							>{/each}</th
+						><AnsiText spans={ansiSpans(headers[key] ?? key)} /></th
 					>
 				{/each}
 			</tr>
@@ -440,13 +436,7 @@
 				>
 					{#each keys as key (key)}
 						<td class={key} data-key={key}
-							>{#each ansiSpans(row.cells[key] ?? '') as span}<span
-									style:color={span.fg}
-									style:background={span.bg}
-									style:font-weight={span.bold ? 'bold' : null}
-									style:opacity={span.dim ? '0.6' : null}
-									style:text-decoration={span.underline ? 'underline' : null}>{span.text}</span
-								>{/each}</td
+							><AnsiText spans={ansiSpans(row.cells[key] ?? '')} /></td
 						>
 					{/each}
 				</tr>

@@ -17,6 +17,7 @@
 -->
 <script lang="ts">
 	import { ansiSpans } from './ansi.js';
+	import AnsiText from './AnsiText.svelte';
 	import { picture } from './hover.js';
 	import { resizing } from './layout/resizing.js';
 
@@ -37,14 +38,7 @@
 	     move together (da-jgrn). -->
 	<div class="picture" class:stretch={$resizing} use:picture={text} />
 {:else}
-	<pre class:error>{#each spans as span}<span
-				style:color={span.fg}
-				style:background={span.bg}
-				style:font-weight={span.bold ? 'bold' : null}
-				style:opacity={span.dim ? '0.6' : null}
-				style:font-style={span.italic ? 'italic' : null}
-				style:text-decoration={span.underline ? 'underline' : null}>{span.text}</span
-			>{/each}</pre>
+	<pre class:error><AnsiText {spans} /></pre>
 {/if}
 
 <style>
