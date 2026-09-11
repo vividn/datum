@@ -43,15 +43,16 @@ a top-level `migrations/` folder.)
 - `slug`: `field:2024-03-16T09:15Z` (human reference, datum-compatible). Derived from field + occur_time, so `retime` rewrites it — **mutable, not an identity**.
 - `content_hash`: SHA-256 dedup key
 - `field`: what is being tracked (e.g. "coffee", "mood", "project", "word")
-- `verb`: occur | start | stop | switch | note
-- `value`: primary JSON value (state for switch, quantity for occur, etc.)
-- `extra_data`: arbitrarily nested JSON; leaf values may use `{"v": x, "u": "unit"}` for unit annotation
-- `time_start` / `time_end`: both optional; duration always derived
-- `timezone`: IANA name (e.g. "America/Chicago")
-- `created_at` / `modified_at` / `device_id`
+- `verb`: the STORED classification, derived from state + dur — `point` | `switch` | `block` | `block-switch` | `point-switch` (`crates/datum-parse/src/verb.rs`). The words a person types — `occur`, `start`, `stop`/`end`, `switch`, `note`, `add` — are the COMMANDS; they set the state and the duration the verb is derived from.
+- `state`: the primary JSON value (the state for a switch, the quantity for an occur). **There is no `value` field** — `state` is the canonical name, and a `value` appearing in new code is a bug, not a synonym.
+- `following_state`: the trailing-edge state of a switch-style verb; meaningful only alongside a `dur`.
+- `data`: arbitrarily nested JSON; leaf values may use `{"v": x, "u": "unit"}` for unit annotation. (Not `extra_data`.)
+- `occur_time` + `dur`: the one instant and the span it covers — see the time model below. There are no `time_start` / `time_end` columns.
+- the zone travels with the time (`occur_time_tz`): an IANA name, e.g. "America/Chicago"
+- `create_time` / `modify_time` / `device_id`
 
 ### Time model
-All four combinations are valid:
+All four combinations are valid as INPUT:
 - `time_start` only — open/ongoing event
 - `time_start` + `time_end` — complete block, dur derived
 - `time_start` + a duration — end derived
