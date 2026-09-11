@@ -313,6 +313,30 @@ describe('the layout engine, by keyboard', () => {
 		});
 	}
 
+	// Locked (da-2a5y), a layout has FEWER targets, not unreachable ones:
+	// no `…` and no border is in the DOM at all, and what is left — the
+	// tabs — is still walked to.
+	test('a locked layout has no … and no border, and its tabs are still in the Tab order', async () => {
+		await withApp(
+			async ({ page }) => {
+				const reached = await tabWalk(page);
+				const controls = await page.evaluate(() => ({
+					hidden: document.querySelectorAll('button.more, [role="separator"]').length,
+					tabs: [...document.querySelectorAll('[role="tab"]')].map((el) => el.dataset.walk ?? null)
+				}));
+				assert.equal(controls.hidden, 0, 'a locked layout still offers a … or a border');
+				assert.equal(controls.tabs.length, 2);
+				// The active tab is the strip's one stop; the arrows walk the rest.
+				assert.ok(controls.tabs.some((walk) => walk && reached.has(walk)), 'the tab strip is not in the Tab order');
+			},
+			{
+				viewport: { width: 1280, height: 900 },
+				prepare: (context) =>
+					context.addInitScript((json) => localStorage.setItem('datum.layout.draft.v1.default', json), LOCKED)
+			}
+		);
+	});
+
 	test('an arrow on a focused border moves it by 2%', async () => {
 		await withApp(async ({ page }) => {
 			const border = page.locator('.split.row > [role="separator"]');
@@ -330,6 +354,41 @@ describe('the layout engine, by keyboard', () => {
 			);
 		}, { viewport: { width: 1280, height: 900 } });
 	});
+});
+
+/** A root holder whose one tab is locked, over [the REPL | a tabbed tail/nowview pane]. */
+const bar = { edge: 'top', align: 'start' };
+const LOCKED = JSON.stringify({
+	version: 1,
+	name: 'default',
+	root: {
+		id: 'root',
+		active: 0,
+		bar,
+		tabs: [
+			{
+				id: 'root-tab',
+				locked: true,
+				content: {
+					id: 'row',
+					direction: 'row',
+					ratios: [0.5, 0.5],
+					children: [
+						{ id: 'repl', active: 0, bar, tabs: [{ id: 'repl-tab', content: { id: 'repl-widget', kind: 'repl', settings: {} } }] },
+						{
+							id: 'tabbed',
+							active: 0,
+							bar,
+							tabs: [
+								{ id: 'tabbed-tail', content: { id: 'tabbed-tail-widget', kind: 'tail', settings: {} } },
+								{ id: 'tabbed-nowview', content: { id: 'tabbed-nowview-widget', kind: 'nowview', settings: {} } }
+							]
+						}
+					]
+				}
+			}
+		]
+	}
 });
 
 // The input widget's own page (da-0dhc): a prompt at the bottom and the

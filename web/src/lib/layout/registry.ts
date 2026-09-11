@@ -35,7 +35,7 @@ import CliPane from '$lib/CliPane.svelte';
 import CommandPane from '$lib/CommandPane.svelte';
 import DayStrip from '$lib/DayStrip.svelte';
 import Stats from '$lib/Stats.svelte';
-import { DEFAULT_DAY_HEIGHT, NOWVIEW_HISTORY, TAIL } from '$lib/panes.js';
+import { DEFAULT_DAY_HEIGHT, MAX_DAY_HEIGHT, MIN_DAY_HEIGHT, NOWVIEW_HISTORY, TAIL, todayBox } from '$lib/panes.js';
 import { DEFAULT_STATS } from '$lib/stats.js';
 import BarWidget from './BarWidget.svelte';
 import NowviewWidget from './NowviewWidget.svelte';
@@ -53,7 +53,16 @@ export interface WidgetKind {
 	onChange?: (settings: Record<string, unknown>, detail: unknown) => Record<string, unknown>;
 	/** Content-sized along a column: see the note above. */
 	fit?: boolean;
+	/**
+	 * A floor that follows the settings, where the constant in `meta` is
+	 * only what the defaults give (vividn: the strip's minimum "can vary
+	 * depending on the size of the days", da-2a5y).
+	 */
+	floor?: (settings: Record<string, unknown>) => { width: number; height: number };
 }
+
+/** The strip body's padding, top and bottom, as its constant floor counts it. */
+const STRIP_PADDING = 16;
 
 const meta = (
 	kind: string,
@@ -73,7 +82,16 @@ export const KINDS: Record<string, WidgetKind> = {
 		props: ({ dayHeight }) => ({
 			dayHeight: typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT
 		}),
-		onChange: (settings, dayHeight) => ({ ...settings, dayHeight })
+		onChange: (settings, dayHeight) => ({ ...settings, dayHeight }),
+		// One whole day at the height its days are DRAWN — today's band
+		// with its axis, the setting clamped as the strip clamps it — plus
+		// the body's padding: a pane holding 200px days cannot be dragged
+		// below one of them, and 40px days let it shrink to a strip.
+		floor: ({ dayHeight }) => {
+			const asked = typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT;
+			const drawn = Math.min(MAX_DAY_HEIGHT, Math.max(MIN_DAY_HEIGHT, asked));
+			return { width: 240, height: todayBox(drawn) + STRIP_PADDING };
+		}
 	},
 	repl: { meta: meta('repl', 'repl', 200, 106), component: ReplWidget },
 	// How far back nowview reaches is its setting, which its − / + step
@@ -108,8 +126,12 @@ export const PICKABLE = Object.keys(KINDS);
 
 export const titleOf = (kind: string): string => KINDS[kind]?.meta.title ?? kind;
 
-/** A kind's floor; an unknown kind (a draft from a newer app) has none. */
-export const floorOfKind = (kind: string) => {
-	const m = KINDS[kind]?.meta;
-	return { width: m?.minWidth ?? 0, height: m?.minHeight ?? 0 };
+/**
+ * A kind's floor, from its settings where it declares one and its constant
+ * otherwise; an unknown kind (a draft from a newer app) has none.
+ */
+export const floorOfKind = (kind: string, settings: Record<string, unknown> = {}) => {
+	const k = KINDS[kind];
+	if (k?.floor) return k.floor(settings);
+	return { width: k?.meta.minWidth ?? 0, height: k?.meta.minHeight ?? 0 };
 };

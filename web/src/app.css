@@ -8,3 +8,34 @@ body {
 	background: #0a0a1a;
 	color: #c8c8e8;
 }
+
+/* Every scroll container's scrollbar, one rule (vividn's second look,
+   da-2a5y: "very tiny, invisible when not in use, and match the frame
+   color"): thin, the frame colour for a thumb on no track at all, and
+   the thumb transparent until the pointer is over the box. Chromium and
+   Firefox both take the standard properties — and Chromium, once they
+   are set, ignores the `::-webkit-scrollbar` rules below, which are
+   Safari's, where a hairline thumb is drawn and hidden the same way. A
+   finger never hovers; touch screens draw their own overlay scrollbars
+   while scrolling and no rule here changes that. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: transparent transparent;
+}
+*:hover {
+	scrollbar-color: #2a2a4a transparent;
+}
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: transparent;
+	border-radius: 3px;
+}
+:hover::-webkit-scrollbar-thumb {
+	background: #2a2a4a;
+}

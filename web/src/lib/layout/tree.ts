@@ -271,6 +271,26 @@ export function setActive(layout: Layout, paneId: NodeId, active: number): Layou
 	);
 }
 
+/**
+ * Lock or unlock a tab: nothing under it may be split, tabbed or resized
+ * while it is locked (the renderer threads the lock down the subtree).
+ * Unlocking removes the key, so a tree that was never locked and one
+ * that was locked and unlocked are the same tree.
+ */
+export function setLocked(layout: Layout, tabId: NodeId, locked: boolean): Layout {
+	return withRoot(
+		layout,
+		mapPanes(layout.root, (pane) => ({
+			...pane,
+			tabs: pane.tabs.map((tab) => {
+				if (tab.id !== tabId) return tab;
+				const { locked: _, ...rest } = tab;
+				return locked ? { ...rest, locked } : rest;
+			})
+		}))
+	);
+}
+
 export function setBar(layout: Layout, paneId: NodeId, bar: Bar): Layout {
 	return withRoot(
 		layout,
@@ -373,27 +393,32 @@ export interface Floor {
 
 /**
  * The least box a pane can be drawn in: the largest floor among its
- * tabs' kinds (`minOf`, from the registry), where a tab holding a split
- * needs its children's floors laid along the split's direction with a
- * `border` between each pair — plus the frame's own `chrome` (its title
- * bar and border) on top. The renderer sets this as the pane's `min-*`,
- * which is what makes a split refuse to drag a child below it and show
- * every child at its floor, scrolling, when the box cannot fit them all.
+ * tabs' kinds (`minOf`, from the registry — given the widget's settings
+ * too, since the strip's floor is one whole day at whatever height its
+ * days are drawn, da-2a5y), where a tab holding a split needs its
+ * children's floors laid along the split's direction with a `border`
+ * between each pair — plus the frame's own `chrome` (its title bar and
+ * border; asked per pane, since a holder draws no bar and a tabbed one
+ * a row of its own) on top. The renderer sets this as the pane's
+ * `min-*`, which is what makes a split refuse to drag a child below it
+ * and show every child at its floor, scrolling, when the box cannot fit
+ * them all.
  */
 export function floorOf(
 	pane: Pane,
-	minOf: (kind: string) => Floor,
+	minOf: (kind: string, settings: Record<string, unknown>) => Floor,
 	border: number,
-	chrome: Floor
+	chrome: (pane: Pane) => Floor
 ): Floor {
 	let width = 0;
 	let height = 0;
 	for (const tab of pane.tabs) {
-		const f = isSplit(tab.content) ? splitFloor(tab.content) : minOf(tab.content.kind);
+		const f = isSplit(tab.content) ? splitFloor(tab.content) : minOf(tab.content.kind, tab.content.settings);
 		width = Math.max(width, f.width);
 		height = Math.max(height, f.height);
 	}
-	return { width: width + chrome.width, height: height + chrome.height };
+	const c = chrome(pane);
+	return { width: width + c.width, height: height + c.height };
 
 	function splitFloor(split: Split): Floor {
 		const floors = split.children.map((child) => floorOf(child, minOf, border, chrome));

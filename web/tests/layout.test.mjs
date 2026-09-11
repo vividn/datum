@@ -160,14 +160,18 @@ describe('the … menu', () => {
 		}, DESKTOP);
 	});
 
-	test('Close pane is disabled on the last pane', async () => {
+	// The last pane cannot be closed — `tree.test.mjs` holds `closeTab` to
+	// it — and the root frame, which used to grey the item, draws no bar
+	// of its own now (da-2a5y): its tabs are the shell's top bar.
+	test('the root frame draws no bar: a lone root widget has no title, no … and no inset', async () => {
 		await withApp(
 			async ({ page }) => {
 				assert.deepEqual(await titles(page), ['repl']);
-				await page.locator('.titlebar button.more').click();
-				const close = page.locator('[role="menu"] button').filter({ hasText: exactly('Close pane') });
-				assert.equal(await close.isDisabled(), true);
-				await page.keyboard.press('Escape');
+				const root = page.locator('section.root');
+				assert.equal(await root.locator('.titlebar').count(), 0);
+				assert.equal(await root.locator('button.more').count(), 0);
+				assert.equal(await root.locator('h2').count(), 0);
+				assert.equal(await root.locator('> .content').evaluate((el) => getComputedStyle(el).paddingTop), '0px');
 			},
 			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, ONE_PANE) }
 		);
@@ -359,47 +363,67 @@ const contentWidth = (page, id) =>
 
 const boxOf = (locator) => locator.boundingBox();
 
+/**
+ * Drag from the middle of `border` by (dx, dy) at pointer rate for
+ * `ms`, and leave the button down. Time-bounded rather than counted:
+ * the measurement below is redraws PER SECOND of dragging.
+ */
+async function dragFor(page, border, dx, dy, ms) {
+	const box = await border.boundingBox();
+	const x = box.x + box.width / 2;
+	const y = box.y + box.height / 2;
+	await page.mouse.move(x, y);
+	await page.mouse.down();
+	const t0 = Date.now();
+	for (let i = 1; ; i++) {
+		const t = Math.min(1, (Date.now() - t0) / ms);
+		await page.mouse.move(x + dx * t, y + dy * t);
+		if (t >= 1) break;
+		await page.waitForTimeout(16);
+	}
+	return Date.now() - t0;
+}
+
 // vividn's first look (da-jgrn): dragging a border was jittery, because every
-// drawn pane re-ran its CLI command at every size it passed through. Now a
-// drag re-runs nothing until the drop, and a burst of nudges is one redraw.
-// Counted through the seam, never eyeballed.
+// drawn pane re-ran its CLI command at every size it passed through. His
+// second (da-2a5y): "have the widgets update some when dragging things
+// around, rather than only when you let go, maybe just have a debounce
+// baked in". So a drag redraws a drawn pane at most every quarter second
+// (`THROTTLE_MS`, resizing.ts) — never at pointer rate — the drop flushes
+// the newest box at once, and a burst of nudges is one redraw. Counted
+// through the seam, never eyeballed, with the denominator printed.
 describe('resizing', () => {
-	test('a border dragged 200px over a second redraws the drawn panes once, on the drop', async () => {
+	test('a border dragged 200px over a second redraws a drawn pane 2–6 times, and once more at the drop', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
 			const border = page.locator('.split.row > [role="separator"]');
-			const box = await border.boundingBox();
-			const x = box.x + box.width / 2;
-			const y = box.y + box.height / 2;
-			await page.mouse.move(x, y);
-			await page.mouse.down();
-			const steps = 60;
-			for (let i = 1; i <= steps; i++) {
-				await page.mouse.move(x + (200 * i) / steps, y);
-				await page.waitForTimeout(16);
-			}
+			const took = await dragFor(page, border, 200, 0, 1000);
 			const during = drawnRuns(await seen());
-			assert.ok(during.nowview <= 2, `nowview ran ${during.nowview} times during the drag`);
-			assert.ok(during.dayview <= 2, `dayview ran ${during.dayview} times during the drag`);
+			console.log(`  drag: ${took}ms, nowview ran ${during.nowview}x during it, dayview ${during.dayview}x`);
+			assert.ok(during.nowview >= 2 && during.nowview <= 6, `nowview ran ${during.nowview} times during a ${took}ms drag`);
+			// The strip spans the page above this split: its box did not move,
+			// so it has nothing to redraw — and redraws nothing.
+			assert.equal(during.dayview, 0, `the strip redrew ${during.dayview}x for a border that did not touch it`);
 			// Meanwhile the picture is still up, scaled to its box — never blank.
 			assert.ok((await canvasWidth(page, 'nowview')) > 0, 'the picture went away during the drag');
 
 			await page.mouse.up();
 			const dropped = Date.now();
-			// The redraw is asked for on the drop itself, not after a delay.
+			// The drop is the leading edge: the newest box is asked for at
+			// once, not a throttle period later — unless the last tick had it
+			// already, in which case there is nothing left to ask.
 			await page.waitForFunction(
-				(before) => window.__datumSeen.filter((a) => a[0] === 'nowview').length > before,
-				during.nowview
+				([before, at]) =>
+					window.__datumSeen.filter((a) => a[0] === 'nowview').length > before || Date.now() - at > 200,
+				[during.nowview, dropped]
 			);
-			assert.ok(Date.now() - dropped <= 200, `the redraw came ${Date.now() - dropped}ms after the drop`);
 			await app.idle();
-
 			const after = drawnRuns(await seen());
-			assert.equal(after.nowview - during.nowview, 1, 'nowview redraws once on the drop');
-			// The strip spans the page above this split: its box did not move,
-			// so it has nothing to redraw — and redraws nothing.
-			assert.equal(after.dayview - during.dayview, 0, 'the strip redrew for a border that did not touch it');
+			const atDrop = after.nowview - during.nowview;
+			console.log(`  drop: nowview ran ${atDrop}x, asked ${Date.now() - dropped}ms after it`);
+			assert.ok(atDrop <= 1, `nowview ran ${atDrop} times at the drop`);
+			assert.equal(after.dayview, 0);
 			// And the picture is the box's size: asked for at the final width,
 			// not the old one stretched to it.
 			assert.equal(await canvasWidth(page, 'nowview'), await contentWidth(page, 'nowview'));
@@ -428,35 +452,29 @@ describe('resizing', () => {
 		}, DESKTOP);
 	});
 
-	test('the strip, dragged taller over a second, draws its new bands once, on the drop', async () => {
+	test('the strip, dragged taller over a second, grows its stack as it goes and draws each new band once', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
 			const before = await bandCount(page);
 			// The root's column border, under the strip: down is a taller strip.
 			const border = page.locator('section.root > .content > .split.column > [role="separator"]').first();
-			const box = await border.boundingBox();
-			const x = box.x + box.width / 2;
-			const y = box.y + box.height / 2;
-			await page.mouse.move(x, y);
-			await page.mouse.down();
-			const steps = 60;
-			for (let i = 1; i <= steps; i++) {
-				await page.mouse.move(x, y + (200 * i) / steps);
-				await page.waitForTimeout(16);
-			}
+			const took = await dragFor(page, border, 0, 200, 1000);
 			const during = drawnRuns(await seen());
-			assert.ok(during.dayview <= 2, `dayview ran ${during.dayview} times during the drag`);
-			assert.ok(during.nowview <= 2, `nowview ran ${during.nowview} times during the drag`);
+			const mid = await bandCount(page);
+			console.log(`  drag: ${took}ms, dayview ran ${during.dayview}x, nowview ${during.nowview}x; bands ${before} → ${mid}`);
+			assert.ok(mid > before, `the strip held ${before} days before and ${mid} during the drag: it did not grow live`);
+			assert.ok(during.nowview >= 2 && during.nowview <= 6, `nowview ran ${during.nowview} times during a ${took}ms drag`);
 			await page.mouse.up();
 			await app.idle();
 			const after = drawnRuns(await seen());
 			const bands = await bandCount(page);
 			assert.ok(bands > before, `a 200px taller strip holds no more days (${before} → ${bands})`);
-			// One `dayview` per NEW band: the width is what every band is drawn
-			// at, and it did not change, so the bands already up are kept.
-			assert.equal(after.dayview - during.dayview, bands - before, 'the strip drew the wrong number of bands');
-			assert.equal(after.nowview - during.nowview, 1, 'nowview, now shorter, redraws once');
+			// One `dayview` per NEW band over the whole drag: the width is what
+			// every band is drawn at, and it did not change, so a band drawn at
+			// one tick is kept through the next.
+			assert.equal(after.dayview, bands - before, 'the strip drew the wrong number of bands');
+			assert.ok(after.nowview - during.nowview <= 1, 'nowview, now shorter, redraws at most once at the drop');
 		}, DESKTOP);
 	});
 
@@ -590,6 +608,262 @@ describe('review follow-ups', () => {
 	});
 });
 
+// vividn's second look (da-2a5y): "There are some container widgets, that
+// throw the spacing off, they have their own ... button floating there,
+// but aren't really necessary." A pane whose one tab holds a split is a
+// box that is not there; with two or more tabs it keeps its strip and its
+// `…`, whose menu leaves splitting to the children.
+describe('holders', () => {
+	test('a holder with one tab draws no bar and no …, beside a widget pane that has both', async () => {
+		await withApp(async ({ page }) => {
+			const side = page.locator('section.holder[data-pane="side"]');
+			assert.equal(await side.count(), 1);
+			assert.equal(await side.locator('> .titlebar').count(), 0);
+			assert.equal(await side.locator('> .titlebar button.more').count(), 0);
+			// The control: the tail, inside it, has its title and its badge.
+			const tail = pane(page, 'tail');
+			assert.equal(await tail.locator('> .titlebar h2').count(), 1);
+			assert.equal(await tail.locator('> .titlebar button.more').count(), 1);
+			// And the holder's box is its split's box: no row above it.
+			const [holder, split] = await Promise.all([boxOf(side), boxOf(side.locator('> .content > .split'))]);
+			assert.equal(Math.round(holder.y), Math.round(split.y), 'the split does not start where the holder does');
+			assert.equal(Math.round(holder.height), Math.round(split.height));
+		}, DESKTOP);
+	});
+
+	test('a holder with two tabs keeps its strip and its …, and its menu offers no Split |', async () => {
+		await withApp(async ({ page }) => {
+			// A second tab on the tail, then its first tab split: the tail pane
+			// now holds a split under one tab and the empty tab beside it.
+			await choose(page, 'tail', 'Add tab');
+			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'tail' }).click();
+			await choose(page, 'tail', 'Split Tab |');
+			const holder = page.locator('section.holder[data-pane="tail"]');
+			assert.equal(await holder.count(), 1);
+			assert.deepEqual(await holder.locator('> .titlebar [role="tab"]').allInnerTexts(), ['split', 'empty']);
+			await holder.locator('> .titlebar button.more').click();
+			const labels = await page.locator('[role="menu"] button').allInnerTexts();
+			assert.deepEqual(
+				labels.map((l) => l.replace(/^\s*✓?\s*/, '').trim()),
+				['Add tab', 'Split Tab |', 'Split Tab −', 'Close tab', 'Bar: top', 'Bar: bottom', 'Bar: left', 'Bar: right', 'Align: start', 'Align: center', 'Align: end']
+			);
+			await page.keyboard.press('Escape');
+		}, DESKTOP);
+	});
+
+	test('a root with two tabs keeps its strip until the shell draws it (Copilot on #172)', async () => {
+		await withApp(
+			async ({ page }) => {
+				const root = page.locator('section.root');
+				assert.deepEqual(await root.locator('> .titlebar [role="tab"]').allInnerTexts(), ['repl', 'tail']);
+				await root.locator('> .titlebar [role="tab"]', { hasText: 'tail' }).click();
+				assert.deepEqual(await titles(page), ['tail']);
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, TWO_ROOT_TABS) }
+		);
+	});
+
+	test('the root holder draws no bar: its split starts at the top of the frame', async () => {
+		await withApp(async ({ page }) => {
+			const root = page.locator('section.root');
+			assert.equal(await root.locator('> .titlebar').count(), 0);
+			const [frame, split] = await Promise.all([boxOf(root), boxOf(root.locator('> .content > .split'))]);
+			assert.equal(Math.round(frame.y), Math.round(split.y));
+		}, DESKTOP);
+	});
+});
+
+// The lock (da-2a5y): "Layouts should have the ability to be locked,
+// which prevents the resizing of panes […] no splitting, new tabs, or
+// resizing." Where the lock is toggled from is the shell's; here it
+// arrives in the draft, on the root's tab, and covers the whole tree.
+describe('the lock', () => {
+	const locked = (on) => JSON.stringify(lockable(on));
+
+	/** The cells of the row split, by width. */
+	const cellWidths = (page) =>
+		page.evaluate(() => [...document.querySelectorAll('.split.row > .cell')].map((c) => c.getBoundingClientRect().width));
+
+	test('a locked root: no separators, no …, a drag and an arrow move nothing, the tabs still switch', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				assert.deepEqual(await titles(page), ['repl', 'tail']);
+				assert.equal(await page.locator('[role="separator"]').count(), 0);
+				assert.equal(await page.locator('button.more').count(), 0);
+				// The gap is still there, as a static border, and dragging across it moves nothing.
+				const gap = page.locator('.split.row > .border.static');
+				assert.equal(await gap.count(), 1);
+				assert.equal(await gap.evaluate((el) => getComputedStyle(el).cursor), 'default');
+				const was = await cellWidths(page);
+				const box = await gap.boundingBox();
+				const x = box.x + box.width / 2;
+				const y = box.y + box.height / 2;
+				await page.mouse.move(x, y);
+				await page.mouse.down();
+				for (let i = 1; i <= 5; i++) await page.mouse.move(x + i * 30, y);
+				await page.mouse.up();
+				await page.waitForTimeout(200);
+				assert.deepEqual(await cellWidths(page), was, 'a drag across a locked border moved it');
+				await page.evaluate(() => document.body.focus());
+				await page.keyboard.press('ArrowRight');
+				await page.waitForTimeout(200);
+				assert.deepEqual(await cellWidths(page), was, 'an arrow moved a locked border');
+				// Tabs are not an edit: the tabbed pane still switches.
+				await pane(page, 'tabbed').locator('[role="tab"]', { hasText: 'nowview' }).click();
+				assert.equal(await activeTab(page, 'tabbed'), 'nowview');
+				assert.deepEqual(app.errors, []);
+
+				// Unlocked, the controls are back — the one border, and a badge on
+				// each widget pane (the root has none of its own).
+				await page.evaluate((json) => localStorage.setItem('datum.layout.draft.v1.default', json), locked(false));
+				await app.reload();
+				assert.equal(await page.locator('.split.row > [role="separator"]').count(), 1);
+				assert.equal(await pane(page, 'repl').locator('button.more').count(), 1);
+				assert.equal(await pane(page, 'tabbed').locator('button.more').count(), 1);
+				assert.equal(await page.locator('section.root button.more').count(), 2);
+			},
+			// The init script runs on every load, the reload included: it
+			// writes the locked draft once and leaves the unlocked one alone.
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draftOnce, locked(true)) }
+		);
+	});
+});
+
+// The scrollbars (da-2a5y): "The built in ones look terrible with the
+// design, they should be more very tiny, invisible when not in use, and
+// match the frame color." One rule for every scroll container, in app.css.
+describe('scrollbars', () => {
+	for (const [name, viewport] of [
+		['1280', { width: 1280, height: 900 }],
+		['390', { width: 390, height: 844 }]
+	]) {
+		test(`are thin on a pane's body and on the root scroller at ${name}`, async () => {
+			await withApp(async ({ page }) => {
+				const seen = await page.evaluate(() => {
+					const style = (el) => {
+						const s = getComputedStyle(el);
+						return { width: s.scrollbarWidth, color: s.scrollbarColor };
+					};
+					return {
+						body: style(document.querySelector('section.pane .body')),
+						root: style(document.querySelector('section.root > .content'))
+					};
+				});
+				assert.equal(seen.body.width, 'thin', `the body: ${JSON.stringify(seen.body)}`);
+				assert.equal(seen.root.width, 'thin', `the root scroller: ${JSON.stringify(seen.root)}`);
+				// No pointer over it: the thumb is transparent.
+				assert.match(seen.body.color, /^rgba\(0, 0, 0, 0\) rgba\(0, 0, 0, 0\)$|^transparent transparent$/);
+			}, { viewport });
+		});
+	}
+});
+
+// The strip's floor follows its day height (vividn, da-2a5y: "The height
+// of the dayview frame should have a clamped minimum of the single day
+// height, so it can vary depending on the size of the days"): with 200px
+// days the pane cannot be dragged below one whole day, and with 40px
+// days it can shrink to a strip.
+describe("the strip's floor", () => {
+	/** A widget pane's chrome (Layout.svelte's CHROME.height) and the strip body's padding. */
+	const CHROME = 20;
+	const PADDING = 16;
+
+	for (const dayHeight of [200, 40]) {
+		test(`with ${dayHeight}px days the strip stops at todayBox(${dayHeight}) plus its frame`, async () => {
+			await withApp(
+				async ({ page }) => {
+					const border = page.locator('.split.column > [role="separator"]');
+					const box = await border.boundingBox();
+					const x = box.x + box.width / 2;
+					const y = box.y + box.height / 2;
+					await page.mouse.move(x, y);
+					await page.mouse.down();
+					for (let i = 1; i <= 10; i++) await page.mouse.move(x, y - i * 60);
+					await page.mouse.up();
+					await page.waitForTimeout(300);
+					const cell = await page.locator('.split.column > .cell').first().boundingBox();
+					const today = dayHeight + 2 * 2 + 15; // panes.ts: todayBox = day + margins + the hour axis
+					assert.ok(cell.height >= today + CHROME, `${dayHeight}px days: the strip was dragged to ${cell.height}px, under one day (${today + CHROME})`);
+					assert.ok(cell.height <= today + CHROME + PADDING + 2, `${dayHeight}px days: the strip stopped at ${cell.height}px, well above its floor`);
+				},
+				{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(stripOver(dayHeight))) }
+			);
+		});
+	}
+});
+
+const bar = { edge: 'top', align: 'start' };
+const widgetPane = (id, kind, settings = {}) => ({
+	id,
+	tabs: [{ id: `${id}-tab`, content: { id: `${id}-widget`, kind, settings } }],
+	active: 0,
+	bar
+});
+
+/** A root holder, its one tab locked or not, over [repl | a tabbed tail/nowview pane]. */
+function lockable(locked) {
+	const tab = {
+		id: 'root-tab',
+		content: {
+			id: 'row',
+			direction: 'row',
+			ratios: [0.5, 0.5],
+			children: [
+				widgetPane('repl', 'repl'),
+				{
+					id: 'tabbed',
+					tabs: [
+						{ id: 'tabbed-tail', content: { id: 'tabbed-tail-widget', kind: 'tail', settings: {} } },
+						{ id: 'tabbed-nowview', content: { id: 'tabbed-nowview-widget', kind: 'nowview', settings: {} } }
+					],
+					active: 0,
+					bar
+				}
+			]
+		}
+	};
+	if (locked) tab.locked = true;
+	return { version: 1, name: 'default', root: { id: 'root', tabs: [tab], active: 0, bar } };
+}
+
+/** A root holder over [the strip at `dayHeight` / the REPL], half and half. */
+const stripOver = (dayHeight) => ({
+	version: 1,
+	name: 'default',
+	root: {
+		id: 'root',
+		tabs: [
+			{
+				id: 'root-tab',
+				content: {
+					id: 'col',
+					direction: 'column',
+					ratios: [0.5, 0.5],
+					children: [widgetPane('strip', 'daystrip', { dayHeight }), widgetPane('repl', 'repl')]
+				}
+			}
+		],
+		active: 0,
+		bar
+	}
+});
+
+/** A root pane with two widget tabs, the REPL and the tail. */
+const TWO_ROOT_TABS = JSON.stringify({
+	version: 1,
+	name: 'default',
+	root: {
+		id: 'root',
+		tabs: [
+			{ id: 'root-repl', content: { id: 'root-repl-widget', kind: 'repl', settings: {} } },
+			{ id: 'root-tail', content: { id: 'root-tail-widget', kind: 'tail', settings: {} } }
+		],
+		active: 0,
+		bar
+	}
+});
+
 /** A draft of one REPL pane, written before the app loads. */
 const ONE_PANE = JSON.stringify({
 	version: 1,
@@ -604,4 +878,8 @@ const ONE_PANE = JSON.stringify({
 
 function draft(json) {
 	localStorage.setItem('datum.layout.draft.v1.default', json);
+}
+
+function draftOnce(json) {
+	if (!localStorage.getItem('datum.layout.draft.v1.default')) localStorage.setItem('datum.layout.draft.v1.default', json);
 }

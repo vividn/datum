@@ -25,11 +25,14 @@ import {
 	normalize,
 	setActive,
 	setBar,
+	setLocked,
 	setRatios,
 	setWidget,
 	splitPane,
-	splitTab
+	splitTab,
+	floorOf
 } from '../src/lib/layout/tree.ts';
+import { isModified } from '../src/lib/layout/draft.ts';
 
 const widgetTab = (kind) => newTab(newWidget(kind));
 
@@ -215,6 +218,67 @@ describe('setBar / setWidget', () => {
 		layout = setWidget(layout, empty.id, newWidget('nowview', { x: 1 }));
 		assert.equal(layout.root.tabs[1].content.kind, 'nowview');
 		assert.deepEqual(layout.root.tabs[1].content.settings, { x: 1 });
+	});
+});
+
+// The lock (da-2a5y): a flag on a tab, which the renderer threads down
+// its subtree. Toggling it is not an edit — the draft must not report a
+// tree that differs from its save only by a lock as modified.
+describe('setLocked', () => {
+	test('sets and clears the flag on the one tab, and unlocking leaves the key out', () => {
+		const { layout } = pair();
+		const tab = layout.root.tabs[0];
+		const locked = setLocked(layout, tab.id, true);
+		assert.equal(locked.root.tabs[0].locked, true);
+		assert.ok(isCanonical(locked));
+		const [left] = locked.root.tabs[0].content.children;
+		assert.equal('locked' in left.tabs[0], false, 'a child tab was locked too');
+		const unlocked = setLocked(locked, tab.id, false);
+		assert.deepEqual(unlocked, layout);
+		assert.equal('locked' in unlocked.root.tabs[0], false);
+	});
+
+	test('is not a modification of the draft', () => {
+		const { layout } = pair();
+		const locked = setLocked(layout, layout.root.tabs[0].id, true);
+		assert.equal(isModified(locked, layout), false);
+		assert.equal(isModified(layout, locked), false);
+		// And a real change still is, lock or no lock.
+		assert.equal(isModified(addTab(locked, layout.root.id), layout), true);
+	});
+
+	test('a widget setting that happens to be shaped like a tab is still compared', () => {
+		// Copilot on #172: the lock is dropped by walking the tree, not by
+		// the shape of an object — a settings record may hold any keys.
+		const shaped = (locked) =>
+			({
+				version: 1,
+				name: 'test',
+				root: newPane([newTab({ id: 'w', kind: 'stats', settings: { content: 'x', locked } })])
+			});
+		assert.equal(isModified(shaped(true), shaped(false)), true);
+	});
+});
+
+// The floors (da-2a5y): a kind's minimum may follow its settings, and
+// what a frame adds is asked per pane — a holder with one tab draws no
+// bar and so adds nothing.
+describe('floorOf', () => {
+	const minOf = (kind, settings) =>
+		kind === 'strip' ? { width: 100, height: (settings.dayHeight ?? 50) + 20 } : { width: 40, height: 30 };
+	const chrome = (pane) => (pane.tabs.length === 1 && 'children' in pane.tabs[0].content ? { width: 0, height: 0 } : { width: 2, height: 20 });
+
+	test('reads the kind\'s floor from the widget\'s settings', () => {
+		const tall = { version: 1, name: 't', root: newPane([newTab(newWidget('strip', { dayHeight: 200 }))]) };
+		assert.deepEqual(floorOf(tall.root, minOf, 8, chrome), { width: 102, height: 240 });
+		const short = { version: 1, name: 't', root: newPane([newTab(newWidget('strip', { dayHeight: 40 }))]) };
+		assert.deepEqual(floorOf(short.root, minOf, 8, chrome), { width: 102, height: 80 });
+	});
+
+	test('adds no chrome for a holder with one tab, and the frame\'s for a widget pane', () => {
+		const { layout } = pair();
+		// Two 40x30 widget panes side by side, each framed (2x20), one 8px border between.
+		assert.deepEqual(floorOf(layout.root, minOf, 8, chrome), { width: 42 + 8 + 42, height: 50 });
 	});
 });
 

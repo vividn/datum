@@ -68,6 +68,8 @@ export interface Tab {
 	id: NodeId;
 	/** Shown on the tab; when absent, the widget kind's own title is used. */
 	title?: string;
+	/** Nothing under this tab can be split, tabbed or resized (da-2a5y). */
+	locked?: boolean;
 	content: Widget | Split;
 }
 

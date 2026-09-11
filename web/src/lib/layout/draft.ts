@@ -6,7 +6,7 @@
 // access is guarded: a browser that refuses storage gets no draft and the
 // saved layout, never an error.
 
-import type { Layout } from './types.js';
+import type { Layout, Pane } from './types.js';
 
 const DRAFT = 'datum.layout.draft.v1.';
 const CURRENT = 'datum.layout.current.v1';
@@ -52,5 +52,26 @@ function canonical(value: unknown): string {
 	);
 }
 
-/** Whether the draft differs from the save — ids included: a new id is a change. */
-export const isModified = (draft: Layout, saved: Layout) => canonical(draft) !== canonical(saved);
+/**
+ * The pane with every tab's `locked` dropped, all the way down — by
+ * walking the tree's own shape, so a widget's settings (an open record
+ * that may hold any keys) are compared as they are.
+ */
+function unlocked(pane: Pane): Pane {
+	return {
+		...pane,
+		tabs: pane.tabs.map(({ locked: _, ...tab }) =>
+			'children' in tab.content
+				? { ...tab, content: { ...tab.content, children: tab.content.children.map(unlocked) } }
+				: tab
+		)
+	};
+}
+
+/**
+ * Whether the draft differs from the save — ids included: a new id is a
+ * change. A tab's lock is not: toggling it is not an edit of the tree
+ * (da-2a5y), whether or not the lock ends up stored with the layout.
+ */
+export const isModified = (draft: Layout, saved: Layout) =>
+	canonical({ ...draft, root: unlocked(draft.root) }) !== canonical({ ...saved, root: unlocked(saved.root) });

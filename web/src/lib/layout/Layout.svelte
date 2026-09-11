@@ -18,8 +18,15 @@
 	the ratio as its value, and the arrows along the split's axis move it
 	by 2%.
 
+	Locked (da-2a5y): a tab's `locked` covers its whole subtree — the
+	flag is threaded down as a prop, and under it every border is `static`
+	(no handle, no keyboard) and every frame draws no `…`.
+
 	Floors: a child's cell is never narrower or shorter than its floor
-	(`floorOf`: the largest of its tabs' kinds' minimums, plus the frame),
+	(`floorOf`: the largest of its tabs' kinds' minimums, plus the frame
+	— `chromeOf`: a widget pane's outline and inset, a tabbed holder's
+	row of tabs, and nothing for a holder with one tab, which draws no
+	bar at all),
 	so a drag clamps and a split too small for its children overflows to
 	the root's scroll rather than hiding one. A kind that sizes itself
 	(`fit`) takes its content's height and no share of the split; the
@@ -42,6 +49,8 @@
 	export let epoch = 0;
 	/** The root pane's id: the one pane whose last tab cannot be closed. */
 	export let rootId: NodeId;
+	/** Whether a tab above this pane is locked; its own active tab may add to it. */
+	export let locked = false;
 
 	/**
 	 * The border between two children, in pixels — the gap between panes,
@@ -55,6 +64,8 @@
 	 * `--inset`).
 	 */
 	const CHROME = { width: 2, height: 20 };
+	/** A tabbed holder's bar: a row of tabs across its edge (PaneFrame's `--row`). */
+	const TAB_ROW = 24;
 	/** What one arrow press moves a border. */
 	const NUDGE = 0.02;
 
@@ -62,6 +73,7 @@
 	$: content = active.content;
 	$: kind = isSplit(content) || content.kind === EMPTY_KIND ? undefined : KINDS[content.kind];
 	$: canClose = !(pane.id === rootId && pane.tabs.length === 1);
+	$: lockedHere = locked || !!active.locked;
 
 	const fits = (child: PaneNode): boolean => {
 		const c = child.tabs[child.active].content;
@@ -72,7 +84,14 @@
 		const c = child.tabs[child.active].content;
 		return isSplit(c) ? '' : (KINDS[c.kind]?.meta.title ?? c.kind);
 	};
-	const floor = (child: PaneNode) => floorOf(child, floorOfKind, BORDER, CHROME);
+	/** What a pane's frame adds around its content: see PaneFrame.svelte. */
+	const chromeOf = (p: PaneNode) => {
+		if (!isSplit(p.tabs[p.active].content)) return CHROME;
+		if (p.tabs.length === 1) return { width: 0, height: 0 };
+		const vertical = p.bar.edge === 'left' || p.bar.edge === 'right';
+		return vertical ? { width: TAB_ROW, height: 0 } : { width: 0, height: TAB_ROW };
+	};
+	const floor = (child: PaneNode) => floorOf(child, floorOfKind, BORDER, chromeOf);
 
 	// ---- dragging a border -----------------------------------------------
 
@@ -175,13 +194,19 @@
 	}
 </script>
 
-<PaneFrame {pane} {canClose} root={pane.id === rootId} kind={isSplit(content) ? undefined : content.kind}>
+<PaneFrame
+	{pane}
+	{canClose}
+	root={pane.id === rootId}
+	locked={lockedHere}
+	kind={isSplit(content) ? undefined : content.kind}
+>
 	{#if isSplit(content)}
 		{@const split = content}
 		<div class="split {split.direction}" bind:this={splitEl} data-split={split.id}>
 			{#each split.children as child, i (child.id)}
 				{#if i > 0}
-					{#if fits(split.children[i - 1]) || fits(child)}
+					{#if lockedHere || fits(split.children[i - 1]) || fits(child)}
 						<div class="border static" aria-hidden="true"></div>
 					{:else}
 						<!-- A focusable separator is a widget in ARIA (it carries a
@@ -210,7 +235,7 @@
 					style:--ratio={(preview ?? split.ratios)[i]}
 					style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
 				>
-					<svelte:self pane={child} {epoch} {rootId} />
+					<svelte:self pane={child} {epoch} {rootId} locked={lockedHere} />
 				</div>
 			{/each}
 		</div>

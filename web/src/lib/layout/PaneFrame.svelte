@@ -19,11 +19,19 @@
 	border between two panes is grabbed right beside it.
 
 	A pane whose tab holds a split rather than a widget is a HOLDER: no
-	border, no background, and — with one untitled tab — a bar that is
-	only the menu, so that the root pane costs the page a few pixels and
-	not a title row. It is `section.holder` rather than `section.pane`
-	so that "the panes" — as the test harness and the rest of the app
-	find them — remain exactly the ones with a widget in them.
+	border, no background, and — with one tab — no bar at all: a box that
+	is not there, since the children's own `…` can split them (vividn's
+	second look, da-2a5y: "they have their own ... button floating there,
+	but aren't really necessary"). With two or more tabs it keeps its tab
+	strip, as a row of its own, and the `…` after the last tab. It is
+	`section.holder` rather than `section.pane` so that "the panes" — as
+	the test harness and the rest of the app find them — remain exactly
+	the ones with a widget in them. The ROOT pane draws no bar of its own
+	either while it has one tab: the shell draws the root's tabs as the
+	page's top bar (da-0a5o), and until that lands a root with several
+	tabs keeps its strip, or nothing could switch them. And a LOCKED frame
+	draws no `…` — nothing under a lock can be split, tabbed or resized,
+	and the tabs still switch.
 
 	Swiping across the content moves between tabs along the bar's axis:
 	left/right under a horizontal bar, up/down under a vertical one. Touch
@@ -46,6 +54,8 @@
 	export let canClose = true;
 	/** The layout's root: the one pane whose content box is the scroller. */
 	export let root = false;
+	/** Under a locked tab: no `…`; the tab strip still switches. */
+	export let locked = false;
 	/**
 	 * The active widget's kind. Its title goes on a wrapper round the frame
 	 * as a class — `.repl`, `.tail`, `.dayview` — which is how the old
@@ -75,16 +85,21 @@
 	$: many = pane.tabs.length > 1;
 	$: vertical = pane.bar.edge === 'left' || pane.bar.edge === 'right';
 	$: title = titleFor(active);
-	/** A holder with one untitled tab has nothing to say but `…`. */
-	$: compact = holder && !many && active.title === undefined;
+	/** No bar at all: a lone root's is the shell's, a lone holder's is its children's. */
+	$: bare = !many && (root || holder);
 
 	const titleFor = (tab: Tab): string =>
 		tab.title ?? (isSplit(tab.content) ? 'split' : titleOf(tab.content.kind));
 
 	$: items = [
 		{ label: 'Add tab', run: () => apply((l) => addTab(l, pane.id)) },
-		{ label: 'Split |', run: () => apply((l) => splitPane(l, pane.id, 'row')) },
-		{ label: 'Split −', run: () => apply((l) => splitPane(l, pane.id, 'column')) },
+		// A holder's children split themselves; its own split is a tab's.
+		...(holder
+			? []
+			: [
+					{ label: 'Split |', run: () => apply((l) => splitPane(l, pane.id, 'row')) },
+					{ label: 'Split −', run: () => apply((l) => splitPane(l, pane.id, 'column')) }
+				]),
 		...(many
 			? [
 					{ label: 'Split Tab |', run: () => apply((l) => splitTab(l, pane.id, pane.active, 'row')) },
@@ -171,10 +186,12 @@
 	class:alarm={$alarm}
 	class:vertical
 	class:root
+	class:bare
 	data-pane={pane.id}
 	data-title={title}
 >
-	<div class="titlebar" class:compact>
+	{#if !bare}
+	<div class="titlebar">
 		<div class="along align-{pane.bar.align}">
 			{#if many}
 				<div class="tabs" role="tablist" aria-orientation={vertical ? 'vertical' : 'horizontal'}>
@@ -189,14 +206,17 @@
 						>
 					{/each}
 				</div>
-			{:else if !compact}
+			{:else}
 				<h2 bind:this={h2}>{#if !$hosted}{title}{/if}</h2>
 			{/if}
 			<!-- Inside `.along`, after the title or the last tab: the badge
 			     goes where the alignment puts them, and right beside them. -->
-			<PaneMenu {items} label="menu of the {title} pane" />
+			{#if !locked}
+				<PaneMenu {items} label="menu of the {title} pane" />
+			{/if}
 		</div>
 	</div>
+	{/if}
 	<div
 		class="content"
 		on:touchstart={many ? onTouchStart : undefined}
@@ -235,8 +255,7 @@
 		border-radius: 6px;
 	}
 
-	/* A holder has no outline to sit on, so its bar stays a row of its own
-	   — the root's whole cost is one badge-high strip with `…` at its end.
+	/* A holder has no outline to sit on, so its bar stays a row of its own.
 	   The bar's edge is the flex direction: the bar is always first in the
 	   DOM (so it is first for the keyboard) and the direction puts it on
 	   the edge asked for. */
@@ -292,17 +311,18 @@
 		width: 0;
 	}
 
-	/* The room the title takes inside, on whichever edge it is on. */
-	.pane.edge-top > .content {
+	/* The room the title takes inside, on whichever edge it is on — none
+	   where there is no title. */
+	.pane.edge-top:not(.bare) > .content {
 		padding-top: var(--inset);
 	}
-	.pane.edge-bottom > .content {
+	.pane.edge-bottom:not(.bare) > .content {
 		padding-bottom: var(--inset);
 	}
-	.pane.edge-left > .content {
+	.pane.edge-left:not(.bare) > .content {
 		padding-left: var(--inset);
 	}
-	.pane.edge-right > .content {
+	.pane.edge-right:not(.bare) > .content {
 		padding-right: var(--inset);
 	}
 
@@ -341,11 +361,6 @@
 	.align-end {
 		justify-content: flex-end;
 	}
-	/* A holder with nothing to say keeps its `…` at the end, as before. */
-	.titlebar.compact > .along {
-		justify-content: flex-end;
-	}
-
 	h2 {
 		margin: 0;
 		padding: 0 0.4rem;
