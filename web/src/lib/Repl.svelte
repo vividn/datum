@@ -33,6 +33,7 @@
 	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
+	import { fileCommand } from './dbio.js';
 	import Prompt from './Prompt.svelte';
 	import { fitArgv } from './panes.js';
 	import { run, type RunResult } from './run.js';
@@ -71,8 +72,11 @@
 	async function submit({ detail: line }: CustomEvent<string>): Promise<void> {
 		const ranAt = Date.now();
 		// Split here rather than through `runLine`, because the argv is what
-		// gets fitted to the box. The echo is the line as typed.
-		await land(line, await run(fitArgv(shellSplit(line), width)), ranAt);
+		// gets fitted to the box. The echo is the line as typed. A file
+		// command ($lib/dbio.ts) goes the browser's way, and before any
+		// await: its dialog needs this keypress.
+		const argv = shellSplit(line);
+		await land(line, await (fileCommand(argv) ?? run(fitArgv(argv, width))), ranAt);
 	}
 
 	/**

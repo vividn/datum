@@ -19,7 +19,9 @@
 	import { now, stampLabel } from '$lib/clock.js';
 	import Prompt from '$lib/Prompt.svelte';
 	import { repl, record } from '$lib/replStore.js';
-	import { runLine, type RunResult } from '$lib/run.js';
+	import { fileCommand } from '$lib/dbio.js';
+	import { run, type RunResult } from '$lib/run.js';
+	import { shellSplit } from '$lib/shellSplit.js';
 	import { isDegraded, storage } from '$lib/storageState.js';
 
 	export let disabled = false;
@@ -50,7 +52,9 @@
 		const ranAt = Date.now();
 		clearTimeout(fade);
 		error = '';
-		const result = await runLine(line);
+		// A file command ($lib/dbio.ts) before any await: its dialog needs this keypress.
+		const argv = shellSplit(line);
+		const result = await (fileCommand(argv) ?? run(argv));
 		record(line, ranAt, result);
 		if (result.code !== 0) {
 			error =

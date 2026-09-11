@@ -41,11 +41,15 @@ export async function storedEntries(limit = 50): Promise<StoredEntry[]> {
 
 /** Offer the backup as a file download named for today. */
 export async function downloadBackup(): Promise<void> {
-	const blob = new Blob([(await backup()) + '\n'], { type: 'application/x-ndjson' });
-	const url = URL.createObjectURL(blob);
+	saveFile((await backup()) + '\n', `datum-backup-${new Date().toISOString().slice(0, 10)}.jsonl`);
+}
+
+/** Hand `text` to the browser as a download called `name`. */
+export function saveFile(text: string, name: string): void {
+	const url = URL.createObjectURL(new Blob([text], { type: 'application/x-ndjson' }));
 	const link = document.createElement('a');
 	link.href = url;
-	link.download = `datum-backup-${new Date().toISOString().slice(0, 10)}.jsonl`;
+	link.download = name;
 	link.click();
 	setTimeout(() => URL.revokeObjectURL(url), 0);
 }
