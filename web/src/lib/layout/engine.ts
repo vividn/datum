@@ -16,6 +16,7 @@
 
 import { writable } from 'svelte/store';
 import { initDb } from '$lib/db.js';
+import { fileCommand } from '$lib/dbio.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
 import { widgetsFor, type FieldListing, type Widget as FieldWidget } from '$lib/widgets.js';
@@ -87,7 +88,7 @@ export async function ran(): Promise<void> {
 export async function press(argv: string[]): Promise<RunResult> {
 	if (repl) return repl.runArgv(argv);
 	const ranAt = Date.now();
-	const result = await run(argv);
+	const result = await (fileCommand(argv) ?? run(argv));
 	record(result.argv.join(' '), ranAt, result);
 	await ran();
 	return result;

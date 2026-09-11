@@ -27,9 +27,9 @@ const LEGACY = fileURLToPath(
 
 const echoes = (page) => page.locator('.repl .echo').count();
 
-/** Type `line` into the REPL and press Enter, without waiting for it to land. */
-async function type(page, line) {
-	const input = page.locator('.repl input');
+/** Type `line` into a prompt and press Enter, without waiting for it to land. */
+async function type(page, line, prompt = '.repl') {
+	const input = page.locator(`${prompt} input`);
 	await input.fill(line);
 	await input.press('Enter');
 }
@@ -51,8 +51,31 @@ async function count(app) {
 	return Number((await app.outputs()).at(-1));
 }
 
-const tailRows = (page) =>
-	page.locator('section.pane[data-title="tail"] tbody tr').count();
+/**
+ * Record, for every file chooser the page clicks open, whether it was in
+ * the same task as an Enter keydown. Playwright's `filechooser` fires for a
+ * click long after the keypress too — headless enforces no activation — so
+ * this is what holds the chooser to the keypress a real browser demands.
+ */
+const clickedInKeydown = (context) =>
+	context.addInitScript(() => {
+		let inEnter = false;
+		addEventListener(
+			'keydown',
+			(e) => {
+				if (e.key !== 'Enter') return;
+				inEnter = true;
+				setTimeout(() => (inEnter = false));
+			},
+			true
+		);
+		window.__chooserClicks = [];
+		const click = HTMLInputElement.prototype.click;
+		HTMLInputElement.prototype.click = function () {
+			if (this.type === 'file') window.__chooserClicks.push(inEnter);
+			return click.call(this);
+		};
+	});
 
 /** Wait, at most two seconds, for the tail pane to show `n` rows. */
 const tailShows = (page, n) =>
@@ -140,19 +163,23 @@ for (const engine of [chromium, webkit]) {
 			);
 		});
 
-		test('on a phone the chooser opens from the REPL', async () => {
+		test('on a phone the chooser opens from the REPL and from the bottom bar', async () => {
 			await withApp(
 				async ({ page }) => {
-					const [chooser] = await Promise.all([
-						page.waitForEvent('filechooser', { timeout: 5000 }),
-						type(page, 'db v2import')
-					]);
-					await chooser.setFiles(LEGACY);
-					await page.waitForFunction(() =>
-						[...document.querySelectorAll('.repl pre')].some((p) => /120 imported/.test(p.textContent))
-					);
+					for (const [prompt, said] of [['.repl', /120 imported/], ['.prompt-bar', /120 skipped/]]) {
+						const [chooser] = await Promise.all([
+							page.waitForEvent('filechooser', { timeout: 5000 }),
+							type(page, 'db v2import', prompt)
+						]);
+						await chooser.setFiles(LEGACY);
+						await page.waitForFunction(
+							(said) => [...document.querySelectorAll('.repl pre')].some((p) => new RegExp(said).test(p.textContent)),
+							said.source
+						);
+					}
+					assert.deepEqual(await page.evaluate(() => window.__chooserClicks), [true, true]);
 				},
-				{ engine, viewport: { width: 390, height: 844 } }
+				{ engine, viewport: { width: 390, height: 844 }, prepare: clickedInKeydown }
 			);
 		});
 	});

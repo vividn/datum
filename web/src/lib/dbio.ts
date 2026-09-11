@@ -8,11 +8,14 @@
 // stdout, and the CLI runs `-` exactly as it would in a pipe. `db purge`,
 // which wants a TTY to ask on, asks in a dialog instead.
 //
-// These are the whole table, on purpose: anything else typed runs as
-// typed, and this is not the start of a shell. The input bar's main menu
-// (after the shell, da-0a5o) calls `upload` / `download` / `purge`
-// directly; a named target database would put `--db <name>` in front of
-// the argv they run (the names are `DATABASES` in $lib/wasiFs.ts).
+// Every prompt consults it — the REPL's, the input widget's, and the
+// bottom bar's through `press` — and nothing else: `run` is the seam and
+// stays literal. These are the whole table, on purpose: anything else
+// typed runs as typed, and this is not the start of a shell. A main menu
+// on the bottom bar ($lib/PromptBar.svelte) would call `upload` /
+// `download` / `purge` directly; a named target database would put
+// `--db <name>` in front of the argv they run (the names are `DATABASES`
+// in $lib/wasiFs.ts).
 
 import ConfirmName from './ConfirmName.svelte';
 import { saveFile } from './backup.js';

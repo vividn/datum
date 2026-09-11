@@ -88,7 +88,8 @@
 	 */
 	export async function runArgv(argv: string[]): Promise<RunResult> {
 		const ranAt = Date.now();
-		const result = await run(argv);
+		// The bottom bar's line comes through here too ($lib/PromptBar.svelte).
+		const result = await (fileCommand(argv) ?? run(argv));
 		await land(result.argv.join(' '), result, ranAt);
 		return result;
 	}
