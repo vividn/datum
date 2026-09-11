@@ -462,6 +462,8 @@ describe('the bottom bar', () => {
 				assert.equal(await repl.count(), 1);
 				assert.equal(await repl.locator('input, .line').count(), 0, 'the REPL still has a prompt of its own');
 
+				// Tracked, so the fields widget has a button to press (da-c7u8).
+				await app.run(['spec', 'set', 'coffee', '--default-verb', 'occur']);
 				await app.submit('occur coffee');
 				await until(() => receipt(page).innerText(), (t) => /^CREATE \S+$/.test(t));
 				assert.deepEqual(await app.echoes(), ['occur coffee']);
