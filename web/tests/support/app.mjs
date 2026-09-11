@@ -14,6 +14,9 @@
 // what the tests exercise is what deploys: the same worker chunk, the same
 // cross-origin-isolation headers (see web/vite.config.ts).
 
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { preview } from 'vite';
 import { chromium } from 'playwright';
@@ -148,14 +151,17 @@ function baseUrl() {
  * explicit `viewport` still wins, so a profile can be resized.
  *
  * `query` is appended to the URL.
+ *
+ * `engine` is a Playwright browser type — `webkit` — for a test that has
+ * to hold on more than chromium. It gets a browser of its own on a fresh
+ * profile (`launchPersistentContext`), torn down with the test.
  */
-export async function withApp(fn, { prepare, locale, viewport, device, query = '' } = {}) {
-	const context = await browser.newContext({
-		...device,
-		timezoneId: TIMEZONE,
-		locale,
-		...(viewport ? { viewport } : {})
-	});
+export async function withApp(fn, { prepare, locale, viewport, device, query = '', engine } = {}) {
+	const options = { ...device, timezoneId: TIMEZONE, locale, ...(viewport ? { viewport } : {}) };
+	const profile = engine && (await mkdtemp(join(tmpdir(), 'datum-profile-')));
+	const context = engine
+		? await engine.launchPersistentContext(profile, options)
+		: await browser.newContext(options);
 	try {
 		await prepare?.(context);
 		const page = await context.newPage();
@@ -163,6 +169,7 @@ export async function withApp(fn, { prepare, locale, viewport, device, query = '
 		await fn(app);
 	} finally {
 		await context.close();
+		if (profile) await rm(profile, { recursive: true, force: true });
 	}
 }
 
