@@ -162,6 +162,7 @@ fn every_pair_has_a_roundtrip_test() {
         (33, 34),
         (34, 35),
         (35, 36),
+        (36, 37),
     ];
     assert_eq!(
         covered.len(),
@@ -2024,6 +2025,33 @@ fn roundtrip_v35_to_v36_field_occurtime_state_only() {
         !field_occurtime_sql(conn).contains("state IS NOT NULL"),
         "down must restore the state-blind predicate",
     );
+}
+
+/// da-ij3x: v37 adds `entries_slug_lookup`, and with it a slug lookup that
+/// does not say `superseded_by IS NULL` searches an index instead of
+/// scanning `entries`. Down drops it and the scan comes back.
+#[test]
+fn roundtrip_v36_to_v37_slug_lookup_index() {
+    let db = fresh_at(36);
+    let conn = db.conn();
+    let plan = |conn: &Connection| -> String {
+        conn.query_row(
+            "EXPLAIN QUERY PLAN SELECT * FROM entries WHERE slug = 'x' AND deleted_at IS NOT NULL",
+            [],
+            |r| r.get(3),
+        )
+        .unwrap()
+    };
+    assert!(!index_exists(conn, "entries_slug_lookup"));
+    assert_eq!(plan(conn), "SCAN entries");
+
+    apply_one_up(conn, 36);
+    assert!(index_exists(conn, "entries_slug_lookup"));
+    assert!(plan(conn).contains("entries_slug_lookup"), "{}", plan(conn));
+
+    apply_one_down(conn, 37);
+    assert!(!index_exists(conn, "entries_slug_lookup"));
+    assert_eq!(plan(conn), "SCAN entries");
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

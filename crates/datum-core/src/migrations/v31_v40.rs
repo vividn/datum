@@ -381,6 +381,20 @@ pub(super) fn m35_to_36_field_occurtime_state_only(conn: &Connection) -> Result<
     Ok(())
 }
 
+/// da-ij3x: a plain lookup index on `entries(slug)`.
+///
+/// `entries_slug` became partial on `superseded_by IS NULL` in v35, and a
+/// partial index only serves queries that repeat its predicate — so every
+/// other `slug = ?` (`slug = ? OR hid = ?`, the tombstone probe, UPDATEs
+/// keyed on slug) planned as a full scan, once per row on the insert path.
+pub(super) fn m36_to_37_slug_lookup_index(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS entries_slug_lookup ON entries (slug);")?;
+    Ok(())
+}
+
 // ─── Down migrations ─────────────────────────────────────────────────
 //
 // Each forward migration above has a paired `down` here that reverses
@@ -400,6 +414,12 @@ pub(super) fn m35_to_36_field_occurtime_state_only(conn: &Connection) -> Result<
 //   docstring. The down still runs to make the schema reversible for
 //   round-trip testing; production callers should back up before
 //   walking back across these.
+
+/// Reverse 37→36 — drop the slug lookup index. Lossless.
+pub(super) fn down_37_to_36_slug_lookup_index(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP INDEX IF EXISTS entries_slug_lookup;")?;
+    Ok(())
+}
 
 /// Reverse 36→35 — restore the state-blind `(field, occur_time)` predicate.
 ///
