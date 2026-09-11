@@ -2,11 +2,13 @@
 //! and (slice 5) custom indices.
 //!
 //! Subcommands:
-//! - `install <path> [--force] [--yes]` — parse a kit TOML and upsert each
-//!   `[[field]]` into `field_specs` with `kit_id = <kit name>`. Existing
-//!   rows for the same field win unless `--force` is passed. If the kit
-//!   declares `[[index]]` blocks, the user is prompted for trust unless
-//!   `--yes`. URLs are blocked until the signed-registry hook lands.
+//! - `install <path|-> [--force] [--yes] [--dry-run]` — parse a kit TOML
+//!   (from stdin when the path is `-`) and upsert each `[[field]]` into
+//!   `field_specs` with `kit_id = <kit name>`. Existing rows for the same
+//!   field win unless `--force` is passed. If the kit declares `[[index]]`
+//!   blocks, the user is prompted for trust unless `--yes`. `--dry-run`
+//!   prints what the kit brings and writes nothing. URLs are blocked until
+//!   the signed-registry hook lands.
 //! - `export <name> [<path>]` — round-trip the rows installed by this kit
 //!   back to TOML. None path → stdout.
 //! - `list` — installed kits with per-kit field/index counts.
@@ -14,7 +16,7 @@
 //!   `DROP INDEX` every kit-owned index.
 
 use std::fs;
-use std::io::{self, BufRead, IsTerminal, Write};
+use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::path::Path;
 
 use std::collections::HashMap;
@@ -45,6 +47,9 @@ pub enum KitSource {
     Local,
     /// HTTP/HTTPS URL. Blocked until signed-registry support lands.
     Url,
+    /// `-`: the TOML on stdin, as `db restore -` reads its backup — what the
+    /// browser, which has no filesystem, hands the file its dialog chose.
+    Stdin,
 }
 
 /// Trust callback surface. Production wires `StdIoTrust` (reads stdin /
@@ -138,6 +143,9 @@ fn summarize_index(ix: &IndexEntry) -> String {
 /// local filesystem. This function is `pub(crate)` so the trust-gate
 /// tests can drive it directly.
 pub(crate) fn classify_source(s: &str) -> KitSource {
+    if s == "-" {
+        return KitSource::Stdin;
+    }
     if let Some(rest) = s.strip_prefix("file://") {
         let _ = rest;
         return KitSource::Local;
@@ -165,6 +173,13 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
                  (signed-registry trust hook is a planned future feature.)"
             );
         }
+        KitSource::Stdin => {
+            let mut src = String::new();
+            io::stdin()
+                .read_to_string(&mut src)
+                .context("read kit TOML from stdin")?;
+            return install_toml(&src, "stdin", args, db, trust);
+        }
         KitSource::Local => {}
     }
 
@@ -172,21 +187,32 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
     let path = Path::new(path_str);
     let src =
         fs::read_to_string(path).with_context(|| format!("read kit TOML at {}", path.display()))?;
-    let kit = KitToml::from_str(&src)?;
+    install_toml(&src, &path.display().to_string(), args, db, trust)
+}
+
+/// Install the kit TOML `src`, read from `from` (a path, or `stdin`).
+fn install_toml(
+    src: &str,
+    from: &str,
+    args: KitInstallArgs,
+    db: &Db,
+    trust: &mut impl TrustGate,
+) -> Result<()> {
+    let kit = KitToml::from_str(src)?;
 
     if kit.kit.name.trim().is_empty() {
-        anyhow::bail!("kit TOML at {} is missing [kit].name", path.display());
+        anyhow::bail!("kit TOML at {from} is missing [kit].name");
     }
 
     // Trust gate runs BEFORE any DB writes so a "no" answer leaves the
     // DB untouched. Index DDL is also validated up front so the user
-    // sees a malformed kit before being asked to approve it.
-    if !kit.indices.is_empty() {
-        for ix in &kit.indices {
-            // Build the DDL early — surfaces validation errors before
-            // we prompt. The string is recomputed inside install_kit.
-            let _ = ix.build_ddl(&kit.kit.name)?;
-        }
+    // sees a malformed kit before being asked to approve it — and a dry
+    // run, which asks nothing, still fails on it.
+    for ix in &kit.indices {
+        // The string is recomputed inside install_kit.
+        let _ = ix.build_ddl(&kit.kit.name)?;
+    }
+    if !kit.indices.is_empty() && !args.dry_run {
         let is_reinstall = !db.load_indices_by_kit(&kit.kit.name)?.is_empty();
         let approved =
             trust.approve_indices(&kit.kit.name, &kit.indices, is_reinstall, args.assume_yes)?;
@@ -244,6 +270,19 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
                 field, anchor
             );
         }
+    }
+
+    if args.dry_run {
+        println!(
+            "Would install kit '{}': {} field(s), {} alias(es), {} view(s), {} command(s), {} index/indices",
+            kit.kit.name,
+            specs.len(),
+            kit.aliases.len(),
+            kit.views.len(),
+            kit.commands.len(),
+            kit.indices.len()
+        );
+        return Ok(());
     }
 
     let report = db.install_kit(&kit.kit.name, &specs, &kit.indices, args.force)?;

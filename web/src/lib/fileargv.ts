@@ -5,13 +5,14 @@
 
 /**
  * The CLI's own options for these commands (datum-parse's
- * `parse/migrate_io.rs`), true for one that takes a value. Anything not
- * here goes on as typed, for the CLI to judge.
+ * `parse/migrate_io.rs` and `parse/kit.rs`), true for one that takes a
+ * value. Anything not here goes on as typed, for the CLI to judge.
  */
 const OPTIONS: Record<string, Record<string, boolean>> = {
-	v2import: { '--from': true, '--backup': true, '--skip-log': true, '--dry-run': false },
-	restore: { '--force': false, '--dry-run': false, '--json': false, '--cluster': false },
-	backup: { '--overwrite': false }
+	'db v2import': { '--from': true, '--backup': true, '--skip-log': true, '--dry-run': false },
+	'db restore': { '--force': false, '--dry-run': false, '--json': false, '--cluster': false },
+	'db backup': { '--overwrite': false },
+	'kit install': { '--force': false, '--yes': false, '--dry-run': false }
 };
 
 export interface FileArgv {
@@ -23,12 +24,12 @@ export interface FileArgv {
 	paths: string[];
 }
 
-/** `argv` rewritten if it is `db v2import` / `restore` / `backup`, else null. */
+/** `argv` rewritten if it is `db v2import` / `restore` / `backup` or `kit install`, else null. */
 export function fileArgv(argv: string[]): FileArgv | null {
-	const [db, sub, ...rest] = argv;
-	const options = OPTIONS[sub];
-	if (db !== 'db' || !options) return null;
-	const out = [db, sub];
+	const [cmd, sub, ...rest] = argv;
+	const options = OPTIONS[`${cmd} ${sub}`];
+	if (!options) return null;
+	const out = [cmd, sub];
 	const paths: string[] = [];
 	let name: string | undefined;
 	let sourced = false;

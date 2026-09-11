@@ -1,7 +1,8 @@
 // The REPL's file commands (da-podv, $lib/dbio.ts): `db backup` is a
 // download, `db restore` / `db v2import` read the file the browser's dialog
-// hands them, and `db purge` asks for the database's name first — and no
-// file ever lands in the transcript.
+// hands them, `db purge` asks for the database's name first, and `kit
+// install` shows what the chosen kit brings and asks before it installs
+// (da-axrk) — and no file ever lands in the transcript.
 //
 // Everything goes through the REPL's own input, as a reader types it:
 // `window.datum.run` does not bump the engine's epoch, so it would not
@@ -35,7 +36,10 @@ describe('fileArgv', () => {
 		['db restore --force', ['db', 'restore', '--force', '-'], []],
 		['db restore b.jsonl --dry-run --json', ['db', 'restore', '-', '--dry-run', '--json'], ['b.jsonl']],
 		['db backup --overwrite out.jsonl', ['db', 'backup', '--overwrite', '-'], []],
-		['db backup', ['db', 'backup', '-'], []]
+		['db backup', ['db', 'backup', '-'], []],
+		['kit install', ['kit', 'install', '-'], []],
+		['kit install rest.toml --force -y', ['kit', 'install', '-', '--force', '-y'], ['rest.toml']],
+		['kit install - --dry-run', ['kit', 'install', '-', '--dry-run'], []]
 	];
 	for (const [line, argv, paths] of cases) {
 		test(line, () => {
@@ -51,7 +55,7 @@ describe('fileArgv', () => {
 	});
 
 	test('anything else runs as typed', () => {
-		for (const line of ['db purge', 'db setup', 'tail', 'backup x']) {
+		for (const line of ['db purge', 'db setup', 'tail', 'backup x', 'kit list', 'kit export rest']) {
 			assert.equal(fileArgv(line.split(' ')), null);
 		}
 	});
@@ -61,6 +65,28 @@ describe('fileArgv', () => {
 const LEGACY = fileURLToPath(
 	new URL('../../crates/datum-cli/tests/fixtures/datum_backup_3days.json', import.meta.url)
 );
+
+/** Two fields, an alias, a view and a command; no index. */
+const KIT = fileURLToPath(new URL('../../crates/datum-cli/tests/fixtures/rest_kit.toml', import.meta.url));
+
+/** Type `kit install` into the bottom bar, choose the kit, and return its confirm. */
+async function kitConfirm(page, line = 'kit install') {
+	const [chooser] = await Promise.all([
+		page.waitForEvent('filechooser', { timeout: 5000 }),
+		type(page, line)
+	]);
+	await chooser.setFiles(KIT);
+	const dialog = page.locator('dialog.confirm');
+	await dialog.waitFor({ timeout: 5000 });
+	return dialog;
+}
+
+/** Press `button` in the confirm and wait for the command to land. */
+async function answer(page, button) {
+	const before = await echoes(page);
+	await page.locator('dialog.confirm').getByRole('button', { name: button, exact: true }).click();
+	await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+}
 
 const echoes = (page) => page.locator('.repl .echo').count();
 
@@ -233,6 +259,34 @@ for (const engine of [chromium, webkit]) {
 			);
 		});
 
+		test('kit install shows what the chosen kit brings and installs it only on yes', async () => {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					const said = await (await kitConfirm(page)).locator('p').innerText();
+					assert.match(said, /^Would install kit 'rest': 2 field\(s\), 1 alias\(es\), 1 view\(s\), 1 command\(s\), 0 index\/indices$/m);
+					assert.match(said, /install only kits you trust/);
+					await answer(page, 'cancel');
+					assert.equal((await app.outputs()).at(-1), 'kit not installed — nothing ran');
+					await app.submit('kit list');
+					assert.equal((await app.outputs()).at(-1), 'No kits installed.');
+					assert.equal(await page.locator('.bar [data-field="nap"]').count(), 0);
+
+					await kitConfirm(page);
+					await answer(page, 'install');
+					assert.match((await app.outputs()).at(-1), /^Installed kit 'rest': 2 field\(s\)/);
+					await app.submit('kit list');
+					assert.match((await app.outputs()).at(-1), /^rest\s+2\s+1\s+1\s+0\s+1$/m);
+					// The fields widget follows without a reload.
+					for (const field of ['nap', 'sleep']) {
+						await page.locator(`.bar [data-field="${field}"]`).waitFor({ timeout: 2000 });
+					}
+					assert.deepEqual(app.errors, []);
+				},
+				{ engine, viewport: { width: 1280, height: 1000 } }
+			);
+		});
+
 		// The bottom bar is the page's one prompt (da-rfs9), so it is asked
 		// twice: the second import finds the first's rows.
 		test('on a phone the chooser opens from the bottom bar, every time', async () => {
@@ -249,7 +303,10 @@ for (const engine of [chromium, webkit]) {
 							said.source
 						);
 					}
-					assert.deepEqual(await page.evaluate(() => window.__chooserClicks), [true, true]);
+					await kitConfirm(page);
+					await answer(page, 'install');
+					assert.match((await page.locator('.repl pre').allInnerTexts()).at(-1), /^Installed kit 'rest'/);
+					assert.deepEqual(await page.evaluate(() => window.__chooserClicks), [true, true, true]);
 				},
 				{ engine, viewport: { width: 390, height: 844 }, prepare: clickedInKeydown }
 			);
@@ -265,7 +322,7 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 			await page.evaluate(() => {
 				window.__asked = [];
 				const previous = window.datum.setRunner((argv, stdin) => {
-					if (argv[0] === 'db') window.__asked.push({ argv, stdin });
+					if (argv[0] === 'db' || argv[0] === 'kit') window.__asked.push({ argv, stdin });
 					return previous(argv, stdin);
 				});
 			});
@@ -295,6 +352,19 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 			]);
 			assert.equal(download.suggestedFilename(), 'out.jsonl');
 			assert.deepEqual((await asked()).argv, ['db', 'backup', '--overwrite', '-']);
+
+			// `--yes` typed never reaches the CLI before the confirm is answered:
+			// the kit is only looked at, and a no runs nothing more.
+			await kitConfirm(page, 'kit install --yes --force');
+			assert.deepEqual(await asked(), {
+				argv: ['kit', 'install', '--force', '-', '--dry-run'],
+				stdin: await readFile(KIT, 'utf8')
+			});
+			await answer(page, 'cancel');
+			assert.deepEqual((await asked()).argv, ['kit', 'install', '--force', '-', '--dry-run']);
+			await kitConfirm(page, 'kit install --yes --force');
+			await answer(page, 'install');
+			assert.deepEqual((await asked()).argv, ['kit', 'install', '--force', '-', '--yes']);
 			assert.deepEqual(app.errors, []);
 		},
 		{ viewport: { width: 1280, height: 1000 } }

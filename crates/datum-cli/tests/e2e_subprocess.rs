@@ -656,6 +656,41 @@ fn subprocess_backup_to_stdout_restores_from_stdin() {
     assert_eq!(to.entry_count(), 2);
 }
 
+/// `kit install -` reads the kit from stdin, and `--dry-run` says what it
+/// brings and installs nothing — what the browser asks before its own
+/// confirm, which it answers with `--yes` (da-axrk).
+#[test]
+fn subprocess_kit_install_from_stdin_and_dry_run() {
+    let env = Env::new();
+    let kit = include_str!("fixtures/rest_kit.toml");
+    let out = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
+
+    let seen = env.run_with_stdin(&["kit", "install", "-", "--dry-run"], kit);
+    assert_ok(&seen, "kit install - --dry-run");
+    assert_eq!(
+        out(&seen).trim(),
+        "Would install kit 'rest': 2 field(s), 1 alias(es), 1 view(s), 1 command(s), 0 index/indices"
+    );
+    assert_eq!(out(&env.run(&["kit", "list"])).trim(), "No kits installed.");
+
+    assert_ok(
+        &env.run_with_stdin(&["kit", "install", "-", "--yes"], kit),
+        "kit install - --yes",
+    );
+    let listed = out(&env.run(&["kit", "list"]));
+    assert!(listed.contains("rest"), "{listed}");
+
+    // An index still wants its trust answered, and stdin is the kit.
+    let chores = include_str!("../../../kits/chores.toml");
+    let refused = env.run_with_stdin(&["kit", "install", "-"], chores);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--yes"));
+
+    let bare = env.run(&["kit", "install"]);
+    assert!(!bare.status.success());
+    assert!(String::from_utf8_lossy(&bare.stderr).contains("<PATH>"));
+}
+
 /// `fields --json`: every field, logged or declared, with its spec and the
 /// states it was logged with.
 #[test]

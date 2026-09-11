@@ -1,13 +1,16 @@
 <!--
-	The web's `db purge` guard (da-podv). The CLI asks for the database's
-	name on a TTY and refuses without one; the browser has none, so this
-	asks instead. `close` says whether the purge button was pressed with
-	the name typed exactly — Escape, cancel or a wrong name are all no.
+	The web's answer to a CLI prompt that wants a TTY the browser has not
+	got: `db purge`'s database name (da-podv), `kit install`'s trust
+	(da-axrk). `close` says whether the `action` button was pressed — with
+	`name` typed exactly, when there is one to type. Escape, cancel or a
+	wrong name are all no.
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 
-	export let name: string;
+	export let text: string;
+	export let action: string;
+	export let name = '';
 
 	const dispatch = createEventDispatcher<{ close: boolean }>();
 	let dialog: HTMLDialogElement;
@@ -19,13 +22,15 @@
 <dialog
 	class="confirm"
 	bind:this={dialog}
-	on:close={() => dispatch('close', dialog.returnValue === 'purge' && typed === name)}
+	on:close={() => dispatch('close', dialog.returnValue === action && typed === name)}
 >
 	<form method="dialog">
-		<p>This will destroy ALL data in <code>{name}</code>.</p>
-		<label>Type <code>{name}</code> to confirm purge: <input bind:value={typed} spellcheck="false" autocapitalize="none" autocomplete="off" /></label>
+		<p>{text}</p>
+		{#if name}
+			<label>Type <code>{name}</code> to confirm {action}: <input bind:value={typed} spellcheck="false" autocapitalize="none" autocomplete="off" /></label>
+		{/if}
 		<div class="buttons">
-			<button value="purge">purge</button>
+			<button value={action}>{action}</button>
 			<button type="button" on:click={() => dialog.close()}>cancel</button>
 		</div>
 	</form>
@@ -48,6 +53,7 @@
 
 	p {
 		margin: 0 0 0.75rem;
+		white-space: pre-line;
 	}
 
 	input {
@@ -76,7 +82,7 @@
 		padding: 0.2rem 0.8rem;
 	}
 
-	button[value='purge'] {
+	button[value] {
 		border-color: #f4645a;
 		color: #f4645a;
 	}

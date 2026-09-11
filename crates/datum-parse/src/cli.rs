@@ -681,6 +681,9 @@ pub struct KitInstallArgs {
     /// non-interactive shells / CI). Without `--yes`, the dispatcher
     /// prints the proposed indices and reads y/N from stdin.
     pub assume_yes: bool,
+    /// Print the kit's name and what it brings, and write nothing — what a
+    /// caller asks before it answers the trust prompt itself (the browser).
+    pub dry_run: bool,
 }
 
 #[derive(Debug)]

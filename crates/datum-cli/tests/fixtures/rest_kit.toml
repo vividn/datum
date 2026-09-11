@@ -1,0 +1,27 @@
+# A small kit with one of each thing a kit can bring but an index — the
+# fixture `kit install -` and the web's kit dialog install (da-axrk).
+[kit]
+name = "rest"
+description = "Naps and sleep."
+
+[[field]]
+name = "nap"
+default_verb = "start"
+
+[[field]]
+name = "sleep"
+default_verb = "switch"
+
+[[alias]]
+name = "zz"
+expands_to = "start nap"
+
+[[view]]
+name = "naps"
+sql = "SELECT field, occur_time FROM entries WHERE field = 'nap' AND deleted_at IS NULL"
+
+[[command]]
+name = "naplist"
+view = "naps"
+help = "List naps"
+columns = ["field", "occur_time"]

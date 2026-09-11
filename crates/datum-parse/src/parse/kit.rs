@@ -13,12 +13,14 @@ pub(crate) fn parse_kit_cmd(tail: &[&str]) -> Result<KitCommand> {
         "install" => {
             let mut force = false;
             let mut assume_yes = false;
+            let mut dry_run = false;
             let mut pos: Vec<&str> = Vec::new();
             for tok in rest {
                 match split_flag(tok) {
                     FlagSplit::Positional(s) => pos.push(s),
                     FlagSplit::Long("force") | FlagSplit::Short('f') => force = true,
                     FlagSplit::Long("yes") | FlagSplit::Short('y') => assume_yes = true,
+                    FlagSplit::Long("dry-run") => dry_run = true,
                     f => return Err(unknown_flag(f)),
                 }
             }
@@ -27,6 +29,7 @@ pub(crate) fn parse_kit_cmd(tail: &[&str]) -> Result<KitCommand> {
                 path,
                 force,
                 assume_yes,
+                dry_run,
             }))
         }
         "export" => {
