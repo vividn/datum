@@ -1,0 +1,149 @@
+// The browser console's two doors ($lib/console.ts, da-6918).
+//
+// `window.datum.run` is the one a hand reaches for, so it does what a hand
+// at the prompt does: the command goes through `engine.press` — the mounted
+// REPL echoes it, the bottom bar receipts it, and the epoch it bumps is the
+// beat every pane re-reads on. A silent `run` is what cost a false bug
+// report on 2026-09-11: the tail was driven from the console, nothing
+// refreshed, and the defect was in the door rather than in the pane.
+//
+// `runQuiet` is the same seam with none of that, for the caller that wants
+// a write and no refresh — the harness's own `run`, and the latency script.
+// Both are asserted here, and the loud one twice: with a REPL on screen and
+// with none, which are the two halves of `press`.
+
+import test, { before, after, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { startApp, stopApp, withApp } from './support/app.mjs';
+import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
+
+before(startApp);
+after(stopApp);
+
+/** A page with a tail pane and no REPL at all: `press`'s other half. */
+const NO_REPL = {
+	...DESKTOP,
+	prepare: (context) =>
+		context.addInitScript(
+			draft,
+			JSON.stringify(along('column', widgetPane('tail', 'tail'), widgetPane('nowview', 'nowview')))
+		)
+};
+
+const receipt = (page) => page.locator('.prompt-bar .receipt');
+
+/** `window.datum[door](argv)` in the page — the console, as a hand uses it. */
+const console_ = (page, door, argv) =>
+	page.evaluate(([d, a]) => window.datum[d](a), [door, argv]);
+
+/** Wait for the tail pane to show `field`. The acceptance's two seconds. */
+const tailShows = (page, field) =>
+	page.waitForFunction(
+		(f) => document.querySelector('section.pane[data-title="tail"] .body')?.innerText.includes(f),
+		field,
+		{ timeout: 2000 }
+	);
+
+/** A mark the page keeps and a reload would lose. */
+const markNoReload = (page) => page.evaluate(() => (window.__stillTheSamePage = true));
+const samePage = (page) => page.evaluate(() => window.__stillTheSamePage === true);
+
+describe('window.datum.run — the loud door', () => {
+	test('through the mounted REPL: the pane shows the row, the bar receipts the hid, the scrollback echoes it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await markNoReload(page);
+
+			const result = await console_(page, 'run', ['occur', 'coffee']);
+			assert.equal(result.code, 0, result.stderr);
+
+			// The pane, with no reload — which is the whole claim.
+			await tailShows(page, 'coffee');
+			assert.equal(await samePage(page), true, 'the page reloaded');
+
+			// The receipt is the CLI's own `CREATE <hid>`, and the hid is the
+			// row's: the same assertion shell.test.mjs makes of a typed line.
+			await page.waitForFunction(() =>
+				document.querySelector('.prompt-bar .receipt').textContent.startsWith('CREATE ')
+			);
+			const [word, hid] = (await receipt(page).innerText()).split(' ');
+			const { rows } = await app.tailRows();
+			assert.equal(word, 'CREATE');
+			assert.equal(rows.length, 1);
+			assert.ok(
+				hid.length >= 4 && rows[0].hid.startsWith(hid),
+				`the receipt's ${hid} is not the row's ${rows[0].hid}`
+			);
+
+			// And it taught: the command is in the scrollback as typed.
+			assert.deepEqual(await app.echoes(), ['occur coffee']);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('a line is shell-split and echoed as written', async () => {
+		await withApp(async (app) => {
+			// A quoted word, so the split is visible in the argv: the app
+			// does the splitting, as it does for a typed line.
+			const line = 'switch mood "quite happy"';
+			const result = await app.page.evaluate((l) => window.datum.runLine(l), line);
+			assert.equal(result.code, 0, result.stderr);
+			assert.deepEqual(result.argv, ['switch', 'mood', 'quite happy']);
+			assert.deepEqual(await app.echoes(), [line]);
+			await tailShows(app.page, 'quite happy');
+		}, DESKTOP);
+	});
+
+	test('with no REPL mounted it records and bumps the beat itself', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			assert.equal(await page.locator('section.pane[data-title="repl"]').count(), 0);
+			await markNoReload(page);
+
+			const result = await console_(page, 'run', ['occur', 'cocoa']);
+			assert.equal(result.code, 0, result.stderr);
+
+			// No scrollback to echo into — there is no REPL — but the beat is
+			// bumped here, so the pane still refreshes, and the bar still
+			// receipts what ran.
+			await tailShows(page, 'cocoa');
+			assert.equal(await samePage(page), true, 'the page reloaded');
+			await page.waitForFunction(() =>
+				document.querySelector('.prompt-bar .receipt').textContent.startsWith('CREATE ')
+			);
+			assert.deepEqual(app.errors, []);
+		}, NO_REPL);
+	});
+});
+
+describe('window.datum.runQuiet — the exception', () => {
+	test('the entry is stored and nothing on the page moves', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const before = {
+				tail: await app.paneText('tail'),
+				echoes: await app.echoes(),
+				receipt: await receipt(page).innerText()
+			};
+
+			const result = await console_(page, 'runQuiet', ['occur', 'tea']);
+			assert.equal(result.code, 0, result.stderr);
+
+			// Stored — `tail --json` is the CLI answering about the database,
+			// not the screen.
+			const { rows } = await app.tailRows();
+			assert.deepEqual(
+				rows.map((row) => row.field),
+				['tea']
+			);
+
+			// And nothing moved. `idle` first: a refresh, had one been coming,
+			// would be a command in flight behind the seam.
+			await app.idle();
+			assert.equal(await app.paneText('tail'), before.tail, 'the tail pane refreshed');
+			assert.deepEqual(await app.echoes(), before.echoes, 'the scrollback grew');
+			assert.equal(await receipt(page).innerText(), before.receipt, 'the bar receipted it');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+});

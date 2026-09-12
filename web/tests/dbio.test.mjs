@@ -5,9 +5,10 @@
 // (da-axrk) — and no file ever lands in the transcript.
 //
 // Everything goes through the REPL's own input, as a reader types it:
-// `window.datum.run` does not bump the engine's epoch, so it would not
-// show that the panes refresh. Counts are the CLI's own `count`, never
-// sizes. A dialog that silently never opens is the failure to look for,
+// the dialog a file command opens is the reader's, and only a keypress
+// carries the activation that opens it. (The harness's `run` is the quiet
+// seam — da-6918 — so it would neither open a dialog nor refresh a pane.)
+// Counts are the CLI's own `count`, never sizes. A dialog that silently never opens is the failure to look for,
 // so every chooser is an awaited `filechooser` event — on chromium and on
 // webkit, whose rules for user activation are the stricter.
 

@@ -265,11 +265,22 @@ function app(page, errors, query) {
 		/** Uncaught errors the page threw, in order. */
 		errors,
 
-		/** The seam. One command in — and its stdin, if any — one RunResult out. */
-		run: (argv, stdin) => page.evaluate(([a, s]) => window.datum.run(a, s), [argv, stdin]),
+		/**
+		 * The seam. One command in — and its stdin, if any — one RunResult out.
+		 *
+		 * The QUIET door (`window.datum.runQuiet`, da-6918), on purpose: a
+		 * test uses this to seed and to read, and nothing on the page is to
+		 * move because it did. A test about the page reacting drives the
+		 * page — `submit`, `pressWidget` — and the console's own loud door
+		 * (`window.datum.run`, which goes through `engine.press`) is what
+		 * console.test.mjs asserts. Quiet also keeps `db backup -` /
+		 * `db restore -` literal: the loud door hands a file command to the
+		 * browser's dialog ($lib/dbio.ts), which is not what a test wants.
+		 */
+		run: (argv, stdin) => page.evaluate(([a, s]) => window.datum.runQuiet(a, s), [argv, stdin]),
 
-		/** The seam's line form, as the REPL feeds it. */
-		runLine: (line) => page.evaluate((l) => window.datum.runLine(l), line),
+		/** The seam's line form, split by the app's own `shellSplit`. Quiet, as `run` is. */
+		runLine: (line) => page.evaluate((l) => window.datum.runQuietLine(l), line),
 
 		/** What actually got stored, newest first: the CLI's `db backup -` rows. */
 		entries: (limit = 50) => page.evaluate((n) => window.datum.entries(n), limit),
@@ -470,7 +481,10 @@ function app(page, errors, query) {
 				// `setRunner` hands back the runner it replaced, and the seam
 				// imports its default runner lazily on first use — so something
 				// has to have run before there is anything to delegate to.
-				await window.datum.run(['tail']);
+				// Quiet: priming the runner is not a command the page should
+				// show, and the spy is to see the test's commands, not this one's
+				// refresh.
+				await window.datum.runQuiet(['tail']);
 				window.__datumSeen = [];
 				const previous = window.datum.setRunner((argv) => {
 					window.__datumSeen.push(argv);

@@ -70,11 +70,10 @@ const A_DAY = [
  * Log the day through the REPL, then wait for the panes to catch up.
  *
  * Through the REPL, not through `run`: the panes re-run their command on
- * the frame's epoch, which only a command typed at the prompt bumps —
- * `run(argv)` stores the row and the panes never hear about it. A test on
- * the seam alone would measure four panes still showing the empty day
- * they mounted with, which is the one arrangement where nothing
- * overflows.
+ * the frame's epoch, and the harness's `run` is the quiet door (da-6918)
+ * — it stores the row and the panes never hear about it. A test on the
+ * seam alone would measure four panes still showing the empty day they
+ * mounted with, which is the one arrangement where nothing overflows.
  *
  * And then the wait, because `submit` returns on the REPL's own echo: the
  * pane commands it set off are still in flight, so a measurement taken

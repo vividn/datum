@@ -33,7 +33,7 @@ export const ready = writable(false);
 export const fields = writable<FieldButton[]>([]);
 
 export interface ReplLike {
-	runArgv(argv: string[], line?: string): Promise<RunResult>;
+	runArgv(argv: string[], line?: string, stdin?: string): Promise<RunResult>;
 }
 
 let repl: ReplLike | null = null;
@@ -94,15 +94,22 @@ export async function ran(): Promise<void> {
 
 /**
  * A command from anywhere but a prompt of its own — a widget-bar press,
- * the bottom bar's line (da-0a5o), which is echoed and recalled as typed.
- * Through the REPL when there is one; see above. Without one it is
- * recorded here, so the shared history and the bottom bar's receipt still
- * see it, and the epoch is bumped here.
+ * the bottom bar's line (da-0a5o), the browser console's `datum.run`
+ * (da-6918) — which is echoed and recalled as typed. Through the REPL
+ * when there is one; see above. Without one it is recorded here, so the
+ * shared history and the bottom bar's receipt still see it, and the epoch
+ * is bumped here.
+ *
+ * `stdin` is what the command reads on its standard input, for a caller
+ * that has the bytes already (`db restore -` from the console). Supplying
+ * it is also what says the browser's file dialog is not wanted: a file
+ * command is only rewritten ($lib/dbio.ts) when the file is still to be
+ * chosen.
  */
-export async function press(argv: string[], line?: string): Promise<RunResult> {
-	if (repl) return repl.runArgv(argv, line);
+export async function press(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
+	if (repl) return repl.runArgv(argv, line, stdin);
 	const ranAt = Date.now();
-	const result = await (fileCommand(argv) ?? run(argv));
+	const result = await ((stdin === undefined ? fileCommand(argv) : null) ?? run(argv, stdin));
 	record(line ?? result.argv.join(' '), ranAt, result);
 	await ran();
 	return result;

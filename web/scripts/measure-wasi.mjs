@@ -67,11 +67,17 @@ async function browser({ incognito = false, throttle = 1 } = {}) {
 	return { context, tab, close };
 }
 
-/** One command through the seam, with the page's own wall clock around it. */
+/**
+ * One command through the seam, with the page's own wall clock around it.
+ *
+ * The quiet door (da-6918): what is being measured is the process, so the
+ * refresh a loud `datum.run` would fold into the same await — three more
+ * commands and every pane re-drawn — must stay outside the clock.
+ */
 function run(page, argv) {
 	return page.evaluate(async (argv) => {
 		const t = performance.now();
-		const result = await window.datum.run(argv);
+		const result = await window.datum.runQuiet(argv);
 		return { ...result, wall: performance.now() - t, at: performance.now() };
 	}, argv);
 }
@@ -167,7 +173,7 @@ async function twoTabs() {
 				const out = [];
 				for (let i = 0; i < 20; i++) {
 					const t = performance.now();
-					const r = await window.datum.run(['occur', name, `i=${i}`]);
+					const r = await window.datum.runQuiet(['occur', name, `i=${i}`]);
 					out.push({ code: r.code, wall: performance.now() - t, tries: r.ms.tries, acquire: r.ms.acquire });
 				}
 				return out;

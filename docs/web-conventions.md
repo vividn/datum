@@ -69,9 +69,12 @@ file in the same commit — a convention nobody can read is a convention nobody 
 ## Tests
 
 12. **Drive the app the way a person does**: type into a prompt (`app.submit`) and read what the
-    panes show — 15 test files do. `window.datum.run` writes without bumping the epoch, so a
-    pane will NOT refresh after it: it is for reading state, not for driving behaviour (this
-    cost a false bug report on 2026-09-11).
+    panes show — 15 test files do. The console runs commands the way the page does:
+    `window.datum.run` / `runLine` go through `engine.press`, so they are echoed, receipted and
+    followed by a refresh, exactly as typing is (da-6918 — a silent `run` cost a false bug
+    report on 2026-09-11). `runQuiet` / `runQuietLine` are the exception and say so: the seam
+    alone, nothing on the page moves, which is what the harness's `app.run` binds to so that a
+    test can seed and read without disturbing what it is about to assert.
 13. **Never assert a delta** ("more rows than before"): assert the thing itself — the count, the
     position, the text. A delta-blind probe cannot see output identical to what was there.
 14. **A browser leg whose browser cannot be launched is skipped with its reason**, never failed:

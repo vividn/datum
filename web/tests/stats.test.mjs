@@ -141,6 +141,10 @@ describe('/stats', () => {
 			const other = await app.page.context().newPage();
 			await other.goto(new URL('/', app.page.url()).href);
 			await other.waitForFunction(() => typeof window.datum?.run === 'function');
+			// The loud door (da-6918): a real tab logging an entry, echoed and
+			// receipted there as a hand at its console would see it. What this
+			// test is about is the FIRST tab, which hears it over the change
+			// channel either way.
 			const r = await other.evaluate(() => window.datum.run(['occur', 'coffee', '-t', '-1']));
 			assert.equal(r.code, 0, r.stderr);
 

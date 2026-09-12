@@ -70,11 +70,14 @@
 	 * actually received, so a press teaches exactly the command it ran. A
 	 * prettier string rebuilt from the press could drift from it; this
 	 * cannot. A file command ($lib/dbio.ts) goes the browser's way, before
-	 * any await: its dialog needs the keypress.
+	 * any await: its dialog needs the keypress — unless the caller brought
+	 * `stdin` itself, which is a file already chosen (`engine.press`).
 	 */
-	export async function runArgv(argv: string[], line?: string): Promise<RunResult> {
+	export async function runArgv(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
 		const ranAt = Date.now();
-		const result = await (fileCommand(argv) ?? run(fitArgv(argv, width)));
+		const result = await (
+			(stdin === undefined ? fileCommand(argv) : null) ?? run(fitArgv(argv, width), stdin)
+		);
 		await land(line ?? result.argv.join(' '), result, ranAt);
 		return result;
 	}
