@@ -643,7 +643,7 @@ fn nowview_at_centres_the_window_on_the_instant() {
         .parse::<chrono::DateTime<Utc>>()
         .unwrap()
         .with_timezone(&chrono::Local);
-    let clock = format!("{}:{:02}", local.hour(), local.minute());
+    let clock = format!("{:02}:{:02}", local.hour(), local.minute());
     assert!(
         svg.contains(&format!(">{clock}</text>")),
         "no {clock}: {svg}"

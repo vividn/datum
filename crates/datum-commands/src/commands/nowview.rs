@@ -18,7 +18,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use datum_core::db::Db;
 use datum_core::entry::Entry;
 use datum_core::field_spec::FieldSpec;
@@ -871,8 +871,7 @@ fn push_switch_region_terminal(
 /// `t` on the reader's clock — the zone `DatumTime::now()` stamps with, which
 /// in the browser is the page's `TZ` (`chrono::Local` is UTC there, da-y6qj).
 pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
-    let local = Zone::host().local_naive(t);
-    format!("{}:{:02}", local.hour(), local.minute())
+    crate::render::action::clock_label(&Zone::host().local_naive(t))
 }
 
 #[cfg(test)]
@@ -926,13 +925,30 @@ mod tests {
         assert!(duration_minutes("nope").is_err());
     }
 
+    /// da-jy9r: the clock is 24-hour `HH:MM` — two digits, a colon, two
+    /// digits — at an hour below 10 as well as above. The readings are pinned,
+    /// not `Utc::now()`, so a suite that runs at 02:57 sees what one that runs
+    /// at 14:04 sees.
     #[test]
-    fn format_local_hh_mm_pads_minute() {
-        let t = chrono::Utc::now();
-        let s = format_local_hh_mm(t);
-        let parts: Vec<&str> = s.split(':').collect();
-        assert_eq!(parts.len(), 2);
-        assert_eq!(parts[1].len(), 2);
+    fn format_local_hh_mm_pads_both_halves() {
+        for (reading, want) in [
+            ("2026-03-16T02:57:00", "02:57"),
+            ("2026-03-16T14:04:00", "14:04"),
+        ] {
+            let naive = reading.parse::<chrono::NaiveDateTime>().unwrap();
+            assert_eq!(crate::render::action::clock_label(&naive), want);
+        }
+        // And the host-zone wrapper keeps that shape, whatever `TZ` says.
+        let s = format_local_hh_mm("2026-03-16T02:57:00Z".parse::<DateTime<Utc>>().unwrap());
+        let (hh, mm) = s
+            .split_once(':')
+            .unwrap_or_else(|| panic!("one colon: {s}"));
+        assert_eq!(hh.len(), 2, "hour not two digits in {s}");
+        assert_eq!(mm.len(), 2, "minute not two digits in {s}");
+        assert!(
+            hh.chars().chain(mm.chars()).all(|c| c.is_ascii_digit()),
+            "not all digits in {s}"
+        );
     }
 
     /// da-2zd: `render.nowview = false` drops the field from the dayview-
