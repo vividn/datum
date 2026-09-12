@@ -19,8 +19,11 @@
 // Every other path lives in memory for the length of one process: the
 // dot-file lock SQLite's WASI build takes (`datum.db.lock`, a directory —
 // WASI has no fcntl locks), and anything else datum writes under HOME.
+//
+// The process's own stdout and stderr are here too (`Sink`), for the same
+// reason the directory is: what the shim ships grows by copying itself.
 
-import { Directory, PreopenDirectory, SyncOPFSFile, wasi, type Inode } from '@bjorn3/browser_wasi_shim';
+import { Directory, Fd, PreopenDirectory, SyncOPFSFile, wasi, type Inode } from '@bjorn3/browser_wasi_shim';
 
 /**
  * The databases that persist: the user's, and `_internal` — the app's own
@@ -96,4 +99,47 @@ export class MemoryHandle implements Handle {
 	}
 	flush() {}
 	close() {}
+}
+
+/**
+ * Somewhere for a process to write, that keeps what it is handed.
+ *
+ * stdout and stderr were a `File` behind an `OpenFile`, and that grows by
+ * allocating an array of exactly the new length and copying the old one
+ * into it, on every write that extends it — so N bytes arriving in k
+ * writes copy O(N·k). A 13.6 MB `db backup -` (20k entries) took 6.1 s in
+ * chromium that way, against 0.43 s for the same command under node:wasi
+ * — and 1.3 s now (da-0lxu). The shim has already copied each write out
+ * of the wasm memory by the time it gets here, so keeping the pieces
+ * costs nothing and `text()` joins them once, in order, at exit.
+ *
+ * A regular file, as `OpenFile` reported, rather than the character device
+ * `ConsoleStdout` reports: rust reads a character device that can neither
+ * seek nor tell as a terminal, and what datum prints to a terminal is not
+ * what it prints to a pipe.
+ */
+export class Sink extends Fd {
+	private readonly chunks: Uint8Array[] = [];
+	private size = 0;
+
+	fd_fdstat_get() {
+		return { ret: wasi.ERRNO_SUCCESS, fdstat: new wasi.Fdstat(wasi.FILETYPE_REGULAR_FILE, 0) };
+	}
+
+	fd_write(data: Uint8Array) {
+		this.chunks.push(data);
+		this.size += data.byteLength;
+		return { ret: wasi.ERRNO_SUCCESS, nwritten: data.byteLength };
+	}
+
+	/** Every write, in order, and nothing else. */
+	text(): string {
+		const all = new Uint8Array(this.size);
+		let at = 0;
+		for (const chunk of this.chunks) {
+			all.set(chunk, at);
+			at += chunk.byteLength;
+		}
+		return new TextDecoder().decode(all);
+	}
 }

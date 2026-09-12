@@ -31,7 +31,7 @@
 
 import { File as MemFile, OpenFile, WASI, type Fd } from '@bjorn3/browser_wasi_shim';
 import cliWasm from './wasm/datum-cli.wasm?url';
-import { DATABASES, DB_FILES, MemoryHandle, opfsDirectory, type Handle } from './wasiFs.js';
+import { DATABASES, DB_FILES, MemoryHandle, opfsDirectory, Sink, type Handle } from './wasiFs.js';
 import type { CliResult, StorageKind } from './dbProtocol.js';
 
 /** Where the CLI's files live in OPFS. */
@@ -161,8 +161,8 @@ async function exec(
 	env: string[],
 	stdin = ''
 ) {
-	const stdout = new MemFile([]);
-	const stderr = new MemFile([]);
+	const stdout = new Sink();
+	const stderr = new Sink();
 	// Measured per database, since the change counter is per file: a layout
 	// saved to `_internal` is no reason to re-run the panes on `datum`.
 	// A process that creates a database is not a write of the user's: the
@@ -172,8 +172,8 @@ async function exec(
 	const before = dbs.map(({ db }) => db.getSize() > 0 && changeCounter(db));
 	const fds: Fd[] = [
 		new OpenFile(new MemFile(new TextEncoder().encode(stdin))),
-		new OpenFile(stdout),
-		new OpenFile(stderr),
+		stdout,
+		stderr,
 		opfsDirectory('/data', handles)
 	];
 	// HOME inside the preopen: datum makes its config dir there, in memory
@@ -210,12 +210,11 @@ async function exec(
 	}
 	const ran = performance.now();
 	for (const handle of handles.values()) handle.flush();
-	const decoder = new TextDecoder();
 	return {
 		code,
 		// Unterminated, as every stdout on the seam is.
-		stdout: decoder.decode(stdout.data).replace(/\n+$/, ''),
-		stderr: decoder.decode(stderr.data).replace(/\n+$/, ''),
+		stdout: stdout.text().replace(/\n+$/, ''),
+		stderr: stderr.text().replace(/\n+$/, ''),
 		changed: dbs
 			.filter(({ db }, i) => before[i] !== false && changeCounter(db) !== before[i])
 			.map(({ name }) => name),
