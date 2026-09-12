@@ -30,7 +30,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -49,6 +49,13 @@ const SCREENS = [
 
 /** The two panes whose content is a drawing datum can author at any size. */
 const DRAWN = ['dayview', 'nowview'];
+
+/**
+ * Mid-afternoon, so the day below is behind the app's clock at any hour
+ * the suite is run: an unpinned app before 10:00 reads `-t 0930` as this
+ * evening and nowview draws no current state at all (da-ldct).
+ */
+const AFTERNOON = todayAt(15);
 
 /** Enough of a day that every pane has something in it. */
 const A_DAY = [
@@ -171,7 +178,7 @@ describe('a pane', () => {
 						assert.ok(box.scrollWidth <= box.clientWidth, `scrolls sideways — ${said}`);
 					}
 				},
-				{ viewport, device }
+				{ viewport, device, clock: AFTERNOON }
 			);
 		});
 
@@ -190,7 +197,7 @@ describe('a pane', () => {
 						);
 					}
 				},
-				{ viewport, device }
+				{ viewport, device, clock: AFTERNOON }
 			);
 		});
 
@@ -226,7 +233,7 @@ describe('a pane', () => {
 						);
 					}
 				},
-				{ viewport, device }
+				{ viewport, device, clock: AFTERNOON }
 			);
 		});
 	}
@@ -252,8 +259,8 @@ describe('a pane', () => {
 					const shown = await drawn(app, 'nowview');
 					assert.ok(shown.ticks.length >= 1, `nowview on ${name} drew no axis`);
 					// Counted, not compared: the three screens are three runs
-					// of the app, and the clock is the wall clock — comparing
-					// its TEXT fails whenever a run straddles a minute.
+					// of the app, and what is claimed here is that each of
+					// them drew a clock at all, not what it said.
 					assert.equal(shown.clock.length, 1, `nowview on ${name} drew no clock`);
 					if (wide === undefined) {
 						wide = shown;
@@ -276,7 +283,7 @@ describe('a pane', () => {
 						`nowview on ${name} drew ${Math.min(...shown.fonts)}px text`
 					);
 				},
-				{ viewport, device }
+				{ viewport, device, clock: AFTERNOON }
 			);
 		}
 	});
@@ -324,6 +331,7 @@ describe('a pane', () => {
 				},
 				{
 					viewport: { width: 360, height: 640 },
+					clock: AFTERNOON,
 					prepare: (context) =>
 						context.addInitScript((key) => {
 							const ranAt = Date.now();
@@ -389,7 +397,7 @@ describe('a pane', () => {
 					assert.ok(after[title] < before[title], `${title} kept its ${before[title]}px canvas`);
 				}
 			},
-			{ viewport: { width: 1280, height: 900 } }
+			{ viewport: { width: 1280, height: 900 }, clock: AFTERNOON }
 		);
 	});
 });
@@ -476,7 +484,7 @@ describe('the tail pane', () => {
 						`a time cell wrapped at ${width}px: ${JSON.stringify(heights)}`
 					);
 				},
-				{ viewport: { width, height: 1600 } }
+				{ viewport: { width, height: 1600 }, clock: AFTERNOON }
 			);
 		});
 	}
@@ -513,7 +521,7 @@ describe('the shell', () => {
 					assert.equal(seen.mainSideways, 0, `main scrolls sideways by ${seen.mainSideways}px`);
 					assert.ok(seen.input >= seen.bar.width * 0.35, `the prompt has ${seen.input.toFixed(0)}px of a ${seen.bar.width.toFixed(0)}px bar`);
 				},
-				{ viewport: { width, height: 900 } }
+				{ viewport: { width, height: 900 }, clock: AFTERNOON }
 			);
 		});
 	}

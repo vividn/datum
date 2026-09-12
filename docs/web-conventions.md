@@ -79,3 +79,10 @@ file in the same commit — a convention nobody can read is a convention nobody 
     loudly rather than passing having examined nothing.
 15. **Wait for the thing, not for a second.** No fixed sleeps: poll the condition with a
     deadline, so a slow machine does not turn a real assertion into a flake.
+16. **A test that seeds a time must say which day it means.** A bare `-t 0930` is "today at
+    09:30" against whatever clock the app is holding, so before 10:00 local the same seed
+    lands in the *future*: `datum now` answers that nothing is current and every pane that
+    draws a current state draws none. Give the seed a date, or pin the app's clock with
+    `withApp(fn, { clock: todayAt(15) })` — one instant for the page and for the worker the
+    CLI runs in — and seed against it. Tests that skipped this passed every afternoon and
+    failed every night, and the failure was twice charged to innocent branches (da-ldct).

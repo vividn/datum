@@ -17,7 +17,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
 import { rowTexts } from './support/tail.mjs';
 
 before(startApp);
@@ -26,8 +26,19 @@ after(stopApp);
 /** A locale that renders times as `04:07 PM`. */
 const TWELVE_HOUR = 'en-US';
 
+/**
+ * Early evening, so the 16:07 seeded below is behind the app's clock.
+ *
+ * Pinned because this file is about the READER's clock convention, and an
+ * unpinned app brings the runner's hour into it: the nowview's own clock
+ * text is whatever hour the suite happens to run at, so the assertion
+ * that it is `HH:MM` was also, silently, an assertion about the machine
+ * (da-ldct). The hour datum draws it at is da-jy9r's, and its unit test's.
+ */
+const EVENING = todayAt(18);
+
 /** Run `fn` against an app whose reader is on a 12-hour locale. */
-const withTwelveHourReader = (fn) => withApp(fn, { locale: TWELVE_HOUR });
+const withTwelveHourReader = (fn) => withApp(fn, { locale: TWELVE_HOUR, clock: EVENING });
 
 describe('the clock the web app prints', () => {
 	test('a 12-hour reader still gets datum 24-hour time, in every pane', async () => {

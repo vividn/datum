@@ -17,7 +17,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
 import { stripAnsi } from './support/tail.mjs';
 
 before(startApp);
@@ -84,6 +84,15 @@ const painted = (spans) => spans.map((s) => s.background).filter((c) => c !== 'r
  * (da-qfv0) — the only bold the CLI writes. Nothing datum prints is italic
  * or SGR-dim, so those two live in the component unexercised.
  */
+/**
+ * Mid-afternoon: 07:00 and 08:00 are behind the app's clock and only the
+ * `+30` below is ahead of it. Unpinned, before 08:00 local all three
+ * stamps are in the future and all three are underlined — the surfaces
+ * agree with each other and the test still passes, having quietly stopped
+ * being about the one underline it names (da-ldct).
+ */
+const AFTERNOON = todayAt(15);
+
 async function twoSurfaces(app) {
 	assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, OK);
 	assert.equal((await app.run(['switch', 'mood', 'happy', '-t', '0800'])).code, OK);
@@ -134,7 +143,7 @@ describe('the spans one component paints', () => {
 					row.map((td) => stripAnsi(column(td.key).cells[i]))
 				);
 			}
-		});
+		}, { clock: AFTERNOON });
 	});
 
 	test("are the REPL's block, character for character", async () => {
@@ -142,7 +151,7 @@ describe('the spans one component paints', () => {
 			const { repl, listed } = await twoSurfaces(app);
 			assert.equal(repl.text, repl.spans.map((s) => s.text).join(''));
 			assert.equal(repl.text, stripAnsi(listed.stdout));
-		});
+		}, { clock: AFTERNOON });
 	});
 
 	test('paint one escape the same colour on both surfaces', async () => {
@@ -161,7 +170,7 @@ describe('the spans one component paints', () => {
 			for (const colour of shown) {
 				assert.ok(badges.includes(colour), `the tail pane paints ${colour}, the REPL does not`);
 			}
-		});
+		}, { clock: AFTERNOON });
 	});
 
 	test('paint bold and underline, on both surfaces, for the escapes datum writes', async () => {
@@ -193,6 +202,6 @@ describe('the spans one component paints', () => {
 				ahead,
 				'the tail pane underlines a different set of stamps than the REPL'
 			);
-		});
+		}, { clock: AFTERNOON });
 	});
 });

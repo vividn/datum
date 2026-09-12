@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { startApp, stopApp, withApp, TIMEZONE } from './support/app.mjs';
+import { startApp, stopApp, withApp, todayAt, TIMEZONE } from './support/app.mjs';
 import { comparableTail, rowTexts, stripAnsi } from './support/tail.mjs';
 
 /** What the real `datum tail` printed for the same day. See support/tail.mjs. */
@@ -352,6 +352,9 @@ describe('the visual views', () => {
 		});
 	});
 
+	// Pinned mid-afternoon: the clock this draws is the app's own, and
+	// unpinned it is the runner's hour — so the assertion below about its
+	// SHAPE was an assertion about the machine (da-ldct).
 	test('nowview carries the clock and the current state', async () => {
 		await withApp(async ({ run, reload, paneSvg }) => {
 			assert.equal((await run(['switch', 'focus', 'deep', '-t', '-5'])).code, OK);
@@ -369,7 +372,7 @@ describe('the visual views', () => {
 
 			await reload();
 			assert.equal(nowChunks(await paneSvg('nowview')).focus, colorOf('deep'));
-		});
+		}, { clock: todayAt(15) });
 	});
 
 	// The shape of the picture, asserted in the browser the way

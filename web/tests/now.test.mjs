@@ -12,11 +12,16 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
 import { stripAnsi } from './support/tail.mjs';
 
 before(startApp);
 after(stopApp);
+
+// Mid-afternoon, so the day below — 07:00 to 12:00 — is behind the app's
+// clock and `now` has something to answer with, at whatever hour the
+// suite is run (da-ldct).
+const AFTERNOON = todayAt(15);
 
 describe('/now', () => {
 	test('is the nowview tab, drawn from `datum now`, and no shape stands in for a state', async () => {
@@ -48,6 +53,6 @@ describe('/now', () => {
 			for (const shape of ['point', 'switch', 'block', 'block-switch', 'point-switch']) {
 				assert.ok(!texts.some((t) => t.trim() === shape), `a shape word is drawn as a state: ${shape}`);
 			}
-		});
+		}, { clock: AFTERNOON });
 	});
 });

@@ -14,7 +14,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
 import { masker } from './support/stdout.mjs';
 
 const fixture = JSON.parse(
@@ -45,6 +45,12 @@ describe('the web prints what the CLI prints', () => {
 				}
 			},
 			{
+				// Mid-afternoon. The script's entries are dated already
+				// (support/stdout.mjs's PINNED_DAY), but nowview prints the
+				// app's own clock into the drawing and sizes the text to it,
+				// so an unpinned hour puts the runner's clock into a
+				// byte-for-byte comparison (da-ldct).
+				clock: todayAt(15),
 				// The device id the native half ran under.
 				prepare: (context) =>
 					context.addInitScript(() => localStorage.setItem('datum-device-id', 'web-parity'))

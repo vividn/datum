@@ -26,6 +26,28 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 /** Every entry the tests log lands on this day, in this zone. */
 export const TIMEZONE = 'UTC';
 
+/**
+ * Today at `hour`:`minute` in the harness's zone, as an instant — for
+ * `withApp`'s `clock`.
+ *
+ * **A test that seeds a time must say which day it means.** A bare
+ * `-t 0930` means "today at 09:30" against whatever clock the app is
+ * holding, so a suite that does not pin that clock seeds a different
+ * instant every hour of the day: before 10:00 local the same seed lands
+ * in the FUTURE, `datum now` answers that nothing is current, and the
+ * panes that draw a current state draw none. Those tests passed every
+ * afternoon and failed every night, and the failure was twice charged to
+ * innocent branches (da-ldct).
+ *
+ * So: seed a dated instant, or pin the clock here and seed against it.
+ * Today rather than a fixed calendar date, because the seeds and the
+ * clock then move together and there is no date in the file to go stale.
+ */
+export function todayAt(hour, minute = 0) {
+	const today = new Date();
+	return Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), hour, minute);
+}
+
 let server;
 let browser;
 
@@ -159,10 +181,15 @@ function baseUrl() {
  * `engine` is a Playwright browser type — `webkit` — for a test that has
  * to hold on more than chromium. It gets a browser of its own on a fresh
  * profile (`launchPersistentContext`), torn down with the test.
+ *
+ * `clock` is the instant the app is held at — the page's and, because
+ * the CLI runs there, the worker's. Any test that seeds a bare `HH:MM`
+ * or reads what is current NOW wants one, with `todayAt` above; a test
+ * that also has to move the clock builds its own with `workerClock`.
  */
 export async function withApp(
 	fn,
-	{ prepare, locale, viewport, device, query = '', engine, timezone = TIMEZONE } = {}
+	{ prepare, clock, locale, viewport, device, query = '', engine, timezone = TIMEZONE } = {}
 ) {
 	const options = { ...device, timezoneId: timezone, locale, ...(viewport ? { viewport } : {}) };
 	const profile = engine && (await mkdtemp(join(tmpdir(), 'datum-profile-')));
@@ -170,6 +197,10 @@ export async function withApp(
 		? await engine.launchPersistentContext(profile, options)
 		: await browser.newContext(options);
 	try {
+		if (clock !== undefined) {
+			await context.clock.setFixedTime(new Date(clock));
+			await workerClock(clock).prepare(context);
+		}
 		await prepare?.(context);
 		const page = await context.newPage();
 		const app = await open(page, query);
