@@ -133,9 +133,9 @@ export function inkOver(hex: string): string {
 }
 
 /**
- * How a switch in a state is labelled: `field` — the field's name in the
- * field's colour over the state's fill; `state` — the state's name in the
- * state fill's ink. vividn is to pick (da-c7u8); `field` is the default.
+ * Which WORD a switch in a state is labelled with: `field` — the field's
+ * name; `state` — the state's. vividn is to pick (da-c7u8); `field` is the
+ * default. It chooses the word only: the ink is the fill's either way.
  */
 export type SwitchLabel = 'field' | 'state';
 
@@ -156,18 +156,25 @@ export interface Look {
  * colour (the field's, where the state has none) inside the field's
  * outline. `hex` turns a colour as the spec spells it into `#rrggbb`, for
  * the ink rule.
+ *
+ * A label's ink comes from the FILL it lands on, once, for every kind
+ * (`filled` below) — never from the field's colour. A switch used to take
+ * the field's colour as its text over a fill that falls back to that same
+ * colour, so the default case — a switch tracked with no colours set at
+ * all — printed the field's name in exactly its own background: contrast
+ * 1.00, an invisible label (da-qnvh). Setting a field colour only changed
+ * which colour was duplicated. Only an unfilled button keeps the field's
+ * colour as its ink, and that is over the pane, not over itself.
  */
 export function lookOf(button: FieldButton, variant: SwitchLabel = 'field', hex: (c: string) => string = (c) => c): Look {
 	const field = hex(button.color ?? NEUTRAL);
 	const { current, shape } = button;
-	const off = { fill: null, line: field, text: field, label: button.field };
-	if (shape.kind === 'point') return { fill: field, line: field, text: inkOver(field), label: button.field };
-	if (shape.kind === 'record' || current === undefined) return off;
-	if (current === true || shape.kind === 'state') return { fill: field, line: field, text: inkOver(field), label: button.field };
+	const filled = (fill: string, label: string): Look => ({ fill, line: field, text: inkOver(fill), label });
+	if (shape.kind === 'point') return filled(field, button.field);
+	if (shape.kind === 'record' || current === undefined) return { fill: null, line: field, text: field, label: button.field };
+	if (current === true || shape.kind === 'state') return filled(field, button.field);
 	const fill = hex(button.stateColors[current] ?? button.color ?? NEUTRAL);
-	return variant === 'state'
-		? { fill, line: field, text: inkOver(fill), label: current }
-		: { fill, line: field, text: field, label: button.field };
+	return filled(fill, variant === 'state' ? current : button.field);
 }
 
 /**

@@ -47,17 +47,25 @@ describe('the logic', () => {
 		assert.equal(inkOver('#818181'), '#000000');
 	});
 
-	test('a point is filled; a block fills while on; a switch takes its state colour inside the field outline', () => {
+	test('a point is filled; a block fills while on; a switch takes its state colour inside the field outline; a label is always the fill’s ink', () => {
 		const w = (shape, rest = {}) => ({ field: 'f', shape, tracked: true, stateColors: {}, ...rest });
 		assert.deepEqual(lookOf(w({ kind: 'point' }, { color: '#ffff00' })), { fill: '#ffff00', line: '#ffff00', text: '#000000', label: 'f' });
 		assert.deepEqual(lookOf(w({ kind: 'point' }, { color: '#ffff00', current: 'x' })).fill, '#ffff00', 'never coloured by a state');
 		assert.deepEqual(lookOf(w({ kind: 'state' }, { color: '#0000ff' })), { fill: null, line: '#0000ff', text: '#0000ff', label: 'f' });
 		assert.deepEqual(lookOf(w({ kind: 'state' }, { color: '#0000ff', current: true })).fill, '#0000ff');
 		const mood = w({ kind: 'states', states: ['good', 'meh'] }, { color: '#800080', stateColors: { good: '#00ff00' }, current: 'good' });
-		assert.deepEqual(lookOf(mood), { fill: '#00ff00', line: '#800080', text: '#800080', label: 'f' });
-		assert.deepEqual(lookOf(mood, 'state'), { fill: '#00ff00', line: '#800080', text: '#000000', label: 'good' });
+		assert.deepEqual(lookOf(mood), { fill: '#00ff00', line: '#800080', text: '#000000', label: 'f' });
+		assert.deepEqual(lookOf(mood, 'state'), { fill: '#00ff00', line: '#800080', text: '#000000', label: 'good' }, 'the variant picks the word, not the ink');
 		assert.equal(lookOf({ ...mood, current: 'meh' }).fill, '#800080', 'a state without a colour takes the field colour');
 		assert.deepEqual(lookOf(w({ kind: 'record' })), { fill: null, line: '#7c7cff', text: '#7c7cff', label: 'f' }, 'no colour: the neutral');
+
+		// da-qnvh: the text was the field's colour and the fill falls back to
+		// the field's colour, so the two collapsed — the name of the field
+		// printed in exactly its own background. Every colour it could be.
+		for (const color of [undefined, '#e8820c', '#00ff00', '#000080']) {
+			const painted = lookOf(w({ kind: 'states', states: ['on'] }, { color, current: 'on' }));
+			assert.notEqual(painted.text, painted.fill, `a switch in ${color ?? 'no colour'} is painted on itself`);
+		}
 	});
 
 	test('a block that is on ends; a record is `add`', () => {
@@ -107,6 +115,57 @@ const look = (page, field) =>
 			underlineColor: cs.textDecorationColor
 		};
 	});
+
+/**
+ * Every label in the widget, with the contrast its ink actually has.
+ *
+ * Contrast, not colour: the bug this measures (da-qnvh) was a chip drawn
+ * in two colours that were the same colour, and every assertion the suite
+ * had said the right name for each of them. Only the ratio between them
+ * said anything was wrong.
+ *
+ * `behind` walks UP for the first ancestor that paints. A chip's own
+ * background is `transparent` whenever it is outlined, and reading the
+ * element alone measures the label against nothing and calls it fine —
+ * which is most of how this was missed.
+ */
+const contrasts = (page) =>
+	page.locator('.bar').evaluate((bar) => {
+		const parse = (color) => (color.match(/[\d.]+/g) ?? []).map(Number);
+		const channel = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+		const luminance = ([r, g, b]) =>
+			0.2126 * channel(r / 255) + 0.7152 * channel(g / 255) + 0.0722 * channel(b / 255);
+		const behind = (el) => {
+			for (let node = el; node; node = node.parentElement) {
+				const bg = parse(getComputedStyle(node).backgroundColor);
+				if (bg[3] === undefined || bg[3] > 0) return bg.slice(0, 3);
+			}
+			return [0, 0, 0];
+		};
+		const ratio = (fg, bg) => {
+			const [light, dark] = [luminance(fg), luminance(bg)].sort((a, b) => b - a);
+			return (light + 0.05) / (dark + 0.05);
+		};
+		return [...bar.querySelectorAll('button.track, [data-field]')].map((el) => {
+			const fg = parse(getComputedStyle(el).color).slice(0, 3);
+			const bg = behind(el);
+			return {
+				label: el.dataset.field ?? el.textContent.trim(),
+				// The untracked names and their `track` badges are the widget's
+				// deliberately faint group (`--muted`, 2.8:1) — vividn's "very
+				// subtle", the same choice as the pane frame's `…`. Measured
+				// here, reported, and not held to the floor.
+				dim: el.classList.contains('untracked'),
+				fg: `rgb(${fg})`,
+				bg: `rgb(${bg})`,
+				contrast: Math.round(ratio(fg, bg) * 100) / 100
+			};
+		});
+	});
+
+/** The measurements as the bead writes them, for a failure to print. */
+const table = (rows) =>
+	rows.map((r) => `  ${r.label.padEnd(10)} ${r.fg.padEnd(20)} ${r.bg.padEnd(20)} ${r.contrast}`).join('\n');
 
 /** Wait until the bar's `field` button has computed `prop` of `value`. */
 const untilFieldStyle = (page, field, prop, value) =>
@@ -227,6 +286,49 @@ describe('in the app', () => {
 			const hint = await page.locator('.bar .hint.empty').boundingBox();
 			assert.ok(Math.abs(hint.y + hint.height / 2 - (track.y + track.height / 2)) < 4, 'the hint is not beside Track +');
 			assert.ok(hint.height < 24, `the hint is ${hint.height}px tall`);
+		});
+	});
+
+	// The four kinds, with NO colours set except the one state colour that
+	// tells a coloured state from an uncoloured one. The default case is
+	// the broken one: a field tracked today has no `state_colors`, and a
+	// switch in a state then filled itself with the field's colour and
+	// wrote the label in that same colour (da-qnvh).
+	const PLAIN = [
+		'spec set pushups --default-verb occur',
+		'spec set work --default-verb start',
+		'spec set mood --default-verb switch --state good --state bad',
+		'spec set energy --default-verb switch --state high --state low --state-color high=green',
+		'start work',
+		'switch mood good',
+		'switch energy high',
+		'occur untracked'
+	];
+
+	test('every field chip clears 4.5:1 against what is behind it, the uncoloured switch included', async () => {
+		await withApp(async ({ page }) => {
+			for (const line of PLAIN) await type(page, line);
+			await page.locator('.bar [data-field="untracked"]').waitFor();
+			await untilFieldStyle(page, 'work', 'backgroundColor', 'rgb(124, 124, 255)');
+
+			const on = await contrasts(page);
+			assert.deepEqual(
+				on.map((r) => r.label),
+				['Track +', 'energy', 'mood', 'pushups', 'work', 'untracked'],
+				'all four kinds have to be in the measurement'
+			);
+			for (const row of on.filter((r) => !r.dim)) {
+				assert.ok(row.contrast >= 4.5, `${row.label} is at ${row.contrast}:1\n${table(on)}`);
+			}
+
+			// And outlined: a block that is off is the one chip whose fill is
+			// on nothing, so its label is measured against the pane.
+			await type(page, 'end work');
+			await untilFieldStyle(page, 'work', 'backgroundColor', CLEAR);
+			const off = await contrasts(page);
+			for (const row of off.filter((r) => !r.dim)) {
+				assert.ok(row.contrast >= 4.5, `${row.label} is at ${row.contrast}:1 with work off\n${table(off)}`);
+			}
 		});
 	});
 
