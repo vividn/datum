@@ -52,11 +52,11 @@
 	}
 
 	button {
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 999px;
 		padding: 0.2rem 0.65rem;
-		color: #c8c8e8;
+		color: var(--ink);
 		font: inherit;
 		font-size: 0.8rem;
 		cursor: pointer;
@@ -64,12 +64,12 @@
 
 	/* A layout reads as a layout: the root bar's own colour. */
 	.layout {
-		color: #7c7cff;
+		color: var(--accent);
 	}
 
 	button:hover,
 	button:focus-visible {
-		border-color: #7c7cff;
-		color: #e0e0ff;
+		border-color: var(--accent);
+		color: var(--ink-bright);
 	}
 </style>

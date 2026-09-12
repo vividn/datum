@@ -393,7 +393,7 @@
 	}
 
 	.widget.active {
-		box-shadow: 0 0 0 2px #e0e0ff;
+		box-shadow: 0 0 0 2px var(--ink-bright);
 	}
 
 	.widget:disabled,
@@ -405,17 +405,19 @@
 
 	/* The first thing a person meets: larger than the fields, and filled. */
 	.track {
-		background: #7c7cff;
+		background: var(--accent);
 		border: none;
 		border-radius: 0.5rem;
 		padding: 0.45rem 1.1rem;
-		color: #0a0a1a;
+		color: var(--page);
 		font-size: 1rem;
 		font-weight: 700;
 		letter-spacing: 0.02em;
-		box-shadow: 0 0 12px #7c7cff66;
+		box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 40%, transparent);
 	}
 
+	/* Not `--accent-bright`: this is the accent as a FILL under a pointer,
+	   which lifts less than the accent as ink does. */
 	.track:hover:not(:disabled) {
 		background: #9a9aff;
 	}
@@ -424,7 +426,7 @@
 		background: none;
 		border: none;
 		padding: 0.35rem 0.3rem;
-		color: #c8c8e8;
+		color: var(--ink);
 		font-size: 0.85rem;
 		text-decoration: underline 2px var(--line);
 		text-underline-offset: 0.3em;
@@ -434,21 +436,23 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
-		color: #55558a;
+		color: var(--muted);
 		font-size: 0.8rem;
 	}
 
 	.track-this {
 		background: none;
+		/* Not `--rule`: a dashed outline reads lighter than a solid one, so
+		   it is drawn a step up to weigh the same. */
 		border: 1px dashed #3a3a6a;
 		border-radius: 3px;
 		padding: 0 0.35rem;
-		color: #7c7cff;
+		color: var(--accent);
 		font-size: 0.7rem;
 	}
 
 	.track-this:hover:not(:disabled) {
-		border-color: #7c7cff;
+		border-color: var(--accent);
 	}
 
 	.panel {
@@ -465,10 +469,13 @@
 		flex-direction: column;
 		gap: 0.35rem;
 		min-width: max-content;
+		/* Not `--ground`: a panel floats ABOVE the bar, and a step up from
+		   the ground it covers is how it says so. */
 		background: #12122a;
-		border: 1px solid #2a2a4a;
+		border: 1px solid var(--rule);
 		border-radius: 6px;
 		padding: 0.5rem;
+		/* A shadow is black at an opacity, not a colour from the palette. */
 		box-shadow: 0 4px 16px #00000080;
 	}
 
@@ -482,17 +489,17 @@
 
 	.bubble-label {
 		width: 2.6rem;
-		color: #55558a;
+		color: var(--muted);
 		font-size: 0.7rem;
 		letter-spacing: 0.06em;
 	}
 
 	.panel button {
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 999px;
 		padding: 0.2rem 0.55rem;
-		color: #c8c8e8;
+		color: var(--ink);
 		font: inherit;
 		font-size: 0.8rem;
 		cursor: pointer;
@@ -500,8 +507,8 @@
 
 	.panel button:hover,
 	.panel button.on {
-		border-color: #7c7cff;
-		color: #e0e0ff;
+		border-color: var(--accent);
+		color: var(--ink-bright);
 	}
 
 	.commit {
@@ -519,32 +526,32 @@
 	}
 
 	.preview {
-		color: #55558a;
+		color: var(--muted);
 		font-size: 0.75rem;
 		white-space: pre;
 	}
 
 	.add input,
 	.add select {
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 4px;
 		padding: 0.25rem 0.4rem;
-		color: #e0e0ff;
+		color: var(--ink-bright);
 		font: inherit;
 		font-size: 0.8rem;
 	}
 
 	.hint {
 		margin: 0;
-		color: #444466;
+		color: var(--quiet);
 		font-size: 0.8rem;
 		font-style: italic;
 	}
 
 	.hint code {
 		font-style: normal;
-		color: #7c7cff;
+		color: var(--accent);
 	}
 
 	/* One line beside Track +, cut rather than wrapped. */

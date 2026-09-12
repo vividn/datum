@@ -156,16 +156,16 @@
 		flex-shrink: 0;
 		min-width: 0;
 		padding: 0.55rem 0.9rem;
-		background: #0d0d1a;
-		border-top: 1px solid #2a2a4a;
+		background: var(--ground);
+		border-top: 1px solid var(--rule);
 	}
 
 	/* Orange rather than red: "your data is not safe yet" is a warning
 	   about the future, not a report of a failure. Visible from across a
 	   desk (PaneFrame.svelte's alarm). */
 	.prompt-bar.alarm {
-		border-top-color: #e8820c;
-		box-shadow: 0 -1px 0 #e8820c inset;
+		border-top-color: var(--alarm);
+		box-shadow: 0 -1px 0 var(--alarm) inset;
 	}
 
 	.brand-block {
@@ -177,13 +177,13 @@
 	}
 
 	.brand {
-		color: #e0e0ff;
+		color: var(--ink-bright);
 		text-decoration: none;
 		font-size: 1.25rem;
 	}
 
 	.tld {
-		color: #55558a;
+		color: var(--muted);
 	}
 
 	.beta-row {
@@ -192,11 +192,16 @@
 		gap: 0.3rem;
 	}
 
+	/* The beta mark, the ⓘ beside it and the note it opens are an amber of
+	   their own — #f0b429 and the four shades under it — and not in the
+	   palette: they say "this software is early", which is a thing the app
+	   says about ITSELF, said once, in a corner. None of them is `--warn`,
+	   which means unsaved work. */
 	.tag {
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		font-size: 0.75rem;
-		color: #0a0a1a;
+		color: var(--page);
 		background: #f0b429;
 		border-radius: 3px;
 		padding: 0 0.3rem;
@@ -252,9 +257,9 @@
 		align-items: center;
 		gap: 0.2rem;
 		padding: 0 0.2rem 0 0.5rem;
-		border: 1px solid #7c7cff;
+		border: 1px solid var(--accent);
 		border-radius: 999px;
-		color: #adadff;
+		color: var(--accent-bright);
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.95rem;
 		white-space: nowrap;
@@ -265,18 +270,21 @@
 		border: none;
 		padding: 0 0.2rem;
 		font: inherit;
-		color: #7c7cff;
+		color: var(--accent);
 		cursor: pointer;
 	}
 
-	/* The time cursor's own blue, as its dotted lines are drawn. */
+	/* The time cursor's own blue, as its dotted lines are drawn — not a
+	   token, because the lines are drawn from $lib/hover.ts as an SVG
+	   attribute, where `var()` does not reach, and one colour written in
+	   two places is better than a token only one of them can use. */
 	.pill.time {
 		border-color: #7c9cff;
 		color: #7c9cff;
 	}
 
 	.pill button:hover {
-		color: #e0e0ff;
+		color: var(--ink-bright);
 	}
 
 	/* At least half the bar: the receipt and the build stamp ellipsize
@@ -306,11 +314,13 @@
 		white-space: nowrap;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 1rem;
+		/* Not a token: the same step between `--quiet` and `--ink` the
+		   echoed line uses (Input.svelte). */
 		color: #8888aa;
 	}
 
 	.receipt.error {
-		color: #f4645a;
+		color: var(--error);
 	}
 
 	/* Dim on purpose: present for whoever is looking for it. */

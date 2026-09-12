@@ -57,7 +57,7 @@
 	}
 
 	.error {
-		color: #f4645a;
+		color: var(--error);
 	}
 
 	.picture :global(svg.svg) {
@@ -89,10 +89,10 @@
 		max-width: calc(100vw - 8px);
 		box-sizing: border-box;
 		padding: 2px 6px;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 6px;
-		color: #c8c8e8;
+		color: var(--ink);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;

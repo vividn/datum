@@ -215,8 +215,7 @@
 
 <button
 	type="button"
-	class:more={!faint}
-	class:faint
+	class={faint ? 'faint' : 'control badge more'}
 	bind:this={button}
 	aria-haspopup="menu"
 	aria-expanded={open}
@@ -305,36 +304,24 @@
 {/if}
 
 <style>
-	/* A rounded square with its own ground so it sits ON the outline
-	   rather than under it (vividn, 17:56). On a pane's frame it is the
-	   title's height where the pointer is fine and a fingertip's 24px
-	   where it is not (PaneFrame.svelte's `--badge`); the root bar's are
-	   24px — the floors reachable.test.mjs holds them to. It takes the
-	   pointer where the line it sits on does not. */
+	/* `.control.badge` (app.css) is the rounded square with its own ground,
+	   so it sits ON the outline rather than under it (vividn, 17:56) — its
+	   `--badge` box is the title's height where the pointer is fine and a
+	   fingertip's 24px where it is not (PaneFrame.svelte), the floor
+	   reachable.test.mjs holds it to. What is this button's own: it does
+	   not stretch, and it takes the pointer where the line it sits on
+	   does not. */
 	.more {
 		flex: none;
-		box-sizing: border-box;
-		inline-size: var(--badge, 24px);
-		block-size: var(--badge, 24px);
-		display: grid;
-		place-items: center;
-		padding: 0;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
-		border-radius: 6px;
-		color: #55558a;
-		font: inherit;
-		font-size: 0.85rem;
-		line-height: 1;
-		cursor: pointer;
 		pointer-events: auto;
 	}
 
-	.more:hover,
-	.more:focus-visible,
+	/* A menu it is holding open looks the same as a menu it is pointed at.
+	   Here rather than on `.control.badge`, because `aria-expanded` on the
+	   root bar's restore act means something else (RootBar.svelte). */
 	.more[aria-expanded='true'] {
-		color: #adadff;
-		border-color: #7c7cff;
+		color: var(--accent-bright);
+		border-color: var(--accent);
 	}
 
 	/* The margin's handle: no ground and no outline, only the glyph, barely
@@ -351,7 +338,7 @@
 		padding: 0;
 		background: none;
 		border: none;
-		color: #7c7cff;
+		color: var(--accent);
 		opacity: 0.25;
 		font: inherit;
 		font-size: 0.75rem;
@@ -373,9 +360,10 @@
 		flex-direction: column;
 		min-width: 10rem;
 		padding: 0.25rem;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 6px;
+		/* A shadow is black at an opacity, not a colour from the palette. */
 		box-shadow: 0 4px 16px #00000088;
 		writing-mode: horizontal-tb;
 		font-family: monospace;
@@ -391,27 +379,27 @@
 		border: none;
 		border-radius: 4px;
 		padding: 0.25rem 0.5rem;
-		color: #c8c8e8;
+		color: var(--ink);
 		font: inherit;
 		cursor: pointer;
 	}
 
 	.menu button:hover:not(:disabled),
 	.menu button:focus-visible {
-		background: #1e1e38;
-		color: #e0e0ff;
+		background: var(--tint);
+		color: var(--ink-bright);
 		outline: none;
 	}
 
 	.menu button:disabled {
-		color: #444466;
+		color: var(--quiet);
 		cursor: default;
 	}
 
 	.menu button.opens::after {
 		content: '▸';
 		margin-inline-start: auto;
-		color: #55558a;
+		color: var(--muted);
 	}
 
 	/* A row: its label where an item's words are, its buttons at the end,
@@ -421,7 +409,7 @@
 		align-items: center;
 		gap: 2px;
 		padding-inline-start: 0.5rem;
-		color: #c8c8e8;
+		color: var(--ink);
 	}
 	.row span {
 		flex: 1;
@@ -450,10 +438,10 @@
 		padding: 0;
 		align-items: center;
 		justify-content: center;
-		color: #55558a;
+		color: var(--muted);
 	}
 	.icons button[aria-checked='true'] {
-		color: #7c7cff;
+		color: var(--accent);
 	}
 	.icons svg {
 		fill: currentColor;
@@ -465,6 +453,6 @@
 	.sep {
 		inline-size: 1px;
 		margin: 4px 3px;
-		background: #2a2a4a;
+		background: var(--rule);
 	}
 </style>

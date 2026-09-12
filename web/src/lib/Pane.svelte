@@ -107,11 +107,13 @@
 	   warning about the future, not a report of a failure that already
 	   happened. It has to be visible at a glance from across a desk. */
 	.pane.alarm {
-		border-color: #e8820c;
-		box-shadow: 0 0 0 1px #e8820c inset;
+		border-color: var(--alarm);
+		box-shadow: 0 0 0 1px var(--alarm) inset;
 	}
 	.pane.alarm h2 {
-		background: #e8820c;
+		background: var(--alarm);
+		/* Not a token: the almost-black the alarm's orange is legible on,
+		   and nothing else in the app is painted on orange. */
 		color: #1a1000;
 	}
 
@@ -120,19 +122,19 @@
 		flex-direction: column;
 		min-width: 0;
 		min-height: 0;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 6px;
 	}
 
 	h2 {
 		margin: 0;
 		padding: 0.35rem 0.6rem;
-		border-bottom: 1px solid #1e1e38;
+		border-bottom: 1px solid var(--tint);
 		font-size: 0.75rem;
 		font-weight: normal;
 		letter-spacing: 0.06em;
-		color: #7c7cff;
+		color: var(--accent);
 	}
 
 	.body {
@@ -144,6 +146,6 @@
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.85rem;
 		line-height: 1.35;
-		color: #c8c8e8;
+		color: var(--ink);
 	}
 </style>

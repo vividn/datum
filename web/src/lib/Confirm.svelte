@@ -39,9 +39,9 @@
 <style>
 	.confirm {
 		max-width: min(26rem, calc(100vw - 2rem));
-		background: #0d0d1a;
-		color: #e0e0ff;
-		border: 1px solid #f4645a;
+		background: var(--ground);
+		color: var(--ink-bright);
+		border: 1px solid var(--error);
 		border-radius: 6px;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.9rem;
@@ -61,8 +61,9 @@
 		width: 100%;
 		box-sizing: border-box;
 		margin-top: 0.4rem;
+		/* The buttons' ground below, and for the same reason. */
 		background: #1a1a30;
-		border: 1px solid #2a2a4a;
+		border: 1px solid var(--rule);
 		color: inherit;
 		font: inherit;
 	}
@@ -74,8 +75,10 @@
 	}
 
 	button {
+		/* Not a token: a step between `--ground` and `--tint` that only the
+		   two buttons in this dialog stand on. */
 		background: #1a1a30;
-		border: 1px solid #2a2a4a;
+		border: 1px solid var(--rule);
 		border-radius: 4px;
 		color: inherit;
 		font: inherit;
@@ -83,7 +86,7 @@
 	}
 
 	button[value] {
-		border-color: #f4645a;
-		color: #f4645a;
+		border-color: var(--error);
+		color: var(--error);
 	}
 </style>

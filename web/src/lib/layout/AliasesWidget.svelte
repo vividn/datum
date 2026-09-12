@@ -86,7 +86,7 @@
 	}
 	.quiet {
 		margin: 0;
-		color: #444466;
+		color: var(--quiet);
 		font-style: italic;
 	}
 </style>

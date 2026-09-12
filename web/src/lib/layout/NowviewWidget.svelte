@@ -39,6 +39,7 @@
 	<div class="nowview-steps">
 		<button
 			type="button"
+			class="control badge step"
 			aria-label="longer window"
 			title={up ? `longer window (${up})` : 'longer window'}
 			disabled={!up}
@@ -46,6 +47,7 @@
 		>
 		<button
 			type="button"
+			class="control badge step"
 			aria-label="shorter window"
 			title={down ? `shorter window (${down === '0' ? 'now' : down})` : 'shorter window'}
 			disabled={!down}
@@ -73,33 +75,14 @@
 		left: calc(4px + var(--under-left, 0px));
 		display: flex;
 		gap: 2px;
+		/* `.control.badge` (app.css) draws the steps, and its box is
+		   `--badge` — which a pane sets to its title row and these would
+		   inherit, being inside one. A step is a fingertip's 24px wherever
+		   it is drawn, so the row says so once, for both of them. */
+		--badge: 24px;
 	}
 
-	/* The … badge's size and colours (PaneMenu.svelte). */
-	button {
-		box-sizing: border-box;
-		inline-size: 24px;
-		block-size: 24px;
-		display: grid;
-		place-items: center;
-		padding: 0;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
-		border-radius: 6px;
-		color: #55558a;
-		font: inherit;
-		font-size: 0.85rem;
-		line-height: 1;
-		cursor: pointer;
-	}
-
-	button:hover:not(:disabled),
-	button:focus-visible {
-		color: #adadff;
-		border-color: #7c7cff;
-	}
-
-	button:disabled {
+	.step:disabled {
 		opacity: 0.4;
 		cursor: default;
 	}

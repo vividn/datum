@@ -23,6 +23,12 @@ export interface AnsiSpan {
 }
 
 // The 16 basic colours, in the same dark-terminal register the panes use.
+//
+// Not the palette (app.css): these are the sixteen SLOTS a terminal has,
+// which the CLI's own escapes name by number, and what a number means is
+// fixed by that convention rather than by anything this app decides. A few
+// happen to equal a token today; naming them for the app's roles would tie
+// datum's output to the frame's looks.
 const BASIC = [
 	'#1a1a2e',
 	'#f4645a',

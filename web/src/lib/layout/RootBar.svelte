@@ -120,6 +120,7 @@
 			<button
 				type="button"
 				role="tab"
+				class="control tab"
 				class:modified={tab.layout !== undefined && $modified.has(tab.layout)}
 				aria-selected={i === $layout.root.active}
 				tabindex={i === $layout.root.active ? 0 : -1}
@@ -134,12 +135,12 @@
 	<PaneMenu items={moreItems} label="menu of the root bar" />
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
 	<div class="acts">
-		<button type="button" class="act save" disabled={!ready} aria-label="save layout" title="save" on:click={doSave}>
+		<button type="button" class="control badge act save" disabled={!ready} aria-label="save layout" title="save" on:click={doSave}>
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
 		</button>
 		<button
 			type="button"
-			class="act restore"
+			class="control badge act restore"
 			disabled={!ready}
 			aria-label={dirty ? 'restore layout' : 'restore a version'}
 			aria-expanded={dirty ? undefined : trail !== null}
@@ -148,12 +149,12 @@
 		>
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
 		</button>
-		<button type="button" class="act save-as" disabled={!ready} aria-label="save layout as…" title="save as…" on:click={doSaveAs}>
+		<button type="button" class="control badge act save-as" disabled={!ready} aria-label="save layout as…" title="save as…" on:click={doSaveAs}>
 			<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1M15.5 12.5v6M12.5 15.5h6" /></svg>
 		</button>
 		<button
 			type="button"
-			class="act lock"
+			class="control badge act lock"
 			disabled={!ready}
 			aria-label={locked ? 'unlock layout' : 'lock layout'}
 			aria-pressed={locked}
@@ -188,8 +189,8 @@
 		gap: 4px;
 		flex-shrink: 0;
 		padding: 0.3rem 0.5rem;
-		background: #0d0d1a;
-		border-bottom: 1px solid #2a2a4a;
+		background: var(--ground);
+		border-bottom: 1px solid var(--rule);
 		min-width: 0;
 	}
 
@@ -205,35 +206,33 @@
 		scrollbar-width: none;
 	}
 
-	/* The pane frames' own tab pills (PaneFrame.svelte), the same shape. */
-	.tabs button {
-		box-sizing: border-box;
+	/* `.control` (app.css) is the pill; a root tab is a wide one, and a
+	   fingertip's 24px tall. The pane frames' tabs are the same shape a
+	   size down (PaneFrame.svelte). */
+	.tab {
 		block-size: 24px;
 		padding: 0 0.6rem;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
-		border-radius: 6px;
-		font: inherit;
 		font-size: 0.8rem;
 		letter-spacing: 0.06em;
-		color: #55558a;
 		white-space: nowrap;
-		cursor: pointer;
 	}
 
-	.tabs button[aria-selected='true'] {
-		color: #7c7cff;
-		border-color: #7c7cff;
+	/* The tab in front says so with its outline — which is why the hover
+	   below lives here and not on `.control`: it has to be able to argue
+	   with this rule, and it can only do that from inside the component. */
+	.tab[aria-selected='true'] {
+		color: var(--accent);
+		border-color: var(--accent);
 	}
 
-	.tabs button:hover,
-	.tabs button:focus-visible {
-		color: #adadff;
+	.tab:hover,
+	.tab:focus-visible {
+		color: var(--accent-bright);
 	}
 
 	.dot {
 		margin-left: 0.3rem;
-		color: #ffd166;
+		color: var(--warn);
 	}
 
 	.acts {
@@ -244,18 +243,23 @@
 		flex: none;
 	}
 
+	/* `.control.badge` (app.css) draws the box. An act carries the accent
+	   at rest rather than the muted ink: it is a thing to do, not a thing
+	   to find. */
 	.act {
-		box-sizing: border-box;
-		inline-size: 24px;
-		block-size: 24px;
-		display: grid;
-		place-items: center;
-		padding: 0;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
-		border-radius: 6px;
-		color: #7c7cff;
-		cursor: pointer;
+		color: var(--accent);
+	}
+
+	/* Hover is repeated from `.control.badge` rather than inherited from it
+	   for the same reason the tabs repeat theirs: a scoped selector carries
+	   svelte's hash TWICE, so `.act[aria-pressed]` below outweighs anything
+	   app.css can say, and a locked lock would keep its amber under the
+	   pointer. Whatever has a local state to argue with hover keeps its
+	   hover local. */
+	.act:hover:not(:disabled),
+	.act:focus-visible {
+		color: var(--accent-bright);
+		border-color: var(--accent);
 	}
 
 	.act svg {
@@ -268,27 +272,21 @@
 		stroke-linejoin: round;
 	}
 
-	.act:hover:not(:disabled),
-	.act:focus-visible {
-		color: #adadff;
-		border-color: #7c7cff;
-	}
-
 	.act:disabled {
 		opacity: 0.5;
 		cursor: default;
 	}
 
 	.act[aria-pressed='true'] {
-		color: #ffd166;
-		border-color: #ffd166;
+		color: var(--warn);
+		border-color: var(--warn);
 	}
 
 	/* Modified: the two acts that decide it stand out. */
 	.modified .save,
 	.modified .restore {
-		color: #ffd166;
-		border-color: #ffd166;
+		color: var(--warn);
+		border-color: var(--warn);
 	}
 	.modified .save svg,
 	.modified .restore svg {
@@ -303,12 +301,12 @@
 		margin: 0.3rem 0 0;
 		padding: 0.3rem 0.6rem;
 		list-style: none;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 6px;
 		white-space: nowrap;
 		font-size: 0.85rem;
-		color: #55558a;
+		color: var(--muted);
 	}
 
 	.versions button {
@@ -316,16 +314,18 @@
 		border: none;
 		padding: 0;
 		font: inherit;
-		color: #7c7cff;
+		color: var(--accent);
 		cursor: pointer;
 	}
 
 	.versions button:hover {
-		color: #adadff;
+		color: var(--accent-bright);
 	}
 
 	.error {
 		font-size: 0.75rem;
+		/* Not `--error`: a lighter red, because this one is a line of words
+		   on the bar rather than a mark on a control. */
 		color: #ff7b7b;
 		white-space: nowrap;
 	}

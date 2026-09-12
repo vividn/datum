@@ -120,8 +120,8 @@
 		padding-block: 0;
 		font: inherit;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		color: #c8c8e8;
-		background: #0a0a1a;
+		color: var(--ink);
+		background: var(--page);
 		border: none;
 		border-radius: 4px;
 	}

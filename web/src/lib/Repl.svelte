@@ -115,13 +115,13 @@
 <style>
 	.quiet {
 		margin: 0;
-		color: #444466;
+		color: var(--quiet);
 		font-style: italic;
 	}
 
 	.quiet code {
 		font-style: normal;
-		color: #7c7cff;
+		color: var(--accent);
 	}
 
 	.head {
@@ -134,6 +134,8 @@
 		flex: 1;
 		min-width: 0;
 		white-space: pre-wrap;
+		/* Not a token: the same step between `--quiet` and `--ink` the input
+		   widget's echo uses (Input.svelte). */
 		color: #8888aa;
 	}
 
@@ -142,7 +144,7 @@
 	   the renderer prints two lines down — is what actually matters. */
 	.stamp {
 		flex: none;
-		color: #444466;
+		color: var(--quiet);
 		font-variant-numeric: tabular-nums;
 	}
 
@@ -150,10 +152,10 @@
 	.rule {
 		margin: 0.5rem 0;
 		border: none;
-		border-top: 1px solid #1e1e38;
+		border-top: 1px solid var(--tint);
 	}
 
 	.prompt {
-		color: #7c7cff;
+		color: var(--accent);
 	}
 </style>

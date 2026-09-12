@@ -112,7 +112,13 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 	return [...all.filter((w) => w.tracked), ...all.filter((w) => !w.tracked)];
 }
 
-/** The app's neutral: what a field without a colour is drawn in. */
+/**
+ * The app's neutral: what a field without a colour is drawn in.
+ *
+ * `--accent`'s value, written out rather than read: it is handed to
+ * `inkOver` below, which parses the hex, and to SVG attributes, where
+ * `var()` does not reach. Change one and change the other (app.css).
+ */
 export const NEUTRAL = '#7c7cff';
 
 /**

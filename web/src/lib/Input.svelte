@@ -89,16 +89,16 @@
 		flex-direction: column;
 		min-width: 0;
 		min-height: 0;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 6px;
 	}
 
 	/* The REPL pane's alarm: someone typing into a database held in memory
 	   is someone about to lose what they type. */
 	.input-widget.alarm {
-		border-color: #e8820c;
-		box-shadow: 0 0 0 1px #e8820c inset;
+		border-color: var(--alarm);
+		box-shadow: 0 0 0 1px var(--alarm) inset;
 	}
 
 	/* No vertical padding, so a widget one line tall gives the history
@@ -125,7 +125,7 @@
 	/* The REPL's stamp and echo, dim for the same reason. */
 	.stamp {
 		flex: none;
-		color: #444466;
+		color: var(--quiet);
 		font-variant-numeric: tabular-nums;
 	}
 
@@ -133,11 +133,15 @@
 		flex: 1;
 		min-width: 0;
 		white-space: pre-wrap;
+		/* Not a token: a step between `--quiet` and `--ink` that three
+		   places want and no role names — an echoed line here, in the REPL
+		   and in the bottom bar's receipt. Give it a name when there is a
+		   fourth, and a sentence to say what the three have in common. */
 		color: #8888aa;
 	}
 
 	.caret {
-		color: #7c7cff;
+		color: var(--accent);
 	}
 
 	.entry {
@@ -148,6 +152,9 @@
 		animation: flash 0.8s ease-out;
 	}
 
+	/* Not a token: the ground a failed line flashes from, which is
+	   `--error` taken most of the way down to `--ground` and is a colour
+	   nothing else uses. */
 	@keyframes flash {
 		from {
 			background: #4a1616;
@@ -160,7 +167,7 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		color: #f4645a;
+		color: var(--error);
 		font-size: 0.85rem;
 	}
 </style>

@@ -446,12 +446,12 @@
 	}
 	.jagged polyline {
 		fill: none;
-		stroke: #e8820c;
+		stroke: var(--alarm);
 		stroke-width: 1.2;
 		vector-effect: non-scaling-stroke;
 	}
 	.jagged:focus-visible {
-		outline: 1px solid #7c7cff;
+		outline: 1px solid var(--accent);
 	}
 
 	.grip {
@@ -467,14 +467,14 @@
 		content: '';
 		display: block;
 		border-radius: 3px;
-		background: #2a2a4a;
+		background: var(--rule);
 	}
 	.grip:hover::before,
 	.grip:focus-visible::before {
-		background: #7c7cff;
+		background: var(--accent);
 	}
 	.grip:focus-visible {
-		outline: 1px solid #7c7cff;
+		outline: 1px solid var(--accent);
 	}
 
 	/* On the seam above today, in the left margin. Absolute, so the notch
@@ -506,9 +506,9 @@
 		font: inherit;
 		font-size: 0.8rem;
 		line-height: 1.3;
-		color: #7c7cff;
-		background: #0d0d1acc;
-		border: 1px solid #2a2a4a;
+		color: var(--accent);
+		background: color-mix(in srgb, var(--ground) 80%, transparent);
+		border: 1px solid var(--rule);
 		border-radius: 0 0 0 4px;
 		cursor: pointer;
 		z-index: 2;
@@ -526,7 +526,7 @@
 
 	.quiet {
 		margin: 0;
-		color: #444466;
+		color: var(--quiet);
 		font-style: italic;
 	}
 </style>

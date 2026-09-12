@@ -482,10 +482,13 @@
 	th {
 		font-weight: normal;
 		/* On the pane's ground, so the rows under it do not show through. */
-		background: #0d0d1a;
+		background: var(--ground);
 		/* The CLI's header is plain text over the columns; a rule under it
 		   does the work the terminal's blank line does. A shadow, not a
 		   border: a collapsed border stays with the table, not the header. */
+		/* Not `--rule`: one hair off it (#2a2a44 against #2a2a4a), and the
+		   two are not the same pixel. Making them one is a visual change,
+		   which this is not. */
 		box-shadow: inset 0 -1px 0 #2a2a44;
 		padding-bottom: calc(0.15em + 1px);
 	}
@@ -528,7 +531,7 @@
 	/* Paged up to the log's first row: a dotted edge over it, drawn as a
 	   background so the row's height, and the count, are untouched. */
 	.start td {
-		background: linear-gradient(to right, #444466 50%, transparent 0) top / 6px 1px repeat-x;
+		background: linear-gradient(to right, var(--quiet) 50%, transparent 0) top / 6px 1px repeat-x;
 	}
 
 	/* What the count leaves under the last row: under a page, it is the room
@@ -551,9 +554,9 @@
 		bottom: 0;
 		font: inherit;
 		font-size: 0.8em;
-		color: #7c7cff;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		color: var(--accent);
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 4px;
 		padding: 0.1em 0.5em;
 		cursor: pointer;
@@ -561,12 +564,12 @@
 
 	.quiet {
 		margin: 0;
-		color: #444466;
+		color: var(--quiet);
 		font-style: italic;
 	}
 
 	.error {
 		margin: 0;
-		color: #f4645a;
+		color: var(--error);
 	}
 </style>

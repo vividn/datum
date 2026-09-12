@@ -1,3 +1,44 @@
+/*
+	The palette (da-a2xl, docs/web-conventions.md §10).
+
+	Every colour the app paints comes from here. A component that writes a
+	literal is a component nobody can restyle — and the top five literals
+	were repeated 15–36 times across 8–18 files before this existed.
+
+	Each token is named for what it is FOR, not for what it is, and the
+	comment beside it is the contract: as long as a colour keeps doing that
+	job, changing it stays a colour change and touches one line.
+*/
+:root {
+	/* The ground behind the panes: the page itself, and the ink on a filled accent. */
+	--page: #0a0a1a;
+	/* A pane's, a bar's, a menu's own background — one step up from the page. */
+	--ground: #0d0d1a;
+	/* A hovered row's ground, and a rule quiet enough to sit inside a pane. */
+	--tint: #1e1e38;
+	/* Every outline, border and separator. */
+	--rule: #2a2a4a;
+	/* The app's one colour: a pane's title, a link, the thing that is chosen. */
+	--accent: #7c7cff;
+	/* The accent under the pointer or the keyboard. */
+	--accent-bright: #adadff;
+	/* A control at rest, and the labels that stand beside one. */
+	--muted: #55558a;
+	/* Secondary text: a hint, a timestamp, a placeholder, a disabled word. */
+	--quiet: #444466;
+	/* Body text. */
+	--ink: #c8c8e8;
+	/* Body text under the pointer, or text that carries more than the rest. */
+	--ink-bright: #e0e0ff;
+	/* "Your data is not safe yet" — a warning about the future, not a
+	   report of a failure, which is why it is orange and not red. */
+	--alarm: #e8820c;
+	/* Something failed. */
+	--error: #f4645a;
+	/* Unsaved work: an act with something still to do. */
+	--warn: #ffd166;
+}
+
 *, *::before, *::after {
 	box-sizing: border-box;
 }
@@ -5,8 +46,8 @@
 body {
 	margin: 0;
 	font-family: monospace;
-	background: #0a0a1a;
-	color: #c8c8e8;
+	background: var(--page);
+	color: var(--ink);
 }
 
 /* Every scroll container's scrollbar, one rule (vividn's second look,
@@ -23,7 +64,7 @@ body {
 	scrollbar-color: transparent transparent;
 }
 *:hover {
-	scrollbar-color: #2a2a4a transparent;
+	scrollbar-color: var(--rule) transparent;
 }
 ::-webkit-scrollbar {
 	width: 6px;
@@ -37,5 +78,54 @@ body {
 	border-radius: 3px;
 }
 :hover::-webkit-scrollbar-thumb {
-	background: #2a2a4a;
+	background: var(--rule);
+}
+
+/*
+	One control (da-a2xl, docs/web-conventions.md §11).
+
+	The small square button the frame is made of — a pane's `…` badge, the
+	nowview's − / +, the root bar's acts — and the pills beside them: the
+	root bar's tabs and a pane's. The same box, ground, outline, radius and
+	muted ink was written out in five places; this is that rule set, once.
+	Global because Svelte scopes a component's CSS, so a class shared
+	between components cannot live in any one of them.
+
+	What a user keeps is what is genuinely its own: where it sits, how big
+	its glyph is, and the ink it carries when it is the chosen one.
+
+	`--badge` is the box, which a pane sets to its title row's height and
+	raises to a fingertip's 24px under a coarse pointer (PaneFrame.svelte,
+	reachable.test.mjs); 24px is what everyone else gets.
+*/
+.control {
+	box-sizing: border-box;
+	padding: 0;
+	background: var(--ground);
+	border: 1px solid var(--rule);
+	border-radius: 6px;
+	color: var(--muted);
+	font: inherit;
+	cursor: pointer;
+}
+
+/* A square one: the badges, whose glyph is centred in the box itself. */
+.control.badge {
+	inline-size: var(--badge, 24px);
+	block-size: var(--badge, 24px);
+	display: grid;
+	place-items: center;
+	font-size: 0.85rem;
+	line-height: 1;
+}
+
+/* Pointed at or focused. Badges only: a tab's outline is how it says
+   whether it is the tab in front, and its own `[aria-selected]` rule has
+   to be able to win against a hover — which a rule from out here, one
+   class short of a scoped one, cannot let it do. So the tabs keep their
+   one-line hover next to the selected rule it argues with. */
+.control.badge:hover:not(:disabled),
+.control.badge:focus-visible {
+	color: var(--accent-bright);
+	border-color: var(--accent);
 }

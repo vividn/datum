@@ -167,15 +167,15 @@
 <style>
 	.quiet {
 		margin: 0;
-		color: #444466;
+		color: var(--quiet);
 		font-style: italic;
 	}
 	.play {
 		font: inherit;
 		font-style: normal;
-		color: #7c7cff;
+		color: var(--accent);
 		background: none;
-		border: 1px solid #2a2a4a;
+		border: 1px solid var(--rule);
 		border-radius: 4px;
 		cursor: pointer;
 	}

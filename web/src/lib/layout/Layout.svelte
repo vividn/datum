@@ -386,7 +386,7 @@
 		position: sticky;
 		bottom: 0;
 		z-index: 1;
-		background: #0a0a1a;
+		background: var(--page);
 	}
 
 	.border {
@@ -410,7 +410,7 @@
 		content: '';
 		position: absolute;
 		inset: 50% auto auto 50%;
-		background: #1e1e38;
+		background: var(--tint);
 		border-radius: 2px;
 	}
 	.row > .border:not(.static)::after {
@@ -425,7 +425,7 @@
 	}
 	.border:hover::after,
 	.border:focus-visible::after {
-		background: #7c7cff;
+		background: var(--accent);
 	}
 	.border:focus-visible {
 		outline: none;
@@ -433,7 +433,7 @@
 
 	.quiet {
 		margin: 0;
-		color: #444466;
+		color: var(--quiet);
 		font-style: italic;
 	}
 </style>

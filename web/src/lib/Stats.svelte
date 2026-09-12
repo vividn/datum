@@ -233,11 +233,11 @@
 	}
 
 	button {
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 999px;
 		padding: 0.25rem 0.7rem;
-		color: #c8c8e8;
+		color: var(--ink);
 		font: inherit;
 		font-size: 0.85rem;
 		cursor: pointer;
@@ -245,8 +245,8 @@
 
 	button:hover,
 	button.on {
-		border-color: #7c7cff;
-		color: #e0e0ff;
+		border-color: var(--accent);
+		color: var(--ink-bright);
 	}
 
 	button.state {
@@ -257,21 +257,21 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.6rem;
-		color: #55558a;
+		color: var(--muted);
 		font-size: 0.8rem;
 	}
 
 	input {
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 4px;
-		color: #e0e0ff;
+		color: var(--ink-bright);
 		font: inherit;
 		color-scheme: dark;
 	}
 
 	.argv {
-		color: #55558a;
+		color: var(--muted);
 		font-size: 0.75rem;
 	}
 
@@ -283,19 +283,19 @@
 	}
 
 	.tile {
-		border: 1px solid #2a2a4a;
+		border: 1px solid var(--rule);
 		border-radius: 6px;
 		padding: 0.4rem 0.8rem;
 	}
 
 	dt {
-		color: #55558a;
+		color: var(--muted);
 		font-size: 0.7rem;
 	}
 
 	dd {
 		margin: 0;
-		color: #e0e0ff;
+		color: var(--ink-bright);
 		font-size: 1.2rem;
 	}
 
@@ -305,7 +305,7 @@
 
 	.quiet {
 		margin: 0;
-		color: #444466;
+		color: var(--quiet);
 		font-style: italic;
 	}
 </style>

@@ -256,6 +256,7 @@
 						<button
 							type="button"
 							role="tab"
+							class="control tab"
 							aria-selected={i === pane.active}
 							tabindex={i === pane.active ? 0 : -1}
 							on:click={() => activate(i)}
@@ -311,8 +312,8 @@
 	}
 
 	.pane {
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 6px;
 	}
 
@@ -433,13 +434,13 @@
 		font-size: 0.75rem;
 		font-weight: normal;
 		letter-spacing: 0.06em;
-		color: #7c7cff;
+		color: var(--accent);
 		white-space: nowrap;
 		pointer-events: auto;
 		/* Its own ground, so the outline stops at the words rather than
 		   running through them. */
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
+		background: var(--ground);
+		border: 1px solid var(--rule);
 		border-radius: 4px;
 	}
 
@@ -451,32 +452,32 @@
 		pointer-events: auto;
 	}
 
-	/* Each tab a small pill on the line, the title's shape and height. */
-	.tabs button {
-		box-sizing: border-box;
+	/* `.control` (app.css) is the pill. On the line a tab is the title's
+	   shape and height, and a smaller radius than a control gets elsewhere
+	   — the line it straddles is 1px, and 6px of round on a 16px box reads
+	   as a lozenge. */
+	.tab {
 		block-size: var(--row);
 		padding-block: 0;
 		padding-inline: 0.5rem;
-		background: #0d0d1a;
-		border: 1px solid #2a2a4a;
 		border-radius: 4px;
-		font: inherit;
 		font-size: 0.75rem;
 		line-height: 1;
 		letter-spacing: 0.06em;
-		color: #55558a;
 		white-space: nowrap;
-		cursor: pointer;
 	}
 
-	.tabs button[aria-selected='true'] {
-		color: #7c7cff;
-		border-color: #7c7cff;
+	/* The tab in front says so with its outline, which is why the hover
+	   below is here and not on `.control`: it has to be able to argue with
+	   this rule, and it can only do that from inside the component. */
+	.tab[aria-selected='true'] {
+		color: var(--accent);
+		border-color: var(--accent);
 	}
 
-	.tabs button:hover,
-	.tabs button:focus-visible {
-		color: #adadff;
+	.tab:hover,
+	.tab:focus-visible {
+		color: var(--accent-bright);
 	}
 
 	/* Orange rather than red: this is "your data is not safe yet", which
@@ -484,12 +485,14 @@
 	   already happened. It has to be visible at a glance from across a
 	   desk. (From Pane.svelte, which drew it before there was a frame.) */
 	.pane.alarm {
-		border-color: #e8820c;
-		box-shadow: 0 0 0 1px #e8820c inset;
+		border-color: var(--alarm);
+		box-shadow: 0 0 0 1px var(--alarm) inset;
 	}
 	.pane.alarm h2 {
-		background: #e8820c;
-		border-color: #e8820c;
+		background: var(--alarm);
+		border-color: var(--alarm);
+		/* Not a token: the almost-black the alarm's orange is legible on,
+		   and nothing else in the app is painted on orange. */
 		color: #1a1000;
 	}
 

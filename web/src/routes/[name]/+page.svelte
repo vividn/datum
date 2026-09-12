@@ -36,11 +36,11 @@
 <style>
 	.notice {
 		margin: 1rem 0;
-		color: #444466;
+		color: var(--quiet);
 		font-style: italic;
 	}
 
 	.notice a {
-		color: #7c7cff;
+		color: var(--accent);
 	}
 </style>

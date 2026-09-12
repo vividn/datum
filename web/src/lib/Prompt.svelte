@@ -86,19 +86,19 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		border-top: 1px solid #1e1e38;
+		border-top: 1px solid var(--tint);
 		padding: 0.45rem 0.6rem;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	}
 
 	.stamp {
 		flex: none;
-		color: #444466;
+		color: var(--quiet);
 		font-variant-numeric: tabular-nums;
 	}
 
 	.prompt {
-		color: #7c7cff;
+		color: var(--accent);
 	}
 
 	input {
@@ -107,7 +107,7 @@
 		background: transparent;
 		border: none;
 		outline: none;
-		color: #e0e0ff;
+		color: var(--ink-bright);
 		font: inherit;
 		font-size: 0.95rem;
 	}
@@ -119,7 +119,7 @@
 	}
 
 	input::placeholder {
-		color: #444466;
+		color: var(--quiet);
 	}
 
 	input:disabled {

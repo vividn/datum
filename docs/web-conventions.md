@@ -48,14 +48,23 @@ file in the same commit — a convention nobody can read is a convention nobody 
 
 ## Looks
 
-10. **Colours come from the palette, not from a literal.** Decided 2026-09-12 and NOT yet done:
-    48 literals are in the components today, the top five repeated 15–36 times across 8–18 files.
-    One `:root` set names the roles — ground, rule, accent, muted, quiet, alarm, error — and the
-    components use them.
+10. **Colours come from the palette, not from a literal** (da-a2xl). `:root` in `app.css` names
+    thirteen roles — `--page`, `--ground`, `--tint`, `--rule`, `--accent`, `--accent-bright`,
+    `--muted`, `--quiet`, `--ink`, `--ink-bright`, `--alarm`, `--error`, `--warn` — each with a
+    line saying what it is FOR, which is the contract: while a colour keeps doing that job,
+    changing it is one line. 178 literals across 22 files became those tokens. What is left is
+    left on purpose and says so where it stands: a one-off tint no role names (invent a token
+    when a second place wants it, not before), a shadow, the beta mark's amber, a colour handed
+    to an SVG attribute or parsed as hex from TypeScript — `var()` reaches neither —
+    and `ansi.ts`'s sixteen, which are a terminal's slots and not this app's looks.
 11. **A control a finger can hit is 24px** (`reachable.test.mjs` holds every `…` badge, every
-    submenu icon and every root-bar button to it). The rule set that makes one — the box, the
-    6px radius, the pane ground, the 1px rule — belongs in one class, not copied into six
-    components as it is today.
+    submenu icon and every root-bar button to it). `.control` in `app.css` is the rule set that
+    makes one — the box, the 6px radius, the pane ground, the 1px rule, the muted ink — and
+    `.control.badge` the square of them, sized by `--badge` (a pane's title row, a fingertip's
+    24px under a coarse pointer). A component keeps only what is its own. It is global because
+    svelte scopes a component's CSS, and for the same reason a hover stays LOCAL wherever
+    another local rule has to lose to it: a scoped selector carries svelte's hash twice, so
+    `.tab[aria-selected]` and `.act[aria-pressed]` outweigh anything `app.css` can say.
 
 ## Tests
 

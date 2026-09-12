@@ -92,6 +92,8 @@ function drawCursor(svg: SVGSVGElement | null, at: Date | undefined): void {
 		[`${a}2`]: place.along,
 		[`${b}1`]: place.start,
 		[`${b}2`]: place.end,
+		// The time cursor's own blue (PromptBar.svelte's `.pill.time`), not a
+		// token: this is an SVG attribute, where `var()` does not reach.
 		stroke: '#7c9cff',
 		'stroke-width': 1,
 		'stroke-dasharray': '3 3',
