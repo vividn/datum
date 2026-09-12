@@ -36,8 +36,12 @@ file in the same commit — a convention nobody can read is a convention nobody 
 ## Modules
 
 7. **Every module opens with a sentence saying what it is, and why it is the way it is.**
-   24 of 24 `.svelte` files and 34 of 37 `.ts` files do (`changes.ts`, `deviceId.ts` and
-   `types.ts` are the gap).
+   **28 of 28 `.svelte` files and 40 of 40 `.ts` files do** — re-counted 2026-09-12 11:2x, and
+   the three this line used to name as the gap (`changes.ts`, `deviceId.ts`, `types.ts`) have
+   all been filled since. ⚠ *Count it accepting every comment syntax these files use: a `.svelte`
+   module's purpose sentence usually sits inside its `<script>` as a `/* */`, not as an `<!-- -->`
+   before it. A first pass looking only for `<!--` reported a file short and named `AnsiText.svelte`,
+   which in fact opens with eleven lines of exactly this.*
 8. **Pure logic lives beside its markup, in a `.ts` a test can call without a browser**:
    `fields.ts`, `stats.ts`, `tail.ts`, `panes.ts`, `bar.ts`, `cursor.ts`, `fileargv.ts`,
    `dbio.ts`. The `.svelte` file holds the markup and the wiring.
