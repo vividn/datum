@@ -165,7 +165,7 @@ describe('a command that fails', () => {
 			assert.equal(await alert.innerText(), why.trim());
 			assert.deepEqual(await lines(page), ['foo']);
 
-			await alert.waitFor({ state: 'detached', timeout: 10000 });
+			await alert.waitFor({ state: 'detached' });
 		});
 	});
 });

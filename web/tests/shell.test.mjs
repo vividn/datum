@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
+import { until } from './support/until.mjs';
 import { settled } from './support/layout.mjs';
 
 before(startApp);
@@ -73,17 +74,6 @@ const layouts = (app, fn, ...args) =>
 	app.page.evaluate(([fn, args]) => window.datum.layouts[fn](...args), [fn, args]);
 
 const receipt = (page) => page.locator('.prompt-bar .receipt');
-
-/** Poll `read` until `ok` accepts what it says, or give up loudly. */
-async function until(read, ok, timeout = 30000) {
-	const deadline = Date.now() + timeout;
-	for (;;) {
-		const seen = await read();
-		if (ok(seen)) return seen;
-		if (Date.now() > deadline) throw new Error(`timed out waiting; last saw: ${JSON.stringify(seen)}`);
-		await new Promise((resolve) => setTimeout(resolve, 100));
-	}
-}
 
 const PRONOUNCED = 'rgb(255, 209, 102)';
 
@@ -235,7 +225,7 @@ describe('a URL', () => {
 		try {
 			const page = await browser.newPage({ ...DESKTOP });
 			await page.goto(`http://127.0.0.1:${server.address().port}/stats`);
-			await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'stats' }).waitFor({ timeout: 30000 });
+			await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'stats' }).waitFor();
 			await page.locator('section.pane[data-title="stats"]').waitFor();
 		} finally {
 			await browser.close();

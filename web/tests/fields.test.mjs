@@ -108,15 +108,14 @@ const look = (page, field) =>
 		};
 	});
 
-/** Wait until `field`'s computed `prop` is `value`. */
-const until = (page, field, prop, value, timeout = 2000) =>
+/** Wait until the bar's `field` button has computed `prop` of `value`. */
+const untilFieldStyle = (page, field, prop, value) =>
 	page.waitForFunction(
 		([f, p, v]) => {
 			const el = document.querySelector(`.bar [data-field="${f}"]`);
 			return el && getComputedStyle(el)[p] === v;
 		},
-		[field, prop, value],
-		{ timeout }
+		[field, prop, value]
 	);
 
 describe('in the app', () => {
@@ -170,13 +169,13 @@ describe('in the app', () => {
 		await withApp(async ({ page }) => {
 			for (const line of FIXTURE) await type(page, line);
 			await type(page, 'start work');
-			await until(page, 'work', 'backgroundColor', BLUE);
+			await untilFieldStyle(page, 'work', 'backgroundColor', BLUE);
 			await type(page, 'end work');
-			await until(page, 'work', 'backgroundColor', CLEAR);
+			await untilFieldStyle(page, 'work', 'backgroundColor', CLEAR);
 			assert.equal((await look(page, 'work')).border, BLUE);
 
 			await type(page, 'switch mood good');
-			await until(page, 'mood', 'backgroundColor', GREEN);
+			await untilFieldStyle(page, 'mood', 'backgroundColor', GREEN);
 			assert.equal((await look(page, 'mood')).border, PURPLE);
 		});
 	});
@@ -192,9 +191,9 @@ describe('in the app', () => {
 			assert.equal((await app.tailRows()).rows.at(-1).field, 'coffee');
 
 			await type(page, 'start work');
-			await until(page, 'work', 'backgroundColor', BLUE);
+			await untilFieldStyle(page, 'work', 'backgroundColor', BLUE);
 			await page.locator('.bar [data-field="work"]').click();
-			await until(page, 'work', 'backgroundColor', CLEAR);
+			await untilFieldStyle(page, 'work', 'backgroundColor', CLEAR);
 			assert.equal((await app.echoes()).at(-1), 'end work');
 			await app.idle();
 			const ended = (await app.tailRows()).rows.at(-1);

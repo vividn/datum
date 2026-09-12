@@ -85,8 +85,7 @@ const atRest = (page) =>
 			const row = Math.min(...trs.map((tr) => tr.getBoundingClientRect().height));
 			return trs.length === Math.floor((box - head) / row);
 		},
-		null,
-		{ timeout: 10_000 }
+		null
 	);
 
 /** Wait until the tail's first row is not `hid`. */
@@ -448,8 +447,7 @@ describe('a write', () => {
 				await wheelUp(page);
 				await page.waitForFunction(
 					(hid) => document.querySelector('section.pane[data-title="tail"] tbody tr.start')?.dataset.hid === hid,
-					tea.hid,
-					{ timeout: 10_000 }
+					tea.hid
 				);
 			},
 			{ viewport: { width: 1280, height: 1200 } }
@@ -503,8 +501,7 @@ describe('a write', () => {
 						const trs = [...body.querySelectorAll('tbody tr')];
 						return trs.at(-1)?.textContent.includes('another-name') && body.scrollHeight <= body.clientHeight + 1;
 					},
-					null,
-					{ timeout: 10_000 }
+					null
 				);
 				const g = await geometry(page);
 				const asks = await page.evaluate(() => window.__tailAsks);
@@ -534,10 +531,8 @@ describe('a write', () => {
 					assert.deepEqual(g0.hids, g0.hids.map((_, i) => seedHid(30 - g0.n + i)), 'not the newest rows');
 
 					await app.submit('occur coffee');
-					await page.waitForFunction(
-						() => [...document.querySelectorAll('section.pane[data-title="tail"] tbody tr')].at(-1)?.textContent.includes('coffee'),
-						null,
-						{ timeout: 2000 }
+					await page.waitForFunction(() =>
+						[...document.querySelectorAll('section.pane[data-title="tail"] tbody tr')].at(-1)?.textContent.includes('coffee')
 					);
 					await app.idle();
 					const g1 = await geometry(page);

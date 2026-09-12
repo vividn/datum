@@ -16,6 +16,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
+import { until } from './support/until.mjs';
 
 /** A tree with every part of the contract in it, nested once. */
 const tree = (name, kind) => ({
@@ -81,17 +82,6 @@ const setDraft = (app, layout) =>
 
 /** Every argv that went to `_internal` — the controls re-reading the saves. */
 const internal = (argv) => argv[0] === '--db' && argv[1] === '_internal';
-
-/** Poll `read` until `ok` accepts what it says, or give up loudly. */
-async function until(read, ok, timeout = 30000) {
-	const deadline = Date.now() + timeout;
-	for (;;) {
-		const seen = await read();
-		if (ok(seen)) return seen;
-		if (Date.now() > deadline) throw new Error(`timed out waiting; last saw: ${JSON.stringify(seen)}`);
-		await new Promise((resolve) => setTimeout(resolve, 100));
-	}
-}
 
 before(startApp);
 after(stopApp);
@@ -240,9 +230,7 @@ describe('the internal database', () => {
 				const internalRead = await app.run(['--db', '_internal', 'tail', 'layout']);
 				assert.equal(internalRead.storage, 'memory');
 
-				await app.page.waitForFunction(() => !document.querySelector('section.pane.alarm'), null, {
-					timeout: 30000
-				});
+				await app.page.waitForFunction(() => !document.querySelector('section.pane.alarm'));
 				await app.reload();
 				assert.doesNotMatch(await app.bannerText(), /memory only/);
 				assert.deepEqual(

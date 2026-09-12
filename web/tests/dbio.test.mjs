@@ -73,12 +73,12 @@ const KIT = fileURLToPath(new URL('../../crates/datum-cli/tests/fixtures/rest_ki
 /** Type `kit install` into the bottom bar, choose the kit, and return its confirm. */
 async function kitConfirm(page, line = 'kit install') {
 	const [chooser] = await Promise.all([
-		page.waitForEvent('filechooser', { timeout: 5000 }),
+		page.waitForEvent('filechooser'),
 		type(page, line)
 	]);
 	await chooser.setFiles(KIT);
 	const dialog = page.locator('dialog.confirm');
-	await dialog.waitFor({ timeout: 5000 });
+	await dialog.waitFor();
 	return dialog;
 }
 
@@ -102,7 +102,7 @@ async function type(page, line) {
 async function choose(page, line, files) {
 	const before = await echoes(page);
 	const [chooser] = await Promise.all([
-		page.waitForEvent('filechooser', { timeout: 5000 }),
+		page.waitForEvent('filechooser'),
 		type(page, line)
 	]);
 	await chooser.setFiles(files);
@@ -141,12 +141,11 @@ const clickedInKeydown = (context) =>
 		};
 	});
 
-/** Wait, at most two seconds, for the tail pane to show `n` rows. */
+/** Wait for the tail pane to show `n` rows. */
 const tailShows = (page, n) =>
 	page.waitForFunction(
 		(n) => document.querySelectorAll('section.pane[data-title="tail"] tbody tr').length === n,
-		n,
-		{ timeout: 2000 }
+		n
 	);
 
 // CI installs chromium's headless shell only (`playwright install
@@ -191,7 +190,7 @@ for (const engine of [chromium, webkit]) {
 
 					// The backup is a download; the transcript has the header, not the rows.
 					const [download] = await Promise.all([
-						page.waitForEvent('download', { timeout: 10000 }),
+						page.waitForEvent('download'),
 						app.submit('db backup')
 					]);
 					const saved = await download.path();
@@ -280,7 +279,7 @@ for (const engine of [chromium, webkit]) {
 					assert.match((await app.outputs()).at(-1), /^rest\s+2\s+1\s+1\s+0\s+1$/m);
 					// The fields widget follows without a reload.
 					for (const field of ['nap', 'sleep']) {
-						await page.locator(`.bar [data-field="${field}"]`).waitFor({ timeout: 2000 });
+						await page.locator(`.bar [data-field="${field}"]`).waitFor();
 					}
 					assert.deepEqual(app.errors, []);
 				},
@@ -295,7 +294,7 @@ for (const engine of [chromium, webkit]) {
 				async ({ page }) => {
 					for (const said of [/120 imported/, /120 skipped/]) {
 						const [chooser] = await Promise.all([
-							page.waitForEvent('filechooser', { timeout: 5000 }),
+							page.waitForEvent('filechooser'),
 							type(page, 'db v2import')
 						]);
 						await chooser.setFiles(LEGACY);
@@ -348,7 +347,7 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 			assert.equal(await count(app), 120);
 
 			const [download] = await Promise.all([
-				page.waitForEvent('download', { timeout: 10000 }),
+				page.waitForEvent('download'),
 				app.submit('db backup --overwrite out.jsonl')
 			]);
 			assert.equal(download.suggestedFilename(), 'out.jsonl');

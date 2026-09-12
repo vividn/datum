@@ -82,7 +82,7 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 		// try/finally, because a browser left open on a failed assertion keeps
 		// the process alive and turns a red test into a hung job.
 		try {
-			await page.waitForFunction(() => crossOriginIsolated, null, { timeout: 20000 });
+			await page.waitForFunction(() => crossOriginIsolated);
 			// The isolated page's mount asks for no reload; once it has
 			// mounted, nothing further is coming — then count.
 			await mounted(page);

@@ -175,7 +175,7 @@ describe('the aliases widget', () => {
 			const input = page.locator('.prompt-bar input');
 			await input.fill('alias set tea "occur tea"');
 			await input.press('Enter');
-			await page.locator('section.pane[data-title="aliases"] li', { hasText: 'tea → occur tea' }).waitFor({ timeout: 2000 });
+			await page.locator('section.pane[data-title="aliases"] li', { hasText: 'tea → occur tea' }).waitFor();
 			assert.deepEqual(await rows(page), ['cof → occur coffee cups=1', 'tea → occur tea', 'coffee → occur coffee']);
 			// In the field's colour: the fields widget's, read on the beat a typed line runs on.
 			await page.waitForFunction(() =>

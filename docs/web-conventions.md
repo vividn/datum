@@ -81,7 +81,16 @@ file in the same commit — a convention nobody can read is a convention nobody 
     CI installs chromium's headless shell only, and a file whose every leg is skipped fails
     loudly rather than passing having examined nothing.
 15. **Wait for the thing, not for a second.** No fixed sleeps: poll the condition with a
-    deadline, so a slow machine does not turn a real assertion into a flake.
+    deadline, so a slow machine does not turn a real assertion into a flake. **A wait's cap is a
+    hang-stop, not a speed assertion** — it is there so a condition that will never come true
+    reports itself instead of sitting until the runner's 120 s per-test budget expires. The suite
+    has ONE tier: **30 s**, which is playwright's own default. So a playwright wait writes no
+    `timeout:` at all, and the one hand-rolled poller (`tests/support/until.mjs`) defaults to the
+    same number. A shorter cap asserts speed by accident and fails a test that had a hundred
+    seconds left: nine sites at 2 s and 5 s were the whole of the suite's flake surface under load
+    — seven failures across four runs, every one a short wait expiring, not one assertion (da-5t8q,
+    da-eznx). If a test really does mean "and quickly", it says so in an assertion that names the
+    number, never in a wait's cap.
 16. **A test that seeds a time must say which day it means.** A bare `-t 0930` is "today at
     09:30" against whatever clock the app is holding, so before 10:00 local the same seed
     lands in the *future*: `datum now` answers that nothing is current and every pane that

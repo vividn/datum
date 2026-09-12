@@ -15,6 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
+import { until } from './support/until.mjs';
 
 /** A sync access handle that is never granted and never refused. */
 const NEVER = `FileSystemFileHandle.prototype.createSyncAccessHandle = () => new Promise(() => {});`;
@@ -52,8 +53,8 @@ const slowFlush = (ms, { once = false } = {}) => `
 		if (slow) {
 			slow = !${once};
 			channel.postMessage('flushing');
-			const until = performance.now() + ${ms};
-			while (performance.now() < until) {}
+			const deadline = performance.now() + ${ms};
+			while (performance.now() < deadline) {}
 		}
 		return flush.apply(this, args);
 	};
@@ -69,17 +70,6 @@ async function stallNextFlush(page) {
 		channel.postMessage('slow');
 	});
 	return () => page.evaluate(() => window.__flushing);
-}
-
-/** Poll `read` until `ok` accepts what it says, or give up loudly. */
-async function until(read, ok, timeout = 30000) {
-	const deadline = Date.now() + timeout;
-	for (;;) {
-		const seen = await read();
-		if (ok(seen)) return seen;
-		if (Date.now() > deadline) throw new Error(`timed out waiting; last saw: ${seen}`);
-		await new Promise((resolve) => setTimeout(resolve, 100));
-	}
 }
 
 before(startApp);
@@ -132,9 +122,7 @@ describe('when durable storage arrives late', () => {
 				// Bounded: the worker retries with backoff, so a healthy build
 				// heals within a few seconds. Never healing is the defect this
 				// exists for.
-				await app.page.waitForFunction(() => !document.querySelector('section.pane.alarm'), null, {
-					timeout: 30000
-				});
+				await app.page.waitForFunction(() => !document.querySelector('section.pane.alarm'));
 
 				// Through a reload, which is the read only durable storage
 				// answers: the entry typed while in memory was moved across.

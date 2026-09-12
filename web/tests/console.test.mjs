@@ -36,12 +36,11 @@ const receipt = (page) => page.locator('.prompt-bar .receipt');
 const console_ = (page, door, argv) =>
 	page.evaluate(([d, a]) => window.datum[d](a), [door, argv]);
 
-/** Wait for the tail pane to show `field`. The acceptance's two seconds. */
+/** Wait for the tail pane to show `field`. */
 const tailShows = (page, field) =>
 	page.waitForFunction(
 		(f) => document.querySelector('section.pane[data-title="tail"] .body')?.innerText.includes(f),
-		field,
-		{ timeout: 2000 }
+		field
 	);
 
 /** A mark the page keeps and a reload would lose. */
