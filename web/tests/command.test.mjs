@@ -80,6 +80,34 @@ describe('the command pane', () => {
 		});
 	});
 
+	// The pane learns a command writes by running it (da-v36y). The command
+	// survives a reload, so the knowledge must too: a mount that learns it
+	// again writes once more. Counted in the database, since the pane's text
+	// is redrawn either way, and over two reloads, since one cannot tell
+	// "once more" from "once per mount".
+	test('does not run a restored command that writes again on a reload', async () => {
+		await withApp(async (app) => {
+			assert.equal(await count(app, 'kettle'), 0);
+			await setCommand(app.page, 'occur kettle');
+			await app.page.locator(`${PANE} button.play`).waitFor();
+			assert.equal(await count(app, 'kettle'), 1);
+
+			for (const reload of [1, 2]) {
+				await app.reload();
+				await app.idle();
+				await app.page.locator(`${PANE} button.play`).waitFor();
+				assert.equal(await count(app, 'kettle'), 1, `reload ${reload} ran \`occur kettle\` again`);
+			}
+
+			// Escape still leaves the command be, and still unrun.
+			await app.page.locator(`${PANE} button.edit`).click();
+			await app.page.locator(`${PANE} input.command`).press('Escape');
+			await app.page.locator(`${PANE} h2`, { hasText: 'occur kettle' }).waitFor();
+			await app.idle();
+			assert.equal(await count(app, 'kettle'), 1);
+		});
+	});
+
 	test('keeps its command across a reload', async () => {
 		await withApp(async (app) => {
 			await setCommand(app.page, 'tail -n 1');

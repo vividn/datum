@@ -8,8 +8,10 @@
 	table is the tail pane's. A command that writes runs once and then only
 	on ▶ (`guard` in CliPane.svelte).
 
-	The one piece of state is the command line, one string in localStorage,
-	so it can become a widget setting when there is a layout to hold one.
+	The state is the command line, one string in localStorage, and beside it
+	the line last seen to write — so a restored command is on ▶ from the
+	start instead of writing once per reload to find out (da-v36y). It can
+	become a widget setting when there is a layout to hold one.
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
@@ -19,6 +21,7 @@
 	export let epoch = 0;
 
 	const STORE_KEY = 'datum.command-pane.v1';
+	const WRITES_KEY = 'datum.command-pane.writes.v1';
 	const HINT = 'type a datum command, e.g. tail -n 5 — nowview runs as nowview -o -, the picture';
 
 	/** The command as typed. */
@@ -39,25 +42,35 @@
 		spec = specFor(line);
 	}
 
+	/** The spec CliPane has seen write; see `guard` there. */
+	let writer: PaneSpec | null = null;
+
 	// A store the browser blocks throws on the property itself; the pane
 	// then starts empty and keeps its command for the visit.
 	onMount(() => {
 		try {
 			const saved = localStorage.getItem(STORE_KEY);
 			if (saved) apply(saved);
+			if (saved && localStorage.getItem(WRITES_KEY) === saved) writer = spec;
 		} catch {
 			/* blocked: nothing to restore */
 		}
 	});
 
+	function save(key: string, value: string): void {
+		try {
+			localStorage.setItem(key, value);
+		} catch {
+			/* blocked: it lasts the visit */
+		}
+	}
+
+	$: if (writer === spec) save(WRITES_KEY, line);
+
 	async function close(next: string | null): Promise<void> {
 		if (next !== null) {
 			apply(next.trim());
-			try {
-				localStorage.setItem(STORE_KEY, line);
-			} catch {
-				/* blocked: the command lasts the visit */
-			}
+			save(STORE_KEY, line);
 		}
 		draft = null;
 		await tick();
@@ -75,7 +88,7 @@
 	const focus = (el: HTMLInputElement) => el.focus();
 </script>
 
-<CliPane {spec} {epoch} guard>
+<CliPane {spec} {epoch} guard bind:writer>
 	<svelte:fragment slot="title">
 		{#if draft === null}
 			{spec.title}

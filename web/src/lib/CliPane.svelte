@@ -93,8 +93,12 @@
 	$: manual = guard && writer === spec;
 	$: if (browser && request.argv && !manual) void refresh(request.argv);
 
-	/** The spec whose run wrote: while it is `spec`, the pane runs on ▶ only. */
-	let writer: PaneSpec | null = null;
+	/**
+	 * The spec whose run wrote: while it is `spec`, the pane runs on ▶ only.
+	 * A prop so a pane that keeps its command across a mount can keep this
+	 * with it — known, not learned again by writing once more (da-v36y).
+	 */
+	export let writer: PaneSpec | null = null;
 	/** The spec with an automatic run out whose effect is not known yet. */
 	let probing: PaneSpec | null = null;
 	/** Whether another automatic run was asked for while that one was out. */
