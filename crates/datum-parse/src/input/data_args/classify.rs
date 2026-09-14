@@ -25,11 +25,12 @@ pub(super) fn datum_path(path: &str) -> String {
 }
 
 /// Split a string at the first `=`; the tail is `Some("")` for `k=` and
-/// `None` when no `=` appears. Mirrors the TS helper `splitFirst("=", s)`.
+/// `None` when no `=` appears. An empty key (`=2`, `==2`, `=`) is no split
+/// at all: the whole token, `=` included, is raw data (da-c312).
 pub(super) fn split_first_eq(s: &str) -> (&str, Option<&str>) {
     match s.split_once('=') {
-        Some((h, t)) => (h, Some(t)),
-        None => (s, None),
+        Some((h, t)) if !h.is_empty() => (h, Some(t)),
+        _ => (s, None),
     }
 }
 

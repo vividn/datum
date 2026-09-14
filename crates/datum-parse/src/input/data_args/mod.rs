@@ -1498,4 +1498,25 @@ mod tests {
         let out = run(a);
         assert_eq!(out["__primary_value"], json!("null"));
     }
+
+    #[test]
+    fn empty_key_token_is_raw_data() {
+        // da-c312: no key before the first `=` means no split — the whole
+        // token, `=` included, fills the next positional key as a string.
+        for tok in ["=2", "==2", "="] {
+            let mut a = args();
+            a.keys = vec!["abc".into()];
+            a.data = vec![tok.into()];
+            assert_eq!(run(a), *json!({"abc": tok}).as_object().unwrap());
+        }
+
+        let mut a = args();
+        a.data = vec!["=2".into()];
+        assert!(handle_data_args(&a).is_err(), "no free key: rejected");
+
+        // An empty VALUE still splits (and drops the key).
+        let mut a = args();
+        a.data = vec!["cups=".into()];
+        assert_eq!(run(a), Map::new());
+    }
 }

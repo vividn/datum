@@ -633,6 +633,38 @@ fn occur_unbound_positional_is_rejected() {
     );
 }
 
+/// da-c312 (vividn's rule, 2026-09-14 — not datum parity): a token with an
+/// empty key is raw data, `=` included, never a `""` key.
+#[test]
+fn occur_empty_key_token_is_raw_data() {
+    let data = |argv: &[&str]| {
+        let db = fresh_db();
+        run_cli(argv, &db).expect("occur");
+        db.entries_for_field("coffee", None).unwrap()[0]
+            .data
+            .clone()
+    };
+
+    let d = data(&["occur", "coffee", "cups=2"]);
+    assert_eq!(d.unwrap().get("cups"), Some(&json!(2)));
+    let d = data(&["occur", "coffee", "cups="]);
+    assert_eq!(d.as_ref().and_then(|d| d.get("cups")), None);
+    for tok in ["=2", "==2", "="] {
+        let d = data(&["occur", "coffee", "-k", "abc", tok]);
+        assert_eq!(d.unwrap().get("abc"), Some(&json!(tok)), "{tok}");
+    }
+
+    for argv in [
+        &["occur", "coffee", "=2"][..],
+        &["occur", "coffee", "cups", "=2"],
+    ] {
+        let db = fresh_db();
+        let err = run_cli(argv, &db).expect_err("no free key for the raw token");
+        assert!(format!("{err:#}").contains("no matching key"), "{err:#}");
+        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 0);
+    }
+}
+
 /// Explicit `state=<v>` on `occur` is also rejected — occur is stateless
 /// by definition; the user wants `switch`/`start`/`stop` for state changes.
 #[test]
