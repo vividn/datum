@@ -25,7 +25,10 @@ const ctx = self as unknown as {
 async function serve(request: DbRequest): Promise<DbResponse> {
 	try {
 		if (request.op === 'open') return { id: request.id, ok: true, storage: await probe() };
-		const cli = await runCli(request.argv, request.env, request.stdin);
+		// stderr as it is written, not only at exit: the page shows progress.
+		const cli = await runCli(request.argv, request.env, request.stdin, (text) =>
+			ctx.postMessage({ notice: 'stderr', id: request.id, text })
+		);
 		return { id: request.id, ok: true, storage: cli.storage, cli };
 	} catch (e) {
 		return { id: request.id, ok: false, error: e instanceof Error ? e.message : String(e) };

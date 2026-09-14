@@ -47,10 +47,13 @@ export type DbCommand =
 export type DbRequest = DbCommand & { id: number };
 
 /**
- * An unsolicited word from the worker, paired to no request: a tab that fell
- * to memory got the file after all and moved its entries across.
+ * An unsolicited word from the worker: a tab that fell to memory got the
+ * file after all and moved its entries across — or request `id`'s process
+ * wrote `text` to stderr while it is still running (da-h9vj).
  */
-export type DbNotice = { notice: 'storage'; storage: StorageKind };
+export type DbNotice =
+	| { notice: 'storage'; storage: StorageKind }
+	| { notice: 'stderr'; id: number; text: string };
 
 export type DbResponse =
 	| { id: number; ok: true; storage: StorageKind; cli?: CliResult }

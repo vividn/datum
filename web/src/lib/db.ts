@@ -12,6 +12,8 @@ export type { StorageKind };
 let worker: Worker | null = null;
 let nextId = 0;
 const pending = new Map<number, (response: DbResponse) => void>();
+/** Who hears a running request's stderr, by request id. */
+const listeners = new Map<number, (text: string) => void>();
 let storage: StorageKind | null = null;
 let opened: Promise<void> | null = null;
 
@@ -66,6 +68,7 @@ function ensureWorker(): Worker {
 	started.onmessage = (event: MessageEvent<DbMessage>) => {
 		const message = event.data;
 		if ('notice' in message) {
+			if (message.notice === 'stderr') return listeners.get(message.id)?.(message.text);
 			// A tab that was in memory just moved its rows onto the file,
 			// which is news for every other tab.
 			setStorage(message.storage);
@@ -90,11 +93,16 @@ function ensureWorker(): Worker {
 }
 
 /** Send one request to the worker and resolve with its answer. */
-function request(command: DbCommand): Promise<Extract<DbResponse, { ok: true }>> {
+function request(
+	command: DbCommand,
+	onStderr?: (text: string) => void
+): Promise<Extract<DbResponse, { ok: true }>> {
 	const id = ++nextId;
 	const started = ensureWorker();
+	if (onStderr) listeners.set(id, onStderr);
 	return new Promise((resolve, reject) => {
 		pending.set(id, (response) => {
+			listeners.delete(id);
 			if (!response.ok) return reject(new Error(response.error));
 			setStorage(response.storage);
 			resolve(response);
@@ -121,8 +129,13 @@ export function initDb(): Promise<void> {
  * A process that wrote is news: for every other tab, which re-runs its panes
  * on it, and — when the write is durable — for the persistence request.
  */
-export async function runCli(argv: string[], env: string[], stdin?: string): Promise<CliResult> {
-	const cli = (await request({ op: 'cli', argv, env, stdin })).cli!;
+export async function runCli(
+	argv: string[],
+	env: string[],
+	stdin?: string,
+	onStderr?: (text: string) => void
+): Promise<CliResult> {
+	const cli = (await request({ op: 'cli', argv, env, stdin }, onStderr)).cli!;
 	if (cli.changed.length) {
 		announceChange(cli.changed);
 		if (cli.storage === 'opfs') {

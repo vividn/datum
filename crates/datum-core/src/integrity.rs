@@ -1237,7 +1237,7 @@ mod tests {
         ];
         // The bulk door skips detection, which is exactly the sync shape:
         // rows land first, warnings are filed afterwards.
-        db.insert_entries_bulk(&batch, crate::db::ConflictStrategy::Ignore)
+        db.insert_entries_bulk(&batch, crate::db::ConflictStrategy::Ignore, &mut |_| {})
             .unwrap();
         for entry in &mut batch {
             *entry = db.get_entry(&entry.slug).unwrap();
@@ -1307,7 +1307,7 @@ mod tests {
                         .build()
                 })
                 .collect();
-            db.insert_entries_bulk(&batch, crate::db::ConflictStrategy::Ignore)
+            db.insert_entries_bulk(&batch, crate::db::ConflictStrategy::Ignore, &mut |_| {})
                 .unwrap();
 
             let reads = Arc::new(AtomicUsize::new(0));

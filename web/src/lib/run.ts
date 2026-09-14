@@ -29,7 +29,12 @@ export interface RunResult {
 	changed?: string[];
 }
 
-export type CommandRunner = (argv: string[], stdin?: string) => Promise<RunResult>;
+/** `onStderr` hears the process's stderr as it is written, before the result. */
+export type CommandRunner = (
+	argv: string[],
+	stdin?: string,
+	onStderr?: (text: string) => void
+) => Promise<RunResult>;
 
 /** Generic failure, as `datum-cli`'s `main` reports one. */
 export const EXIT_ERROR = 1;
@@ -52,11 +57,15 @@ export function setRunner(next: CommandRunner): CommandRunner | null {
  * Run one command, with `stdin` on its standard input if it reads any.
  * Never rejects — a thrown error becomes a nonzero result.
  */
-export async function run(argv: string[], stdin?: string): Promise<RunResult> {
+export async function run(
+	argv: string[],
+	stdin?: string,
+	onStderr?: (text: string) => void
+): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
 	try {
 		runner ??= (await import('./runners/wasi.js')).wasiRun;
-		return await runner(argv, stdin);
+		return await runner(argv, stdin, onStderr);
 	} catch (e) {
 		// A runner that throws is a bug in the runner, not in the caller: the
 		// seam still owes the UI a result it can render.

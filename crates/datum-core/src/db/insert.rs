@@ -195,10 +195,14 @@ impl Db {
     /// [`crate::integrity::detect_for_entries`] (da-ij3x): per row it reads
     /// the field's whole history, O(N²) over a restore. So each row is
     /// checked against the whole batch, not only the rows before it.
+    ///
+    /// `on_row` is told how many rows are written so far, after each one —
+    /// a count to show, still inside the one transaction (da-h9vj).
     pub fn insert_entries_batch(
         &self,
         entries: &[Entry],
         strategy: ConflictStrategy,
+        on_row: &mut dyn FnMut(usize),
     ) -> Result<Vec<InsertOutcome>> {
         let tx = self.conn.unchecked_transaction()?;
         let mut outcomes = Vec::with_capacity(entries.len());
@@ -207,6 +211,7 @@ impl Db {
             let (outcome, row) = write_entry_in_tx(&tx, entry, strategy)?;
             outcomes.push(outcome);
             written.extend(row);
+            on_row(outcomes.len());
         }
         crate::integrity::detect_for_entries(
             &tx,
@@ -239,10 +244,14 @@ impl Db {
     /// **OPT-IN.** Existing per-row callers (`switch`, `block`, sync apply)
     /// must keep using `insert_entry_with_strategy` / `insert_entries_batch`
     /// so they get full conflict detection and history.
+    ///
+    /// `on_row` is told the count written so far, as in
+    /// [`Self::insert_entries_batch`].
     pub fn insert_entries_bulk(
         &self,
         entries: &[Entry],
         strategy: ConflictStrategy,
+        on_row: &mut dyn FnMut(usize),
     ) -> Result<Vec<InsertOutcome>> {
         if !matches!(strategy, ConflictStrategy::Ignore) {
             return Err(DatumError::Other(format!(
@@ -253,6 +262,7 @@ impl Db {
         let mut outcomes = Vec::with_capacity(entries.len());
         for entry in entries {
             outcomes.push(insert_entry_bulk_in_tx(&tx, entry)?);
+            on_row(outcomes.len());
         }
         tx.commit()?;
         Ok(outcomes)

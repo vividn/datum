@@ -18,6 +18,7 @@
 // `--db <name>` in front of the argv they run (the names are `DATABASES`
 // in $lib/wasiFs.ts).
 
+import { writable } from 'svelte/store';
 import Confirm from './Confirm.svelte';
 import { saveFile } from './backup.js';
 import { fileArgv } from './fileargv.js';
@@ -63,11 +64,23 @@ function pick(): Promise<File | null> {
 /** What a command that ran nothing says, in one quiet line. */
 const nothing = (argv: string[], stdout: string): RunResult => ({ argv, code: 0, stdout, stderr: '' });
 
+/**
+ * The latest line an upload's command has said on stderr while it runs —
+ * `db v2import` / `db restore` counting as they go (da-h9vj) — and '' once
+ * it has exited.
+ */
+export const progress = writable('');
+
 /** Run `argv` (its source `-`) with a file the reader picks as its stdin. */
 export function upload(argv: string[]): Promise<RunResult> {
-	return pick().then(async (file) =>
-		file ? run(argv, await file.text()) : nothing(argv, 'no file chosen — nothing ran')
-	);
+	return pick().then(async (file) => {
+		if (!file) return nothing(argv, 'no file chosen — nothing ran');
+		const said = (text: string) => {
+			const line = text.trim().split(/[\r\n]+/).at(-1);
+			if (line) progress.set(line);
+		};
+		return run(argv, await file.text(), said).finally(() => progress.set(''));
+	});
 }
 
 /**

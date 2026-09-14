@@ -22,6 +22,7 @@ pub mod cmd;
 pub mod commands;
 #[cfg(feature = "db")]
 pub mod config;
+pub mod progress;
 pub mod render;
 
 /// Tell the user, on stderr, that opening the database migrated it.

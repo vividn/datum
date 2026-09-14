@@ -22,6 +22,7 @@ use datum_core::{
 use crate::{
     args::{BackupArgs, RestoreArgs},
     config,
+    progress::Progress,
 };
 
 /// Version of the `.tar.gz` archive *envelope* (manifest + file layout).
@@ -544,11 +545,15 @@ fn restore_from_reader<R: std::io::BufRead>(
     let all_lines = legacy_iter.chain(body_iter);
 
     let mut pending: Vec<Entry> = Vec::new();
+    let mut reading = Progress::new("restore: reading", report.header_entry_count);
+    let mut read = 0;
     for line in all_lines {
         let line = line.context("Reading backup line")?;
         if line.trim().is_empty() {
             continue;
         }
+        reading.tick(read);
+        read += 1;
         let mut raw: serde_json::Value =
             serde_json::from_str(&line).with_context(|| format!("Parsing entry JSON: {line}"))?;
         if backup_version < current {
@@ -575,13 +580,16 @@ fn restore_from_reader<R: std::io::BufRead>(
 
         pending.push(entry);
     }
+    reading.finish(read);
 
     if !pending.is_empty() {
         // Same per-row semantics as insert_entry_with_strategy (history rows,
         // conflict strategy dispatch), one commit for the whole batch.
         // Tallies are recomputed from the committed outcomes, so the
         // entry-count integrity check below reflects what actually landed.
-        let outcomes = db.insert_entries_batch(&pending, strategy)?;
+        let mut inserting = Progress::new("restore: inserting", Some(pending.len()));
+        let outcomes = db.insert_entries_batch(&pending, strategy, &mut |n| inserting.tick(n))?;
+        inserting.finish(pending.len());
         for outcome in outcomes {
             match outcome {
                 InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {

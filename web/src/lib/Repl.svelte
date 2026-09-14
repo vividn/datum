@@ -32,7 +32,7 @@
 	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
-	import { fileCommand } from './dbio.js';
+	import { fileCommand, progress } from './dbio.js';
 	import { fitArgv } from './panes.js';
 	import { run, type RunResult } from './run.js';
 
@@ -113,6 +113,10 @@
 			<CliOutput text={entry.result.stderr} error={entry.result.code !== 0} />
 		{/if}
 	{/each}
+	{#if $progress}
+		<!-- A file command still running says how far it is (da-h9vj). -->
+		<p class="progress">{$progress}</p>
+	{/if}
 </Pane>
 
 <style>
@@ -160,5 +164,11 @@
 
 	.prompt {
 		color: var(--accent);
+	}
+
+	.progress {
+		margin: 0;
+		color: var(--quiet);
+		font-variant-numeric: tabular-nums;
 	}
 </style>

@@ -22,6 +22,7 @@ use serde_json::Value as JsonValue;
 use crate::{
     args::{DbImportArgs, DbImportArgsExt},
     config::device_id,
+    progress::Progress,
 };
 
 pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
@@ -66,7 +67,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     // idempotency (every re-import of that source uses "" too).
     let backup_time = backup["backupTime"].as_str().unwrap_or("").to_string();
 
+    let mut reading = Progress::new("v2import: reading", Some(docs.len()));
     for (doc_idx, doc) in docs.iter().enumerate() {
+        reading.tick(doc_idx);
         let data = &doc["data"];
         let meta = &doc["meta"];
         let doc_id = doc_id_or_synthetic(doc, doc_idx);
@@ -289,6 +292,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         entry_doc_ids.push(doc_id);
         source_human_ids.push(source_human_id);
     }
+    reading.finish(docs.len());
 
     // Pre-flight: detect hid collisions for entries that lifted their hid
     // from `meta.humanId`. Two flavors:
@@ -345,7 +349,11 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // run `datum conflicts list` post-import for belt-and-braces.
         // Dedup (`Ignored`) maps to `skipped` to mirror the previous per-row
         // behavior; skipped rows also retract their point/block tally.
-        let outcomes = db.insert_entries_bulk(&entries, ConflictStrategy::Ignore)?;
+        let mut inserting = Progress::new("v2import: inserting", Some(entries.len()));
+        let outcomes = db.insert_entries_bulk(&entries, ConflictStrategy::Ignore, &mut |n| {
+            inserting.tick(n)
+        })?;
+        inserting.finish(entries.len());
         let mut inserted = 0usize;
         for ((entry, outcome), doc_id) in entries
             .iter()

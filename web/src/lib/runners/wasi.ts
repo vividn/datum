@@ -9,8 +9,12 @@ import { runCli } from '../db.js';
 import { deviceId } from '../deviceId.js';
 import type { RunResult } from '../run.js';
 
-/** `datum <argv>`, with `stdin` on its standard input. */
-export async function wasiRun(argv: string[], stdin?: string): Promise<RunResult> {
+/** `datum <argv>`, with `stdin` on its standard input; `onStderr` hears stderr as it is written. */
+export async function wasiRun(
+	argv: string[],
+	stdin?: string,
+	onStderr?: (text: string) => void
+): Promise<RunResult> {
 	const env = [
 		`TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
 		`DATUM_DEVICE_ID=${deviceId()}`,
@@ -18,5 +22,5 @@ export async function wasiRun(argv: string[], stdin?: string): Promise<RunResult
 	];
 	// The whole process record — its timings and storage ride along for
 	// scripts/measure-wasi.mjs, unread by the app.
-	return runCli(argv, env, stdin);
+	return runCli(argv, env, stdin, onStderr);
 }

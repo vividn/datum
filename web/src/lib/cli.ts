@@ -159,10 +159,11 @@ async function exec(
 	handles: Map<string, Handle>,
 	argv: string[],
 	env: string[],
-	stdin = ''
+	stdin = '',
+	onStderr?: (text: string) => void
 ) {
 	const stdout = new Sink();
-	const stderr = new Sink();
+	const stderr = new Sink(onStderr);
 	// Measured per database, since the change counter is per file: a layout
 	// saved to `_internal` is no reason to re-run the panes on `datum`.
 	// A process that creates a database is not a write of the user's: the
@@ -308,7 +309,12 @@ export function onStorage(listener: (storage: StorageKind) => void): void {
 }
 
 /** Run `datum <argv>` with `env`; resolves once the process has exited. */
-export function runCli(argv: string[], env: string[], stdin?: string): Promise<CliResult> {
+export function runCli(
+	argv: string[],
+	env: string[],
+	stdin?: string,
+	onStderr?: (text: string) => void
+): Promise<CliResult> {
 	lastEnv = env;
 	return enqueue(async () => {
 		const t0 = performance.now();
@@ -316,7 +322,7 @@ export function runCli(argv: string[], env: string[], stdin?: string): Promise<C
 		const t1 = performance.now();
 		const runIn = async (handles: Map<string, Handle>, tries: number): Promise<CliResult> => {
 			const t2 = performance.now();
-			const run = await exec(module, handles, argv, env, stdin);
+			const run = await exec(module, handles, argv, env, stdin, onStderr);
 			return {
 				argv,
 				code: run.code,

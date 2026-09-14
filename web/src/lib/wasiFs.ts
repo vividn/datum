@@ -122,11 +122,21 @@ export class Sink extends Fd {
 	private readonly chunks: Uint8Array[] = [];
 	private size = 0;
 
+	/**
+	 * `said`, if given, hears each write as it happens. The process holds the
+	 * worker until it exits, so this is the only way what it prints — an
+	 * import's progress (da-h9vj) — reaches the page while it runs.
+	 */
+	constructor(private readonly said?: (text: string) => void) {
+		super();
+	}
+
 	fd_fdstat_get() {
 		return { ret: wasi.ERRNO_SUCCESS, fdstat: new wasi.Fdstat(wasi.FILETYPE_REGULAR_FILE, 0) };
 	}
 
 	fd_write(data: Uint8Array) {
+		this.said?.(new TextDecoder().decode(data));
 		this.chunks.push(data);
 		this.size += data.byteLength;
 		return { ret: wasi.ERRNO_SUCCESS, nwritten: data.byteLength };

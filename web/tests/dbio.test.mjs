@@ -14,7 +14,9 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
 import { fileArgv } from '../src/lib/fileargv.ts';
@@ -313,6 +315,47 @@ for (const engine of [chromium, webkit]) {
 		});
 	});
 }
+
+// A ~50 MB import on a phone ran in silence (da-h9vj). The CLI counts on
+// stderr, and the worker streams it out while the process still holds it.
+test('an import shows its progress while it runs, and the result after', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			const utc = (i) => new Date(Date.UTC(2025, 0, 1) + i * 60000).toISOString();
+			const docs = Array.from({ length: 5000 }, (_, i) => ({
+				_id: `coffee:${utc(i)}`,
+				data: { field: 'coffee', occurTime: { utc: utc(i), o: 0 } },
+				meta: { createTime: { utc: utc(i), o: 0 } }
+			}));
+			const file = join(await mkdtemp(join(tmpdir(), 'datum-progress-')), 'big.json');
+			await writeFile(file, JSON.stringify({ backupTime: '2025-02-01T00:00:00Z', docs }));
+
+			// Every reading the REPL shows, and whether the command had landed by then.
+			await page.evaluate(() => {
+				window.__readings = [];
+				const echoes = () => document.querySelectorAll('.repl .echo').length;
+				const before = echoes();
+				new MutationObserver(() => {
+					const shown = document.querySelector('.repl .progress')?.textContent;
+					if (shown && shown !== window.__readings.at(-1)?.shown) {
+						window.__readings.push({ shown, landed: echoes() > before });
+					}
+				}).observe(document.body, { subtree: true, childList: true, characterData: true });
+			});
+			await choose(page, 'db v2import', file);
+
+			const readings = await page.evaluate(() => window.__readings);
+			const running = readings.filter((r) => !r.landed).map((r) => r.shown);
+			assert.ok(new Set(running).size >= 2, JSON.stringify(readings));
+			for (const shown of running) assert.match(shown, /^v2import: (reading|inserting) \d+\/5000$/);
+			assert.ok((await app.outputs()).some((o) => /5000 imported/.test(o)));
+			assert.equal(await page.locator('.repl .progress').count(), 0);
+			assert.deepEqual(app.errors, []);
+		},
+		{ viewport: { width: 1280, height: 1000 } }
+	);
+});
 
 test('an option keeps its value, and only the source is the chosen file (da-1vz2)', async () => {
 	await withApp(
