@@ -47,7 +47,6 @@ import { DEFAULT_DAY_HEIGHT, MAX_DAY_HEIGHT, MIN_DAY_HEIGHT, NOWVIEW_HISTORY, TA
 import { DEFAULT_STATS } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
 import FieldsPane from './FieldsPane.svelte';
-import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
 import NowviewWidget from './NowviewWidget.svelte';
 import ReplWidget from './ReplWidget.svelte';
@@ -150,9 +149,6 @@ export const KINDS: Record<string, WidgetKind> = {
 	},
 	// The aliases widget (da-x6yj): every alias, listed.
 	aliases: { meta: meta('aliases', 'aliases'), component: AliasesWidget, legible: { width: 160, height: 72 } },
-	// The input widget (da-0dhc): the prompt line and, given the height, the
-	// history above it — one line's worth is legible.
-	input: { meta: meta('input', 'input'), component: InputWidget, legible: { width: 200, height: 40 } },
 	// What the shell shows in a tab whose layout cannot be inlined (da-0a5o).
 	notice: { meta: meta('notice', 'notice'), component: Notice, hidden: true, legible: { width: 120, height: 40 } }
 };

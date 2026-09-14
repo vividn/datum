@@ -9,7 +9,7 @@
 // which wants a TTY to ask on, asks in a dialog instead, and so does
 // `kit install`'s trust (da-axrk).
 //
-// Every prompt consults it — the REPL's, the input widget's, and the
+// Every line a person types consults it — the REPL's own runner and the
 // bottom bar's through `press` — and nothing else: `run` is the seam and
 // stays literal. These are the whole table, on purpose: anything else
 // typed runs as typed, and this is not the start of a shell. A main menu

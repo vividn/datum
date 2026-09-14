@@ -113,6 +113,32 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
 // ---- inline / extract -------------------------------------------------
 
 /**
+ * The kinds that have been RETIRED, and what a layout naming one opens as.
+ *
+ * A kind's id is a saved-layout key (docs/web-conventions.md #9), so a
+ * kind cannot simply go: every layout and draft already stored on a
+ * device still names it, and an unknown kind draws as an untitled empty
+ * pane. `input` (da-0dhc) was the REPL's prompt with no output pane; the
+ * bottom bar is that prompt now (da-rfs9), so the widget that does what
+ * it did and more is the REPL (da-22vg).
+ *
+ * Here rather than in `tree.ts` because this is where layouts are READ:
+ * `inline` is the one door every save, draft and built-in comes through,
+ * and `extract` writes the new name back out — so a layout migrates once,
+ * against its own baseline, and stays migrated. `normalize` would run it
+ * on every drag of a border instead, and would give the tree's shape
+ * module an opinion about kinds, which it has never had.
+ */
+const RETIRED_KINDS: Record<string, string> = { input: 'repl' };
+
+/** A tab whose widget is a retired kind, as the kind it became. */
+const migrated = (tab: Tab): Tab => {
+	if (isSplit(tab.content)) return tab;
+	const kind = RETIRED_KINDS[tab.content.kind];
+	return kind === undefined ? tab : { ...tab, content: { ...tab.content, kind } };
+};
+
+/**
  * The tab that holds `saved`, its ids re-minted where `taken` already has
  * them (and the new ones added to `taken`). A root pane with one tab is
  * lifted — the tab's content becomes the root tab's, under the pane's id
@@ -128,7 +154,7 @@ export function inline(saved: Layout, taken: Set<NodeId>): Tab {
 		return next;
 	};
 	const root = mapIds(
-		mapTabs(saved.root, (tab) => without(tab, 'locked')),
+		mapTabs(saved.root, (tab) => migrated(without(tab, 'locked'))),
 		mint
 	);
 	if (root.tabs.length === 1) {
@@ -241,9 +267,13 @@ export function boot(): Promise<void> {
 	return (booting ??= (async () => {
 		await initDb().catch(() => {});
 		const state = loadRoot() ?? { names: [HOME], active: 0 };
+		// A retired name opens as what it became, and only once: a device
+		// with `input` and `repl` both open gets one REPL tab, not two tabs
+		// wearing the same name.
+		const names = [...new Set(state.names.map(canonicalName))];
 		const taken = new Set<NodeId>();
 		const tabs: Tab[] = [];
-		for (const name of state.names) {
+		for (const name of names) {
 			const tab = await openTab(name, taken);
 			if (tab) tabs.push(tab);
 		}

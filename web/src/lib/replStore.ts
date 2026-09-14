@@ -2,7 +2,7 @@
 // plus the recall history Up walks.
 //
 // One store for every prompt on the page (da-0dhc). The REPL shows all of
-// it; the input widget shows the commands and their times and none of what
+// it; the bottom bar shows the last command's receipt and none of what
 // they printed. Both write through `record`, so however many prompts are
 // on screen there is one writer of the localStorage key — two components
 // persisting their own copies would each overwrite the other's commands.

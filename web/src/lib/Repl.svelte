@@ -143,8 +143,8 @@
 		flex: 1;
 		min-width: 0;
 		white-space: pre-wrap;
-		/* Not a token: the same step between `--quiet` and `--ink` the input
-		   widget's echo uses (Input.svelte). */
+		/* Not a token: the same step between `--quiet` and `--ink` the
+		   bottom bar's receipt uses (PromptBar.svelte). */
 		color: #8888aa;
 	}
 

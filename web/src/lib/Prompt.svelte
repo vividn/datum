@@ -1,7 +1,8 @@
 <!--
-	The prompt line: a live clock, the caret, the text box. The bottom
-	bar's and the input widget's are this one component (da-0dhc), so the
-	two cannot drift apart in how they look or in what Up brings back.
+	The prompt line: a live clock, the caret, the text box. The bottom bar
+	is its one user since the input widget went (da-22vg) — the REPL lost
+	its own prompt in da-rfs9 — so this is indirection kept on purpose,
+	not shared code: da-xfa4 is reshaping the bar around it.
 
 	Enter hands the line to the owner as `submit` and empties the box, the
 	way a shell consumes a line. Up and down walk the history every prompt

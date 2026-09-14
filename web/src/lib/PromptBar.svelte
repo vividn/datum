@@ -344,7 +344,7 @@
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 1rem;
 		/* Not a token: the same step between `--quiet` and `--ink` the
-		   echoed line uses (Input.svelte). */
+		   REPL's echoed line uses (Repl.svelte). */
 		color: #8888aa;
 	}
 

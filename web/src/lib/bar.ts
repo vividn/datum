@@ -12,8 +12,8 @@
 // `prefill` puts a line into the bar's prompt without running it — the
 // fields widget's `add <field> ` (da-c7u8); the bar takes it and clears it.
 //
-// `last` is every command run anywhere — a REPL line, a widget-bar press,
-// the input widget, a command pane's ▶, the bar itself — because every one
+// `last` is every command run anywhere — a widget-bar press, a command
+// pane's ▶, the bar itself — because every one
 // of them goes through `record` in $lib/replStore.ts, which tells this
 // store. It is what the receipt is read off: the CLI's own first line,
 // reduced to its action word and hid. Not restored across a reload, unlike

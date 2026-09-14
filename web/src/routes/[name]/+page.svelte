@@ -5,8 +5,10 @@
 	root bar is where you are. A reload lands on the same tab: which tabs
 	are open, and which is active, is this device's ($lib/layout/draft.ts).
 
-	`/now`, `/stats` and `/input` still work: they are the layouts of those
-	names. A name that is none of these is a quiet notice with a link home.
+	`/now` and `/stats` still work: they are the layouts of those names,
+	and `/input` — a widget that went (da-22vg) — is the REPL, which is
+	what it became. A name that is none of these is a quiet notice with a
+	link home.
 
 	One catch-all route, not a route per name, so the deployed site — where
 	every path is served by adapter-static's fallback (svelte.config.js) —

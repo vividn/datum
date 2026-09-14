@@ -52,6 +52,10 @@ file in the same commit — a convention nobody can read is a convention nobody 
    change without a migration; the title, the file names and the tests all read as the thing the
    reader sees. (`fields` is `FieldsWidget.svelte`, `layout/FieldsPane.svelte`, `fields.ts` and
    `fields.test.mjs` since da-850j; its id is `widgetbar` still, and a comment on the id says so.)
+   The migration, when a kind GOES, is `RETIRED_KINDS` in `layout/shell.ts` — the id maps to the
+   kind that took its work over, applied where layouts are read (`inline`) so a stored layout opens
+   as the new kind rather than as an untitled empty pane, and is written back out by `extract`.
+   (`input` → `repl`, da-22vg.)
 
 ## Looks
 

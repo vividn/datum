@@ -294,12 +294,12 @@ describe('a pane', () => {
 	// the page under it. A command line you cannot see what you typed in
 	// is not a command line, so the clock drops its seconds down here and
 	// the input keeps the room. That prompt is the bottom bar's now
-	// (da-rfs9), sharing its row with the brand and the receipt.
-	// And the input widget (da-0dhc) is the same prompt line, its history
-	// taking the place of the scrollback — so it is held to the same width.
+	// (da-rfs9), sharing its row with the brand and the receipt — and since
+	// the input widget went (da-22vg) it is the page's only one, so the
+	// list below has one entry and the loop is what keeps the next one
+	// honest.
 	const PROMPTS = [
-		{ what: "the bottom bar's input", path: '/', line: '.prompt-bar .line', frame: '.prompt-bar' },
-		{ what: "the input widget's input", path: '/input', line: '.input-widget .line', frame: '.input-widget' }
+		{ what: "the bottom bar's input", path: '/', line: '.prompt-bar .line', frame: '.prompt-bar' }
 	];
 
 	for (const { what, path, line: lineSelector, frame } of PROMPTS) {
