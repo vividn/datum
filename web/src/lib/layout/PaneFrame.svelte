@@ -32,9 +32,20 @@
 	strip, as a row of its own, and the `…` after the last tab. It is
 	`section.holder` rather than `section.pane` so that "the panes" — as
 	the test harness and the rest of the app find them — remain exactly
-	the ones with a widget in them. The ROOT pane draws no bar of its own
-	at all, however many tabs it has: the shell draws the root's tabs as
-	the page's top bar (da-0a5o). And a LOCKED frame
+	the ones with a thing in them.
+
+	A tab carrying a LAYOUT is such a thing, whatever shape its content
+	has (da-9puz): the layout is the boundary vividn drew, so it draws the
+	frame and wears the layout's name (`labelOf`, registry.ts — the rule
+	the root bar's tabs read too), where a holder made by splitting is
+	scaffolding with no name of its own. Without that, choosing a layout
+	of several panes for a tab spilled them loose into its space,
+	indistinguishable from the panes around them. The panes inside keep
+	their own frames, so the layout's is a second, outer line — which is
+	what says where it begins and ends. The ROOT pane is the exception at
+	the other end: it draws no bar of its own at all, however many tabs
+	it has, and no box, because the shell draws the root's tabs as the
+	page's top bar (da-0a5o). And a LOCKED frame
 	draws no `…` — nothing under a lock can be split, tabbed or resized,
 	and the tabs still switch.
 
@@ -58,11 +69,11 @@
 <script lang="ts">
 	import { setContext } from 'svelte';
 	import { writable } from 'svelte/store';
-	import type { BarAlign, BarEdge, Pane, Tab } from './types.js';
+	import type { BarAlign, BarEdge, Pane } from './types.js';
 	import { isSplit } from './types.js';
 	import { apply } from './current.js';
 	import { addTab, closeTab, setActive, setBar, splitPane, splitTab } from './tree.js';
-	import { titleOf } from './registry.js';
+	import { labelOf, titleOf } from './registry.js';
 	import PaneMenu from './PaneMenu.svelte';
 
 	export let pane: Pane;
@@ -114,15 +125,29 @@
 	$: titleHost.set(h2);
 
 	$: active = pane.tabs[pane.active];
-	$: holder = isSplit(active.content);
+	/**
+	 * Scaffolding, not a thing: a split someone made by splitting. A tab
+	 * carrying a LAYOUT is not one however its content is shaped (da-9puz)
+	 * — the layout is the boundary, so it draws the frame and wears the
+	 * name, instead of spilling its panes loose among the panes around it.
+	 * The page root is the exception at the other end: the shell draws its
+	 * identity (its tabs, its name, its acts), so the root is never a box.
+	 */
+	$: holder = isSplit(active.content) && (root || active.layout === undefined);
+	/** A frame round a LAYOUT's panes: they are inset from it, so the two outlines read as two. */
+	$: nested = isSplit(active.content) && !holder;
 	$: many = pane.tabs.length > 1;
 	$: vertical = pane.bar.edge === 'left' || pane.bar.edge === 'right';
-	$: title = titleFor(active);
+	/**
+	 * `labelOf` (registry.ts), the one rule — except at the root, which
+	 * wears no name of its own: its tab always carries a layout, and the
+	 * shell already wears that name on the root bar (da-0a5o). So the root
+	 * is called what it SHOWS, which is what `data-title` means everywhere
+	 * the shell is not the one naming the pane.
+	 */
+	$: title = labelOf(root ? { ...active, layout: undefined } : active);
 	/** No bar at all: the root's is the shell's, a lone holder's is its children's. */
 	$: bare = root || (!many && holder);
-
-	const titleFor = (tab: Tab): string =>
-		tab.title ?? (isSplit(tab.content) ? 'split' : titleOf(tab.content.kind));
 
 	$: items = [
 		{ label: 'Add tab', run: () => apply((l) => addTab(l, pane.id)) },
@@ -241,6 +266,7 @@
 	class:alarm={$alarm}
 	class:vertical
 	class:root
+	class:nested
 	class:bare
 	class:clip={!root && kind !== undefined}
 	data-pane={pane.id}
@@ -260,7 +286,7 @@
 							aria-selected={i === pane.active}
 							tabindex={i === pane.active ? 0 : -1}
 							on:click={() => activate(i)}
-							on:keydown={(e) => onTabKey(e, i)}>{titleFor(tab)}</button
+							on:keydown={(e) => onTabKey(e, i)}>{labelOf(tab)}</button
 						>
 					{/each}
 				</div>
@@ -521,6 +547,29 @@
 	.root > .content {
 		overflow: auto;
 	}
+	/* A layout's panes are inset from its frame: the page's own gap all
+	   round (`BORDER`, Layout.svelte — half a row), so the two outlines
+	   read as two rather than as one thick line, and the WHOLE row on the
+	   bar's edge, where both the layout's title and its first pane's
+	   straddle their own outline and each reaches half a row over the
+	   other's. Without it they land on each other and the layout's name is
+	   not there at all (da-9puz). `chromeOf` counts this. */
+	.pane.nested > .content {
+		padding: calc(var(--row) / 2);
+	}
+	.pane.nested.edge-top > .content {
+		padding-top: var(--row);
+	}
+	.pane.nested.edge-bottom > .content {
+		padding-bottom: var(--row);
+	}
+	.pane.nested.edge-left > .content {
+		padding-left: var(--row);
+	}
+	.pane.nested.edge-right > .content {
+		padding-right: var(--row);
+	}
+
 	/* The titles along the page's own edges hang half their row outside
 	   their panes — their badges half theirs — and the scroller would cut
 	   that half off: it reaches out over the page's margin by that much

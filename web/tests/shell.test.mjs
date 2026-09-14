@@ -622,8 +622,10 @@ describe('the cycle guard', () => {
 			assert.notEqual(tail, JSON.stringify(tree), 'the tail tab was not found to replace');
 			await layouts(app, 'saveLayout', JSON.parse(tail));
 			await app.reload();
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'notice', 'command', 'fields']);
-			assert.match(await app.paneText('notice'), /cannot hold itself/);
+			// The tab is the `day` layout's, so it wears that name (da-9puz);
+			// what it holds, since it cannot hold itself, is the notice.
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'day', 'command', 'fields']);
+			assert.match(await app.paneText('day'), /cannot hold itself/);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -637,8 +639,9 @@ describe('the cycle guard', () => {
 			await openChooser(page);
 			assert.deepEqual(await chooser(page).locator('button.layout').allInnerTexts(), ['mine'], 'day, open above, must not be offered');
 			await chooser(page).locator('button', { hasText: exactly('mine') }).click();
-			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'fields']);
+			// The pane wears the LAYOUT's name, not its one widget's (da-9puz).
+			await page.locator('section.pane[data-title="mine"]').locator('svg.svg').waitFor();
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'mine', 'command', 'fields']);
 		}, DESKTOP);
 	});
 });

@@ -36,7 +36,8 @@
 // sees these numbers.
 
 import type { ComponentType } from 'svelte';
-import type { WidgetKindMeta } from './types.js';
+import type { Tab, WidgetKindMeta } from './types.js';
+import { isSplit } from './types.js';
 import type { Floor } from './tree.js';
 import CliPane from '$lib/CliPane.svelte';
 import CommandPane from '$lib/CommandPane.svelte';
@@ -160,6 +161,19 @@ export const KINDS: Record<string, WidgetKind> = {
 export const PICKABLE = Object.keys(KINDS).filter((kind) => !KINDS[kind].hidden);
 
 export const titleOf = (kind: string): string => KINDS[kind]?.meta.title ?? kind;
+
+/**
+ * What a tab is CALLED, wherever it is shown: the root bar's tabs, a pane
+ * frame's title and its tab strip all read this one rule (da-9puz).
+ *
+ * The layout a tab holds is its name — a tab carrying `layout` is one
+ * thing with an identity, and wears it. Failing that its own `title`, and
+ * failing that what it shows: the widget kind's title, or «split» for a
+ * split of panes that is nobody's layout — scaffolding, with no name of
+ * its own to wear.
+ */
+export const labelOf = (tab: Tab): string =>
+	tab.layout ?? tab.title ?? (isSplit(tab.content) ? 'split' : titleOf(tab.content.kind));
 
 /** A kind's snaps, from its settings; a kind that declares none (or an unknown one) has none. */
 export const snapsOfKind = (kind: string, settings: Record<string, unknown> = {}) => {

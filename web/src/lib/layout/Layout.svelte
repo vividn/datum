@@ -96,16 +96,27 @@
 	/**
 	 * What a pane's frame adds around its content: see PaneFrame.svelte.
 	 * The bar's row (`ROW`, the frame's `--row`) is the whole of it across
-	 * a tabbed holder's edge, and the inside half of it on a widget pane's,
+	 * a tabbed holder's edge, and the inside half of it on a framed pane's,
 	 * where it straddles the outline.
+	 *
+	 * A tab carrying a LAYOUT draws the frame too, however its content is
+	 * shaped (da-9puz), and insets its panes from it — the gap all round
+	 * and the whole row on the bar's edge, which is where the title's own
+	 * half-row already lies. The root's chrome cancels itself in
+	 * `rootFloorOf`, so neither test need except it.
 	 */
 	const chromeOf = (p: PaneNode) => {
-		const widget = !isSplit(p.tabs[p.active].content);
-		const outline = widget ? OUTLINE : 0;
-		const bar = widget ? ROW / 2 : p.tabs.length > 1 ? ROW : 0;
+		const tab = p.tabs[p.active];
+		const nested = isSplit(tab.content) && tab.layout !== undefined;
+		const widget = !isSplit(tab.content);
+		const outline = widget || nested ? OUTLINE : 0;
+		// The inset already holds the title's half-row: only a widget pane's
+		// title lies over its content.
+		const bar = widget ? ROW / 2 : nested ? ROW + BORDER : p.tabs.length > 1 ? ROW : 0;
+		const across = nested ? 2 * BORDER : 0;
 		return p.bar.edge === 'left' || p.bar.edge === 'right'
-			? { width: outline + bar, height: outline }
-			: { width: outline, height: outline + bar };
+			? { width: outline + bar, height: outline + across }
+			: { width: outline + across, height: outline + bar };
 	};
 	// One function, two callers, two `minOf`s — keep them apart: the drag's
 	// floor is the frame alone, the root's is every pane legible.

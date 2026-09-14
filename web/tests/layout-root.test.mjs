@@ -281,6 +281,139 @@ describe('holders', () => {
 	});
 });
 
+// da-9puz. `Tab.layout` is the layout boundary: a tab carrying a name is
+// one thing with an identity, where a holder made by splitting is
+// scaffolding. vividn: "when a layout is selected for a pane, it should
+// still get a frame and a label, right now it doesn't, exploding its
+// subwidgets into its space" — a saved layout of several panes arrives as
+// a split, which made the tab a holder, so it drew no outline, no
+// background and (with one tab) no bar, and its panes landed loose among
+// the panes around them.
+describe('a tab that holds a layout', () => {
+	/** A layout of two panes stacked: what a reader saves and then puts in a pane. */
+	const TWO = {
+		version: 1,
+		name: 'mine',
+		root: {
+			id: 'm',
+			active: 0,
+			bar,
+			tabs: [
+				{
+					id: 'm-tab',
+					content: {
+						id: 'm-split',
+						direction: 'column',
+						ratios: [0.5, 0.5],
+						children: [widgetPane('m-a', 'nowview'), widgetPane('m-b', 'stats')]
+					}
+				}
+			]
+		}
+	};
+	/** And a layout that is one widget, which was always a pane and stays one. */
+	const ONE = { version: 1, name: 'one', root: widgetPane('o', 'stats') };
+
+	const save = (app, layout) => app.page.evaluate((l) => window.datum.layouts.saveLayout(l), layout);
+
+	/** Put `name` in a pane split off the tail, and wait for its frame. */
+	async function put(app, name) {
+		await choose(app.page, 'tail', 'split side by side');
+		await fill(app.page, name);
+		await app.page.locator(`section.pane[data-title="${name}"]`).waitFor();
+		await settled(app.page);
+	}
+
+	const boxes = (locator) => locator.evaluateAll((all) => all.map((el) => el.getBoundingClientRect()).map((b) => ({ x: b.x, y: b.y, right: b.right, bottom: b.bottom })));
+
+	test('a layout of several panes draws a frame, titled with its name — not «split» — and its panes sit inside it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await save(app, TWO);
+			await put(app, 'mine');
+
+			const mine = page.locator('section.pane[data-title="mine"]');
+			assert.equal(await mine.count(), 1, 'the layout drew no frame of its own');
+			assert.equal(await page.locator('section.holder[data-title="mine"]').count(), 0, 'the layout is still a holder');
+			assert.equal(await mine.locator('> .titlebar h2').innerText(), 'mine');
+			// A frame, which is an outline and a ground of its own.
+			const drawn = await mine.evaluate((el) => {
+				const s = getComputedStyle(el);
+				return { border: s.borderTopWidth, ground: s.backgroundColor };
+			});
+			assert.equal(drawn.border, '1px');
+			assert.notEqual(drawn.ground, 'rgba(0, 0, 0, 0)', 'the layout has no ground of its own');
+
+			// Its two panes are inside it, and its title is not lain on by
+			// theirs: the inset (the gap all round, the whole row on the
+			// bar's edge) is what keeps the two outlines two.
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'mine', 'nowview', 'stats', 'command', 'fields']);
+			const [frame] = await boxes(mine);
+			const inside = await boxes(mine.locator(':scope > .content > .split > .cell section.pane'));
+			assert.equal(inside.length, 2);
+			for (const p of inside)
+				assert.ok(p.x > frame.x && p.y > frame.y && p.right < frame.right && p.bottom < frame.bottom, `a pane of the layout is not inside its frame: ${JSON.stringify(p)} in ${JSON.stringify(frame)}`);
+			const [outer] = await boxes(mine.locator('> .titlebar h2'));
+			const [first] = await boxes(mine.locator(':scope > .content h2'));
+			assert.ok(outer.bottom <= first.y, `the layout's title (${outer.y}–${outer.bottom}) lies on its first pane's (${first.y}–${first.bottom})`);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('a layout of one widget is that widget in a normal frame, wearing the layout name', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await save(app, ONE);
+			await put(app, 'one');
+
+			const one = page.locator('section.pane[data-title="one"]');
+			assert.equal(await one.locator('.stats').count(), 1);
+			// One frame between the reader and the widget, not two: the
+			// widget's pane IS the layout's tab (shell.ts lifts it).
+			assert.equal(await one.locator('section.pane, section.holder').count(), 0, 'a second frame inside the one-widget layout');
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'one', 'command', 'fields']);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('a holder made by splitting draws no frame, and the page root none either, though its tab is the `day` layout', async () => {
+		await withApp(async ({ page }) => {
+			// The scaffolding case, unchanged: the tail's tab split in two.
+			await choose(page, 'tail', 'Add tab');
+			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'tail' }).click();
+			await choose(page, 'tail', 'split tab side by side');
+			const tail = page.locator('section.holder[data-pane="tail"]');
+			assert.equal(await tail.count(), 1, 'a holder made by splitting drew a frame');
+			assert.deepEqual(await tail.locator('> .titlebar [role="tab"]').allInnerTexts(), ['split', 'empty']);
+
+			// And the root, whose tab carries `day`, is still no box at all:
+			// the shell draws its name and its tabs (da-0a5o).
+			const root = page.locator('section.root');
+			assert.equal(await root.evaluate((el) => el.classList.contains('holder')), true);
+			assert.equal(await root.evaluate((el) => getComputedStyle(el).borderTopWidth), '0px');
+			assert.equal(await root.locator('> .titlebar').count(), 0);
+		}, DESKTOP);
+	});
+
+	test('on a 320px phone a layout in a pane still fits inside its frame', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await save(app, TWO);
+			await choose(page, 'repl', 'split top and bottom');
+			await fill(page, 'mine');
+			await page.locator('section.pane[data-title="mine"]').waitFor();
+			await settled(page);
+			const mine = page.locator('section.pane[data-title="mine"]');
+			const [frame] = await boxes(mine);
+			const inside = await boxes(mine.locator(':scope > .content > .split > .cell section.pane'));
+			assert.equal(inside.length, 2);
+			for (const p of inside)
+				assert.ok(p.x >= frame.x && p.right <= frame.right, `a pane of the layout runs out of its frame: ${JSON.stringify(p)} in ${JSON.stringify(frame)}`);
+			assert.deepEqual(app.errors, []);
+		}, { viewport: { width: 320, height: 640 } });
+	});
+});
+
 // The lock (da-2a5y): "Layouts should have the ability to be locked,
 // which prevents the resizing of panes […] no splitting, new tabs, or
 // resizing." Where the lock is toggled from is the shell's; here it

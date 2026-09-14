@@ -23,10 +23,9 @@
 	import { choose } from './chooser.js';
 	import { layout, loaded } from './current.js';
 	import PaneMenu from './PaneMenu.svelte';
-	import { titleOf } from './registry.js';
+	import { labelOf, titleOf } from './registry.js';
 	import { activate, close, modified, open, restore, save, saveAs, toggleLock, versions } from './shell.js';
 	import type { Tab } from './types.js';
-	import { isSplit } from './types.js';
 
 	let busy = false;
 	let error = '';
@@ -39,10 +38,6 @@
 	$: dirty = name !== undefined && $modified.has(name);
 	$: locked = !!active?.locked;
 	$: ready = $loaded && !busy && name !== undefined;
-
-	/** A tab's label: its layout's name; a tab without one, what it shows. */
-	const label = (tab: Tab): string =>
-		tab.layout ?? tab.title ?? (isSplit(tab.content) ? 'split' : titleOf(tab.content.kind));
 
 	/**
 	 * The `+`: the chooser, and what it came back with. A layout opens as a
@@ -120,7 +115,7 @@
 				on:click={() => activate(i)}
 				on:keydown={(e) => onTabKey(e, i)}
 			>
-				{label(tab)}{#if tab.layout !== undefined && $modified.has(tab.layout)}<span class="dot" title="modified">•</span>{/if}
+				{labelOf(tab)}{#if tab.layout !== undefined && $modified.has(tab.layout)}<span class="dot" title="modified">•</span>{/if}
 			</button>
 		{/each}
 	</div>
