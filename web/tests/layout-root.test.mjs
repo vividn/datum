@@ -19,12 +19,14 @@ import {
 	DESKTOP,
 	PHONE,
 	activeTab,
+	addTab,
 	bar,
 	boxOf,
 	chooseBar,
 	choose,
 	draft,
 	fill,
+	menuButton,
 	menuLines,
 	pane,
 	settled,
@@ -92,7 +94,7 @@ describe('the draft', () => {
 	test('is back after a reload, and a layout with no draft is the default', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await choose(page, 'tail', 'split side by side');
+			await choose(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'nowview');
 			await chooseBar(page, 'strip', 'left');
 			const arranged = await titles(page);
@@ -109,8 +111,8 @@ describe('the draft', () => {
 		await withApp(
 			async (app) => {
 				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'fields']);
-				await choose(app.page, 'tail', 'Add tab');
-				assert.equal(await activeTab(app.page, 'tail'), 'empty');
+				await addTab(app.page, 'tail', 'aliases');
+				assert.equal(await activeTab(app.page, 'tail'), 'aliases');
 				assert.deepEqual(app.errors, []);
 			},
 			{
@@ -177,7 +179,7 @@ describe('on a phone', () => {
 			// gesture: the REPL's `CREATE <hid> <slug>` line is wider than a
 			// phone and its body scrolls sideways to it.
 			await app.submit('occur coffee');
-			await choose(page, 'repl', 'Add tab');
+			await addTab(page, 'repl', 'aliases');
 			await pane(page, 'repl').locator('[role="tab"]', { hasText: 'repl' }).click();
 			const body = pane(page, 'repl').locator('.body');
 			assert.ok(
@@ -218,19 +220,20 @@ describe('review follow-ups', () => {
 // vividn's second look (da-2a5y): "There are some container widgets, that
 // throw the spacing off, they have their own ... button floating there,
 // but aren't really necessary." A pane whose one tab holds a split is a
-// box that is not there; with two or more tabs it keeps its strip and its
-// `…`, whose menu leaves splitting to the children.
+// box that is not there; with two or more tabs it keeps its strip, and its
+// menu — on the tab in front (da-9vtw) — leaves splitting to the children.
 describe('holders', () => {
-	test('a holder with one tab draws no bar and no …, beside a widget pane that has both', async () => {
+	test('a holder with one tab draws no bar and no menu, beside a widget pane that has both', async () => {
 		await withApp(async ({ page }) => {
 			const side = page.locator('section.holder[data-pane="side"]');
 			assert.equal(await side.count(), 1);
 			assert.equal(await side.locator('> .titlebar').count(), 0);
-			assert.equal(await side.locator('> .titlebar button.more').count(), 0);
+			assert.equal(await side.locator('> .titlebar button.title, > .titlebar button.add').count(), 0);
 			// The control: the tail, inside it, has its title and its badge.
 			const tail = pane(page, 'tail');
 			assert.equal(await tail.locator('> .titlebar h2').count(), 1);
-			assert.equal(await tail.locator('> .titlebar button.more').count(), 1);
+			assert.equal(await tail.locator('> .titlebar button.title').count(), 1);
+			assert.equal(await tail.locator('> .titlebar button.add').count(), 1);
 			// And the holder's box is its split's box: no row above it.
 			const [holder, split] = await Promise.all([boxOf(side), boxOf(side.locator('> .content > .split'))]);
 			assert.equal(Math.round(holder.y), Math.round(split.y), 'the split does not start where the holder does');
@@ -238,20 +241,21 @@ describe('holders', () => {
 		}, DESKTOP);
 	});
 
-	test('a holder with two tabs keeps its strip and its …, and its menu offers no Split row', async () => {
-		await withApp(async ({ page }) => {
-			// A second tab on the tail, then its first tab split: the tail pane
-			// now holds a split under one tab and the empty tab beside it.
-			await choose(page, 'tail', 'Add tab');
-			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'tail' }).click();
-			await choose(page, 'tail', 'split tab side by side');
-			const holder = page.locator('section.holder[data-pane="tail"]');
-			assert.equal(await holder.count(), 1);
-			assert.deepEqual(await holder.locator('> .titlebar [role="tab"]').allInnerTexts(), ['split', 'empty']);
-			await holder.locator('> .titlebar button.more').click();
-			assert.deepEqual(await menuLines(page), ['Add tab', 'Split Tab | −', 'Close tab', 'Bar']);
-			await page.keyboard.press('Escape');
-		}, DESKTOP);
+	test('a holder with two tabs keeps its strip, and its menu offers no Split row', async () => {
+		await withApp(
+			async ({ page }) => {
+				const holder = page.locator('section.holder[data-pane="tabbed"]');
+				assert.equal(await holder.count(), 1);
+				assert.deepEqual(await holder.locator('> .titlebar [role="tab"]').allInnerTexts(), ['split', 'aliases']);
+				await menuButton(page, 'tabbed').click();
+				// No Split — the children of the split it holds split
+				// themselves — and Break out, which takes the tab in front out
+				// of the strip, is still offered.
+				assert.deepEqual(await menuLines(page), ['Choose…', 'Break out ← → ↑ ↓', 'Close tab', 'Bar']);
+				await page.keyboard.press('Escape');
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(tabbedHolder())) }
+		);
 	});
 
 	// Copilot on #172: a root with two tabs must keep a strip, or nothing
@@ -318,7 +322,7 @@ describe('a tab that holds a layout', () => {
 
 	/** Put `name` in a pane split off the tail, and wait for its frame. */
 	async function put(app, name) {
-		await choose(app.page, 'tail', 'split side by side');
+		await choose(app.page, 'tail', 'split: a new pane to the right');
 		await fill(app.page, name);
 		await app.page.locator(`section.pane[data-title="${name}"]`).waitFor();
 		await settled(app.page);
@@ -377,29 +381,30 @@ describe('a tab that holds a layout', () => {
 	});
 
 	test('a holder made by splitting draws no frame, and the page root none either, though its tab is the `day` layout', async () => {
-		await withApp(async ({ page }) => {
-			// The scaffolding case, unchanged: the tail's tab split in two.
-			await choose(page, 'tail', 'Add tab');
-			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'tail' }).click();
-			await choose(page, 'tail', 'split tab side by side');
-			const tail = page.locator('section.holder[data-pane="tail"]');
-			assert.equal(await tail.count(), 1, 'a holder made by splitting drew a frame');
-			assert.deepEqual(await tail.locator('> .titlebar [role="tab"]').allInnerTexts(), ['split', 'empty']);
+		await withApp(
+			async ({ page }) => {
+				// The scaffolding case, unchanged: a pane one of whose tabs is
+				// a split that is nobody's layout, beside a widget tab.
+				const tail = page.locator('section.holder[data-pane="tabbed"]');
+				assert.equal(await tail.count(), 1, 'a holder made by splitting drew a frame');
+				assert.deepEqual(await tail.locator('> .titlebar [role="tab"]').allInnerTexts(), ['split', 'aliases']);
 
-			// And the root, whose tab carries `day`, is still no box at all:
-			// the shell draws its name and its tabs (da-0a5o).
-			const root = page.locator('section.root');
-			assert.equal(await root.evaluate((el) => el.classList.contains('holder')), true);
-			assert.equal(await root.evaluate((el) => getComputedStyle(el).borderTopWidth), '0px');
-			assert.equal(await root.locator('> .titlebar').count(), 0);
-		}, DESKTOP);
+				// And the root, whose tab carries `day`, is still no box at all:
+				// the shell draws its name and its tabs (da-0a5o).
+				const root = page.locator('section.root');
+				assert.equal(await root.evaluate((el) => el.classList.contains('holder')), true);
+				assert.equal(await root.evaluate((el) => getComputedStyle(el).borderTopWidth), '0px');
+				assert.equal(await root.locator('> .titlebar').count(), 0);
+			},
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(tabbedHolder())) }
+		);
 	});
 
 	test('on a 320px phone a layout in a pane still fits inside its frame', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await save(app, TWO);
-			await choose(page, 'repl', 'split top and bottom');
+			await choose(page, 'repl', 'split: a new pane below');
 			await fill(page, 'mine');
 			await page.locator('section.pane[data-title="mine"]').waitFor();
 			await settled(page);
@@ -432,7 +437,7 @@ describe('the lock', () => {
 				assert.deepEqual(await titles(page), ['repl', 'tail']);
 				assert.equal(await page.locator('[role="separator"]').count(), 0);
 				// The root bar's `+` and `…` (da-0a5o) are above the layout, not under its lock.
-				assert.equal(await page.locator('section.root button.more').count(), 0);
+				assert.equal(await page.locator('section.root button.title, section.root button.add').count(), 0);
 				// The gap is still there, as a static border, and dragging across it moves nothing.
 				const gap = page.locator('.split.row > .border.static');
 				assert.equal(await gap.count(), 1);
@@ -456,14 +461,19 @@ describe('the lock', () => {
 				assert.equal(await activeTab(page, 'tabbed'), 'nowview');
 				assert.deepEqual(app.errors, []);
 
-				// Unlocked, the controls are back — the one border, and a badge on
-				// each widget pane (the root has none of its own).
+				// Unlocked, the controls are back — the one border, and on each
+				// pane a menu and a `+` (the root has none of its own): the
+				// title where there is one tab, the tab in front where there
+				// are two.
 				await page.evaluate(() => localStorage.removeItem('datum.layout.locked.v1.day'));
 				await app.reload();
 				assert.equal(await page.locator('.split.row > [role="separator"]').count(), 1);
-				assert.equal(await pane(page, 'repl').locator('button.more').count(), 1);
-				assert.equal(await pane(page, 'tabbed').locator('button.more').count(), 1);
-				assert.equal(await page.locator('section.root button.more').count(), 2);
+				assert.equal(await pane(page, 'repl').locator('button.title').count(), 1);
+				assert.equal(
+					await pane(page, 'tabbed').locator('[role="tab"][aria-selected="true"][aria-haspopup="menu"]').count(),
+					1
+				);
+				assert.equal(await page.locator('section.root button.add').count(), 2);
 			},
 			// The init script runs on every load, the reload included: it
 			// writes the draft and the lock once and leaves the unlocked one alone.
@@ -471,6 +481,49 @@ describe('the lock', () => {
 		);
 	});
 });
+
+/** A root holder over [repl | a pane whose two tabs are a SPLIT and a widget]. */
+function tabbedHolder() {
+	return {
+		version: 1,
+		name: 'day',
+		root: {
+			id: 'root',
+			tabs: [
+				{
+					id: 'root-tab',
+					content: {
+						id: 'row',
+						direction: 'row',
+						ratios: [0.5, 0.5],
+						children: [
+							widgetPane('repl', 'repl'),
+							{
+								id: 'tabbed',
+								tabs: [
+									{
+										id: 'tabbed-split',
+										content: {
+											id: 'inner',
+											direction: 'row',
+											ratios: [0.5, 0.5],
+											children: [widgetPane('inner-tail', 'tail'), widgetPane('inner-nowview', 'nowview')]
+										}
+									},
+									{ id: 'tabbed-aliases', content: { id: 'tabbed-aliases-widget', kind: 'aliases', settings: {} } }
+								],
+								active: 0,
+								bar
+							}
+						]
+					}
+				}
+			],
+			active: 0,
+			bar
+		}
+	};
+}
 
 /** A root holder over [repl | a tabbed tail/nowview pane]. */
 function lockable() {

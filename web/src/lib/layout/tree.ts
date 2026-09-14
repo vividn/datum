@@ -59,6 +59,28 @@ export const newSplit = (direction: Split['direction'], children: Pane[]): Split
 	children
 });
 
+/**
+ * The four arrows a split or a break-out is aimed with (da-9vtw): where
+ * on the screen the pane lands. Spatial, always — `right` is to the right
+ * of the pane whatever edge its bar is on.
+ */
+export type Toward = 'left' | 'right' | 'up' | 'down';
+
+/** The split direction each arrow needs, and whether it lands before its neighbour. */
+const AXIS: Record<Toward, Split['direction']> = { left: 'row', right: 'row', up: 'column', down: 'column' };
+const BEFORE: Record<Toward, boolean> = { left: true, right: false, up: true, down: false };
+
+const ordered = (pane: Pane, fresh: Pane, before: boolean): Pane[] => (before ? [fresh, pane] : [pane, fresh]);
+
+/** `fresh` into `split` beside child `at`, on the side `before` says, taking half that child's share. */
+function inserted(split: Split, at: number, fresh: Pane, before: boolean): Split {
+	const children = [...split.children];
+	const ratios = [...split.ratios];
+	children.splice(before ? at : at + 1, 0, fresh);
+	ratios.splice(at, 1, ratios[at] / 2, ratios[at] / 2);
+	return { ...split, children, ratios };
+}
+
 // ---- walking ---------------------------------------------------------
 
 /** Rebuild the tree with `fn` applied to every pane, children first. */
@@ -96,6 +118,34 @@ export function findSplit(layout: Layout, splitId: NodeId): Split | undefined {
 	for (const pane of panes(layout.root))
 		for (const tab of pane.tabs) if (isSplit(tab.content) && tab.content.id === splitId) return tab.content;
 	return undefined;
+}
+
+/**
+ * Where a pane sits: the split that holds it, the tab and pane that hold
+ * that split, and which child of the split it is. The root pane sits in
+ * nothing, and is the one pane with no `in`.
+ */
+interface Spot {
+	pane: Pane;
+	in: { split: Split; tab: Tab; holder: Pane; at: number } | null;
+}
+
+function spotOf(root: Pane, paneId: NodeId): Spot | null {
+	if (root.id === paneId) return { pane: root, in: null };
+	const walk = (holder: Pane): Spot | null => {
+		for (const tab of holder.tabs) {
+			if (!isSplit(tab.content)) continue;
+			const split = tab.content;
+			const at = split.children.findIndex((child) => child.id === paneId);
+			if (at >= 0) return { pane: split.children[at], in: { split, tab, holder, at } };
+			for (const child of split.children) {
+				const found = walk(child);
+				if (found) return found;
+			}
+		}
+		return null;
+	};
+	return walk(root);
 }
 
 export function findTab(layout: Layout, tabId: NodeId): Tab | undefined {
@@ -177,12 +227,14 @@ export function normalize(layout: Layout): Layout {
 
 /**
  * Split a pane in two: it becomes one child of a new split, beside a new
- * pane holding one empty tab. All its tabs travel with it. When the pane
- * already sits in a split running the same way, the new pane simply joins
- * that split after it, taking half its share — the same picture with one
- * fewer level of tree.
+ * pane holding one empty tab, on the arrow's side. All its tabs travel
+ * with it. When the pane already sits in a split running the same way,
+ * the new pane simply joins that split beside it, taking half its share —
+ * the same picture with one fewer level of tree.
  */
-export function splitPane(layout: Layout, paneId: NodeId, direction: Split['direction']): Layout {
+export function splitPane(layout: Layout, paneId: NodeId, toward: Toward): Layout {
+	const direction = AXIS[toward];
+	const before = BEFORE[toward];
 	let done = false;
 	const joined = mapPanes(layout.root, (pane) => ({
 		...pane,
@@ -191,52 +243,111 @@ export function splitPane(layout: Layout, paneId: NodeId, direction: Split['dire
 			const at = tab.content.children.findIndex((child) => child.id === paneId);
 			if (at < 0) return tab;
 			done = true;
-			const children = [...tab.content.children];
-			const ratios = [...tab.content.ratios];
-			children.splice(at + 1, 0, newPane());
-			ratios.splice(at, 1, ratios[at] / 2, ratios[at] / 2);
-			return { ...tab, content: { ...tab.content, children, ratios } };
+			return { ...tab, content: inserted(tab.content, at, newPane(), before) };
 		})
 	}));
 	if (done) return withRoot(layout, joined);
 	const wrapped = mapPanes(layout.root, (pane) =>
-		pane.id === paneId ? newPane([newTab(newSplit(direction, [pane, newPane()]))]) : pane
+		pane.id === paneId ? newPane([newTab(newSplit(direction, ordered(pane, newPane(), before)))]) : pane
 	);
 	return withRoot(layout, wrapped);
 }
 
+/** Whether `breakOut` has anywhere to go: every pane but the root's own. */
+export function canBreakOut(layout: Layout, paneId: NodeId): boolean {
+	return !!spotOf(layout.root, paneId)?.in;
+}
+
 /**
- * Split one tab of a pane: its content becomes a split of [a new pane
- * holding the old content, a new empty pane]. Only with two or more tabs
- * — with one, this would draw the same picture as `splitPane`, so it is
- * refused (vividn, 15:51).
+ * Break a widget out of the group it is in, one level (da-9vtw): it
+ * leaves that group and lands on the arrow's side of the grouping above.
+ *
+ * WHICH GROUP it leaves is the first step, and the only difference
+ * between the two cases. A pane with several tabs leaves its TAB STRIP:
+ * the active tab becomes a pane of its own, and the other tabs stay. A
+ * pane with one leaves its SPLIT: the pane itself goes, and what is left
+ * of the split closes up behind it (`normalize`, which shares its ratios
+ * out again). Either way the box it leaves behind — the pane whose strip
+ * it left, or the pane that held the split — is what it lands beside,
+ * and `beside` is the one second step for both: into the grouping that
+ * holds that box when it runs the arrow's way, else around the whole of
+ * that grouping, in a new split of the right direction, rather than
+ * forcing the pane in sideways. So repeating the operation walks a widget
+ * up the tree, out of one grouping after another, until it is a band
+ * across the layout; the root's own pane has nothing to leave and comes
+ * back unchanged (`canBreakOut`).
  */
-export function splitTab(
-	layout: Layout,
-	paneId: NodeId,
-	tabIndex: number,
-	direction: Split['direction']
-): Layout {
-	const pane = findPane(layout, paneId);
-	if (!pane || pane.tabs.length < 2 || !pane.tabs[tabIndex]) return layout;
-	return withRoot(
-		layout,
-		mapPanes(layout.root, (p) =>
-			p.id !== paneId
-				? p
-				: {
-						...p,
-						tabs: p.tabs.map((tab, i) =>
-							i !== tabIndex
-								? tab
-								: {
-										...tab,
-										content: newSplit(direction, [newPane([newTab(tab.content, tab.title)]), newPane()])
-									}
-						)
-					}
-		)
+export function breakOut(layout: Layout, paneId: NodeId, toward: Toward): Layout {
+	const spot = spotOf(layout.root, paneId);
+	if (!spot?.in) return layout;
+	const { pane } = spot;
+	const strip = pane.tabs.length > 1;
+	const moving = strip ? newPane([pane.tabs[pane.active]], pane.bar) : pane;
+	const root = strip ? withoutTab(layout.root, pane.id, pane.active) : withoutPane(layout.root, pane.id);
+	// The box left behind, and where that box itself sits: that is the
+	// grouping to land in, and the box is what it lands beside. A box in no
+	// split of its own is the root's, and the grouping is then the tab the
+	// moving pane has just come out of — with no box to land beside.
+	const box = strip ? spot : spotOf(root, spot.in.holder.id);
+	const where =
+		box && box.in ? { tab: box.in.tab.id, anchor: box.pane.id } : { tab: spot.in.tab.id, anchor: null };
+	return withRoot(layout, beside(root, where.tab, where.anchor, moving, toward));
+}
+
+/** The pane without tab `index`: the tab a break-out takes with it. */
+function withoutTab(root: Pane, paneId: NodeId, index: number): Pane {
+	return mapPanes(root, (pane) =>
+		pane.id !== paneId
+			? pane
+			: {
+					...pane,
+					tabs: pane.tabs.filter((_, i) => i !== index),
+					active: Math.max(0, pane.active > index ? pane.active - 1 : pane.active)
+				}
 	);
+}
+
+/** The tree without that pane: it leaves its split, whose ratios `normalize` shares out again. */
+function withoutPane(root: Pane, paneId: NodeId): Pane {
+	return mapPanes(root, (pane) => ({
+		...pane,
+		tabs: pane.tabs.map((tab) => {
+			if (!isSplit(tab.content)) return tab;
+			const at = tab.content.children.findIndex((child) => child.id === paneId);
+			if (at < 0) return tab;
+			return {
+				...tab,
+				content: {
+					...tab.content,
+					children: tab.content.children.filter((_, i) => i !== at),
+					ratios: tab.content.ratios.filter((_, i) => i !== at)
+				}
+			};
+		})
+	}));
+}
+
+/**
+ * Put `moving` into what `tabId` holds, on the arrow's side: beside
+ * `anchor` when that content is a split already running the arrow's way
+ * (at its far end when there is no anchor — the pane came out of the
+ * grouping it is landing in), and otherwise around the whole of it, in a
+ * new split of the right direction.
+ */
+function beside(root: Pane, tabId: NodeId, anchor: NodeId | null, moving: Pane, toward: Toward): Pane {
+	const direction = AXIS[toward];
+	const before = BEFORE[toward];
+	return mapPanes(root, (pane) => ({
+		...pane,
+		tabs: pane.tabs.map((tab) => {
+			if (tab.id !== tabId) return tab;
+			const content = tab.content;
+			if (!isSplit(content) || content.direction !== direction)
+				return { ...tab, content: newSplit(direction, ordered(newPane([newTab(content)]), moving, before)) };
+			const at = anchor === null ? -1 : content.children.findIndex((child) => child.id === anchor);
+			return { ...tab, content: inserted(content, at < 0 ? (before ? 0 : content.children.length - 1) : at, moving, before) };
+		})
+	}));
 }
 
 /** The share a pane added along an edge of the dashboard starts with. */
@@ -269,12 +380,16 @@ export function addEdge(layout: Layout, edge: BarEdge): Layout {
 	return withRoot(layout, { ...root, tabs });
 }
 
-/** A new empty tab at the end of the pane, made active. */
-export function addTab(layout: Layout, paneId: NodeId): Layout {
+/**
+ * A tab at the end of the pane, made active — an empty one, unless the
+ * caller has minted its own (the `+` badge fills it with what the chooser
+ * came back with, and needs its id to do that).
+ */
+export function addTab(layout: Layout, paneId: NodeId, tab: Tab = newTab()): Layout {
 	return withRoot(
 		layout,
 		mapPanes(layout.root, (pane) =>
-			pane.id !== paneId ? pane : { ...pane, tabs: [...pane.tabs, newTab()], active: pane.tabs.length }
+			pane.id !== paneId ? pane : { ...pane, tabs: [...pane.tabs, tab], active: pane.tabs.length }
 		)
 	);
 }

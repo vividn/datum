@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { chooser, fill, offers, openChooser, settled } from './support/layout.mjs';
+import { addTab, chooser, fill, offers, openChooser, settled } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -65,9 +65,9 @@ async function offered(page) {
 	return items.map((t) => t.trim());
 }
 
-/** Open a pane's `…` menu and choose an item by its exact label. */
+/** Open a pane's menu — its title — and choose an item by its exact label. */
 async function choose(page, id, label) {
-	await page.locator(`section[data-pane="${id}"] .titlebar button.more`).first().click();
+	await page.locator(`section[data-pane="${id}"] .titlebar button.title`).first().click();
 	await page.getByRole('menuitem', { name: label, exact: true }).click();
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
@@ -245,7 +245,7 @@ describe('the icons', () => {
 			assert.deepEqual(await dotted(page), []);
 			const quiet = await icon(page, 'save').evaluate((el) => getComputedStyle(el).color);
 
-			await choose(page, 'tail', 'split side by side');
+			await choose(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
 			assert.deepEqual(await dotted(page), ['day']);
 			assert.equal(await icon(page, 'save').evaluate((el) => getComputedStyle(el).color), PRONOUNCED);
@@ -258,7 +258,7 @@ describe('the icons', () => {
 			assert.equal(await icon(page, 'save').evaluate((el) => getComputedStyle(el).color), quiet);
 			assert.equal(await icon(page, 'restore').getAttribute('aria-label'), 'restore a version');
 
-			await choose(page, 'tail', 'split side by side');
+			await choose(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'nowview');
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
 			await icon(page, 'save').click();
@@ -302,7 +302,7 @@ describe('the icons', () => {
 	test('save as makes a mine tab beside day, and both are saved', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await choose(page, 'tail', 'split side by side');
+			await choose(page, 'tail', 'split: a new pane to the right');
 			page.once('dialog', (dialog) => dialog.accept('mine'));
 			await icon(page, 'save-as').click();
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
@@ -324,8 +324,8 @@ describe('the icons', () => {
 			// Both open, both tail panes editable on their own: a split in
 			// mine's tail leaves day's alone.
 			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).click();
-			await choose(page, 'tail', 'Add tab');
-			assert.deepEqual(await page.locator('section.pane [role="tablist"] [role="tab"]').allInnerTexts(), ['tail', 'empty']);
+			await addTab(page, 'tail', 'aliases');
+			assert.deepEqual(await page.locator('section.pane [role="tablist"] [role="tab"]').allInnerTexts(), ['tail', 'aliases']);
 			await page.locator('.root-bar [role="tab"]', { hasText: 'day' }).click();
 			assert.equal(await page.locator('section.pane [role="tablist"]').count(), 0, 'the tab strip leaked into day');
 			assert.deepEqual(await dotted(page), ['mine']);
@@ -398,7 +398,7 @@ describe('the icons', () => {
 	test('an edit in tab A survives a save from tab B, dot and all', async () => {
 		await withApp(async (a) => {
 			const b = await a.newTab();
-			await choose(a.page, 'tail', 'split side by side');
+			await choose(a.page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await dotted(a.page), ['day']);
 			assert.deepEqual(await dotted(b.page), []);
 
@@ -635,7 +635,7 @@ describe('the cycle guard', () => {
 			const { page } = app;
 			// mine: the nowview alone, then embedded in day's tail.
 			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
-			await choose(page, 'tail', 'split side by side');
+			await choose(page, 'tail', 'split: a new pane to the right');
 			await openChooser(page);
 			assert.deepEqual(await chooser(page).locator('button.layout').allInnerTexts(), ['mine'], 'day, open above, must not be offered');
 			await chooser(page).locator('button', { hasText: exactly('mine') }).click();
@@ -657,7 +657,7 @@ describe('the one chooser', () => {
 			const fromRoot = await offered(page);
 			assert.deepEqual(fromRoot, ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases', 'input']);
 
-			await choose(page, 'tail', 'split side by side');
+			await choose(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
 			await openChooser(page);
 			// The same list, in the same order — less `day`, which is open

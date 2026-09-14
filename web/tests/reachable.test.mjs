@@ -234,7 +234,7 @@ describe('by keyboard', () => {
 
 	test("the command pane's ✎ and ▶ are reachable", async () => {
 		await withApp(async ({ page }) => {
-			await page.locator('section[data-pane="repl"] .titlebar button.more').focus();
+			await page.locator('section[data-pane="repl"] .titlebar button.title').focus();
 			await tabTo(page, 'button.edit');
 			await page.keyboard.press('Enter');
 			await page.keyboard.type('occur tea');
@@ -281,22 +281,29 @@ describe('the layout engine, by keyboard', () => {
 		return seen;
 	}
 
-	test('a Tab walk reaches every … button, every border, the edge handles and the nowview steps', async () => {
+	test('a Tab walk reaches every menu button, every border, the edge handles and the nowview steps', async () => {
 		await withApp(async ({ page }) => {
 			const reached = await tabWalk(page);
-			// The root bar's icons and the beta hint (da-0a5o) are walked too.
+			// The root bar's icons and the beta hint (da-0a5o) are walked too,
+			// and each pane's title and `+` (da-9vtw).
 			const controls = await page.evaluate(() =>
-				[...document.querySelectorAll('button.more, button.faint, [role="separator"], .nowview-steps button, .root-bar .act, .prompt-bar .hint-button')]
+				[
+					...document.querySelectorAll(
+						'button.title, button.add, button.more, button.faint, [role="separator"], .nowview-steps button, .root-bar .act, .prompt-bar .hint-button'
+					)
+				]
 					.filter((el) => el.getClientRects().length > 0)
 					.map((el) => ({
 						walk: el.dataset.walk ?? null,
-						what: el.matches('button.more')
+						what: el.matches('button.title, button.more')
 							? `menu of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
-							: el.matches('.nowview-steps button, .act, button.faint')
-								? el.getAttribute('aria-label')
-								: el.matches('.hint-button')
-									? 'the beta hint'
-									: 'border'
+							: el.matches('button.add')
+								? `the + of ${el.closest('section')?.dataset.title}`
+								: el.matches('.nowview-steps button, .act, button.faint')
+									? el.getAttribute('aria-label')
+									: el.matches('.hint-button')
+										? 'the beta hint'
+										: 'border'
 					}))
 			);
 			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');
@@ -311,8 +318,8 @@ describe('the layout engine, by keyboard', () => {
 
 	test('every menu item is on screen and reachable by the arrows', async () => {
 		await withApp(async ({ page }) => {
-			// A pane's `…`, the root bar's, and the margin's handles (da-qk2k).
-			const openers = page.locator('button.more:visible, button.faint');
+			// A pane's title, the root bar's `…`, and the margin's handles (da-qk2k).
+			const openers = page.locator('button.title:visible, button.more:visible, button.faint');
 			const menus = await openers.count();
 			for (let m = 0; m < menus; m++) {
 				await openers.nth(m).focus();
@@ -321,11 +328,18 @@ describe('the layout engine, by keyboard', () => {
 				const count = await items.count();
 				const visited = new Set();
 				for (let i = 0; i < count; i++) {
+					// By name rather than by words: the four arrows of Split and
+					// of Break out (da-9vtw) draw the same four glyphs.
 					const label = await page.evaluate(() => {
 						const el = document.activeElement;
 						const { top, bottom, left, right } = el.getBoundingClientRect();
 						const ok = top >= 0 && left >= 0 && bottom <= innerHeight && right <= innerWidth;
-						return { text: el.textContent.trim(), role: el.getAttribute('role'), ok, disabled: el.disabled };
+						return {
+							text: el.getAttribute('aria-label') ?? el.textContent.trim(),
+							role: el.getAttribute('role'),
+							ok,
+							disabled: el.disabled
+						};
 					});
 					assert.ok(label.role?.startsWith('menuitem'), `focus left the menu at ${label.text}`);
 					assert.ok(label.ok, `${label.text} is off-screen`);
@@ -345,10 +359,11 @@ describe('the layout engine, by keyboard', () => {
 	});
 
 	// The floors a pointer needs, after the margins came down (da-jgrn) and
-	// the title row with them (da-om9v): a border is at least 8px across; a
-	// pane's `…` badge is the title's height (16px) where the pointer is
-	// fine and a fingertip's 24px where it is coarse; the root bar's are
-	// 24px under either.
+	// the title row with them (da-om9v): a border is at least 8px across;
+	// what opens a pane's menu — its title (da-9vtw) — and the `+` beside
+	// it are the row's height (16px) where the pointer is fine and a
+	// fingertip's 24px where it is coarse; the root bar's are 24px under
+	// either.
 	for (const [name, options] of [
 		['1280x900', { viewport: { width: 1280, height: 900 } }],
 		['390x844', { viewport: { width: 390, height: 844 } }],
@@ -365,7 +380,7 @@ describe('the layout engine, by keyboard', () => {
 					return {
 						coarse: matchMedia('(pointer: coarse)').matches,
 						borders: shown('[role="separator"]').map((el) => Math.min(...box(el))),
-						panes: shown('section button.more').map(box),
+						panes: shown('section button.title, section button.add').map(box),
 						root: shown('.root-bar button.more, .root-bar .act').map(box)
 					};
 				});
@@ -373,7 +388,7 @@ describe('the layout engine, by keyboard', () => {
 				assert.ok(sizes.borders.length > 0 && sizes.panes.length > 0 && sizes.root.length > 0);
 				for (const across of sizes.borders) assert.ok(across >= 8, `a border is ${across}px across`);
 				const floor = sizes.coarse ? 24 : 16;
-				for (const [w, h] of sizes.panes) assert.ok(w >= floor && h >= floor, `a pane's badge is ${w}x${h}`);
+				for (const [w, h] of sizes.panes) assert.ok(w >= floor && h >= floor, `a pane's menu button is ${w}x${h}`);
 				for (const [w, h] of sizes.root) assert.ok(w >= 24 && h >= 24, `a root bar badge is ${w}x${h}`);
 			}, options);
 		});
@@ -390,8 +405,8 @@ describe('the layout engine, by keyboard', () => {
 			await withApp(async ({ page }) => {
 				const icons = page.locator('[role="menu"][aria-label="Bar"] button');
 				for (const edge of ['top', 'left']) {
-					// A pane's `…`, not the root bar's `+` or `…` (da-0a5o), which have no Bar.
-					await page.locator('section.pane button.more').first().click();
+					// A pane's own menu, not the root bar's `+` or `…` (da-0a5o), which have no Bar.
+					await page.locator('section.pane button.title').first().click();
 					await page.locator('[role="menu"] button', { hasText: /^\s*Bar\s*$/ }).click();
 					const seen = await icons.evaluateAll((all) =>
 						all.map((el) => {
@@ -419,18 +434,20 @@ describe('the layout engine, by keyboard', () => {
 	}
 
 	// Locked (da-2a5y), a layout has FEWER targets, not unreachable ones:
-	// no `…` and no border is in the DOM at all, and what is left — the
-	// tabs — is still walked to. The lock is this device's, on the `day`
+	// no menu, no `+` and no border is in the DOM at all, and what is left
+	// — the tabs — is still walked to. The lock is this device's, on the `day`
 	// tab (da-0a5o); the root bar above the layout is not under it.
-	test('a locked layout has no …, no border and no edge handle, and its tabs are still in the Tab order', async () => {
+	test('a locked layout has no menu, no border and no edge handle, and its tabs are still in the Tab order', async () => {
 		await withApp(
 			async ({ page }) => {
 				const reached = await tabWalk(page);
 				const controls = await page.evaluate(() => ({
-					hidden: document.querySelectorAll('section.root button.more, section.root [role="separator"], button.faint').length,
+					hidden: document.querySelectorAll(
+						'section.root button.title, section.root button.add, section.root button.more, section.root [role="separator"], button.faint'
+					).length,
 					tabs: [...document.querySelectorAll('section.root [role="tab"]')].map((el) => el.dataset.walk ?? null)
 				}));
-				assert.equal(controls.hidden, 0, 'a locked layout still offers a …, a border or an edge handle');
+				assert.equal(controls.hidden, 0, 'a locked layout still offers a menu, a `+`, a border or an edge handle');
 				assert.equal(controls.tabs.length, 2);
 				// The active tab is the strip's one stop; the arrows walk the rest.
 				assert.ok(controls.tabs.some((walk) => walk && reached.has(walk)), 'the tab strip is not in the Tab order');

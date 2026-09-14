@@ -40,11 +40,31 @@
 	type Short = { text: string; title: string; run: () => void };
 
 	export let items: { label: string; run?: () => void; sub?: Choice[][]; row?: Short[]; disabled?: boolean }[];
-	/** Names the menu for assistive tech: which pane it belongs to. */
+	/**
+	 * Names the menu for assistive tech: which pane it belongs to. It names
+	 * the BUTTON too, where the button has no words of its own — a trigger
+	 * with words (a tab) is named by them.
+	 */
 	export let label: string;
 	export let title = 'pane menu';
-	/** A faint handle filling its box — the page margin's (da-qk2k) — rather than a badge. */
-	export let faint = false;
+	/**
+	 * What the button that opens the menu looks like: the `…` badge, the
+	 * page margin's faint handle (da-qk2k), the pane's own title — a button
+	 * with no look of its own, laid over the title's box (da-9vtw) — or one
+	 * of its tabs. Everything else about the menu is the same either way,
+	 * and the attributes a trigger needs beyond these (a tab's `role` and
+	 * `aria-selected`) are passed straight through to the button.
+	 */
+	export let look: 'badge' | 'faint' | 'title' | 'tab' = 'badge';
+
+	const LOOK: Record<typeof look, string> = {
+		badge: 'control badge more',
+		faint: 'faint',
+		title: 'title',
+		tab: 'control tab'
+	};
+	/** What a trigger with no words of its own shows. */
+	const GLYPH: Record<typeof look, string> = { badge: '…', faint: '…', title: '', tab: '' };
 
 	let open = false;
 	let button: HTMLButtonElement;
@@ -209,13 +229,15 @@
 
 <button
 	type="button"
-	class={faint ? 'faint' : 'control badge more'}
+	class={LOOK[look]}
 	bind:this={button}
 	aria-haspopup="menu"
 	aria-expanded={open}
-	aria-label={label}
+	aria-label={$$slots.default ? undefined : label}
 	{title}
-	on:click={() => (open ? close() : show())}>…</button
+	{...$$restProps}
+	on:keydown
+	on:click={() => (open ? close() : show())}><slot>{GLYPH[look]}</slot></button
 >
 
 {#if open}
@@ -316,6 +338,29 @@
 	.more[aria-expanded='true'] {
 		color: var(--accent-bright);
 		border-color: var(--accent);
+	}
+
+	/* The pane's own title as the button (da-9vtw): no look of its own, laid
+	   over the title's box — the words under it are the frame's h2, or the
+	   widget's where it draws its own, and the controls a widget puts there
+	   (the command pane's ✎) are lifted above it (PaneFrame.svelte). It
+	   fills that box, which is a finger's 24px where the pointer is coarse
+	   and the row's own height where it is not. */
+	.title {
+		position: absolute;
+		inset: 0;
+		padding: 0;
+		background: none;
+		border: none;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		pointer-events: auto;
+	}
+
+	.title:focus-visible {
+		outline: 1px solid var(--accent);
+		outline-offset: -1px;
 	}
 
 	/* The margin's handle: no ground and no outline, only the glyph, barely

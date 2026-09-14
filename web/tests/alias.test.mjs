@@ -171,8 +171,8 @@ describe('the aliases widget', () => {
 			// a name like `orange` would fall through to `md5(field)` (da-yiyj).
 			await ok(run, ['spec', 'set', 'coffee', '--default-verb', 'occur', '--color', '#ffa500']);
 			await ok(run, ['alias', 'set', 'cof', 'occur coffee cups=1']);
-			await page.locator('section[data-pane="tail"] .titlebar button.more').first().click();
-			await page.getByRole('menuitem', { name: 'split side by side', exact: true }).click();
+			await page.locator('section[data-pane="tail"] .titlebar button.title').first().click();
+			await page.getByRole('menuitem', { name: 'split: a new pane to the right', exact: true }).click();
 			await fill(page, 'aliases');
 			await page.locator('section.pane[data-title="aliases"] li').nth(1).waitFor();
 			assert.deepEqual(await rows(page), ['cof → occur coffee cups=1', 'coffee → occur coffee']);

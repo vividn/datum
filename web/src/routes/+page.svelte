@@ -50,7 +50,7 @@
 			{#each EDGES as edge (edge)}
 				<div class="edge {edge}">
 					<PaneMenu
-						faint
+						look="faint"
 						label="{edge} edge of the dashboard"
 						title="extend the dashboard"
 						items={[{ label: 'Add widget', run: () => apply((l) => addEdge(l, edge)) }]}

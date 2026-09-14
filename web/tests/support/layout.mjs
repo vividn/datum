@@ -1,5 +1,6 @@
-// The layout tests' vocabulary (da-jdop): finding panes, driving the `…`
-// menu and the borders, and writing a layout down before the app loads.
+// The layout tests' vocabulary (da-jdop): finding panes, driving the
+// title's menu and the borders, and writing a layout down before the app
+// loads.
 //
 // Shared by the `layout-*.test.mjs` files, which were one file until it
 // outgrew the runner's per-file timeout (da-5xg3). The harness is still
@@ -52,14 +53,32 @@ export const settled = (page) =>
 		return before === shape();
 	});
 
-/** Open a pane's `…` menu and choose an item by its name — `Add tab`, `split side by side`. */
+/**
+ * What opens a pane's menu (da-9vtw): its title, or — with several tabs —
+ * the tab in front. The `…` badge is gone; the `+` beside it adds a tab.
+ */
+export const menuButton = (page, id) =>
+	pane(page, id).locator('.titlebar button.title, .titlebar [role="tab"][aria-selected="true"]').first();
+
+/** A pane's `+`: the badge where the `…` was. */
+export const addButton = (page, id) => pane(page, id).locator('.titlebar button.add').first();
+
+/** Open a pane's menu and choose an item by its name — `Choose…`, `break out: this widget below`. */
 export async function choose(page, id, label) {
-	await pane(page, id).locator('.titlebar button.more').first().click();
+	await menuButton(page, id).click();
 	await page.getByRole('menuitem', { name: label, exact: true }).click();
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
-/** The open `…` menu, one string per line: an item's words, or a row's label and its buttons. */
+/** Add a tab to a pane: the `+`, then `name` in the chooser it opens. */
+export async function addTab(page, id, name) {
+	await addButton(page, id).click();
+	await chooser(page).waitFor();
+	await chooser(page).locator('button').filter({ hasText: exactly(name) }).click();
+	await chooser(page).waitFor({ state: 'detached' });
+}
+
+/** The open menu, one string per line: an item's words, or a row's label and its buttons. */
 export const menuLines = (page) =>
 	page.locator('[role="menu"]').first().evaluate((menu) =>
 		[...menu.children].map((el) =>
@@ -94,9 +113,15 @@ export async function fill(page, name) {
 /** The `Bar ▸` submenu, open. */
 export const barMenu = (page) => page.locator('[role="menu"][aria-label="Bar"]');
 
-/** Open a pane's `…` menu, then its `Bar ▸`. */
+/**
+ * Open a pane's menu, then its `Bar ▸`.
+ *
+ * By key rather than by click: a title on the page's outer edge straddles
+ * it, and the margin's own handle (da-qk2k) lies over that half — the
+ * pointer's own path is tested where nothing is in the way.
+ */
 export async function openBar(page, id) {
-	await pane(page, id).locator('.titlebar button.more').first().click();
+	await menuButton(page, id).press('Enter');
 	await page.locator('[role="menu"] button').filter({ hasText: exactly('Bar') }).click();
 	await barMenu(page).waitFor();
 }

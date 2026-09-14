@@ -114,7 +114,9 @@ describe('hovering the day strip', () => {
 			async ({ page }) => {
 				await page.locator(DOT).tap();
 				assert.equal(await page.locator(TIP).innerText(), LABELS.coffee);
-				await page.locator('section.pane h2').first().tap();
+				// Anywhere but the strip: a pane's own body. Not its title —
+				// that is the button that opens the pane's menu now (da-9vtw).
+				await page.locator('section.pane[data-title="repl"] .body').tap();
 				assert.ok(await page.locator(TIP).isHidden());
 			},
 			{ device: devices['iPhone 13'] }

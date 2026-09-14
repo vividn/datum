@@ -46,14 +46,13 @@
 <script lang="ts">
 	import Pane from '$lib/Pane.svelte';
 	import PaneFrame, { ROW } from './PaneFrame.svelte';
-	import { choose } from './chooser.js';
+	import { fillTab } from './chooser.js';
 	import type { NodeId, Pane as PaneNode, Split } from './types.js';
 	import { isSplit } from './types.js';
 	import { apply } from './current.js';
-	import { EMPTY_KIND, floorOf, newWidget, rootFloorOf, setRatios, setWidget } from './tree.js';
+	import { EMPTY_KIND, floorOf, rootFloorOf, setRatios, setWidget } from './tree.js';
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
-	import { ancestorsOf, inlineInto } from './shell.js';
 
 	export let pane: PaneNode;
 	export let epoch = 0;
@@ -236,18 +235,6 @@
 		return next;
 	}
 
-	/**
-	 * An empty tab's one button (da-uyx1): the chooser, and what it came
-	 * back with — a layout inlined into this tab, or a widget put in it.
-	 * The names open above the tab are the ones it may not hold.
-	 */
-	async function fill(tabId: NodeId): Promise<void> {
-		const picked = await choose(ancestorsOf(tabId));
-		if (!picked) return;
-		if ('layout' in picked) await inlineInto(tabId, picked.layout);
-		else apply((l) => setWidget(l, tabId, newWidget(picked.kind)));
-	}
-
 	function nudge(event: KeyboardEvent, split: Split, index: number) {
 		const grow = split.direction === 'row' ? 'ArrowRight' : 'ArrowDown';
 		const shrink = split.direction === 'row' ? 'ArrowLeft' : 'ArrowUp';
@@ -315,7 +302,7 @@
 		{@const tabId = active.id}
 		<Pane title="empty">
 			<div class="choose">
-				<button type="button" class="control" on:click={() => void fill(tabId)}
+				<button type="button" class="control" on:click={() => void fillTab(tabId)}
 					>Choose Widget/Layout</button
 				>
 			</div>

@@ -1,10 +1,11 @@
 <!--
-	The frame of one pane: its bar, its tabs, its `…` menu, and the swipe.
+	The frame of one pane: its bar, its tabs, the menu its TITLE opens, and
+	the swipe.
 
 	A PANE is the holder (vividn's word); what it holds is in the slot. With
 	one tab there is no bar at all: the title sits ON the frame's outline,
 	small and quiet, straddling the line the way a legend does, and the
-	`…` is a badge right after it, on the same line (vividn, 17:56 — "just
+	`+` is a badge right after it, on the same line (vividn, 17:56 — "just
 	overlay the title on the frame, with the nice ... button visible next
 	to it", da-jgrn). With more tabs the tab strip sits there instead and
 	the badge follows the LAST tab. The line is the edge the pane's `bar`
@@ -26,10 +27,10 @@
 
 	A pane whose tab holds a split rather than a widget is a HOLDER: no
 	border, no background, and — with one tab — no bar at all: a box that
-	is not there, since the children's own `…` can split them (vividn's
+	is not there, since the children's own titles can split them (vividn's
 	second look, da-2a5y: "they have their own ... button floating there,
 	but aren't really necessary"). With two or more tabs it keeps its tab
-	strip, as a row of its own, and the `…` after the last tab. It is
+	strip, as a row of its own, and the `+` after the last tab. It is
 	`section.holder` rather than `section.pane` so that "the panes" — as
 	the test harness and the rest of the app find them — remain exactly
 	the ones with a thing in them.
@@ -46,8 +47,8 @@
 	the other end: it draws no bar of its own at all, however many tabs
 	it has, and no box, because the shell draws the root's tabs as the
 	page's top bar (da-0a5o). And a LOCKED frame
-	draws no `…` — nothing under a lock can be split, tabbed or resized,
-	and the tabs still switch.
+	draws no menu — nothing under a lock can be split, tabbed or resized,
+	and the tabs still switch — nor a `+`, and its title is not a button.
 
 	Swiping across the content moves between tabs along the bar's axis:
 	left/right under a horizontal bar, up/down under a vertical one. Touch
@@ -67,12 +68,15 @@
 </script>
 
 <script lang="ts">
-	import { setContext } from 'svelte';
+	import { setContext, tick } from 'svelte';
 	import { writable } from 'svelte/store';
-	import type { BarAlign, BarEdge, Pane } from './types.js';
+	import type { BarAlign, BarEdge, Layout, Pane } from './types.js';
 	import { isSplit } from './types.js';
-	import { apply } from './current.js';
-	import { addTab, closeTab, setActive, setBar, splitPane, splitTab } from './tree.js';
+	import { apply, layout } from './current.js';
+	import { choose, fillTab, put } from './chooser.js';
+	import { ancestorsOf } from './shell.js';
+	import type { Toward } from './tree.js';
+	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, splitPane } from './tree.js';
 	import { labelOf, titleOf } from './registry.js';
 	import PaneMenu from './PaneMenu.svelte';
 
@@ -81,7 +85,7 @@
 	export let canClose = true;
 	/** The layout's root: the one pane whose content box is the scroller. */
 	export let root = false;
-	/** Under a locked tab: no `…`; the tab strip still switches. */
+	/** Under a locked tab: no menu and no `+`; the tab strip still switches. */
 	export let locked = false;
 	/**
 	 * The active widget's kind. Its title goes on a wrapper round the frame
@@ -112,6 +116,26 @@
 	}
 	/** A swipe shorter than this is a touch, not a swipe. */
 	const SWIPE_PX = 40;
+
+	/**
+	 * The four arrows, in the one order, and where each one puts a pane on
+	 * the screen — a rotated bar does not turn them, since the menu is
+	 * drawn on `document.body` and reads the screen's way (PaneMenu.svelte).
+	 */
+	const ARROWS: { toward: Toward; text: string; where: string }[] = [
+		{ toward: 'left', text: '←', where: 'to the left' },
+		{ toward: 'right', text: '→', where: 'to the right' },
+		{ toward: 'up', text: '↑', where: 'above' },
+		{ toward: 'down', text: '↓', where: 'below' }
+	];
+
+	/** One menu item's row: the same operation aimed four ways, each named in full. */
+	const aimed = (what: string, op: (layout: Layout, toward: Toward) => Layout) =>
+		ARROWS.map(({ toward, text, where }) => ({
+			text,
+			title: `${what} ${where}`,
+			run: () => apply((l) => op(l, toward))
+		}));
 
 	// What `Pane.svelte` looks for: it renders body-only inside a frame and
 	// reports its alarm here, so the orange reaches whichever pane holds
@@ -148,32 +172,14 @@
 	$: title = labelOf(root ? { ...active, layout: undefined } : active);
 	/** No bar at all: the root's is the shell's, a lone holder's is its children's. */
 	$: bare = root || (!many && holder);
+	/** Whether this pane has a group to leave: everything but the root's own pane. */
+	$: canBreak = canBreakOut($layout, pane.id);
 
 	$: items = [
-		{ label: 'Add tab', run: () => apply((l) => addTab(l, pane.id)) },
+		{ label: 'Choose…', run: () => void fillTab(active.id) },
 		// A holder's children split themselves; its own split is a tab's.
-		...(holder
-			? []
-			: [
-					{
-						label: 'Split',
-						row: [
-							{ text: '|', title: 'split side by side', run: () => apply((l) => splitPane(l, pane.id, 'row')) },
-							{ text: '−', title: 'split top and bottom', run: () => apply((l) => splitPane(l, pane.id, 'column')) }
-						]
-					}
-				]),
-		...(many
-			? [
-					{
-						label: 'Split Tab',
-						row: [
-							{ text: '|', title: 'split tab side by side', run: () => apply((l) => splitTab(l, pane.id, pane.active, 'row')) },
-							{ text: '−', title: 'split tab top and bottom', run: () => apply((l) => splitTab(l, pane.id, pane.active, 'column')) }
-						]
-					}
-				]
-			: []),
+		...(holder ? [] : [{ label: 'Split', row: aimed('split: a new pane', (l, t) => splitPane(l, pane.id, t)) }]),
+		...(canBreak ? [{ label: 'Break out', row: aimed('break out: this widget', (l, t) => breakOut(l, pane.id, t)) }] : []),
 		{
 			label: many ? 'Close tab' : 'Close pane',
 			disabled: !canClose,
@@ -203,19 +209,40 @@
 		}
 	];
 
+	/**
+	 * The `+`: the chooser, then a tab holding what it came back with —
+	 * dismissed, it creates nothing. The names open above the new tab are
+	 * the ones above its sibling, less that sibling's own.
+	 */
+	async function addChosen(): Promise<void> {
+		const picked = await choose(ancestorsOf(active.id).filter((name) => name !== active.layout));
+		if (!picked) return;
+		const tab = newTab();
+		apply((l) => addTab(l, pane.id, tab));
+		await put(tab.id, picked);
+	}
+
 	const activate = (index: number) => apply((l) => setActive(l, pane.id, index));
 
-	/** Arrow keys walk the tab strip; the tab focused is the tab shown. */
-	function onTabKey(event: KeyboardEvent, index: number) {
+	/** The tab strip, to put the focus back on the tab switched to. */
+	let strip: HTMLElement | null = null;
+
+	/**
+	 * Arrow keys walk the tab strip; the tab focused is the tab shown.
+	 *
+	 * After the tick, since switching swaps which tab is the menu's button
+	 * (da-9vtw) and so replaces two of the strip's elements: the tab to
+	 * focus is the one that is there once it has.
+	 */
+	async function onTabKey(event: KeyboardEvent, index: number) {
 		const forward = vertical ? 'ArrowDown' : 'ArrowRight';
 		const back = vertical ? 'ArrowUp' : 'ArrowLeft';
 		const next = event.key === forward ? index + 1 : event.key === back ? index - 1 : null;
 		if (next === null || next < 0 || next >= pane.tabs.length) return;
 		event.preventDefault();
 		activate(next);
-		(event.currentTarget as HTMLElement).parentElement
-			?.querySelectorAll<HTMLElement>('[role="tab"]')
-			[next]?.focus();
+		await tick();
+		strip?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
 	}
 
 	// ---- swipe -----------------------------------------------------------
@@ -277,26 +304,59 @@
 	<div class="titlebar">
 		<div class="along align-{pane.bar.align}">
 			{#if many}
-				<div class="tabs" role="tablist" aria-orientation={vertical ? 'vertical' : 'horizontal'}>
+				<div
+					class="tabs"
+					role="tablist"
+					aria-orientation={vertical ? 'vertical' : 'horizontal'}
+					bind:this={strip}
+				>
 					{#each pane.tabs as tab, i (tab.id)}
-						<button
-							type="button"
-							role="tab"
-							class="control tab"
-							aria-selected={i === pane.active}
-							tabindex={i === pane.active ? 0 : -1}
-							on:click={() => activate(i)}
-							on:keydown={(e) => onTabKey(e, i)}>{labelOf(tab)}</button
-						>
+						{#if i === pane.active && !locked}
+							<!-- The tab in front is the menu's button; the others switch. -->
+							<PaneMenu
+								{items}
+								look="tab"
+								label="menu of the {labelOf(tab)} tab"
+								title="tab menu"
+								role="tab"
+								aria-selected="true"
+								tabindex="0"
+								on:keydown={(e) => onTabKey(e, i)}>{labelOf(tab)}</PaneMenu
+							>
+						{:else}
+							<button
+								type="button"
+								role="tab"
+								class="control tab"
+								aria-selected={i === pane.active}
+								tabindex={i === pane.active ? 0 : -1}
+								on:click={() => activate(i)}
+								on:keydown={(e) => onTabKey(e, i)}>{labelOf(tab)}</button
+							>
+						{/if}
 					{/each}
 				</div>
 			{:else}
-				<h2 bind:this={h2}>{#if !$hosted}{title}{/if}</h2>
+				<!-- The title's own box, and the menu's button laid over the
+				     whole of it — beside the h2 rather than inside it, so that
+				     the words may be clipped to their box and the button not. -->
+				<div class="titlebox">
+					<h2 bind:this={h2}>{#if !$hosted}{title}{/if}</h2>
+					{#if !locked}
+						<PaneMenu {items} look="title" label="menu of the {title} pane" />
+					{/if}
+				</div>
 			{/if}
 			<!-- Inside `.along`, after the title or the last tab: the badge
 			     goes where the alignment puts them, and right beside them. -->
 			{#if !locked}
-				<PaneMenu {items} label="menu of the {title} pane" />
+				<button
+					type="button"
+					class="control badge add"
+					aria-label="add a tab to the {title} pane"
+					title="add a tab"
+					on:click={() => void addChosen()}>+</button
+				>
 			{/if}
 		</div>
 	</div>
@@ -363,6 +423,15 @@
 		flex: none;
 		min-width: 0;
 		min-height: 0;
+	}
+
+	/* A holder's bar is a row of its own, and the titles of the panes under
+	   it straddle the top of the content right below it (da-om9v): the row
+	   stays above them, or the tab in front — the button that opens the
+	   menu (da-9vtw) — is half covered by the first child's title. */
+	.holder > .titlebar {
+		position: relative;
+		z-index: 3;
 	}
 
 	/* On a pane the bar is a LINE, not a box: zero thick, laid down the
@@ -445,15 +514,33 @@
 	.align-end {
 		justify-content: flex-end;
 	}
+	/* The box the title is in: the words, and over the whole of them the
+	   button that opens the menu (`.title`, PaneMenu.svelte). It is what
+	   positions that button, and is exactly the h2 — which is why the
+	   button is not inside the h2, whose overflow is hidden to clip the
+	   words and would clip the button's outer pixels with them. */
+	.titlebox {
+		position: relative;
+		display: flex;
+		flex: 0 1 auto;
+		min-inline-size: 0;
+		min-block-size: 0;
+	}
+
 	/* The words and a line round them, the frame's own: nothing across
-	   the bar but the outline, whichever way the bar runs. */
+	   the bar but the outline, whichever way the bar runs. A widget's own
+	   controls in here (the command pane's ✎) are lifted above the button
+	   laid over them, and are `:global` because the widget draws them. */
 	h2 {
 		box-sizing: border-box;
 		margin: 0;
 		padding-block: 0;
 		padding-inline: 0.4rem;
-		block-size: var(--row);
-		line-height: calc(var(--row) - 2px);
+		/* The row's height, and a finger's where the pointer is coarse — the
+		   title is a button now (da-9vtw), and a button is on the floor
+		   `reachable.test.mjs` holds the badges to. */
+		block-size: var(--badge);
+		line-height: calc(var(--badge) - 2px);
 		min-inline-size: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -470,6 +557,25 @@
 		border-radius: 4px;
 	}
 
+	h2 :global(button),
+	h2 :global(input) {
+		position: relative;
+		z-index: 1;
+	}
+
+	/* The whole title says it can be pressed. */
+	h2:hover {
+		color: var(--accent-bright);
+		border-color: var(--accent);
+	}
+
+	/* The `+` does not stretch, and takes the pointer where the line it
+	   sits on does not. */
+	.add {
+		flex: none;
+		pointer-events: auto;
+	}
+
 	.tabs {
 		display: flex;
 		gap: 4px;
@@ -481,8 +587,10 @@
 	/* `.control` (app.css) is the pill. On the line a tab is the title's
 	   shape and height, and a smaller radius than a control gets elsewhere
 	   — the line it straddles is 1px, and 6px of round on a 16px box reads
-	   as a lozenge. */
-	.tab {
+	   as a lozenge. `:global`, and under `.tabs` so that it reaches no
+	   further: the tab in front is drawn by PaneMenu, being the button
+	   that opens the menu (da-9vtw), and carries no scope of this file's. */
+	.tabs :global(.tab) {
 		block-size: var(--row);
 		padding-block: 0;
 		padding-inline: 0.5rem;
@@ -496,13 +604,13 @@
 	/* The tab in front says so with its outline, which is why the hover
 	   below is here and not on `.control`: it has to be able to argue with
 	   this rule, and it can only do that from inside the component. */
-	.tab[aria-selected='true'] {
+	.tabs :global(.tab[aria-selected='true']) {
 		color: var(--accent);
 		border-color: var(--accent);
 	}
 
-	.tab:hover,
-	.tab:focus-visible {
+	.tabs :global(.tab:hover),
+	.tabs :global(.tab:focus-visible) {
 		color: var(--accent-bright);
 	}
 

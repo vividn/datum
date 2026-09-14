@@ -154,13 +154,13 @@ describe('resizing', () => {
 	});
 
 
-	test('a border is grabbed right beside a … badge, which hangs half over the gap', async () => {
+	test('a border is grabbed right beside the + badge, which hangs half over the gap', async () => {
 		await withApp(async ({ page }) => {
 			// The tail's badge is centred on its top outline, so half of it
 			// hangs into the gap above — the column border between nowview and
 			// tail — and no further: 8px of a 16px badge in an 8px gap (da-om9v).
 			const border = pane(page, 'side').locator('.split.column > [role="separator"]').first();
-			const badge = pane(page, 'tail').locator('.titlebar button.more');
+			const badge = pane(page, 'tail').locator('.titlebar button.add');
 			const [gap, more, tailBefore] = await Promise.all([boxOf(border), boxOf(badge), boxOf(pane(page, 'tail'))]);
 			const middle = more.y + more.height / 2;
 			assert.ok(Math.abs(middle - (tailBefore.y + 0.5)) <= 1, `the badge's middle (${middle}) is not on the outline (${tailBefore.y})`);

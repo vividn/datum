@@ -14,6 +14,8 @@ import {
 	addEdge,
 	addTab,
 	allIds,
+	breakOut,
+	canBreakOut,
 	canCloseTab,
 	closeTab,
 	findPane,
@@ -31,7 +33,6 @@ import {
 	setRatios,
 	setWidget,
 	splitPane,
-	splitTab,
 	floorOf,
 	rootFloorOf
 } from '../src/lib/layout/tree.ts';
@@ -58,7 +59,7 @@ const kinds = (pane) => pane.tabs.map((t) => t.content.kind);
 describe('splitPane', () => {
 	test('the pane becomes one child of a new split, beside a new empty pane', () => {
 		const before = single('tail');
-		const after = splitPane(before, before.root.id, 'row');
+		const after = splitPane(before, before.root.id, 'right');
 		assert.ok(isCanonical(after));
 		const split = after.root.tabs[0].content;
 		assert.equal(split.direction, 'row');
@@ -67,27 +68,47 @@ describe('splitPane', () => {
 		assert.deepEqual(kinds(split.children[1]), [EMPTY_KIND]);
 	});
 
+	test('the arrow says which side the new pane is on', () => {
+		const before = single('tail');
+		for (const [toward, direction, at] of [
+			['left', 'row', 0],
+			['right', 'row', 1],
+			['up', 'column', 0],
+			['down', 'column', 1]
+		]) {
+			const split = splitPane(before, before.root.id, toward).root.tabs[0].content;
+			assert.equal(split.direction, direction, toward);
+			assert.deepEqual(kinds(split.children[at]), [EMPTY_KIND], `${toward}: the new pane is not child ${at}`);
+			assert.equal(split.children[1 - at].id, before.root.id, toward);
+		}
+	});
+
 	test('all the tabs travel together', () => {
 		let layout = single('tail');
 		layout = addTab(layout, layout.root.id);
-		layout = splitPane(layout, layout.root.id, 'column');
+		layout = splitPane(layout, layout.root.id, 'down');
 		const split = layout.root.tabs[0].content;
 		assert.deepEqual(kinds(split.children[0]), ['tail', EMPTY_KIND]);
 	});
 
 	test('joins a split already running that way rather than nesting', () => {
 		const { layout, left } = pair();
-		const after = splitPane(layout, left.id, 'row');
+		const after = splitPane(layout, left.id, 'right');
 		const split = after.root.tabs[0].content;
 		assert.equal(split.children.length, 3);
 		assert.equal(split.children[0].id, left.id);
 		assert.deepEqual(kinds(split.children[1]), [EMPTY_KIND]);
 		assert.deepEqual(split.ratios, [0.25, 0.25, 0.5]);
+		// ← puts it on the other side of the same pane, taking the same share.
+		const other = splitPane(layout, left.id, 'left').root.tabs[0].content;
+		assert.deepEqual(kinds(other.children[0]), [EMPTY_KIND]);
+		assert.equal(other.children[1].id, left.id);
+		assert.deepEqual(other.ratios, [0.25, 0.25, 0.5]);
 	});
 
 	test('nests when the split runs the other way', () => {
 		const { layout, left } = pair();
-		const after = splitPane(layout, left.id, 'column');
+		const after = splitPane(layout, left.id, 'down');
 		const outer = after.root.tabs[0].content;
 		assert.equal(outer.children.length, 2);
 		const inner = outer.children[0].tabs[0].content;
@@ -97,22 +118,118 @@ describe('splitPane', () => {
 	});
 });
 
-describe('splitTab', () => {
-	test('is refused with one tab', () => {
+// Break out (da-9vtw): one operation, two groups to leave — a tab strip
+// and a split — and one landing, beside the box left behind.
+describe('breakOut', () => {
+	/** A root whose tab holds a column of [A, H], where H holds a row of [P, Q]. */
+	function nested() {
+		const a = newPane([widgetTab('dayview')]);
+		const p = newPane([widgetTab('repl')]);
+		const q = newPane([widgetTab('tail')]);
+		const holder = newPane([newTab(newSplit('row', [p, q]))]);
+		const tab = newTab(newSplit('column', [a, holder]));
+		return { layout: { version: 1, name: 'test', root: newPane([tab]) }, tab, a, p, q, holder };
+	}
+
+	/** Every pane of the tree with a widget in it, by kind, in order. */
+	const shown = (layout) => {
+		const out = [];
+		const walk = (pane) => {
+			for (const tab of pane.tabs)
+				if ('children' in tab.content) tab.content.children.forEach(walk);
+				else out.push(tab.content.kind);
+		};
+		walk(layout.root);
+		return out;
+	};
+
+	test('the root’s own pane has nothing to leave', () => {
 		const layout = single('tail');
-		assert.equal(splitTab(layout, layout.root.id, 0, 'row'), layout);
+		assert.equal(canBreakOut(layout, layout.root.id), false);
+		assert.equal(breakOut(layout, layout.root.id, 'left'), layout);
+		// Nor with tabs on it: the root pane is in no split either way.
+		const tabbed = addTab(layout, layout.root.id);
+		assert.equal(canBreakOut(tabbed, tabbed.root.id), false);
 	});
 
-	test("that tab's content becomes a split of [its old content, an empty pane]", () => {
-		let layout = single('tail');
-		layout = addTab(layout, layout.root.id);
-		const after = splitTab(layout, layout.root.id, 0, 'column');
+	test('with several tabs the active one leaves the strip and lands beside the pane', () => {
+		const { layout, left, right } = pair();
+		let tabbed = addTab(layout, left.id);
+		tabbed = setWidget(tabbed, tabbed.root.tabs[0].content.children[0].tabs[1].id, newWidget('tail'));
+		assert.equal(canBreakOut(tabbed, left.id), true);
+		const after = breakOut(tabbed, left.id, 'right');
 		assert.ok(isCanonical(after));
 		const split = after.root.tabs[0].content;
-		assert.equal(split.direction, 'column');
-		assert.deepEqual(kinds(split.children[0]), ['tail']);
-		assert.deepEqual(kinds(split.children[1]), [EMPTY_KIND]);
-		assert.deepEqual(kinds(after.root).slice(1), [EMPTY_KIND], 'the other tab is untouched');
+		assert.equal(split.direction, 'row');
+		// The pane keeps its other tab, and the one that left is beside it.
+		assert.deepEqual(kinds(split.children[0]), ['repl']);
+		assert.deepEqual(kinds(split.children[1]), ['tail']);
+		assert.deepEqual(kinds(split.children[2]), ['tail'], 'the pane beside it moved');
+		assert.deepEqual(split.ratios, [0.25, 0.25, 0.5]);
+	});
+
+	test('a tab breaking out across the split wraps the whole grouping', () => {
+		const { layout, left } = pair();
+		const tabbed = addTab(layout, left.id);
+		const after = breakOut(tabbed, left.id, 'down');
+		assert.ok(isCanonical(after));
+		const outer = after.root.tabs[0].content;
+		assert.equal(outer.direction, 'column');
+		assert.equal(outer.children[0].tabs[0].content.direction, 'row', 'the row is not under the column');
+		assert.deepEqual(kinds(outer.children[1]), [EMPTY_KIND], 'the tab that left is not the bottom band');
+	});
+
+	test('with one tab the pane leaves its split for the grouping above', () => {
+		const { layout, p, q, a } = nested();
+		assert.equal(canBreakOut(layout, p.id), true);
+		const after = breakOut(layout, p.id, 'up');
+		assert.ok(isCanonical(after));
+		const column = after.root.tabs[0].content;
+		assert.equal(column.direction, 'column');
+		// A new row of the column, between the pane above and what it left,
+		// which unnested behind it — and its share comes out of that box.
+		assert.equal(column.children[0].id, a.id);
+		assert.equal(column.children[1].id, p.id, 'the pane did not land above what it left');
+		assert.deepEqual(shown(after), ['dayview', 'repl', 'tail']);
+		assert.deepEqual(column.ratios, [0.5, 0.25, 0.25]);
+		assert.deepEqual(kinds(column.children[2]), ['tail'], 'what was left behind');
+	});
+
+	test('across the grouping, the whole grouping is wrapped rather than the pane forced in sideways', () => {
+		const { layout, p } = nested();
+		const after = breakOut(layout, p.id, 'left');
+		assert.ok(isCanonical(after));
+		const row = after.root.tabs[0].content;
+		assert.equal(row.direction, 'row');
+		assert.equal(row.children[0].id, p.id, 'the pane is not the left-hand band');
+		const column = row.children[1].tabs[0].content;
+		assert.equal(column.direction, 'column', 'the grouping it left is not under the new split');
+		assert.deepEqual(shown(after), ['repl', 'dayview', 'tail']);
+	});
+
+	test('two in a row walk it up two levels', () => {
+		const { layout, p } = nested();
+		const once = breakOut(layout, p.id, 'up');
+		// A row of the column now; the next one takes it out of the column.
+		const twice = breakOut(once, p.id, 'up');
+		assert.ok(isCanonical(twice));
+		const column = twice.root.tabs[0].content;
+		assert.equal(column.children[0].id, p.id, 'it is not the top band of the page');
+		assert.deepEqual(shown(twice), ['repl', 'dayview', 'tail']);
+		// And there it stays: the root tab is the top of the tree.
+		assert.deepEqual(shown(breakOut(twice, p.id, 'up')), ['repl', 'dayview', 'tail']);
+	});
+
+	test('the tabs left behind are untouched, and the split it left closes up', () => {
+		const { layout, p, q, holder } = nested();
+		const withTabs = addTab(layout, holder.id);
+		const after = breakOut(withTabs, p.id, 'up');
+		assert.ok(isCanonical(after));
+		// The holder kept both its tabs, the second still empty; the row it
+		// held has one child left and unnested into it.
+		const kept = after.root.tabs[0].content.children[2];
+		assert.deepEqual(kinds(kept), ['tail', EMPTY_KIND]);
+		assert.equal(findPane(after, q.id), undefined, 'the survivor pane itself is gone');
 	});
 });
 
@@ -483,13 +600,13 @@ describe('any sequence of operations', () => {
 		};
 		for (let i = 0; i < 1000; i++) {
 			const pane = pick(everyPane(layout));
-			const dir = rand() < 0.5 ? 'row' : 'column';
+			const dir = pick(['left', 'right', 'up', 'down']);
 			switch (Math.floor(rand() * 7)) {
 				case 0:
 					layout = splitPane(layout, pane.id, dir);
 					break;
 				case 1:
-					layout = splitTab(layout, pane.id, Math.floor(rand() * pane.tabs.length), dir);
+					layout = breakOut(layout, pane.id, pick(['left', 'right', 'up', 'down']));
 					break;
 				case 2:
 					layout = addTab(layout, pane.id);

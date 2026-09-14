@@ -12,8 +12,12 @@
 // the instant it appears rather than growing a line under the pointer.
 
 import Chooser from './Chooser.svelte';
+import { apply } from './current.js';
 import { BUILTIN_NAMES } from './defaults.js';
+import { ancestorsOf, inlineInto } from './shell.js';
 import { listLayouts } from './store.js';
+import { newWidget, setWidget } from './tree.js';
+import type { NodeId } from './types.js';
 
 /** What the modal came back with: a layout to inline, or a widget kind to fill with. */
 export type Choice = { layout: string } | { kind: string };
@@ -42,4 +46,21 @@ export async function choose(ancestors: string[] = []): Promise<Choice | null> {
 			resolve(detail);
 		});
 	});
+}
+
+/** What a choice does to a tab: a layout inlined into it, or a widget put in it. */
+export async function put(tabId: NodeId, picked: Choice): Promise<void> {
+	if ('layout' in picked) await inlineInto(tabId, picked.layout);
+	else apply((l) => setWidget(l, tabId, newWidget(picked.kind)));
+}
+
+/**
+ * Fill a tab from the chooser: the empty pane's one button and the pane
+ * menu's `Choose…` (da-9vtw), which replaces what the tab holds. The
+ * names open above the tab are the ones it may not hold; a dismissed
+ * chooser changes nothing.
+ */
+export async function fillTab(tabId: NodeId): Promise<void> {
+	const picked = await choose(ancestorsOf(tabId));
+	if (picked) await put(tabId, picked);
 }

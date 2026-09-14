@@ -1,5 +1,6 @@
-// The layout engine's `…` menu (da-jdop, da-nk4k, da-13bc): its items, the
-// `Bar ▸` submenu, the keyboard and the pointer — driven through the built
+// The layout engine's pane menu (da-jdop, da-nk4k, da-13bc, da-9vtw): what
+// opens it — the pane's TITLE, or the tab in front — its items, the
+// `Bar ▸` submenu, the keyboard and the pointer. Driven through the built
 // app in a real browser. Read through the frame's classes, the buttons'
 // words and `aria-checked`, never "the menu looks different".
 
@@ -11,6 +12,8 @@ import {
 	PHONE,
 	ONE_PANE,
 	activeTab,
+	addButton,
+	addTab,
 	barMenu,
 	boxOf,
 	chooseBar,
@@ -18,6 +21,7 @@ import {
 	chooser,
 	draft,
 	exactly,
+	menuButton,
 	menuLines,
 	offers,
 	openBar,
@@ -30,16 +34,40 @@ import {
 before(startApp);
 after(stopApp);
 
-describe('the … menu', () => {
-	test('Split | on the tail pane makes two panes, the new one a Choose button, and the choice renders', async () => {
+describe('the menu the title opens', () => {
+	/** The menu of the default layout's tail pane: one tab, in the side column. */
+	const TAIL_MENU = ['Choose…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Close pane', 'Bar'];
+
+	test('the title is the button, and Choose… is the first item', async () => {
 		await withApp(async ({ page }) => {
-			await choose(page, 'tail', 'split side by side');
+			const title = menuButton(page, 'tail');
+			assert.match(await title.getAttribute('class'), /\btitle\b/);
+			assert.equal(await title.getAttribute('aria-label'), 'menu of the tail pane');
+			assert.equal(await pane(page, 'tail').locator('.titlebar button.more').count(), 0, 'the … badge is still there');
+			await title.click();
+			assert.deepEqual(await menuLines(page), TAIL_MENU);
+			// Choose… fills this tab from the one modal (da-uyx1): the pane
+			// becomes what was picked, and nothing is added beside it.
+			await page.getByRole('menuitem', { name: 'Choose…', exact: true }).click();
+			await chooser(page).waitFor();
+			await chooser(page).locator('button').filter({ hasText: exactly('aliases') }).click();
+			await chooser(page).waitFor({ state: 'detached' });
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'aliases', 'command', 'fields']);
+		}, DESKTOP);
+	});
+
+	test('each Split arrow puts the new pane on its own side', async () => {
+		await withApp(async ({ page }) => {
+			await choose(page, 'tail', 'split: a new pane below');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
+			const empty = page.locator('section.pane[data-title="empty"]');
+			const [tail, made] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(empty)]);
+			assert.equal(Math.round(made.x), Math.round(tail.x));
+			assert.ok(made.y > tail.y + tail.height, 'the new pane is not under the tail');
 			// One button, not a grid of them (da-uyx1) — and it opens the
 			// chooser: the layouts it could hold first (`day` is open above
 			// this pane, so it is not offered — da-0a5o), then the kinds.
-			const empty = page.locator('section.pane[data-title="empty"] .body');
-			assert.deepEqual(await empty.locator('button').allInnerTexts(), ['Choose Widget/Layout']);
+			assert.deepEqual(await empty.locator('.body button').allInnerTexts(), ['Choose Widget/Layout']);
 			await openChooser(page);
 			assert.deepEqual(await offers(page), [
 				'dayview',
@@ -54,69 +82,112 @@ describe('the … menu', () => {
 			]);
 			await chooser(page).locator('button', { hasText: 'nowview' }).click();
 			// The new pane is titled by its kind and draws: a second nowview
-			// beside the tail, at its own box's size.
+			// under the tail, at its own box's size.
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'fields']);
 		}, DESKTOP);
 	});
 
-	test('Add tab twice makes a tab strip', async () => {
+	test('← puts it on the other side of the same pane', async () => {
 		await withApp(async ({ page }) => {
-			await choose(page, 'tail', 'Add tab');
-			await choose(page, 'tail', 'Add tab');
-			const tabs = pane(page, 'tail').locator('[role="tablist"] [role="tab"]');
-			assert.deepEqual(await tabs.allInnerTexts(), ['tail', 'empty', 'empty']);
-			assert.equal(await activeTab(page, 'tail'), 'empty');
-			assert.equal(await pane(page, 'tail').locator('h2').count(), 0, 'a tabbed pane has no h2');
-			// Split Tab is only offered with 2+ tabs — and here it is.
-			await pane(page, 'tail').locator('.titlebar button.more').click();
-			assert.deepEqual(await menuLines(page), ['Add tab', 'Split | −', 'Split Tab | −', 'Close tab', 'Bar']);
-			await page.keyboard.press('Escape');
+			await choose(page, 'tail', 'split: a new pane to the left');
+			const [tail, made] = await Promise.all([
+				boxOf(pane(page, 'tail')),
+				boxOf(page.locator('section.pane[data-title="empty"]'))
+			]);
+			assert.ok(made.x + made.width <= tail.x + 1, 'the new pane is not left of the tail');
+			assert.equal(Math.round(made.y), Math.round(tail.y));
 		}, DESKTOP);
 	});
 
-	test('Split Tab is not offered with one tab', async () => {
-		await withApp(async ({ page }) => {
-			await pane(page, 'tail').locator('.titlebar button.more').click();
-			assert.deepEqual(await menuLines(page), ['Add tab', 'Split | −', 'Close pane', 'Bar']);
-			await page.keyboard.press('Escape');
-		}, DESKTOP);
-	});
-
-	test('Bar ▸ left turns the title vertical, reading up; Bar ▸ right reads down', async () => {
+	// The arrows are the SCREEN's, not the bar's: the menu is drawn on
+	// `document.body` and reads the screen's way whatever the bar does.
+	test('a rotated bar does not turn the arrows', async () => {
 		await withApp(async ({ page }) => {
 			await chooseBar(page, 'tail', 'left');
-			const h2 = pane(page, 'tail').locator('h2');
-			assert.equal(await h2.evaluate((el) => getComputedStyle(el).writingMode), 'vertical-rl');
-			const bar = pane(page, 'tail').locator('.titlebar');
-			assert.notEqual(await bar.evaluate((el) => getComputedStyle(el).transform), 'none', 'turned round');
-			const [barBox, bodyBox] = await Promise.all([
-				bar.boundingBox(),
-				pane(page, 'tail').locator('.body').boundingBox()
+			await choose(page, 'tail', 'split: a new pane to the right');
+			const [tail, made] = await Promise.all([
+				boxOf(pane(page, 'tail')),
+				boxOf(page.locator('section.pane[data-title="empty"]'))
 			]);
-			assert.ok(barBox.x + barBox.width <= bodyBox.x + 1, 'the bar is on the left of the content');
+			assert.ok(made.x >= tail.x + tail.width - 1, 'the new pane is not right of the tail');
+			assert.equal(Math.round(made.y), Math.round(tail.y));
+		}, DESKTOP);
+	});
 
-			await chooseBar(page, 'tail', 'right');
-			assert.equal(await h2.evaluate((el) => getComputedStyle(el).writingMode), 'vertical-rl');
-			assert.equal(await bar.evaluate((el) => getComputedStyle(el).transform), 'none');
-			const [right, body] = await Promise.all([
-				bar.boundingBox(),
-				pane(page, 'tail').locator('.body').boundingBox()
+	test('Break out takes the widget out of its grouping, and again out of the next', async () => {
+		await withApp(async ({ page }) => {
+			// The tail sits in the side column, beside nowview; ← takes it out
+			// of that column and lays it down the page beside the whole thing.
+			await choose(page, 'tail', 'break out: this widget to the left');
+			const [tail, nowview] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(pane(page, 'nowview'))]);
+			assert.ok(tail.x + tail.width <= nowview.x + 1, 'the tail is not left of what it left');
+			assert.ok(tail.height > nowview.height, 'the tail did not take the column’s whole height');
+			// Again: out of the row it landed in, to the left of the page.
+			await choose(page, 'tail', 'break out: this widget to the left');
+			const [again, strip] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(pane(page, 'strip'))]);
+			assert.ok(again.x < strip.x, 'the tail is not left of the day strip');
+			assert.ok(again.height > tail.height, `the tail is ${again.height}px tall, was ${tail.height}`);
+		}, DESKTOP);
+	});
+
+	test('the + adds a tab holding what the chooser came back with; dismissed, it adds nothing', async () => {
+		await withApp(async ({ page }) => {
+			await addButton(page, 'tail').click();
+			await chooser(page).waitFor();
+			await page.keyboard.press('Escape');
+			await chooser(page).waitFor({ state: 'detached' });
+			assert.equal(await pane(page, 'tail').locator('[role="tab"]').count(), 0, 'a dismissed chooser added a tab');
+
+			await addTab(page, 'tail', 'aliases');
+			const tabs = pane(page, 'tail').locator('[role="tab"]');
+			assert.deepEqual(await tabs.allInnerTexts(), ['tail', 'aliases']);
+			assert.equal(await activeTab(page, 'tail'), 'aliases');
+			assert.equal(await pane(page, 'tail').locator('h2').count(), 0, 'a tabbed pane has no h2');
+			assert.equal(await pane(page, 'tail').getAttribute('data-title'), 'aliases', 'the tab is not what was chosen');
+		}, DESKTOP);
+	});
+
+	test('the tab in front opens the menu; an inactive tab just switches', async () => {
+		await withApp(async ({ page }) => {
+			await addTab(page, 'tail', 'aliases');
+			const tabs = pane(page, 'tail').locator('[role="tab"]');
+			// The tab in front carries the menu, and its name is still its words.
+			assert.equal(await tabs.nth(1).getAttribute('aria-haspopup'), 'menu');
+			assert.equal(await tabs.nth(1).getAttribute('aria-label'), null);
+			await tabs.nth(0).click();
+			assert.equal(await page.locator('[role="menu"]').count(), 0, 'switching opened the menu');
+			assert.equal(await activeTab(page, 'tail'), 'tail');
+			// Now the tail is the tab in front: the same click opens the menu.
+			await tabs.nth(0).click();
+			await page.locator('[role="menu"]').waitFor();
+			// With tabs it is the TAB that closes, and Break out gives the
+			// tab in front a pane of its own.
+			assert.deepEqual(await menuLines(page), ['Choose…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Close tab', 'Bar']);
+			await page.getByRole('menuitem', { name: 'break out: this widget below', exact: true }).click();
+			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+			// The tab that left is a pane of its own, under the pane it left;
+			// the other stayed behind, which is that pane's whole strip now.
+			assert.equal(await pane(page, 'tail').locator('[role="tab"]').count(), 0);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'aliases', 'tail', 'command', 'fields']);
+			const [stayed, gone] = await Promise.all([
+				boxOf(page.locator('section.pane[data-title="aliases"]')),
+				boxOf(page.locator('section.pane[data-title="tail"]'))
 			]);
-			assert.ok(right.x >= body.x + body.width - 1, 'the bar is on the right of the content');
+			assert.ok(gone.y > stayed.y, 'the tab that broke out is not below the pane it left');
 		}, DESKTOP);
 	});
 
 	// The last pane cannot be closed — `tree.test.mjs` holds `closeTab` to
 	// it — and the root frame, which used to grey the item, draws no bar
 	// of its own now (da-2a5y): its tabs are the shell's top bar.
-	test('the root frame draws no bar: a lone root widget has no title, no … and no inset', async () => {
+	test('the root frame draws no bar: a lone root widget has no title, no menu and no inset', async () => {
 		await withApp(
 			async ({ page }) => {
 				assert.deepEqual(await titles(page), ['repl']);
 				const root = page.locator('section.root');
 				assert.equal(await root.locator('.titlebar').count(), 0);
-				assert.equal(await root.locator('button.more').count(), 0);
+				assert.equal(await root.locator('button.title, button.add').count(), 0);
 				assert.equal(await root.locator('h2').count(), 0);
 				assert.equal(await root.locator('> .content').evaluate((el) => getComputedStyle(el).paddingTop), '0px');
 			},
@@ -182,9 +253,9 @@ describe('the Bar submenu', () => {
 
 	test('one Bar item for the seven; it opens four placements | three alignments, the checked ones in the accent', async () => {
 		await withApp(async ({ page }) => {
-			await pane(page, 'tail').locator('.titlebar button.more').click();
+			await menuButton(page, 'tail').click();
 			const items = page.locator('[role="menu"] button');
-			assert.deepEqual(await menuLines(page), ['Add tab', 'Split | −', 'Close pane', 'Bar']);
+			assert.deepEqual(await menuLines(page), ['Choose…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Close pane', 'Bar']);
 			assert.equal(await items.filter({ hasText: /Bar:|Align:/ }).count(), 0);
 			await items.filter({ hasText: exactly('Bar') }).click();
 			const cells = await row(page);
@@ -248,13 +319,13 @@ describe('the Bar submenu', () => {
 
 	test('by keyboard: in with ArrowRight, across, Enter chooses; back out with ArrowLeft, Escape, Tab', async () => {
 		await withApp(async ({ page }) => {
-			const more = pane(page, 'tail').locator('.titlebar button.more');
+			const more = menuButton(page, 'tail');
 			const focused = () =>
 				page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim());
-			/** From the badge: open, ArrowDown until `Bar` is focused. */
+			/** From the title: open, ArrowDown until `Bar` is focused. */
 			async function toBar() {
 				await page.keyboard.press('Enter');
-				for (let i = 0; i < 8 && (await focused()) !== 'Bar'; i++) await page.keyboard.press('ArrowDown');
+				for (let i = 0; i < 16 && (await focused()) !== 'Bar'; i++) await page.keyboard.press('ArrowDown');
 				assert.equal(await focused(), 'Bar');
 			}
 			await more.focus();
@@ -266,7 +337,7 @@ describe('the Bar submenu', () => {
 			await page.keyboard.press('Enter');
 			assert.match(await pane(page, 'tail').getAttribute('class'), /\bedge-right\b/);
 			assert.equal(await page.locator('[role="menu"]').count(), 0);
-			assert.ok(await more.evaluate((el) => el === document.activeElement), 'choosing did not hand focus to the badge');
+			assert.ok(await more.evaluate((el) => el === document.activeElement), 'choosing did not hand focus to the title');
 
 			await toBar();
 			await page.keyboard.press('ArrowRight');
@@ -281,7 +352,7 @@ describe('the Bar submenu', () => {
 			await page.keyboard.press('Escape');
 			assert.equal(await focused(), 'Bar', 'Escape did not go back to Bar');
 			await page.keyboard.press('Escape');
-			assert.ok(await more.evaluate((el) => el === document.activeElement), 'Escape twice did not reach the badge');
+			assert.ok(await more.evaluate((el) => el === document.activeElement), 'Escape twice did not reach the title');
 
 			await toBar();
 			await page.keyboard.press('ArrowRight');
@@ -292,13 +363,13 @@ describe('the Bar submenu', () => {
 });
 
 // "bar submenu should open immediately on mouse over" and "let's put the
-// two split buttons on the same line" (da-13bc).
-describe('the … menu by pointer', () => {
+// two split buttons on the same line" (da-13bc) — four of them now (da-9vtw).
+describe('the pane menu by pointer', () => {
 	const barItem = (page) => page.getByRole('menuitem', { name: /^Bar/ });
 
 	test('Bar ▸ opens on the pointer with no click, stays open on the way to it, and closes on another item', async () => {
 		await withApp(async ({ page }) => {
-			await pane(page, 'tail').locator('.titlebar button.more').click();
+			await menuButton(page, 'tail').click();
 			await barItem(page).hover();
 			await barMenu(page).waitFor();
 			assert.equal(await barItem(page).getAttribute('aria-expanded'), 'true');
@@ -324,7 +395,7 @@ describe('the … menu by pointer', () => {
 	// submenu; the tap does (Copilot on #176). A real touch, through CDP.
 	test('a touch entering Bar ▸ does not open it; the tap does', async () => {
 		await withApp(async ({ page }) => {
-			await pane(page, 'repl').locator('.titlebar button.more').tap();
+			await menuButton(page, 'repl').tap();
 			const item = barItem(page);
 			await item.evaluate((el) => {
 				window.__entered = [];
@@ -351,41 +422,52 @@ describe('the … menu by pointer', () => {
 		await withApp(async ({ page }) => {
 			const focused = () =>
 				page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim());
-			await pane(page, 'tail').locator('.titlebar button.more').focus();
+			await menuButton(page, 'tail').focus();
 			await page.keyboard.press('Enter');
+			// Choose… first, then the Split row.
+			assert.equal(await focused(), 'Choose…');
 			await page.keyboard.press('ArrowDown');
-			assert.equal(await focused(), 'split side by side');
+			assert.equal(await focused(), 'split: a new pane to the left');
 			const walk = [];
-			for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowLeft']) {
+			for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft']) {
 				await page.keyboard.press(key);
 				walk.push(await focused());
 			}
 			assert.deepEqual(walk, [
-				'split side by side',
-				'split top and bottom',
-				'split top and bottom',
-				'split side by side',
-				'split side by side'
+				'split: a new pane to the left',
+				'split: a new pane to the right',
+				'split: a new pane above',
+				'split: a new pane below',
+				'split: a new pane below',
+				'split: a new pane above'
 			]);
-			// And ArrowDown from the row's second button goes on to the next item.
+			// And ArrowDown from the row's last button goes on to the next
+			// item — the four arrows of Break out, then Close pane.
+			await page.keyboard.press('ArrowRight');
 			await page.keyboard.press('ArrowRight');
 			await page.keyboard.press('ArrowDown');
+			assert.equal(await focused(), 'break out: this widget to the left');
+			for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
 			assert.equal(await focused(), 'Close pane');
 		}, DESKTOP);
 	});
 
-	test('Split is one line of two buttons, and − splits top and bottom', async () => {
+	test('Split is one line of four arrows, and ↓ splits below', async () => {
 		await withApp(async ({ page }) => {
-			await pane(page, 'tail').locator('.titlebar button.more').click();
+			await menuButton(page, 'tail').click();
 			const buttons = page.getByRole('group', { name: 'Split' }).getByRole('menuitem');
-			assert.deepEqual(await buttons.evaluateAll((all) => all.map((b) => b.getAttribute('aria-label'))), [
-				'split side by side',
-				'split top and bottom'
+			assert.deepEqual(await buttons.evaluateAll((all) => all.map((b) => `${b.textContent.trim()} ${b.getAttribute('aria-label')}`)), [
+				'← split: a new pane to the left',
+				'→ split: a new pane to the right',
+				'↑ split: a new pane above',
+				'↓ split: a new pane below'
 			]);
-			const [side, stack] = await Promise.all([boxOf(buttons.nth(0)), boxOf(buttons.nth(1))]);
-			assert.equal(side.y, stack.y, 'the two are not on one line');
-			for (const b of [side, stack]) assert.ok(b.width >= 24 && b.height >= 24, `a split button is ${b.width}x${b.height}`);
-			await buttons.nth(1).click();
+			const boxes = await Promise.all([0, 1, 2, 3].map((i) => boxOf(buttons.nth(i))));
+			for (const b of boxes) {
+				assert.equal(b.y, boxes[0].y, 'the four are not on one line');
+				assert.ok(b.width >= 24 && b.height >= 24, `a split button is ${b.width}x${b.height}`);
+			}
+			await buttons.nth(3).click();
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
 			const [tail, empty] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(page.locator('section.pane[data-title="empty"]'))]);

@@ -1,16 +1,17 @@
-// A pane's frame (da-jdop, da-jgrn, da-om9v, da-13bc): the title on the
-// outline, the badge beside it, the row as tall as its words, the gaps,
-// the scrollbars — driven through the built app in a real browser and
-// measured in screen coordinates, since the left bar is turned round.
+// A pane's frame (da-jdop, da-jgrn, da-om9v, da-13bc, da-9vtw): the title
+// on the outline — the button that opens the pane's menu — the `+` beside
+// it, the row as tall as its words, the gaps, the scrollbars. Driven
+// through the built app in a real browser and measured in screen
+// coordinates, since the left bar is turned round.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
+	addTab,
 	boxOf,
 	chooseBar,
-	choose,
 	pane
 } from './support/layout.mjs';
 
@@ -18,36 +19,39 @@ before(startApp);
 after(stopApp);
 
 // The bar, after vividn's first look (da-jgrn): with one tab no tab strip at
-// all — the title sits on the frame's outline and the `…` is a badge right
+// all — the title sits on the frame's outline and the `+` is a badge right
 // after it; with more, the strip, and the badge right after the last tab.
 describe('the title on the frame', () => {
 	/** Does `inner` straddle the top edge of `outer`? */
 	const straddlesTop = (inner, outer) => inner.y < outer.y && inner.y + inner.height > outer.y;
 
-	test('one tab: no tab strip, the title on the outline, the … right after it, on the keyboard', async () => {
+	test('one tab: no tab strip, the title on the outline, the + right after it, on the keyboard', async () => {
 		await withApp(async ({ page }) => {
 			const tail = pane(page, 'tail');
 			assert.equal(await tail.locator('[role="tablist"]').count(), 0);
-			const [frame, h2, more] = await Promise.all([boxOf(tail), boxOf(tail.locator('h2')), boxOf(tail.locator('button.more'))]);
+			const [frame, h2, add] = await Promise.all([boxOf(tail), boxOf(tail.locator('h2')), boxOf(tail.locator('button.add'))]);
 			assert.ok(straddlesTop(h2, frame), `the title ${JSON.stringify(h2)} is not on the outline of ${JSON.stringify(frame)}`);
-			assert.ok(straddlesTop(more, frame), `the badge ${JSON.stringify(more)} is not on the outline`);
-			const apart = more.x - (h2.x + h2.width);
+			assert.ok(straddlesTop(add, frame), `the badge ${JSON.stringify(add)} is not on the outline`);
+			const apart = add.x - (h2.x + h2.width);
 			assert.ok(apart >= 0 && apart <= 8, `the badge is ${apart}px from the title`);
-			assert.equal(more.height, h2.height, `the badge is ${more.width}x${more.height}, the title ${h2.height} tall`);
-			await tail.locator('button.more').focus();
+			assert.equal(add.height, h2.height, `the badge is ${add.width}x${add.height}, the title ${h2.height} tall`);
+			// The title IS the menu's button (da-9vtw), and it fills the box.
+			const title = await boxOf(tail.locator('button.title'));
+			assert.deepEqual([title.width, title.height], [h2.width, h2.height], 'the button does not fill the title');
+			await tail.locator('button.title').focus();
 			await page.keyboard.press('Enter');
 			await page.locator('[role="menu"]').waitFor();
 			await page.keyboard.press('Escape');
 		}, DESKTOP);
 	});
 
-	test('two tabs: the strip, and the … right after the last tab', async () => {
+	test('two tabs: the strip, and the + right after the last tab', async () => {
 		await withApp(async ({ page }) => {
-			await choose(page, 'tail', 'Add tab');
+			await addTab(page, 'tail', 'aliases');
 			const tail = pane(page, 'tail');
 			const tabs = tail.locator('[role="tablist"] [role="tab"]');
 			assert.equal(await tabs.count(), 2);
-			const [frame, last, more] = await Promise.all([boxOf(tail), boxOf(tabs.last()), boxOf(tail.locator('button.more'))]);
+			const [frame, last, more] = await Promise.all([boxOf(tail), boxOf(tabs.last()), boxOf(tail.locator('button.add'))]);
 			assert.ok(straddlesTop(last, frame), 'the tabs are not on the outline');
 			const apart = more.x - (last.x + last.width);
 			assert.ok(apart >= 0 && apart <= 8, `the badge is ${apart}px from the last tab`);
@@ -65,11 +69,11 @@ describe('the title on the frame', () => {
 		await withApp(async ({ page }) => {
 			const tail = pane(page, 'tail');
 			await chooseBar(page, 'tail', 'right');
-			let [h2, more] = await Promise.all([boxOf(tail.locator('h2')), boxOf(tail.locator('button.more'))]);
+			let [h2, more] = await Promise.all([boxOf(tail.locator('h2')), boxOf(tail.locator('button.add'))]);
 			let apart = more.y - (h2.y + h2.height);
 			assert.ok(apart >= 0 && apart <= 8, `right bar, reading down: the badge is ${apart}px below the title`);
 			await chooseBar(page, 'tail', 'left');
-			[h2, more] = await Promise.all([boxOf(tail.locator('h2')), boxOf(tail.locator('button.more'))]);
+			[h2, more] = await Promise.all([boxOf(tail.locator('h2')), boxOf(tail.locator('button.add'))]);
 			apart = h2.y - (more.y + more.height);
 			assert.ok(apart >= 0 && apart <= 8, `left bar, reading up: the badge is ${apart}px above the title`);
 		}, DESKTOP);
@@ -84,7 +88,7 @@ describe('the title on the frame', () => {
 // turned round.
 describe('the title row, as tall as its words', () => {
 	/** What sits on a pane's bar, or over its corner, that could reach a neighbour. */
-	const ON_BAR = ':scope > .titlebar :is(h2, [role="tab"], button.more), [role="slider"], .nowview-steps button';
+	const ON_BAR = ':scope > .titlebar :is(h2, [role="tab"], button.add), [role="slider"], .nowview-steps button';
 
 	/** Every piece of `ON_BAR` inside another pane's border box. */
 	const bleeds = (page) =>
@@ -300,12 +304,14 @@ describe('the title on the line', () => {
 			const seen = await page.evaluate(() => {
 				const main = document.querySelector('main');
 				const h2 = document.querySelector('section[data-pane="strip"] h2');
+				const box = h2.closest('.titlebox');
 				const h = h2.getBoundingClientRect();
 				return {
 					clip: document.querySelector('section.root > .content').getBoundingClientRect().top,
 					title: h.top,
-					// The title's topmost row of pixels is the title's, not cut away.
-					hit: document.elementFromPoint(h.left + h.width / 2, h.top + 1) === h2,
+					// The title's topmost row of pixels is the title's, not cut
+					// away — the button laid over it (da-9vtw) is the title too.
+					hit: box.contains(document.elementFromPoint(h.left + h.width / 2, h.top + 1)),
 					pane: document.querySelector('section[data-pane="strip"]').getBoundingClientRect().top,
 					margin: main.getBoundingClientRect().top + parseFloat(getComputedStyle(main).paddingTop)
 				};
