@@ -27,6 +27,18 @@ use super::Db;
 /// offset stored beside it changes at every DST transition — reading those
 /// as relocations would invent a move twice a year, which is precisely the
 /// error a cache keyed on offset changes makes.
+///
+/// **No outer `ORDER BY occur_time`** — do not add one back (da-uhur). The
+/// inner scan already walks `entries_occur_time`, so the handful of rows
+/// that survive the filter come out in occur_time order for free, and
+/// `ZoneTimeline::new` sorts its observations regardless: the timeline does
+/// not depend on this order in the first place. All the outer sort bought
+/// was a temp B-tree in the query plan.
+///
+/// What actually spills here is the window function, whose partition —
+/// every live entry — is materialised into an ephemeral table the plan
+/// never mentions. That is why this is a tidy-up and `temp_store = MEMORY`
+/// (`Db::configure_connection`) is the fix for the browser.
 const ZONE_CHANGES_SQL: &str = "\
     SELECT occur_time, occur_time_tz FROM (
         SELECT occur_time,
@@ -38,8 +50,7 @@ const ZONE_CHANGES_SQL: &str = "\
            AND occur_time IS NOT NULL
            AND occur_time_tz IS NOT NULL
     )
-    WHERE prev_tz IS NULL OR prev_tz <> occur_time_tz
-    ORDER BY occur_time";
+    WHERE prev_tz IS NULL OR prev_tz <> occur_time_tz";
 
 impl Db {
     /// Load the [`ZoneTimeline`] this database describes.
@@ -183,6 +194,89 @@ mod tests {
             tl.resolve_local(july_noon).for_boundary(),
             utc("2024-07-15T17:00:00Z"),
             "July noon in Chicago is CDT (-5), not the January CST (-6)"
+        );
+    }
+
+    /// The plan stays free of the temp B-tree the outer `ORDER BY` bought
+    /// (da-uhur), so that nothing reintroduces the sort by accident.
+    #[test]
+    fn the_scan_uses_no_temp_b_tree() {
+        let db = fresh_db();
+        logged_in(&db, "2024-01-05T18:00:00Z", "America/Chicago");
+        logged_in(&db, "2024-06-05T10:00:00Z", "Europe/Berlin");
+
+        let sql = format!("EXPLAIN QUERY PLAN {ZONE_CHANGES_SQL}");
+        let mut stmt = db.conn.prepare(&sql).unwrap();
+        let plan: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(3))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert!(
+            !plan.iter().any(|step| step.contains("TEMP B-TREE")),
+            "the zone scan sorts again: {plan:#?}"
+        );
+    }
+
+    /// What the comment on `ZONE_CHANGES_SQL` claims: the rows arrive in
+    /// occur_time order because of the index, not because of a sort — and
+    /// not because of the order they were written in, which here is the
+    /// reverse.
+    #[test]
+    fn the_rows_arrive_in_occur_time_order_unsorted() {
+        let db = fresh_db();
+        for (at, tz) in [
+            ("2024-09-05T18:00:00Z", "Asia/Tokyo"),
+            ("2024-06-05T10:00:00Z", "Europe/Berlin"),
+            ("2024-01-05T18:00:00Z", "America/Chicago"),
+        ] {
+            logged_in(&db, at, tz);
+        }
+
+        let mut stmt = db.conn.prepare(ZONE_CHANGES_SQL).unwrap();
+        let rows: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(
+            rows.iter().map(|(_, tz)| tz.as_str()).collect::<Vec<_>>(),
+            ["America/Chicago", "Europe/Berlin", "Asia/Tokyo"],
+        );
+        assert!(rows.windows(2).all(|w| w[0].0 < w[1].0), "{rows:#?}");
+    }
+
+    /// And the timeline those rows build — every segment of it, not its
+    /// length — on a history with several moves.
+    #[test]
+    fn several_moves_give_the_whole_timeline() {
+        let db = fresh_db();
+        for (at, tz) in [
+            ("2024-01-05T18:00:00Z", "America/Chicago"),
+            ("2024-02-05T18:00:00Z", "America/Chicago"),
+            ("2024-06-05T10:00:00Z", "Europe/Berlin"),
+            ("2024-07-05T10:00:00Z", "Asia/Tokyo"),
+            ("2024-09-05T18:00:00Z", "America/Chicago"),
+        ] {
+            logged_in(&db, at, tz);
+        }
+
+        let tl = db.zone_timeline(berlin()).unwrap();
+        assert_eq!(
+            tl.segments(),
+            [
+                // The earliest segment reaches back over all prior history.
+                (DateTime::<Utc>::MIN_UTC, chicago()),
+                (utc("2024-06-05T10:00:00Z"), berlin()),
+                (
+                    utc("2024-07-05T10:00:00Z"),
+                    Zone::iana("Asia/Tokyo").unwrap()
+                ),
+                (utc("2024-09-05T18:00:00Z"), chicago()),
+            ]
+            .map(|(from, zone)| crate::time::ZoneSegment { from, zone })
         );
     }
 }

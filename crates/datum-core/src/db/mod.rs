@@ -110,12 +110,30 @@ impl Db {
     ///
     /// All three pragmas cost microseconds — the CLI hot path stays
     /// instantaneous. (`execute_batch` because these pragmas return rows.)
+    ///
+    /// On wasm there is a fourth, `temp_store = MEMORY` (da-uhur). A WASI
+    /// process has exactly one preopened directory and no temp directory at
+    /// all, so the first query whose ephemeral table or sorter outgrows the
+    /// page cache asks the VFS for a temp path and is answered
+    /// `SQLITE_IOERR_GETTEMPPATH` (6410) — "disk I/O error", fatal, on a
+    /// query that is merely large. `stats` did this on a ~20k-entry
+    /// database in the browser. In memory there is nothing to ask the VFS
+    /// for, and no query can reach that error again.
+    ///
+    /// `target_family = "wasm"` rather than `target_os = "wasi"`: the
+    /// premise is not which WASI preview the shim implements but that a
+    /// wasm build of datum has no host filesystem to spill into, which is
+    /// true of every wasm target the CLI is compiled for. Native keeps
+    /// SQLite's compile-time default (FILE), where a genuinely huge sort
+    /// should spill to the disk that exists rather than eat the machine.
     fn configure_connection(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             "PRAGMA busy_timeout = 5000;\n\
              PRAGMA journal_mode = WAL;\n\
              PRAGMA synchronous = NORMAL;",
         )?;
+        #[cfg(target_family = "wasm")]
+        conn.execute_batch("PRAGMA temp_store = MEMORY;")?;
         Ok(())
     }
 
