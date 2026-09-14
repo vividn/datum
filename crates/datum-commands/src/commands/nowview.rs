@@ -422,20 +422,29 @@ pub(crate) fn build_dayview_fields(
         by_field.entry(e.field.clone()).or_default().push(e);
     }
 
-    // Include any tracked field with no entries in window so the leading-
-    // state synthesis below can still give it a band: a field whose open
+    // Include any field with no entries in window so the leading-state
+    // synthesis below can still give it a band: a field whose open
     // switch state predates the fetch window has no in-window entries at
     // all, but `state_at` still knows its active state (da-ncoa).
-    let tracked = db
-        .get_tracked_fields(chrono::Utc::now())
-        .unwrap_or_default();
-    for tf in &tracked {
-        by_field.entry(tf.field.clone()).or_default();
+    // da-vmjh: `distinct_fields`, not `get_tracked_fields` — only the
+    // NAMES are read here, and the tracked read costs a state resolution
+    // and a spec load per field to compute an `ignored` flag nobody asks
+    // for.
+    for field in db.distinct_fields().unwrap_or_default() {
+        by_field.entry(field).or_default();
     }
+
+    // da-vmjh: one spec read and one state read for every field, not one
+    // per field. `leading_state_region` asks for the state at the SAME
+    // instant for all of them, so the batch answers every call.
+    let field_names: Vec<&str> = by_field.keys().map(String::as_str).collect();
+    let specs = db.batch_load_specs(&field_names)?;
+    let leading_states = db.batch_state_at(&field_names, fetch_start)?;
+    drop(field_names);
 
     let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
     for (field, mut entries_for_field) in by_field {
-        let spec = db.load_spec(&field).ok().flatten();
+        let spec = specs.get(&field).cloned();
         // da-2zd: per-surface visibility. Hidden-on-nowview specs drop
         // out before per-entry work — data still flows through tail/get/
         // grep/view; only the visual band is suppressed.
@@ -451,9 +460,12 @@ pub(crate) fn build_dayview_fields(
         // the fetch window — no in-window entry opens it, so without this
         // the band falls back to the field-default color.
         let mut blocks: Vec<DayviewBlock> = Vec::new();
-        if let Some((start_ms, end_ms, state)) =
-            leading_state_region(db, &field, &entries_for_field, fetch_start, open_end_ms)?
-        {
+        if let Some((start_ms, end_ms, state)) = leading_state_region(
+            leading_states.get(&field),
+            &entries_for_field,
+            fetch_start,
+            open_end_ms,
+        ) {
             push_switch_region(
                 &mut blocks,
                 Some(&state),
@@ -542,23 +554,28 @@ pub(crate) fn build_fields(
         by_field.entry(e.field.clone()).or_default().push(e);
     }
 
+    // da-vmjh: the names alone, and one spec + state read for all of
+    // them — see `build_dayview_fields`.
     let mut all_fields: Vec<String> = by_field.keys().cloned().collect();
-    let tracked = db.get_tracked_fields(chrono::Utc::now())?;
-    for tf in &tracked {
-        if !all_fields.iter().any(|f| f == &tf.field) {
-            all_fields.push(tf.field.clone());
+    for field in db.distinct_fields()? {
+        if !all_fields.iter().any(|f| f == &field) {
+            all_fields.push(field);
         }
     }
+    let field_names: Vec<&str> = all_fields.iter().map(String::as_str).collect();
+    let specs = db.batch_load_specs(&field_names)?;
+    let leading_states = db.batch_state_at(&field_names, window_start)?;
 
     let mut out: Vec<NowviewField> = Vec::with_capacity(all_fields.len());
-    for field in all_fields {
-        let spec = db.load_spec(&field).ok().flatten();
+    for field in &all_fields {
+        let field = field.as_str();
+        let spec = specs.get(field).cloned();
         if let Some(s) = spec.as_ref() {
             if !s.presentation.renders_on("nowview") {
                 continue;
             }
         }
-        let mut entries_for_field = by_field.remove(&field).unwrap_or_default();
+        let mut entries_for_field = by_field.remove(field).unwrap_or_default();
         entries_for_field.sort_by_key(occur_time_ms);
         // da-zwct: `day_end_ms` CLIPS an open region; it does not close
         // one. A block given as a duration, on the other hand, really
@@ -577,22 +594,25 @@ pub(crate) fn build_fields(
         // include_empty=false path — omits the field entirely while the
         // state list above still shows it.
         let mut blocks: Vec<NowviewBlock> = Vec::new();
-        if let Some((start_ms, end_ms, state)) =
-            leading_state_region(db, &field, &entries_for_field, window_start, open_end_ms)?
-        {
+        if let Some((start_ms, end_ms, state)) = leading_state_region(
+            leading_states.get(field),
+            &entries_for_field,
+            window_start,
+            open_end_ms,
+        ) {
             push_switch_region_terminal(
                 &mut blocks,
                 Some(&state),
                 start_ms,
                 end_ms,
-                &field,
+                field,
                 spec.as_ref(),
             );
         }
 
         let (entry_blocks, points) = render_field_visuals_terminal(
             &entries_for_field,
-            &field,
+            field,
             spec.as_ref(),
             &switch_region_ends,
             db,
@@ -604,18 +624,18 @@ pub(crate) fn build_fields(
         }
 
         let resolved = match &spec {
-            Some(s) => s.presentation.resolve_position(&field),
-            None => FieldSpec::new(field.clone(), datum_core::action::Action::Occur)
+            Some(s) => s.presentation.resolve_position(field),
+            None => FieldSpec::new(field.to_string(), datum_core::action::Action::Occur)
                 .presentation
-                .resolve_position(&field),
+                .resolve_position(field),
         };
 
         // Per-field fallback color — single hex unless the field has a
         // saved parallel-state default (rare).
-        let default_colors = vec![rgb_to_hex(field_rgb(&field, spec.as_ref()))];
+        let default_colors = vec![rgb_to_hex(field_rgb(field, spec.as_ref()))];
 
         out.push(NowviewField {
-            field,
+            field: field.to_string(),
             blocks,
             points,
             y_frac: resolved.y,
@@ -640,10 +660,16 @@ fn build_current_states(
         Some(d) => d,
         None => return Vec::new(),
     };
+    // da-vmjh: one spec read and one state read for the whole panel.
+    // Every row asks about the same instant, so the batch answers them
+    // all — this used to be two queries per rendered field.
+    let names: Vec<&str> = day.fields.iter().map(|f| f.field.as_str()).collect();
+    let specs = db.batch_load_specs(&names).unwrap_or_default();
+    let states = db.batch_state_at(&names, end).unwrap_or_default();
     let mut out: Vec<NowviewCurrentState> = Vec::with_capacity(day.fields.len());
     for f in &day.fields {
-        let spec = db.load_spec(&f.field).ok().flatten();
-        let state = db.state_at(&f.field, end).ok().flatten();
+        let spec = specs.get(&f.field).cloned();
+        let state = states.get(&f.field).cloned();
         let (state_label, colors) = match state.as_ref() {
             None => (None, vec![rgb_to_hex(field_rgb(&f.field, spec.as_ref()))]),
             Some(v) if is_unrendered_switch_value(Some(v)) => {
@@ -676,23 +702,23 @@ fn build_current_states(
 
 /// Leading-state synthesis (da-ncoa): the entry fetch only reaches back to
 /// `window_start`, so a state set BEFORE that instant has no in-window
-/// switching entry to open its region. Ask [`Db::state_at`] — which knows
-/// the true answer and already drives the SVG state panel — for the state
-/// active at `window_start`, and return the region the missing entry would
-/// have opened: `[window_start, first in-window switching entry or
-/// fallback_end_ms]`. `entries` must be sorted by occur_time ascending.
+/// switching entry to open its region. The caller passes the state
+/// [`Db::batch_state_at`] resolved at `window_start` — the same oracle
+/// that drives the SVG state panel — and this returns the region the
+/// missing entry would have opened: `[window_start, first in-window
+/// switching entry or fallback_end_ms]`. `entries` must be sorted by
+/// occur_time ascending.
 ///
-/// Returns `Ok(None)` when an in-window switching entry already covers
+/// Returns `None` when an in-window switching entry already covers
 /// `window_start` or the field has no prior state-bearing entry. A state
 /// that doesn't render (null / false / IGNORED) is still returned — the
 /// push helpers' existing [`is_unrendered_switch_value`] gate drops it.
 fn leading_state_region(
-    db: &Db,
-    field: &str,
+    state_at_window_start: Option<&JsonValue>,
     entries: &[Entry],
     window_start: DateTime<Utc>,
     fallback_end_ms: i64,
-) -> Result<Option<(i64, i64, JsonValue)>> {
+) -> Option<(i64, i64, JsonValue)> {
     let window_start_ms = window_start.timestamp_millis();
     let lead_end_ms = entries
         .iter()
@@ -700,12 +726,9 @@ fn leading_state_region(
         .find_map(occur_time_ms_opt)
         .unwrap_or(fallback_end_ms);
     if lead_end_ms <= window_start_ms {
-        return Ok(None);
+        return None;
     }
-    match db.state_at(field, window_start)? {
-        Some(state) => Ok(Some((window_start_ms, lead_end_ms, state))),
-        None => Ok(None),
-    }
+    state_at_window_start.map(|state| (window_start_ms, lead_end_ms, state.clone()))
 }
 
 /// Verb-driven render targeting the terminal-band [`NowviewField`] shape

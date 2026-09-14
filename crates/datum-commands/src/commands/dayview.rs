@@ -451,9 +451,15 @@ fn build_day_fields(
         by_field.entry(e.field.clone()).or_default().push(e);
     }
 
+    // da-vmjh: one spec query for every field in the day, not one per
+    // field.
+    let field_names: Vec<&str> = by_field.keys().map(String::as_str).collect();
+    let specs = db.batch_load_specs(&field_names)?;
+    drop(field_names);
+
     let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
     for (field, mut entries_for_field) in by_field {
-        let spec = db.load_spec(&field).ok().flatten();
+        let spec = specs.get(&field).cloned();
         // da-2zd: per-surface visibility. When the spec says this field
         // is hidden on `dayview`, drop it before doing per-entry work —
         // data still flows through tail/get/grep/view, only the visual

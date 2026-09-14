@@ -153,9 +153,25 @@ impl Db {
     /// Distinct field names across all live (non-deleted) entries,
     /// alphabetical. The `now` view feeds this into [`Db::state_at`] to
     /// build its row set.
+    ///
+    /// da-vmjh: a skip-scan, not a scan. `SELECT DISTINCT field` walked
+    /// every row of `entries_live_field_occur` to return the couple of
+    /// dozen names it holds — 18 ms at 22k rows, and growing. Each step
+    /// of the recursion instead seeks the index straight to the next
+    /// name (`SEARCH … (field>?)`, served by SQLite's `min()`
+    /// optimization), so the cost is O(fields x log N) and does not grow
+    /// with the length of the record. Same rows, same order: the walk is
+    /// ascending and `LIVE_SQL` is the same predicate.
     pub fn distinct_fields(&self) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT DISTINCT field FROM entries WHERE {LIVE_SQL} ORDER BY field"
+            "WITH RECURSIVE f(field) AS (
+                 SELECT min(field) FROM entries WHERE {LIVE_SQL}
+                 UNION ALL
+                 SELECT (SELECT min(field) FROM entries
+                          WHERE field > f.field AND {LIVE_SQL})
+                   FROM f WHERE f.field IS NOT NULL
+             )
+             SELECT field FROM f WHERE field IS NOT NULL"
         ))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
@@ -176,5 +192,95 @@ impl Db {
             Ok((field, serde_json::from_str(&state)?))
         })
         .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entry::{Entry, Verb};
+    use crate::time::DatumTime;
+    use chrono::{TimeZone, Utc};
+
+    fn push(db: &Db, field: &str, secs: i64) {
+        let t =
+            Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap() + chrono::Duration::seconds(secs);
+        db.insert_entry(&Entry::new_legacy(
+            field,
+            Verb::Switch,
+            Some(serde_json::json!("on")),
+            None,
+            Some(DatumTime {
+                utc: t,
+                offset_minutes: 0,
+                timezone: Some("UTC".into()),
+                uncertainty: None,
+            }),
+            None,
+            "d1",
+        ))
+        .unwrap();
+    }
+
+    /// The skip-scan returns exactly what `SELECT DISTINCT … ORDER BY
+    /// field` returned: every live field once, alphabetical, and nothing
+    /// from a row the liveness predicate excludes.
+    #[test]
+    fn distinct_fields_skips_to_each_name_once_in_order() {
+        let db = Db::open_in_memory().unwrap();
+        for (i, f) in ["mood", "coffee", "mood", "apple", "coffee", "mood"]
+            .iter()
+            .enumerate()
+        {
+            push(&db, f, i as i64 * 60);
+        }
+        assert_eq!(
+            db.distinct_fields().unwrap(),
+            vec!["apple".to_string(), "coffee".into(), "mood".into()]
+        );
+    }
+
+    #[test]
+    fn distinct_fields_is_empty_on_an_empty_store() {
+        let db = Db::open_in_memory().unwrap();
+        assert!(db.distinct_fields().unwrap().is_empty());
+    }
+
+    /// da-vmjh's gate for this read: every step must SEEK the next name,
+    /// never walk the rows between. A `SCAN entries` line is the
+    /// predecessor — `SELECT DISTINCT field` read all 22k rows to
+    /// return 26 names.
+    #[test]
+    fn distinct_fields_seeks_and_never_scans_entries() {
+        let db = Db::open_in_memory().unwrap();
+        push(&db, "mood", 0);
+        let sql = format!(
+            "WITH RECURSIVE f(field) AS (
+                 SELECT min(field) FROM entries WHERE {LIVE_SQL}
+                 UNION ALL
+                 SELECT (SELECT min(field) FROM entries
+                          WHERE field > f.field AND {LIVE_SQL})
+                   FROM f WHERE f.field IS NOT NULL
+             )
+             SELECT field FROM f WHERE field IS NOT NULL"
+        );
+        let mut stmt = db
+            .conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap();
+        let plan = stmt
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<String>>>()
+            .unwrap()
+            .join("\n");
+        assert!(
+            plan.contains("SEARCH entries USING INDEX entries_live_field_occur"),
+            "expected an index seek per name, got:\n{plan}"
+        );
+        assert!(
+            !plan.contains("SCAN entries"),
+            "a SCAN of entries is the whole-history read this replaced, got:\n{plan}"
+        );
     }
 }

@@ -1438,7 +1438,7 @@ mod tests {
         let mut entry = entry_builder("weird:field").verb(Verb::Point).build();
         entry.field = "weird:field".into();
         let err = db
-            .insert_entries_bulk(&[entry], ConflictStrategy::Ignore)
+            .insert_entries_bulk(&[entry], ConflictStrategy::Ignore, &mut |_| {})
             .unwrap_err();
         assert!(matches!(err, DatumError::InvalidFieldSpec(_)));
     }
@@ -1488,8 +1488,12 @@ mod tests {
                 .build()
         };
         let (later, earlier) = (open_at(10), open_at(9));
-        db.insert_entries_batch(&[later.clone(), earlier], ConflictStrategy::Ignore)
-            .unwrap();
+        db.insert_entries_batch(
+            &[later.clone(), earlier],
+            ConflictStrategy::Ignore,
+            &mut |_| {},
+        )
+        .unwrap();
 
         let filed = crate::integrity::list(db.conn(), &Default::default()).unwrap();
         assert_eq!(filed.len(), 1, "{filed:?}");

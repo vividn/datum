@@ -9,7 +9,8 @@ use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 
 use super::types::{
-    time_expr_endbound, TrackedField, STATE_ORDER_NEWEST_FIRST, STATE_PARTICIPATION_SQL,
+    time_expr_endbound, TrackedField, STATE_ORDER_NEWEST_FIRST, STATE_ORDER_OLDEST_FIRST,
+    STATE_PARTICIPATION_SQL,
 };
 use super::Db;
 
@@ -89,6 +90,19 @@ impl Db {
     /// `fields`, evaluated at `t`, newest first — the column-level input
     /// [`super::now::resolve_effective`] reads. Fields with no
     /// qualifying entry are absent from the map.
+    ///
+    /// da-vmjh: one index-bounded `ORDER BY … LIMIT depth` PER FIELD,
+    /// looped over a single prepared statement. The predecessor asked
+    /// for all fields at once and ranked them with `ROW_NUMBER() OVER
+    /// (PARTITION BY field …)`, filtering `rn <= depth` OUTSIDE the
+    /// window — so SQLite numbered every row of every field back to the
+    /// beginning of history just to keep one per field, and the cost of
+    /// reading "what is the state right now" grew with the length of the
+    /// record (77 ms at 22k rows, 0.9 ms this way). Per field the
+    /// planner walks `entries_live_field_occur` — the partial
+    /// `(field, occur_time) WHERE deleted_at IS NULL` index, whose
+    /// predicate [`STATE_PARTICIPATION_SQL`] implies — backwards from
+    /// the cutoff and stops after `depth` rows.
     fn state_rows_at(
         &self,
         fields: &[&str],
@@ -101,38 +115,13 @@ impl Db {
             return Ok(out);
         }
         let cutoff = t.to_rfc3339();
-        let endbound = time_expr_endbound();
-        let placeholders = std::iter::repeat_n("?", fields.len())
-            .collect::<Vec<_>>()
-            .join(",");
-        // da-2i8g: each row's verb / occur_time / dur / following_state
-        // come along so the trailing-edge rules can be applied in Rust —
-        // `dur` is an ISO-8601 string, which SQL cannot add to a time.
-        // Rows arrive newest first (`rn` ascending) so the resolver can
-        // walk back from the winner.
-        let sql = format!(
-            "SELECT field, state, verb, occur_time, dur, following_state FROM (
-                SELECT field, state, verb, occur_time, dur, following_state,
-                  ROW_NUMBER() OVER (
-                    PARTITION BY field
-                    ORDER BY {STATE_ORDER_NEWEST_FIRST}
-                  ) AS rn
-                FROM entries
-                WHERE field IN ({placeholders})
-                  AND {STATE_PARTICIPATION_SQL}
-                  AND {endbound} <= ?
-            ) WHERE rn <= {depth} ORDER BY rn"
-        );
-        let mut bindings: Vec<String> = fields.iter().map(|s| s.to_string()).collect();
-        bindings.push(cutoff);
-        let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(
-            rusqlite::params_from_iter(bindings.iter()),
-            read_state_columns,
-        )?;
-        for r in rows {
-            let (field, row) = decode_state_row(r.map_err(DatumError::Db)?)?;
-            out.entry(field).or_default().push(row);
+        let mut stmt = self.conn.prepare(&state_rows_sql(depth))?;
+        for field in dedup_fields(fields) {
+            let rows = stmt.query_map(rusqlite::params![field, cutoff], read_state_columns)?;
+            for r in rows {
+                let (field, row) = decode_state_row(r.map_err(DatumError::Db)?)?;
+                out.entry(field).or_default().push(row);
+            }
         }
         self.append_spanning_blocks(fields, t, &mut out)?;
         Ok(out)
@@ -146,41 +135,27 @@ impl Db {
     /// edge is re-derived in Rust because `dur` is an ISO-8601 string
     /// SQL cannot subtract from a time. [`super::now::resolve_effective`]
     /// re-orders the merged rows on that edge.
+    ///
+    /// da-vmjh: same per-field `ORDER BY … LIMIT` shape as
+    /// [`Db::state_rows_at`], and for the same reason — this one walked
+    /// forward from `t` over every future row of every field.
     fn append_spanning_blocks(
         &self,
         fields: &[&str],
         t: DateTime<Utc>,
         out: &mut std::collections::HashMap<String, Vec<super::now::StateRow>>,
     ) -> Result<()> {
-        let placeholders = std::iter::repeat_n("?", fields.len())
-            .collect::<Vec<_>>()
-            .join(",");
-        let endbound = time_expr_endbound();
-        let sql = format!(
-            "SELECT field, state, verb, occur_time, dur, following_state FROM (
-                SELECT field, state, verb, occur_time, dur, following_state,
-                  ROW_NUMBER() OVER (
-                    PARTITION BY field ORDER BY {endbound} ASC, slug ASC
-                  ) AS rn
-                FROM entries
-                WHERE field IN ({placeholders})
-                  AND {STATE_PARTICIPATION_SQL}
-                  AND dur IS NOT NULL
-                  AND {endbound} > ?
-            ) WHERE rn <= {} ORDER BY rn",
-            super::now::SPAN_LOOKAHEAD,
-        );
-        let mut bindings: Vec<String> = fields.iter().map(|s| s.to_string()).collect();
-        bindings.push(t.to_rfc3339());
-        let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(
-            rusqlite::params_from_iter(bindings.iter()),
-            read_state_columns,
-        )?;
-        for r in rows {
-            let (field, row) = decode_state_row(r.map_err(DatumError::Db)?)?;
-            if row.leading_edge().is_some_and(|edge| edge <= t) {
-                out.entry(field).or_default().push(row);
+        let cutoff = t.to_rfc3339();
+        let mut stmt = self
+            .conn
+            .prepare(&spanning_blocks_sql(super::now::SPAN_LOOKAHEAD))?;
+        for field in dedup_fields(fields) {
+            let rows = stmt.query_map(rusqlite::params![field, cutoff], read_state_columns)?;
+            for r in rows {
+                let (field, row) = decode_state_row(r.map_err(DatumError::Db)?)?;
+                if row.leading_edge().is_some_and(|edge| edge <= t) {
+                    out.entry(field).or_default().push(row);
+                }
             }
         }
         Ok(())
@@ -316,6 +291,59 @@ impl Db {
     }
 }
 
+/// The `fields` list with repeats removed, order preserved. The
+/// predecessor's `field IN (…)` deduped for free; the per-field loop that
+/// replaced it would otherwise read a repeated name twice and hand
+/// [`super::now::resolve_effective`] a doubled row list.
+fn dedup_fields<'a>(fields: &[&'a str]) -> Vec<&'a str> {
+    let mut seen = std::collections::HashSet::with_capacity(fields.len());
+    fields.iter().copied().filter(|f| seen.insert(*f)).collect()
+}
+
+/// The single-field state read (da-vmjh): the newest `depth`
+/// state-participating rows at or before `?2`, newest first. Bound
+/// `?1` = field, `?2` = the RFC-3339 cutoff.
+///
+/// The shape is the point: an equality on `field` plus a range on
+/// `occur_time`, ordered the way `entries_live_field_occur` already
+/// stores them, so the planner SEARCHes that index and stops at
+/// `LIMIT` — `USE TEMP B-TREE FOR LAST TERM OF ORDER BY` is only the
+/// slug tiebreak sorting within one `occur_time`, which still lets the
+/// scan terminate early. A plan that SCANs a subquery instead has read
+/// the whole history.
+pub(super) fn state_rows_sql(depth: usize) -> String {
+    // da-2i8g: each row's verb / occur_time / dur / following_state come
+    // along so the trailing-edge rules can be applied in Rust — `dur` is
+    // an ISO-8601 string, which SQL cannot add to a time.
+    let endbound = time_expr_endbound();
+    format!(
+        "SELECT field, state, verb, occur_time, dur, following_state
+           FROM entries
+          WHERE field = ?1
+            AND {STATE_PARTICIPATION_SQL}
+            AND {endbound} <= ?2
+          ORDER BY {STATE_ORDER_NEWEST_FIRST}
+          LIMIT {depth}"
+    )
+}
+
+/// The single-field spanning-block read (da-vmjh): the oldest `limit`
+/// dur-bearing rows stored after `?2`, oldest first. Same index and same
+/// early exit as [`state_rows_sql`], walked the other way.
+pub(super) fn spanning_blocks_sql(limit: usize) -> String {
+    let endbound = time_expr_endbound();
+    format!(
+        "SELECT field, state, verb, occur_time, dur, following_state
+           FROM entries
+          WHERE field = ?1
+            AND {STATE_PARTICIPATION_SQL}
+            AND dur IS NOT NULL
+            AND {endbound} > ?2
+          ORDER BY {STATE_ORDER_OLDEST_FIRST}
+          LIMIT {limit}"
+    )
+}
+
 /// The six columns both state-row readers select, decoded as far as
 /// rusqlite alone can take them. The JSON columns stay as strings here so
 /// a parse failure surfaces as a [`DatumError`] rather than being flattened
@@ -435,6 +463,82 @@ mod tests {
             "d1",
         );
         db.insert_entry(&entry).unwrap();
+    }
+
+    /// Every line of `EXPLAIN QUERY PLAN` for `sql`, joined.
+    fn plan_of(db: &Db, sql: &str) -> String {
+        let mut stmt = db
+            .conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap();
+        let rows = stmt
+            .query_map(rusqlite::params!["mood", "2026-01-01T00:00:00Z"], |r| {
+                r.get::<_, String>(3)
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<String>>>()
+            .unwrap();
+        rows.join("\n")
+    }
+
+    /// The gate for da-vmjh. Both state reads must be able to STOP at
+    /// their `LIMIT`, and the plan says whether they can.
+    ///
+    /// `SEARCH … USING INDEX entries_live_field_occur` is the seek: the
+    /// partial `(field, occur_time) WHERE deleted_at IS NULL` index,
+    /// whose predicate [`STATE_PARTICIPATION_SQL`] implies. A `SCAN`
+    /// line is the discriminator — the predecessor ranked every row of
+    /// every field with `ROW_NUMBER() OVER (PARTITION BY field …)` and
+    /// filtered `rn <= depth` outside the window, so its plan read
+    /// `CO-ROUTINE (subquery-N)` / `SCAN (subquery-N)` / `USE TEMP
+    /// B-TREE FOR ORDER BY`: the whole history materialized and sorted
+    /// before one row per field was kept. Neither may reappear.
+    ///
+    /// `USE TEMP B-TREE FOR LAST TERM OF ORDER BY` is allowed and
+    /// expected: the index does not carry `slug`, so SQLite sorts the
+    /// tiebreak within each equal-`occur_time` block. That is block
+    /// sorting, which still terminates at the LIMIT.
+    #[test]
+    fn state_reads_stop_at_their_limit() {
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "mood", json!("happy"), 100);
+
+        for (label, sql) in [
+            ("state_rows_sql", state_rows_sql(1)),
+            (
+                "state_rows_sql deep",
+                state_rows_sql(super::super::now::RESUME_LOOKBACK),
+            ),
+            (
+                "spanning_blocks_sql",
+                spanning_blocks_sql(super::super::now::SPAN_LOOKAHEAD),
+            ),
+        ] {
+            let plan = plan_of(&db, &sql);
+            assert!(
+                plan.contains("SEARCH") && plan.contains("entries_live_field_occur"),
+                "{label}: expected a SEARCH on entries_live_field_occur, got:\n{plan}"
+            );
+            assert!(
+                !plan.contains("SCAN"),
+                "{label}: a SCAN means the read cannot stop at its LIMIT, got:\n{plan}"
+            );
+            assert!(
+                !plan.contains("USE TEMP B-TREE FOR ORDER BY"),
+                "{label}: a full sort means the whole history is materialized first \
+                 (a LAST-TERM b-tree is fine), got:\n{plan}"
+            );
+        }
+    }
+
+    /// The per-field loop must not double a repeated name — `field IN
+    /// (…)` used to dedupe for free.
+    #[test]
+    fn repeated_field_reads_once() {
+        let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "mood", json!("happy"), 100);
+        let rows = db.state_rows_at(&["mood", "mood"], probe(), 4).unwrap();
+        assert_eq!(rows["mood"].len(), 1);
     }
 
     #[test]

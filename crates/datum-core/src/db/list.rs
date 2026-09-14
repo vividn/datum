@@ -47,64 +47,7 @@ impl Db {
     /// optional final reverse. The returned vec is oldest-first by default
     /// (so tail's output reads top-to-bottom in chronological order).
     pub fn list_entries(&self, params: &ListParams) -> Result<Vec<Entry>> {
-        let metric_expr: &str = time_expr(params.metric);
-
-        let mut sql = format!("SELECT * FROM entries WHERE {LIVE_SQL}");
-        let mut bindings: Vec<String> = Vec::new();
-
-        // da-5ns / da-r17h: a timeless row (bare `add`/`note`, or any
-        // `-T`/--no-timestamp insert) stores `occur_time IS NULL` (its
-        // slug is `field:c<create_time>`, not a stub timestamp). The Occur
-        // metric (chronological "when did this happen") must skip those
-        // rows; Modify / Hybrid still see them.
-        if params.metric == TimeMetric::Occur {
-            sql.push_str(" AND occur_time IS NOT NULL");
-        }
-        // da-ghlx: default-filter review markers (`extra_metadata.flag =
-        // true`, da-dnnn) and protocol notes (`extra_metadata.meta =
-        // true`, da-xn8j). `json_extract` returns 1 for JSON true,
-        // 0 for JSON false, NULL when the path or column is absent —
-        // `IS NOT 1` covers all three "not-set" cases without
-        // dereferencing a NULL column.
-        if !params.include_meta {
-            sql.push_str(
-                " AND json_extract(extra_metadata, '$.flag') IS NOT 1 \
-                  AND json_extract(extra_metadata, '$.meta') IS NOT 1",
-            );
-        }
-        if !params.fields.is_empty() {
-            // One name → `= ?` (equivalent, slightly tighter plan); two or
-            // more → `IN (?, ?, …)` so a multi-field tail merges via the
-            // `entries_field_occur` index instead of scanning.
-            if params.fields.len() == 1 {
-                sql.push_str(" AND field = ?");
-            } else {
-                let qs = vec!["?"; params.fields.len()].join(", ");
-                sql.push_str(&format!(" AND field IN ({qs})"));
-            }
-            bindings.extend(params.fields.iter().cloned());
-        }
-        if let Some(start) = &params.start_utc {
-            sql.push_str(&format!(" AND {metric_expr} >= ?"));
-            bindings.push(start.to_rfc3339());
-        }
-        if let Some(end) = &params.end_utc {
-            sql.push_str(&format!(" AND {metric_expr} <= ?"));
-            bindings.push(end.to_rfc3339());
-        }
-
-        // For tail we want the LAST N by metric, so sort DESC + LIMIT then
-        // reverse; for head we want FIRST N, so sort ASC + LIMIT. Secondary
-        // sort by `slug` keeps tied metric timestamps in a deterministic
-        // order — slugs embed the timestamp so same-metric rows sort stably.
-        let order_dir = if params.head { "ASC" } else { "DESC" };
-        sql.push_str(&format!(
-            " ORDER BY {metric_expr} {order_dir}, slug {order_dir}"
-        ));
-        if let Some(n) = params.limit {
-            sql.push_str(&format!(" LIMIT {n}"));
-        }
-
+        let (sql, bindings) = list_entries_sql(params);
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), row_to_entry)?;
         let mut results: Vec<Entry> = rows
@@ -220,5 +163,125 @@ impl Db {
             .prepare("SELECT slug FROM entries WHERE deleted_at IS NOT NULL ORDER BY slug ASC")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+}
+
+/// The SQL + bindings for [`Db::list_entries`], split out so the plan can
+/// be asserted (da-vmjh). The window read every render surface makes —
+/// `TimeMetric::Hybrid`, which resolves to `occur_time`, bounded at both
+/// ends — must be served by `entries_occur_time`, the partial
+/// `(occur_time, slug) WHERE deleted_at IS NULL` index: it covers the
+/// range AND the whole ORDER BY, so the read touches only the rows in
+/// the window and never sorts.
+pub(super) fn list_entries_sql(params: &ListParams) -> (String, Vec<String>) {
+    let metric_expr: &str = time_expr(params.metric);
+
+    let mut sql = format!("SELECT * FROM entries WHERE {LIVE_SQL}");
+    let mut bindings: Vec<String> = Vec::new();
+
+    // da-5ns / da-r17h: a timeless row (bare `add`/`note`, or any
+    // `-T`/--no-timestamp insert) stores `occur_time IS NULL` (its
+    // slug is `field:c<create_time>`, not a stub timestamp). The Occur
+    // metric (chronological "when did this happen") must skip those
+    // rows; Modify / Hybrid still see them.
+    if params.metric == TimeMetric::Occur {
+        sql.push_str(" AND occur_time IS NOT NULL");
+    }
+    // da-ghlx: default-filter review markers (`extra_metadata.flag =
+    // true`, da-dnnn) and protocol notes (`extra_metadata.meta =
+    // true`, da-xn8j). `json_extract` returns 1 for JSON true,
+    // 0 for JSON false, NULL when the path or column is absent —
+    // `IS NOT 1` covers all three "not-set" cases without
+    // dereferencing a NULL column.
+    if !params.include_meta {
+        sql.push_str(
+            " AND json_extract(extra_metadata, '$.flag') IS NOT 1 \
+              AND json_extract(extra_metadata, '$.meta') IS NOT 1",
+        );
+    }
+    if !params.fields.is_empty() {
+        // One name → `= ?` (equivalent, slightly tighter plan); two or
+        // more → `IN (?, ?, …)` so a multi-field tail merges via the
+        // `entries_field_occur` index instead of scanning.
+        if params.fields.len() == 1 {
+            sql.push_str(" AND field = ?");
+        } else {
+            let qs = vec!["?"; params.fields.len()].join(", ");
+            sql.push_str(&format!(" AND field IN ({qs})"));
+        }
+        bindings.extend(params.fields.iter().cloned());
+    }
+    if let Some(start) = &params.start_utc {
+        sql.push_str(&format!(" AND {metric_expr} >= ?"));
+        bindings.push(start.to_rfc3339());
+    }
+    if let Some(end) = &params.end_utc {
+        sql.push_str(&format!(" AND {metric_expr} <= ?"));
+        bindings.push(end.to_rfc3339());
+    }
+
+    // For tail we want the LAST N by metric, so sort DESC + LIMIT then
+    // reverse; for head we want FIRST N, so sort ASC + LIMIT. Secondary
+    // sort by `slug` keeps tied metric timestamps in a deterministic
+    // order — slugs embed the timestamp so same-metric rows sort stably.
+    let order_dir = if params.head { "ASC" } else { "DESC" };
+    sql.push_str(&format!(
+        " ORDER BY {metric_expr} {order_dir}, slug {order_dir}"
+    ));
+    if let Some(n) = params.limit {
+        sql.push_str(&format!(" LIMIT {n}"));
+    }
+
+    (sql, bindings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::types::TimeMetric;
+
+    /// da-vmjh item 4: the window read every render surface makes is
+    /// index-bounded, and was already. `dayview` / `nowview` fetch
+    /// `TimeMetric::Hybrid` between two instants with no field filter;
+    /// `entries_occur_time` — partial `(occur_time, slug) WHERE
+    /// deleted_at IS NULL` — covers the range and the whole ORDER BY, so
+    /// the plan is one SEARCH with no sort and no scan. Recorded here so
+    /// a later edit to the predicate (a metric change, a new default
+    /// filter that is not sargable) cannot quietly turn the last-few-days
+    /// read back into a whole-history one.
+    #[test]
+    fn the_render_window_read_is_index_bounded() {
+        let db = Db::open_in_memory().unwrap();
+        let params = ListParams {
+            metric: TimeMetric::Hybrid,
+            start_utc: Some("2026-09-12T00:00:00Z".parse().unwrap()),
+            end_utc: Some("2026-09-14T12:00:00Z".parse().unwrap()),
+            ..Default::default()
+        };
+        let (sql, bindings) = list_entries_sql(&params);
+        let mut stmt = db
+            .conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap();
+        let plan = stmt
+            .query_map(rusqlite::params_from_iter(bindings.iter()), |r| {
+                r.get::<_, String>(3)
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<String>>>()
+            .unwrap()
+            .join("\n");
+        assert!(
+            plan.contains("SEARCH entries USING INDEX entries_occur_time"),
+            "expected the window to be walked on entries_occur_time, got:\n{plan}"
+        );
+        assert!(
+            !plan.contains("SCAN entries"),
+            "a SCAN reads the whole history for a two-day window, got:\n{plan}"
+        );
+        assert!(
+            !plan.contains("TEMP B-TREE"),
+            "the index covers the ORDER BY; a sort means it stopped doing so, got:\n{plan}"
+        );
     }
 }
