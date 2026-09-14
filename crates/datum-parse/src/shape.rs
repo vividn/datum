@@ -331,7 +331,11 @@ mod tests {
     #[test]
     fn switch_to_tracked_is_hidden() {
         assert_eq!(
-            render_shape(Verb::Switch, EntryShape::Point, &s(json!(TRACKED_STATE_VALUE))),
+            render_shape(
+                Verb::Switch,
+                EntryShape::Point,
+                &s(json!(TRACKED_STATE_VALUE))
+            ),
             RenderShape::Hidden,
         );
     }

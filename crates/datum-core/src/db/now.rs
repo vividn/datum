@@ -12,8 +12,8 @@ use serde_json::Value as JsonValue;
 use crate::entry::Entry;
 use crate::error::Result;
 
-use crate::shape::is_inactive_state;
 use super::Db;
+use crate::shape::is_inactive_state;
 
 /// Wire-format identifier for the JSON shape of [`NowSnapshot`].
 pub const SCHEMA_ID: &str = "datum_now_v1";
