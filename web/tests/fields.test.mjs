@@ -26,9 +26,9 @@ describe('the logic', () => {
 	test('tracked fields first, each group in the CLI order; `now` says what is on', () => {
 		const widgets = buttonsFor(
 			[
-				{ field: 'a', spec: null, states: [] },
-				{ field: 'b', spec: spec('b', { default_verb: 'start' }), states: [] },
-				{ field: 'c', spec: spec('c', { default_verb: 'switch' }), states: ['x'] }
+				{ field: 'a', spec: null, states: [], color: '#111111', state_colors: {} },
+				{ field: 'b', spec: spec('b', { default_verb: 'start' }), states: [], color: '#222222', state_colors: {} },
+				{ field: 'c', spec: spec('c', { default_verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' } }
 			],
 			[{ field: 'b', state: true }, { field: 'c', state: 'x' }, { field: 'a', state: false }]
 		);
@@ -48,7 +48,7 @@ describe('the logic', () => {
 	});
 
 	test('a point is filled; a block fills while on; a switch takes its state colour inside the field outline; a label is always the fill’s ink', () => {
-		const w = (shape, rest = {}) => ({ field: 'f', shape, tracked: true, stateColors: {}, ...rest });
+		const w = (shape, rest = {}) => ({ field: 'f', shape, tracked: true, color: '#7c7cff', stateColors: {}, ...rest });
 		assert.deepEqual(lookOf(w({ kind: 'point' }, { color: '#ffff00' })), { fill: '#ffff00', line: '#ffff00', text: '#000000', label: 'f' });
 		assert.deepEqual(lookOf(w({ kind: 'point' }, { color: '#ffff00', current: 'x' })).fill, '#ffff00', 'never coloured by a state');
 		assert.deepEqual(lookOf(w({ kind: 'state' }, { color: '#0000ff' })), { fill: null, line: '#0000ff', text: '#0000ff', label: 'f' });
@@ -57,14 +57,16 @@ describe('the logic', () => {
 		assert.deepEqual(lookOf(mood), { fill: '#00ff00', line: '#800080', text: '#000000', label: 'f' });
 		assert.deepEqual(lookOf(mood, 'state'), { fill: '#00ff00', line: '#800080', text: '#000000', label: 'good' }, 'the variant picks the word, not the ink');
 		assert.equal(lookOf({ ...mood, current: 'meh' }).fill, '#800080', 'a state without a colour takes the field colour');
-		assert.deepEqual(lookOf(w({ kind: 'record' })), { fill: null, line: '#7c7cff', text: '#7c7cff', label: 'f' }, 'no colour: the neutral');
+		assert.deepEqual(lookOf(w({ kind: 'record' })), { fill: null, line: '#7c7cff', text: '#7c7cff', label: 'f' }, 'a record is outlined and inked in its (resolved) field colour');
 
 		// da-qnvh: the text was the field's colour and the fill falls back to
 		// the field's colour, so the two collapsed — the name of the field
 		// printed in exactly its own background. Every colour it could be.
-		for (const color of [undefined, '#e8820c', '#00ff00', '#000080']) {
+		// `color` is always a resolved `#rrggbb` in production (da-yiyj) — no
+		// longer an "uncoloured" case for `lookOf` itself to handle.
+		for (const color of ['#7c7cff', '#e8820c', '#00ff00', '#000080']) {
 			const painted = lookOf(w({ kind: 'states', states: ['on'] }, { color, current: 'on' }));
-			assert.notEqual(painted.text, painted.fill, `a switch in ${color ?? 'no colour'} is painted on itself`);
+			assert.notEqual(painted.text, painted.fill, `a switch in ${color} is painted on itself`);
 		}
 	});
 
@@ -76,11 +78,15 @@ describe('the logic', () => {
 	});
 });
 
+// Hex, not CSS colour names: `crates/datum-commands/src/render/colors.rs`'s
+// `resolve_rgb` only understands `#rrggbb` (or a legacy ANSI-256 number) —
+// the same model both the CLI and the widget now share (da-yiyj) — so a name
+// like `orange` would silently fall through to `md5(field)`.
 const FIXTURE = [
-	'spec set coffee --default-verb occur --color orange',
-	'spec set work --default-verb start --color blue',
+	'spec set coffee --default-verb occur --color #ffa500',
+	'spec set work --default-verb start --color #0000ff',
 	// `--state good=green` would name a state `good=green`: the colours are `--state-color`.
-	'spec set mood --default-verb switch --state good --state bad --state-color good=green --state-color bad=red --color purple',
+	'spec set mood --default-verb switch --state good --state bad --state-color good=#008000 --state-color bad=#ff0000 --color #800080',
 	'spec set note --default-verb add',
 	'occur untracked'
 ];
@@ -215,7 +221,9 @@ describe('in the app', () => {
 			assert.notEqual(note.role, null);
 			assert.notEqual(note.role, 'button');
 			assert.equal(note.underline, 'underline');
-			assert.equal(note.underlineColor, 'rgb(124, 124, 255)', 'no colour: the neutral');
+			// No spec colour: resolved server-side to md5("note") (da-yiyj), not
+			// the app's accent — `crates/datum-commands/src/render/colors.rs`.
+			assert.equal(note.underlineColor, 'rgb(170, 214, 83)');
 
 			const untracked = page.locator('.bar .untracked[data-field="untracked"]');
 			assert.equal(await untracked.locator('button').getAttribute('aria-label'), 'track untracked');
@@ -298,7 +306,7 @@ describe('in the app', () => {
 		'spec set pushups --default-verb occur',
 		'spec set work --default-verb start',
 		'spec set mood --default-verb switch --state good --state bad',
-		'spec set energy --default-verb switch --state high --state low --state-color high=green',
+		'spec set energy --default-verb switch --state high --state low --state-color high=#008000',
 		'start work',
 		'switch mood good',
 		'switch energy high',
@@ -309,7 +317,9 @@ describe('in the app', () => {
 		await withApp(async ({ page }) => {
 			for (const line of PLAIN) await type(page, line);
 			await page.locator('.bar [data-field="untracked"]').waitFor();
-			await untilFieldStyle(page, 'work', 'backgroundColor', 'rgb(124, 124, 255)');
+			// No spec colour on `work`: resolved server-side to md5("work"),
+			// not the app's accent (da-yiyj).
+			await untilFieldStyle(page, 'work', 'backgroundColor', 'rgb(103, 233, 44)');
 
 			const on = await contrasts(page);
 			assert.deepEqual(

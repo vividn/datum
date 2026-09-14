@@ -29,9 +29,14 @@ export interface FieldButton {
 	shape: FieldShape;
 	/** A spec exists: the field is tracked, and the bar gives it a button. */
 	tracked: boolean;
-	/** The spec's colour, when it declares one. */
-	color?: string;
-	/** The spec's per-state colours. */
+	/**
+	 * The field's RESOLVED colour (`#rrggbb`) — `datum fields --json`'s
+	 * `color`, computed the same way the CLI paints it: a spec override, else
+	 * `md5(field)` (da-yiyj). Always present; there is no untracked/colourless
+	 * case left for the widget to fall back on.
+	 */
+	color: string;
+	/** Every listed state's RESOLVED colour (`#rrggbb`) — `fields --json`'s `state_colors`. */
 	stateColors: Record<string, string>;
 	/**
 	 * What the field is in now, by `datum now --json`: `true` for an open
@@ -83,6 +88,10 @@ export interface FieldListing {
 	spec: FieldSpec | null;
 	/** The distinct states the field has been logged with. */
 	states: unknown[];
+	/** The field's resolved colour (`#rrggbb`) — spec override, else `md5(field)`. */
+	color: string;
+	/** Every listed state's resolved colour (`#rrggbb`), keyed by state name. */
+	state_colors: Record<string, string>;
 }
 
 /** One row of `datum now --json`'s `active`. */
@@ -98,14 +107,14 @@ export interface NowActive {
  */
 export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): FieldButton[] {
 	const now = new Map(active.map((a) => [a.field, a.state]));
-	const all: FieldButton[] = listing.map(({ field, spec, states }) => {
+	const all: FieldButton[] = listing.map(({ field, spec, states, color, state_colors }) => {
 		const state = now.get(field);
 		return {
 			field,
 			shape: shapeFor(spec ?? undefined, states),
 			tracked: spec != null,
-			color: spec?.color ?? undefined,
-			stateColors: spec?.state_colors ?? {},
+			color,
+			stateColors: state_colors,
 			current: state === true || (typeof state === 'string' && state !== '') ? state : undefined
 		};
 	});
@@ -154,8 +163,10 @@ export interface Look {
  * filled with its field's colour; a block is filled while it is on and
  * outlined otherwise; a switch in a state is filled with that state's
  * colour (the field's, where the state has none) inside the field's
- * outline. `hex` turns a colour as the spec spells it into `#rrggbb`, for
- * the ink rule.
+ * outline. `button.color` / `button.stateColors` are already resolved
+ * `#rrggbb` — `datum fields --json` computes them the same way the CLI
+ * paints them (da-yiyj), so there is nothing left here to parse or fall
+ * back to a neutral for.
  *
  * A label's ink comes from the FILL it lands on, once, for every kind
  * (`filled` below) — never from the field's colour. A switch used to take
@@ -166,14 +177,14 @@ export interface Look {
  * which colour was duplicated. Only an unfilled button keeps the field's
  * colour as its ink, and that is over the pane, not over itself.
  */
-export function lookOf(button: FieldButton, variant: SwitchLabel = 'field', hex: (c: string) => string = (c) => c): Look {
-	const field = hex(button.color ?? NEUTRAL);
+export function lookOf(button: FieldButton, variant: SwitchLabel = 'field'): Look {
+	const field = button.color;
 	const { current, shape } = button;
 	const filled = (fill: string, label: string): Look => ({ fill, line: field, text: inkOver(fill), label });
 	if (shape.kind === 'point') return filled(field, button.field);
 	if (shape.kind === 'record' || current === undefined) return { fill: null, line: field, text: field, label: button.field };
 	if (current === true || shape.kind === 'state') return filled(field, button.field);
-	const fill = hex(button.stateColors[current] ?? button.color ?? NEUTRAL);
+	const fill = button.stateColors[current] ?? button.color;
 	return filled(fill, variant === 'state' ? current : button.field);
 }
 

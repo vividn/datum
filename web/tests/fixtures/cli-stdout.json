@@ -98,7 +98,7 @@
 		{
 			"argv": ["fields", "--json"],
 			"code": 0,
-			"stdout": "[\n  {\n    \"field\": \"coffee\",\n    \"spec\": null,\n    \"states\": []\n  },\n  {\n    \"field\": \"journal\",\n    \"spec\": null,\n    \"states\": []\n  },\n  {\n    \"field\": \"mood\",\n    \"spec\": null,\n    \"states\": [\n      \"happy\",\n      \"tired\"\n    ]\n  },\n  {\n    \"field\": \"pushups\",\n    \"spec\": null,\n    \"states\": []\n  },\n  {\n    \"field\": \"work\",\n    \"spec\": null,\n    \"states\": [\n      false,\n      true\n    ]\n  }\n]"
+			"stdout": "[\n  {\n    \"color\": \"#24eb05\",\n    \"field\": \"coffee\",\n    \"spec\": null,\n    \"state_colors\": {},\n    \"states\": []\n  },\n  {\n    \"color\": \"#fb9141\",\n    \"field\": \"journal\",\n    \"spec\": null,\n    \"state_colors\": {},\n    \"states\": []\n  },\n  {\n    \"color\": \"#dc27c0\",\n    \"field\": \"mood\",\n    \"spec\": null,\n    \"state_colors\": {\n      \"happy\": \"#56ab24\",\n      \"tired\": \"#287f44\"\n    },\n    \"states\": [\n      \"happy\",\n      \"tired\"\n    ]\n  },\n  {\n    \"color\": \"#543328\",\n    \"field\": \"pushups\",\n    \"spec\": null,\n    \"state_colors\": {},\n    \"states\": []\n  },\n  {\n    \"color\": \"#67e92c\",\n    \"field\": \"work\",\n    \"spec\": null,\n    \"state_colors\": {},\n    \"states\": [\n      false,\n      true\n    ]\n  }\n]"
 		},
 		{
 			"argv": ["count", "--group-by", "field"],

@@ -29,7 +29,6 @@
 		declareArgv,
 		lookOf,
 		pressArgv,
-		NEUTRAL,
 		type Adjust,
 		type SwitchLabel,
 		type FieldButton,
@@ -69,19 +68,8 @@
 	$: tracked = fields.filter((w) => w.tracked);
 	$: untracked = fields.filter((w) => !w.tracked);
 
-	// A spec's colour is spelled however it was typed (`orange`, `#ffa500`);
-	// the ink rule needs `#rrggbb`, which the browser's own parser gives.
-	let ctx: CanvasRenderingContext2D | null = null;
-	function hex(color: string): string {
-		ctx ??= document.createElement('canvas').getContext('2d');
-		if (!ctx) return NEUTRAL;
-		ctx.fillStyle = NEUTRAL;
-		ctx.fillStyle = color;
-		return ctx.fillStyle.startsWith('#') ? ctx.fillStyle : NEUTRAL;
-	}
-
 	function paint(button: FieldButton, variant: SwitchLabel) {
-		const look = lookOf(button, variant, hex);
+		const look = lookOf(button, variant);
 		return { look, style: `--fill: ${look.fill ?? 'transparent'}; --line: ${look.line}; --text: ${look.text}` };
 	}
 

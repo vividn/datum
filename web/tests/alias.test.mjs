@@ -164,7 +164,11 @@ describe('the aliases widget', () => {
 
 	test('picked into a pane, it lists every alias and grows a row on a typed alias set', async () => {
 		await withApp(async ({ page, run }) => {
-			await ok(run, ['spec', 'set', 'coffee', '--default-verb', 'occur', '--color', 'orange']);
+			// Hex, not a CSS colour name: the fields widget's `color` is now
+			// resolved server-side by `crates/datum-commands/src/render/colors.rs`,
+			// which only understands `#rrggbb` (or a legacy ANSI-256 number) —
+			// a name like `orange` would fall through to `md5(field)` (da-yiyj).
+			await ok(run, ['spec', 'set', 'coffee', '--default-verb', 'occur', '--color', '#ffa500']);
 			await ok(run, ['alias', 'set', 'cof', 'occur coffee cups=1']);
 			await page.locator('section[data-pane="tail"] .titlebar button.more').first().click();
 			await page.getByRole('menuitem', { name: 'split side by side', exact: true }).click();
