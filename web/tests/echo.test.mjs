@@ -45,6 +45,17 @@ describe('echoArgv', () => {
 		}
 	});
 
+	test('an argv with no command word is left alone', () => {
+		// `--version` and `--help` are read before the parser looks for a
+		// subcommand, so a trailing `--show json` is not a flag on a command
+		// but a stray word, and the CLI exits 1 on it (da-1hdg). An unknown
+		// WORD is still a write under another name; the absence of a word is
+		// not.
+		for (const argv of [['--version'], ['--help'], ['-h'], ['--db', 'x']]) {
+			assert.deepEqual(echoArgv(argv), argv, argv.join(' '));
+		}
+	});
+
 	test('a `--show` the reader named wins, in either spelling', () => {
 		assert.deepEqual(echoArgv(['occur', 'x', '--show', 'all']), ['occur', 'x', '--show', 'all']);
 		assert.deepEqual(echoArgv(['occur', 'x', '--show=none']), ['occur', 'x', '--show=none']);
@@ -97,11 +108,16 @@ describe('parseEcho', () => {
 });
 
 /**
- * The words `echoArgv` leaves alone, with arguments that make each one a
+ * The argvs `echoArgv` leaves alone, with arguments that make each one a
  * command the CLI will actually try to run.
  *
  * `db`, `spec`, `alias`, `config`, `sync` and `kit` are groups: the flag
  * they refuse is refused at the subcommand, so each is probed as one.
+ *
+ * `help`, `repl` and the flag-only argvs are here for da-1hdg: they are
+ * not in `datum help`'s command table, which is how a sweep over that
+ * table left them getting the flag and turned `help` — the first thing a
+ * new user types into the bar — into a parse error.
  */
 const READERS = [
 	['tail'],
@@ -124,7 +140,12 @@ const READERS = [
 	['kit', 'list'],
 	['track', 'coffee'],
 	['ignore', 'coffee'],
-	['reparse']
+	['reparse'],
+	['help'],
+	['help', 'occur'],
+	['repl'],
+	['--version'],
+	['--help']
 ];
 
 /** Verbs that DO echo a document (da-yc9w's own list). */

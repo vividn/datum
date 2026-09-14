@@ -52,6 +52,11 @@ export interface EchoDoc {
  * `tests/echo.test.mjs` runs every word here and every echoing verb
  * through the real CLI and holds this list to what the CLI does, so it
  * cannot drift quietly.
+ *
+ * `help` and `repl` are on the list but NOT in `datum help`'s own command
+ * table — the CLI accepts words it does not advertise, which is how a
+ * sweep over that table misses them (da-1hdg). They are the first thing a
+ * new user types into the bar, and `help --show json` is a parse error.
  */
 const NO_ECHO = new Set([
 	// Readers and drawn views.
@@ -84,7 +89,10 @@ const NO_ECHO = new Set([
 	'track',
 	'ignore',
 	'retime',
-	'reparse'
+	'reparse',
+	// Words the CLI answers but does not list in `datum help`.
+	'help',
+	'repl'
 ]);
 
 /** The value form, as the CLI's `Show` reads it. */
@@ -114,9 +122,12 @@ const hasShow = (argv: string[]): boolean =>
 /**
  * Ask a reader's command for its echo as data.
  *
- * Left alone: a command with no echo (above), and one that names its own
+ * Left alone: a command with no echo (above), one that names its own
  * `--show` — someone who asks for `--show all` gets `--show all`, as
- * someone who names a `--width` gets that width.
+ * someone who names a `--width` gets that width — and an argv with no
+ * command word at all (`--version`, `--help`, a bare `--db x`), which is
+ * not a command under another name but a flag the parser reads before it
+ * looks for one, and errors on a trailing `--show` (da-1hdg).
  *
  * `--show` is a per-SIDE flag: `switch a x , switch b y` is two commands,
  * and one flag at the end reaches only the second, which would leave the
@@ -128,7 +139,8 @@ export function echoArgv(argv: string[]): string[] {
 	const out: string[] = [];
 	let side: string[] = [];
 	const flush = (): void => {
-		if (side.length && !hasShow(side) && !NO_ECHO.has(commandOf(side) ?? '')) {
+		const command = commandOf(side);
+		if (command !== undefined && !hasShow(side) && !NO_ECHO.has(command)) {
 			side = [...side, SHOW, JSON_SHOW];
 		}
 		out.push(...side);
