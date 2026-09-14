@@ -10,8 +10,10 @@
 	rectangle, filled while it is on; a switch is a rectangle filled with
 	its current state's colour; a keyed record is its name, underlined, and
 	a click prefills `add <field> ` in the bottom bar rather than running
-	anything. The bar wraps and grows; the page scrolls, never the bar,
-	whose panels hang upward out of it. Ignored fields get no button: the
+	anything. The bar wraps and grows; its pane keeps the height its
+	layout gives it and the bar scrolls inside it (da-mbz2), while its
+	panels, which hang upward out of it, are hung against the screen so
+	that scroller cannot clip them. Ignored fields get no button: the
 	Track + form lists them, and a press runs `track <field>`.
 	`startTracking` is the one place that form opens from, for the set-up
 	walkthrough to take over.
@@ -183,6 +185,38 @@
 	function onWindowKeyDown(event: KeyboardEvent) {
 		if (event.key === 'Escape') close();
 	}
+
+	/**
+	 * Hang an open panel above the slot it belongs to, against the screen.
+	 *
+	 * The bar scrolls inside its pane (da-mbz2), and a scroller clips
+	 * whatever its children hang outside it — so a panel is `fixed` and
+	 * placed from its slot's box rather than laid out against it. It still
+	 * opens upward (da-hkpd: below the bar is off the bottom of the
+	 * screen), and never past the top edge: a panel taller than the room
+	 * above its slot scrolls inside itself.
+	 */
+	function hang(node: HTMLElement) {
+		const slot = node.parentElement;
+		const place = () => {
+			if (!slot) return;
+			const box = slot.getBoundingClientRect();
+			node.style.setProperty('--left', `${box.left}px`);
+			node.style.setProperty('--above', `${box.top}px`);
+			node.style.setProperty('--screen', `${document.documentElement.clientHeight}px`);
+		};
+		place();
+		// Capturing: the scroll that moves the slot is the PANE's, not the
+		// window's, and a scroll event does not bubble.
+		window.addEventListener('scroll', place, true);
+		window.addEventListener('resize', place);
+		return {
+			destroy() {
+				window.removeEventListener('scroll', place, true);
+				window.removeEventListener('resize', place);
+			}
+		};
+	}
 </script>
 
 <svelte:window on:pointerdown={onWindowPointerDown} on:keydown={onWindowKeyDown} />
@@ -193,7 +227,7 @@
 			Track +
 		</button>
 		{#if adding}
-			<form class="panel add" on:submit|preventDefault={declare}>
+			<form class="panel add" use:hang on:submit|preventDefault={declare}>
 				<!-- svelte-ignore a11y-autofocus -->
 				<input bind:value={newField} placeholder="field" spellcheck="false" autofocus />
 				<select bind:value={newKind} aria-label="what a press logs">
@@ -276,7 +310,7 @@
 			{/if}
 
 			{#if open === button}
-				<div class="panel">
+				<div class="panel" use:hang>
 					{#if adjustable}
 						<div class="bubbles">
 							<span class="bubble-label">when</span>
@@ -445,15 +479,18 @@
 	}
 
 	.panel {
-		position: absolute;
+		/* Fixed, and placed by `hang` above: the bar's own pane scrolls,
+		   and a panel laid out against its slot would be clipped by that
+		   scroller. Upward, because the bar is the bottom-most row of the
+		   frame at every width, so a panel hung below it opens off the
+		   bottom of the screen — reachable only by a scroll the reader has
+		   no reason to guess at (da-hkpd). */
+		position: fixed;
 		z-index: 10;
-		/* Upward: the bar is the bottom-most row of the frame at every
-		   width, so a panel hung below it opens off the bottom of the
-		   screen — reachable only by a scroll the reader has no reason to
-		   guess at (da-hkpd). Above the bar it is on screen wherever the
-		   bar is. */
-		bottom: calc(100% + 0.3rem);
-		left: 0;
+		left: var(--left);
+		bottom: calc(var(--screen) - var(--above) + 0.3rem);
+		max-height: calc(var(--above) - 0.6rem);
+		overflow: auto;
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;

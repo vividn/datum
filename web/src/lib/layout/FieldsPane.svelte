@@ -1,13 +1,15 @@
 <!--
 	The fields widget as a widget kind.
 
-	Its own body rather than `Pane.svelte`'s, because the widget's panels
-	hang UPWARD out of it (FieldsWidget.svelte, da-hkpd) and a scrolling body
-	would clip them: this body never scrolls, and the pane takes the
-	widget's height instead (`fit` in registry.ts). A press goes, with the
-	bottom bar's pills after it, to the engine's `press`, which routes it
-	through whichever REPL is on screen; a record's line goes to the bottom
-	bar's prompt, unrun.
+	Its own body rather than `Pane.svelte`'s, for the padding and nothing
+	else: this body scrolls, so the pane keeps whatever height its split
+	ratios give it and a bar with more buttons than fit is reached by
+	scrolling rather than by the pane growing (da-mbz2). The widget's
+	panels hang UPWARD out of the bar and a scroller would clip them, so
+	they are hung against the screen instead (`hang` in
+	FieldsWidget.svelte). A press goes, with the bottom bar's pills after
+	it, to the engine's `press`, which routes it through whichever REPL is
+	on screen; a record's line goes to the bottom bar's prompt, unrun.
 -->
 <script lang="ts">
 	import FieldsWidget from '$lib/FieldsWidget.svelte';
@@ -30,9 +32,9 @@
 
 <style>
 	.body {
+		flex: 1;
+		min-height: 0;
+		overflow: auto;
 		padding: 0.5rem 0.6rem;
-		/* Held open so the pane stops above the bottom edge rather than
-		   snapping taller once the bar has buttons in it. A floor only. */
-		min-height: 2rem;
 	}
 </style>

@@ -34,10 +34,6 @@
 // only: the root's minimum (Layout.svelte), so a screen too small for
 // every pane scrolls the page rather than squeezing them — a drag never
 // sees these numbers.
-//
-// `fit`: the pane takes the height its content asks for rather than a
-// share of the split — the bar, whose height is however many rows its
-// chips wrap to (da-vyo2).
 
 import type { ComponentType } from 'svelte';
 import type { WidgetKindMeta } from './types.js';
@@ -65,8 +61,6 @@ export interface WidgetKind {
 	 * detail folded into them. A kind without one has nothing to keep.
 	 */
 	onChange?: (settings: Record<string, unknown>, detail: unknown) => Record<string, unknown>;
-	/** Content-sized along a column: see the note above. */
-	fit?: boolean;
 	/** Content-box sizes a border drag snaps to, from the settings: see the note above. */
 	snap?: (settings: Record<string, unknown>) => { width?: number[]; height?: number[] };
 	/** Not offered by the picker: a kind the app puts in a tab itself. */
@@ -151,7 +145,6 @@ export const KINDS: Record<string, WidgetKind> = {
 		meta: meta('widgetbar', 'fields'),
 		component: FieldsPane,
 		props: ({ switchLabel }) => ({ switchLabel: switchLabel === 'state' ? 'state' : 'field' }),
-		fit: true,
 		legible: { width: 160, height: 49 }
 	},
 	// The aliases widget (da-x6yj): every alias, listed.

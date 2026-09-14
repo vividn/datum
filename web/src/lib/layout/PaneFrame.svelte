@@ -62,7 +62,7 @@
 	import { isSplit } from './types.js';
 	import { apply } from './current.js';
 	import { addTab, closeTab, setActive, setBar, splitPane, splitTab } from './tree.js';
-	import { KINDS, titleOf } from './registry.js';
+	import { titleOf } from './registry.js';
 	import PaneMenu from './PaneMenu.svelte';
 
 	export let pane: Pane;
@@ -242,7 +242,7 @@
 	class:vertical
 	class:root
 	class:bare
-	class:clip={!root && kind !== undefined && !KINDS[kind]?.fit}
+	class:clip={!root && kind !== undefined}
 	data-pane={pane.id}
 	data-title={title}
 	style:--row="{ROW}px"
@@ -509,17 +509,15 @@
 	}
 
 	/* A pane dragged down to its frame (da-zh2o) shows nothing of its
-	   widget outside it — the body's own padding included. The widget
-	   bar is the exception: it sizes itself, so it is never squeezed, and
-	   its panels hang upward out of its pane. */
+	   widget outside it — the body's own padding included. A widget with
+	   more in it than the box holds scrolls inside its own body. */
 	.clip > .content {
 		overflow: hidden;
 	}
 
-	/* Only the root scrolls. A split whose children's floors do not fit
-	   overflows into it and the page scrolls to the rest — while the
-	   widget bar's panels, which hang upward out of their pane
-	   (FieldsWidget.svelte), stay unclipped at every level in between. */
+	/* Only the root scrolls, of the frames: a split whose children's
+	   floors do not fit overflows into it and the page scrolls to the
+	   rest. A widget's own body may scroll inside its pane. */
 	.root > .content {
 		overflow: auto;
 	}

@@ -354,18 +354,16 @@ describe('floorOf', () => {
 		assert.deepEqual(floorOf(layout.root, none, 8, chrome), { width: 2 + 8 + 2, height: 20 });
 	});
 
-	// The root's minimum (#180's review): a content-sized pane is counted at
-	// its drawn height where that is MORE than its floor, never less — its
-	// floor is its largest tab's, and a hidden tab keeps its room.
-	test("the root's keeps a fit pane's larger hidden tab, and adds a wrapped bar", () => {
+	// The root's minimum: every pane legible, laid out as the tree lays
+	// them, less the root's own frame. No pane sizes itself to its content
+	// any more (da-mbz2), so nothing is counted at a drawn height — a
+	// pane's floor is its LARGEST tab's, and a hidden tab keeps its room.
+	test("the root's is every pane legible, keeping a larger hidden tab", () => {
 		const legible = (kind) => ({ repl: { width: 200, height: 106 }, widgetbar: { width: 160, height: 45 }, stats: { width: 240, height: 140 } })[kind];
 		const bar = newPane([widgetTab('widgetbar'), widgetTab('stats')]);
 		const root = newPane([newTab(newSplit('column', [newPane([widgetTab('repl')]), bar]))]);
-		const split = root.tabs[0].content;
-		const at = (px) => rootFloorOf(root, split, legible, 8, chrome, (child) => (child === bar ? px : 0));
 		// repl 106 + its frame 20, the border, stats 140 + its frame 20; the root holder draws no frame.
-		assert.deepEqual(at(45 + 20), { width: 242, height: 126 + 8 + 160 }, 'the bar is drawn, the stats tab hidden');
-		assert.deepEqual(at(200 + 20), { width: 242, height: 126 + 8 + 220 }, 'the bar wraps past it');
+		assert.deepEqual(rootFloorOf(root, legible, 8, chrome), { width: 242, height: 126 + 8 + 160 });
 	});
 });
 

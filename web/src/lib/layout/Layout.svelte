@@ -39,11 +39,9 @@
 	Snaps: a kind may name content sizes (`snapsOfKind` — the strip's is
 	one whole day); a drag whose preview comes within `SNAP_PX` of one,
 	on either side of the border, lands on it, and past that carries on.
-	The arrows do not snap. A kind that sizes itself
-	(`fit`) takes its content's height and no share of the split; the
-	border beside it is a gap, not a handle. The last content-sized child
-	of a column sticks to the bottom of the scroller — which is the widget
-	bar's phone pinning (da-hkpd), now a property of where it sits.
+	The arrows do not snap. Every pane takes the share of the split its
+	ratio gives it — none sizes itself to its content (da-mbz2), so a
+	widget with more in it than its box holds scrolls inside it.
 -->
 <script lang="ts">
 	import { getContext, setContext } from 'svelte';
@@ -99,19 +97,6 @@
 	$: canClose = !(pane.id === rootId && pane.tabs.length === 1);
 	$: lockedHere = locked || !!active.locked;
 
-	const fits = (child: PaneNode): boolean => {
-		const c = child.tabs[child.active].content;
-		return !isSplit(c) && !!KINDS[c.kind]?.fit;
-	};
-	/**
-	 * What each cell grows by: its ratio over the children that grow, since
-	 * flexbox hands out only a fraction of the free space when the grows
-	 * sum below 1 — a content-sized child's share would go empty (da-6twf).
-	 */
-	const grown = (split: Split, ratios: number[]): number[] => {
-		const sum = split.children.reduce((s, c, i) => (fits(c) ? s : s + ratios[i]), 0) || 1;
-		return ratios.map((r) => r / sum);
-	};
 	/** The old grid named its areas by what they showed; a cell does too. */
 	const named = (child: PaneNode): string => {
 		const c = child.tabs[child.active].content;
@@ -134,15 +119,8 @@
 	// One function, two callers, two `minOf`s — keep them apart: the drag's
 	// floor is the frame alone, the root's is every pane legible.
 	const floor = (child: PaneNode) => floorOf(child, () => NONE, BORDER, chromeOf);
-	/** Each cell's drawn height: what a content-sized child takes of the root's minimum. */
-	let drawn: number[] = [];
-	/**
-	 * The root split's least box: its panes' legible boxes, and a
-	 * content-sized child at the height it is drawn where that is more —
-	 * the bar wraps to as many rows as its chips need.
-	 */
-	const legible = (root: PaneNode, split: Split, drawn: number[]) =>
-		rootFloorOf(root, split, legibleOfKind, BORDER, chromeOf, (child, i) => (fits(child) ? (drawn[i] ?? 0) : 0));
+	/** The root split's least box: its panes' legible boxes, laid out as the tree lays them. */
+	const legible = (root: PaneNode) => rootFloorOf(root, legibleOfKind, BORDER, chromeOf);
 	/** A child's snaps as extents along the split: its widget tabs' snaps, plus its frame. */
 	const snapsOf = (child: PaneNode, split: Split): number[] => {
 		const axis = split.direction === 'row' ? 'width' : 'height';
@@ -183,12 +161,12 @@
 		let free = 0;
 		let share = 0;
 		split.children.forEach((child, i) => {
-			if (fits(child) || !boxes[i]) return;
+			if (!boxes[i]) return;
 			free += extent(boxes[i], split);
 			share += split.ratios[i];
 		});
-		return split.children.map((child, i) => {
-			if (fits(child) || free <= 0) return 0;
+		return split.children.map((child) => {
+			if (free <= 0) return 0;
 			const f = floor(child);
 			return ((split.direction === 'row' ? f.width : f.height) * share) / free;
 		});
@@ -276,8 +254,8 @@
 >
 	{#if isSplit(content)}
 		{@const split = content}
-		{@const least = pane.id === rootId ? legible(pane, split, drawn) : undefined}
-		{@const grow = grown(split, preview ?? split.ratios)}
+		{@const least = pane.id === rootId ? legible(pane) : undefined}
+		{@const grow = preview ?? split.ratios}
 		<div
 			class="split {split.direction}"
 			bind:this={splitEl}
@@ -287,7 +265,7 @@
 		>
 			{#each split.children as child, i (child.id)}
 				{#if i > 0}
-					{#if lockedHere || fits(split.children[i - 1]) || fits(child)}
+					{#if lockedHere}
 						<div class="border static" aria-hidden="true"></div>
 					{:else}
 						<!-- A focusable separator is a widget in ARIA (it carries a
@@ -312,8 +290,6 @@
 				{/if}
 				<div
 					class="cell {named(child)}"
-					class:fit={fits(child)}
-					bind:offsetHeight={drawn[i]}
 					style:--ratio={grow[i]}
 					style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
 				>
@@ -375,20 +351,6 @@
 	.column > .cell {
 		min-height: var(--floor);
 	}
-	.cell.fit {
-		flex: 0 0 auto;
-	}
-
-	/* The bar's phone pinning (da-hkpd): where a column overflows the
-	   root's scroller, its last content-sized child stays on screen and
-	   the panes scroll behind it. */
-	.column > .cell.fit:last-child {
-		position: sticky;
-		bottom: 0;
-		z-index: 1;
-		background: var(--page);
-	}
-
 	.border {
 		flex: 0 0 8px;
 		touch-action: none;

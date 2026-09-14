@@ -50,24 +50,24 @@ const split = (
 /**
  * Ratios in proportion to the panes' legible heights (registry.ts's
  * `legible`, each plus its 14px frame: the outline and the inside half
- * of the title's row, Layout.svelte's `chromeOf`), sharing `rest` — what
- * the bar, which takes the height its chips need, leaves. The kinds have
- * no floor to hold a pane up any more (da-zh2o), so the ratios do: a
- * screen at the root's minimum draws every pane exactly legible, and a
- * taller one grows them alike.
+ * of the title's row, Layout.svelte's `chromeOf`). The kinds have no
+ * floor to hold a pane up any more (da-zh2o), so the ratios do: a screen
+ * at the root's minimum draws every pane exactly legible, and a taller
+ * one grows them alike. Every child of the column is in the sum — the
+ * fields pane included, now that no pane sizes itself (da-mbz2).
  */
-const legibly = (heights: number[], rest: number): number[] =>
-	heights.map((h) => (rest * h) / heights.reduce((a, b) => a + b, 0));
+const legibly = (heights: number[]): number[] =>
+	heights.map((h) => h / heights.reduce((a, b) => a + b, 0));
 
 /**
  * The desktop: strip / [REPL | nowview / tail / command] / fields.
  *
- * The bar takes the height its chips need (`fit` in registry.ts); the
- * strip (one day, 134) and the middle row (the side column's nowview,
- * tail and command at 122, 116 and 116, and their two borders: 370)
- * share the rest, which at a laptop's height is today's band with a
- * little of yesterday above it — a taller strip is more past (da-zb0d).
- * The row is the wireframe's 2fr/1fr.
+ * The strip (one day, 134), the middle row (the side column's nowview,
+ * tail and command at 122, 116 and 116, and their two borders: 370) and
+ * the fields pane (63) share the column in that proportion — 0.236 /
+ * 0.653 / 0.111, which at a laptop's height is today's band with a
+ * little of yesterday above it (a taller strip is more past, da-zb0d)
+ * and two rows of buttons. The row is the wireframe's 2fr/1fr.
  */
 export const DEFAULT_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -75,7 +75,7 @@ export const DEFAULT_LAYOUT: Layout = {
 	designedFor: 'desktop',
 	root: holder(
 		'root',
-		split('main', 'column', [...legibly([134, 370], 0.9), 0.1], [
+		split('main', 'column', legibly([134, 370, 63]), [
 			strip(),
 			holder(
 				'middle',
@@ -83,7 +83,7 @@ export const DEFAULT_LAYOUT: Layout = {
 					widgetPane('repl', 'repl'),
 					holder(
 						'side',
-						split('aside', 'column', legibly([122, 116, 116], 1), [
+						split('aside', 'column', legibly([122, 116, 116]), [
 							widgetPane('nowview', 'nowview'),
 							widgetPane('tail', 'tail'),
 							widgetPane('command', 'command')
@@ -107,8 +107,9 @@ const tabbed = (id: string, kinds: string[]): Pane => ({
 
 /**
  * A phone: strip / REPL / [tail, nowview, command] as tabs / fields,
- * one column — the strip, the REPL and the tabs at their legible 134, 85
- * and 122 (nowview's, the tallest of the three).
+ * one column — the strip, the REPL, the tabs and the fields pane at
+ * their legible 134, 85, 122 (nowview's, the tallest of the three) and
+ * 63: 0.332 / 0.210 / 0.302 / 0.156.
  */
 export const DEFAULT_LAYOUT_MOBILE: Layout = {
 	version: LAYOUT_VERSION,
@@ -116,7 +117,7 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', [...legibly([134, 85, 122], 0.9), 0.1], [
+		split('main', 'column', legibly([134, 85, 122, 63]), [
 			strip(),
 			widgetPane('repl', 'repl'),
 			tabbed('side', ['tail', 'nowview', 'command']),

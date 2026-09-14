@@ -472,28 +472,16 @@ export function floorOf(
 }
 
 /**
- * The root's least box: its `floorOf` less its own frame, plus what a
- * column's child is `drawn` taller than its floor — a content-sized one
- * whose bar wraps. Only ever plus: a child's floor is the largest of its
- * tabs, so one drawn shorter than that is showing a smaller tab, and the
- * hidden one keeps its room.
+ * The root's least box: its `floorOf` less its own frame, which the root
+ * draws around the box rather than inside it.
  */
 export function rootFloorOf(
 	root: Pane,
-	split: Split,
 	minOf: (kind: string, settings: Record<string, unknown>) => Floor,
 	border: number,
-	chrome: (pane: Pane) => Floor,
-	drawn: (child: Pane, index: number) => number
+	chrome: (pane: Pane) => Floor
 ): Floor {
 	const f = floorOf(root, minOf, border, chrome);
 	const c = chrome(root);
-	const more =
-		split.direction === 'column'
-			? split.children.reduce(
-					(sum, child, i) => sum + Math.max(0, drawn(child, i) - floorOf(child, minOf, border, chrome).height),
-					0
-				)
-			: 0;
-	return { width: f.width - c.width, height: f.height - c.height + more };
+	return { width: f.width - c.width, height: f.height - c.height };
 }
