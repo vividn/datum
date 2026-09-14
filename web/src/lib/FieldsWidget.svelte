@@ -378,10 +378,6 @@
 		gap: 0.4rem;
 	}
 
-	.slot {
-		position: relative;
-	}
-
 	.widget,
 	.track,
 	.record {
