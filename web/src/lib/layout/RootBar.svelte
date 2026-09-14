@@ -1,41 +1,72 @@
 <!--
 	The root tab bar — the page's top bar, in place of the header (da-0a5o).
 
-	The root pane's tabs, each a pill: click or the arrow keys to switch,
-	a dot on one whose tree differs from its save. After them a `+` that
-	opens the one chooser (da-uyx1) — the layouts, then the widget kinds,
-	where a layout opens as a root tab and a widget opens that kind's
-	built-in one-widget layout — and a `…` with what the header used to
-	offer. At the right end the four acts on the ACTIVE tab's layout:
-	save, restore, save as…, lock — real buttons with names, 24px, glyphs
-	drawn inline. While the tab is modified, save and restore stand out
-	(vividn: "Both should become more pronounced when a layout is modified so
-	that the user can decide"), and restore goes back to the last save;
-	with nothing to discard it opens the save's versions instead, and
+	It is the pane title bar, formatted as a top bar (da-wjob). vividn: it
+	"is actually just a specially formatted version of the same thing —
+	make sure it is really completely aligned with the other widget picker,
+	just formatted differently". So the ACTIVE tab's name is the button of
+	the same `PaneMenu` a pane's title opens, holding the same items from
+	the same builder (`menu.ts`); an inactive tab still just switches, and
+	the arrow keys walk them. After them a `+` that opens the one chooser
+	(da-uyx1) — the layouts, then the widget kinds, where a layout opens as
+	a root tab and a widget opens that kind's built-in one-widget layout.
+
+	What the root's menu is missing, and why, is `menu.ts`'s comment: no
+	`Split` (the root pane IS the shell — there is nothing outside it to
+	split against, so its four arrows are `Break out`, which at the root
+	means a new pane down one whole side of the layout — what the page's
+	four `…` edge handles used to do, da-qk2k) and no `Bar` (the root
+	draws no bar of its own — this one is the shell's). What it has that a
+	pane's has not is `export backup…`: there is one database.
+
+	The layout's own four acts — save, restore, save as…, lock — are in
+	the menu too, where the orange dot is (vividn: "Inside the menu there
+	could be a lock, save, and save as options. That seems more
+	consistent. Maybe highlight Restore and Save so that it is obvious
+	that that is what the orange dot is referring to"). They were a row of
+	icons at the right end of this bar until da-wjob; the row is gone, no
+	shortcut kept. While the tab is modified Save and Restore are marked
+	in the menu and the tab keeps its dot, so the dot's meaning is one
+	press from the dot. Restore goes back to the last save; with nothing
+	to discard it opens the save's versions under the bar instead, and
 	`→ forward` undoes the last restore. The lock is this device's
-	(shell.ts).
+	(shell.ts), and a LOCKED root tab follows the pane rule — the menu
+	holds the four acts alone, so `Unlock layout` stays reachable.
 
 	A root tab is one COPY of its layout and has no privilege over a copy
 	nested in a pane (da-crp5): the same four acts are in that pane's menu
 	(PaneFrame.svelte), and both ask for them by the copy's TAB ID, which
-	is what says which copy's tree is being saved.
+	is what says which copy's tree is being saved — so this menu acts on
+	the ROOT tab's layout however deep the layouts under it go.
+
+	At the right end, dim and out of the way, is which build is in front of
+	you: the version, a separator and the short sha (vividn: "Let's move the
+	version string to the top bar"). It came from the bottom bar, which
+	da-xfa4 clears in the same sprint.
 
 	On a phone the tabs scroll sideways rather than wrapping — one row,
-	always — while the `+`, the `…` and the icons stay where they are.
+	always — while the `+` and the build stamp stay where they are.
 -->
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { downloadBackup } from '$lib/backup.js';
-	import { choose } from './chooser.js';
-	import { layout, loaded } from './current.js';
+	import { choose, fillTab } from './chooser.js';
+	import { apply, layout, loaded } from './current.js';
+	import { layoutActs, menuItems } from './menu.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
 	import { activate, close, modified, open, restore, save, saveAs, toggleLock, versions } from './shell.js';
-	import type { Tab } from './types.js';
+	import { addEdge } from './tree.js';
+	import type { BarEdge, Tab } from './types.js';
+	import type { Toward } from './tree.js';
 
 	let busy = false;
 	let error = '';
 	/** The active save's versions, newest first, while the list is open. */
 	let trail: { version: number; modifyTime: string }[] | null = null;
+
+	/** The root's `Break out`: an arrow is a side of the whole layout (`addEdge`). */
+	const SIDE: Record<Toward, BarEdge> = { left: 'left', right: 'right', up: 'top', down: 'bottom' };
 
 	$: tabs = $layout.root.tabs;
 	$: active = tabs[$layout.root.active] as Tab | undefined;
@@ -44,6 +75,7 @@
 	$: id = active?.id;
 	$: dirty = id !== undefined && $modified.has(id);
 	$: locked = !!active?.locked;
+	/** Loaded, and no act in flight: what a test waits for before pressing. */
 	$: ready = $loaded && !busy && name !== undefined;
 
 	/**
@@ -56,11 +88,6 @@
 		const picked = await choose();
 		if (picked) await act(() => open('layout' in picked ? picked.layout : titleOf(picked.kind)));
 	}
-
-	$: moreItems = [
-		{ label: 'Close tab', disabled: tabs.length < 2, run: () => close($layout.root.active) },
-		{ label: 'export backup…', run: () => void act(downloadBackup) }
-	];
 
 	async function act(job: () => Promise<unknown>): Promise<void> {
 		busy = true;
@@ -76,6 +103,7 @@
 
 	const doSave = () => act(async () => id !== undefined && save(id));
 
+	/** Modified: back to the last save. Clean: the versions, to pick one. */
 	const doRestore = () =>
 		act(async () => {
 			if (name === undefined || id === undefined) return;
@@ -97,88 +125,103 @@
 			await saveAs(id, to);
 		});
 
+	$: acts = {
+		dirty,
+		locked,
+		save: doSave,
+		restore: doRestore,
+		saveAs: doSaveAs,
+		toggleLock: () => id !== undefined && toggleLock(id)
+	};
+
+	$: items = locked
+		? layoutActs(acts)
+		: menuItems({
+				choose: () => id !== undefined && void fillTab(id),
+				// No `split`: the root pane is the shell, with nothing outside
+				// it to split against. No `bar`: this bar IS the root's.
+				breakOut: { what: 'break out: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },
+				close: { label: 'Close tab', disabled: tabs.length < 2, run: () => close($layout.root.active) },
+				acts,
+				extra: [{ label: 'export backup…', run: () => void act(downloadBackup) }]
+			});
+
 	/** Arrow keys walk the tabs; the tab focused is the tab shown. */
-	function onTabKey(event: KeyboardEvent, index: number) {
+	async function onTabKey(event: KeyboardEvent, index: number) {
 		const next = event.key === 'ArrowRight' ? index + 1 : event.key === 'ArrowLeft' ? index - 1 : null;
 		if (next === null || next < 0 || next >= tabs.length) return;
 		event.preventDefault();
 		activate(next);
-		(event.currentTarget as HTMLElement).parentElement
-			?.querySelectorAll<HTMLElement>('[role="tab"]')
-			[next]?.focus();
+		// After the tick: switching swaps which tab is the menu's button, so
+		// the tab to focus is the one that is there once it has (da-9vtw).
+		await tick();
+		strip?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
 	}
+
+	let strip: HTMLElement | null = null;
 </script>
 
-<nav class="root-bar" class:modified={dirty} aria-label="layouts">
-	<div class="tabs" role="tablist" aria-orientation="horizontal">
+<nav class="root-bar" class:modified={dirty} aria-busy={!ready} aria-label="layouts">
+	<div class="tabs" role="tablist" aria-orientation="horizontal" bind:this={strip}>
 		{#each $loaded ? tabs : [] as tab, i (tab.id)}
-			<button
-				type="button"
-				role="tab"
-				class="control tab"
-				class:modified={$modified.has(tab.id)}
-				aria-selected={i === $layout.root.active}
-				tabindex={i === $layout.root.active ? 0 : -1}
-				on:click={() => activate(i)}
-				on:keydown={(e) => onTabKey(e, i)}
-			>
-				{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}
-			</button>
+			{#if i === $layout.root.active && items.length > 0}
+				<!-- The tab in front is the menu's button; the others switch. -->
+				<PaneMenu
+					{items}
+					look="tab"
+					label="menu of the {labelOf(tab)} layout"
+					title="layout menu"
+					role="tab"
+					aria-selected="true"
+					tabindex="0"
+					class={$modified.has(tab.id) ? 'modified' : ''}
+					on:keydown={(e) => onTabKey(e, i)}
+					>{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}</PaneMenu
+				>
+			{:else}
+				<button
+					type="button"
+					role="tab"
+					class="control tab"
+					class:modified={$modified.has(tab.id)}
+					aria-selected={i === $layout.root.active}
+					tabindex={i === $layout.root.active ? 0 : -1}
+					on:click={() => activate(i)}
+					on:keydown={(e) => onTabKey(e, i)}
+				>
+					{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}
+				</button>
+			{/if}
 		{/each}
 	</div>
 	<button type="button" class="control badge add" aria-label="open a layout" title="open a layout" on:click={add}>+</button>
-	<PaneMenu items={moreItems} label="menu of the root bar" />
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
-	<div class="acts">
-		<button type="button" class="control badge act save" disabled={!ready} aria-label="save layout" title="save" on:click={doSave}>
-			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
-		</button>
-		<button
-			type="button"
-			class="control badge act restore"
-			disabled={!ready}
-			aria-label={dirty ? 'restore layout' : 'restore a version'}
-			aria-expanded={dirty ? undefined : trail !== null}
-			title={dirty ? 'restore the last save' : 'versions'}
-			on:click={doRestore}
-		>
-			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
-		</button>
-		<button type="button" class="control badge act save-as" disabled={!ready} aria-label="save layout as…" title="save as…" on:click={doSaveAs}>
-			<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1M15.5 12.5v6M12.5 15.5h6" /></svg>
-		</button>
-		<button
-			type="button"
-			class="control badge act lock"
-			disabled={!ready}
-			aria-label={locked ? 'unlock layout' : 'lock layout'}
-			aria-pressed={locked}
-			title={locked ? 'unlock' : 'lock'}
-			on:click={() => id !== undefined && toggleLock(id)}
-		>
-			<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" />{#if locked}<path d="M7 11V7a5 5 0 0 1 10 0v4" />{:else}<path d="M7 11V7a5 5 0 0 1 9.9-1" />{/if}</svg>
-		</button>
-		{#if trail && !dirty}
-			<ul class="versions">
-				{#if trail.length}
-					<li><button type="button" on:click={() => pick()}>→ forward</button></li>
-				{:else}
-					<li>not saved yet</li>
-				{/if}
-				{#each trail as v (v.version)}
-					<li>
-						<button type="button" on:click={() => pick(v.version)}
-							>v{v.version} · {new Date(v.modifyTime).toLocaleString()}</button
-						>
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</div>
+	<!-- Which build is in front of you: a developer's sanity check, dim and
+	     last. It was the bottom bar's until da-wjob; da-xfa4 clears it there. -->
+	<span class="build" title="datum.day {__DATUM_VERSION__} · commit {__DATUM_COMMIT__}"
+		>{__DATUM_VERSION__} · {__DATUM_COMMIT__}</span
+	>
+	{#if trail && !dirty}
+		<ul class="versions">
+			{#if trail.length}
+				<li><button type="button" on:click={() => pick()}>→ forward</button></li>
+			{:else}
+				<li>not saved yet</li>
+			{/if}
+			{#each trail as v (v.version)}
+				<li>
+					<button type="button" on:click={() => pick(v.version)}
+						>v{v.version} · {new Date(v.modifyTime).toLocaleString()}</button
+					>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 </nav>
 
 <style>
 	.root-bar {
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 4px;
@@ -203,29 +246,32 @@
 
 	/* `.control` (app.css) is the pill; a root tab is a wide one, and a
 	   fingertip's 24px tall. The pane frames' tabs are the same shape a
-	   size down (PaneFrame.svelte). */
-	.tab {
+	   size down (PaneFrame.svelte). The active one is a PaneMenu's button,
+	   which carries `.control.tab` from its `look` and this `.tab` from the
+	   class passed through — so both are the same pill. */
+	.tabs :global(.tab) {
 		block-size: 24px;
 		padding: 0 0.6rem;
 		font-size: 0.8rem;
 		letter-spacing: 0.06em;
 		white-space: nowrap;
+		flex: none;
 	}
 
 	/* The tab in front says so with its outline — which is why the hover
 	   below lives here and not on `.control`: it has to be able to argue
 	   with this rule, and it can only do that from inside the component. */
-	.tab[aria-selected='true'] {
+	.tabs :global(.tab[aria-selected='true']) {
 		color: var(--accent);
 		border-color: var(--accent);
 	}
 
-	.tab:hover,
-	.tab:focus-visible {
+	.tabs :global(.tab:hover),
+	.tabs :global(.tab:focus-visible) {
 		color: var(--accent-bright);
 	}
 
-	/* The `+` is a badge like the `…` beside it, and does not stretch. */
+	/* The `+` is a badge, and does not stretch. */
 	.add {
 		flex: none;
 	}
@@ -235,62 +281,25 @@
 		color: var(--warn);
 	}
 
-	.acts {
-		position: relative;
-		display: flex;
-		gap: 4px;
+	/* Dim on purpose: present for whoever is looking for it. Last on the
+	   bar, so the tabs and the `+` keep their room. */
+	.build {
 		margin-left: auto;
-		flex: none;
+		flex: 0 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.7rem;
+		font-variant-numeric: tabular-nums;
+		color: color-mix(in srgb, var(--muted) 60%, transparent);
 	}
 
-	/* `.control.badge` (app.css) draws the box. An act carries the accent
-	   at rest rather than the muted ink: it is a thing to do, not a thing
-	   to find. */
-	.act {
-		color: var(--accent);
-	}
-
-	/* Hover is repeated from `.control.badge` rather than inherited from it
-	   for the same reason the tabs repeat theirs: a scoped selector carries
-	   svelte's hash TWICE, so `.act[aria-pressed]` below outweighs anything
-	   app.css can say, and a locked lock would keep its amber under the
-	   pointer. Whatever has a local state to argue with hover keeps its
-	   hover local. */
-	.act:hover:not(:disabled),
-	.act:focus-visible {
-		color: var(--accent-bright);
-		border-color: var(--accent);
-	}
-
-	.act svg {
-		width: 14px;
-		height: 14px;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 2;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-	}
-
-	.act:disabled {
-		opacity: 0.5;
-		cursor: default;
-	}
-
-	.act[aria-pressed='true'] {
-		color: var(--warn);
-		border-color: var(--warn);
-	}
-
-	/* Modified: the two acts that decide it stand out. */
-	.modified .save,
-	.modified .restore {
-		color: var(--warn);
-		border-color: var(--warn);
-	}
-	.modified .save svg,
-	.modified .restore svg {
-		stroke-width: 3;
+	/* A phone: the tabs keep the room, the build stamp goes. */
+	@media (max-width: 480px) {
+		.build {
+			display: none;
+		}
 	}
 
 	.versions {

@@ -18,6 +18,7 @@ import {
 	boxOf,
 	chooseBar,
 	choose,
+	chooseRoot,
 	chooser,
 	draft,
 	exactly,
@@ -27,6 +28,7 @@ import {
 	openBar,
 	openChooser,
 	pane,
+	rootMenuButton,
 	settled,
 	titles
 } from './support/layout.mjs';
@@ -198,8 +200,8 @@ describe('the menu the title opens', () => {
 		await withApp(
 			async ({ page }) => {
 				// The root's tabs are the root bar's (da-0a5o), and the last
-				// of them cannot be closed from its `…`.
-				await page.locator('.root-bar button[aria-label="menu of the root bar"]').click();
+				// of them cannot be closed from its own menu.
+				await rootMenuButton(page).click();
 				const close = page.locator('[role="menu"] button').filter({ hasText: exactly('Close tab') });
 				assert.equal(await close.isDisabled(), true);
 				await page.keyboard.press('Escape');
@@ -218,6 +220,109 @@ describe('the menu the title opens', () => {
 			// itself now, as the row's second child.
 			assert.equal(await page.locator('section.pane[data-pane="side"]').getAttribute('data-title'), 'tail');
 			assert.equal(await page.locator('section.holder[data-pane="side"]').count(), 0);
+		}, DESKTOP);
+	});
+});
+
+// The root bar is the pane title bar formatted as a top bar (da-wjob).
+// vividn: it "is actually just a specially formatted version of the same
+// thing — make sure it is really completely aligned with the other widget
+// picker, just formatted differently". So the test that matters is not a
+// second list of the root's items written out by hand: it is the pane's
+// own list, with the root's differences NAMED — anything else that
+// diverges fails here.
+describe("the root bar's menu", () => {
+	/** The root's differences from a pane's, and only these. */
+	const NO_SPLIT = 'Split ← → ↑ ↓'; // the root pane IS the shell: nothing outside it to split against
+	const NO_BAR = 'Bar'; //            the root draws no bar of its own — this one is the shell's
+	const ROOT_ONLY = ['export backup…']; // there is one database
+
+	/** Open a menu, read its lines, close it. */
+	async function linesOf(page, open) {
+		await open();
+		const lines = await menuLines(page);
+		await page.keyboard.press('Escape');
+		await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+		return lines;
+	}
+
+	test('the active layout name is the button, and Choose… is the first item', async () => {
+		await withApp(async ({ page }) => {
+			const name = rootMenuButton(page);
+			assert.equal(await name.innerText(), 'day');
+			assert.equal(await name.getAttribute('aria-haspopup'), 'menu');
+			assert.equal(await name.getAttribute('title'), 'layout menu');
+			assert.equal(await page.locator('.root-bar button.more').count(), 0, 'the … badge is still there');
+			await name.click();
+			assert.equal(await page.locator('[role="menu"]').getAttribute('aria-label'), 'menu of the day layout');
+			assert.equal((await menuLines(page))[0], 'Choose…');
+			await page.keyboard.press('Escape');
+		}, DESKTOP);
+	});
+
+	test('an inactive root tab just switches; the one it switches to opens the menu', async () => {
+		await withApp(async ({ page }) => {
+			const tabs = page.locator('.root-bar [role="tab"]');
+			await page.locator('.root-bar button[aria-label="open a layout"]').click();
+			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
+			await chooser(page).waitFor({ state: 'detached' });
+			await page.locator('.root-bar [role="tab"]').nth(1).waitFor();
+			assert.deepEqual(await tabs.allInnerTexts(), ['day', 'stats']);
+			// The one behind carries no menu: a click on it switches.
+			assert.equal(await tabs.nth(0).getAttribute('aria-haspopup'), null);
+			await tabs.nth(0).click();
+			assert.equal(await page.locator('[role="menu"]').count(), 0, 'switching opened the menu');
+			await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'day' }).waitFor();
+			await tabs.nth(0).click();
+			await page.locator('[role="menu"]').waitFor();
+			await page.keyboard.press('Escape');
+		}, DESKTOP);
+	});
+
+	test('the root menu is the pane menu, less Split and Bar, plus export backup…', async () => {
+		await withApp(async ({ page }) => {
+			// A pane whose menu has everything a pane menu can have: several
+			// tabs (so it says `Close tab`, as the root's always does) and an
+			// active tab holding a LAYOUT (so the four acts are on it too,
+			// da-crp5). `day` is only choosable once the root tab is `mine`.
+			page.once('dialog', (dialog) => dialog.accept('mine'));
+			await chooseRoot(page, 'Save layout as…');
+			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).waitFor();
+			await addTab(page, 'tail', 'day');
+			// The chooser closes before the layout is inlined; the tab wears
+			// its name once it is.
+			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'day' }).waitFor();
+
+			const paneLines = await linesOf(page, () => menuButton(page, 'tail').click());
+			assert.deepEqual(paneLines, [
+				'Choose…',
+				NO_SPLIT,
+				'Break out ← → ↑ ↓',
+				'Close tab',
+				NO_BAR,
+				'Save layout',
+				'Restore layout',
+				'Save layout as…',
+				'Lock layout'
+			]);
+
+			const rootLines = await linesOf(page, () => rootMenuButton(page).click());
+			assert.deepEqual(rootLines, [...paneLines.filter((l) => l !== NO_SPLIT && l !== NO_BAR), ...ROOT_ONLY]);
+		}, DESKTOP);
+	});
+
+	test('Choose… replaces the root tab with what the chooser came back with', async () => {
+		await withApp(async ({ page }) => {
+			await chooseRoot(page, 'Choose…');
+			await chooser(page).waitFor();
+			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
+			await chooser(page).waitFor({ state: 'detached' });
+			await page.locator('section.pane[data-title="stats"]').waitFor();
+			assert.deepEqual(await titles(page), ['stats']);
+			assert.deepEqual(
+				await page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim())),
+				['day']
+			);
 		}, DESKTOP);
 	});
 });

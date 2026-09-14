@@ -69,14 +69,14 @@ file in the same commit — a convention nobody can read is a convention nobody 
     to an SVG attribute or parsed as hex from TypeScript — `var()` reaches neither —
     and `ansi.ts`'s sixteen, which are a terminal's slots and not this app's looks.
 11. **A control a finger can hit is 24px** (`reachable.test.mjs` holds every button that opens a
-    menu — a pane's title and the root bar's `…` (da-9vtw) — every badge beside one, every
-    submenu icon and every root-bar button to it). `.control` in `app.css` is the rule set that
+    menu — a pane's title and the root bar's active tab (da-9vtw, da-wjob) — every badge beside
+    one, every submenu icon and every root-bar button to it). `.control` in `app.css` is the rule set that
     makes one — the box, the 6px radius, the pane ground, the 1px rule, the muted ink — and
     `.control.badge` the square of them, sized by `--badge` (a pane's title row, a fingertip's
     24px under a coarse pointer, which is what the title's own box is sized by too). A component keeps only what is its own. It is global because
     svelte scopes a component's CSS, and for the same reason a hover stays LOCAL wherever
     another local rule has to lose to it: a scoped selector carries svelte's hash twice, so
-    `.tab[aria-selected]` and `.act[aria-pressed]` outweigh anything `app.css` can say.
+    `.tab[aria-selected]` outweighs anything `app.css` can say.
 
 ## Tests
 
@@ -129,8 +129,10 @@ file in the same commit — a convention nobody can read is a convention nobody 
     The pane menu is "menu of the *active tab's* title pane", so `menu of the repl pane`
     disappears the moment that pane shows another tab — use
     `section[data-pane="repl"] button[aria-label^="menu of the"]`, since the identity does not
-    move. The root bar's restore button reads **"restore a version"** when the layout is clean
-    and **"restore layout"** when it is dirty. And the menu labels carry a **trailing space**
+    move. The root bar's restore ICON read **"restore a version"** when the layout was clean
+    and **"restore layout"** when it was dirty; da-wjob took that row away — the act is
+    `Restore layout` in the root menu now, one label in both states, marked when the layout is
+    modified. The lesson stands wherever a label still tracks state. And the menu labels carry a **trailing space**
     (`"Add tab "`, `"Close pane "`, `"Add widget "`), so an anchored text regex can never
     match, while `getByRole('button', …)` misses a `<button role="menuitem">` because an
     explicit `role` overrides the implicit one — ask for the role the element **declares**, by

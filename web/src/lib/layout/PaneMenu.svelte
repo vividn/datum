@@ -1,6 +1,9 @@
 <!--
-	The `…` menu of a pane: a badge on the frame's outline, right after the
-	title or the last tab (PaneFrame.svelte), and the menu it opens.
+	The menu — of a pane, opened by its title or the tab in front
+	(PaneFrame.svelte), and of the whole page, opened by the active root
+	tab's name (RootBar.svelte). One component, one list of items
+	(`menu.ts`); what differs between the two is the `look` of the button
+	and which parts of that list apply.
 
 	A real `<button>` and a real menu: the button opens it (click, Enter,
 	Space), arrow keys walk the items, Home/End jump, Escape closes and
@@ -33,13 +36,10 @@
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
+	import type { Item } from './menu.js';
 
-	/** A submenu's button: `icon` is the thick bar `[x, y, w, h]` drawn in a 16px square. */
-	type Choice = { label: string; title: string; icon: number[]; checked: boolean; run: () => void };
-	/** A row's button: `text` is what it shows, `title` its name. */
-	type Short = { text: string; title: string; run: () => void };
-
-	export let items: { label: string; run?: () => void; sub?: Choice[][]; row?: Short[]; disabled?: boolean }[];
+	/** The items, from the one builder both menus use (`menu.ts`). */
+	export let items: Item[];
 	/**
 	 * Names the menu for assistive tech: which pane it belongs to. It names
 	 * the BUTTON too, where the button has no words of its own — a trigger
@@ -48,23 +48,19 @@
 	export let label: string;
 	export let title = 'pane menu';
 	/**
-	 * What the button that opens the menu looks like: the `…` badge, the
-	 * page margin's faint handle (da-qk2k), the pane's own title — a button
-	 * with no look of its own, laid over the title's box (da-9vtw) — or one
-	 * of its tabs. Everything else about the menu is the same either way,
-	 * and the attributes a trigger needs beyond these (a tab's `role` and
-	 * `aria-selected`) are passed straight through to the button.
+	 * What the button that opens the menu looks like: the pane's own title
+	 * — a button with no look of its own, laid over the title's box
+	 * (da-9vtw) — or one of its tabs, which is what the root bar's active
+	 * tab is too (da-wjob). Everything else about the menu is the same
+	 * either way, and the attributes a trigger needs beyond these (a tab's
+	 * `role` and `aria-selected`) are passed straight through to the
+	 * button — a `class` among them is ADDED to the look's own rather than
+	 * replacing it, which is how a root tab wears its `modified`
+	 * (RootBar.svelte).
 	 */
-	export let look: 'badge' | 'faint' | 'title' | 'tab' = 'badge';
+	export let look: 'title' | 'tab' = 'title';
 
-	const LOOK: Record<typeof look, string> = {
-		badge: 'control badge more',
-		faint: 'faint',
-		title: 'title',
-		tab: 'control tab'
-	};
-	/** What a trigger with no words of its own shows. */
-	const GLYPH: Record<typeof look, string> = { badge: '…', faint: '…', title: '', tab: '' };
+	const LOOK: Record<typeof look, string> = { title: 'title', tab: 'control tab' };
 
 	let open = false;
 	let button: HTMLButtonElement;
@@ -228,16 +224,16 @@
 <svelte:window on:pointerdown={onWindowPointerDown} />
 
 <button
+	{...$$restProps}
 	type="button"
-	class={LOOK[look]}
+	class="{LOOK[look]} {$$restProps.class ?? ''}"
 	bind:this={button}
 	aria-haspopup="menu"
 	aria-expanded={open}
 	aria-label={$$slots.default ? undefined : label}
 	{title}
-	{...$$restProps}
 	on:keydown
-	on:click={() => (open ? close() : show())}><slot>{GLYPH[look]}</slot></button
+	on:click={() => (open ? close() : show())}><slot /></button
 >
 
 {#if open}
@@ -272,6 +268,7 @@
 					type="button"
 					role="menuitem"
 					class:opens={item.sub}
+					class:marked={item.marked}
 					disabled={item.disabled}
 					aria-haspopup={item.sub ? 'menu' : undefined}
 					aria-expanded={item.sub ? sub?.item === item : undefined}
@@ -320,26 +317,6 @@
 {/if}
 
 <style>
-	/* `.control.badge` (app.css) is the rounded square with its own ground,
-	   so it sits ON the outline rather than under it (vividn, 17:56) — its
-	   `--badge` box is the title's height where the pointer is fine and a
-	   fingertip's 24px where it is not (PaneFrame.svelte), the floor
-	   reachable.test.mjs holds it to. What is this button's own: it does
-	   not stretch, and it takes the pointer where the line it sits on
-	   does not. */
-	.more {
-		flex: none;
-		pointer-events: auto;
-	}
-
-	/* A menu it is holding open looks the same as a menu it is pointed at.
-	   Here rather than on `.control.badge`, because `aria-expanded` on the
-	   root bar's restore act means something else (RootBar.svelte). */
-	.more[aria-expanded='true'] {
-		color: var(--accent-bright);
-		border-color: var(--accent);
-	}
-
 	/* The pane's own title as the button (da-9vtw): no look of its own, laid
 	   over the title's box — the words under it are the frame's h2, or the
 	   widget's where it draws its own, and the controls a widget puts there
@@ -361,35 +338,6 @@
 	.title:focus-visible {
 		outline: 1px solid var(--accent);
 		outline-offset: -1px;
-	}
-
-	/* The margin's handle: no ground and no outline, only the glyph, barely
-	   there until it is pointed at or focused. Its box is the target — and
-	   the glyph's line box, 14px in the 12px margin, is clipped to it, or
-	   the right-hand one reaches 1px past the page and main scrolls
-	   sideways by it (da-5xg3). */
-	.faint {
-		overflow: hidden;
-		inline-size: 100%;
-		block-size: 100%;
-		display: grid;
-		place-items: center;
-		padding: 0;
-		background: none;
-		border: none;
-		color: var(--accent);
-		opacity: 0.25;
-		font: inherit;
-		font-size: 0.75rem;
-		line-height: 1;
-		cursor: pointer;
-	}
-
-	.faint:hover,
-	.faint:focus-visible,
-	.faint[aria-expanded='true'] {
-		opacity: 1;
-		outline: none;
 	}
 
 	.menu {
@@ -428,6 +376,14 @@
 		background: var(--tint);
 		color: var(--ink-bright);
 		outline: none;
+	}
+
+	/* Marked: the act the orange dot is about (da-wjob). The same amber the
+	   dot and the modified tab wear, so the eye joins the three. Colour and
+	   weight, not a ground, so hover above still reads. */
+	.menu button.marked {
+		color: var(--warn);
+		font-weight: bold;
 	}
 
 	.menu button:disabled {

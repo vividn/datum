@@ -281,34 +281,37 @@ describe('the layout engine, by keyboard', () => {
 		return seen;
 	}
 
-	test('a Tab walk reaches every menu button, every border, the edge handles and the nowview steps', async () => {
+	test('a Tab walk reaches every menu button, every border and the nowview steps', async () => {
 		await withApp(async ({ page }) => {
 			const reached = await tabWalk(page);
-			// The root bar's icons and the beta hint (da-0a5o) are walked too,
-			// and each pane's title and `+` (da-9vtw).
+			// The root bar's `+` and its active tab — which is the page's own
+			// menu button (da-wjob) — and the beta hint (da-0a5o) are walked
+			// too, and each pane's title and `+` (da-9vtw).
 			const controls = await page.evaluate(() =>
 				[
 					...document.querySelectorAll(
-						'button.title, button.add, button.more, button.faint, [role="separator"], .nowview-steps button, .root-bar .act, .prompt-bar .hint-button'
+						'button.title, button.add, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .prompt-bar .hint-button'
 					)
 				]
 					.filter((el) => el.getClientRects().length > 0)
 					.map((el) => ({
 						walk: el.dataset.walk ?? null,
-						what: el.matches('button.title, button.more')
-							? `menu of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
-							: el.matches('button.add')
-								? `the + of ${el.closest('section')?.dataset.title}`
-								: el.matches('.nowview-steps button, .act, button.faint')
-									? el.getAttribute('aria-label')
-									: el.matches('.hint-button')
-										? 'the beta hint'
-										: 'border'
+						what: el.matches('button.title')
+							? `menu of ${el.closest('section')?.dataset.title}`
+							: el.matches('.root-bar [role="tab"]')
+								? 'menu of the root bar'
+								: el.matches('button.add')
+									? `the + of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
+									: el.matches('.nowview-steps button')
+										? el.getAttribute('aria-label')
+										: el.matches('.hint-button')
+											? 'the beta hint'
+											: 'border'
 					}))
 			);
 			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');
-			// The margin's handles (da-qk2k), one a side.
-			assert.equal(controls.filter((c) => c.what.endsWith('edge of the dashboard')).length, 4, 'not four edge handles');
+			assert.equal(controls.filter((c) => c.what === 'menu of the root bar').length, 1, 'the root bar has no menu button');
+			assert.equal(await page.locator('button.faint').count(), 0, 'the margin handles are back (da-wjob)');
 			assert.ok(controls.some((c) => c.what === 'border'), 'the default layout has no draggable border');
 			for (const control of controls) {
 				assert.ok(control.walk && reached.has(control.walk), `${control.what} is not in the Tab order`);
@@ -318,8 +321,8 @@ describe('the layout engine, by keyboard', () => {
 
 	test('every menu item is on screen and reachable by the arrows', async () => {
 		await withApp(async ({ page }) => {
-			// A pane's title, the root bar's `…`, and the margin's handles (da-qk2k).
-			const openers = page.locator('button.title:visible, button.more:visible, button.faint');
+			// A pane's title, and the root bar's active tab (da-wjob).
+			const openers = page.locator('button.title:visible, .root-bar [role="tab"][aria-selected="true"]');
 			const menus = await openers.count();
 			for (let m = 0; m < menus; m++) {
 				await openers.nth(m).focus();
@@ -381,7 +384,7 @@ describe('the layout engine, by keyboard', () => {
 						coarse: matchMedia('(pointer: coarse)').matches,
 						borders: shown('[role="separator"]').map((el) => Math.min(...box(el))),
 						panes: shown('section button.title, section button.add').map(box),
-						root: shown('.root-bar button.more, .root-bar .act').map(box)
+						root: shown('.root-bar button.add, .root-bar [role="tab"]').map(box)
 					};
 				});
 				assert.equal(sizes.coarse, name.endsWith('finger'));
@@ -389,7 +392,7 @@ describe('the layout engine, by keyboard', () => {
 				for (const across of sizes.borders) assert.ok(across >= 8, `a border is ${across}px across`);
 				const floor = sizes.coarse ? 24 : 16;
 				for (const [w, h] of sizes.panes) assert.ok(w >= floor && h >= floor, `a pane's menu button is ${w}x${h}`);
-				for (const [w, h] of sizes.root) assert.ok(w >= 24 && h >= 24, `a root bar badge is ${w}x${h}`);
+				for (const [w, h] of sizes.root) assert.ok(w >= 24 && h >= 24, `a root bar control is ${w}x${h}`);
 			}, options);
 		});
 	}
@@ -436,18 +439,19 @@ describe('the layout engine, by keyboard', () => {
 	// Locked (da-2a5y), a layout has FEWER targets, not unreachable ones:
 	// no menu, no `+` and no border is in the DOM at all, and what is left
 	// — the tabs — is still walked to. The lock is this device's, on the `day`
-	// tab (da-0a5o); the root bar above the layout is not under it.
-	test('a locked layout has no menu, no border and no edge handle, and its tabs are still in the Tab order', async () => {
+	// tab (da-0a5o); the root bar above the layout keeps its own menu, which
+	// is where `Unlock layout` is (da-crp5).
+	test('a locked layout has no menu and no border, and its tabs are still in the Tab order', async () => {
 		await withApp(
 			async ({ page }) => {
 				const reached = await tabWalk(page);
 				const controls = await page.evaluate(() => ({
 					hidden: document.querySelectorAll(
-						'section.root button.title, section.root button.add, section.root button.more, section.root [role="separator"], button.faint'
+						'section.root button.title, section.root button.add, section.root [role="separator"]'
 					).length,
 					tabs: [...document.querySelectorAll('section.root [role="tab"]')].map((el) => el.dataset.walk ?? null)
 				}));
-				assert.equal(controls.hidden, 0, 'a locked layout still offers a menu, a `+`, a border or an edge handle');
+				assert.equal(controls.hidden, 0, 'a locked layout still offers a menu, a `+` or a border');
 				assert.equal(controls.tabs.length, 2);
 				// The active tab is the strip's one stop; the arrows walk the rest.
 				assert.ok(controls.tabs.some((walk) => walk && reached.has(walk)), 'the tab strip is not in the Tab order');

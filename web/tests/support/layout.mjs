@@ -63,6 +63,21 @@ export const menuButton = (page, id) =>
 /** A pane's `+`: the badge where the `…` was. */
 export const addButton = (page, id) => pane(page, id).locator('.titlebar button.add').first();
 
+/**
+ * What opens the PAGE's menu (da-wjob): the active root tab's name. The
+ * root bar is the pane title bar formatted as a top bar, so this is the
+ * same `PaneMenu` with the same items, less the ones the root has no use
+ * for — see `menu.ts`.
+ */
+export const rootMenuButton = (page) => page.locator('.root-bar [role="tab"][aria-selected="true"]');
+
+/** Open the root menu and choose an item by its name — `Save layout`, `break out: a new pane to the left`. */
+export async function chooseRoot(page, label) {
+	await rootMenuButton(page).click();
+	await page.getByRole('menuitem', { name: label, exact: true }).click();
+	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+}
+
 /** Open a pane's menu and choose an item by its name — `Choose…`, `break out: this widget below`. */
 export async function choose(page, id, label) {
 	await menuButton(page, id).click();
@@ -117,8 +132,8 @@ export const barMenu = (page) => page.locator('[role="menu"][aria-label="Bar"]')
  * Open a pane's menu, then its `Bar ▸`.
  *
  * By key rather than by click: a title on the page's outer edge straddles
- * it, and the margin's own handle (da-qk2k) lies over that half — the
- * pointer's own path is tested where nothing is in the way.
+ * it, so half of it is in the page's margin — the pointer's own path is
+ * tested where nothing is in the way.
  */
 export async function openBar(page, id) {
 	await menuButton(page, id).press('Enter');

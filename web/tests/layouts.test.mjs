@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
+import { chooseRoot } from './support/layout.mjs';
 
 /** A tree with every part of the contract in it, nested once. */
 const tree = (name, kind) => ({
@@ -70,7 +71,9 @@ const shellTree = (name, kind) => {
 };
 
 /** The shell has read the save (and so `_internal.db` exists). */
-const controlsReady = (app) => app.page.locator('.root-bar .act.save:not([disabled])').waitFor();
+// Loaded, and no act still in flight: the bar says so (`aria-busy`), since
+// the acts that used to be disabled buttons are menu items now (da-wjob).
+const controlsReady = (app) => app.page.locator('.root-bar[aria-busy="false"] [role="tab"]').first().waitFor();
 
 const isModified = (app) =>
 	app.page.locator('.root-bar').evaluate((el) => el.classList.contains('modified'));
@@ -259,7 +262,7 @@ describe('the draft', () => {
 			await controlsReady(app);
 			assert.equal(await isModified(app), true, 'the draft did not survive a reload');
 
-			await app.page.locator('.root-bar .act.save').click();
+			await chooseRoot(app.page, 'Save layout');
 			await until(() => isModified(app), (m) => m === false);
 			assert.deepEqual(await layouts(app, 'loadLayout', 'day'), edited);
 			assert.equal(await draft(app), null);
@@ -268,7 +271,7 @@ describe('the draft', () => {
 			await app.reload();
 			await controlsReady(app);
 			assert.equal(await isModified(app), true);
-			await app.page.locator('.root-bar .act.restore').click();
+			await chooseRoot(app.page, 'Restore layout');
 			await until(() => isModified(app), (m) => m === false);
 			assert.equal(await draft(app), null);
 
@@ -286,7 +289,7 @@ describe('the draft', () => {
 			async (app) => {
 				await controlsReady(app);
 				assert.equal(await isModified(app), false);
-				await app.page.locator('.root-bar .act.save').click();
+				await chooseRoot(app.page, 'Save layout');
 				await controlsReady(app);
 				assert.equal(await layouts(app, 'loadLayout', 'day').then((l) => l.name), 'day');
 				assert.equal(await app.page.locator('.root-bar .error').count(), 0);
@@ -315,8 +318,7 @@ describe('the controls', () => {
 			await layouts(app, 'saveLayout', first);
 			await layouts(app, 'saveLayout', shellTree('day', 'nowview'));
 
-			const restore = app.page.locator('.root-bar .act.restore');
-			await restore.click();
+			await chooseRoot(app.page, 'Restore layout');
 			const items = app.page.locator('.root-bar .versions button');
 			await items.first().waitFor();
 			assert.deepEqual(
@@ -343,7 +345,7 @@ describe('the controls', () => {
 			await controlsReady(app);
 
 			app.page.once('dialog', (dialog) => dialog.accept('phone'));
-			await app.page.locator('.root-bar .act.save-as').click();
+			await chooseRoot(app.page, 'Save layout as…');
 			await until(() => isModified(app), (m) => m === false);
 			assert.deepEqual(await layouts(app, 'loadLayout', 'phone'), { ...edited, name: 'phone' });
 			assert.deepEqual(

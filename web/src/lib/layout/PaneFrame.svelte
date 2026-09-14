@@ -78,14 +78,14 @@
 <script lang="ts">
 	import { setContext, tick } from 'svelte';
 	import { writable } from 'svelte/store';
-	import type { BarAlign, BarEdge, Layout, Pane } from './types.js';
+	import type { BarAlign, BarEdge, Pane } from './types.js';
 	import { isSplit } from './types.js';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
 	import { ancestorsOf, modified, restore, save, saveAs, toggleLock } from './shell.js';
-	import type { Toward } from './tree.js';
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, splitPane } from './tree.js';
 	import { labelOf, titleOf } from './registry.js';
+	import { layoutActs, menuItems } from './menu.js';
 	import PaneMenu from './PaneMenu.svelte';
 
 	export let pane: Pane;
@@ -130,26 +130,6 @@
 	}
 	/** A swipe shorter than this is a touch, not a swipe. */
 	const SWIPE_PX = 40;
-
-	/**
-	 * The four arrows, in the one order, and where each one puts a pane on
-	 * the screen — a rotated bar does not turn them, since the menu is
-	 * drawn on `document.body` and reads the screen's way (PaneMenu.svelte).
-	 */
-	const ARROWS: { toward: Toward; text: string; where: string }[] = [
-		{ toward: 'left', text: '←', where: 'to the left' },
-		{ toward: 'right', text: '→', where: 'to the right' },
-		{ toward: 'up', text: '↑', where: 'above' },
-		{ toward: 'down', text: '↓', where: 'below' }
-	];
-
-	/** One menu item's row: the same operation aimed four ways, each named in full. */
-	const aimed = (what: string, op: (layout: Layout, toward: Toward) => Layout) =>
-		ARROWS.map(({ toward, text, where }) => ({
-			text,
-			title: `${what} ${where}`,
-			run: () => apply((l) => op(l, toward))
-		}));
 
 	// What `Pane.svelte` looks for: it renders body-only inside a frame and
 	// reports its alarm here, so the orange reaches whichever pane holds
@@ -202,61 +182,70 @@
 
 	/**
 	 * The four acts on the layout this tab HOLDS (da-crp5) — the same four
-	 * the root bar draws, since a nested copy is no different in kind. Not
+	 * the root bar offers, since a nested copy is no different in kind. Not
 	 * offered under a lock from above; the tab's OWN lock leaves them, so
 	 * that `Unlock layout` can be reached.
 	 */
-	$: layoutActs =
+	$: acts =
 		active.layout === undefined || locked
-			? []
-			: [
-					{ label: 'Save layout', run: () => attempt(save(active.id)) },
-					{ label: 'Restore layout', run: () => attempt(restore(active.id)) },
-					{
-						label: 'Save layout as…',
-						run: () => {
-							const to = prompt('Save this layout as:', '')?.trim();
-							if (to) attempt(saveAs(active.id, to));
-						}
+			? undefined
+			: {
+					dirty: $modified.has(active.id),
+					locked: !!active.locked,
+					save: () => attempt(save(active.id)),
+					restore: () => attempt(restore(active.id)),
+					saveAs: () => {
+						const to = prompt('Save this layout as:', '')?.trim();
+						if (to) attempt(saveAs(active.id, to));
 					},
-					{ label: active.locked ? 'Unlock layout' : 'Lock layout', run: () => toggleLock(active.id) }
-				];
+					toggleLock: () => toggleLock(active.id)
+				};
 
-	$: paneItems = [
-		{ label: 'Choose…', run: () => void fillTab(active.id) },
-		// A holder's children split themselves; its own split is a tab's.
-		...(holder ? [] : [{ label: 'Split', row: aimed('split: a new pane', (l, t) => splitPane(l, pane.id, t)) }]),
-		...(canBreak ? [{ label: 'Break out', row: aimed('break out: this widget', (l, t) => breakOut(l, pane.id, t)) }] : []),
-		{
-			label: many ? 'Close tab' : 'Close pane',
-			disabled: !canClose,
-			run: () => apply((l) => closeTab(l, pane.id, pane.active))
-		},
-		{
-			label: 'Bar',
-			sub: [
-				EDGES.map((edge) => ({
-					label: edge,
-					title: `bar on the ${edge}`,
-					icon: mark(edge),
-					checked: pane.bar.edge === edge,
-					run: () => apply((l) => setBar(l, pane.id, { ...pane.bar, edge }))
-				})),
-				ALIGNS.map((align, i) => {
-					const where = SEEN[pane.bar.edge][i];
-					return {
-						label: align,
-						title: `align to the ${align} (${where})`,
-						icon: mark(pane.bar.edge, AT[where], 5),
-						checked: pane.bar.align === align,
-						run: () => apply((l) => setBar(l, pane.id, { ...pane.bar, align }))
-					};
-				})
-			]
-		}
-	];
+	/** The pane's `Bar ▸` (da-nk4k): four placements, then three alignments. */
+	$: bar = {
+		label: 'Bar',
+		sub: [
+			EDGES.map((edge) => ({
+				label: edge,
+				title: `bar on the ${edge}`,
+				icon: mark(edge),
+				checked: pane.bar.edge === edge,
+				run: () => apply((l) => setBar(l, pane.id, { ...pane.bar, edge }))
+			})),
+			ALIGNS.map((align, i) => {
+				const where = SEEN[pane.bar.edge][i];
+				return {
+					label: align,
+					title: `align to the ${align} (${where})`,
+					icon: mark(pane.bar.edge, AT[where], 5),
+					checked: pane.bar.align === align,
+					run: () => apply((l) => setBar(l, pane.id, { ...pane.bar, align }))
+				};
+			})
+		]
+	};
 
-	$: items = lockedHere ? layoutActs : [...paneItems, ...layoutActs];
+	/**
+	 * The menu, from the one builder the root bar uses too (`menu.ts`). A
+	 * locked pane keeps only the acts, so `Unlock layout` is reachable.
+	 */
+	$: items = lockedHere
+		? acts
+			? layoutActs(acts)
+			: []
+		: menuItems({
+				choose: () => void fillTab(active.id),
+				// A holder's children split themselves; its own split is a tab's.
+				split: holder ? undefined : { what: 'split: a new pane', run: (t) => apply((l) => splitPane(l, pane.id, t)) },
+				breakOut: canBreak ? { what: 'break out: this widget', run: (t) => apply((l) => breakOut(l, pane.id, t)) } : undefined,
+				close: {
+					label: many ? 'Close tab' : 'Close pane',
+					disabled: !canClose,
+					run: () => apply((l) => closeTab(l, pane.id, pane.active))
+				},
+				bar,
+				acts
+			});
 
 	/**
 	 * The `+`: the chooser, then a tab holding what it came back with —

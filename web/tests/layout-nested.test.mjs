@@ -21,7 +21,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { DESKTOP, bar, choose, fill, menuButton, settled, widgetPane } from './support/layout.mjs';
+import { DESKTOP, bar, choose, chooseRoot, fill, menuButton, settled, widgetPane } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -121,7 +121,7 @@ describe('an edit inside an embedded layout', () => {
 			await choose(page, 'm-a', 'split: a new pane to the right');
 
 			// Save `day` with the edit inside `mine` standing.
-			await page.locator('.root-bar .act.save').click();
+			await chooseRoot(page, 'Save layout');
 			await until(() => rootDotted(page, 'day'), (dot) => dot === false);
 
 			// What `day` stored is the REFERENCE: a tab naming `mine`, its
@@ -150,7 +150,7 @@ describe('the dot and the acts on a nested layout', () => {
 			const { page } = app;
 			await embed(app);
 			// Embedding changed `day`, not `mine`.
-			await page.locator('.root-bar .act.save').click();
+			await chooseRoot(page, 'Save layout');
 			await until(() => rootDotted(page, 'day'), (dot) => dot === false);
 			assert.equal(await dotted(copy(page)), false);
 
@@ -230,7 +230,7 @@ describe('two copies of one layout', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await embedTwice(app);
-			await page.locator('.root-bar .act.save').click();
+			await chooseRoot(page, 'Save layout');
 			await until(() => rootDotted(page, 'day'), (dot) => dot === false);
 
 			await app.reload();

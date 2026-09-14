@@ -1,6 +1,7 @@
 // The shell (da-0a5o): the root tab bar in place of the header, layouts as
-// root tabs that a URL can open, the four icons on the active tab, and the
-// fixed bottom bar with the brand, the prompt and the CLI's receipt.
+// root tabs that a URL can open, the four acts in the active tab's own
+// menu (da-wjob — the icon row that held them is gone), and the fixed
+// bottom bar with the brand, the prompt and the CLI's receipt.
 //
 // Driven through the built app in a real browser. Every assertion names
 // what is on screen — tab labels, the receipt's text, a hid from the
@@ -17,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { addTab, chooser, fill, offers, openChooser, settled } from './support/layout.mjs';
+import { addTab, chooseRoot, chooser, fill, menuLines, offers, openChooser, rootMenuButton, settled } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -72,7 +73,35 @@ async function choose(page, id, label) {
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
-const icon = (page, name) => page.locator(`.root-bar .act.${name}`);
+/** The four acts, as the root menu names them (da-wjob). */
+const ACT = { save: 'Save layout', restore: 'Restore layout', 'save-as': 'Save layout as…', lock: 'Lock layout', unlock: 'Unlock layout' };
+
+/** Run one of the layout's acts from the root menu. */
+const act = (page, name) => chooseRoot(page, ACT[name]);
+
+/** The root menu's items, open: label, whether it is marked, and its colour. */
+async function rootItems(page) {
+	await rootMenuButton(page).click();
+	const seen = await page.locator('[role="menu"]').evaluate((menu) =>
+		// One entry a LINE, as `menuLines` reads it: a row of arrows is its
+		// label and its glyphs, not four items.
+		[...menu.children].map((el) =>
+			el.getAttribute('role') === 'group'
+				? {
+						label: [el.getAttribute('aria-label'), ...[...el.querySelectorAll('button')].map((b) => b.textContent.trim())].join(' '),
+						marked: false,
+						color: getComputedStyle(el).color
+					}
+				: { label: el.textContent.trim(), marked: el.classList.contains('marked'), color: getComputedStyle(el).color }
+		)
+	);
+	await page.keyboard.press('Escape');
+	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+	return seen;
+}
+
+/** One root menu item, as `rootItems` reports it. */
+const rootItem = async (page, label) => (await rootItems(page)).find((i) => i.label === label);
 
 const layouts = (app, fn, ...args) =>
 	app.page.evaluate(([fn, args]) => window.datum.layouts[fn](...args), [fn, args]);
@@ -95,16 +124,16 @@ describe('the shell', () => {
 			assert.equal(await bar.locator('.tag').evaluate((el) => el.textContent), 'beta');
 			assert.equal(await bar.locator('input').count(), 1);
 			assert.equal(await receipt(page).innerText(), '');
-			// The build stamp moved here from the header, dim and last.
-			assert.match(await bar.locator('.build').innerText(), /\S+ · \S+/);
-			// The four acts, each a real button with a name, 24px.
-			for (const [name, label] of [['save', 'save layout'], ['restore', 'restore a version'], ['save-as', 'save layout as…'], ['lock', 'lock layout']]) {
-				const el = icon(page, name);
-				assert.equal(await el.getAttribute('aria-label'), label);
-				assert.equal(await el.getAttribute('type'), 'button');
-				const box = await el.boundingBox();
-				assert.ok(box.width >= 24 && box.height >= 24, `${name} is ${box.width}x${box.height}`);
-			}
+			// The build stamp is the ROOT bar's now (da-wjob): version · sha,
+			// dim and last. da-xfa4 clears it from the bottom bar.
+			assert.equal(await bar.locator('.build').count(), 0, 'the build stamp is still on the bottom bar');
+			assert.match(await page.locator('.root-bar .build').innerText(), /\S+ · \S+/);
+			// The four acts are in the active tab's own menu, no icon row.
+			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
+			assert.deepEqual(
+				(await rootItems(page)).map((i) => i.label),
+				['Choose…', 'Break out ← → ↑ ↓', 'Close tab', 'Save layout', 'Restore layout', 'Save layout as…', 'Lock layout', 'export backup…']
+			);
 			assert.deepEqual(errors, []);
 		}, DESKTOP);
 	});
@@ -129,7 +158,7 @@ describe('the shell', () => {
 
 			// A saved layout is offered by name, after day and before the kinds.
 			page.once('dialog', (dialog) => dialog.accept('mine'));
-			await icon(page, 'save-as').click();
+			await act(page, 'save-as');
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
 			// The chooser reads the saved layouts each time it opens, so the
 			// save is on the list the first time it is asked.
@@ -238,30 +267,32 @@ describe('a URL', () => {
 	});
 });
 
-describe('the icons', () => {
-	test('a split shows the dot and pronounces save and restore; restore undoes it; save keeps it', async () => {
+describe('the acts', () => {
+	test('a split shows the dot and marks Save and Restore; restore undoes it; save keeps it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			assert.deepEqual(await dotted(page), []);
-			const quiet = await icon(page, 'save').evaluate((el) => getComputedStyle(el).color);
+			const quiet = (await rootItem(page, 'Save layout')).color;
 
 			await choose(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
 			assert.deepEqual(await dotted(page), ['day']);
-			assert.equal(await icon(page, 'save').evaluate((el) => getComputedStyle(el).color), PRONOUNCED);
-			assert.equal(await icon(page, 'restore').evaluate((el) => getComputedStyle(el).color), PRONOUNCED);
-			assert.equal(await icon(page, 'restore').getAttribute('aria-label'), 'restore layout');
+			// The dot's meaning, in the menu beside it: exactly the two acts
+			// that answer it are marked, and in the dot's own amber.
+			const marked = await rootItems(page);
+			assert.deepEqual(marked.filter((i) => i.marked).map((i) => i.label), ['Save layout', 'Restore layout']);
+			for (const i of marked.filter((i) => i.marked)) assert.equal(i.color, PRONOUNCED, `${i.label} is ${i.color}`);
 
-			await icon(page, 'restore').click();
+			await act(page, 'restore');
 			await until(() => dotted(page), (d) => d.length === 0);
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'fields']);
-			assert.equal(await icon(page, 'save').evaluate((el) => getComputedStyle(el).color), quiet);
-			assert.equal(await icon(page, 'restore').getAttribute('aria-label'), 'restore a version');
+			assert.deepEqual((await rootItems(page)).filter((i) => i.marked), []);
+			assert.equal((await rootItem(page, 'Save layout')).color, quiet);
 
 			await choose(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'nowview');
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
-			await icon(page, 'save').click();
+			await act(page, 'save');
 			await until(() => dotted(page), (d) => d.length === 0);
 			assert.deepEqual(
 				(await layouts(app, 'listLayouts')).map((l) => l.name),
@@ -284,7 +315,7 @@ describe('the icons', () => {
 			const { page } = app;
 			await choose(page, 'command', 'Close pane');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
-			await icon(page, 'save').click();
+			await act(page, 'save');
 			await until(() => dotted(page), (d) => d.length === 0);
 			const saved = await layouts(app, 'loadLayout', 'day');
 
@@ -304,7 +335,7 @@ describe('the icons', () => {
 			const { page } = app;
 			await choose(page, 'tail', 'split: a new pane to the right');
 			page.once('dialog', (dialog) => dialog.accept('mine'));
-			await icon(page, 'save-as').click();
+			await act(page, 'save-as');
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
 			assert.deepEqual(await rootTabs(page), ['mine']);
 			assert.deepEqual(await dotted(page), []);
@@ -338,33 +369,37 @@ describe('the icons', () => {
 			const { page } = app;
 			const locked = () => page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked);
 			assert.equal(await locked(), false);
-			await icon(page, 'lock').click();
+			await act(page, 'lock');
 			await until(locked, (l) => l === true);
-			assert.equal(await icon(page, 'lock').getAttribute('aria-pressed'), 'true');
-			assert.equal(await icon(page, 'lock').getAttribute('aria-label'), 'unlock layout');
+			// Under the lock the menu is the four acts alone (the pane rule,
+			// da-crp5): nothing to split or close, but Unlock is reachable.
+			assert.deepEqual(
+				(await rootItems(page)).map((i) => i.label),
+				['Save layout', 'Restore layout', 'Save layout as…', 'Unlock layout']
+			);
 			assert.deepEqual(await dotted(page), [], 'the lock alone showed the modified dot');
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), '1');
 
 			await app.reload();
 			assert.equal(await locked(), true);
-			assert.equal(await icon(page, 'lock').getAttribute('aria-pressed'), 'true');
+			assert.ok((await rootItems(page)).some((i) => i.label === 'Unlock layout'));
 
 			// Saved while locked: the entry carries no lock.
-			await icon(page, 'save').click();
+			await act(page, 'save');
 			await until(() => layouts(app, 'listLayouts'), (l) => l.length === 1);
 			const saved = await layouts(app, 'loadLayout', 'day');
 			assert.doesNotMatch(JSON.stringify(saved), /"locked"/, 'the lock went into the entry');
 			assert.deepEqual(await dotted(page), []);
 
-			await icon(page, 'lock').click();
+			await act(page, 'unlock');
 			await until(locked, (l) => l === false);
-			assert.equal(await icon(page, 'lock').getAttribute('aria-label'), 'lock layout');
+			assert.ok((await rootItems(page)).some((i) => i.label === 'Lock layout'));
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), null);
 		}, DESKTOP);
 
 		await withApp(async ({ page }) => {
 			assert.equal(await page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked), false);
-			assert.equal(await icon(page, 'lock').getAttribute('aria-pressed'), 'false');
+			assert.ok((await rootItems(page)).some((i) => i.label === 'Lock layout'));
 		}, DESKTOP);
 	});
 
@@ -372,14 +407,16 @@ describe('the icons', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await choose(page, 'command', 'Close pane');
-			await icon(page, 'save').click();
+			await act(page, 'save');
 			await until(() => dotted(page), (d) => d.length === 0);
 			await choose(page, 'nowview', 'Close pane');
-			await icon(page, 'save').click();
+			await act(page, 'save');
 			await until(() => dotted(page), (d) => d.length === 0);
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
 
-			await icon(page, 'restore').click();
+			// Nothing to discard, so Restore offers the save's versions under
+			// the bar instead — the one affordance that did NOT move (da-wjob).
+			await act(page, 'restore');
 			const items = page.locator('.root-bar .versions button');
 			await items.first().waitFor();
 			assert.deepEqual(
@@ -404,7 +441,7 @@ describe('the icons', () => {
 
 			const heard = await a.spyOnRunner();
 			await choose(b.page, 'command', 'Close pane');
-			await icon(b.page, 'save').click();
+			await act(b.page, 'save');
 			await until(() => dotted(b.page), (d) => d.length === 0);
 			// A hears the save — it reads the saved layout back from
 			// `_internal` — and once that has answered, its baseline has
@@ -720,7 +757,7 @@ describe('a layout naming a widget that went', () => {
 
 			// And the new name is what a save writes back: the migration
 			// happens once per layout, not once per load.
-			await icon(page, 'save').click();
+			await act(page, 'save');
 			await until(
 				() => layouts(app, 'loadLayout', 'mine'),
 				(saved) => saved.root.tabs[0].content.kind === 'repl'
@@ -769,8 +806,8 @@ describe('on a phone', () => {
 					height: el.getBoundingClientRect().height,
 					scrolls: strip.scrollWidth > strip.clientWidth,
 					tabs: [...el.querySelectorAll('[role="tab"]')].map((t) => Math.round(t.getBoundingClientRect().top)),
-					// The acts stay on screen whatever the strip holds.
-					acts: [box('.act.save').right, box('.act.lock').right, box('button[aria-label="open a layout"]').right],
+					// The `+` stays on screen whatever the strip holds.
+					acts: [box('button[aria-label="open a layout"]').right],
 					screen: document.documentElement.clientWidth
 				};
 			});

@@ -10,7 +10,8 @@
 	`storage` and `persisted` stores); in the middle the prompt line every
 	prompt on the page shares (Prompt.svelte: the history Up walks is the
 	REPL's); at the right the receipt — the CLI's own first line, cut to
-	its action word and hid — and, dim, which build this is.
+	its action word and hid. Which build this is moved to the root bar
+	(da-wjob; da-xfa4 redraws this one).
 
 	It is the page's one command line and its status line, so it stands
 	out (da-rfs9, vividn: "Make the bottom input bar quite a bit bigger, it
@@ -162,10 +163,6 @@
 	<span class="receipt" class:error={receipt?.error} role="status" title={receipt?.text}
 		>{receipt?.text ?? ''}</span
 	>
-	<!-- Which build is in front of you: a developer's sanity check, dim and last. -->
-	<span class="build" title="datum.day {__DATUM_VERSION__} · commit {__DATUM_COMMIT__}"
-		>{__DATUM_VERSION__} · {__DATUM_COMMIT__}</span
-	>
 </footer>
 
 <style>
@@ -315,7 +312,7 @@
 		color: var(--ink-bright);
 	}
 
-	/* At least half the bar: the receipt and the build stamp ellipsize
+	/* At least half the bar: the receipt ellipsizes
 	   before the line typed into gives up its room. */
 	.prompt {
 		flex: 1 0 50%;
@@ -352,22 +349,9 @@
 		color: var(--error);
 	}
 
-	/* Dim on purpose: present for whoever is looking for it. */
-	.build {
-		flex: 0 1 auto;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		font-size: 0.7rem;
-		font-variant-numeric: tabular-nums;
-		color: color-mix(in srgb, currentColor 35%, transparent);
-		white-space: nowrap;
-	}
-
-	/* A phone: the prompt keeps the room. The build stamp goes, the brand
-	   is `datum` alone with `beta` under it, the receipt takes less. */
+	/* A phone: the prompt keeps the room. The brand is `datum` alone with
+	   `beta` under it, and the receipt takes less. */
 	@media (max-width: 480px) {
-		.build,
 		.tld {
 			display: none;
 		}

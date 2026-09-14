@@ -10,6 +10,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { chooseRoot } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -107,7 +108,7 @@ describe('the nowview widget', () => {
 			);
 
 			// The root bar's save icon, on the `day` tab (da-0a5o).
-			await page.locator('.root-bar .act.save:not([disabled])').click();
+			await chooseRoot(page, 'Save layout');
 			await page.waitForFunction(() => !document.querySelector('.root-bar.modified'));
 			const other = await app.newTab();
 			const saved = await other.page.evaluate(() => window.datum.layouts.loadLayout('day'));

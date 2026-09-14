@@ -78,8 +78,9 @@ describe('the wasi CLI', () => {
 			const [download] = await Promise.all([
 				app.page.waitForEvent('download'),
 				(async () => {
-					// In the root bar's `…` since the shell (da-0a5o).
-					await app.page.locator('.root-bar button[aria-label="menu of the root bar"]').click();
+					// In the root bar's own menu — the active layout's name —
+					// since da-wjob; in its `…` before that (da-0a5o).
+					await app.page.locator('.root-bar [role="tab"][aria-selected="true"]').click();
 					await app.page.locator('[role="menu"] button', { hasText: 'export backup' }).click();
 				})()
 			]);
