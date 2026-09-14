@@ -418,9 +418,10 @@
 		flex: 0 0 var(--input-band);
 	}
 
-	/* At least half its tier: the prompt is what the bar is for. */
+	/* The whole of its tier: nothing else stands on this row since the
+	   build stamp went to the root bar (da-wjob). */
 	.prompt {
-		flex: 1 0 60%;
+		flex: 1;
 		min-width: 0;
 	}
 
