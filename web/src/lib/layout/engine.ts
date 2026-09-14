@@ -18,6 +18,7 @@ import { get, writable } from 'svelte/store';
 import { clearUnlockedPills, pills, showGhost } from '$lib/bar.js';
 import { initDb } from '$lib/db.js';
 import { fileCommand } from '$lib/dbio.js';
+import { echoArgv } from '$lib/echo.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
 import { shellSplit } from '$lib/shellSplit.js';
@@ -110,23 +111,32 @@ export async function ran(): Promise<void> {
  * line is (`pressWithPills`). Everything else showed up without anyone
  * typing it, so the prompt says what ran, as a ghost that fades (da-jprg);
  * a typed line is not echoed back at the person who just typed it.
+ *
+ * `echo` is what to SAY ran, when that is not the whole argv: the bar's
+ * pills go into the argv as words but are shown beside the ghost as pills
+ * (da-xfa4), so saying them twice would be saying them twice.
  */
 export async function press(
 	argv: string[],
 	line?: string,
 	stdin?: string,
-	typed = false
+	typed = false,
+	echo?: string
 ): Promise<RunResult> {
 	const result = await (repl ? repl.runArgv(argv, line, stdin) : alone(argv, line, stdin));
-	if (!typed) showGhost(line ?? result.argv.join(' '));
+	// The argv the CALLER asked for, never the one the runner received: the
+	// web appends flags of its own on the way through (`--show json`,
+	// `--width`), and those are the web's, not a command anyone should be
+	// taught to type (da-xfa4).
+	if (!typed) showGhost(echo ?? line ?? argv.join(' '));
 	return result;
 }
 
 /** With no REPL mounted: run it, record it, and bump the epoch here. */
 async function alone(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
 	const ranAt = Date.now();
-	const result = await ((stdin === undefined ? fileCommand(argv) : null) ?? run(argv, stdin));
-	record(line ?? result.argv.join(' '), ranAt, result);
+	const result = await ((stdin === undefined ? fileCommand(argv) : null) ?? run(echoArgv(argv), stdin));
+	record(line ?? argv.join(' '), ranAt, result);
 	await ran();
 	return result;
 }
@@ -140,13 +150,17 @@ async function alone(argv: string[], line?: string, stdin?: string): Promise<Run
  *
  * A SUCCEEDING press clears the unlocked pills, so the bar is ready for
  * the next line; a failure leaves them, so a retry keeps its time.
+ *
+ * The GHOST is the argv alone: the pills that went with it are drawn as
+ * pills beside it and fade with it (da-xfa4, `spent` in $lib/bar.ts).
  */
 export const pressWithPills = async (argv: string[], line?: string): Promise<RunResult> => {
 	const result = await press(
 		[...argv, ...get(pills).flatMap((pill) => shellSplit(pill.text))],
 		line === undefined ? undefined : [line, ...get(pills).map((pill) => pill.text)].join(' '),
 		undefined,
-		line !== undefined
+		line !== undefined,
+		line ?? argv.join(' ')
 	);
 	if (result.code === 0) clearUnlockedPills();
 	return result;

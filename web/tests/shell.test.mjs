@@ -106,12 +106,20 @@ const rootItem = async (page, label) => (await rootItems(page)).find((i) => i.la
 const layouts = (app, fn, ...args) =>
 	app.page.evaluate(([fn, args]) => window.datum.layouts[fn](...args), [fn, args]);
 
-const receipt = (page) => page.locator('.prompt-bar .receipt');
+/**
+ * The bar's receipt: the first line of a document section in the result
+ * area since da-xfa4, where it used to be a span of its own that was
+ * always in the DOM. There is none before the first command.
+ */
+const receipt = (page) => page.locator('.prompt-bar .doc .receipt');
+
+/** The result area's raw lines — what a command with no action echo shows. */
+const rawResult = (page) => page.locator('.prompt-bar .result .raw');
 
 const PRONOUNCED = 'rgb(255, 209, 102)';
 
 describe('the shell', () => {
-	test('no header; the root bar shows day active; the bottom bar has the brand, beta, the prompt, an empty receipt', async () => {
+	test('no header; the root bar shows day active; the bottom bar has the brand, beta, the prompt, an empty result area', async () => {
 		await withApp(async ({ page, errors }) => {
 			assert.equal(await page.locator('header').count(), 0, 'the header is still there');
 			assert.equal(await page.locator('aside.beta').count(), 0, 'the beta banner is still there');
@@ -123,7 +131,9 @@ describe('the shell', () => {
 			assert.equal(await bar.locator('.brand').innerText(), 'datum.day');
 			assert.equal(await bar.locator('.tag').evaluate((el) => el.textContent), 'beta');
 			assert.equal(await bar.locator('input').count(), 1);
-			assert.equal(await receipt(page).innerText(), '');
+			// Nothing has run, so the result area has nothing to draw.
+			assert.equal(await receipt(page).count(), 0);
+			assert.equal(await rawResult(page).count(), 0);
 			// The build stamp is the ROOT bar's now (da-wjob): version · sha,
 			// dim and last. da-xfa4 clears it from the bottom bar.
 			assert.equal(await bar.locator('.build').count(), 0, 'the build stamp is still on the bottom bar');
@@ -491,22 +501,29 @@ describe('the bottom bar', () => {
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
 			assert.equal(await input.inputValue(), '');
 
+			// An error echoes no document, so the result area shows the CLI's
+			// own stderr lines and is marked (da-xfa4).
 			await input.fill('foo');
 			await input.press('Enter');
-			await until(() => receipt(page).innerText(), (t) => !t.startsWith('CREATE'));
+			await page.locator('.prompt-bar .result.error').waitFor();
+			assert.equal(await receipt(page).count(), 0, 'an error drew a document');
 			const said = await app.runLine('foo');
 			const firstLine = said.stderr.replace(/\x1b\[[0-9;]*m/g, '').split('\n').find((l) => l.trim()).trim();
-			assert.equal(await receipt(page).innerText(), firstLine);
-			assert.equal(await receipt(page).evaluate((el) => el.classList.contains('error')), true);
-			assert.equal(await receipt(page).evaluate((el) => getComputedStyle(el).color), 'rgb(244, 100, 90)');
+			assert.equal((await rawResult(page).innerText()).split('\n')[0], firstLine);
+			assert.equal(
+				await rawResult(page).evaluate((el) => getComputedStyle(el).color),
+				'rgb(244, 100, 90)'
+			);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
 
 	// The page's one command line and its status line (da-rfs9): tall
 	// enough to stand out — absolute heights, not "bigger than before" —
-	// and the REPL is only the scrollback it types into.
-	test('stands out at 60–72px with a ≥1.05rem prompt; the REPL has no prompt, and the bar and a chip land in its scrollback', async () => {
+	// and the REPL is only the scrollback it types into. da-xfa4 gave it a
+	// result area above the input row and fixed the whole thing at 6rem,
+	// so the window is around that number and still absolute.
+	test('stands out at 92–104px with a ≥1.05rem prompt; the REPL has no prompt, and the bar and a chip land in its scrollback', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -515,7 +532,7 @@ describe('the bottom bar', () => {
 					font: parseFloat(getComputedStyle(document.querySelector('.prompt-bar input')).fontSize),
 					rem: parseFloat(getComputedStyle(document.documentElement).fontSize)
 				}));
-				assert.ok(height >= 60 && height <= 72, `the bottom bar is ${height}px tall at 1280x800`);
+				assert.ok(height >= 92 && height <= 104, `the bottom bar is ${height}px tall at 1280x800`);
 				assert.ok(font >= 1.05 * rem, `the prompt's input is ${font}px on a ${rem}px rem`);
 
 				const repl = page.locator('section[data-pane="repl"]');
@@ -527,7 +544,14 @@ describe('the bottom bar', () => {
 				await app.submit('occur coffee');
 				await until(() => receipt(page).innerText(), (t) => /^CREATE \S+$/.test(t));
 				assert.deepEqual(await app.echoes(), ['occur coffee']);
-				assert.match((await app.outputs()).join('\n'), /CREATE .*coffee/, "the CLI's line is not in the scrollback");
+				// The scrollback carries the command's DOCUMENT, not its printed
+				// lines: the web asks every command it runs for `--show json`
+				// (da-xfa4), so both surfaces draw the same sections.
+				assert.match(
+					await page.locator('.repl .doc').first().innerText(),
+					/CREATE[\s\S]*coffee/,
+					"the CLI's action is not in the scrollback"
+				);
 
 				await app.pressWidget('coffee');
 				assert.deepEqual(await app.echoes(), ['occur coffee', 'occur coffee']);
@@ -576,7 +600,13 @@ describe('the bottom bar', () => {
 			await input.press('Enter');
 			// After, not before: the CLI takes no flag before its verb (da-c7u8).
 			await until(seen, (argvs) => argvs.some((a) => a[0] === 'occur'));
-			assert.ok((await seen()).some((a) => JSON.stringify(a) === JSON.stringify(['occur', 'tea', '-t', '0700'])), JSON.stringify(await seen()));
+			// `--show json` at the end is the web's own (da-xfa4).
+			assert.ok(
+				(await seen()).some(
+					(a) => JSON.stringify(a) === JSON.stringify(['occur', 'tea', '-t', '0700', '--show', 'json'])
+				),
+				JSON.stringify(await seen())
+			);
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill').length === 0);
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), []);
 		}, DESKTOP);
@@ -605,8 +635,8 @@ describe('the bottom bar', () => {
 			assert.deepEqual(
 				(await seen()).filter((a) => a[0] === 'occur'),
 				[
-					['occur', 'tea', '-t', '0700'],
-					['occur', 'tea', '-t', '0700']
+					['occur', 'tea', '-t', '0700', '--show', 'json'],
+					['occur', 'tea', '-t', '0700', '--show', 'json']
 				]
 			);
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'the locked pill survives');
@@ -620,19 +650,34 @@ describe('the bottom bar', () => {
 			const input = page.locator('.prompt-bar input');
 			await input.fill('foo');
 			await input.press('Enter');
-			await page.waitForFunction(() => document.querySelector('.prompt-bar .receipt').classList.contains('error'));
+			await page.locator('.prompt-bar .result.error').waitFor();
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'a failed command keeps the pill');
 		}, DESKTOP);
 	});
 
-	test('in the DOM, the input precedes the pills', async () => {
+	// The pills moved INSIDE the prompt in da-xfa4 — vividn: "move the -t
+	// pills to be just slightly to the right of the >, so that they are
+	// visible as you type text" — so what "after the input" means is no
+	// longer DOM order but where they are drawn: past the caret, over the
+	// box, and inside it.
+	test('the pills are drawn inside the box, past the caret', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time' }]));
-			const order = await page.locator('.prompt-bar > *').evaluateAll((els) =>
-				els.map((el) => el.className.split(' ')[0])
+			await page.locator('.prompt-bar .pill').waitFor();
+			const seen = await page.evaluate(() => {
+				const box = (s) => document.querySelector(s).getBoundingClientRect();
+				return {
+					pill: box('.prompt-bar .pill'),
+					caret: box('.prompt-bar .line > .prompt'),
+					field: box('.prompt-bar .field')
+				};
+			});
+			assert.ok(seen.pill.left > seen.caret.right, 'the pill is not past the ❯');
+			assert.ok(
+				seen.pill.left >= seen.field.left - 1 && seen.pill.right <= seen.field.right + 1,
+				'the pill is outside the box'
 			);
-			assert.ok(order.indexOf('prompt') < order.indexOf('pills'), JSON.stringify(order));
 		}, DESKTOP);
 	});
 
@@ -721,7 +766,7 @@ describe('the one chooser', () => {
 	});
 });
 
-// A kind's id is a saved-layout key (docs/web-conventions.md #9), so a
+// A kind's id is a saved-layout key (docs/web-conventions.md #10), so a
 // widget cannot simply go: every layout and draft already stored on a
 // device still names it. The `input` widget went (da-22vg) — the bottom
 // bar is the prompt it was — and what named it opens as the REPL, the

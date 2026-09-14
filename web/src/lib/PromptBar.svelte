@@ -1,27 +1,56 @@
 <!--
-	The bottom bar (da-0a5o): the one fixed thing on the screen.
+	The bottom bar (da-0a5o, reshaped by da-xfa4): the one fixed thing on
+	the screen, and the app's status line as well as its command line.
 
-	vividn: "At the very bottom, let's put an input bar (like the one on the
-	REPL). This can be fixed there and always available to click and enter
-	in data or type some other command." So: at the left the brand, with
-	`beta` under it and a hint that opens what the beta banner used to say
-	— that this is early software, and where the entries are (the
-	storage sentence, read off the database that actually opened, the
-	`storage` and `persisted` stores); in the middle the prompt line every
-	prompt on the page shares (Prompt.svelte: the history Up walks is the
-	REPL's); at the right the receipt — the CLI's own first line, cut to
-	its action word and hid. Which build this is moved to the root bar
-	(da-wjob; da-xfa4 redraws this one).
+	vividn: "The bottom 40% of the input bar will be for input, the top 60%
+	should show the result of the last command". So the bar is two tiers:
 
-	It is the page's one command line and its status line, so it stands
-	out (da-rfs9, vividn: "Make the bottom input bar quite a bit bigger, it
-	needs to stand out, it is the main input and also status bar for the
-	whole app"): about 64px tall where it was 37, the prompt at 1.15rem.
-	The REPL has no prompt of its own any more; what is typed here lands
-	in its scrollback.
+	- the RESULT area on top ($lib/BarResult.svelte) — the last command's
+	  documents as sections, one each, or its own output when it echoes
+	  none;
+	- the INPUT row below — the prompt line every command on the page goes
+	  through (Prompt.svelte), with the pills riding after what is typed.
+
+	At the left, spanning both, the brand with `beta` and the ⓘ that opens
+	what the beta banner used to say — that this is early software, and
+	where the entries are (the storage sentence, read off the database that
+	actually opened) — and UNDER it the clock, bright, in the input row's
+	40% so it lines up with the prompt (vividn: "Move the clock underneath
+	the logo, and make it nice and bright, takes up 40% to align with
+	command"). Which build this is went to the root bar in da-wjob.
+
+	Centred on the bar, a `^` that expands upward into the whole REPL. It
+	and the result area's «(tap to expand)» are ONE expansion with two
+	entry points. What it opens is the REPL COMPONENT — the same widget a
+	layout can hold, reading the same scrollback store — not a second
+	rendering of it. The expansion's REPL does not register with the engine
+	($lib/layout/engine.ts): a press still runs wherever it would have.
+
+	THE BAR'S HEIGHT IS FIXED, and that is the point of it: 6rem (96px at
+	the browser's default), never changing with what the last command
+	answered, so the dashboard above it never reflows. The two tiers are
+	57.6px and 38.4px, and 6rem is the SMALLEST number that holds all four
+	cases of the result area, which is what fixes it:
+
+	  · 4 raw lines at 0.68rem/1.25 — 54.4px, the deepest case, from a
+	    `tail` too long to show whole;
+	  · 3 document lines at 0.72rem/1.3 — 44.9px, an entry with data;
+	  · 2 at 1rem/1.35 — 43.2px, one without, at the larger size vividn asked
+	    for ("the font size could be bigger though when there are only 2
+	    lines");
+	  · and 38.4px below for the 1.15rem prompt, whose line box is ~22px.
+
+	The «(tap to expand)» costs no line: it sits in the area's corner
+	(BarResult.svelte), which is what keeps the deepest case at four.
+
+	It grew from 64px, which takes 32px from the dashboard. The floors that
+	room is measured against are the panes' own (`legibleOfKind` in
+	layout/registry.ts, through `rootFloorOf`), and the root scrolls to them
+	when the page is shorter than they are — so the cost of the extra tier
+	is 32px of scroll on a short screen and nothing on a tall one.
 
 	Every command run anywhere shows here (`last` in $lib/bar.ts, told by
-	`record`): the receipt stays until the next command. That is the teach
+	`record`): the result stays until the next command. That is the teach
 	loop, from wherever the command came. A command NOBODY TYPED — a
 	fields-widget press, the console — also says what it ran, as a ghost in
 	the field that fades within a second (`ghost`, da-jprg). A line the
@@ -29,10 +58,13 @@
 	cleared, because a box that refills itself reads as text the reader
 	typed and may edit.
 
-	Before the prompt is the pill slot — `-t 14:30`, x-able — which the time
-	cursor fills ($lib/cursor.ts, da-wnt2) and which stays for the next
-	command; a submitted line is what was typed and then the pills' text,
-	as a fields-widget press is (`pressWithPills`). A line the fields
+	The pills — `-t 14:30`, x-able — which the time cursor fills
+	($lib/cursor.ts, da-wnt2) ride inside the prompt just after the typed
+	text; a submitted line is what was typed and then the pills' text, as a
+	fields-widget press is (`pressWithPills`). A press SPENDS its unlocked
+	pills: they leave the live set at once and fade beside the ghost of the
+	command they went into (`spent` in $lib/bar.ts), while a locked one
+	stays and slides back leftward as the ghost goes. A line the fields
 	widget prefills (`prefill`) lands in the field, focused, unrun.
 
 	While storage is degraded the bar's border is the panes' alarm orange
@@ -42,32 +74,33 @@
 -->
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
+	import BarResult from '$lib/BarResult.svelte';
 	import {
+		GHOST_MS,
 		ghost as ghostStore,
 		last,
 		pills,
 		prefill,
-		receiptOf,
 		removePill,
+		spent,
 		toggleLockPill,
 		type Ghost
 	} from '$lib/bar.js';
+	import { clockSecondsLabel, now } from '$lib/clock.js';
 	import { pressWithPills, ready } from '$lib/layout/engine.js';
 	import Prompt from '$lib/Prompt.svelte';
+	import Repl from '$lib/Repl.svelte';
 	import { shellSplit } from '$lib/shellSplit.js';
 	import { isDegraded, persisted, storage } from '$lib/storageState.js';
-
-	/** How long a ghost is on screen — the fade in Prompt.svelte's own CSS. */
-	const GHOST_MS = 1000;
 
 	let input = '';
 	let field: HTMLElement;
 	let hint = false;
+	let expanded = false;
 	let ghost: Ghost | null = null;
 	let fade: ReturnType<typeof setTimeout> | undefined;
 	onDestroy(() => clearTimeout(fade));
 
-	$: receipt = $last ? receiptOf($last.result) : null;
 	$: if ($ghostStore) haunt($ghostStore);
 	$: if ($prefill !== null) take($prefill);
 
@@ -111,8 +144,12 @@
 							: 'the browser may clear them if space runs short — install the app to keep them.');
 
 	function onKey(event: KeyboardEvent): void {
-		if (event.key === 'Escape' && hint) {
+		if (event.key !== 'Escape') return;
+		if (hint) {
 			hint = false;
+			event.preventDefault();
+		} else if (expanded) {
+			expanded = false;
 			event.preventDefault();
 		}
 	}
@@ -121,59 +158,123 @@
 <svelte:window on:keydown={onKey} />
 
 <footer class="prompt-bar" class:alarm={degraded} title={degraded ? sentence : undefined}>
+	{#if expanded}
+		<!-- Upward, over the page: the bar is the bottom edge. -->
+		<div class="expansion">
+			<Repl />
+		</div>
+	{/if}
+
 	<div class="brand-block">
-		<a class="brand" href="/">datum<span class="tld">.day</span></a>
-		<span class="beta-row">
-			<span class="tag">beta</span>
-			<button
-				type="button"
-				class="hint-button"
-				aria-label="about datum.day"
-				aria-expanded={hint}
-				title="about datum.day"
-				on:click={() => (hint = !hint)}>ⓘ</button
-			>
-		</span>
+		<div class="brand-top">
+			<a class="brand" href="/">datum<span class="tld">.day</span></a>
+			<span class="beta-row">
+				<span class="tag">beta</span>
+				<button
+					type="button"
+					class="hint-button"
+					aria-label="about datum.day"
+					aria-expanded={hint}
+					title="about datum.day"
+					on:click={() => (hint = !hint)}>ⓘ</button
+				>
+			</span>
+		</div>
+		<!-- Live, not restored: a command's stamp is history, this one is the
+		     clock. On a narrow screen the seconds go and the minutes stay.
+		     The whole label is ONE flex item: a `:SS` that were an item of its
+		     own would be a block box beside a block box, and `innerText` — and
+		     a reader copying the clock — would find a line break in the middle
+		     of a time. -->
+		<span class="stamp"
+			><span class="clock"
+				>{clockSecondsLabel($now).slice(0, 5)}<span class="seconds"
+					>{clockSecondsLabel($now).slice(5)}</span
+				></span
+			></span
+		>
 		{#if hint}
 			<aside class="beta-hint" role="dialog" aria-label="about datum.day">
 				<p>datum.day is early software. {sentence}</p>
 			</aside>
 		{/if}
 	</div>
-	<div class="prompt" bind:this={field}>
-		<Prompt bind:input bind:ghost disabled={!$ready} on:submit={submit} />
-	</div>
-	{#if $pills.length}
-		<div class="pills">
-			{#each $pills as pill (pill.id)}
-				<span class="pill {pill.kind}" class:locked={pill.locked}
-					>{pill.text}<button
-						type="button"
-						class="lock"
-						aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"
-						aria-pressed={!!pill.locked}
-						on:click={() => toggleLockPill(pill.id)}>{pill.locked ? '🔒' : '🔓'}</button
-					><button type="button" class="remove" aria-label="remove {pill.text}" on:click={() => removePill(pill.id)}
-						>×</button
-					></span
-				>
-			{/each}
+
+	<div class="tiers">
+		<div class="tier top">
+			<BarResult result={$last?.result ?? null} on:expand={() => (expanded = true)} />
 		</div>
-	{/if}
-	<span class="receipt" class:error={receipt?.error} role="status" title={receipt?.text}
-		>{receipt?.text ?? ''}</span
+		<div class="tier bottom">
+			<div class="prompt" bind:this={field}>
+				<Prompt bind:input bind:ghost disabled={!$ready} on:submit={submit}>
+					<svelte:fragment slot="pills">
+						{#each $pills as pill (pill.id)}
+							<span class="pill {pill.kind}" class:locked={pill.locked}
+								>{pill.text}<button
+									type="button"
+									class="lock"
+									aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"
+									aria-pressed={!!pill.locked}
+									on:click={() => toggleLockPill(pill.id)}>{pill.locked ? '🔒' : '🔓'}</button
+								><button
+									type="button"
+									class="remove"
+									aria-label="remove {pill.text}"
+									on:click={() => removePill(pill.id)}>×</button
+								></span
+							>
+						{/each}
+						<!-- Spent, not live: no × and no lock, out of the argv and out
+						     of the time cursor, fading with the ghost of the command it
+						     went into. A different class for a different thing, so a
+						     reader of `.pill` — a test included — is never handed one. -->
+						{#each $spent as pill (pill.id)}
+							<span class="spent {pill.kind}">{pill.text}</span>
+						{/each}
+					</svelte:fragment>
+				</Prompt>
+			</div>
+		</div>
+	</div>
+
+	<!-- vividn: "in the center of this input bar, let's put a little ^, that
+	     if clicked expands upperwards to show the whole REPL". Its bottom
+	     edge sits on the line between the tiers, so it is never over the
+	     box a finger is aiming at.
+
+	     Two boxes on purpose: the BUTTON is the hit area, which reaches a
+	     fingertip's 24px upward under a coarse pointer (conventions #12),
+	     and the TAB inside it is the paint, pinned to its foot and the same
+	     small thing at every pointer. Growing the paint instead would put
+	     an opaque 24px block over the middle of the result area. -->
+	<button
+		type="button"
+		class="caret"
+		class:open={expanded}
+		aria-label={expanded ? 'close the REPL' : 'open the REPL'}
+		aria-expanded={expanded}
+		title={expanded ? 'close the REPL' : 'open the REPL'}
+		on:click={() => (expanded = !expanded)}
+		><span class="tab"><span class="chevron">^</span></span></button
 	>
 </footer>
 
 <style>
 	.prompt-bar {
+		/* See the note above: fixed, and every tier inside it derived from
+		   this one number. `tier`, not `band`: the day strip's stacked days
+		   are `.band` and a test asking the page for one must not be handed
+		   half the bottom bar. */
+		--bar: 6rem;
+		--input-band: 40%;
 		position: relative;
 		display: flex;
-		align-items: center;
-		gap: 0.5rem;
+		align-items: stretch;
+		gap: 0.6rem;
 		flex-shrink: 0;
+		height: var(--bar);
 		min-width: 0;
-		padding: 0.55rem 0.9rem;
+		padding: 0 0.9rem;
 		background: var(--ground);
 		border-top: 1px solid var(--rule);
 	}
@@ -191,7 +292,29 @@
 		display: flex;
 		flex-direction: column;
 		flex: none;
+		min-width: 0;
 		line-height: 1.1;
+	}
+
+	/* The two tiers, on the left too: the brand over the result area's
+	   60%, the clock over the input row's 40%, so the clock and the prompt
+	   are on one line. */
+	.brand-top {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		flex: 1 1 auto;
+		min-height: 0;
+	}
+
+	.stamp {
+		display: flex;
+		align-items: center;
+		flex: 0 0 var(--input-band);
+		color: var(--ink-bright);
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		font-size: 1.15rem;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.brand {
@@ -264,14 +387,58 @@
 		color: #e8d5a8;
 	}
 
-	.pills {
+	/* The bar's own two tiers, and everything that is not the brand.
+	   `tiers`, not `stack`: the day strip's scroller is `.stack`. */
+	.tiers {
 		display: flex;
-		justify-content: center;
-		gap: 0.3rem;
-		flex: none;
+		flex-direction: column;
+		flex: 1;
+		min-width: 0;
 	}
 
-	.pill {
+	.tier {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+
+	.tier.top {
+		flex: 1 1 auto;
+		min-height: 0;
+		border-bottom: 1px solid var(--tint);
+	}
+
+	.tier.top :global(.result) {
+		flex: 1;
+		height: 100%;
+	}
+
+	.tier.bottom {
+		flex: 0 0 var(--input-band);
+	}
+
+	/* At least half its tier: the prompt is what the bar is for. */
+	.prompt {
+		flex: 1 0 60%;
+		min-width: 0;
+	}
+
+	/* The prompt line draws its own rule above itself; here the tier's
+	   border is the rule. */
+	.prompt :global(.line) {
+		border-top: none;
+		padding: 0 0.2rem;
+	}
+
+	.prompt :global(input),
+	.prompt :global(.ghost),
+	.prompt :global(.mirror) {
+		font-size: 1.15rem;
+	}
+
+	.pill,
+	.spent {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.2rem;
@@ -279,9 +446,31 @@
 		border: 1px solid var(--accent);
 		border-radius: 999px;
 		color: var(--accent-bright);
+		background: var(--ground);
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.95rem;
 		white-space: nowrap;
+	}
+
+	.spent {
+		padding-right: 0.5rem;
+		pointer-events: none;
+		animation: ghost-fade 1s ease-out forwards;
+	}
+
+	@keyframes ghost-fade {
+		from {
+			opacity: 1;
+		}
+		to {
+			opacity: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.spent {
+			animation: none;
+		}
 	}
 
 	.pill button {
@@ -303,7 +492,8 @@
 	   token, because the lines are drawn from $lib/hover.ts as an SVG
 	   attribute, where `var()` does not reach, and one colour written in
 	   two places is better than a token only one of them can use. */
-	.pill.time {
+	.pill.time,
+	.spent.time {
 		border-color: #7c9cff;
 		color: #7c9cff;
 	}
@@ -312,55 +502,97 @@
 		color: var(--ink-bright);
 	}
 
-	/* At least half the bar: the receipt ellipsizes
-	   before the line typed into gives up its room. */
-	.prompt {
-		flex: 1 0 50%;
+	/* On the line between the tiers, centred on the whole bar. */
+	.caret {
+		position: absolute;
+		left: 50%;
+		bottom: var(--input-band);
+		transform: translateX(-50%);
+		z-index: 2;
+		display: flex;
+		align-items: flex-end;
+		justify-content: center;
+		width: 2.2rem;
+		height: 0.9rem;
+		padding: 0;
+		background: none;
+		border: none;
+		font: inherit;
+		color: var(--quiet);
+		cursor: pointer;
+	}
+
+	@media (pointer: coarse) {
+		.caret {
+			height: 1.5rem;
+		}
+	}
+
+	.tab {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 100%;
+		height: 0.9rem;
+		background: var(--ground);
+		border: 1px solid var(--tint);
+		border-bottom: none;
+		border-radius: 4px 4px 0 0;
+		font-size: 0.75rem;
+		line-height: 1;
+	}
+
+	.caret:hover .tab,
+	.caret:focus-visible .tab {
+		color: var(--accent-bright);
+		border-color: var(--accent);
+	}
+
+	/* The glyph turns over, not the tab: a rotated tab would put its
+	   rounded corners and its open edge at the bottom. */
+	.chevron {
+		display: inline-block;
+		line-height: 1;
+	}
+
+	.caret.open .tab {
+		color: var(--accent-bright);
+	}
+
+	.caret.open .chevron {
+		transform: rotate(180deg);
+	}
+
+	/* The REPL, opened upward from the bar and over the page. */
+	.expansion {
+		position: absolute;
+		bottom: 100%;
+		left: 0;
+		right: 0;
+		z-index: 19;
+		display: flex;
+		height: min(60vh, 32rem);
+		background: var(--ground);
+		border-top: 1px solid var(--rule);
+		box-shadow: 0 -8px 24px #00000088;
+	}
+
+	.expansion :global(section.pane) {
+		flex: 1;
 		min-width: 0;
-	}
-
-	/* The prompt line draws its own rule above itself for the input
-	   widget; here the bar is the rule. */
-	.prompt :global(.line) {
-		border-top: none;
-		padding: 0.7rem 0.2rem;
-	}
-
-	.prompt :global(input),
-	.prompt :global(.ghost) {
-		font-size: 1.15rem;
-	}
-
-	.receipt {
-		flex: 0 1 auto;
-		max-width: 30%;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		font-size: 1rem;
-		/* Not a token: the same step between `--quiet` and `--ink` the
-		   REPL's echoed line uses (Repl.svelte). */
-		color: #8888aa;
-	}
-
-	.receipt.error {
-		color: var(--error);
 	}
 
 	/* A phone: the prompt keeps the room. The brand is `datum` alone with
-	   `beta` under it, and the receipt takes less. */
+	   `beta` under it, and the clock keeps its minutes and drops its
+	   seconds. */
 	@media (max-width: 480px) {
-		.tld {
+		.tld,
+		.stamp .seconds {
 			display: none;
 		}
 		.prompt-bar {
 			gap: 0.35rem;
 			padding-inline: 0.4rem;
-		}
-		.receipt {
-			max-width: 22%;
 		}
 		.prompt :global(.line) {
 			gap: 0.3rem;

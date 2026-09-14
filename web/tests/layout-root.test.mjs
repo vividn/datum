@@ -176,9 +176,11 @@ describe('on a phone', () => {
 			assert.equal(await activeTab(page, 'side'), 'tail', 'a swipe right did not move back');
 
 			// A pane whose content scrolls along the bar's axis keeps the
-			// gesture: the REPL's `CREATE <hid> <slug>` line is wider than a
-			// phone and its body scrolls sideways to it.
-			await app.submit('occur coffee');
+			// gesture. A `tail` of a long-named field is the wide line now:
+			// the action echo is drawn as a section that ellipsizes instead
+			// of overflowing (da-xfa4), and a table still is a table.
+			await app.submit(`occur ${'x'.repeat(60)}`);
+			await app.submit('tail');
 			await addTab(page, 'repl', 'aliases');
 			await pane(page, 'repl').locator('[role="tab"]', { hasText: 'repl' }).click();
 			const body = pane(page, 'repl').locator('.body');

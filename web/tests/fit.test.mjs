@@ -298,17 +298,27 @@ describe('a pane', () => {
 	// the input widget went (da-22vg) it is the page's only one, so the
 	// list below has one entry and the loop is what keeps the next one
 	// honest.
+	//
+	// The clock is no longer ON that line: da-xfa4 moved it under the logo,
+	// in the bar's left block, where it lines up with the prompt row. It
+	// still drops its seconds at 360px, and that is still the claim.
 	const PROMPTS = [
-		{ what: "the bottom bar's input", path: '/', line: '.prompt-bar .line', frame: '.prompt-bar' }
+		{
+			what: "the bottom bar's input",
+			path: '/',
+			line: '.prompt-bar .line',
+			clock: '.prompt-bar .stamp',
+			frame: '.prompt-bar'
+		}
 	];
 
-	for (const { what, path, line: lineSelector, frame } of PROMPTS) {
+	for (const { what, path, line: lineSelector, clock: clockSelector, frame } of PROMPTS) {
 		test(`keeps ${what} wide on a 360px phone, ten commands of scrollback and all`, async () => {
 			await withApp(
 				async (app) => {
 					const { page } = app;
 					if (path !== '/') await app.goto(path);
-					const clock = await page.locator(`${lineSelector} .stamp`).innerText();
+					const clock = await page.locator(clockSelector).innerText();
 					assert.match(clock, /^\d{2}:\d{2}$/, `the prompt clock kept its seconds at 360px: ${clock}`);
 
 					const { input, line, pane } = await page.evaluate(

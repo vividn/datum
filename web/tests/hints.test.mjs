@@ -10,6 +10,13 @@
 // the hints off the rendered page and RUNS them, each against its own empty
 // database — the state a first-time reader is in. The hint and the parser can
 // then only drift apart by failing here, whichever of the two moves.
+//
+// THE PLACEHOLDER ITSELF IS GONE (da-xfa4). vividn: "Let's get rid of the
+// always present placeholder `occur coffee cups=2`, that doesn't add to the
+// experience for new users and is annoying for non-new users." So the rule it
+// was under is asserted the other way round now — the open prompt offers no
+// example at all — and the REPL's worked examples, which a reader reads once
+// and not on every line, are the whole of what this file runs.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,11 +28,10 @@ after(stopApp);
 /**
  * Every command the freshly opened page offers, as the reader sees it.
  *
- * The placeholder is the bottom bar's prompt's own hint; the `code` spans
- * are the REPL's line, which the pane shows only while the scrollback is
- * empty. Both
- * are read from the page rather than from the source, so a hint that moves
- * or gains a sibling is still covered.
+ * The `code` spans are the REPL's line, which the pane shows only while the
+ * scrollback is empty. Read from the page rather than from the source, so a
+ * hint that moves or gains a sibling is still covered. The placeholder is
+ * read too — to assert that there is none.
  */
 let offered;
 async function hints() {
@@ -50,12 +56,12 @@ async function typedFresh(line) {
 }
 
 describe('the commands the REPL offers a new user', () => {
-	test('the placeholder runs', async () => {
+	test('the open prompt offers no placeholder at all', async () => {
 		const { placeholder } = await hints();
-		assert.ok(placeholder, 'the enabled prompt shows no placeholder to check');
-
-		const result = await typedFresh(placeholder);
-		assert.equal(result.code, 0, `\`${placeholder}\` — ${result.stderr}`);
+		// An example in the box every time you look at it is an example for
+		// nobody: a new reader has the REPL's, and everyone else has typed it
+		// a hundred times (da-xfa4, superseding da-e5u7's choice of text).
+		assert.equal(placeholder, '', `the open prompt still hints \`${placeholder}\``);
 	});
 
 	test('the worked examples run', async () => {

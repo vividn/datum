@@ -632,6 +632,14 @@
 		gap: 4px;
 		min-width: 0;
 		min-height: 0;
+		/* A strip longer than its bar is CUT at the bar, never drawn past
+		   it: a pane's bar lies along that pane's outline, so anything of
+		   it outside the pane is inside a neighbour (da-om9v's rule). It
+		   was four pixels from happening on a phone with three tabs on a
+		   vertical bar, and the taller bottom bar of da-xfa4 spent those
+		   four; the tabs give way instead, which is what everything else
+		   in this app does when it runs out of room. */
+		overflow: hidden;
 		pointer-events: auto;
 	}
 
@@ -650,6 +658,12 @@
 		line-height: 1;
 		letter-spacing: 0.06em;
 		white-space: nowrap;
+		/* `min-inline-size: auto` is a flex item's own words, so a strip
+		   of nowrap tabs cannot shrink at all without this. With it they
+		   share what the bar has and each cuts to an ellipsis. */
+		min-inline-size: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	/* The tab in front says so with its outline, which is why the hover

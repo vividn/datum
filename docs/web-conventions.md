@@ -20,17 +20,30 @@ file in the same commit — a convention nobody can read is a convention nobody 
    `changes.ts` and joins the same beat. Do not invent a second refresh path, and do not try to
    decide which verbs write — the CLI's list would drift from ours.
 4. **The argv that runs is the argv that is echoed.** A widget composes an argv and dispatches it;
-   the prompt shows `result.argv`. Nothing rebuilds a display string from a press — a
+   the prompt shows THAT argv. Nothing rebuilds a display string from a press — a
    reconstruction can drift from the command, and the echo is how a person learns the CLI.
+   It is the argv the CALLER asked for, not `result.argv`: the web appends flags of its own on
+   the way through (`--width`, `--show json`, below), and those are the web's plumbing, not a
+   command to teach (da-xfa4).
    It is shown BESIDE the prompt and never as the input's value (`bar.ghost`, da-jprg): a box
    that fills itself reads as text the reader typed and may edit. A line the reader really did
    type is cleared on Enter and does not come back at all.
 5. **The bar's pills go after the verb** (`engine.pressWithPills`): the CLI takes no flag before
-   its verb, so a time cursor lands on a chip press exactly as on a typed line.
+   its verb, so a time cursor lands on a chip press exactly as on a typed line. They are drawn
+   as pills BESIDE the ghost rather than as words in it, and a press spends its unlocked ones —
+   out of the live set at once, fading on screen with the ghost (`bar.spent`, da-xfa4).
+6. **The web asks every command it runs for its echo as data** — `--show json` appended the way
+   `fitArgv` appends `--width` (`echoArgv` in `$lib/echo.ts`, at `Repl.runArgv` and
+   `engine.alone`). The bottom bar and the REPL then PLACE the CLI's own strings — action, hid,
+   id, info, the data on one line — and compose none of them. `NO_ECHO` in that file is the
+   denylist of commands with no action echo: it is a denylist because an argv whose first word
+   is not a command (`mood switch happy`, an alias) is a write under another name and must get
+   the flag, and `tests/echo.test.mjs` holds the list to what the CLI actually does. A stdout
+   with no document in it falls back to the lines the CLI printed.
 
 ## Panes that render at their own size
 
-6. A pane that asks the CLI for a picture at its own width **measures its box through
+7. A pane that asks the CLI for a picture at its own width **measures its box through
    `settle`** (`layout/resizing.ts`) — a border drag resizes every frame, and one render per
    frame is jitter — **guards its runs so the last STARTED wins** (not the last to return), and
    **re-reads on `epoch`**. `CliPane`, `DayStrip`, `TailTable` and `Stats` each keep this rule;
@@ -38,17 +51,17 @@ file in the same commit — a convention nobody can read is a convention nobody 
 
 ## Modules
 
-7. **Every module opens with a sentence saying what it is, and why it is the way it is.**
+8. **Every module opens with a sentence saying what it is, and why it is the way it is.**
    **28 of 28 `.svelte` files and 40 of 40 `.ts` files do** — re-counted 2026-09-12 11:2x, and
    the three this line used to name as the gap (`changes.ts`, `deviceId.ts`, `types.ts`) have
    all been filled since. ⚠ *Count it accepting every comment syntax these files use: a `.svelte`
    module's purpose sentence usually sits inside its `<script>` as a `/* */`, not as an `<!-- -->`
    before it. A first pass looking only for `<!--` reported a file short and named `AnsiText.svelte`,
    which in fact opens with eleven lines of exactly this.*
-8. **Pure logic lives beside its markup, in a `.ts` a test can call without a browser**:
+9. **Pure logic lives beside its markup, in a `.ts` a test can call without a browser**:
    `fields.ts`, `stats.ts`, `tail.ts`, `panes.ts`, `bar.ts`, `cursor.ts`, `fileargv.ts`,
    `dbio.ts`. The `.svelte` file holds the markup and the wiring.
-9. **One widget kind, one name.** A kind's id in `registry.ts` is a saved-layout key and cannot
+10. **One widget kind, one name.** A kind's id in `registry.ts` is a saved-layout key and cannot
    change without a migration; the title, the file names and the tests all read as the thing the
    reader sees. (`fields` is `FieldsWidget.svelte`, `layout/FieldsPane.svelte`, `fields.ts` and
    `fields.test.mjs` since da-850j; its id is `widgetbar` still, and a comment on the id says so.)
@@ -59,7 +72,7 @@ file in the same commit — a convention nobody can read is a convention nobody 
 
 ## Looks
 
-10. **Colours come from the palette, not from a literal** (da-a2xl). `:root` in `app.css` names
+11. **Colours come from the palette, not from a literal** (da-a2xl). `:root` in `app.css` names
     thirteen roles — `--page`, `--ground`, `--tint`, `--rule`, `--accent`, `--accent-bright`,
     `--muted`, `--quiet`, `--ink`, `--ink-bright`, `--alarm`, `--error`, `--warn` — each with a
     line saying what it is FOR, which is the contract: while a colour keeps doing that job,
@@ -68,7 +81,7 @@ file in the same commit — a convention nobody can read is a convention nobody 
     when a second place wants it, not before), a shadow, the beta mark's amber, a colour handed
     to an SVG attribute or parsed as hex from TypeScript — `var()` reaches neither —
     and `ansi.ts`'s sixteen, which are a terminal's slots and not this app's looks.
-11. **A control a finger can hit is 24px** (`reachable.test.mjs` holds every button that opens a
+12. **A control a finger can hit is 24px** (`reachable.test.mjs` holds every button that opens a
     menu — a pane's title and the root bar's active tab (da-9vtw, da-wjob) — every badge beside
     one, every submenu icon and every root-bar button to it). `.control` in `app.css` is the rule set that
     makes one — the box, the 6px radius, the pane ground, the 1px rule, the muted ink — and
@@ -80,19 +93,19 @@ file in the same commit — a convention nobody can read is a convention nobody 
 
 ## Tests
 
-12. **Drive the app the way a person does**: type into a prompt (`app.submit`) and read what the
+13. **Drive the app the way a person does**: type into a prompt (`app.submit`) and read what the
     panes show — 15 test files do. The console runs commands the way the page does:
     `window.datum.run` / `runLine` go through `engine.press`, so they are echoed, receipted and
     followed by a refresh, exactly as typing is (da-6918 — a silent `run` cost a false bug
     report on 2026-09-11). `runQuiet` / `runQuietLine` are the exception and say so: the seam
     alone, nothing on the page moves, which is what the harness's `app.run` binds to so that a
     test can seed and read without disturbing what it is about to assert.
-13. **Never assert a delta** ("more rows than before"): assert the thing itself — the count, the
+14. **Never assert a delta** ("more rows than before"): assert the thing itself — the count, the
     position, the text. A delta-blind probe cannot see output identical to what was there.
-14. **A browser leg whose browser cannot be launched is skipped with its reason**, never failed:
+15. **A browser leg whose browser cannot be launched is skipped with its reason**, never failed:
     CI installs chromium's headless shell only, and a file whose every leg is skipped fails
     loudly rather than passing having examined nothing.
-15. **Wait for the thing, not for a second.** No fixed sleeps: poll the condition with a
+16. **Wait for the thing, not for a second.** No fixed sleeps: poll the condition with a
     deadline, so a slow machine does not turn a real assertion into a flake. **A wait's cap is a
     hang-stop, not a speed assertion** — it is there so a condition that will never come true
     reports itself instead of sitting until the runner's 120 s per-test budget expires. The suite
@@ -103,14 +116,14 @@ file in the same commit — a convention nobody can read is a convention nobody 
     — seven failures across four runs, every one a short wait expiring, not one assertion (da-5t8q,
     da-eznx). If a test really does mean "and quickly", it says so in an assertion that names the
     number, never in a wait's cap.
-16. **A test that seeds a time must say which day it means.** A bare `-t 0930` is "today at
+17. **A test that seeds a time must say which day it means.** A bare `-t 0930` is "today at
     09:30" against whatever clock the app is holding, so before 10:00 local the same seed
     lands in the *future*: `datum now` answers that nothing is current and every pane that
     draws a current state draws none. Give the seed a date, or pin the app's clock with
     `withApp(fn, { clock: todayAt(15) })` — one instant for the page and for the worker the
     CLI runs in — and seed against it. Tests that skipped this passed every afternoon and
     failed every night, and the failure was twice charged to innocent branches (da-ldct).
-17. **A defect that only shows across a MOUNT needs a test that remounts — and asserts
+18. **A defect that only shows across a MOUNT needs a test that remounts — and asserts
     twice.** Some state is per-mount while the thing it describes is persisted, so a
     single-session test cannot see the bug at all. `CommandPane`'s write guard is *learned,
     not declared* — `CliPane` discovers that a command writes by running it and seeing
@@ -124,7 +137,7 @@ file in the same commit — a convention nobody can read is a convention nobody 
     "runs once more" from "runs once per mount" (da-v36y — 1→2→3→4 across three reloads on
     `d8d7724`, 1→1→1→1 after the fix, and the new test confirmed to FAIL on the old components:
     *reload 1 ran `occur kettle` again, 2 !== 1*).
-18. **Locate a control by its identity, not by a label that tracks state.** This app's
+19. **Locate a control by its identity, not by a label that tracks state.** This app's
     aria-labels move with state, so a selector written from one state times out in another.
     The pane menu is "menu of the *active tab's* title pane", so `menu of the repl pane`
     disappears the moment that pane shows another tab — use

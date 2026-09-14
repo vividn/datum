@@ -42,8 +42,13 @@ const seconds = (label) => {
 /** How far `later` is after `earlier`, in seconds, across midnight. */
 const apart = (earlier, later) => (seconds(later) - seconds(earlier) + 86400) % 86400;
 
-/** The live clock on the prompt line — the bottom bar's. */
-const promptClock = (page) => page.locator('.prompt-bar .line .stamp').innerText();
+/**
+ * The live clock — the bottom bar's.
+ *
+ * Under the logo since da-xfa4, not on the prompt line: vividn asked for it
+ * "underneath the logo … nice and bright", lined up with the input row.
+ */
+const promptClock = (page) => page.locator('.prompt-bar .stamp').innerText();
 
 /** Every scrollback stamp, oldest first. */
 const stamps = (page) => page.locator('.repl .head .stamp').allInnerTexts();
@@ -55,7 +60,7 @@ const brightness = (css) => {
 };
 
 describe("the REPL's prompt, the bottom bar's", () => {
-	test('carries a clock, left of the caret, that counts up', async () => {
+	test('carries a clock, under the logo and on the prompt’s line, that counts up', async () => {
 		// The 12-hour reader again (da-6o81): a clock is exactly the thing
 		// that goes locale-shaped when nobody pins the locale in the test.
 		await withApp(
@@ -63,18 +68,22 @@ describe("the REPL's prompt, the bottom bar's", () => {
 				const first = await promptClock(page);
 				assert.match(first, HHMMSS, 'the prompt clock is not datum 24-hour HH:MM:SS');
 
-				// Left of the caret, in the DOM and on the screen.
-				const [clockRight, caretLeft] = await page.evaluate(() => {
-					const line = document.querySelector('.prompt-bar .line');
-					return [
-						line.querySelector('.stamp').getBoundingClientRect().right,
-						line.querySelector('.prompt').getBoundingClientRect().left
-					];
+				// Left of the caret and under the brand, on the screen: the
+				// bar's left block holds the logo over it.
+				const seen = await page.evaluate(() => {
+					const box = (s) => document.querySelector(s).getBoundingClientRect();
+					return {
+						clockRight: box('.prompt-bar .stamp').right,
+						clockTop: box('.prompt-bar .stamp').top,
+						caretLeft: box('.prompt-bar .line > .prompt').left,
+						brandBottom: box('.prompt-bar .brand').bottom
+					};
 				});
-				assert.ok(clockRight <= caretLeft, 'the clock is not left of the caret');
+				assert.ok(seen.clockRight <= seen.caretLeft, 'the clock is not left of the caret');
+				assert.ok(seen.clockTop >= seen.brandBottom - 1, 'the clock is not under the logo');
 
 				await page.waitForFunction(
-					(was) => document.querySelector('.prompt-bar .line .stamp')?.innerText !== was,
+					(was) => document.querySelector('.prompt-bar .stamp')?.innerText !== was,
 					first
 				);
 				const second = await promptClock(page);

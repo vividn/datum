@@ -202,8 +202,20 @@ describe('the teach-echo', () => {
 			// splits it: the quoted words are one argument.
 			// The panes re-run their own commands after every submission, so
 			// the submitted one is simply the first the runner saw.
+			// `--show json` after it is the web's own (da-xfa4): every command
+			// a reader runs is asked for its echo as data. It is NOT in the
+			// scrollback above, which is the point of the two assertions
+			// standing together — the web's plumbing runs, and is never taught.
 			const [executed] = await seen();
-			assert.deepEqual(executed, ['note', 'word', 'correr', 'to run', 'srcLang=pt']);
+			assert.deepEqual(executed, [
+				'note',
+				'word',
+				'correr',
+				'to run',
+				'srcLang=pt',
+				'--show',
+				'json'
+			]);
 		});
 	});
 
@@ -217,8 +229,10 @@ describe('the teach-echo', () => {
 			const seen = await spyOnRunner();
 			await pressWidget('coffee');
 			const [executed] = await seen();
-			assert.deepEqual(executed, ['occur', 'coffee']);
-			assert.equal((await echoes()).at(-1), executed.join(' '));
+			assert.deepEqual(executed, ['occur', 'coffee', '--show', 'json']);
+			// The ECHO is the argv the widget asked for, without the web's own
+			// `--show json` (da-xfa4): the plumbing is not a command to teach.
+			assert.equal((await echoes()).at(-1), 'occur coffee');
 		});
 	});
 });

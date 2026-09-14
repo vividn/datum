@@ -99,19 +99,23 @@ const lineXs = (page, scope) =>
 		})
 	);
 
-/** Type a line into the bottom bar and wait for its receipt. */
+/**
+ * Type a line into the bottom bar and wait for its receipt.
+ *
+ * The receipt is the first line of a document section in the result area
+ * since da-xfa4, so there is none at all before the first command — where
+ * the old bar kept an empty span.
+ */
+const receiptNow = () => document.querySelector('.prompt-bar .doc .receipt')?.textContent ?? '';
+
 async function barRun(page, line) {
-	const before = await page.locator('.prompt-bar .receipt').innerText();
+	const before = await page.evaluate(receiptNow);
 	await page.locator('.prompt-bar input').fill(line);
 	await page.locator('.prompt-bar input').press('Enter');
 	await page.waitForFunction(
-		(b) => {
-			const r = document.querySelector('.prompt-bar .receipt').textContent;
-			return r && r !== b;
-		},
-		before
+		`(${receiptNow})() !== ${JSON.stringify(before)} && (${receiptNow})() !== ''`
 	);
-	return page.locator('.prompt-bar .receipt').innerText();
+	return page.locator('.prompt-bar .doc .receipt').innerText();
 }
 
 describe('the time cursor', () => {

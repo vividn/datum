@@ -144,7 +144,7 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
 /**
  * The kinds that have been RETIRED, and what a layout naming one opens as.
  *
- * A kind's id is a saved-layout key (docs/web-conventions.md #9), so a
+ * A kind's id is a saved-layout key (docs/web-conventions.md #10), so a
  * kind cannot simply go: every layout and draft already stored on a
  * device still names it, and an unknown kind draws as an untitled empty
  * pane. `input` (da-0dhc) was the REPL's prompt with no output pane; the

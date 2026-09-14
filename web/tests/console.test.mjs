@@ -32,6 +32,16 @@ const NO_REPL = {
 
 const receipt = (page) => page.locator('.prompt-bar .receipt');
 
+/**
+ * The bar's receipt line, or '' when no command has run.
+ *
+ * The result area draws a SECTION per document since da-xfa4, so the
+ * receipt is that section's first line and there is none before the first
+ * command — where the old bar kept an empty span.
+ */
+const receiptText = async (page) =>
+	(await receipt(page).count()) ? receipt(page).innerText() : '';
+
 /** `window.datum[door](argv)` in the page — the console, as a hand uses it. */
 const console_ = (page, door, argv) =>
 	page.evaluate(([d, a]) => window.datum[d](a), [door, argv]);
@@ -87,7 +97,10 @@ describe('window.datum.run — the loud door', () => {
 			const line = 'switch mood "quite happy"';
 			const result = await app.page.evaluate((l) => window.datum.runLine(l), line);
 			assert.equal(result.code, 0, result.stderr);
-			assert.deepEqual(result.argv, ['switch', 'mood', 'quite happy']);
+			// The words the app split, in front of the `--show json` the web
+			// appends to every command it runs (da-xfa4): `result.argv` is
+			// what the runner received, plumbing included.
+			assert.deepEqual(result.argv.slice(0, 3), ['switch', 'mood', 'quite happy']);
 			assert.deepEqual(await app.echoes(), [line]);
 			await tailShows(app.page, 'quite happy');
 		}, DESKTOP);
@@ -122,7 +135,7 @@ describe('window.datum.runQuiet — the exception', () => {
 			const before = {
 				tail: await app.paneText('tail'),
 				echoes: await app.echoes(),
-				receipt: await receipt(page).innerText()
+				receipt: await receiptText(page)
 			};
 
 			const result = await console_(page, 'runQuiet', ['occur', 'tea']);
@@ -141,7 +154,7 @@ describe('window.datum.runQuiet — the exception', () => {
 			await app.idle();
 			assert.equal(await app.paneText('tail'), before.tail, 'the tail pane refreshed');
 			assert.deepEqual(await app.echoes(), before.echoes, 'the scrollback grew');
-			assert.equal(await receipt(page).innerText(), before.receipt, 'the bar receipted it');
+			assert.equal(await receiptText(page), before.receipt, 'the bar receipted it');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});

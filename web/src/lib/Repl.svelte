@@ -33,6 +33,8 @@
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
 	import { fileCommand, progress } from './dbio.js';
+	import Docs from './Docs.svelte';
+	import { echoArgv, parseEcho } from './echo.js';
 	import { fitArgv } from './panes.js';
 	import { run, type RunResult } from './run.js';
 
@@ -68,21 +70,29 @@
 	 * Run an argv — the bottom bar's line, a widget press (da-nz29).
 	 *
 	 * A typed `line` is echoed as typed, quotes and all. A press has no
-	 * line: the scrollback echoes `result.argv`, the array the runner
-	 * actually received, so a press teaches exactly the command it ran. A
-	 * prettier string rebuilt from the press could drift from it; this
-	 * cannot. A file command ($lib/dbio.ts) goes the browser's way, before
-	 * any await: its dialog needs the keypress — unless the caller brought
+	 * line: the scrollback echoes the argv the CALLER asked for, so a press
+	 * teaches exactly the command it asked for. A prettier string rebuilt
+	 * from the press could drift from it; this cannot. What it must NOT
+	 * echo is the argv the runner received — the web appends flags of its
+	 * own on the way through (`--width`, and `--show json` since da-xfa4),
+	 * and those are the web's plumbing, not a command to teach.
+	 *
+	 * A file command ($lib/dbio.ts) goes the browser's way, before any
+	 * await: its dialog needs the keypress — unless the caller brought
 	 * `stdin` itself, which is a file already chosen (`engine.press`).
 	 */
 	export async function runArgv(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
 		const ranAt = Date.now();
 		const result = await (
-			(stdin === undefined ? fileCommand(argv) : null) ?? run(fitArgv(argv, width), stdin)
+			(stdin === undefined ? fileCommand(argv) : null) ??
+			run(echoArgv(fitArgv(argv, width)), stdin)
 		);
-		await land(line ?? result.argv.join(' '), result, ranAt);
+		await land(line ?? argv.join(' '), result, ranAt);
 		return result;
 	}
+
+	/** A command's documents, when it echoed any ($lib/echo.ts). */
+	const docsOf = (result: RunResult) => parseEcho(result.stdout);
 
 	/** Into the shared store, and the view pinned to it. */
 	async function land(line: string, result: RunResult, ranAt: number): Promise<void> {
@@ -108,7 +118,21 @@
 			     every reader of it — a test, a copy-paste — already assumes. -->
 			<div class="echo"><span class="prompt">❯</span> {entry.line}</div>
 		</div>
-		{#if entry.result.stdout}
+		{#if docsOf(entry.result)}
+			<!-- The same sections the bottom bar draws, one per document
+			     (da-xfa4): the web appends `--show json` to every command it
+			     runs, so both surfaces get the documents and a multi-document
+			     result is side by side in each.
+			     THE TRADE: `--show json` carries the CLI's strings with its
+			     ANSI stripped, so an action echo in here is no longer painted
+			     in datum's field and state colours — a table, a picture and an
+			     error still are, because they carry no echo and arrive as the
+			     CLI printed them. vividn asked for exactly this ("The whole web
+			     interface can take use json as the default show and then
+			     render on it's own terms which is nice separation"); the
+			     colour is the cost of the one mechanism. -->
+			<Docs docs={docsOf(entry.result) ?? []} all />
+		{:else if entry.result.stdout}
 			<CliOutput text={entry.result.stdout} />
 		{/if}
 		{#if entry.result.stderr}

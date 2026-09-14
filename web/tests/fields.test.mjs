@@ -306,7 +306,9 @@ describe('in the app', () => {
 			await page.waitForFunction(
 				() => document.querySelector('.prompt-bar .ghost')?.textContent === 'occur coffee'
 			);
-			await page.waitForFunction(() => document.querySelector('.prompt-bar .receipt').textContent.startsWith('CREATE '));
+			await page.waitForFunction(() =>
+				document.querySelector('.prompt-bar .doc .receipt')?.textContent.startsWith('CREATE ')
+			);
 			await app.idle();
 			assert.equal((await app.tailRows()).rows.at(-1).field, 'coffee');
 
@@ -323,7 +325,16 @@ describe('in the app', () => {
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 09:00', kind: 'time' }]));
 			await page.locator('.bar [data-field="coffee"]').click();
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'occur'));
-			assert.deepEqual((await seen()).find((a) => a[0] === 'occur'), ['occur', 'coffee', '-t', '09:00']);
+			// `--show json` after the pills is the web's own (da-xfa4): every
+			// command a reader runs is asked for its echo as data.
+			assert.deepEqual((await seen()).find((a) => a[0] === 'occur'), [
+				'occur',
+				'coffee',
+				'-t',
+				'09:00',
+				'--show',
+				'json'
+			]);
 		});
 	});
 

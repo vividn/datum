@@ -127,6 +127,15 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   or renderer in TypeScript — every pane, the widget bar (`fields --json`),
   the tail table (`tail --json`'s `columns`), /now (`now --bare`) and the
   export button (`db backup -`) are CLI commands through `run(argv)`.
+  A command a reader runs also carries `--show json` (da-xfa4, `echoArgv`
+  in `web/src/lib/echo.ts`), so the bottom bar and the REPL PLACE the
+  CLI's own action echo — action, hid, id, info, data — instead of
+  parsing its printed lines; a command with no echo falls back to them.
+- The bottom bar is the page's command line AND its status line (da-xfa4):
+  a fixed 6rem, the top 60% the last command's result as one section per
+  document (`+N` opens a modal when they do not fit), the bottom 40% the
+  prompt with the time-cursor pills riding after the typed text, the clock
+  under the logo, and a centred `^` that expands upward into the REPL.
 - A burst takes the database files for itself (sync access handles) under
   the `datum-cli-files` Web Lock, so tabs take turns fairly and none is the
   owner. Back-to-back commands share one acquisition (da-dvzx): the handles

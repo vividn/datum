@@ -15,17 +15,24 @@
 // `last` is every command run anywhere — a widget-bar press, a command
 // pane's ▶, the bar itself — because every one
 // of them goes through `record` in $lib/replStore.ts, which tells this
-// store. It is what the receipt is read off: the CLI's own first line,
-// reduced to its action word and hid. Not restored across a reload, unlike
-// the scrollback: a receipt is about the command just run, and on a fresh
-// page none has been.
+// store. It is what the bar's result area is drawn from ($lib/BarResult
+// .svelte): the CLI's own documents, or its own lines when it echoed
+// none. Not restored across a reload, unlike the scrollback: a result is
+// about the command just run, and on a fresh page none has been.
 //
 // `ghost` is the narrower thing the prompt itself shows (da-jprg) — see
 // below.
 
-import { writable } from 'svelte/store';
-import { stripAnsi } from './ansi.js';
+import { get, writable } from 'svelte/store';
 import type { RunResult } from './run.js';
+
+/**
+ * How long a ghost is on screen, and so how long a spent pill takes to
+ * fade with it (da-xfa4). One constant: the fade is in Prompt.svelte's
+ * CSS, the two timers that take the ghost and the pills away are here and
+ * in PromptBar.svelte, and all three have to agree.
+ */
+export const GHOST_MS = 1000;
 
 export interface Pill {
 	id: string;
@@ -46,8 +53,32 @@ export const removePill = (id: string): void => pills.update((all) => all.filter
 export const toggleLockPill = (id: string): void =>
 	pills.update((all) => all.map((p) => (p.id === id ? { ...p, locked: !p.locked } : p)));
 
-/** After a press SUCCEEDS: unlocked pills clear, locked ones stay for the next line. */
-export const clearUnlockedPills = (): void => pills.update((all) => all.filter((p) => p.locked));
+/**
+ * The pills a press has just spent, on their way out (da-xfa4).
+ *
+ * A SEPARATE store, not a flag on `pills`: a spent pill is no longer in
+ * the argv a press builds and no longer the time cursor's other face
+ * ($lib/cursor.ts) — it is a receipt fading beside the ghost of the
+ * command it went into. Keeping it out of `pills` is what lets both of
+ * those readers stay exactly as they were.
+ */
+export const spent = writable<Pill[]>([]);
+
+/**
+ * After a press SUCCEEDS: unlocked pills clear, locked ones stay for the
+ * next line.
+ *
+ * The cleared ones move to `spent` for the length of a ghost — vividn: "The
+ * pills should be used with the ghost text, so they can be part of it and
+ * fade with it" — and are gone after it.
+ */
+export const clearUnlockedPills = (): void => {
+	const doomed = get(pills).filter((p) => !p.locked);
+	if (!doomed.length) return;
+	pills.update((all) => all.filter((p) => p.locked));
+	spent.set(doomed);
+	setTimeout(() => spent.update((all) => (all === doomed ? [] : all)), GHOST_MS);
+};
 
 export const prefill = writable<string | null>(null);
 
@@ -86,27 +117,3 @@ export const last = writable<LastRun | null>(null);
 /** `record` says a command ran. */
 export const noteRun = (line: string, ranAt: number, result: RunResult): void =>
 	last.set({ line, ranAt, result });
-
-export interface Receipt {
-	text: string;
-	error: boolean;
-}
-
-const firstLine = (text: string): string =>
-	stripAnsi(text)
-		.split('\n')
-		.find((l) => l.trim())
-		?.trim() ?? '';
-
-/**
- * What the bar says about a result: on failure the CLI's first line of
- * stderr; otherwise its first line of stdout, cut to the action word and
- * the hid when it is the CLI's echo (`CREATE 8vcb6 coffee:…` → `CREATE
- * 8vcb6`) — the truth as the CLI printed it, never rebuilt (da-nz29).
- */
-export function receiptOf(result: RunResult): Receipt {
-	if (result.code !== 0) return { text: firstLine(result.stderr) || `exit ${result.code}`, error: true };
-	const line = firstLine(result.stdout);
-	const echo = /^([A-Z]+)\s+(\S+)/.exec(line);
-	return { text: echo ? `${echo[1]} ${echo[2]}` : line, error: false };
-}
