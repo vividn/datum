@@ -30,7 +30,7 @@ impl Progress {
     /// `done` so far — said only if long enough has passed since the last.
     pub fn tick(&mut self, done: usize) {
         let every = Duration::from_millis(if self.tty { 200 } else { 1000 });
-        if done % 64 == 0 && self.last.elapsed() >= every {
+        if done.is_multiple_of(64) && self.last.elapsed() >= every {
             self.say(done, "");
         }
     }
