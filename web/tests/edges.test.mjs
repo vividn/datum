@@ -8,6 +8,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { fill } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -26,17 +27,17 @@ async function extend(page, edge) {
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
-/** The root split's box, and the box of the pane showing the picker. */
+/** The root split's box, and the box of the empty pane the edge just added. */
 const boxes = (page) =>
 	page.evaluate(() => {
 		const rect = (el) => {
 			const { left, right, top, bottom } = el.getBoundingClientRect();
 			return { left, right, top, bottom };
 		};
-		const picker = document.querySelector('.picker')?.closest('section.pane');
+		const empty = document.querySelector('section.pane[data-title="empty"]');
 		return {
 			split: rect(document.querySelector('section.root > .content > .split')),
-			fresh: picker ? rect(picker) : null
+			fresh: empty ? rect(empty) : null
 		};
 	});
 
@@ -93,7 +94,7 @@ describe('the edge handles', () => {
 				const { page } = app;
 				await extend(page, 'bottom');
 				const { split, fresh } = await boxes(page);
-				assert.ok(fresh, 'no pane shows the picker');
+				assert.ok(fresh, 'no pane is empty');
 				assert.ok(near(fresh.left, split.left) && near(fresh.right, split.right), 'the new pane does not span the width');
 				assert.ok(near(fresh.bottom, split.bottom), 'the new pane is not at the bottom');
 				const content = await draft(page);
@@ -101,7 +102,7 @@ describe('the edge handles', () => {
 				assert.equal(content.ratios.at(-1), 0.2);
 				const added = content.children.at(-1).id;
 
-				await page.locator('.picker button', { hasText: /^stats$/ }).click();
+				await fill(page, 'stats');
 				const stats = page.locator(`section[data-pane="${added}"] .stats`);
 				await stats.waitFor();
 				await app.reload();
@@ -119,7 +120,7 @@ describe('the edge handles', () => {
 				);
 				await extend(page, 'left');
 				const { split, fresh } = await boxes(page);
-				assert.ok(fresh, 'no pane shows the picker');
+				assert.ok(fresh, 'no pane is empty');
 				assert.ok(near(fresh.left, split.left), 'the new pane is not at the left');
 				assert.ok(near(fresh.top, split.top) && near(fresh.bottom, split.bottom), 'the new pane does not span the height');
 				const content = await draft(page);

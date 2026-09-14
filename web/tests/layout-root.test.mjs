@@ -24,6 +24,7 @@ import {
 	chooseBar,
 	choose,
 	draft,
+	fill,
 	menuLines,
 	pane,
 	settled,
@@ -92,7 +93,7 @@ describe('the draft', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await choose(page, 'tail', 'split side by side');
-			await page.locator('.picker button', { hasText: 'nowview' }).click();
+			await fill(page, 'nowview');
 			await chooseBar(page, 'strip', 'left');
 			const arranged = await titles(page);
 			await app.reload();

@@ -27,7 +27,7 @@
 // stripped by `extract`, so it is never saved and never an edit.
 //
 // A layout may be inlined deeper too — a tab anywhere with `layout` set,
-// from the picker — and is expanded on load from its own save, with one
+// from the chooser — and is expanded on load from its own save, with one
 // guard: a name already open above it (`day` inside `day`) is a notice,
 // not a recursion. A nested layout is a view of that layout: the outer
 // save keeps only the reference (`extract` stubs it), and edits made
@@ -73,7 +73,7 @@ const BAR = { edge: 'top', align: 'start' } as const;
 const phone = () =>
 	typeof matchMedia === 'function' && matchMedia(`(max-width: ${PHONE_WIDTH}px)`).matches;
 
-/** The name a URL or a picker means: the old routes and kind names map to one layout each. */
+/** The name a URL or the chooser means: the old routes and kind names map to one layout each. */
 export const canonicalName = (name: string): string => ALIASES[name] ?? name;
 
 /** The saved layout `name`, else the built-in one, else null. */
@@ -397,7 +397,7 @@ export function toggleLock(name: string): void {
 	apply((l) => setLocked(l, tab.id, locked));
 }
 
-/** Fill a tab anywhere in the tree with layout `name`, inlined; the picker's other choice. */
+/** Fill a tab anywhere in the tree with layout `name`, inlined; the chooser's other choice. */
 export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
 	const taken = new Set(allIds(get(layout)));
 	const filled = await expandTab({ id: tabId, content: notice(''), layout: name }, ancestorsOf(tabId), taken);

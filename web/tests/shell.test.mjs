@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { settled } from './support/layout.mjs';
+import { chooser, fill, offers, openChooser, settled } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -45,19 +45,23 @@ const titles = (page) =>
 const exactly = (label) =>
 	new RegExp(`^\\s*✓?\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
 
-/** Open the root bar's `+` and pick `name`. */
+/** Open the root bar's `+` — the one chooser (da-uyx1). */
+const add = (page) => page.locator('.root-bar button[aria-label="open a layout"]');
+
+/** Open the `+` and pick `name`. */
 async function pick(page, name) {
-	await page.locator('.root-bar button[aria-label="open a layout"]').click();
-	await page.locator('[role="menu"] button').filter({ hasText: exactly(name) }).click();
-	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+	await add(page).click();
+	await chooser(page).locator('button').filter({ hasText: exactly(name) }).click();
+	await chooser(page).waitFor({ state: 'detached' });
 }
 
 /** What the `+` offers, in order. */
 async function offered(page) {
-	await page.locator('.root-bar button[aria-label="open a layout"]').click();
-	const items = await page.locator('[role="menu"] button').allInnerTexts();
+	await add(page).click();
+	await chooser(page).waitFor();
+	const items = await offers(page);
 	await page.keyboard.press('Escape');
-	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+	await chooser(page).waitFor({ state: 'detached' });
 	return items.map((t) => t.trim());
 }
 
@@ -127,8 +131,8 @@ describe('the shell', () => {
 			page.once('dialog', (dialog) => dialog.accept('mine'));
 			await icon(page, 'save-as').click();
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
-			// The list is re-read after the save lands, a beat behind the tab.
-			await until(() => offered(page), (o) => o.includes('mine'));
+			// The chooser reads the saved layouts each time it opens, so the
+			// save is on the list the first time it is asked.
 			assert.deepEqual(await offered(page), ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases', 'input']);
 		}, DESKTOP);
 
@@ -255,7 +259,7 @@ describe('the icons', () => {
 			assert.equal(await icon(page, 'restore').getAttribute('aria-label'), 'restore a version');
 
 			await choose(page, 'tail', 'split side by side');
-			await page.locator('.picker button', { hasText: exactly('nowview') }).click();
+			await fill(page, 'nowview');
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
 			await icon(page, 'save').click();
 			await until(() => dotted(page), (d) => d.length === 0);
@@ -619,18 +623,55 @@ describe('the cycle guard', () => {
 		}, DESKTOP);
 	});
 
-	test('the picker offers day inside a pane, and a nested layout draws', async () => {
+	test('the chooser offers day inside a pane, and a nested layout draws', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			// mine: the nowview alone, then embedded in day's tail.
 			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
 			await choose(page, 'tail', 'split side by side');
-			const picker = page.locator('section.pane[data-title="empty"] .picker');
-			await picker.locator('button.layout').first().waitFor();
-			assert.deepEqual(await picker.locator('button.layout').allInnerTexts(), ['mine'], 'day, open above, must not be offered');
-			await picker.locator('button', { hasText: exactly('mine') }).click();
+			await openChooser(page);
+			assert.deepEqual(await chooser(page).locator('button.layout').allInnerTexts(), ['mine'], 'day, open above, must not be offered');
+			await chooser(page).locator('button', { hasText: exactly('mine') }).click();
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'fields']);
+		}, DESKTOP);
+	});
+});
+
+describe('the one chooser', () => {
+	// da-uyx1: the empty pane's button and the root bar's `+` open the SAME
+	// modal, so what they offer cannot drift apart — one list, one order.
+	test("the root + and an empty pane offer the same items in the same order, minus the pane's ancestors", async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			// A saved layout, so the Layouts section holds more than `day`.
+			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
+			const fromRoot = await offered(page);
+			assert.deepEqual(fromRoot, ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases', 'input']);
+
+			await choose(page, 'tail', 'split side by side');
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
+			await openChooser(page);
+			// The same list, in the same order — less `day`, which is open
+			// above this pane and may not be offered inside itself.
+			assert.deepEqual(await offers(page), fromRoot.filter((n) => n !== 'day'));
+
+			// The keyboard is inside the dialog, on its first item, and Tab
+			// walks the rest in the order they are listed.
+			const focused = () => page.evaluate(() => document.activeElement?.textContent?.trim());
+			assert.equal(await page.evaluate(() => document.activeElement?.closest('dialog.chooser') !== null), true);
+			assert.equal(await focused(), fromRoot[1]);
+			await page.keyboard.press('Tab');
+			assert.equal(await focused(), fromRoot[2]);
+
+			// Escape closes it, hands focus back to the button that opened
+			// it, and changes nothing: the pane is still empty.
+			await page.keyboard.press('Escape');
+			await chooser(page).waitFor({ state: 'detached' });
+			assert.equal(await focused(), 'Choose Widget/Layout');
+			await settled(page);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
+			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
 });

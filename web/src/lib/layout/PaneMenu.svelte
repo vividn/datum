@@ -32,7 +32,7 @@
 	that element, rotation and all, not to the screen.
 -->
 <script lang="ts">
-	import { createEventDispatcher, tick } from 'svelte';
+	import { tick } from 'svelte';
 
 	/** A submenu's button: `icon` is the thick bar `[x, y, w, h]` drawn in a 16px square. */
 	type Choice = { label: string; title: string; icon: number[]; checked: boolean; run: () => void };
@@ -42,14 +42,9 @@
 	export let items: { label: string; run?: () => void; sub?: Choice[][]; row?: Short[]; disabled?: boolean }[];
 	/** Names the menu for assistive tech: which pane it belongs to. */
 	export let label: string;
-	/** What the button shows; the root bar's picker is this menu with a `+` (da-0a5o). */
-	export let glyph = '…';
 	export let title = 'pane menu';
 	/** A faint handle filling its box — the page margin's (da-qk2k) — rather than a badge. */
 	export let faint = false;
-
-	/** `open`: the menu is about to show — a chance to refresh its items. */
-	const dispatch = createEventDispatcher<{ open: void }>();
 
 	let open = false;
 	let button: HTMLButtonElement;
@@ -68,7 +63,6 @@
 	// bottom (a bottom bar, a left-hand bar's end), and never past either
 	// edge of the screen — a menu item off-screen is one nobody can reach.
 	async function show() {
-		dispatch('open');
 		open = true;
 		await tick();
 		const box = button.getBoundingClientRect();
@@ -221,7 +215,7 @@
 	aria-expanded={open}
 	aria-label={label}
 	{title}
-	on:click={() => (open ? close() : show())}>{glyph}</button
+	on:click={() => (open ? close() : show())}>…</button
 >
 
 {#if open}

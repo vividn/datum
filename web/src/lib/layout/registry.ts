@@ -5,9 +5,9 @@
 // included. A kind is its `WidgetKindMeta` (the contract in types.ts:
 // title and default settings) plus the Svelte component that draws
 // it and, where the component wants something other than `settings`, the
-// props to hand it. The picker lists `PICKABLE`; the tree's empty tab
+// props to hand it. The chooser lists `PICKABLE`; the tree's empty tab
 // (`EMPTY_KIND`, tree.ts) is not a kind here — Layout.svelte draws the
-// picker for it.
+// button that opens the chooser for it.
 //
 // A kind has no floor (vividn's third look, da-zh2o: "the hard limits kind
 // of interferes with setting stuff up"): a pane shrinks until its content
@@ -63,7 +63,7 @@ export interface WidgetKind {
 	onChange?: (settings: Record<string, unknown>, detail: unknown) => Record<string, unknown>;
 	/** Content-box sizes a border drag snaps to, from the settings: see the note above. */
 	snap?: (settings: Record<string, unknown>) => { width?: number[]; height?: number[] };
-	/** Not offered by the picker: a kind the app puts in a tab itself. */
+	/** Not offered by the chooser: a kind the app puts in a tab itself. */
 	hidden?: boolean;
 	/** The content box the kind is legible in, fixed or from the settings: see the note above. */
 	legible: Floor | ((settings: Record<string, unknown>) => Floor);
@@ -156,7 +156,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	notice: { meta: meta('notice', 'notice'), component: Notice, hidden: true, legible: { width: 120, height: 40 } }
 };
 
-/** The kinds the picker offers, in the order it shows them. */
+/** The kinds the chooser offers, in the order it shows them. */
 export const PICKABLE = Object.keys(KINDS).filter((kind) => !KINDS[kind].hidden);
 
 export const titleOf = (kind: string): string => KINDS[kind]?.meta.title ?? kind;

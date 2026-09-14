@@ -72,6 +72,25 @@ export const menuLines = (page) =>
 /** A menu item's whole label. */
 export const exactly = (label) => new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
 
+/** The one chooser (da-uyx1): the modal that fills a tab, open. */
+export const chooser = (page) => page.locator('dialog.chooser');
+
+/** What the chooser offers, in order: the layouts, then the widgets. */
+export const offers = (page) => chooser(page).locator('button').allInnerTexts();
+
+/** Open the chooser from an empty pane's one button. */
+export async function openChooser(page) {
+	await page.locator('section.pane[data-title="empty"] .choose button').click();
+	await chooser(page).waitFor();
+}
+
+/** Open the chooser from an empty pane and choose `name` — a layout or a widget. */
+export async function fill(page, name) {
+	await openChooser(page);
+	await chooser(page).locator('button').filter({ hasText: exactly(name) }).click();
+	await chooser(page).waitFor({ state: 'detached' });
+}
+
 /** The `Bar ▸` submenu, open. */
 export const barMenu = (page) => page.locator('[role="menu"][aria-label="Bar"]');
 

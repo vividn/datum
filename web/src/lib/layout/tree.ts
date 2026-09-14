@@ -17,7 +17,7 @@
 
 import type { Bar, BarEdge, Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
 
-/** The kind an empty tab holds: the picker, until a widget is chosen. */
+/** The kind an empty tab holds: one Choose Widget/Layout button, until something is chosen. */
 export const EMPTY_KIND = 'empty';
 
 const isSplit = (content: Widget | Split): content is Split => 'children' in content;
@@ -243,7 +243,7 @@ export function splitTab(
 export const EDGE_RATIO = 0.2;
 
 /**
- * Add a pane — one empty tab, the picker — spanning a whole edge of the
+ * Add a pane — one empty tab, asking to be filled — spanning a whole edge of the
  * active root tab's content (da-qk2k): the dashboard extended from its
  * side, however split up it already is. A content already split the way
  * the edge runs takes the new pane as its first or last child; anything

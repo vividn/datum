@@ -11,7 +11,7 @@
 import { run } from '../run.js';
 import type { Layout } from './types.js';
 
-/** A saved layout as a picker lists it. */
+/** A saved layout as the chooser lists it. */
 export interface LayoutListing {
 	name: string;
 	designedFor?: Layout['designedFor'];

@@ -15,6 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { fill } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -172,7 +173,7 @@ describe('the aliases widget', () => {
 			await ok(run, ['alias', 'set', 'cof', 'occur coffee cups=1']);
 			await page.locator('section[data-pane="tail"] .titlebar button.more').first().click();
 			await page.getByRole('menuitem', { name: 'split side by side', exact: true }).click();
-			await page.locator('section.pane[data-title="empty"] .picker button', { hasText: 'aliases' }).click();
+			await fill(page, 'aliases');
 			await page.locator('section.pane[data-title="aliases"] li').nth(1).waitFor();
 			assert.deepEqual(await rows(page), ['cof → occur coffee cups=1', 'coffee → occur coffee']);
 

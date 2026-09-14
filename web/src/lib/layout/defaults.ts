@@ -134,7 +134,7 @@ export const defaultLayoutFor = (phone: boolean): Layout =>
 
 // ---- the built-in layouts (da-0a5o) ------------------------------------
 //
-// What the root bar's picker and a URL can name without anything saved:
+// What the root bar's `+` and a URL can name without anything saved:
 // `day` — today's page, the desktop or the phone tree by the screen's
 // width at first load — and one layout per widget kind that is just that
 // widget, named as its pane is titled (`nowview`, `tail`, `stats`, …), so
@@ -180,5 +180,5 @@ export function builtinLayout(name: string, phone: boolean): Layout | null {
 	return make ? make(phone) : null;
 }
 
-/** The built-in names, `day` first, in the order the picker offers them. */
+/** The built-in names, `day` first, in the order the chooser offers them. */
 export const BUILTIN_NAMES = Object.keys(BUILTIN);

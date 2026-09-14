@@ -44,18 +44,16 @@
 	widget with more in it than its box holds scrolls inside it.
 -->
 <script lang="ts">
-	import { getContext, setContext } from 'svelte';
-	import { readable, writable, type Readable } from 'svelte/store';
 	import Pane from '$lib/Pane.svelte';
 	import PaneFrame, { ROW } from './PaneFrame.svelte';
-	import Picker from './Picker.svelte';
+	import { choose } from './chooser.js';
 	import type { NodeId, Pane as PaneNode, Split } from './types.js';
 	import { isSplit } from './types.js';
 	import { apply } from './current.js';
 	import { EMPTY_KIND, floorOf, newWidget, rootFloorOf, setRatios, setWidget } from './tree.js';
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
-	import { inlineInto } from './shell.js';
+	import { ancestorsOf, inlineInto } from './shell.js';
 
 	export let pane: PaneNode;
 	export let epoch = 0;
@@ -86,13 +84,6 @@
 	$: active = pane.tabs[pane.active];
 	$: content = active.content;
 
-	// The layouts open above this pane's content (da-0a5o): the ones its
-	// picker must not offer, or `day` could hold `day`. A store, since the
-	// active tab changes and a context is set once.
-	const above = getContext<Readable<string[]> | undefined>('layout-ancestors') ?? readable<string[]>([]);
-	const ancestors = writable<string[]>([]);
-	setContext('layout-ancestors', ancestors);
-	$: ancestors.set(active.layout === undefined ? $above : [...$above, active.layout]);
 	$: kind = isSplit(content) || content.kind === EMPTY_KIND ? undefined : KINDS[content.kind];
 	$: canClose = !(pane.id === rootId && pane.tabs.length === 1);
 	$: lockedHere = locked || !!active.locked;
@@ -234,6 +225,18 @@
 		return next;
 	}
 
+	/**
+	 * An empty tab's one button (da-uyx1): the chooser, and what it came
+	 * back with — a layout inlined into this tab, or a widget put in it.
+	 * The names open above the tab are the ones it may not hold.
+	 */
+	async function fill(tabId: NodeId): Promise<void> {
+		const picked = await choose(ancestorsOf(tabId));
+		if (!picked) return;
+		if ('layout' in picked) await inlineInto(tabId, picked.layout);
+		else apply((l) => setWidget(l, tabId, newWidget(picked.kind)));
+	}
+
 	function nudge(event: KeyboardEvent, split: Split, index: number) {
 		const grow = split.direction === 'row' ? 'ArrowRight' : 'ArrowDown';
 		const shrink = split.direction === 'row' ? 'ArrowLeft' : 'ArrowUp';
@@ -299,10 +302,13 @@
 		</div>
 	{:else if content.kind === EMPTY_KIND}
 		{@const tabId = active.id}
-		<Picker
-			on:pick={(e) => apply((l) => setWidget(l, tabId, newWidget(e.detail)))}
-			on:layout={(e) => void inlineInto(tabId, e.detail)}
-		/>
+		<Pane title="empty">
+			<div class="choose">
+				<button type="button" class="control" on:click={() => void fill(tabId)}
+					>Choose Widget/Layout</button
+				>
+			</div>
+		</Pane>
 	{:else if kind}
 		{@const widget = content}
 		{@const fold = kind.onChange}
@@ -391,6 +397,27 @@
 	}
 	.border:focus-visible {
 		outline: none;
+	}
+
+	/* One centred button, and nothing else: an empty pane is a question,
+	   not a menu (vividn, da-uyx1 — a grid of pills read as a fields widget).
+	   Not `.empty`: a cell carries the class of what it shows (`named`), so
+	   an empty tab's cell IS `.cell.empty` and this would centre the pane
+	   itself inside it. */
+	.choose {
+		display: grid;
+		place-items: center;
+		block-size: 100%;
+	}
+	.choose button {
+		min-block-size: 24px;
+		padding: 0.3rem 0.9rem;
+		color: var(--accent);
+	}
+	.choose button:hover,
+	.choose button:focus-visible {
+		color: var(--accent-bright);
+		border-color: var(--accent);
 	}
 
 	.quiet {

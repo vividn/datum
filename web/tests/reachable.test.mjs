@@ -34,6 +34,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { chooser } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -126,6 +127,42 @@ describe('on a phone-sized screen', () => {
 			await withApp(async ({ page, submit }) => {
 				await track(page, submit, FIELDS);
 				await assertOnScreen(page, '.bar button.widget', "the first field's chip");
+			}, { viewport });
+		});
+	}
+
+	// The one chooser (da-uyx1) is a modal over the whole page, so the
+	// screen it has to fit is the narrowest one: 320px, with every item a
+	// fingertip's 24px and the dialog itself inside the viewport.
+	for (const viewport of [NARROW, TINY]) {
+		const size = `${viewport.width}x${viewport.height}`;
+
+		test(`the chooser fits, with 24px items, at ${size}`, async () => {
+			await withApp(async ({ page }) => {
+				await page.locator('.root-bar button[aria-label="open a layout"]').click();
+				await chooser(page).waitFor();
+				const box = await chooser(page).boundingBox();
+				const screen = await page.evaluate(() => ({
+					width: document.documentElement.clientWidth,
+					height: document.documentElement.clientHeight
+				}));
+				assert.ok(
+					box.x >= 0 && box.x + box.width <= screen.width + 1,
+					`the chooser is ${box.x}–${box.x + box.width} on a ${screen.width}px screen`
+				);
+				assert.ok(box.y >= 0 && box.y + box.height <= screen.height + 1, 'the chooser is taller than the screen');
+				const items = chooser(page).locator('button');
+				const count = await items.count();
+				assert.ok(count > 1, `the chooser offers ${count} items`);
+				for (let i = 0; i < count; i++) {
+					const item = await items.nth(i).boundingBox();
+					const name = await items.nth(i).innerText();
+					assert.ok(item.height >= 24, `${name} is ${item.height}px tall`);
+					assert.ok(
+						item.x >= 0 && item.x + item.width <= screen.width + 1,
+						`${name} is ${item.x}–${item.x + item.width} on a ${screen.width}px screen`
+					);
+				}
 			}, { viewport });
 		});
 	}

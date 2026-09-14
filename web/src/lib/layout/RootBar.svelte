@@ -3,27 +3,27 @@
 
 	The root pane's tabs, each a pill: click or the arrow keys to switch,
 	a dot on one whose tree differs from its save. After them a `+` that
-	opens the picker — `day`, the saved layouts, then a layout per widget
-	kind — and a `…` with what the header used to offer. At the right end
-	the four acts on the ACTIVE tab's layout: save, restore, save as…,
-	lock — real buttons with names, 24px, glyphs drawn inline. While the
-	tab is modified, save and restore stand out (vividn: "Both should become
-	more pronounced when a layout is modified so that the user can decide"),
-	and restore goes back to the last save; with nothing to discard it
-	opens the save's versions instead, and `→ forward` undoes the last
-	restore. The lock is this device's (shell.ts).
+	opens the one chooser (da-uyx1) — the layouts, then the widget kinds,
+	where a layout opens as a root tab and a widget opens that kind's
+	built-in one-widget layout — and a `…` with what the header used to
+	offer. At the right end the four acts on the ACTIVE tab's layout:
+	save, restore, save as…, lock — real buttons with names, 24px, glyphs
+	drawn inline. While the tab is modified, save and restore stand out
+	(vividn: "Both should become more pronounced when a layout is modified so
+	that the user can decide"), and restore goes back to the last save;
+	with nothing to discard it opens the save's versions instead, and
+	`→ forward` undoes the last restore. The lock is this device's
+	(shell.ts).
 
 	On a phone the tabs scroll sideways rather than wrapping — one row,
 	always — while the `+`, the `…` and the icons stay where they are.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { downloadBackup } from '$lib/backup.js';
+	import { choose } from './chooser.js';
 	import { layout, loaded } from './current.js';
-	import { BUILTIN_NAMES } from './defaults.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { titleOf } from './registry.js';
-	import { listLayouts } from './store.js';
 	import { activate, close, modified, open, restore, save, saveAs, toggleLock, versions } from './shell.js';
 	import type { Tab } from './types.js';
 	import { isSplit } from './types.js';
@@ -32,8 +32,6 @@
 	let error = '';
 	/** The active save's versions, newest first, while the list is open. */
 	let trail: { version: number; modifyTime: string }[] | null = null;
-	/** The saved layouts' names, for the picker. */
-	let saved: string[] = [];
 
 	$: tabs = $layout.root.tabs;
 	$: active = tabs[$layout.root.active] as Tab | undefined;
@@ -46,20 +44,16 @@
 	const label = (tab: Tab): string =>
 		tab.layout ?? tab.title ?? (isSplit(tab.content) ? 'split' : titleOf(tab.content.kind));
 
-	onMount(refreshSaved);
-
-	async function refreshSaved(): Promise<void> {
-		saved = (await listLayouts().catch(() => [])).map((l) => l.name);
+	/**
+	 * The `+`: the chooser, and what it came back with. A layout opens as a
+	 * root tab; a widget kind opens its built-in one-widget layout, whose
+	 * name is the kind's title (defaults.ts). Nothing is above a root tab,
+	 * so nothing is refused here.
+	 */
+	async function add(): Promise<void> {
+		const picked = await choose();
+		if (picked) await act(() => open('layout' in picked ? picked.layout : titleOf(picked.kind)));
 	}
-
-	// `day`, the saved layouts, then a layout per widget kind — a saved one
-	// under a built-in's name is listed once, as the layout it shadows.
-	$: choices = [
-		'day',
-		...saved.filter((n) => !BUILTIN_NAMES.includes(n)),
-		...BUILTIN_NAMES.filter((n) => n !== 'day')
-	];
-	$: pickerItems = choices.map((n) => ({ label: n, run: () => void act(() => open(n)) }));
 
 	$: moreItems = [
 		{ label: 'Close tab', disabled: tabs.length < 2, run: () => close($layout.root.active) },
@@ -78,7 +72,7 @@
 		}
 	}
 
-	const doSave = () => act(async () => name !== undefined && (await save(name), await refreshSaved()));
+	const doSave = () => act(async () => name !== undefined && save(name));
 
 	const doRestore = () =>
 		act(async () => {
@@ -99,7 +93,6 @@
 			const to = prompt('Save this layout as:', '')?.trim();
 			if (!to) return;
 			await saveAs(name, to);
-			await refreshSaved();
 		});
 
 	/** Arrow keys walk the tabs; the tab focused is the tab shown. */
@@ -131,7 +124,7 @@
 			</button>
 		{/each}
 	</div>
-	<PaneMenu items={pickerItems} label="open a layout" glyph="+" title="open a layout" on:open={refreshSaved} />
+	<button type="button" class="control badge add" aria-label="open a layout" title="open a layout" on:click={add}>+</button>
 	<PaneMenu items={moreItems} label="menu of the root bar" />
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
 	<div class="acts">
@@ -228,6 +221,11 @@
 	.tab:hover,
 	.tab:focus-visible {
 		color: var(--accent-bright);
+	}
+
+	/* The `+` is a badge like the `…` beside it, and does not stretch. */
+	.add {
+		flex: none;
 	}
 
 	.dot {

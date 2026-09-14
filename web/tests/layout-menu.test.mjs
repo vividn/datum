@@ -15,10 +15,13 @@ import {
 	boxOf,
 	chooseBar,
 	choose,
+	chooser,
 	draft,
 	exactly,
 	menuLines,
+	offers,
 	openBar,
+	openChooser,
 	pane,
 	settled,
 	titles
@@ -28,14 +31,17 @@ before(startApp);
 after(stopApp);
 
 describe('the … menu', () => {
-	test('Split | on the tail pane makes two panes, the new one a picker, and the pick renders', async () => {
+	test('Split | on the tail pane makes two panes, the new one a Choose button, and the choice renders', async () => {
 		await withApp(async ({ page }) => {
 			await choose(page, 'tail', 'split side by side');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
-			const picker = page.locator('section.pane[data-title="empty"] .picker');
-			// The layouts it could hold come first (`day` is open above this
-			// pane, so it is not offered — da-0a5o), then the kinds.
-			assert.deepEqual(await picker.locator('button').allInnerTexts(), [
+			// One button, not a grid of them (da-uyx1) — and it opens the
+			// chooser: the layouts it could hold first (`day` is open above
+			// this pane, so it is not offered — da-0a5o), then the kinds.
+			const empty = page.locator('section.pane[data-title="empty"] .body');
+			assert.deepEqual(await empty.locator('button').allInnerTexts(), ['Choose Widget/Layout']);
+			await openChooser(page);
+			assert.deepEqual(await offers(page), [
 				'dayview',
 				'repl',
 				'nowview',
@@ -46,7 +52,7 @@ describe('the … menu', () => {
 				'aliases',
 				'input'
 			]);
-			await picker.locator('button', { hasText: 'nowview' }).click();
+			await chooser(page).locator('button', { hasText: 'nowview' }).click();
 			// The new pane is titled by its kind and draws: a second nowview
 			// beside the tail, at its own box's size.
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();

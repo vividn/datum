@@ -109,7 +109,7 @@ export interface Layout {
  * What the registry knows about a widget kind, independent of Svelte.
  *
  * The component that draws the kind is registered beside this in the
- * engine; this is the part persistence, the picker and the kit tooling can
+ * engine; this is the part persistence, the chooser and the kit tooling can
  * read without importing a component. A kind has no floor: a pane shrinks
  * until only its frame is left (da-zh2o).
  */
