@@ -292,7 +292,10 @@ describe('in the app', () => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
 			await page.locator('.bar [data-field="coffee"]').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur coffee');
+			// Ghosted beside the prompt, not typed into it (da-jprg).
+			await page.waitForFunction(
+				() => document.querySelector('.prompt-bar .ghost')?.textContent === 'occur coffee'
+			);
 			await page.waitForFunction(() => document.querySelector('.prompt-bar .receipt').textContent.startsWith('CREATE '));
 			await app.idle();
 			assert.equal((await app.tailRows()).rows.at(-1).field, 'coffee');

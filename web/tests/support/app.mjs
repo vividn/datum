@@ -182,6 +182,10 @@ function baseUrl() {
  * to hold on more than chromium. It gets a browser of its own on a fresh
  * profile (`launchPersistentContext`), torn down with the test.
  *
+ * `reducedMotion` is `reduce` for a reader who has asked the system for
+ * no animation, which is a different app: what fades for everyone else has
+ * to be shown and taken away instead (da-jprg).
+ *
  * `clock` is the instant the app is held at — the page's and, because
  * the CLI runs there, the worker's. Any test that seeds a bare `HH:MM`
  * or reads what is current NOW wants one, with `todayAt` above; a test
@@ -189,9 +193,25 @@ function baseUrl() {
  */
 export async function withApp(
 	fn,
-	{ prepare, clock, locale, viewport, device, query = '', engine, timezone = TIMEZONE } = {}
+	{
+		prepare,
+		clock,
+		locale,
+		viewport,
+		device,
+		query = '',
+		engine,
+		reducedMotion,
+		timezone = TIMEZONE
+	} = {}
 ) {
-	const options = { ...device, timezoneId: timezone, locale, ...(viewport ? { viewport } : {}) };
+	const options = {
+		...device,
+		timezoneId: timezone,
+		locale,
+		...(reducedMotion ? { reducedMotion } : {}),
+		...(viewport ? { viewport } : {})
+	};
 	const profile = engine && (await mkdtemp(join(tmpdir(), 'datum-profile-')));
 	const context = engine
 		? await engine.launchPersistentContext(profile, options)

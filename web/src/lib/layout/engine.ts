@@ -15,7 +15,7 @@
 // nowhere to put, and comes back the moment a REPL is added.
 
 import { get, writable } from 'svelte/store';
-import { clearUnlockedPills, pills } from '$lib/bar.js';
+import { clearUnlockedPills, pills, showGhost } from '$lib/bar.js';
 import { initDb } from '$lib/db.js';
 import { fileCommand } from '$lib/dbio.js';
 import { record } from '$lib/replStore.js';
@@ -105,9 +105,25 @@ export async function ran(): Promise<void> {
  * it is also what says the browser's file dialog is not wanted: a file
  * command is only rewritten ($lib/dbio.ts) when the file is still to be
  * chosen.
+ *
+ * `typed` says the reader typed this at a prompt — only the bottom bar's
+ * line is (`pressWithPills`). Everything else showed up without anyone
+ * typing it, so the prompt says what ran, as a ghost that fades (da-jprg);
+ * a typed line is not echoed back at the person who just typed it.
  */
-export async function press(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
-	if (repl) return repl.runArgv(argv, line, stdin);
+export async function press(
+	argv: string[],
+	line?: string,
+	stdin?: string,
+	typed = false
+): Promise<RunResult> {
+	const result = await (repl ? repl.runArgv(argv, line, stdin) : alone(argv, line, stdin));
+	if (!typed) showGhost(line ?? result.argv.join(' '));
+	return result;
+}
+
+/** With no REPL mounted: run it, record it, and bump the epoch here. */
+async function alone(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
 	const ranAt = Date.now();
 	const result = await ((stdin === undefined ? fileCommand(argv) : null) ?? run(argv, stdin));
 	record(line ?? result.argv.join(' '), ranAt, result);
@@ -128,7 +144,9 @@ export async function press(argv: string[], line?: string, stdin?: string): Prom
 export const pressWithPills = async (argv: string[], line?: string): Promise<RunResult> => {
 	const result = await press(
 		[...argv, ...get(pills).flatMap((pill) => shellSplit(pill.text))],
-		line === undefined ? undefined : [line, ...get(pills).map((pill) => pill.text)].join(' ')
+		line === undefined ? undefined : [line, ...get(pills).map((pill) => pill.text)].join(' '),
+		undefined,
+		line !== undefined
 	);
 	if (result.code === 0) clearUnlockedPills();
 	return result;

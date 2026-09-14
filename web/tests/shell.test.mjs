@@ -421,7 +421,7 @@ describe('the icons', () => {
 });
 
 describe('the bottom bar', () => {
-	test('a typed line is run and receipted with the hid from the listing; a press shows in the field; foo is an error', async () => {
+	test('a typed line is run and receipted with the hid from the listing; a press ghosts in the field; foo is an error', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const input = page.locator('.prompt-bar input');
@@ -440,14 +440,19 @@ describe('the bottom bar', () => {
 			// As if typed at the REPL: it is in its scrollback.
 			assert.deepEqual(await app.echoes(), ['occur coffee']);
 
-			// A widget-bar press: the bar's field shows the command for a
-			// beat, and the receipt is the press's.
+			// A widget-bar press: the bar's field GHOSTS the command — beside
+			// the prompt, never as the box's value (da-jprg) — and the
+			// receipt is the press's.
 			await page.locator('.bar button.widget', { hasText: 'coffee' }).click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur coffee');
+			await page.waitForFunction(
+				() => document.querySelector('.prompt-bar .ghost')?.textContent === 'occur coffee'
+			);
+			assert.equal(await input.inputValue(), '', 'the press became the input\'s value');
 			await until(() => receipt(page).innerText(), (t) => t.startsWith('CREATE ') && t !== `CREATE ${hid}`);
 			await app.idle();
 			assert.equal((await app.tailRows()).rows.length, 2);
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === '');
+			await page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
+			assert.equal(await input.inputValue(), '');
 
 			await input.fill('foo');
 			await input.press('Enter');

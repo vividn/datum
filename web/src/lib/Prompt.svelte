@@ -10,15 +10,26 @@
 
 	The default slot sits at the end of the line, for what the owner has to
 	say about the last command without an output pane to say it in.
+
+	`ghost` is a command the reader did not type, shown for about a second
+	where the placeholder goes and fading out of it (da-jprg). A span over
+	the box rather than the placeholder itself because Firefox animates
+	neither a transition nor a keyframe on `::placeholder` — measured
+	2026-09-14 on chromium 1223, webkit 2336 and firefox 1538, where only
+	the first two interpolate. It is never the input's value: the box is
+	the reader's, and the moment they touch a key the ghost is gone.
 -->
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
+	import type { Ghost } from '$lib/bar.js';
 	import { clockSecondsLabel, now } from '$lib/clock.js';
 	import { repl } from '$lib/replStore.js';
 
 	/** The text in the prompt. Bind it to type a command in from outside. */
 	export let input = '';
 	export let disabled = false;
+	/** A command nobody typed, to show and fade. Bind it: a keystroke takes it away. */
+	export let ghost: Ghost | null = null;
 
 	const dispatch = createEventDispatcher<{ submit: string }>();
 
@@ -36,6 +47,8 @@
 	}
 
 	function recall(event: KeyboardEvent): void {
+		// The box is the reader's the moment they type in it.
+		ghost = null;
 		const { history } = $repl;
 		if (event.key === 'ArrowUp') {
 			const next = cursor === -1 ? history.length - 1 : cursor - 1;
@@ -68,16 +81,26 @@
 		></span
 	>
 	<span class="prompt">❯</span>
-	<input
-		type="text"
-		bind:value={input}
-		on:keydown={recall}
-		{disabled}
-		placeholder={disabled ? 'opening database…' : 'occur coffee cups=2'}
-		spellcheck="false"
-		autocapitalize="none"
-		autocomplete="off"
-	/>
+	<span class="field">
+		<input
+			type="text"
+			bind:value={input}
+			on:keydown={recall}
+			{disabled}
+			placeholder={disabled ? 'opening database…' : 'occur coffee cups=2'}
+			spellcheck="false"
+			autocapitalize="none"
+			autocomplete="off"
+		/>
+		<!-- Keyed on the object, so a second press restarts the fade rather
+		     than joining the first one's. Hidden while there is anything in
+		     the box: the ghost has the placeholder's slot and nothing else. -->
+		{#if ghost && !input}
+			{#key ghost}
+				<span class="ghost" aria-hidden="true">{ghost.line}</span>
+			{/key}
+		{/if}
+	</span>
 	<slot />
 </form>
 
@@ -101,15 +124,59 @@
 		color: var(--accent);
 	}
 
+	/* The box and the ghost over it, one on top of the other. */
+	.field {
+		position: relative;
+		display: flex;
+		flex: 1;
+		min-width: 0;
+	}
+
 	input {
 		flex: 1;
 		min-width: 0;
 		background: transparent;
 		border: none;
 		outline: none;
+		padding: 0;
 		color: var(--ink-bright);
 		font: inherit;
 		font-size: 0.95rem;
+	}
+
+	/* Where the placeholder is, in the placeholder's font — the same
+	   position, no second row, no layout shift — and out of the way of the
+	   caret and of a click. It arrives near the brightness of a typed line
+	   (vividn: "a slightly dimmed version") and fades to nothing: arriving
+	   dim and fading dimmer is a change too small to read. */
+	.ghost {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		overflow: hidden;
+		white-space: nowrap;
+		pointer-events: none;
+		color: var(--ink);
+		font-size: 0.95rem;
+		animation: ghost-fade 1s ease-out forwards;
+	}
+
+	@keyframes ghost-fade {
+		from {
+			opacity: 1;
+		}
+		to {
+			opacity: 0;
+		}
+	}
+
+	/* No fade for a reader who asked for no motion: it is shown, and the
+	   owner's own timer takes it away at the same moment (PromptBar.svelte). */
+	@media (prefers-reduced-motion: reduce) {
+		.ghost {
+			animation: none;
+		}
 	}
 
 	@media (max-width: 480px) {

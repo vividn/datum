@@ -22,6 +22,9 @@ file in the same commit — a convention nobody can read is a convention nobody 
 4. **The argv that runs is the argv that is echoed.** A widget composes an argv and dispatches it;
    the prompt shows `result.argv`. Nothing rebuilds a display string from a press — a
    reconstruction can drift from the command, and the echo is how a person learns the CLI.
+   It is shown BESIDE the prompt and never as the input's value (`bar.ghost`, da-jprg): a box
+   that fills itself reads as text the reader typed and may edit. A line the reader really did
+   type is cleared on Enter and does not come back at all.
 5. **The bar's pills go after the verb** (`engine.pressWithPills`): the CLI takes no flag before
    its verb, so a time cursor lands on a chip press exactly as on a typed line.
 

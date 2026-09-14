@@ -19,10 +19,14 @@
 	The REPL has no prompt of its own any more; what is typed here lands
 	in its scrollback.
 
-	Every command run anywhere shows here as if typed (`last` in
-	$lib/bar.ts, told by `record`): the line sits in the field for a beat
-	and the receipt stays until the next command. That is the teach loop,
-	from wherever the command came.
+	Every command run anywhere shows here (`last` in $lib/bar.ts, told by
+	`record`): the receipt stays until the next command. That is the teach
+	loop, from wherever the command came. A command NOBODY TYPED — a
+	fields-widget press, the console — also says what it ran, as a ghost in
+	the field that fades within a second (`ghost`, da-jprg). A line the
+	reader typed does not come back: it is cleared on Enter and stays
+	cleared, because a box that refills itself reads as text the reader
+	typed and may edit.
 
 	Before the prompt is the pill slot — `-t 14:30`, x-able — which the time
 	cursor fills ($lib/cursor.ts, da-wnt2) and which stays for the next
@@ -37,43 +41,54 @@
 -->
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
-	import { last, pills, prefill, receiptOf, removePill, toggleLockPill } from '$lib/bar.js';
+	import {
+		ghost as ghostStore,
+		last,
+		pills,
+		prefill,
+		receiptOf,
+		removePill,
+		toggleLockPill,
+		type Ghost
+	} from '$lib/bar.js';
 	import { pressWithPills, ready } from '$lib/layout/engine.js';
 	import Prompt from '$lib/Prompt.svelte';
 	import { shellSplit } from '$lib/shellSplit.js';
 	import { isDegraded, persisted, storage } from '$lib/storageState.js';
 
-	/** How long the last command's line stays in the field. */
-	const BEAT_MS = 1500;
+	/** How long a ghost is on screen — the fade in Prompt.svelte's own CSS. */
+	const GHOST_MS = 1000;
 
 	let input = '';
 	let field: HTMLElement;
 	let hint = false;
-	let echoed = '';
-	let beat: ReturnType<typeof setTimeout> | undefined;
-	onDestroy(() => clearTimeout(beat));
+	let ghost: Ghost | null = null;
+	let fade: ReturnType<typeof setTimeout> | undefined;
+	onDestroy(() => clearTimeout(fade));
 
 	$: receipt = $last ? receiptOf($last.result) : null;
-	$: if ($last) show($last.line);
+	$: if ($ghostStore) haunt($ghostStore);
 	$: if ($prefill !== null) take($prefill);
 
 	async function take(line: string): Promise<void> {
 		prefill.set(null);
 		input = line;
-		echoed = '';
 		await tick();
 		field.querySelector('input')?.focus();
 	}
 
-	/** The line, in the field, for a beat — unless someone is typing there. */
-	function show(line: string): void {
-		if (input !== '' && input !== echoed) return;
-		clearTimeout(beat);
-		input = echoed = line;
-		beat = setTimeout(() => {
-			if (input === echoed) input = '';
-			echoed = '';
-		}, BEAT_MS);
+	/**
+	 * Show what ran, and take it away again. Nothing here touches `input`:
+	 * whatever the reader is halfway through typing is theirs, however slow
+	 * the command that landed was.
+	 */
+	function haunt(next: Ghost): void {
+		// A one-shot signal, as `prefill` is: taken, then put back to null,
+		// so a bar mounted later does not open onto an old command's ghost.
+		ghostStore.set(null);
+		clearTimeout(fade);
+		ghost = next;
+		fade = setTimeout(() => (ghost = null), GHOST_MS);
 	}
 
 	async function submit({ detail: typed }: CustomEvent<string>): Promise<void> {
@@ -125,7 +140,7 @@
 		{/if}
 	</div>
 	<div class="prompt" bind:this={field}>
-		<Prompt bind:input disabled={!$ready} on:submit={submit} />
+		<Prompt bind:input bind:ghost disabled={!$ready} on:submit={submit} />
 	</div>
 	{#if $pills.length}
 		<div class="pills">
@@ -314,7 +329,8 @@
 		padding: 0.7rem 0.2rem;
 	}
 
-	.prompt :global(input) {
+	.prompt :global(input),
+	.prompt :global(.ghost) {
 		font-size: 1.15rem;
 	}
 
