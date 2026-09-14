@@ -60,7 +60,15 @@ docker build -t datum-sync-server -f crates/datum-sync-server/Dockerfile .
 All configuration is environment variables, read in one place
 (`src/config.rs`): `DATUM_SYNC_PORT`, `DATUM_SYNC_DB`,
 `DATUM_SYNC_ORIGIN`, `DATUM_SYNC_RP_NAME`, `DATUM_SYNC_JWT_SECRET`,
-`DATUM_SYNC_AUTH_RATELIMIT_PER_MIN`.
+`DATUM_SYNC_AUTH_RATELIMIT_PER_MIN`, `DATUM_SYNC_ALLOW_INSECURE_HTTP`.
+
+The relay refuses to start with a non-loopback `http` origin: WebAuthn
+needs a secure context and bearer tokens must not cross the network in
+cleartext. Serve real deployments over `https` (typically a TLS-terminating
+reverse proxy in front of the relay, with `DATUM_SYNC_ORIGIN` set to the
+public https URL). `http://localhost`, `127.0.0.1`, and `::1` are exempt —
+loopback never leaves the machine. For trusted-LAN testing only, set
+`DATUM_SYNC_ALLOW_INSECURE_HTTP=true` to accept a cleartext origin.
 
 The unauthenticated auth surface (passkey ceremonies, `/auth/refresh`,
 device-code *start*) is rate-limited per peer IP —

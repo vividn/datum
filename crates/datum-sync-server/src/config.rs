@@ -9,6 +9,7 @@
 //! who read the source could forge a 30-day bearer for any user_id.
 
 use anyhow::{bail, Context};
+use url::Url;
 
 /// Minimum JWT secret length in bytes. HS256 keys shorter than the
 /// SHA-256 output size weaken the MAC, and the floor also rejects the
@@ -87,9 +88,20 @@ impl Config {
             None => 30,
         };
 
+        // WebAuthn needs a secure context and bearer tokens must never cross
+        // the wire in cleartext, so a network-facing origin must be https.
+        // Validated here (fail-closed, same audited home as the secret check)
+        // before the relay or any admin command proceeds.
+        let origin = var("DATUM_SYNC_ORIGIN").unwrap_or_else(|| format!("http://localhost:{port}"));
+        let allow_insecure_http = matches!(
+            var("DATUM_SYNC_ALLOW_INSECURE_HTTP").as_deref(),
+            Some("true") | Some("1")
+        );
+        validate_origin(&origin, allow_insecure_http)?;
+
         Ok(Config {
             db_path: var("DATUM_SYNC_DB").unwrap_or_else(|| "./datum-sync-server.db".into()),
-            origin: var("DATUM_SYNC_ORIGIN").unwrap_or_else(|| format!("http://localhost:{port}")),
+            origin,
             rp_name: var("DATUM_SYNC_RP_NAME").unwrap_or_else(|| "datum sync".into()),
             jwt_secret,
             port,
@@ -115,6 +127,41 @@ impl Config {
              full account-takeover path. Enable only behind a real verification step.",
         )
     }
+}
+
+/// Reject a network-facing origin that isn't `https`.
+///
+/// WebAuthn refuses to run outside a secure context, and the relay's bearer
+/// tokens would otherwise traverse the network in cleartext. Loopback hosts
+/// (`localhost`, `127.0.0.1`, `::1`) are exempt — they never leave the machine,
+/// and `http://localhost` is the default. A non-loopback `http` origin is
+/// refused unless `DATUM_SYNC_ALLOW_INSECURE_HTTP` is set: a deliberately loud
+/// escape hatch for trusted-network testing that names its own risk.
+fn validate_origin(origin: &str, allow_insecure_http: bool) -> anyhow::Result<()> {
+    let url = Url::parse(origin)
+        .with_context(|| format!("DATUM_SYNC_ORIGIN is not a valid URL: {origin:?}"))?;
+
+    if url.scheme() == "https" {
+        return Ok(());
+    }
+
+    let is_loopback = match url.host() {
+        Some(url::Host::Domain(h)) => h.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    };
+    if is_loopback || allow_insecure_http {
+        return Ok(());
+    }
+
+    bail!(
+        "DATUM_SYNC_ORIGIN={origin:?} is insecure: a non-loopback origin must be https. \
+         WebAuthn refuses to run outside a secure context, and bearer tokens would cross \
+         the network in cleartext. Use https (typically via a TLS-terminating reverse proxy \
+         in front of the relay), or set DATUM_SYNC_ALLOW_INSECURE_HTTP=true to accept \
+         cleartext on a trusted network (testing only)."
+    );
 }
 
 #[cfg(test)]
@@ -267,5 +314,49 @@ mod tests {
         assert_eq!(config.db_path, "/tmp/relay.db");
         assert_eq!(config.origin, "https://sync.example.com");
         assert_eq!(config.rp_name, "example sync");
+    }
+
+    /// Loopback over http never touches the wire, so it boots — this also
+    /// covers the `http://localhost` default.
+    #[test]
+    fn loopback_http_origin_is_accepted() {
+        for origin in [
+            "http://localhost:3000",
+            "http://127.0.0.1:8080",
+            "http://[::1]:3000",
+        ] {
+            assert!(
+                Config::from_lookup(lookup(&[
+                    ("DATUM_SYNC_JWT_SECRET", GOOD_SECRET),
+                    ("DATUM_SYNC_ORIGIN", origin),
+                ]))
+                .is_ok(),
+                "loopback origin {origin:?} must boot"
+            );
+        }
+    }
+
+    /// A network-facing http origin would send bearer tokens in cleartext and
+    /// break WebAuthn's secure-context requirement — refuse it by default.
+    #[test]
+    fn insecure_nonloopback_http_origin_is_rejected() {
+        let err = Config::from_lookup(lookup(&[
+            ("DATUM_SYNC_JWT_SECRET", GOOD_SECRET),
+            ("DATUM_SYNC_ORIGIN", "http://sync.example.com"),
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("insecure"), "got: {err}");
+    }
+
+    /// The escape hatch is explicit and loud, for trusted-network testing.
+    #[test]
+    fn insecure_origin_allowed_with_explicit_optout() {
+        let config = Config::from_lookup(lookup(&[
+            ("DATUM_SYNC_JWT_SECRET", GOOD_SECRET),
+            ("DATUM_SYNC_ORIGIN", "http://sync.example.com"),
+            ("DATUM_SYNC_ALLOW_INSECURE_HTTP", "true"),
+        ]))
+        .unwrap();
+        assert_eq!(config.origin, "http://sync.example.com");
     }
 }
