@@ -473,6 +473,7 @@ pub fn resolve_parse_output_args(o: &datum_parse::input::OutputArgs) -> anyhow::
         parse_output::Show::Standard => Show::Standard,
         parse_output::Show::Format => Show::Format,
         parse_output::Show::All => Show::All,
+        parse_output::Show::Json => Show::Json,
     };
     if show == Show::Format && resolved.format_string.is_none() {
         anyhow::bail!("--show format requires -o <format> (got no format string)");

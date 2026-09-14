@@ -73,7 +73,7 @@ VIEWS / SYNC:
 
 GLOBAL OPTIONS:
   --db <NAME_OR_PATH>   Override the active DB
-  --show <MODE>         default|none|minimal|standard|format|all
+  --show <MODE>         default|none|minimal|standard|format|all|json
   -A, --show-all        Shorthand for --show all
   -o, --format-string   %field%-templated output string
   -h, --help            Show this help
@@ -165,7 +165,7 @@ OPTIONS:
       --alias-overwrite Allow --alias to replace an existing alias
       --dry-run         Preview the would-be entry without writing
   -A, --show-all        Show full entry detail after writing
-      --show <MODE>     Output verbosity (none|minimal|standard|all|format)
+      --show <MODE>     Output verbosity (none|minimal|standard|all|format|json)
   -o, --format-string <FMT>  Render written entry via format string
 ";
 

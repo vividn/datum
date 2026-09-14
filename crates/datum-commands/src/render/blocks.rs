@@ -209,6 +209,21 @@ fn render_value_body(value: &JsonValue) -> String {
 
 // ─── User-data block ────────────────────────────────────────────────────────
 
+/// Rendered `(key, value)` pairs of `entry.data`, or `None` when there is
+/// no data. Value bodies are rendered once; no chipping in the data block
+/// (rule 5 applies to the state second line only).
+fn data_pairs(entry: &Entry) -> Option<Vec<(String, String)>> {
+    let map = entry.data.as_ref()?.as_object()?;
+    if map.is_empty() {
+        return None;
+    }
+    Some(
+        map.iter()
+            .map(|(k, v)| (k.clone(), render_value_body(v)))
+            .collect(),
+    )
+}
+
 /// Render the user-data block (entry's `extra_data`) per rules 8–11.
 /// Returns `None` when there's nothing to render (no data, empty object,
 /// or only-`id` data).
@@ -218,21 +233,9 @@ fn render_value_body(value: &JsonValue) -> String {
 /// used when the rendered width ≤ 40 chars; otherwise the block is
 /// multiline with right-aligned keys.
 pub(crate) fn format_data_block(entry: &Entry) -> Option<String> {
-    let extra = entry.data.as_ref()?;
-    let map = extra.as_object()?;
-    let pairs: Vec<(String, JsonValue)> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-    if pairs.is_empty() {
-        return None;
-    }
+    let rendered = data_pairs(entry)?;
 
-    // Render value bodies once; no chipping in the data block (rule 5
-    // applies to the state second line only).
-    let rendered: Vec<(String, String)> = pairs
-        .iter()
-        .map(|(k, v)| (k.clone(), render_value_body(v)))
-        .collect();
-
-    let inline = render_data_inline(&rendered);
+    let inline = data_items(&rendered).join(DATA_ITEM_SEP);
     let block = if visible_width(&inline) <= DATA_INLINE_WIDTH {
         format!("  {inline}")
     } else {
@@ -241,12 +244,29 @@ pub(crate) fn format_data_block(entry: &Entry) -> Option<String> {
     Some(block)
 }
 
-fn render_data_inline(pairs: &[(String, String)]) -> String {
-    pairs
-        .iter()
-        .map(|(k, v)| format!("{k}: {v}"))
-        .collect::<Vec<_>>()
-        .join(", ")
+/// Separator of the inline data block — and so of [`data_inline`].
+const DATA_ITEM_SEP: &str = ", ";
+
+/// The data block as one `key: value` string per key, unpadded. The inline
+/// block is these joined with [`DATA_ITEM_SEP`]; the multiline block is the
+/// same pairs with right-aligned keys. `--show json` serialises them
+/// (da-yc9w), so there is one renderer and the two forms cannot drift.
+fn data_items(pairs: &[(String, String)]) -> Vec<String> {
+    pairs.iter().map(|(k, v)| format!("{k}: {v}")).collect()
+}
+
+/// The per-key data strings of `entry`, in the order the block prints them.
+pub(crate) fn data_entry_items(entry: &Entry) -> Vec<String> {
+    let Some(pairs) = data_pairs(entry) else {
+        return Vec::new();
+    };
+    data_items(&pairs)
+}
+
+/// The CLI's own one-line join of [`data_entry_items`] — what the inline
+/// data block prints, so a `--show json` caller never composes one.
+pub(crate) fn data_inline(items: &[String]) -> String {
+    items.join(DATA_ITEM_SEP)
 }
 
 fn render_data_multiline(pairs: &[(String, String)]) -> String {

@@ -33,10 +33,10 @@ pub fn dispatch_argv(argv: Vec<String>, db: &Db) -> Result<()> {
 /// is drained and the error propagates — the atomic commit never runs,
 /// so nothing is written.
 pub fn dispatch_invocation(invocation: crate::args::Invocation, db: &Db) -> Result<()> {
-    match invocation {
+    crate::render::json_echo::scope(|| match invocation {
         crate::args::Invocation::Single(cli) => dispatch(cli, db),
         crate::args::Invocation::Multi { sides, .. } => dispatch_multi_sides(sides, db),
-    }
+    })
 }
 
 fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
@@ -189,6 +189,14 @@ fn normalize_shared_occur_time(
 }
 
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
+    // The `--show json` echo is one document per run, not per entry, so the
+    // outermost scope is the one that prints (da-yc9w). Both dispatch entry
+    // points open a scope — `datum-cli` reaches `dispatch` directly, while
+    // a multi-side run nests one per side.
+    crate::render::json_echo::scope(|| dispatch_inner(cli, db))
+}
+
+fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
     use crate::commands;
     match cli.command {
         // Repl is intercepted by the binary entry point before dispatch

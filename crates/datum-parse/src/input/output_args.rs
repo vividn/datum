@@ -27,7 +27,12 @@ pub static FLAG_SPECS: &[FlagSpec<OutputArgs>] = &[
         short: None,
         long: Some("show"),
         action: FlagAction::Value(|a, v| {
-            a.show = Some(v.to_string());
+            // `none` latches: once a run has asked for silence, a later
+            // `--show <anything>` cannot un-silence it (da-yc9w). Otherwise
+            // the last `--show` wins, as it always has.
+            if a.show.as_deref() != Some("none") {
+                a.show = Some(v.to_string());
+            }
             Ok(())
         }),
     },
@@ -59,6 +64,10 @@ pub enum Show {
     Format,
     /// Default + full pretty-printed doc.
     All,
+    /// The action echo as one JSON document on stdout, nothing else
+    /// (da-yc9w). Carries exactly the strings the default show prints,
+    /// so a caller places them instead of parsing them.
+    Json,
 }
 
 impl FromStr for Show {
@@ -72,6 +81,7 @@ impl FromStr for Show {
             "standard" => Ok(Show::Standard),
             "format" => Ok(Show::Format),
             "all" => Ok(Show::All),
+            "json" => Ok(Show::Json),
             other => Err(format!("unknown --show value: {other}")),
         }
     }
@@ -141,6 +151,32 @@ mod tests {
         let r = OutputArgs::default().resolve();
         assert_eq!(r.show, Show::Default);
         assert_eq!(r.format_string, None);
+    }
+
+    /// da-yc9w: the JSON echo is one more `Show`, and `none` outranks it
+    /// wherever both are asked for — silence is not undoable.
+    #[test]
+    fn json_is_a_show_and_none_latches_over_it() {
+        assert_eq!("json".parse::<Show>().unwrap(), Show::Json);
+        assert_eq!("JSON".parse::<Show>().unwrap(), Show::Json);
+
+        let spec = FLAG_SPECS
+            .iter()
+            .find(|f| f.long == Some("show"))
+            .expect("--show is registered");
+        let FlagAction::Value(set) = &spec.action else {
+            unreachable!("--show is a value flag")
+        };
+
+        let mut a = OutputArgs::default();
+        set(&mut a, "none").unwrap();
+        set(&mut a, "json").unwrap();
+        assert_eq!(a.resolve().show, Show::None, "`--show none` latches");
+
+        let mut b = OutputArgs::default();
+        set(&mut b, "minimal").unwrap();
+        set(&mut b, "json").unwrap();
+        assert_eq!(b.resolve().show, Show::Json, "otherwise the last wins");
     }
 
     #[test]

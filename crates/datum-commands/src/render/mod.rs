@@ -14,6 +14,7 @@ pub mod action;
 pub(crate) mod blocks;
 pub mod characters;
 pub mod colors;
+pub mod json_echo;
 pub mod ordinals;
 pub mod show_all;
 pub(crate) mod state_truncate;
@@ -67,6 +68,9 @@ pub enum Show {
     Format,
     /// Default + full pretty-printed doc.
     All,
+    /// The action echo as one JSON document on stdout, nothing else
+    /// (da-yc9w). See [`json_echo`].
+    Json,
 }
 
 impl std::str::FromStr for Show {
@@ -79,6 +83,7 @@ impl std::str::FromStr for Show {
             "standard" => Ok(Show::Standard),
             "format" => Ok(Show::Format),
             "all" => Ok(Show::All),
+            "json" => Ok(Show::Json),
             other => Err(format!("unknown --show value: {other}")),
         }
     }
@@ -317,6 +322,22 @@ pub struct ActionLines {
     /// The default show's data view: the structured-state doc line, then the
     /// user-data block. Empty for a plain string state with no extra data.
     pub data: Vec<String>,
+    /// The three pieces [`Self::header`] is built from, ANSI-free, for a
+    /// caller that must address them separately — the web bar puts the full
+    /// id behind the hid (da-yc9w). `header` stripped of escapes is always
+    /// these three joined by a space.
+    pub action: String,
+    /// The displayed (5-char) hid, ANSI-free.
+    pub hid: String,
+    /// The full `field:time` slug, ANSI-free.
+    pub id: String,
+    /// The data view as one string per key — the structured-state doc line,
+    /// then one `key: value` per user-data key, unpadded and ANSI-free.
+    /// [`Self::data`] is the same content laid out for a terminal.
+    pub data_items: Vec<String>,
+    /// [`Self::data_items`] under the CLI's own inline-block join, so a
+    /// caller never composes one.
+    pub data_inline: String,
 }
 
 /// Build [`ActionLines`] against an explicit `now`, so a caller that renders
@@ -348,15 +369,35 @@ pub fn action_lines_at(
     // structured-state internals on a line below the chip. Tail never
     // takes this path (see `print_table_with`). Then the user-data block.
     let mut data = Vec::new();
+    let mut data_items = Vec::new();
     if let Some(v) = entry.state.as_ref() {
         if let Some(line) = self::blocks::format_state_doc_line(v, &entry.field, spec) {
             data.push(format!("  {line}"));
+            data_items.push(strip_ansi(&line));
         }
     }
     if let Some(extra) = self::blocks::format_data_block(entry) {
         data.push(extra);
     }
-    ActionLines { header, info, data }
+    data_items.extend(
+        self::blocks::data_entry_items(entry)
+            .iter()
+            .map(|s| strip_ansi(s)),
+    );
+    let data_inline = self::blocks::data_inline(&data_items);
+
+    ActionLines {
+        header,
+        info,
+        data,
+        // Stripped from the very fragments `header` was joined from, so the
+        // two can only ever say the same thing.
+        action: strip_ansi(ex.action.as_deref().unwrap_or_default()),
+        hid: strip_ansi(ex.hid.as_deref().unwrap_or_default()),
+        id: strip_ansi(ex.slug.as_deref().unwrap_or_default()),
+        data_items,
+        data_inline,
+    }
 }
 
 pub fn show_action_with_context(
@@ -380,6 +421,15 @@ pub fn show_action_with_context(
     // "today" from it and the header never reads `now`, so sourcing both
     // from the one builder changes nothing about what is printed.
     let lines = action_lines_at(entry, action, registry, ctx, &self::action::now_local());
+
+    // `--show json`: collect, print nothing. The outermost dispatch scope
+    // emits the one document (da-yc9w). `Show::None` already returned above,
+    // so silence still wins over the echo.
+    if args.show == Show::Json {
+        self::json_echo::push(&lines);
+        return;
+    }
+
     println!("{}", lines.header);
 
     if args.show == Show::Minimal {
@@ -460,8 +510,13 @@ pub fn show_update_with_context(
 }
 
 /// Datum's RENAME output: before id ⟶ after id.
+///
+/// Silent under [`Show::Json`]: RENAME is a half-line about two slugs, not an
+/// [`ActionLines`] echo, and giving it a JSON form would mean a second action
+/// formatter. Every call site follows it with the real CREATE/UPDATE echo,
+/// whose `id` is the new slug — so the document loses only the old one.
 pub fn show_rename(before_id: &str, after_id: &str, args: &OutputArgs) {
-    if args.silent() || args.show == Show::Format {
+    if args.silent() || args.show == Show::Format || args.show == Show::Json {
         return;
     }
     let code = Outcome::Rename.ansi_color();
@@ -489,6 +544,9 @@ pub fn show_retime(
     if args.silent() || args.show == Show::Format {
         return;
     }
+    // No `--show json` branch: `retime` carries no output flags at all
+    // (`RetimeArgs` has no `OutputArgs`), so this renderer is only ever
+    // reached at the default show.
     println!(
         "{}",
         format_retime_line(entry, before, registry, &self::action::now_local())
