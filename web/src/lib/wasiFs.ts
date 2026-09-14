@@ -171,9 +171,16 @@ export class Sink extends Fd {
 	 * `said`, if given, hears each write as it happens. The process holds the
 	 * worker until it exits, so this is the only way what it prints — an
 	 * import's progress (da-h9vj) — reaches the page while it runs.
+	 *
+	 * Declared as a field and assigned here rather than as a constructor
+	 * parameter property: node's strip-only type stripping, which is how the
+	 * tests load this file, refuses those (da-c76f).
 	 */
-	constructor(private readonly said?: (text: string) => void) {
+	private readonly said?: (text: string) => void;
+
+	constructor(said?: (text: string) => void) {
 		super();
+		this.said = said;
 	}
 
 	fd_fdstat_get() {
