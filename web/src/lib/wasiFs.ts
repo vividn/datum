@@ -40,7 +40,7 @@ export type Handle = ConstructorParameters<typeof SyncOPFSFile>[0];
 
 /** `name`, preopened, with `handles` as the files SQLite creates and deletes. */
 export function opfsDirectory(name: string, handles: Map<string, Handle>): PreopenDirectory {
-	const backed = new Map([...handles].map(([file, handle]) => [file, new SyncOPFSFile(handle)]));
+	const backed = new Map([...handles].map(([file, handle]) => [file, new SyncOPFSFile(quotaAware(handle))]));
 
 	class Contents extends Map<string, Inode> {
 		delete(file: string): boolean {
@@ -65,6 +65,51 @@ export function opfsDirectory(name: string, handles: Map<string, Handle>): Preop
 		new Contents([...backed].filter(([, opfs]) => opfs.handle.getSize() > 0))
 	);
 	return preopen;
+}
+
+const isFull = (e: unknown) => (e as { name?: string } | null)?.name === 'QuotaExceededError';
+
+/**
+ * `handle`, with a full disk told to SQLite rather than thrown through it (da-qlu7).
+ *
+ * The shim calls the handle with no try/catch, so a `QuotaExceededError`
+ * unwound through the wasm import and trapped the process mid-write. Now:
+ *
+ *   write     writes 0 bytes: SQLite's unix VFS reads a short write as
+ *             SQLITE_FULL, rolls the transaction back, and the command fails
+ *             with "database or disk is full"
+ *   truncate  a grow that does not fit leaves the file as it was: SQLite sees
+ *             success, and its next write past the old end is the short
+ *             write above (it only grows a file by truncate for a size hint)
+ *   flush     never throws it — the quota is spent by write and truncate —
+ *             so it is left alone
+ *
+ * Only a full disk: any other exception still traps, as a bug should.
+ */
+function quotaAware(handle: Handle): Handle {
+	// Every call made on `handle` itself: a native handle's methods throw
+	// "Illegal invocation" for any other receiver.
+	return {
+		getSize: () => handle.getSize(),
+		read: (buffer, options) => handle.read(buffer, options),
+		flush: () => handle.flush(),
+		close: () => handle.close(),
+		write(buffer, options) {
+			try {
+				return handle.write(buffer, options);
+			} catch (e) {
+				if (isFull(e)) return 0;
+				throw e;
+			}
+		},
+		truncate(to) {
+			try {
+				handle.truncate(to);
+			} catch (e) {
+				if (!isFull(e)) throw e;
+			}
+		}
+	};
 }
 
 /** A sync access handle over memory, for a browser that will not give one. */
