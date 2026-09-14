@@ -235,12 +235,12 @@ for (const engine of [chromium, webkit]) {
 
 					// The downloaded backup, chosen in the dialog, brings the three back.
 					await choose(page, 'db restore', saved);
-					assert.match((await app.outputs()).at(-1), /3 inserted/);
+					assert.match((await app.stdouts()).at(-1), /3 inserted/);
 					await tailShows(page, 3);
 
 					// vividn's legacy backup, twice: the second is all skips.
 					await choose(page, 'db v2import', LEGACY);
-					assert.match((await app.outputs()).at(-1), /120 imported/);
+					assert.match((await app.stdouts()).at(-1), /120 imported/);
 					assert.equal(await count(app), 123);
 					await app.submit('dayview --start-date 2025-01-01 --end-date 2025-01-03');
 					const drawn = await page.locator('.repl svg.svg').last().evaluate((svg) => svg.outerHTML);
@@ -248,7 +248,7 @@ for (const engine of [chromium, webkit]) {
 					// `data-title` since the page stopped keeping `<title>` (da-8jb8).
 					assert.match(drawn, /data-title="music /);
 					await choose(page, 'db v2import', LEGACY);
-					assert.match((await app.outputs()).at(-1), /120 skipped/);
+					assert.match((await app.stdouts()).at(-1), /120 skipped/);
 					assert.equal(await count(app), 123);
 
 					// A cancelled chooser runs nothing and says so once.
@@ -373,14 +373,16 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 			const legacy = await readFile(LEGACY, 'utf8');
 
 			await choose(page, 'db v2import --dry-run', LEGACY);
-			assert.match((await app.outputs()).at(-1), /Migration summary: 120 would import/);
+			assert.match((await app.stdouts()).at(-1), /Migration summary: 120 would import/);
 			assert.equal(await count(app), 0);
 
 			await choose(page, 'db v2import --from backup.json --dry-run', LEGACY);
 			assert.deepEqual(await asked(), { argv: ['db', 'v2import', '--from', '-', '--dry-run'], stdin: legacy });
-			const [summary, note] = (await app.outputs()).slice(-2);
-			assert.match(summary, /Migration summary: 120 would import/);
-			assert.equal(note, 'not a file in the browser: backup.json');
+			assert.match((await app.stdouts()).at(-1), /Migration summary: 120 would import/);
+			// The page's own note is the last line of stderr, after the
+			// progress the CLI wrote there as it read (da-h9vj).
+			const said = (await app.outputs()).at(-1).split('\n');
+			assert.equal(said.at(-1), 'not a file in the browser: backup.json');
 			assert.equal(await count(app), 0);
 
 			// `--skip-log` keeps its path, so `-` is still the backup.

@@ -172,7 +172,7 @@
 	{:else if result.stdout}
 		<CliOutput text={result.stdout} {behind} />
 	{:else if result.stderr}
-		<CliOutput text={result.stderr} error {behind} />
+		<CliOutput text={result.stderr} stream="stderr" error {behind} />
 	{:else if spec.empty}
 		<p class="quiet">{spec.empty}</p>
 	{/if}

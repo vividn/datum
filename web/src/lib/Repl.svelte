@@ -112,7 +112,7 @@
 			<CliOutput text={entry.result.stdout} />
 		{/if}
 		{#if entry.result.stderr}
-			<CliOutput text={entry.result.stderr} error={entry.result.code !== 0} />
+			<CliOutput text={entry.result.stderr} stream="stderr" error={entry.result.code !== 0} />
 		{/if}
 	{/each}
 	{#if $progress}

@@ -24,6 +24,13 @@
 	export let text: string;
 	/** Paint the block as an error (stderr). */
 	export let error = false;
+	/**
+	 * Which stream this block is. `error` cannot say: since progress went
+	 * to stderr (da-h9vj) a successful command renders two plain blocks,
+	 * and a reader asking for "what it printed" got the progress lines
+	 * (da-q15y).
+	 */
+	export let stream: 'stdout' | 'stderr' = 'stdout';
 	/** A newer block has been asked for: this one is dimmed until it lands. */
 	export let behind = false;
 
@@ -40,7 +47,7 @@
 	     move together (da-jgrn). -->
 	<div class="picture" class:stretch={$resizing} class:behind use:picture={text} />
 {:else}
-	<pre class:error class:behind><AnsiText {spans} /></pre>
+	<pre data-stream={stream} class:error class:behind><AnsiText {spans} /></pre>
 {/if}
 
 <style>

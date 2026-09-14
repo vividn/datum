@@ -196,7 +196,7 @@
 				{#if result?.stdout}
 					<CliOutput text={result.stdout} />
 				{:else if result?.stderr}
-					<CliOutput text={result.stderr} error={result.code !== 0} />
+					<CliOutput text={result.stderr} stream="stderr" error={result.code !== 0} />
 				{/if}
 			</div>
 		{/if}

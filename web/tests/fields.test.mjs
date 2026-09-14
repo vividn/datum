@@ -193,7 +193,7 @@ describe('in the app', () => {
 	before(startApp);
 	after(stopApp);
 
-	test('Track + first and largest, then each tracked field by its kind, the untracked dim after', async () => {
+	test('Track + first and largest, then every field alphabetically, each drawn by its kind', async () => {
 		await withApp(async ({ page }) => {
 			for (const line of FIXTURE) await type(page, line);
 			await page.locator('.bar [data-field="untracked"]').waitFor();
@@ -201,7 +201,9 @@ describe('in the app', () => {
 			const order = await page.locator('.bar').evaluate((bar) =>
 				[...bar.querySelectorAll('button.track, [data-field]')].map((el) => el.dataset.field ?? 'Track +')
 			);
-			assert.deepEqual(order, ['Track +', 'coffee', 'mood', 'note', 'work', 'untracked']);
+			// The bar is the CLI's own order — alphabetical, no tracked/untracked
+			// partition and so no dim group after it (da-d08c).
+			assert.deepEqual(order, ['Track +', 'coffee', 'mood', 'note', 'untracked', 'work']);
 			const track = await page.locator('.bar button.track').evaluate((el) => ({
 				height: el.getBoundingClientRect().height,
 				bg: getComputedStyle(el).backgroundColor,
@@ -264,9 +266,17 @@ describe('in the app', () => {
 			const [header, ...rows] = (await app.run(['db', 'backup', '-'])).stdout.trim().split('\n');
 			const walk = JSON.parse(rows.find((l) => l.includes('"walk"')));
 			const swim = { ...walk, hid: 'swim0000', slug: walk.slug.replace('walk', 'swim'), field: 'swim', content_hash: '0'.repeat(64), raw_input: 'occur swim' };
-			// Typed, as a person would: the page's own command, so its own beat refreshes the bar.
-			const [chooser] = await Promise.all([page.waitForEvent('filechooser'), type(page, 'db restore -')]);
+			// Typed, as a person would: the page's own command, so its own beat
+			// refreshes the bar. The chooser is awaited BEFORE the echo, never
+			// alongside it: the echo cannot land until the file is chosen, so a
+			// `type` that waits for the echo deadlocks the chooser it opened and
+			// the test could never pass (da-q15y).
+			const before = await page.locator('.repl .echo').count();
+			const input = page.locator('.prompt-bar input');
+			await input.fill('db restore -');
+			const [chooser] = await Promise.all([page.waitForEvent('filechooser'), input.press('Enter')]);
 			await chooser.setFiles({ name: 'swim.jsonl', mimeType: 'application/jsonl', buffer: Buffer.from(`${header}\n${JSON.stringify(swim)}\n`) });
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
 			await page.locator('.bar button[data-field="swim"]').waitFor();
 			assert.equal((await app.entries()).some((e) => e.field === 'swim'), true);
 		});

@@ -370,6 +370,18 @@ function app(page, errors, query) {
 		outputs: () => page.locator('.repl pre').allInnerTexts(),
 
 		/**
+		 * The REPL's rendered stdout blocks, oldest first.
+		 *
+		 * What a command PRINTED, without the progress a file command
+		 * writes to stderr as it runs (da-h9vj). `outputs()` holds both
+		 * streams, so for a `db restore` its last block is
+		 * `restore: reading 3/3`, not the summary — the two are plain
+		 * `pre` alike, since the error paint follows the exit code and a
+		 * successful command's stderr is not an error (da-q15y).
+		 */
+		stdouts: () => page.locator('.repl pre[data-stream="stdout"]').allInnerTexts(),
+
+		/**
 		 * What one of the day frame's panes is showing, by its title.
 		 *
 		 * Each pane is one datum command rendered as text ($lib/panes.ts),
