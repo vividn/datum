@@ -7,6 +7,11 @@
 // the last click to the final picture, whether that picture is the last
 // click's, and what else ran during the burst.
 //
+// And where each process's time went — acquire / instantiate / run / flush,
+// with the acquisitions the burst paid for (da-dvzx): the commands of a
+// burst share one acquisition of the OPFS handles, so `acquire` is the phase
+// this measures the effect of.
+//
 // Usage:  pnpm run build && node scripts/measure-burst.mjs [--entries N] [--throttle 4]
 
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -23,6 +28,21 @@ const flag = (name, fallback) => {
 const ENTRIES = flag('entries', 20000);
 const THROTTLE = flag('throttle', 1);
 const BURSTS = 3;
+
+const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? 0;
+
+/** Where a set of processes spent their time, and what they paid to acquire. */
+const phases = (all) => ({
+	processes: all.length,
+	acquisitions: all.filter((ms) => ms.tries > 0).length,
+	medianMs: Object.fromEntries(
+		['acquire', 'instantiate', 'run', 'flush'].map((key) => [
+			key,
+			Math.round(median(all.map((ms) => ms[key])) * 10) / 10
+		])
+	),
+	totalAcquireMs: Math.round(all.reduce((n, ms) => n + ms.acquire, 0))
+});
 
 const server = await preview({ root: web, logLevel: 'warn', preview: { host: '127.0.0.1', port: 0 } });
 const base = server.resolvedUrls.local[0].replace(/\/$/, '');
@@ -89,7 +109,7 @@ try {
 			const run = { argv, t0: performance.now() };
 			window.__burst.runs.push(run);
 			const result = await previous(argv, stdin, onStderr);
-			Object.assign(run, { t1: performance.now(), superseded: !!result.superseded });
+			Object.assign(run, { t1: performance.now(), superseded: !!result.superseded, ms: result.ms });
 			return result;
 		});
 		new MutationObserver((records) => {
@@ -133,7 +153,7 @@ try {
 		);
 		await quiet();
 		const got = await page.evaluate(() => ({
-			runs: window.__burst.runs.map(({ argv, t0, t1, superseded }) => ({ argv, t0, t1, superseded })),
+			runs: window.__burst.runs.map(({ argv, t0, t1, superseded, ms }) => ({ argv, t0, t1, superseded, ms })),
 			paints: [...window.__burst.paints],
 			pill: document.querySelector('.prompt-bar .pill.time')?.firstChild?.textContent ?? null
 		}));
@@ -142,6 +162,9 @@ try {
 		const others = {};
 		for (const r of started.filter((r) => r.argv[0] !== 'nowview')) others[r.argv[0]] = (others[r.argv[0]] ?? 0) + 1;
 		const finalAt = nowviews.at(-1)?.argv[nowviews.at(-1).argv.indexOf('--at') + 1];
+		// Where a process's time went, over every process the burst started —
+		// not just the nowviews, since they all share the one acquisition.
+		const timed = started.filter((r) => r.ms);
 		reports.push({
 			nowviewRequests: got.runs.filter((r) => r.argv[0] === 'nowview').length,
 			nowviewStarted: nowviews.length,
@@ -152,10 +175,41 @@ try {
 			),
 			finalAt,
 			pill: got.pill,
-			otherCommands: others
+			otherCommands: others,
+			...phases(timed.map((r) => r.ms))
 		});
 	}
-	console.log(JSON.stringify({ entries: ENTRIES, throttle: THROTTLE, seeded: seeded.stdout, bursts: reports }, null, 2));
+
+	// The other shape of burst: jobs that are all in the worker's queue at
+	// once — the pane fan-out of one epoch, a hand on the widget bar — which
+	// is where an acquisition is shared (da-dvzx). The clicks above are not
+	// that: the page keeps one nowview out and one waiting (da-eoq3), so its
+	// next request arrives only after the last one's result and the queue
+	// drains in between.
+	const queued = await page.evaluate(async () => {
+		const at = (i) => new Date(Date.now() - i * 60_000).toISOString();
+		const t = performance.now();
+		const runs = await Promise.all(
+			Array.from({ length: 10 }, (_, i) =>
+				window.datum.runQuiet(['nowview', '-o', '-', '--width', '400', '--height', '300', '--at', at(i)])
+			)
+		);
+		return { spanMs: Math.round(performance.now() - t), ms: runs.map((r) => r.ms), codes: runs.map((r) => r.code) };
+	});
+
+	console.log(
+		JSON.stringify(
+			{
+				entries: ENTRIES,
+				throttle: THROTTLE,
+				seeded: seeded.stdout,
+				bursts: reports,
+				queuedAtOnce: { spanMs: queued.spanMs, failures: queued.codes.filter((c) => c !== 0).length, ...phases(queued.ms) }
+			},
+			null,
+			2
+		)
+	);
 } finally {
 	await context.close();
 	rmSync(dir, { recursive: true, force: true });

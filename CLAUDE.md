@@ -127,9 +127,12 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   or renderer in TypeScript — every pane, the widget bar (`fields --json`),
   the tail table (`tail --json`'s `columns`), /now (`now --bare`) and the
   export button (`db backup -`) are CLI commands through `run(argv)`.
-- Every process takes the database files for itself (sync access handles
-  opened at start, closed at exit) under the `datum-cli-files` Web Lock, so
-  tabs take turns fairly and none is the owner; the SQLite header's change
+- A burst takes the database files for itself (sync access handles) under
+  the `datum-cli-files` Web Lock, so tabs take turns fairly and none is the
+  owner. Back-to-back commands share one acquisition (da-dvzx): the handles
+  and the lock are kept while jobs wait in the worker's queue, and given
+  back when it drains or once a burst has held them 250 ms, so a tab beside
+  it is never made to wait for the whole burst. The SQLite header's change
   counter (offset 24) decides whether a process wrote, which is what
   `web/src/lib/changes.ts` tells the other tabs. A browser that refuses the
   handles gets a database in memory for the tab, which keeps going back for

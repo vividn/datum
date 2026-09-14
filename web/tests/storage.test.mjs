@@ -315,6 +315,200 @@ describe('two tabs', () => {
 	});
 });
 
+// One acquisition of the files, shared by the commands of a burst (da-dvzx).
+//
+// Opening a sync access handle on each of the four files cost about as much
+// as a warm command, and a burst paid it per command. Now the handles and
+// the `datum-cli-files` lock are kept while the worker's queue still has
+// jobs waiting — bounded twice, because the tab beside this one is waiting
+// on that lock: they go back when the queue drains, and when a burst that
+// never drains has held them past the cap.
+//
+// Counted, not timed: the open is the cost, so the tests count opens at the
+// platform and read `ms.tries` back off the seam.
+
+/** The cap in $lib/cli.ts — `BURST_HOLD_MS`, mirrored here. */
+const HOLD_MS = 250;
+
+/**
+ * Count the worker's handle opens, askable from the page over the
+ * `datum-test-opens` channel.
+ */
+const countOpens = `
+	const real = FileSystemFileHandle.prototype.createSyncAccessHandle;
+	let opens = 0;
+	FileSystemFileHandle.prototype.createSyncAccessHandle = function (...args) {
+		opens++;
+		return real.apply(this, args);
+	};
+	const channel = new BroadcastChannel('datum-test-opens');
+	channel.onmessage = (e) => e.data === 'how many?' && channel.postMessage({ opens });
+`;
+
+/** How many handles the worker has opened since it started. */
+const opens = (page) =>
+	page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				const channel = new BroadcastChannel('datum-test-opens');
+				channel.onmessage = (e) => {
+					if (typeof e.data?.opens === 'number') {
+						channel.close();
+						resolve(e.data.opens);
+					}
+				};
+				channel.postMessage('how many?');
+			})
+	);
+
+/**
+ * Every `argvs` fired at once, so the queue behind the first is never empty.
+ * Returns each outcome — with what it paid to acquire — and the span of all.
+ */
+const fireAtOnce = (page, argvs) =>
+	page.evaluate(async (argvs) => {
+		const started = Date.now();
+		const runs = await Promise.all(
+			argvs.map((argv) =>
+				window.datum.runQuiet(argv).then((r) => ({
+					code: r.code,
+					stderr: r.stderr,
+					tries: r.ms.tries,
+					acquire: r.ms.acquire,
+					at: Date.now()
+				}))
+			)
+		);
+		return { runs, spanMs: Date.now() - started, startedAt: started };
+	}, argvs);
+
+/** Ten writes, each its own minute; ten `--version`s, which touch no rows. */
+const writes = Array.from({ length: 10 }, (_, i) => ['occur', 'ping', '-t', `07${String(i).padStart(2, '0')}`]);
+const versions = Array.from({ length: 10 }, () => ['--version']);
+
+describe('the files, held across a burst', () => {
+	// `--version` for the counting, because sharing is only possible between
+	// commands that fit inside the cap and this suite runs a browser per file
+	// in parallel: a burst of ten writes on a loaded machine can spend the cap
+	// on every one of them, which is the cap doing its job and would read here
+	// as a regression. What the burst does to the rows is asserted below it,
+	// where the command has to be a write.
+	test('back-to-back commands share one acquisition, and give it back when the queue drains', async () => {
+		await withApp(
+			async (app) => {
+				await app.idle();
+				// What one acquisition costs in opens, measured rather than
+				// written down: one handle per file SQLite may touch.
+				let before = await opens(app.page);
+				assert.equal((await app.run(['--version'])).code, 0);
+				const perAcquire = (await opens(app.page)) - before;
+				assert.ok(perAcquire > 0, 'nothing was opened at all — the count is not reaching the worker');
+
+				before = await opens(app.page);
+				const burst = await fireAtOnce(app.page, versions);
+				burst.runs.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
+
+				// Each acquisition is one command's: the one that opened the
+				// handles reports the tries, the ones after it opened nothing.
+				const acquisitions = burst.runs.filter((r) => r.tries > 0).length;
+				assert.equal(
+					(await opens(app.page)) - before,
+					acquisitions * perAcquire,
+					'the handles opened do not match the commands that say they opened them'
+				);
+				assert.ok(acquisitions < 10, `ten commands, ${acquisitions} acquisitions — nothing was shared`);
+				// One per cap window the burst spanned, plus the one it opened with.
+				const allowed = Math.ceil(burst.spanMs / HOLD_MS) + 1;
+				assert.ok(
+					acquisitions <= allowed,
+					`${acquisitions} acquisitions over ${burst.spanMs}ms, where ${allowed} is the cap's worth`
+				);
+
+				// Nothing was written, so no pane is refreshing behind this: the
+				// queue drained, the files went back, and the next command has to
+				// open them again.
+				before = await opens(app.page);
+				assert.equal((await app.run(['tail'])).code, 0);
+				assert.equal(
+					(await opens(app.page)) - before,
+					perAcquire,
+					'the files were still held across an idle page'
+				);
+
+				// And a burst of writes on shared handles keeps the database
+				// whole: each created a journal and deleted it again, so a
+				// directory not rebuilt per process would show up here.
+				const wrote = await fireAtOnce(app.page, writes);
+				wrote.runs.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
+				const check = await app.run(['check']);
+				assert.equal(check.code, 0, check.stdout + check.stderr);
+				const rows = await app.entries(100);
+				assert.equal(rows.length, 10);
+				assert.equal(new Set(rows.map((e) => e.hid)).size, 10);
+				assert.deepEqual(app.errors, []);
+			},
+			{ prepare: inWorker(countOpens) }
+		);
+	});
+
+	test('a burst in one tab lets the other in without waiting for the whole of it', async () => {
+		await withApp(async (first) => {
+			const second = await first.newTab();
+			await first.idle();
+			await second.idle();
+
+			// Not awaited: the other tab has to ask while this one is holding
+			// the files, and this one's queue is never empty while it runs.
+			await first.page.evaluate(() => {
+				window.__started = Date.now();
+				window.__done = [];
+				window.__burst = Promise.all(
+					Array.from({ length: 20 }, (_, i) =>
+						window.datum
+							.runQuiet(['occur', 'a', '-t', `07${String(i).padStart(2, '0')}`])
+							.then((r) => {
+								const done = { code: r.code, stderr: r.stderr, at: Date.now() };
+								window.__done.push(done);
+								return done;
+							})
+					)
+				);
+			});
+			await first.page.waitForFunction(() => window.__done.length >= 3);
+
+			// `ms.acquire` is what it waited for the files themselves — not the
+			// pane refreshes of its own that the burst's writes put in front of
+			// it, which is what a wall clock here would mostly be measuring.
+			const other = await second.page.evaluate(async () => {
+				const r = await window.datum.runQuiet(['occur', 'b', '-t', '0900']);
+				return { code: r.code, stderr: r.stderr, acquire: r.ms.acquire, at: Date.now() };
+			});
+			const burst = await first.page.evaluate(() => window.__burst);
+			const span = (await first.page.evaluate(() => Date.now() - window.__started)) || 1;
+			burst.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
+			assert.equal(other.code, 0, other.stderr);
+
+			// It was let in mid-burst: writes of the burst landed after it.
+			assert.ok(
+				burst.filter((r) => r.at > other.at).length > 0,
+				`the other tab's command landed only after all twenty (it waited ${other.acquire}ms for the files)`
+			);
+			// And it waited for a turn, not for the burst — measured against the
+			// burst's own length, so a loaded machine slows both together.
+			assert.ok(
+				other.acquire * 4 < span,
+				`${Math.round(other.acquire)}ms waiting for the files, of a ${span}ms burst of twenty`
+			);
+
+			const rows = await second.entries(100);
+			assert.equal(rows.length, 21);
+			assert.equal(new Set(rows.map((e) => e.hid)).size, 21);
+			const check = await second.run(['check']);
+			assert.equal(check.code, 0, check.stdout + check.stderr);
+		});
+	});
+});
+
 // Asking the browser to keep it (da-frg2). Eviction is per origin, and an
 // origin's storage is best-effort until the browser grants persistence — so
 // the app asks, once, after the first entry lands durably, and the banner

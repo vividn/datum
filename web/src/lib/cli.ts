@@ -8,15 +8,23 @@
 // database files in $lib/wasiFs.ts. What it prints is what the CLI prints;
 // there is nothing here that knows what a command means.
 //
-// EVERY COMMAND TAKES THE FILES FOR ITSELF. It opens a sync access handle on
-// each database file at process start and closes them at exit, so nothing is
-// held between commands and every tab runs its own — there is no owner tab
-// to elect, forward to, or lose. The spike measured both this and an
-// owner-tab design; this one was faster under two tabs (26.6 ms median
-// against 101) and cannot run a command twice, where the owner's resend
-// could (da-1vat).
+// EVERY BURST TAKES THE FILES FOR ITSELF. A sync access handle on each
+// database file is opened before a process starts, so nothing outside this
+// worker is held while the page is idle and every tab runs its own commands
+// — there is no owner tab to elect, forward to, or lose. The spike measured
+// both this and an owner-tab design; this one was faster under two tabs
+// (26.6 ms median against 101) and cannot run a command twice, where the
+// owner's resend could (da-1vat).
 //
-// Tabs take turns through a Web Lock held for the length of one process.
+// Back-to-back commands SHARE one acquisition (da-dvzx): while the queue
+// still has jobs waiting, the handles and the lock are kept and the next job
+// runs on them, because opening four handles costs about as much as a warm
+// command and a burst paid it per command. Two bounds keep that from
+// starving another tab: they are let go the moment the queue drains, and a
+// burst that never pauses lets go anyway once it has held them past
+// `BURST_HOLD_MS`.
+//
+// Tabs take turns through a Web Lock, held for as long as the handles are.
 // The handles alone would keep two processes apart, but not fairly: a tab
 // with commands queued closes its handles and reopens them before another
 // tab's retry comes round, and twenty writes across two tabs starved one of
@@ -46,8 +54,31 @@ const OPFS_DIR = 'datum-cli';
  */
 const ACQUIRE_DEADLINE_MS = 5000;
 
-/** The Web Lock a process holds for as long as it has the files. */
+/** The Web Lock this worker holds for as long as it has the files. */
 const FILES_LOCK = 'datum-cli-files';
+
+/**
+ * The longest a burst may keep the files before letting another tab in.
+ *
+ * The queue draining is what usually gives them up; this is the bound for a
+ * burst that never drains — a hand on the widget bar, a pane following a
+ * cursor — where otherwise a second tab would wait out the whole of it.
+ *
+ * 250 ms, because the lock is first come, first served: this IS the other
+ * tab's worst added wait, and it is no longer than the page takes to answer
+ * a keypress. It stays well inside `ACQUIRE_DEADLINE_MS`, and at a warm
+ * command of ~21 ms (the spike) it amortizes one acquisition over about ten
+ * commands.
+ *
+ * Measured against the alternative of giving the files up the moment
+ * `locks.query()` shows another tab waiting: that cut the median acquire
+ * under two tabs from 88 ms to 17 ms, but the 40 writes of the spike's
+ * two-tab race then took 5.3 s — what holding nothing at all takes, since a
+ * contended burst never gets to share — against 4.0 s for this cap. Its
+ * ~110 ms median acquire is not starvation but a fair turn taken in
+ * batches: 200 ms was the worst wait seen, inside this bound.
+ */
+const BURST_HOLD_MS = 250;
 
 /** How soon a tab in memory goes back for the file, and the most it waits. */
 const RETRY_FIRST_MS = 2000;
@@ -70,6 +101,9 @@ let queue: Promise<unknown> = Promise.resolve();
 /** The newest queued job per key, told when a newer one replaces it. */
 const waiting = new Map<string, () => void>();
 
+/** Jobs queued and not yet started: while any wait, the files are kept. */
+let queued = 0;
+
 /**
  * Queue `job`; resolves `null` if it was superseded before it started.
  *
@@ -87,9 +121,18 @@ function enqueue<T>(job: () => Promise<T>, key?: string): Promise<T | null> {
 		waiting.get(key)?.();
 		waiting.set(key, drop);
 	}
-	const next = queue.then(() => {
+	queued++;
+	const next = queue.then(async () => {
+		queued--;
 		if (key && waiting.get(key) === drop) waiting.delete(key);
-		return dropped ? null : job();
+		try {
+			return dropped ? null : await job();
+		} finally {
+			// Drained: nothing is behind this job, so the files go back rather
+			// than be held across an idle page — including when every job
+			// behind it was dropped, and so never asked for them at all.
+			if (queued === 0) release();
+		}
 	});
 	queue = next.catch(() => {});
 	return next;
@@ -154,18 +197,77 @@ function close(handles: Map<string, Handle>): void {
 	for (const handle of handles.values()) handle.close();
 }
 
-/** Run `job` with the files: this tab's turn at the lock, then the handles. */
-async function withFiles<T>(job: (handles: Map<string, Handle>, tries: number) => Promise<T>) {
-	const turn = async () => {
-		const { handles, tries } = await acquire();
-		try {
-			return await job(handles, tries);
-		} finally {
-			close(handles);
-		}
-	};
+/** The files this worker is holding, and what gives them back. */
+interface Files {
+	handles: Map<string, Handle>;
+	/** The opens the acquisition took — for the command that paid for it. */
+	tries: number;
+	/** When they were taken, for `BURST_HOLD_MS`. */
+	since: number;
+	release: () => void;
+}
+
+/** The files, while a burst holds them; null while this worker has none. */
+let files: Files | null = null;
+
+/**
+ * Take this tab's turn at the lock, then the handles, and keep both until
+ * the returned `release`.
+ *
+ * The lock is held by staying inside its callback — the shape the Web Locks
+ * API gives for a lock outliving one await — so the handles are closed and
+ * the lock freed in that order, with no window where another tab holds the
+ * lock and ours still has the files.
+ */
+async function hold(): Promise<Files> {
 	const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
-	return locks ? (locks.request(FILES_LOCK, turn) as Promise<T>) : turn();
+	if (!locks) {
+		const { handles, tries } = await acquire();
+		return { handles, tries, since: performance.now(), release: () => close(handles) };
+	}
+	// Named apart from `release` below, which is this module's own: this one
+	// is the handle back INTO the lock's callback.
+	let give!: () => void;
+	const given = new Promise<void>((resolve) => (give = resolve));
+	return new Promise<Files>((resolve, reject) => {
+		locks
+			.request(FILES_LOCK, async () => {
+				let got: { handles: Map<string, Handle>; tries: number };
+				try {
+					got = await acquire();
+				} catch (e) {
+					reject(e);
+					return;
+				}
+				resolve({ ...got, since: performance.now(), release: give });
+				try {
+					await given;
+				} finally {
+					close(got.handles);
+				}
+			})
+			.catch(reject);
+	});
+}
+
+/** Give the files back, if this worker is holding any. */
+function release(): void {
+	files?.release();
+	files = null;
+}
+
+/** Run `job` with the files — a burst's, if one is holding them. */
+async function withFiles<T>(job: (handles: Map<string, Handle>, tries: number) => Promise<T>) {
+	// Past the cap, let go before asking again: the lock is first come, first
+	// served, so the tab behind us is served here rather than at the end of a
+	// burst that never pauses.
+	if (files && performance.now() - files.since > BURST_HOLD_MS) release();
+	const held = (files ??= await hold());
+	// The opens are the acquiring command's; every command after it on the
+	// same handles opened nothing, and says so.
+	const tries = held.tries;
+	held.tries = 0;
+	return job(held.handles, tries);
 }
 
 /** SQLite's file change counter (header offset 24), bumped by every write. */
