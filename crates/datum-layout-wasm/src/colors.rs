@@ -10,6 +10,7 @@
 //!
 //! See `docs/visual-parity-analysis.md` §§1, 5, 8 for the rules.
 
+use datum_parse::shape::is_off_state;
 use md5::{Digest, Md5};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -131,7 +132,7 @@ pub fn state_value_hex(
     match value {
         JsonValue::Null => Some(IGNORED_HEX.to_string()),
         JsonValue::Bool(true) => Some(field_hex(field, style)),
-        JsonValue::Bool(false) => None,
+        v if is_off_state(v) => None,
         JsonValue::String(s) if s == IGNORED_STATE => Some(IGNORED_HEX.to_string()),
         JsonValue::String(s) => Some(state_hex(s, style)),
         JsonValue::Array(items) => items.first().and_then(|v| state_value_hex(v, field, style)),
@@ -161,11 +162,7 @@ pub fn state_value_colors(
 /// True for the values a switch region does not draw: absent, null, false,
 /// or the IGNORED sentinel (`datum_core::shape::is_unrendered_switch_value`).
 pub fn is_unrendered_switch_value(v: Option<&JsonValue>) -> bool {
-    match v {
-        None | Some(JsonValue::Null) | Some(JsonValue::Bool(false)) => true,
-        Some(JsonValue::String(s)) => s == IGNORED_STATE,
-        _ => false,
-    }
+    datum_parse::shape::is_inactive_state(v)
 }
 
 /// The text datum shows for a state value: a string as itself, anything

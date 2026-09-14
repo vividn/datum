@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
 use datum_core::db::Db;
+use datum_core::shape::TRACKED_STATE_VALUE;
 use serde_json::{json, Value as JsonValue};
 
 use crate::args::FieldsArgs;
@@ -52,7 +53,11 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
         .map(|f| (f, Vec::new()))
         .collect();
     for (field, state) in db.distinct_field_states()? {
-        by_field.entry(field).or_default().push(state);
+        let entry = by_field.entry(field).or_default();
+        // da-5ifp: TRACKED is not a state a field can be switched to.
+        if state != TRACKED_STATE_VALUE {
+            entry.push(state);
+        }
     }
     let registry = db.load_registry()?;
     for field in registry.fields.keys() {

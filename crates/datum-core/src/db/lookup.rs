@@ -197,11 +197,11 @@ impl Db {
     /// start or switch entry whose state-effect is still active (not closed by
     /// a subsequent stop/occur or overridden by a later switch).
     ///
-    /// Returns `None` if the field's active state at `at` is `null` or `false`
-    /// (i.e. there is nothing to close).
+    /// Returns `None` if the field's active state at `at` is `null` or off
+    /// (`false` / TRACKED — nothing to close).
     pub fn find_open_block(&self, field: &str, at: DateTime<Utc>) -> Result<Option<Entry>> {
         let active = self.get_active_state(field, at)?;
-        if matches!(active, JsonValue::Null | JsonValue::Bool(false)) {
+        if active.is_null() || crate::shape::is_off_state(&active) {
             return Ok(None);
         }
         let at_str = at.to_rfc3339();

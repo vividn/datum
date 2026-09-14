@@ -11,6 +11,7 @@
 //!   `38;2;R;G;B` for fg).
 
 use datum_core::field_spec::FieldSpec;
+use datum_core::shape::is_off_state;
 use md5::{Digest, Md5};
 use serde_json::Value as JsonValue;
 use std::cell::Cell;
@@ -214,7 +215,7 @@ pub(crate) fn state_value_rgb(
     match value {
         JsonValue::Null => Some(Rgb::IGNORED),
         JsonValue::Bool(true) => Some(field_rgb(field, spec)),
-        JsonValue::Bool(false) => None,
+        v if is_off_state(v) => None,
         JsonValue::String(s) if s == IGNORED_STATE => Some(Rgb::IGNORED),
         JsonValue::String(s) => Some(state_rgb(s, spec)),
         JsonValue::Array(items) => {

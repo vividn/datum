@@ -21,6 +21,7 @@ use chrono::DateTime;
 use datum_core::db::{Db, IGNORED_STATE_VALUE};
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
+use datum_core::shape::is_off_state;
 use datum_core::shape::{
     dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
     is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
@@ -67,8 +68,7 @@ pub(crate) fn block_fill_for_value(
 }
 
 pub(crate) fn is_ignored_or_false(v: &JsonValue) -> bool {
-    matches!(v, JsonValue::Bool(false))
-        || matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
+    is_off_state(v) || matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
 }
 
 /// For each entry, the UTC-ms end-time of its switch region (the occur_time

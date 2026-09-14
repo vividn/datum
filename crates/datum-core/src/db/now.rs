@@ -12,7 +12,7 @@ use serde_json::Value as JsonValue;
 use crate::entry::Entry;
 use crate::error::Result;
 
-use super::types::IGNORED_STATE_VALUE;
+use crate::shape::is_inactive_state;
 use super::Db;
 
 /// Wire-format identifier for the JSON shape of [`NowSnapshot`].
@@ -407,21 +407,19 @@ fn entry_event_time(e: &Entry) -> Option<DateTime<Utc>> {
     e.occur_time.as_ref().map(|t| t.utc)
 }
 
-/// Truthiness in the `datum now` sense: not `false`, not `null`, not the
-/// IGNORED sentinel. Arrays are truthy iff any element is truthy.
+/// Truthiness in the `datum now` sense: not inactive
+/// ([`is_inactive_state`]). Arrays are truthy iff any element is truthy.
 fn is_truthy(v: &JsonValue) -> bool {
     match v {
-        JsonValue::Null => false,
-        JsonValue::Bool(b) => *b,
-        JsonValue::String(s) if s == IGNORED_STATE_VALUE => false,
         JsonValue::Array(items) => items.iter().any(is_truthy),
-        _ => true,
+        v => !is_inactive_state(Some(v)),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shape::{IGNORED_STATE_VALUE, TRACKED_STATE_VALUE};
 
     #[test]
     fn truthy_rules() {
@@ -429,6 +427,7 @@ mod tests {
         assert!(!is_truthy(&JsonValue::Bool(false)));
         assert!(is_truthy(&JsonValue::Bool(true)));
         assert!(!is_truthy(&JsonValue::String(IGNORED_STATE_VALUE.into())));
+        assert!(!is_truthy(&JsonValue::String(TRACKED_STATE_VALUE.into())));
         assert!(is_truthy(&JsonValue::String("happy".into())));
         // Empty string is still a state value — truthy.
         assert!(is_truthy(&JsonValue::String(String::new())));

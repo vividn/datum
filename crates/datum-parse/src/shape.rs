@@ -55,6 +55,31 @@ use crate::verb::Verb;
 /// region rather than opening one (see [`is_unrendered_switch_value`]).
 pub const IGNORED_STATE_VALUE: &str = "IGNORED";
 
+/// The sentinel state `datum track` writes on an occur field: "tracked,
+/// nothing logged yet" (da-5ifp). Everywhere but the text it reads as
+/// `false` — see [`is_off_state`].
+pub const TRACKED_STATE_VALUE: &str = "TRACKED";
+
+/// True for the states that mean the field is tracked but off: `false`
+/// and the TRACKED sentinel.
+pub fn is_off_state(v: &JsonValue) -> bool {
+    match v {
+        JsonValue::Bool(false) => true,
+        JsonValue::String(s) => s == TRACKED_STATE_VALUE,
+        _ => false,
+    }
+}
+
+/// True for the states in which a field is not on: absent, null, IGNORED,
+/// or off ([`is_off_state`]). The one definition of "inactive" (da-5ifp).
+pub fn is_inactive_state(v: Option<&JsonValue>) -> bool {
+    match v {
+        None | Some(JsonValue::Null) => true,
+        Some(JsonValue::String(s)) if s == IGNORED_STATE_VALUE => true,
+        Some(v) => is_off_state(v),
+    }
+}
+
 /// Legacy shape classifier kept on the public surface as a compatibility
 /// shim for sub-bead 1: callers that were matching on
 /// `entry.entry_shape` still compile, but the value is derived from
@@ -281,12 +306,7 @@ pub fn has_state_badge(verb: Verb) -> bool {
 /// false / IGNORED ends the prior state but does not start a new colored
 /// region.
 pub fn is_unrendered_switch_value(v: Option<&JsonValue>) -> bool {
-    match v {
-        None | Some(JsonValue::Null) => true,
-        Some(JsonValue::Bool(false)) => true,
-        Some(JsonValue::String(s)) if s == IGNORED_STATE_VALUE => true,
-        _ => false,
-    }
+    is_inactive_state(v)
 }
 
 #[cfg(test)]
@@ -305,6 +325,14 @@ mod tests {
         assert_eq!(
             render_shape(Verb::Switch, EntryShape::Point, &s(json!("happy"))),
             RenderShape::Region,
+        );
+    }
+
+    #[test]
+    fn switch_to_tracked_is_hidden() {
+        assert_eq!(
+            render_shape(Verb::Switch, EntryShape::Point, &s(json!(TRACKED_STATE_VALUE))),
+            RenderShape::Hidden,
         );
     }
 

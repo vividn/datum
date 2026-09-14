@@ -6,23 +6,39 @@ use datum_core::{
     db::Db,
     entry::{Entry, Verb},
     field_spec::FieldSpec,
+    shape::{is_inactive_state, TRACKED_STATE_VALUE},
     time::DatumTime,
 };
+use serde_json::Value as JsonValue;
 
 use crate::args::TrackArgs;
 use crate::config::device_id;
 
 pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
-    // da-2sr: tracking lives in the entry log. `track` writes a switch
-    // entry with value=NULL — semantically "tracked, no current state".
-    // Any later real switch (`switch mood happy`) supersedes this. Color
-    // and per-state-color overrides still live on FieldSpec, so we update
-    // the spec only when the user actually passed those arguments.
+    // da-2sr: tracking lives in the entry log, as a switch entry. da-5ifp:
+    // a field that holds a state is tracked `false`; an occur field has no
+    // off state to hold, so it gets the TRACKED sentinel. Either one is not
+    // IGNORED, which is what un-ignores a field. Color and per-state-color
+    // overrides still live on FieldSpec, so we update the spec only when the
+    // user actually passed those arguments.
+    let spec = db.load_spec(&args.field)?;
+    let holds_state = match &spec {
+        Some(s) => matches!(s.default_verb, Action::Start | Action::Switch),
+        None => db
+            .distinct_field_states()?
+            .iter()
+            .any(|(f, s)| *f == args.field && !is_inactive_state(Some(s))),
+    };
+    let state = if holds_state {
+        JsonValue::Bool(false)
+    } else {
+        JsonValue::String(TRACKED_STATE_VALUE.to_string())
+    };
     let device = device_id()?;
     let entry = Entry::new_legacy(
         &args.field,
         Verb::Switch,
-        None,
+        Some(state),
         None,
         Some(DatumTime::now()),
         None,
@@ -31,7 +47,7 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     db.insert_entry(&entry)?;
 
     if args.color.is_some() || !args.state_colors.is_empty() || !args.tags.is_empty() {
-        let mut spec = match db.load_spec(&args.field)? {
+        let mut spec = match spec {
             Some(s) => s,
             None => FieldSpec::new(&args.field, Action::Occur),
         };

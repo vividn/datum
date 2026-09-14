@@ -25,7 +25,8 @@ use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
-use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
+use datum_core::db::{Db, ListParams, TimeMetric};
+use datum_core::shape::{is_inactive_state, is_off_state};
 use datum_core::time::DatumTime;
 use datum_parse::input::TimeArgs;
 use datum_parse::time::{resolve_timezone, Zone, ZoneTimeline};
@@ -526,7 +527,7 @@ struct TimelineRow {
 enum StateClass {
     /// A real state the user tracked — always in the denominator.
     Tracked,
-    /// `false` — the field is stopped. This is every gap between blocks.
+    /// `false` or TRACKED — the field is stopped. This is every gap between blocks.
     Closed,
     /// `null`, the `IGNORED` sentinel, or no state at all.
     Untracked,
@@ -534,9 +535,8 @@ enum StateClass {
 
 fn classify(v: Option<&JsonValue>) -> StateClass {
     match v {
-        None | Some(JsonValue::Null) => StateClass::Untracked,
-        Some(JsonValue::String(s)) if s == IGNORED_STATE_VALUE => StateClass::Untracked,
-        Some(JsonValue::Bool(false)) => StateClass::Closed,
+        Some(v) if is_off_state(v) => StateClass::Closed,
+        v if is_inactive_state(v) => StateClass::Untracked,
         _ => StateClass::Tracked,
     }
 }

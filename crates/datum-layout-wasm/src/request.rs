@@ -383,7 +383,7 @@ fn block_fill(value: Option<&JsonValue>, field: &str, style: Option<&FieldStyle>
                 .collect(),
         ),
         Some(v) => {
-            let muted = matches!(v, JsonValue::Bool(false))
+            let muted = datum_parse::shape::is_off_state(v)
                 || matches!(v, JsonValue::String(s) if s == crate::colors::IGNORED_STATE);
             BlockFill::Single(if muted {
                 field_color()
