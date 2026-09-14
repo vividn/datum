@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
 use datum_core::db::Db;
-use datum_core::shape::TRACKED_STATE_VALUE;
+use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use serde_json::{json, Value as JsonValue};
 
 use crate::args::FieldsArgs;
@@ -45,7 +45,8 @@ pub fn fields(args: FieldsArgs, db: &Db) -> Result<()> {
 /// caller like the web widget bar never has to re-derive them (da-yiyj).
 /// `state_colors` covers every state the field has been logged with plus
 /// every `allowed_states` entry, since a not-yet-logged allowed state still
-/// gets a button.
+/// gets a button. `ignored` is the field's latest track/ignore status
+/// ([`is_ignored_state`], da-d08c) — whether a spec exists has no say in it.
 pub fn compute_fields(db: &Db) -> Result<JsonValue> {
     let mut by_field: BTreeMap<String, Vec<JsonValue>> = db
         .distinct_fields()?
@@ -54,8 +55,9 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
         .collect();
     for (field, state) in db.distinct_field_states()? {
         let entry = by_field.entry(field).or_default();
-        // da-5ifp: TRACKED is not a state a field can be switched to.
-        if state != TRACKED_STATE_VALUE {
+        // da-5ifp: TRACKED and IGNORED are statuses, not states a field
+        // can be switched to.
+        if state != TRACKED_STATE_VALUE && !is_ignored_state(&state) {
             entry.push(state);
         }
     }
@@ -63,12 +65,15 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
     for field in registry.fields.keys() {
         by_field.entry(field.clone()).or_default();
     }
+    let names: Vec<&str> = by_field.keys().map(String::as_str).collect();
+    let latest = db.batch_state_at(&names, chrono::Utc::now())?;
     Ok(JsonValue::Array(
         by_field
-            .into_iter()
+            .iter()
             .map(|(field, states)| {
-                let spec = registry.fields.get(&field);
-                let color = field_hex(&field, spec);
+                let ignored = latest.get(field).is_some_and(is_ignored_state);
+                let spec = registry.fields.get(field);
+                let color = field_hex(field, spec);
                 let mut state_names: BTreeSet<&str> =
                     states.iter().filter_map(JsonValue::as_str).collect();
                 if let Some(allowed) = spec.and_then(|s| s.allowed_states.as_deref()) {
@@ -85,6 +90,7 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
                     "states": states,
                     "color": color,
                     "state_colors": state_colors,
+                    "ignored": ignored,
                 })
             })
             .collect(),

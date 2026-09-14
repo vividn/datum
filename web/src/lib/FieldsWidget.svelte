@@ -3,15 +3,18 @@
 	way anything gets logged without typing (da-nz29, da-c7u8).
 
 	Track + comes first: the way into the whole app, so it is there on an
-	empty database too. Then the TRACKED fields (a spec exists), each shaped
-	by its kind and painted by what it is now (`lookOf` in fields.ts): a
-	point is a filled pill; a block is a rectangle, filled while it is on;
-	a switch is a rectangle filled with its current state's colour; a keyed
-	record is its name, underlined, and a click prefills `add <field> ` in
-	the bottom bar rather than running anything. Last, dim, the fields
-	logged without a spec, each with a `track` that opens the form with the
-	name in it — `startTracking` is the one place that form opens from, for
-	the set-up walkthrough to take over.
+	empty database too. Then every field that is not ignored (`ignored` in
+	`datum fields --json`, da-d08c), spec or no spec, in the CLI's
+	alphabetical order, each shaped by its kind and painted by what it is
+	now (`lookOf` in fields.ts): a point is a filled pill; a block is a
+	rectangle, filled while it is on; a switch is a rectangle filled with
+	its current state's colour; a keyed record is its name, underlined, and
+	a click prefills `add <field> ` in the bottom bar rather than running
+	anything. The bar wraps and grows; the page scrolls, never the bar,
+	whose panels hang upward out of it. Ignored fields get no button: the
+	Track + form lists them, and a press runs `track <field>`.
+	`startTracking` is the one place that form opens from, for the set-up
+	walkthrough to take over.
 
 	Press to log. Press and hold (or right-click, or the menu key) to open
 	the `-t` / `dur` bubbles first. A multi-state field opens its state menu
@@ -65,8 +68,8 @@
 	let newKind: FieldShape['kind'] = 'point';
 	let newStates = '';
 
-	$: tracked = fields.filter((w) => w.tracked);
-	$: untracked = fields.filter((w) => !w.tracked);
+	$: buttons = fields.filter((w) => !w.ignored);
+	$: ignored = fields.filter((w) => w.ignored);
 
 	function paint(button: FieldButton, variant: SwitchLabel) {
 		const look = lookOf(button, variant);
@@ -213,11 +216,22 @@
 							>{/if}
 					</p>
 				{/if}
+				{#if ignored.length > 0}
+					<!-- Ignored fields get no button; this is the way back (da-d08c). -->
+					<div class="states ignored">
+						<span class="bubble-label">ignored</span>
+						{#each ignored as { field } (field)}
+							<button type="button" data-ignored={field} title="track {field}" on:click={() => emit(['track', field])}
+								>{field}</button
+							>
+						{/each}
+					</div>
+				{/if}
 			</form>
 		{/if}
 	</div>
 
-	{#if fields.length === 0}
+	{#if buttons.length === 0}
 		<!-- No direction word here on purpose: this hint said "below" while the
 		     bar was at the top of the page (da-nz29), and da-1x72 moved the
 		     bar to the bottom without the copy following. Name the thing, not
@@ -225,7 +239,7 @@
 		<p class="hint empty">nothing tracked yet — or type a command to log something</p>
 	{/if}
 
-	{#each tracked as button (button.field)}
+	{#each buttons as button (button.field)}
 		{@const { look, style } = paint(button, switchLabel)}
 		<div class="slot">
 			{#if button.shape.kind === 'record'}
@@ -320,18 +334,6 @@
 			{/if}
 		</div>
 	{/each}
-
-	{#each untracked as button (button.field)}
-		<span class="untracked" data-field={button.field}
-			>{button.field}<button
-				class="track-this"
-				{disabled}
-				aria-label="track {button.field}"
-				title="track {button.field}"
-				on:click={() => startTracking(button.field)}>track</button
-			></span
-		>
-	{/each}
 </div>
 
 <style>
@@ -348,8 +350,7 @@
 
 	.widget,
 	.track,
-	.record,
-	.track-this {
+	.record {
 		/* A held press must not also select the label or raise the platform's
 		   text callout, on touch least of all. */
 		user-select: none;

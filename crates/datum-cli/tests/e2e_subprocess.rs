@@ -716,6 +716,48 @@ fn subprocess_fields_lists_logged_and_declared_fields() {
     assert_eq!(doc[1]["spec"]["default_verb"], "start");
 }
 
+/// `fields --json`'s `ignored` is the latest track/ignore status and
+/// nothing else — not whether a spec exists (da-d08c).
+#[test]
+fn subprocess_fields_ignored_is_the_latest_status_not_the_spec() {
+    let env = Env::new();
+    assert_ok(&env.run(&["track", "tea"]), "track");
+    assert_ok(&env.run(&["occur", "walk"]), "occur");
+    assert_ok(
+        &env.run(&["spec", "set", "run", "--default-verb", "occur"]),
+        "spec",
+    );
+    assert_ok(&env.run(&["ignore", "run"]), "ignore");
+
+    let out = env.run(&["fields", "--json"]);
+    assert_ok(&out, "fields --json");
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rows: Vec<_> = doc
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["field"].as_str().unwrap(), r["ignored"].clone()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("run", serde_json::json!(true)),
+            ("tea", serde_json::json!(false)),
+            ("walk", serde_json::json!(false)),
+        ]
+    );
+    assert_eq!(
+        doc[0]["states"],
+        serde_json::json!([]),
+        "IGNORED is not a state"
+    );
+
+    assert_ok(&env.run(&["track", "run"]), "track");
+    let out = env.run(&["fields", "--json"]);
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(doc[0]["ignored"], false, "track un-ignores");
+}
+
 /// `nowview -o -` is the SVG on stdout; bare `nowview` stays the terminal
 /// band (da-57dj). The picture is what a caller with no terminal shows.
 #[test]

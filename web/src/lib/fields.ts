@@ -27,8 +27,12 @@ export type FieldShape =
 export interface FieldButton {
 	field: string;
 	shape: FieldShape;
-	/** A spec exists: the field is tracked, and the bar gives it a button. */
-	tracked: boolean;
+	/**
+	 * `datum fields --json`'s `ignored` — the field's latest track/ignore
+	 * status, defined once in datum-core (da-d08c). The bar draws a button
+	 * for every field that is not; Track + offers the ignored ones back.
+	 */
+	ignored: boolean;
 	/**
 	 * The field's RESOLVED colour (`#rrggbb`) — `datum fields --json`'s
 	 * `color`, computed the same way the CLI paints it: a spec override, else
@@ -94,6 +98,8 @@ export interface FieldListing {
 	color: string;
 	/** Every listed state's resolved colour (`#rrggbb`), keyed by state name. */
 	state_colors: Record<string, string>;
+	/** The latest track/ignore status is IGNORED (da-d08c). */
+	ignored: boolean;
 }
 
 /** One row of `datum now --json`'s `active`. */
@@ -103,24 +109,23 @@ export interface NowActive {
 }
 
 /**
- * The widget's buttons: every field `datum fields` lists, the tracked ones
- * (a spec exists) first, each group in the CLI's order. `active` is
- * `datum now --json`'s — a field it does not name is off.
+ * The widget's entries: every field `datum fields` lists, in the CLI's
+ * order — alphabetical, the one ordering rule, so a press never moves a
+ * button. `active` is `datum now --json`'s — a field it does not name is off.
  */
 export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): FieldButton[] {
 	const now = new Map(active.map((a) => [a.field, a.state]));
-	const all: FieldButton[] = listing.map(({ field, spec, states, color, state_colors }) => {
+	return listing.map(({ field, spec, states, color, state_colors, ignored }) => {
 		const state = now.get(field);
 		return {
 			field,
 			shape: shapeFor(spec ?? undefined, states),
-			tracked: spec != null,
+			ignored,
 			color,
 			stateColors: state_colors,
 			current: state === true || (typeof state === 'string' && state !== '') ? state : undefined
 		};
 	});
-	return [...all.filter((w) => w.tracked), ...all.filter((w) => !w.tracked)];
 }
 
 /**

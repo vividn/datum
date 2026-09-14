@@ -28,19 +28,19 @@ describe('the logic', () => {
 		assert.deepEqual(shapeFor(undefined, ['b', 'a']), { kind: 'states', states: ['a', 'b'] });
 	});
 
-	test('tracked fields first, each group in the CLI order; `now` says what is on', () => {
+	test('every field in the CLI order, a spec or not; `ignored` is the CLI\'s; `now` says what is on', () => {
 		const widgets = buttonsFor(
 			[
-				{ field: 'a', spec: null, states: [], color: '#111111', state_colors: {} },
-				{ field: 'b', spec: spec('b', { default_verb: 'start' }), states: [], color: '#222222', state_colors: {} },
-				{ field: 'c', spec: spec('c', { default_verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' } }
+				{ field: 'a', spec: null, states: [true], color: '#111111', state_colors: {}, ignored: false },
+				{ field: 'b', spec: spec('b', { default_verb: 'start' }), states: [], color: '#222222', state_colors: {}, ignored: true },
+				{ field: 'c', spec: spec('c', { default_verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' }, ignored: false }
 			],
 			[{ field: 'b', state: true }, { field: 'c', state: 'x' }, { field: 'a', state: false }]
 		);
-		assert.deepEqual(widgets.map((w) => [w.field, w.tracked, w.current]), [
-			['b', true, true],
-			['c', true, 'x'],
-			['a', false, undefined]
+		assert.deepEqual(widgets.map((w) => [w.field, w.shape.kind, w.ignored, w.current]), [
+			['a', 'state', false, undefined],
+			['b', 'state', true, true],
+			['c', 'states', false, 'x']
 		]);
 	});
 
@@ -168,11 +168,6 @@ const contrasts = (page) =>
 			const bg = behind(el);
 			return {
 				label: el.dataset.field ?? el.textContent.trim(),
-				// The untracked names and their `track` badges are the widget's
-				// deliberately faint group (`--muted`, 2.8:1) — vividn's "very
-				// subtle", the same choice as the pane frame's `…`. Measured
-				// here, reported, and not held to the floor.
-				dim: el.classList.contains('untracked'),
 				fg: `rgb(${fg})`,
 				bg: `rgb(${bg})`,
 				contrast: Math.round(ratio(fg, bg) * 100) / 100
@@ -236,10 +231,44 @@ describe('in the app', () => {
 			// the app's accent — `crates/datum-commands/src/render/colors.rs`.
 			assert.equal(note.underlineColor, 'rgb(170, 214, 83)');
 
-			const untracked = page.locator('.bar .untracked[data-field="untracked"]');
-			assert.equal(await untracked.locator('button').getAttribute('aria-label'), 'track untracked');
-			await untracked.locator('button').click();
-			assert.equal(await page.locator('form.add input').first().inputValue(), 'untracked');
+			// No spec, logged once: a point, a button like any other.
+			assert.equal((await look(page, 'untracked')).tag, 'BUTTON');
+		});
+	});
+
+	// da-d08c, the three cases as measured: whether a field has a spec says
+	// nothing about whether it gets a button — its track/ignore status does.
+	test('track tea and occur walk are buttons; an ignored run with a spec is not, and Track + un-ignores it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of ['track tea', 'occur walk', 'spec set run --default-verb occur', 'ignore run']) await type(page, line);
+			await page.locator('.bar button[data-field="walk"]').waitFor();
+			const drawn = () => page.locator('.bar [data-field]').evaluateAll((all) => all.map((el) => `${el.tagName}:${el.dataset.field}`));
+			assert.deepEqual(await drawn(), ['BUTTON:tea', 'BUTTON:walk']);
+
+			await page.locator('.bar button.track').click();
+			await page.locator('.bar [data-ignored="run"]').click();
+			await page.locator('.bar button[data-field="run"]').waitFor();
+			assert.equal((await app.echoes()).at(-1), 'track run');
+			assert.deepEqual(await drawn(), ['BUTTON:run', 'BUTTON:tea', 'BUTTON:walk']);
+		});
+	});
+
+	test('a field that arrives by `db restore -` is a button after that command, with no reload', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await type(page, 'occur walk');
+			await page.locator('.bar button[data-field="walk"]').waitFor();
+			// The backup's own header and walk's own row, re-keyed as a field
+			// the page has never seen — what an import from elsewhere brings.
+			const [header, ...rows] = (await app.run(['db', 'backup', '-'])).stdout.trim().split('\n');
+			const walk = JSON.parse(rows.find((l) => l.includes('"walk"')));
+			const swim = { ...walk, hid: 'swim0000', slug: walk.slug.replace('walk', 'swim'), field: 'swim', content_hash: '0'.repeat(64), raw_input: 'occur swim' };
+			// Typed, as a person would: the page's own command, so its own beat refreshes the bar.
+			const [chooser] = await Promise.all([page.waitForEvent('filechooser'), type(page, 'db restore -')]);
+			await chooser.setFiles({ name: 'swim.jsonl', mimeType: 'application/jsonl', buffer: Buffer.from(`${header}\n${JSON.stringify(swim)}\n`) });
+			await page.locator('.bar button[data-field="swim"]').waitFor();
+			assert.equal((await app.entries()).some((e) => e.field === 'swim'), true);
 		});
 	});
 
@@ -335,10 +364,10 @@ describe('in the app', () => {
 			const on = await contrasts(page);
 			assert.deepEqual(
 				on.map((r) => r.label),
-				['Track +', 'energy', 'mood', 'pushups', 'work', 'untracked'],
+				['Track +', 'energy', 'mood', 'pushups', 'untracked', 'work'],
 				'all four kinds have to be in the measurement'
 			);
-			for (const row of on.filter((r) => !r.dim)) {
+			for (const row of on) {
 				assert.ok(row.contrast >= 4.5, `${row.label} is at ${row.contrast}:1\n${table(on)}`);
 			}
 

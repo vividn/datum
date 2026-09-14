@@ -75,9 +75,14 @@ pub fn is_off_state(v: &JsonValue) -> bool {
 pub fn is_inactive_state(v: Option<&JsonValue>) -> bool {
     match v {
         None | Some(JsonValue::Null) => true,
-        Some(JsonValue::String(s)) if s == IGNORED_STATE_VALUE => true,
-        Some(v) => is_off_state(v),
+        Some(v) => is_ignored_state(v) || is_off_state(v),
     }
+}
+
+/// True for the IGNORED sentinel: a field whose latest track/ignore status
+/// is IGNORED is ignored; every other field is active (da-d08c).
+pub fn is_ignored_state(v: &JsonValue) -> bool {
+    matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
 }
 
 /// Legacy shape classifier kept on the public surface as a compatibility

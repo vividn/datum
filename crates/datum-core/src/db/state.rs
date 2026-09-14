@@ -9,8 +9,7 @@ use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 
 use super::types::{
-    time_expr_endbound, TrackedField, IGNORED_STATE_VALUE, STATE_ORDER_NEWEST_FIRST,
-    STATE_PARTICIPATION_SQL,
+    time_expr_endbound, TrackedField, STATE_ORDER_NEWEST_FIRST, STATE_PARTICIPATION_SQL,
 };
 use super::Db;
 
@@ -279,11 +278,9 @@ impl Db {
         let specs = self.batch_load_specs(&field_refs)?;
         let mut out = Vec::with_capacity(fields.len());
         for field in fields {
-            let ignored = match states.get(&field) {
-                None => true,
-                Some(JsonValue::String(s)) if s == IGNORED_STATE_VALUE => true,
-                _ => false,
-            };
+            let ignored = states
+                .get(&field)
+                .is_none_or(crate::shape::is_ignored_state);
             let color = specs.get(&field).and_then(|s| s.color.clone());
             out.push(TrackedField {
                 field,
@@ -375,6 +372,7 @@ fn decode_state_row(cols: StateColumns) -> Result<(String, super::now::StateRow)
 mod tests {
     use super::*;
     use crate::entry::{Entry, Verb};
+    use crate::shape::IGNORED_STATE_VALUE;
     use crate::time::DatumTime;
     use chrono::TimeZone;
     use serde_json::json;
