@@ -24,6 +24,8 @@
 	export let text: string;
 	/** Paint the block as an error (stderr). */
 	export let error = false;
+	/** A newer block has been asked for: this one is dimmed until it lands. */
+	export let behind = false;
 
 	const SVG_START = /^\s*(?:<\?xml[\s?]|<svg[\s>])/;
 
@@ -36,9 +38,9 @@
 	     (layout/resizing.ts); it follows its box as one scaled image
 	     until the drop redraws it — whole, so an axis and its labels
 	     move together (da-jgrn). -->
-	<div class="picture" class:stretch={$resizing} use:picture={text} />
+	<div class="picture" class:stretch={$resizing} class:behind use:picture={text} />
 {:else}
-	<pre class:error><AnsiText {spans} /></pre>
+	<pre class:error class:behind><AnsiText {spans} /></pre>
 {/if}
 
 <style>
@@ -58,6 +60,13 @@
 
 	.error {
 		color: var(--error);
+	}
+
+	/* Catching up (da-eoq3): the old block stays, faded, so it is never read
+	   as the answer to what was just asked. The new one lands at full. */
+	.behind {
+		opacity: 0.45;
+		transition: opacity 120ms;
 	}
 
 	.picture :global(svg.svg) {

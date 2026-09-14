@@ -67,8 +67,30 @@ let announce: (storage: StorageKind) => void = () => {};
 /** One process at a time per worker, so a command never meets its own tab. */
 let queue: Promise<unknown> = Promise.resolve();
 
-function enqueue<T>(job: () => Promise<T>): Promise<T> {
-	const next = queue.then(job);
+/** The newest queued job per key, told when a newer one replaces it. */
+const waiting = new Map<string, () => void>();
+
+/**
+ * Queue `job`; resolves `null` if it was superseded before it started.
+ *
+ * A job with a `key` (a pane's identity, da-eoq3) that has not started yet
+ * is dropped when a newer job with the same key is queued: only the newest
+ * picture of a pane is worth a process. A job without one — every command
+ * typed or pressed — is never dropped.
+ */
+function enqueue<T>(job: () => Promise<T>): Promise<T>;
+function enqueue<T>(job: () => Promise<T>, key?: string): Promise<T | null>;
+function enqueue<T>(job: () => Promise<T>, key?: string): Promise<T | null> {
+	let dropped = false;
+	const drop = () => (dropped = true);
+	if (key) {
+		waiting.get(key)?.();
+		waiting.set(key, drop);
+	}
+	const next = queue.then(() => {
+		if (key && waiting.get(key) === drop) waiting.delete(key);
+		return dropped ? null : job();
+	});
 	queue = next.catch(() => {});
 	return next;
 }
@@ -303,18 +325,27 @@ function keepTrying(delay: number): void {
 	}, delay);
 }
 
+/** Where the database lives now, without queueing anything to ask. */
+export function storageNow(): StorageKind {
+	return memory ? 'memory' : 'opfs';
+}
+
 /** Be told when storage changes under the page. */
 export function onStorage(listener: (storage: StorageKind) => void): void {
 	announce = listener;
 }
 
-/** Run `datum <argv>` with `env`; resolves once the process has exited. */
+/**
+ * Run `datum <argv>` with `env`; resolves once the process has exited, or
+ * `null` if a newer command with the same `key` superseded it first.
+ */
 export function runCli(
 	argv: string[],
 	env: string[],
 	stdin?: string,
-	onStderr?: (text: string) => void
-): Promise<CliResult> {
+	onStderr?: (text: string) => void,
+	key?: string
+): Promise<CliResult | null> {
 	lastEnv = env;
 	return enqueue(async () => {
 		const t0 = performance.now();
@@ -341,5 +372,5 @@ export function runCli(
 			};
 		};
 		return memory ? runIn(memory, 0) : withFiles(runIn);
-	});
+	}, key);
 }

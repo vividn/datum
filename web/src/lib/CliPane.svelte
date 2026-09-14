@@ -5,6 +5,10 @@
 	shows the text that comes back. No parsing, no formatting, no database
 	— everything it displays was produced by datum itself.
 -->
+<script context="module" lang="ts">
+	let panes = 0;
+</script>
+
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
@@ -33,9 +37,10 @@
 	export let guard = false;
 
 	let result: RunResult | null = null;
-	/** How many runs have been started, and the newest one on screen. */
-	let started = 0;
-	let shown = -1;
+	/** The argv on screen, as its words. */
+	let shown = '';
+	/** This pane in the worker's queue: its newer run drops its older, unstarted one. */
+	const key = `pane:${++panes}`;
 
 	let body: HTMLDivElement | undefined;
 	/** The body's content box, once measured. See `paneArgv`. */
@@ -91,7 +96,10 @@
 	$: sized = drawn ? box : null;
 	$: request = { argv: table ? null : paneArgv(JSON.parse(words) as string[], sized), epoch };
 	$: manual = guard && writer === spec;
-	$: if (browser && request.argv && !manual) void refresh(request.argv);
+	$: if (browser && request.argv && !manual) void refresh();
+	// The picture on screen is not the one asked for: the cursor moved, and
+	// the new one is on its way. Dimmed rather than presented as current.
+	$: behind = !!result && !manual && !!request.argv && JSON.stringify(request.argv) !== shown;
 
 	/**
 	 * The spec whose run wrote: while it is `spec`, the pane runs on ▶ only.
@@ -99,35 +107,36 @@
 	 * with it — known, not learned again by writing once more (da-v36y).
 	 */
 	export let writer: PaneSpec | null = null;
-	/** The spec with an automatic run out whose effect is not known yet. */
-	let probing: PaneSpec | null = null;
-	/** Whether another automatic run was asked for while that one was out. */
-	let deferred = false;
+	/** Whether a run is out, and whether a newer one was asked for meanwhile. */
+	let out = false;
+	let waiting = false;
 
-	async function refresh(argv: string[], pressed = false): Promise<void> {
+	/**
+	 * Run the newest request: at most one run out and one waiting (da-eoq3).
+	 *
+	 * A burst of clicks on the dayview asks for a nowview per click, and a
+	 * process cannot be stopped once started, so the burst costs the run
+	 * already out plus the LAST one asked for — never the ones between, and
+	 * the run that comes back behind a newer request is not painted. The
+	 * same rule is the write guard's (da-wb2n): a second run sent before the
+	 * first came back would be the second write. Keyless while guarded, so
+	 * the worker never drops a command that may write.
+	 */
+	async function refresh(): Promise<void> {
+		if (out) return void (waiting = true);
+		out = true;
 		const of = spec;
-		if (guard && !pressed) {
-			// One at a time until the pane knows whether the command writes:
-			// a second run sent before the first came back is the second write.
-			if (probing === of) return void (deferred = true);
-			probing = of;
-		}
-		const at = ++started;
-		const next = await run(argv);
+		const argv = request.argv!;
+		const next = await run(argv, undefined, undefined, guard ? undefined : key);
+		out = false;
 		if (guard && next.changed?.length) writer = of;
-		if (probing === of) {
-			probing = null;
-			const again = deferred && spec === of && writer !== of;
-			deferred = false;
-			if (again && request.argv) void refresh(request.argv);
+		if (waiting) {
+			waiting = false;
+			if (request.argv && !(guard && writer === spec)) return refresh();
 		}
-		// Type fast enough — or drag the window — and two refreshes are in
-		// flight at once; they can finish out of order, and the loser would
-		// paint the older answer over the newer one. Last started wins, not
-		// last to return.
-		if (at < shown) return;
-		shown = at;
+		if (next.superseded) return;
 		result = next;
+		shown = JSON.stringify(argv);
 	}
 
 	// A press is a command the reader asked for, like a line typed: into
@@ -137,8 +146,9 @@
 		const argv = request.argv;
 		if (!argv) return;
 		const ranAt = Date.now();
-		await refresh(argv, true);
-		if (result) record(argv.join(' '), ranAt, result);
+		result = await run(argv);
+		shown = JSON.stringify(argv);
+		record(argv.join(' '), ranAt, result);
 	}
 </script>
 
@@ -160,9 +170,9 @@
 	{:else if !result}
 		<p class="quiet">…</p>
 	{:else if result.stdout}
-		<CliOutput text={result.stdout} />
+		<CliOutput text={result.stdout} {behind} />
 	{:else if result.stderr}
-		<CliOutput text={result.stderr} error />
+		<CliOutput text={result.stderr} error {behind} />
 	{:else if spec.empty}
 		<p class="quiet">{spec.empty}</p>
 	{/if}

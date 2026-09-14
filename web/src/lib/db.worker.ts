@@ -9,7 +9,7 @@
 // $lib/cli.ts. This file is only the door: a request in, a process's
 // outcome out, and a word to the page when storage changes under it.
 
-import { onStorage, probe, runCli } from './cli.js';
+import { onStorage, probe, runCli, storageNow } from './cli.js';
 import type { DbMessage, DbRequest, DbResponse } from './dbProtocol.js';
 
 /**
@@ -26,9 +26,14 @@ async function serve(request: DbRequest): Promise<DbResponse> {
 	try {
 		if (request.op === 'open') return { id: request.id, ok: true, storage: await probe() };
 		// stderr as it is written, not only at exit: the page shows progress.
-		const cli = await runCli(request.argv, request.env, request.stdin, (text) =>
-			ctx.postMessage({ notice: 'stderr', id: request.id, text })
+		const cli = await runCli(
+			request.argv,
+			request.env,
+			request.stdin,
+			(text) => ctx.postMessage({ notice: 'stderr', id: request.id, text }),
+			request.key
 		);
+		if (!cli) return { id: request.id, ok: true, storage: storageNow() };
 		return { id: request.id, ok: true, storage: cli.storage, cli };
 	} catch (e) {
 		return { id: request.id, ok: false, error: e instanceof Error ? e.message : String(e) };

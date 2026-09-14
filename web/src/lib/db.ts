@@ -128,14 +128,17 @@ export function initDb(): Promise<void> {
  *
  * A process that wrote is news: for every other tab, which re-runs its panes
  * on it, and — when the write is durable — for the persistence request.
+ * `null` when a newer command with the same `key` superseded it unrun.
  */
 export async function runCli(
 	argv: string[],
 	env: string[],
 	stdin?: string,
-	onStderr?: (text: string) => void
-): Promise<CliResult> {
-	const cli = (await request({ op: 'cli', argv, env, stdin }, onStderr)).cli!;
+	onStderr?: (text: string) => void,
+	key?: string
+): Promise<CliResult | null> {
+	const cli = (await request({ op: 'cli', argv, env, stdin, key }, onStderr)).cli;
+	if (!cli) return null;
 	if (cli.changed.length) {
 		announceChange(cli.changed);
 		if (cli.storage === 'opfs') {

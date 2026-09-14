@@ -27,13 +27,23 @@ export interface RunResult {
 	 * ran.
 	 */
 	changed?: string[];
+	/**
+	 * Nothing ran: a newer command with the same key took this one's place
+	 * in the queue (da-eoq3). Not a failure — the caller ignores it.
+	 */
+	superseded?: boolean;
 }
 
-/** `onStderr` hears the process's stderr as it is written, before the result. */
+/**
+ * `onStderr` hears the process's stderr as it is written, before the result.
+ * `key` names who is asking (a pane): a newer command with the same key drops
+ * this one if it has not started yet. Without a key a command always runs.
+ */
 export type CommandRunner = (
 	argv: string[],
 	stdin?: string,
-	onStderr?: (text: string) => void
+	onStderr?: (text: string) => void,
+	key?: string
 ) => Promise<RunResult>;
 
 /** Generic failure, as `datum-cli`'s `main` reports one. */
@@ -60,12 +70,13 @@ export function setRunner(next: CommandRunner): CommandRunner | null {
 export async function run(
 	argv: string[],
 	stdin?: string,
-	onStderr?: (text: string) => void
+	onStderr?: (text: string) => void,
+	key?: string
 ): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
 	try {
 		runner ??= (await import('./runners/wasi.js')).wasiRun;
-		return await runner(argv, stdin, onStderr);
+		return await runner(argv, stdin, onStderr, key);
 	} catch (e) {
 		// A runner that throws is a bug in the runner, not in the caller: the
 		// seam still owes the UI a result it can render.

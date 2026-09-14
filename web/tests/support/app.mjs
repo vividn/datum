@@ -233,9 +233,9 @@ async function open(page, query) {
 function countRuns(page) {
 	return page.evaluate(() => {
 		window.__datumInflight = 0;
-		const previous = window.datum.setRunner((argv, stdin) => {
+		const previous = window.datum.setRunner((...args) => {
 			window.__datumInflight += 1;
-			return previous(argv, stdin).finally(() => (window.__datumInflight -= 1));
+			return previous(...args).finally(() => (window.__datumInflight -= 1));
 		});
 	});
 }
@@ -486,9 +486,9 @@ function app(page, errors, query) {
 				// refresh.
 				await window.datum.runQuiet(['tail']);
 				window.__datumSeen = [];
-				const previous = window.datum.setRunner((argv) => {
+				const previous = window.datum.setRunner((argv, ...rest) => {
 					window.__datumSeen.push(argv);
-					return previous(argv);
+					return previous(argv, ...rest);
 				});
 			});
 			return () => page.evaluate(() => window.__datumSeen);

@@ -40,8 +40,12 @@ export interface CliResult {
 export type DbCommand =
 	/** Find out where the database lives, and say. */
 	| { op: 'open' }
-	/** Run `datum <argv>` under WASI, with `stdin` on its standard input. */
-	| { op: 'cli'; argv: string[]; env: string[]; stdin?: string };
+	/**
+	 * Run `datum <argv>` under WASI, with `stdin` on its standard input.
+	 * A `key` lets a newer command with the same key drop this one while it
+	 * is still queued (da-eoq3).
+	 */
+	| { op: 'cli'; argv: string[]; env: string[]; stdin?: string; key?: string };
 
 /** A command with the tag that pairs its response to it. */
 export type DbRequest = DbCommand & { id: number };
@@ -56,6 +60,7 @@ export type DbNotice =
 	| { notice: 'stderr'; id: number; text: string };
 
 export type DbResponse =
+	/** `cli` absent on a cli request: superseded, nothing ran. */
 	| { id: number; ok: true; storage: StorageKind; cli?: CliResult }
 	| { id: number; ok: false; error: string };
 
