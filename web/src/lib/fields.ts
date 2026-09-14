@@ -56,12 +56,12 @@ export interface Adjust {
 /**
  * Decide a field's shape.
  *
- * The spec's verb wins where it says something only a declaration can:
- * `switch`, `start`, `add`. `occur` does not — `track --color` writes it
- * as a placeholder for every field it colours — so for `occur`, as for no
- * spec, the log is the evidence: a field logged with string states is a
- * multi-state field, one logged with `true`/`false` is a block, and
- * anything else is a point. The field's *name* is never consulted.
+ * The spec's verb wins whenever it declares one: `switch`, `start`, `add`,
+ * `occur` all say what a press means regardless of how the field has been
+ * logged so far. Only a field with NO spec falls back to the log as
+ * evidence: a field logged with string states is a multi-state field, one
+ * logged with `true`/`false` is a block, and anything else is a point. The
+ * field's *name* is never consulted.
  */
 export function shapeFor(spec: FieldSpec | undefined, observed: unknown[] = []): FieldShape {
 	const strings = [...new Set(observed.filter((v): v is string => typeof v === 'string'))].sort();
@@ -75,6 +75,8 @@ export function shapeFor(spec: FieldSpec | undefined, observed: unknown[] = []):
 			return { kind: 'state' };
 		case 'add':
 			return { kind: 'record' };
+		case 'occur':
+			return { kind: 'point' };
 	}
 
 	if (strings.length > 0) return { kind: 'states', states: strings };

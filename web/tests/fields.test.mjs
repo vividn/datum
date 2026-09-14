@@ -15,11 +15,16 @@ import { startApp, stopApp, withApp } from './support/app.mjs';
 const spec = (field, rest = {}) => ({ field, ...rest });
 
 describe('the logic', () => {
-	test('`occur` is a placeholder, so the log decides; start / switch / add are declarations', () => {
-		assert.deepEqual(shapeFor(spec('sleep', { default_verb: 'occur' }), [true, false]), { kind: 'state' });
+	test('a spec\'s verb wins, whatever the log says; a spec-less field falls back to the log', () => {
+		// occur is a declaration too: a field logged with `true`/`false` under
+		// an occur spec still stays a point (da-u8n7), not a block.
+		assert.deepEqual(shapeFor(spec('sleep', { default_verb: 'occur' }), [true, false]), { kind: 'point' });
 		assert.deepEqual(shapeFor(spec('coffee', { default_verb: 'occur' })), { kind: 'point' });
 		assert.deepEqual(shapeFor(spec('work', { default_verb: 'start' })), { kind: 'state' });
 		assert.deepEqual(shapeFor(spec('note', { default_verb: 'add' })), { kind: 'record' });
+		// No spec: the log is the only evidence. A boolean log is a block...
+		assert.deepEqual(shapeFor(undefined, [true, false]), { kind: 'state' });
+		// ...and named states are a menu.
 		assert.deepEqual(shapeFor(undefined, ['b', 'a']), { kind: 'states', states: ['a', 'b'] });
 	});
 
@@ -75,6 +80,12 @@ describe('the logic', () => {
 		assert.deepEqual(pressArgv(w({ kind: 'state' })), ['start', 'f']);
 		assert.deepEqual(pressArgv(w({ kind: 'state' }, true), { minutesAgo: 5 }), ['end', 'f', '-t', '-5']);
 		assert.deepEqual(pressArgv(w({ kind: 'record' })), ['add', 'f']);
+	});
+
+	test('an occur spec presses `occur`, even once it has been logged with a boolean state (da-u8n7)', () => {
+		const shape = shapeFor(spec('jumps', { default_verb: 'occur' }), [true]);
+		assert.deepEqual(shape, { kind: 'point' });
+		assert.deepEqual(pressArgv({ field: 'jumps', shape, tracked: true, stateColors: {} }), ['occur', 'jumps']);
 	});
 });
 
