@@ -20,7 +20,10 @@
 
 	Locked (da-2a5y): a tab's `locked` covers its whole subtree — the
 	flag is threaded down as a prop, and under it every border is `static`
-	(no handle, no keyboard) and every frame draws no `…`.
+	(no handle, no keyboard) and every frame draws no `…`. The frame is
+	told the lock from ABOVE it and adds its own tab's, so it can tell the
+	two apart: a layout tab that is itself locked still shows the menu its
+	`Unlock layout` is in (da-crp5).
 
 	Floors: a child's cell is never narrower or shorter than its frame
 	(`floorOf` over `chromeOf`: a widget pane's outline and the inside
@@ -250,7 +253,7 @@
 	{pane}
 	{canClose}
 	root={pane.id === rootId}
-	locked={lockedHere}
+	locked={locked}
 	kind={isSplit(content) ? undefined : content.kind}
 >
 	{#if isSplit(content)}

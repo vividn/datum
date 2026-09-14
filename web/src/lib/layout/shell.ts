@@ -1,14 +1,34 @@
-// The shell's root tabs: layouts inlined into the one tree (da-0a5o).
+// The shell: layouts inlined into the one tree, at any depth (da-0a5o,
+// da-crp5).
 //
 // The page is one layout tree (`current.ts`), and the root pane's tabs are
-// the page's top bar. A root tab whose `layout` is set (types.ts) HOLDS
-// that saved layout — its content is the saved tree inlined, so the
-// engine, `apply` and the draft never learn that layouts exist. What this
-// module owns is the seam between a tab and its save: `inline` (a saved
-// `Layout` → the tab that holds it) and `extract` (the tab → the `Layout`
-// to save or compare), the boot that fills the root from this device's
-// list of open layouts, and the four acts on the active tab — save,
-// restore, save as, lock — which the root bar's icons call.
+// the page's top bar. A tab whose `layout` is set (types.ts) HOLDS that
+// saved layout — its content is the saved tree inlined, so the engine,
+// `apply` and the draft never learn that layouts exist. What this module
+// owns is the seam between a tab and its save: `inline` (a saved `Layout`
+// → the tab that holds it) and `extract` (the tab → the `Layout` to save
+// or compare), the boot that fills the root from this device's list of
+// open layouts, and the four acts — save, restore, save as, lock — which
+// the root bar's icons and a pane's menu call.
+//
+// IDENTITY IS THE NAME, and a tab carrying it is a COPY (da-crp5). The
+// root bar's tabs have no privilege: a tab six panes down carrying
+// `layout` is the same kind of thing, and the baseline, the draft and the
+// lock all hang off the NAME, never off where the tab sits. So:
+//
+//   - `modified` names every COPY whose subtree differs from its save, by
+//     tab id, so each copy wears its own dot wherever it is drawn.
+//   - the acts take a copy's tab id and find it anywhere in the tree.
+//     Saving a copy writes THAT copy's tree under the name — which moves
+//     the baseline, and with it every other copy's dot: a second copy of
+//     the same layout, left as it was, is then the one that differs. That
+//     is what a reader sees, and it is the honest report.
+//   - restoring and a save arriving from another tab move every copy of
+//     the name that nobody edited here.
+//   - the draft (per name, `localStorage`) is written from the FIRST copy
+//     in tree order that differs from its save, and cleared when no copy
+//     does. One name, one draft: with the same layout open twice and both
+//     edited, the outer copy's edit is the one kept over a reload.
 //
 // Ids: a saved layout's ids are unique within it and no further. Two
 // root tabs made from one save (`day` and a `mine` saved from it) share
@@ -26,13 +46,22 @@
 // an edit forever. A lock is per device (vividn, 2026-09-11 12:56) and is
 // stripped by `extract`, so it is never saved and never an edit.
 //
-// A layout may be inlined deeper too — a tab anywhere with `layout` set,
-// from the chooser — and is expanded on load from its own save, with one
-// guard: a name already open above it (`day` inside `day`) is a notice,
-// not a recursion. A nested layout is a view of that layout: the outer
-// save keeps only the reference (`extract` stubs it), and edits made
-// inside it belong to nobody's save — open the layout as a root tab to
-// change it.
+// A layout is held BY REFERENCE wherever it is nested: the outer save
+// keeps only the name and the tab's id (`extract` stubs the content), so
+// saving the outer layout never inlines the inner one into it, and an edit
+// made inside the inner one goes to the inner one's own save and draft.
+// A nested tab is expanded on load from that draft, else that save, with
+// one guard: a name already open above it (`day` inside `day`) is a
+// notice, not a recursion.
+//
+// A nested tab takes the id `inline` gives it — the saved root pane's,
+// re-minted where it is taken — rather than the id the outer tree had for
+// it, because `extract` rebuilds the root pane from the tab's own id, and
+// a tab whose id was the outer tree's would differ from its save forever.
+// That id is then what the outer save records, and `expandTab` lets the
+// tab's own id go before re-inlining, so the second copy of one layout
+// takes `<id>@<name>` again on every load instead of drifting to a fresh
+// id and reporting the outer layout as modified.
 
 import { derived, get, writable } from 'svelte/store';
 import { onExternalChange } from '$lib/changes.js';
@@ -189,7 +218,13 @@ export function extract(tab: Tab): Layout {
 				};
 	const clean = mapTabs(mapIds(root, unmint), (t) => {
 		const bare = without(t, 'locked');
-		return bare.layout === undefined ? bare : { ...bare, content: { id: `${bare.id}-stub`, kind: EMPTY_KIND, settings: {} } };
+		// A nested layout is kept by REFERENCE: its name and the id its tab
+		// takes, and nothing else — not its content and not its title, which
+		// are its own save's and would otherwise report this layout as
+		// modified whenever that one changed.
+		return bare.layout === undefined
+			? bare
+			: { id: bare.id, layout: bare.layout, content: { id: `${bare.id}-stub`, kind: EMPTY_KIND, settings: {} } };
 	});
 	return { version: LAYOUT_VERSION, name, root: clean };
 }
@@ -212,20 +247,30 @@ async function expandContent(content: Widget | Split, path: string[], taken: Set
 	return { ...content, children };
 }
 
-/** A root tab: what it holds is expanded under its own name, so it may not hold itself. */
-async function expandRoot(tab: Tab, taken: Set<NodeId>): Promise<Tab> {
-	return { ...tab, content: await expandContent(tab.content, [tab.layout as string], taken) };
+/**
+ * The tab holding layout `name` with `source` as its tree — its save, its
+ * draft, a version restored — its own nested layouts expanded under it,
+ * and this device's lock for the name on it. `path` is the names open
+ * above it, `name` included.
+ */
+async function tabHolding(name: string, source: Layout, path: string[], taken: Set<NodeId>): Promise<Tab> {
+	const inlined = inline(normalize({ ...source, name }), taken);
+	const filled: Tab = { ...inlined, content: await expandContent(inlined.content, path, taken) };
+	return loadLocked(name) ? { ...filled, locked: true } : filled;
 }
 
-/** A tab with its nested layouts (any depth) filled in from their saves. */
+/** A tab with its nested layouts (any depth) filled in from their drafts, else their saves. */
 async function expandTab(tab: Tab, path: string[], taken: Set<NodeId>): Promise<Tab> {
 	if (tab.layout === undefined) return { ...tab, content: await expandContent(tab.content, path, taken) };
 	const name = tab.layout;
 	if (path.includes(name)) return { ...tab, content: notice(`the layout “${name}” cannot hold itself`) };
 	const saved = await resolve(name);
 	if (!saved) return { ...tab, content: notice(`no layout named “${name}”`) };
-	const inlined = inline(normalize(saved), taken);
-	return { ...tab, content: await expandContent(inlined.content, [...path, name], taken) };
+	baselines.update((b) => ({ ...b, [name]: baselineOf(saved) }));
+	// The id this tab has is the one the inner root pane took last time:
+	// let it go, so it takes it again rather than minting a new one.
+	taken.delete(tab.id);
+	return tabHolding(name, loadDraft(name) ?? saved, [...path, name], taken);
 }
 
 // ---- the root ---------------------------------------------------------
@@ -235,28 +280,45 @@ const baselines = writable<Record<string, Layout>>({});
 
 export const rootTabs = (l: Layout): Tab[] => l.root.tabs;
 
-/** The open layouts whose tab differs from its save. */
+/**
+ * Every COPY in the tree — a tab carrying a layout — outermost first and
+ * in document order, so the root bar's tabs come before anything nested
+ * and "the first copy" is a thing a reader can point at.
+ */
+export function layoutTabs(l: Layout): Tab[] {
+	const found: Tab[] = [];
+	const walk = (pane: Pane) => {
+		for (const tab of pane.tabs) {
+			if (tab.layout !== undefined) found.push(tab);
+			if (isSplit(tab.content)) tab.content.children.forEach(walk);
+		}
+	};
+	walk(l.root);
+	return found;
+}
+
+/** The copies whose subtree differs from their layout's save, BY TAB ID. */
 export const modified = derived([layout, baselines], ([$layout, $baselines]) => {
-	const names = new Set<string>();
-	for (const tab of rootTabs($layout)) {
-		const base = tab.layout === undefined ? undefined : $baselines[tab.layout];
-		if (base && isModified(extract(tab), base)) names.add(tab.layout as string);
+	const ids = new Set<NodeId>();
+	for (const tab of layoutTabs($layout)) {
+		const base = $baselines[tab.layout as string];
+		if (base && isModified(extract(tab), base)) ids.add(tab.id);
 	}
-	return names;
+	return ids;
 });
 
-function tabOf(name: string): Tab | undefined {
-	return rootTabs(get(layout)).find((t) => t.layout === name);
-}
+/** The copy with this tab id, anywhere in the tree. */
+const copyOf = (tabId: NodeId): Tab | undefined => layoutTabs(get(layout)).find((t) => t.id === tabId);
+
+/** The first copy of `name`, anywhere in the tree. */
+const tabOf = (name: string): Tab | undefined => layoutTabs(get(layout)).find((t) => t.layout === name);
 
 /** A root tab for `name` — the draft this device has of it, else its save — or null for an unknown name. */
 async function openTab(name: string, taken: Set<NodeId>): Promise<Tab | null> {
 	const saved = await resolve(name);
 	if (!saved) return null;
 	baselines.update((b) => ({ ...b, [name]: baselineOf(saved) }));
-	const source = loadDraft(name) ?? saved;
-	const tab = await expandRoot(inline(normalize({ ...source, name }), taken), taken);
-	return loadLocked(name) ? { ...tab, locked: true } : tab;
+	return tabHolding(name, loadDraft(name) ?? saved, [name], taken);
 }
 
 let booted = false;
@@ -293,38 +355,57 @@ export function boot(): Promise<void> {
 
 // Every change to the tree, and every move of a baseline (a save, a
 // restore, another tab's save): the open list and the active tab to this
-// device, and each tab's draft — kept while it differs from its save,
-// cleared once it does not.
+// device, and each NAME's draft — one per name, whatever its depth, taken
+// from the first copy that differs from the save and cleared when no copy
+// does. A name whose baseline has not landed is left alone: its draft is
+// what the tab is about to be built from.
 function settle(): void {
 	if (!booted) return;
 	const $layout = get(layout);
-	const tabs = rootTabs($layout);
-	saveRoot({ names: tabs.map((t) => t.layout).filter((n): n is string => n !== undefined), active: $layout.root.active });
+	saveRoot({
+		names: rootTabs($layout).map((t) => t.layout).filter((n): n is string => n !== undefined),
+		active: $layout.root.active
+	});
 	const bases = get(baselines);
-	for (const tab of tabs) {
-		if (tab.layout === undefined) continue;
+	const drafted = new Set<string>();
+	const clean = new Set<string>();
+	for (const tab of layoutTabs($layout)) {
+		const name = tab.layout as string;
+		const base = bases[name];
+		if (!base || drafted.has(name)) continue;
 		const tree = extract(tab);
-		const base = bases[tab.layout];
-		if (base && !isModified(tree, base)) clearDraft(tab.layout);
-		else saveDraft(tree);
+		if (isModified(tree, base)) {
+			drafted.add(name);
+			saveDraft(tree);
+		} else clean.add(name);
 	}
+	for (const name of clean) if (!drafted.has(name)) clearDraft(name);
 }
 layout.subscribe(settle);
 baselines.subscribe(settle);
 
-/** Replace the tab holding `name` with `saved`, re-inlined; `unless` may veto at the last instant. */
-async function replaceTab(name: string, saved: Layout, unless?: (tab: Tab) => boolean): Promise<void> {
-	const others = new Set(allIds(get(layout)).filter((id) => !idsOf(tabOf(name)).has(id)));
-	const next = await expandRoot(inline(normalize({ ...saved, name }), others), others);
-	apply((l) => {
-		const at = rootTabs(l).findIndex((t) => t.layout === name);
-		if (at < 0) return l;
-		const was = rootTabs(l)[at];
-		if (unless?.(was)) return l;
-		const tabs = [...l.root.tabs];
-		tabs[at] = { ...next, ...(was.locked ? { locked: true } : {}) };
-		return normalize({ ...l, root: { ...l.root, tabs } });
-	});
+/**
+ * Every copy of `name`, at any depth, re-inlined from `saved`; `unless`
+ * may veto one at the last instant. The copies' own ids are freed first,
+ * so each takes back the id it had rather than minting a fresh one.
+ */
+async function replaceCopies(name: string, saved: Layout, unless?: (tab: Tab) => boolean): Promise<void> {
+	const copies = layoutTabs(get(layout)).filter((t) => t.layout === name);
+	if (copies.length === 0) return;
+	const mine = new Set(copies.flatMap((t) => [...idsOf(t)]));
+	const taken = new Set(allIds(get(layout)).filter((id) => !mine.has(id)));
+	const next = new Map<NodeId, Tab>();
+	for (const copy of copies) next.set(copy.id, await tabHolding(name, saved, ancestorsOf(copy.id), taken));
+	apply((l) =>
+		normalize({
+			...l,
+			root: mapTabs(l.root, (was) => {
+				const to = was.layout === name ? next.get(was.id) : undefined;
+				if (!to || unless?.(was)) return was;
+				return { ...to, ...(was.locked ? { locked: true } : {}) };
+			})
+		})
+	);
 }
 
 function idsOf(tab: Tab | undefined): Set<NodeId> {
@@ -334,24 +415,21 @@ function idsOf(tab: Tab | undefined): Set<NodeId> {
 
 /**
  * Another tab saved. Each open layout's baseline moves to the new save,
- * and a tab nobody edited here moves with it. Whether it was edited is
- * decided AFTER the load, against the baseline it was edited from, and
- * again at the instant of the swap — so an edit made while the load was
- * in flight is kept, dot and all (the review thread on #168).
+ * and every copy nobody edited here moves with it — a nested copy as much
+ * as a root tab's. Whether a copy was edited is decided AFTER the load,
+ * against the baseline it was edited from, and again at the instant of
+ * the swap — so an edit made while the load was in flight is kept, dot
+ * and all (the review thread on #168).
  */
 async function followSaves(): Promise<void> {
-	for (const tab of rootTabs(get(layout))) {
-		const name = tab.layout;
-		if (name === undefined) continue;
+	for (const name of new Set(layoutTabs(get(layout)).map((t) => t.layout as string))) {
 		const next = await loadLayout(name).catch(() => null);
 		if (!next) continue;
 		const before = get(baselines)[name];
-		const base = baselineOf(next);
-		baselines.update((b) => ({ ...b, [name]: base }));
+		baselines.update((b) => ({ ...b, [name]: baselineOf(next) }));
 		const edited = (t: Tab) => !!before && isModified(extract(t), before);
-		const now = tabOf(name);
-		if (!now || edited(now)) continue;
-		await replaceTab(name, next, edited);
+		if (layoutTabs(get(layout)).filter((t) => t.layout === name).every(edited)) continue;
+		await replaceCopies(name, next, edited);
 	}
 }
 
@@ -381,10 +459,18 @@ export const activate = (index: number) => apply((l) => setActive(l, l.root.id, 
 /** Close a root tab; the last one stays (tree.ts). Its draft, if any, is kept for next time. */
 export const close = (index: number) => apply((l) => closeTab(l, l.root.id, index));
 
-/** Save the tab's tree as `name`'s new version; the tab is then unmodified. */
-export async function save(name: string): Promise<void> {
-	const tab = tabOf(name);
+/**
+ * Save this copy's tree as its layout's new version.
+ *
+ * The copy is then unmodified — and so is any other copy of the same
+ * layout that happens to hold the same tree. One that does not now
+ * differs from the save, and says so with its dot: the save is the
+ * layout, not the tab it was made from.
+ */
+export async function save(tabId: NodeId): Promise<void> {
+	const tab = copyOf(tabId);
 	if (!tab) return;
+	const name = tab.layout as string;
 	const tree = extract(tab);
 	await saveLayout(tree);
 	baselines.update((b) => ({ ...b, [name]: baselineOf(tree) }));
@@ -392,58 +478,63 @@ export async function save(name: string): Promise<void> {
 
 /**
  * Back to the save: the last one, or `version` of it (a new version, as
- * `undo` makes one — the way forward again is `restore(name)` with none).
+ * `undo` makes one — the way forward again is `restore(tabId)` with none).
+ * Every copy of the layout goes back with it; the name is what is being
+ * restored.
  */
-export async function restore(name: string, version?: number): Promise<void> {
-	const saved = version === undefined && get(modified).has(name) ? await resolve(name) : await restoreSaved(name, version);
+export async function restore(tabId: NodeId, version?: number): Promise<void> {
+	const tab = copyOf(tabId);
+	if (!tab) return;
+	const name = tab.layout as string;
+	const saved = version === undefined && get(modified).has(tabId) ? await resolve(name) : await restoreSaved(name, version);
 	if (!saved) return;
 	baselines.update((b) => ({ ...b, [name]: baselineOf(saved) }));
-	await replaceTab(name, saved);
+	await replaceCopies(name, saved);
 }
 
-/** The tab's tree under a new name, and the tab pointed at it; the original keeps its save. */
-export async function saveAs(name: string, newName: string): Promise<void> {
-	const tab = tabOf(name);
-	if (!tab || !newName || newName === name) return;
+/** This copy's tree under a new name, and this copy pointed at it; the original keeps its save. */
+export async function saveAs(tabId: NodeId, newName: string): Promise<void> {
+	const tab = copyOf(tabId);
+	if (!tab || !newName || newName === tab.layout) return;
+	const name = tab.layout as string;
 	const copy = await saveAsSaved(extract(tab), newName);
-	// The tab first, then its baseline, then the old draft: `settle` runs
+	// This copy first, then its baseline, then the old draft: `settle` runs
 	// on each, and would write the edit back under the old name if the tab
 	// still carried it when the new baseline landed.
-	apply((l) => ({
-		...l,
-		root: { ...l.root, tabs: l.root.tabs.map((t) => (t.layout === name ? { ...t, layout: newName } : t)) }
-	}));
+	apply((l) => ({ ...l, root: mapTabs(l.root, (t) => (t.id === tabId ? { ...t, layout: newName } : t)) }));
 	baselines.update((b) => ({ ...b, [newName]: baselineOf(copy) }));
 	clearDraft(name);
-	await replaceTab(newName, copy);
+	await replaceCopies(newName, copy);
 }
 
-/** Lock or unlock a root tab, on this device only. */
-export function toggleLock(name: string): void {
-	const tab = tabOf(name);
+/**
+ * Lock or unlock a layout, on this device only — every copy of it, since
+ * the lock is the name's (`draft.ts`) and a copy that ignored it would
+ * unlock itself on the next reload.
+ */
+export function toggleLock(tabId: NodeId): void {
+	const tab = copyOf(tabId);
 	if (!tab) return;
+	const name = tab.layout as string;
 	const locked = !tab.locked;
 	saveLocked(name, locked);
-	apply((l) => setLocked(l, tab.id, locked));
+	apply((l) =>
+		layoutTabs(l)
+			.filter((t) => t.layout === name)
+			.reduce((acc, t) => setLocked(acc, t.id, locked), l)
+	);
 }
 
-/** Fill a tab anywhere in the tree with layout `name`, inlined; the chooser's other choice. */
+/**
+ * Fill a tab anywhere in the tree with layout `name`, inlined; the
+ * chooser's other choice. The tab that lands is `inline`'s own — id and
+ * all — so it is the same kind of thing as a root tab and its `extract`
+ * reads back equal to the save.
+ */
 export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
 	const taken = new Set(allIds(get(layout)));
 	const filled = await expandTab({ id: tabId, content: notice(''), layout: name }, ancestorsOf(tabId), taken);
-	apply((l) => {
-		const tabs = (pane: Pane): Pane => ({
-			...pane,
-			tabs: pane.tabs.map((t) =>
-				t.id === tabId
-					? { ...t, layout: name, content: filled.content }
-					: isSplit(t.content)
-						? { ...t, content: { ...t.content, children: t.content.children.map(tabs) } }
-						: t
-			)
-		});
-		return normalize({ ...l, root: tabs(l.root) });
-	});
+	apply((l) => normalize({ ...l, root: mapTabs(l.root, (t) => (t.id === tabId ? filled : t)) }));
 }
 
 /** The layout names open above `tabId` (the tab's own included, if it is one): what it may not hold. */

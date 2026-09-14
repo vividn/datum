@@ -15,6 +15,11 @@
 	`→ forward` undoes the last restore. The lock is this device's
 	(shell.ts).
 
+	A root tab is one COPY of its layout and has no privilege over a copy
+	nested in a pane (da-crp5): the same four acts are in that pane's menu
+	(PaneFrame.svelte), and both ask for them by the copy's TAB ID, which
+	is what says which copy's tree is being saved.
+
 	On a phone the tabs scroll sideways rather than wrapping — one row,
 	always — while the `+`, the `…` and the icons stay where they are.
 -->
@@ -35,7 +40,9 @@
 	$: tabs = $layout.root.tabs;
 	$: active = tabs[$layout.root.active] as Tab | undefined;
 	$: name = active?.layout;
-	$: dirty = name !== undefined && $modified.has(name);
+	/** The acts work on THIS COPY of the layout (da-crp5): its tab id, not its name. */
+	$: id = active?.id;
+	$: dirty = id !== undefined && $modified.has(id);
 	$: locked = !!active?.locked;
 	$: ready = $loaded && !busy && name !== undefined;
 
@@ -67,27 +74,27 @@
 		}
 	}
 
-	const doSave = () => act(async () => name !== undefined && save(name));
+	const doSave = () => act(async () => id !== undefined && save(id));
 
 	const doRestore = () =>
 		act(async () => {
-			if (name === undefined) return;
-			if (dirty) return restore(name);
+			if (name === undefined || id === undefined) return;
+			if (dirty) return restore(id);
 			trail = trail ? null : await versions(name).catch(() => []);
 		});
 
 	const pick = (version?: number) =>
 		act(async () => {
-			if (name !== undefined) await restore(name, version);
+			if (id !== undefined) await restore(id, version);
 			trail = null;
 		});
 
 	const doSaveAs = () =>
 		act(async () => {
-			if (name === undefined) return;
+			if (id === undefined) return;
 			const to = prompt('Save this layout as:', '')?.trim();
 			if (!to) return;
-			await saveAs(name, to);
+			await saveAs(id, to);
 		});
 
 	/** Arrow keys walk the tabs; the tab focused is the tab shown. */
@@ -109,13 +116,13 @@
 				type="button"
 				role="tab"
 				class="control tab"
-				class:modified={tab.layout !== undefined && $modified.has(tab.layout)}
+				class:modified={$modified.has(tab.id)}
 				aria-selected={i === $layout.root.active}
 				tabindex={i === $layout.root.active ? 0 : -1}
 				on:click={() => activate(i)}
 				on:keydown={(e) => onTabKey(e, i)}
 			>
-				{labelOf(tab)}{#if tab.layout !== undefined && $modified.has(tab.layout)}<span class="dot" title="modified">•</span>{/if}
+				{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}
 			</button>
 		{/each}
 	</div>
@@ -147,7 +154,7 @@
 			aria-label={locked ? 'unlock layout' : 'lock layout'}
 			aria-pressed={locked}
 			title={locked ? 'unlock' : 'lock'}
-			on:click={() => name !== undefined && toggleLock(name)}
+			on:click={() => id !== undefined && toggleLock(id)}
 		>
 			<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" />{#if locked}<path d="M7 11V7a5 5 0 0 1 10 0v4" />{:else}<path d="M7 11V7a5 5 0 0 1 9.9-1" />{/if}</svg>
 		</button>

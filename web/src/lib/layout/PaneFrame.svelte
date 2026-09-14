@@ -50,6 +50,14 @@
 	draws no menu — nothing under a lock can be split, tabbed or resized,
 	and the tabs still switch — nor a `+`, and its title is not a button.
 
+	A layout tab's frame is also where that layout's identity is worked
+	(da-crp5): the four acts the root bar draws for a root tab — save,
+	restore, save as, lock — are in this menu when the tab holds a layout,
+	whatever its depth, and the orange modified dot follows the title or
+	the tab. The one exception to the lock above: a layout tab that is
+	itself locked keeps a menu holding those acts alone, so `Unlock
+	layout` can be reached.
+
 	Swiping across the content moves between tabs along the bar's axis:
 	left/right under a horizontal bar, up/down under a vertical one. Touch
 	only, with a threshold, and never over a scroll — the gesture starts
@@ -74,7 +82,7 @@
 	import { isSplit } from './types.js';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
-	import { ancestorsOf } from './shell.js';
+	import { ancestorsOf, modified, restore, save, saveAs, toggleLock } from './shell.js';
 	import type { Toward } from './tree.js';
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, splitPane } from './tree.js';
 	import { labelOf, titleOf } from './registry.js';
@@ -85,7 +93,13 @@
 	export let canClose = true;
 	/** The layout's root: the one pane whose content box is the scroller. */
 	export let root = false;
-	/** Under a locked tab: no menu and no `+`; the tab strip still switches. */
+	/**
+	 * Whether a tab ABOVE this pane is locked. The active tab's own lock is
+	 * added to it below: under either there is no `+` and none of the pane
+	 * items, and the tab strip still switches — but a layout tab that is
+	 * itself locked keeps the menu holding its `Unlock layout` (da-crp5),
+	 * or a lock would be a thing nobody could undo.
+	 */
 	export let locked = false;
 	/**
 	 * The active widget's kind. Its title goes on a wrapper round the frame
@@ -175,7 +189,40 @@
 	/** Whether this pane has a group to leave: everything but the root's own pane. */
 	$: canBreak = canBreakOut($layout, pane.id);
 
-	$: items = [
+	/** This pane's own lock: one above it, or its active tab's own. */
+	$: lockedHere = locked || !!active.locked;
+
+	/**
+	 * A failed act: reported where a developer sees it. The root bar has a
+	 * line for the active layout's errors; a pane's bar is one row of words
+	 * with no room for one, and the act is the reader's own press, so it
+	 * must not throw into the page either.
+	 */
+	const attempt = (job: Promise<unknown>) => void job.catch((e) => console.error(e));
+
+	/**
+	 * The four acts on the layout this tab HOLDS (da-crp5) — the same four
+	 * the root bar draws, since a nested copy is no different in kind. Not
+	 * offered under a lock from above; the tab's OWN lock leaves them, so
+	 * that `Unlock layout` can be reached.
+	 */
+	$: layoutActs =
+		active.layout === undefined || locked
+			? []
+			: [
+					{ label: 'Save layout', run: () => attempt(save(active.id)) },
+					{ label: 'Restore layout', run: () => attempt(restore(active.id)) },
+					{
+						label: 'Save layout as…',
+						run: () => {
+							const to = prompt('Save this layout as:', '')?.trim();
+							if (to) attempt(saveAs(active.id, to));
+						}
+					},
+					{ label: active.locked ? 'Unlock layout' : 'Lock layout', run: () => toggleLock(active.id) }
+				];
+
+	$: paneItems = [
 		{ label: 'Choose…', run: () => void fillTab(active.id) },
 		// A holder's children split themselves; its own split is a tab's.
 		...(holder ? [] : [{ label: 'Split', row: aimed('split: a new pane', (l, t) => splitPane(l, pane.id, t)) }]),
@@ -208,6 +255,8 @@
 			]
 		}
 	];
+
+	$: items = lockedHere ? layoutActs : [...paneItems, ...layoutActs];
 
 	/**
 	 * The `+`: the chooser, then a tab holding what it came back with —
@@ -311,7 +360,7 @@
 					bind:this={strip}
 				>
 					{#each pane.tabs as tab, i (tab.id)}
-						{#if i === pane.active && !locked}
+						{#if i === pane.active && items.length > 0}
 							<!-- The tab in front is the menu's button; the others switch. -->
 							<PaneMenu
 								{items}
@@ -321,17 +370,20 @@
 								role="tab"
 								aria-selected="true"
 								tabindex="0"
-								on:keydown={(e) => onTabKey(e, i)}>{labelOf(tab)}</PaneMenu
+								on:keydown={(e) => onTabKey(e, i)}
+								>{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}</PaneMenu
 							>
 						{:else}
 							<button
 								type="button"
 								role="tab"
 								class="control tab"
+								class:modified={$modified.has(tab.id)}
 								aria-selected={i === pane.active}
 								tabindex={i === pane.active ? 0 : -1}
 								on:click={() => activate(i)}
-								on:keydown={(e) => onTabKey(e, i)}>{labelOf(tab)}</button
+								on:keydown={(e) => onTabKey(e, i)}
+								>{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}</button
 							>
 						{/if}
 					{/each}
@@ -341,15 +393,15 @@
 				     whole of it — beside the h2 rather than inside it, so that
 				     the words may be clipped to their box and the button not. -->
 				<div class="titlebox">
-					<h2 bind:this={h2}>{#if !$hosted}{title}{/if}</h2>
-					{#if !locked}
+					<h2 bind:this={h2}>{#if !$hosted}{title}{#if $modified.has(active.id)}<span class="dot" title="modified">•</span>{/if}{/if}</h2>
+					{#if items.length > 0}
 						<PaneMenu {items} look="title" label="menu of the {title} pane" />
 					{/if}
 				</div>
 			{/if}
 			<!-- Inside `.along`, after the title or the last tab: the badge
 			     goes where the alignment puts them, and right beside them. -->
-			{#if !locked}
+			{#if !lockedHere}
 				<button
 					type="button"
 					class="control badge add"
@@ -561,6 +613,16 @@
 	h2 :global(input) {
 		position: relative;
 		z-index: 1;
+	}
+
+	/* The modified dot (da-crp5): the same mark the root bar puts on a
+	   modified layout's tab, in the same orange, wherever the copy is
+	   drawn. `:global` on the tabs, since the tab in front is PaneMenu's
+	   button and carries no scope of this file's. */
+	.dot,
+	.tabs :global(.dot) {
+		margin-inline-start: 0.3rem;
+		color: var(--warn);
 	}
 
 	/* The whole title says it can be pressed. */
