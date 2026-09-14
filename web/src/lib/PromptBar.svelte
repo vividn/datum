@@ -37,7 +37,7 @@
 -->
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
-	import { last, pills, prefill, receiptOf, removePill } from '$lib/bar.js';
+	import { last, pills, prefill, receiptOf, removePill, toggleLockPill } from '$lib/bar.js';
 	import { pressWithPills, ready } from '$lib/layout/engine.js';
 	import Prompt from '$lib/Prompt.svelte';
 	import { shellSplit } from '$lib/shellSplit.js';
@@ -124,20 +124,26 @@
 			</aside>
 		{/if}
 	</div>
+	<div class="prompt" bind:this={field}>
+		<Prompt bind:input disabled={!$ready} on:submit={submit} />
+	</div>
 	{#if $pills.length}
 		<div class="pills">
 			{#each $pills as pill (pill.id)}
-				<span class="pill {pill.kind}"
-					>{pill.text}<button type="button" aria-label="remove {pill.text}" on:click={() => removePill(pill.id)}
+				<span class="pill {pill.kind}" class:locked={pill.locked}
+					>{pill.text}<button
+						type="button"
+						class="lock"
+						aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"
+						aria-pressed={!!pill.locked}
+						on:click={() => toggleLockPill(pill.id)}>{pill.locked ? '🔒' : '🔓'}</button
+					><button type="button" class="remove" aria-label="remove {pill.text}" on:click={() => removePill(pill.id)}
 						>×</button
 					></span
 				>
 			{/each}
 		</div>
 	{/if}
-	<div class="prompt" bind:this={field}>
-		<Prompt bind:input disabled={!$ready} on:submit={submit} />
-	</div>
 	<span class="receipt" class:error={receipt?.error} role="status" title={receipt?.text}
 		>{receipt?.text ?? ''}</span
 	>
@@ -248,6 +254,7 @@
 
 	.pills {
 		display: flex;
+		justify-content: center;
 		gap: 0.3rem;
 		flex: none;
 	}
@@ -270,8 +277,14 @@
 		border: none;
 		padding: 0 0.2rem;
 		font: inherit;
+		font-size: 0.8rem;
 		color: var(--accent);
 		cursor: pointer;
+	}
+
+	/* A locked pill stands out: it will not clear on its own after a press. */
+	.pill.locked {
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
 	}
 
 	/* The time cursor's own blue, as its dotted lines are drawn — not a

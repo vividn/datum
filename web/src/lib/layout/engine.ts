@@ -15,7 +15,7 @@
 // nowhere to put, and comes back the moment a REPL is added.
 
 import { get, writable } from 'svelte/store';
-import { pills } from '$lib/bar.js';
+import { clearUnlockedPills, pills } from '$lib/bar.js';
 import { initDb } from '$lib/db.js';
 import { fileCommand } from '$lib/dbio.js';
 import { record } from '$lib/replStore.js';
@@ -121,9 +121,15 @@ export async function press(argv: string[], line?: string, stdin?: string): Prom
  * takes no flag before its verb. The one path both take (da-c7u8), so a
  * pill lands on a press exactly as on a typed line. A typed `line` is
  * echoed as typed, the pills' text after it.
+ *
+ * A SUCCEEDING press clears the unlocked pills, so the bar is ready for
+ * the next line; a failure leaves them, so a retry keeps its time.
  */
-export const pressWithPills = (argv: string[], line?: string): Promise<RunResult> =>
-	press(
+export const pressWithPills = async (argv: string[], line?: string): Promise<RunResult> => {
+	const result = await press(
 		[...argv, ...get(pills).flatMap((pill) => shellSplit(pill.text))],
 		line === undefined ? undefined : [line, ...get(pills).map((pill) => pill.text)].join(' ')
 	);
+	if (result.code === 0) clearUnlockedPills();
+	return result;
+};

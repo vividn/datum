@@ -508,22 +508,85 @@ describe('the bottom bar', () => {
 		);
 	});
 
-	test('a pill set programmatically shows, its x removes it, and a submit runs typed + pills', async () => {
+	test('a pill set programmatically shows, its x removes it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time' }]));
+			const pill = page.locator('.prompt-bar .pill');
+			assert.equal(await pill.evaluate((el) => el.firstChild.textContent), '-t 0700');
+			await pill.locator('button.remove').click();
+			assert.equal(await page.locator('.prompt-bar .pill').count(), 0);
+			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), []);
+		}, DESKTOP);
+	});
+
+	test('a submit runs typed + pills, then an unlocked pill clears on success', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time' }]));
-			const pill = page.locator('.prompt-bar .pill');
-			assert.equal(await pill.evaluate((el) => el.textContent), '-t 0700×');
 			const input = page.locator('.prompt-bar input');
 			await input.fill('occur tea');
 			await input.press('Enter');
 			// After, not before: the CLI takes no flag before its verb (da-c7u8).
 			await until(seen, (argvs) => argvs.some((a) => a[0] === 'occur'));
 			assert.ok((await seen()).some((a) => JSON.stringify(a) === JSON.stringify(['occur', 'tea', '-t', '0700'])), JSON.stringify(await seen()));
-			await pill.locator('button[aria-label="remove -t 0700"]').click();
-			assert.equal(await page.locator('.prompt-bar .pill').count(), 0);
+			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill').length === 0);
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), []);
+		}, DESKTOP);
+	});
+
+	test('a locked pill survives a successful press; an unlocked one does not', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const seen = await app.spyOnRunner();
+			await page.evaluate(() =>
+				window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time', locked: true }])
+			);
+			await page.locator('.prompt-bar .pill button.lock').click();
+			assert.equal(await page.evaluate(() => window.datum.bar.pills()[0].locked), false);
+
+			// Re-lock it, then run twice: the pill and its time survive both.
+			await page.locator('.prompt-bar .pill button.lock').click();
+			assert.ok((await page.locator('.prompt-bar .pill').getAttribute('class')).split(' ').includes('locked'));
+
+			for (let i = 0; i < 2; i++) {
+				const input = page.locator('.prompt-bar input');
+				await input.fill('occur tea');
+				await input.press('Enter');
+				await until(seen, (argvs) => argvs.filter((a) => a[0] === 'occur').length === i + 1);
+			}
+			assert.deepEqual(
+				(await seen()).filter((a) => a[0] === 'occur'),
+				[
+					['occur', 'tea', '-t', '0700'],
+					['occur', 'tea', '-t', '0700']
+				]
+			);
+			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'the locked pill survives');
+		}, DESKTOP);
+	});
+
+	test('a failed command leaves its pill in place', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time' }]));
+			const input = page.locator('.prompt-bar input');
+			await input.fill('foo');
+			await input.press('Enter');
+			await page.waitForFunction(() => document.querySelector('.prompt-bar .receipt').classList.contains('error'));
+			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'a failed command keeps the pill');
+		}, DESKTOP);
+	});
+
+	test('in the DOM, the input precedes the pills', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time' }]));
+			const order = await page.locator('.prompt-bar > *').evaluateAll((els) =>
+				els.map((el) => el.className.split(' ')[0])
+			);
+			assert.ok(order.indexOf('prompt') < order.indexOf('pills'), JSON.stringify(order));
 		}, DESKTOP);
 	});
 
@@ -582,6 +645,12 @@ describe('on a phone', () => {
 			assert.ok(bar.height >= 52, `the bottom bar is ${bar.height}px tall on a phone`);
 			const input = await page.locator('.prompt-bar input').boundingBox();
 			assert.ok(input.width >= 100, `the prompt is ${input.width}px wide`);
+
+			// A pill after the input must not squeeze it away at phone width.
+			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 09:00', kind: 'time' }]));
+			const withPill = await page.locator('.prompt-bar input').boundingBox();
+			assert.ok(withPill.width >= 100, `the prompt is ${withPill.width}px wide with a pill`);
+			await page.evaluate(() => window.datum.bar.removePill('when'));
 
 			for (const name of ['nowview', 'tail', 'stats', 'command', 'repl', 'fields', 'input']) {
 				await pick(page, name);

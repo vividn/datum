@@ -30,6 +30,8 @@ export interface Pill {
 	text: string;
 	/** What kind of thing it is (`time`, `range`), for the bar to colour. */
 	kind: string;
+	/** A locked pill survives a successful press instead of clearing. */
+	locked?: boolean;
 }
 
 export const pills = writable<Pill[]>([]);
@@ -37,6 +39,12 @@ export const pills = writable<Pill[]>([]);
 export const setPills = (next: Pill[]): void => pills.set(next);
 
 export const removePill = (id: string): void => pills.update((all) => all.filter((p) => p.id !== id));
+
+export const toggleLockPill = (id: string): void =>
+	pills.update((all) => all.map((p) => (p.id === id ? { ...p, locked: !p.locked } : p)));
+
+/** After a press SUCCEEDS: unlocked pills clear, locked ones stay for the next line. */
+export const clearUnlockedPills = (): void => pills.update((all) => all.filter((p) => p.locked));
 
 export const prefill = writable<string | null>(null);
 

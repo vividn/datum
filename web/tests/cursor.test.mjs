@@ -115,7 +115,7 @@ async function barRun(page, line) {
 }
 
 describe('the time cursor', () => {
-	test('a click on today: a pill, a line, the nowview centred on it; a line logs at it; × clears it all', async () => {
+	test('a click on today: a pill, a line, the nowview centred on it; a line logs at it and clears it; × clears it too', async () => {
 		await withDay(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
@@ -150,17 +150,26 @@ describe('the time cursor', () => {
 				});
 			assert.ok(Math.abs(centre[0] - centre[1]) < 0.5, `nowview's line at ${centre[1]}, its centre ${centre[0]}`);
 
-			// A line from the bar is logged at the cursor, and the pill stays.
+			// A line from the bar is logged at the cursor, then the (unlocked)
+			// pill clears on success — and the cursor everywhere with it.
 			assert.match(await barRun(page, 'occur tea'), /^CREATE /);
 			const [tea] = (await app.entries()).filter((e) => e.field === 'tea');
 			assert.equal(Date.parse(tea.occur_time.utc), cursor, JSON.stringify(tea.occur_time));
-			assert.equal(await pillText(page), text);
 			const tail = await app.paneTable('tail');
 			const row = tail.rows.find((r) => r.includes('tea'));
 			assert.ok(row?.[tail.keys.indexOf('time')].startsWith(text.slice(3)), JSON.stringify(row));
+			assert.equal(await pillText(page), null);
+			await page.waitForFunction(() => {
+				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
+				return argv && !argv.includes('--at');
+			});
+			assert.equal(await page.locator('line.cursor').count(), 0);
 
-			// × — and the cursor is gone everywhere.
-			await page.locator(`${PILL} button`).click();
+			// Click again: a fresh pill's × also clears the cursor everywhere.
+			const at2 = await spot(page, TODAY, 0.5);
+			await page.mouse.click(at2.x, at2.y);
+			await pillText(page);
+			await page.locator(`${PILL} button.remove`).click();
 			assert.equal(await page.locator(PILL).count(), 0);
 			await page.waitForFunction(() => {
 				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
