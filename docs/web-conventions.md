@@ -110,3 +110,31 @@ file in the same commit — a convention nobody can read is a convention nobody 
     `withApp(fn, { clock: todayAt(15) })` — one instant for the page and for the worker the
     CLI runs in — and seed against it. Tests that skipped this passed every afternoon and
     failed every night, and the failure was twice charged to innocent branches (da-ldct).
+17. **A defect that only shows across a MOUNT needs a test that remounts — and asserts
+    twice.** Some state is per-mount while the thing it describes is persisted, so a
+    single-session test cannot see the bug at all. `CommandPane`'s write guard is *learned,
+    not declared* — `CliPane` discovers that a command writes by running it and seeing
+    `changed` — while the command line lives in `localStorage`: the command survived a reload
+    and the knowledge about it did not, so every mount re-learned by writing once, and a user
+    got one unrequested entry per refresh. **A test that applied the command and asserted one
+    row passed on the broken code.** What catches it: reload and count again; count the
+    **store** (`entries`), never the pane's text, because the pane redraws either way and
+    cannot tell a re-run from a redraw; assert a fresh field is **0 before anything**, or every
+    number in the test is meaningless; and loop **two** reloads, because one cannot distinguish
+    "runs once more" from "runs once per mount" (da-v36y — 1→2→3→4 across three reloads on
+    `d8d7724`, 1→1→1→1 after the fix, and the new test confirmed to FAIL on the old components:
+    *reload 1 ran `occur kettle` again, 2 !== 1*).
+18. **Locate a control by its identity, not by a label that tracks state.** This app's
+    aria-labels move with state, so a selector written from one state times out in another.
+    The pane menu is "menu of the *active tab's* title pane", so `menu of the repl pane`
+    disappears the moment that pane shows another tab — use
+    `section[data-pane="repl"] button[aria-label^="menu of the"]`, since the identity does not
+    move. The root bar's restore button reads **"restore a version"** when the layout is clean
+    and **"restore layout"** when it is dirty. And the menu labels carry a **trailing space**
+    (`"Add tab "`, `"Close pane "`, `"Add widget "`), so an anchored text regex can never
+    match, while `getByRole('button', …)` misses a `<button role="menuitem">` because an
+    explicit `role` overrides the implicit one — ask for the role the element **declares**, by
+    accessible name. Three timeouts and one false conclusion came from this on 2026-09-12/13:
+    a failed anchor on `/^add widget$/i` produced the belief "the button is `+`", which then
+    sat in working knowledge for a day and sent a later session hunting the wrong control.
+
