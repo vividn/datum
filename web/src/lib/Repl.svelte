@@ -46,6 +46,8 @@
 	// The scrollback is restored before the first paint ($lib/replStore.ts);
 	// pin the view to its end the way a run does.
 	onMount(() => pane.scrollToBottom());
+	// A progress line lands under the scrollback; keep it in view.
+	$: if ($progress && pane) tick().then(() => pane.scrollToBottom());
 
 	// What a drawn command has to be told (`fitArgv`): the content box, not
 	// the element's own width — the body is padded, and an image a fraction
