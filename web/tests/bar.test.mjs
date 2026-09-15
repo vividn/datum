@@ -4,10 +4,15 @@
 // what the last command answered as well as take the next one. Everything
 // here is measured on the page rather than described: the claim that
 // carries the file is the FIRST one — the bar's height is the same number
-// after a command that returns two lines, a command that returns three,
-// and a command that returns a table. A status line that grew with its
-// content would reflow the dashboard above it on every entry logged, which
-// is the bug this shape exists to make impossible.
+// after a command that returns a bare entry, one that returns an entry
+// with six keys of data, and one that returns a table. A status line that
+// grew with its content would reflow the dashboard above it on every entry
+// logged, which is the bug this shape exists to make impossible.
+//
+// A document is TWO lines whatever it carries (da-f4mw): its data stands
+// beside them in a brace, up to four rows and then a `+N`. So the rows
+// have to fit inside the two lines' own height — measured here, not
+// described — and a document with no data has no brace in the DOM at all.
 //
 // The strings are never asserted against strings written here: a document
 // is compared with what the CLI itself printed for the same command
@@ -43,11 +48,16 @@ const section = (page, i = 0) =>
 		.evaluate((el) => ({
 			receipt: el.querySelector('.receipt')?.innerText.trim(),
 			info: el.querySelector('.info')?.innerText,
-			data: el.querySelector('.data')?.innerText ?? null,
+			rows: [...el.querySelectorAll('.brace .row')].map((r) => r.innerText),
+			more: el.querySelector('.brace .more')?.innerText ?? null,
 			hid: el.querySelector('.hid')?.textContent,
 			id: el.querySelector('.hid')?.getAttribute('title'),
 			size: parseFloat(getComputedStyle(el).fontSize),
-			lines: [...el.children].length
+			lines: [...el.querySelector('.lines').children].length,
+			// The trap the band's fixed height makes: the brace may not be
+			// deeper than the two lines it stands beside.
+			linesHigh: el.querySelector('.lines').getBoundingClientRect().height,
+			braceHigh: el.querySelector('.brace')?.getBoundingClientRect().height ?? 0
 		}));
 
 /** Wait until the bar's result area has drawn a document at all. */
@@ -74,6 +84,8 @@ describe('the bar never changes height', () => {
 			for (const line of [
 				'occur water',
 				'occur coffee beans=ethiopian cups=2 roast=dark',
+				'occur brew a=1 b=2 c=3 d=4 e=5 f=6',
+				'occur coffee cups=2 , occur tea',
 				'tail',
 				'occur nope --nonsense'
 			]) {
@@ -88,7 +100,7 @@ describe('the bar never changes height', () => {
 });
 
 describe('one document', () => {
-	test('no data is two lines, data is three and smaller — and both are the CLI’s own strings', async () => {
+	test('data or none, two lines at the two-line size — and the data beside them in a brace', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 
@@ -97,23 +109,56 @@ describe('one document', () => {
 			const plain = await section(page);
 			const [plainDoc] = await cliDocs(app, ['get', 'water']);
 			assert.equal(plain.lines, 2, 'an entry with no data drew a third line');
-			assert.equal(plain.data, null);
+			// No data, no brace: not an empty one, not a hidden one.
+			assert.equal(await page.locator(`${DOC} .brace`).count(), 0);
 			assert.equal(plain.hid, plainDoc.hid);
 			assert.equal(plain.info.replace(ESC, ''), plainDoc.info);
 
-			await app.submit('occur coffee beans=ethiopian cups=2');
+			await app.submit('occur coffee cups=2 roast=dark');
 			await page.waitForFunction(
 				(hid) => document.querySelector('.prompt-bar .doc .hid')?.textContent !== hid,
 				plain.hid
 			);
 			const rich = await section(page);
 			const [richDoc] = await cliDocs(app, ['get', 'coffee']);
-			assert.equal(rich.lines, 3, 'an entry with data drew no data line');
-			assert.equal(rich.data, richDoc.data_inline);
+			assert.equal(rich.lines, 2, 'an entry with data drew a third line');
+			// The CLI's `data` items, one to a row, in the CLI's order — not
+			// `data_inline`, which is the terminal's own join.
+			assert.deepEqual(rich.rows, richDoc.data);
+			assert.equal(rich.rows.length, 2, rich.rows.join(' | '));
+			assert.equal(rich.more, null);
+			// The lines did not shrink to make room for it, which is the
+			// whole of the change.
+			assert.equal(rich.size, plain.size, `${rich.size}px beside ${plain.size}px`);
 			assert.ok(
-				rich.size < plain.size,
-				`three lines at ${rich.size}px is not smaller than two at ${plain.size}px`
+				rich.braceHigh <= rich.linesHigh + 1,
+				`the brace is ${rich.braceHigh}px against the lines' ${rich.linesHigh}px`
 			);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('past four keys: four rows and a +N, whose sheet lists every one', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.submit('occur brew a=1 b=2 c=3 d=4 e=5 f=6');
+			await page.locator(`${DOC} .brace`).waitFor();
+
+			const shown = await section(page);
+			const [doc] = await cliDocs(app, ['get', 'brew']);
+			assert.equal(doc.data.length, 6, doc.data.join(' | '));
+			assert.equal(shown.lines, 2);
+			assert.deepEqual(shown.rows, doc.data.slice(0, 4));
+			assert.equal(shown.more, '+2');
+			assert.ok(
+				shown.braceHigh <= shown.linesHigh + 1,
+				`four rows and a chip are ${shown.braceHigh}px against ${shown.linesHigh}px`
+			);
+
+			await page.locator(`${DOC} .brace .more`).click();
+			const keys = page.locator('dialog.sheet .key');
+			await keys.first().waitFor();
+			assert.deepEqual(await keys.allInnerTexts(), doc.data, 'the sheet lost a key');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -205,6 +250,33 @@ describe('several documents', () => {
 			await page.waitForFunction(() =>
 				document.querySelector('.prompt-bar .doc .info')?.textContent.includes('tea')
 			);
+			assert.deepEqual(app.errors, []);
+		}, NARROW);
+	});
+
+	test('320px: a section too narrow for the rows draws the count, and the info line is whole', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.submit('occur brew a=1 bean=ethiopian c=3 grind=fine e=5 water=94C');
+			await page.locator(`${DOC} .brace`).waitFor();
+
+			const shown = await section(page);
+			// Every key behind the count: four rows of a character or two
+			// would not be the data, and the sheet has all of it.
+			assert.deepEqual(shown.rows, []);
+			assert.equal(shown.more, '+6');
+
+			// And the brace took none of the width the two lines wanted
+			// (the bead's trap 2): the info line is not ellipsized at all.
+			const cut = await page
+				.locator(`${DOC} .info`)
+				.evaluate((el) => el.scrollWidth - el.clientWidth);
+			assert.ok(cut <= 1, `the info line lost ${cut}px to the brace`);
+
+			await page.locator(`${DOC} .brace .more`).click();
+			const keys = page.locator('dialog.sheet .key');
+			await keys.first().waitFor();
+			assert.equal(await keys.count(), 6);
 			assert.deepEqual(app.errors, []);
 		}, NARROW);
 	});

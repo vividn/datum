@@ -35,7 +35,8 @@ file in the same commit — a convention nobody can read is a convention nobody 
 6. **The web asks every command it runs for its echo as data** — `--show json` appended the way
    `fitArgv` appends `--width` (`echoArgv` in `$lib/echo.ts`, at `Repl.runArgv` and
    `engine.alone`). The bottom bar and the REPL then PLACE the CLI's own strings — action, hid,
-   id, info, the data on one line — and compose none of them. The document carries the CLI's
+   id, info, and its `data` items one to a row in a brace beside the two lines (da-f4mw) — and
+   compose none of them; `data_inline` is the terminal's own join and the web does not use it. The document carries the CLI's
    own COLOURS too (da-yu9s): `field` and `state` as logged, `field_color` and `state_color` as
    `fields --json` resolves them, and `info_segments` — `info` split into `{text, color}` runs,
    which is what `Doc.svelte` paints the line from. The web never looks for the field inside

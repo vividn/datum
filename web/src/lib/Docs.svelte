@@ -18,13 +18,17 @@
 	`all` is the REPL's form: no band to fit, so every document is drawn and
 	the row wraps. The modal uses it too — one rendering, three places.
 
-	The row's SIZE is one decision for the whole row: three lines and the
-	smaller type when any document carries data, because sections standing
-	side by side in one fixed band cannot each pick their own.
+	Every section is the same two lines at the same size, whatever it
+	carries: a document's data sits beside its lines rather than under them
+	(da-f4mw, Doc.svelte), so there is no longer a size for the row to
+	decide. What this file still decides for a section is whether it is wide
+	enough for those rows to read — it is the surface that measures — and a
+	narrower one draws the brace as the key count alone.
 -->
 <script lang="ts">
 	import Doc from '$lib/Doc.svelte';
 	import type { EchoDoc } from '$lib/echo.js';
+	import Sheet from '$lib/Sheet.svelte';
 
 	export let docs: EchoDoc[];
 	/** Draw every document and wrap, rather than fitting a fixed band. */
@@ -32,34 +36,38 @@
 
 	/** The narrowest section whose info line still reads, in px. */
 	const MIN = 208;
+	/**
+	 * The narrowest section that holds the info line AND readable data rows.
+	 *
+	 * Measured, not chosen (Doc.svelte): the info line wants 183px and the
+	 * brace's braces and chip 71px, so below this the rows are a few pixels
+	 * and the count is the honest thing to draw instead.
+	 */
+	const ROOMY = 320;
 	/** What the `+N` chip takes from the row. */
 	const CHIP = 48;
 
 	let row: HTMLDivElement | undefined;
-	let sheet: HTMLDialogElement | undefined;
 	let width = 0;
 	let open = false;
 
-	$: small = docs.some((doc) => doc.data_inline);
 	$: capacity = Math.max(1, Math.floor(width / MIN));
 	$: over = !all && width > 0 && docs.length > capacity;
 	$: shown = all || !over ? docs.length : Math.max(1, Math.floor((width - CHIP) / MIN));
+	// Never in the REPL or the sheet: there is no band to fit there, and a
+	// section is at least the 14rem the row wraps at.
+	$: tight = !all && width > 0 && width / shown < ROOMY;
 
 	function measure(node: HTMLDivElement): { destroy(): void } {
 		const observer = new ResizeObserver(([entry]) => (width = entry.contentRect.width));
 		observer.observe(node);
 		return { destroy: () => observer.disconnect() };
 	}
-
-	// A real `<dialog>`, as $lib/Confirm.svelte uses: the browser's own
-	// modal brings Escape, the backdrop and the focus trap with it, and
-	// none of them is a keyboard handler written here a second time.
-	$: if (sheet && open && !sheet.open) sheet.showModal();
 </script>
 
 <div class="docs" class:all bind:this={row} use:measure>
 	{#each docs.slice(0, shown) as doc (doc.hid + doc.action)}
-		<Doc {doc} {small} />
+		<Doc {doc} {tight} />
 	{/each}
 	{#if over}
 		<button
@@ -71,19 +79,9 @@
 	{/if}
 </div>
 
-{#if open}
-	<dialog class="sheet" bind:this={sheet} on:close={() => (open = false)}>
-		<div class="sheet-head">
-			<span>{docs.length} documents</span>
-			<button type="button" class="close" aria-label="close" on:click={() => sheet?.close()}
-				>×</button
-			>
-		</div>
-		<div class="sheet-body">
-			<svelte:self {docs} all />
-		</div>
-	</dialog>
-{/if}
+<Sheet title="{docs.length} documents" bind:open>
+	<svelte:self {docs} all />
+</Sheet>
 
 <style>
 	.docs {
@@ -136,56 +134,5 @@
 	.more:hover,
 	.more:focus-visible {
 		background: color-mix(in srgb, var(--accent) 18%, transparent);
-	}
-
-	.sheet {
-		width: min(48rem, calc(100vw - 2rem));
-		max-height: min(32rem, calc(100vh - 4rem));
-		padding: 0;
-		background: var(--ground);
-		color: var(--ink);
-		border: 1px solid var(--rule);
-		border-radius: 8px;
-		box-shadow: 0 8px 32px #000000aa;
-	}
-
-	.sheet[open] {
-		display: flex;
-		flex-direction: column;
-	}
-
-	.sheet::backdrop {
-		background: rgb(0 0 0 / 0.6);
-	}
-
-	.sheet-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		border-bottom: 1px solid var(--tint);
-		color: var(--quiet);
-	}
-
-	.sheet-body {
-		padding: 0.75rem;
-		overflow: auto;
-	}
-
-	.close {
-		background: none;
-		border: none;
-		padding: 0 0.3rem;
-		font: inherit;
-		font-size: 1.2rem;
-		line-height: 1;
-		color: var(--quiet);
-		cursor: pointer;
-	}
-
-	.close:hover,
-	.close:focus-visible {
-		color: var(--ink-bright);
 	}
 </style>

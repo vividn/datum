@@ -34,10 +34,11 @@
 
 	  · 4 raw lines at 0.68rem/1.25 — 54.4px, the deepest case, from a
 	    `tail` too long to show whole;
-	  · 3 document lines at 0.72rem/1.3 — 44.9px, an entry with data;
-	  · 2 at 1rem/1.35 — 43.2px, one without, at the larger size vividn asked
-	    for ("the font size could be bigger though when there are only 2
-	    lines");
+	  · 2 document lines at 1rem/1.35 — 43.2px, at the larger size vividn
+	    asked for ("the font size could be bigger though when there are
+	    only 2 lines"), and it is two whatever the entry carries: its data
+	    stands BESIDE them in a brace, four 0.6rem/1.1 rows deep, which is
+	    42.2px and so inside the same 43.2px (da-f4mw, Doc.svelte);
 	  · and 38.4px below for the 1.15rem prompt, whose line box is ~22px.
 
 	The «(tap to expand)» costs no line: it sits in the area's corner

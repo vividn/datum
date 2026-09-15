@@ -2,14 +2,34 @@
 	One document of a command's result (da-xfa4), as the bottom bar's
 	status line shows it and as the REPL and the `+N` modal show it.
 
-	Two lines when the entry carries no data — the action with its hid,
-	then the info line — and three when it does, the data on the third as
-	one line, cut with an ellipsis where it overruns. vividn: "If there is no
-	extra data, show it in 2 lines … If there is extra data, then show 3
-	lines, with all the extra data on one line (or truncated if there is a
-	lot of extra data)", and "the font size could be bigger though when
-	there are only 2 lines" — which is `small`, set by whoever draws the
-	row, because sections standing side by side in one band share a size.
+	TWO LINES, always at the two-line size — the action with its hid, then
+	the info line — and the entry's data BESIDE them, in a brace (da-f4mw).
+	It used to be a third line, with the whole row shrunk to 0.72rem so
+	three would fit the fixed band; vividn, from the train: "The extra data is
+	almost invisible in the output part of the input bar. Rather than
+	changing the lines to be 3 in this case, let's put the extra data next
+	to the 2 lines in a big {}. The font size can be smaller here, up to 4
+	lines. If there are more than 4 rows of extra data, maybe show a +N; if
+	there is no extra data, no {} is necessary." So the lines keep the size
+	vividn asked for them ("the font size could be bigger though when there
+	are only 2 lines") whatever the entry carries, and the data is read in
+	its own column rather than as a grey line under a shrunken one.
+
+	The brace holds up to `ROWS` of the CLI's `key: value` strings, in the
+	CLI's order, at a size DERIVED from the two lines' height rather than
+	picked by eye — four of them fit inside it, which is what keeps the
+	band's 6rem the same number after every command (PromptBar.svelte).
+	Past four: four and a `+N`, whose sheet lists every key. No data: no
+	brace, and the two lines take the whole width.
+
+	`tight` is the 320px phone, and it is measured and not guessed: a
+	section 239px wide wants 183px for its info line and 71px for the
+	brace's own furniture, which leaves the rows FOUR pixels. Four rows of
+	one character each are not the data, so a section that narrow shows
+	`{ +N }` — the count of every key, opening the same sheet — and the
+	info line keeps the width it needs (the bead's trap 2). Which sections
+	are that narrow is Docs.svelte's to say: it is the surface that
+	measures.
 
 	Every string here is datum's own, out of `--show json` ($lib/echo.ts):
 	the web places them and lets CSS truncate them, and composes none of
@@ -31,59 +51,103 @@
 -->
 <script lang="ts">
 	import type { EchoDoc, InfoSegment } from '$lib/echo.js';
+	import Sheet from '$lib/Sheet.svelte';
 
 	export let doc: EchoDoc;
-	/** The three-line size: set for the whole row when any document has data. */
-	export let small = false;
+	/** The section is too narrow for a row to read: show the count alone. */
+	export let tight = false;
+
+	/** Rows of data the brace holds before it goes to a `+N`. */
+	const ROWS = 4;
 
 	let shown = false;
+	let open = false;
 
 	/** The line's runs, or the unpainted line as its one run. */
 	let segments: InfoSegment[];
 	$: segments = doc.info_segments?.length
 		? doc.info_segments
 		: [{ text: doc.info, color: null }];
+
+	/** The CLI's `key: value` strings — `data`, not the terminal's join. */
+	let rows: string[];
+	$: rows = doc.data ?? [];
+	$: visible = tight ? [] : rows.slice(0, ROWS);
+	$: hidden = rows.length - visible.length;
 </script>
 
-<div class="doc" class:small>
-	<div class="receipt">
-		<span class="action">{doc.action}</span>
-		<button
-			type="button"
-			class="hid"
-			title={doc.id}
-			aria-label="full id {doc.id}"
-			aria-expanded={shown}
-			on:click={() => (shown = !shown)}>{shown ? doc.id : doc.hid}</button
-		>
+<div class="doc">
+	<div class="lines">
+		<div class="receipt">
+			<span class="action">{doc.action}</span>
+			<button
+				type="button"
+				class="hid"
+				title={doc.id}
+				aria-label="full id {doc.id}"
+				aria-expanded={shown}
+				on:click={() => (shown = !shown)}>{shown ? doc.id : doc.hid}</button
+			>
+		</div>
+		<!-- Nothing may come between the spans: the line is monospace and
+		     laid out with runs of spaces, and a newline in the markup is a
+		     space in the DOM — so the hugging here is load-bearing, as it is
+		     in AnsiText.svelte. -->
+		<div class="info">{#each segments as segment}<span style:color={segment.color}
+				>{segment.text}</span
+			>{/each}</div>
 	</div>
-	<!-- Nothing may come between the spans: the line is monospace and
-	     laid out with runs of spaces, and a newline in the markup is a
-	     space in the DOM — so the hugging here is load-bearing, as it is
-	     in AnsiText.svelte. -->
-	<div class="info">{#each segments as segment}<span style:color={segment.color}>{segment.text}</span
-		>{/each}</div>
-	{#if doc.data_inline}
-		<div class="data">{doc.data_inline}</div>
+	{#if rows.length}
+		<div class="brace" style:--rows={Math.max(visible.length, 1)}>
+			<span class="curly" aria-hidden="true">&#123;</span>
+			{#if visible.length}
+				<div class="rows">
+					{#each visible as row, i (i)}
+						<div class="row">{row}</div>
+					{/each}
+				</div>
+			{/if}
+			{#if hidden > 0}
+				<button type="button" class="more" title="{hidden} more" on:click={() => (open = true)}
+					>+{hidden}</button
+				>
+			{/if}
+			<span class="curly" aria-hidden="true">&#125;</span>
+		</div>
 	{/if}
 </div>
 
+{#if hidden > 0}
+	<Sheet title="{rows.length} keys" bind:open>
+		<div class="keys">
+			{#each rows as row, i (i)}
+				<div class="key">{row}</div>
+			{/each}
+		</div>
+	</Sheet>
+{/if}
+
 <style>
+	/* The lines and the brace stand side by side, centred in whatever
+	   height the surface gives the section. */
 	.doc {
 		display: flex;
-		flex-direction: column;
-		justify-content: center;
+		align-items: center;
+		gap: 0.4rem;
 		min-width: 0;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		/* Two lines of room; the third fits because `small` shrinks the type
-		   by more than a third and the band's height never changes. */
+		/* The two-line size, now the only one: 2 × 1.35rem = 2.7rem, which
+		   is the band's deepest document case (PromptBar.svelte). */
 		font-size: 1rem;
 		line-height: 1.35;
 	}
 
-	.doc.small {
-		font-size: 0.72rem;
-		line-height: 1.3;
+	/* Only as wide as the lines themselves: the brace then HUGS them —
+	   vividn's "next to the 2 lines" — rather than sitting at the far edge
+	   of a wide section. */
+	.lines {
+		flex: 0 1 auto;
+		min-width: 0;
 	}
 
 	/* Each line is one line: the band is a fixed height, so a string too
@@ -93,7 +157,7 @@
 	   printed. */
 	.receipt,
 	.info,
-	.data {
+	.row {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: pre;
@@ -129,7 +193,71 @@
 		color: var(--ink-bright);
 	}
 
-	.data {
-		color: var(--quiet);
+	.brace {
+		/* Shrinks four times as readily as the lines do, and never past
+		   this cap: on a 320px phone it is the VALUES that ellipsize, never
+		   the info line the section is for (the bead's trap 2). */
+		flex: 0 4 auto;
+		display: flex;
+		align-items: center;
+		gap: 0.15rem;
+		min-width: 0;
+		max-width: 40%;
+	}
+
+	/* One glyph pair as tall as the rows it holds — so a brace is never
+	   taller than the two lines beside it, whatever `--rows` is. */
+	.curly {
+		flex: none;
+		font-size: calc(var(--rows) * 0.55rem);
+		line-height: 1;
+		color: var(--muted);
+	}
+
+	/* Four rows inside the two lines' height, derived from it and not
+	   chosen: 2 × 1.35rem leaves 0.675rem a row, and 0.6rem × 1.1 =
+	   0.66rem puts the four just inside that. */
+	.rows {
+		min-width: 0;
+		font-size: 0.6rem;
+		line-height: 1.1;
+		/* vividn's whole complaint was that this was almost invisible; it is
+		   the entry's own data, so it reads as the lines do, a step down. */
+		color: var(--ink);
+	}
+
+	/* The docs' own chip (Docs.svelte), at the brace's size — beside the
+	   rows and not under them, because a fifth row is a row the band has
+	   not got. */
+	.more {
+		flex: none;
+		align-self: center;
+		padding: 0 0.25rem;
+		background: none;
+		border: 1px solid var(--accent);
+		border-radius: 999px;
+		font-family: inherit;
+		font-size: 0.6rem;
+		line-height: 1.4;
+		color: var(--accent-bright);
+		cursor: pointer;
+	}
+
+	.more:hover,
+	.more:focus-visible {
+		background: color-mix(in srgb, var(--accent) 18%, transparent);
+	}
+
+	/* In the sheet there is no band to fit, so every key is listed at a
+	   size meant for reading. */
+	.keys {
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		font-size: 0.85rem;
+		line-height: 1.5;
+		color: var(--ink);
+	}
+
+	.key {
+		white-space: pre-wrap;
 	}
 </style>
