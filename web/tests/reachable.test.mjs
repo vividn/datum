@@ -199,6 +199,29 @@ describe('on a phone-sized screen', () => {
 		});
 	}
 
+	// The REPL's own control (da-bhvy) is on the bottom bar's top line, and
+	// what it opens hangs upward from there. A lid a thumb cannot find is
+	// no lid: it is asserted here at every screen, box and all.
+	for (const viewport of SCREENS) {
+		const size = `${viewport.width}x${viewport.height}`;
+
+		test(`the REPL control is on screen, and opens there, at ${size}`, async () => {
+			await withApp(async ({ page }) => {
+				await assertOnScreen(page, '.prompt-bar .caret', 'the REPL control');
+				const box = await page.locator('.prompt-bar .caret').boundingBox();
+				const width = await page.evaluate(() => document.documentElement.clientWidth);
+				assert.ok(box.height >= 24, `the REPL control is ${box.height}px tall`);
+				assert.ok(
+					box.x >= 0 && box.x + box.width <= width + 1,
+					`the REPL control is ${box.x}–${box.x + box.width} on a ${width}px screen`
+				);
+
+				await page.locator('.prompt-bar .caret').click();
+				await assertOnScreen(page, '.prompt-bar .expansion', 'the REPL it opens');
+			}, { viewport });
+		});
+	}
+
 	// A button whose panel opens off the bottom edge is no more reachable
 	// than a button that is off it: the bar is the frame's bottom row, so
 	// its panels hang upward.

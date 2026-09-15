@@ -283,7 +283,7 @@ describe('several documents', () => {
 });
 
 describe('a command with no echo', () => {
-	test('a tail shows its own LAST four lines, with an expander that opens the REPL', async () => {
+	test('a tail shows its own LAST four lines', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			for (const f of ['a', 'b', 'c', 'd', 'e', 'f']) assert.equal((await app.run(['occur', f])).code, 0);
@@ -298,12 +298,9 @@ describe('a command with no echo', () => {
 				'the bar showed lines that were not the CLI’s last four'
 			);
 
-			// One expansion, two entry points.
-			await page.locator(`${BAR} .expand`).click();
-			// A REPL opened here is a bare `Pane` — a `<section class="pane">`
-			// with its own h2 — not a pane of the layout tree, which is what
-			// carries `data-title`.
-			await page.locator(`${BAR} .expansion section.pane`).waitFor();
+			// What it cut is one tap away, at the bar's own control — the
+			// area itself offers none any more (da-bhvy).
+			assert.equal(await page.locator(`${BAR} .expand`).count(), 0);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -349,29 +346,205 @@ describe('a command with no echo', () => {
 });
 
 describe('the ^', () => {
-	test('opens the REPL upward and closes it again', async () => {
+	// One control, at the bar's TOP EDGE, and it toggles (da-bhvy). vividn:
+	// "The (tap to expand) should be at the top — it can overlay the top
+	// line of the entire input bar. And it should toggle, hitting it again
+	// should close the repl." And what it opens stands ON the input row:
+	// "the bottom of the repl should actually be on top of the output bar,
+	// so that the repl perfectly overlays the output of the last command".
+	// So the scrollback's last entry is the very answer the tier was
+	// showing — and whole, where the tier had cut it.
+
+	/** Where the control, the two tiers and the open REPL are drawn. */
+	const boxes = (page) =>
+		page.evaluate(() => {
+			const box = (s) => {
+				const el = document.querySelector(s);
+				if (!el) return null;
+				const { top, bottom, left, right, height } = el.getBoundingClientRect();
+				return { top, bottom, left, right, height };
+			};
+			return {
+				bar: box('.prompt-bar'),
+				control: box('.prompt-bar .caret'),
+				tier: box('.prompt-bar .tier.top'),
+				prompt: box('.prompt-bar .tier.bottom'),
+				expansion: box('.prompt-bar .expansion')
+			};
+		});
+
+	/** Open the REPL and wait for it. A REPL here is a bare `Pane`. */
+	async function open(page) {
+		await page.locator(`${BAR} .caret`).click();
+		await page.locator(`${BAR} .expansion section.pane`).waitFor();
+	}
+
+	for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 640 }]) {
+		const size = `${viewport.width}x${viewport.height}`;
+
+		test(`the control sits on the bar's top line at ${size}`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				const shut = await boxes(page);
+				assert.ok(
+					Math.abs(shut.control.top - shut.bar.top) <= 1,
+					`the control's head at ${shut.control.top}, the bar's at ${shut.bar.top}`
+				);
+				// A fingertip, at every pointer (conventions #12).
+				assert.ok(shut.control.height >= 24, `the control is ${shut.control.height}px tall`);
+				assert.ok(
+					shut.control.left >= 0 && shut.control.right <= viewport.width,
+					`the control is ${shut.control.left}–${shut.control.right} on ${size}`
+				);
+
+				// And it stays where it was: the way out is the way in.
+				await open(page);
+				const lit = await boxes(page);
+				assert.ok(
+					Math.abs(lit.control.top - lit.bar.top) <= 1,
+					`open, the control's head at ${lit.control.top}, the bar's at ${lit.bar.top}`
+				);
+				assert.deepEqual(app.errors, []);
+			}, { viewport });
+		});
+	}
+
+	test('one press opens the REPL, the next closes it, and so does Escape', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
-			assert.equal(await page.locator(`${BAR} .expansion`).count(), 0);
+			const control = page.locator(`${BAR} .caret`);
+			const expansion = page.locator(`${BAR} .expansion`);
+			assert.equal(await expansion.count(), 0);
+			assert.equal(await control.getAttribute('aria-expanded'), 'false');
 
-			await page.locator(`${BAR} .caret`).click();
-			const repl = page.locator(`${BAR} .expansion section.pane`);
-			await repl.waitFor();
-			// It opens UPWARD: over the page, not into the bar.
-			const [bar, panel] = await Promise.all([
-				page.locator(BAR).evaluate((el) => el.getBoundingClientRect().top),
-				page.locator(`${BAR} .expansion`).evaluate((el) => el.getBoundingClientRect().bottom)
-			]);
-			assert.ok(Math.abs(panel - bar) <= 1, `the panel's foot at ${panel}, the bar's head at ${bar}`);
-			// And it is the scrollback: the command just typed is in it.
-			assert.ok((await repl.innerText()).includes('occur coffee'));
+			await open(page);
+			assert.equal(await control.getAttribute('aria-expanded'), 'true');
+			// It is the scrollback: the command just typed is in it.
+			assert.ok((await expansion.innerText()).includes('occur coffee'));
 
-			await page.locator(`${BAR} .caret`).click();
-			assert.equal(await page.locator(`${BAR} .expansion`).count(), 0);
+			await control.click();
+			await expansion.waitFor({ state: 'detached' });
+			assert.equal(await control.getAttribute('aria-expanded'), 'false');
+
+			await open(page);
+			await page.keyboard.press('Escape');
+			await expansion.waitFor({ state: 'detached' });
+			assert.equal(await control.getAttribute('aria-expanded'), 'false');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
+
+	test('open, its foot is on the input row and the prompt keeps the focus', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.submit('occur coffee');
+			await open(page);
+
+			const { bar, tier, prompt, expansion } = await boxes(page);
+			assert.ok(
+				Math.abs(expansion.bottom - tier.bottom) <= 1,
+				`the REPL's foot at ${expansion.bottom}, the result tier's at ${tier.bottom}`
+			);
+			assert.ok(
+				expansion.bottom <= prompt.top + 1,
+				`the REPL's foot at ${expansion.bottom} is past the prompt's head at ${prompt.top}`
+			);
+			// Upward, over the page — not into the bar, which never moves.
+			assert.ok(expansion.top < bar.top, `the REPL's head at ${expansion.top}, the bar's at ${bar.top}`);
+
+			assert.ok(
+				await page.locator(`${BAR} input`).evaluate((el) => el === document.activeElement),
+				'the prompt lost the focus to the control'
+			);
+			// And the line under it still runs: the new command lands in the
+			// REPL, and in the tier it is covering.
+			await app.submit('occur tea');
+			await page.waitForFunction(() =>
+				document.querySelector('.prompt-bar .expansion').innerText.includes('occur tea')
+			);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('a document the tier cut to four rows and a +2 reads whole in the REPL', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.submit('occur brew a=1 b=2 c=3 d=4 e=5 f=6');
+			await page.locator(`${DOC} .brace`).waitFor();
+
+			const cut = await section(page);
+			assert.equal(cut.rows.length, 4);
+			assert.equal(cut.more, '+2');
+
+			await open(page);
+			// The scrollback's LAST entry — the one the tier was showing.
+			const doc = page.locator(`${BAR} .expansion .doc`).last();
+			const keys = await doc.locator('.brace .row').allInnerTexts();
+			assert.deepEqual(keys, cut.rows.concat(['e: 5', 'f: 6']), 'the REPL cut the data too');
+			assert.equal(await doc.locator('.brace .more').count(), 0, 'the REPL still counts rows it did not draw');
+
+			// Closed again, the tier shows what it showed before.
+			await page.locator(`${BAR} .caret`).click();
+			await page.locator(`${BAR} .expansion`).waitFor({ state: 'detached' });
+			const again = await section(page);
+			assert.deepEqual(again.rows, cut.rows);
+			assert.equal(again.more, '+2');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('a table the tier cut to four lines reads whole in the REPL', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const f of ['a', 'b', 'c', 'd', 'e', 'f']) assert.equal((await app.run(['occur', f])).code, 0);
+			await app.submit('tail');
+			await page.locator(`${BAR} .raw p`).first().waitFor();
+
+			const printed = (await app.run(['tail'])).stdout.replace(ESC, '').replace(/\n+$/, '').split('\n');
+			assert.ok(printed.length > 4, 'the tail fitted — nothing to prove');
+			assert.deepEqual(await page.locator(`${BAR} .raw p`).allInnerTexts(), printed.slice(-4));
+
+			await open(page);
+			const out = page.locator(`${BAR} .expansion pre[data-stream="stdout"]`).last();
+			const whole = (await out.innerText())
+				.replace(/\n+$/, '')
+				.split('\n')
+				.map((line) => line.trimEnd());
+			assert.deepEqual(whole, printed.map((line) => line.trimEnd()));
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	// The trap of a lid on the bar's top line: the brand's ⓘ and the clock
+	// are on that line too, and a control across all of it would take their
+	// taps.
+	for (const { viewport, size } of [
+		{ viewport: DESKTOP, size: '1280x800' },
+		{ viewport: NARROW, size: '320x640' }
+	]) {
+		test(`the ⓘ and the clock keep their taps at ${size}`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				const reached = await page.evaluate(() =>
+					['.prompt-bar .hint-button', '.prompt-bar .clock'].map((selector) => {
+						const el = document.querySelector(selector);
+						const { left, right, top, bottom } = el.getBoundingClientRect();
+						const at = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+						return selector + (el === at || el.contains(at) ? ' reached' : ' covered');
+					})
+				);
+				assert.deepEqual(reached, [
+					'.prompt-bar .hint-button reached',
+					'.prompt-bar .clock reached'
+				]);
+
+				await page.locator(`${BAR} .hint-button`).click();
+				await page.locator(`${BAR} .beta-hint`).waitFor();
+				assert.deepEqual(app.errors, []);
+			}, viewport);
+		});
+	}
 });
 
 /** Where a pill's left edge is, and where the `❯` ends. */

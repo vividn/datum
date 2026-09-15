@@ -15,6 +15,10 @@
 	are only 2 lines") whatever the entry carries, and the data is read in
 	its own column rather than as a grey line under a shrunken one.
 
+	`all` is the form with no band to fit — the REPL the bar's `^` opens
+	over its result area (da-bhvy), and the `+N` sheet: every row is drawn,
+	so a document the tier had cut to four and a `+N` is read whole there.
+
 	The brace holds up to `ROWS` of the CLI's `key: value` strings, in the
 	CLI's order, at a size DERIVED from the two lines' height rather than
 	picked by eye — four of them fit inside it, which is what keeps the
@@ -56,6 +60,8 @@
 	export let doc: EchoDoc;
 	/** The section is too narrow for a row to read: show the count alone. */
 	export let tight = false;
+	/** No band to fit — the REPL, the sheet: every row, no `+N`. */
+	export let all = false;
 
 	/** Rows of data the brace holds before it goes to a `+N`. */
 	const ROWS = 4;
@@ -72,7 +78,7 @@
 	/** The CLI's `key: value` strings — `data`, not the terminal's join. */
 	let rows: string[];
 	$: rows = doc.data ?? [];
-	$: visible = tight ? [] : rows.slice(0, ROWS);
+	$: visible = tight ? [] : all ? rows : rows.slice(0, ROWS);
 	$: hidden = rows.length - visible.length;
 </script>
 

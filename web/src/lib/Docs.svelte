@@ -67,7 +67,7 @@
 
 <div class="docs" class:all bind:this={row} use:measure>
 	{#each docs.slice(0, shown) as doc (doc.hid + doc.action)}
-		<Doc {doc} {tight} />
+		<Doc {doc} {tight} {all} />
 	{/each}
 	{#if over}
 		<button

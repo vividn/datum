@@ -19,12 +19,23 @@
 	the logo, and make it nice and bright, takes up 40% to align with
 	command"). Which build this is went to the root bar in da-wjob.
 
-	Centred on the bar, a `^` that expands upward into the whole REPL. It
-	and the result area's «(tap to expand)» are ONE expansion with two
-	entry points. What it opens is the REPL COMPONENT — the same widget a
-	layout can hold, reading the same scrollback store — not a second
-	rendering of it. The expansion's REPL does not register with the engine
+	At the bar's TOP EDGE, one `^` that expands upward into the whole REPL
+	and closes it again (da-bhvy). vividn: "The (tap to expand) should be at
+	the top — it can overlay the top line of the entire input bar. And it
+	should toggle, hitting it again should close the repl." So the result
+	area's «(tap to expand)» is gone: one control, one place, both ways.
+
+	What it opens is the REPL COMPONENT — the same widget a layout can
+	hold, reading the same scrollback store — not a second rendering of
+	it. The expansion's REPL does not register with the engine
 	($lib/layout/engine.ts): a press still runs wherever it would have.
+
+	The open REPL's foot sits on the INPUT ROW, not on the bar: it covers
+	the result tier exactly, so its last entry IS the very output the tier
+	was showing — and whole, where the tier had cut it with an ellipsis or
+	a `+N`. The prompt below it stays put and keeps the focus, so Enter
+	runs and the new command lands in the REPL and in the covered tier
+	alike.
 
 	THE BAR'S HEIGHT IS FIXED, and that is the point of it: 6rem (96px at
 	the browser's default), never changing with what the last command
@@ -40,9 +51,6 @@
 	    stands BESIDE them in a brace, four 0.6rem/1.1 rows deep, which is
 	    42.2px and so inside the same 43.2px (da-f4mw, Doc.svelte);
 	  · and 38.4px below for the 1.15rem prompt, whose line box is ~22px.
-
-	The «(tap to expand)» costs no line: it sits in the area's corner
-	(BarResult.svelte), which is what keeps the deepest case at four.
 
 	It grew from 64px, which takes 32px from the dashboard. The floors that
 	room is measured against are the panes' own (`legibleOfKind` in
@@ -109,7 +117,22 @@
 		prefill.set(null);
 		input = line;
 		await tick();
-		field.querySelector('input')?.focus();
+		focusInput();
+	}
+
+	const focusInput = () => field?.querySelector('input')?.focus();
+
+	/**
+	 * Open the REPL over the result tier, or close it again.
+	 *
+	 * The focus goes back to the prompt either way: the control is a lid,
+	 * not a place to be — the line under it stays the page's command line
+	 * while the scrollback is open.
+	 */
+	async function toggle(): Promise<void> {
+		expanded = !expanded;
+		await tick();
+		focusInput();
 	}
 
 	/**
@@ -160,7 +183,8 @@
 
 <footer class="prompt-bar" class:alarm={degraded} title={degraded ? sentence : undefined}>
 	{#if expanded}
-		<!-- Upward, over the page: the bar is the bottom edge. -->
+		<!-- Upward, over the page: the INPUT ROW is the bottom edge, so the
+		     result tier is under the scrollback's last entry. -->
 		<div class="expansion">
 			<Repl />
 		</div>
@@ -203,7 +227,7 @@
 
 	<div class="tiers">
 		<div class="tier top">
-			<BarResult result={$last?.result ?? null} on:expand={() => (expanded = true)} />
+			<BarResult result={$last?.result ?? null} />
 		</div>
 		<div class="tier bottom">
 			<div class="prompt" bind:this={field}>
@@ -239,15 +263,16 @@
 	</div>
 
 	<!-- vividn: "in the center of this input bar, let's put a little ^, that
-	     if clicked expands upperwards to show the whole REPL". Its bottom
-	     edge sits on the line between the tiers, so it is never over the
-	     box a finger is aiming at.
+	     if clicked expands upperwards to show the whole REPL" — at the
+	     bar's TOP EDGE (da-bhvy), where it stays whether the REPL is open
+	     or shut, and over it, so the way out is where the way in was.
 
-	     Two boxes on purpose: the BUTTON is the hit area, which reaches a
-	     fingertip's 24px upward under a coarse pointer (conventions #12),
-	     and the TAB inside it is the paint, pinned to its foot and the same
-	     small thing at every pointer. Growing the paint instead would put
-	     an opaque 24px block over the middle of the result area. -->
+	     Centred, not the full width: the brand's ⓘ and the clock are on
+	     the left of this same line and a lid across all of it would take
+	     their taps. Two boxes on purpose: the BUTTON is the hit area, a
+	     fingertip's 24px (conventions #12) reaching down into the result
+	     tier, and the TAB inside it is the paint, pinned to its head, so
+	     what hangs over the reader's four lines is a small thing. -->
 	<button
 		type="button"
 		class="caret"
@@ -255,8 +280,7 @@
 		aria-label={expanded ? 'close the REPL' : 'open the REPL'}
 		aria-expanded={expanded}
 		title={expanded ? 'close the REPL' : 'open the REPL'}
-		on:click={() => (expanded = !expanded)}
-		><span class="tab"><span class="chevron">^</span></span></button
+		on:click={toggle}><span class="tab"><span class="chevron">^</span></span></button
 	>
 </footer>
 
@@ -504,30 +528,26 @@
 		color: var(--ink-bright);
 	}
 
-	/* On the line between the tiers, centred on the whole bar. */
+	/* On the bar's top line, centred on the whole bar — and above the
+	   expansion (z-index 19), which covers everything else on this line
+	   while it is open. */
 	.caret {
 		position: absolute;
 		left: 50%;
-		bottom: var(--input-band);
+		top: 0;
 		transform: translateX(-50%);
-		z-index: 2;
+		z-index: 21;
 		display: flex;
-		align-items: flex-end;
+		align-items: flex-start;
 		justify-content: center;
 		width: 2.2rem;
-		height: 0.9rem;
+		height: 1.5rem;
 		padding: 0;
 		background: none;
 		border: none;
 		font: inherit;
 		color: var(--quiet);
 		cursor: pointer;
-	}
-
-	@media (pointer: coarse) {
-		.caret {
-			height: 1.5rem;
-		}
 	}
 
 	.tab {
@@ -538,8 +558,8 @@
 		height: 0.9rem;
 		background: var(--ground);
 		border: 1px solid var(--tint);
-		border-bottom: none;
-		border-radius: 4px 4px 0 0;
+		border-top: none;
+		border-radius: 0 0 4px 4px;
 		font-size: 0.75rem;
 		line-height: 1;
 	}
@@ -565,10 +585,13 @@
 		transform: rotate(180deg);
 	}
 
-	/* The REPL, opened upward from the bar and over the page. */
+	/* The REPL, opened upward over the page — and over the result tier,
+	   whose bottom edge is this one: `--input-band` of the bar's height is
+	   the input row, and the tier ends where it begins. So the scrollback's
+	   last entry stands exactly where the tier's answer stood. */
 	.expansion {
 		position: absolute;
-		bottom: 100%;
+		bottom: var(--input-band);
 		left: 0;
 		right: 0;
 		z-index: 19;
