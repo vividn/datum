@@ -48,6 +48,18 @@
 	  off, today is simply the last band in the scroller and goes with the
 	  rest.
 
+	The strip also ZOOMS onto an hour range (da-ukcf): two fingers pinching
+	over it, or ctrl+wheel on a desktop, narrow the window; a two-finger
+	drag or shift+wheel pans it; a double-tap — or the pane menu's `Reset
+	widget` — gives the whole day back. Every band at once, because they
+	share the x-axis. `dayview` has no window flag, so a window is a
+	picture drawn for the whole day at the window's SCALE and shown through
+	the band: one offset-and-scale (`windowMap` in $lib/panes.ts) puts the
+	hours in it, and the strip's own gridlines and ruler are drawn from the
+	same map. Under the gesture nothing is asked at all — the pictures on
+	screen are mapped where they are, and the release is what asks datum
+	for the window at its own width, so the lines come back crisp.
+
 	How many days the box SHOWS: as many as it holds (da-zb0d). The strip
 	fills its container and the pane it sits in is what says how tall it
 	is. How many days the stack HOLDS is a second number (da-bewc): a
@@ -56,12 +68,13 @@
 	within the gesture. So the stack holds a FORTNIGHT at least, however
 	short the box, and that past is what the reader scrolls back through.
 
-	What the reader sets — `dayHeight`, `labelWidth`, `freezeToday` — is
-	a prop in and a `change` out; the dashboard keeps them in the widget's
-	settings, and the strip itself writes nothing down.
+	What the reader sets — `dayHeight`, `labelWidth`, `freezeToday`,
+	`hourFrom`/`hourTo` — is a prop in and a `change` out; the dashboard
+	keeps them in the widget's settings, and the strip itself writes
+	nothing down.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onMount, tick } from 'svelte';
+	import { createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
 	import { browser } from '$app/environment';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
@@ -75,11 +88,18 @@
 		DEFAULT_LABEL_WIDTH,
 		MIN_LABEL_WIDTH,
 		MAX_LABEL_WIDTH,
+		HOUR_FROM,
+		HOUR_TO,
 		bandArgv,
 		bandBox,
+		clampWindow,
 		dayPitch,
 		geometryArgv,
-		todayBox
+		pictureWidth,
+		todayBox,
+		wholeDay,
+		windowMap,
+		zoomWindow
 	} from './panes.js';
 	import { settle } from './layout/resizing.js';
 
@@ -92,9 +112,18 @@
 	export let labelWidth: number = DEFAULT_LABEL_WIDTH;
 	/** Is today pinned under the scroller, or the last band inside it? */
 	export let freezeToday = true;
+	/** The hour range every band is drawn onto — the whole day at rest (da-ukcf). */
+	export let hourFrom: number = HOUR_FROM;
+	export let hourTo: number = HOUR_TO;
 
 	/** What the reader moved, folded into the widget's settings by the owner. */
-	type Setting = { dayHeight?: number; labelWidth?: number; freezeToday?: boolean };
+	type Setting = {
+		dayHeight?: number;
+		labelWidth?: number;
+		freezeToday?: boolean;
+		hourFrom?: number;
+		hourTo?: number;
+	};
 	const dispatch = createEventDispatcher<{ change: Setting }>();
 
 	/** How far back the strip will reach, however tall its box grows. */
@@ -116,6 +145,7 @@
 	);
 
 	let body: HTMLDivElement | undefined;
+	let stripEl: HTMLDivElement | undefined;
 	let stackEl: HTMLDivElement | undefined;
 	/** The box the pane gives the strip, in whole pixels, once measured. */
 	let width = 0;
@@ -123,8 +153,49 @@
 	/** Is the newest day the bottom-most band in view? */
 	let atBottom = true;
 
-	/** The pictures' own width: the box less the column the strip writes stamps in. */
+	/** The band's own width on screen: the box less the stamp column. */
 	$: bandWidth = Math.max(0, width - labelWidth);
+
+	// ── the hour window ────────────────────────────────────────────────
+	//
+	// The window the bands were DRAWN for, and the one they are shown
+	// through: the same at rest, and a gesture is the difference between
+	// them. Which is why the gesture costs nothing — the pictures are
+	// mapped where they are, and datum is asked again only on release.
+
+	/** The window a gesture is previewing, or null when none is in hand. */
+	let live: [number, number] | null = null;
+	/** The window the pictures are asked for: the widget's setting, made sane. */
+	$: committed = clampWindow(hourFrom, hourTo);
+	/** The window on screen. */
+	$: view = live ?? committed;
+	/** How wide a day has to be drawn for `committed` to fill the band. */
+	$: pictureBox = bandWidth > 0 ? pictureWidth(bandWidth, committed[1] - committed[0]) : 0;
+
+	/**
+	 * Each picture is mapped by the width IT was drawn at, not by the one
+	 * just asked for.
+	 *
+	 * Which matters for the beat after a release: the window has changed,
+	 * every band has been asked again, and what is on screen meanwhile is
+	 * the picture drawn for the window BEFORE. Mapped by the new width it
+	 * would be stretched by the ratio between them and show the wrong
+	 * hours — a jump, and then a jump back as each answer lands, one CLI
+	 * process apart. Mapped by its own, it shows exactly the hours it is
+	 * meant to and merely a little soft, which is the gesture's preview
+	 * carrying on until the crisp answer arrives.
+	 */
+	const IDENTITY = { offset: 0, scale: 1 };
+	$: mapFor = (full: number) =>
+		full > 0 && bandWidth > 0 ? windowMap(view, full, bandWidth) : IDENTITY;
+	/** The gridlines and the ruler are drawn from the GEOMETRY's own width. */
+	$: gridMap = mapFor(geometryBox);
+	/** Where along the band a gridline or a ruler tick falls. */
+	$: bandX = (x: number) => gridMap.offset + gridMap.scale * x;
+	/** Is there a window at all, or is the whole day on screen? */
+	$: zoomed = !wholeDay(view);
+	/** The transform each band's picture is shown under. */
+	$: bandZoom = (end: number) => mapFor(drawnAt[end]);
 
 	/**
 	 * The days the box SHOWS. The room is whatever is left once the ruler,
@@ -207,6 +278,10 @@
 
 	/** Each band on screen, by how many days back it is. 0 is today's. */
 	let shown: Record<number, RunResult> = {};
+	/** And the width each of those pictures was drawn at — see `mapFor`. */
+	let drawnAt: Record<number, number> = {};
+	/** The width the geometry on hand was read at. */
+	let geometryBox = 0;
 
 	/**
 	 * A band's picture — or the message that came instead of one, said out
@@ -277,7 +352,9 @@
 
 	// Not on mount: the static build prerenders this page, and there is no
 	// database (or `run`) outside the browser.
-	$: request = { width: bandWidth, dayHeight, epoch, midnights };
+	// The pictures are asked for at the WINDOW's width, not the band's:
+	// the band is what they are shown through (`pictureBox`).
+	$: request = { width: pictureBox, dayHeight, epoch, midnights };
 	$: if (browser && request.width > 0) draw(request, ends);
 
 	function draw(
@@ -306,6 +383,7 @@
 			if (onDay && fresh.today && fresh.today !== onDay) midnights += 1;
 			onDay = fresh.today ?? onDay;
 			geometry = fresh;
+			geometryBox = at.width;
 		});
 
 		for (const end of ends) {
@@ -317,6 +395,7 @@
 				if (token < (from[end] ?? 0)) return;
 				from[end] = token;
 				shown = { ...shown, [end]: result };
+				drawnAt = { ...drawnAt, [end]: at.width };
 				void anchor();
 			});
 		}
@@ -428,12 +507,21 @@
 		if (!geometry) return [] as { x: number; at: number; label: string }[];
 		const half = AXIS_FONT * 0.6 + 3;
 		let prev = -Infinity;
-		return geometry.hours.slice(0, -1).map((hour) => {
-			const at = clamp(hour.x, half, Math.max(half, bandWidth - half));
-			const named = hour.major && at - half >= prev;
-			if (named) prev = at + half;
-			return { x: hour.x, at, label: named ? hour.label : '' };
-		});
+		return geometry.hours
+			.slice(0, -1)
+			.map((hour) => ({ hour, x: bandX(hour.x) }))
+			// A window leaves most of the day off the ends of the band.
+			.filter(({ x }) => x >= -1 && x <= bandWidth + 1)
+			.map(({ hour, x }) => {
+				const at = clamp(x, half, Math.max(half, bandWidth - half));
+				// The majors are the hours datum names, thinned until two
+				// labels no longer touch. Zoomed in, the hours BETWEEN them
+				// have room too, and a ruler that named only every third of
+				// four hours on screen would be a ruler with one number on it.
+				const named = (hour.major || zoomed) && at - half >= prev;
+				if (named) prev = at + half;
+				return { x, at, label: named ? hour.label : '' };
+			});
 	})();
 
 	// ── the handle: the day height and the label width together ────────
@@ -505,6 +593,156 @@
 		void anchor();
 	}
 
+	// ── the zoom: two fingers, ctrl+wheel, and a double-tap back ───────
+
+	/** Ask the owner for `next`, and show it meanwhile. */
+	function setWindow(next: [number, number]): void {
+		live = null;
+		if (next[0] === committed[0] && next[1] === committed[1]) return;
+		[hourFrom, hourTo] = next;
+		dispatch('change', { hourFrom, hourTo });
+	}
+
+	/** The band's box on screen — what a gesture's x is a fraction of. */
+	function bandBoxNow(): DOMRect | null {
+		const band = stripEl?.querySelector('.band');
+		const box = band?.getBoundingClientRect();
+		return box && box.width > 0 ? box : null;
+	}
+
+	/** Let go of the gesture: the window it was previewing becomes the ask. */
+	function commit(): void {
+		const next = live;
+		pinching = null;
+		if (next) setWindow(next);
+		live = null;
+	}
+
+	/** The fingers down on the strip, by pointer id, and their x. */
+	const fingers = new Map<number, number>();
+	/** The pinch in hand: where it began, and the band it began over. */
+	let pinching: { window: [number, number]; apart: number; mid: number; box: DOMRect } | null =
+		null;
+
+	const xs = () => [...fingers.values()];
+	const spread = () => Math.abs(xs()[0] - xs()[1]);
+	const middle = () => (xs()[0] + xs()[1]) / 2;
+	/**
+	 * How far apart two fingers must be before their spread is read as a
+	 * zoom. Closer than this, the pair is a two-finger PAN: dividing by a
+	 * few pixels turns a millimetre of drift into an order of magnitude.
+	 */
+	const PINCH_FLOOR = 20;
+
+	// The window listens, not the element: a finger that wanders off the
+	// strip mid-pinch is still part of the pinch, and the element would
+	// stop hearing it. Armed by the first finger, so the last one off is
+	// always heard and no finger is left behind on the map.
+	function listen(on: boolean): void {
+		for (const [type, handler] of [
+			['pointermove', onPointerMove],
+			['pointerup', onPointerUp],
+			['pointercancel', onPointerUp]
+		] as [string, EventListener][]) {
+			if (on) window.addEventListener(type, handler);
+			else window.removeEventListener(type, handler);
+		}
+	}
+
+	function onPointerDown(event: PointerEvent): void {
+		// The strip's own controls are not the picture: the `+` handle, the
+		// freeze toggle and the jagged line have the pointer when it is on
+		// them, and a press on one is not the start of a gesture.
+		if ((event.target as HTMLElement).closest('button')) return;
+		tapped(event);
+		if (event.pointerType === 'mouse') return;
+		fingers.set(event.pointerId, event.clientX);
+		if (fingers.size === 1) listen(true);
+		if (fingers.size !== 2) return;
+		const box = bandBoxNow();
+		if (!box) return;
+		// A wheel's pause commits it; the fingers are the gesture now.
+		clearTimeout(settling);
+		pinching = { window: view, apart: spread(), mid: middle(), box };
+	}
+
+	function onPointerMove(event: PointerEvent): void {
+		if (!fingers.has(event.pointerId)) return;
+		fingers.set(event.pointerId, event.clientX);
+		if (!pinching || fingers.size !== 2) return;
+		const { window: was, apart, mid, box } = pinching;
+		const by = apart >= PINCH_FLOOR ? spread() / apart : 1;
+		live = zoomWindow(was, by, (mid - box.x) / box.width, (middle() - box.x) / box.width);
+	}
+
+	function onPointerUp(event: PointerEvent): void {
+		fingers.delete(event.pointerId);
+		if (pinching && fingers.size < 2) commit();
+		if (fingers.size === 0) listen(false);
+	}
+
+	/**
+	 * `touch-action: pan-y` keeps the browser off a pinch, but a two-finger
+	 * drag is still a scroll it may claim — and claiming it sends
+	 * `pointercancel` mid-gesture. While two fingers are down the move is
+	 * ours.
+	 */
+	function onTouchMove(event: TouchEvent): void {
+		if (fingers.size >= 2) event.preventDefault();
+	}
+
+	/**
+	 * Two presses in the same place, in quick succession: the whole day
+	 * back. A tap anywhere on the picture, as a pinch is; the same gesture
+	 * a map gives back its whole world for.
+	 */
+	const DOUBLE_TAP = 350;
+	let tap = { at: -Infinity, x: 0, y: 0 };
+	function tapped(event: PointerEvent): void {
+		const near = Math.abs(event.clientX - tap.x) < 30 && Math.abs(event.clientY - tap.y) < 30;
+		if (near && event.timeStamp - tap.at < DOUBLE_TAP) {
+			tap = { at: -Infinity, x: 0, y: 0 };
+			setWindow([HOUR_FROM, HOUR_TO]);
+			return;
+		}
+		tap = { at: event.timeStamp, x: event.clientX, y: event.clientY };
+	}
+
+	/**
+	 * A notch of the wheel is half a doubling, so one lands a window at a
+	 * round fraction of the one before it. A trackpad pinch arrives here
+	 * too, as a shower of small deltas: they accumulate into one gesture,
+	 * which the pause at the end of it commits.
+	 *
+	 * ctrl zooms and shift pans, which is what a browser's own reading of
+	 * the two modifiers over a picture is; a BARE wheel is left alone —
+	 * that is the stack scrolling back through the days.
+	 */
+	const NOTCH = 200;
+	let settling: ReturnType<typeof setTimeout> | undefined;
+
+	function onWheel(event: WheelEvent): void {
+		if (pinching || (!event.ctrlKey && !event.shiftKey)) return;
+		const box = bandBoxNow();
+		if (!box) return;
+		event.preventDefault();
+		const from = live ?? committed;
+		const where = clamp((event.clientX - box.x) / box.width, 0, 1);
+		// Down and right are later in the day: the window follows the
+		// wheel, so the picture moves against it.
+		const panned = (event.deltaX || event.deltaY) / box.width;
+		live = event.ctrlKey
+			? zoomWindow(from, Math.pow(2, -event.deltaY / NOTCH), where)
+			: zoomWindow(from, 1, where, where - panned);
+		clearTimeout(settling);
+		settling = setTimeout(commit, 120);
+	}
+
+	onDestroy(() => {
+		clearTimeout(settling);
+		listen(false);
+	});
+
 	/**
 	 * The jagged line's teeth: a vertex every 2 units across a 400-wide
 	 * viewBox, stretched to the strip's width — about 5px a stroke at
@@ -516,6 +754,10 @@
 <Pane title="dayview" bind:body>
 	<div
 		class="strip"
+		bind:this={stripEl}
+		on:pointerdown={onPointerDown}
+		on:touchmove|nonpassive={onTouchMove}
+		on:wheel|nonpassive={onWheel}
 		style:--band="{bandBox(shownDayHeight)}px"
 		style:--pitch="{dayPitch(shownDayHeight)}px"
 		style:--today="{todayBox(shownDayHeight)}px"
@@ -534,7 +776,14 @@
 							{#each stamp(geometry?.today ?? null, end, stampLines) as line}<span>{line}</span
 								>{/each}
 						</div>
-						<div class="band" class:past={end > 0} data-days-ago={end} data-days="1">
+						<div
+							class="band"
+							class:past={end > 0}
+							data-days-ago={end}
+							data-days="1"
+							style:--zoom-x="{bandZoom(end).offset}px"
+							style:--zoom={bandZoom(end).scale}
+						>
 							<div class="shot" class:previewing={!!sizing}>
 								{#if shown[end]}<CliOutput {...picture(shown[end])} />{/if}
 							</div>
@@ -618,7 +867,13 @@
 				<div class="stamp" style:font-size="{stampFont}px">
 					{#each stamp(geometry?.today ?? null, 0, stampLines) as line}<span>{line}</span>{/each}
 				</div>
-				<div class="band" data-days-ago="0" data-days="1">
+				<div
+					class="band"
+					data-days-ago="0"
+					data-days="1"
+					style:--zoom-x="{bandZoom(0).offset}px"
+					style:--zoom={bandZoom(0).scale}
+				>
 					<div class="shot" class:previewing={!!sizing}>
 						{#if shown[0]}<CliOutput {...picture(shown[0])} />{:else}<p class="quiet">…</p>{/if}
 					</div>
@@ -659,8 +914,8 @@
 					<line
 						class="gridline"
 						data-hour={hour.hour}
-						x1={hour.x}
-						x2={hour.x}
+						x1={bandX(hour.x)}
+						x2={bandX(hour.x)}
 						y1="0"
 						y2="100%"
 						stroke-opacity={hour.major ? 0.4 : 0.1}
@@ -690,6 +945,9 @@
 		justify-content: flex-end;
 		overflow: hidden;
 		background: var(--picture);
+		/* One finger still scrolls the stack back through the days; two are
+		   the window's, not the browser's page zoom (da-ukcf). */
+		touch-action: pan-y;
 	}
 
 	/* The room above the divider, whatever is left of the box once the
@@ -775,6 +1033,29 @@
 	   — against the band instead of the screen. */
 	.shot.previewing {
 		transform: scale(var(--sx), var(--sy));
+		transform-origin: 0 0;
+	}
+
+	/* The hour window (da-ukcf): the picture is drawn for the WHOLE day at
+	   the window's scale, and this is the part of it the band shows. The
+	   same map the gridlines and the ruler are drawn from, so the three
+	   move together; the band clips the rest.
+
+	   On the picture itself rather than on `.shot`, which is the hover
+	   label's positioning parent: a transform there would make it the
+	   containing block of a `position: fixed` tip (see above), where the
+	   tip is the svg's SIBLING (hover.ts) and a transform on the svg does
+	   not reach it. The pointer still finds the right instant either way —
+	   `timeAt` reads the picture through its own `getScreenCTM`, which is
+	   the transform included.
+
+	   Always, not only while there is a window: the map is the identity at
+	   the whole day, and a band whose picture is still the PREVIOUS,
+	   wider window's needs mapping until its own answer lands, double-tap
+	   included. The variables are the BAND's for the same reason — the map
+	   is each picture's own (`mapFor`). */
+	.band :global(svg.svg) {
+		transform: translateX(var(--zoom-x)) scaleX(var(--zoom));
 		transform-origin: 0 0;
 	}
 

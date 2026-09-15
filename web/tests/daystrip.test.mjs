@@ -42,6 +42,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { devices } from 'playwright';
 import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
+import { choose, chooseRoot } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -1146,6 +1147,298 @@ describe('the day strip', () => {
 				assert.ok(m.strip >= m.today, `today's band does not fit its row: ${JSON.stringify(m)}`);
 			},
 			{ viewport: screen }
+		);
+	});
+});
+
+// ── the hour window (da-ukcf) ────────────────────────────────────────
+//
+// Two fingers over the strip, or ctrl+wheel on a desk, zoom it onto an
+// hour range; a double-tap gives the whole day back. What makes it a
+// STRIP's zoom rather than a picture's is that every band moves together
+// — they share the x-axis, and a stack whose days were windowed one at a
+// time would not be a stack — so the assertion on every gesture is that
+// the bands' transforms are all the FIRST one's, and that the date stamps
+// beside them have not moved at all.
+//
+// Read off the screen rather than off the setting wherever it can be: how
+// many hours the ruler and the gridlines actually show is the thing a
+// reader sees, and the window is only how the strip says it. The setting
+// is asserted too, because it is what a saved layout keeps.
+
+/** How many hour gridlines land inside the band — the hours on screen. */
+const hoursShown = ({ page }) =>
+	page.locator('.strip').evaluate((strip) => {
+		const band = strip.querySelector('.band').getBoundingClientRect();
+		return [...strip.querySelectorAll('.gridlines .gridline')].filter((line) => {
+			const x = Number(line.getAttribute('x1'));
+			return x >= -0.5 && x <= band.width + 0.5;
+		}).length;
+	});
+
+/** The hours the RULER names, in order — the numbers under the bottom band. */
+const rulerLabels = ({ page }) =>
+	page.locator('.ruler .tick-label').allTextContents();
+
+/** Every band's transform, as the browser resolves it. */
+const bandTransforms = ({ page }) =>
+	page
+		.locator('.band svg.svg')
+		.evaluateAll((svgs) => svgs.map((svg) => getComputedStyle(svg).transform));
+
+/** Where each date stamp's box begins, rounded to the pixel. */
+const stampXs = ({ page }) =>
+	page
+		.locator('.strip .stamp')
+		.evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().x)));
+
+/** The window the strip's owner has heard. */
+const windowHeard = async (app) => [
+	await heard(app, 'hourFrom'),
+	await heard(app, 'hourTo')
+];
+
+/**
+ * Wait until the window the owner has heard satisfies `expr`, which is
+ * written about `w` — `w[1] - w[0] < 24`.
+ */
+const untilWindow = ({ page }, expr) =>
+	page.waitForFunction(
+		`(() => { const s = (${stripSettings})(); const w = [s.hourFrom, s.hourTo]; return ${expr}; })()`
+	);
+
+/** Today's band, whose box is every band's box along x. */
+const bandBox = ({ page }) => page.locator('.band[data-days-ago="0"]').boundingBox();
+
+/** What each `dayview` was asked for as its `--width`. */
+const askedWidths = (argvs) =>
+	argvs
+		.filter((argv) => argv[0] === 'dayview')
+		.map((argv) => Number(argv[argv.indexOf('--width') + 1]));
+
+/** How wide a band is DRAWN — the picture's own width, in its own units. */
+const drawnWidth = ({ page }) =>
+	page.locator('.band[data-days-ago="0"] svg.svg').evaluate((svg) => svg.width.baseVal.value);
+
+/**
+ * Two fingers over `box`, `from` px apart, drawn to `to` px apart.
+ *
+ * Through CDP, as every other touch in this suite: Playwright's
+ * touchscreen only taps, and a pinch made of mouse events would be a test
+ * of the wrong handler. `midway` is called with the fingers still down —
+ * the gesture's preview is only on screen until they lift.
+ */
+async function pinch(page, box, from, to, midway) {
+	const y = box.y + box.height / 2;
+	const x = box.x + box.width / 2;
+	const cdp = await page.context().newCDPSession(page);
+	const both = (apart) => [
+		{ id: 1, x: x - apart / 2, y },
+		{ id: 2, x: x + apart / 2, y }
+	];
+	const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+	try {
+		await at('touchStart', [both(from)[0]]);
+		await at('touchStart', both(from));
+		for (let i = 1; i <= 6; i++) await at('touchMove', both(from + ((to - from) * i) / 6));
+		await midway?.();
+		await at('touchEnd', []);
+	} finally {
+		await cdp.detach();
+	}
+}
+
+/** Two taps in the same place, quickly — the gesture for the whole day back. */
+async function doubleTap(page, box) {
+	const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	const cdp = await page.context().newCDPSession(page);
+	try {
+		for (const _ of [1, 2]) {
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		}
+	} finally {
+		await cdp.detach();
+	}
+}
+
+const PHONE = { device: devices['Pixel 5'], viewport: { width: 390, height: 640 } };
+
+describe('the day strip zooms onto an hour range', () => {
+	test('a pinch windows every band at once, and the stamps stay where they are', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.idle();
+			const box = await bandBox(app);
+			const stamps = await stampXs(app);
+			// At rest a band is drawn at the band's own width: the whole day.
+			const full = await drawnWidth(app);
+			assert.equal(await hoursShown(app), 25, 'the strip does not start on the whole day');
+
+			// Fingers drawn three times as far apart: a third of the day.
+			const seen = await app.spyOnRunner();
+			await pinch(page, box, 100, 300, async () => {
+				// Under the gesture the pictures on screen are MAPPED, not
+				// asked for again — that is what makes a pinch free.
+				assert.deepEqual(askedWidths(await seen()), []);
+				const during = await bandTransforms(app);
+				assert.ok(during.length > 1, `only ${during.length} band on screen`);
+				assert.deepEqual(during, during.map(() => during[0]), 'the bands moved apart');
+				assert.equal(await hoursShown(app), 9, 'the pinch did not narrow the window');
+			});
+
+			// The release asks for the window — the same eight hours, drawn
+			// at its own width now, which is three days' worth of pixels.
+			await untilWindow(app, 'w[1] - w[0] < 24');
+			assert.deepEqual(await windowHeard(app), [8, 16]);
+			await app.idle();
+			assert.deepEqual(
+				[...new Set(askedWidths(await seen()))],
+				[full * 3],
+				'the bands were not re-drawn at the window’s width'
+			);
+
+			// And the whole strip is on those hours: one transform for every
+			// band, nine hours on screen, and a ruler that names them.
+			const after = await bandTransforms(app);
+			assert.deepEqual(after, after.map(() => after[0]), 'the bands moved apart');
+			assert.equal(await hoursShown(app), 9);
+			assert.deepEqual(
+				await rulerLabels(app),
+				['08', '09', '10', '11', '12', '13', '14', '15', '16'],
+				'the ruler does not name the hours the window holds'
+			);
+
+			// The stamps are beside the pictures, not in them: nothing the
+			// window does moves them.
+			assert.deepEqual(await stampXs(app), stamps, 'the date stamps moved');
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	test('a double-tap gives the whole day back', async () => {
+		await withApp(async (app) => {
+			await app.idle();
+			const box = await bandBox(app);
+			await pinch(app.page, box, 100, 300);
+			await untilWindow(app, 'w[1] - w[0] < 24');
+			await app.idle();
+
+			await doubleTap(app.page, box);
+			await untilWindow(app, 'w[0] === 0 && w[1] === 24');
+			await app.idle();
+			assert.equal(await hoursShown(app), 25);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	test('ctrl+wheel zooms, shift+wheel pans, and a double-click is the way back', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.idle();
+				const box = await bandBox(app);
+				const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+				await page.mouse.move(middle.x, middle.y);
+
+				// A bare wheel is the stack scrolling back through the days,
+				// not a zoom — the strip's oldest reflex, and still true.
+				await page.mouse.wheel(0, -100);
+				await app.idle();
+				assert.deepEqual(await windowHeard(app), [0, 24]);
+
+				// ctrl+wheel: a notch is half a doubling, so the day comes in
+				// by √2 about the pointer — which is the middle, so the window
+				// stays centred on noon.
+				await page.keyboard.down('Control');
+				await page.mouse.wheel(0, -100);
+				await untilWindow(app, 'w[1] - w[0] < 24');
+				await page.keyboard.up('Control');
+				const zoom = await windowHeard(app);
+				assert.ok(
+					Math.abs(zoom[1] - zoom[0] - 24 / Math.SQRT2) < 0.05,
+					`a notch is not half a doubling: ${zoom}`
+				);
+				assert.ok(Math.abs((zoom[0] + zoom[1]) / 2 - 12) < 0.05, `the zoom drifted: ${zoom}`);
+				const shown = await hoursShown(app);
+				assert.ok(shown < 25, `ctrl+wheel showed ${shown} hours of the day`);
+
+				// shift+wheel: the same window, later in the day. Down and
+				// right are later, so the picture moves against the wheel.
+				await page.keyboard.down('Shift');
+				await page.mouse.wheel(0, 200);
+				await untilWindow(app, `w[0] > ${zoom[0] + 0.5}`);
+				await page.keyboard.up('Shift');
+				const panned = await windowHeard(app);
+				assert.ok(
+					Math.abs(panned[1] - panned[0] - (zoom[1] - zoom[0])) < 0.05,
+					`the pan changed the span: ${zoom} → ${panned}`
+				);
+				const panShown = await hoursShown(app);
+				assert.ok(
+					Math.abs(panShown - shown) <= 1,
+					`the pan changed how much is on screen: ${shown} → ${panShown}`
+				);
+
+				// Every band is still on the one axis, and the stamps beside
+				// them have not moved.
+				const after = await bandTransforms(app);
+				assert.deepEqual(after, after.map(() => after[0]), 'the bands moved apart');
+
+				// Two clicks in the same place: the whole day.
+				await page.mouse.dblclick(middle.x, middle.y);
+				await untilWindow(app, 'w[0] === 0 && w[1] === 24');
+				await app.idle();
+				assert.equal(await hoursShown(app), 25);
+				assert.deepEqual(app.errors, []);
+			},
+			{ viewport: { width: 1280, height: 900 } }
+		);
+	});
+
+	test('the window is a setting: saved with the layout, and reset with the widget', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.idle();
+				const box = await bandBox(app);
+
+				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+				await page.keyboard.down('Control');
+				await page.mouse.wheel(0, -200);
+				await untilWindow(app, 'w[1] - w[0] < 13');
+				await page.keyboard.up('Control');
+				const zoomed = await windowHeard(app);
+				await app.idle();
+				const shown = await hoursShown(app);
+
+				await chooseRoot(page, 'Save layout');
+				await app.reload();
+				await app.idle();
+
+				// The strip comes back on the hours it was left on, and it is
+				// DRAWING them: the setting alone would pass on a strip that
+				// had forgotten how to window.
+				assert.deepEqual(await windowHeard(app), zoomed);
+				assert.equal(await hoursShown(app), shown);
+				const bands = await bandTransforms(app);
+				assert.deepEqual(bands, bands.map(() => bands[0]));
+				assert.notEqual(
+					bands[0],
+					'matrix(1, 0, 0, 1, 0, 0)',
+					'the restored strip draws the whole day'
+				);
+
+				// And `Reset widget` is the other way back to the whole day:
+				// the window is one of the strip's declared defaults, so the
+				// act that puts a widget back to them puts the window back.
+				await choose(page, 'strip', 'Reset widget');
+				await untilWindow(app, 'w[0] === 0 && w[1] === 24');
+				await app.idle();
+				assert.equal(await hoursShown(app), 25);
+				assert.deepEqual(app.errors, []);
+			},
+			{ viewport: { width: 1280, height: 900 } }
 		);
 	});
 });

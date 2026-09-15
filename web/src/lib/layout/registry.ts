@@ -47,6 +47,8 @@ import Stats from '$lib/Stats.svelte';
 import {
 	DEFAULT_DAY_HEIGHT,
 	DEFAULT_LABEL_WIDTH,
+	HOUR_FROM,
+	HOUR_TO,
 	MAX_DAY_HEIGHT,
 	MIN_DAY_HEIGHT,
 	NOWVIEW_HISTORY,
@@ -100,19 +102,26 @@ const meta = (
 
 export const KINDS: Record<string, WidgetKind> = {
 	// The strip fills its box and shows as much of the past as fits above
-	// today (da-zb0d); how tall a day is drawn is its one setting, which
-	// its notch changes.
+	// today (da-zb0d). Its settings are what the reader has moved on it:
+	// the day height and the date column (the `+` handle), whether today
+	// is frozen at the bottom, and the hour range it is zoomed onto — so
+	// a saved layout keeps a zoomed strip zoomed, and `Reset widget` is
+	// the way back to the whole day (da-ukcf).
 	daystrip: {
 		meta: meta('daystrip', 'dayview', {
 			dayHeight: DEFAULT_DAY_HEIGHT,
 			labelWidth: DEFAULT_LABEL_WIDTH,
-			freezeToday: true
+			freezeToday: true,
+			hourFrom: HOUR_FROM,
+			hourTo: HOUR_TO
 		}),
 		component: DayStrip,
-		props: ({ dayHeight, labelWidth, freezeToday }) => ({
+		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo }) => ({
 			dayHeight: typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT,
 			labelWidth: typeof labelWidth === 'number' ? labelWidth : DEFAULT_LABEL_WIDTH,
-			freezeToday: typeof freezeToday === 'boolean' ? freezeToday : true
+			freezeToday: typeof freezeToday === 'boolean' ? freezeToday : true,
+			hourFrom: typeof hourFrom === 'number' ? hourFrom : HOUR_FROM,
+			hourTo: typeof hourTo === 'number' ? hourTo : HOUR_TO
 		}),
 		// The strip's `change` names the settings it moved — the `+` handle
 		// moves two at once — so the fold is the same one for all of them.

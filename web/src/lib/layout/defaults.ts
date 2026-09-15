@@ -19,7 +19,7 @@
 
 import type { Layout, Pane, Split, Tab } from './types.js';
 import { LAYOUT_VERSION } from './types.js';
-import { DEFAULT_DAY_HEIGHT, DEFAULT_LABEL_WIDTH } from '$lib/panes.js';
+import { DEFAULT_DAY_HEIGHT, DEFAULT_LABEL_WIDTH, HOUR_FROM, HOUR_TO } from '$lib/panes.js';
 
 const bar = { edge: 'top', align: 'start' } as const;
 
@@ -30,8 +30,16 @@ const widgetPane = (id: string, kind: string, settings: Record<string, unknown> 
 	bar
 });
 
-/** The strip, with its one setting written down rather than implied. */
-const strip = () => widgetPane('strip', 'daystrip', { dayHeight: DEFAULT_DAY_HEIGHT, labelWidth: DEFAULT_LABEL_WIDTH, freezeToday: true });
+/** The strip's settings, written down rather than implied. */
+const STRIP = {
+	dayHeight: DEFAULT_DAY_HEIGHT,
+	labelWidth: DEFAULT_LABEL_WIDTH,
+	freezeToday: true,
+	hourFrom: HOUR_FROM,
+	hourTo: HOUR_TO
+};
+
+const strip = () => widgetPane('strip', 'daystrip', { ...STRIP });
 
 const holder = (id: string, split: Split): Pane => ({
 	id,
@@ -152,7 +160,7 @@ const only = (name: string, kind: string, settings: Record<string, unknown> = {}
 /** The built-ins by name; `day` is looked up through `builtinLayout`, since it depends on the screen. */
 export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	day: (phone) => ({ ...defaultLayoutFor(phone), name: 'day' }),
-	dayview: () => only('dayview', 'daystrip', { dayHeight: DEFAULT_DAY_HEIGHT, labelWidth: DEFAULT_LABEL_WIDTH, freezeToday: true }),
+	dayview: () => only('dayview', 'daystrip', { ...STRIP }),
 	repl: () => only('repl', 'repl'),
 	nowview: () => only('nowview', 'nowview'),
 	tail: () => only('tail', 'tail'),

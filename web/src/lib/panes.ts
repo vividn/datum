@@ -183,6 +183,113 @@ export const DIVIDER = 1;
  */
 export const AXIS_HEIGHT = 15;
 
+// ── the hour window (da-ukcf) ────────────────────────────────────────
+//
+// The strip draws an HOUR RANGE, and the whole day is just its widest
+// setting. Every band draws the same range — they share the x-axis, and a
+// stack whose days were windowed one at a time would not be a stack.
+//
+// `dayview` has no window flag, so the window is a picture WIDER than the
+// band, shown through it: the day is asked for at `pictureWidth`, which is
+// as many pixels as the band would need to hold all 24 hours at the
+// window's scale, and `windowMap` is the offset and scale that puts the
+// window's own hours in the band. The gridlines and the ruler are the
+// strip's own, drawn from the same map, so they follow the picture without
+// a second question. (The flag would be better — one day's data at one
+// width, whatever the zoom — and it is a CLI follow-up, not a reason to
+// keep the strip at 24 hours meanwhile.)
+
+/** The whole day: the window at rest, and what a double-tap returns to. */
+export const HOUR_FROM = 0;
+export const HOUR_TO = 24;
+const DAY_HOURS = 24;
+
+/**
+ * The shortest window, in hours. An hour of one day across a whole band
+ * is a minute to the millimetre — finer than anything a person logs.
+ */
+const MIN_SPAN = 1;
+
+/**
+ * The widest picture a band is asked for, in pixels.
+ *
+ * The zoom costs width: a 2-hour window is a day drawn twelve times as
+ * wide as the band. Past this the picture stops growing and the map
+ * stretches it instead — the deepest zooms are a little soft rather than
+ * a `dayview` of tens of thousands of pixels per band per day.
+ */
+const MAX_PICTURE = 6000;
+
+/** An hour, rounded to the minute — as fine as a window is ever stated. */
+const toMinute = (hour: number) => Math.round(hour * 60) / 60;
+
+/**
+ * `[from, to]` as a window the strip can draw: inside the day, at least
+ * `MIN_SPAN` long, and stated to the minute.
+ */
+export function clampWindow(from: number, to: number): [number, number] {
+	const a = Number.isFinite(from) ? from : HOUR_FROM;
+	const b = Number.isFinite(to) ? to : HOUR_TO;
+	const span = Math.min(DAY_HOURS, Math.max(MIN_SPAN, b - a || DAY_HOURS));
+	const start = Math.min(Math.max(a, 0), DAY_HOURS - span);
+	return [toMinute(start), toMinute(start + span)];
+}
+
+/** Whether `view` is the whole day — the one window that needs no map. */
+export const wholeDay = (view: [number, number]) =>
+	view[0] <= HOUR_FROM && view[1] >= HOUR_TO;
+
+/**
+ * How wide a day must be DRAWN for `span` of its hours to fill `bandWidth`.
+ *
+ * At the whole day it is the band itself, which is what the strip has
+ * always asked for.
+ */
+export const pictureWidth = (bandWidth: number, span: number) =>
+	Math.min(MAX_PICTURE, Math.round((bandWidth * DAY_HOURS) / span));
+
+/**
+ * The picture's x → the band's x: `x * scale + offset`.
+ *
+ * One map for the pictures (a CSS transform) and for the strip's own
+ * gridlines and ruler (arithmetic), so the three cannot disagree. At the
+ * whole day it is the identity, to the pixel the rounding of
+ * `pictureWidth` leaves.
+ */
+export function windowMap(
+	view: [number, number],
+	full: number,
+	bandWidth: number
+): { offset: number; scale: number } {
+	const span = view[1] - view[0];
+	return {
+		offset: -(view[0] * bandWidth) / span,
+		scale: (DAY_HOURS * bandWidth) / (full * span)
+	};
+}
+
+/**
+ * The window a gesture asks for: `view` scaled by `by` about the band
+ * fraction `was`, with that point carried to the fraction `now`.
+ *
+ * `by` is the gesture's own — fingers apart is greater than one, and a
+ * picture magnified shows LESS time, so the span is divided by it. The
+ * hour under the fingers when they landed is the hour under them now,
+ * which is what makes the gesture a grip on the picture rather than a
+ * dial beside it; a pan is the same thing with `by` of one.
+ */
+export function zoomWindow(
+	view: [number, number],
+	by: number,
+	was: number,
+	now = was
+): [number, number] {
+	const span = (view[1] - view[0]) / Math.max(by, 1e-3);
+	const hour = view[0] + was * (view[1] - view[0]);
+	const from = hour - now * span;
+	return clampWindow(from, from + span);
+}
+
 /**
  * The box one day of the past occupies: the picture and nothing else.
  *
