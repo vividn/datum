@@ -170,6 +170,14 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   mounted. `Pane.svelte` inside a frame renders body-only and hands its
   title slot and alarm up to `PaneFrame.svelte`. Tests find a pane by its
   `data-title`; the old grid's area names live on as classes of the cells.
+  A saved layout lives in one of TWO stores (da-gg0v, `store.ts`): the
+  person's own in `_internal`, and whatever a `[[layout]]` block in a kit
+  installed into the DATA db — an ordinary `layout` entry carrying its
+  `kit_id`, so it syncs to every device of that database. A listing says
+  which (`builtin` | `user` | `kit:<name>`); a save shadows a kit's or a
+  built-in's name, `Reset layout` goes back to the kit's tree, and
+  `designedFor` decides which of two same-named layouts wins on THIS
+  device and orders the chooser — it never hides one.
 - The tail pane is `tail -w` (da-lan0, `web/src/lib/TailTable.svelte`):
   its box decides the row count (`tail -n <n>`, n from a hidden probe
   row's height, never from the drawn table, and never under `tail`'s own

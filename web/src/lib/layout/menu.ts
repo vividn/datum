@@ -18,8 +18,9 @@
 // - the layout's own acts — save, restore, save as, lock — are on any tab
 //   that HOLDS a layout (da-crp5), which the root's always does and a
 //   pane's sometimes does; `Reset layout` joins them on a tab holding a
-//   layout that SHIPPED with datum (da-luwe), which is a fact about the
-//   layout and not about which of the two menus is open.
+//   layout that SHIPPED — with datum (da-luwe) or in a kit (da-gg0v) —
+//   which is a fact about the layout and not about which of the two menus
+//   is open.
 // - `Reset widget` (da-7ymx) is on a tab that HOLDS A WIDGET of its own —
 //   not a layout, not a split — and whose kind declares defaults to put
 //   back. The root's tab almost always holds a layout, so the root menu

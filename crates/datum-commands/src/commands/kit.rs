@@ -12,6 +12,12 @@
 //! - `export <name> [<path>]` — round-trip the rows installed by this kit
 //!   back to TOML. None path → stdout.
 //! - `list` — installed kits with per-kit field/index counts.
+//!
+//! A kit may also carry `[[layout]]` blocks (da-gg0v). Those do not go to
+//! a table of their own: each becomes an ordinary entry of field `layout`
+//! in THIS database, which is how a layout syncs with the data it belongs
+//! to and how the web reads it beside the person's own — see
+//! `datum_core::db::kit_layout`.
 //! - `uninstall <name>` — drop every row tagged with this kit's id and
 //!   `DROP INDEX` every kit-owned index.
 
@@ -24,10 +30,11 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use datum_core::db::Db;
 use datum_core::field_spec::{detect_anchor_cycles, format_cycle};
-use datum_core::kit::{FieldEntry, IndexEntry, KitToml};
+use datum_core::kit::{validate_layout_entry, FieldEntry, IndexEntry, KitToml};
 use datum_core::kit_color::resolve_color;
 
 use crate::args::{KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs};
+use crate::config::device_id;
 
 pub fn kit(cmd: KitCommand, db: &Db) -> Result<()> {
     match cmd {
@@ -212,6 +219,11 @@ fn install_toml(
         // The string is recomputed inside install_kit.
         let _ = ix.build_ddl(&kit.kit.name)?;
     }
+    // Layouts are screened here too, so a kit whose tree is not JSON fails
+    // before the trust prompt and before a dry run reports anything.
+    for layout in &kit.layouts {
+        let _ = validate_layout_entry(layout)?;
+    }
     if !kit.indices.is_empty() && !args.dry_run {
         let is_reinstall = !db.load_indices_by_kit(&kit.kit.name)?.is_empty();
         let approved =
@@ -274,12 +286,13 @@ fn install_toml(
 
     if args.dry_run {
         println!(
-            "Would install kit '{}': {} field(s), {} alias(es), {} view(s), {} command(s), {} index/indices",
+            "Would install kit '{}': {} field(s), {} alias(es), {} view(s), {} command(s), {} layout(s), {} index/indices",
             kit.kit.name,
             specs.len(),
             kit.aliases.len(),
             kit.views.len(),
             kit.commands.len(),
+            kit.layouts.len(),
             kit.indices.len()
         );
         return Ok(());
@@ -295,6 +308,11 @@ fn install_toml(
     // Slice 6: kit-defined commands. Validation runs first so a bad rule
     // surfaces before any partial-install of fields/views.
     let cmd_report = db.install_kit_commands(&kit.kit.name, &kit.commands, args.force)?;
+    // Layouts (da-gg0v) land as ENTRIES in this very database, not in a
+    // table of their own — so they sync with the data, and the web reads
+    // them beside the person's own layouts in `_internal`.
+    let layout_report =
+        db.install_kit_layouts(&kit.kit.name, &kit.layouts, &device_id()?, args.force)?;
 
     let installed: Vec<&str> = report.installed().collect();
     let skipped: Vec<&str> = report.skipped().collect();
@@ -304,6 +322,8 @@ fn install_toml(
     let aliases_skipped: Vec<&str> = alias_report.skipped().collect();
     let cmds_installed: Vec<&str> = cmd_report.installed().collect();
     let cmds_skipped: Vec<&str> = cmd_report.skipped().collect();
+    let layouts_installed: Vec<&str> = layout_report.installed().collect();
+    let layouts_skipped: Vec<&str> = layout_report.skipped().collect();
 
     if !installed.is_empty() {
         println!(
@@ -318,6 +338,7 @@ fn install_toml(
         && views_installed.is_empty()
         && aliases_installed.is_empty()
         && cmds_installed.is_empty()
+        && layouts_installed.is_empty()
     {
         println!("Installed kit '{}' (no new fields)", kit.kit.name);
     }
@@ -391,6 +412,21 @@ fn install_toml(
             println!("  - {c}");
         }
     }
+    if !layouts_installed.is_empty() {
+        println!("Installed {} layout(s):", layouts_installed.len());
+        for l in &layouts_installed {
+            println!("  + {l}");
+        }
+    }
+    if !layouts_skipped.is_empty() {
+        println!(
+            "Skipped {} layout(s) (existing entries kept; use --force to overwrite):",
+            layouts_skipped.len()
+        );
+        for l in &layouts_skipped {
+            println!("  - {l}");
+        }
+    }
     Ok(())
 }
 
@@ -400,17 +436,20 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
     let aliases = db.load_aliases_by_kit(&args.name)?;
     let installed_indices = db.load_indices_by_kit(&args.name)?;
     let commands = db.load_commands_by_kit(&args.name)?;
+    let layouts = db.load_layouts_by_kit(&args.name)?;
     if specs.is_empty()
         && views.is_empty()
         && aliases.is_empty()
         && installed_indices.is_empty()
         && commands.is_empty()
+        && layouts.is_empty()
     {
         anyhow::bail!("no installed kit named '{}'", args.name);
     }
     let view_count = views.len();
     let alias_count = aliases.len();
     let cmd_count = commands.len();
+    let layout_count = layouts.len();
     let index_count = installed_indices.len();
     // Reconstruct the TOML-side `IndexEntry` shape from the persisted
     // SQL text. The on-disk DDL is what matters for re-install, and the
@@ -436,6 +475,7 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
         &aliases,
         &synthetic_indices,
         commands,
+        layouts,
     );
     let toml = kit.to_toml()?;
 
@@ -443,13 +483,14 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
         Some(p) => {
             fs::write(p, &toml).with_context(|| format!("write kit TOML to {p}"))?;
             println!(
-                "Exported kit '{}' ({} field(s), {} view(s), {} alias(es), {} index/indices, {} command(s)) → {p}",
+                "Exported kit '{}' ({} field(s), {} view(s), {} alias(es), {} index/indices, {} command(s), {} layout(s)) → {p}",
                 args.name,
                 specs.len(),
                 view_count,
                 alias_count,
                 index_count,
-                cmd_count
+                cmd_count,
+                layout_count
             );
         }
         None => print!("{toml}"),
@@ -464,13 +505,19 @@ fn list(db: &Db) -> Result<()> {
         return Ok(());
     }
     println!(
-        "{:<24} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}",
-        "kit", "fields", "views", "aliases", "indices", "cmds"
+        "{:<24} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}",
+        "kit", "fields", "views", "aliases", "indices", "cmds", "layouts"
     );
     for k in kits {
         println!(
-            "{:<24} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}",
-            k.kit_id, k.field_count, k.view_count, k.alias_count, k.index_count, k.command_count
+            "{:<24} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}",
+            k.kit_id,
+            k.field_count,
+            k.view_count,
+            k.alias_count,
+            k.index_count,
+            k.command_count,
+            k.layout_count
         );
     }
     Ok(())
@@ -484,25 +531,30 @@ fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
     let removed_views = db.uninstall_kit_views(&args.name)?;
     let removed_aliases = db.uninstall_kit_aliases(&args.name)?;
     let removed_cmds = db.uninstall_kit_commands(&args.name)?;
+    // A layout is an entry, so its removal is a SOFT delete — the deletion
+    // has to reach the other devices of this database (da-gg0v).
+    let removed_layouts = db.uninstall_kit_layouts(&args.name)?;
     if removed.is_empty()
         && removed_views.is_empty()
         && removed_aliases.is_empty()
         && indices_before.is_empty()
         && removed_cmds.is_empty()
+        && removed_layouts.is_empty()
     {
         println!(
-            "No fields, views, aliases, indices, or commands tagged with kit '{}'.",
+            "No fields, views, aliases, indices, commands, or layouts tagged with kit '{}'.",
             args.name
         );
     } else {
         println!(
-            "Uninstalled kit '{}': {} field(s), {} view(s), {} alias(es), {} index/indices, {} command(s)",
+            "Uninstalled kit '{}': {} field(s), {} view(s), {} alias(es), {} index/indices, {} command(s), {} layout(s)",
             args.name,
             removed.len(),
             removed_views.len(),
             removed_aliases.len(),
             indices_before.len(),
-            removed_cmds.len()
+            removed_cmds.len(),
+            removed_layouts.len()
         );
         for f in &removed {
             println!("  - field {f}");
@@ -518,6 +570,9 @@ fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
         }
         for c in &removed_cmds {
             println!("  - cmd   {c}");
+        }
+        for l in &removed_layouts {
+            println!("  - layout {l}");
         }
     }
     Ok(())

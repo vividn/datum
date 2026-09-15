@@ -5,9 +5,14 @@
 	wherever it is opened. Its caller is `chooser.ts`, which is what the
 	pane menu and the root menu call.
 
-	The order: the layouts `chooser.ts` handed it (`day`, then the saved
-	ones, less what is open above the tab), and then every `PICKABLE` kind
-	by its title, in the registry's order.
+	The order: the layouts `chooser.ts` handed it (`day`, then the rest by
+	device, less what is open above the tab), and then every `PICKABLE`
+	kind by its title, in the registry's order.
+
+	A layout says where it came from (da-gg0v): `data-source` is
+	`builtin`, `user` or `kit:<name>`, and a kit's layout wears the kit's
+	name beside its own, so a list that joins two stores does not read as
+	one flat pile of names.
 
 	The `<dialog>` pattern is Confirm.svelte's: `showModal` puts focus
 	inside and Escape — or a click on the backdrop, which lands on the
@@ -17,10 +22,10 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { PICKABLE, titleOf } from './registry.js';
-	import type { Choice } from './chooser.js';
+	import type { Choice, Offer } from './chooser.js';
 
 	/** The layouts this tab could hold, in order (chooser.ts). */
-	export let layouts: string[] = [];
+	export let layouts: Offer[] = [];
 
 	const dispatch = createEventDispatcher<{ close: Choice | null }>();
 
@@ -52,8 +57,17 @@
 	{#if layouts.length}
 		<h3>Layouts</h3>
 		<div class="group" role="group" aria-label="Layouts">
-			{#each layouts as name (name)}
-				<button type="button" class="layout" on:click={() => pick({ layout: name })}>{name}</button>
+			{#each layouts as { name, source } (name)}
+				<button
+					type="button"
+					class="layout"
+					data-source={source}
+					on:click={() => pick({ layout: name })}
+				>
+					<span class="name">{name}</span>{#if source.startsWith('kit:')}<span class="from"
+							>{source.slice(4)}</span
+						>{/if}
+				</button>
 			{/each}
 		</div>
 	{/if}
@@ -126,6 +140,12 @@
 	/* A layout reads as a layout: the root bar's own colour. */
 	.layout {
 		color: var(--accent);
+	}
+
+	/* The kit a layout came in with, quieter than the name it goes by. */
+	.from {
+		margin-inline-start: 0.35rem;
+		color: var(--muted);
 	}
 
 	button:hover,

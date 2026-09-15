@@ -82,7 +82,9 @@ import {
 	saveRoot
 } from './draft.js';
 import {
+	kitLayout,
 	loadLayout,
+	refreshKitLayouts,
 	restore as restoreSaved,
 	saveAs as saveAsSaved,
 	saveLayout,
@@ -105,12 +107,41 @@ const BAR = { edge: 'top', align: 'start' } as const;
 const phone = () =>
 	typeof matchMedia === 'function' && matchMedia(`(max-width: ${PHONE_WIDTH}px)`).matches;
 
+/** This screen, in the word a layout's `designedFor` uses. */
+export const device = (): NonNullable<Layout['designedFor']> => (phone() ? 'mobile' : 'desktop');
+
+/**
+ * Whether `l` may SHADOW a same-named layout here (vividn, 2026-09-15 18:01):
+ * "load a different set of layouts by default when the device is detected
+ * to be mobile, but still let them both load each other's custom layouts".
+ *
+ * So `designedFor` is not a filter — a layout designed for the other device
+ * is still listed and still opens by name. It only decides who WINS a name
+ * three things may answer to: a layout that says nothing suits either
+ * device and shadows; one that names the other device stands aside.
+ */
+const forHere = (l: { designedFor?: Layout['designedFor'] } | null): boolean =>
+	!!l && (!l.designedFor || l.designedFor === device());
+
+/**
+ * Of the candidates for one name, in precedence order (the person's save,
+ * then the kit's, then the built-in), the first that may shadow here — and
+ * failing that the first that EXISTS, so a mobile-only layout still opens
+ * on a desktop when nothing else answers to its name.
+ */
+const pick = (...candidates: (Layout | null)[]): Layout | null =>
+	candidates.find(forHere) ?? candidates.find(Boolean) ?? null;
+
 /** The name a URL or the chooser means: the old routes and kind names map to one layout each. */
 export const canonicalName = (name: string): string => ALIASES[name] ?? name;
 
-/** The saved layout `name`, else the built-in one, else null. */
+/** The layout `name` means here: the save, else the kit's, else the built-in. */
 export async function resolve(name: string): Promise<Layout | null> {
-	return (await loadLayout(name).catch(() => null)) ?? builtinLayout(name, phone());
+	return pick(
+		await loadLayout(name).catch(() => null),
+		kitLayout(name),
+		builtinLayout(name, phone())
+	);
 }
 
 // ---- walking ----------------------------------------------------------
@@ -334,6 +365,9 @@ let booting: Promise<void> | null = null;
 export function boot(): Promise<void> {
 	return (booting ??= (async () => {
 		await initDb().catch(() => {});
+		// Before the first `resolve`: a kit's layout is one of the trees a
+		// name may mean, and `shippedTree` reads the cache synchronously.
+		await refreshKitLayouts();
 		const state = loadRoot() ?? { names: [HOME], active: 0 };
 		// A name with another spelling opens under the one name, and only
 		// once: a device with `now` and `nowview` both open gets one
@@ -356,6 +390,9 @@ export function boot(): Promise<void> {
 		booted = true;
 		loaded.set(true);
 		onExternalChange(() => void followSaves(), '_internal');
+		// A kit installed in another tab — into the data db — changes what
+		// the names mean here too.
+		onExternalChange(() => void refreshKitLayouts());
 	})());
 }
 
@@ -524,17 +561,17 @@ export async function saveAs(tabId: NodeId, newName: string): Promise<void> {
 }
 
 /**
- * The tree that SHIPPED under `name`: what a reset goes back to, and the
- * one seam for what else might ship one (da-luwe).
+ * The tree that SHIPPED under `name`: what a reset goes back to (da-luwe).
  *
- * Today the built-ins alone. vividn, 18:15: "maybe if a layout was installed
- * through a kit, it could reset to the kit's definition" — a kit carries
- * field specs and indices and no layouts yet, so that is a second arm here
- * when there is something to point it at, and nothing else moves. A name
- * with no shipped tree — anything the reader saved themselves — has no
- * reset at all.
+ * Both arms now (da-gg0v). vividn, 18:15: "maybe if a layout was installed
+ * through a kit, it could reset to the kit's definition" — so a kit's
+ * layout is a shipped tree exactly as a built-in is, and takes the name
+ * ahead of the built-in, being the more particular thing: it was installed
+ * into THIS database. A name with no shipped tree — anything the reader
+ * saved themselves, under a name nothing else claims — has no reset at all.
  */
-export const shippedTree = (name: string): Layout | null => builtinLayout(name, phone());
+export const shippedTree = (name: string): Layout | null =>
+	pick(kitLayout(name), builtinLayout(name, phone()));
 
 /**
  * Back to the shipped tree: this copy's DRAFT set to what `defaults.ts`

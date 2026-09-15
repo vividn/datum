@@ -13,25 +13,49 @@
 
 import Chooser from './Chooser.svelte';
 import { BUILTIN_NAMES } from './defaults.js';
-import { ancestorsOf, inlineInto, widgetInto } from './shell.js';
-import { listLayouts } from './store.js';
+import { ancestorsOf, device, inlineInto, widgetInto } from './shell.js';
+import { listLayouts, refreshKitLayouts } from './store.js';
+import type { LayoutSource } from './store.js';
 import type { NodeId } from './types.js';
 
 /** What the modal came back with: a layout to inline, or a widget kind to fill with. */
 export type Choice = { layout: string } | { kind: string };
 
+/** One line of the modal's layout list: the name, and where it came from. */
+export interface Offer {
+	name: string;
+	source: LayoutSource;
+}
+
 /**
- * The layouts the modal offers, in the one order: `day`, then the saved
- * layouts that do not shadow a built-in's name — every built-in but `day`
- * IS a kind's one-widget layout, and is listed once, among the widgets —
- * less the names already open above the tab, since `day` may not hold
- * `day` (the shell refuses such names too; the modal does not offer them).
+ * The layouts the modal offers, in the one order: `day`, then the rest —
+ * every built-in but `day` IS a kind's one-widget layout, and is listed
+ * once, among the widgets — less the names already open above the tab,
+ * since `day` may not hold `day` (the shell refuses such names too; the
+ * modal does not offer them).
+ *
+ * The rest, which is the person's saves and whatever a kit installed into
+ * this database (da-gg0v), are ordered BY DEVICE: the ones designed for
+ * this screen first, then the ones designed for the other or for neither.
+ * vividn, 2026-09-15 18:01: "load a different set of layouts by default when
+ * the device is detected to be mobile, but still let them both load each
+ * other's custom layouts". Both halves are there, in that order — nothing
+ * is hidden from a device.
+ *
+ * The kit half is re-read here rather than trusted from boot, so a kit
+ * installed at the prompt a moment ago is in the list.
  */
-async function layoutsFor(ancestors: string[]): Promise<string[]> {
-	const saved = (await listLayouts().catch(() => [])).map((l) => l.name);
-	return ['day', ...saved.filter((n) => !BUILTIN_NAMES.includes(n))].filter(
-		(n) => !ancestors.includes(n)
+async function layoutsFor(ancestors: string[]): Promise<Offer[]> {
+	await refreshKitLayouts();
+	const listed = (await listLayouts().catch(() => [])).filter(
+		(l) => !BUILTIN_NAMES.includes(l.name)
 	);
+	const here = device();
+	const mine = listed.filter((l) => l.designedFor === here);
+	const rest = listed.filter((l) => l.designedFor !== here);
+	return [{ name: 'day', source: 'builtin' as const }, ...mine, ...rest]
+		.map(({ name, source }) => ({ name, source }))
+		.filter((o) => !ancestors.includes(o.name));
 }
 
 /** Open the chooser; `ancestors` are the layout names it must not offer. */

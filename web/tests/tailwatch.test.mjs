@@ -465,7 +465,11 @@ describe('a write', () => {
 			window.__tailAsks = [];
 			const post = Worker.prototype.postMessage;
 			Worker.prototype.postMessage = function (message, ...rest) {
-				if (message?.op === 'cli' && message.argv[0] === 'tail' && message.argv.includes('--json')) {
+				// The PANE's listing, which never names a field: `tail --json`
+				// with the field's slot empty. The layout store asks `tail
+				// layout --json` of the data db for what a kit shipped
+				// (da-gg0v), and that is not a listing this pane asked for.
+				if (message?.op === 'cli' && message.argv[0] === 'tail' && message.argv[1] === '--json') {
 					const body = document.querySelector('section.pane[data-title="tail"] .body');
 					const style = body && getComputedStyle(body);
 					window.__tailAsks.push({

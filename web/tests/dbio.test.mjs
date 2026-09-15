@@ -266,7 +266,7 @@ for (const engine of [chromium, webkit]) {
 				async (app) => {
 					const { page } = app;
 					const said = await (await kitConfirm(page)).locator('p').innerText();
-					assert.match(said, /^Would install kit 'rest': 2 field\(s\), 1 alias\(es\), 1 view\(s\), 1 command\(s\), 0 index\/indices$/m);
+					assert.match(said, /^Would install kit 'rest': 2 field\(s\), 1 alias\(es\), 1 view\(s\), 1 command\(s\), 0 layout\(s\), 0 index\/indices$/m);
 					assert.match(said, /install only kits you trust/);
 					await answer(page, 'cancel');
 					assert.equal((await app.outputs()).at(-1), 'kit not installed — nothing ran');
@@ -278,7 +278,7 @@ for (const engine of [chromium, webkit]) {
 					await answer(page, 'install');
 					assert.match((await app.outputs()).at(-1), /^Installed kit 'rest': 2 field\(s\)/);
 					await app.submit('kit list');
-					assert.match((await app.outputs()).at(-1), /^rest\s+2\s+1\s+1\s+0\s+1$/m);
+					assert.match((await app.outputs()).at(-1), /^rest\s+2\s+1\s+1\s+0\s+1\s+0$/m);
 					// The fields widget follows without a reload.
 					for (const field of ['nap', 'sleep']) {
 						await page.locator(`.bar [data-field="${field}"]`).waitFor();

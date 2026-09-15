@@ -40,6 +40,11 @@ pub struct KitToml {
     /// byte-for-byte. Slice 3 (da-d4t.3).
     #[serde(default, rename = "alias", skip_serializing_if = "Vec::is_empty")]
     pub aliases: Vec<AliasEntry>,
+    /// `[[layout]]` declarations. Each becomes an entry of field `layout`
+    /// in the database the kit installs into — see [`LayoutEntry`]
+    /// (da-gg0v).
+    #[serde(default, rename = "layout", skip_serializing_if = "Vec::is_empty")]
+    pub layouts: Vec<LayoutEntry>,
     /// `[[index]]` declarations. Each becomes a `CREATE INDEX` against
     /// `entries` recorded in `kit_indices`. Trust-gated at install time;
     /// see slice 5 (da-d4t.5).
@@ -148,6 +153,74 @@ pub struct FieldEntry {
 pub struct ViewEntry {
     pub name: String,
     pub sql: String,
+}
+
+/// A `[[layout]]` entry — a dashboard layout the kit ships (da-gg0v).
+///
+/// Unlike every other kit block, a layout does not land in a table of its
+/// own. It becomes an ORDINARY ENTRY of field `layout`, slug
+/// `layout:<name>`, in the database the kit installs into — the same row
+/// the web's layout store writes one database over
+/// (`web/src/lib/layout/store.ts`), with `kit_id` in its data saying which
+/// kit shipped it. So a kit layout syncs with the data it belongs to and
+/// reaches every device of that database, which is what vividn asked for
+/// ("layouts have to go inside the db proper, not the _internal db").
+///
+/// `root` is the tree as the web's `Layout.root`: JSON, held in a TOML
+/// string. The shape is the web's contract (`web/src/lib/layout/types.ts`)
+/// and nothing here reads inside it — [`validate_layout_entry`] only
+/// checks that it parses as a JSON object, and stores it canonicalized so
+/// export reproduces what install wrote.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LayoutEntry {
+    pub name: String,
+    /// `mobile` | `desktop`, or absent for a layout that suits either.
+    /// Advisory (vividn, 18:01): it decides which device a layout may shadow
+    /// a same-named one on, and the order the web's chooser lists it in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub designed_for: Option<String>,
+    /// The root pane, as JSON.
+    pub root: String,
+}
+
+/// The two devices a layout may declare itself designed for.
+pub const DESIGNED_FOR: [&str; 2] = ["mobile", "desktop"];
+
+/// The layout-tree version an installed layout is stamped with — the web's
+/// `LAYOUT_VERSION` (`web/src/lib/layout/types.ts`). The two are bumped
+/// together: a tree shape the web cannot read is not one a kit may ship.
+pub const LAYOUT_VERSION: u32 = 1;
+
+/// Screen a `[[layout]]` block and return its root, parsed.
+///
+/// The name has to be usable as a slug's tail, the `designed_for` has to be
+/// one of the two devices, and the root has to be a JSON object — a bare
+/// number or a list is not a pane and would draw nothing.
+pub fn validate_layout_entry(entry: &LayoutEntry) -> Result<serde_json::Value> {
+    if entry.name.trim().is_empty() {
+        return Err(DatumError::Other("kit layout: missing name".into()));
+    }
+    if let Some(device) = entry.designed_for.as_deref() {
+        if !DESIGNED_FOR.contains(&device) {
+            return Err(DatumError::Other(format!(
+                "kit layout '{}': invalid designed_for '{}' (must be mobile|desktop)",
+                entry.name, device
+            )));
+        }
+    }
+    let root: serde_json::Value = serde_json::from_str(&entry.root).map_err(|e| {
+        DatumError::Other(format!(
+            "kit layout '{}': root is not JSON: {e}",
+            entry.name
+        ))
+    })?;
+    if !root.is_object() {
+        return Err(DatumError::Other(format!(
+            "kit layout '{}': root must be a JSON object (the layout's root pane)",
+            entry.name
+        )));
+    }
+    Ok(root)
 }
 
 /// A `[[alias]]` entry — a named expansion of a `datum` invocation.
@@ -293,6 +366,7 @@ impl KitToml {
             fields,
             views: Vec::new(),
             aliases: Vec::new(),
+            layouts: Vec::new(),
             indices: indices.to_vec(),
             commands: Vec::new(),
         }
@@ -315,8 +389,12 @@ impl KitToml {
     }
 
     /// Build a [`KitToml`] from field specs, view rows, alias rows, indices,
-    /// and command rows. Used by `datum kit export <name>` with slices
-    /// 1/3/4/5/6 all wired in.
+    /// command rows and layouts. Used by `datum kit export <name>` with
+    /// slices 1/3/4/5/6 and da-gg0v all wired in.
+    // One parameter per kind of row a kit can carry, which is the point of
+    // the function: a builder would only move the same list to the call
+    // site, where the one caller writes it out once.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_kit_rows_full(
         name: &str,
         version: Option<&str>,
@@ -325,11 +403,13 @@ impl KitToml {
         aliases: &[Alias],
         indices: &[IndexEntry],
         commands: Vec<CommandEntry>,
+        layouts: Vec<LayoutEntry>,
     ) -> Self {
         let mut kit = Self::from_field_specs(name, version, specs, indices);
         kit.views = views;
         kit.aliases = aliases.iter().map(AliasEntry::from_alias).collect();
         kit.commands = commands;
+        kit.layouts = layouts;
         kit
     }
 }
@@ -1284,6 +1364,7 @@ where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
             fields: vec![],
             views: vec![],
             aliases: vec![],
+            layouts: vec![],
             indices: vec![IndexEntry {
                 name: "by_field".into(),
                 on: "entries".into(),

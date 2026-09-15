@@ -24,6 +24,7 @@ mod insert;
 mod integrity;
 mod kit;
 mod kit_command;
+mod kit_layout;
 mod list;
 mod lookup;
 mod multi;
@@ -52,6 +53,7 @@ pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
 pub use kit_command::{
     validate_command, InstallCommandsReport, InstalledKitCommand, KitCommandOutcome,
 };
+pub use kit_layout::{InstallLayoutsReport, KitLayoutOutcome, LAYOUT_FIELD, LAYOUT_KIT_KEY};
 pub use multi::merge_group_key;
 pub use now::{
     NowFieldActive, NowFieldIgnored, NowFieldTrackedFalse, NowFilter, NowSnapshot,

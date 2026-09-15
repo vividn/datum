@@ -72,6 +72,7 @@ pub struct InstalledKit {
     pub alias_count: usize,
     pub index_count: usize,
     pub command_count: usize,
+    pub layout_count: usize,
 }
 
 /// One row from `kit_indices`, returned by [`Db::load_indices_by_kit`].
@@ -251,13 +252,25 @@ impl Db {
                     FROM kit_commands
                     WHERE kit_id IS NOT NULL
                     GROUP BY kit_id
+                ),
+                -- Layouts are ENTRIES, not a table of their own (da-gg0v):
+                -- the kit that shipped one is a key in its data blob.
+                kit_layouts AS (
+                    SELECT json_extract(data, '$.kit_id') AS kit_id, COUNT(*) AS n
+                    FROM entries
+                    WHERE field = 'layout'
+                      AND deleted_at IS NULL
+                      AND superseded_by IS NULL
+                      AND json_extract(data, '$.kit_id') IS NOT NULL
+                    GROUP BY 1
                 )
              SELECT k.kit_id,
                     IFNULL(f.n, 0),
                     IFNULL(v.n, 0),
                     IFNULL(a.n, 0),
                     IFNULL(i.n, 0),
-                    IFNULL(c.n, 0)
+                    IFNULL(c.n, 0),
+                    IFNULL(l.n, 0)
              FROM (
                  SELECT kit_id FROM kit_fields
                  UNION
@@ -268,12 +281,15 @@ impl Db {
                  SELECT kit_id FROM kit_idx
                  UNION
                  SELECT kit_id FROM kit_cmds
+                 UNION
+                 SELECT kit_id FROM kit_layouts
              ) k
              LEFT JOIN kit_fields  f ON f.kit_id = k.kit_id
              LEFT JOIN kit_views   v ON v.kit_id = k.kit_id
              LEFT JOIN kit_aliases a ON a.kit_id = k.kit_id
              LEFT JOIN kit_idx     i ON i.kit_id = k.kit_id
              LEFT JOIN kit_cmds    c ON c.kit_id = k.kit_id
+             LEFT JOIN kit_layouts l ON l.kit_id = k.kit_id
              ORDER BY k.kit_id",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -284,6 +300,7 @@ impl Db {
                 alias_count: row.get::<_, i64>(3)? as usize,
                 index_count: row.get::<_, i64>(4)? as usize,
                 command_count: row.get::<_, i64>(5)? as usize,
+                layout_count: row.get::<_, i64>(6)? as usize,
             })
         })?;
         let mut out = Vec::new();

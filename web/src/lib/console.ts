@@ -46,7 +46,7 @@ export interface DatumConsole {
 	entries(limit?: number): Promise<StoredEntry[]>;
 	/** `datum tail --json`: the rows and the painted columns the tail pane lays out. */
 	tailRows(): Promise<{ rows: TailRow[]; columns: TailColumn[] }>;
-	/** The saved layouts in the `_internal` database: list, load, save, restore. */
+	/** The layout store: the person's own in `_internal` and a kit's in the data db (da-gg0v). */
 	layouts: typeof layouts;
 	/** The live tree (da-jdop): what is on screen, and the one way to change it. */
 	layout: { current(): Layout; apply(op: (layout: Layout) => Layout): void };
