@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# The merge queue's check, path-gated.
+#
+# Until 2026-09-15 the queue ran `cargo build --all-targets`, `cargo test
+# --workspace` and clippy on this box for EVERY landing, web-only ones
+# included — twelve full workspace builds on 09-15 alone, each beside the
+# cans' own `scripts/check.sh` run of the same battery — and never ran the
+# web suite, so a web failure reached main (19841c4) and was caught by CI
+# only after the merge. vividn, 18:15: "make those improvements".
+#
+# So: the Rust battery runs when Rust changed; the web suite runs when web/
+# changed; a docs-only landing runs nothing. `scripts/check.sh` is the
+# battery the cans run, so the queue and the can cannot disagree about
+# what "green" means.
+#
+# The queue's environment may not have node on PATH (it is nvm's, loaded by
+# an interactive shell's rc file), so the web half puts it there itself.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+base="${MQ_BASE:-origin/main}"
+merge_base="$(git merge-base "$base" HEAD)"
+changed="$(git diff --name-only "$merge_base" HEAD)"
+
+rust="$(printf '%s\n' "$changed" | grep -E '^(crates/|Cargo\.(toml|lock)$|rust-toolchain|scripts/check\.sh$)' || true)"
+web="$(printf '%s\n' "$changed" | grep -E '^web/' || true)"
+
+if [ -n "$rust" ]; then
+  echo "mq-check: Rust changed — running scripts/check.sh"
+  bash scripts/check.sh
+fi
+
+if [ -n "$web" ]; then
+  if ! command -v pnpm >/dev/null 2>&1; then
+    node_bin="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -1 || true)"
+    export PATH="${node_bin:+$node_bin:}$HOME/.local/share/pnpm:$PATH"
+  fi
+  echo "mq-check: web/ changed — running the web check and suite"
+  (cd web && pnpm install --frozen-lockfile && pnpm run check && pnpm test)
+fi
+
+if [ -z "$rust$web" ]; then
+  echo "mq-check: nothing under crates/ or web/ changed since $merge_base — nothing to run"
+fi

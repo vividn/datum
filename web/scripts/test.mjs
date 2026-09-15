@@ -1,0 +1,32 @@
+// `pnpm test`: the web suite, with its parallelism bounded by the box.
+//
+// Every test file launches its own Chromium (tests/support/app.mjs), and
+// `node --test` runs one file per core minus one: 23 at once on the 24-core
+// build box — 163 Chrome processes across three cans at 17:1x on 2026-09-15.
+// A flat `--test-concurrency=6` fixed the box and broke CI: its runners have
+// four cores, so their default was THREE, and six was a raise — twenty-one
+// tests timed out under the contention (PR #213's first run). So the cap is
+// the smaller of six and what the machine has: six here, three on CI, one
+// on a laptop that is doing something else.
+//
+// `DATUM_TEST_CONCURRENCY` overrides the cap for a run that wants to measure
+// something; any further arguments go to `node --test` unchanged.
+
+import { availableParallelism } from 'node:os';
+import { spawn } from 'node:child_process';
+
+const cap = Number(process.env.DATUM_TEST_CONCURRENCY ?? 6);
+const concurrency = Math.max(1, Math.min(cap, availableParallelism() - 1));
+
+const child = spawn(
+	process.execPath,
+	[
+		'--test',
+		`--test-concurrency=${concurrency}`,
+		'--test-timeout=120000',
+		'tests/**/*.test.mjs',
+		...process.argv.slice(2)
+	],
+	{ stdio: 'inherit' }
+);
+child.on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 1)));

@@ -9,7 +9,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "pretest": "pnpm run build",
-    "test": "node --test --test-timeout=120000 \"tests/**/*.test.mjs\"",
+    "test": "node scripts/test.mjs",
     "test:fixtures": "node scripts/capture-cli-fixtures.mjs",
     "build:cli-wasm": "node scripts/build-cli-wasm.mjs"
   },
