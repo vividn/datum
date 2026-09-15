@@ -209,6 +209,7 @@ fn render(request: Request) -> Response {
                         };
                         let fields = build_fields(d.fields, &styles, &window, &BTreeMap::new());
                         DayviewDayInput {
+                            date: None,
                             label_lines: d.label_lines,
                             start_ms: d.start_ms,
                             end_ms: d.end_ms,

@@ -191,6 +191,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         let fields = build_day_fields(db, day_start_ms, day_end_ms, now_ms)?;
 
         days_input.push(DayviewDayInput {
+            date: Some(date.to_string()),
             label_lines,
             start_ms: day_start_ms,
             end_ms: day_end_ms,
@@ -238,7 +239,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         interday_margin: DEFAULT_INTERDAY_MARGIN,
         time_axis_height: args.time_axis_height,
         margin: args.margin,
-        label_width: None,
+        label_width: args.label_width,
         orientation,
         axis_ticks_override: None,
         right_panel_width: 0.0,
@@ -545,6 +546,7 @@ mod tests {
             height: None,
             day_height: None,
             time_axis_height: 15.0,
+            label_width: None,
             margin: 2.0,
             output_file: None,
             show: ShowFlag::Default,

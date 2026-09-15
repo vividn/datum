@@ -142,68 +142,74 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
 
     // Per-day rendering.
     for (i, day) in layout.days.iter().enumerate() {
-        // Date label group — positioned at the start of this day's slot
-        // along the cross axis, centered on the perpendicular dim.
-        let (label_group_x, label_group_y) = match layout.orientation {
-            Orientation::Horizontal => (0.0, day.day_offset),
-            Orientation::Vertical => (geom.data_x + day.day_offset, 0.0),
-        };
-        let _ = write!(
-            &mut out,
-            r#"<g class="day-label" data-day="{i}" transform="translate({lx},{ly})">"#,
-            i = i,
-            lx = label_group_x,
-            ly = label_group_y,
-        );
-        let n_lines = day.label_lines.len().max(1);
-        for (j, line) in day.label_lines.iter().enumerate() {
-            let (lx, ly, anchor) = match layout.orientation {
-                Orientation::Horizontal => {
-                    // Right-aligned within the label strip; lines stacked
-                    // vertically across the row.
-                    let line_y = ((j as f64 + 0.5) * layout.day_height) / n_lines as f64;
-                    (layout.label_width - 4.0, line_y, "end")
-                }
-                Orientation::Vertical => {
-                    // Centered horizontally within the column; lines
-                    // stacked vertically within the top label strip.
-                    let cx = layout.day_height / 2.0;
-                    let line_y = ((j as f64 + 0.5) * layout.label_width) / n_lines as f64;
-                    (cx, line_y, "middle")
-                }
+        // The date-label strip: group, lines, and the day's warning icon.
+        // A zero-width strip is a caller drawing its own date labels (or
+        // none at all) — there is no column to write into, so nothing is
+        // emitted rather than a label at a negative x (da-55ru).
+        if layout.label_width > 0.0 {
+            // Positioned at the start of this day's slot along the cross
+            // axis, centered on the perpendicular dim.
+            let (label_group_x, label_group_y) = match layout.orientation {
+                Orientation::Horizontal => (0.0, day.day_offset),
+                Orientation::Vertical => (geom.data_x + day.day_offset, 0.0),
             };
             let _ = write!(
                 &mut out,
-                r#"<text class="date-label" x="{lx}" y="{ly}" dy="0.35em" fill="{c}" text-anchor="{a}" font-size="{fs}">{txt}</text>"#,
-                c = TEXT_COLOR,
-                fs = layout.label_font_size,
-                a = anchor,
-                txt = escape_xml(line),
+                r#"<g class="day-label" data-day="{i}" transform="translate({lx},{ly})">"#,
+                i = i,
+                lx = label_group_x,
+                ly = label_group_y,
             );
-        }
-        // Warning icon for conflicts — placed next to the date label.
-        if day.has_error {
-            let icon_size = (layout.day_height * 0.4).clamp(8.0, 20.0);
-            let (icon_x, icon_y) = match layout.orientation {
-                Orientation::Horizontal => (
-                    layout.label_width - 2.0,
-                    (layout.day_height - icon_size) / 2.0,
-                ),
-                Orientation::Vertical => (
-                    (layout.day_height - icon_size) / 2.0,
-                    layout.label_width - 2.0 - icon_size,
-                ),
-            };
-            let _ = write!(
-                &mut out,
-                r#"<g class="day-error" transform="translate({x},{y})">"#,
-                x = icon_x,
-                y = icon_y,
-            );
-            push_warning_icon(&mut out, icon_size);
+            let n_lines = day.label_lines.len().max(1);
+            for (j, line) in day.label_lines.iter().enumerate() {
+                let (lx, ly, anchor) = match layout.orientation {
+                    Orientation::Horizontal => {
+                        // Right-aligned within the label strip; lines stacked
+                        // vertically across the row.
+                        let line_y = ((j as f64 + 0.5) * layout.day_height) / n_lines as f64;
+                        (layout.label_width - 4.0, line_y, "end")
+                    }
+                    Orientation::Vertical => {
+                        // Centered horizontally within the column; lines
+                        // stacked vertically within the top label strip.
+                        let cx = layout.day_height / 2.0;
+                        let line_y = ((j as f64 + 0.5) * layout.label_width) / n_lines as f64;
+                        (cx, line_y, "middle")
+                    }
+                };
+                let _ = write!(
+                    &mut out,
+                    r#"<text class="date-label" x="{lx}" y="{ly}" dy="0.35em" fill="{c}" text-anchor="{a}" font-size="{fs}">{txt}</text>"#,
+                    c = TEXT_COLOR,
+                    fs = layout.label_font_size,
+                    a = anchor,
+                    txt = escape_xml(line),
+                );
+            }
+            // Warning icon for conflicts — placed next to the date label.
+            if day.has_error {
+                let icon_size = (layout.day_height * 0.4).clamp(8.0, 20.0);
+                let (icon_x, icon_y) = match layout.orientation {
+                    Orientation::Horizontal => (
+                        layout.label_width - 2.0,
+                        (layout.day_height - icon_size) / 2.0,
+                    ),
+                    Orientation::Vertical => (
+                        (layout.day_height - icon_size) / 2.0,
+                        layout.label_width - 2.0 - icon_size,
+                    ),
+                };
+                let _ = write!(
+                    &mut out,
+                    r#"<g class="day-error" transform="translate({x},{y})">"#,
+                    x = icon_x,
+                    y = icon_y,
+                );
+                push_warning_icon(&mut out, icon_size);
+                out.push_str("</g>");
+            }
             out.push_str("</g>");
         }
-        out.push_str("</g>");
 
         // Per-field bands — emitted in plot coords (no per-day transform);
         // helpers map (time, cross) → (x, y) per orientation.
@@ -793,6 +799,7 @@ mod tests {
     fn one_day_with_block(error: bool, orientation: Orientation) -> DayviewConfig {
         DayviewConfig {
             days: vec![DayviewDayInput {
+                date: None,
                 label_lines: vec!["Mon".into(), "Apr 27".into(), "2026".into()],
                 start_ms: DAY_START,
                 end_ms: DAY_START + 24 * HOUR,
@@ -957,6 +964,7 @@ mod tests {
     fn now_line_omitted_when_no_today() {
         let cfg = DayviewConfig {
             days: vec![DayviewDayInput {
+                date: None,
                 label_lines: vec!["Mon".into()],
                 start_ms: DAY_START,
                 end_ms: DAY_START + 24 * HOUR,

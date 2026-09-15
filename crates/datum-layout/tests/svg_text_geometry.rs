@@ -234,6 +234,7 @@ fn dayview_at(width: f64, orientation: Orientation) -> String {
             let s = day_start + i * 24 * HOUR;
             let e = s + 24 * HOUR;
             DayviewDayInput {
+                date: None,
                 label_lines: vec!["Mon".into(), "04-27".into()],
                 start_ms: s,
                 end_ms: e,

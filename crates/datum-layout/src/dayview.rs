@@ -58,6 +58,12 @@ pub struct DayviewDayInput {
     /// (e.g. `["Mon", "Apr 27", "2026"]`). The layout auto-shrinks from
     /// 3 → 2 → 1 line based on row height + minimum font size.
     pub label_lines: Vec<String>,
+    /// The day itself, ISO `YYYY-MM-DD`, as the caller cut it. Carried
+    /// through to [`RenderedDay::date`] for a caller that draws its own
+    /// date labels (`--label-width 0`) and so cannot read them off the
+    /// SVG. `None` when the band is not a civic day (nowview's window).
+    #[serde(default)]
+    pub date: Option<String>,
     /// Day window start (inclusive) in UTC ms.
     pub start_ms: i64,
     /// Day window end (exclusive) in UTC ms.
@@ -213,6 +219,9 @@ pub struct DayviewLayout {
     /// the day-stack axis).
     pub label_width: f64,
     pub day_height: f64,
+    /// Band + gap: what one day advances the day-stack axis by.
+    #[serde(default)]
+    pub day_pitch: f64,
     pub interday_margin: f64,
     pub time_axis_height: f64,
     /// Font size used for the date labels (after 3→2→1 shrink).
@@ -228,6 +237,10 @@ pub struct DayviewLayout {
     /// Hourly axis ticks shared across every day, in time-axis pixels
     /// (relative to the plot's data-area origin on the time axis).
     pub axis_ticks: Vec<DayviewAxisTick>,
+    /// The same ticks in SVG coordinates — what a caller drawing its own
+    /// axis labels needs, without redoing the strip arithmetic.
+    #[serde(default)]
+    pub hours: Vec<DayviewHourMark>,
     /// Pixel width reserved beside the data area for an orientation-specific
     /// overlay. Carried through from [`DayviewConfig::right_panel_width`] so
     /// nowview's overlay knows where its panel sits.
@@ -247,6 +260,14 @@ pub struct Rect {
 pub struct RenderedDay {
     /// Truncated (when shrinking) date labels actually shown.
     pub label_lines: Vec<String>,
+    /// The day, ISO `YYYY-MM-DD`, from [`DayviewDayInput::date`] —
+    /// untruncated, unlike `label_lines`.
+    #[serde(default)]
+    pub date: Option<String>,
+    /// SVG y of the band's leading edge. Horizontal: the top of this day's
+    /// row. Vertical: the top of the column strip, the same for every day.
+    #[serde(default)]
+    pub y: f64,
     /// Offset of this day along the day-stacking (cross) axis, in pixels,
     /// relative to the data-area origin.
     pub day_offset: f64,
@@ -326,6 +347,15 @@ pub struct DayviewAxisTick {
     pub is_major: bool,
 }
 
+/// One gridline in SVG coordinates (da-55ru).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct DayviewHourMark {
+    pub hour: u8,
+    /// Position along the time axis, from the SVG origin: x in horizontal
+    /// mode, y in vertical mode (where the gridline runs the other way).
+    pub x: f64,
+}
+
 /// Minimum font size below which we drop a label line.
 const MIN_LABEL_FONT: f64 = 7.0;
 const MAX_LABEL_FONT: f64 = 20.0;
@@ -387,7 +417,9 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         }
     }
 
-    let label_width = config.label_width.unwrap_or(label_font_size * 4.0);
+    // A negative strip would draw the bands left of the margin; 0 is the
+    // floor, and it means no date labels at all (da-55ru).
+    let label_width = config.label_width.unwrap_or(label_font_size * 4.0).max(0.0);
 
     let data_rows_extent =
         n_days as f64 * config.day_height + (n_days - 1) as f64 * config.interday_margin;
@@ -444,6 +476,26 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         .axis_ticks_override
         .clone()
         .unwrap_or_else(|| hourly_axis_ticks(time_axis_extent));
+
+    // SVG origin of the data area: the plot's translate plus the strips
+    // the renderer puts before it (`dayview_svg::PlotGeom`).
+    let (data_x, data_y) = match config.orientation {
+        Orientation::Horizontal => (config.margin + label_width, config.margin),
+        Orientation::Vertical => (
+            config.margin + config.time_axis_height,
+            config.margin + label_width,
+        ),
+    };
+    let hours: Vec<DayviewHourMark> = axis_ticks
+        .iter()
+        .map(|t| DayviewHourMark {
+            hour: t.hour,
+            x: match config.orientation {
+                Orientation::Horizontal => data_x + t.time_pos,
+                Orientation::Vertical => data_y + t.time_pos,
+            },
+        })
+        .collect();
 
     let mut days: Vec<RenderedDay> = Vec::with_capacity(config.days.len());
 
@@ -560,6 +612,11 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
 
         days.push(RenderedDay {
             label_lines,
+            date: day.date.clone(),
+            y: match config.orientation {
+                Orientation::Horizontal => data_y + day_offset,
+                Orientation::Vertical => data_y,
+            },
             day_offset,
             has_error: day.has_error,
             fields,
@@ -577,6 +634,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         margin: config.margin,
         label_width,
         day_height: config.day_height,
+        day_pitch: config.day_height + config.interday_margin,
         interday_margin: config.interday_margin,
         time_axis_height: config.time_axis_height,
         label_font_size,
@@ -585,6 +643,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         time_axis_extent,
         days,
         axis_ticks,
+        hours,
         right_panel_width: config.right_panel_width.max(0.0),
     }
 }
@@ -618,6 +677,7 @@ mod tests {
 
     fn empty_day(label: &[&str]) -> DayviewDayInput {
         DayviewDayInput {
+            date: None,
             label_lines: label.iter().map(|s| s.to_string()).collect(),
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
@@ -717,6 +777,7 @@ mod tests {
     #[test]
     fn now_line_only_on_today_row() {
         let day1 = DayviewDayInput {
+            date: None,
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
@@ -724,6 +785,7 @@ mod tests {
             fields: vec![],
         };
         let day2 = DayviewDayInput {
+            date: None,
             label_lines: vec!["Tue".into()],
             start_ms: DAY_START + 24 * HOUR,
             end_ms: DAY_START + 48 * HOUR,
@@ -752,6 +814,7 @@ mod tests {
     #[test]
     fn now_line_extends_through_axis_on_last_day_only() {
         let day1 = DayviewDayInput {
+            date: None,
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
@@ -759,6 +822,7 @@ mod tests {
             fields: vec![],
         };
         let day2 = DayviewDayInput {
+            date: None,
             label_lines: vec!["Tue".into()],
             start_ms: DAY_START + 24 * HOUR,
             end_ms: DAY_START + 48 * HOUR,
@@ -787,6 +851,7 @@ mod tests {
     #[test]
     fn empty_fields_are_skipped() {
         let day = DayviewDayInput {
+            date: None,
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
@@ -849,6 +914,7 @@ mod tests {
             points: vec![],
         };
         let day = DayviewDayInput {
+            date: None,
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
@@ -874,6 +940,7 @@ mod tests {
     #[test]
     fn blocks_clip_to_day_window() {
         let day = DayviewDayInput {
+            date: None,
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
@@ -941,6 +1008,7 @@ mod tests {
     #[test]
     fn multi_state_block_preserves_stripe_colors() {
         let day = DayviewDayInput {
+            date: None,
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,
@@ -1077,6 +1145,7 @@ mod tests {
     #[test]
     fn vertical_blocks_clip_to_day_window() {
         let day = DayviewDayInput {
+            date: None,
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
             end_ms: DAY_START + 24 * HOUR,

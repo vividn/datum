@@ -423,3 +423,170 @@ fn a_just_logged_dur_block_ends_on_the_now_line() {
         hours(extent, axis) * 60.0
     );
 }
+
+/// The x of the first `<g class="day-data">` band — `data-lo` is the
+/// leading edge of the data area, the same number `hours[0].x` reports.
+fn first_band_x(svg: &str) -> f64 {
+    let at = svg.find(r#"class="day-data""#).expect("a day band");
+    let lo = svg[at..].find("data-lo=\"").expect("data-lo") + at + 9;
+    let end = svg[lo..].find('"').unwrap() + lo;
+    svg[lo..end].parse().expect("data-lo is a number")
+}
+
+/// `--label-width 0 --time-axis-height 0` — bands only, edge to edge, with
+/// the gridlines still drawn (da-55ru). This is what the web asks for when
+/// it draws its own date and axis labels.
+#[test]
+fn dayview_label_width_zero_drops_the_date_labels() {
+    let db = fresh_db();
+    entry_builder("workout")
+        .verb(Verb::Switch)
+        .time_start_utc(local_noon_today_utc())
+        .insert(&db);
+
+    let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    run_cli(
+        &[
+            "dayview",
+            "-n",
+            "3",
+            "--label-width",
+            "0",
+            "--time-axis-height",
+            "0",
+            "--margin",
+            "2",
+            "-o",
+            &path,
+        ],
+        &db,
+    )
+    .expect("dayview --label-width 0");
+
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert!(!svg.contains("date-label"), "no date labels: {svg}");
+    assert!(!svg.contains("day-label"), "and no label column at all");
+    assert!(!svg.contains("tick-label"), "no axis labels either");
+    assert!(svg.contains(r#"class="gridline""#), "gridlines still drawn");
+    assert_eq!(
+        first_band_x(&svg),
+        2.0,
+        "the bands start at the margin, not after a label column"
+    );
+}
+
+/// `--label-width 120` — the column is exactly 120 wide, the bands start
+/// after it, and the date labels sit inside it.
+#[test]
+fn dayview_label_width_sets_the_date_column() {
+    let db = fresh_db();
+    entry_builder("workout")
+        .verb(Verb::Switch)
+        .time_start_utc(local_noon_today_utc())
+        .insert(&db);
+
+    let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    run_cli(
+        &[
+            "dayview",
+            "--label-width",
+            "120",
+            "--margin",
+            "2",
+            "-o",
+            &path,
+        ],
+        &db,
+    )
+    .expect("dayview --label-width 120");
+
+    let svg = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(first_band_x(&svg), 122.0, "bands start at 120 + margin");
+    // Right-aligned at the column's inner edge, so every label fits in 120.
+    assert!(
+        svg.contains(r#"<text class="date-label" x="116""#),
+        "date labels sit inside the 120px column: {svg}"
+    );
+}
+
+/// `--show json` carries the geometry a caller drawing its own labels
+/// needs: the resolved `label_width`, the day pitch, and the SVG x of
+/// every hour gridline — the same x the SVG draws them at.
+#[test]
+fn dayview_json_carries_the_label_geometry() {
+    let db = fresh_db();
+    entry_builder("workout")
+        .verb(Verb::Switch)
+        .time_start_utc(local_noon_today_utc())
+        .insert(&db);
+
+    let svg_file = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let json_file = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+    let argv = |out: &str| {
+        vec![
+            "dayview".to_string(),
+            "-n".into(),
+            "3".into(),
+            "--label-width".into(),
+            "0".into(),
+            "--time-axis-height".into(),
+            "0".into(),
+            "-o".into(),
+            out.to_string(),
+        ]
+    };
+    let svg_argv = argv(svg_file.path().to_str().unwrap());
+    run_cli(
+        &svg_argv.iter().map(String::as_str).collect::<Vec<_>>(),
+        &db,
+    )
+    .expect("dayview svg");
+    let mut json_argv = argv(json_file.path().to_str().unwrap());
+    json_argv.push("--show".into());
+    json_argv.push("json".into());
+    run_cli(
+        &json_argv.iter().map(String::as_str).collect::<Vec<_>>(),
+        &db,
+    )
+    .expect("dayview --show json");
+
+    let svg = std::fs::read_to_string(svg_file.path()).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(json_file.path()).unwrap()).unwrap();
+
+    assert_eq!(json["label_width"].as_f64(), Some(0.0));
+    assert_eq!(json["day_height"].as_f64(), Some(100.0));
+    assert_eq!(json["day_pitch"].as_f64(), Some(115.0), "band + gap");
+    assert_eq!(json["margin"].as_f64(), Some(2.0));
+    assert_eq!(json["time_axis_height"].as_f64(), Some(0.0));
+
+    let hours = json["hours"].as_array().expect("hours array");
+    assert_eq!(hours.len(), 25, "00..24 inclusive");
+    assert_eq!(hours[0]["hour"].as_u64(), Some(0));
+    let first_x = hours[0]["x"].as_f64().expect("hours[0].x");
+
+    // The SVG is drawn inside `<g class="plot" transform="translate(m,m)">`,
+    // so the gridline's own x1 plus the margin is what `hours[].x` reports.
+    let at = svg.find(r#"<line class="gridline""#).expect("a gridline");
+    let x1 = svg[at..].split("x1=\"").nth(1).unwrap();
+    let x1: f64 = x1[..x1.find('"').unwrap()].parse().unwrap();
+    assert_eq!(
+        first_x,
+        x1 + json["margin"].as_f64().unwrap(),
+        "hours[0].x is the first gridline's x in the SVG"
+    );
+
+    // Every day carries its own date and the y its band is drawn at.
+    let days = json["days"].as_array().expect("days");
+    assert_eq!(days.len(), 3);
+    for (i, day) in days.iter().enumerate() {
+        assert!(day["date"].as_str().is_some(), "day {i} has an ISO date");
+        assert_eq!(
+            day["y"].as_f64(),
+            Some(2.0 + i as f64 * 115.0),
+            "day {i} sits a pitch below the one above it"
+        );
+    }
+}

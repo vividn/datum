@@ -111,6 +111,15 @@ pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
                 out.time_axis_height = parse_f64(v, "--time-axis-height")?;
                 i += 1;
             }
+            FlagSplit::Long("label-width") => {
+                let (v, ni) = take_value(tail, i, None, "--label-width")?;
+                out.label_width = Some(parse_f64(v, "--label-width")?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("label-width", v) => {
+                out.label_width = Some(parse_f64(v, "--label-width")?);
+                i += 1;
+            }
             FlagSplit::Long("margin") => {
                 let (v, ni) = take_value(tail, i, None, "--margin")?;
                 out.margin = parse_f64(v, "--margin")?;

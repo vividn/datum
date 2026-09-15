@@ -1044,6 +1044,10 @@ pub struct DayviewArgs {
     pub day_height: Option<f64>,
     /// `--time-axis-height` — time-axis strip thickness. Default: 15.
     pub time_axis_height: f64,
+    /// `--label-width` — the date-label column's width in pixels; `0`
+    /// draws no date labels and no column, so the bands start at the
+    /// margin (da-55ru). None → derived from the label font size.
+    pub label_width: Option<f64>,
     /// `--margin` — outer margin. Default: 2.
     pub margin: f64,
     /// `-o`/`--output-file` — output path; extension picks format
@@ -1072,6 +1076,7 @@ impl Default for DayviewArgs {
             height: None,
             day_height: None,
             time_axis_height: 15.0,
+            label_width: None,
             margin: 2.0,
             output_file: None,
             show: Show::Default,

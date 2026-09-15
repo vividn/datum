@@ -614,6 +614,7 @@ const MIN_MS: i64 = 60 * 1000;
 fn dayview_scene_empty() -> DayviewLayoutResult {
     let cfg = DayviewConfig {
         days: vec![DayviewDayInput {
+            date: None,
             label_lines: vec!["Wed".into(), "Apr 22".into(), "2026".into()],
             start_ms: DAY_START_MS,
             end_ms: DAY_START_MS + 24 * HOUR_MS,
@@ -637,6 +638,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
     // One field, one block 09:00-11:00, plus a point at 14:30. No now-line
     // (now is set past today's window).
     let day = DayviewDayInput {
+        date: None,
         label_lines: vec!["Wed".into(), "Apr 22".into(), "2026".into()],
         start_ms: DAY_START_MS,
         end_ms: DAY_START_MS + 24 * HOUR_MS,
@@ -681,6 +683,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
     // Multi-state stripes: an array of two states renders as diagonal
     // stripes per da-7r4. Pin the SVG so the stripe geometry doesn't drift.
     let day = DayviewDayInput {
+        date: None,
         label_lines: vec!["Wed".into(), "Apr 22".into(), "2026".into()],
         start_ms: DAY_START_MS,
         end_ms: DAY_START_MS + 24 * HOUR_MS,
@@ -731,6 +734,7 @@ fn dayview_scene_today_now_line() -> DayviewLayoutResult {
     // dashed now-line on top.
     let now_ms = DAY_START_MS + 14 * HOUR_MS + 30 * MIN_MS;
     let day = DayviewDayInput {
+        date: None,
         label_lines: vec!["Wed".into(), "Apr 22".into(), "2026".into()],
         start_ms: DAY_START_MS,
         end_ms: DAY_START_MS + 24 * HOUR_MS,
@@ -784,6 +788,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
     ));
 
     let day = DayviewDayInput {
+        date: None,
         label_lines: vec![],
         start_ms,
         end_ms,
@@ -853,6 +858,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
     ));
 
     let day = DayviewDayInput {
+        date: None,
         label_lines: vec![],
         start_ms,
         end_ms,

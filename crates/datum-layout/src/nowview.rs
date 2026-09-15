@@ -379,6 +379,7 @@ pub fn nowview_config(
     // date-focused. The HH:MM clock overlay near the now-line takes its
     // place.
     let day = DayviewDayInput {
+        date: None,
         label_lines: Vec::new(),
         start_ms: now_ms - (before * 60_000.0) as i64,
         end_ms: now_ms + (after * 60_000.0) as i64,

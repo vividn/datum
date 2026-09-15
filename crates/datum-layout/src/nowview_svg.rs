@@ -343,6 +343,7 @@ mod tests {
         let now_ms = 1_700_000_000_000_i64;
         let history_ms = 30 * 60 * 1000;
         let day = DayviewDayInput {
+            date: None,
             label_lines: vec!["Mon".into()],
             start_ms: now_ms - history_ms,
             end_ms: now_ms,
@@ -423,6 +424,7 @@ mod tests {
         let now_ms = 1_700_000_000_000_i64;
         let history_ms = 30 * 60 * 1000;
         let day = DayviewDayInput {
+            date: None,
             label_lines: vec![],
             start_ms: now_ms - history_ms,
             end_ms: now_ms,
@@ -518,6 +520,7 @@ mod tests {
         let now_ms = 1_700_000_000_000_i64;
         let history_ms = 30 * 60 * 1000;
         let day = DayviewDayInput {
+            date: None,
             label_lines: vec![],
             start_ms: now_ms - history_ms,
             end_ms: now_ms,
@@ -583,6 +586,7 @@ mod tests {
         let now_ms = 1_700_000_000_000_i64;
         let history_ms = 30 * 60 * 1000;
         let day = DayviewDayInput {
+            date: None,
             label_lines: vec![],
             start_ms: now_ms - history_ms,
             end_ms: now_ms,
@@ -642,6 +646,7 @@ mod tests {
         let now_ms = 1_700_000_000_000_i64;
         let history_ms = 30 * 60 * 1000;
         let day = DayviewDayInput {
+            date: None,
             label_lines: vec![],
             start_ms: now_ms - history_ms,
             end_ms: now_ms,
