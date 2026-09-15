@@ -35,6 +35,11 @@ pub enum ChangeKind {
     SyncConflictResolve,
     /// Revert to a prior version via `datum undo`.
     Undo,
+    /// Step forward again via `datum redo` — the inverse of [`ChangeKind::Undo`]
+    /// on the same trail. The distinction is not decoration: `redo` is only
+    /// offered when the newest row is an `Undo`, so a second `redo` in a row
+    /// has nothing ahead of it and says so (da-s6no).
+    Redo,
 }
 
 impl ChangeKind {
@@ -46,6 +51,7 @@ impl ChangeKind {
             ChangeKind::SyncMerge => "sync_merge",
             ChangeKind::SyncConflictResolve => "sync_conflict_resolve",
             ChangeKind::Undo => "undo",
+            ChangeKind::Redo => "redo",
         }
     }
 }
@@ -66,6 +72,7 @@ impl std::str::FromStr for ChangeKind {
             "sync_merge" => Ok(ChangeKind::SyncMerge),
             "sync_conflict_resolve" => Ok(ChangeKind::SyncConflictResolve),
             "undo" => Ok(ChangeKind::Undo),
+            "redo" => Ok(ChangeKind::Redo),
             other => Err(format!("unknown change_kind: '{other}'")),
         }
     }

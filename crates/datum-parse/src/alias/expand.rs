@@ -85,6 +85,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "delete",
     "del",
     "undo",
+    "redo",
     "help",
     "history",
     "why",

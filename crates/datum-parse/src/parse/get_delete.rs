@@ -99,12 +99,14 @@ pub(crate) fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
     })
 }
 
+/// Rejection text for the retired `--force` / `--window` pair on `undo`.
+/// Names what replaced them, so the message teaches rather than just refuses.
+pub const UNDO_GATE_REMOVED: &str = "`--force` and `--window` were removed from `undo` (da-s6no): it no longer refuses on age. It acts on `_LAST`, or on the most recent tombstone when nothing has been touched, warning on stderr when the change is over ten minutes old — and `datum redo` takes the step back.";
+
 #[derive(Default)]
 pub(crate) struct UndoParsing {
     output: OutputArgs,
     to_version: Option<u32>,
-    force: bool,
-    window: Option<String>,
 }
 
 pub(crate) fn undo_args_registry() -> Vec<LiftedSpec<UndoParsing>> {
@@ -116,13 +118,20 @@ pub(crate) fn undo_args_registry() -> Vec<LiftedSpec<UndoParsing>> {
         p.to_version = Some(parse_u32(v, "--to-version")?);
         Ok(())
     }));
-    r.push(local_switch(None, Some("force"), |p| {
-        p.force = true;
-        Ok(())
+    // `--force` and `--window` were REMOVED (da-s6no). Do not restore them.
+    //
+    // They were the two halves of one gate: bare `undo` refused a `_LAST`
+    // pointer older than fifteen minutes unless `--force` was passed, and the
+    // tombstone fallback looked only inside `--window`. Undo is reversible now
+    // that `redo` exists, so the gate cost more than it saved. Kept as
+    // tombstones — a script still carrying either flag learns what happened
+    // instead of reading "unknown flag".
+    // `crates/datum-cli/tests/undo_gate_removed.rs` is what keeps them gone.
+    r.push(local_switch(None, Some("force"), |_p| {
+        Err(ParseError::InvalidArg(UNDO_GATE_REMOVED.into()))
     }));
-    r.push(local_value(None, Some("window"), |p, v| {
-        p.window = Some(v.to_string());
-        Ok(())
+    r.push(local_value(None, Some("window"), |_p, _v| {
+        Err(ParseError::InvalidArg(UNDO_GATE_REMOVED.into()))
     }));
     r
 }
@@ -134,8 +143,29 @@ pub(crate) fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
     Ok(UndoArgs {
         id_or_slug: pos.first().map(|s| s.to_string()),
         to_version: composed.to_version,
-        force: composed.force,
-        window: composed.window.unwrap_or_else(|| "15m".to_string()),
+        output: composed.output,
+    })
+}
+
+/// `redo` carries the output family and nothing else — see [`RedoArgs`].
+#[derive(Default)]
+pub(crate) struct RedoParsing {
+    output: OutputArgs,
+}
+
+pub(crate) fn redo_args_registry() -> Vec<LiftedSpec<RedoParsing>> {
+    input::output_args::FLAG_SPECS
+        .iter()
+        .map(|spec| lift(|p: &mut RedoParsing| &mut p.output, spec))
+        .collect()
+}
+
+pub(crate) fn parse_redo_args(tail: &[&str]) -> Result<RedoArgs> {
+    let registry = redo_args_registry();
+    let mut composed = RedoParsing::default();
+    let pos = fold_args(tail, &mut composed, &registry)?;
+    Ok(RedoArgs {
+        id_or_slug: pos.first().map(|s| s.to_string()),
         output: composed.output,
     })
 }

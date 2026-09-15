@@ -228,6 +228,7 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::Rekey(args) => commands::rekey::rekey(args, db),
         Command::Retime(args) => commands::retime::retime(args, db),
         Command::Undo(args) => commands::undo::undo(args, db),
+        Command::Redo(args) => commands::undo::redo(args, db),
         Command::History(args) => commands::history::history(args, db),
         Command::Why(args) => commands::why::why(args, db),
         Command::Spec(sub) => commands::spec::spec(sub, db),
@@ -1279,22 +1280,19 @@ mod tests {
 
     // ─── B7: undo via soft-delete tombstone ─────────────────────────────────
 
-    fn undo_args(slug: Option<&str>, force: bool, window: &str) -> UndoArgs {
+    fn undo_args(slug: Option<&str>) -> UndoArgs {
         UndoArgs {
             id_or_slug: slug.map(str::to_string),
-            to_version: None,
-            force,
-            window: window.to_string(),
-            output: Default::default(),
+            ..Default::default()
         }
     }
 
     #[test]
-    fn undo_restores_most_recent_delete_within_window() {
+    fn undo_restores_most_recent_delete() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
 
-        // Three entries; delete the middle one. `undo` with default window
+        // Three entries; delete the middle one. Bare `undo` with no pointer
         // must pick that one (the most recent tombstone) and bring it back.
         db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
         let doomed = make_entry_at("mood", 200, "d1");
@@ -1305,35 +1303,36 @@ mod tests {
         db.soft_delete_entry(&doomed_id).unwrap();
         assert_eq!(db.entries_for_field("mood", None).unwrap().len(), 2);
 
-        crate::commands::undo::undo(undo_args(None, false, "15m"), &db).unwrap();
+        crate::commands::undo::undo(undo_args(None), &db).unwrap();
 
         let live = db.entries_for_field("mood", None).unwrap();
         assert_eq!(live.len(), 3);
         assert!(live.iter().any(|e| e.slug == doomed_id));
     }
 
+    /// da-s6no: an old tombstone is no longer out of reach. `undo` used to
+    /// refuse anything older than `--window` unless `--force` was passed;
+    /// with `redo` to walk it back, age only earns a warning.
     #[test]
-    fn undo_outside_window_errors_without_force() {
+    fn undo_reaches_an_old_tombstone_without_a_flag() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("mood", 100, "d1");
         let id = e.slug.clone();
         db.insert_entry(&e).unwrap();
         db.soft_delete_entry(&id).unwrap();
+        // Age the tombstone well past any window the old code would have had.
+        db.conn()
+            .execute(
+                "UPDATE entries SET deleted_at = ?1 WHERE slug = ?2",
+                rusqlite::params![
+                    (chrono::Utc::now() - chrono::Duration::hours(30)).to_rfc3339(),
+                    id
+                ],
+            )
+            .unwrap();
 
-        // Zero-length window: the tombstone we just created is already "too old"
-        // (its deleted_at < now - 0). Undo without --force must bail out.
-        let err = crate::commands::undo::undo(undo_args(None, false, "0s"), &db).unwrap_err();
-        assert!(
-            err.to_string().contains("use --force"),
-            "error should suggest --force, got: {err}"
-        );
-
-        // Row is still tombstoned.
-        assert!(db.entries_for_field("mood", None).unwrap().is_empty());
-
-        // With --force, the same call restores it regardless of window.
-        crate::commands::undo::undo(undo_args(None, true, "0s"), &db).unwrap();
+        crate::commands::undo::undo(undo_args(None), &db).unwrap();
         let live = db.entries_for_field("mood", None).unwrap();
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].slug, id);
@@ -1356,7 +1355,7 @@ mod tests {
         db.soft_delete_entry(&a_id).unwrap();
         db.soft_delete_entry(&b_id).unwrap();
 
-        crate::commands::undo::undo(undo_args(Some(&a_slug), false, "15m"), &db).unwrap();
+        crate::commands::undo::undo(undo_args(Some(&a_slug)), &db).unwrap();
 
         // A is back, B is still tombstoned.
         let live: Vec<_> = db.entries_for_field("mood", None).unwrap();
@@ -1699,7 +1698,7 @@ mod tests {
             &db,
         )
         .unwrap();
-        crate::commands::undo::undo(undo_args(None, false, "15m"), &db).unwrap();
+        crate::commands::undo::undo(undo_args(None), &db).unwrap();
 
         // Row is back, identical to the original insertion (including content_hash).
         let restored = db.get_entry(&id).unwrap();

@@ -35,11 +35,11 @@ pub use pcli::{
     ConflictStrategyArg, ConflictsCommand, ConflictsKeep, ConflictsListArgs, ConflictsResolveArgs,
     CountArgs, DayviewArgs, DbCommand, DbImportArgs, DbPurgeArgs, DeleteArgs, EditArgs, FieldsArgs,
     GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs, KitCommand, KitExportArgs,
-    KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs, NowviewArgs, ReparseArgs,
-    RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, StatsArgs, StatsPeriod,
-    SyncAgentArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand,
-    SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat,
-    WhyArgs,
+    KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs, NowviewArgs, RedoArgs,
+    ReparseArgs, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, StatsArgs,
+    StatsPeriod, SyncAgentArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs,
+    SyncKeyCommand, SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs,
+    ViewArgs, ViewFormat, WhyArgs,
 };
 
 /// The `--show` level the shared layer swept out of argv (da-qt6z).
@@ -536,6 +536,7 @@ impl_output_args_ext!(UpdateArgs);
 impl_output_args_ext!(EditArgs);
 impl_output_args_ext!(DeleteArgs);
 impl_output_args_ext!(UndoArgs);
+impl_output_args_ext!(RedoArgs);
 
 /// `.resolved_path()` on [`DbImportArgs`].
 pub trait DbImportArgsExt {

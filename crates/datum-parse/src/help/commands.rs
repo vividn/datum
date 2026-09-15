@@ -751,9 +751,11 @@ const NOW_BODY: &str = "USAGE:\n  datum now [-A] [--bare] [--no-color] [--cols N
 
 const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG> [--pretty]\n\nStructured states (objects with `id` and other fields) render as an `{id}`\nchip on the main info line, with sub-fields broken out on a state second\nline below. Parallel states wrap in `[ … ]` with one inner state per line.\nThe per-entry data block follows the same alignment convention — keys are\nright-aligned so their trailing `:` shares a column when the block goes\nmultiline.\n";
 
-const DELETE_BODY: &str = "USAGE:\n  datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--force] [--dry-run] [--strict]\n                [-A | -o FMT]\n\nARGS:\n  [ID_OR_SLUG]  QuickId(s) — hid prefix, slug, `_`/`_LAST`, `<field>:_`,\n                slug wildcard. Multiple targets may be comma-batched\n                (`<id>,<id>,...`); resolution is per-token.\n                Omitting the arg defaults to `_LAST_WITH_PROTECTION`,\n                which refuses if the last-accessed pointer is > 15 min\n                stale (prevents accidental delete of an old `_LAST`).\n\nOPTIONS:\n      --force       Skip the y/N confirmation prompt.\n      --dry-run     Print what would be deleted and exit; no DB writes.\n      --strict      With comma-batched tokens, abort up-front if ANY\n                    token failed to resolve (default: delete the\n                    resolved subset, skip-and-warn on the failures).\n  -A, --show-all    Show the full entry document for each deleted row.\n  -o, --format-string <FMT>\n                    Render each deleted row through datum's format-string DSL.\n\nEXAMPLES:\n  datum delete                    # delete _LAST (refuses if > 15 min stale)\n  datum delete activity:_         # delete latest activity row\n  datum delete a1b2,c3d4 --force  # batched, no prompt\n  datum delete a1b2,c3d4 --dry-run\n                                  # preview only — no DB writes\n";
+const DELETE_BODY: &str = "USAGE:\n  datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--force] [--dry-run] [--strict]\n                [-A | -o FMT]\n\nARGS:\n  [ID_OR_SLUG]  QuickId(s) — hid prefix, slug, `_`/`_LAST`, `<field>:_`,\n                slug wildcard. Multiple targets may be comma-batched\n                (`<id>,<id>,...`); resolution is per-token.\n                Omitting the arg targets `_LAST`. Nothing refuses on\n                age: past ten minutes delete warns on stderr with\n                the pointer's age and proceeds (`datum undo` is the\n                way back).\n\nOPTIONS:\n      --force       Accepted, but there is no longer a prompt to skip.\n      --dry-run     Print what would be deleted and exit; no DB writes.\n      --strict      With comma-batched tokens, abort up-front if ANY\n                    token failed to resolve (default: delete the\n                    resolved subset, skip-and-warn on the failures).\n  -A, --show-all    Show the full entry document for each deleted row.\n  -o, --format-string <FMT>\n                    Render each deleted row through datum's format-string DSL.\n\nEXAMPLES:\n  datum delete                    # delete _LAST (warns if > 10 min stale)\n  datum delete activity:_         # delete latest activity row\n  datum delete a1b2,c3d4          # batched\n  datum delete a1b2,c3d4 --dry-run\n                                  # preview only — no DB writes\n";
 
-const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG] [--to-version N] [--force] [--window 15m]\n\nReverts an entry to a prior version via its entry_history trail. By default,\nrestores the immediately-previous version; --to-version N picks an explicit\nversion. Falls back to undeleting recently-tombstoned legacy entries (no\nhistory) within --window (default 15m).\n";
+const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG] [--to-version N]\n\nReverts an entry to a prior version via its entry_history trail. By default,\nrestores the immediately-previous version; --to-version N picks an explicit\nversion. With no ID_OR_SLUG it acts on `_LAST`, falling back to the most\nrecent tombstone for legacy entries with no trail.\n\nUndo never refuses on age. Past ten minutes it names the age on stderr and\nproceeds anyway: `datum redo` is the way forward again.\n";
+
+const REDO_BODY: &str = "USAGE:\n  datum redo [ID_OR_SLUG]\n\nThe inverse of `datum undo`: re-applies the version the last undo stepped\nback from. Redo of an undone create re-creates the entry under the same hid;\nredo of an undone delete deletes it again. With no ID_OR_SLUG it acts on\n`_LAST`, and every row of a multi-entry `_LAST` steps together.\n\nExits 1 with 'nothing to redo' when the entry's newest step is not an undo,\nso `undo; redo; redo` moves once, not twice.\n";
 
 const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG> [--version N | --diff A B]\n";
 
@@ -1284,15 +1286,36 @@ pub const COMMANDS: &[CommandSpec] = &[
             "Reverts an entry to a prior version using its entry_history trail. \
              By default, undo restores the immediately-previous version; pass \
              --to-version N to restore an explicit version number. \
-             For legacy entries without a history trail, undo falls back to \
-             undeleting a recently tombstoned entry within --window (default 15m).",
+             For legacy entries without a history trail, undo falls back to the \
+             most recent tombstone. Undo never refuses on age: past ten minutes \
+             it warns and proceeds, and `datum redo` is the way forward again.",
         ),
-        usage: &["datum undo [ID_OR_SLUG] [--to-version N] [--force] [--window 15m]"],
+        usage: &["datum undo [ID_OR_SLUG] [--to-version N]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(UNDO_BODY),
+        display_input_name: false,
+    },
+    CommandSpec {
+        name: "redo",
+        aliases: &[],
+        category: Category::Mutate,
+        summary: "redo the last undone change (the inverse of undo)",
+        top_summary: Some("Redo the last undone change (the inverse of undo)"),
+        long_description: Some(
+            "Re-applies the version that the last undo on that entry stepped \
+             back from. Redo of an undone create re-creates it under the same \
+             hid; redo of an undone delete deletes it again. With no ID_OR_SLUG \
+             it acts on `_LAST`. Exits 1 when there is nothing ahead.",
+        ),
+        usage: &["datum redo [ID_OR_SLUG]"],
+        args: NO_ARGS,
+        flags: NO_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 0,
+        body_override: Some(REDO_BODY),
         display_input_name: false,
     },
     // ----- ADMIN -----

@@ -75,6 +75,14 @@ impl Db {
     /// Records a `user_edit` history row capturing the pre-delete state so
     /// `datum undo` can restore it by reverting to the prior version.
     pub fn soft_delete_entry(&self, slug_or_hid: &str) -> Result<()> {
+        self.soft_delete_entry_as(slug_or_hid, ChangeKind::UserEdit)
+    }
+
+    /// [`Db::soft_delete_entry`] with the history row's `change_kind` chosen by
+    /// the caller. `undo` of a just-created entry is a delete, and it tags the
+    /// row [`ChangeKind::Undo`] so `redo` can see that the newest step was an
+    /// undo and step forward again (da-s6no).
+    pub fn soft_delete_entry_as(&self, slug_or_hid: &str, kind: ChangeKind) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         let pre: Option<Entry> = tx
             .query_row(
@@ -87,7 +95,7 @@ impl Db {
             Some(e) => e,
             None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
         };
-        history::record(&tx, &pre, ChangeKind::UserEdit)?;
+        history::record(&tx, &pre, kind)?;
         let now = Utc::now();
         // da-4vyw: a tombstone must not hash identically to the live row it
         // replaced — that equality is what would authorise a silent dedupe
@@ -112,6 +120,20 @@ impl Db {
     /// Returns the restored [`Entry`]. Errors [`DatumError::NotFound`] if
     /// the entry or the target version doesn't exist.
     pub fn revert_entry_to(&self, hid_or_slug: &str, target_version: u32) -> Result<Entry> {
+        self.revert_entry_to_as(hid_or_slug, target_version, ChangeKind::Undo)
+    }
+
+    /// [`Db::revert_entry_to`] with the history row's `change_kind` chosen by
+    /// the caller — [`ChangeKind::Undo`] for a step back, [`ChangeKind::Redo`]
+    /// for the step forward that takes it back (da-s6no). The mechanics are
+    /// identical; only the label on the new row differs, and that label is what
+    /// tells `redo` whether anything lies ahead.
+    pub fn revert_entry_to_as(
+        &self,
+        hid_or_slug: &str,
+        target_version: u32,
+        kind: ChangeKind,
+    ) -> Result<Entry> {
         let tx = self.conn.unchecked_transaction()?;
 
         // Resolve the current row (live or tombstoned) to pin down the hid.
@@ -136,8 +158,9 @@ impl Db {
                     ))
                 })?;
 
-        // Record the pre-undo state as the new history row, tagged as Undo.
-        history::record(&tx, &current, ChangeKind::Undo)?;
+        // Record the pre-revert state as the new history row, tagged with the
+        // step that is about to happen.
+        history::record(&tx, &current, kind)?;
 
         // Apply the target state to the live entries row. This covers
         // unchanged-slug updates as well as flipping `deleted_at` back and

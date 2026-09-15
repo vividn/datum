@@ -15,12 +15,8 @@ use crate::{
 pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
     let registry = load_registry_opt(db);
     let output = args.output()?;
-    // da-uzxj: bare `datum delete` defaults to `_LAST`. The 15-minute
-    // protection window is now a *prompt* (see
-    // `confirm_default_last_if_stale`) rather than a hard refusal —
-    // when the pointer is stale, we render the candidate and ask
-    // [Y/n] before mutating. With an explicit id, or within the
-    // window, or `--force`, no prompt fires at all.
+    // da-uzxj: bare `datum delete` defaults to `_LAST`. Nothing guards that
+    // default any more (da-s6no) — see the warning below.
     let pattern = args
         .id_or_slug
         .as_deref()
@@ -65,20 +61,17 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         return Ok(());
     }
 
-    // da-uzxj: prompt only when the user defaulted to `_LAST` AND the
-    // pointer is older than the protection window. Explicit ids,
-    // fresh `_LAST`, and `--force` skip the prompt entirely — the
-    // user named what they wanted (or the pointer is fresh enough to
-    // trust the default).
-    if !crate::commands::helpers::confirm_default_last_if_stale(
-        db,
-        args.id_or_slug.as_deref(),
-        args.force,
-        "Delete",
-        &entries,
-    )? {
-        println!("Aborted.");
-        return Ok(());
+    // da-s6no: the fifteen-minute protection on the bare `_LAST` default is
+    // gone. vividn, 2026-09-15 20:19: «you can remove the delete protection,
+    // since undo is so easy, but do give the warning.» A delete is a
+    // tombstone and `datum undo` brings it straight back, so the pointer's
+    // age is worth SAYING — it is not worth a prompt the user answers blind
+    // on a tty, or a refusal everywhere else (a script, the web app, which
+    // have no stdin to answer with). Past ten minutes the warning names the
+    // age; nothing stops. An explicit id names its own target and needs no
+    // warning about the pointer.
+    if args.id_or_slug.is_none() {
+        crate::commands::helpers::warn_if_stale_default_last("deleting an entry", db);
     }
 
     let mut first_err: Option<anyhow::Error> = None;

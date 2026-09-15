@@ -1,17 +1,37 @@
-//! `datum undo [steps]` — roll back recent writes via the EntryHistory trail.
+//! `datum undo` and `datum redo` — the two directions along an entry's
+//! EntryHistory trail.
+//!
+//! The trail keeps every version, so neither direction loses anything: `undo`
+//! steps back, `redo` steps forward again, and the row each one writes records
+//! which way it went. That label is the whole of redo's bookkeeping — `redo`
+//! is offered only when the newest step was an `undo`, which is what makes
+//! `undo; redo; redo` move once instead of oscillating (da-s6no).
+//!
+//! Neither command refuses on age. Undo used to guard bare `_LAST` behind a
+//! fifteen-minute window (a prompt on a tty, a refusal without one); with a
+//! way forward that guard cost more than it saved, so what is left of it is a
+//! warning past ten minutes naming how old the change is.
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use datum_core::{db::Db, time::parse_duration};
+use datum_core::{
+    db::Db,
+    entry::Entry,
+    field_spec::SpecRegistry,
+    history::{self, ChangeKind},
+    ids::Hid,
+    last_docs,
+};
 
 use crate::{
-    args::{OutputFlagsExt, UndoArgs},
-    commands::helpers::{load_registry_opt, resolve_prefix_or_tombstone},
-    render::{show_create, OutputArgs},
+    args::{OutputFlagsExt, RedoArgs, UndoArgs},
+    commands::helpers::{load_registry_opt, resolve_prefix_or_tombstone, warn_if_stale},
+    render::{show_create, show_delete, show_update, OutputArgs},
 };
 
 pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
     let registry = load_registry_opt(db);
+    let output = args.output()?;
 
     // Slug-targeted undo. Prefer the history-based revert (D4): back off to
     // the prior recorded version. Fall back to the legacy undelete path when
@@ -19,10 +39,8 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
     // a backup) so the command remains useful for those rows.
     if let Some(id_or_slug) = args.id_or_slug.as_deref() {
         let current = resolve_prefix_or_tombstone(db, id_or_slug)?;
-        let latest = datum_core::history::latest_version(db.conn(), &current.hid)
-            .map_err(anyhow::Error::from)?;
+        let latest = history::latest_version(db.conn(), &current.hid)?;
 
-        let output = args.output()?;
         match (args.to_version, latest) {
             (Some(v), _) => {
                 // Bounds-check against the entry's version range [1, latest].
@@ -35,26 +53,30 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
                 if v < 1 || v > latest_n {
                     anyhow::bail!("version {v} doesn't exist; entry has {latest_n} version(s)");
                 }
-                let restored = db
-                    .revert_entry_to(&current.hid, v)
-                    .map_err(anyhow::Error::from)?;
-                show_create(&restored, registry.as_ref(), &output);
-                Ok(())
+                step_to(
+                    db,
+                    &current,
+                    v,
+                    ChangeKind::Undo,
+                    registry.as_ref(),
+                    &output,
+                )
             }
-            (None, Some(n)) if n >= 2 => {
-                let restored = db
-                    .revert_entry_to(&current.hid, n - 1)
-                    .map_err(anyhow::Error::from)?;
-                show_create(&restored, registry.as_ref(), &output);
-                Ok(())
-            }
+            (None, Some(n)) if n >= 2 => step_to(
+                db,
+                &current,
+                n - 1,
+                ChangeKind::Undo,
+                registry.as_ref(),
+                &output,
+            ),
             _ => {
                 // No prior version to revert to — fall back to legacy undelete
                 // so tombstoned entries without history still come back. Use
                 // the resolved full slug/hid so prefixes keep working here too.
-                db.undelete(&current.slug).map_err(anyhow::Error::from)?;
+                db.undelete(&current.slug)?;
                 if let Ok(entry) = db.get_entry(&current.slug) {
-                    show_create(&entry, registry.as_ref(), &output);
+                    show_step(&current, &entry, registry.as_ref(), &output);
                 }
                 Ok(())
             }
@@ -64,117 +86,157 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
             anyhow::bail!("--to-version requires an <id_or_slug> to target");
         }
 
-        // Bare `undo` defaults to `_LAST` (matches the broader
-        // mutating-command convention; da-uzxj). Within the 15-minute
-        // protection window we act on the pointer silently. Outside
-        // the window we render the candidate and prompt [Y/n] before
-        // acting — same pattern as `delete` / `update`.  `--force`
-        // skips the pointer entirely and falls through to the legacy
-        // most-recent-tombstone path so existing scripts keep working.
-        if !args.force {
-            match datum_core::last_docs::get_last_docs(db) {
-                Ok(Some(reference))
-                    if datum_core::last_docs::within_protection_window(
-                        reference.time,
-                        Utc::now(),
-                    ) =>
-                {
-                    return undo_via_last_docs(db, &reference.hids, &registry, &args.output()?);
-                }
-                Ok(Some(reference)) => {
-                    // Pointer is stale — prompt before reverting it.
-                    // Collect the live entries the pointer references
-                    // so the prompt shows the user what they're about
-                    // to bring back / revert.
-                    let mut candidates: Vec<datum_core::entry::Entry> = Vec::new();
-                    for hid in &reference.hids {
-                        if let Ok(entry) = db.get_entry_including_deleted(hid) {
-                            candidates.push(entry);
-                        }
-                    }
-                    if !candidates.is_empty() {
-                        if crate::commands::helpers::confirm_default_last_if_stale(
-                            db,
-                            None,
-                            false,
-                            "Undo",
-                            &candidates,
-                        )? {
-                            return undo_via_last_docs(
-                                db,
-                                &reference.hids,
-                                &registry,
-                                &args.output()?,
-                            );
-                        }
-                        // Explicit decline stops outright — same
-                        // "Aborted." convention as delete/retime/
-                        // update. Falling through here would let the
-                        // window fallback silently restore a DIFFERENT,
-                        // newer tombstone than the one the user just
-                        // said no to (da-3vvk).
-                        println!("Aborted.");
-                        return Ok(());
-                    }
-                    // Pointer references nothing restorable — fall
-                    // through to the window-based fallback so legacy
-                    // `undo --window` against older tombstones still
-                    // works.
-                }
-                Ok(None) | Err(_) => {
-                    // No pointer (fresh DB or pre-da-e65 schema) — fall through.
-                }
-            }
+        // Bare `undo` acts on `_LAST` (the broader mutating-command
+        // convention; da-uzxj) whenever the pointer names something that
+        // still exists. A pointer naming nothing restorable falls through
+        // to the most recent tombstone, which is all a pre-pointer database
+        // has to offer.
+        if let Some(reference) = pointer_with_live_targets(db) {
+            warn_if_stale("undoing a change", reference.time);
+            return undo_via_last_docs(db, &reference.hids, &registry, &output);
         }
 
-        let window = parse_duration(&args.window)
-            .with_context(|| format!("Invalid --window value '{}'", args.window))?;
-
-        let target = if args.force {
-            db.most_recent_tombstone()?
-        } else {
-            db.list_recent_tombstones(window)?.into_iter().next()
-        };
-
-        match target {
+        match db.most_recent_tombstone()? {
             Some(entry) => {
+                warn_if_stale(
+                    "undoing a change",
+                    entry.deleted_at.unwrap_or_else(Utc::now),
+                );
                 // Prefer the history-based revert so the undo shows up in the
                 // entry's trail; fall back to undelete for legacy tombstones.
-                let latest = datum_core::history::latest_version(db.conn(), &entry.hid)
-                    .map_err(anyhow::Error::from)?;
-                let output = args.output()?;
-                match latest {
-                    Some(n) if n >= 2 => {
-                        let restored = db
-                            .revert_entry_to(&entry.hid, n - 1)
-                            .map_err(anyhow::Error::from)?;
-                        show_create(&restored, registry.as_ref(), &output);
-                    }
+                match history::latest_version(db.conn(), &entry.hid)? {
+                    Some(n) if n >= 2 => step_to(
+                        db,
+                        &entry,
+                        n - 1,
+                        ChangeKind::Undo,
+                        registry.as_ref(),
+                        &output,
+                    ),
                     _ => {
-                        db.undelete(&entry.slug).map_err(anyhow::Error::from)?;
-                        let restored = db.get_entry(&entry.slug).unwrap_or(entry);
-                        show_create(&restored, registry.as_ref(), &output);
+                        db.undelete(&entry.slug)?;
+                        let restored = db.get_entry(&entry.slug).unwrap_or_else(|_| entry.clone());
+                        show_step(&entry, &restored, registry.as_ref(), &output);
+                        Ok(())
                     }
                 }
-                Ok(())
             }
-            None => {
-                // Nothing within the window. If --force was off and there's
-                // still an older tombstone, nudge the user toward --force;
-                // otherwise the store has no tombstones at all.
-                if !args.force {
-                    if let Some(older) = db.most_recent_tombstone()? {
-                        anyhow::bail!(
-                            "No deletes within {}; most recent is '{}' (use --force to restore it)",
-                            args.window,
-                            older.slug
-                        );
-                    }
-                }
-                anyhow::bail!("Nothing to undo — no soft-deleted entries found")
-            }
+            None => anyhow::bail!("Nothing to undo — no soft-deleted entries found"),
         }
     }
+}
+
+/// `datum redo [ID_OR_SLUG]` — the step back that `undo` just took, taken
+/// forward again.
+///
+/// The trail after an undo ends with an `Undo` row whose snapshot IS the state
+/// the undo stepped away from, so going forward is the same revert machinery
+/// aimed one version later: `state_at_version(latest - 1)` is exactly that
+/// snapshot. The new row is tagged `Redo`, so the next `redo` sees that the
+/// newest step was not an undo and says there is nothing ahead.
+pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
+    let registry = load_registry_opt(db);
+    let output = args.output()?;
+
+    let targets: Vec<Hid> = match args.id_or_slug.as_deref() {
+        Some(id_or_slug) => vec![resolve_prefix_or_tombstone(db, id_or_slug)?.hid],
+        None => {
+            let reference = pointer_with_live_targets(db)
+                .context("Nothing to redo — no entry has been touched yet")?;
+            warn_if_stale("redoing a change", reference.time);
+            reference.hids
+        }
+    };
+
+    let mut moved: Vec<Hid> = Vec::new();
+    for hid in &targets {
+        let current = match resolve_prefix_or_tombstone(db, hid) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("redo {hid}: {e}");
+                continue;
+            }
+        };
+        match redo_target_version(db, &current.hid)? {
+            Some(version) => {
+                step_to(
+                    db,
+                    &current,
+                    version,
+                    ChangeKind::Redo,
+                    registry.as_ref(),
+                    &output,
+                )?;
+                moved.push(current.hid.clone());
+            }
+            None => continue,
+        }
+    }
+
+    if moved.is_empty() {
+        anyhow::bail!("Nothing to redo — the last change here was not an undo");
+    }
+    // `_LAST` follows the entries that moved, the way undo's does, so a
+    // second `undo` after a `redo` lands on the same rows.
+    let _ = last_docs::set_last_docs(db, &moved);
+    Ok(())
+}
+
+/// The version `redo` must revert to, or `None` when nothing lies ahead.
+///
+/// Something lies ahead exactly when the newest row on the trail is an `Undo`:
+/// that row's snapshot is the pre-undo state, reachable as the state at the
+/// version one below it.
+fn redo_target_version(db: &Db, hid: &str) -> Result<Option<u32>> {
+    let Some(latest) = history::latest_version(db.conn(), hid)? else {
+        return Ok(None);
+    };
+    if latest < 2 {
+        return Ok(None);
+    }
+    let newest = history::get(db.conn(), hid, latest)?;
+    Ok(match newest.map(|row| row.change_kind) {
+        Some(ChangeKind::Undo) => Some(latest - 1),
+        _ => None,
+    })
+}
+
+/// Move `current` to the state it held at `version` and echo the step.
+fn step_to(
+    db: &Db,
+    current: &Entry,
+    version: u32,
+    kind: ChangeKind,
+    registry: Option<&SpecRegistry>,
+    output: &OutputArgs,
+) -> Result<()> {
+    let restored = db.revert_entry_to_as(&current.hid, version, kind)?;
+    show_step(current, &restored, registry, output);
+    Ok(())
+}
+
+/// The echo for one step names the action the step PERFORMS, not the command
+/// that asked for it: bringing a tombstone back is a CREATE, tombstoning is a
+/// DELETE, and anything else is an UPDATE. The same three words the write
+/// commands print, so the bar reads the same either way.
+fn show_step(before: &Entry, after: &Entry, registry: Option<&SpecRegistry>, output: &OutputArgs) {
+    match (before.deleted_at.is_some(), after.deleted_at.is_some()) {
+        (_, true) => show_delete(after, registry, output),
+        (true, false) => show_create(after, registry, output),
+        (false, false) => show_update(after, registry, output),
+    }
+}
+
+/// The last-docs pointer, but only when at least one hid it names still
+/// resolves to a row (live or tombstoned). A pointer into nothing is no
+/// better than no pointer at all.
+fn pointer_with_live_targets(db: &Db) -> Option<last_docs::LastDocsRef> {
+    let reference = last_docs::get_last_docs(db).ok().flatten()?;
+    reference
+        .hids
+        .iter()
+        .any(|hid| db.get_entry_including_deleted(hid).is_ok())
+        .then_some(reference)
 }
 
 /// Bare `undo` path: revert each hid named by the last-docs pointer.
@@ -184,14 +246,14 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
 /// hids so `_LAST` keeps tracking the user's "current" set.
 fn undo_via_last_docs(
     db: &Db,
-    hids: &[datum_core::ids::Hid],
-    registry: &Option<datum_core::field_spec::SpecRegistry>,
+    hids: &[Hid],
+    registry: &Option<SpecRegistry>,
     output: &OutputArgs,
 ) -> Result<()> {
     if hids.is_empty() {
         anyhow::bail!("Last-docs pointer is empty — nothing to undo");
     }
-    let mut restored_hids: Vec<datum_core::ids::Hid> = Vec::new();
+    let mut restored_hids: Vec<Hid> = Vec::new();
     let mut first_err: Option<anyhow::Error> = None;
     for hid in hids {
         let current = match resolve_prefix_or_tombstone(db, hid) {
@@ -202,24 +264,23 @@ fn undo_via_last_docs(
                 continue;
             }
         };
-        let latest = datum_core::history::latest_version(db.conn(), &current.hid)
-            .map_err(anyhow::Error::from)?;
-        let restored: Result<datum_core::entry::Entry> = match latest {
+        let latest = history::latest_version(db.conn(), &current.hid)?;
+        let restored: Result<Entry> = match latest {
             Some(n) if n >= 2 => db
-                .revert_entry_to(&current.hid, n - 1)
+                .revert_entry_to_as(&current.hid, n - 1, ChangeKind::Undo)
                 .map_err(anyhow::Error::from),
             _ => {
                 if current.deleted_at.is_some() {
-                    db.undelete(&current.slug).map_err(anyhow::Error::from)?;
+                    db.undelete(&current.slug)?;
                     db.get_entry(&current.slug).map_err(anyhow::Error::from)
                 } else {
                     // Undoing a just-created entry = deleting it. The history
                     // table has only version 1 (the create); no prior version
                     // exists to revert to. Soft-delete instead, which tombstones
-                    // the entry — a subsequent `undo` on the same hid restores it
-                    // via the revert/un-delete branches above.
-                    db.soft_delete_entry(&current.slug)
-                        .map_err(anyhow::Error::from)?;
+                    // the entry — tagged as an Undo so `redo` can bring it back
+                    // under the same hid, and so a second `undo` on the same hid
+                    // restores it via the revert branch above.
+                    db.soft_delete_entry_as(&current.slug, ChangeKind::Undo)?;
                     db.get_entry_including_deleted(&current.slug)
                         .map_err(anyhow::Error::from)
                 }
@@ -228,7 +289,7 @@ fn undo_via_last_docs(
         match restored {
             Ok(entry) => {
                 restored_hids.push(entry.hid.clone());
-                show_create(&entry, registry.as_ref(), output);
+                show_step(&current, &entry, registry.as_ref(), output);
             }
             Err(e) => {
                 eprintln!("undo {hid}: {e}");
@@ -237,7 +298,7 @@ fn undo_via_last_docs(
         }
     }
     if !restored_hids.is_empty() {
-        let _ = datum_core::last_docs::set_last_docs(db, &restored_hids);
+        let _ = last_docs::set_last_docs(db, &restored_hids);
     }
     match first_err {
         Some(e) if restored_hids.is_empty() => Err(e),

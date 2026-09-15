@@ -301,17 +301,18 @@ fn subprocess_sync_status_count_agrees_with_now_after_delete() {
     );
 }
 
-/// da-3vvk: declining the bare-`undo` stale-`_LAST` prompt must stop
-/// outright ("Aborted."), NOT fall through to the window fallback —
-/// which would silently restore a DIFFERENT, newer tombstone than the
-/// one the user just said no to. Needs the real binary: the prompt
-/// reads stdin, and only a piped "n" can exercise the decline branch
-/// (the in-process harnesses' closed stdin reads as the yes-default).
+/// da-s6no: a stale `_LAST` no longer stops bare `undo`. It used to prompt
+/// on a tty (and refuse without one) past fifteen minutes; now it proceeds,
+/// says how old the change was on stderr, and exits 0.
+///
+/// The da-3vvk invariant it inherits: the entry it acts on is the one the
+/// POINTER names, never whichever tombstone happens to be newest. Needs the
+/// real binary so the pointer can be aged in the file the process reads.
 #[test]
-fn subprocess_undo_decline_stale_prompt_restores_nothing() {
+fn subprocess_undo_past_the_window_warns_and_acts_on_the_pointer() {
     let env = Env::new();
     // Two entries, both tombstoned. The pointer will name X (coffee);
-    // Y (tea) is the newer tombstone the window fallback would pick.
+    // Y (tea) is the newer tombstone a "most recent" fallback would pick.
     assert_ok(&env.run(&["occur", "coffee"]), "create X");
     assert_ok(&env.run(&["occur", "tea", "-t", "+1"]), "create Y");
 
@@ -324,26 +325,164 @@ fn subprocess_undo_decline_stale_prompt_restores_nothing() {
     assert_ok(&env.run(&["del", "coffee", "--force"]), "delete X");
     assert_ok(&env.run(&["del", "tea", "--force"]), "delete Y");
 
-    // Point `_LAST` at X and age it past the 15-minute protection
-    // window so bare `undo` takes the prompt path.
+    // Point `_LAST` at X and age it well past the ten-minute warning line.
     conn.execute(
         "UPDATE last_docs SET hids = ?1,
-             time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-20 minutes')",
+             time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-23 minutes')",
         [format!("[\"{x_hid}\"]")],
     )
     .expect("force-stale pointer at X");
 
-    let out = env.run_with_stdin(&["undo"], "n\n");
-    assert_ok(&out, "undo decline");
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    let out = env.run(&["undo"]);
+    assert_ok(&out, "stale undo must proceed");
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stdout.contains("Aborted."),
-        "decline must print Aborted.: stdout={stdout:?} stderr={}",
-        String::from_utf8_lossy(&out.stderr)
+        stderr.contains("23 minutes ago"),
+        "stale undo must name the age on stderr: {stderr:?}"
     );
-    // Nothing restored — both tombstones intact (the window fallback
-    // would have brought back Y).
-    assert_eq!(env.entry_count(), 0, "decline must restore nothing");
+
+    // X is back; Y — the newer tombstone — is untouched.
+    assert_eq!(env.entry_count(), 1, "only the pointer's entry comes back");
+    let live_field: String = conn
+        .query_row(
+            "SELECT field FROM entries WHERE deleted_at IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .expect("the restored row");
+    assert_eq!(
+        live_field, "coffee",
+        "undo followed the pointer, not the clock"
+    );
+}
+
+/// da-s6no: inside ten minutes there is nothing to warn about, so bare
+/// `undo` says nothing on stderr. The control for the test above.
+#[test]
+fn subprocess_undo_inside_ten_minutes_is_silent() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "coffee"]), "create");
+    let out = env.run(&["undo"]);
+    assert_ok(&out, "fresh undo");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("warning:"),
+        "a fresh undo must not warn: {stderr:?}"
+    );
+}
+
+/// da-s6no: `undo` then `redo` through the real binary leaves the entry
+/// byte-identical to what it was before the undo, and a second `redo` has
+/// nothing ahead of it.
+#[test]
+fn subprocess_redo_restores_the_undone_state_exactly_once() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "coffee", "cups=2"]), "create");
+    assert_ok(&env.run(&["update", "_", "cups=3"]), "update");
+
+    let before = env.run(&["get", "coffee", "--show", "json"]);
+    assert_ok(&before, "get before undo");
+
+    assert_ok(&env.run(&["undo"]), "undo");
+    let undone = env.run(&["get", "coffee", "--show", "json"]);
+    assert_ne!(
+        String::from_utf8_lossy(&undone.stdout),
+        String::from_utf8_lossy(&before.stdout),
+        "the undo must actually move the entry"
+    );
+
+    assert_ok(&env.run(&["redo"]), "redo");
+    let after = env.run(&["get", "coffee", "--show", "json"]);
+    assert_eq!(
+        String::from_utf8_lossy(&after.stdout),
+        String::from_utf8_lossy(&before.stdout),
+        "redo must restore the pre-undo state byte for byte"
+    );
+
+    let again = env.run(&["redo"]);
+    assert_eq!(
+        again.status.code(),
+        Some(1),
+        "a second redo has nothing ahead"
+    );
+    assert!(
+        String::from_utf8_lossy(&again.stderr).contains("Nothing to redo"),
+        "the second redo must say so: {:?}",
+        String::from_utf8_lossy(&again.stderr)
+    );
+}
+
+/// da-s6no: `redo` of an undone CREATE brings the entry back under the same
+/// hid — the undo tombstoned it, the redo un-tombstones it.
+#[test]
+fn subprocess_redo_of_an_undone_create_brings_the_entry_back() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "tea"]), "create");
+    let conn = Connection::open(&env.db).expect("open db");
+    let hid: String = conn
+        .query_row("SELECT hid FROM entries WHERE field = 'tea'", [], |r| {
+            r.get(0)
+        })
+        .expect("tea hid");
+
+    assert_ok(&env.run(&["undo"]), "undo the create");
+    assert_eq!(env.entry_count(), 0, "undoing a create tombstones it");
+
+    assert_ok(&env.run(&["redo"]), "redo the create");
+    assert_eq!(env.entry_count(), 1, "redo brings it back");
+    let back: String = conn
+        .query_row(
+            "SELECT hid FROM entries WHERE deleted_at IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .expect("the live row");
+    assert_eq!(back, hid, "the same hid comes back, not a new entry");
+}
+
+/// da-s6no (vividn, 20:19): `delete`'s own fifteen-minute protection goes the
+/// same way as undo's. A stale `_LAST` no longer prompts — it deletes, and
+/// names the age on stderr. Needs the real binary: the old behaviour was a
+/// prompt that read stdin, so only a subprocess proves nothing is asked.
+#[test]
+fn subprocess_delete_past_the_window_warns_and_proceeds() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "coffee"]), "create");
+
+    let conn = Connection::open(&env.db).expect("open db");
+    conn.execute(
+        "UPDATE last_docs SET time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-23 minutes')",
+        [],
+    )
+    .expect("force-stale pointer");
+
+    // No `--force`, and stdin is closed: under the old gate this prompted.
+    let out = env.run(&["delete"]);
+    assert_ok(&out, "stale delete must proceed");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("deleting an entry from 23 minutes ago"),
+        "stale delete must name the age on stderr: {stderr:?}"
+    );
+    assert!(
+        !stderr.contains("[Y/n]"),
+        "nothing may be asked: {stderr:?}"
+    );
+    assert_eq!(env.entry_count(), 0, "the entry is tombstoned");
+}
+
+/// The control: inside ten minutes `delete` says nothing at all.
+#[test]
+fn subprocess_delete_inside_ten_minutes_is_silent() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "coffee"]), "create");
+    let out = env.run(&["delete"]);
+    assert_ok(&out, "fresh delete");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("warning:"),
+        "a fresh delete must not warn: {stderr:?}"
+    );
 }
 
 /// `dm --version` must print the version banner to stdout and exit 0

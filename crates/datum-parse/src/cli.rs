@@ -41,6 +41,7 @@ pub enum Command {
     Get(GetArgs),
     Delete(DeleteArgs),
     Undo(UndoArgs),
+    Redo(RedoArgs),
 
     History(HistoryArgs),
     Why(WhyArgs),
@@ -528,10 +529,13 @@ pub struct EditArgs {
 
 #[derive(Debug, Default)]
 pub struct DeleteArgs {
-    /// Optional. When omitted, callers default to the
-    /// `_LAST_WITH_PROTECTION` quickId token (resolves against the
-    /// last-accessed pointer, refusing if it's > 15 min stale).
+    /// Optional. When omitted, `delete` targets `_LAST` — plainly, with no
+    /// protection window (da-s6no). Past ten minutes it warns on stderr with
+    /// the pointer's age and proceeds; `datum undo` is the way back.
     pub id_or_slug: Option<String>,
+    /// `--force` skipped the stale-`_LAST` confirmation prompt. That prompt
+    /// went with the gate (da-s6no) and the flag currently has nothing left
+    /// to skip; it is still accepted, so existing scripts keep working.
     pub force: bool,
     pub dry_run: bool,
     pub strict: bool,
@@ -539,26 +543,30 @@ pub struct DeleteArgs {
     pub output: OutputArgs,
 }
 
-#[derive(Debug)]
+/// `datum undo [ID_OR_SLUG] [--to-version N]` — one step back along the
+/// entry's history trail.
+///
+/// There is no staleness flag here any more (da-s6no): `undo` used to refuse
+/// a `_LAST` pointer older than fifteen minutes unless `--force` was given,
+/// and to hunt tombstones only inside `--window`. Both were gates on a
+/// reversible operation, and `redo` made them cost more than they saved —
+/// `undo` now always proceeds and warns instead.
+#[derive(Debug, Default)]
 pub struct UndoArgs {
     pub id_or_slug: Option<String>,
     pub to_version: Option<u32>,
-    pub force: bool,
-    pub window: String,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }
 
-impl Default for UndoArgs {
-    fn default() -> Self {
-        Self {
-            id_or_slug: None,
-            to_version: None,
-            force: false,
-            window: "15m".to_string(),
-            output: OutputArgs::default(),
-        }
-    }
+/// `datum redo [ID_OR_SLUG]` — one step FORWARD along the trail, undoing the
+/// last `undo`. No `--to-version`: an explicit version number is what `undo`
+/// is for, and `redo` is the word for the step a hand already took back.
+#[derive(Debug, Default)]
+pub struct RedoArgs {
+    pub id_or_slug: Option<String>,
+    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    pub output: OutputArgs,
 }
 
 #[derive(Debug)]

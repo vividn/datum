@@ -37,6 +37,7 @@ MUTATE:
   retime   Shift time_start/time_end on entries (alias: rt)
   delete   Delete an entry (alias: del)
   undo     Undo the last change to an entry (revert via history)
+  redo     Redo the last undone change (the inverse of undo)
 
 READ:
   tail     Show recent entries

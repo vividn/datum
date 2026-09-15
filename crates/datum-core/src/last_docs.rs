@@ -15,6 +15,10 @@
 //! default, matching datum). `_LAST` has no time guard. Neither token
 //! prompts on its own — the destructive-command y/N prompt is layered on
 //! top by the command implementation.
+//!
+//! [`STALE_WARNING_MINUTES`] is the softer, ten-minute line `undo` and
+//! `redo` use instead: they never refuse on age, they only say how old the
+//! change they are about to move was.
 
 use chrono::{DateTime, Duration, Utc};
 use rusqlite::{params, OptionalExtension};
@@ -78,6 +82,20 @@ pub fn within_protection_window(reference_time: DateTime<Utc>, now: DateTime<Utc
     now - reference_time <= Duration::minutes(PROTECTION_WINDOW_MINUTES)
 }
 
+/// How old the pointer may get before `undo` / `redo` SAY so. Not a gate:
+/// those commands never refuse on age (da-s6no — undo is reversible now that
+/// `redo` exists, so refusing costs more than it saves). Past this the command
+/// still runs and names the age on stderr.
+pub const STALE_WARNING_MINUTES: i64 = 10;
+
+/// The pointer's age when it is past [`STALE_WARNING_MINUTES`], or `None`
+/// while it is fresh. The caller words the warning; this decides whether
+/// there is one.
+pub fn stale_warning_age(reference_time: DateTime<Utc>, now: DateTime<Utc>) -> Option<Duration> {
+    let age = now - reference_time;
+    (age > Duration::minutes(STALE_WARNING_MINUTES)).then_some(age)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,6 +132,20 @@ mod tests {
         let now = Utc::now();
         assert!(within_protection_window(now, now));
         assert!(within_protection_window(now - Duration::minutes(10), now));
+    }
+
+    #[test]
+    fn stale_warning_is_silent_inside_ten_minutes() {
+        let now = Utc::now();
+        assert!(stale_warning_age(now, now).is_none());
+        assert!(stale_warning_age(now - Duration::minutes(9), now).is_none());
+    }
+
+    #[test]
+    fn stale_warning_names_the_age_past_ten_minutes() {
+        let now = Utc::now();
+        let age = stale_warning_age(now - Duration::minutes(23), now).expect("past the line");
+        assert_eq!(age.num_minutes(), 23);
     }
 
     #[test]

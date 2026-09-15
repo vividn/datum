@@ -1,7 +1,7 @@
 //! Multi-row read paths: per-field lists, time-window lists, and the unified
 //! `list_entries` query that backs `tail`/`head`.
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
 use crate::entry::Entry;
@@ -128,22 +128,9 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
-    /// Tombstoned rows whose `deleted_at` is within `within` of now, most
-    /// recently deleted first. Undo uses this to locate recent deletes
-    /// inside the safety window.
-    pub fn list_recent_tombstones(&self, within: Duration) -> Result<Vec<Entry>> {
-        let cutoff = (Utc::now() - within).to_rfc3339();
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM entries
-             WHERE deleted_at IS NOT NULL AND deleted_at >= ?1
-             ORDER BY deleted_at DESC, slug DESC",
-        )?;
-        let rows = stmt.query_map(params![cutoff], row_to_entry)?;
-        rows.map(|r| r.map_err(DatumError::Db)).collect()
-    }
-
-    /// Most recently tombstoned row, regardless of age. `undo --force`
-    /// uses this to reach back past the default safety window.
+    /// Most recently tombstoned row, regardless of age. Bare `undo` uses this
+    /// when no last-docs pointer names a target; there is no age window, since
+    /// undo refuses nothing on age (da-s6no).
     pub fn most_recent_tombstone(&self) -> Result<Option<Entry>> {
         let mut stmt = self.conn.prepare(
             "SELECT * FROM entries

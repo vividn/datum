@@ -476,9 +476,18 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 ### undo (daydumb only, D4)
 
 - **Purpose:** revert an entry to a prior version (or undo a delete).
-- **Flags:** optional `id_or_slug`, `--to-version`, `--force`,
-  `--window` (default `15m`).
-- **Notes:** the safety window prevents surprise reverts of old data.
+- **Flags:** optional `id_or_slug`, `--to-version`.
+- **Notes:** no safety window. `--force` / `--window` were removed with
+  the fifteen-minute gate (da-s6no) — undo is reversible now that `redo`
+  exists, so age earns a stderr warning past ten minutes, not a refusal.
+
+### redo (daydumb only, da-s6no)
+
+- **Purpose:** the inverse of `undo` — re-apply the version the last undo
+  stepped back from.
+- **Flags:** optional `id_or_slug`.
+- **Notes:** offered only when the entry's newest history row is an `undo`,
+  so `undo; redo; redo` moves once. Exits 1 with "Nothing to redo" otherwise.
 
 ### why (daydumb only, D3)
 

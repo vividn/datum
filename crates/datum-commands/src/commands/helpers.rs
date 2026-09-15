@@ -235,6 +235,62 @@ pub(crate) fn resolve_batch(
     (entries, errors)
 }
 
+/// The stale-`_LAST` WARNING that `undo`, `redo` and `delete` print in place
+/// of a gate (da-s6no).
+///
+/// vividn, 2026-09-15: «let's remove the 15 minute gate on undo since redo is
+/// possible; still put a warning though after 10 minutes», and at 20:19 «you
+/// can remove the delete protection, since undo is so easy, but do give the
+/// warning». Nothing refuses: past [`STALE_WARNING_MINUTES`] the command says
+/// how old the change it is touching was, on stderr, and carries on.
+///
+/// `phrase` is the clause before the age — "undoing a change", "deleting an
+/// entry" — so the whole line reads as a sentence.
+///
+/// [`STALE_WARNING_MINUTES`]: datum_core::last_docs::STALE_WARNING_MINUTES
+pub(crate) fn warn_if_stale(phrase: &str, reference_time: chrono::DateTime<chrono::Utc>) {
+    if let Some(age) = datum_core::last_docs::stale_warning_age(reference_time, chrono::Utc::now())
+    {
+        eprintln!("warning: {phrase} from {}", spell_age(age));
+    }
+}
+
+/// [`warn_if_stale`] against the `_LAST` pointer's own age — for a command
+/// that defaulted to it rather than naming a target. A database with no
+/// pointer has no age to report and says nothing.
+pub(crate) fn warn_if_stale_default_last(phrase: &str, db: &Db) {
+    if let Ok(Some(reference)) = datum_core::last_docs::get_last_docs(db) {
+        warn_if_stale(phrase, reference.time);
+    }
+}
+
+/// "23 minutes ago", "1 hour 5 minutes ago" — the age spelled out, because
+/// the warning is a sentence and `2h5m` is not.
+fn spell_age(age: chrono::Duration) -> String {
+    fn unit(n: i64, name: &str) -> String {
+        if n == 1 {
+            format!("1 {name}")
+        } else {
+            format!("{n} {name}s")
+        }
+    }
+    let minutes = age.num_minutes();
+    let spelled = if minutes < 60 {
+        unit(minutes, "minute")
+    } else if minutes < 60 * 24 {
+        match (minutes / 60, minutes % 60) {
+            (h, 0) => unit(h, "hour"),
+            (h, m) => format!("{} {}", unit(h, "hour"), unit(m, "minute")),
+        }
+    } else {
+        match (minutes / (60 * 24), (minutes / 60) % 24) {
+            (d, 0) => unit(d, "day"),
+            (d, h) => format!("{} {}", unit(d, "day"), unit(h, "hour")),
+        }
+    };
+    format!("{spelled} ago")
+}
+
 /// da-uzxj: stale-default protection for mutating commands.
 ///
 /// When the user runs a mutating command (`delete`, `update`, `merge`,

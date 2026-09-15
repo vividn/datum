@@ -231,6 +231,7 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
         "get" => Command::Get(parse_get_args(rest)?),
         "delete" | "del" => Command::Delete(parse_delete_args(rest)?),
         "undo" => Command::Undo(parse_undo_args(rest)?),
+        "redo" => Command::Redo(parse_redo_args(rest)?),
 
         "history" => Command::History(parse_history_args(rest)?),
         "why" => Command::Why(parse_why_args(rest)?),
