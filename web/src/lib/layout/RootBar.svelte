@@ -12,12 +12,13 @@
 	a root tab and a widget opens that kind's built-in one-widget layout.
 
 	What the root's menu is missing, and why, is `menu.ts`'s comment: no
-	`Split` (the root pane IS the shell — there is nothing outside it to
-	split against, so its four arrows are `Break out`, which at the root
-	means a new pane down one whole side of the layout — what the page's
-	four `…` edge handles used to do, da-qk2k) and no `Bar` (the root
-	draws no bar of its own — this one is the shell's). What it has that a
-	pane's has not is `export backup…`: there is one database.
+	`Break out` (a tab breaks out of its STRIP, and the root has no strip
+	to leave) and no `Bar` (the root draws no bar of its own — this one is
+	the shell's). Its `Split` is `addEdge`: a new pane down one whole side
+	of the layout — what the page's four `…` edge handles used to do
+	(da-qk2k) — which is what a split beside the shell can only mean
+	(da-a642). What it has that a pane's has not is `export backup…`:
+	there is one database.
 
 	The layout's own acts — save, restore, save as…, lock — are in the
 	menu too, where the orange dot is (vividn: "Inside the menu there
@@ -83,7 +84,7 @@
 	/** The active save's versions, newest first, while the list is open. */
 	let trail: { version: number; modifyTime: string }[] | null = null;
 
-	/** The root's `Break out`: an arrow is a side of the whole layout (`addEdge`). */
+	/** The root's `Split`: an arrow is a side of the whole layout (`addEdge`). */
 	const SIDE: Record<Toward, BarEdge> = { left: 'left', right: 'right', up: 'top', down: 'bottom' };
 
 	$: tabs = $layout.root.tabs;
@@ -180,9 +181,9 @@
 				// widget — one whose kind has no built-in layout (da-y2f6) — can
 				// be reset like any other. One holding a layout cannot.
 				reset: resetWidget(active),
-				// No `split`: the root pane is the shell, with nothing outside
-				// it to split against. No `bar`: this bar IS the root's.
-				breakOut: { what: 'break out: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },
+				// No `breakOut`: a tab breaks out of its strip, and the root has
+				// no strip to leave (da-a642). No `bar`: this bar IS the root's.
+				split: { what: 'split: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },
 				close: { label: 'Close tab', disabled: tabs.length < 2, run: () => close($layout.root.active) },
 				acts,
 				extra: [{ label: 'export backup…', run: () => void act(downloadBackup) }]

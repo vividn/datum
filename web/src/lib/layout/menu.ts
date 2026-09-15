@@ -9,9 +9,10 @@
 // hand in lands with the same label in the same order. What each menu is
 // missing is a fact about the thing it belongs to:
 //
-// - the ROOT pane is the shell, so there is nothing outside it to split
-//   against and no `Split`; its `Break out` is `addEdge`, a new pane down
-//   one whole side of the layout in front.
+// - the ROOT pane is the shell, so there is no strip for a tab to leave
+//   and no `Break out`; its `Split` is `addEdge`, a new pane down one
+//   whole side of the layout in front — the only thing a split beside the
+//   shell can mean (da-a642).
 // - the root draws no bar of its own (PaneFrame.svelte's `bare`), so `Bar`
 //   means nothing there and is not offered.
 // - the layout's own acts — save, restore, save as, lock — are on any tab

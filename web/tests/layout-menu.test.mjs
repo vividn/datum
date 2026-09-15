@@ -259,8 +259,8 @@ describe('the menu the title opens', () => {
 // diverges fails here.
 describe("the root bar's menu", () => {
 	/** The root's differences from a pane's, and only these. */
-	const NO_SPLIT = 'Split ← → ↑ ↓'; // the root pane IS the shell: nothing outside it to split against
-	const NO_BAR = 'Bar'; //            the root draws no bar of its own — this one is the shell's
+	const NO_BREAK = 'Break out ← → ↑ ↓'; // a tab leaves its STRIP, and the root has none (da-a642)
+	const NO_BAR = 'Bar'; //                the root draws no bar of its own — this one is the shell's
 	const ROOT_ONLY = ['export backup…']; // there is one database
 	const CLOSE = '× Close tab'; //        last in both, after `export backup…` (da-ygc9)
 
@@ -306,7 +306,7 @@ describe("the root bar's menu", () => {
 		}, DESKTOP);
 	});
 
-	test('the root menu is the pane menu, less Split and Bar, plus export backup…', async () => {
+	test('the root menu is the pane menu, less Break out and Bar, plus export backup…', async () => {
 		await withApp(async ({ page }) => {
 			// A pane whose menu has everything a pane menu can have: several
 			// tabs (so it says `Close tab`, as the root's always does) and an
@@ -323,8 +323,8 @@ describe("the root bar's menu", () => {
 			const paneLines = await linesOf(page, () => menuButton(page, 'tail').click());
 			assert.deepEqual(paneLines, [
 				'Choose…',
-				NO_SPLIT,
-				'Break out ← → ↑ ↓',
+				'Split ← → ↑ ↓',
+				NO_BREAK,
 				NO_BAR,
 				'Save layout',
 				'Restore layout',
@@ -344,7 +344,7 @@ describe("the root bar's menu", () => {
 			// the reader just saved — and not about which menu is open, so
 			// it is the one item the two menus may differ on (da-luwe).
 			const rootLines = await linesOf(page, () => rootMenuButton(page).click());
-			const shared = paneLines.filter((l) => l !== NO_SPLIT && l !== NO_BAR && l !== 'Reset layout');
+			const shared = paneLines.filter((l) => l !== NO_BREAK && l !== NO_BAR && l !== 'Reset layout');
 			assert.deepEqual(rootLines, [...shared.slice(0, -1), ...ROOT_ONLY, CLOSE]);
 		}, DESKTOP);
 	});

@@ -3,10 +3,12 @@
 // added a pane spanning that whole side. The handles were not
 // discoverable (vividn: "We can remove the the 4 ... things on the edges of
 // the screen"), so da-wjob took them away and the act moved into the root
-// menu, where it is `Break out` with the same four arrows every other
-// menu row has — the root pane being the shell, breaking out of it is a
-// new pane down one whole side. The BEHAVIOUR is what this file tests, so
-// it stayed and only its entry point moved.
+// menu, where it is `Split` with the same four arrows every other menu
+// row has — the root pane being the shell, splitting beside it is a new
+// pane down one whole side. (It wore `Break out` until da-a642: a tab
+// breaks out of its STRIP, and the root has no strip to leave.) The
+// BEHAVIOUR is what this file tests, so it stayed and only its entry
+// point moved.
 //
 // Boxes and tree shapes, never "one more pane than before" alone: a
 // delta-blind probe passes against a page that grew the wrong pane.
@@ -24,13 +26,13 @@ const SCREENS = [
 	{ width: 390, height: 844 }
 ];
 
-/** Which arrow of `Break out` puts a pane down each side. */
+/** Which arrow of `Split` puts a pane down each side. */
 const WHERE = { top: 'above', bottom: 'below', left: 'to the left', right: 'to the right' };
 
-/** Break out toward `edge` from the root menu. */
-const extend = (page, edge) => chooseRoot(page, `break out: a new pane ${WHERE[edge]}`);
+/** Split toward `edge` from the root menu. */
+const extend = (page, edge) => chooseRoot(page, `split: a new pane ${WHERE[edge]}`);
 
-/** The root split's box, and the box of the empty pane the break out just added. */
+/** The root split's box, and the box of the empty pane the split just added. */
 const boxes = (page) =>
 	page.evaluate(() => {
 		const rect = (el) => {
@@ -64,10 +66,9 @@ describe('extending the dashboard from its edges', () => {
 				'an edge handle is still drawn'
 			);
 			await rootMenuButton(page).click();
-			assert.ok(
-				(await menuLines(page)).includes('Break out ← → ↑ ↓'),
-				'the root menu has no Break out row'
-			);
+			const lines = await menuLines(page);
+			assert.ok(lines.includes('Split ← → ↑ ↓'), 'the root menu has no Split row');
+			assert.ok(!lines.includes('Break out ← → ↑ ↓'), 'the root menu still offers Break out');
 			await page.keyboard.press('Escape');
 		}, { viewport: SCREENS[0] });
 	});
@@ -125,7 +126,7 @@ describe('extending the dashboard from its edges', () => {
 		});
 	}
 
-	test('under the lock, the root menu offers no Break out — the acts alone', async () => {
+	test('under the lock, the root menu offers no Split — the acts alone', async () => {
 		await withApp(
 			async ({ page }) => {
 				await page.locator('section.root').waitFor();

@@ -419,7 +419,7 @@ describe('Reset layout', () => {
 
 			// Modified and SAVED: the save now shadows `defaults.ts`, which is
 			// the state a reset exists to undo.
-			await chooseRoot(page, 'break out: a new pane to the left');
+			await chooseRoot(page, 'split: a new pane to the left');
 			await until(() => paneCount(page), (n) => n === panes + 1);
 			const edited = await treeOf(app);
 			assert.notDeepEqual(edited.root, builtin.root);
@@ -465,7 +465,7 @@ describe('Reset layout', () => {
 			await controlsReady(app);
 			const panes = await paneCount(page);
 
-			await chooseRoot(page, 'break out: a new pane to the left');
+			await chooseRoot(page, 'split: a new pane to the left');
 			await until(() => paneCount(page), (n) => n === panes + 1);
 			await until(() => draft(app), (d) => d !== null);
 
@@ -511,7 +511,7 @@ describe('Reset layout', () => {
 			const builtin = await treeOf(app);
 			const panes = await paneCount(page);
 
-			await chooseRoot(page, 'break out: a new pane to the left');
+			await chooseRoot(page, 'split: a new pane to the left');
 			await until(() => paneCount(page), (n) => n === panes + 1);
 
 			await reset(app, panes);

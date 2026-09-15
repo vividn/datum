@@ -71,7 +71,7 @@ export const addButton = (page, id) => pane(page, id).locator('.titlebar button.
  */
 export const rootMenuButton = (page) => page.locator('.root-bar [role="tab"][aria-selected="true"]');
 
-/** Open the root menu and choose an item by its name — `Save layout`, `break out: a new pane to the left`. */
+/** Open the root menu and choose an item by its name — `Save layout`, `split: a new pane to the left`. */
 export async function chooseRoot(page, label) {
 	await rootMenuButton(page).click();
 	await page.getByRole('menuitem', { name: label, exact: true }).click();

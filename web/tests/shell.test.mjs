@@ -165,7 +165,7 @@ describe('the shell', () => {
 				// `day` is a built-in, so it has the fifth act (da-luwe).
 				[
 					'Choose…',
-					'Break out ← → ↑ ↓',
+					'Split ← → ↑ ↓',
 					'Save layout',
 					'Restore layout',
 					'Reset layout',
