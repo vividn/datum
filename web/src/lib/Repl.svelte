@@ -123,14 +123,16 @@
 			     (da-xfa4): the web appends `--show json` to every command it
 			     runs, so both surfaces get the documents and a multi-document
 			     result is side by side in each.
-			     THE TRADE: `--show json` carries the CLI's strings with its
-			     ANSI stripped, so an action echo in here is no longer painted
-			     in datum's field and state colours — a table, a picture and an
-			     error still are, because they carry no echo and arrive as the
-			     CLI printed them. vividn asked for exactly this ("The whole web
+			     `--show json` carries the CLI's strings with its ANSI
+			     stripped, which for a while cost the echo datum's field and
+			     state colours while a table, a picture and an error kept
+			     theirs — they carry no echo and arrive as the CLI printed
+			     them. The document now carries the colours as DATA
+			     (`info_segments`, da-yu9s) and `Doc.svelte` paints from
+			     those, so the separation vividn asked for ("The whole web
 			     interface can take use json as the default show and then
-			     render on it's own terms which is nice separation"); the
-			     colour is the cost of the one mechanism. -->
+			     render on it's own terms which is nice separation") no
+			     longer costs the colour. -->
 			<Docs docs={docsOf(entry.result) ?? []} all />
 		{:else if entry.result.stdout}
 			<CliOutput text={entry.result.stdout} />

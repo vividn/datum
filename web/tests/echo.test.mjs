@@ -108,6 +108,76 @@ describe('parseEcho', () => {
 });
 
 /**
+ * The echo arrives painted (da-yu9s).
+ *
+ * `--show json` strips the ANSI, so for a while the REPL's own scrollback
+ * showed `occur coffee` in grey beside a table still in datum's colours.
+ * The document now carries the colours as data, and both surfaces place
+ * them. Measured on the screen, and against the CLI's own numbers: the
+ * colour asserted is the one the SAME document called `field_color`, not a
+ * hex written down here.
+ */
+describe('the echo is painted in datum’s colours', () => {
+	/** Every run of one surface's info line, as the browser drew it. */
+	const runs = (page, root) =>
+		page.locator(`${root} .doc .info`).first().evaluate((el) =>
+			[...el.querySelectorAll('span')].map((s) => ({
+				text: s.textContent,
+				color: getComputedStyle(s).color
+			}))
+		);
+
+	/** `#rrggbb` as `getComputedStyle` gives it back. */
+	const asRgb = (hex) => {
+		const n = parseInt(hex.slice(1), 16);
+		return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+	};
+
+	test('the field is in its own colour, in the bar and in the REPL alike', async () => {
+		await withApp(async (app) => {
+			await app.submit('occur coffee');
+			const [doc] = parseEcho((await app.run(['get', 'coffee', '--show', 'json'])).stdout);
+			assert.ok(doc.field_color, 'the CLI answered no field colour');
+
+			for (const root of ['.prompt-bar', '.repl']) {
+				const drawn = await runs(app.page, root);
+				assert.equal(
+					drawn.map((r) => r.text).join(''),
+					doc.info,
+					`${root}: the painted line is not the line the CLI printed`
+				);
+				const field = drawn.filter((r) => r.text === doc.field);
+				assert.equal(field.length, 1, `${root}: ${JSON.stringify(drawn)}`);
+				assert.equal(
+					field[0].color,
+					asRgb(doc.field_color),
+					`${root}: the field is not in its own colour`
+				);
+			}
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('a state gets its own colour, which is not the field’s', async () => {
+		await withApp(async (app) => {
+			await app.submit('switch mood happy');
+			const [doc] = parseEcho((await app.run(['get', 'mood', '--show', 'json'])).stdout);
+			assert.notEqual(doc.state_color, doc.field_color);
+
+			const drawn = await runs(app.page, '.repl');
+			assert.equal(drawn.map((r) => r.text).join(''), doc.info);
+			assert.ok(
+				drawn.some(
+					(r) => r.text.startsWith(doc.state) && r.color === asRgb(doc.state_color)
+				),
+				`the state is not in its own colour: ${JSON.stringify(drawn)}`
+			);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+});
+
+/**
  * The argvs `echoArgv` leaves alone, with arguments that make each one a
  * command the CLI will actually try to run.
  *

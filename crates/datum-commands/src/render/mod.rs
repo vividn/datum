@@ -338,6 +338,22 @@ pub struct ActionLines {
     /// [`Self::data_items`] under the CLI's own inline-block join, so a
     /// caller never composes one.
     pub data_inline: String,
+    /// The entry's field name.
+    pub field: String,
+    /// The entry's state as logged — a JSON string / bool / null / object,
+    /// or `None` where the entry carries none.
+    pub state: Option<JsonValue>,
+    /// `#rrggbb` for [`Self::field`], from `colors::field_hex` — the very
+    /// derivation the terminal badge and `fields --json` paint with.
+    pub field_color: String,
+    /// `#rrggbb` for [`Self::state`], from `colors::state_hex`; `None` where
+    /// there is no state, or where the state paints none (`Bool(false)`).
+    pub state_color: Option<String>,
+    /// [`Self::info`] split into its coloured runs (da-yu9s), so a surface
+    /// that is not a terminal paints the line without ever looking for the
+    /// field inside it — `switch mood mood` names it twice. The texts
+    /// concatenated equal [`Self::info`] byte for byte.
+    pub info_segments: Vec<colors::AnsiSegment>,
 }
 
 /// Build [`ActionLines`] against an explicit `now`, so a caller that renders
@@ -364,6 +380,18 @@ pub fn action_lines_at(
     let default_ctx = self::action::RenderContext::default();
     let render_ctx = ctx.unwrap_or(&default_ctx);
     let info = self::action::format_info_line_at(entry, spec, render_ctx, now);
+    // The same line again with the colour gate forced open, split at its
+    // own escapes (da-yu9s). Re-rendering rather than threading a second
+    // return type through the renderer is what makes the two forms
+    // unable to disagree: `format_info_line_at` is a function of
+    // (entry, spec, ctx, now), and every painter here leaves the plain
+    // text alone — so these segments' texts are exactly `info` stripped.
+    let info_segments = {
+        let _painted = self::colors::ColorOverride::set(true);
+        self::colors::ansi_segments(&self::action::format_info_line_at(
+            entry, spec, render_ctx, now,
+        ))
+    };
 
     // State second line (da-gvj1 rule 3): doc-style renderers expose
     // structured-state internals on a line below the chip. Tail never
@@ -397,6 +425,14 @@ pub fn action_lines_at(
         id: strip_ansi(ex.slug.as_deref().unwrap_or_default()),
         data_items,
         data_inline,
+        field: entry.field.clone(),
+        state: entry.state.clone(),
+        field_color: self::colors::field_hex(&entry.field, spec),
+        state_color: entry
+            .state
+            .as_ref()
+            .and_then(|v| self::colors::state_hex(v, &entry.field, spec)),
+        info_segments,
     }
 }
 

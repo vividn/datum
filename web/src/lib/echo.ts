@@ -19,6 +19,19 @@
 // scrollback echoes the argv the caller asked for, not the one the runner
 // received (Repl.svelte, engine.press).
 
+/**
+ * One run of the info line, as the CLI painted it (da-yu9s).
+ *
+ * `color` is the hex the terminal would have used — the chip's background
+ * for the field badge and the state cell, the foreground for a marker —
+ * and `null` where the run is unpainted. The texts concatenated are the
+ * whole of `info`, so a surface places them and never composes one.
+ */
+export interface InfoSegment {
+	text: string;
+	color: string | null;
+}
+
 /** One document of the CLI's echo — `--show json`'s own field names. */
 export interface EchoDoc {
 	/** `CREATE`, `EXISTS`, `DELETE`, … */
@@ -35,6 +48,21 @@ export interface EchoDoc {
 	data: string[];
 	/** The same pairs joined for one line. */
 	data_inline: string;
+	/** The field the entry tracks. */
+	field?: string;
+	/** The state as logged — a string, a bool, null, an object. */
+	state?: unknown;
+	/** `#rrggbb` for the field, as `fields --json` publishes it. */
+	field_color?: string;
+	/** `#rrggbb` for the state, or null where the state paints none. */
+	state_color?: string | null;
+	/**
+	 * `info` split into its coloured runs, so the line can be painted
+	 * without looking for the field inside it — `switch mood mood` names it
+	 * twice, and only the CLI knows which is which. Absent from a module
+	 * too old to carry them, which is why the renderer falls back to `info`.
+	 */
+	info_segments?: InfoSegment[];
 }
 
 /**

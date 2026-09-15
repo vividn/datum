@@ -425,6 +425,118 @@ pub fn strip_ansi(s: &str) -> String {
     out
 }
 
+/// One run of painted text and the colour it reads as (da-yu9s).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AnsiSegment {
+    /// The run's text, ANSI-free.
+    pub text: String,
+    /// `#rrggbb`, or `None` where the run was left unpainted.
+    pub color: Option<String>,
+}
+
+/// Split a painted string into runs of one colour — the renderer's own
+/// palette handed to a surface that is not a terminal (da-yu9s).
+///
+/// A run's colour is its BACKGROUND where it has one, since that is what a
+/// bg-painted chip (the field badge, the state cell, a LEAD/TRAIL slot)
+/// reads as, and its foreground otherwise. The bright-grey the renderer
+/// paints slugs and markers with is [`Rgb::IGNORED`], the same `#888888` it
+/// uses for the ignored state.
+///
+/// Escapes are dropped exactly as [`strip_ansi`] drops them, so
+/// `ansi_segments(s)`'s texts concatenated always equal `strip_ansi(s)` —
+/// which is what keeps a caller's coloured form from drifting from its
+/// plain one.
+pub fn ansi_segments(s: &str) -> Vec<AnsiSegment> {
+    let mut out: Vec<AnsiSegment> = Vec::new();
+    let (mut fg, mut bg) = (None, None);
+    let mut rest = s;
+    while let Some(esc) = rest.find('\x1b') {
+        push_run(&mut out, &rest[..esc], bg.clone().or_else(|| fg.clone()));
+        let after = &rest[esc..];
+        // Everything up to the first `m` is the sequence; an unterminated
+        // one swallows the tail, as `strip_ansi` does.
+        match after.find('m') {
+            Some(end) => {
+                apply_sgr(&after[..end], &mut fg, &mut bg);
+                rest = &after[end + 1..];
+            }
+            None => rest = "",
+        }
+    }
+    push_run(&mut out, rest, bg.or(fg));
+    out
+}
+
+/// Append `text` to the last run when it carries the same colour, so a
+/// sequence of escapes that does not change the colour does not split one
+/// run into several.
+fn push_run(out: &mut Vec<AnsiSegment>, text: &str, color: Option<String>) {
+    if text.is_empty() {
+        return;
+    }
+    match out.last_mut() {
+        Some(last) if last.color == color => last.text.push_str(text),
+        _ => out.push(AnsiSegment {
+            text: text.to_string(),
+            color,
+        }),
+    }
+}
+
+/// Apply one SGR sequence's parameters to the running fg / bg. Parameters
+/// this renderer never emits (bold, underline, the basic colours other than
+/// bright black) are skipped: they say nothing about the run's colour.
+fn apply_sgr(sequence: &str, fg: &mut Option<String>, bg: &mut Option<String>) {
+    let body = sequence
+        .trim_start_matches('\x1b')
+        .trim_start_matches('[')
+        .trim_end_matches(|c: char| !c.is_ascii_digit() && c != ';');
+    let params: Vec<u16> = body
+        .split(';')
+        .map(|p| p.parse::<u16>().unwrap_or(0))
+        .collect();
+    let mut i = 0;
+    while i < params.len() {
+        match params[i] {
+            0 => {
+                *fg = None;
+                *bg = None;
+            }
+            90 => *fg = Some(Rgb::IGNORED.hex()),
+            code @ (38 | 48) => {
+                let slot = if code == 38 { &mut *fg } else { &mut *bg };
+                match params.get(i + 1) {
+                    Some(2) => {
+                        if let (Some(&r), Some(&g), Some(&b)) =
+                            (params.get(i + 2), params.get(i + 3), params.get(i + 4))
+                        {
+                            *slot = Some(
+                                Rgb {
+                                    r: r as u8,
+                                    g: g as u8,
+                                    b: b as u8,
+                                }
+                                .hex(),
+                            );
+                        }
+                        i += 4;
+                    }
+                    Some(5) => {
+                        if let Some(&n) = params.get(i + 2) {
+                            *slot = Some(ansi256_rgb(n as u8).hex());
+                        }
+                        i += 2;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+}
+
 /// Count visible terminal columns, ignoring ANSI escapes. Width is the
 /// Unicode display width (da-dhtp): emoji / CJK count 2 columns,
 /// combining marks and other zero-width chars count 0 — so layout math
@@ -536,6 +648,61 @@ mod tests {
     #[test]
     fn strip_ansi_preserves_plain_text() {
         assert_eq!(strip_ansi("\x1b[32mhi\x1b[0m"), "hi");
+    }
+
+    /// The chip's BACKGROUND is what the run reads as; a fg-only run
+    /// reports its foreground, and unpainted text reports nothing.
+    #[test]
+    fn ansi_segments_report_the_colour_a_run_reads_as() {
+        let _painted = ColorOverride::set(true);
+        let line = format!(
+            "{}{}{}",
+            "12:00:00",
+            paint(GRAY_FG, "+2"),
+            paint_bg(Rgb { r: 1, g: 2, b: 3 }, "coffee")
+        );
+        assert_eq!(
+            ansi_segments(&line),
+            vec![
+                AnsiSegment {
+                    text: "12:00:00".into(),
+                    color: None
+                },
+                AnsiSegment {
+                    text: "+2".into(),
+                    color: Some(Rgb::IGNORED.hex())
+                },
+                AnsiSegment {
+                    text: "coffee".into(),
+                    color: Some("#010203".into())
+                },
+            ]
+        );
+    }
+
+    /// The contract every caller leans on: the segments are the string,
+    /// escapes removed — so a coloured form cannot drift from its plain one.
+    #[test]
+    fn ansi_segments_rebuild_the_stripped_string() {
+        for line in [
+            "",
+            "plain",
+            "\x1b[38;2;1;2;3mfg\x1b[0m plain \x1b[48;2;4;5;6mbg\x1b[0m",
+            "\x1b[4m\x1b[90m-1d\x1b[0m 09:15:00\x1b[0m",
+            "\x1b[1m\x1b[48;2;9;9;9m\x1b[38;2;255;215;0m!\x1b[0m",
+            "trailing \x1b[38;2;7;7;7",
+        ] {
+            let joined: String = ansi_segments(line).into_iter().map(|s| s.text).collect();
+            assert_eq!(joined, strip_ansi(line), "segments must rebuild {line:?}");
+        }
+    }
+
+    /// Runs the escapes split but the colour does not stay split.
+    #[test]
+    fn ansi_segments_merge_runs_of_one_colour() {
+        let merged = ansi_segments("\x1b[38;2;1;2;3ma\x1b[38;2;1;2;3mb\x1b[0m");
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].text, "ab");
     }
 
     #[test]

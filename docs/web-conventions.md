@@ -35,7 +35,12 @@ file in the same commit — a convention nobody can read is a convention nobody 
 6. **The web asks every command it runs for its echo as data** — `--show json` appended the way
    `fitArgv` appends `--width` (`echoArgv` in `$lib/echo.ts`, at `Repl.runArgv` and
    `engine.alone`). The bottom bar and the REPL then PLACE the CLI's own strings — action, hid,
-   id, info, the data on one line — and compose none of them. `NO_ECHO` in that file is the
+   id, info, the data on one line — and compose none of them. The document carries the CLI's
+   own COLOURS too (da-yu9s): `field` and `state` as logged, `field_color` and `state_color` as
+   `fields --json` resolves them, and `info_segments` — `info` split into `{text, color}` runs,
+   which is what `Doc.svelte` paints the line from. The web never looks for the field inside
+   `info` (`switch mood mood` names it twice) and never derives a colour of its own.
+   `NO_ECHO` in that file is the
    denylist of commands with no action echo: it is a denylist because an argv whose first word
    is not a command (`mood switch happy`, an alias) is a write under another name and must get
    the flag, and `tests/echo.test.mjs` holds the list to what the CLI actually does. A stdout

@@ -15,19 +15,34 @@
 	the web places them and lets CSS truncate them, and composes none of
 	them (docs/web-conventions.md #6).
 
+	The colours are datum's own too (da-yu9s). `--show json` strips the
+	ANSI, so the info line arrived here unpainted for a while and an echo
+	read grey beside a table that was still in datum's field and state
+	colours. It now arrives as `info_segments` — the runs the terminal
+	would have painted, each with its hex — so the line is PLACED painted
+	rather than searched for a field name (`switch mood mood` has it
+	twice, and only the CLI knows which is which). A document without
+	them falls back to the plain line.
+
 	The full id is behind the hid — vividn: "don't show full id (rather
 	showing that on hover over the hid)" — as a `title` for a pointer and,
 	because touch has no hover, as a TAP that swaps the hid for the id
 	until it is tapped again.
 -->
 <script lang="ts">
-	import type { EchoDoc } from '$lib/echo.js';
+	import type { EchoDoc, InfoSegment } from '$lib/echo.js';
 
 	export let doc: EchoDoc;
 	/** The three-line size: set for the whole row when any document has data. */
 	export let small = false;
 
 	let shown = false;
+
+	/** The line's runs, or the unpainted line as its one run. */
+	let segments: InfoSegment[];
+	$: segments = doc.info_segments?.length
+		? doc.info_segments
+		: [{ text: doc.info, color: null }];
 </script>
 
 <div class="doc" class:small>
@@ -42,7 +57,12 @@
 			on:click={() => (shown = !shown)}>{shown ? doc.id : doc.hid}</button
 		>
 	</div>
-	<div class="info">{doc.info}</div>
+	<!-- Nothing may come between the spans: the line is monospace and
+	     laid out with runs of spaces, and a newline in the markup is a
+	     space in the DOM — so the hugging here is load-bearing, as it is
+	     in AnsiText.svelte. -->
+	<div class="info">{#each segments as segment}<span style:color={segment.color}>{segment.text}</span
+		>{/each}</div>
 	{#if doc.data_inline}
 		<div class="data">{doc.data_inline}</div>
 	{/if}
