@@ -15,6 +15,7 @@ use serde_json::{json, Value as JsonValue};
 
 use crate::args::FieldsArgs;
 use crate::render::colors::{field_hex, state_rgb};
+use crate::render::format_grid;
 
 pub fn fields(args: FieldsArgs, db: &Db) -> Result<()> {
     let listing = compute_fields(db)?;
@@ -22,20 +23,51 @@ pub fn fields(args: FieldsArgs, db: &Db) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&listing)?);
         return Ok(());
     }
-    for row in listing.as_array().into_iter().flatten() {
-        let states: Vec<String> = row["states"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(|s| s.as_str().map_or_else(|| s.to_string(), str::to_string))
-            .collect();
-        println!(
-            "{}\t{}",
-            row["field"].as_str().unwrap_or(""),
-            states.join(" ")
-        );
-    }
+    print!("{}", format_listing(&listing, args.include_ignored));
     Ok(())
+}
+
+/// The plain listing (da-1lnf): a `field` / `states` header over one row
+/// per field, so the second column reads as what it is — the set of states
+/// the field has been logged with, not its current one.
+///
+/// Ignored fields are left out unless `include_ignored`; when one is shown
+/// a third `ignored` column says which. `--json` never comes through here:
+/// it carries every field with its `ignored` flag, which is what the web
+/// widget bar reads.
+pub fn format_listing(listing: &JsonValue, include_ignored: bool) -> String {
+    let ignored = |row: &JsonValue| row["ignored"] == json!(true);
+    let shown: Vec<&JsonValue> = listing
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|row| include_ignored || !ignored(row))
+        .collect();
+    let mark = shown.iter().any(|row| ignored(row));
+    let mut headers = vec!["field", "states"];
+    if mark {
+        headers.push("ignored");
+    }
+    let rows: Vec<Vec<String>> = shown
+        .iter()
+        .map(|row| {
+            let states: Vec<String> = row["states"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|s| s.as_str().map_or_else(|| s.to_string(), str::to_string))
+                .collect();
+            let mut cells = vec![
+                row["field"].as_str().unwrap_or("").to_string(),
+                states.join(" "),
+            ];
+            if mark {
+                cells.push(if ignored(row) { "true" } else { "" }.to_string());
+            }
+            cells
+        })
+        .collect();
+    format_grid(&headers, &rows)
 }
 
 /// `[{"field", "spec", "states", "color", "state_colors"}]`, alphabetical by
@@ -104,6 +136,60 @@ mod tests {
     use datum_core::entry::Verb;
     use datum_core::field_spec::FieldSpec;
     use datum_core::test_util::{entry_builder, fresh_db};
+
+    /// da-1lnf: the plain listing leads with a header, so the second
+    /// column reads as the SET of states the field has been logged with.
+    #[test]
+    fn listing_leads_with_a_header() {
+        let listing = json!([
+            {"field": "work", "states": [false, true], "ignored": false},
+            {"field": "x", "states": [], "ignored": false},
+        ]);
+        let out = format_listing(&listing, false);
+        let mut lines = out.lines();
+        assert_eq!(lines.next(), Some("field  states"));
+        assert_eq!(lines.next(), Some("work   false true"));
+        assert_eq!(lines.next(), Some("x"));
+        assert_eq!(lines.next(), None);
+    }
+
+    /// da-1lnf: an ignored field is left out of the plain listing, and
+    /// comes back — marked by an `ignored` column — when asked for.
+    #[test]
+    fn ignored_fields_are_left_out_unless_asked_for() {
+        let listing = json!([
+            {"field": "old", "states": [], "ignored": true},
+            {"field": "work", "states": [false, true], "ignored": false},
+        ]);
+        let plain = format_listing(&listing, false);
+        assert!(!plain.contains("old"), "ignored field leaked:\n{plain}");
+        assert!(!plain.contains("ignored"), "stray column:\n{plain}");
+
+        let all = format_listing(&listing, true);
+        let mut lines = all.lines();
+        assert_eq!(lines.next(), Some("field  states      ignored"));
+        assert_eq!(lines.next(), Some("old                true"));
+        assert_eq!(lines.next(), Some("work   false true"));
+    }
+
+    /// da-dhtp: the columns are laid out with the table's own width
+    /// function, so a wide-glyph field name does not push the column.
+    #[test]
+    fn wide_glyphs_do_not_push_the_column() {
+        let listing = json!([
+            {"field": "日本語", "states": ["a"], "ignored": false},
+            {"field": "abcdef", "states": ["b"], "ignored": false},
+        ]);
+        let out = format_listing(&listing, false);
+        let lines: Vec<&str> = out.lines().collect();
+        // Both names are six columns wide, so both rows end at the same
+        // visible column — unless the layout counted 日本語's nine BYTES.
+        assert_eq!(
+            crate::render::visible_width(lines[1]),
+            crate::render::visible_width(lines[2]),
+            "state column moved:\n{out}"
+        );
+    }
 
     #[test]
     fn lists_logged_and_declared_fields_with_their_states() {

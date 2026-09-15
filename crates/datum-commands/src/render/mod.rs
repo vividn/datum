@@ -660,6 +660,39 @@ pub struct TableArgs {
     pub max_total_width: Option<usize>,
 }
 
+/// A header row over plain cells, for the listings that have no [`Entry`]
+/// to lay out — `fields` (da-1lnf). Columns are separated by the entry
+/// table's two-space gutter and sized with the same ANSI- and
+/// unicode-aware [`visible_width`], so a field named `日本語` sits in its
+/// column rather than pushing it.
+pub fn format_grid(headers: &[&str], rows: &[Vec<String>]) -> String {
+    let widths: Vec<usize> = headers
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
+            std::iter::once(colors::visible_width(h))
+                .chain(
+                    rows.iter()
+                        .filter_map(|r| r.get(i))
+                        .map(|c| colors::visible_width(c)),
+                )
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
+    let header: Vec<String> = headers.iter().map(|h| (*h).to_string()).collect();
+    let mut out = String::new();
+    for cells in std::iter::once(&header).chain(rows) {
+        let mut line = String::new();
+        for (i, cell) in cells.iter().enumerate() {
+            push_cell(&mut line, cell, widths[i], false);
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    out
+}
+
 /// Render entries as a table with `time | field | state | dur | _n | hid` columns
 /// (plus any extra `columns`). Empty result → `[No data]`. Silenced by
 /// `--show none`.

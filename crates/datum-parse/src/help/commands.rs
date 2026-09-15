@@ -726,16 +726,28 @@ const STATS_FLAGS: &[FlagSpec] = &[
     },
 ];
 
-const FIELDS_FLAGS: &[FlagSpec] = &[FlagSpec {
-    short: None,
-    long: "json",
-    takes_value: false,
-    value_hint: None,
-    value_optional: false,
-    summary: "One object per field: `field`, `spec` (or null), `states`",
-    long_description: None,
-    left_override: None,
-}];
+const FIELDS_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        short: None,
+        long: "json",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "One object per field: `field`, `spec` (or null), `states`",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: Some('A'),
+        long: "include-ignored",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "List ignored fields too (same as `--show all`)",
+        long_description: None,
+        left_override: None,
+    },
+];
 
 const IDS_FLAGS: &[FlagSpec] = &[
     FlagSpec {
@@ -1505,11 +1517,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "list fields with their spec and logged states",
         top_summary: Some("List every field: its spec and the states it was logged with"),
         long_description: None,
-        usage: &["datum fields [--json]"],
+        usage: &["datum fields [--json] [--include-ignored | -A]"],
         args: NO_ARGS,
         flags: FIELDS_FLAGS,
         examples: NO_EXAMPLES,
-        summary_col: 22,
+        summary_col: 25,
         body_override: None,
         display_input_name: false,
     },

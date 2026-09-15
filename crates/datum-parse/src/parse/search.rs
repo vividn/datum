@@ -205,21 +205,45 @@ pub(crate) fn parse_stats_args(tail: &[&str]) -> Result<StatsArgs> {
     Ok(out)
 }
 
-/// `fields [--json]` — no positionals: it lists every field.
+/// `fields [--json] [--include-ignored | -A | --show all]` — no
+/// positionals: it lists every field.
+///
+/// The output family is lifted the way `tail` lifts it, so `-A` /
+/// `--show all` reach the listing as the one engineering spelling of
+/// `--include-ignored` (da-1lnf). da-qt6z folds the family into the
+/// shared layer; until then it is parsed here.
 pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
-    let mut out = FieldsArgs::default();
-    for tok in tail {
-        match split_flag(tok) {
-            FlagSplit::Long("json") => out.json = true,
-            FlagSplit::Positional(s) => {
-                return Err(ParseError::InvalidArg(format!(
-                    "unexpected argument: '{s}'"
-                )))
-            }
-            f => return Err(unknown_flag(f)),
-        }
+    #[derive(Default)]
+    struct FieldsParsing {
+        output: OutputArgs,
+        json: bool,
+        include_ignored: bool,
     }
-    Ok(out)
+    let mut registry: Vec<LiftedSpec<FieldsParsing>> = Vec::new();
+    for spec in input::output_args::FLAG_SPECS {
+        registry.push(lift(|p: &mut FieldsParsing| &mut p.output, spec));
+    }
+    registry.push(local_switch(None, Some("json"), |p| {
+        p.json = true;
+        Ok(())
+    }));
+    registry.push(local_switch(None, Some("include-ignored"), |p| {
+        p.include_ignored = true;
+        Ok(())
+    }));
+
+    let mut composed = FieldsParsing::default();
+    let pos = fold_args(tail, &mut composed, &registry)?;
+    if let Some(s) = pos.first() {
+        return Err(ParseError::InvalidArg(format!(
+            "unexpected argument: '{s}'"
+        )));
+    }
+    Ok(FieldsArgs {
+        json: composed.json,
+        include_ignored: composed.include_ignored
+            || composed.output.resolve().show == input::output_args::Show::All,
+    })
 }
 
 pub(crate) fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {

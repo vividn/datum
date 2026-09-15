@@ -824,6 +824,11 @@ pub struct FlagArgs {
 #[derive(Debug, Default)]
 pub struct FieldsArgs {
     pub json: bool,
+    /// Ignored fields join the plain listing: `--include-ignored`, or the
+    /// engineering spelling `-A` / `--show all` (da-1lnf). `--json` is
+    /// unaffected — it has always carried every field with its `ignored`
+    /// flag, and the widget bar reads that.
+    pub include_ignored: bool,
 }
 
 #[derive(Debug)]
