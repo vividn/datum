@@ -427,15 +427,15 @@ mod tests {
         args.rest = vec!["text=some text".to_string()];
         log_entry(Action::Note, args, &db).unwrap();
         // da-2sr: an add-only field has no state-bearing entry, so state_at
-        // returns None — the projection labels it ignored (the "no entries"
-        // default). It still appears in `get_tracked_fields` so callers
-        // know it exists, but `now` filters it out by default.
+        // returns None. da-m1l8: nothing has said to ignore it, so it is
+        // TRACKED — the same answer `datum fields --json` has always given
+        // it. `now` still draws no row for it: there is no state to draw.
         let tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let journal = tracked.iter().find(|f| f.field == "journal");
         assert!(journal.is_some(), "field should be present after any write");
         assert!(
-            journal.unwrap().ignored,
-            "add-only field defaults to ignored"
+            !journal.unwrap().ignored,
+            "an add-only field is tracked, not ignored"
         );
     }
 

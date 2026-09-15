@@ -31,6 +31,19 @@ impl Db {
         }
     }
 
+    /// Every field that has a declared spec, alphabetical. A spec is a
+    /// field the user has NAMED, so it belongs to the field list even
+    /// with no entry logged against it yet — `fields` has always listed
+    /// it (`compute_fields` unions the registry in) and
+    /// [`Db::get_tracked_fields`] does the same (da-m1l8).
+    pub fn spec_fields(&self) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT field FROM field_specs ORDER BY field")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
     /// Load specs for many fields in a single query. Fields without a
     /// stored spec are absent from the returned map.
     pub fn batch_load_specs(

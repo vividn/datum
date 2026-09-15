@@ -93,16 +93,7 @@ fn print_info_block(name: Option<&str>, path: &std::path::Path, db: Option<&Db>)
     let deleted = count_tombstones(db).unwrap_or(0);
     println!("  entries:  {live} ({deleted} deleted)");
 
-    let tracked = db
-        .get_tracked_fields(chrono::Utc::now())
-        .unwrap_or_default();
-    let (t_count, i_count) = tracked.iter().fold((0usize, 0usize), |(t, i), f| {
-        if f.ignored {
-            (t, i + 1)
-        } else {
-            (t + 1, i)
-        }
-    });
+    let (t_count, i_count) = tracked_ignored_counts(db);
     println!("  fields:   {t_count} tracked, {i_count} ignored");
 
     match last_modified(db) {
@@ -117,6 +108,26 @@ fn print_info_block(name: Option<&str>, path: &std::path::Path, db: Option<&Db>)
         Err(_) => println!("  size:     ?"),
     }
     Ok(())
+}
+
+/// `info`'s field tally: `(tracked, ignored)` over
+/// [`Db::get_tracked_fields`], which counts a field ignored only when its
+/// latest state-bearing row says so (da-m1l8) — the same rule `datum
+/// fields --json` reports per field.
+pub fn tracked_ignored_counts(db: &Db) -> (usize, usize) {
+    db.get_tracked_fields(chrono::Utc::now())
+        .unwrap_or_default()
+        .iter()
+        .fold(
+            (0, 0),
+            |(t, i), f| {
+                if f.ignored {
+                    (t, i + 1)
+                } else {
+                    (t + 1, i)
+                }
+            },
+        )
 }
 
 fn count_tombstones(db: &Db) -> anyhow::Result<usize> {

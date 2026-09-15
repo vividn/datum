@@ -43,8 +43,8 @@ impl Db {
     /// through too, so the two oracles cannot diverge.
     ///
     /// `Ok(None)` means the field has no qualifying entries at or before
-    /// `t`, which callers should treat as IGNORED (the default for unseen
-    /// fields). `Ok(Some(JsonValue::String("IGNORED")))` is the explicit
+    /// `t` — nothing has said to ignore it, so callers read it as TRACKED
+    /// (da-m1l8). `Ok(Some(JsonValue::String("IGNORED")))` is the explicit
     /// ignore sentinel; any other value (including `Null` from a "track,
     /// no current state" entry) means the field is tracked.
     pub fn state_at(&self, field: &str, t: DateTime<Utc>) -> Result<Option<JsonValue>> {
@@ -240,28 +240,93 @@ impl Db {
     }
 
     /// Project the entry log into a [`TrackedField`] list for the `now`
-    /// view. A field appears here iff it has at least one live entry; its
-    /// `ignored` flag derives from [`Db::state_at`] at `at` — pass
-    /// `Utc::now()` for the live view, or a time-travel anchor (da-n0dr)
-    /// so scope membership matches the per-field states at that moment.
-    /// Per-field color is read from the matching [`FieldSpec`] when one
-    /// exists. Ordered alphabetically by field name.
+    /// view. A field appears here iff it has at least one live entry or a
+    /// declared spec; its `ignored` flag derives from [`Db::state_at`] at
+    /// `at` — pass `Utc::now()` for the live view, or a time-travel anchor
+    /// (da-n0dr) so scope membership matches the per-field states at that
+    /// moment. Per-field color is read from the matching [`FieldSpec`]
+    /// when one exists. Ordered alphabetically by field name.
+    ///
+    /// da-m1l8: this is the SAME list, under the same rule, that `datum
+    /// fields --json` emits — one definition of "ignored", not two. A
+    /// field is IGNORED only when its latest state-bearing row says so;
+    /// a field with no such row at all (every entry timeless, or nothing
+    /// but a spec) is TRACKED, so it keeps its place in `info`'s count
+    /// and in the front ends that offer it as a button.
+    ///
+    /// The one thing absence still decides is MEMBERSHIP (da-n0dr): a
+    /// field none of whose rows had happened by `at` did not exist in the
+    /// world as of `at`, and is left out of the list rather than
+    /// classified either way. At `at = Utc::now()` — every caller but
+    /// `now`'s time travel — that excludes nothing.
     pub fn get_tracked_fields(&self, at: DateTime<Utc>) -> Result<Vec<TrackedField>> {
-        let fields = self.distinct_fields()?;
+        let mut names: std::collections::BTreeSet<String> =
+            self.distinct_fields()?.into_iter().collect();
+        names.extend(self.spec_fields()?);
+        let fields: Vec<String> = names.into_iter().collect();
         let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
         let states = self.batch_state_at(&field_refs, at)?;
         let specs = self.batch_load_specs(&field_refs)?;
+        // Only the fields with no state at `at` need their existence
+        // established — every other field has just proved it with a row.
+        let stateless: Vec<&str> = field_refs
+            .iter()
+            .copied()
+            .filter(|f| !states.contains_key(*f))
+            .collect();
+        let existed = self.fields_seen_by(&stateless, at)?;
         let mut out = Vec::with_capacity(fields.len());
         for field in fields {
-            let ignored = states
-                .get(&field)
-                .is_none_or(crate::shape::is_ignored_state);
+            let ignored = match states.get(&field) {
+                Some(state) => crate::shape::is_ignored_state(state),
+                // A spec is a standing declaration, not an event, so it
+                // vouches for the field at any anchor.
+                None if existed.contains(&field) || specs.contains_key(&field) => false,
+                None => continue,
+            };
             let color = specs.get(&field).and_then(|s| s.color.clone());
             out.push(TrackedField {
                 field,
                 ignored,
                 color,
             });
+        }
+        Ok(out)
+    }
+
+    /// Which of `fields` had any live row of their own at or before `at`.
+    /// A timeless row (no `occur_time`) enters the world when it is
+    /// written, so `create_time` stands in for it.
+    fn fields_seen_by(
+        &self,
+        fields: &[&str],
+        at: DateTime<Utc>,
+    ) -> Result<std::collections::HashSet<String>> {
+        let mut out = std::collections::HashSet::new();
+        if fields.is_empty() {
+            return Ok(out);
+        }
+        let placeholders = std::iter::repeat_n("?", fields.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT DISTINCT field FROM entries \
+             WHERE field IN ({placeholders}) AND {live} \
+               AND COALESCE(occur_time, create_time) <= ?{n}",
+            live = super::types::LIVE_SQL,
+            n = fields.len() + 1
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<String> = fields
+            .iter()
+            .map(|f| (*f).to_string())
+            .chain(std::iter::once(at.to_rfc3339()))
+            .collect();
+        let rows = stmt.query_map(rusqlite::params_from_iter(params), |row| {
+            row.get::<_, String>(0)
+        })?;
+        for r in rows {
+            out.insert(r.map_err(DatumError::Db)?);
         }
         Ok(out)
     }
@@ -982,8 +1047,10 @@ mod tests {
     #[test]
     fn state_at_block_with_nothing_before_it_resumes_no_state() {
         // There is no state to hand back to, so the honest answer is
-        // "tracked, no current state" — `Null`, and NOT absent, which
-        // callers read as IGNORED.
+        // "tracked, no current state" — `Null`, and NOT absent. Both
+        // read as TRACKED now (da-m1l8), but they still say different
+        // things: `Null` is a field that HAS a timed row and holds no
+        // state; absent is a field with no timed row at all.
         let db = Db::open_in_memory().unwrap();
         push_block(&db, "work", json!(false), 720, 1720);
         assert_eq!(

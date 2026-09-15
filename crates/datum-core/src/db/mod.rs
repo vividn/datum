@@ -7,8 +7,9 @@
 //! derived aliases). Tracking state — whether a field is tracked or ignored
 //! — is NOT on the spec; it derives from the entry log via [`Db::state_at`].
 //! [`Db::get_tracked_fields`] is a thin projection that walks every distinct
-//! field in `entries` and labels each as ignored or tracked according to its
-//! most recent state-bearing entry.
+//! field in `entries` plus every declared spec, and labels each ignored or
+//! tracked according to its most recent state-bearing entry — ignored only
+//! when that entry says so, so a field without one is tracked (da-m1l8).
 //!
 //! ## Module layout
 //!
