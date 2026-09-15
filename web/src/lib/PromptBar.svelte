@@ -233,19 +233,35 @@
 			<div class="prompt" bind:this={field}>
 				<Prompt bind:input bind:ghost disabled={!$ready} on:submit={submit}>
 					<svelte:fragment slot="pills">
+						<!-- vividn, on the deployed build: "click anywhere except lock to
+						     dismiss (so no x)" and then "maybe doch keep the x icon, but
+						     still click anywhere to dismiss" (da-tnv3). So the × is a
+						     MARK, not a target: the pill is two sibling buttons — a
+						     nested one would be invalid HTML — and the remove button is
+						     every pixel that is not the lock, padding and × alike. The
+						     lock is a flat SVG in the pill's own ink: the emoji clashed
+						     with everything around it, and its two states differ by one
+						     path. -->
 						{#each $pills as pill (pill.id)}
 							<span class="pill {pill.kind}" class:locked={pill.locked}
-								>{pill.text}<button
-									type="button"
-									class="lock"
-									aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"
-									aria-pressed={!!pill.locked}
-									on:click={() => toggleLockPill(pill.id)}>{pill.locked ? '🔒' : '🔓'}</button
 								><button
 									type="button"
 									class="remove"
 									aria-label="remove {pill.text}"
-									on:click={() => removePill(pill.id)}>×</button
+									on:click={() => removePill(pill.id)}
+									><span class="label">{pill.text}</span><span class="x" aria-hidden="true">×</span
+									></button
+								><button
+									type="button"
+									class="lock"
+									aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"
+									aria-pressed={!!pill.locked}
+									on:click={() => toggleLockPill(pill.id)}
+									><svg class="glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+										><rect x="3" y="7" width="10" height="7" rx="1.5" /><path
+											d={pill.locked ? 'M5.5 7V5a2.5 2.5 0 0 1 5 0v2' : 'M10.5 7V5a2.5 2.5 0 0 1 5 0'}
+										/></svg
+									></button
 								></span
 							>
 						{/each}
@@ -292,6 +308,9 @@
 		   half the bottom bar. */
 		--bar: 6rem;
 		--input-band: 40%;
+		/* What is typed, and so what a pill beside it reads at — vividn asked
+		   for the two to be one size (da-tnv3), so they are one number. */
+		--input-font: 1.15rem;
 		position: relative;
 		display: flex;
 		align-items: stretch;
@@ -460,33 +479,49 @@
 	.prompt :global(input),
 	.prompt :global(.ghost),
 	.prompt :global(.mirror) {
-		font-size: 1.15rem;
+		font-size: var(--input-font);
 	}
 
+	/* SOLID, and the size of what is typed beside them. vividn, on the
+	   deployed build: "We need to make the pills much more prominent, they
+	   are almost invisible right now. Solid background color… increase
+	   their font size to be the same as the input bar." So the kind's
+	   colour — the colour the outline used to be — FILLS the pill and the
+	   page's own ground is the ink on it (`--page`'s contract), which is
+	   the one pairing the palette already names.
+
+	   `--pill` is that colour, and the only thing a kind sets: the fill,
+	   the ink and the locked ring are all derived from it here, so a new
+	   kind stays one line. */
 	.pill,
 	.spent {
+		--pill: var(--accent);
 		display: inline-flex;
 		align-items: center;
-		gap: 0.2rem;
-		padding: 0 0.2rem 0 0.5rem;
-		border: 1px solid var(--accent);
+		border: none;
 		border-radius: 999px;
-		color: var(--accent-bright);
-		background: var(--ground);
+		/* So a button's hover wash is clipped to the pill's own edge. */
+		overflow: hidden;
+		color: var(--page);
+		background: var(--pill);
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		font-size: 0.95rem;
+		font-size: var(--input-font);
+		line-height: 1;
 		white-space: nowrap;
 	}
 
 	.spent {
-		padding-right: 0.5rem;
+		padding: 0.25rem 0.55rem;
 		pointer-events: none;
+		opacity: 0.6;
 		animation: ghost-fade 1s ease-out forwards;
 	}
 
+	/* From the spent pill's own opacity, not from 1: it is a receipt
+	   fading, and it never brightens on its way out. */
 	@keyframes ghost-fade {
 		from {
-			opacity: 1;
+			opacity: 0.6;
 		}
 		to {
 			opacity: 0;
@@ -499,19 +534,50 @@
 		}
 	}
 
+	/* Two siblings dividing the pill between them: the remove button takes
+	   every pixel that is not the lock, so a press on the text, on the ×
+	   or on the padding is the same press. */
 	.pill button {
+		display: flex;
+		align-items: center;
+		gap: 0.3em;
 		background: none;
 		border: none;
-		padding: 0 0.2rem;
+		padding: 0.25rem 0.3rem 0.25rem 0.55rem;
 		font: inherit;
-		font-size: 0.8rem;
-		color: var(--accent);
+		color: inherit;
 		cursor: pointer;
 	}
 
-	/* A locked pill stands out: it will not clear on its own after a press. */
+	.pill button.lock {
+		padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+	}
+
+	/* A mark, not a target — the whole of the button beside it removes. */
+	.pill .x {
+		opacity: 0.65;
+	}
+
+	/* Flat and one colour, drawn in the pill's ink: a filled body and a
+	   shackle that is the only thing the two states differ by. */
+	.glyph {
+		display: block;
+		width: 0.8em;
+		height: 0.8em;
+		fill: currentColor;
+	}
+
+	.glyph path {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.7;
+		stroke-linecap: round;
+	}
+
+	/* A locked pill stands out: it will not clear on its own after a press.
+	   An inset ring in the ink, so «will not clear» needs no second colour. */
 	.pill.locked {
-		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		box-shadow: inset 0 0 0 2px var(--page);
 	}
 
 	/* The time cursor's own blue, as its dotted lines are drawn — not a
@@ -520,12 +586,13 @@
 	   two places is better than a token only one of them can use. */
 	.pill.time,
 	.spent.time {
-		border-color: #7c9cff;
-		color: #7c9cff;
+		--pill: #7c9cff;
 	}
 
+	/* Which half the pointer is over — the only thing that says the lock is
+	   a target of its own now that the rest of the pill is one press. */
 	.pill button:hover {
-		color: var(--ink-bright);
+		background: color-mix(in srgb, var(--page) 20%, transparent);
 	}
 
 	/* On the bar's top line, centred on the whole bar — and above the

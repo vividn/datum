@@ -609,12 +609,14 @@ describe('the bottom bar', () => {
 		);
 	});
 
-	test('a pill set programmatically shows, its x removes it', async () => {
+	test('a pill set programmatically shows, and a press on it removes it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time' }]));
 			const pill = page.locator('.prompt-bar .pill');
-			assert.equal(await pill.evaluate((el) => el.firstChild.textContent), '-t 0700');
+			// The × beside the label is a mark inside the remove button now
+			// (da-tnv3), so the pill's own text is the label's.
+			assert.equal(await pill.locator('.label').textContent(), '-t 0700');
 			await pill.locator('button.remove').click();
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 0);
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), []);

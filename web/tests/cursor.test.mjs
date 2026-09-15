@@ -1,7 +1,7 @@
 // The time cursor (da-wnt2): a click on the dayview points the page at the
 // time under it — a dotted blue line there, ONE `-t` pill in the bar, and
 // the nowview centred on it with a dotted line of its own. A line typed
-// with the pill is logged at it; the pill's × takes all of it away.
+// with the pill is logged at it; a press on the pill takes all of it away.
 //
 // Delta-blind on purpose: every time is held to what the picture's own
 // geometry puts under the click, every argv to what the seam was handed,
@@ -81,7 +81,7 @@ const spot = (page, picture, f, from) =>
 /** The time pill's text, without its ×; `null` when there is none. */
 const pillText = async (page) => {
 	const pills = page.locator(`${PILL}.time`);
-	return (await pills.count()) ? pills.evaluate((p) => p.firstChild.textContent) : null;
+	return (await pills.count()) ? pills.evaluate((p) => p.querySelector('.label').textContent) : null;
 };
 
 /** `-t HH:MM` / `-t YYYY-MM-DDTHH:MM` on 2026-09-10 (UTC) as an instant. */
@@ -169,7 +169,7 @@ describe('the time cursor', () => {
 			});
 			assert.equal(await page.locator('line.cursor').count(), 0);
 
-			// Click again: a fresh pill's × also clears the cursor everywhere.
+			// Click again: a press on a fresh pill also clears the cursor everywhere.
 			const at2 = await spot(page, TODAY, 0.5);
 			await page.mouse.click(at2.x, at2.y);
 			await pillText(page);

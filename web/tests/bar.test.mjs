@@ -651,6 +651,192 @@ describe('the pills ride with the text', () => {
 	});
 });
 
+/**
+ * Wait for the pills to have stopped moving after a line was typed.
+ *
+ * Two things happen and neither is a promise the test can await: the mirror
+ * measures the new text a frame after it is in the box (da-xfa4), and the
+ * pills then SLIDE to where it puts them over 120ms — or, on a screen too
+ * narrow for them, do not move at all. So the condition is the one that
+ * covers both: the mirror says the typed line, and nothing has moved for a
+ * quarter of a second.
+ */
+const settled = async (page, selector, typed) => {
+	await page.evaluate(() => delete window.__settle);
+	await page.waitForFunction(
+		([s, text]) => {
+			if (document.querySelector('.prompt-bar .mirror').textContent !== text) return false;
+			const left = document.querySelector(s).getBoundingClientRect().left;
+			const seen = window.__settle;
+			if (!seen || Math.abs(seen.left - left) > 0.5) {
+				window.__settle = { left, since: performance.now() };
+				return false;
+			}
+			return performance.now() - seen.since > 250;
+		},
+		[selector, typed]
+	);
+};
+
+/** Every live pill on the bar, as `setPills` would have them. */
+const setPills = (page, texts) =>
+	page.evaluate(
+		(all) => window.datum.bar.setPills(all.map((text, i) => ({ id: `p${i}`, kind: 'time', text }))),
+		texts
+	);
+
+/**
+ * What the reader can SEE of the first live pill — read off the page, and
+ * the kind's colour resolved through a probe rather than written here, so
+ * the colour stays in the one place the component keeps it.
+ */
+const pillLook = (page) =>
+	page.evaluate(() => {
+		const pill = document.querySelector('.prompt-bar .pill');
+		const style = getComputedStyle(pill);
+		const probe = document.createElement('span');
+		probe.style.color = style.getPropertyValue('--pill');
+		document.body.append(probe);
+		const kind = getComputedStyle(probe).color;
+		probe.remove();
+		const buttons = [...pill.querySelectorAll('button')];
+		return {
+			background: style.backgroundColor,
+			kind,
+			size: style.fontSize,
+			inputSize: getComputedStyle(document.querySelector('.prompt-bar input')).fontSize,
+			text: pill.textContent,
+			labels: buttons.map((b) => b.getAttribute('aria-label')),
+			lockIsSvg: !!pill.querySelector('button.lock > svg'),
+			// The × is a MARK inside the remove button, never a target of its own.
+			xIsOwnButton: buttons.some((b) => b.textContent.trim() === '×'),
+			nested: buttons.some((b) => b.querySelector('button')),
+			height: pill.getBoundingClientRect().height,
+			ring: style.boxShadow
+		};
+	});
+
+// vividn, on the deployed build (da-tnv3): "We need to make the pills much
+// more prominent, they are almost invisible right now. Solid background
+// color, click anywhere except lock to dismiss… increase their font size
+// to be the same as the input bar… Let's use a flat lock icon, mono
+// colour." Every claim below is measured on the page: the fill is compared
+// with the kind's own colour and the size with the input's own size, so
+// neither number is written twice.
+describe('the pills are prominent', () => {
+	test('solid in its kind’s colour, at the input’s size, with an SVG lock and no × of its own', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await setPill(page, { text: '-t 14:30' });
+			await page.locator(`${BAR} .pill`).waitFor();
+
+			const look = await pillLook(page);
+			assert.notEqual(look.background, 'rgba(0, 0, 0, 0)', 'the pill is not filled');
+			assert.equal(look.background, look.kind, `filled ${look.background}, its kind is ${look.kind}`);
+			assert.equal(look.size, look.inputSize, `the pill at ${look.size}, the input at ${look.inputSize}`);
+
+			// No emoji anywhere in what the pill says, and the lock is drawn.
+			assert.equal(look.text.replace('×', ''), '-t 14:30');
+			assert.ok(look.lockIsSvg, 'the lock is not an svg');
+			assert.ok(!look.xIsOwnButton, 'the × is a button of its own');
+			assert.ok(!look.nested, 'a button inside a button');
+			assert.deepEqual(look.labels, ['remove -t 14:30', 'lock -t 14:30']);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('a press anywhere but the lock removes it — text, ×, padding and Enter alike', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const seen = await app.spyOnRunner();
+			const live = () => page.evaluate(() => window.datum.bar.pills().length);
+
+			// The lock is the one part that is not the remove button: it flips
+			// `aria-pressed`, marks the pill, and the pill stays.
+			await setPill(page, { text: '-t 14:30' });
+			await page.locator(`${BAR} .pill button.lock`).click();
+			assert.equal(
+				await page.locator(`${BAR} .pill button.lock`).getAttribute('aria-pressed'),
+				'true'
+			);
+			assert.equal(await live(), 1, 'the lock removed the pill');
+			const locked = await pillLook(page);
+			assert.notEqual(locked.ring, 'none', 'a locked pill reads no differently');
+
+			// A locked pill still carries into the argv a submitted line builds.
+			await app.submit('tail');
+			assert.ok(
+				(await seen()).some((argv) => argv.join(' ').includes('-t 14:30')),
+				'the pill never reached the argv'
+			);
+
+			// Everywhere else on it is one press: the text, the × beside it,
+			// the padding under the pointer, and Enter on the focused button.
+			for (const target of ['.pill .label', '.pill .x', '.pill button.remove']) {
+				await setPill(page, { text: '-t 14:30' });
+				await page.locator(`${BAR} ${target}`).waitFor();
+				await page.locator(`${BAR} ${target}`).click();
+				await page.waitForFunction(() => window.datum.bar.pills().length === 0);
+				assert.equal(await page.locator(`${BAR} .pill`).count(), 0, `${target} did not remove it`);
+			}
+			await setPill(page, { text: '-t 14:30' });
+			await page.locator(`${BAR} .pill button.remove`).press('Enter');
+			await page.waitForFunction(() => window.datum.bar.pills().length === 0);
+
+			// And gone from the argv with it.
+			const before = (await seen()).length;
+			await app.submit('tail');
+			assert.ok(
+				!(await seen())
+					.slice(before)
+					.some((argv) => argv.join(' ').includes('-t 14:30')),
+				'a removed pill still reached the argv'
+			);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 640 }]) {
+		const size = `${viewport.width}x${viewport.height}`;
+
+		test(`three pills do not grow the bar at ${size}`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				const bare = await barHeight(page);
+				await setPills(page, ['-t 14:30', '-d yesterday', '30m']);
+				await page.locator(`${BAR} .pill`).first().waitFor();
+				await app.idle();
+				assert.equal(await barHeight(page), bare, 'the pills grew the bar');
+
+				// The trap the larger font makes (da-xfa4's mirror): the pills
+				// still ride AFTER what is typed, not over it — or, when the
+				// line has outgrown the box, stand at its right edge, which is
+				// the clamp Prompt.svelte documents.
+				await page.locator(`${BAR} input`).fill('occur coffee');
+				await settled(page, `${BAR} .pills`, 'occur coffee');
+				const after = await page.evaluate(() => {
+					const at = (s) => document.querySelector(`.prompt-bar ${s}`).getBoundingClientRect();
+					const pills = at('.pills');
+					return {
+						pill: at('.pill').left,
+						caret: at('.line > .prompt').right,
+						text: at('.mirror').right,
+						pillsRight: pills.right,
+						box: at('.field').right
+					};
+				});
+				assert.ok(after.pill > after.caret, `the pill at ${after.pill}, the ❯ ends at ${after.caret}`);
+				assert.ok(
+					after.pill >= after.text - 1 || after.pillsRight >= after.box - 1,
+					`the pill at ${after.pill} is over the typed text, which ends at ${after.text}`
+				);
+				assert.equal(await barHeight(page), bare, 'the pills grew the bar');
+				assert.deepEqual(app.errors, []);
+			}, { viewport });
+		});
+	}
+});
+
 describe('the clock', () => {
 	test('is under the logo, on the input row’s line', async () => {
 		await withApp(async (app) => {
