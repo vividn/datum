@@ -6,6 +6,10 @@
 	(da-rex1). The step is the widget's setting, handed out with `change`, so
 	the tree keeps it with the layout.
 
+	The band takes sideways motion of its own, so it says so with
+	`data-pans="x"` (da-kcmp): a one-finger drag across it is never a swipe
+	between the pane's tabs, whatever the pane it is in.
+
 	The same window is also ZOOMED (da-5goc): two fingers pinching over the
 	picture, or ctrl+wheel on a desktop, scale it about the anchor — now, or
 	the `--at` instant when one is set — which stays where it is on screen.
@@ -181,6 +185,7 @@
 	style:--zoom={zoom?.scale ?? 1}
 	style:--zoom-x="{zoom?.origin ?? 0}px"
 	bind:this={el}
+	data-pans="x"
 	on:pointerdown={onPointerDown}
 	on:touchmove|nonpassive={onTouchMove}
 	on:wheel|nonpassive={onWheel}

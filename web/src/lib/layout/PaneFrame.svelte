@@ -61,9 +61,28 @@
 
 	Swiping across the content moves between tabs along the bar's axis:
 	left/right under a horizontal bar, up/down under a vertical one. Touch
-	only, with a threshold, and never over a scroll — the gesture starts
-	only when nothing under the finger scrolls that way, so the strip's
-	stack and a wide tail table keep their own scroll.
+	only, and with the motion under the finger (da-kcmp). Whose the gesture
+	is, is settled at the first move that commits an axis, by DIRECTION and
+	not by what merely exists under the finger:
+
+	  - a scroller between the finger and this frame's content box — or an
+	    element declaring the axis its own with `data-pans` (the nowview's
+	    band) — keeps the gesture while it can still go that way. At its
+	    end it yields, which is vividn's rule: "when they reach the end then
+	    allow swiping". Read once, at the start: a scroll that runs out
+	    under the finger stays a scroll, and the NEXT swipe moves the tab.
+	  - else the innermost frame with a tab in the finger's direction takes
+	    it and stops the event, so no frame above it moves too. A frame on
+	    its LAST tab lets it through — which is how a swipe over a tabbed
+	    pane reaches the root and moves the whole layout, the root's tabs
+	    being the page's layouts (da-0a5o).
+	  - a touch on the frame itself — the nested inset, the root's page
+	    margin — has nothing under it and is always the frame's: "always
+	    allow swiping when swiping in the margins or along the frame".
+
+	Then the content follows the finger, and the release slides it the rest
+	of the way off and brings the next tab in from the far side — two
+	phases through the one box, so no two tabs are ever mounted at once.
 -->
 <script lang="ts" context="module">
 	/**
@@ -131,6 +150,12 @@
 	}
 	/** A swipe shorter than this is a touch, not a swipe. */
 	const SWIPE_PX = 40;
+	/**
+	 * How long the content takes to slide off, and the next tab's to
+	 * arrive. The transition reads it as `--slide`, so the wait after the
+	 * transform and the transition itself are the one number.
+	 */
+	const SLIDE_MS = 150;
 
 	// What `Pane.svelte` looks for: it renders body-only inside a frame and
 	// reports its alarm here, so the orange reaches whichever pane holds
@@ -291,17 +316,63 @@
 
 	// ---- swipe -----------------------------------------------------------
 
-	let touch: { x: number; y: number; dead: boolean } | null = null;
+	/**
+	 * A gesture in hand (da-kcmp).
+	 *
+	 * `panners` is the walk from the finger to this frame's content box,
+	 * done ONCE at the start — a computed style per ancestor is the cost,
+	 * and it does not change under the finger. `state` is decided at the
+	 * first move that commits an axis and never revisited: a scroll that
+	 * runs out mid-gesture stays the browser's, and the NEXT swipe moves
+	 * the tab.
+	 */
+	type Swipe = { x: number; y: number; panners: HTMLElement[]; state: 'pending' | 'ours' | 'theirs' };
+	let touch: Swipe | null = null;
 
-	/** Does anything between `target` and `root` scroll along `axis` here? */
-	function scrolls(target: EventTarget | null, root: HTMLElement, axis: 'x' | 'y'): boolean {
+	/** The content box: what follows the finger, and what says how far off is off. */
+	let contentEl: HTMLElement | null = null;
+	/** How far the content is from home along the bar's axis, in px. */
+	let offset = 0;
+	/** Whether that offset is moving on its own — the slide, or the snap back. */
+	let gliding = false;
+
+	const inRange = (index: number) => index >= 0 && index < pane.tabs.length;
+	/** The reader asked for no motion: the swap is instant, as it was. */
+	const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+	/**
+	 * Everything between `target` and `root` that may take motion along
+	 * `axis`: a scroller with somewhere to go, and any element that says it
+	 * takes the axis itself with `data-pans` — the nowview's band, and a
+	 * dayview pan when it comes. One attribute, and no import either way.
+	 */
+	function pannersUnder(target: EventTarget | null, root: HTMLElement, axis: 'x' | 'y'): HTMLElement[] {
+		const found: HTMLElement[] = [];
 		for (let el = target as HTMLElement | null; el && el !== root; el = el.parentElement) {
+			if ((el.dataset.pans ?? '').includes(axis)) {
+				found.push(el);
+				continue;
+			}
 			const style = getComputedStyle(el);
 			const overflow = axis === 'x' ? style.overflowX : style.overflowY;
 			if (overflow !== 'auto' && overflow !== 'scroll') continue;
-			if (axis === 'x' ? el.scrollWidth > el.clientWidth : el.scrollHeight > el.clientHeight) return true;
+			if (axis === 'x' ? el.scrollWidth > el.clientWidth : el.scrollHeight > el.clientHeight) found.push(el);
 		}
-		return false;
+		return found;
+	}
+
+	/**
+	 * Can `el` still go the way the finger is going, from where it is? A
+	 * finger moving one way drags the content that way, so the scroller
+	 * goes the other. One pixel of slack: a fractional `scrollWidth` never
+	 * quite reaches its end. An element that declares the axis always can.
+	 */
+	function takes(el: HTMLElement, axis: 'x' | 'y', along: number): boolean {
+		if ((el.dataset.pans ?? '').includes(axis)) return true;
+		const at = axis === 'x' ? el.scrollLeft : el.scrollTop;
+		const box = axis === 'x' ? el.clientWidth : el.clientHeight;
+		const whole = axis === 'x' ? el.scrollWidth : el.scrollHeight;
+		return along > 0 ? at > 0 : at + box < whole - 1;
 	}
 
 	function onTouchStart(event: TouchEvent) {
@@ -309,25 +380,111 @@
 		touch = {
 			x: t.clientX,
 			y: t.clientY,
-			dead:
-				event.touches.length > 1 ||
-				scrolls(event.target, event.currentTarget as HTMLElement, vertical ? 'y' : 'x')
+			panners: pannersUnder(event.target, event.currentTarget as HTMLElement, vertical ? 'y' : 'x'),
+			state: event.touches.length > 1 ? 'theirs' : 'pending'
 		};
+	}
+
+	/** Until a gesture has moved this far it has not said which way it is going. */
+	const COMMIT_PX = 10;
+
+	/**
+	 * The first move that commits an axis decides whose the gesture is, and
+	 * the innermost frame that CAN move takes it: a scroller (or a panner)
+	 * with room in the finger's direction keeps it, else this frame claims
+	 * it if it has a tab that way — and stops it, so no frame above moves
+	 * too. A frame on its last tab lets it through, which is how a swipe on
+	 * the last tab of a nested pane reaches the root and moves the layout.
+	 *
+	 * The listener is non-passive so that a claimed gesture can be kept
+	 * from the page's own scroller as well. `touch-action` would not do:
+	 * it is read per element when the touch starts, and would forbid the
+	 * inner scrollers their own pans.
+	 */
+	function onTouchMove(event: TouchEvent) {
+		const was = touch;
+		if (!was || was.state === 'theirs') return;
+		if (event.touches.length > 1) return void cancel();
+		const t = event.touches[0];
+		const dx = t.clientX - was.x;
+		const dy = t.clientY - was.y;
+		const along = vertical ? dy : dx;
+		const across = vertical ? dx : dy;
+		if (was.state === 'pending') {
+			if (Math.max(Math.abs(along), Math.abs(across)) < COMMIT_PX) return;
+			const axis = vertical ? 'y' : 'x';
+			const mine =
+				Math.abs(along) > Math.abs(across) &&
+				!was.panners.some((el) => takes(el, axis, along)) &&
+				inRange(pane.active + (along < 0 ? 1 : -1));
+			was.state = mine ? 'ours' : 'theirs';
+			if (!mine) return;
+		}
+		event.stopPropagation();
+		event.preventDefault();
+		if (!still()) offset = along;
 	}
 
 	function onTouchEnd(event: TouchEvent) {
 		const was = touch;
 		touch = null;
-		if (!was || was.dead) return;
+		if (!was || was.state !== 'ours') return;
+		event.stopPropagation();
 		const t = event.changedTouches[0];
-		const dx = t.clientX - was.x;
-		const dy = t.clientY - was.y;
-		const along = vertical ? dy : dx;
-		const across = vertical ? dx : dy;
-		if (Math.abs(along) < SWIPE_PX || Math.abs(across) > Math.abs(along)) return;
+		const along = vertical ? t.clientY - was.y : t.clientX - was.x;
 		// Pushing the content away from the bar's start is "next".
 		const next = pane.active + (along < 0 ? 1 : -1);
-		if (next >= 0 && next < pane.tabs.length) activate(next);
+		if (Math.abs(along) < SWIPE_PX || !inRange(next)) void glide(0);
+		else void slide(next, along < 0 ? -1 : 1);
+	}
+
+	function cancel() {
+		touch = null;
+		void glide(0);
+	}
+
+	/**
+	 * The swap, with the motion: the content goes the rest of the way off
+	 * the way the finger went, the tab is switched under it, and what the
+	 * box holds now comes in from the far side. Two phases, ONE box — the
+	 * neighbour is never mounted beside the tab in front, so no widget runs
+	 * twice. A tab pressed in the strip, or reached by an arrow, still
+	 * switches instantly: the motion belongs to the swipe.
+	 */
+	async function slide(next: number, way: number) {
+		if (still()) return void activate(next);
+		const extent = (vertical ? contentEl?.clientHeight : contentEl?.clientWidth) ?? 0;
+		await glide(way * extent);
+		activate(next);
+		gliding = false;
+		offset = -way * extent;
+		await tick();
+		// Read the layout back, so the far side is a frame of its own: two
+		// writes in one frame are folded together and nothing would move.
+		void contentEl?.clientWidth;
+		await glide(0);
+	}
+
+	/** Move the content to `to` with the transition on, and wait it out. */
+	async function glide(to: number): Promise<void> {
+		if (offset === to) return;
+		gliding = true;
+		offset = to;
+		await tick();
+		await new Promise<void>((resolve) => {
+			const el = contentEl;
+			const done = () => {
+				clearTimeout(timer);
+				el?.removeEventListener('transitionend', onEnd);
+				resolve();
+			};
+			const onEnd = (e: TransitionEvent) => {
+				if (e.target === el && e.propertyName === 'transform') done();
+			};
+			const timer = setTimeout(done, SLIDE_MS + 50);
+			el?.addEventListener('transitionend', onEnd);
+		});
+		gliding = false;
 	}
 </script>
 
@@ -408,11 +565,18 @@
 		</div>
 	</div>
 	{/if}
+	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<div
 		class="content"
+		class:gliding
+		class:moving={offset !== 0 || gliding}
+		bind:this={contentEl}
+		style:transform={offset === 0 ? null : `translate${vertical ? 'Y' : 'X'}(${offset}px)`}
+		style:--slide="{SLIDE_MS}ms"
 		on:touchstart={many ? onTouchStart : undefined}
+		on:touchmove|nonpassive={many ? onTouchMove : undefined}
 		on:touchend={many ? onTouchEnd : undefined}
-		on:touchcancel={many ? () => (touch = null) : undefined}
+		on:touchcancel={many ? cancel : undefined}
 	>
 		<slot />
 	</div>
@@ -713,6 +877,14 @@
 		min-height: 0;
 	}
 
+	/* The swipe's motion (da-kcmp): under the finger the content follows
+	   it with no transition at all; the slide the release finishes and the
+	   snap back of one too short are the same box, moved with one. Under
+	   `prefers-reduced-motion` no transform is ever set (the handlers), so
+	   the swap is the instant one it was. */
+	.content.gliding {
+		transition: transform var(--slide) ease-out;
+	}
 	/* A pane dragged down to its frame (da-zh2o) shows nothing of its
 	   widget outside it — the body's own padding included. A widget with
 	   more in it than the box holds scrolls inside its own body. */
@@ -725,6 +897,12 @@
 	   rest. A widget's own body may scroll inside its pane. */
 	.root > .content {
 		overflow: auto;
+	}
+	/* A transformed box widens the overflow of whatever scrolls it — and
+	   the root's content IS the page's scroller — so while it is moving,
+	   nothing scrolls to the part hanging out. */
+	.content.moving {
+		overflow: hidden;
 	}
 	/* A layout's panes are inset from its frame: the page's own gap all
 	   round (`BORDER`, Layout.svelte — half a row), so the two outlines

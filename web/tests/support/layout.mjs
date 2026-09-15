@@ -12,6 +12,7 @@
 // with more.
 
 import { devices } from 'playwright';
+import { until } from './until.mjs';
 
 export const DESKTOP = { viewport: { width: 1280, height: 900 } };
 export const PHONE = { device: devices['iPhone 12'] };
@@ -124,6 +125,88 @@ export async function fill(page, name) {
 	await chooser(page).locator('button').filter({ hasText: exactly(name) }).click();
 	await chooser(page).waitFor({ state: 'detached' });
 }
+
+/**
+ * A real touch swipe from (x, y) by (dx, dy), through CDP.
+ *
+ * `Input.dispatchTouchEvent` is a real touch — the page's mouse cannot
+ * make one, and a swipe made of mouse events would be a test of the wrong
+ * handler. It moves in several steps because the gesture's axis is
+ * committed at the first move that has gone far enough (da-kcmp), and
+ * because the content follows the finger through those moves.
+ */
+export async function swipe(page, x, y, dx, dy, steps = 6) {
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+	for (let i = 1; i <= steps; i++) {
+		await cdp.send('Input.dispatchTouchEvent', {
+			type: 'touchMove',
+			touchPoints: [{ x: x + (dx * i) / steps, y: y + (dy * i) / steps }]
+		});
+	}
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await cdp.detach();
+}
+
+/**
+ * Swipe by (dx, dy) from a point in `locator`'s box, given as fractions of
+ * it — its middle unless `at` says otherwise. The element is brought on
+ * screen first: a touch outside the viewport lands nowhere.
+ */
+export async function swipeOver(page, locator, dx, dy, at = { x: 0.5, y: 0.5 }) {
+	await locator.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
+	const box = await locator.boundingBox();
+	await swipe(page, box.x + box.width * at.x, box.y + box.height * at.y, dx, dy);
+}
+
+/**
+ * Put `locator`'s scroll at its `end` (or its start) along x, and leave it
+ * there.
+ *
+ * What a swipe test says before it swipes: a scroller with room in the
+ * finger's direction keeps the gesture and a scroller at its end yields it
+ * (da-kcmp), so a test about the FRAME's half of that rule pins the scroll
+ * rather than hoping the widget under the finger is narrow. A no-op where
+ * nothing scrolls.
+ *
+ * The scroll the LAST gesture started is waited out first: a touch scroll
+ * settles over several frames, and a write made while it is still running
+ * is overtaken by it — which is a scroller that yielded a gesture in the
+ * test's words and kept it in the browser's.
+ */
+export async function scrollX(locator, end) {
+	let last = null;
+	await until(
+		() => locator.evaluate((el) => el.scrollLeft),
+		(at) => {
+			const stopped = at === last;
+			last = at;
+			return stopped;
+		}
+	);
+	await locator.evaluate((el, end) => (el.scrollLeft = end ? el.scrollWidth : 0), end);
+	await until(
+		() => locator.evaluate((el) => [el.scrollLeft, el.scrollWidth - el.clientWidth]),
+		([at, most]) => (end ? at >= most - 1 : at === 0)
+	);
+}
+
+/**
+ * Wait until `locator` is at rest: nothing of the swipe still in flight.
+ *
+ * The barrier a swipe wants, `settled` being blind to it: a transform
+ * moves what is drawn and nothing that is laid out, so the page's boxes
+ * are identical from one frame to the next while the content is sliding.
+ * Both endings come back to no transform at all — the tab switched, or
+ * the swipe snapped back — so this is where the tab may be read, and a
+ * swipe that should have moved NOTHING has had its chance to.
+ */
+export const atRest = (locator) =>
+	until(
+		() => locator.evaluate((el) => getComputedStyle(el).transform),
+		(transform) => transform === 'none',
+		5000
+	);
 
 /** The `Bar ▸` submenu, open. */
 export const barMenu = (page) => page.locator('[role="menu"][aria-label="Bar"]');

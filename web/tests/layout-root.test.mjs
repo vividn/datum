@@ -8,9 +8,9 @@
 //
 // The phone cases use Playwright's iPhone 12 profile whole (a touch
 // pointer, a device pixel ratio, overlay scrollbars) and drive the swipe
-// through CDP's `Input.dispatchTouchEvent`, which is a real touch — the
-// page's mouse cannot make one, and a swipe made of mouse events would be
-// a test of the wrong handler.
+// through `swipe` (support/layout.mjs), a real touch through CDP. The rest
+// of the swipe — the motion, the root's layouts, what claims a gesture —
+// is `layout-swipe.test.mjs`.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,6 +20,7 @@ import {
 	PHONE,
 	activeTab,
 	addTab,
+	atRest,
 	bar,
 	boxOf,
 	chooseBar,
@@ -30,27 +31,13 @@ import {
 	menuLines,
 	pane,
 	settled,
+	swipe,
 	titles,
 	widgetPane
 } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
-
-/** A real touch swipe from (x, y) by (dx, dy), through CDP. */
-async function swipe(page, x, y, dx, dy) {
-	const cdp = await page.context().newCDPSession(page);
-	const steps = 6;
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
-	for (let i = 1; i <= steps; i++) {
-		await cdp.send('Input.dispatchTouchEvent', {
-			type: 'touchMove',
-			touchPoints: [{ x: x + (dx * i) / steps, y: y + (dy * i) / steps }]
-		});
-	}
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-	await cdp.detach();
-}
 
 describe('the default layout', () => {
 	test('shows the strip, the REPL, nowview, tail and the widget bar in panes', async () => {
@@ -161,19 +148,21 @@ describe('on a phone', () => {
 			await content.evaluate((el) => el.scrollIntoView({ block: 'start' }));
 			let box = await content.boundingBox();
 			const mid = box.y + box.height / 2;
-			// Each swipe is read once the page has settled, not waited for:
-			// the same barrier that shows these two landing is what shows the
-			// last one, over a scroll, did not.
+			// Each swipe is read once the content is back at rest (`atRest`):
+			// the swap waits for the slide now (da-kcmp), so the same barrier
+			// that shows these two landing is what shows the last one, over a
+			// scroll, did not.
 			await swipe(page, box.x + box.width * 0.8, mid, -120, 0);
-			await settled(page);
+			await atRest(content);
 			assert.equal(await activeTab(page, 'side'), 'nowview', 'a swipe left did not move to the next tab');
-			// Drawn before the swipe back: while the picture is arriving the
-			// body is briefly wider than its box, and a swipe over a sideways
-			// scroll is — by the rule under test — not a swipe.
-			await pane(page, 'side').locator('svg.svg').waitFor();
+			// And back, from the tab after it rather than from the nowview:
+			// the band declares the sideways gesture its own (`data-pans`,
+			// da-kcmp), so a finger drawn across the picture never moves a
+			// tab — which `layout-swipe.test.mjs` is where it is asserted.
+			await pane(page, 'side').locator('[role="tab"]', { hasText: 'command' }).click();
 			await swipe(page, box.x + box.width * 0.2, mid, 120, 0);
-			await settled(page);
-			assert.equal(await activeTab(page, 'side'), 'tail', 'a swipe right did not move back');
+			await atRest(content);
+			assert.equal(await activeTab(page, 'side'), 'nowview', 'a swipe right did not move back');
 
 			// A pane whose content scrolls along the bar's axis keeps the
 			// gesture. A `tail` of a long-named field is the wide line now:
@@ -191,7 +180,7 @@ describe('on a phone', () => {
 			await body.evaluate((el) => el.scrollIntoView({ block: 'start' }));
 			box = await body.boundingBox();
 			await swipe(page, box.x + box.width * 0.8, box.y + box.height / 2, -120, 0);
-			await settled(page);
+			await atRest(pane(page, 'repl').locator('> .content'));
 			assert.equal(await activeTab(page, 'repl'), 'repl', 'a swipe over a sideways scroll changed the tab');
 		}, PHONE);
 	});
