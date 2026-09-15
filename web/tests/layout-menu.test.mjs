@@ -328,6 +328,8 @@ describe("the root bar's menu", () => {
 				NO_BAR,
 				'Save layout',
 				'Restore layout',
+				// This tab holds `day`, which ships with datum (da-luwe).
+				'Reset layout',
 				'Save layout as…',
 				'Lock layout',
 				CLOSE
@@ -335,8 +337,14 @@ describe("the root bar's menu", () => {
 
 			// The same arithmetic, with Close held at the end of both
 			// (da-ygc9): the root's own item goes in before it, not after.
+			//
+			// `Reset layout` is dropped from the comparison rather than
+			// missing from one side: it is a fact about the LAYOUT — this
+			// pane holds the built-in `day`, the root tab holds the `mine`
+			// the reader just saved — and not about which menu is open, so
+			// it is the one item the two menus may differ on (da-luwe).
 			const rootLines = await linesOf(page, () => rootMenuButton(page).click());
-			const shared = paneLines.filter((l) => l !== NO_SPLIT && l !== NO_BAR);
+			const shared = paneLines.filter((l) => l !== NO_SPLIT && l !== NO_BAR && l !== 'Reset layout');
 			assert.deepEqual(rootLines, [...shared.slice(0, -1), ...ROOT_ONLY, CLOSE]);
 		}, DESKTOP);
 	});

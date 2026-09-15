@@ -132,7 +132,8 @@ describe('on a phone-sized screen', () => {
 	}
 
 	// The gear (da-pp1a) is the root bar's right end: the global settings
-	// menu, and the only way to the build stamp now. The bar is one row
+	// menu, and since da-luwe the only thing in it is the build stamp —
+	// the reset it also held is a layout's own act now. The bar is one row
 	// that never wraps, so the thing that can push the gear off is a
 	// crowded strip of tabs on a narrow screen — and its menu, which opens
 	// from the right edge, has to land on the screen as well.
@@ -149,9 +150,10 @@ describe('on a phone-sized screen', () => {
 
 				await page.locator('.root-bar button.gear').click();
 				const items = page.locator('[role="menu"][aria-label="settings"] button');
-				// The reset, and the build stamp under it — a fact, so disabled.
-				assert.equal(await items.count(), 2);
-				assert.equal(await items.evaluateAll((all) => all.filter((b) => !b.disabled).length), 1);
+				// The build stamp alone — a fact, so disabled, and so the one
+				// menu here with nothing in it to press (da-luwe).
+				assert.equal(await items.count(), 1);
+				assert.equal(await items.evaluateAll((all) => all.filter((b) => !b.disabled).length), 0);
 				const menu = await page.locator('[role="menu"][aria-label="settings"]').boundingBox();
 				const screen = await page.evaluate(() => ({
 					width: document.documentElement.clientWidth,
@@ -400,13 +402,18 @@ describe('the layout engine, by keyboard', () => {
 			// A pane's title, and the root bar's active tab (da-wjob).
 			const openers = page.locator('button.title:visible, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear');
 			const menus = await openers.count();
+			/** Every label the arrows reached, across all the menus. */
+			const seen = new Set();
 			for (let m = 0; m < menus; m++) {
 				await openers.nth(m).focus();
 				await page.keyboard.press('Enter');
 				const items = page.locator('[role="menu"] button');
-				const count = await items.count();
+				// The walk is over what can be FOCUSED: a menu whose every item
+				// is disabled — the gear's, since da-luwe — opens, holds focus
+				// on itself, and closes on the Escape below.
+				const enabled = await items.evaluateAll((all) => all.filter((b) => !b.disabled).length);
 				const visited = new Set();
-				for (let i = 0; i < count; i++) {
+				for (let i = 0; i < enabled; i++) {
 					// By name rather than by words: the four arrows of Split and
 					// of Break out (da-9vtw) draw the same four glyphs.
 					const label = await page.evaluate(() => {
@@ -425,8 +432,8 @@ describe('the layout engine, by keyboard', () => {
 					visited.add(label.text);
 					await page.keyboard.press('ArrowDown');
 				}
-				const enabled = await items.evaluateAll((all) => all.filter((b) => !b.disabled).length);
 				assert.equal(visited.size, enabled, `menu ${m}: the arrows visited ${visited.size} of ${enabled} items`);
+				for (const label of visited) seen.add(label);
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				assert.ok(
@@ -434,6 +441,10 @@ describe('the layout engine, by keyboard', () => {
 					'Escape did not hand focus back to the button'
 				);
 			}
+			// `Reset layout` (da-luwe) is an act like the other four: on the
+			// screen and on the arrows' path, in the menu of `day` — the
+			// built-in root tab this page opens with.
+			assert.ok(seen.has('Reset layout'), `Reset layout was never walked: ${[...seen].join(' | ')}`);
 		}, { viewport: { width: 1280, height: 900 } });
 	});
 

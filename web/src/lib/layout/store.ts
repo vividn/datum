@@ -116,17 +116,3 @@ export async function restore(name: string, version?: number): Promise<Layout> {
 export async function deleteLayout(name: string): Promise<void> {
 	await datum('del', (await row(name)).hid, '--force');
 }
-
-/**
- * Every saved layout, gone — the whole field, in one `del` (da-pp1a).
- *
- * By hid again, and joined with commas because that is how `del` reads a
- * batch (`resolve_batch`) and a hid never holds one. Soft-deleted, as any
- * `del` is: the entry keeps its history but is no longer live, so
- * `tail layout` finds nothing and the names stop shadowing the built-ins
- * — here and, when the database syncs, on the other devices too.
- */
-export async function deleteAllLayouts(): Promise<void> {
-	const hids = (await rows()).map((r) => r.hid);
-	if (hids.length > 0) await datum('del', hids.join(','), '--force');
-}

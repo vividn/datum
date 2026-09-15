@@ -16,7 +16,9 @@
 //   means nothing there and is not offered.
 // - the layout's own acts — save, restore, save as, lock — are on any tab
 //   that HOLDS a layout (da-crp5), which the root's always does and a
-//   pane's sometimes does.
+//   pane's sometimes does; `Reset layout` joins them on a tab holding a
+//   layout that SHIPPED with datum (da-luwe), which is a fact about the
+//   layout and not about which of the two menus is open.
 // - `Reset widget` (da-7ymx) is on a tab that HOLDS A WIDGET of its own —
 //   not a layout, not a split — and whose kind declares defaults to put
 //   back. The root's tab almost always holds a layout, so the root menu
@@ -69,28 +71,37 @@ export const aimed = (what: string, run: (toward: Toward) => void): Short[] =>
 /** An operation aimed four ways: what it does, named for the titles. */
 export type Aimed = { what: string; run: (toward: Toward) => void };
 
-/** The layout a tab holds, and the four things that can be done to it. */
+/** The layout a tab holds, and the things that can be done to it. */
 export type Acts = {
 	/** Whether this copy's tree differs from its save: the orange dot's fact. */
 	dirty: boolean;
 	locked: boolean;
 	save: () => void;
 	restore: () => void;
+	/** Back to the tree that SHIPPED under this name — only a layout that HAS one (da-luwe). */
+	reset?: () => void;
 	saveAs: () => void;
 	toggleLock: () => void;
 };
 
 /**
- * The four acts on the layout a tab holds (da-crp5).
+ * The acts on the layout a tab holds (da-crp5).
  *
  * While the layout is MODIFIED, Save and Restore are marked (vividn: "Maybe
  * highlight Restore and Save so that it is obvious that that is what the
  * orange dot is referring to") — the dot's meaning, in the same place as
  * the acts that answer it.
+ *
+ * `Reset layout` sits between them and `Save layout as…`: the two ways
+ * BACK together (da-luwe), Restore to the save and Reset to what shipped.
+ * It is the only one that is not always there — a layout the reader made
+ * themselves has no shipped tree to go back to, so its menu has four
+ * items and a built-in's has five.
  */
 export const layoutActs = (a: Acts): Item[] => [
 	{ label: 'Save layout', marked: a.dirty, run: a.save },
 	{ label: 'Restore layout', marked: a.dirty, run: a.restore },
+	...(a.reset ? [{ label: 'Reset layout', run: a.reset }] : []),
 	{ label: 'Save layout as…', run: a.saveAs },
 	{ label: a.locked ? 'Unlock layout' : 'Lock layout', run: a.toggleLock }
 ];

@@ -51,8 +51,9 @@
 	and the tabs still switch — nor a `+`, and its title is not a button.
 
 	A layout tab's frame is also where that layout's identity is worked
-	(da-crp5): the four acts the root bar draws for a root tab — save,
-	restore, save as, lock — are in this menu when the tab holds a layout,
+	(da-crp5): the acts the root bar draws for a root tab — save, restore,
+	save as, lock, and `Reset layout` where the layout is one that SHIPPED
+	with datum (da-luwe) — are in this menu when the tab holds a layout,
 	whatever its depth, and the orange modified dot follows the title or
 	the tab. The one exception to the lock above: a layout tab that is
 	itself locked keeps a menu holding those acts alone, so `Unlock
@@ -82,7 +83,7 @@
 	import { isSplit } from './types.js';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
-	import { ancestorsOf, modified, resetWidget, restore, save, saveAs, toggleLock } from './shell.js';
+	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock } from './shell.js';
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, splitPane } from './tree.js';
 	import { labelOf, titleOf } from './registry.js';
 	import { layoutActs, menuItems } from './menu.js';
@@ -181,8 +182,10 @@
 	const attempt = (job: Promise<unknown>) => void job.catch((e) => console.error(e));
 
 	/**
-	 * The four acts on the layout this tab HOLDS (da-crp5) — the same four
-	 * the root bar offers, since a nested copy is no different in kind. Not
+	 * The acts on the layout this tab HOLDS (da-crp5) — the same ones the
+	 * root bar offers, since a nested copy is no different in kind: `Reset
+	 * layout` among them where the name has a shipped tree (da-luwe), which
+	 * is a fact about the LAYOUT and so is the same in either menu. Not
 	 * offered under a lock from above; the tab's OWN lock leaves them, so
 	 * that `Unlock layout` can be reached.
 	 */
@@ -194,6 +197,7 @@
 					locked: !!active.locked,
 					save: () => attempt(save(active.id)),
 					restore: () => attempt(restore(active.id)),
+					reset: shippedTree(active.layout) ? () => attempt(resetLayout(active.id)) : undefined,
 					saveAs: () => {
 						const to = prompt('Save this layout as:', '')?.trim();
 						if (to) attempt(saveAs(active.id, to));

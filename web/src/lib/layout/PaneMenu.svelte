@@ -94,7 +94,12 @@
 		const below = box.bottom + 2;
 		const top = below + height <= window.innerHeight ? below : Math.max(4, box.top - 2 - height);
 		at = { top, left: fit(box.left, width, window.innerWidth) };
-		focusItem(enabled(menu), 0);
+		// The first item that can be focused — or the menu itself, when
+		// none can: the gear's is one disabled line since da-luwe, and a
+		// menu holding focus nowhere is one Escape cannot close.
+		const all = enabled(menu);
+		if (all.length > 0) focusItem(all, 0);
+		else menu?.focus();
 	}
 
 	function close(returnFocus = true) {

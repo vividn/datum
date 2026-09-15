@@ -19,8 +19,8 @@
 	draws no bar of its own — this one is the shell's). What it has that a
 	pane's has not is `export backup…`: there is one database.
 
-	The layout's own four acts — save, restore, save as…, lock — are in
-	the menu too, where the orange dot is (vividn: "Inside the menu there
+	The layout's own acts — save, restore, save as…, lock — are in the
+	menu too, where the orange dot is (vividn: "Inside the menu there
 	could be a lock, save, and save as options. That seems more
 	consistent. Maybe highlight Restore and Save so that it is obvious
 	that that is what the orange dot is referring to"). They were a row of
@@ -29,12 +29,15 @@
 	in the menu and the tab keeps its dot, so the dot's meaning is one
 	press from the dot. Restore goes back to the last save; with nothing
 	to discard it opens the save's versions under the bar instead, and
-	`→ forward` undoes the last restore. The lock is this device's
-	(shell.ts), and a LOCKED root tab follows the pane rule — the menu
-	holds the four acts alone, so `Unlock layout` stays reachable.
+	`→ forward` undoes the last restore. A tab holding a layout that
+	SHIPPED with datum has a fifth, `Reset layout` (da-luwe), beside
+	Restore: the other way back, to `defaults.ts` rather than to the save.
+	The lock is this device's (shell.ts), and a LOCKED root tab follows
+	the pane rule — the menu holds those acts alone, so `Unlock layout`
+	stays reachable.
 
 	A root tab is one COPY of its layout and has no privilege over a copy
-	nested in a pane (da-crp5): the same four acts are in that pane's menu
+	nested in a pane (da-crp5): the same acts are in that pane's menu
 	(PaneFrame.svelte), and both ask for them by the copy's TAB ID, which
 	is what says which copy's tree is being saved — so this menu acts on
 	the ROOT tab's layout however deep the layouts under it go.
@@ -42,15 +45,22 @@
 	At the right end is a gear (da-pp1a): the GLOBAL settings menu, the
 	root's alone the way `export backup…` is, and the same `PaneMenu` as
 	every other menu here. vividn, from the train: "Can we add a global
-	settings menu at the top right (little gear icon)? For now, let's add a
-	Reset all layouts, that way I can always reset as we're modifying the
-	defaults. Maybe we can put the version and hash string in that menu as
-	well." So it holds two things — the reset, which asks first and then
-	deletes every saved layout and this device's drafts with them
-	(`shell.ts`), and, dim and disabled at the bottom, which build is in
-	front of you: the version, a separator and the short sha. That stamp
-	was the bottom bar's until da-wjob and this bar's until now; it is out
-	of the way for good, and still one press from anyone looking for it.
+	settings menu at the top right (little gear icon)? ... Maybe we can put
+	the version and hash string in that menu as well." That stamp — the
+	version, a separator and the short sha, dim and disabled because it is
+	a fact and not an act — is what it holds. It was the bottom bar's until
+	da-wjob and this bar's until da-pp1a; it is out of the way for good,
+	and still one press from anyone looking for it.
+
+	It held one act as well: «Reset all layouts…», which deleted every
+	saved layout — on every device, once `_internal` synced — and cleared
+	this device's drafts and locks. vividn, 18:15: "Definitely don't want to
+	delete *all* layouts, rather just reset the built-in layouts that ship
+	with datum, but probably it's better just to have a single Reset
+	Layout, rather than do batch." So it is gone (da-luwe), and what a
+	reader wanting a default back reaches for is `Reset layout` on that
+	layout's own tab, which writes nothing and can be undone from the item
+	above it.
 
 	On a phone the tabs scroll sideways rather than wrapping — one row,
 	always — while the `+` and the gear stay where they are.
@@ -63,8 +73,7 @@
 	import { layoutActs, menuItems } from './menu.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
-	import { activate, close, modified, open, resetLayouts, resetWidget, restore, save, saveAs, toggleLock, versions } from './shell.js';
-	import { confirm } from '$lib/confirm.js';
+	import { activate, close, modified, open, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock, versions } from './shell.js';
 	import { addEdge } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
 	import type { Toward } from './tree.js';
@@ -126,6 +135,9 @@
 			trail = null;
 		});
 
+	/** Back to the tree that shipped: the draft alone, so Restore is the way back (da-luwe). */
+	const doReset = () => act(async () => id !== undefined && resetLayout(id));
+
 	const doSaveAs = () =>
 		act(async () => {
 			if (id === undefined) return;
@@ -135,7 +147,7 @@
 		});
 
 	/**
-	 * The four acts belong to the layout the active tab HOLDS — and a root
+	 * The acts belong to the layout the active tab HOLDS — and a root
 	 * tab need not hold one: a tab can be a bare widget, which the tree
 	 * allows and a pane tab given a widget from the chooser becomes
 	 * (da-8o07). At the root that same choice lands the widget's built-in
@@ -150,6 +162,10 @@
 					locked,
 					save: doSave,
 					restore: doRestore,
+					// Only a layout that HAS a shipped tree can be sent back to
+					// one, so a layout the reader saved themselves has no act
+					// here at all (da-luwe).
+					reset: shippedTree(name) ? doReset : undefined,
 					saveAs: doSaveAs,
 					toggleLock: () => id !== undefined && toggleLock(id)
 				};
@@ -174,27 +190,16 @@
 
 	/**
 	 * The gear's menu: the page's own settings, which belong to no layout
-	 * and no pane. The reset asks first — it deletes what other devices
-	 * hold too, once the `_internal` database syncs — and the build stamp
-	 * is the bottom item, disabled, because it is a fact and not an act.
+	 * and no pane. Which build is in front of you, disabled, because it is
+	 * a fact and not an act — and, since da-luwe, the only thing here: the
+	 * «Reset all layouts…» that deleted every saved layout on every device
+	 * is gone, and `Reset layout` on a built-in tab's own menu does what it
+	 * was wanted for, to one layout and without writing anything.
 	 *
-	 * A constant: neither item depends on which layout is in front, which
-	 * is the whole of what makes this menu the page's and not a tab's.
+	 * A constant: it does not depend on which layout is in front, which is
+	 * the whole of what makes this menu the page's and not a tab's.
 	 */
-	const settings = [
-		{
-			label: 'Reset all layouts…',
-			run: () =>
-				void act(async () => {
-					const yes = await confirm(
-						'Delete every saved layout on this device? The built-in layouts come back.',
-						'Reset'
-					);
-					if (yes) await resetLayouts();
-				})
-		},
-		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true }
-	];
+	const settings = [{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true }];
 
 	/** Arrow keys walk the tabs; the tab focused is the tab shown. */
 	async function onTabKey(event: KeyboardEvent, index: number) {

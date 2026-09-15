@@ -125,7 +125,7 @@ describe('extending the dashboard from its edges', () => {
 		});
 	}
 
-	test('under the lock, the root menu offers no Break out — the four acts alone', async () => {
+	test('under the lock, the root menu offers no Break out — the acts alone', async () => {
 		await withApp(
 			async ({ page }) => {
 				await page.locator('section.root').waitFor();
@@ -133,6 +133,8 @@ describe('extending the dashboard from its edges', () => {
 				assert.deepEqual(await menuLines(page), [
 					'Save layout',
 					'Restore layout',
+					// `day` ships with datum, so it can be reset (da-luwe).
+					'Reset layout',
 					'Save layout as…',
 					'Unlock layout'
 				]);

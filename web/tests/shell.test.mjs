@@ -147,22 +147,33 @@ describe('the shell', () => {
 			assert.equal(await rawResult(page).count(), 0);
 			// The build stamp is in the GEAR's menu now (da-pp1a): version ·
 			// sha, the bottom item and disabled. It was the bottom bar's
-			// until da-wjob and the root bar's until this bead; neither bar
+			// until da-wjob and the root bar's until that bead; neither bar
 			// draws it any more.
 			assert.equal(await bar.locator('.build').count(), 0, 'the build stamp is still on the bottom bar');
 			assert.equal(await page.locator('.root-bar .build').count(), 0, 'the build stamp is still on the root bar');
+			// And it is all the gear holds: «Reset all layouts…», which
+			// deleted every saved layout on every device, is gone (da-luwe)
+			// — `Reset layout` on a built-in's own tab is what replaced it.
 			const gear = await gearItems(page);
-			assert.deepEqual(gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp')), [
-				'Reset all layouts…',
-				'the build stamp'
-			]);
-			assert.deepEqual(gear.map((i) => i.disabled), [false, true]);
-			// The four acts are in the active tab's own menu, no icon row.
+			assert.deepEqual(gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp')), ['the build stamp']);
+			assert.deepEqual(gear.map((i) => i.disabled), [true]);
+			// The acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
 				// Close last, after `export backup…` (da-ygc9), wearing its ×.
-				['Choose…', 'Break out ← → ↑ ↓', 'Save layout', 'Restore layout', 'Save layout as…', 'Lock layout', 'export backup…', '× Close tab']
+				// `day` is a built-in, so it has the fifth act (da-luwe).
+				[
+					'Choose…',
+					'Break out ← → ↑ ↓',
+					'Save layout',
+					'Restore layout',
+					'Reset layout',
+					'Save layout as…',
+					'Lock layout',
+					'export backup…',
+					'× Close tab'
+				]
 			);
 			assert.deepEqual(errors, []);
 		}, DESKTOP);
@@ -401,11 +412,11 @@ describe('the acts', () => {
 			assert.equal(await locked(), false);
 			await act(page, 'lock');
 			await until(locked, (l) => l === true);
-			// Under the lock the menu is the four acts alone (the pane rule,
+			// Under the lock the menu is the acts alone (the pane rule,
 			// da-crp5): nothing to split or close, but Unlock is reachable.
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
-				['Save layout', 'Restore layout', 'Save layout as…', 'Unlock layout']
+				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as…', 'Unlock layout']
 			);
 			assert.deepEqual(await dotted(page), [], 'the lock alone showed the modified dot');
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), '1');

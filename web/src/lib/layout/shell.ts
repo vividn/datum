@@ -8,8 +8,9 @@
 // owns is the seam between a tab and its save: `inline` (a saved `Layout`
 // → the tab that holds it) and `extract` (the tab → the `Layout` to save
 // or compare), the boot that fills the root from this device's list of
-// open layouts, and the four acts — save, restore, save as, lock — which
-// the root bar's icons and a pane's menu call.
+// open layouts, and the acts — save, restore, save as, lock, and reset for
+// a layout that shipped with datum (da-luwe) — which the root bar's menu
+// and a pane's menu call.
 //
 // IDENTITY IS THE NAME, and a tab carrying it is a COPY (da-crp5). The
 // root bar's tabs have no privilege: a tab six panes down carrying
@@ -71,7 +72,6 @@ import { LAYOUT_VERSION, isSplit } from './types.js';
 import { apply, layout, loaded } from './current.js';
 import { ALIASES, BUILTIN_NAMES, PHONE_WIDTH, builtinLayout } from './defaults.js';
 import {
-	clearDevice,
 	clearDraft,
 	isModified,
 	loadDraft,
@@ -82,7 +82,6 @@ import {
 	saveRoot
 } from './draft.js';
 import {
-	deleteAllLayouts,
 	loadLayout,
 	restore as restoreSaved,
 	saveAs as saveAsSaved,
@@ -511,24 +510,37 @@ export async function saveAs(tabId: NodeId, newName: string): Promise<void> {
 }
 
 /**
- * Reset: every saved layout deleted, this device's drafts, locks and open
- * list cleared with them, and the shell booted again (da-pp1a).
+ * The tree that SHIPPED under `name`: what a reset goes back to, and the
+ * one seam for what else might ship one (da-luwe).
  *
- * vividn, from the train: "I've started modifying the default layout... let's
- * add a Reset all layouts, that way I can always reset as we're modifying
- * the defaults." A save of `day` shadows `defaults.ts` for good (`resolve`
- * reads the save first), so this is what undoes the shadow — both halves of
- * it, since a draft shadows just as firmly as a save.
- *
- * The boot is a page load, which is the whole of it: nothing survives the
- * reload that was not just deleted, so `day` resolves to `builtinLayout`
- * again and the engine, the baselines and the draft all start from there.
- * The saves go first — a failed `del` then leaves the device as it was.
+ * Today the built-ins alone. vividn, 18:15: "maybe if a layout was installed
+ * through a kit, it could reset to the kit's definition" — a kit carries
+ * field specs and indices and no layouts yet, so that is a second arm here
+ * when there is something to point it at, and nothing else moves. A name
+ * with no shipped tree — anything the reader saved themselves — has no
+ * reset at all.
  */
-export async function resetLayouts(): Promise<void> {
-	await deleteAllLayouts();
-	clearDevice();
-	location.reload();
+export const shippedTree = (name: string): Layout | null => builtinLayout(name, phone());
+
+/**
+ * Back to the shipped tree: this copy's DRAFT set to what `defaults.ts`
+ * holds for its name, and NOTHING written (da-luwe).
+ *
+ * vividn, 16:29: "when reset is clicked it should restore the default
+ * settings, but not actually save them to the db, so that the user can
+ * restore to their other layout, then upon save it would sync." So the
+ * baseline does not move, which is the whole difference from `restore`:
+ * the copy now differs from its save and says so with its dot, `Restore
+ * layout` beside it in the menu is the way back, and `Save layout` is what
+ * writes the shipped tree over the save — and syncs it, as any save does.
+ * With no save shadowing the built-in, the reset just discards this
+ * device's draft and the dot clears.
+ */
+export async function resetLayout(tabId: NodeId): Promise<void> {
+	const tab = copyOf(tabId);
+	if (!tab) return;
+	const shipped = shippedTree(tab.layout as string);
+	if (shipped) await replaceCopies(tab.layout as string, shipped);
 }
 
 /**
