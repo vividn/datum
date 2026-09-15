@@ -69,7 +69,14 @@
 	const FOR = ['', '5m', '15m', '30m', '1h'];
 
 	let bar: HTMLElement;
-	let open: FieldButton | null = null;
+	/**
+	 * The field whose long-press PANEL is open, by name — never the button
+	 * object, for the same reason `picked` is not (da-0n3k): `buttons` is
+	 * rebuilt from the fields store on every beat, so an `open === button`
+	 * identity check goes false the next time anything runs, and the panel
+	 * a reader is still setting bubbles in vanishes under them.
+	 */
+	let open: string | null = null;
 	let adjust: Adjust = {};
 
 	/**
@@ -145,7 +152,7 @@
 	function panel(button: FieldButton) {
 		adding = false;
 		adjust = {};
-		open = button;
+		open = button.field;
 	}
 
 	function close() {
@@ -259,7 +266,7 @@
 			held = false;
 			return;
 		}
-		if (open === button) close();
+		if (open === button.field) close();
 		else press(button);
 	}
 
@@ -447,11 +454,11 @@
 					<button
 						class="widget {button.shape.kind}"
 						class:on={look.fill !== null}
-						class:active={open === button}
+						class:active={open === button.field}
 						style={vars(look)}
 						{disabled}
 						data-field={button.field}
-						aria-expanded={open === button}
+						aria-expanded={open === button.field}
 						title="press to log · hold for when / how long"
 						on:pointerdown={() => down(button)}
 						on:pointerup={clearHold}
@@ -462,7 +469,7 @@
 					>{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
 				{/if}
 
-				{#if open === button}
+				{#if open === button.field}
 					<div class="panel" use:hang>
 						<div class="bubbles">
 							<span class="bubble-label">when</span>

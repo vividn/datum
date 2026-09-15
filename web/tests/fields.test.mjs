@@ -742,4 +742,39 @@ describe('a state field fills the widget with its states', () => {
 			);
 		}, { clock: todayAt(15) });
 	});
+
+	// Why that test used to fail, and the claim on its own: the panel is held
+	// open by field NAME (da-0n3k). The bar's buttons are rebuilt from the
+	// fields store on every beat, so an `open === button` identity check went
+	// false the next time anything ran — and what ran was usually nothing the
+	// reader did, just the refresh still in flight from the last command.
+	test('the panel, and the bubble set in it, outlive a beat', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seed(app, MOOD, 'mood');
+			await app.idle();
+
+			await page.locator('.bar [data-field="mood"]').click({ button: 'right' });
+			await page.locator('.bar .panel .bubbles button', { hasText: '-15m' }).click();
+
+			// A beat with nothing near the bar: a read-only command through the
+			// seam, which bumps the epoch and rebuilds every button all the same.
+			await page.evaluate(async () => {
+				await window.datum.run(['tail']);
+			});
+			await app.idle();
+
+			await page.locator('.bar .panel .states button').filter({ hasText: 'happy' }).waitFor();
+			assert.equal(
+				await page.locator('.bar .panel .bubbles button.on', { hasText: '-15m' }).count(),
+				1,
+				'the bubble set before the beat'
+			);
+
+			const before = (await app.echoes()).length;
+			await page.locator('.bar .panel .states button').filter({ hasText: 'happy' }).click();
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			assert.equal((await app.echoes()).at(-1), 'switch mood happy -t -15');
+		}, { clock: todayAt(15) });
+	});
 });
