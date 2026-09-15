@@ -109,7 +109,8 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   Action canonicalization sets state=true on entries that don't supply
   one explicitly. A duration — a trailing positional (`start work 25m`)
   or `dur=25m`; da-azqq retired the `--dur` flag — sets `dur = ISO 8601
-  duration` from `time_start` forward. Without one the row's storage verb
+  duration` as the span ENDING at the entry's time: `start work 25m -t
+  12:30` is work from 12:05 to 12:30 (da-zwct). Without one the row's storage verb
   derives to `Verb::Switch` (state=set, dur=null); with one it derives to
   `Verb::Block`.
 - **Missing in daydumb:** nothing significant.
@@ -125,10 +126,11 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Daydumb today:** `log_entry(Action::Stop, ...)` with `LogArgs`.
   Action canonicalization sets state=false. `--last-state` closes the
   most recent open block and records its prior state; errors if no
-  open block exists. A duration (`end work 12m`, or `dur=12m`) anchors
-  the block AT the entry's time and runs FORWARD: `end work 12m -t 14:00`
-  is 14:00–14:12. da-azqq removed `--dur`, which ran backward from `-t`
-  and so disagreed with the two spellings that remain. Bare stop derives
+  open block exists. A duration (`end work 12m`, or `dur=12m`) ENDS
+  the block at the entry's time and runs BACK from there: `end work 12m
+  -t 14:12` is 14:00–14:12 (da-zwct). da-azqq removed `--dur`, which
+  disagreed with the two spellings that remain about which side of `-t`
+  the block fell on. Bare stop derives
   to `Verb::Switch`; stop with a duration derives to `Verb::Block`.
 - **Missing in daydumb:** nothing significant.
 - **Divergences:** daydumb's `--last-state` error is explicit; datum

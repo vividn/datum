@@ -5,8 +5,9 @@
 //! 12m`; and the reserved key, `dur=12m`). It disagreed with those two
 //! about which side of `-t` the block falls on: `end work --dur 12m -t
 //! 14:00` wrote a block ending at 14:00, while both surviving spellings
-//! write one starting at 14:00. Two spellings of "a twelve minute break"
-//! landed twelve minutes apart.
+//! then wrote one starting at 14:00. Two spellings of "a twelve minute
+//! break" landed twelve minutes apart. (da-zwct has since settled the
+//! survivors on the END of `-t` too — see the second test below.)
 //!
 //! A deleted flag comes back because nothing objects when someone adds
 //! it. These tests object. If you are here because one of them failed

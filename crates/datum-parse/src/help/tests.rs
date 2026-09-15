@@ -315,7 +315,9 @@ fn snapshot_end_alias_substitutes_verb() {
             // `stop`'s USAGE carries the second line da-azqq added: with
             // `--dur` gone, the trailing duration is the only spelling on
             // this verb and the help has to say which side of `-t` it falls.
-            "  datum end <FIELD> [VALUE | KEY=VALUE]... [DUR]\n    DUR (or dur=DUR) runs FORWARD from the entry's time:\n    `datum end work 12m -t 14:00` is a break from 14:00 to 14:12\n",
+            // da-zwct settled that side: `-t` is the block's END and the
+            // duration is the span that preceded it (da-vq0z fixed the words).
+            "  datum end <FIELD> [VALUE | KEY=VALUE]... [DUR]\n    DUR (or dur=DUR) runs BACK from the entry's time:\n    `datum end work 12m -t 14:12` is a break from 14:00 to 14:12\n",
         );
     assert_eq!(s, expected);
 }

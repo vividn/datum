@@ -982,12 +982,13 @@ pub const COMMANDS: &[CommandSpec] = &[
         top_summary: Some("Begin a duration-tracked activity"),
         long_description: Some(
             "A trailing duration (`datum start work 25m`, or `dur=25m`) closes the \
-             block: it begins at the entry's time — now, or wherever `-t`/`-d` put \
-             it — and runs forward from there.",
+             block: it ENDS at the entry's time — now, or wherever `-t`/`-d` put \
+             it — and the span runs BACK from there. `datum start work 25m -t \
+             12:30` is work from 12:05 to 12:30.",
         ),
         usage: &[
             "datum start <FIELD> [VALUE | KEY=VALUE]... [DUR]",
-            "  DUR (or dur=DUR) runs FORWARD from the entry's time",
+            "  DUR (or dur=DUR) runs BACK from the entry's time",
         ],
         args: NO_ARGS,
         flags: LOG_FLAGS,
@@ -1004,13 +1005,13 @@ pub const COMMANDS: &[CommandSpec] = &[
         top_summary: Some("End a duration-tracked activity (alias: end)"),
         long_description: Some(
             "A trailing duration (`datum end work 12m`, or `dur=12m`) is how long the \
-             break runs: `-t` is when you stopped, and the span runs FORWARD from \
-             there. `end work 12m -t 14:00` is a break from 14:00 to 14:12.",
+             break ran: `-t` is when it ENDED, and the span runs BACK from \
+             there. `end work 12m -t 14:12` is a break from 14:00 to 14:12.",
         ),
         usage: &[
             "datum stop <FIELD> [VALUE | KEY=VALUE]... [DUR]",
-            "  DUR (or dur=DUR) runs FORWARD from the entry's time:",
-            "  `datum end work 12m -t 14:00` is a break from 14:00 to 14:12",
+            "  DUR (or dur=DUR) runs BACK from the entry's time:",
+            "  `datum end work 12m -t 14:12` is a break from 14:00 to 14:12",
         ],
         args: NO_ARGS,
         flags: LOG_FLAGS,

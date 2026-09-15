@@ -502,8 +502,9 @@ fn start_explicit_dur_slot_declaration() {
 }
 
 /// `dm stop abc 3` mirrors start: a trailing numeric is the duration, and
-/// on stop it anchors the block AT the entry's time and runs forward — the
-/// same code path (`entry.dur`) both spellings take.
+/// on stop it ends the block AT the entry's time, the span running BACK
+/// from there (da-zwct) — the same code path (`entry.dur`) both spellings
+/// take.
 #[test]
 fn stop_bare_numeric_positional_is_duration() {
     let db = fresh_db();
