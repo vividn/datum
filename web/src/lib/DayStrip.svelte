@@ -544,8 +544,14 @@
 			</div>
 		{/if}
 
-		<!-- The one line in the strip that belongs to no day. -->
+		<!--
+			The two lines the `+` is the intersection of (vividn: «a little +
+			intersection at the 00 marker dividing the day labels from the
+			bar»): the divider between two dates, and the spine between the
+			date column and the bands, which is the 00 mark.
+		-->
 		<div class="divider"></div>
+		<div class="spine"></div>
 
 		<!--
 			The strip's own controls, on that line: the freeze toggle at the far
@@ -770,6 +776,18 @@
 	.shot.previewing {
 		transform: scale(var(--sx), var(--sy));
 		transform-origin: 0 0;
+	}
+
+	/* The spine: the same 1px rule, the other way, at the 00 mark. */
+	.spine {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: var(--label);
+		width: var(--divider);
+		background: var(--rule);
+		pointer-events: none;
+		z-index: 2;
 	}
 
 	/* 1px, full width, and nothing else: the line itself. */
