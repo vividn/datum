@@ -479,9 +479,11 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 - **Purpose:** revert an entry to a prior version (or undo a delete).
 - **Flags:** optional `id_or_slug`, `--to-version`.
-- **Notes:** no safety window. `--force` / `--window` were removed with
-  the fifteen-minute gate (da-s6no) — undo is reversible now that `redo`
-  exists, so age earns a stderr warning past ten minutes, not a refusal.
+- **Notes:** no safety window. The fifteen-minute gate went (da-s6no) —
+  undo is reversible now that `redo` exists, so age earns a stderr warning
+  past ten minutes, not a refusal. `--force` is still accepted and does
+  nothing (as on `delete`); `--window` took a duration and is refused with
+  a message naming what replaced it.
 
 ### redo (daydumb only, da-s6no)
 

@@ -535,7 +535,8 @@ pub struct DeleteArgs {
     pub id_or_slug: Option<String>,
     /// `--force` skipped the stale-`_LAST` confirmation prompt. That prompt
     /// went with the gate (da-s6no) and the flag currently has nothing left
-    /// to skip; it is still accepted, so existing scripts keep working.
+    /// to skip; it is still accepted, so existing scripts keep working. Same
+    /// for `undo --force`, which is accepted without even a field to land in.
     pub force: bool,
     pub dry_run: bool,
     pub strict: bool,
@@ -550,7 +551,10 @@ pub struct DeleteArgs {
 /// a `_LAST` pointer older than fifteen minutes unless `--force` was given,
 /// and to hunt tombstones only inside `--window`. Both were gates on a
 /// reversible operation, and `redo` made them cost more than they saved —
-/// `undo` now always proceeds and warns instead.
+/// `undo` now always proceeds and warns instead. `--force` is still accepted
+/// and parsed into nothing, as `delete`'s is, so scripts carrying it keep
+/// working; `--window` took a value and is refused with a message that says
+/// what replaced it.
 #[derive(Debug, Default)]
 pub struct UndoArgs {
     pub id_or_slug: Option<String>,

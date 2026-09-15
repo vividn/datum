@@ -356,6 +356,33 @@ fn subprocess_undo_past_the_window_warns_and_acts_on_the_pointer() {
     );
 }
 
+/// da-8uig: `undo --force` is a no-op flag, not a parse error — it exits 0
+/// and warns on the stale pointer exactly as the bare `undo` above does.
+/// Needs the real binary for both halves: the exit code and the stderr line.
+#[test]
+fn subprocess_undo_force_is_inert_and_still_warns() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "coffee", "cups=2"]), "create");
+    assert_ok(&env.run(&["update", "_", "cups=3"]), "update");
+
+    Connection::open(&env.db)
+        .expect("open db")
+        .execute(
+            "UPDATE last_docs
+                SET time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-23 minutes')",
+            [],
+        )
+        .expect("force-stale pointer");
+
+    let out = env.run(&["undo", "--force"]);
+    assert_ok(&out, "`--force` must be accepted, not a parse error");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("23 minutes ago"),
+        "`--force` skips nothing, so the stale warning still comes: {stderr:?}"
+    );
+}
+
 /// da-s6no: inside ten minutes there is nothing to warn about, so bare
 /// `undo` says nothing on stderr. The control for the test above.
 #[test]

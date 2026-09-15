@@ -99,9 +99,11 @@ pub(crate) fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
     })
 }
 
-/// Rejection text for the retired `--force` / `--window` pair on `undo`.
-/// Names what replaced them, so the message teaches rather than just refuses.
-pub const UNDO_GATE_REMOVED: &str = "`--force` and `--window` were removed from `undo` (da-s6no): it no longer refuses on age. It acts on `_LAST`, or on the most recent tombstone when nothing has been touched, warning on stderr when the change is over ten minutes old — and `datum redo` takes the step back.";
+/// Rejection text for the retired `--window` on `undo`. It took a value that
+/// meant something, so a script still passing one is told what replaced it
+/// rather than just refused. (`--force` carried no value and is accepted as a
+/// no-op — see [`undo_args_registry`].)
+pub const UNDO_GATE_REMOVED: &str = "`--window` was removed from `undo` (da-s6no): it no longer refuses on age. It acts on `_LAST`, or on the most recent tombstone when nothing has been touched, warning on stderr when the change is over ten minutes old — and `datum redo` takes the step back.";
 
 #[derive(Default)]
 pub(crate) struct UndoParsing {
@@ -118,18 +120,20 @@ pub(crate) fn undo_args_registry() -> Vec<LiftedSpec<UndoParsing>> {
         p.to_version = Some(parse_u32(v, "--to-version")?);
         Ok(())
     }));
-    // `--force` and `--window` were REMOVED (da-s6no). Do not restore them.
+    // The gate these two flags were the halves of is GONE (da-s6no): bare
+    // `undo` refused a `_LAST` pointer older than fifteen minutes unless
+    // `--force` was passed, and the tombstone fallback looked only inside
+    // `--window`. Undo is reversible now that `redo` exists, so the gate cost
+    // more than it saved. The two flags part ways here.
     //
-    // They were the two halves of one gate: bare `undo` refused a `_LAST`
-    // pointer older than fifteen minutes unless `--force` was passed, and the
-    // tombstone fallback looked only inside `--window`. Undo is reversible now
-    // that `redo` exists, so the gate cost more than it saved. Kept as
-    // tombstones — a script still carrying either flag learns what happened
-    // instead of reading "unknown flag".
-    // `crates/datum-cli/tests/undo_gate_removed.rs` is what keeps them gone.
-    r.push(local_switch(None, Some("force"), |_p| {
-        Err(ParseError::InvalidArg(UNDO_GATE_REMOVED.into()))
-    }));
+    // `--force` is ACCEPTED and does nothing — it is a bare switch, so a
+    // script that still carries it means only "don't stop to ask me", and
+    // there has been no prompt to skip since da-s6no. `delete --force` is
+    // idle for exactly this reason; the two commands stay alike.
+    r.push(local_switch(None, Some("force"), |_p| Ok(())));
+    // `--window` stays a tombstone: it took a DURATION that meant something,
+    // and a script passing one deserves the sentence that says what replaced
+    // it rather than a silent change of behaviour.
     r.push(local_value(None, Some("window"), |_p, _v| {
         Err(ParseError::InvalidArg(UNDO_GATE_REMOVED.into()))
     }));

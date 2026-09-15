@@ -36,13 +36,13 @@ fn age_pointer(db: &datum_core::db::Db, minutes: i64) {
         .unwrap();
 }
 
-/// Both of undo's retired flags fail with the tombstone, which names what
-/// replaced them, rather than with a bare "unknown flag" a reader takes for
-/// an oversight.
+/// `undo --window <DUR>` still fails with the tombstone, which names what
+/// replaced the gate, rather than with a bare "unknown flag" a reader takes
+/// for an oversight. It took a duration that meant something, so silently
+/// ignoring it would change what the script asked for.
 #[test]
-fn undos_gate_flags_are_rejected_with_a_message_that_teaches() {
+fn undos_window_is_rejected_with_a_message_that_teaches() {
     for argv in [
-        vec!["undo", "--force"],
         vec!["undo", "--window", "15m"],
         vec!["undo", "--window=15m"],
     ] {
@@ -52,7 +52,7 @@ fn undos_gate_flags_are_rejected_with_a_message_that_teaches() {
             .map(|_| String::new())
             .unwrap_or_else(|e| format!("{e:#}"));
         assert!(
-            err.contains("were removed from `undo`"),
+            err.contains("was removed from `undo`"),
             "`datum {}` must fail with the tombstone, got: {err}",
             argv.join(" ")
         );
@@ -61,6 +61,30 @@ fn undos_gate_flags_are_rejected_with_a_message_that_teaches() {
             "the tombstone must name what replaced the gate, got: {err}"
         );
     }
+}
+
+/// da-8uig, vividn: "undo --force should also just be a no-op" — the twin of
+/// `delete_still_accepts_force_even_with_nothing_to_skip` below. A bare
+/// switch carries no meaning past "don't stop to ask me", and nothing has
+/// asked since da-s6no, so it is accepted and the undo proceeds, stale
+/// `_LAST` and all. (That it also still WARNS past ten minutes is
+/// `subprocess_undo_force_is_inert_and_still_warns` in `e2e_subprocess.rs`,
+/// where stderr is observable.)
+#[test]
+fn undo_still_accepts_force_even_with_nothing_to_skip() {
+    let db = fresh_db();
+    run_cli(&["occur", "coffee", "cups=2"], &db).expect("create");
+    run_cli(&["update", "_", "cups=3"], &db).expect("update");
+    age_pointer(&db, 90);
+
+    run_cli(&["undo", "--force"], &db).expect("--force is still a valid flag");
+
+    let entries = db.list_including_deleted().unwrap();
+    assert_eq!(
+        entries[0].data.as_ref().unwrap()["cups"],
+        2,
+        "`--force` is inert, so the undo happened exactly as a bare one would"
+    );
 }
 
 /// The behaviour those flags used to guard: a `_LAST` well past fifteen
