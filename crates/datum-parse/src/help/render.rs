@@ -11,6 +11,30 @@ use super::commands::{
     find_command, COMMANDS, GLOBAL_FLAGS, GLOBAL_FLAGS_COL, TOP_LEVEL_FOOTER, TOP_LEVEL_USAGE,
 };
 use super::spec::{Category, CommandSpec, FlagSpec};
+use crate::input::output_args::{shows_for, Show};
+
+/// The output family as `--help` lists it for one command: `(left, summary)`.
+///
+/// `--show` and its `--json` shorthand are read by the shared argument
+/// layer for every command (da-qt6z), so they are documented from here
+/// once rather than repeated in thirteen hand-written flag tables. The
+/// values listed are the ones that command actually draws — the same
+/// table the parser rejects an unsupported value against, so `--help` and
+/// the error message cannot disagree.
+fn output_rows(command: &str) -> Vec<(String, String)> {
+    let shows = shows_for(command);
+    let mut rows = vec![(
+        "    --show <MODE>".to_string(),
+        shows.iter().map(|s| s.name()).collect::<Vec<_>>().join("|"),
+    )];
+    if shows.contains(&Show::Json) {
+        rows.push((
+            "    --json".to_string(),
+            "Shorthand for --show json".to_string(),
+        ));
+    }
+    rows
+}
 
 /// Render the plain-text help string for `cmd`, or the top-level help
 /// when `cmd` is `None`.
@@ -98,6 +122,26 @@ fn render_command(spec: &CommandSpec, input_name: &str, was_alias: bool) -> Stri
         s.push_str(body);
     } else {
         s.push_str(&render_command_body_structured(spec, displayed_name));
+    }
+    let rows = output_rows(spec.name);
+    // The block keeps the command's own summary column where it fits, and
+    // widens for a command whose OPTIONS table is narrower than `--show
+    // <MODE>` — the two rows always line up with each other.
+    let col = rows
+        .iter()
+        .map(|(left, _)| 2 + left.len() + 2)
+        .max()
+        .unwrap_or(0)
+        .max(spec.summary_col);
+    s.push_str("\nOUTPUT:\n");
+    for (left, summary) in rows {
+        s.push_str("  ");
+        s.push_str(&left);
+        for _ in 0..(col - 2 - left.len()) {
+            s.push(' ');
+        }
+        s.push_str(&summary);
+        s.push('\n');
     }
     s
 }
@@ -264,6 +308,10 @@ fn render_markdown_command(spec: &CommandSpec) -> String {
             s.push_str(&format!("- `{}` — {}\n", render_flag_left(f), f.summary));
         }
     }
+    s.push_str("\n## Output\n\n");
+    for (left, summary) in output_rows(spec.name) {
+        s.push_str(&format!("- `{}` — {}\n", left.trim(), summary));
+    }
     if !spec.examples.is_empty() {
         s.push_str("\n## Examples\n\n");
         for ex in spec.examples {
@@ -386,6 +434,13 @@ fn render_roff_command(spec: &CommandSpec) -> String {
     if !spec.flags.is_empty() {
         s.push_str(".SH OPTIONS\n");
         s.push_str(&render_roff_flag_table(spec.flags));
+    }
+
+    s.push_str(".SH OUTPUT\n");
+    for (left, summary) in output_rows(spec.name) {
+        s.push_str(".TP\n");
+        s.push_str(&format!(".B {}\n", roff_escape(left.trim())));
+        s.push_str(&format!("{}\n", roff_escape(&summary)));
     }
 
     if !spec.examples.is_empty() {

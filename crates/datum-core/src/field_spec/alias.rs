@@ -180,6 +180,8 @@ pub enum AliasEffect {
     Delete { name: String, text: String },
     /// Refuse, with the message the CLI would have failed with.
     Refuse(String),
+    /// Print nothing, store nothing — `alias list --show none` (da-qt6z).
+    Nothing,
 }
 
 /// The guards every user-alias write goes through, and the alias it
@@ -215,6 +217,7 @@ pub fn alias_effect(
     derived: &SpecAliasIndex,
 ) -> AliasEffect {
     use datum_parse::cli::AliasCommand;
+    use datum_parse::input::Show;
 
     /// The effective namespace, sorted by name — derived first so a user
     /// row of the same name overwrites it.
@@ -242,7 +245,7 @@ pub fn alias_effect(
         ),
         // One object per name in the namespace: a user row as `user`, a
         // derived one as `derived` with the field and kind it came from.
-        AliasCommand::List { json: true } => AliasEffect::Say(
+        AliasCommand::List { show: Show::Json } => AliasEffect::Say(
             serde_json::Value::Array(
                 namespace(user, derived)
                     .into_iter()
@@ -263,7 +266,9 @@ pub fn alias_effect(
             )
             .to_string(),
         ),
-        AliasCommand::List { json: false } => {
+        // `--show none` asks for silence, and an empty `Say` is it.
+        AliasCommand::List { show: Show::None } => AliasEffect::Nothing,
+        AliasCommand::List { .. } => {
             let all = namespace(user, derived);
             if all.is_empty() {
                 return AliasEffect::Say("No aliases defined.".to_string());

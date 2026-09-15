@@ -74,6 +74,7 @@ VIEWS / SYNC:
 GLOBAL OPTIONS:
   --db <NAME_OR_PATH>   Override the active DB
   --show <MODE>         default|none|minimal|standard|format|all|json
+  --json                Shorthand for --show json
   -A, --show-all        Shorthand for --show all
   -o, --format-string   %field%-templated output string
   -h, --help            Show this help
@@ -114,7 +115,10 @@ OPTIONS:
   -w, --watch [INT]     Live scrollable view; stream entries (poll 1s)
       --table           Legacy columnar view (default: info-line)
       --show-meta       (alias: --show-all-metadata)  Include flag/meta entries (hidden by default)
-      --json            Named rows for scripts (JSON Lines under --watch)
+
+OUTPUT:
+      --show <MODE>     default|none|format|json
+      --json            Shorthand for --show json
 ";
 
 #[test]
@@ -165,8 +169,11 @@ OPTIONS:
       --alias-overwrite Allow --alias to replace an existing alias
       --dry-run         Preview the would-be entry without writing
   -A, --show-all        Show full entry detail after writing
-      --show <MODE>     Output verbosity (none|minimal|standard|all|format|json)
   -o, --format-string <FMT>  Render written entry via format string
+
+OUTPUT:
+      --show <MODE>     default|none|minimal|standard|format|all|json
+      --json            Shorthand for --show json
 ";
 
 #[test]
@@ -526,6 +533,10 @@ USAGE:
 
 OPTIONS:
   -n, --limit <N>   Number of entries (default 10)
+
+OUTPUT:
+      --show <MODE>  default|none|format|json
+      --json         Shorthand for --show json
 ";
 
 #[test]
@@ -547,6 +558,10 @@ OPTIONS:
   -c, --comment <T>       Comment
       --dry-run           Show what would change
       --strict            Abort on first batch error
+
+OUTPUT:
+      --show <MODE>       default|none|minimal|standard|format|all|json
+      --json              Shorthand for --show json
 ";
 
 #[test]
@@ -572,12 +587,15 @@ const EXPECTED_COUNT: &str = "\
 datum count — count entries (filtered/grouped/since-bounded)
 
 USAGE:
-  datum count [FIELD] [--group-by KEY] [--since TIME] [--json]
+  datum count [FIELD] [--group-by KEY] [--since TIME]
 
 OPTIONS:
       --group-by <KEY>  state|verb|field
       --since <TIME>    Duration ago (1d, 30m, 1:30), YYYY-MM-DD, or any -t time
-      --json            Machine-readable output
+
+OUTPUT:
+      --show <MODE>     default|none|json
+      --json            Shorthand for --show json
 ";
 
 #[test]
@@ -589,14 +607,17 @@ const EXPECTED_IDS: &str = "\
 datum ids — list entry ids (newest-first)
 
 USAGE:
-  datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug] [--json]
+  datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug]
 
 OPTIONS:
   -n, --limit <N>     Cap the number of ids returned
       --oldest-first  Return oldest-first instead of newest-first
       --since <TIME>  Same grammar as `datum count --since`
       --slug          Print slugs instead of short hids
-      --json          Machine-readable output
+
+OUTPUT:
+      --show <MODE>   default|none|json
+      --json          Shorthand for --show json
 ";
 
 #[test]

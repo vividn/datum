@@ -5,7 +5,7 @@ use chrono::Utc;
 use datum_core::db::{Db, NowFilter};
 use datum_core::time::DatumTime;
 
-use crate::args::NowArgs;
+use crate::args::{NowArgs, ShowFlag};
 use crate::config;
 use crate::render::{render_pending_integrity_warning, render_snapshot};
 
@@ -30,9 +30,13 @@ pub fn now(args: NowArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
         snapshot_time,
     };
 
-    if args.json {
-        // `--json` bypasses sync banners / integrity warnings / nowview
-        // band so the output is a single stable JSON document.
+    if args.show == ShowFlag::None {
+        return Ok(());
+    }
+
+    if args.show == ShowFlag::Json {
+        // `--show json` bypasses sync banners / integrity warnings /
+        // nowview band so the output is a single stable JSON document.
         let snapshot = db.current_now(&filter)?;
         let rendered = serde_json::to_string_pretty(&snapshot)?;
         println!("{rendered}");

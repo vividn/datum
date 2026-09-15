@@ -19,10 +19,6 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
                 match split_flag(arg) {
                     FlagSplit::Long("text") => text = true,
                     FlagSplit::LongAttached("text", _) => text = true,
-                    // `--json` is the explicit form of the default; accept it
-                    // so `spec show --json` round-trips instead of erroring.
-                    FlagSplit::Long("json") => text = false,
-                    FlagSplit::LongAttached("json", _) => text = false,
                     FlagSplit::Positional(p) => {
                         if field.is_none() {
                             field = Some(p.to_string());
@@ -124,13 +120,13 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 pos.push(s);
                 i += 1;
             }
-            FlagSplit::Long("json") => {
-                let (v, ni) = take_value(tail, i, None, "--json")?;
-                out.json = Some(v.to_string());
+            FlagSplit::Long("from-json") => {
+                let (v, ni) = take_value(tail, i, None, "--from-json")?;
+                out.from_json = Some(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("json", v) => {
-                out.json = Some(v.to_string());
+            FlagSplit::LongAttached("from-json", v) => {
+                out.from_json = Some(v.to_string());
                 i += 1;
             }
             FlagSplit::Long("default-verb") => {
@@ -292,6 +288,21 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
             }
             f => return Err(unknown_flag(f)),
         }
+    }
+    // The spec body used to be `--json <JSON>`; da-qt6z made `--json` the
+    // global `--show json`, which takes no value — so the old spelling
+    // leaves the body standing here as a second positional. Say where it
+    // went rather than drop it on the floor.
+    if let Some(extra) = pos.get(1) {
+        if extra.trim_start().starts_with('{') {
+            return Err(ParseError::InvalidArg(format!(
+                "spec set: the spec body is `--from-json <JSON>` now — `--json` \
+                 is the global `--show json`, so '{extra}' arrived as an argument"
+            )));
+        }
+        return Err(ParseError::InvalidArg(format!(
+            "unexpected argument: '{extra}'"
+        )));
     }
     out.field = require_pos(&pos.to_vec(), "<FIELD>")?;
     // Declaring a field is the one place a name is chosen, so it is the

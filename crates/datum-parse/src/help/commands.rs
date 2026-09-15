@@ -316,16 +316,6 @@ const LOG_FLAGS: &[FlagSpec] = &[
         left_override: None,
     },
     FlagSpec {
-        short: None,
-        long: "show",
-        takes_value: true,
-        value_hint: Some("MODE"),
-        value_optional: false,
-        summary: "Output verbosity (none|minimal|standard|all|format|json)",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
         short: Some('o'),
         long: "format-string",
         takes_value: true,
@@ -445,16 +435,6 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: Some("    --show-meta       (alias: --show-all-metadata)"),
     },
-    FlagSpec {
-        short: None,
-        long: "json",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Named rows for scripts (JSON Lines under --watch)",
-        long_description: None,
-        left_override: None,
-    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -568,16 +548,6 @@ const COUNT_FLAGS: &[FlagSpec] = &[
         value_hint: Some("TIME"),
         value_optional: false,
         summary: "Duration ago (1d, 30m, 1:30), YYYY-MM-DD, or any -t time",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: None,
-        long: "json",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Machine-readable output",
         long_description: None,
         left_override: None,
     },
@@ -714,40 +684,19 @@ const STATS_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: None,
     },
-    FlagSpec {
-        short: None,
-        long: "json",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Machine-readable output",
-        long_description: None,
-        left_override: None,
-    },
 ];
 
-const FIELDS_FLAGS: &[FlagSpec] = &[
-    FlagSpec {
-        short: None,
-        long: "json",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "One object per field: `field`, `spec` (or null), `states`",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: Some('A'),
-        long: "include-ignored",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "List ignored fields too (same as `--show all`)",
-        long_description: None,
-        left_override: None,
-    },
-];
+// `--json` is documented once, in the shared OUTPUT block (da-qt6z).
+const FIELDS_FLAGS: &[FlagSpec] = &[FlagSpec {
+    short: Some('A'),
+    long: "include-ignored",
+    takes_value: false,
+    value_hint: None,
+    value_optional: false,
+    summary: "List ignored fields too (same as `--show all`)",
+    long_description: None,
+    left_override: None,
+}];
 
 const IDS_FLAGS: &[FlagSpec] = &[
     FlagSpec {
@@ -790,16 +739,6 @@ const IDS_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: None,
     },
-    FlagSpec {
-        short: None,
-        long: "json",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Machine-readable output",
-        long_description: None,
-        left_override: None,
-    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -812,12 +751,11 @@ const NOW_BODY: &str = "USAGE:\n  datum now [-A] [--bare] [--no-color] [--cols N
 
 const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG> [--pretty]\n\nStructured states (objects with `id` and other fields) render as an `{id}`\nchip on the main info line, with sub-fields broken out on a state second\nline below. Parallel states wrap in `[ … ]` with one inner state per line.\nThe per-entry data block follows the same alignment convention — keys are\nright-aligned so their trailing `:` shares a column when the block goes\nmultiline.\n";
 
-const DELETE_BODY: &str = "USAGE:\n  datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--force] [--dry-run] [--strict]\n                [--show V | -A | -o FMT]\n\nARGS:\n  [ID_OR_SLUG]  QuickId(s) — hid prefix, slug, `_`/`_LAST`, `<field>:_`,\n                slug wildcard. Multiple targets may be comma-batched\n                (`<id>,<id>,...`); resolution is per-token.\n                Omitting the arg defaults to `_LAST_WITH_PROTECTION`,\n                which refuses if the last-accessed pointer is > 15 min\n                stale (prevents accidental delete of an old `_LAST`).\n\nOPTIONS:\n      --force       Skip the y/N confirmation prompt.\n      --dry-run     Print what would be deleted and exit; no DB writes.\n      --strict      With comma-batched tokens, abort up-front if ANY\n                    token failed to resolve (default: delete the\n                    resolved subset, skip-and-warn on the failures).\n  -A, --show-all    Show the full entry document for each deleted row.\n      --show <V>    Output verbosity: default|none|minimal|standard|format|all|json.\n  -o, --format-string <FMT>\n                    Render each deleted row through datum's format-string DSL.\n\nEXAMPLES:\n  datum delete                    # delete _LAST (refuses if > 15 min stale)\n  datum delete activity:_         # delete latest activity row\n  datum delete a1b2,c3d4 --force  # batched, no prompt\n  datum delete a1b2,c3d4 --dry-run\n                                  # preview only — no DB writes\n";
+const DELETE_BODY: &str = "USAGE:\n  datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--force] [--dry-run] [--strict]\n                [-A | -o FMT]\n\nARGS:\n  [ID_OR_SLUG]  QuickId(s) — hid prefix, slug, `_`/`_LAST`, `<field>:_`,\n                slug wildcard. Multiple targets may be comma-batched\n                (`<id>,<id>,...`); resolution is per-token.\n                Omitting the arg defaults to `_LAST_WITH_PROTECTION`,\n                which refuses if the last-accessed pointer is > 15 min\n                stale (prevents accidental delete of an old `_LAST`).\n\nOPTIONS:\n      --force       Skip the y/N confirmation prompt.\n      --dry-run     Print what would be deleted and exit; no DB writes.\n      --strict      With comma-batched tokens, abort up-front if ANY\n                    token failed to resolve (default: delete the\n                    resolved subset, skip-and-warn on the failures).\n  -A, --show-all    Show the full entry document for each deleted row.\n  -o, --format-string <FMT>\n                    Render each deleted row through datum's format-string DSL.\n\nEXAMPLES:\n  datum delete                    # delete _LAST (refuses if > 15 min stale)\n  datum delete activity:_         # delete latest activity row\n  datum delete a1b2,c3d4 --force  # batched, no prompt\n  datum delete a1b2,c3d4 --dry-run\n                                  # preview only — no DB writes\n";
 
 const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG] [--to-version N] [--force] [--window 15m]\n\nReverts an entry to a prior version via its entry_history trail. By default,\nrestores the immediately-previous version; --to-version N picks an explicit\nversion. Falls back to undeleting recently-tombstoned legacy entries (no\nhistory) within --window (default 15m).\n";
 
-const HISTORY_BODY: &str =
-    "USAGE:\n  datum history <ID_OR_SLUG> [--version N | --diff A B] [--json]\n";
+const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG> [--version N | --diff A B]\n";
 
 const WHY_BODY: &str = "USAGE:\n  datum why <ID_OR_SLUG> [--full]\n";
 
@@ -825,7 +763,7 @@ const EDIT_BODY: &str = "USAGE:\n  datum edit <ID_OR_SLUG>\n";
 
 const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG] [SHIFT]\n  datum retime [SLUG] [-r] [-t T] [-y]... [-q]... [-d D]\n  datum retime [SLUG] --offset DUR [--field F] [--after BND] [--before BND]\n\nDEFAULTS:\n  SLUG omitted        → `_LAST` (matches update/delete/undo)\n  No time-args        → set to now\n  SHIFT (bare int)    → minutes-offset shorthand; `retime <id> -5` shifts -5 min\n  -r/--relative       → interpret time-args as a delta from now, applied to the\n                        entry's current occur_time (rather than absolute target).\n                        Same flag is `--reverse` on tail; namespaces don't collide.\n  --offset DUR        → explicit ISO duration shift (legacy form)\n\nBULK FILTERS (--field/--after/--before select rows instead of _LAST):\n  BND                 → a duration ago (1d, 30m, 1:30), a date (2026-06-01,\n                        apr29, today, yesterday), or any -t time. Both bounds\n                        are inclusive, and a bare date names that day's\n                        opening midnight — so --before 2026-06-01 excludes\n                        June 1.\n";
 
-const SPEC_BODY: &str = "USAGE:\n  datum spec show <FIELD> [--text | --json]\n  datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]\n  datum spec set <FIELD> [--json JSON] [--default-verb V] [--state S]... [--tag T]... ...\n  datum spec list [--tag T]\n  datum spec remove <FIELD>\n\n`add-state` merges one state into a field spec without dropping the others\n(unlike `set --state`, which replaces the whole list). Use `-` in the COLOR\nslot to set only a description: `datum spec add-state mood meh - \"so-so\"`.\n";
+const SPEC_BODY: &str = "USAGE:\n  datum spec show <FIELD> [--text]\n  datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]\n  datum spec set <FIELD> [--from-json JSON] [--default-verb V] [--state S]... [--tag T]... ...\n  datum spec list [--tag T]\n  datum spec remove <FIELD>\n\n`add-state` merges one state into a field spec without dropping the others\n(unlike `set --state`, which replaces the whole list). Use `-` in the COLOR\nslot to set only a description: `datum spec add-state mood meh - \"so-so\"`.\n";
 
 const ALIAS_LONG_DESCRIPTION: &str = "Aliases expand argv before the parser sees it, so an alias can stand in for any prefix of a `datum` invocation — verb, field, flags, or all three.\n\nA standalone, whitespace-bounded `,` token splits one invocation into N sides that write atomically with the same occur_time. The trigger works at the top-level CLI, inside alias bodies, and through chains of alias-of-alias (multi-of-multi flattens to N flat sides). The comma must be its own token: `vertical , sit` triggers a multi, while `vertical,sit`, `vertical ,sit`, and `vertical, sit` do not. Values with embedded commas (`key=a,b`) pass through unchanged.\n\nKey slot forms (`-k` and `-K` accept the same three shapes): `-k key` is required and errors at call time if unfilled, `-k key=` is optional with no default (silently skipped), `-k key=val` defaults to `val` when no value is supplied. A `-k` or `-K` name declared on multiple sides becomes a shared slot — one call-site value propagates to every declaring side. The `.` token skips a slot on its side; for a shared slot it skips on all sides.\n\n`--` semantics in multi-entry contexts: inside an alias body, flags before `--` scope to their side and flags after `--` apply to all sides. `--` is implicit at the end of every alias body, so call-site flags apply to all sides by default. A `--` inside an alias body does not propagate past the alias boundary. Call-site time flags compose with alias-bound times rather than overriding them.\n\nAfter a multi-entry write, `_LAST` refers to every entry written by the most recent invocation, so `rekey _LAST oldkey=newkey` affects every row of the atomic group. A subsequent single-entry write resets `_LAST` to that one row.";
 
@@ -836,19 +774,19 @@ const TRACK_BODY: &str =
 
 const IGNORE_BODY: &str = "USAGE:\n  datum ignore <FIELD>\n";
 
-const GREP_BODY: &str = "USAGE:\n  datum grep <PATTERN>... [-f FIELD] [--show V | -A | -o FMT]\n\nARGS:\n  <PATTERN>...    One or more regex patterns; rows must match EVERY one\n                  (AND semantics). Each pattern is matched against the\n                  entry's serialized JSON representation, so slug, value,\n                  extra_data, and metadata are all in scope.\n\nOPTIONS:\n  -f, --field <F>      Restrict the search to entries on field F.\n  -A, --show-all       Show the full entry document (verbose form).\n      --show <V>       Output verbosity: default|none|minimal|standard|format|all|json.\n  -o, --format-string <FMT>\n                       Render each hit through datum's format-string mini-DSL.\n\nEXAMPLES:\n  datum grep coffee                      # any entry mentioning 'coffee'\n  datum grep -f mood happy               # mood rows with state/value matching 'happy'\n  datum grep -A 'kg' caffeine            # caffeine rows with units/value matching 'kg'\n";
+const GREP_BODY: &str = "USAGE:\n  datum grep <PATTERN>... [-f FIELD] [-A | -o FMT]\n\nARGS:\n  <PATTERN>...    One or more regex patterns; rows must match EVERY one\n                  (AND semantics). Each pattern is matched against the\n                  entry's serialized JSON representation, so slug, value,\n                  extra_data, and metadata are all in scope.\n\nOPTIONS:\n  -f, --field <F>      Restrict the search to entries on field F.\n  -A, --show-all       Show the full entry document (verbose form).\n  -o, --format-string <FMT>\n                       Render each hit through datum's format-string mini-DSL.\n\nEXAMPLES:\n  datum grep coffee                      # any entry mentioning 'coffee'\n  datum grep -f mood happy               # mood rows with state/value matching 'happy'\n  datum grep -A 'kg' caffeine            # caffeine rows with units/value matching 'kg'\n";
 
-const CHECK_BODY: &str = "USAGE:\n  datum check [CHECKER]... [--fix] [--json]\n  datum check --list [--json]\n\nARGS:\n  [CHECKER]...   Run only the named checker(s). With no positionals, the\n                 full default battery runs. Known names:\n                   verbs      Drift between stored verb and derive_verb\n                   aliases    Spec/user alias divergence + state collisions\n                   slugs      Drift between stored slug and re-derived slug\n                   integrity  Pending warnings from the conflict_queue\n                   flags      Pending review markers from `datum flag`\n                   tz         Stored UTC offset vs timezone at that instant\n\nOPTIONS:\n  --fix          Rewrite drifted `verb` / `slug` columns to match what\n                 the live deriver would produce; annotate alias state\n                 collisions with the explicit first-saved-wins\n                 resolution; rewrite legacy `content_hash` columns\n                 that disagree with `expected_content_hash`.\n  --list         Print the set of known checker names and exit.\n  --json         Machine-readable output.\n\nEXAMPLES:\n  datum check                  # full default battery\n  datum check verbs            # only verb-drift\n  datum check aliases --fix    # only alias divergence, annotate collisions\n  datum check integrity flags  # only the queue + review-marker views\n  datum check slugs --fix      # rewrite drifted slug columns in place\n";
+const CHECK_BODY: &str = "USAGE:\n  datum check [CHECKER]... [--fix]\n  datum check --list\n\nARGS:\n  [CHECKER]...   Run only the named checker(s). With no positionals, the\n                 full default battery runs. Known names:\n                   verbs      Drift between stored verb and derive_verb\n                   aliases    Spec/user alias divergence + state collisions\n                   slugs      Drift between stored slug and re-derived slug\n                   integrity  Pending warnings from the conflict_queue\n                   flags      Pending review markers from `datum flag`\n                   tz         Stored UTC offset vs timezone at that instant\n\nOPTIONS:\n  --fix          Rewrite drifted `verb` / `slug` columns to match what\n                 the live deriver would produce; annotate alias state\n                 collisions with the explicit first-saved-wins\n                 resolution; rewrite legacy `content_hash` columns\n                 that disagree with `expected_content_hash`.\n  --list         Print the set of known checker names and exit.\n\nEXAMPLES:\n  datum check                  # full default battery\n  datum check verbs            # only verb-drift\n  datum check aliases --fix    # only alias divergence, annotate collisions\n  datum check integrity flags  # only the queue + review-marker views\n  datum check slugs --fix      # rewrite drifted slug columns in place\n";
 
-const DAYVIEW_BODY: &str = "USAGE:\n  datum dayview [OPTIONS]\n\nOPTIONS:\n  --start-date <DATE>      Start date (ISO YYYY-MM-DD or relative offset like -3, 0)\n  --end-date <DATE>, -d    End date (default: today)\n  --n-days <N>, -n         Number of days (default: 1)\n  --width <N>              SVG width in pixels (default: 2000)\n  --height <N>             Total SVG height (auto from day-height + n-days when unset)\n  --day-height <N>         Per-day band height (default: 100)\n  --time-axis-height <N>   Bottom time-axis strip height (default: 15)\n  --margin <N>             Outer margin (default: 2)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  --json                   Emit layout JSON instead of SVG (debug)\n  -w, --watch              Redraw on a 5-minute poll loop\n";
+const DAYVIEW_BODY: &str = "USAGE:\n  datum dayview [OPTIONS]\n\nOPTIONS:\n  --start-date <DATE>      Start date (ISO YYYY-MM-DD or relative offset like -3, 0)\n  --end-date <DATE>, -d    End date (default: today)\n  --n-days <N>, -n         Number of days (default: 1)\n  --width <N>              SVG width in pixels (default: 2000)\n  --height <N>             Total SVG height (auto from day-height + n-days when unset)\n  --day-height <N>         Per-day band height (default: 100)\n  --time-axis-height <N>   Bottom time-axis strip height (default: 15)\n  --margin <N>             Outer margin (default: 2)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  -w, --watch              Redraw on a 5-minute poll loop\n";
 
 const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --history <DUR>          History window before \"now\" (e.g. 15m, 1h). Default: 30m.\n                           0 = the snapshot: each field's state, no time band\n  --at <TIME>              Centre the window on TIME (as -t takes it) instead of\n                           ending it at now\n  --width <N>              SVG width in pixels (auto-scales with --history when unset)\n  --height <N>             SVG height in pixels (default 300)\n  --margin <N>             Outer margin (default 2)\n  --time-axis-height <N>   Time-axis strip height (default 15)\n  -o, --output-file <PATH> .svg / .png / .html, or - for the SVG on stdout\n                           (default: the terminal band)\n  -w, --watch              Redraw on DB change (60s idle refresh)\n";
 
 const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n";
 
-const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n  datum db backup <PATH | -> [--overwrite]\n  datum db restore <PATH | -> [--force] [--dry-run] [--json]\n  datum db migrate (run | status | edit)\n  datum db v2import [FILE | - | --from FILE] [--dry-run]\n\nSetup applies any pending schema migrations to the active database. Use\n`datum db purge` to drop and recreate the schema from scratch.\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n\nBackup dumps live entries to JSONL (default) or tar.gz when the path ends in\n.tar.gz / .tgz, or to stdout as JSONL when the path is `-`. Restore replays\na backup file (or JSONL on stdin, for `-`) into the active database.\n\nMigrate is the schema-migration runner: `run` advances the DB to the binary's\ntarget version, `status` lists applied/pending steps, `edit` is reserved for\nper-entry data migrations (not yet implemented).\n\nV2import ingests a legacy datum CouchDB backup JSON (`{ docs: [...] }`), or\nthat JSON on stdin for `-`, into the active database. Idempotent —\nre-importing the same backup is a no-op.\n";
+const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n  datum db backup <PATH | -> [--overwrite]\n  datum db restore <PATH | -> [--force] [--dry-run]\n  datum db migrate (run | status | edit)\n  datum db v2import [FILE | - | --from FILE] [--dry-run]\n\nSetup applies any pending schema migrations to the active database. Use\n`datum db purge` to drop and recreate the schema from scratch.\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n\nBackup dumps live entries to JSONL (default) or tar.gz when the path ends in\n.tar.gz / .tgz, or to stdout as JSONL when the path is `-`. Restore replays\na backup file (or JSONL on stdin, for `-`) into the active database.\n\nMigrate is the schema-migration runner: `run` advances the DB to the binary's\ntarget version, `status` lists applied/pending steps, `edit` is reserved for\nper-entry data migrations (not yet implemented).\n\nV2import ingests a legacy datum CouchDB backup JSON (`{ docs: [...] }`), or\nthat JSON on stdin for `-`, into the active database. Idempotent —\nre-importing the same backup is a no-op.\n";
 
-const CONFIG_BODY: &str = "USAGE:\n  datum config show [--json]\n";
+const CONFIG_BODY: &str = "USAGE:\n  datum config show\n";
 
 const SYNC_BODY: &str = "USAGE:\n  datum sync [--push | --pull] [--dry-run] [--server URL]\n  datum sync login [--server URL] [--cluster NAME]\n  datum sync config set-server <URL> [--global]\n  datum sync config disable\n  datum sync config show\n  datum sync key (init | unlock | rotate-passphrase | show-fingerprint) [--server URL] [--force]\n  datum sync status [--server URL]\n  datum sync install-daemon [--show | --uninstall]\n  datum sync agent [--pid-file PATH] [-v] [--one-shot]\n";
 
@@ -888,6 +826,16 @@ pub const GLOBAL_FLAGS: &[FlagSpec] = &[
         summary: "default|none|minimal|standard|format|all|json",
         long_description: None,
         left_override: Some("--show <MODE>"),
+    },
+    FlagSpec {
+        short: None,
+        long: "json",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Shorthand for --show json",
+        long_description: None,
+        left_override: Some("--json"),
     },
     FlagSpec {
         short: Some('A'),
@@ -1181,7 +1129,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "modification trail for an entry",
         top_summary: Some("Show the full modification trail for an entry"),
         long_description: None,
-        usage: &["datum history <ID_OR_SLUG> [--version N | --diff A B] [--json]"],
+        usage: &["datum history <ID_OR_SLUG> [--version N | --diff A B]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,
@@ -1329,9 +1277,9 @@ pub const COMMANDS: &[CommandSpec] = &[
         top_summary: Some("Manage field specs (schemas)"),
         long_description: None,
         usage: &[
-            "datum spec show <FIELD> [--text | --json]",
+            "datum spec show <FIELD> [--text]",
             "datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]",
-            "datum spec set <FIELD> [--json JSON] [--default-verb V] [--state S]... [--tag T]... ...",
+            "datum spec set <FIELD> [--from-json JSON] [--default-verb V] [--state S]... [--tag T]... ...",
             "datum spec list [--tag T]",
             "datum spec remove <FIELD>",
         ],
@@ -1399,7 +1347,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "run DB consistency checks",
         top_summary: Some("Run database consistency checks"),
         long_description: None,
-        usage: &["datum check [CHECKER]... [--fix] [--json]"],
+        usage: &["datum check [CHECKER]... [--fix]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,
@@ -1418,7 +1366,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             "datum db setup",
             "datum db purge [--yes | -y]",
             "datum db backup <PATH | -> [--overwrite]",
-            "datum db restore <PATH | -> [--force] [--dry-run] [--json]",
+            "datum db restore <PATH | -> [--force] [--dry-run]",
             "datum db migrate (run | status | edit)",
             "datum db v2import [FILE | - | --from FILE] [--dry-run]",
         ],
@@ -1451,7 +1399,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "show or manage user configuration",
         top_summary: None,
         long_description: None,
-        usage: &["datum config show [--json]"],
+        usage: &["datum config show"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,
@@ -1467,7 +1415,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "count entries (filtered/grouped/since-bounded)",
         top_summary: Some("Count entries (optionally filtered/grouped/since-bounded)"),
         long_description: None,
-        usage: &["datum count [FIELD] [--group-by KEY] [--since TIME] [--json]"],
+        usage: &["datum count [FIELD] [--group-by KEY] [--since TIME]"],
         args: NO_ARGS,
         flags: COUNT_FLAGS,
         examples: NO_EXAMPLES,
@@ -1483,7 +1431,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         top_summary: Some("Count, total duration, and per-state ratio over a time slice"),
         long_description: None,
         usage: &[
-            "datum stats <FIELD[:STATE]> [SLICE] [--since TIME] [--until TIME] [--json]",
+            "datum stats <FIELD[:STATE]> [SLICE] [--since TIME] [--until TIME]",
             "datum stats <FIELD[:STATE]> (--today | --week | --last-week | --month | --last-month)",
             "datum stats <FIELD[:STATE]> [-d DATE | -y* | -t TIME | -q*] [--until TIME]",
             "datum stats <FIELD[:STATE]> [--include-false] [--include-untracked]",
@@ -1502,7 +1450,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "list entry ids (newest-first)",
         top_summary: Some("List entry ids (newest-first by default)"),
         long_description: None,
-        usage: &["datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug] [--json]"],
+        usage: &["datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug]"],
         args: NO_ARGS,
         flags: IDS_FLAGS,
         examples: NO_EXAMPLES,
@@ -1517,7 +1465,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "list fields with their spec and logged states",
         top_summary: Some("List every field: its spec and the states it was logged with"),
         long_description: None,
-        usage: &["datum fields [--json] [--include-ignored | -A]"],
+        usage: &["datum fields [--include-ignored | -A]"],
         args: NO_ARGS,
         flags: FIELDS_FLAGS,
         examples: NO_EXAMPLES,

@@ -1,5 +1,12 @@
-//! `outputArgs` — `--show-all/-A`, `--show`, `--format-string/-o`. Port of
-//! datum's `src/input/outputArgs.ts`.
+//! `outputArgs` — the output-flag family. Port of datum's
+//! `src/input/outputArgs.ts`.
+//!
+//! `-A/--show-all` and `-o/--format-string` are per-command flags, lifted
+//! onto whichever intent struct carries an [`OutputArgs`]. `--show` and
+//! its `--json` shorthand are NOT: da-qt6z made them one family read by
+//! the shared layer for EVERY command, next to `--db`, so [`take_show`]
+//! below is the only place either spelling is recognised. `spec`'s old
+//! `--json <JSON>` input flag was renamed `--from-json` to clear the way.
 //!
 //! Step 2b/N lifted the `Show` enum + resolve algorithm out of
 //! `datum-commands` so that the bespoke parser (step 3/N) owns the
@@ -11,28 +18,16 @@
 
 use std::str::FromStr;
 
+use crate::error::{ParseError, Result as ParseResult};
 use crate::input::flag_registry::{FlagAction, FlagSpec};
 
-/// Canonical flag set for the output concern.
+/// Canonical flag set for the per-command half of the output concern.
 pub static FLAG_SPECS: &[FlagSpec<OutputArgs>] = &[
     FlagSpec {
         short: Some('A'),
         long: Some("show-all"),
         action: FlagAction::Switch(|a| {
             a.show_all = true;
-            Ok(())
-        }),
-    },
-    FlagSpec {
-        short: None,
-        long: Some("show"),
-        action: FlagAction::Value(|a, v| {
-            // `none` latches: once a run has asked for silence, a later
-            // `--show <anything>` cannot un-silence it (da-yc9w). Otherwise
-            // the last `--show` wins, as it always has.
-            if a.show.as_deref() != Some("none") {
-                a.show = Some(v.to_string());
-            }
             Ok(())
         }),
     },
@@ -142,6 +137,135 @@ impl OutputArgs {
     }
 }
 
+// ─── The shared half: `--show` / `--json`, read for every command ────────
+
+/// Every `--show` value, in the order `--help` lists them.
+pub const ALL_SHOWS: &[Show] = &[
+    Show::Default,
+    Show::None,
+    Show::Minimal,
+    Show::Standard,
+    Show::Format,
+    Show::All,
+    Show::Json,
+];
+
+impl Show {
+    /// The spelling `--show` accepts, and `--help` prints.
+    pub fn name(self) -> &'static str {
+        match self {
+            Show::Default => "default",
+            Show::None => "none",
+            Show::Minimal => "minimal",
+            Show::Standard => "standard",
+            Show::Format => "format",
+            Show::All => "all",
+            Show::Json => "json",
+        }
+    }
+}
+
+/// What a command can actually draw — the `--show` values its own code
+/// branches on.
+///
+/// The family is parsed for every command now (da-qt6z), so this table is
+/// what keeps that from meaning "every command silently ignores six of the
+/// seven values". A value missing here is an error naming the command, not
+/// a flag that quietly does nothing; it is also what `--help` prints, so
+/// the two can't drift.
+pub fn shows_for(command: &str) -> &'static [Show] {
+    match command {
+        // The document renderers (`render::show_action_with_context`)
+        // draw every level.
+        "occur" | "start" | "stop" | "end" | "switch" | "add" | "note" | "get" | "delete"
+        | "del" | "undo" | "update" | "merge" | "rekey" | "edit" => ALL_SHOWS,
+        // The table renderer honours silence and the format string.
+        "grep" => &[Show::Default, Show::None, Show::Format],
+        // …and `tail`/`head` have their own JSON rows on top of it.
+        "tail" | "head" => &[Show::Default, Show::None, Show::Format, Show::Json],
+        // Readers carrying a JSON document beside their stock output.
+        // `alias`, `config` and `db` are groups: only `alias list`,
+        // `config show` and `db restore` render the document, and the
+        // sibling subcommands ignore the flag.
+        "now" | "nowview" | "dayview" | "stats" | "count" | "ids" | "history" | "check"
+        | "alias" | "config" | "db" => &[Show::Default, Show::None, Show::Json],
+        // `fields` draws one more: `--show all` is the engineering
+        // spelling of its `--include-ignored` (da-1lnf).
+        "fields" => &[Show::Default, Show::None, Show::Json, Show::All],
+        // `spec show` prints its document by default, so `--show json` is
+        // the explicit form of that; it has no silent mode to offer.
+        "spec" => &[Show::Default, Show::Json],
+        // Everything else prints one thing, one way.
+        _ => &[Show::Default],
+    }
+}
+
+/// Pull the output family out of one command's tokens, returning the
+/// resolved `Show` (when either flag appeared) and the survivors.
+///
+/// * `--show <V>`, `--show=<V>` — the named value.
+/// * `--json` — exactly `--show json`, and it takes no value.
+/// * The LAST one wins, for every pair: `--show none --show json` prints
+///   the document, `--show json --show none` prints nothing. Silence used
+///   to latch (da-yc9w); vividn asked for last-wins, so it no longer does.
+///
+/// Whether the named command can DRAW the value is [`check_show`], which
+/// the caller runs once the subcommand has been recognised: a typo'd verb
+/// deserves "unknown subcommand", not a lecture about its renderings.
+pub fn take_show<'a>(tokens: &[&'a str]) -> ParseResult<(Option<Show>, Vec<&'a str>)> {
+    let mut show: Option<Show> = None;
+    let mut rest: Vec<&'a str> = Vec::with_capacity(tokens.len());
+    let mut i = 0;
+    while i < tokens.len() {
+        let tok = tokens[i];
+        let value = match tok.strip_prefix("--show") {
+            Some("") => {
+                let v = tokens
+                    .get(i + 1)
+                    .ok_or_else(|| ParseError::InvalidArg("--show requires a value".into()))?;
+                i += 1;
+                Some((*v).to_string())
+            }
+            Some(eq) if eq.starts_with('=') => Some(eq[1..].to_string()),
+            _ if tok == "--json" => Some("json".to_string()),
+            _ if tok.starts_with("--json=") => {
+                return Err(ParseError::InvalidArg(
+                    "--json takes no value (it is `--show json`)".into(),
+                ))
+            }
+            _ => None,
+        };
+        match value {
+            Some(v) => show = Some(v.parse::<Show>().map_err(ParseError::InvalidArg)?),
+            None => rest.push(tok),
+        }
+        i += 1;
+    }
+
+    Ok((show, rest))
+}
+
+/// Refuse a `--show` value the named command has no rendering for.
+///
+/// Loud beats silently ignored: the flag is read for every command now, so
+/// without this `fields --show minimal` would parse and then draw the
+/// default, which is the failure mode the family was meant to remove.
+pub fn check_show(show: Show, command: &str) -> ParseResult<()> {
+    let allowed = shows_for(command);
+    if allowed.contains(&show) {
+        return Ok(());
+    }
+    Err(ParseError::InvalidArg(format!(
+        "{command}: --show {} is not a rendering {command} has (it draws: {})",
+        show.name(),
+        allowed
+            .iter()
+            .map(|v| v.name())
+            .collect::<Vec<_>>()
+            .join("|"),
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,30 +277,63 @@ mod tests {
         assert_eq!(r.format_string, None);
     }
 
-    /// da-yc9w: the JSON echo is one more `Show`, and `none` outranks it
-    /// wherever both are asked for — silence is not undoable.
+    /// da-qt6z: the LAST `--show` wins, for every pair of values.
+    /// `none` used to latch over everything after it (da-yc9w); that came
+    /// from vremya's wording of the spec, not from what vividn wanted, and
+    /// silence is now as overridable as every other value.
     #[test]
-    fn json_is_a_show_and_none_latches_over_it() {
+    fn the_last_show_wins_for_every_pair() {
         assert_eq!("json".parse::<Show>().unwrap(), Show::Json);
         assert_eq!("JSON".parse::<Show>().unwrap(), Show::Json);
 
-        let spec = FLAG_SPECS
-            .iter()
-            .find(|f| f.long == Some("show"))
-            .expect("--show is registered");
-        let FlagAction::Value(set) = &spec.action else {
-            unreachable!("--show is a value flag")
-        };
+        let table = [
+            (vec!["--show", "none", "--show", "json"], Show::Json),
+            (vec!["--show", "json", "--show", "none"], Show::None),
+            (vec!["--show", "json", "--show", "json"], Show::Json),
+            (vec!["--show", "minimal", "--show", "all"], Show::All),
+            (vec!["--show", "json", "--json"], Show::Json),
+            (vec!["--json"], Show::Json),
+            (vec!["--json", "--show", "none"], Show::None),
+            (vec!["--show=none", "--show=json"], Show::Json),
+        ];
+        for (argv, want) in table {
+            let (got, rest) = take_show(&argv).unwrap();
+            assert_eq!(got, Some(want), "{argv:?}");
+            assert!(rest.is_empty(), "{argv:?} left {rest:?} behind");
+        }
 
-        let mut a = OutputArgs::default();
-        set(&mut a, "none").unwrap();
-        set(&mut a, "json").unwrap();
-        assert_eq!(a.resolve().show, Show::None, "`--show none` latches");
+        // Nothing asked for → nothing resolved, and every token survives.
+        let (got, rest) = take_show(&["coffee", "-t", "9:15"]).unwrap();
+        assert_eq!(got, None);
+        assert_eq!(rest, vec!["coffee", "-t", "9:15"]);
+    }
 
-        let mut b = OutputArgs::default();
-        set(&mut b, "minimal").unwrap();
-        set(&mut b, "json").unwrap();
-        assert_eq!(b.resolve().show, Show::Json, "otherwise the last wins");
+    /// A value the named command has no rendering for is loud, and the
+    /// message names both (da-qt6z).
+    #[test]
+    fn a_show_the_command_cannot_draw_is_an_error() {
+        let err = check_show(Show::Minimal, "fields").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("fields: --show minimal is not a rendering fields has"),
+            "{msg}"
+        );
+        assert!(check_show(Show::Json, "fields").is_ok());
+        assert!(check_show(Show::Json, "track").is_err());
+        assert!(check_show(Show::Default, "track").is_ok());
+        // An unknown value is loud too, rather than degrading to default.
+        assert!(take_show(&["--show", "banana"]).is_err());
+    }
+
+    /// `--json` carries no value of its own, so a value behind it is left
+    /// standing as an argument — which is how `spec set x --json '{…}'`
+    /// reaches the parser that points at `--from-json`.
+    #[test]
+    fn json_takes_no_value_and_leaves_one_standing() {
+        let (got, rest) = take_show(&["set", "x", "--json", "{}"]).unwrap();
+        assert_eq!(got, Some(Show::Json));
+        assert_eq!(rest, vec!["set", "x", "{}"]);
+        assert!(take_show(&["--json=x"]).is_err());
     }
 
     #[test]

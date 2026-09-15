@@ -42,6 +42,13 @@ pub use pcli::{
     WhyArgs,
 };
 
+/// The `--show` level the shared layer swept out of argv (da-qt6z).
+///
+/// Distinct from [`crate::render::Show`], which is the render layer's own
+/// copy; [`resolve_parse_output_args`] is the bridge between the two. The
+/// readers that used to carry a `json: bool` compare against this one.
+pub use datum_parse::input::Show as ShowFlag;
+
 // ─── Intent context (provenance for the current invocation) ──────────────
 
 /// Provenance captured during the CLI pre-pass: the literal argv the

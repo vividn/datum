@@ -17,6 +17,7 @@ use crate::render::term_layout::{detect_cols, detect_rows, is_stdout_tty};
 use crate::render::{print_table_with, table_columns_with, TableArgs, TimeMetricCol};
 
 pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
+    let json = args.output()?.show == crate::render::Show::Json;
     // `field:state` form (da-plbb): block-mode rendering replaces the
     // per-entry table entirely. The state-block path doesn't share any
     // of the column/metric/watch plumbing below — bail early. The parser
@@ -26,10 +27,11 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
             // The block form renders derived spans, not entries, so the
             // per-entry row shape below doesn't describe it. Say so rather
             // than emit rows the caller didn't ask for (da-c7uw).
-            if args.json {
+            if json {
                 anyhow::bail!(
-                    "--json is not supported with the `field:state` block form; \
-                     run `datum tail {field} --json` and group the rows, or drop --json"
+                    "--show json is not supported with the `field:state` block \
+                     form; run `datum tail {field} --json` and group the rows, \
+                     or drop the flag"
                 );
             }
             return crate::commands::tail_state::tail_state(
@@ -46,11 +48,11 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
         .metric
         .parse()
         .map_err(|e: String| anyhow::anyhow!(e))?;
-    // da-c7uw: `--json` replaces the table entirely. It deliberately
+    // da-c7uw: `--show json` replaces the table entirely. It deliberately
     // skips the terminal-fitting plumbing below — structured output that
     // changed its row count with the window size would be a worse
     // contract than the table it replaces.
-    if args.json {
+    if json {
         return tail_json(&args, metric, columns, db);
     }
     // da-5025: when stdout is a real terminal AND the user didn't pin

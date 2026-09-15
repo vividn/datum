@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 
-use crate::args::{ConfigCommand, ConfigShowArgs};
+use crate::args::{ConfigCommand, ConfigShowArgs, ShowFlag};
 use crate::config;
 
 pub fn config(sub: ConfigCommand, cli_db: Option<&str>) -> Result<()> {
@@ -16,8 +16,11 @@ pub fn config(sub: ConfigCommand, cli_db: Option<&str>) -> Result<()> {
 
 fn config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Result<()> {
     let cfg = config::Config::load(cli_db)?;
+    if args.show == ShowFlag::None {
+        return Ok(());
+    }
 
-    if args.json {
+    if args.show == ShowFlag::Json {
         let rows = cfg
             .rows()
             .into_iter()

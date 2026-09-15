@@ -20,7 +20,7 @@ use datum_core::{
 };
 
 use crate::{
-    args::{BackupArgs, RestoreArgs},
+    args::{BackupArgs, RestoreArgs, ShowFlag},
     config,
     progress::Progress,
 };
@@ -285,10 +285,15 @@ impl RestoreReport {
 
 pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
     let dry_run = args.dry_run;
-    let json = args.json;
+    let silent = args.show == ShowFlag::None;
+    let json = args.show == ShowFlag::Json;
     let force = args.force;
     let bump_cluster = args.cluster;
     let report = cmd_restore_with_report(args, db)?;
+
+    if silent {
+        return Ok(());
+    }
 
     if json {
         let out = serde_json::json!({
@@ -739,7 +744,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -826,7 +831,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -862,7 +867,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -882,7 +887,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -947,7 +952,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: true,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1054,7 +1059,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1106,7 +1111,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1149,7 +1154,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1183,7 +1188,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1230,7 +1235,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1277,7 +1282,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: true,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1322,7 +1327,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1340,7 +1345,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: true,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1387,7 +1392,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1400,7 +1405,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: true, // conflict strategy = Update
                 dry_run: true,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1441,7 +1446,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: true,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1489,7 +1494,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: true,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1545,7 +1550,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1626,7 +1631,7 @@ mod tests {
                 path: backup_path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,
@@ -1667,7 +1672,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: true,
-                json: false,
+                show: ShowFlag::Default,
                 cluster: false,
             },
             &dst,

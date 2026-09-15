@@ -3,12 +3,15 @@
 use anyhow::Result;
 use datum_core::db::Db;
 
-use crate::args::IdsArgs;
+use crate::args::{IdsArgs, ShowFlag};
 use crate::commands::time_bounds::parse_since;
 
 pub fn ids(args: IdsArgs, db: &Db) -> Result<()> {
     let ids = compute_ids(&args, db)?;
-    if args.json {
+    if args.show == ShowFlag::None {
+        return Ok(());
+    }
+    if args.show == ShowFlag::Json {
         let arr: Vec<serde_json::Value> = ids
             .iter()
             .map(|s| serde_json::Value::String(s.clone()))

@@ -10,7 +10,7 @@
 //! `OutputArgs`, `ConflictStrategy`) live in `datum-commands::args`
 //! alongside the re-exports.
 
-use crate::input::{DurationArgs, Matcher, OutputArgs, TimeArgs};
+use crate::input::{DurationArgs, Matcher, OutputArgs, Show, TimeArgs};
 
 #[derive(Debug)]
 pub struct Cli {
@@ -189,7 +189,9 @@ pub enum ConfigCommand {
 
 #[derive(Debug, Default)]
 pub struct ConfigShowArgs {
-    pub json: bool,
+    /// The output level the shared layer swept out of argv (da-qt6z).
+    /// `--json` is the value `json`; `Show::None` prints nothing.
+    pub show: Show,
 }
 
 // ─── Info / Setup ─────────────────────────────────────────────────────────
@@ -412,13 +414,13 @@ pub struct TailArgs {
     /// them — they're review markers / out-of-band notes, not tracked
     /// data. See da-ghlx.
     pub show_meta: bool,
-    /// `--json` (da-c7uw) — emit one named object per row instead of the
-    /// human table. The table's column set is a display decision and has
-    /// changed under scripts that position-parsed it; this is the shape
-    /// consumers are meant to read. With `--watch` the rows stream as
-    /// JSON Lines, one document per changed frame.
-    pub json: bool,
-    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    /// `-A/--show-all` / `-o/--format-string`, plus the swept `--show`.
+    ///
+    /// `--show json` (da-c7uw's `--json`) emits one named object per row
+    /// instead of the human table. The table's column set is a display
+    /// decision and has changed under scripts that position-parsed it;
+    /// this is the shape consumers are meant to read. With `--watch` the
+    /// rows stream as JSON Lines, one document per changed frame.
     pub output: OutputArgs,
 }
 
@@ -436,7 +438,6 @@ impl Default for TailArgs {
             watch: None,
             table: false,
             show_meta: false,
-            json: false,
             output: OutputArgs::default(),
         }
     }
@@ -565,7 +566,9 @@ pub struct HistoryArgs {
     pub id_or_slug: String,
     pub version: Option<u32>,
     pub diff: Option<Vec<u32>>,
-    pub json: bool,
+    /// The output level the shared layer swept out of argv (da-qt6z).
+    /// `--json` is the value `json`; `Show::None` prints nothing.
+    pub show: Show,
 }
 
 #[derive(Debug)]
@@ -578,10 +581,11 @@ pub struct WhyArgs {
 
 #[derive(Debug)]
 pub enum SpecCommand {
-    /// `datum spec show <FIELD> [--text | --json]` — JSON by default;
-    /// `--text` switches to a human-readable summary including per-state
-    /// colors and descriptions (da-nhzo). `--json` is accepted as the
-    /// explicit form of the default for a round-trippable fetch.
+    /// `datum spec show <FIELD> [--text]` — JSON by default; `--text`
+    /// switches to a human-readable summary including per-state colors
+    /// and descriptions (da-nhzo). `--show json` (and its `--json`
+    /// shorthand) is the explicit form of the default, read by the shared
+    /// output layer like every other command's (da-qt6z).
     Show {
         field: String,
         text: bool,
@@ -608,7 +612,10 @@ pub enum SpecCommand {
 #[derive(Debug, Default)]
 pub struct SpecSetArgs {
     pub field: String,
-    pub json: Option<String>,
+    /// `--from-json <JSON>` — the whole spec body, replacing the existing
+    /// one. Spelled `--json` until da-qt6z made that the global
+    /// `--show json`; vividn picked the new name.
+    pub from_json: Option<String>,
     pub default_verb: Option<String>,
     pub states: Vec<String>,
     pub color: Option<String>,
@@ -638,7 +645,8 @@ pub struct SpecSetArgs {
     /// "leave as-is"; default fallback is the resolved `y`.
     pub z_index: Option<f64>,
     /// Replace the spec's `tags` list with this. Empty (`Vec::is_empty`) is
-    /// treated as "leave as-is" — to clear tags, pass `--json '...tags=[]'`.
+    /// treated as "leave as-is" — to clear tags, pass
+    /// `--from-json '...tags=[]'`.
     pub tags: Vec<String>,
     /// `--strict` / `--no-strict`. `Some(true)` locks the spec down (the
     /// `orphaned_extra_data_key` check fires for undeclared keys);
@@ -650,7 +658,7 @@ pub struct SpecSetArgs {
 pub enum AliasCommand {
     Show { name: String },
     Set { name: String, expansion: String },
-    List { json: bool },
+    List { show: Show },
     Remove { name: String },
 }
 
@@ -750,11 +758,12 @@ pub struct NowArgs {
     /// layer 1 (active-only). Rebound from `-t` to `-a` in da-tx8j so
     /// the standard `-t TIME` time_args flag can fly here.
     pub show_tracked: bool,
-    /// `--json` — emit the [`NowSnapshot`](datum_core::db::NowSnapshot)
-    /// wire schema instead of the terminal view. Other surfaces (web,
-    /// wear, voice) consume this; the schema is versioned via
+    /// The swept `--show` (da-qt6z). `--show json` — the old `--json` —
+    /// emits the [`NowSnapshot`](datum_core::db::NowSnapshot) wire schema
+    /// instead of the terminal view. Other surfaces (web, wear, voice)
+    /// consume this; the schema is versioned via
     /// `datum_core::db::NOW_SCHEMA_ID`.
-    pub json: bool,
+    pub show: Show,
     /// `--bare` — suppress the trailing terminal nowview band; only show
     /// the active-state list. Useful for piping or scripting.
     pub bare: bool,
@@ -823,9 +832,11 @@ pub struct FlagArgs {
 
 #[derive(Debug, Default)]
 pub struct FieldsArgs {
-    pub json: bool,
+    /// The output level the shared layer swept out of argv (da-qt6z).
+    /// `--json` is the value `json`; `Show::None` prints nothing.
+    pub show: Show,
     /// Ignored fields join the plain listing: `--include-ignored`, or the
-    /// engineering spelling `-A` / `--show all` (da-1lnf). `--json` is
+    /// engineering spelling `-A` / `--show all` (da-1lnf). `--show json` is
     /// unaffected — it has always carried every field with its `ignored`
     /// flag, and the widget bar reads that.
     pub include_ignored: bool,
@@ -844,7 +855,9 @@ pub struct CountArgs {
     pub field: Option<String>,
     pub group_by: Option<String>,
     pub since: Option<String>,
-    pub json: bool,
+    /// The output level the shared layer swept out of argv (da-qt6z).
+    /// `--json` is the value `json`; `Show::None` prints nothing.
+    pub show: Show,
 }
 
 /// Which whole calendar period a `--today` / `--week` / `--month` style
@@ -918,7 +931,9 @@ pub struct StatsArgs {
     /// `IGNORED` sentinel) in the ratio denominator. Off by default, same
     /// reason as [`StatsArgs::include_false`].
     pub include_untracked: bool,
-    pub json: bool,
+    /// The output level the shared layer swept out of argv (da-qt6z).
+    /// `--json` is the value `json`; `Show::None` prints nothing.
+    pub show: Show,
 }
 
 #[derive(Debug, Default)]
@@ -928,7 +943,9 @@ pub struct IdsArgs {
     pub oldest_first: bool,
     pub since: Option<String>,
     pub slug: bool,
-    pub json: bool,
+    /// The output level the shared layer swept out of argv (da-qt6z).
+    /// `--json` is the value `json`; `Show::None` prints nothing.
+    pub show: Show,
 }
 
 #[derive(Debug)]
@@ -949,7 +966,10 @@ pub struct RestoreArgs {
     pub path: String,
     pub force: bool,
     pub dry_run: bool,
-    pub json: bool,
+    /// The output level the shared layer swept out of argv (da-qt6z).
+    /// `--json` is the value `json`; `Show::None` prints nothing.
+    pub show: Show,
+
     /// `--cluster` (da-ws1q sub-5): after the restore succeeds, bump
     /// the sync cluster's generation on the relay so peers see a
     /// `GenerationMismatchError` instead of re-pushing their stale
@@ -961,7 +981,10 @@ pub struct RestoreArgs {
 
 #[derive(Debug, Default)]
 pub struct CheckArgs {
-    pub json: bool,
+    /// The output level the shared layer swept out of argv (da-qt6z).
+    /// `--json` is the value `json`; `Show::None` prints nothing.
+    pub show: Show,
+
     /// Positional list of checker names to run. When empty, the default
     /// battery runs (every known checker). When non-empty, only the named
     /// checkers run. Known names: see [`KNOWN_CHECKERS`].
@@ -1026,9 +1049,10 @@ pub struct DayviewArgs {
     /// `-o`/`--output-file` — output path; extension picks format
     /// (.svg / .png / .html). None → SVG to stdout.
     pub output_file: Option<String>,
-    /// `--json` — emit the layout JSON instead of SVG (test-only / debug
-    /// hook; not in datum-TS).
-    pub json: bool,
+    /// The swept `--show` (da-qt6z). `--show json` — the old `--json` —
+    /// emits the layout JSON instead of SVG (test-only / debug hook; not
+    /// in datum-TS).
+    pub show: Show,
     /// `--watch`/`-w` — redraw on a 5-minute interval (poll loop;
     /// follow-up will swap to DB-change events).
     pub watch: bool,
@@ -1050,7 +1074,7 @@ impl Default for DayviewArgs {
             time_axis_height: 15.0,
             margin: 2.0,
             output_file: None,
-            json: false,
+            show: Show::Default,
             watch: false,
             orientation: DayviewOrientation::default(),
         }
@@ -1080,11 +1104,12 @@ pub struct NowviewArgs {
     /// terminal output (per da-57dj), routed through the
     /// `nowview_terminal` visual band-stack renderer.
     pub output_file: Option<String>,
-    /// Emit the current-state panel as JSON instead of rendering. Mirrors
-    /// `dayview --json`; consumed by external clients (e.g. the Pebble
-    /// `nowview` watchface) that want the resolved per-field state + colors
-    /// without parsing SVG. Short-circuits before terminal/SVG dispatch.
-    pub json: bool,
+    /// The swept `--show` (da-qt6z). `--show json` emits the
+    /// current-state panel as JSON instead of rendering; consumed by
+    /// external clients (e.g. the Pebble `nowview` watchface) that want
+    /// the resolved per-field state + colors without parsing SVG. It
+    /// short-circuits before terminal/SVG dispatch.
+    pub show: Show,
     /// Watch mode: redraw on DB change (≈500ms) plus a 60s periodic
     /// refresh so the clock keeps advancing on an idle DB.
     pub watch: bool,
@@ -1117,7 +1142,7 @@ impl Default for NowviewArgs {
             // ~9pt. The previous default rendered too small to read.
             time_axis_height: 22.0,
             output_file: None,
-            json: false,
+            show: Show::Default,
             watch: false,
             window: None,
             cols: None,

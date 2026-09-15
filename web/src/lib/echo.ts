@@ -68,14 +68,16 @@ export interface EchoDoc {
 /**
  * The commands that carry no action echo, so there is nothing to ask for.
  *
- * Measured against the built CLI on 2026-09-14 rather than reasoned about:
- * most of these do not merely lack an echo, they REJECT `--show` and exit
- * 1 ("unexpected flag: --show"), some of them at the subcommand (`db
- * backup -`, `alias list`, `spec list`). Appending the flag to one of them
- * would turn a working command into an error, so the set is a denylist and
- * not an allowlist: an argv whose first word is NOT a command — `mood
- * switch happy` field-first, or an alias the CLI expands in its own
- * pre-pass — is a write command under another name, and must get the flag.
+ * Measured against the built CLI rather than reasoned about. It used to be
+ * that most of these REJECTED `--show` outright; da-qt6z made the output
+ * family one flag read for every command, so the cost of appending it
+ * moved rather than went away: a reader that now ACCEPTS `--show json`
+ * answers with its own JSON document instead of the table or picture the
+ * pane asked for, and one that draws neither still exits 1. Either way
+ * the flag must not be appended, so the set stays a denylist and not an
+ * allowlist: an argv whose first word is NOT a command — `mood switch
+ * happy` field-first, or an alias the CLI expands in its own pre-pass —
+ * is a write command under another name, and must get the flag.
  *
  * `tests/echo.test.mjs` runs every word here and every echoing verb
  * through the real CLI and holds this list to what the CLI does, so it

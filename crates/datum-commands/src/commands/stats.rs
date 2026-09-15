@@ -32,7 +32,7 @@ use datum_parse::input::TimeArgs;
 use datum_parse::time::{resolve_timezone, Zone, ZoneTimeline};
 use serde_json::Value as JsonValue;
 
-use crate::args::{StatsArgs, StatsPeriod};
+use crate::args::{ShowFlag, StatsArgs, StatsPeriod};
 use crate::commands::field_visuals::state_label;
 use crate::commands::time_bounds::{parse_since, parse_until};
 use crate::config::resolve_week_start;
@@ -272,10 +272,10 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
 
 pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
     let result = compute_stats(&args, db)?;
-    if args.json {
-        print!("{}", render_json(&result));
-    } else {
-        print!("{}", render_text(&result));
+    match args.show {
+        ShowFlag::None => {}
+        ShowFlag::Json => print!("{}", render_json(&result)),
+        _ => print!("{}", render_text(&result)),
     }
     Ok(())
 }

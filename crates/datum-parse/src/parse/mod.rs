@@ -31,6 +31,7 @@
 use crate::alias::expand::shell_split;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
+use crate::input::{self, Show};
 
 mod alias;
 mod conflicts;
@@ -150,6 +151,17 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
                     .map(String::from);
                 return Err(ParseError::ManRequested(next));
             }
+            // `--show` / `--json` in front of the subcommand: stepped over
+            // here and read by the shared sweep below, which takes them
+            // wherever they appear. Only the missing value is caught here,
+            // because the sweep never sees a token this loop skipped past.
+            FlagSplit::Long("show") => {
+                if tail.get(i + 1).is_none() {
+                    return Err(ParseError::InvalidArg("--show requires a value".into()));
+                }
+                i += 2;
+            }
+            FlagSplit::LongAttached("show", _) | FlagSplit::Long("json") => i += 1,
             FlagSplit::Positional(_) => break i,
             FlagSplit::Long(name) | FlagSplit::LongAttached(name, _) => {
                 return Err(ParseError::InvalidArg(format!(
@@ -165,12 +177,13 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
     };
 
     let sub = tail[sub_idx];
-    let rest: &[&str] = &tail[sub_idx + 1..];
 
-    // Per-subcommand `--help` / `-h` short-circuit. Walk `rest` once and
-    // bail with a HelpRequested if we find either form; this saves
-    // every subcommand parser from having to handle them individually.
-    for tok in rest {
+    // Per-subcommand `--help` / `-h` short-circuit. Walk the tokens once
+    // and bail with a HelpRequested if we find either form; this saves
+    // every subcommand parser from having to handle them individually,
+    // and it runs BEFORE the output sweep so `datum X --help` answers
+    // even when the rest of the line is nonsense.
+    for tok in &tail[sub_idx + 1..] {
         match *tok {
             "--help" | "-h" => return Err(ParseError::HelpRequested(Some(sub.to_string()))),
             // `datum SUB --man` and (after the field/verb prepass swap)
@@ -179,6 +192,23 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
             _ => {}
         }
     }
+
+    // The output family (`--show <V>`, `--json`) is read HERE, for every
+    // command, the way `--db` is — not thirteen times by hand in the
+    // per-command registries (da-qt6z). Both halves of `tail` are swept,
+    // so `datum --show json occur x` and `datum occur x --show json` are
+    // the same invocation; the last one wins; and a value the named
+    // command has no rendering for is an error rather than a no-op.
+    //
+    // `spec` is in the family too: its `--json <JSON>` input flag was
+    // renamed `--from-json` (vividn, 2026-09-15), so nothing collides.
+    //
+    // The leading half's survivors are the globals the loop above already
+    // consumed, so only its `--show` matters; a later one outranks it.
+    let (before, _) = input::take_show(&tail[..sub_idx])?;
+    let (after, swept) = input::take_show(&tail[sub_idx + 1..])?;
+    let show = after.or(before);
+    let rest: &[&str] = &swept;
 
     let command = match sub {
         "occur" => Command::Occur(parse_log_args(rest)?),
@@ -267,7 +297,63 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
         }
     };
 
+    let mut command = command;
+    if let Some(show) = show {
+        // Only now that the subcommand is known to be real: a typo'd verb
+        // deserves the typo guard's message, not a lecture about the
+        // renderings it does not have (da-sg3b).
+        input::check_show(show, sub)?;
+        apply_show(&mut command, show);
+    }
     Ok(Cli { db, command })
+}
+
+/// Hand the swept `--show` to whichever intent carries the output level.
+///
+/// Two shapes, because the render layers differ: the commands that draw
+/// entry documents or tables resolve through an [`OutputArgs`](input::OutputArgs)
+/// (which also carries `-A` and `-o`), while a reader with a JSON
+/// document beside its stock output just needs the level. The thirteen
+/// readers used to carry a hand-wired `json: bool` each; they carry a
+/// `show` now, and `--json` is the value `json` (da-qt6z).
+fn apply_show(command: &mut Command, show: Show) {
+    let named = show.name().to_string();
+    match command {
+        Command::Occur(a)
+        | Command::Start(a)
+        | Command::Stop(a)
+        | Command::Switch(a)
+        | Command::Add(a)
+        | Command::Note(a) => a.output.show = Some(named),
+        Command::Tail(a) | Command::Head(a) => a.output.show = Some(named),
+        Command::Get(a) => a.output.show = Some(named),
+        Command::Delete(a) => a.output.show = Some(named),
+        Command::Undo(a) => a.output.show = Some(named),
+        Command::Update(a) | Command::Merge(a) | Command::Rekey(a) => a.output.show = Some(named),
+        Command::Edit(a) => a.output.show = Some(named),
+        Command::Grep(a) => a.output.show = Some(named),
+
+        Command::Now(a) => a.show = show,
+        Command::Nowview(a) => a.show = show,
+        Command::Dayview(a) => a.show = show,
+        Command::Stats(a) => a.show = show,
+        Command::Count(a) => a.show = show,
+        Command::Ids(a) => a.show = show,
+        Command::Fields(a) => {
+            a.show = show;
+            // `--show all` is the other spelling of `-A` here (da-1lnf).
+            a.include_ignored |= show == Show::All;
+        }
+        Command::History(a) => a.show = show,
+        Command::Check(a) => a.show = show,
+        Command::Config(ConfigCommand::Show(a)) => a.show = show,
+        Command::Alias(AliasCommand::List { show: s }) => *s = show,
+        Command::Db(DbCommand::Restore(a)) => a.show = show,
+
+        // `shows_for` allowed nothing but `default` for the rest, so
+        // there is no level left to carry.
+        _ => {}
+    }
 }
 
 #[cfg(test)]

@@ -90,12 +90,9 @@ pub(crate) fn parse_config_cmd(tail: &[&str]) -> Result<ConfigCommand> {
     let rest: &[&str] = &tail[1..];
     match *sub {
         "show" => {
-            let mut args = ConfigShowArgs::default();
-            for tok in rest {
-                match split_flag(tok) {
-                    FlagSplit::Long("json") => args.json = true,
-                    f => return Err(unknown_flag(f)),
-                }
+            let args = ConfigShowArgs::default();
+            if let Some(tok) = rest.first() {
+                return Err(unknown_flag(split_flag(tok)));
             }
             Ok(ConfigCommand::Show(args))
         }

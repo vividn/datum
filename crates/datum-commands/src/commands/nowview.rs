@@ -39,7 +39,7 @@ use datum_parse::time::dur::parse_duration;
 use datum_parse::time::{parse_time, TimeBuilder, TimeCtx};
 use serde_json::Value as JsonValue;
 
-use crate::args::NowviewArgs;
+use crate::args::{NowviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
     canonical_verb, dur_seconds, leading_edge_ms, occur_time_ms, occur_time_ms_opt,
     push_switch_region, render_field_visuals, rgb_to_hex, state_label, switch_region_end_ms,
@@ -50,10 +50,14 @@ use crate::render::term_layout;
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
-    // `--json` emits the resolved current-state panel as structured data for
-    // external clients (e.g. the Pebble `nowview` watchface) and short-
-    // circuits both the terminal and SVG dispatch below.
-    if args.json {
+    if args.show == ShowFlag::None {
+        return Ok(());
+    }
+
+    // `--show json` emits the resolved current-state panel as structured
+    // data for external clients (e.g. the Pebble `nowview` watchface) and
+    // short-circuits both the terminal and SVG dispatch below.
+    if args.show == ShowFlag::Json {
         return render_json_once(&args, db);
     }
 

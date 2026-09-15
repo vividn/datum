@@ -38,6 +38,8 @@ pub use flag_registry::{
 };
 pub use flexible_positional::{flexible_positional, FlexibleTarget};
 pub use matcher::{parse_matcher_token, Matcher, MatcherOp};
-pub use output_args::{OutputArgs, OutputResolved, Show};
+pub use output_args::{
+    check_show, shows_for, take_show, OutputArgs, OutputResolved, Show, ALL_SHOWS,
+};
 pub use quick_id_arg::QuickIdArg;
 pub use time_args::{TimeArgs, TimeFromArgs};

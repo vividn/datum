@@ -1,6 +1,7 @@
 use super::core::*;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
+use crate::input::Show;
 
 pub(crate) fn parse_migrate_cmd(tail: &[&str]) -> Result<MigrateCommand> {
     let Some(sub) = tail.first() else {
@@ -78,14 +79,12 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
     let mut pos: Vec<&str> = Vec::new();
     let mut force = false;
     let mut dry_run = false;
-    let mut json = false;
     let mut cluster = false;
     for tok in tail {
         match split_flag(tok) {
             FlagSplit::Positional(s) => pos.push(s),
             FlagSplit::Long("force") => force = true,
             FlagSplit::Long("dry-run") => dry_run = true,
-            FlagSplit::Long("json") => json = true,
             FlagSplit::Long("cluster") => cluster = true,
             f => return Err(unknown_flag(f)),
         }
@@ -95,7 +94,7 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         path,
         force,
         dry_run,
-        json,
+        show: Show::default(),
         cluster,
     })
 }

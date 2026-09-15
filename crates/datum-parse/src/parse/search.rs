@@ -1,7 +1,7 @@
 use super::core::*;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
-use crate::input::{self, lift, local_switch, local_value, LiftedSpec, OutputArgs};
+use crate::input::{self, lift, local_switch, local_value, LiftedSpec, OutputArgs, Show};
 
 pub(crate) fn parse_grep_args(tail: &[&str]) -> Result<GrepArgs> {
     #[derive(Default)]
@@ -50,7 +50,6 @@ pub(crate) fn parse_check_args(tail: &[&str]) -> Result<CheckArgs> {
     let mut out = CheckArgs::default();
     for tok in tail {
         match split_flag(tok) {
-            FlagSplit::Long("json") => out.json = true,
             FlagSplit::Long("fix") => out.fix = true,
             FlagSplit::Long("list") => out.list = true,
             FlagSplit::Positional(name) => {
@@ -95,10 +94,6 @@ pub(crate) fn parse_count_args(tail: &[&str]) -> Result<CountArgs> {
             }
             FlagSplit::LongAttached("since", v) => {
                 out.since = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("json") => {
-                out.json = true;
                 i += 1;
             }
             f => return Err(unknown_flag(f)),
@@ -162,10 +157,6 @@ fn stats_args_registry() -> Vec<LiftedSpec<StatsArgs>> {
             Ok(())
         },
     ));
-    r.push(local_switch(None, Some("json"), |p: &mut StatsArgs| {
-        p.json = true;
-        Ok(())
-    }));
     r.push(local_switch(None, Some("today"), |p: &mut StatsArgs| {
         set_stats_period(p, StatsPeriod::Today)
     }));
@@ -205,28 +196,25 @@ pub(crate) fn parse_stats_args(tail: &[&str]) -> Result<StatsArgs> {
     Ok(out)
 }
 
-/// `fields [--json] [--include-ignored | -A | --show all]` — no
-/// positionals: it lists every field.
+/// `fields [--include-ignored | -A]` — no positionals: it lists every
+/// field.
 ///
-/// The output family is lifted the way `tail` lifts it, so `-A` /
-/// `--show all` reach the listing as the one engineering spelling of
-/// `--include-ignored` (da-1lnf). da-qt6z folds the family into the
-/// shared layer; until then it is parsed here.
+/// `--json` and `--show` are gone from here: da-qt6z folded the output
+/// family into the shared layer, which sweeps them out of `tail` before
+/// this runs. What stays is `-A` — lifted the way `tail` lifts it, and
+/// the engineering spelling of `--include-ignored` (da-1lnf). Its other
+/// spelling, `--show all`, arrives through the shared layer and is ORed
+/// in by `apply_show`.
 pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
     #[derive(Default)]
     struct FieldsParsing {
         output: OutputArgs,
-        json: bool,
         include_ignored: bool,
     }
     let mut registry: Vec<LiftedSpec<FieldsParsing>> = Vec::new();
     for spec in input::output_args::FLAG_SPECS {
         registry.push(lift(|p: &mut FieldsParsing| &mut p.output, spec));
     }
-    registry.push(local_switch(None, Some("json"), |p| {
-        p.json = true;
-        Ok(())
-    }));
     registry.push(local_switch(None, Some("include-ignored"), |p| {
         p.include_ignored = true;
         Ok(())
@@ -240,9 +228,8 @@ pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
         )));
     }
     Ok(FieldsArgs {
-        json: composed.json,
-        include_ignored: composed.include_ignored
-            || composed.output.resolve().show == input::output_args::Show::All,
+        show: Show::default(),
+        include_ignored: composed.include_ignored || composed.output.show_all,
     })
 }
 
@@ -281,10 +268,6 @@ pub(crate) fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
             }
             FlagSplit::Long("slug") => {
                 out.slug = true;
-                i += 1;
-            }
-            FlagSplit::Long("json") => {
-                out.json = true;
                 i += 1;
             }
             f => return Err(unknown_flag(f)),

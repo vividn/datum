@@ -1,7 +1,7 @@
 use super::core::*;
 use crate::cli::*;
 use crate::error::Result;
-use crate::input::{self, lift, local_switch, local_value, LiftedSpec};
+use crate::input::{self, lift, local_switch, local_value, LiftedSpec, Show};
 
 pub(crate) fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
     // `now` accepts the standard time_args (`-t/-d/-y/-q/-z`) for
@@ -15,7 +15,6 @@ pub(crate) fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
         time: input::TimeArgs,
         show_tracked: bool,
         show_all: bool,
-        json: bool,
         bare: bool,
         no_color: bool,
         cols: Option<u16>,
@@ -30,10 +29,6 @@ pub(crate) fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
     }));
     registry.push(local_switch(Some('A'), Some("all"), |p| {
         p.show_all = true;
-        Ok(())
-    }));
-    registry.push(local_switch(None, Some("json"), |p| {
-        p.json = true;
         Ok(())
     }));
     registry.push(local_switch(None, Some("bare"), |p| {
@@ -57,7 +52,7 @@ pub(crate) fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
     Ok(NowArgs {
         show_all: composed.show_all,
         show_tracked: composed.show_tracked,
-        json: composed.json,
+        show: Show::default(),
         bare: composed.bare,
         no_color: composed.no_color,
         cols: composed.cols,

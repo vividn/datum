@@ -59,8 +59,8 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
 }
 
 fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
-    // --json replaces the entire spec; individual flags merge into existing.
-    let mut spec = if let Some(json) = &args.json {
+    // --from-json replaces the entire spec; individual flags merge in.
+    let mut spec = if let Some(json) = &args.from_json {
         let mut s: FieldSpec =
             serde_json::from_str(json).with_context(|| "Invalid field spec JSON")?;
         s.field = args.field.clone();
@@ -320,7 +320,7 @@ mod tests {
         //               --color green --id-template "%field%:%state%"
         let args = SpecSetArgs {
             field: "mood".to_string(),
-            json: None,
+            from_json: None,
             default_verb: Some("switch".to_string()),
             states: vec!["happy".to_string(), "sad".to_string()],
             color: Some("green".to_string()),
@@ -362,7 +362,7 @@ mod tests {
         // Dropping "sad" from the states list drops its alias.
         let args2 = SpecSetArgs {
             field: "mood".to_string(),
-            json: None,
+            from_json: None,
             default_verb: None,
             states: vec!["happy".to_string()],
             color: None,

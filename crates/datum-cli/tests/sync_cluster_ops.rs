@@ -18,7 +18,7 @@ mod sync_support;
 use chrono::{Duration, TimeZone, Utc};
 use datum_cli::config::{auth_token_path, master_key_path, server_host_from_url};
 use datum_cli::sync::{run_sync_with_client, AuthToken, Direction};
-use datum_commands::args::{DbPurgeArgs, RestoreArgs};
+use datum_commands::args::{DbPurgeArgs, RestoreArgs, ShowFlag};
 use datum_commands::commands::backup_restore;
 use datum_commands::commands::db::purge_with_io;
 use datum_core::db::Db;
@@ -328,7 +328,7 @@ fn db_restore_with_cluster_flag_bumps_server_generation() {
             path: backup_path,
             force: true,
             dry_run: false,
-            json: false,
+            show: ShowFlag::Default,
             cluster: true,
         },
         &db,
@@ -373,7 +373,7 @@ fn db_restore_dry_run_with_cluster_does_not_bump() {
             path: backup_path,
             force: false,
             dry_run: true,
-            json: false,
+            show: ShowFlag::Default,
             cluster: true,
         },
         &db,

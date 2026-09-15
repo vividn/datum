@@ -3,7 +3,7 @@
 use anyhow::Result;
 use datum_core::db::{Db, GroupColumn};
 
-use crate::args::CountArgs;
+use crate::args::{CountArgs, ShowFlag};
 use crate::commands::time_bounds::parse_since;
 
 /// Structured result of `count` — either a single total or a grouped
@@ -30,7 +30,10 @@ pub fn compute_count(args: &CountArgs, db: &Db) -> Result<CountResult> {
 
 pub fn count(args: CountArgs, db: &Db) -> Result<()> {
     let result = compute_count(&args, db)?;
-    match (&result, args.json) {
+    if args.show == ShowFlag::None {
+        return Ok(());
+    }
+    match (&result, args.show == ShowFlag::Json) {
         (CountResult::Total(n), false) => println!("{n}"),
         (CountResult::Total(n), true) => {
             println!("{}", serde_json::json!({ "count": n }));

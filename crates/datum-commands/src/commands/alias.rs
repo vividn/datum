@@ -42,6 +42,7 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
             println!("{text}");
         }
         AliasEffect::Refuse(message) => bail!(message),
+        AliasEffect::Nothing => {}
     }
     Ok(())
 }

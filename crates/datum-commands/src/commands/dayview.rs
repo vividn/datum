@@ -30,7 +30,7 @@ use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
 use datum_parse::cli::DayviewOrientation;
 use datum_parse::time::{parse_date, DateArg, TimeCtx};
 
-use crate::args::DayviewArgs;
+use crate::args::{DayviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
     occur_time_ms, render_field_visuals, switch_region_end_ms, title_marks,
 };
@@ -246,7 +246,10 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
 
     let layout = compute_dayview(&config);
 
-    if args.json {
+    if args.show == ShowFlag::None {
+        return Ok(());
+    }
+    if args.show == ShowFlag::Json {
         let json = serde_json::to_string_pretty(&layout)?;
         return write_payload(args.output_file.as_deref(), &json, OutputKind::Json);
     }
@@ -544,7 +547,7 @@ mod tests {
             time_axis_height: 15.0,
             margin: 2.0,
             output_file: None,
-            json: false,
+            show: ShowFlag::Default,
             watch: true,
             orientation: DayviewOrientation::default(),
         }

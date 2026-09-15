@@ -176,14 +176,31 @@ fn header_and_info_are_byte_identical_to_the_default_show() {
     }
 }
 
-/// `Show::None` wins: silence is not something a later `--show` can undo.
+/// The LAST `--show` wins, in both directions (da-qt6z). `none` used to
+/// latch over anything after it; vividn asked for last-wins, so silence is
+/// now as overridable as every other value.
 #[test]
-fn show_none_still_wins() {
+fn the_last_show_wins_over_none_in_both_directions() {
     let env = Env::new();
+    let stdout = env.run(&["occur", "coffee", "--show", "none", "--show", "json"]);
+    let doc: Value = serde_json::from_str(stdout.trim_end()).unwrap_or_else(|e| {
+        panic!("--show none --show json prints the document ({e}): {stdout:?}")
+    });
     assert_eq!(
-        env.run(&["occur", "coffee", "--show", "none", "--show", "json"]),
+        doc["docs"].as_array().map(Vec::len),
+        Some(1),
+        "one document, not silence: {stdout:?}"
+    );
+    assert_eq!(
+        env.run(&["occur", "tea", "--show", "json", "--show", "none"]),
         "",
-        "--show none --show json stays silent"
+        "--show json --show none is silent"
+    );
+    // `--json` is exactly `--show json`, so the pair is still json.
+    assert_eq!(
+        env.docs(&["occur", "milk", "--show", "json", "--json"])
+            .len(),
+        1
     );
 }
 

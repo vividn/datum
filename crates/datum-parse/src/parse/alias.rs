@@ -1,6 +1,7 @@
 use super::core::*;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
+use crate::input::Show;
 
 pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
     let Some(sub) = tail.first() else {
@@ -26,14 +27,12 @@ pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
             Ok(AliasCommand::Set { name, expansion })
         }
         "list" => {
-            let mut json = false;
-            for tok in rest {
-                match split_flag(tok) {
-                    FlagSplit::Long("json") => json = true,
-                    f => return Err(unknown_flag(f)),
-                }
+            if let Some(tok) = rest.first() {
+                return Err(unknown_flag(split_flag(tok)));
             }
-            Ok(AliasCommand::List { json })
+            Ok(AliasCommand::List {
+                show: Show::default(),
+            })
         }
         "remove" => {
             let name = require_pos(rest, "<NAME>")?;

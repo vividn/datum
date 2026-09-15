@@ -183,6 +183,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 - `--db <NAME_OR_PATH>` — Override the active DB
 - `--show <MODE>` — default|none|minimal|standard|format|all|json
+- `--json` — Shorthand for --show json
 - `-A, --show-all` — Shorthand for --show all
 - `-o, --format-string` — %field%-templated output string
 - `-h, --help` — Show this help

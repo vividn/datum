@@ -1,23 +1,18 @@
 use super::core::*;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
-use crate::input::{self, lift, local_switch, local_value, LiftedSpec, OutputArgs};
+use crate::input::{self, lift, local_switch, local_value, LiftedSpec, OutputArgs, Show};
 
 #[derive(Default)]
 pub(crate) struct HistoryParsing {
     version: Option<u32>,
     diff: Option<Vec<u32>>,
-    json: bool,
 }
 
 pub(crate) fn history_args_registry() -> Vec<LiftedSpec<HistoryParsing>> {
     let mut r: Vec<LiftedSpec<HistoryParsing>> = Vec::new();
     r.push(local_value(None, Some("version"), |p, v| {
         p.version = Some(parse_u32(v, "--version")?);
-        Ok(())
-    }));
-    r.push(local_switch(None, Some("json"), |p| {
-        p.json = true;
         Ok(())
     }));
     // `--diff` consumes TWO detached values — handled by the caller as a
@@ -47,7 +42,7 @@ pub(crate) fn parse_history_args(tail: &[&str]) -> Result<HistoryArgs> {
         id_or_slug,
         version: composed.version,
         diff: composed.diff,
-        json: composed.json,
+        show: Show::default(),
     })
 }
 

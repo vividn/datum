@@ -4,18 +4,23 @@ use anyhow::{Context, Result};
 use datum_core::{db::Db, entry::Entry};
 use serde_json::Value as JsonValue;
 
-use crate::args::HistoryArgs;
+use crate::args::{HistoryArgs, ShowFlag};
 use crate::commands::helpers::{format_version_row, resolve_prefix_or_tombstone};
 use crate::render::action::now_local;
 
 pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
+    let json = args.show == ShowFlag::Json;
     let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)
         .with_context(|| format!("entry not found: {}", args.id_or_slug))?;
     let hid = current.hid.clone();
 
     // `--version N` wins over `--diff` when both are set. The snapshot is
-    // rendered as pretty JSON either way — `--json` is a no-op here but
-    // accepted for symmetry with the list/diff forms.
+    // rendered as pretty JSON either way — `--show json` is a no-op here
+    // but accepted for symmetry with the list/diff forms.
+    if args.show == ShowFlag::None {
+        return Ok(());
+    }
+
     if let Some(v) = args.version {
         let snap = resolve_version_snapshot(db, &current, v)?;
         println!("{}", serde_json::to_string_pretty(&snap)?);
@@ -26,7 +31,7 @@ pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
         let (a, b) = (ab[0], ab[1]);
         let snap_a = resolve_version_snapshot(db, &current, a)?;
         let snap_b = resolve_version_snapshot(db, &current, b)?;
-        if args.json {
+        if json {
             let payload = serde_json::json!({
                 "a": { "version": a, "snapshot": snap_a },
                 "b": { "version": b, "snapshot": snap_b },
@@ -41,7 +46,7 @@ pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
     // Default: list every version, newest first.
     let versions = datum_core::history::list(db.conn(), &hid, true).map_err(anyhow::Error::from)?;
 
-    if args.json {
+    if json {
         let payload: Vec<_> = versions
             .iter()
             .map(|v| {

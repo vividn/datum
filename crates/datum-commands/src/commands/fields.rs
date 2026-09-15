@@ -13,13 +13,16 @@ use datum_core::db::Db;
 use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use serde_json::{json, Value as JsonValue};
 
-use crate::args::FieldsArgs;
+use crate::args::{FieldsArgs, ShowFlag};
 use crate::render::colors::{field_hex, state_rgb};
 use crate::render::format_grid;
 
 pub fn fields(args: FieldsArgs, db: &Db) -> Result<()> {
     let listing = compute_fields(db)?;
-    if args.json {
+    if args.show == ShowFlag::None {
+        return Ok(());
+    }
+    if args.show == ShowFlag::Json {
         println!("{}", serde_json::to_string_pretty(&listing)?);
         return Ok(());
     }

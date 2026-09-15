@@ -147,6 +147,7 @@ fn alias_response(effect: AliasEffect) -> JsonValue {
     match effect {
         AliasEffect::Refuse(message) => json!({ "error": message }),
         AliasEffect::Say(text) => json!({ "output": text }),
+        AliasEffect::Nothing => json!({ "output": "" }),
         AliasEffect::Save {
             alias,
             text,

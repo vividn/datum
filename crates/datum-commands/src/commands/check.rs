@@ -15,7 +15,7 @@ use datum_parse::cli::KNOWN_CHECKERS;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
-use crate::args::CheckArgs;
+use crate::args::{CheckArgs, ShowFlag};
 use crate::commands::helpers::load_registry_opt;
 use crate::commands::render_helpers::build_render_contexts;
 use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
@@ -32,8 +32,15 @@ use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
 /// the explicit first-saved-wins resolution (no DB mutation — precedence
 /// is already deterministic).
 pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
+    let json = args.show == ShowFlag::Json;
+    // `--show none` silences the report but not the exit code: a check
+    // that found errors still exits 1 (da-qt6z).
+    let silent = args.show == ShowFlag::None;
     if args.list {
-        if args.json {
+        if silent {
+            return Ok(());
+        }
+        if json {
             println!("{}", serde_json::to_string(KNOWN_CHECKERS)?);
         } else {
             for name in KNOWN_CHECKERS {
@@ -110,7 +117,9 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     }
     .with_recomputed_summary();
 
-    if args.json {
+    if silent {
+        // nothing printed; the exit code below still speaks.
+    } else if json {
         println!("{}", render_json(&report)?);
     } else {
         print!("{}", render_human(&report));
