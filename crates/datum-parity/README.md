@@ -18,7 +18,7 @@ This crate exists to be that reference.
 | `get` text output | `goldens/text/fixtures.toml` (6 fixtures) | yes |
 | `tail` text output | `goldens/text/fixtures.toml` (7 fixtures) | yes |
 | `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures, all `uncapturable` — see da-t5f5) | yes |
-| `dayview` SVG output | `goldens/text/fixtures.toml` (4 fixtures) | yes |
+| `dayview` SVG output | `goldens/text/fixtures.toml` (6 fixtures) | yes |
 | `content_hash` preimage | `goldens/hash/content_hash.toml` (6 fixtures) | no |
 | Cross-version changeset decode | `goldens/changeset/` (2 frozen payloads) | no |
 | Bug regressions (da-438y, etc.) | `tests/regressions.rs` (5 tests + lock) | no |
@@ -141,7 +141,7 @@ crates/datum-parity/
 │   ├── hash/
 │   │   └── content_hash.toml  # entry → canonical preimage → SHA-256
 │   └── text/
-│       ├── fixtures.toml          # 21 fixtures across all 4 surfaces
+│       ├── fixtures.toml          # 23 fixtures across all 4 surfaces
 │       └── expected/<name>.txt    # captured stdout/SVG, one per fixture
 ├── scripts/
 │   └── setup_datum.sh  # clone + install pinned datum

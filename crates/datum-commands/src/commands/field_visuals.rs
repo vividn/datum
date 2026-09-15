@@ -137,6 +137,10 @@ pub(crate) fn leading_edge_ms(entry: &Entry, occur_ms: i64) -> i64 {
 /// Spec mapping (per da-5ns.5):
 /// - **Block**: emit a colored block for `[occur − dur, occur]` using
 ///   `state` as the fill (da-zwct: the duration precedes `occur`).
+///   Unless the state is OFF (`false` / TRACKED) — then the span is a
+///   HOLE (da-6gvw): nothing is painted there and whatever block
+///   encloses it is cut in two, each side keeping its own label and
+///   colour. It is the same rule a switch to `false` already obeys.
 /// - **Block-switch**: same block, AND open a new switch region at
 ///   `occur` — where the block ends — colored `following_state` until
 ///   the next switching event.
@@ -160,6 +164,10 @@ pub(crate) fn render_field_visuals(
 ) -> (Vec<DayviewBlock>, Vec<DayviewPoint>) {
     let mut blocks: Vec<DayviewBlock> = Vec::new();
     let mut points: Vec<DayviewPoint> = Vec::new();
+    // Spans the field was explicitly OFF for (da-6gvw). Collected as the
+    // walk goes and subtracted from everything it drew, because a hole may
+    // sit inside a region the walk has not reached yet.
+    let mut holes: Vec<(i64, i64)> = Vec::new();
 
     for (idx, entry) in entries.iter().enumerate() {
         let Some(occur_dt) = entry.occur_time.as_ref() else {
@@ -176,15 +184,24 @@ pub(crate) fn render_field_visuals(
         match shape {
             RenderShape::Hidden | RenderShape::Marker => {}
             RenderShape::Region if is_block_verb(verb) => {
-                push_block_window(
-                    &mut blocks,
-                    entry,
-                    occur_ms,
-                    field,
-                    spec,
-                    day_start_ms,
-                    day_end_ms,
-                );
+                if is_hole_state(entry.state.as_ref()) {
+                    // da-6gvw: `end work 5` stores a Block with `state =
+                    // false`. It says the field was OFF for those five
+                    // minutes, so it is a hole, not a mark.
+                    if let Some(hole) = block_span(entry, occur_ms) {
+                        holes.push(hole);
+                    }
+                } else {
+                    push_block_window(
+                        &mut blocks,
+                        entry,
+                        occur_ms,
+                        field,
+                        spec,
+                        day_start_ms,
+                        day_end_ms,
+                    );
+                }
             }
             RenderShape::Region => {
                 // Primary switch region (Verb::Switch).
@@ -256,7 +273,83 @@ pub(crate) fn render_field_visuals(
             }
         }
     }
-    (blocks, points)
+    (
+        punch_holes(blocks, &holes, dayview_block_span, set_dayview_block_span),
+        points,
+    )
+}
+
+/// True for the states that make a block a hole rather than a mark: the
+/// OFF states (`false`, TRACKED). `null`/absent is not one — a block
+/// logged without a state still happened, it just has nothing to say
+/// about what it was.
+pub(crate) fn is_hole_state(value: Option<&JsonValue>) -> bool {
+    value.is_some_and(is_off_state)
+}
+
+/// A block row's `[occur − dur, occur]` span, or `None` when it carries
+/// no duration to span (da-zwct).
+pub(crate) fn block_span(entry: &Entry, occur_ms: i64) -> Option<(i64, i64)> {
+    match dur_seconds(entry) {
+        Some(secs) if secs > 0 => Some((leading_edge_ms(entry, occur_ms), occur_ms)),
+        _ => None,
+    }
+}
+
+/// Subtract the holes from the blocks. A hole inside a block splits it in
+/// two, each half keeping the block's own fill and label; a hole at an
+/// edge trims it; a hole covering it removes it altogether (da-6gvw).
+///
+/// Generic over the block shape so the dayview's `DayviewBlock` walk and
+/// nowview's terminal `NowviewBlock` walk punch by the one routine —
+/// they already share every other decision through this module, and a
+/// second copy of this one is how the two surfaces drift apart.
+pub(crate) fn punch_holes<T: Clone>(
+    blocks: Vec<T>,
+    holes: &[(i64, i64)],
+    span: impl Fn(&T) -> (i64, i64),
+    set_span: impl Fn(&mut T, i64, i64),
+) -> Vec<T> {
+    if holes.is_empty() {
+        return blocks;
+    }
+    let mut out: Vec<T> = Vec::with_capacity(blocks.len());
+    for block in blocks {
+        let mut pieces = vec![block];
+        for &(hole_start, hole_end) in holes {
+            let mut next = Vec::with_capacity(pieces.len() + 1);
+            for piece in pieces {
+                let (start, end) = span(&piece);
+                if hole_end <= start || hole_start >= end {
+                    next.push(piece);
+                    continue;
+                }
+                if start < hole_start {
+                    let mut left = piece.clone();
+                    set_span(&mut left, start, hole_start);
+                    next.push(left);
+                }
+                if hole_end < end {
+                    let mut right = piece;
+                    set_span(&mut right, hole_end, end);
+                    next.push(right);
+                }
+            }
+            pieces = next;
+        }
+        out.extend(pieces);
+    }
+    out
+}
+
+/// The `span` / `set_span` pair [`punch_holes`] needs for a [`DayviewBlock`].
+pub(crate) fn dayview_block_span(b: &DayviewBlock) -> (i64, i64) {
+    (b.start_ms, b.end_ms)
+}
+
+pub(crate) fn set_dayview_block_span(b: &mut DayviewBlock, start_ms: i64, end_ms: i64) {
+    b.start_ms = start_ms;
+    b.end_ms = end_ms;
 }
 
 /// Emit a block clipped to the day window for a `[occur − dur, occur]`
@@ -830,6 +923,157 @@ mod tests {
             blocks.iter().all(|b| b.end_ms > b.start_ms),
             "no block may run backwards"
         );
+    }
+
+    // ─── da-6gvw: a false block is a hole ─────────────────────────────
+
+    /// The three rows `start work -t 09:00`, `end work 5 -t 10:00`,
+    /// `end work -t 12:00` as the CLI stores them.
+    fn work_with_a_false_block(hole_occur: chrono::DateTime<Utc>) -> Vec<Entry> {
+        vec![
+            stub_entry(
+                "work",
+                Verb::Switch,
+                Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap(),
+                None,
+                Some(JsonValue::Bool(true)),
+                None,
+            ),
+            stub_entry(
+                "work",
+                Verb::Block,
+                hole_occur,
+                Some("PT5M"),
+                Some(JsonValue::Bool(false)),
+                None,
+            ),
+            stub_entry(
+                "work",
+                Verb::Switch,
+                Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap(),
+                None,
+                Some(JsonValue::Bool(false)),
+                None,
+            ),
+        ]
+    }
+
+    fn render_work(entries: &[Entry]) -> Vec<DayviewBlock> {
+        let db = Db::open_in_memory().unwrap();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let ends = switch_region_end_ms(entries, day_end);
+        let (blocks, points) =
+            render_field_visuals(entries, "work", None, day_start, day_end, &ends, &db);
+        assert!(points.is_empty());
+        blocks
+    }
+
+    fn ms(hour: u32, minute: u32) -> i64 {
+        Utc.with_ymd_and_hms(2026, 4, 27, hour, minute, 0)
+            .unwrap()
+            .timestamp_millis()
+    }
+
+    /// `end work 5 -t 10:00` inside a running `work` cuts the enclosing
+    /// region in two rather than painting a mark of its own.
+    #[test]
+    fn false_block_is_a_hole_that_cuts_the_enclosing_region() {
+        let blocks = render_work(&work_with_a_false_block(
+            Utc.with_ymd_and_hms(2026, 4, 27, 10, 0, 0).unwrap(),
+        ));
+        assert_eq!(blocks.len(), 2, "the region is split, not painted over");
+        assert_eq!(
+            (blocks[0].start_ms, blocks[0].end_ms),
+            (ms(9, 0), ms(9, 55))
+        );
+        assert_eq!(
+            (blocks[1].start_ms, blocks[1].end_ms),
+            (ms(10, 0), ms(12, 0))
+        );
+        // Both halves keep the region's own label and colour.
+        for b in &blocks {
+            assert_eq!(b.state_label.as_deref(), Some("start"));
+        }
+        match (&blocks[0].fill, &blocks[1].fill) {
+            (BlockFill::Single(a), BlockFill::Single(b)) => assert_eq!(a, b),
+            _ => panic!("expected single-fill halves"),
+        }
+        // Nothing carries the hole's own word.
+        assert!(
+            !blocks
+                .iter()
+                .any(|b| b.state_label.as_deref() == Some("end")),
+            "a hole is not a mark"
+        );
+    }
+
+    /// A hole at a region's leading edge trims it instead of splitting it.
+    #[test]
+    fn false_block_at_a_regions_edge_trims_it() {
+        let blocks = render_work(&work_with_a_false_block(
+            Utc.with_ymd_and_hms(2026, 4, 27, 9, 5, 0).unwrap(),
+        ));
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            (blocks[0].start_ms, blocks[0].end_ms),
+            (ms(9, 5), ms(12, 0))
+        );
+    }
+
+    /// A hole covering the whole region leaves nothing behind.
+    #[test]
+    fn false_block_covering_the_region_leaves_nothing() {
+        let entries = vec![
+            stub_entry(
+                "work",
+                Verb::Switch,
+                Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap(),
+                None,
+                Some(JsonValue::Bool(true)),
+                None,
+            ),
+            stub_entry(
+                "work",
+                Verb::Block,
+                Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap(),
+                Some("PT4H"),
+                Some(JsonValue::Bool(false)),
+                None,
+            ),
+            stub_entry(
+                "work",
+                Verb::Switch,
+                Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap(),
+                None,
+                Some(JsonValue::Bool(false)),
+                None,
+            ),
+        ];
+        assert!(render_work(&entries).is_empty());
+    }
+
+    /// The TRACKED sentinel reads as off everywhere else; a block wearing
+    /// it is a hole too.
+    #[test]
+    fn tracked_block_is_a_hole_as_false_is() {
+        let entries = vec![stub_entry(
+            "work",
+            Verb::Block,
+            Utc.with_ymd_and_hms(2026, 4, 27, 10, 0, 0).unwrap(),
+            Some("PT5M"),
+            Some(JsonValue::String(
+                datum_core::shape::TRACKED_STATE_VALUE.into(),
+            )),
+            None,
+        )];
+        assert!(render_work(&entries).is_empty());
     }
 
     /// Block-switch where `following_state` is the "ended" sentinel (false /

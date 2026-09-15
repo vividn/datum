@@ -270,3 +270,20 @@ setup = [
   ["start", "work", "30", "-d", "2024-01-15", "-t", "1230"],
 ]
 query = ["dayview", "-d", "2024-01-15"]
+
+# da-6gvw: the set had no `false` block. `end work 5` stores a duration
+# block whose state is `false` — the field was OFF for those five minutes
+# — and daydumb painted it in the field's colour on top of the running
+# `work` block instead of cutting a hole in it. Datum's own renderer
+# drops a `simplifyState` → false block and lets the gap show; this
+# fixture is that reading, held against the reference.
+[[fixture]]
+name = "dayview_false_block_is_a_hole_svg"
+description = "`dayview` SVG where a `false` duration block cuts a hole in the enclosing block (da-6gvw)"
+surface = "dayview"
+setup = [
+  ["start", "work", "-d", "2024-01-15", "-t", "0900"],
+  ["end", "work", "5", "-d", "2024-01-15", "-t", "1000"],
+  ["end", "work", "-d", "2024-01-15", "-t", "1200"],
+]
+query = ["dayview", "-d", "2024-01-15"]

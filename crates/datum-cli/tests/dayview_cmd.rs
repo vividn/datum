@@ -590,3 +590,63 @@ fn dayview_json_carries_the_label_geometry() {
         );
     }
 }
+
+/// da-6gvw: `end work 5` stores a Block whose state is `false` — the
+/// field was OFF for those five minutes. It must be a HOLE: nothing
+/// painted, and the `work` block that encloses it cut in two.
+#[test]
+fn a_false_dur_block_is_a_hole_cut_out_of_the_enclosing_block() {
+    let db = fresh_db();
+    run_cli(&["start", "work", "-y", "-t", "0900"], &db).expect("start");
+    run_cli(&["end", "work", "5", "-y", "-t", "1000"], &db).expect("end with dur");
+    run_cli(&["end", "work", "-y", "-t", "1200"], &db).expect("end");
+
+    let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    let day = yesterday();
+    run_cli(
+        &[
+            "dayview",
+            "--start-date",
+            &day,
+            "--end-date",
+            &day,
+            "--width",
+            "2400",
+            "--label-width",
+            "0",
+            "-o",
+            &path,
+        ],
+        &db,
+    )
+    .expect("dayview dispatch");
+    let svg = std::fs::read_to_string(&path).expect("read svg");
+
+    let states: Vec<&str> = svg
+        .match_indices(r#"<rect class="block""#)
+        .map(|(i, _)| {
+            let rect = &svg[i..i + svg[i..].find('>').unwrap()];
+            let at = rect.find("data-state=\"").expect("data-state") + 12;
+            &rect[at..at + rect[at..].find('"').unwrap()]
+        })
+        .collect();
+    assert_eq!(
+        states,
+        vec!["start", "start"],
+        "two halves of the `work` block and nothing else"
+    );
+
+    let titles: Vec<&str> = svg
+        .match_indices("<title>")
+        .map(|(i, _)| {
+            let rest = &svg[i + 7..];
+            &rest[..rest.find("</title>").unwrap()]
+        })
+        .collect();
+    assert_eq!(
+        titles,
+        vec!["work: start 09:00–09:55", "work: start 10:00–12:00"],
+        "the hole runs [occur − dur, occur] and both halves keep the region's label"
+    );
+}

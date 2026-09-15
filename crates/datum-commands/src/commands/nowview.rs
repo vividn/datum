@@ -41,9 +41,9 @@ use serde_json::Value as JsonValue;
 
 use crate::args::{NowviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
-    canonical_verb, dur_seconds, leading_edge_ms, occur_time_ms, occur_time_ms_opt,
-    push_switch_region, render_field_visuals, rgb_to_hex, state_label, switch_region_end_ms,
-    title_marks,
+    block_span, canonical_verb, dur_seconds, is_hole_state, leading_edge_ms, occur_time_ms,
+    occur_time_ms_opt, punch_holes, push_switch_region, render_field_visuals, rgb_to_hex,
+    state_label, switch_region_end_ms, title_marks,
 };
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
 use crate::render::term_layout;
@@ -748,6 +748,9 @@ fn render_field_visuals_terminal(
 ) -> (Vec<NowviewBlock>, Vec<NowviewPoint>) {
     let mut blocks: Vec<NowviewBlock> = Vec::new();
     let mut points: Vec<NowviewPoint> = Vec::new();
+    // da-6gvw: the spans the field was explicitly OFF for, subtracted at
+    // the end — the same holes the dayview walk punches.
+    let mut holes: Vec<(i64, i64)> = Vec::new();
 
     for (idx, entry) in entries.iter().enumerate() {
         let Some(occur_dt) = entry.occur_time.as_ref() else {
@@ -763,7 +766,13 @@ fn render_field_visuals_terminal(
         match shape {
             RenderShape::Hidden | RenderShape::Marker => {}
             RenderShape::Region if is_block_verb(verb) => {
-                push_block_terminal(&mut blocks, entry, occur_ms, field, spec);
+                if is_hole_state(entry.state.as_ref()) {
+                    if let Some(hole) = block_span(entry, occur_ms) {
+                        holes.push(hole);
+                    }
+                } else {
+                    push_block_terminal(&mut blocks, entry, occur_ms, field, spec);
+                }
             }
             RenderShape::Region => {
                 push_switch_region_terminal(
@@ -824,7 +833,18 @@ fn render_field_visuals_terminal(
             );
         }
     }
-    (blocks, points)
+    (
+        punch_holes(
+            blocks,
+            &holes,
+            |b| (b.start_ms, b.end_ms),
+            |b, start_ms, end_ms| {
+                b.start_ms = start_ms;
+                b.end_ms = end_ms;
+            },
+        ),
+        points,
+    )
 }
 
 fn push_block_terminal(
@@ -1153,6 +1173,73 @@ mod tests {
             occur.timestamp_millis() - 30 * 60 * 1000
         );
         assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
+    }
+
+    /// da-6gvw: the two surfaces must agree about a `false` block. The
+    /// dayview punches a hole in the enclosing region; nowview's terminal
+    /// walk is a second dispatch over the same rows and must punch the
+    /// same one, or the two pictures of one day disagree.
+    #[test]
+    fn terminal_false_block_is_the_same_hole_the_dayview_punches() {
+        use crate::commands::field_visuals::render_field_visuals;
+        use chrono::TimeZone;
+
+        let db = Db::open_in_memory().unwrap();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let entries = vec![
+            stub_entry(
+                "work",
+                Verb::Switch,
+                Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap(),
+                None,
+                Some(JsonValue::Bool(true)),
+                None,
+            ),
+            stub_entry(
+                "work",
+                Verb::Block,
+                Utc.with_ymd_and_hms(2026, 4, 27, 10, 0, 0).unwrap(),
+                Some("PT5M"),
+                Some(JsonValue::Bool(false)),
+                None,
+            ),
+            stub_entry(
+                "work",
+                Verb::Switch,
+                Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap(),
+                None,
+                Some(JsonValue::Bool(false)),
+                None,
+            ),
+        ];
+        let ends = switch_region_end_ms(&entries, day_end);
+        let (terminal, points) = render_field_visuals_terminal(&entries, "work", None, &ends, &db);
+        assert!(points.is_empty());
+        let (dayview, _) =
+            render_field_visuals(&entries, "work", None, day_start, day_end, &ends, &db);
+
+        let terminal_spans: Vec<(i64, i64)> =
+            terminal.iter().map(|b| (b.start_ms, b.end_ms)).collect();
+        let dayview_spans: Vec<(i64, i64)> =
+            dayview.iter().map(|b| (b.start_ms, b.end_ms)).collect();
+        assert_eq!(terminal_spans, dayview_spans);
+
+        let at = |h, m| {
+            Utc.with_ymd_and_hms(2026, 4, 27, h, m, 0)
+                .unwrap()
+                .timestamp_millis()
+        };
+        assert_eq!(
+            terminal_spans,
+            vec![(at(9, 0), at(9, 55)), (at(10, 0), at(12, 0))]
+        );
     }
 
     /// Terminal-shape PointSwitch emits a dot AND opens a switch region.
