@@ -235,3 +235,18 @@ export function declareArgv(field: string, shape: FieldShape): string[] {
 	}
 	return argv;
 }
+
+/**
+ * How one state reads in the list a press fills the widget with (da-g635).
+ *
+ * The state the field is in NOW is marked exactly the way the field's own
+ * chip marks it — filled with that state's colour inside the field's
+ * outline, which is `lookOf`'s switch case and so cannot drift from it.
+ * Every other state is outlined in its own resolved colour: the list says
+ * what each state is painted as without claiming any of them is on.
+ */
+export function stateLook(button: FieldButton, state: string): Look {
+	if (button.current === state) return lookOf(button, 'state');
+	const color = button.stateColors[state] ?? button.color;
+	return { fill: null, line: color, text: color, label: state };
+}

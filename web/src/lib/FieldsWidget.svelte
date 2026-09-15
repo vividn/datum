@@ -19,8 +19,17 @@
 	walkthrough to take over.
 
 	Press to log. Press and hold (or right-click, or the menu key) to open
-	the `-t` / `dur` bubbles first. A multi-state field opens its state menu
-	either way.
+	the `-t` / `dur` bubbles first.
+
+	A multi-state field asks WHICH, so its button reads `name:` and a press
+	fills the bar with that field's states in place of the fields — `< Back`
+	first, `+` last (da-g635). Nothing floats: the list is the widget's own
+	content, in the same scroller and under the same height rules, and the
+	pane is scrolled back to where it stood when Back returns the fields. A
+	press on a state runs `switch <field> <state>` and comes back; `+` is an
+	input, and Enter on it runs the same command with a state the field has
+	never been in, which is how one is learned. A LONG press still opens the
+	panel, states and all, so the `-t` / `dur` bubbles can be set first.
 
 	The widget never runs anything itself: it composes an argv and
 	dispatches it, and the page runs it through `run()` and echoes the
@@ -29,12 +38,14 @@
 	is no second string built for display that could drift from it.
 -->
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, tick } from 'svelte';
 	import {
 		declareArgv,
 		lookOf,
 		pressArgv,
+		stateLook,
 		type Adjust,
+		type Look,
 		type SwitchLabel,
 		type FieldButton,
 		type FieldShape
@@ -58,9 +69,23 @@
 
 	let bar: HTMLElement;
 	let open: FieldButton | null = null;
-	/** Whether the open panel shows the adjustment bubbles (long press did). */
-	let adjustable = false;
 	let adjust: Adjust = {};
+
+	/**
+	 * The field whose STATES have taken the bar over, by name (da-g635).
+	 *
+	 * By name and not by the button, because the entries are rebuilt on
+	 * every beat: held by name, the list redraws from the field as it is
+	 * now — the state just logged marked — rather than from a copy that
+	 * went stale the moment it was picked.
+	 */
+	let picked: string | null = null;
+	/** Whether the `+` at the end of that list has become its input. */
+	let addingState = false;
+	let newState = '';
+	/** The pane's scroller and where it stood when the states took over. */
+	let scrolled: HTMLElement | null = null;
+	let scrolledTo = 0;
 
 	let holdTimer: ReturnType<typeof setTimeout> | null = null;
 	let held = false;
@@ -72,10 +97,11 @@
 
 	$: buttons = fields.filter((w) => !w.ignored);
 	$: ignored = fields.filter((w) => w.ignored);
+	$: picking = picked === null ? null : (buttons.find((b) => b.field === picked) ?? null);
 
-	function paint(button: FieldButton, variant: SwitchLabel) {
-		const look = lookOf(button, variant);
-		return { look, style: `--fill: ${look.fill ?? 'transparent'}; --line: ${look.line}; --text: ${look.text}` };
+	/** A look as the custom properties every button below is painted from. */
+	function vars(look: Look) {
+		return `--fill: ${look.fill ?? 'transparent'}; --line: ${look.line}; --text: ${look.text}`;
 	}
 
 	function statesOf(shape: FieldShape): string[] {
@@ -109,10 +135,15 @@
 	$: hint = newField.trim() === '' ? null : fieldNameHint(newField.trim());
 	$: fixed = hint === null ? null : suggestFieldName(newField.trim());
 
-	function panel(button: FieldButton, withAdjust: boolean) {
+	/**
+	 * The panel a LONG press opens: the `-t` / `dur` bubbles, and for a
+	 * multi-state field the states to spend them on. A plain press never
+	 * opens it — that fills the bar with the states instead (`pick`) — so
+	 * the bubbles are the whole reason it exists and are always in it.
+	 */
+	function panel(button: FieldButton) {
 		adding = false;
 		adjust = {};
-		adjustable = withAdjust;
 		open = button;
 	}
 
@@ -121,8 +152,27 @@
 		adding = false;
 	}
 
+	/**
+	 * Leave the state list for the field list, with the pane where it was.
+	 *
+	 * The states are fewer than the fields, so the shorter list scrolls the
+	 * pane's own scroller back up under the reader — where they were is
+	 * remembered by `pick` and given back here, after the list is drawn.
+	 */
+	function back() {
+		if (picked === null) return;
+		picked = null;
+		addingState = false;
+		newState = '';
+		const scroller = scrolled;
+		const top = scrolledTo;
+		scrolled = null;
+		if (scroller) void tick().then(() => (scroller.scrollTop = top));
+	}
+
 	function emit(argv: string[]) {
 		close();
+		back();
 		dispatch('run', argv);
 	}
 
@@ -133,11 +183,48 @@
 		adding = true;
 	}
 
+	/**
+	 * Show `button`'s states in the bar, in place of the fields (da-g635).
+	 *
+	 * Nothing floats: the list is REPLACED inside the widget's own box, so
+	 * the pane keeps the height its layout gives it (da-mbz2) and the
+	 * states are reached by the same scroll the fields are.
+	 */
+	function pick(button: FieldButton) {
+		close();
+		scrolled = scrollerOf();
+		scrolledTo = scrolled?.scrollTop ?? 0;
+		picked = button.field;
+	}
+
+	/** The scrolling ancestor the bar sits in — FieldsPane's body, in the app. */
+	function scrollerOf(): HTMLElement | null {
+		for (let node = bar?.parentElement; node; node = node.parentElement) {
+			if (node.scrollHeight > node.clientHeight) return node;
+		}
+		return null;
+	}
+
 	function press(button: FieldButton) {
-		// A multi-state field can't be logged without picking a state, so a
-		// plain press opens the menu instead of committing (bead item 2).
-		if (button.shape.kind === 'states') panel(button, false);
+		// A multi-state field can't be logged without saying which, so a
+		// plain press asks — the bar fills with its states.
+		if (button.shape.kind === 'states') pick(button);
 		else emit(pressArgv(button));
+	}
+
+	/**
+	 * Enter in the `+`'s input. A state is learned from the log, so
+	 * `switch` is the whole of adding one: it is in the list next time.
+	 * Empty cancels, as Escape does.
+	 */
+	function addState(button: FieldButton) {
+		const state = newState.trim();
+		if (state === '') {
+			addingState = false;
+			newState = '';
+			return;
+		}
+		emit(pressArgv(button, adjust, state));
 	}
 
 	function clearHold() {
@@ -153,7 +240,7 @@
 		holdTimer = setTimeout(() => {
 			holdTimer = null;
 			held = true;
-			panel(button, true);
+			panel(button);
 		}, HOLD_MS);
 	}
 
@@ -183,7 +270,14 @@
 	}
 
 	function onWindowKeyDown(event: KeyboardEvent) {
-		if (event.key === 'Escape') close();
+		if (event.key !== 'Escape') return;
+		// Innermost first: the panel a long press opened, then the input the
+		// `+` became, then the state list itself — Escape is its Back.
+		if (open || adding) close();
+		else if (addingState) {
+			addingState = false;
+			newState = '';
+		} else back();
 	}
 
 	/**
@@ -222,96 +316,147 @@
 <svelte:window on:pointerdown={onWindowPointerDown} on:keydown={onWindowKeyDown} />
 
 <div class="bar" bind:this={bar}>
-	<div class="slot">
-		<button class="track add-button" {disabled} title="track a new field" on:click={() => (adding ? close() : startTracking())}>
-			Track +
-		</button>
-		{#if adding}
-			<form class="panel add" use:hang on:submit|preventDefault={declare}>
-				<!-- svelte-ignore a11y-autofocus -->
-				<input bind:value={newField} placeholder="field" spellcheck="false" autofocus />
-				<select bind:value={newKind} aria-label="what a press logs">
-					<option value="point">occur — a thing that happened</option>
-					<option value="state">start — a block that begins and ends</option>
-					<option value="states">switch — one of several states</option>
-					<option value="record">add — a record you type</option>
-				</select>
-				{#if newKind === 'states'}
-					<input bind:value={newStates} placeholder="states, comma-separated" spellcheck="false" />
-				{/if}
-				<button type="submit" disabled={hint !== null}>track it</button>
-				{#if hint === null}
-					<code class="preview">{addArgv.join(' ')}</code>
-				{:else}
-					<p class="hint">
-						{hint}{#if fixed}
-							<button type="button" class="fix" on:click={() => (newField = fixed ?? '')}
-								>use {fixed}</button
-							>{/if}
-					</p>
-				{/if}
-				{#if ignored.length > 0}
-					<!-- Ignored fields get no button; this is the way back (da-d08c). -->
-					<div class="states ignored">
-						<span class="bubble-label">ignored</span>
-						{#each ignored as { field } (field)}
-							<button type="button" data-ignored={field} title="track {field}" on:click={() => emit(['track', field])}
-								>{field}</button
-							>
-						{/each}
-					</div>
-				{/if}
-			</form>
-		{/if}
-	</div>
-
-	{#if buttons.length === 0}
-		<!-- No direction word here on purpose: this hint said "below" while the
-		     bar was at the top of the page (da-nz29), and da-1x72 moved the
-		     bar to the bottom without the copy following. Name the thing, not
-		     where it is. -->
-		<p class="hint empty">nothing tracked yet — or type a command to log something</p>
-	{/if}
-
-	{#each buttons as button (button.field)}
-		{@const { look, style } = paint(button, switchLabel)}
+	{#if picking}
+		{@const chosen = picking}
+		<!-- The states, in place of the fields (da-g635): `< Back` first —
+		     it logs nothing — then one button per state in the CLI's order,
+		     each painted as that state is, and `+` last, which is how a
+		     state that has never been logged gets into the list at all. -->
 		<div class="slot">
-			{#if button.shape.kind === 'record'}
-				<!-- Not a button: nothing runs. The line goes to the bar's prompt. -->
+			<button class="nav back" data-back {disabled} title="back to the fields" on:click={back}>
+				&lt; Back
+			</button>
+		</div>
+
+		{#each statesOf(chosen.shape) as state (state)}
+			{@const look = stateLook(chosen, state)}
+			<div class="slot">
 				<button
-					class="record"
-					role="link"
-					data-field={button.field}
-					{style}
+					class="widget states"
+					class:on={look.fill !== null}
+					style={vars(look)}
 					{disabled}
-					title="add {button.field} … — fills the prompt"
-					on:click={() => dispatch('line', `add ${button.field} `)}>{button.field}</button
+					data-state={state}
+					title={pressArgv(chosen, adjust, state).join(' ')}
+					on:click={() => emit(pressArgv(chosen, adjust, state))}
 				>
+					{state}
+				</button>
+			</div>
+		{/each}
+
+		<div class="slot">
+			{#if addingState}
+				<form on:submit|preventDefault={() => addState(chosen)}>
+					<!-- svelte-ignore a11y-autofocus -->
+					<input
+						class="new-state"
+						bind:value={newState}
+						placeholder="state"
+						aria-label="a new state for {chosen.field}"
+						spellcheck="false"
+						autofocus
+					/>
+				</form>
 			{:else}
 				<button
-					class="widget {button.shape.kind}"
-					class:on={look.fill !== null}
-					class:active={open === button}
-					{style}
+					class="nav add-state"
+					data-add-state
 					{disabled}
-					data-field={button.field}
-					aria-haspopup={button.shape.kind === 'states' ? 'menu' : undefined}
-					aria-expanded={open === button}
-					title="press to log · hold for when / how long"
-					on:pointerdown={() => down(button)}
-					on:pointerup={clearHold}
-					on:pointerleave={clearHold}
-					on:pointercancel={clearHold}
-					on:contextmenu|preventDefault={() => panel(button, true)}
-					on:click={() => click(button)}
+					title="add a state to {chosen.field}"
+					on:click={() => (addingState = true)}
 				>
-					{look.label}
+					+
 				</button>
 			{/if}
+		</div>
+	{:else}
+		<div class="slot">
+			<button class="track add-button" {disabled} title="track a new field" on:click={() => (adding ? close() : startTracking())}>
+				Track +
+			</button>
+			{#if adding}
+				<form class="panel add" use:hang on:submit|preventDefault={declare}>
+					<!-- svelte-ignore a11y-autofocus -->
+					<input bind:value={newField} placeholder="field" spellcheck="false" autofocus />
+					<select bind:value={newKind} aria-label="what a press logs">
+						<option value="point">occur — a thing that happened</option>
+						<option value="state">start — a block that begins and ends</option>
+						<option value="states">switch — one of several states</option>
+						<option value="record">add — a record you type</option>
+					</select>
+					{#if newKind === 'states'}
+						<input bind:value={newStates} placeholder="states, comma-separated" spellcheck="false" />
+					{/if}
+					<button type="submit" disabled={hint !== null}>track it</button>
+					{#if hint === null}
+						<code class="preview">{addArgv.join(' ')}</code>
+					{:else}
+						<p class="hint">
+							{hint}{#if fixed}
+								<button type="button" class="fix" on:click={() => (newField = fixed ?? '')}
+									>use {fixed}</button
+								>{/if}
+						</p>
+					{/if}
+					{#if ignored.length > 0}
+						<!-- Ignored fields get no button; this is the way back (da-d08c). -->
+						<div class="states ignored">
+							<span class="bubble-label">ignored</span>
+							{#each ignored as { field } (field)}
+								<button type="button" data-ignored={field} title="track {field}" on:click={() => emit(['track', field])}
+									>{field}</button
+								>
+							{/each}
+						</div>
+					{/if}
+				</form>
+			{/if}
+		</div>
 
-			{#if open === button}
-				<div class="panel" use:hang>
-					{#if adjustable}
+		{#if buttons.length === 0}
+			<!-- No direction word here on purpose: this hint said "below" while the
+			     bar was at the top of the page (da-nz29), and da-1x72 moved the
+			     bar to the bottom without the copy following. Name the thing, not
+			     where it is. -->
+			<p class="hint empty">nothing tracked yet — or type a command to log something</p>
+		{/if}
+
+		{#each buttons as button (button.field)}
+			{@const look = lookOf(button, switchLabel)}
+			<div class="slot">
+				{#if button.shape.kind === 'record'}
+					<!-- Not a button: nothing runs. The line goes to the bar's prompt. -->
+					<button
+						class="record"
+						role="link"
+						data-field={button.field}
+						style={vars(look)}
+						{disabled}
+						title="add {button.field} … — fills the prompt"
+						on:click={() => dispatch('line', `add ${button.field} `)}>{button.field}</button
+					>
+				{:else}
+					<button
+						class="widget {button.shape.kind}"
+						class:on={look.fill !== null}
+						class:active={open === button}
+						style={vars(look)}
+						{disabled}
+						data-field={button.field}
+						aria-expanded={open === button}
+						title="press to log · hold for when / how long"
+						on:pointerdown={() => down(button)}
+						on:pointerup={clearHold}
+						on:pointerleave={clearHold}
+						on:pointercancel={clearHold}
+						on:contextmenu|preventDefault={() => panel(button)}
+						on:click={() => click(button)}
+					>{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
+				{/if}
+
+				{#if open === button}
+					<div class="panel" use:hang>
 						<div class="bubbles">
 							<span class="bubble-label">when</span>
 							{#each WHEN as minutes (minutes)}
@@ -334,40 +479,40 @@
 								</button>
 							{/each}
 						</div>
-					{/if}
 
-					{#if button.shape.kind === 'states'}
-						{#if statesOf(button.shape).length === 0}
-							<p class="hint">
-								no states yet — <code>switch {button.field} &lt;state&gt;</code> in the REPL
-							</p>
+						{#if button.shape.kind === 'states'}
+							{#if statesOf(button.shape).length === 0}
+								<p class="hint">
+									no states yet — <code>switch {button.field} &lt;state&gt;</code> in the REPL
+								</p>
+							{:else}
+								<div class="states">
+									{#each statesOf(button.shape) as state (state)}
+										<button
+											title={pressArgv(button, adjust, state).join(' ')}
+											on:click={() => emit(pressArgv(button, adjust, state))}
+										>
+											{state}
+										</button>
+									{/each}
+								</div>
+							{/if}
 						{:else}
-							<div class="states">
-								{#each statesOf(button.shape) as state (state)}
-									<button
-										title={pressArgv(button, adjust, state).join(' ')}
-										on:click={() => emit(pressArgv(button, adjust, state))}
-									>
-										{state}
-									</button>
-								{/each}
-							</div>
+							<button class="commit" on:click={() => emit(pressArgv(button, adjust))}>log</button>
 						{/if}
-					{:else}
-						<button class="commit" on:click={() => emit(pressArgv(button, adjust))}>log</button>
-					{/if}
 
-					<code class="preview"
-						>{pressArgv(
-							button,
-							adjust,
-							button.shape.kind === 'states' ? '<state>' : undefined
-						).join(' ')}</code
-					>
-				</div>
-			{/if}
-		</div>
-	{/each}
+						<code class="preview"
+							>{pressArgv(
+								button,
+								adjust,
+								button.shape.kind === 'states' ? '<state>' : undefined
+							).join(' ')}</code
+						>
+					</div>
+				{/if}
+			</div>
+		{/each}
+	{/if}
 </div>
 
 <style>
@@ -380,7 +525,8 @@
 
 	.widget,
 	.track,
-	.record {
+	.record,
+	.nav {
 		/* A held press must not also select the label or raise the platform's
 		   text callout, on touch least of all. */
 		user-select: none;
@@ -417,9 +563,31 @@
 
 	.widget:disabled,
 	.track:disabled,
-	.record:disabled {
+	.record:disabled,
+	.nav:disabled {
 		opacity: 0.4;
 		cursor: default;
+	}
+
+	/* `< Back` and `+`: the two ends of the state list, and neither of them
+	   a state — so they are drawn in the app's own ink rather than in any
+	   field's colour, and cannot be mistaken for something to log. */
+	.nav {
+		background: var(--ground);
+		border: 1px solid var(--rule);
+		border-radius: 3px;
+		padding: 0.35rem 0.85rem;
+		color: var(--ink);
+		font-size: 0.85rem;
+	}
+
+	.nav:hover:not(:disabled) {
+		border-color: var(--accent);
+		color: var(--ink-bright);
+	}
+
+	.new-state {
+		width: 7rem;
 	}
 
 	/* The first thing a person meets: larger than the fields, and filled. */
@@ -554,7 +722,8 @@
 	}
 
 	.add input,
-	.add select {
+	.add select,
+	.new-state {
 		background: var(--ground);
 		border: 1px solid var(--rule);
 		border-radius: 4px;

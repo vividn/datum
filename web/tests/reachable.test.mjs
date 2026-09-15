@@ -209,13 +209,31 @@ describe('on a phone-sized screen', () => {
 		}, { viewport: PHONE });
 	});
 
-	test("a field's state menu is on screen", async () => {
+	// A PLAIN press fills the bar with the field's states in place (da-g635)
+	// — nothing floats, so there is no panel to be off the screen. The panel
+	// a LONG press opens is still one, bubbles and states together, and it is
+	// the one this asserts.
+	test("a field's state bubbles are on screen", async () => {
 		await withApp(async ({ page, submit }) => {
 			await submit('spec set mood --default-verb switch --state happy');
 			const chip = page.locator('.bar button.widget', { hasText: 'mood' });
 			await chip.waitFor();
+			await chip.click({ button: 'right' });
+			await assertOnScreen(page, '.bar .panel', "mood's state panel");
+		}, { viewport: PHONE });
+	});
+
+	test("the states a press fills the bar with are on screen", async () => {
+		await withApp(async ({ page, submit }) => {
+			// mood is the switch here, so the other four are what wrap the bar.
+			await submit('spec set mood --default-verb switch --state happy --state sad');
+			await track(page, submit, FIELDS.filter((f) => f !== 'mood'));
+			const chip = page.locator('.bar button.widget', { hasText: 'mood' });
+			await chip.waitFor();
 			await chip.click();
-			await assertOnScreen(page, '.bar .panel', "mood's state menu");
+			await assertOnScreen(page, '.bar [data-back]', 'the way back to the fields');
+			await assertOnScreen(page, '.bar [data-state="happy"]', "mood's happy");
+			await assertOnScreen(page, '.bar [data-add-state]', 'the + that adds a state');
 		}, { viewport: PHONE });
 	});
 
