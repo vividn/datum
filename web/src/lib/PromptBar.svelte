@@ -73,8 +73,12 @@
 	fields-widget press is (`pressWithPills`). A press SPENDS its unlocked
 	pills: they leave the live set at once and fade beside the ghost of the
 	command they went into (`spent` in $lib/bar.ts), while a locked one
-	stays and slides back leftward as the ghost goes. A line the fields
-	widget prefills (`prefill`) lands in the field, focused, unrun.
+	stays and slides back leftward as the ghost goes. All of that is the
+	PROMPT's, not the bar's, since da-3zon: an input widget draws the same
+	command line in a pane and the two are one buffer, one set of pills and
+	one Enter. A line the fields widget prefills (`prefill`) lands in it,
+	focused, unrun — in the widget while one is on screen, else here
+	(`focusLine`).
 
 	While storage is degraded the bar's border is the panes' alarm orange
 	and its title is the storage sentence: the warning the banner carried
@@ -82,42 +86,31 @@
 	warning (measured 2026-09-08 — see the old BetaBanner's note).
 -->
 <script lang="ts">
-	import { onDestroy, tick } from 'svelte';
+	import { tick } from 'svelte';
 	import BarResult from '$lib/BarResult.svelte';
-	import {
-		GHOST_MS,
-		ghost as ghostStore,
-		last,
-		pills,
-		prefill,
-		removePill,
-		spent,
-		toggleLockPill,
-		type Ghost
-	} from '$lib/bar.js';
+	import { focusLine, last, prefill, text } from '$lib/bar.js';
 	import { clockSecondsLabel, now } from '$lib/clock.js';
-	import { pressWithPills, ready } from '$lib/layout/engine.js';
 	import Prompt from '$lib/Prompt.svelte';
 	import Repl from '$lib/Repl.svelte';
-	import { shellSplit } from '$lib/shellSplit.js';
 	import { isDegraded, persisted, storage } from '$lib/storageState.js';
 
-	let input = '';
 	let field: HTMLElement;
 	let hint = false;
 	let expanded = false;
-	let ghost: Ghost | null = null;
-	let fade: ReturnType<typeof setTimeout> | undefined;
-	onDestroy(() => clearTimeout(fade));
 
-	$: if ($ghostStore) haunt($ghostStore);
 	$: if ($prefill !== null) take($prefill);
 
+	/**
+	 * The one-shot `prefill` signal is taken HERE because the bar is the one
+	 * view always on screen — but where the caret then goes is `focusLine`'s
+	 * choice, which is an input widget when the reader has put one on the
+	 * page (da-3zon).
+	 */
 	async function take(line: string): Promise<void> {
 		prefill.set(null);
-		input = line;
+		text.set(line);
 		await tick();
-		focusInput();
+		focusLine();
 	}
 
 	const focusInput = () => field?.querySelector('input')?.focus();
@@ -133,24 +126,6 @@
 		expanded = !expanded;
 		await tick();
 		focusInput();
-	}
-
-	/**
-	 * Show what ran, and take it away again. Nothing here touches `input`:
-	 * whatever the reader is halfway through typing is theirs, however slow
-	 * the command that landed was.
-	 */
-	function haunt(next: Ghost): void {
-		// A one-shot signal, as `prefill` is: taken, then put back to null,
-		// so a bar mounted later does not open onto an old command's ghost.
-		ghostStore.set(null);
-		clearTimeout(fade);
-		ghost = next;
-		fade = setTimeout(() => (ghost = null), GHOST_MS);
-	}
-
-	async function submit({ detail: typed }: CustomEvent<string>): Promise<void> {
-		await pressWithPills(shellSplit(typed), typed);
 	}
 
 	$: degraded = isDegraded($storage);
@@ -231,49 +206,7 @@
 		</div>
 		<div class="tier bottom">
 			<div class="prompt" bind:this={field}>
-				<Prompt bind:input bind:ghost disabled={!$ready} on:submit={submit}>
-					<svelte:fragment slot="pills">
-						<!-- vividn, on the deployed build: "click anywhere except lock to
-						     dismiss (so no x)" and then "maybe doch keep the x icon, but
-						     still click anywhere to dismiss" (da-tnv3). So the × is a
-						     MARK, not a target: the pill is two sibling buttons — a
-						     nested one would be invalid HTML — and the remove button is
-						     every pixel that is not the lock, padding and × alike. The
-						     lock is a flat SVG in the pill's own ink: the emoji clashed
-						     with everything around it, and its two states differ by one
-						     path. -->
-						{#each $pills as pill (pill.id)}
-							<span class="pill {pill.kind}" class:locked={pill.locked}
-								><button
-									type="button"
-									class="remove"
-									aria-label="remove {pill.text}"
-									on:click={() => removePill(pill.id)}
-									><span class="label">{pill.text}</span><span class="x" aria-hidden="true">×</span
-									></button
-								><button
-									type="button"
-									class="lock"
-									aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"
-									aria-pressed={!!pill.locked}
-									on:click={() => toggleLockPill(pill.id)}
-									><svg class="glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
-										><rect x="3" y="7" width="10" height="7" rx="1.5" /><path
-											d={pill.locked ? 'M5.5 7V5a2.5 2.5 0 0 1 5 0v2' : 'M10.5 7V5a2.5 2.5 0 0 1 5 0'}
-										/></svg
-									></button
-								></span
-							>
-						{/each}
-						<!-- Spent, not live: no × and no lock, out of the argv and out
-						     of the time cursor, fading with the ghost of the command it
-						     went into. A different class for a different thing, so a
-						     reader of `.pill` — a test included — is never handed one. -->
-						{#each $spent as pill (pill.id)}
-							<span class="spent {pill.kind}">{pill.text}</span>
-						{/each}
-					</svelte:fragment>
-				</Prompt>
+				<Prompt />
 			</div>
 		</div>
 	</div>
@@ -308,9 +241,6 @@
 		   half the bottom bar. */
 		--bar: 6rem;
 		--input-band: 40%;
-		/* What is typed, and so what a pill beside it reads at — vividn asked
-		   for the two to be one size (da-tnv3), so they are one number. */
-		--input-font: 1.15rem;
 		position: relative;
 		display: flex;
 		align-items: stretch;
@@ -474,125 +404,6 @@
 	.prompt :global(.line) {
 		border-top: none;
 		padding: 0 0.2rem;
-	}
-
-	.prompt :global(input),
-	.prompt :global(.ghost),
-	.prompt :global(.mirror) {
-		font-size: var(--input-font);
-	}
-
-	/* SOLID, and the size of what is typed beside them. vividn, on the
-	   deployed build: "We need to make the pills much more prominent, they
-	   are almost invisible right now. Solid background color… increase
-	   their font size to be the same as the input bar." So the kind's
-	   colour — the colour the outline used to be — FILLS the pill and the
-	   page's own ground is the ink on it (`--page`'s contract), which is
-	   the one pairing the palette already names.
-
-	   `--pill` is that colour, and the only thing a kind sets: the fill,
-	   the ink and the locked ring are all derived from it here, so a new
-	   kind stays one line. */
-	.pill,
-	.spent {
-		--pill: var(--accent);
-		display: inline-flex;
-		align-items: center;
-		border: none;
-		border-radius: 999px;
-		/* So a button's hover wash is clipped to the pill's own edge. */
-		overflow: hidden;
-		color: var(--page);
-		background: var(--pill);
-		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		font-size: var(--input-font);
-		line-height: 1;
-		white-space: nowrap;
-	}
-
-	.spent {
-		padding: 0.25rem 0.55rem;
-		pointer-events: none;
-		opacity: 0.6;
-		animation: ghost-fade 1s ease-out forwards;
-	}
-
-	/* From the spent pill's own opacity, not from 1: it is a receipt
-	   fading, and it never brightens on its way out. */
-	@keyframes ghost-fade {
-		from {
-			opacity: 0.6;
-		}
-		to {
-			opacity: 0;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.spent {
-			animation: none;
-		}
-	}
-
-	/* Two siblings dividing the pill between them: the remove button takes
-	   every pixel that is not the lock, so a press on the text, on the ×
-	   or on the padding is the same press. */
-	.pill button {
-		display: flex;
-		align-items: center;
-		gap: 0.3em;
-		background: none;
-		border: none;
-		padding: 0.25rem 0.3rem 0.25rem 0.55rem;
-		font: inherit;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.pill button.lock {
-		padding: 0.25rem 0.5rem 0.25rem 0.25rem;
-	}
-
-	/* A mark, not a target — the whole of the button beside it removes. */
-	.pill .x {
-		opacity: 0.65;
-	}
-
-	/* Flat and one colour, drawn in the pill's ink: a filled body and a
-	   shackle that is the only thing the two states differ by. */
-	.glyph {
-		display: block;
-		width: 0.8em;
-		height: 0.8em;
-		fill: currentColor;
-	}
-
-	.glyph path {
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.7;
-		stroke-linecap: round;
-	}
-
-	/* A locked pill stands out: it will not clear on its own after a press.
-	   An inset ring in the ink, so «will not clear» needs no second colour. */
-	.pill.locked {
-		box-shadow: inset 0 0 0 2px var(--page);
-	}
-
-	/* The time cursor's own blue, as its dotted lines are drawn — not a
-	   token, because the lines are drawn from $lib/hover.ts as an SVG
-	   attribute, where `var()` does not reach, and one colour written in
-	   two places is better than a token only one of them can use. */
-	.pill.time,
-	.spent.time {
-		--pill: #7c9cff;
-	}
-
-	/* Which half the pointer is over — the only thing that says the lock is
-	   a target of its own now that the rest of the pill is one press. */
-	.pill button:hover {
-		background: color-mix(in srgb, var(--page) 20%, transparent);
 	}
 
 	/* On the bar's top line, centred on the whole bar — and above the

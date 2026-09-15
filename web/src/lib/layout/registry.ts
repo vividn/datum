@@ -26,7 +26,8 @@
 // and a command pane showing one: its header row and three rows (21.6px
 // each) plus padding, 102px. The fields widget: one row, as tall as its
 // Track + (33px), plus padding. The aliases list: three of its lines
-// (18.4px each) plus padding, 72px. nowview: datum draws it no shorter than a 50px band plus its
+// (18.4px each) plus padding, 72px. The input widget: its prompt row
+// (36.4px) and one document line of receipt (21.6px), 58px. nowview: datum draws it no shorter than a 50px band plus its
 // axis, 92px of picture (da-wb2n), plus padding. Widths are where each
 // stops making sense rather than where it stops rendering: an hour of the
 // strip per 10px, a CLI line, the tail's four columns, four chips. The
@@ -55,6 +56,7 @@ import {
 import { DEFAULT_STATS } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
 import FieldsPane from './FieldsPane.svelte';
+import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
 import NowviewWidget from './NowviewWidget.svelte';
 import ReplWidget from './ReplWidget.svelte';
@@ -165,6 +167,12 @@ export const KINDS: Record<string, WidgetKind> = {
 	},
 	// The aliases widget (da-x6yj): every alias, listed.
 	aliases: { meta: meta('aliases', 'aliases'), component: AliasesWidget, legible: { width: 160, height: 72 } },
+	// The input widget (da-0dhc, back as da-3zon): the bottom bar's command
+	// line drawn in a pane — the same buffer, the same pills, the same
+	// Enter. Legible at its prompt row (36.4px measured) plus one line of
+	// receipt above it (a document line at 1rem/1.35, 21.6px): the least
+	// that is still a command line with an answer over it.
+	input: { meta: meta('input', 'input'), component: InputWidget, legible: { width: 200, height: 58 } },
 	// What the shell shows in a tab whose layout cannot be inlined (da-0a5o).
 	notice: { meta: meta('notice', 'notice'), component: Notice, hidden: true, legible: { width: 120, height: 40 } }
 };

@@ -182,7 +182,7 @@ describe('the shell', () => {
 	test('+ lists day, the widget kinds and the saved layouts; nowview opens a tab; a reload keeps it, another device starts fresh', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			assert.deepEqual(await offered(page), ['day', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases']);
+			assert.deepEqual(await offered(page), ['day', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases', 'input']);
 
 			await pick(page, 'nowview');
 			await until(() => rootTabs(page), (t) => t.includes('nowview'));
@@ -203,7 +203,7 @@ describe('the shell', () => {
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
 			// The chooser reads the saved layouts each time it opens, so the
 			// save is on the list the first time it is asked.
-			assert.deepEqual(await offered(page), ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases']);
+			assert.deepEqual(await offered(page), ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases', 'input']);
 		}, DESKTOP);
 
 		// Which tabs are open is per device (vividn: the selection is not synced).
@@ -770,7 +770,7 @@ describe('the one chooser', () => {
 			// A saved layout, so the Layouts section holds more than `day`.
 			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
 			const fromRoot = await offered(page);
-			assert.deepEqual(fromRoot, ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases']);
+			assert.deepEqual(fromRoot, ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'command', 'stats', 'fields', 'aliases', 'input']);
 
 			await choose(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
@@ -800,15 +800,21 @@ describe('the one chooser', () => {
 });
 
 // A kind's id is a saved-layout key (docs/web-conventions.md #10), so a
-// widget cannot simply go: every layout and draft already stored on a
-// device still names it. The `input` widget went (da-22vg) — the bottom
-// bar is the prompt it was — and what named it opens as the REPL, the
-// widget that does what it did and more, rather than as an untitled
-// empty pane.
-describe('a layout naming a widget that went', () => {
+// widget's id is what a device's stored layouts and drafts hold it by, and
+// that is what makes a widget's RETURN safe as well as its retirement.
+//
+// These two tests are da-22vg's, inverted. The `input` widget went on
+// 09-14 and `RETIRED_KINDS` mapped it to `repl`; vividn asked for it back on
+// 09-15 (da-3zon) — he wants the box somewhere other than the foot of the
+// screen — so the arm is gone and the same id draws the same kind again.
+// A layout saved with an input widget BEFORE 09-14 opens as an input once
+// more; one that was migrated in the fortnight between was rewritten to
+// `repl` by `extract` on its next save and stays a REPL, which is what it
+// says it is.
+describe('a layout naming the widget that went and came back', () => {
 	const ROOT_BAR = { edge: 'top', align: 'start' };
 
-	test('a saved layout whose widget is `input` opens as a REPL, unmodified, and saves back as one', async () => {
+	test('a saved layout whose widget is `input` opens as an input widget, unmodified, and saves back as one', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await layouts(app, 'saveLayout', {
@@ -823,35 +829,34 @@ describe('a layout naming a widget that went', () => {
 			});
 			await pick(page, 'mine');
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
-			assert.deepEqual(await titles(page), ['repl']);
-			// The REPL itself, not just a pane wearing its name: its own
-			// empty-scrollback line is in the body.
-			await page.locator('section.pane[data-title="repl"] p.quiet', { hasText: 'type a command' }).waitFor();
+			assert.deepEqual(await titles(page), ['input']);
+			// The widget itself, not just a pane wearing its name: the command
+			// line is in the body, and it is not the bar's.
+			await page.locator('section.pane[data-title="input"] .input-widget input').waitFor();
 
-			// Migrated against its own baseline, so reading it is not an
-			// edit: no dot on the tab, and nothing logged at the page.
+			// Read, not edited: no dot on the tab, and nothing logged at the page.
 			assert.deepEqual(await dotted(page), []);
 			assert.deepEqual(app.errors, []);
 
-			// And the new name is what a save writes back: the migration
-			// happens once per layout, not once per load.
+			// And `input` is still what a save writes back — nothing rewrites
+			// the id on the way out any more.
 			await act(page, 'save');
 			await until(
 				() => layouts(app, 'loadLayout', 'mine'),
-				(saved) => saved.root.tabs[0].content.kind === 'repl'
+				(saved) => saved.root.tabs[0].content.kind === 'input'
 			);
 		}, DESKTOP);
 	});
 
-	test('/input opens the REPL, and the chooser no longer offers the widget', async () => {
+	test('/input opens the input widget, and the chooser offers it again', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.goto('/input');
-			await until(() => rootTabs(page), (t) => t.includes('repl'));
-			assert.equal(await activeRootTab(page), 'repl');
-			assert.deepEqual(await titles(page), ['repl']);
-			assert.equal(await page.locator('.input-widget').count(), 0, 'the input widget is still drawn');
-			assert.ok(!(await offered(page)).includes('input'), 'the chooser still offers the input widget');
+			await until(() => rootTabs(page), (t) => t.includes('input'));
+			assert.equal(await activeRootTab(page), 'input');
+			assert.deepEqual(await titles(page), ['input']);
+			await page.locator('.input-widget input').waitFor();
+			assert.ok((await offered(page)).includes('input'), 'the chooser does not offer the input widget');
 		}, DESKTOP);
 	});
 });

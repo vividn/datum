@@ -633,3 +633,51 @@ const LOCKED = JSON.stringify({
 		]
 	}
 });
+
+// The input widget's own page (da-0dhc, back as da-3zon). The widget is
+// the bottom bar's command line drawn in a pane, and vividn asked for it
+// because the bar is hard to see on a desktop — so the two claims are
+// that its box is ON THE SCREEN it is drawn on, at every phone size, and
+// that the keyboard can get into it without a pointer. A prompt below the
+// fold, or one only a click can reach, is not a command line.
+describe('the input widget at /input', () => {
+	for (const viewport of SCREENS) {
+		const size = `${viewport.width}x${viewport.height}`;
+
+		test(`its box and its receipt are on screen at ${size}`, async () => {
+			await withApp(
+				async (app) => {
+					await app.goto('/input');
+					await app.page.locator('.input-widget input').waitFor();
+					await assertOnScreen(app.page, '.input-widget', "the input widget's box");
+					await assertOnScreen(app.page, '.input-widget input', "the input widget's prompt");
+					// And the bar it stands beside is still there and still usable.
+					await assertOnScreen(app.page, '.prompt-bar input', "the bottom bar's prompt");
+				},
+				{ viewport }
+			);
+		});
+	}
+
+	test('a Tab walk from the top of the page reaches its input, as it does the bar’s', async () => {
+		await withApp(async (app) => {
+			await app.goto('/input');
+			await app.page.locator('.input-widget input').waitFor();
+			await app.page.evaluate(() => document.body.focus());
+			const reached = new Set();
+			for (let i = 0; i < 40; i++) {
+				await app.page.keyboard.press('Tab');
+				const where = await app.page.evaluate(() =>
+					document.activeElement?.closest('.input-widget')
+						? 'widget'
+						: document.activeElement?.closest('.prompt-bar')
+							? 'bar'
+							: null
+				);
+				if (where) reached.add(where);
+				if (reached.size === 2) break;
+			}
+			assert.deepEqual([...reached].sort(), ['bar', 'widget']);
+		});
+	});
+});

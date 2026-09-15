@@ -159,22 +159,23 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	command: () => only('command', 'command'),
 	stats: () => only('stats', 'stats'),
 	fields: () => only('fields', 'widgetbar'),
-	aliases: () => only('aliases', 'aliases')
+	aliases: () => only('aliases', 'aliases'),
+	input: () => only('input', 'input')
 };
 
 /**
- * Other spellings a URL may use: the old routes (`/now`), the widget
- * kinds whose pane title differs from their kind name, and a name that
- * has been RETIRED — `input`, the prompt with no output pane, which the
- * bottom bar is now (da-22vg), so `/input` and a device that had that tab
- * open land on the REPL rather than on «nothing is called input».
+ * Other spellings a URL may use: the old routes (`/now`) and the widget
+ * kinds whose pane title differs from their kind name.
+ *
+ * `input` was here for the fortnight the widget was gone (da-22vg) and is
+ * not any more: the widget is back (da-3zon), so `/input` is `input`
+ * again and a device that kept that tab open gets what it saved.
  */
 export const ALIASES: Record<string, string> = {
 	now: 'nowview',
 	daystrip: 'dayview',
 	widgets: 'fields',
-	widgetbar: 'fields',
-	input: 'repl'
+	widgetbar: 'fields'
 };
 
 /** The built-in layout `name` names, if any; `phone` picks `day`'s tree. */

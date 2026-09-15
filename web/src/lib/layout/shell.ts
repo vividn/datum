@@ -149,9 +149,12 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
  * A kind's id is a saved-layout key (docs/web-conventions.md #10), so a
  * kind cannot simply go: every layout and draft already stored on a
  * device still names it, and an unknown kind draws as an untitled empty
- * pane. `input` (da-0dhc) was the REPL's prompt with no output pane; the
- * bottom bar is that prompt now (da-rfs9), so the widget that does what
- * it did and more is the REPL (da-22vg).
+ * pane.
+ *
+ * EMPTY, and kept: `input` was the one entry (da-22vg, `input` → `repl`)
+ * and the input widget is back under that very id (da-3zon), so a layout
+ * saved with one opens as one again — which is the whole point of a kind's
+ * id being a saved-layout key. The next kind to go writes its arm here.
  *
  * Here rather than in `tree.ts` because this is where layouts are READ:
  * `inline` is the one door every save, draft and built-in comes through,
@@ -160,7 +163,7 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
  * on every drag of a border instead, and would give the tree's shape
  * module an opinion about kinds, which it has never had.
  */
-const RETIRED_KINDS: Record<string, string> = { input: 'repl' };
+const RETIRED_KINDS: Record<string, string> = {};
 
 /** A tab whose widget is a retired kind, as the kind it became. */
 const migrated = (tab: Tab): Tab => {
@@ -331,9 +334,9 @@ export function boot(): Promise<void> {
 	return (booting ??= (async () => {
 		await initDb().catch(() => {});
 		const state = loadRoot() ?? { names: [HOME], active: 0 };
-		// A retired name opens as what it became, and only once: a device
-		// with `input` and `repl` both open gets one REPL tab, not two tabs
-		// wearing the same name.
+		// A name with another spelling opens under the one name, and only
+		// once: a device with `now` and `nowview` both open gets one
+		// nowview tab, not two tabs wearing the same name.
 		const names = [...new Set(state.names.map(canonicalName))];
 		const taken = new Set<NodeId>();
 		const tabs: Tab[] = [];

@@ -1,21 +1,23 @@
 <!--
-	The prompt line: the caret, the text box, and the pills that ride after
-	what is typed in it. The bottom bar is its one user since the input
-	widget went (da-22vg) — the REPL lost its own prompt in da-rfs9 — so
-	this is indirection kept on purpose, not shared code.
+	THE command line: the caret, the box, the pills that ride after what is
+	typed in it, and the Enter that runs it.
+
+	It is drawn in two places and it is ONE line (da-3zon): the bottom bar
+	(PromptBar.svelte) and every `input` widget on the page
+	(layout/InputWidget.svelte). The box binds straight to `text` in
+	$lib/bar.ts and Enter calls `submitLine` there, so nothing here is a
+	copy of anything — type in either and both show it, Enter in either
+	runs it, and both empty together. Two local strings synced by effects is
+	how two boxes drift by a keystroke.
 
 	The clock left in da-xfa4: it is under the logo now, in the bar's left
-	block, where it lines up with this row. One implementation still
-	($lib/clock.ts) and now one caller, so there is no prop here deciding
-	whether to draw it.
+	block, where it lines up with this row.
 
-	Enter hands the line to the owner as `submit` and empties the box, the
-	way a shell consumes a line. Up and down walk the history every prompt
-	shares ($lib/replStore.ts), shell-style: the draft you were typing is
-	kept and handed back when you walk past the newest entry.
-
-	The default slot sits at the end of the line, for what the owner has to
-	say about the last command without an output pane to say it in.
+	Enter empties the box the way a shell consumes a line. Up and down walk
+	the history every prompt shares ($lib/replStore.ts), shell-style: the
+	draft you were typing is kept and handed back when you walk past the
+	newest entry — kept per BOX, since it is what this reader was in the
+	middle of typing here.
 
 	THERE IS NO PLACEHOLDER while the database is open. vividn, 2026-09-14:
 	"Let's get rid of the always present placeholder `occur coffee cups=2`,
@@ -34,16 +36,17 @@
 	the first two interpolate. It is never the input's value: the box is
 	the reader's, and the moment they touch a key the ghost is gone.
 
-	THE `pills` SLOT rides just after the typed text (da-xfa4). vividn: "move
-	the -t pills to be just slightly to the right of the >, so that they
-	are visible as you type text (they can move to the right as you type
-	more text)". Following the text needs the text's width, and
-	`field-sizing: content` is not everywhere it has to work — measured
-	2026-09-14: chromium 1223 has it, webkit 2336 and firefox 1538 do not —
-	so the width comes from a hidden MIRROR span in the box's own font,
-	which every engine can measure. The mirror carries the ghost's line
-	while a ghost is up, so the pills are part of the ghost and go back
-	leftward when it fades.
+	THE PILLS ride just after the typed text (da-xfa4). vividn: "move the -t
+	pills to be just slightly to the right of the >, so that they are
+	visible as you type text (they can move to the right as you type more
+	text)". Following the text needs the text's width, and `field-sizing:
+	content` is not everywhere it has to work — measured 2026-09-14:
+	chromium 1223 has it, webkit 2336 and firefox 1538 do not — so the
+	width comes from a hidden MIRROR span in the box's own font, which
+	every engine can measure. The mirror carries the ghost's line while a
+	ghost is up, so the pills are part of the ghost and go back leftward
+	when it fades. Each instance measures its OWN text, so a widget's pills
+	sit past what was typed in the widget.
 
 	When text and pills outgrow the box the pills STOP following and stand
 	at its right edge, and the box reserves their width as padding so the
@@ -52,17 +55,25 @@
 	and clickable however long the line is.
 -->
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
-	import type { Ghost } from '$lib/bar.js';
+	import { onMount } from 'svelte';
+	import {
+		ghost,
+		pills,
+		registerLine,
+		removePill,
+		spent,
+		submitLine,
+		text,
+		toggleLockPill
+	} from '$lib/bar.js';
+	import { ready } from '$lib/layout/engine.js';
 	import { repl } from '$lib/replStore.js';
 
-	/** The text in the prompt. Bind it to type a command in from outside. */
-	export let input = '';
-	export let disabled = false;
-	/** A command nobody typed, to show and fade. Bind it: a keystroke takes it away. */
-	export let ghost: Ghost | null = null;
-
-	const dispatch = createEventDispatcher<{ submit: string }>();
+	/**
+	 * True in an input widget. It is where a focus that nobody clicked
+	 * goes while one is on screen (`focusLine` in $lib/bar.ts).
+	 */
+	export let widget = false;
 
 	/** The air between the `❯` and a pill, so the box stays easy to click into. */
 	const GAP = 10;
@@ -71,43 +82,46 @@
 	let cursor = -1;
 	let draft = '';
 
+	let box: HTMLInputElement;
 	let boxWidth = 0;
 	let textWidth = 0;
 	let pillsWidth = 0;
 
+	onMount(() => registerLine(box, widget));
+
 	/** What the pills follow: what is typed, or the ghost while one is up. */
-	$: mirrored = input || (ghost ? ghost.line : '');
+	$: mirrored = $text || ($ghost ? $ghost.line : '');
 	$: pillsLeft = Math.max(GAP, Math.min(textWidth + GAP, boxWidth - pillsWidth));
 
 	function submit(): void {
-		const line = input;
+		const line = $text;
 		if (!line.trim()) return;
-		input = '';
+		$text = '';
 		draft = '';
 		cursor = -1;
-		dispatch('submit', line);
+		void submitLine(line);
 	}
 
 	function recall(event: KeyboardEvent): void {
 		// The box is the reader's the moment they type in it.
-		ghost = null;
+		if ($ghost) ghost.set(null);
 		const { history } = $repl;
 		if (event.key === 'ArrowUp') {
 			const next = cursor === -1 ? history.length - 1 : cursor - 1;
 			if (next < 0) return;
-			if (cursor === -1) draft = input;
+			if (cursor === -1) draft = $text;
 			event.preventDefault();
 			cursor = next;
-			input = history[cursor];
+			$text = history[cursor];
 		} else if (event.key === 'ArrowDown') {
 			if (cursor === -1) return;
 			event.preventDefault();
 			cursor += 1;
 			if (cursor >= history.length) {
 				cursor = -1;
-				input = draft;
+				$text = draft;
 			} else {
-				input = history[cursor];
+				$text = history[cursor];
 			}
 		}
 	}
@@ -118,10 +132,11 @@
 	<span class="field" style="--pills: {pillsWidth}px" bind:clientWidth={boxWidth}>
 		<input
 			type="text"
-			bind:value={input}
+			bind:this={box}
+			bind:value={$text}
 			on:keydown={recall}
-			{disabled}
-			placeholder={disabled ? 'opening database…' : ''}
+			disabled={!$ready}
+			placeholder={$ready ? '' : 'opening database…'}
 			spellcheck="false"
 			autocapitalize="none"
 			autocomplete="off"
@@ -132,20 +147,60 @@
 		<!-- Keyed on the object, so a second press restarts the fade rather
 		     than joining the first one's. Hidden while there is anything in
 		     the box: the ghost has the placeholder's slot and nothing else. -->
-		{#if ghost && !input}
-			{#key ghost}
-				<span class="ghost" aria-hidden="true">{ghost.line}</span>
+		{#if $ghost && !$text}
+			{#key $ghost}
+				<span class="ghost" aria-hidden="true">{$ghost.line}</span>
 			{/key}
 		{/if}
 		<span class="pills" style="left: {pillsLeft}px" bind:clientWidth={pillsWidth}>
-			<slot name="pills" />
+			<!-- vividn, on the deployed build: "click anywhere except lock to
+			     dismiss (so no x)" and then "maybe doch keep the x icon, but
+			     still click anywhere to dismiss" (da-tnv3). So the × is a
+			     MARK, not a target: the pill is two sibling buttons — a
+			     nested one would be invalid HTML — and the remove button is
+			     every pixel that is not the lock, padding and × alike. The
+			     lock is a flat SVG in the pill's own ink: the emoji clashed
+			     with everything around it, and its two states differ by one
+			     path. -->
+			{#each $pills as pill (pill.id)}
+				<span class="pill {pill.kind}" class:locked={pill.locked}
+					><button
+						type="button"
+						class="remove"
+						aria-label="remove {pill.text}"
+						on:click={() => removePill(pill.id)}
+						><span class="label">{pill.text}</span><span class="x" aria-hidden="true">×</span
+						></button
+					><button
+						type="button"
+						class="lock"
+						aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"
+						aria-pressed={!!pill.locked}
+						on:click={() => toggleLockPill(pill.id)}
+						><svg class="glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+							><rect x="3" y="7" width="10" height="7" rx="1.5" /><path
+								d={pill.locked ? 'M5.5 7V5a2.5 2.5 0 0 1 5 0v2' : 'M10.5 7V5a2.5 2.5 0 0 1 5 0'}
+							/></svg
+						></button
+					></span
+				>
+			{/each}
+			<!-- Spent, not live: no × and no lock, out of the argv and out of
+			     the time cursor, fading with the ghost of the command it went
+			     into. A different class for a different thing, so a reader of
+			     `.pill` — a test included — is never handed one. -->
+			{#each $spent as pill (pill.id)}
+				<span class="spent {pill.kind}">{pill.text}</span>
+			{/each}
 		</span>
 	</span>
-	<slot />
 </form>
 
 <style>
 	.line {
+		/* What is typed, and so what a pill beside it reads at — vividn asked
+		   for the two to be one size (da-tnv3), so they are one number. */
+		--input-font: 1.15rem;
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -176,7 +231,7 @@
 		padding: 0 var(--pills) 0 0;
 		color: var(--ink-bright);
 		font: inherit;
-		font-size: 0.95rem;
+		font-size: var(--input-font);
 	}
 
 	/* Where the placeholder is, in the placeholder's font — the same
@@ -193,7 +248,7 @@
 		white-space: nowrap;
 		pointer-events: none;
 		color: var(--ink);
-		font-size: 0.95rem;
+		font-size: var(--input-font);
 		animation: ghost-fade 1s ease-out forwards;
 	}
 
@@ -207,7 +262,7 @@
 		pointer-events: none;
 		white-space: pre;
 		font: inherit;
-		font-size: 0.95rem;
+		font-size: var(--input-font);
 	}
 
 	/* On top of the box, following the text. `left` is animated so a pill
@@ -225,6 +280,102 @@
 		transition: left 120ms ease-out;
 	}
 
+	/* SOLID, and the size of what is typed beside them. vividn, on the
+	   deployed build: "We need to make the pills much more prominent, they
+	   are almost invisible right now. Solid background color… increase
+	   their font size to be the same as the input bar." So the kind's
+	   colour — the colour the outline used to be — FILLS the pill and the
+	   page's own ground is the ink on it (`--page`'s contract), which is
+	   the one pairing the palette already names.
+
+	   `--pill` is that colour, and the only thing a kind sets: the fill,
+	   the ink and the locked ring are all derived from it here, so a new
+	   kind stays one line. */
+	.pill,
+	.spent {
+		--pill: var(--accent);
+		display: inline-flex;
+		align-items: center;
+		border: none;
+		border-radius: 999px;
+		/* So a button's hover wash is clipped to the pill's own edge. */
+		overflow: hidden;
+		color: var(--page);
+		background: var(--pill);
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		font-size: var(--input-font);
+		line-height: 1;
+		white-space: nowrap;
+	}
+
+	.spent {
+		padding: 0.25rem 0.55rem;
+		pointer-events: none;
+		opacity: 0.6;
+		animation: spent-fade 1s ease-out forwards;
+	}
+
+	/* Two siblings dividing the pill between them: the remove button takes
+	   every pixel that is not the lock, so a press on the text, on the ×
+	   or on the padding is the same press. */
+	.pill button {
+		display: flex;
+		align-items: center;
+		gap: 0.3em;
+		background: none;
+		border: none;
+		padding: 0.25rem 0.3rem 0.25rem 0.55rem;
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+	}
+
+	.pill button.lock {
+		padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+	}
+
+	/* A mark, not a target — the whole of the button beside it removes. */
+	.pill .x {
+		opacity: 0.65;
+	}
+
+	/* Flat and one colour, drawn in the pill's ink: a filled body and a
+	   shackle that is the only thing the two states differ by. */
+	.glyph {
+		display: block;
+		width: 0.8em;
+		height: 0.8em;
+		fill: currentColor;
+	}
+
+	.glyph path {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.7;
+		stroke-linecap: round;
+	}
+
+	/* A locked pill stands out: it will not clear on its own after a press.
+	   An inset ring in the ink, so «will not clear» needs no second colour. */
+	.pill.locked {
+		box-shadow: inset 0 0 0 2px var(--page);
+	}
+
+	/* The time cursor's own blue, as its dotted lines are drawn — not a
+	   token, because the lines are drawn from $lib/hover.ts as an SVG
+	   attribute, where `var()` does not reach, and one colour written in
+	   two places is better than a token only one of them can use. */
+	.pill.time,
+	.spent.time {
+		--pill: #7c9cff;
+	}
+
+	/* Which half the pointer is over — the only thing that says the lock is
+	   a target of its own now that the rest of the pill is one press. */
+	.pill button:hover {
+		background: color-mix(in srgb, var(--page) 20%, transparent);
+	}
+
 	@keyframes ghost-fade {
 		from {
 			opacity: 1;
@@ -234,10 +385,22 @@
 		}
 	}
 
+	/* From the spent pill's own opacity, not from 1: it is a receipt
+	   fading, and it never brightens on its way out. */
+	@keyframes spent-fade {
+		from {
+			opacity: 0.6;
+		}
+		to {
+			opacity: 0;
+		}
+	}
+
 	/* No fade for a reader who asked for no motion: it is shown, and the
-	   owner's own timer takes it away at the same moment (PromptBar.svelte). */
+	   store's own timer takes it away at the same moment ($lib/bar.ts). */
 	@media (prefers-reduced-motion: reduce) {
-		.ghost {
+		.ghost,
+		.spent {
 			animation: none;
 		}
 		.pills {

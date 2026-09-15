@@ -1,5 +1,13 @@
-// The bottom bar's own state (da-0a5o): its pills, and the last command
-// run anywhere on the page.
+// The page's ONE command line, as state (da-0a5o, da-3zon): the text
+// being typed, the pills riding after it, the ghost over it, the submit
+// that runs it, and the last command run anywhere on the page.
+//
+// Called `bar.ts` because the bottom bar was its only view. It is not any
+// more: an `input` WIDGET is the same command line drawn in a pane
+// (da-3zon), so the buffer lives here and both views bind to it — type in
+// either and both show it, Enter in either runs it. Two local strings
+// synced by effects is how two boxes drift by a keystroke; there is one
+// string and it is `text`.
 //
 // Pills are what the bar is built to receive and nothing here sets: the
 // shared time cursor vividn named next — a click on the dayview loading a
@@ -9,8 +17,9 @@
 // flag before its verb). `setPills` and `removePill` are the whole of the
 // contract.
 //
-// `prefill` puts a line into the bar's prompt without running it — the
-// fields widget's `add <field> ` (da-c7u8); the bar takes it and clears it.
+// `prefill` puts a line into the command line without running it — the
+// fields widget's `add <field> ` (da-c7u8); the bar takes the signal and
+// clears it, and `focusLine` decides which box the caret lands in.
 //
 // `last` is every command run anywhere — a widget-bar press, a command
 // pane's ▶, the bar itself — because every one
@@ -24,13 +33,15 @@
 // below.
 
 import { get, writable } from 'svelte/store';
+import { pressWithPills } from './layout/engine.js';
 import type { RunResult } from './run.js';
+import { shellSplit } from './shellSplit.js';
 
 /**
  * How long a ghost is on screen, and so how long a spent pill takes to
  * fade with it (da-xfa4). One constant: the fade is in Prompt.svelte's
- * CSS, the two timers that take the ghost and the pills away are here and
- * in PromptBar.svelte, and all three have to agree.
+ * CSS and the two timers that take the ghost and the pills away are both
+ * below, and all three have to agree.
  */
 export const GHOST_MS = 1000;
 
@@ -80,6 +91,56 @@ export const clearUnlockedPills = (): void => {
 	setTimeout(() => spent.update((all) => (all === doomed ? [] : all)), GHOST_MS);
 };
 
+/**
+ * What is typed at the command line, wherever it is drawn. THE buffer:
+ * every `Prompt.svelte` binds its box straight to this store.
+ */
+export const text = writable('');
+
+/**
+ * Run a line the reader typed — the one submit path, for the bar and for
+ * every input widget (da-3zon).
+ *
+ * `pressWithPills` is the rest of it: the pills go into the argv after the
+ * verb, the line is echoed as typed, the receipt lands on `last` and in
+ * the shared history, and a success spends the unlocked pills. Clearing
+ * the box is the caller's, because the box is `text` and both views empty
+ * together the moment it is set.
+ *
+ * The import back into `layout/engine.ts` closes a cycle — engine reads
+ * the pills from here — which ESM allows because neither module CALLS the
+ * other while it is loading.
+ */
+export const submitLine = (line: string): Promise<RunResult> =>
+	pressWithPills(shellSplit(line), line);
+
+/**
+ * The boxes the command line is drawn in, in the order they mounted: the
+ * bar's, and one per input widget on screen.
+ *
+ * `focusLine` is where a focus that is not a click goes — a `prefill` from
+ * the fields widget today. It lands in the last WIDGET mounted, and in the
+ * bar when there is none: the box a reader put on the page is the one they
+ * are looking at, and the bar is the fallback that is always there.
+ */
+const lines: { el: HTMLInputElement; widget: boolean }[] = [];
+
+export function registerLine(el: HTMLInputElement, widget: boolean): () => void {
+	const entry = { el, widget };
+	lines.push(entry);
+	return () => {
+		const i = lines.indexOf(entry);
+		// Guarded: a `splice(-1, 1)` on a second unregister would drop
+		// somebody else's box instead of nothing.
+		if (i >= 0) lines.splice(i, 1);
+	};
+}
+
+export const focusLine = (): void => {
+	const widgets = lines.filter((l) => l.widget);
+	(widgets.at(-1) ?? lines.find((l) => !l.widget))?.el.focus();
+};
+
 export const prefill = writable<string | null>(null);
 
 export interface Ghost {
@@ -100,11 +161,22 @@ export interface Ghost {
  *
  * A fresh object every time, identical line or not, so a second press
  * restarts the fade instead of riding out the first one's.
+ *
+ * The timer is HERE, as `spent`'s is, rather than in a view: there is more
+ * than one prompt on the page now (da-3zon) and a ghost taken by whichever
+ * one mounted first would be a ghost the others never saw.
  */
 export const ghost = writable<Ghost | null>(null);
 
+let haunting: ReturnType<typeof setTimeout> | undefined;
+
 /** `press` says a command ran that nobody typed. */
-export const showGhost = (line: string): void => ghost.set({ line });
+export const showGhost = (line: string): void => {
+	const next: Ghost = { line };
+	ghost.set(next);
+	clearTimeout(haunting);
+	haunting = setTimeout(() => ghost.update((g) => (g === next ? null : g)), GHOST_MS);
+};
 
 export interface LastRun {
 	line: string;

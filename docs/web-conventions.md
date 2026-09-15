@@ -74,7 +74,9 @@ file in the same commit — a convention nobody can read is a convention nobody 
    The migration, when a kind GOES, is `RETIRED_KINDS` in `layout/shell.ts` — the id maps to the
    kind that took its work over, applied where layouts are read (`inline`) so a stored layout opens
    as the new kind rather than as an untitled empty pane, and is written back out by `extract`.
-   (`input` → `repl`, da-22vg.)
+   The map is empty today: `input` was its one arm (→ `repl`, da-22vg) and the input widget came
+   back under that very id (da-3zon), so a layout saved with one opens as one again — which is what
+   a kind's id being a saved-layout key BUYS, and not only what it costs.
 
 ## Looks
 

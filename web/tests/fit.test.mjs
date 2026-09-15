@@ -294,14 +294,14 @@ describe('a pane', () => {
 	// the page under it. A command line you cannot see what you typed in
 	// is not a command line, so the clock drops its seconds down here and
 	// the input keeps the room. That prompt is the bottom bar's now
-	// (da-rfs9), sharing its row with the brand and the receipt — and since
-	// the input widget went (da-22vg) it is the page's only one, so the
-	// list below has one entry and the loop is what keeps the next one
-	// honest.
+	// (da-rfs9), sharing its row with the brand and the receipt — and the
+	// input WIDGET (da-3zon) draws the very same line in a pane, so it is
+	// held to the same width wherever a reader parks it.
 	//
 	// The clock is no longer ON that line: da-xfa4 moved it under the logo,
 	// in the bar's left block, where it lines up with the prompt row. It
-	// still drops its seconds at 360px, and that is still the claim.
+	// still drops its seconds at 360px, and that is still the claim — of
+	// the bar, which is the one that has a clock.
 	const PROMPTS = [
 		{
 			what: "the bottom bar's input",
@@ -309,6 +309,13 @@ describe('a pane', () => {
 			line: '.prompt-bar .line',
 			clock: '.prompt-bar .stamp',
 			frame: '.prompt-bar'
+		},
+		{
+			what: "the input widget's input",
+			path: '/input',
+			line: '.input-widget .line',
+			clock: null,
+			frame: '.input-widget'
 		}
 	];
 
@@ -318,8 +325,10 @@ describe('a pane', () => {
 				async (app) => {
 					const { page } = app;
 					if (path !== '/') await app.goto(path);
-					const clock = await page.locator(clockSelector).innerText();
-					assert.match(clock, /^\d{2}:\d{2}$/, `the prompt clock kept its seconds at 360px: ${clock}`);
+					if (clockSelector) {
+						const clock = await page.locator(clockSelector).innerText();
+						assert.match(clock, /^\d{2}:\d{2}$/, `the prompt clock kept its seconds at 360px: ${clock}`);
+					}
 
 					const { input, line, pane } = await page.evaluate(
 						([lineSelector, frame]) => {
