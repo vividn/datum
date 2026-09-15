@@ -182,15 +182,19 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   and shows `↓ new`. `web/tests/tailwatch.test.mjs` holds it to that.
 - The dayview strip is a stack of days, not one band (da-cgyh): today is
   pinned at the bottom and the days before it are stacked above, as many
-  as the strip's box holds (da-zb0d: the height comes from the container,
+  as the strip's box SHOWS (da-zb0d: the height comes from the container,
   the day height is a `dayHeight` prop with a `change` event, and the
-  strip keeps nothing in `localStorage`), one `dayview` render per band
-  through the seam (`bandArgv` in `web/src/lib/panes.ts`). Every band
-  asks for the same `--width` and `--day-height`, which is what pins
-  `label_width` and so makes the hour gridlines of one band land on those
-  of the next; all but today's suppress the axis strip with
-  `--time-axis-height 0`. When the band above today is not the day before
-  it, a jagged `<button>` between them scrolls yesterday back down.
+  strip keeps nothing in `localStorage`) — but the stack HOLDS a fortnight
+  at least, however short the box, which is the past the reader scrolls
+  back through (da-bewc: the two numbers were one, so the whole scroll
+  range was the single partly-revealed day and the strip moved 38px and
+  stopped), one `dayview` render per band through the seam (`bandArgv` in
+  `web/src/lib/panes.ts`). Every band asks for the same `--width` and
+  `--day-height`, which is what pins `label_width` and so makes the hour
+  gridlines of one band land on those of the next; all but today's
+  suppress the axis strip with `--time-axis-height 0`. When the band above
+  today is not the day before it, a jagged `<button>` between them scrolls
+  yesterday back down.
 
 ## Migration from original datum
 

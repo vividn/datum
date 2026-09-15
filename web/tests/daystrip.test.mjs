@@ -19,8 +19,11 @@
 // so it is asserted against the stack's scroll position, driven both ways.
 //
 // Since da-zb0d the strip has no handle for its own height: its BOX says
-// how tall it is, and how tall it is says how much past it holds. So the
-// tests size the box the page gives it and read which days appear. The
+// how tall it is, and how tall it is says how much past it SHOWS — which
+// since da-bewc is not how much it HOLDS. The stack keeps a fortnight of
+// past above the box so that there is somewhere to scroll to; `heldFor`
+// is that arithmetic, `onScreen` is what the box shows of it, and the
+// scrolling itself is driven by a real wheel and a real finger. The
 // one thing a reader sets on the strip itself is how tall a day is drawn
 // — the notch in the left margin — and that is a prop in and a `change`
 // event out, which is asserted from the outside: what the strip's owner
@@ -30,6 +33,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { devices } from 'playwright';
 import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
 
 before(startApp);
@@ -144,14 +148,58 @@ const setBox = ({ page }, px) =>
 	}, px);
 
 /**
- * How many days before today the strip owes at arithmetic `m`: the room
+ * How many days before today the box SHOWS at arithmetic `m`: the room
  * above today's band, in days, counting a partly revealed one.
  */
 function owedAt(m) {
 	const room = Math.max(0, m.strip - m.today - m.gap);
-	return room > 0 ? Math.min(60, Math.ceil((room - m.band) / m.unit) + 1) : 0;
+	return room > 0 ? Math.ceil((room - m.band) / m.unit) + 1 : 0;
 }
 const owed = async (app) => owedAt(await metrics(app));
+
+/** The scrollback the stack holds below what the box shows — DayStrip's CHUNK. */
+const FORTNIGHT = 14;
+/** How far back the strip reaches however tall its box — DayStrip's MAX_DEPTH. */
+const DEEPEST = 60;
+
+/**
+ * How many days the stack HOLDS when the box shows `shown` of them.
+ *
+ * The two numbers are not one (da-bewc): a stack holding exactly what its
+ * box shows overflows it by at most the one partly revealed day, which is
+ * a few dozen pixels of scroll and then nothing. So there is always a
+ * fortnight of past above the box to scroll back through, and a box that
+ * shows more than a fortnight holds what it shows.
+ */
+const heldFor = (shown) => (shown > 0 ? Math.min(DEEPEST, Math.max(FORTNIGHT, shown)) : 0);
+const heldAt = (m) => heldFor(owedAt(m));
+
+/**
+ * Which days of the past are ON SCREEN, by how many days back each is.
+ *
+ * A day is on screen when its whole date stamp is inside the stack's box
+ * — the stamp is how a reader tells one day from another, so a day whose
+ * stamp is cut is a day they cannot read. Read off the pictures rather
+ * than off the depth, because since da-bewc the stack holds days the box
+ * does not show, and what the box shows is the claim being made.
+ */
+const onScreen = ({ page }) =>
+	page.locator('.stack').evaluate((stack) => {
+		const box = stack.getBoundingClientRect();
+		const seen = [];
+		for (const band of stack.querySelectorAll('.band.past')) {
+			const end = Number(band.dataset.daysAgo);
+			const n = Number(band.dataset.days);
+			const labels = [...band.querySelectorAll('svg.svg text.date-label')];
+			for (let i = 0; i < n; i++) {
+				const first = labels[3 * i]?.getBoundingClientRect();
+				const last = labels[3 * i + 2]?.getBoundingClientRect();
+				if (first && last && first.top >= box.top - 1 && last.bottom <= box.bottom + 1)
+					seen.push(end + n - 1 - i);
+			}
+		}
+		return seen.sort((a, b) => a - b);
+	});
 
 /**
  * Size the box so the strip shows exactly `days` days before today.
@@ -182,20 +230,21 @@ async function sizeFor(app, days) {
 	const m = await metrics(app);
 	const strip = days === 0 ? m.today : m.today + m.gap + pastHeight(m, days) - m.unit / 2;
 	await setBox(app, Math.ceil(strip + m.chrome));
-	await waitForDays(app, days);
+	await waitForDays(app, heldFor(days));
 }
 
 /** Size the box so the room above today is exactly `days` whole days. */
 async function sizeWhole(app, days) {
 	const m = await metrics(app);
 	await setBox(app, m.today + m.gap + pastHeight(m, days) + m.chrome);
-	await waitForDays(app, days);
+	await waitForDays(app, heldFor(days));
 }
 
 /**
- * Wait until the strip shows exactly `depth` days before today, and every
+ * Wait until the stack HOLDS exactly `depth` days before today, and every
  * picture on it is drawn with as many days as its box claims — no day
- * more, and none still the depth it was before.
+ * more, and none still the depth it was before. What the box SHOWS of
+ * them is `onScreen` (da-bewc).
  */
 const waitForDays = ({ page }, depth) =>
 	page.waitForFunction((want) => {
@@ -280,6 +329,51 @@ async function dragBy({ page }, selector, dy) {
 	await page.mouse.up();
 }
 
+/**
+ * Turn a real wheel over the past, as a reader does: the pointer in the
+ * middle of the stack, `by` pixels of deltaY — negative is back in time,
+ * since the past is above.
+ *
+ * Not `el.scrollTop = ...`, which is what every other scroll assertion in
+ * this file does and which passed throughout da-bewc, while nothing a
+ * hand could do moved the strip at all.
+ */
+async function wheelOverPast({ page }, by) {
+	const box = await page.locator('.stack').boundingBox();
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.wheel(0, by);
+}
+
+/**
+ * Drag a finger down the stack, which is back in time for the same
+ * reason.
+ *
+ * Playwright's touchscreen only taps, so the sequence goes over CDP —
+ * where a real touch comes from, and the only way to tell a finger that
+ * scrolls from a finger a `touch-action` or a pointer capture has eaten.
+ */
+async function dragOverPast({ page }, by) {
+	const box = await page.locator('.stack').boundingBox();
+	const x = box.x + box.width / 2;
+	const y = box.y + box.height / 2;
+	const cdp = await page.context().newCDPSession(page);
+	const at = (type, py) =>
+		cdp.send('Input.dispatchTouchEvent', {
+			type,
+			touchPoints: type === 'touchEnd' ? [] : [{ x, y: py }]
+		});
+	try {
+		await at('touchStart', y);
+		for (let i = 1; i <= 10; i++) await at('touchMove', y + (by * i) / 10);
+		await at('touchEnd', y + by);
+	} finally {
+		await cdp.detach();
+	}
+}
+
+/** The box today's band occupies on the screen — it is not to move. */
+const todayBand = ({ page }) => page.locator('.band.today').boundingBox();
+
 /** The stack's scroll box, as the strip reads it. */
 const stackScroll = ({ page }) =>
 	page.locator('.stack').evaluate((el) => ({
@@ -312,25 +406,32 @@ describe('the day strip', () => {
 			await setBox(app, 300);
 			const few = await owed(app);
 			assert.ok(few >= 1, `300px holds today and nothing else: ${few} days`);
-			await waitForDays(app, few);
+			await waitForDays(app, heldFor(few));
+			const short = await onScreen(app);
 
 			// A tall box: more of them.
 			await setBox(app, 600);
 			const many = await owed(app);
 			assert.ok(many > few, `600px holds no more days than 300px: ${many} vs ${few}`);
-			await waitForDays(app, many);
+			await waitForDays(app, heldFor(many));
+
+			// The box is what SHOWS them: the taller one has more of the
+			// past on screen, and neither shows more than it has room for.
+			const tall = await onScreen(app);
+			assert.ok(tall.length > short.length, `600px shows no more days than 300px: ${tall} vs ${short}`);
+			assert.ok(tall.length <= many, `600px shows ${tall.length} days in room for ${many}`);
 
 			// ONE picture for the past, holding every day of it (da-hnyb),
 			// and today's band apart from it.
 			const past = app.page.locator('.stack .band');
 			assert.equal(await past.count(), 1, 'the past is not one picture');
-			assert.equal(Number(await past.getAttribute('data-days')), many);
+			assert.equal(Number(await past.getAttribute('data-days')), heldFor(many));
 
 			// And each day is the day it claims: the days immediately before
 			// today, oldest at the top.
 			assert.deepEqual(
 				days(await band(app, 1)),
-				Array.from({ length: many }, (_, i) => labelFor(nowMs, many - i)),
+				Array.from({ length: heldFor(many) }, (_, i) => labelFor(nowMs, heldFor(many) - i)),
 				'the past is stamped with the wrong days'
 			);
 			assert.deepEqual(days(await band(app, 0)), [labelFor(nowMs, 0)]);
@@ -349,11 +450,11 @@ describe('the day strip', () => {
 			await app.idle();
 			assert.ok(!(await band(app, 1)).includes(happy), 'the past drew an entry logged today');
 
-			// Shrunk back, the days that no longer fit go away — the box is
-			// a height, not a ratchet.
+			// Shrunk back, the days that no longer fit go off screen — the
+			// box is a height, not a ratchet.
 			await setBox(app, 300);
-			await waitForDays(app, few);
-			assert.equal(days(await band(app, 1)).length, few);
+			await waitForDays(app, heldFor(few));
+			assert.deepEqual(await onScreen(app), short);
 
 			// A box exactly today's height holds today alone.
 			await sizeFor(app, 0);
@@ -361,44 +462,138 @@ describe('the day strip', () => {
 		});
 	});
 
-	test('the past fills a room of whole days exactly, and scrolls in one that is not', async () => {
+	test('the stack holds a fortnight above the box, whether or not the box holds whole days', async () => {
 		await withApp(async (app) => {
-			// Room for three whole days: the picture is the stack's height,
-			// to the pixel, and there is nothing to scroll.
+			// Room for three whole days. The box is three days tall — and
+			// the picture in it is a fortnight, which is what there is to
+			// scroll to. It used to be three days, to the pixel, which left
+			// the wheel and the finger nothing to move (da-bewc).
 			await sizeWhole(app, 3);
 			const m = await metrics(app);
 			const whole = await stackScroll(app);
-			assert.equal(svgHeight(await band(app, 1)), pastHeight(m, 3), 'datum drew the past another height');
+			assert.equal(svgHeight(await band(app, 1)), pastHeight(m, FORTNIGHT), 'datum drew the past another height');
 			assert.equal(whole.client, pastHeight(m, 3), `the stack is not three days tall: ${JSON.stringify(whole)}`);
-			assert.equal(whole.total, whole.client, 'three whole days scroll');
+			assert.equal(whole.total, pastHeight(m, FORTNIGHT));
+			assert.ok(
+				whole.total - whole.client > 200,
+				`three whole days of box leave nothing to scroll: ${JSON.stringify(whole)}`
+			);
 
 			// Half a day less and the top one is partly revealed: the same
-			// three days, and now the stack scrolls to them.
+			// fortnight behind a shorter window on it.
 			await sizeFor(app, 3);
 			const part = await stackScroll(app);
-			assert.equal(part.total, pastHeight(m, 3));
-			assert.ok(part.total > part.client, `the stack does not scroll: ${JSON.stringify(part)}`);
+			assert.equal(part.total, pastHeight(m, FORTNIGHT));
+			assert.ok(part.client < whole.client, `the shorter box is not shorter: ${JSON.stringify(part)}`);
 		});
 	});
 
-	test('one more day re-draws the past one day deeper, and not today', async () => {
+	test('a wheel over the past scrolls back through the days, today staying put', async () => {
 		await withApp(async (app) => {
+			// A box three days tall: a date stamp fits in it whole, so there
+			// is something legible to arrive at.
 			await sizeFor(app, 3);
-			await app.idle();
-			const seen = await app.spyOnRunner();
+			const rest = await stackScroll(app);
+			const before = await onScreen(app);
+			assert.ok(before.length > 0, `no day is legible in the box: ${JSON.stringify(rest)}`);
+			const today = await todayBand(app);
 
-			await sizeFor(app, 4);
-			await app.idle();
+			// One turn of the wheel, upward. The stack goes back in time —
+			// scrollTop falls, because the oldest day is at the top — and it
+			// goes a long way: before da-bewc the whole range was the 38px
+			// of the one day the box did not quite show.
+			await wheelOverPast(app, -600);
+			await app.page.waitForFunction(
+				(was) => document.querySelector('.stack').scrollTop <= was - 200,
+				rest.top
+			);
+			const moved = await stackScroll(app);
+			assert.ok(
+				rest.top - moved.top >= 200,
+				`the wheel moved the stack ${rest.top - moved.top}px: ${JSON.stringify(moved)}`
+			);
 
-			// Every dayview the strip ran for the taller box, by the days it
-			// asked for and where they ended: the past at four, once, and
-			// today not at all — its picture did not change.
-			const flag = (argv, name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null);
-			const views = (await seen())
-				.filter((argv) => argv[0] === 'dayview')
-				.map((argv) => [flag(argv, '--n-days'), flag(argv, '--end-date')]);
-			assert.deepEqual(views, [['4', '-1']]);
+			// And a day OLDER than any that was on screen now is — the
+			// point of scrolling, as against merely moving.
+			const after = await onScreen(app);
+			assert.ok(
+				after.some((daysAgo) => daysAgo > Math.max(...before)),
+				`nothing older came into view: ${after} after ${before}`
+			);
+
+			// Today is pinned through all of it: it is not in the scroller.
+			assert.deepEqual(await todayBand(app), today, "today's band moved");
+
+			// Nothing else took the gesture: neither the pane's own body
+			// (da-mbz2) nor the page.
+			const stole = await app.page.evaluate(() => {
+				const body = document.querySelector('.strip').closest('.body');
+				return { pane: body.scrollTop, page: window.scrollY };
+			});
+			assert.deepEqual(stole, { pane: 0, page: 0 });
 		});
+	});
+
+	test('a finger over the past scrolls it on a phone, and the page does not move', async () => {
+		// The phone as it comes (390x640, da-hkpd): the box the default
+		// layout gives the strip, which is the box vividn could not scroll.
+		await withApp(
+			async (app) => {
+				const rest = await stackScroll(app);
+				assert.ok(
+					rest.total - rest.client >= 200,
+					`the phone's strip holds nothing to scroll: ${JSON.stringify(rest)}`
+				);
+				const today = await todayBand(app);
+
+				// A finger pulled DOWN the stack is back in time.
+				await dragOverPast(app, 300);
+				await app.page.waitForFunction(
+					(was) => document.querySelector('.stack').scrollTop <= was - 200,
+					rest.top
+				);
+				const moved = await stackScroll(app);
+				assert.ok(
+					rest.top - moved.top >= 200,
+					`the finger moved the stack ${rest.top - moved.top}px: ${JSON.stringify(moved)}`
+				);
+				assert.deepEqual(await todayBand(app), today, "today's band moved");
+				assert.equal(await app.page.evaluate(() => window.scrollY), 0, 'the page scrolled instead');
+			},
+			{ device: devices['Pixel 5'], viewport: { width: 390, height: 640 } }
+		);
+	});
+
+	test('one more day re-draws the picture that gained it, and not today', async () => {
+		// The shortest day, so a box past the fortnight fits on a screen:
+		// inside the fortnight the stack holds the same days however the
+		// box moves, and the argv does not change, so nothing is re-drawn.
+		await withApp(
+			async (app) => {
+				await say(app, 40);
+				await app.page.waitForFunction(
+					() => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === 40
+				);
+				await sizeFor(app, 15);
+				await app.idle();
+				const seen = await app.spyOnRunner();
+
+				await sizeFor(app, 16);
+				await app.idle();
+
+				// Every dayview the strip ran for the taller box, by the days
+				// it asked for and where they ended: the OLDEST picture,
+				// which is the one that gained the day, once — and neither
+				// the fortnight below it nor today, whose pictures are the
+				// same argv as before.
+				const flag = (argv, name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null);
+				const views = (await seen())
+					.filter((argv) => argv[0] === 'dayview')
+					.map((argv) => [flag(argv, '--n-days'), flag(argv, '--end-date')]);
+				assert.deepEqual(views, [['2', '-15']]);
+			},
+			{ viewport: { width: 1280, height: 1400 } }
+		);
 	});
 
 	test('a past deeper than a fortnight is a picture a fortnight, a day apart', async () => {
@@ -459,7 +654,11 @@ describe('the day strip', () => {
 				await sizeFor(app, 2);
 				const m = await metrics(app);
 				assert.ok(m.band > 120, `the day box is not built on the 120 day height: ${m.band}`);
-				assert.equal(svgHeight(await band(app, 1)), pastHeight(m, 2), 'the past');
+				// Waited for: the stack holds the same fortnight at either
+				// height, so the day COUNT `sizeFor` waits on does not move
+				// and the re-draw at 120 is still in flight behind it.
+				await waitForHeights(app, { 1: pastHeight(m, heldAt(m)), 0: m.today });
+				assert.equal(svgHeight(await band(app, 1)), pastHeight(m, heldAt(m)), 'the past');
 				assert.equal(svgHeight(await band(app, 0)), m.today, "today's band");
 
 				// The notch moves it — up is taller — and the owner hears
@@ -472,14 +671,14 @@ describe('the day strip', () => {
 				// wrote is the new size, every day in it taller by `grow`.
 				// Waited for, because the render happens on the drop.
 				const tall = grown(m, grow);
-				await waitForHeights(app, { 1: pastHeight(tall, owedAt(tall)), 0: tall.today });
+				await waitForHeights(app, { 1: pastHeight(tall, heldAt(tall)), 0: tall.today });
 
 				// ↻ says the default, to the owner as well.
 				await app.page.locator('button.reset').click();
 				assert.equal(await valueOf(app), fallback);
 				await heardIs(app, fallback);
 				const at = await metrics(app);
-				await waitForHeights(app, { 1: pastHeight(at, owedAt(at)), 0: at.today });
+				await waitForHeights(app, { 1: pastHeight(at, heldAt(at)), 0: at.today });
 		});
 	});
 
@@ -498,8 +697,8 @@ describe('the day strip', () => {
 			assert.equal(await valueOf(app), was + grow);
 			const up = grown(m, grow);
 			assert.equal(owedAt(up), 2, 'the taller days do not leave two in the box');
-			await waitForHeights(app, { 1: pastHeight(up, 2), 0: up.today });
-			await waitForDays(app, 2);
+			await waitForHeights(app, { 1: pastHeight(up, heldAt(up)), 0: up.today });
+			await waitForDays(app, heldAt(up));
 
 			// And the thing the stack is for still holds at the new height:
 			// the same hour is the same column in the past as today.
@@ -510,12 +709,12 @@ describe('the day strip', () => {
 			// And DOWN is shorter, by the same 40, from the same start —
 			// and more days fit.
 			await app.page.locator('button.reset').click();
-			await waitForHeights(app, { 1: pastHeight(m, 3), 0: m.today });
+			await waitForHeights(app, { 1: pastHeight(m, heldAt(m)), 0: m.today });
 			await dragBy(app, 'button.day-grip', grow);
 			assert.equal(await valueOf(app), was - grow);
 			const down = grown(m, -grow);
-			await waitForHeights(app, { 1: pastHeight(down, owedAt(down)), 0: down.today });
-			await waitForDays(app, owedAt(down));
+			await waitForHeights(app, { 1: pastHeight(down, heldAt(down)), 0: down.today });
+			await waitForDays(app, heldAt(down));
 		});
 	});
 
@@ -633,8 +832,11 @@ describe('the day strip', () => {
 				`enter did not bring yesterday back: ${JSON.stringify(back)}`
 			);
 			// The depth is unchanged — the line puts the stack back, it does
-			// not throw away the days the box holds.
-			assert.equal(await app.page.locator('.stack .band').getAttribute('data-days'), '5');
+			// not throw away the days it holds.
+			assert.equal(
+				Number(await app.page.locator('.stack .band').getAttribute('data-days')),
+				heldFor(5)
+			);
 
 			// And the same by pointer, which is the other half of "reachable
 			// by keyboard and by touch".
@@ -659,7 +861,7 @@ describe('the day strip', () => {
 				// something to say at the end.
 				await sizeFor(app, 5);
 				assert.deepEqual(days(await band(app, 0)), stamps(noon, 0, 0));
-				assert.deepEqual(days(await band(app, 1)), stamps(noon, 5, 1));
+				assert.deepEqual(days(await band(app, 1)), stamps(noon, heldFor(5), 1));
 
 				// Over the boundary. The strip redraws on the frame's epoch,
 				// which is the same beat today's band has always refreshed
@@ -675,11 +877,14 @@ describe('the day strip', () => {
 				assert.deepEqual(days(await band(app, 0)), stamps(after, 0, 0));
 				assert.deepEqual(
 					days(await band(app, 1)),
-					stamps(after, 5, 1),
+					stamps(after, heldFor(5), 1),
 					'the past did not follow the new today'
 				);
 				// The box did not move, so neither did the depth.
-				assert.equal(await app.page.locator('.stack .band').getAttribute('data-days'), '5');
+				assert.equal(
+					Number(await app.page.locator('.stack .band').getAttribute('data-days')),
+					heldFor(5)
+				);
 				// And the rule still reads off the scroll position, not off
 				// the date it was first drawn for.
 				assert.equal(await jagged(app), 0);

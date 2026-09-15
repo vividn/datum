@@ -37,40 +37,65 @@ const pastDays = (page) =>
 		.locator('.stack .band')
 		.evaluateAll((els) => els.reduce((n, b) => n + Number(b.dataset.days), 0));
 
+/**
+ * The days of the past the strip is SHOWING: those whose whole date stamp
+ * is inside the stack's box.
+ *
+ * Since da-bewc the strip holds a fortnight however short its box, so
+ * that there is a past above the box to scroll back through — which means
+ * the days it holds no longer answer "how far back does this reach", and
+ * the days on screen do.
+ */
+const shownDays = (page) =>
+	pane(page, 'strip')
+		.locator('.stack')
+		.evaluate((stack) => {
+			const box = stack.getBoundingClientRect();
+			let n = 0;
+			for (const band of stack.querySelectorAll('.band.past')) {
+				const labels = [...band.querySelectorAll('svg.svg text.date-label')];
+				for (let i = 0; i < labels.length / 3; i++) {
+					const first = labels[3 * i].getBoundingClientRect();
+					const last = labels[3 * i + 2].getBoundingClientRect();
+					if (first.top >= box.top - 1 && last.bottom <= box.bottom + 1) n += 1;
+				}
+			}
+			return n;
+		});
+
 describe('resizing', () => {
 	// At 1000px tall, not 900: the row under the strip sits near its floor
 	// (three panes stacked in the side column), so a drag can only take the
 	// strip up to that floor — and whether that is one more day or none
 	// is a threshold a few pixels of chrome move (the shell's bars, da-0a5o,
 	// moved it). A taller screen leaves the strip room for a third day.
-	test('the strip, dragged taller over a second, reaches further back as it goes and draws each depth once', async () => {
+	test('the strip, dragged taller over a second, shows further back as it goes and re-draws nothing it holds', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
-			const before = await pastDays(page);
+			const held = await pastDays(page);
+			const before = await shownDays(page);
 			// The root's column border, under the strip: down is a taller strip.
 			const border = page.locator('section.root > .content > .split.column > [role="separator"]').first();
 			const took = await dragFor(page, border, 0, 200, 1000);
 			const during = drawnRuns(await seen());
-			const mid = await pastDays(page);
-			console.log(`  drag: ${took}ms, dayview ran ${during.dayview}x, nowview ${during.nowview}x; days ${before} → ${mid}`);
-			assert.ok(mid > before, `the strip held ${before} days before and ${mid} during the drag: it did not grow live`);
+			const mid = await shownDays(page);
+			console.log(`  drag: ${took}ms, dayview ran ${during.dayview}x, nowview ${during.nowview}x; shown ${before} → ${mid} of ${held}`);
+			assert.ok(mid > before, `the strip showed ${before} days before and ${mid} during the drag: it did not grow live`);
 			assert.ok(during.nowview >= 2 && during.nowview <= 6, `nowview ran ${during.nowview} times during a ${took}ms drag`);
 			await page.mouse.up();
 			await app.idle();
 			const after = drawnRuns(await seen());
-			const days = await pastDays(page);
-			assert.ok(days > before, `a 200px taller strip holds no more days (${before} → ${days})`);
-			// Only the past is re-drawn, one picture per depth the drag passed
-			// through and never the same one twice: the width did not change,
-			// so today's picture, and each asked for at an earlier tick, is kept.
-			const views = (await seen()).filter((a) => a[0] === 'dayview').map((a) => a.join(' '));
-			assert.ok(views.every((v) => v.includes('--end-date')), `today was re-drawn: ${views.join(' | ')}`);
-			assert.equal(new Set(views).size, views.length, `a picture was drawn twice: ${views.join(' | ')}`);
-			assert.ok(
-				after.dayview >= 1 && after.dayview <= days - before,
-				`${after.dayview} pictures for ${days - before} more days`
-			);
+			const days = await shownDays(page);
+			assert.ok(days > before, `a 200px taller strip shows no more days (${before} → ${days})`);
+			// And it cost nothing: this drag stays inside the fortnight the
+			// stack already holds (da-bewc), and 200px of height changes
+			// neither the width nor the day height, so no picture's argv
+			// changed and datum was not asked again — the days that came
+			// into view were drawn before the drag began.
+			assert.equal(await pastDays(page), held, `the drag changed the days held: ${held} → ${await pastDays(page)}`);
+			assert.equal(during.dayview, 0, `${during.dayview} pictures drawn during a drag inside the fortnight`);
+			assert.equal(after.dayview, 0, `${after.dayview} pictures drawn at the drop of a drag inside the fortnight`);
 			assert.ok(after.nowview - during.nowview <= 1, 'nowview, now shorter, redraws at most once at the drop');
 		}, { viewport: { width: 1280, height: 1000 } });
 	});

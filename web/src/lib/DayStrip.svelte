@@ -22,12 +22,24 @@
 	two of them the stack leaves the space datum leaves between two days,
 	so a day costs the same wherever it falls.
 
-	How many days: as many as the BOX holds (da-zb0d). The strip is a
-	widget of the dashboard, and the pane it sits in is what says how tall
-	it is — so the strip fills its container and `depth` is `the room
+	How many days the box SHOWS: as many as it holds (da-zb0d). The strip
+	is a widget of the dashboard, and the pane it sits in is what says how
+	tall it is — so the strip fills its container and `fits` is `the room
 	above today ÷ one band`. It has no handle for its own height, no
 	memory of one, and no cap of its own: a taller pane is more past, and
 	that is the whole control.
+
+	How many days the stack HOLDS is a second number, and the two were one
+	(da-bewc). A stack holding exactly what its box shows overflows it by
+	at most the one day that is partly revealed — 38px on a laptop, 57 on
+	a phone — so the wheel and the finger both reached it, both scrolled
+	it, and both ran out within the gesture: «scrolling doesn't seem to
+	work here. Everywhere.» There was nowhere to scroll TO. So the stack
+	holds a FORTNIGHT at least, however short the box, and that past is
+	what the reader scrolls back through; a box tall enough to show more
+	shows more, to MAX_DEPTH. It costs nothing at rest — a fortnight is
+	one picture, as one day was — and a resize inside it now re-draws
+	nothing at all, because the argv has not changed.
 
 	How tall one day is drawn is the widget's SETTING, `dayHeight`: a prop
 	in, and a `change` event out whenever the reader moves it. The notch
@@ -77,9 +89,12 @@
 
 	/** The margin between the past and today, in pixels, matching the CSS below. */
 	const GAP = 5;
-	/** How far back the strip will reach, however tall its box. */
+	/** How far back the strip will reach, however tall its box grows. */
 	const MAX_DEPTH = 60;
-	/** The most days one picture of the past holds — see the note above. */
+	/**
+	 * The most days one picture of the past holds — see the note above —
+	 * and so also the least the stack holds: the scrollback is a picture.
+	 */
 	const CHUNK = 14;
 	/** What one press of an arrow key moves the day-height handle. */
 	const HEIGHT_STEP = 5;
@@ -111,16 +126,20 @@
 	let atBottom = true;
 
 	/**
-	 * The days the strip is showing: as many as the room above today
-	 * holds, counting a day that is only partly revealed — a day half on
-	 * screen is a day that has to be drawn, and it is the one the stack
+	 * The days the box SHOWS: as many as the room above today holds,
+	 * counting a day that is only partly revealed — a day half on screen
+	 * is a day that has to be drawn, and it is the first one the stack
 	 * scrolls up to. The first costs its box; each one more, its pitch.
 	 */
 	$: room = Math.max(0, height - todayBox(dayHeight) - GAP);
-	$: depth =
-		room > 0
-			? Math.min(MAX_DEPTH, Math.ceil((room - bandBox(dayHeight)) / dayPitch(dayHeight)) + 1)
-			: 0;
+	$: fits = room > 0 ? Math.ceil((room - bandBox(dayHeight)) / dayPitch(dayHeight)) + 1 : 0;
+	/**
+	 * The days the stack HOLDS: a fortnight at least, so that there is a
+	 * past above the box to scroll back through (da-bewc), and as many as
+	 * the box shows when it shows more than that. Zero is a box with no
+	 * room above today at all, which has nothing to scroll either way.
+	 */
+	$: depth = fits > 0 ? Math.min(MAX_DEPTH, Math.max(CHUNK, fits)) : 0;
 
 	/** The height a drag is previewing, or the committed one at rest. */
 	$: shownDayHeight = sizing ? sizing.preview : dayHeight;
