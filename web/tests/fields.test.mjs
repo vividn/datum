@@ -656,4 +656,90 @@ describe('a state field fills the widget with its states', () => {
 			);
 		}, { clock: todayAt(15), viewport: { width: 390, height: 640 } });
 	});
+
+	// A `-t` belongs to the panel it was set in. It used to outlive it:
+	// dismissing the panel left `adjust` standing, and the next plain press
+	// spent it on the in-place list — a state logged fifteen minutes ago with
+	// nothing on screen saying so (da-vlc0, a regression of da-g635). The list
+	// draws no bubbles, so it must carry none.
+
+	/** Long-press `mood:` and set `when` to -15m, then dismiss the panel. */
+	async function setThenDismiss(page) {
+		await page.locator('.bar [data-field="mood"]').click({ button: 'right' });
+		await page.locator('.bar .panel .bubbles button', { hasText: '-15m' }).click();
+		await page.keyboard.press('Escape');
+		await page.locator('.bar .panel').waitFor({ state: 'detached' });
+	}
+
+	/** mood's newest stored entry — `entries()` is the CLI's own rows. */
+	const newestMood = async (app) => (await app.entries()).find((e) => e.field === 'mood');
+
+	test('a bubble from a dismissed panel does not follow the plain press into the list', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seed(app, MOOD, 'mood');
+			await setThenDismiss(page);
+
+			await page.locator('.bar [data-field="mood"]').click();
+			await page.locator('.bar [data-state="happy"]').waitFor();
+			// The cheap witness: a state's title IS the argv its press runs, so
+			// a bubble that ever leaks again says so here first.
+			assert.equal(
+				await page.locator('.bar [data-state="happy"]').getAttribute('title'),
+				'switch mood happy'
+			);
+
+			const before = (await app.echoes()).length;
+			await page.locator('.bar [data-state="happy"]').click();
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			assert.equal((await app.echoes()).at(-1), 'switch mood happy');
+
+			const stored = await newestMood(app);
+			assert.equal(Date.parse(stored.occur_time.utc), todayAt(15), JSON.stringify(stored.occur_time));
+		}, { clock: todayAt(15) });
+	});
+
+	test('nor into the `+` at the end of that list', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seed(app, MOOD, 'mood');
+			await setThenDismiss(page);
+
+			const before = (await app.echoes()).length;
+			await page.locator('.bar [data-field="mood"]').click();
+			await page.locator('.bar [data-add-state]').click();
+			await page.locator('.bar input.new-state').fill('sad');
+			await page.locator('.bar input.new-state').press('Enter');
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			assert.equal((await app.echoes()).at(-1), 'switch mood sad');
+
+			const stored = await newestMood(app);
+			assert.equal(stored.state, 'sad', JSON.stringify(stored.state));
+			assert.equal(Date.parse(stored.occur_time.utc), todayAt(15), JSON.stringify(stored.occur_time));
+		}, { clock: todayAt(15) });
+	});
+
+	// The other half of the same claim: the panel is where a bubble IS spent,
+	// and it still is.
+	test('the long press spends its own bubble on the state it picks', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seed(app, MOOD, 'mood');
+
+			await page.locator('.bar [data-field="mood"]').click({ button: 'right' });
+			await page.locator('.bar .panel .bubbles button', { hasText: '-15m' }).click();
+
+			const before = (await app.echoes()).length;
+			await page.locator('.bar .panel .states button', { hasText: 'happy' }).click();
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			assert.equal((await app.echoes()).at(-1), 'switch mood happy -t -15');
+
+			const stored = await newestMood(app);
+			assert.equal(
+				Date.parse(stored.occur_time.utc),
+				todayAt(14, 45),
+				JSON.stringify(stored.occur_time)
+			);
+		}, { clock: todayAt(15) });
+	});
 });

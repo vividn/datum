@@ -26,9 +26,10 @@
 	first, `+` last (da-g635). Nothing floats: the list is the widget's own
 	content, in the same scroller and under the same height rules, and the
 	pane is scrolled back to where it stood when Back returns the fields. A
-	press on a state runs `switch <field> <state>` and comes back; `+` is an
-	input, and Enter on it runs the same command with a state the field has
-	never been in, which is how one is learned. A LONG press still opens the
+	press on a state runs `switch <field> <state>` — plainly, with no `-t`,
+	because the list carries no bubbles — and comes back; `+` is an input,
+	and Enter on it runs the same command with a state the field has never
+	been in, which is how one is learned. A LONG press still opens the
 	panel, states and all, so the `-t` / `dur` bubbles can be set first.
 
 	The widget never runs anything itself: it composes an argv and
@@ -192,6 +193,12 @@
 	 */
 	function pick(button: FieldButton) {
 		close();
+		// The in-place list shows no bubbles, so it must carry none: a `-t`
+		// set in the panel and then dismissed would otherwise still be on
+		// the next plain press, and the state would be logged fifteen
+		// minutes ago with nothing on screen saying so (da-vlc0). `panel()`
+		// resets it for its own opening; this is the other door in.
+		adjust = {};
 		scrolled = scrollerOf();
 		scrolledTo = scrolled?.scrollTop ?? 0;
 		picked = button.field;
