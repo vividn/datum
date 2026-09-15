@@ -85,7 +85,7 @@
 	$: dirty = id !== undefined && $modified.has(id);
 	$: locked = !!active?.locked;
 	/** Loaded, and no act in flight: what a test waits for before pressing. */
-	$: ready = $loaded && !busy && name !== undefined;
+	$: ready = $loaded && !busy && active !== undefined;
 
 	/**
 	 * The `+`: the chooser, and what it came back with. A layout opens as a
@@ -134,17 +134,28 @@
 			await saveAs(id, to);
 		});
 
-	$: acts = {
-		dirty,
-		locked,
-		save: doSave,
-		restore: doRestore,
-		saveAs: doSaveAs,
-		toggleLock: () => id !== undefined && toggleLock(id)
-	};
+	/**
+	 * The four acts belong to the layout the active tab HOLDS — and a root
+	 * tab need not hold one: a tab given a widget from the chooser sheds
+	 * the layout it held (da-8o07), and is then a plain widget tab with
+	 * nothing to save, restore or lock. The same rule a pane's frame reads.
+	 */
+	$: acts =
+		name === undefined
+			? undefined
+			: {
+					dirty,
+					locked,
+					save: doSave,
+					restore: doRestore,
+					saveAs: doSaveAs,
+					toggleLock: () => id !== undefined && toggleLock(id)
+				};
 
 	$: items = locked
-		? layoutActs(acts)
+		? acts
+			? layoutActs(acts)
+			: []
 		: menuItems({
 				choose: () => id !== undefined && void fillTab(id),
 				// No `split`: the root pane is the shell, with nothing outside

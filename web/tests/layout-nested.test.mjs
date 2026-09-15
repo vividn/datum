@@ -21,7 +21,21 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { DESKTOP, bar, choose, chooseRoot, fill, menuButton, settled, widgetPane } from './support/layout.mjs';
+import {
+	DESKTOP,
+	addTab,
+	bar,
+	choose,
+	chooseRoot,
+	chooser,
+	exactly,
+	fill,
+	menuLines,
+	pane,
+	rootMenuButton,
+	settled,
+	widgetPane
+} from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -270,6 +284,111 @@ describe('a save in another tab', () => {
 			await until(() => inside(copy(page)), (t) => t.length === 3);
 			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields', 'tail']);
 			assert.equal(await dotted(copy(page)), false);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+});
+
+// Choosing a WIDGET for a tab that holds a layout (da-8o07).
+//
+// vividn, from the train: "Select a layout, for example default […] then
+// click on default and hit choose, and select a widget, like tail. Instead
+// of replacing the default layout with a tail widget, it changes the
+// default layout to have a tail widget at the top level […] Instead, the
+// default layout should disappear and it should just be a single pane,
+// tail."
+//
+// So the widget is not put INSIDE the copy: it replaces it. The tab sheds
+// the name, and with it the dot, the acts and the draft — and the SAVE is
+// untouched, because the tab was only ever a copy of it.
+describe('a widget chosen for a tab that holds a layout', () => {
+	/** The active tab of a pane, as the live tree holds it — `shell` is the root. */
+	const activeTabOf = (page, paneId) =>
+		page.evaluate((paneId) => {
+			const all = [];
+			const walk = (p) => {
+				all.push(p);
+				for (const tab of p.tabs) if ('children' in tab.content) tab.content.children.forEach(walk);
+			};
+			walk(window.datum.layout.current().root);
+			const found = all.find((p) => p.id === paneId);
+			return found ? found.tabs[found.active] : null;
+		}, paneId);
+
+	/** The tail pane's tab strip, one label per tab, the dot kept. */
+	const tabsOf = (page, id) => pane(page, id).locator('[role="tab"]').allInnerTexts();
+
+	test('a pane tab sheds the layout: the tab IS the widget, and the save is untouched', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await layouts(app, 'saveLayout', MINE);
+			const before = await layouts(app, 'loadLayout', 'mine');
+
+			// The tail pane's `+`: a second tab holding `mine`, two panes in it.
+			await addTab(page, 'tail', 'mine');
+			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'mine' }).waitFor();
+			await settled(page);
+			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields']);
+
+			// That tab's own menu: Choose… → the tail widget.
+			await choose(page, 'tail', 'Choose…');
+			await chooser(page).waitFor();
+			await chooser(page).locator('button').filter({ hasText: exactly('tail') }).click();
+			await chooser(page).waitFor({ state: 'detached' });
+			await settled(page);
+
+			// The tab is the widget: no name, no lifted title, no panes under it.
+			const tab = await activeTabOf(page, 'tail');
+			assert.equal(tab.layout, undefined, JSON.stringify(tab));
+			assert.equal(tab.title, undefined, JSON.stringify(tab));
+			assert.equal(tab.content.kind, 'tail');
+			assert.deepEqual(await tabsOf(page, 'tail'), ['tail', 'tail'], 'the tab still reads mine');
+			assert.equal(await page.locator('section.pane[data-title="mine"]').count(), 0);
+			assert.equal(await pane(page, 'tail').locator('[role="tab"] .dot').count(), 0, 'a shed tab wears a dot');
+
+			// The save is whole: the tab was a copy, and the copy is gone.
+			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before);
+			await chooseRoot(page, 'Save layout');
+			await until(() => rootDotted(page, 'day'), (dot) => dot === false);
+			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before, 'saving day wrote over mine');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('a ROOT tab sheds it the same way: no name, no dot, and no layout left to save', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await layouts(app, 'saveLayout', MINE);
+			const before = await layouts(app, 'loadLayout', 'mine');
+
+			// The root bar's `+`: `mine` as a second root tab.
+			await page.locator('.root-bar button[aria-label="open a layout"]').click();
+			await chooser(page).locator('button').filter({ hasText: exactly('mine') }).click();
+			await chooser(page).waitFor({ state: 'detached' });
+			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).waitFor();
+			await settled(page);
+
+			await chooseRoot(page, 'Choose…');
+			await chooser(page).waitFor();
+			await chooser(page).locator('button').filter({ hasText: exactly('tail') }).click();
+			await chooser(page).waitFor({ state: 'detached' });
+			await settled(page);
+
+			const tab = await activeTabOf(page, 'shell');
+			assert.equal(tab.layout, undefined, JSON.stringify(tab));
+			assert.equal(tab.title, undefined, JSON.stringify(tab));
+			assert.equal(tab.content.kind, 'tail');
+			assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['day', 'tail']);
+			assert.equal(await page.locator('.root-bar [role="tab"] .dot').count(), 0, 'a shed root tab wears a dot');
+			assert.equal(await page.locator('section.pane[data-title="mine"]').count(), 0);
+
+			// A tab holding no layout has no layout to save: the acts are
+			// gone from its menu, and `mine` is as it was saved.
+			await rootMenuButton(page).click();
+			const lines = await menuLines(page);
+			assert.equal(lines.includes('Save layout'), false, lines.join(' | '));
+			await page.keyboard.press('Escape');
+			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});

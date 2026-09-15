@@ -32,6 +32,7 @@ import {
 	setLocked,
 	setRatios,
 	setWidget,
+	shedLayout,
 	splitPane,
 	floorOf,
 	rootFloorOf
@@ -411,6 +412,32 @@ describe('setBar / setWidget', () => {
 		layout = setWidget(layout, empty.id, newWidget('nowview', { x: 1 }));
 		assert.equal(layout.root.tabs[1].content.kind, 'nowview');
 		assert.deepEqual(layout.root.tabs[1].content.settings, { x: 1 });
+	});
+
+	// A widget chosen for a tab that HOLDS a layout replaces the copy
+	// rather than going inside it (da-8o07): the name goes, and with it the
+	// title `inline` lifted off the save, so the tab reads its widget's own.
+	test('shedLayout drops the name and the lifted title, and only from that tab', () => {
+		const one = single('tail');
+		let layout = addTab(one, one.root.id);
+		const [kept, held] = layout.root.tabs;
+		layout = {
+			...layout,
+			root: {
+				...layout.root,
+				tabs: [{ ...kept, title: 'mine', layout: 'mine' }, { ...held, title: 'mine', layout: 'mine' }]
+			}
+		};
+		layout = shedLayout(setWidget(layout, held.id, newWidget('nowview')), held.id);
+		assert.deepEqual(layout.root.tabs[1], { id: held.id, content: layout.root.tabs[1].content });
+		assert.equal(layout.root.tabs[1].content.kind, 'nowview');
+		assert.deepEqual([layout.root.tabs[0].layout, layout.root.tabs[0].title], ['mine', 'mine']);
+	});
+
+	test('shedLayout leaves a tab that holds no layout alone', () => {
+		const one = single('tail');
+		const tab = one.root.tabs[0];
+		assert.deepEqual(shedLayout(one, tab.id), one);
 	});
 });
 

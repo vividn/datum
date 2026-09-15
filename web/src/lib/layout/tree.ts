@@ -507,6 +507,29 @@ export function setWidget(layout: Layout, tabId: NodeId, widget: Widget): Layout
 	);
 }
 
+/**
+ * A tab stops holding a saved layout (da-8o07).
+ *
+ * The identity is the NAME (shell.ts), and a tab that carries one is a
+ * COPY of that layout — so a tab given a widget of its own is no longer
+ * that copy: the name goes, and with it the title `inline` lifted off the
+ * save. What is left is a plain tab wearing its widget's own title. The
+ * save itself is not this module's business and is untouched.
+ */
+export function shedLayout(layout: Layout, tabId: NodeId): Layout {
+	return withRoot(
+		layout,
+		mapPanes(layout.root, (pane) => ({
+			...pane,
+			tabs: pane.tabs.map((tab) => {
+				if (tab.id !== tabId || tab.layout === undefined) return tab;
+				const { layout: _name, title: _title, ...rest } = tab;
+				return rest;
+			})
+		}))
+	);
+}
+
 /** Every node id in the tree, for a uniqueness check. */
 export function allIds(layout: Layout): NodeId[] {
 	const ids: NodeId[] = [];

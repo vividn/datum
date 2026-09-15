@@ -12,11 +12,9 @@
 // the instant it appears rather than growing a line under the pointer.
 
 import Chooser from './Chooser.svelte';
-import { apply } from './current.js';
 import { BUILTIN_NAMES } from './defaults.js';
-import { ancestorsOf, inlineInto } from './shell.js';
+import { ancestorsOf, inlineInto, widgetInto } from './shell.js';
 import { listLayouts } from './store.js';
-import { newWidget, setWidget } from './tree.js';
 import type { NodeId } from './types.js';
 
 /** What the modal came back with: a layout to inline, or a widget kind to fill with. */
@@ -48,10 +46,16 @@ export async function choose(ancestors: string[] = []): Promise<Choice | null> {
 	});
 }
 
-/** What a choice does to a tab: a layout inlined into it, or a widget put in it. */
+/**
+ * What a choice does to a tab: a layout inlined into it, or a widget put
+ * in it — and a widget makes the tab THE WIDGET, shedding a layout it held
+ * (da-8o07), which is why this is `widgetInto` rather than a bare
+ * `setWidget`: `setWidget` is also how a widget's own settings are folded
+ * back in (Layout.svelte), where the identity must survive.
+ */
 export async function put(tabId: NodeId, picked: Choice): Promise<void> {
 	if ('layout' in picked) await inlineInto(tabId, picked.layout);
-	else apply((l) => setWidget(l, tabId, newWidget(picked.kind)));
+	else widgetInto(tabId, picked.kind);
 }
 
 /**

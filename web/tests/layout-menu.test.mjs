@@ -341,6 +341,10 @@ describe("the root bar's menu", () => {
 		}, DESKTOP);
 	});
 
+	// The tab BECOMES the widget (da-8o07): a root tab is a copy of the
+	// layout it names, and a widget chosen for it replaces the copy rather
+	// than being put inside it — so the tab reads the widget's own title,
+	// not `day`. `layout-nested.test.mjs` holds the rest of that rule.
 	test('Choose… replaces the root tab with what the chooser came back with', async () => {
 		await withApp(async ({ page }) => {
 			await chooseRoot(page, 'Choose…');
@@ -351,7 +355,7 @@ describe("the root bar's menu", () => {
 			assert.deepEqual(await titles(page), ['stats']);
 			assert.deepEqual(
 				await page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim())),
-				['day']
+				['stats']
 			);
 		}, DESKTOP);
 	});

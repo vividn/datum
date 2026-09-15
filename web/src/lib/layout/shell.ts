@@ -89,7 +89,7 @@ import {
 	saveLayout,
 	versions
 } from './store.js';
-import { EMPTY_KIND, allIds, closeTab, newId, normalize, setActive, setLocked } from './tree.js';
+import { EMPTY_KIND, allIds, closeTab, findTab, newId, newWidget, normalize, setActive, setLocked, setWidget, shedLayout } from './tree.js';
 
 export { versions };
 
@@ -558,6 +558,22 @@ export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
 	const taken = new Set(allIds(get(layout)));
 	const filled = await expandTab({ id: tabId, content: notice(''), layout: name }, ancestorsOf(tabId), taken);
 	apply((l) => normalize({ ...l, root: mapTabs(l.root, (t) => (t.id === tabId ? filled : t)) }));
+}
+
+/**
+ * Fill a tab anywhere in the tree with a widget — the chooser's other
+ * choice, and `inlineInto`'s opposite (da-8o07).
+ *
+ * A tab that HELD a layout sheds it (`shedLayout`): what the reader chose
+ * is what the tab now IS, not a widget put inside a copy of that layout.
+ * The save is untouched — the tab was a copy, and the copy is gone — and
+ * with the last copy of a name goes its baseline, so no dot, no draft and
+ * no act is left over for a copy that is not there.
+ */
+export function widgetInto(tabId: NodeId, kind: string): void {
+	const name = findTab(get(layout), tabId)?.layout;
+	apply((l) => shedLayout(setWidget(l, tabId, newWidget(kind)), tabId));
+	if (name !== undefined && !tabOf(name)) baselines.update(({ [name]: _gone, ...rest }) => rest);
 }
 
 /** The layout names open above `tabId` (the tab's own included, if it is one): what it may not hold. */
