@@ -63,7 +63,7 @@
 	import { layoutActs, menuItems } from './menu.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
-	import { activate, close, modified, open, resetLayouts, restore, save, saveAs, toggleLock, versions } from './shell.js';
+	import { activate, close, modified, open, resetLayouts, resetWidget, restore, save, saveAs, toggleLock, versions } from './shell.js';
 	import { confirm } from '$lib/confirm.js';
 	import { addEdge } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
@@ -160,6 +160,10 @@
 			: []
 		: menuItems({
 				choose: () => id !== undefined && void fillTab(id),
+				// The same rule a pane's frame reads: a root tab holding a bare
+				// widget — one whose kind has no built-in layout (da-y2f6) — can
+				// be reset like any other. One holding a layout cannot.
+				reset: resetWidget(active),
 				// No `split`: the root pane is the shell, with nothing outside
 				// it to split against. No `bar`: this bar IS the root's.
 				breakOut: { what: 'break out: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },

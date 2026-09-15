@@ -171,6 +171,18 @@ export const titleOf = (kind: string): string => KINDS[kind]?.meta.title ?? kind
 export const labelOf = (tab: Tab): string =>
 	tab.layout ?? tab.title ?? (isSplit(tab.content) ? 'split' : titleOf(tab.content.kind));
 
+/**
+ * The settings a fresh widget of `kind` starts with, or undefined when the
+ * kind declares none — which is what `Reset widget` asks the registry
+ * (da-7ymx): a kind with nothing written down has nothing to put back, so
+ * the menu leaves the item out. A COPY, so a reset cannot write through to
+ * the registry's own object.
+ */
+export const defaultsOfKind = (kind: string): Record<string, unknown> | undefined => {
+	const declared = KINDS[kind]?.meta.defaultSettings;
+	return declared && Object.keys(declared).length > 0 ? { ...declared } : undefined;
+};
+
 /** A kind's snaps, from its settings; a kind that declares none (or an unknown one) has none. */
 export const snapsOfKind = (kind: string, settings: Record<string, unknown> = {}) => {
 	const s = KINDS[kind]?.snap?.(settings);

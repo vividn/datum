@@ -82,7 +82,7 @@
 	import { isSplit } from './types.js';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
-	import { ancestorsOf, modified, restore, save, saveAs, toggleLock } from './shell.js';
+	import { ancestorsOf, modified, resetWidget, restore, save, saveAs, toggleLock } from './shell.js';
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, splitPane } from './tree.js';
 	import { labelOf, titleOf } from './registry.js';
 	import { layoutActs, menuItems } from './menu.js';
@@ -235,6 +235,8 @@
 			: []
 		: menuItems({
 				choose: () => void fillTab(active.id),
+				// Beside Choose…, and about the same thing: the widget in front.
+				reset: resetWidget(active),
 				// A holder's children split themselves; its own split is a tab's.
 				split: holder ? undefined : { what: 'split: a new pane', run: (t) => apply((l) => splitPane(l, pane.id, t)) },
 				breakOut: canBreak ? { what: 'break out: this widget', run: (t) => apply((l) => breakOut(l, pane.id, t)) } : undefined,

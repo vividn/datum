@@ -17,6 +17,10 @@
 // - the layout's own acts — save, restore, save as, lock — are on any tab
 //   that HOLDS a layout (da-crp5), which the root's always does and a
 //   pane's sometimes does.
+// - `Reset widget` (da-7ymx) is on a tab that HOLDS A WIDGET of its own —
+//   not a layout, not a split — and whose kind declares defaults to put
+//   back. The root's tab almost always holds a layout, so the root menu
+//   almost never shows it; that is the same rule, not a second one.
 // - `export backup…` is the root's alone: there is one database.
 //
 // Close is the LAST item of either menu, whatever else the caller hands
@@ -101,6 +105,14 @@ export const CLOSE = '\u00d7';
  */
 export function menuItems(spec: {
 	choose: () => void;
+	/**
+	 * `Reset widget` (da-7ymx): the widget in front, back to the defaults
+	 * its kind declares. Undefined — and so left out — when the tab holds
+	 * no widget of its own (a layout, a split) or its kind declares no
+	 * defaults, which is `resetWidget` in `shell.ts` asking the registry.
+	 * Beside `Choose…`, because like it it is about the widget in front.
+	 */
+	reset?: () => void;
 	split?: Aimed;
 	breakOut?: Aimed;
 	close: { label: string; disabled?: boolean; run: () => void };
@@ -111,6 +123,7 @@ export function menuItems(spec: {
 }): Item[] {
 	return [
 		{ label: 'Choose…', run: spec.choose },
+		...(spec.reset ? [{ label: 'Reset widget', run: spec.reset }] : []),
 		...(spec.split ? [{ label: 'Split', row: aimed(spec.split.what, spec.split.run) }] : []),
 		...(spec.breakOut ? [{ label: 'Break out', row: aimed(spec.breakOut.what, spec.breakOut.run) }] : []),
 		...(spec.bar ? [spec.bar] : []),
