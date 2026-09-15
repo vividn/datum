@@ -13,7 +13,7 @@ file in the same commit — a convention nobody can read is a convention nobody 
    `cli.ts` opens OPFS (with `storageState.ts` asking the browser whether it may keep it).
    If a pane needs something the CLI cannot say yet, the change belongs in the CLI.
 2. **`localStorage` is for what belongs to this device and this device only**: the layout draft
-   (`layout/draft.ts`), which layouts are open (`layout/current.ts`), the command pane's line,
+   (`layout/draft.ts`), which layouts are open (`layout/current.ts`), the custom pane's line,
    the REPL scrollback, the device id, the widget picker's last choice. Never entries.
 3. **One beat.** After any command, `engine.ran()` bumps `epoch` and rebuilds the fields widget;
    every pane takes `export let epoch` and re-reads. A write in another tab arrives through
@@ -77,6 +77,9 @@ file in the same commit — a convention nobody can read is a convention nobody 
    The map is empty today: `input` was its one arm (→ `repl`, da-22vg) and the input widget came
    back under that very id (da-3zon), so a layout saved with one opens as one again — which is what
    a kind's id being a saved-layout key BUYS, and not only what it costs.
+   A kind renamed BEFORE anyone has saved a layout naming it needs no arm at all — it is a plain
+   rename, no migration, no alias, nothing to carry (`command` → `custom`, da-zqop, 2026-09-15,
+   which freed `command` for the commands widget); after that first saved layout it needs one.
 
 ## Looks
 
@@ -133,7 +136,7 @@ file in the same commit — a convention nobody can read is a convention nobody 
     failed every night, and the failure was twice charged to innocent branches (da-ldct).
 18. **A defect that only shows across a MOUNT needs a test that remounts — and asserts
     twice.** Some state is per-mount while the thing it describes is persisted, so a
-    single-session test cannot see the bug at all. `CommandPane`'s write guard is *learned,
+    single-session test cannot see the bug at all. `CustomPane`'s write guard is *learned,
     not declared* — `CliPane` discovers that a command writes by running it and seeing
     `changed` — while the command line lives in `localStorage`: the command survived a reload
     and the knowledge about it did not, so every mount re-learned by writing once, and a user

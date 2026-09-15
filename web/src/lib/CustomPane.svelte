@@ -1,6 +1,6 @@
 <!--
-	A pane whose command the reader types (da-wb2n) — a prototype, on the
-	fixed grid, of a pane that can run any datum command.
+	The custom widget: a pane whose command the reader types (da-wb2n) — a
+	prototype, on the fixed grid, of a pane that can run any datum command.
 
 	It is a CliPane whose argv is state rather than a constant: ✎ in the
 	title bar opens the command for editing, Enter applies it, Escape leaves
@@ -20,6 +20,8 @@
 
 	export let epoch = 0;
 
+	// The keys predate the name: the kind was `command` until da-zqop
+	// renamed it `custom`, and a reader's saved line must survive that.
 	const STORE_KEY = 'datum.command-pane.v1';
 	const WRITES_KEY = 'datum.command-pane.writes.v1';
 	const HINT = 'type a datum command, e.g. tail -n 5 — nowview runs as nowview -o -, the picture';
@@ -34,7 +36,7 @@
 	// A fresh object every time, the same line re-applied included: a new
 	// spec is what tells CliPane it is a new command, due one run.
 	function specFor(line: string): PaneSpec {
-		return { title: line || 'command', argv: commandArgv(line), empty: line ? 'no output' : HINT };
+		return { title: line || 'custom', argv: commandArgv(line), empty: line ? 'no output' : HINT };
 	}
 
 	function apply(next: string): void {

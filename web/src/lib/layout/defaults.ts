@@ -1,7 +1,7 @@
 // Today's page, as data.
 //
 // The day frame the wireframe (da-hrz0) drew — strip across the top, the
-// REPL beside a column of nowview, tail and the command pane (da-wb2n),
+// REPL beside a column of nowview, tail and the custom pane (da-wb2n),
 // the widget bar along the bottom — was a CSS grid with four fixed areas. It is a tree now, and this is
 // that tree: what a reader who has never touched the `…` menu sees.
 //
@@ -60,10 +60,10 @@ const legibly = (heights: number[]): number[] =>
 	heights.map((h) => h / heights.reduce((a, b) => a + b, 0));
 
 /**
- * The desktop: strip / [REPL | nowview / tail / command] / fields.
+ * The desktop: strip / [REPL | nowview / tail / custom] / fields.
  *
  * The strip (one day, 130), the middle row (the side column's nowview,
- * tail and command at 122, 116 and 116, and their two borders: 370) and
+ * tail and custom at 122, 116 and 116, and their two borders: 370) and
  * the fields pane (63) share the column in that proportion — 0.231 /
  * 0.657 / 0.112, which at a laptop's height is today's band with a
  * little of yesterday above it (a taller strip is more past, da-zb0d)
@@ -86,7 +86,7 @@ export const DEFAULT_LAYOUT: Layout = {
 						split('aside', 'column', legibly([122, 116, 116]), [
 							widgetPane('nowview', 'nowview'),
 							widgetPane('tail', 'tail'),
-							widgetPane('command', 'command')
+							widgetPane('custom', 'custom')
 						])
 					)
 				])
@@ -106,7 +106,7 @@ const tabbed = (id: string, kinds: string[]): Pane => ({
 });
 
 /**
- * A phone: strip / REPL / [tail, nowview, command] as tabs / fields,
+ * A phone: strip / REPL / [tail, nowview, custom] as tabs / fields,
  * one column — the strip, the REPL, the tabs and the fields pane at
  * their legible 130, 85, 122 (nowview's, the tallest of the three) and
  * 63: 0.327 / 0.214 / 0.307 / 0.158.
@@ -120,7 +120,7 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
 		split('main', 'column', legibly([130, 85, 122, 63]), [
 			strip(),
 			widgetPane('repl', 'repl'),
-			tabbed('side', ['tail', 'nowview', 'command']),
+			tabbed('side', ['tail', 'nowview', 'custom']),
 			widgetPane('bar', 'widgetbar')
 		])
 	)
@@ -156,7 +156,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	repl: () => only('repl', 'repl'),
 	nowview: () => only('nowview', 'nowview'),
 	tail: () => only('tail', 'tail'),
-	command: () => only('command', 'command'),
+	custom: () => only('custom', 'custom'),
 	stats: () => only('stats', 'stats'),
 	fields: () => only('fields', 'widgetbar'),
 	aliases: () => only('aliases', 'aliases'),

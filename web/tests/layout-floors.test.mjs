@@ -191,7 +191,7 @@ describe('resizing', () => {
 // the content box is the inside half of the title's row — 8px down a
 // column under a top bar, 0px across a row.
 describe('a widget pane shrinks to its frame', () => {
-	for (const kind of ['daystrip', 'repl', 'nowview', 'tail', 'command', 'stats']) {
+	for (const kind of ['daystrip', 'repl', 'nowview', 'tail', 'custom', 'stats']) {
 		for (const direction of ['column', 'row']) {
 			const axis = direction === 'row' ? 'width' : 'height';
 			test(`${kind}, across a ${direction}: only its frame is left, ${CHROME[axis]}px ${axis}`, async () => {

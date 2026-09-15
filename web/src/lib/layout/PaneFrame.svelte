@@ -161,7 +161,7 @@
 	// reports its alarm here, so the orange reaches whichever pane holds
 	// the REPL.
 	const alarm = writable(false);
-	/** The h2, for a widget that draws its own title (the command pane's ✎). */
+	/** The h2, for a widget that draws its own title (the custom pane's ✎). */
 	const titleHost = writable<HTMLElement | null>(null);
 	const hosted = writable(false);
 	setContext('layout-frame', { alarm, titleHost, hosted });
@@ -740,7 +740,7 @@
 
 	/* The words and a line round them, the frame's own: nothing across
 	   the bar but the outline, whichever way the bar runs. A widget's own
-	   controls in here (the command pane's ✎) are lifted above the button
+	   controls in here (the custom pane's ✎) are lifted above the button
 	   laid over them, and are `:global` because the widget draws them. */
 	h2 {
 		box-sizing: border-box;

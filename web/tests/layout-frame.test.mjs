@@ -172,17 +172,17 @@ describe('the title row, as tall as its words', () => {
 		}, DESKTOP);
 	});
 
-	test('the command pane’s ✎ and its editor fit inside the row, uncut', async () => {
+	test('the custom pane’s ✎ and its editor fit inside the row, uncut', async () => {
 		await withApp(async ({ page }) => {
-			const command = page.locator('section.pane[data-title="command"]');
+			const custom = page.locator('section.pane[data-title="custom"]');
 			const fits = () =>
-				command.evaluate((p) => {
+				custom.evaluate((p) => {
 					const h2 = p.querySelector(':scope > .titlebar h2');
 					return { box: h2.getBoundingClientRect().height, inner: h2.clientHeight, needs: h2.scrollHeight };
 				});
 			const shown = await fits();
-			await command.locator('button.edit').click();
-			await command.locator('input.command').waitFor();
+			await custom.locator('button.edit').click();
+			await custom.locator('input.command').waitFor();
 			const editing = await fits();
 			for (const [what, seen] of [['shown', shown], ['editing', editing]]) {
 				assert.ok(seen.box <= 18, `${what}: the title is ${seen.box}px tall`);

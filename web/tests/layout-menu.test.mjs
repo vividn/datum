@@ -54,7 +54,7 @@ describe('the menu the title opens', () => {
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('aliases') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'aliases', 'command', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'aliases', 'custom', 'fields']);
 		}, DESKTOP);
 	});
 
@@ -84,7 +84,7 @@ describe('the menu the title opens', () => {
 	test('each Split arrow puts the new pane on its own side', async () => {
 		await withApp(async ({ page }) => {
 			await choose(page, 'tail', 'split: a new pane below');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
 			const empty = page.locator('section.pane[data-title="empty"]');
 			const [tail, made] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(empty)]);
 			assert.equal(Math.round(made.x), Math.round(tail.x));
@@ -99,7 +99,7 @@ describe('the menu the title opens', () => {
 				'repl',
 				'nowview',
 				'tail',
-				'command',
+				'custom',
 				'stats',
 				'fields',
 				'aliases',
@@ -109,7 +109,7 @@ describe('the menu the title opens', () => {
 			// The new pane is titled by its kind and draws: a second nowview
 			// under the tail, at its own box's size.
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'command', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'custom', 'fields']);
 		}, DESKTOP);
 	});
 
@@ -194,7 +194,7 @@ describe('the menu the title opens', () => {
 			// The tab that left is a pane of its own, under the pane it left;
 			// the other stayed behind, which is that pane's whole strip now.
 			assert.equal(await pane(page, 'tail').locator('[role="tab"]').count(), 0);
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'aliases', 'tail', 'command', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'aliases', 'tail', 'custom', 'fields']);
 			const [stayed, gone] = await Promise.all([
 				boxOf(page.locator('section.pane[data-title="aliases"]')),
 				boxOf(page.locator('section.pane[data-title="tail"]'))
@@ -239,7 +239,7 @@ describe('the menu the title opens', () => {
 
 	test('closing panes unnests their split', async () => {
 		await withApp(async ({ page }) => {
-			await choose(page, 'command', 'Close pane');
+			await choose(page, 'custom', 'Close pane');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
 			await choose(page, 'nowview', 'Close pane');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
@@ -627,7 +627,7 @@ describe('the pane menu by pointer', () => {
 			}
 			await buttons.nth(3).click();
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'command', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
 			const [tail, empty] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(page.locator('section.pane[data-title="empty"]'))]);
 			assert.equal(Math.round(empty.x), Math.round(tail.x));
 			assert.equal(Math.round(empty.width), Math.round(tail.width));

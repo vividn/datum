@@ -531,7 +531,7 @@ describe('snapsOfKind', () => {
 		const { snapsOfKind } = await import('../src/lib/layout/registry.ts');
 		assert.deepEqual(snapsOfKind('daystrip', { dayHeight: 120 }), { width: [], height: [todayBox(120) + 16] });
 		assert.deepEqual(snapsOfKind('daystrip', { dayHeight: 1000 }).height, [todayBox(240) + 16], 'clamped as the strip draws it');
-		for (const kind of ['repl', 'tail', 'nowview', 'command', 'stats', 'widgetbar', 'nope']) {
+		for (const kind of ['repl', 'tail', 'nowview', 'custom', 'stats', 'widgetbar', 'nope']) {
 			assert.deepEqual(snapsOfKind(kind), { width: [], height: [] }, kind);
 		}
 	});

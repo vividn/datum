@@ -42,7 +42,7 @@ after(stopApp);
 describe('the default layout', () => {
 	test('shows the strip, the REPL, nowview, tail and the widget bar in panes', async () => {
 		await withApp(async ({ page }) => {
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
 		}, DESKTOP);
 	});
 
@@ -97,7 +97,7 @@ describe('the draft', () => {
 	test('a blocked localStorage renders the default with no error', async () => {
 		await withApp(
 			async (app) => {
-				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'command', 'fields']);
+				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
 				await addTab(app.page, 'tail', 'aliases');
 				assert.equal(await activeTab(app.page, 'tail'), 'aliases');
 				assert.deepEqual(app.errors, []);
@@ -118,7 +118,7 @@ describe('the draft', () => {
 });
 
 describe('on a phone', () => {
-	test('the mobile default is one column with the bar on screen, tail, nowview and command as tabs', async () => {
+	test('the mobile default is one column with the bar on screen, tail, nowview and custom as tabs', async () => {
 		await withApp(async ({ page }) => {
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
 			const boxes = await page.evaluate(() =>
@@ -128,7 +128,7 @@ describe('on a phone', () => {
 				})
 			);
 			assert.equal(new Set(boxes.map((b) => `${b.x}:${b.w}`)).size, 1, `not a column: ${JSON.stringify(boxes)}`);
-			assert.deepEqual(await pane(page, 'side').locator('[role="tab"]').allInnerTexts(), ['tail', 'nowview', 'command']);
+			assert.deepEqual(await pane(page, 'side').locator('[role="tab"]').allInnerTexts(), ['tail', 'nowview', 'custom']);
 			const add = await page.locator('.bar button.add-button').boundingBox();
 			const screen = await page.evaluate(() => document.documentElement.clientHeight);
 			assert.ok(add.y >= 0 && add.y + add.height <= screen, `the + is off-screen: ${JSON.stringify(add)}`);
@@ -159,7 +159,7 @@ describe('on a phone', () => {
 			// the band declares the sideways gesture its own (`data-pans`,
 			// da-kcmp), so a finger drawn across the picture never moves a
 			// tab — which `layout-swipe.test.mjs` is where it is asserted.
-			await pane(page, 'side').locator('[role="tab"]', { hasText: 'command' }).click();
+			await pane(page, 'side').locator('[role="tab"]', { hasText: 'custom' }).click();
 			await swipe(page, box.x + box.width * 0.2, mid, 120, 0);
 			await atRest(content);
 			assert.equal(await activeTab(page, 'side'), 'nowview', 'a swipe right did not move back');
@@ -342,7 +342,7 @@ describe('a tab that holds a layout', () => {
 			// Its two panes are inside it, and its title is not lain on by
 			// theirs: the inset (the gap all round, the whole row on the
 			// bar's edge) is what keeps the two outlines two.
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'mine', 'nowview', 'stats', 'command', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'mine', 'nowview', 'stats', 'custom', 'fields']);
 			const [frame] = await boxes(mine);
 			const inside = await boxes(mine.locator(':scope > .content > .split > .cell section.pane'));
 			assert.equal(inside.length, 2);
@@ -366,7 +366,7 @@ describe('a tab that holds a layout', () => {
 			// One frame between the reader and the widget, not two: the
 			// widget's pane IS the layout's tab (shell.ts lifts it).
 			assert.equal(await one.locator('section.pane, section.holder').count(), 0, 'a second frame inside the one-widget layout');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'one', 'command', 'fields']);
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'one', 'custom', 'fields']);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});

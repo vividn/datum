@@ -337,7 +337,7 @@
 	/* The pane's own title as the button (da-9vtw): no look of its own, laid
 	   over the title's box — the words under it are the frame's h2, or the
 	   widget's where it draws its own, and the controls a widget puts there
-	   (the command pane's ✎) are lifted above it (PaneFrame.svelte). It
+	   (the custom pane's ✎) are lifted above it (PaneFrame.svelte). It
 	   fills that box, which is a finger's 24px where the pointer is coarse
 	   and the row's own height where it is not. */
 	.title {

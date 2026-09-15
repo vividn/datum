@@ -311,7 +311,7 @@ export const TAIL: PaneSpec = {
 };
 
 /**
- * The argv of a command typed into the command pane (da-wb2n).
+ * The argv of a command typed into the custom pane (da-wb2n).
  *
  * Split as the REPL splits a line, so `note "hello world"` means the same in
  * both. Bare `nowview` is asked for its picture (`-o -`, as NOWVIEW is) —

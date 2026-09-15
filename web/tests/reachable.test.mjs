@@ -320,7 +320,7 @@ describe('on a phone-sized screen', () => {
 	});
 });
 
-// The command pane's controls (da-wb2n) are buttons in the tab order, not
+// The custom pane's controls (da-wb2n) are buttons in the tab order, not
 // click targets: from the REPL's `…` (the pane before them, now the REPL has
 // no prompt of its own — da-rfs9), Tab reaches ✎, the keyboard types and
 // applies a command, and when that command writes, Tab reaches its ▶.
@@ -334,7 +334,7 @@ describe('by keyboard', () => {
 		assert.fail(`Tab never reached ${selector}`);
 	}
 
-	test("the command pane's ✎ and ▶ are reachable", async () => {
+	test("the custom pane's ✎ and ▶ are reachable", async () => {
 		await withApp(async ({ page }) => {
 			await page.locator('section[data-pane="repl"] .titlebar button.title').focus();
 			await tabTo(page, 'button.edit');

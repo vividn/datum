@@ -38,7 +38,7 @@ export interface Bar {
  * A widget instance: a registered kind plus its own settings.
  *
  * `settings` is the widget's to interpret (the day strip's bar height, the
- * command pane's argv, an embedded layout's name) and is saved with the
+ * custom pane's argv, an embedded layout's name) and is saved with the
  * tree, which is how two day views can differ. Unknown keys are kept, not
  * dropped: a newer app may have written them.
  */

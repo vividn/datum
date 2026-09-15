@@ -177,7 +177,7 @@ describe('a scroller keeps the gesture until its end', () => {
 								tabs: [
 									{ id: 'wide-aliases', content: { id: 'wide-aliases-w', kind: 'aliases', settings: {} } },
 									{ id: 'wide-repl', content: { id: 'wide-repl-w', kind: 'repl', settings: {} } },
-									{ id: 'wide-command', content: { id: 'wide-command-w', kind: 'command', settings: {} } }
+									{ id: 'wide-custom', content: { id: 'wide-custom-w', kind: 'custom', settings: {} } }
 								]
 							}
 						]
@@ -217,7 +217,7 @@ describe('a scroller keeps the gesture until its end', () => {
 				await pane(page, 'wide').locator('[role="tab"]', { hasText: 'repl' }).click();
 				await scrollX(body, true);
 				await swipeOver(page, body, -120, 0, { x: 0.8, y: 0.5 });
-				await until(() => activeTab(page, 'wide'), (t) => t === 'command');
+				await until(() => activeTab(page, 'wide'), (t) => t === 'custom');
 				assert.deepEqual(app.errors, []);
 			},
 			{ ...PHONE, prepare: (context) => context.addInitScript(draft, JSON.stringify(threeTabs())) }
@@ -237,7 +237,7 @@ describe('the innermost frame that can move takes the gesture', () => {
 
 				// On the pane's LAST tab there is nowhere for it to go, so the
 				// same swipe reaches the root and moves the whole layout.
-				await pane(page, 'side').locator('[role="tab"]', { hasText: 'command' }).click();
+				await pane(page, 'side').locator('[role="tab"]', { hasText: 'custom' }).click();
 				const last = pane(page, 'side').locator('.body');
 				await scrollX(last, true);
 				await swipeOver(page, last, -120, 0);
@@ -248,7 +248,7 @@ describe('the innermost frame that can move takes the gesture', () => {
 				await scrollX(back, false);
 				await swipeOver(page, back, 120, 0);
 				await until(() => shown(page), (name) => name === 'day');
-				assert.equal(await activeTab(page, 'side'), 'command');
+				assert.equal(await activeTab(page, 'side'), 'custom');
 			},
 			{ ...PHONE, prepare: twoLayouts }
 		);

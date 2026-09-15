@@ -1,4 +1,4 @@
-// The command pane: a pane whose command the reader types (da-wb2n).
+// The custom widget: a pane whose command the reader types (da-wb2n).
 //
 // A prototype of a pane that can run any datum command, so what is tested
 // is what such a pane owes the reader whatever it runs: it follows the
@@ -17,7 +17,7 @@ import { startApp, stopApp, withApp } from './support/app.mjs';
 before(startApp);
 after(stopApp);
 
-/** The command pane: the one with an edit affordance or an open editor. */
+/** The custom pane: the one with an edit affordance or an open editor. */
 const PANE = 'section.pane:has(h2 button.edit, h2 input.command)';
 
 /** Type `line` into the pane's editor, as a reader does. */
@@ -42,7 +42,7 @@ async function shows(page, re) {
 const count = async ({ entries }, field) =>
 	(await entries(500)).filter((e) => e.field === field).length;
 
-describe('the command pane', () => {
+describe('the custom pane', () => {
 	test('follows the database like the other panes', async () => {
 		await withApp(async (app) => {
 			await setCommand(app.page, 'tail -n 1');
@@ -66,7 +66,7 @@ describe('the command pane', () => {
 			assert.equal(await count(app, 'tea'), 1);
 
 			// An epoch bump. By the time the tail table shows the coffee the
-			// panes have all been told; any run the command pane started on
+			// panes have all been told; any run the custom pane started on
 			// it is ahead of the count in the worker's queue.
 			await app.submit('occur coffee');
 			await app.page.locator('section.pane td', { hasText: 'coffee' }).first().waitFor();
@@ -120,6 +120,25 @@ describe('the command pane', () => {
 		});
 	});
 
+	// The kind was `command` until da-zqop renamed it `custom`; the pane's
+	// own key was not renamed with it, because a line a reader saved under
+	// the old build has to come back under the new one. The key is asserted
+	// by name so that renaming it later is a deliberate act.
+	test('keeps its line under the key that predates the name', async () => {
+		await withApp(async (app) => {
+			await setCommand(app.page, 'tail -n 1');
+			assert.equal(
+				await app.page.evaluate(() => localStorage.getItem('datum.command-pane.v1')),
+				'tail -n 1'
+			);
+
+			// Written by a build that called the widget `command`, read by this one.
+			await app.page.evaluate(() => localStorage.setItem('datum.command-pane.v1', 'tail -n 2'));
+			await app.reload();
+			await app.page.locator(`${PANE} h2`, { hasText: 'tail -n 2' }).waitFor();
+		});
+	});
+
 	test('works for the visit when the store is blocked', async () => {
 		await withApp(
 			async (app) => {
@@ -131,7 +150,7 @@ describe('the command pane', () => {
 				await shows(app.page, /coffee/);
 
 				await app.reload();
-				await app.page.locator(`${PANE} h2`, { hasText: 'command' }).waitFor();
+				await app.page.locator(`${PANE} h2`, { hasText: 'custom' }).waitFor();
 				assert.match(await shows(app.page, /type a datum command/), /type a datum command/);
 				assert.deepEqual(app.errors, [], `the blocked store threw at the page: ${app.errors[0]}`);
 				assert.deepEqual(logged, [], `the blocked store logged an error: ${logged[0]}`);

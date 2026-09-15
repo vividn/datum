@@ -77,7 +77,7 @@
 <!--
 	Inside a frame the title slot cannot be rendered here — the frame draws
 	the bar — so it is rendered and then MOVED into the frame's h2 (the
-	`portal` action), where the command pane's ✎ and its editor land in the
+	`portal` action), where the custom pane's ✎ and its editor land in the
 	title bar of a dashboard pane exactly as they did in the grid's.
 -->
 <svelte:element

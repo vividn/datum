@@ -23,7 +23,7 @@
 // body's 16px of padding — its snap. The REPL: three lines of scrollback
 // (18.4px each) plus padding, 71px — the bottom bar is its prompt
 // (da-rfs9), so it has no line of its own to keep. The tail,
-// and a command pane showing one: its header row and three rows (21.6px
+// and a custom pane showing one: its header row and three rows (21.6px
 // each) plus padding, 102px. The fields widget: one row, as tall as its
 // Track + (33px), plus padding. The aliases list: three of its lines
 // (18.4px each) plus padding, 72px. The input widget: its prompt row
@@ -41,7 +41,7 @@ import type { Tab, WidgetKindMeta } from './types.js';
 import { isSplit } from './types.js';
 import type { Floor } from './tree.js';
 import CliPane from '$lib/CliPane.svelte';
-import CommandPane from '$lib/CommandPane.svelte';
+import CustomPane from '$lib/CustomPane.svelte';
 import DayStrip from '$lib/DayStrip.svelte';
 import Stats from '$lib/Stats.svelte';
 import {
@@ -142,9 +142,11 @@ export const KINDS: Record<string, WidgetKind> = {
 		props: () => ({ spec: TAIL }),
 		legible: { width: 200, height: 102 }
 	},
-	// The command pane (da-wb2n) keeps its line in its own localStorage
-	// key for now; making it a widget setting is its own change.
-	command: { meta: meta('command', 'command'), component: CommandPane, legible: { width: 200, height: 102 } },
+	// The custom widget (da-wb2n): one command line the reader writes. It
+	// keeps that line in its own localStorage key for now; making it a
+	// widget setting is its own change. Called `command` until da-zqop,
+	// which freed that id for the commands widget (da-ltux).
+	custom: { meta: meta('custom', 'custom'), component: CustomPane, legible: { width: 200, height: 102 } },
 	// The stats widget (da-n7r0): its settings ARE the widget's settings —
 	// the tree keeps them, and a `change` from the widget writes them back
 	// (Layout.svelte).
