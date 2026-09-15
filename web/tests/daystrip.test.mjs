@@ -371,6 +371,34 @@ async function dragOverPast({ page }, by) {
 	}
 }
 
+/**
+ * Put the day `daysAgo` before today at the top of the stack's box, where
+ * a flick leaves it: one scroll, so what comes into view comes into view
+ * at once rather than every day between here and there passing through.
+ */
+const scrollToDay = ({ page }, daysAgo) =>
+	page.locator('.stack').evaluate((stack, back) => {
+		stack.scrollTop = stack.querySelector(`.band[data-days-ago="${back}"]`).closest('.row')
+			.offsetTop;
+	}, daysAgo);
+
+/** Let the page have its frames: a scroll is answered on one, not inline. */
+const beat = ({ page }) =>
+	page.evaluate(
+		() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+	);
+
+/**
+ * Which days the `dayview` PICTURES a spy saw were for, as days ago — the
+ * geometry's `--show json` is not a picture, and today carries no
+ * `--end-date` because it is the argv every other band is an offset from.
+ */
+const viewsOf = async (seen) =>
+	(await seen())
+		.filter((argv) => argv[0] === 'dayview' && !argv.includes('json'))
+		.map((argv) => (argv.includes('--end-date') ? -Number(argv[argv.indexOf('--end-date') + 1]) : 0))
+		.sort((a, b) => a - b);
+
 /** The box today's band occupies on the screen — it is not to move. */
 const todayBand = ({ page }) => page.locator('.band[data-days-ago="0"]').boundingBox();
 
@@ -717,6 +745,69 @@ describe('the day strip', () => {
 			},
 			{ viewport: { width: 1280, height: 1400 } }
 		);
+	});
+
+	// da-dtwz. A new epoch re-draws the days the reader can SEE and lets
+	// the rest keep the picture they have — a fortnight of bands is a
+	// fortnight of CLI processes in front of whatever is typed next. What
+	// that left open is the day the reader scrolls BACK to: the next beat
+	// is the next command, so the entry just logged for ten days ago was
+	// not in the band, and would not be until something else ran.
+	test('a stale band scrolled into view is re-drawn, and it alone', async () => {
+		await withApp(async (app) => {
+			// A box a hair SHORT of one whole day, so the stack's viewport
+			// holds the band scrolled to it and not a pixel of the one above
+			// — what runs below is then a count of that one band.
+			const m = await metrics(app);
+			await setBox(app, m.band + m.divider + m.axis + m.pitch - 2 + m.chrome);
+			await waitForDays(app, heldFor(1));
+			await app.idle();
+
+			await app.submit('occur coffee -d -10');
+			await app.idle();
+
+			// Off screen, so it still holds the picture drawn before the
+			// entry existed — which is the whole point of keeping it.
+			assert.ok(!(await band(app, 10)).includes('point-bg'), 'day 10 was re-drawn off screen');
+
+			const seen = await app.spyOnRunner();
+			await scrollToDay(app, 10);
+
+			// Within a beat of coming into view, the dot is there.
+			await app.page.waitForFunction(() =>
+				document.querySelector('.band[data-days-ago="10"] svg.svg')?.outerHTML.includes('point-bg')
+			);
+			await app.idle();
+
+			// And exactly the band that came into view was asked for: not
+			// the fortnight above it, and not the geometry, which is at this
+			// epoch already.
+			assert.deepEqual(await viewsOf(seen), [10]);
+		});
+	});
+
+	test('a scroll over bands already at this epoch asks for nothing', async () => {
+		await withApp(async (app) => {
+			await sizeWhole(app, 2);
+			await app.idle();
+
+			// Nothing has run since the stack was drawn, so every band in it
+			// is at the epoch on screen — and scrolling is just scrolling.
+			const seen = await app.spyOnRunner();
+			const rest = await stackScroll(app);
+			await wheelOverPast(app, -600);
+			await beat(app);
+			const moved = await stackScroll(app);
+			await wheelOverPast(app, 600);
+			await beat(app);
+			await app.idle();
+
+			// The wheel really did turn — an assertion about what a scroll
+			// does not ask for is worth nothing if nothing scrolled.
+			assert.ok(moved.top < rest.top, `the wheel moved the stack ${rest.top - moved.top}px`);
+
+			assert.deepEqual(await viewsOf(seen), []);
+		});
 	});
 
 	test('the day height comes in as a prop and goes out as a change', async () => {

@@ -271,6 +271,7 @@
 		return () => {
 			observer.disconnect();
 			settled.stop();
+			if (refreshing) cancelAnimationFrame(refreshing);
 		};
 	});
 
@@ -308,10 +309,15 @@
 	 * picture they have. A fortnight of bands is a fortnight of CLI
 	 * processes, and putting fifteen of them in front of whatever is typed
 	 * next cost three and a half seconds a command — for days that are not
-	 * on the screen. A day scrolled back into view is re-drawn on the next
-	 * beat, which is the next thing that could have changed it.
+	 * on the screen.
+	 *
+	 * Which is why every run remembers the epoch it was ASKED at: a day
+	 * kept that way holds a picture from before the change, and when the
+	 * reader scrolls it into view `refreshVisible` asks for that day and
+	 * no other (da-dtwz).
 	 */
-	let cache = { key: '', size: '', runs: new Map<string, Promise<RunResult>>() };
+	type Asked = { epoch: number; run: Promise<RunResult> };
+	let cache = { key: '', size: '', runs: new Map<string, Asked>() };
 
 	/**
 	 * A midnight, counted — the one thing that makes a CACHED picture
@@ -368,8 +374,8 @@
 		const ask = (argv: string[]): Promise<RunResult> => {
 			const id = argv.join(' ');
 			let pending = cache.runs.get(id);
-			if (!pending) cache.runs.set(id, (pending = run(argv)));
-			return pending;
+			if (!pending) cache.runs.set(id, (pending = { epoch: at.epoch, run: run(argv) }));
+			return pending.run;
 		};
 
 		// The geometry first: the gridlines, the ruler and the date stamps
@@ -409,7 +415,7 @@
 	function kept(
 		at: { width: number; dayHeight: number },
 		sameSize: boolean
-	): Map<string, Promise<RunResult>> {
+	): Map<string, Asked> {
 		const visible = visibleDays();
 		if (!sameSize || visible === null) return new Map();
 		const again = new Set(visible.map((end) => bandArgv(at.width, at.dayHeight, end).join(' ')));
@@ -444,6 +450,38 @@
 
 	function onScroll(): void {
 		atBottom = !stackEl || stackEl.scrollTop + stackEl.clientHeight >= stackEl.scrollHeight - 1;
+		refreshVisible();
+	}
+
+	/** The frame a pending refresh is waiting for; a scroll is many events. */
+	let refreshing = 0;
+
+	/**
+	 * Ask again for the days now on screen that were drawn before the
+	 * current epoch (da-dtwz).
+	 *
+	 * The cache keeps a day the reader could not see rather than re-running
+	 * a fortnight of CLI processes in front of the next command — and the
+	 * next beat is the next COMMAND, so scrolling up to the entry just
+	 * logged for ten days ago showed a band drawn before it existed. Here
+	 * the scroll itself is the beat, and it asks for the stale bands that
+	 * came into view and for nothing else: days already at this epoch were
+	 * re-drawn when it turned.
+	 */
+	function refreshVisible(): void {
+		if (refreshing || !browser) return;
+		refreshing = requestAnimationFrame(() => {
+			refreshing = 0;
+			const at = request;
+			if (at.width <= 0) return;
+			const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
+			const stale = (visibleDays() ?? []).filter(
+				(end) => (cache.runs.get(id(end))?.epoch ?? at.epoch) < at.epoch
+			);
+			if (!stale.length) return;
+			for (const end of stale) cache.runs.delete(id(end));
+			draw(at, stale);
+		});
 	}
 
 	/** Put the newest day back against the divider. The depth is unchanged. */
