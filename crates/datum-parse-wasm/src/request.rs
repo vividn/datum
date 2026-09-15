@@ -429,7 +429,7 @@ mod tests {
     /// in the CLI — `sleep` starts sleep, `happy` switches mood.
     #[test]
     fn a_field_spec_makes_its_own_names_commands() {
-        let mut mood = FieldSpec::new("mood", datum_core::action::Action::Switch);
+        let mut mood = FieldSpec::with_verb("mood", datum_core::action::Action::Switch);
         mood.allowed_states = Some(vec!["happy".to_string()]);
         let specs = vec![mood];
 
@@ -508,7 +508,7 @@ mod tests {
     /// the name actually comes from instead of reporting a missing row.
     #[test]
     fn removing_a_derived_alias_names_the_spec_that_owns_it() {
-        let spec = FieldSpec::new("sleep", datum_core::action::Action::Start);
+        let spec = FieldSpec::with_verb("sleep", datum_core::action::Action::Start);
         let out = with_world(&["alias", "remove", "sleep"], Vec::new(), vec![spec]);
         assert_eq!(
             out["error"],

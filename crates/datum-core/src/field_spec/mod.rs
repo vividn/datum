@@ -46,4 +46,4 @@ pub use interpolation::{
 };
 pub use position::{detect_anchor_cycles, format_cycle, resolve_positions, PositionResolution};
 pub use presentation::{PresentationSpec, Render, ResolvedPosition, DEFAULT_FIELD_HEIGHT};
-pub use spec::{FieldSpec, SubfieldSpec, SubfieldType, DEFAULT_VERB_CHOICES};
+pub use spec::{verb_from_log, FieldSpec, SubfieldSpec, SubfieldType, DEFAULT_VERB_CHOICES};

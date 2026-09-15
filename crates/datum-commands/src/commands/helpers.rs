@@ -491,7 +491,7 @@ mod tests {
                 unit: None,
             },
         );
-        let mut spec = FieldSpec::new("mood", Action::Switch);
+        let mut spec = FieldSpec::with_verb("mood", Action::Switch);
         spec.subfields = subfields;
         spec.strict = strict;
         spec

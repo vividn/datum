@@ -398,7 +398,7 @@ mod tests {
                 unit: None,
             },
         );
-        let mut spec = FieldSpec::new("word", Action::Add);
+        let mut spec = FieldSpec::with_verb("word", Action::Add);
         spec.subfields = subfields;
         spec.description = Some("Vocabulary word in a foreign language".to_string());
         spec

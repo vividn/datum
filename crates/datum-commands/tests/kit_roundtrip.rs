@@ -477,7 +477,7 @@ color = "#000000"
     let db = fresh_db();
 
     // Pre-existing user-declared row.
-    let mut existing = FieldSpec::new("sleep", Action::Start);
+    let mut existing = FieldSpec::with_verb("sleep", Action::Start);
     existing.color = Some("#aaaaaa".into());
     db.save_field_spec(&existing).unwrap();
 

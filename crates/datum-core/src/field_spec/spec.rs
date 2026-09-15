@@ -11,6 +11,7 @@
 //! derived from the entry log via [`Db::state_at`](crate::db::Db::state_at).
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
 use crate::action::Action;
@@ -52,14 +53,25 @@ pub enum SubfieldType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldSpec {
     pub field: String,
-    /// Default action when none is specified. Must be one of the canonical
-    /// actions: `occur | start | switch | add`. `stop`/`end`/`note` are not
+    /// Default action when none is specified, or `None` for «the log
+    /// decides» (da-emze). Must be one of the canonical actions:
+    /// `occur | start | switch | add`. `stop`/`end`/`note` are not
     /// permitted (they're terminal/compat-only, not defaults).
+    ///
+    /// A spec exists for many reasons — a colour, a tag, a position — and
+    /// only one of them is "what a bare press means". Minting a
+    /// placeholder verb for the others turned a start/stop field into a
+    /// one-tap occur button the moment it was given a colour, so a spec
+    /// that was never asked about the verb carries none, and every reader
+    /// falls back to [`verb_from_log`] — the same evidence an unspecced
+    /// field is read by.
     ///
     /// JSON key stays `default_verb` for wire-format compatibility with
     /// stored field-spec rows; the type changed from [`Verb`] to [`Action`]
     /// in da-8y2q.2 when intent was split out from storage classification.
-    pub default_verb: Action,
+    /// Absent or `null` in JSON means unset.
+    #[serde(default)]
+    pub default_verb: Option<Action>,
     /// Named subfields with their constraints.
     #[serde(default)]
     pub subfields: HashMap<String, SubfieldSpec>,
@@ -133,16 +145,36 @@ pub struct FieldSpec {
     pub presentation: PresentationSpec,
 }
 
-/// The subset of actions permitted as a field's `default_verb` (intent slot).
+/// The subset of actions permitted as a field's `default_verb` (intent
+/// slot). `None` — «the log decides» — is permitted alongside these.
 pub const DEFAULT_VERB_CHOICES: &[Action] =
     &[Action::Occur, Action::Start, Action::Switch, Action::Add];
 
+/// The verb a field's LOG implies, for a spec that declares none.
+///
+/// The one rule, shared with the web widget's fallback for an unspecced
+/// field (`shapeFor` in `web/src/lib/fields.ts`): a field logged with
+/// named states is a `switch`, one logged with on/off booleans is a
+/// `start`, anything else is an `occur`. `states` is the field's distinct
+/// logged states with the TRACKED/IGNORED statuses already dropped — they
+/// are statuses, not states a field can be switched to (da-5ifp).
+pub fn verb_from_log(states: &[JsonValue]) -> Action {
+    if states.iter().any(JsonValue::is_string) {
+        Action::Switch
+    } else if states.iter().any(JsonValue::is_boolean) {
+        Action::Start
+    } else {
+        Action::Occur
+    }
+}
+
 impl FieldSpec {
-    /// New bare spec with sensible defaults for the given field name and action.
-    pub fn new(field: impl Into<String>, default_verb: Action) -> Self {
+    /// New bare spec for the given field name, with no default verb —
+    /// the log decides what a bare press of it means (da-emze).
+    pub fn new(field: impl Into<String>) -> Self {
         Self {
             field: field.into(),
-            default_verb,
+            default_verb: None,
             subfields: HashMap::new(),
             description: None,
             unit: None,
@@ -158,6 +190,14 @@ impl FieldSpec {
             strict: false,
             tags: Vec::new(),
             presentation: PresentationSpec::default(),
+        }
+    }
+
+    /// [`FieldSpec::new`] with an explicit default verb declared.
+    pub fn with_verb(field: impl Into<String>, default_verb: Action) -> Self {
+        Self {
+            default_verb: Some(default_verb),
+            ..Self::new(field)
         }
     }
 
@@ -177,23 +217,25 @@ impl FieldSpec {
         self.tags.iter().any(|t| t == tag)
     }
 
-    /// Validate that `default_verb` is one of the accepted canonical choices.
-    /// Returns an error message if the verb is out of range (e.g. `Stop`,
-    /// `Block`).
+    /// Validate that `default_verb` is one of the accepted canonical
+    /// choices, or unset. Returns an error message if the verb is out of
+    /// range (e.g. `Stop`, `Block`).
     pub fn validate_default_verb(&self) -> std::result::Result<(), String> {
-        if DEFAULT_VERB_CHOICES.contains(&self.default_verb) {
-            Ok(())
-        } else {
-            Err(format!(
-                "invalid default_verb '{}' — must be one of: occur, start, switch, add",
-                self.default_verb
-            ))
+        match self.default_verb {
+            None => Ok(()),
+            Some(v) if DEFAULT_VERB_CHOICES.contains(&v) => Ok(()),
+            Some(v) => Err(format!(
+                "invalid default_verb '{v}' — must be one of: occur, start, switch, add"
+            )),
         }
     }
 
-    /// Regenerate `derived_aliases` from the current spec. Always produces:
+    /// Regenerate `derived_aliases` from the current spec. Produces:
     ///
-    /// 1. `<field>` → `<default_verb> <field>` (kind=BareField)
+    /// 1. `<field>` → `<default_verb> <field>` (kind=BareField) — only
+    ///    when the spec declares a verb. A spec that declares none says
+    ///    nothing about what a bare `<field>` would mean, so it mints no
+    ///    word for it (da-emze).
     /// 2. `<field>e` → `end <field>` (kind=TerminalEnd) — only when
     ///    `default_verb ∈ {Start, Switch}` (duration-capable verbs).
     /// 3. One `<state>` → `switch <field> <state>` per allowed state
@@ -210,19 +252,21 @@ impl FieldSpec {
         let mut out: Vec<DerivedAlias> = Vec::new();
 
         // 1. Bare-field alias: `<field>` → `<default_verb> <field>`.
-        out.push(DerivedAlias {
-            name: self.field.clone(),
-            expands_to: format!("{} {}", self.default_verb, self.field),
-            kind: DerivedAliasKind::BareField,
-        });
-
-        // 2. Terminal-end alias: only for duration-capable default verbs.
-        if matches!(self.default_verb, Action::Start | Action::Switch) {
+        if let Some(verb) = self.default_verb {
             out.push(DerivedAlias {
-                name: format!("{}e", self.field),
-                expands_to: format!("end {}", self.field),
-                kind: DerivedAliasKind::TerminalEnd,
+                name: self.field.clone(),
+                expands_to: format!("{} {}", verb, self.field),
+                kind: DerivedAliasKind::BareField,
             });
+
+            // 2. Terminal-end alias: only for duration-capable default verbs.
+            if matches!(verb, Action::Start | Action::Switch) {
+                out.push(DerivedAlias {
+                    name: format!("{}e", self.field),
+                    expands_to: format!("end {}", self.field),
+                    kind: DerivedAliasKind::TerminalEnd,
+                });
+            }
         }
 
         // 3. Per-state aliases.
@@ -246,7 +290,7 @@ mod tests {
 
     #[test]
     fn regenerate_derived_aliases_covers_bare_terminal_and_states() {
-        let mut spec = FieldSpec::new("mood", Action::Switch);
+        let mut spec = FieldSpec::with_verb("mood", Action::Switch);
         spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
         spec.regenerate_derived_aliases();
         // bare `mood` + terminal `moode` + two states
@@ -279,7 +323,7 @@ mod tests {
 
     #[test]
     fn regenerate_derived_aliases_emits_bare_but_no_terminal_for_occur() {
-        let mut spec = FieldSpec::new("coffee", Action::Occur);
+        let mut spec = FieldSpec::with_verb("coffee", Action::Occur);
         spec.regenerate_derived_aliases();
         // Only bare-field — Occur is not duration-capable, no terminal.
         assert_eq!(spec.derived_aliases.len(), 1);
@@ -291,7 +335,7 @@ mod tests {
 
     #[test]
     fn regenerate_derived_aliases_emits_terminal_for_start_default() {
-        let mut spec = FieldSpec::new("sleep", Action::Start);
+        let mut spec = FieldSpec::with_verb("sleep", Action::Start);
         spec.regenerate_derived_aliases();
         // bare `sleep` + terminal `sleepe`
         assert_eq!(spec.derived_aliases.len(), 2);
@@ -311,7 +355,7 @@ mod tests {
 
     #[test]
     fn no_autoalias_suppresses_all_derived_aliases() {
-        let mut spec = FieldSpec::new("sleep", Action::Start);
+        let mut spec = FieldSpec::with_verb("sleep", Action::Start);
         spec.no_autoalias = true;
         spec.regenerate_derived_aliases();
         assert!(spec.derived_aliases.is_empty());
@@ -319,11 +363,14 @@ mod tests {
 
     #[test]
     fn validate_default_verb_rejects_non_canonical() {
-        let mut spec = FieldSpec::new("mood", Action::Stop);
+        let mut spec = FieldSpec::with_verb("mood", Action::Stop);
         assert!(spec.validate_default_verb().is_err());
-        spec.default_verb = Action::Block;
+        spec.default_verb = Some(Action::Block);
         assert!(spec.validate_default_verb().is_err());
-        spec.default_verb = Action::Switch;
+        spec.default_verb = Some(Action::Switch);
+        assert!(spec.validate_default_verb().is_ok());
+        // Unset is «the log decides», not a broken spec (da-emze).
+        spec.default_verb = None;
         assert!(spec.validate_default_verb().is_ok());
     }
 
@@ -332,7 +379,7 @@ mod tests {
         // Position + render fields live in `presentation` but serialize as
         // top-level keys via #[serde(flatten)] — preserves on-disk shape
         // from before the split.
-        let mut spec = FieldSpec::new("sleep", Action::Start);
+        let mut spec = FieldSpec::with_verb("sleep", Action::Start);
         spec.presentation.y = Some(0.05);
         spec.presentation.height = Some(0.20);
         spec.presentation.z_index = Some(1.0);
@@ -386,7 +433,7 @@ mod tests {
     #[test]
     fn render_serde_roundtrip_bool_form() {
         use super::super::Render;
-        let mut spec = FieldSpec::new("hidden", Action::Occur);
+        let mut spec = FieldSpec::with_verb("hidden", Action::Occur);
         spec.presentation.render = Some(Render::All(false));
         let json = serde_json::to_string(&spec).unwrap();
         // bool form serializes as a bare bool (untagged enum).
@@ -398,7 +445,7 @@ mod tests {
     #[test]
     fn render_serde_roundtrip_per_surface_form() {
         use super::super::Render;
-        let mut spec = FieldSpec::new("partial", Action::Occur);
+        let mut spec = FieldSpec::with_verb("partial", Action::Occur);
         let mut map = HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.presentation.render = Some(Render::PerSurface(map));
@@ -409,7 +456,7 @@ mod tests {
 
     #[test]
     fn render_serde_omits_when_none() {
-        let spec = FieldSpec::new("plain", Action::Occur);
+        let spec = FieldSpec::with_verb("plain", Action::Occur);
         let json = serde_json::to_string(&spec).unwrap();
         assert!(!json.contains("render"), "json = {json}");
     }
@@ -440,7 +487,7 @@ mod tests {
 
     #[test]
     fn add_tag_is_idempotent_and_preserves_insertion_order() {
-        let mut spec = FieldSpec::new("dishes", Action::Occur);
+        let mut spec = FieldSpec::with_verb("dishes", Action::Occur);
         assert!(spec.add_tag("chore"));
         assert!(spec.add_tag("daily"));
         // Re-adding a known tag is a no-op and reports false.
@@ -452,12 +499,12 @@ mod tests {
 
     #[test]
     fn tags_serde_roundtrip_omits_empty() {
-        let spec = FieldSpec::new("plain", Action::Occur);
+        let spec = FieldSpec::with_verb("plain", Action::Occur);
         let json = serde_json::to_string(&spec).unwrap();
         // Empty tags are skipped to keep the on-disk shape small + diffable.
         assert!(!json.contains("\"tags\""), "json = {json}");
 
-        let mut spec = FieldSpec::new("dishes", Action::Occur);
+        let mut spec = FieldSpec::with_verb("dishes", Action::Occur);
         spec.tags = vec!["chore".into(), "daily".into()];
         let json = serde_json::to_string(&spec).unwrap();
         assert!(json.contains("\"tags\":[\"chore\",\"daily\"]"));
@@ -467,7 +514,7 @@ mod tests {
 
     #[test]
     fn anchor_fields_serde_roundtrip() {
-        let mut spec = FieldSpec::new("contacts", Action::Occur);
+        let mut spec = FieldSpec::with_verb("contacts", Action::Occur);
         spec.presentation.relative_to = Some("body".into());
         spec.presentation.anchor_pos_ratio = Some(0.1);
         spec.presentation.anchor_size_ratio = Some(0.05);

@@ -4,7 +4,6 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
-use crate::action::Action;
 use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 
@@ -15,12 +14,13 @@ use super::types::{
 use super::Db;
 
 impl Db {
-    /// Load the field's spec or return a fresh default-`Occur` one. Used by
-    /// the color setters that may need to mint a spec on first write.
+    /// Load the field's spec or return a fresh verbless one. Used by the
+    /// color setters that may need to mint a spec on first write — a
+    /// colour says nothing about what a press means (da-emze).
     pub(super) fn load_or_new_spec(&self, field: &str) -> Result<FieldSpec> {
         match self.load_spec(field)? {
             Some(s) => Ok(s),
-            None => Ok(FieldSpec::new(field, Action::Occur)),
+            None => Ok(FieldSpec::new(field)),
         }
     }
 

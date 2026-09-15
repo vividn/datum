@@ -126,7 +126,7 @@ fn resolve_one(
 
     // Path 1: no spec at all → hash/default fallback.
     let Some(spec) = spec else {
-        let pos = FieldSpec::new(field, Action::Occur)
+        let pos = FieldSpec::with_verb(field, Action::Occur)
             .presentation
             .resolve_position(field);
         memo.insert(field.to_string(), pos);
@@ -314,7 +314,7 @@ mod tests {
     use super::*;
 
     fn anchored_spec(name: &str, anchor: &str, pos_ratio: f64, size_ratio: f64) -> FieldSpec {
-        let mut spec = FieldSpec::new(name, Action::Occur);
+        let mut spec = FieldSpec::with_verb(name, Action::Occur);
         spec.presentation.relative_to = Some(anchor.into());
         spec.presentation.anchor_pos_ratio = Some(pos_ratio);
         spec.presentation.anchor_size_ratio = Some(size_ratio);
@@ -322,7 +322,7 @@ mod tests {
     }
 
     fn absolute_spec(name: &str, y: f64, h: f64) -> FieldSpec {
-        let mut spec = FieldSpec::new(name, Action::Occur);
+        let mut spec = FieldSpec::with_verb(name, Action::Occur);
         spec.presentation.y = Some(y);
         spec.presentation.height = Some(h);
         spec
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn resolve_positions_marks_malformed_triple_and_falls_back() {
         // anchor_pos_ratio set, anchor_size_ratio missing → malformed.
-        let mut spec = FieldSpec::new("bad", Action::Occur);
+        let mut spec = FieldSpec::with_verb("bad", Action::Occur);
         spec.presentation.relative_to = Some("body".into());
         spec.presentation.anchor_pos_ratio = Some(0.1);
         // Intentionally omit anchor_size_ratio.

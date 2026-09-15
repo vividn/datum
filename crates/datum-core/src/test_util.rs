@@ -203,12 +203,12 @@ pub struct SpecBuilder {
 impl SpecBuilder {
     pub fn new(field: impl Into<String>) -> Self {
         Self {
-            spec: FieldSpec::new(field, Action::Occur),
+            spec: FieldSpec::new(field),
         }
     }
 
     pub fn default_verb(mut self, v: Action) -> Self {
-        self.spec.default_verb = v;
+        self.spec.default_verb = Some(v);
         self
     }
 

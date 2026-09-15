@@ -62,10 +62,15 @@ export interface Adjust {
  *
  * The spec's verb wins whenever it declares one: `switch`, `start`, `add`,
  * `occur` all say what a press means regardless of how the field has been
- * logged so far. Only a field with NO spec falls back to the log as
- * evidence: a field logged with string states is a multi-state field, one
- * logged with `true`/`false` is a block, and anything else is a point. The
- * field's *name* is never consulted.
+ * logged so far. A field with no spec — or a spec that declares no verb,
+ * which is every spec minted just to hold a colour or a tag (da-emze) —
+ * falls back to the log as evidence: a field logged with string states is
+ * a multi-state field, one logged with `true`/`false` is a block, and
+ * anything else is a point. The field's *name* is never consulted.
+ *
+ * `null` and `undefined` both fall through the switch below, so a verbless
+ * spec and no spec at all reach the same evidence — which is the whole
+ * point of leaving the slot empty.
  */
 export function shapeFor(spec: FieldSpec | undefined, observed: unknown[] = []): FieldShape {
 	const strings = [...new Set(observed.filter((v): v is string => typeof v === 'string'))].sort();
@@ -223,8 +228,16 @@ export function pressArgv(button: FieldButton, adjust: Adjust = {}, state?: stri
 	return argv;
 }
 
-/** The argv `spec set` needs to declare a new field of the given shape. */
-export function declareArgv(field: string, shape: FieldShape): string[] {
+/**
+ * The argv `spec set` needs to declare a new field of the given shape.
+ *
+ * `null` is «decide from the log» (da-emze): the spec is created — it is
+ * what a colour or a tag would later hang on — but no verb is set, so the
+ * button keeps the shape the field's own entries give it. A verb the
+ * person did not choose is not a default; it is a decision made for them.
+ */
+export function declareArgv(field: string, shape: FieldShape | null): string[] {
+	if (shape === null) return ['spec', 'set', field];
 	const argv = ['spec', 'set', field, '--default-verb'];
 	if (shape.kind === 'point') argv.push('occur');
 	else if (shape.kind === 'state') argv.push('start');

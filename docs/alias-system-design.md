@@ -24,7 +24,7 @@ This is mostly **consolidation**: datum already merges manual + derived at load;
 
 On `track` / spec-save, a field projects into the table:
 
-- **Field alias (auto, default-on):** `<field> → <default_verb> <field>`, source `spec:<field>`. Collision-safe — field names are unique.
+- **Field alias (auto, default-on):** `<field> → <default_verb> <field>`, source `spec:<field>`. Collision-safe — field names are unique. A spec's `default_verb` is optional (da-emze); one that declares none says nothing about what a bare `<field>` would mean, so it projects neither this alias nor the terminal one.
 - **Terminal alias:** `<field>e → end <field>` (duration-capable verbs), source `spec:<field>`. A user may add a nicer manual one (e.g. `over → end activity`).
 - **State aliases (opt-in):** only when the field's `auto_alias_states` flag is on, each state projects `<state> → switch <field> <state>`, source `spec:<field>/state:<state>`.
 

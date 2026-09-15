@@ -506,7 +506,7 @@ fn build_day_fields(
         // handles it via a transient default-spec instance.
         let resolved = match &spec {
             Some(s) => s.presentation.resolve_position(&field),
-            None => FieldSpec::new(field.clone(), datum_core::action::Action::Occur)
+            None => FieldSpec::new(field.clone())
                 .presentation
                 .resolve_position(&field),
         };
@@ -882,12 +882,12 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // mood has render = false → must NOT appear in dayview output.
-        let mut hidden = FieldSpec::new("mood", Action::Switch);
+        let mut hidden = FieldSpec::with_verb("mood", Action::Switch);
         hidden.presentation.render = Some(Render::All(false));
         db.save_field_spec(&hidden).unwrap();
 
         // coffee has no render set → default visible.
-        db.save_field_spec(&FieldSpec::new("coffee", Action::Occur))
+        db.save_field_spec(&FieldSpec::with_verb("coffee", Action::Occur))
             .unwrap();
 
         // Log one entry on each field so neither is empty by accident.
@@ -942,7 +942,7 @@ mod tests {
         use datum_core::time::DatumTime;
 
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
+        let mut spec = FieldSpec::with_verb("stretch_routine", Action::Occur);
         let mut map = std::collections::HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.presentation.render = Some(Render::PerSurface(map));
@@ -987,7 +987,7 @@ mod tests {
         use datum_core::time::DatumTime;
 
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("caffeine", Action::Occur);
+        let mut spec = FieldSpec::with_verb("caffeine", Action::Occur);
         spec.color = Some("#643200".into());
         db.save_field_spec(&spec).unwrap();
 

@@ -13,8 +13,10 @@ export interface DatumTime {
  * The intent verbs a field spec may carry as its default.
  *
  * Serialized kebab-case, mirroring `Action` in
- * crates/datum-core/src/action.rs. `occur` is the variant's `#[default]`,
- * so a field with no spec at all behaves as a point field.
+ * crates/datum-core/src/action.rs. The slot is OPTIONAL (da-emze): a spec
+ * minted to hold a colour or a tag was never asked what a press means, and
+ * carries no verb — `null` on the wire — so the log decides, exactly as it
+ * does for a field with no spec at all.
  */
 export type DefaultAction = 'occur' | 'start' | 'stop' | 'switch' | 'block' | 'add' | 'note';
 
@@ -28,7 +30,8 @@ export type DefaultAction = 'occur' | 'start' | 'stop' | 'switch' | 'block' | 'a
  */
 export interface FieldSpec {
 	field: string;
-	default_verb?: DefaultAction;
+	/** Absent or `null` = «the log decides» (da-emze). */
+	default_verb?: DefaultAction | null;
 	/** Allowed states for a switch field. Absent/null = unconstrained. */
 	allowed_states?: string[] | null;
 	color?: string | null;

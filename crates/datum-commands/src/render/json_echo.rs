@@ -298,7 +298,7 @@ mod tests {
         /// two occurrences are painted differently.
         #[test]
         fn the_field_and_state_segments_carry_their_colours() {
-            let mut spec = FieldSpec::new("mood", Action::Switch);
+            let mut spec = FieldSpec::with_verb("mood", Action::Switch);
             spec.color = Some("#ff6600".to_string());
             let mut registry = SpecRegistry::new();
             registry.fields.insert("mood".to_string(), spec);
@@ -341,7 +341,7 @@ mod tests {
         /// A spec override reaches both the document and the painted line.
         #[test]
         fn a_spec_colour_shows_up_in_field_color() {
-            let mut spec = FieldSpec::new("mood", Action::Switch);
+            let mut spec = FieldSpec::with_verb("mood", Action::Switch);
             spec.color = Some("#ff6600".to_string());
             let mut registry = SpecRegistry::new();
             registry.fields.insert("mood".to_string(), spec);

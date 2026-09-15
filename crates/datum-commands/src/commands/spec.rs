@@ -16,7 +16,7 @@ use crate::config::device_id;
 pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
     match sub {
         SpecCommand::Show { field, text } => match db.load_spec(&field)? {
-            Some(spec) if text => render_spec_text(&spec),
+            Some(spec) if text => render_spec_text(&spec, db.field_verb(&field)?),
             Some(spec) => println!("{}", serde_json::to_string_pretty(&spec)?),
             None => println!("No spec defined for field '{field}'"),
         },
@@ -67,13 +67,14 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         s
     } else {
         db.load_spec(&args.field)?
-            .unwrap_or_else(|| FieldSpec::new(&args.field, Action::Occur))
+            .unwrap_or_else(|| FieldSpec::new(&args.field))
     };
 
     if let Some(dv) = &args.default_verb {
-        spec.default_verb = dv
-            .parse::<Action>()
-            .map_err(|e| anyhow::anyhow!("Invalid --default-verb: {e}"))?;
+        spec.default_verb = Some(
+            dv.parse::<Action>()
+                .map_err(|e| anyhow::anyhow!("Invalid --default-verb: {e}"))?,
+        );
     }
     if !args.states.is_empty() {
         spec.allowed_states = Some(args.states.clone());
@@ -223,7 +224,7 @@ fn spec_add_state(
 ) -> Result<()> {
     let mut spec = db
         .load_spec(field)?
-        .unwrap_or_else(|| FieldSpec::new(field, Action::Occur));
+        .unwrap_or_else(|| FieldSpec::new(field));
 
     let states = spec.allowed_states.get_or_insert_with(Vec::new);
     let existed = states.iter().any(|s| s == name);
@@ -255,9 +256,15 @@ fn spec_add_state(
 /// for programmatic use, but a typed-out reading of the spec's intent reads
 /// faster for humans. This format prints field-level metadata first, then
 /// per-state lines listing color + description side by side (da-nhzo).
-fn render_spec_text(spec: &FieldSpec) {
+/// `from_log` is what [`Db::field_verb`] answers for this field — printed
+/// when the spec declares no verb of its own, so the inference a verbless
+/// spec leans on is visible rather than guessed at (da-emze).
+fn render_spec_text(spec: &FieldSpec, from_log: Action) {
     println!("{}", spec.field);
-    println!("  default_verb: {:?}", spec.default_verb);
+    match spec.default_verb {
+        Some(verb) => println!("  verb: {verb}"),
+        None => println!("  verb: (from the log: {from_log})"),
+    }
     if let Some(d) = &spec.description {
         println!("  description: {d}");
     }

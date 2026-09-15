@@ -9,7 +9,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { inkOver, lookOf, pressArgv, shapeFor, buttonsFor } from '../src/lib/fields.ts';
+import { declareArgv, inkOver, lookOf, pressArgv, shapeFor, buttonsFor } from '../src/lib/fields.ts';
 import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 
 const spec = (field, rest = {}) => ({ field, ...rest });
@@ -86,6 +86,25 @@ describe('the logic', () => {
 		const shape = shapeFor(spec('jumps', { default_verb: 'occur' }), [true]);
 		assert.deepEqual(shape, { kind: 'point' });
 		assert.deepEqual(pressArgv({ field: 'jumps', shape, tracked: true, stateColors: {} }), ['occur', 'jumps']);
+	});
+
+	// da-emze: a spec exists for many reasons, and only one of them is
+	// "what a press means". A spec that answers `null` there never answered
+	// the question, so it says no more than no spec at all does.
+	test('a spec with no verb says nothing — the log decides, as it does with no spec', () => {
+		assert.deepEqual(shapeFor(spec('sleep', { default_verb: null }), [true, false]), { kind: 'state' });
+		assert.deepEqual(shapeFor(spec('mood', { default_verb: null }), ['sad', 'ok']), {
+			kind: 'states',
+			states: ['ok', 'sad']
+		});
+		assert.deepEqual(shapeFor(spec('coffee', { default_verb: null })), { kind: 'point' });
+		// A colour on the spec is not evidence of anything either.
+		assert.deepEqual(shapeFor(spec('sleep', { color: '#0000ff' }), [true, false]), { kind: 'state' });
+	});
+
+	test('«decide from the log» declares the field and no verb', () => {
+		assert.deepEqual(declareArgv('sleep', null), ['spec', 'set', 'sleep']);
+		assert.deepEqual(declareArgv('sleep', { kind: 'state' }), ['spec', 'set', 'sleep', '--default-verb', 'start']);
 	});
 });
 
@@ -253,6 +272,52 @@ describe('in the app', () => {
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			assert.equal((await app.echoes()).at(-1), 'track run');
 			assert.deepEqual(await drawn(), ['BUTTON:run', 'BUTTON:tea', 'BUTTON:walk']);
+		});
+	});
+
+	// da-emze: the bug, as vividn found it. A colour needs a spec to live in,
+	// and the spec used to be minted with `occur` — so colouring a
+	// start/stop field turned it into a one-tap occur button, because
+	// da-u8n7 honours a spec's verb. A colour is not a verb: the button
+	// stays a block, and an EXPLICIT verb still changes it.
+	test('colouring a start/stop field leaves it a block; naming a verb is what changes it', async () => {
+		// The shape is on the chip as its class, so the wait is for the bar
+		// to have caught up with the command — not for a beat to have gone by.
+		const untilShape = (page, kind) =>
+			page.waitForFunction(
+				(k) => document.querySelector('.bar [data-field="sleep"]')?.classList.contains(k),
+				kind
+			);
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of ['start sleep -t -60', 'end sleep -t -1', 'track sleep --color #0000ff']) await type(page, line);
+			await untilFieldStyle(page, 'sleep', 'borderTopColor', BLUE);
+			assert.equal(JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout).default_verb, null);
+
+			await untilShape(page, 'state');
+			await app.pressWidget('sleep');
+			assert.equal((await app.echoes()).at(-1), 'start sleep', 'a colour made it a point');
+
+			await type(page, 'end sleep');
+			await type(page, 'spec set sleep --default-verb occur');
+			await untilShape(page, 'point');
+			await app.pressWidget('sleep');
+			assert.equal((await app.echoes()).at(-1), 'occur sleep', 'an explicit verb was not honoured');
+		});
+	});
+
+	test('the Track + form declares a field with no verb when the log is to decide', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.locator('.bar button.track').click();
+			const form = page.locator('form.add');
+			assert.equal(await form.locator('select').inputValue(), 'log', 'a verb was chosen for the user');
+
+			await form.locator('input').first().fill('sleep');
+			assert.equal((await form.locator('code.preview').innerText()).trim(), 'spec set sleep');
+			await form.locator('button[type="submit"]').click();
+			await page.locator('.bar button[data-field="sleep"]').waitFor();
+			assert.equal(JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout).default_verb, null);
 		});
 	});
 

@@ -8,8 +8,10 @@
 
 use rusqlite::{params, OptionalExtension};
 
+use crate::action::Action;
 use crate::error::{DatumError, Result};
-use crate::field_spec::{Alias, FieldSpec, SpecRegistry};
+use crate::field_spec::{verb_from_log, Alias, FieldSpec, SpecRegistry};
+use crate::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 
 use super::types::{AliasConflict, AliasConflictReason, SaveSpecReport};
 use super::Db;
@@ -29,6 +31,26 @@ impl Db {
             Some(j) => Ok(Some(serde_json::from_str(&j)?)),
             None => Ok(None),
         }
+    }
+
+    /// What a bare press of `field` means: the verb its spec declares,
+    /// else the one its log implies ([`verb_from_log`]).
+    ///
+    /// A spec's verb is optional (da-emze) — a spec minted to hold a
+    /// colour or a tag was never asked the question — so every reader that
+    /// wants a verb asks for it here rather than reading the slot, and an
+    /// unspecced field and a verbless spec answer alike.
+    pub fn field_verb(&self, field: &str) -> Result<Action> {
+        if let Some(verb) = self.load_spec(field)?.and_then(|s| s.default_verb) {
+            return Ok(verb);
+        }
+        let states: Vec<serde_json::Value> = self
+            .distinct_field_states()?
+            .into_iter()
+            .filter(|(f, s)| f == field && *s != TRACKED_STATE_VALUE && !is_ignored_state(s))
+            .map(|(_, s)| s)
+            .collect();
+        Ok(verb_from_log(&states))
     }
 
     /// Every field that has a declared spec, alphabetical. A spec is a
@@ -234,7 +256,7 @@ mod tag_tests {
     #[test]
     fn save_mirrors_tags_into_column() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("dishes", Action::Occur);
+        let mut spec = FieldSpec::with_verb("dishes", Action::Occur);
         spec.tags = vec!["chore".into(), "daily".into()];
         db.save_field_spec(&spec).unwrap();
 
@@ -266,14 +288,14 @@ mod tag_tests {
     #[test]
     fn list_specs_by_tag_filters_membership_not_substring() {
         let db = Db::open_in_memory().unwrap();
-        let mut dishes = FieldSpec::new("dishes", Action::Occur);
+        let mut dishes = FieldSpec::with_verb("dishes", Action::Occur);
         dishes.tags = vec!["chore".into()];
-        let mut laundry = FieldSpec::new("laundry", Action::Occur);
+        let mut laundry = FieldSpec::with_verb("laundry", Action::Occur);
         laundry.tags = vec!["chore".into(), "weekly".into()];
-        let mood = FieldSpec::new("mood", Action::Switch);
+        let mood = FieldSpec::with_verb("mood", Action::Switch);
         // `chores` (with trailing s) must NOT match a search for `chore` —
         // the LIKE prefilter would, but the Rust verifier rejects it.
-        let mut almost = FieldSpec::new("almost", Action::Occur);
+        let mut almost = FieldSpec::with_verb("almost", Action::Occur);
         almost.tags = vec!["chores".into()];
 
         db.save_field_spec(&dishes).unwrap();
@@ -295,7 +317,7 @@ mod tag_tests {
     #[test]
     fn save_leaves_render_json_null_when_render_is_none() {
         let db = Db::open_in_memory().unwrap();
-        let spec = FieldSpec::new("plain", Action::Occur);
+        let spec = FieldSpec::with_verb("plain", Action::Occur);
         db.save_field_spec(&spec).unwrap();
 
         let stored: Option<String> = db
@@ -319,7 +341,7 @@ mod tag_tests {
     #[test]
     fn save_mirrors_render_bool_into_column() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("background_telemetry", Action::Occur);
+        let mut spec = FieldSpec::with_verb("background_telemetry", Action::Occur);
         spec.presentation.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 
@@ -340,7 +362,7 @@ mod tag_tests {
     #[test]
     fn save_mirrors_per_surface_render_into_column() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
+        let mut spec = FieldSpec::with_verb("stretch_routine", Action::Occur);
         let mut map = HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.presentation.render = Some(Render::PerSurface(map));
@@ -371,7 +393,7 @@ mod tag_tests {
     fn save_field_spec_rejects_colon_in_field_name() {
         use crate::error::DatumError;
         let db = Db::open_in_memory().unwrap();
-        let spec = FieldSpec::new("weird:field", Action::Occur);
+        let spec = FieldSpec::with_verb("weird:field", Action::Occur);
         let err = db.save_field_spec(&spec).unwrap_err();
         assert!(
             matches!(err, DatumError::InvalidFieldSpec(_)),
@@ -382,7 +404,7 @@ mod tag_tests {
     #[test]
     fn re_save_clears_render_json_when_spec_drops_render() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("toggle", Action::Occur);
+        let mut spec = FieldSpec::with_verb("toggle", Action::Occur);
         spec.presentation.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 

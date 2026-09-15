@@ -42,7 +42,7 @@ fn occur_field_is_tracked_not_on() {
 #[test]
 fn block_field_is_tracked_false() {
     let db = fresh_db();
-    db.save_field_spec(&FieldSpec::new("work", Action::Start))
+    db.save_field_spec(&FieldSpec::with_verb("work", Action::Start))
         .unwrap();
     run_cli(&["track", "work"], &db).unwrap();
     assert_eq!(latest_state(&db, "work"), json!(false));
@@ -69,4 +69,56 @@ fn track_unignores_an_ignored_field() {
     assert!(ignored(&db));
     run_cli(&["track", "mood"], &db).unwrap();
     assert!(!ignored(&db));
+}
+
+/// da-emze: a colour is not a verb. `track --color` has to mint a spec to
+/// put the colour in, and minting one with `occur` as a placeholder turned
+/// a start/stop field into a one-tap occur button the moment it was
+/// coloured (da-u8n7 honours a spec's verb). The spec it mints now
+/// declares no verb, so the widget still reads the field's shape off its
+/// log — `fields --json`'s `states` — and still draws a block.
+#[test]
+fn a_colour_alone_mints_no_verb() {
+    let db = fresh_db();
+    run_cli(&["start", "sleep", "-t", "-60"], &db).unwrap();
+    run_cli(&["end", "sleep", "-t", "-1"], &db).unwrap();
+    run_cli(&["track", "sleep", "--color", "blue"], &db).unwrap();
+
+    let spec = db.load_spec("sleep").unwrap().unwrap();
+    assert_eq!(spec.color.as_deref(), Some("blue"));
+    assert_eq!(spec.default_verb, None, "a colour minted a verb");
+    // …and no bare-field alias either: nothing decided what `datum sleep`
+    // would mean.
+    assert!(
+        spec.derived_aliases.is_empty(),
+        "verbless spec minted aliases: {:?}",
+        spec.derived_aliases
+    );
+
+    let listing = compute_fields(&db).unwrap();
+    assert_eq!(listing[0]["field"], "sleep");
+    assert_eq!(listing[0]["spec"]["default_verb"], JsonValue::Null);
+    // The widget's evidence: booleans, which is a block button.
+    assert_eq!(listing[0]["states"], json!([false, true]));
+    // And the CLI reads the same shape off the same log.
+    assert_eq!(db.field_verb("sleep").unwrap(), Action::Start);
+}
+
+/// The wire format is unchanged: a spec an older build wrote still carries
+/// its verb, and the verb still wins over the log (da-u8n7).
+#[test]
+fn a_spec_written_with_a_verb_still_loads_with_it() {
+    let db = fresh_db();
+    db.conn()
+        .execute(
+            "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
+            rusqlite::params!["sleep", r#"{"field":"sleep","default_verb":"occur"}"#],
+        )
+        .unwrap();
+    run_cli(&["start", "sleep", "-t", "-60"], &db).unwrap();
+    run_cli(&["end", "sleep", "-t", "-1"], &db).unwrap();
+
+    let spec = db.load_spec("sleep").unwrap().unwrap();
+    assert_eq!(spec.default_verb, Some(Action::Occur));
+    assert_eq!(db.field_verb("sleep").unwrap(), Action::Occur);
 }

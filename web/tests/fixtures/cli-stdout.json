@@ -128,7 +128,7 @@
 		{
 			"argv": ["spec", "show", "coffee"],
 			"code": 0,
-			"stdout": "{\n  \"field\": \"coffee\",\n  \"default_verb\": \"occur\",\n  \"subfields\": {},\n  \"description\": null,\n  \"unit\": null,\n  \"id_template\": null,\n  \"color\": \"#884400\",\n  \"allowed_states\": null,\n  \"state_colors\": {},\n  \"derived_aliases\": [\n    {\n      \"state\": \"coffee\",\n      \"expands_to\": \"occur coffee\",\n      \"kind\": \"bare_field\"\n    }\n  ],\n  \"id_keys\": [],\n  \"data_keys\": [],\n  \"no_autoalias\": false,\n  \"strict\": false\n}"
+			"stdout": "{\n  \"field\": \"coffee\",\n  \"default_verb\": null,\n  \"subfields\": {},\n  \"description\": null,\n  \"unit\": null,\n  \"id_template\": null,\n  \"color\": \"#884400\",\n  \"allowed_states\": null,\n  \"state_colors\": {},\n  \"derived_aliases\": [],\n  \"id_keys\": [],\n  \"data_keys\": [],\n  \"no_autoalias\": false,\n  \"strict\": false\n}"
 		},
 		{
 			"argv": ["nosuch"],

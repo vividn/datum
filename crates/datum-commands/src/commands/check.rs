@@ -1889,7 +1889,7 @@ mod tests {
                 unit: None,
             },
         );
-        let mut spec = FieldSpec::new("mood", Action::Switch);
+        let mut spec = FieldSpec::with_verb("mood", Action::Switch);
         spec.subfields = subfields;
         // da-mkes: the orphan check only fires for strict specs.
         spec.strict = true;
@@ -1937,7 +1937,7 @@ mod tests {
                 unit: None,
             },
         );
-        let mut spec = FieldSpec::new("mood", Action::Switch);
+        let mut spec = FieldSpec::with_verb("mood", Action::Switch);
         spec.subfields = subfields;
         // strict defaults to false — flag should not fire.
         db.save_field_spec(&spec).unwrap();
@@ -2120,7 +2120,7 @@ mod tests {
     use datum_core::field_spec::Alias;
 
     fn switch_spec(field: &str, states: &[&str]) -> FieldSpec {
-        let mut spec = FieldSpec::new(field, Action::Switch);
+        let mut spec = FieldSpec::with_verb(field, Action::Switch);
         spec.allowed_states = Some(states.iter().map(|s| s.to_string()).collect());
         spec.regenerate_derived_aliases();
         spec

@@ -22,8 +22,9 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     // overrides still live on FieldSpec, so we update the spec only when the
     // user actually passed those arguments.
     let spec = db.load_spec(&args.field)?;
-    let holds_state = match &spec {
-        Some(s) => matches!(s.default_verb, Action::Start | Action::Switch),
+    let holds_state = match spec.as_ref().and_then(|s| s.default_verb) {
+        Some(v) => matches!(v, Action::Start | Action::Switch),
+        // No spec, or a spec that declares no verb (da-emze): the log says.
         None => db
             .distinct_field_states()?
             .iter()
@@ -49,7 +50,9 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     if args.color.is_some() || !args.state_colors.is_empty() || !args.tags.is_empty() {
         let mut spec = match spec {
             Some(s) => s,
-            None => FieldSpec::new(&args.field, Action::Occur),
+            // da-emze: a colour is not a verb. A spec minted to hold one
+            // declares no verb, so the field's shape still comes from its log.
+            None => FieldSpec::new(&args.field),
         };
         if let Some(c) = &args.color {
             spec.color = Some(c.clone());

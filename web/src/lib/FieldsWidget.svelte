@@ -100,7 +100,11 @@
 
 	let adding = false;
 	let newField = '';
-	let newKind: FieldShape['kind'] = 'point';
+	// 'log' is «decide from the log», and the default: a person who came
+	// here to name a field has not necessarily decided what a press of it
+	// means, and a verb chosen for them is a decision they did not make
+	// (da-emze). The spec is still created — a colour hangs on it later.
+	let newKind: FieldShape['kind'] | 'log' = 'log';
 	let newStates = '';
 
 	$: buttons = fields.filter((w) => !w.ignored);
@@ -119,18 +123,20 @@
 	// Reactive, not a function call: Svelte tracks the variables an
 	// expression *names*, so `declareArgv(field, newShape())` in the markup
 	// would never see a change to `newKind` or `newStates` — the preview
-	// would sit at `--default-verb occur` while the form said otherwise,
+	// would sit at the first option's argv while the form said otherwise,
 	// and a preview that disagrees with the command teaches a lie.
 	$: newShape =
-		newKind === 'states'
-			? ({
-					kind: 'states',
-					states: newStates
-						.split(',')
-						.map((s) => s.trim())
-						.filter(Boolean)
-				} satisfies FieldShape)
-			: ({ kind: newKind } as FieldShape);
+		newKind === 'log'
+			? null
+			: newKind === 'states'
+				? ({
+						kind: 'states',
+						states: newStates
+							.split(',')
+							.map((s) => s.trim())
+							.filter(Boolean)
+					} satisfies FieldShape)
+				: ({ kind: newKind } as FieldShape);
 
 	$: addArgv = declareArgv(newField.trim() || '<field>', newShape);
 
@@ -394,6 +400,7 @@
 					<!-- svelte-ignore a11y-autofocus -->
 					<input bind:value={newField} placeholder="field" spellcheck="false" autofocus />
 					<select bind:value={newKind} aria-label="what a press logs">
+						<option value="log">decide from the log</option>
 						<option value="point">occur — a thing that happened</option>
 						<option value="state">start — a block that begins and ends</option>
 						<option value="states">switch — one of several states</option>

@@ -571,7 +571,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // da-ivld: id_structure is body-only; the `<field>:` prefix is implicit.
-        let mut spec = FieldSpec::new("coffee", Action::Occur);
+        let mut spec = FieldSpec::with_verb("coffee", Action::Occur);
         spec.id_template = Some("%uid%".to_string());
         db.save_field_spec(&spec).unwrap();
 
@@ -597,7 +597,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // Spec has one template; --id passes a different one → --id wins.
-        let mut spec = FieldSpec::new("coffee", Action::Occur);
+        let mut spec = FieldSpec::with_verb("coffee", Action::Occur);
         spec.id_template = Some("%uid%".to_string());
         db.save_field_spec(&spec).unwrap();
 

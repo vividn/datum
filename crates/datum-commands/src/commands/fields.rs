@@ -204,7 +204,7 @@ mod tests {
                 .insert(&db);
         }
         entry_builder("coffee").insert(&db);
-        db.save_field_spec(&FieldSpec::new("sleep", Action::Start))
+        db.save_field_spec(&FieldSpec::with_verb("sleep", Action::Start))
             .unwrap();
 
         let listing = compute_fields(&db).unwrap();
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn spec_colour_wins_over_md5() {
         let db = fresh_db();
-        let mut spec = FieldSpec::new("mood", Action::Switch);
+        let mut spec = FieldSpec::with_verb("mood", Action::Switch);
         spec.color = Some("#ff6600".to_string());
         db.save_field_spec(&spec).unwrap();
 
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn colourless_state_resolves_to_md5_of_state_not_field() {
         let db = fresh_db();
-        let mut spec = FieldSpec::new("mood", Action::Switch);
+        let mut spec = FieldSpec::with_verb("mood", Action::Switch);
         spec.color = Some("#ff6600".to_string());
         db.save_field_spec(&spec).unwrap();
         entry_builder("mood")
@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn legacy_ansi256_number_resolves() {
         let db = fresh_db();
-        let mut spec = FieldSpec::new("mood", Action::Switch);
+        let mut spec = FieldSpec::with_verb("mood", Action::Switch);
         spec.color = Some("196".to_string());
         db.save_field_spec(&spec).unwrap();
 
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn allowed_states_get_resolved_colours_even_unlogged() {
         let db = fresh_db();
-        let mut spec = FieldSpec::new("mood", Action::Switch);
+        let mut spec = FieldSpec::with_verb("mood", Action::Switch);
         spec.allowed_states = Some(vec!["happy".to_string(), "sad".to_string()]);
         db.save_field_spec(&spec).unwrap();
 
