@@ -346,17 +346,25 @@ describe("the root bar's menu", () => {
 	// than being put inside it — so the tab reads the widget's own title,
 	// not `day`. `layout-nested.test.mjs` holds the rest of that rule.
 	test('Choose… replaces the root tab with what the chooser came back with', async () => {
-		await withApp(async ({ page }) => {
+		await withApp(async (app) => {
+			const { page } = app;
 			await chooseRoot(page, 'Choose…');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
 			await page.locator('section.pane[data-title="stats"]').waitFor();
 			assert.deepEqual(await titles(page), ['stats']);
-			assert.deepEqual(
-				await page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim())),
-				['stats']
-			);
+			const names = () =>
+				page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim()));
+			assert.deepEqual(await names(), ['stats']);
+
+			// At the root the widget is its built-in layout (da-y2f6), so the
+			// tab has a name — and a named root tab is in this device's open
+			// list, which is what brings it back.
+			await app.reload();
+			await page.locator('section.pane[data-title="stats"]').waitFor();
+			assert.deepEqual(await names(), ['stats']);
+			assert.deepEqual(await titles(page), ['stats']);
 		}, DESKTOP);
 	});
 });

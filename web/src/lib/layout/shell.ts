@@ -69,7 +69,7 @@ import { initDb } from '$lib/db.js';
 import type { Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
 import { LAYOUT_VERSION, isSplit } from './types.js';
 import { apply, layout, loaded } from './current.js';
-import { ALIASES, PHONE_WIDTH, builtinLayout } from './defaults.js';
+import { ALIASES, BUILTIN_NAMES, PHONE_WIDTH, builtinLayout } from './defaults.js';
 import {
 	clearDevice,
 	clearDraft,
@@ -553,10 +553,17 @@ export function toggleLock(tabId: NodeId): void {
  * chooser's other choice. The tab that lands is `inline`'s own — id and
  * all — so it is the same kind of thing as a root tab and its `extract`
  * reads back equal to the save.
+ *
+ * The tab is REPLACED, so a layout it HELD is not one of the names open
+ * above it: the ancestors are what is above it, less its own. Without
+ * that, filling a tab with the layout it already holds — or with the
+ * built-in a chosen widget is (`widgetInto`) — would refuse itself.
  */
 export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
+	const held = findTab(get(layout), tabId)?.layout;
+	const above = ancestorsOf(tabId).filter((n) => n !== held);
 	const taken = new Set(allIds(get(layout)));
-	const filled = await expandTab({ id: tabId, content: notice(''), layout: name }, ancestorsOf(tabId), taken);
+	const filled = await expandTab({ id: tabId, content: notice(''), layout: name }, above, taken);
 	apply((l) => normalize({ ...l, root: mapTabs(l.root, (t) => (t.id === tabId ? filled : t)) }));
 }
 
@@ -569,9 +576,22 @@ export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
  * The save is untouched — the tab was a copy, and the copy is gone — and
  * with the last copy of a name goes its baseline, so no dot, no draft and
  * no act is left over for a copy that is not there.
+ *
+ * At the ROOT it is the built-in ONE-WIDGET LAYOUT the kind is instead
+ * (da-y2f6): every built-in but `day` is exactly that widget alone, named
+ * as its pane is titled, so the tab can be the widget AND have a name —
+ * and it has to have one, because this device's open list is a list of
+ * NAMES (`settle`, `saveRoot`) and a nameless root tab has nothing to
+ * write there, so it would be gone after a reload. It is the same path
+ * the root bar's `+` takes for a built-in name. A pickable kind with no
+ * built-in still sheds, and then it is a root tab like any other nameless
+ * one: it lives as long as the page does.
  */
-export function widgetInto(tabId: NodeId, kind: string): void {
+export async function widgetInto(tabId: NodeId, kind: string): Promise<void> {
 	const name = findTab(get(layout), tabId)?.layout;
+	const builtin = canonicalName(kind);
+	if (rootTabs(get(layout)).some((t) => t.id === tabId) && BUILTIN_NAMES.includes(builtin))
+		return inlineInto(tabId, builtin);
 	apply((l) => shedLayout(setWidget(l, tabId, newWidget(kind)), tabId));
 	if (name !== undefined && !tabOf(name)) baselines.update(({ [name]: _gone, ...rest }) => rest);
 }

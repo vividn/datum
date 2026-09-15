@@ -52,10 +52,13 @@ export async function choose(ancestors: string[] = []): Promise<Choice | null> {
  * (da-8o07), which is why this is `widgetInto` rather than a bare
  * `setWidget`: `setWidget` is also how a widget's own settings are folded
  * back in (Layout.svelte), where the identity must survive.
+ *
+ * At the root a widget is its built-in one-widget layout, which is why
+ * `widgetInto` is a promise too (da-y2f6).
  */
 export async function put(tabId: NodeId, picked: Choice): Promise<void> {
 	if ('layout' in picked) await inlineInto(tabId, picked.layout);
-	else widgetInto(tabId, picked.kind);
+	else await widgetInto(tabId, picked.kind);
 }
 
 /**

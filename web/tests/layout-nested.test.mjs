@@ -34,6 +34,7 @@ import {
 	pane,
 	rootMenuButton,
 	settled,
+	titles,
 	widgetPane
 } from './support/layout.mjs';
 
@@ -355,7 +356,13 @@ describe('a widget chosen for a tab that holds a layout', () => {
 		}, DESKTOP);
 	});
 
-	test('a ROOT tab sheds it the same way: no name, no dot, and no layout left to save', async () => {
+	// At the ROOT the shed would cost the tab its name, and a root tab's
+	// name is the whole of what this device writes down (`shell.ts`'s
+	// `settle`): «day → Choose… → tail», a reload, and the tail tab is
+	// gone. So at the root the widget is its BUILT-IN one-widget layout
+	// instead (da-y2f6) — the tab IS the widget and is called `tail`, with
+	// the four acts a named tab has and a line in the open list.
+	test('a ROOT tab becomes the built-in layout of that widget, and survives a reload', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await layouts(app, 'saveLayout', MINE);
@@ -368,26 +375,46 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).waitFor();
 			await settled(page);
 
+			// `mine` is the name open above the tab, and `tail` is not it:
+			// nothing here is a layout holding itself.
+			assert.deepEqual(
+				await page.evaluate(() => window.datum.shell.ancestorsOf(window.datum.layout.current().root.tabs[1].id)),
+				['mine']
+			);
+
 			await chooseRoot(page, 'Choose…');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('tail') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
+			// The built-in is READ before it lands (`resolve`), so the tab
+			// changes a beat after the modal closes.
+			await page.locator('.root-bar [role="tab"]', { hasText: 'tail' }).waitFor();
 			await settled(page);
 
 			const tab = await activeTabOf(page, 'shell');
-			assert.equal(tab.layout, undefined, JSON.stringify(tab));
-			assert.equal(tab.title, undefined, JSON.stringify(tab));
+			assert.equal(tab.layout, 'tail', JSON.stringify(tab));
 			assert.equal(tab.content.kind, 'tail');
+			assert.deepEqual(await titles(page), ['tail']);
 			assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['day', 'tail']);
-			assert.equal(await page.locator('.root-bar [role="tab"] .dot').count(), 0, 'a shed root tab wears a dot');
+			assert.equal(await page.locator('.root-bar [role="tab"] .dot').count(), 0, 'the built-in came up modified');
 			assert.equal(await page.locator('section.pane[data-title="mine"]').count(), 0);
 
-			// A tab holding no layout has no layout to save: the acts are
-			// gone from its menu, and `mine` is as it was saved.
+			// A named tab keeps the four acts.
 			await rootMenuButton(page).click();
 			const lines = await menuLines(page);
-			assert.equal(lines.includes('Save layout'), false, lines.join(' | '));
+			for (const act of ['Save layout', 'Restore layout', 'Save layout as…', 'Lock layout'])
+				assert.ok(lines.includes(act), `${act} is missing: ${lines.join(' | ')}`);
 			await page.keyboard.press('Escape');
+
+			// The name is what the device writes down, so the tab comes back.
+			await app.reload();
+			await page.locator('.root-bar [role="tab"]', { hasText: 'tail' }).waitFor();
+			await settled(page);
+			assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['day', 'tail']);
+			assert.equal((await activeTabOf(page, 'shell')).layout, 'tail');
+			assert.deepEqual(await titles(page), ['tail']);
+
+			// `mine` is as it was saved: the tab was only ever a copy of it.
 			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);

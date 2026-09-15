@@ -709,3 +709,30 @@ describe('a layout tab', () => {
 		assert.equal(after.root.tabs[0].content.kind, EMPTY_KIND);
 	});
 });
+
+// Every pickable kind has a built-in one-widget layout (da-y2f6).
+//
+// At the root a chosen widget becomes that layout, which is what gives the
+// tab a name and so a place in the device's open list. A kind the chooser
+// offers with no built-in would shed instead and be gone after a reload —
+// so a kind added to `PICKABLE` needs its line in `BUILTIN` too, and this
+// is what says so. The kinds whose built-in is spelled differently reach
+// it through `ALIASES`, the same door a URL uses.
+describe('PICKABLE ⊆ BUILTIN', () => {
+	test('each kind the chooser offers names one, titled as its pane is', async () => {
+		const { PICKABLE, titleOf } = await import('../src/lib/layout/registry.ts');
+		const { ALIASES, BUILTIN, BUILTIN_NAMES } = await import('../src/lib/layout/defaults.ts');
+		assert.ok(PICKABLE.length > 0);
+		for (const kind of PICKABLE) {
+			const name = ALIASES[kind] ?? kind;
+			assert.ok(BUILTIN_NAMES.includes(name), `${kind} has no built-in layout (${name})`);
+			assert.notEqual(name, 'day', `${kind} may not be the day layout`);
+			// The root bar's `+` reaches the same layout by the kind's TITLE
+			// and `widgetInto` by its alias: one name, or the two doors part.
+			assert.equal(name, titleOf(kind), `${kind} is titled ${titleOf(kind)} but aliased to ${name}`);
+			const only = BUILTIN[name](false);
+			assert.equal(only.name, name);
+			assert.deepEqual(kinds(only.root), [kind], `the ${name} built-in is the ${kind} widget alone`);
+		}
+	});
+});

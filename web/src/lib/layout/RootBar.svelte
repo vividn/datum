@@ -136,9 +136,11 @@
 
 	/**
 	 * The four acts belong to the layout the active tab HOLDS — and a root
-	 * tab need not hold one: a tab given a widget from the chooser sheds
-	 * the layout it held (da-8o07), and is then a plain widget tab with
-	 * nothing to save, restore or lock. The same rule a pane's frame reads.
+	 * tab need not hold one: a tab can be a bare widget, which the tree
+	 * allows and a pane tab given a widget from the chooser becomes
+	 * (da-8o07). At the root that same choice lands the widget's built-in
+	 * layout instead, so it keeps its acts (da-y2f6). The same rule a
+	 * pane's frame reads.
 	 */
 	$: acts =
 		name === undefined
