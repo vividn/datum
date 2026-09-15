@@ -271,5 +271,12 @@ jobs:
       # toolchain. Regenerate them with `pnpm run test:fixtures` against a
       # built `datum` binary when the CLI's stored shape changes — and if
       # you forget, `build-and-test` re-captures them and goes red.
+      # A runner is dedicated, and the load average it carries here is the
+      # STALE trace of the build and the browser install that just finished,
+      # not work competing with the suite — so this job names its number (the
+      # three files four cores gave it before da-x38v) rather than reading a
+      # load that has already ended.
       - name: pnpm test
         run: pnpm test
+        env:
+          DATUM_TEST_CONCURRENCY: 3

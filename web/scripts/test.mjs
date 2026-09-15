@@ -6,17 +6,26 @@
 // A flat `--test-concurrency=6` fixed the box and broke CI: its runners have
 // four cores, so their default was THREE, and six was a raise — twenty-one
 // tests timed out under the contention (PR #213's first run). So the cap is
-// the smaller of six and what the machine has: six here, three on CI, one
-// on a laptop that is doing something else.
+// the smaller of six and what the machine has AND what the machine's current
+// load leaves — see `filesAtOnce`.
 //
-// `DATUM_TEST_CONCURRENCY` overrides the cap for a run that wants to measure
-// something; any further arguments go to `node --test` unchanged.
+// `DATUM_TEST_CONCURRENCY` overrides the number exactly, load and cores and
+// all: the merge queue's `scripts/mq-check.sh` sets it, because the refinery's
+// verdict is the one run that must not yield to the cans'. Any further
+// arguments go to `node --test` unchanged.
 
-import { availableParallelism } from 'node:os';
+import { availableParallelism, loadavg } from 'node:os';
 import { spawn } from 'node:child_process';
+import { filesAtOnce } from './concurrency.mjs';
 
-const cap = Number(process.env.DATUM_TEST_CONCURRENCY ?? 6);
-const concurrency = Math.max(1, Math.min(cap, availableParallelism() - 1));
+const cores = availableParallelism();
+// Read once: a run's concurrency is fixed at its start.
+const load = loadavg()[0];
+const override = process.env.DATUM_TEST_CONCURRENCY ? Number(process.env.DATUM_TEST_CONCURRENCY) : undefined;
+const concurrency = filesAtOnce(cores, load, 6, override);
+console.log(
+	`test: ${cores} cores, load ${load.toFixed(1)} → ${concurrency} file${concurrency === 1 ? '' : 's'} at once${override ? ' (override)' : ''}`
+);
 
 const child = spawn(
 	process.execPath,

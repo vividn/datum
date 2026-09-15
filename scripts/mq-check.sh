@@ -37,6 +37,11 @@ if [ -n "$web" ]; then
     export PATH="${node_bin:+$node_bin:}$HOME/.local/share/pnpm:$PATH"
   fi
   echo "mq-check: web/ changed — running the web check and suite"
+  # The suite otherwise reads the box's load average and yields to it, which is
+  # right for a can sharing the box and wrong here: the refinery's verdict is
+  # the one run that must not wait behind the cans'. So the queue names its own
+  # number and everyone else reads the load (da-x38v).
+  export DATUM_TEST_CONCURRENCY=6
   (cd web && pnpm install --frozen-lockfile && pnpm run check && pnpm test)
 fi
 
