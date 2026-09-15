@@ -1,16 +1,43 @@
 {
+  "id": "/",
   "name": "datum",
   "short_name": "datum",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0a0a1a",
   "theme_color": "#1a1a2e",
   "description": "Personal data tracker - fully offline, SQLite in the browser",
   "icons": [
     {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/favicon.png",
-      "sizes": "any",
-      "type": "image/png"
+      "sizes": "64x64",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
