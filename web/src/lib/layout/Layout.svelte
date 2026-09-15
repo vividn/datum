@@ -54,6 +54,7 @@
 	import { isSplit } from './types.js';
 	import { apply } from './current.js';
 	import { EMPTY_KIND, floorOf, rootFloorOf, setRatios, setWidget } from './tree.js';
+	import { maximized, maximizedIn } from './maximize.js';
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
 
@@ -89,6 +90,14 @@
 	$: kind = isSplit(content) || content.kind === EMPTY_KIND ? undefined : KINDS[content.kind];
 	$: canClose = !(pane.id === rootId && pane.tabs.length === 1);
 	$: lockedHere = locked || !!active.locked;
+	/**
+	 * The maximized pane (da-00am), resolved HERE and nowhere else: the root
+	 * render is the one place that substitutes a subtree, so there is no
+	 * `maximized` prop threaded down every level. Null unless this is the
+	 * root, the state belongs to the tab in front, and the pane is still in
+	 * its tree — which is how a closed or broken-out pane heals itself.
+	 */
+	$: big = pane.id === rootId ? maximizedIn($maximized, active) : null;
 
 	/** The old grid named its areas by what they showed; a cell does too. */
 	const named = (child: PaneNode): string => {
@@ -256,7 +265,14 @@
 	locked={locked}
 	kind={isSplit(content) ? undefined : content.kind}
 >
-	{#if isSplit(content)}
+	{#if big}
+		<!-- The pane alone, under the root bar and in place of the whole
+		     tree — a pane inside a nested layout tab included, since a
+		     maximize into a small box is not one. It keeps its own frame,
+		     and nothing in the tree changed, so the press that puts it back
+		     puts everything back with it. -->
+		<svelte:self pane={big.pane} {epoch} {rootId} locked={big.locked} />
+	{:else if isSplit(content)}
 		{@const split = content}
 		{@const least = pane.id === rootId ? legible(pane) : undefined}
 		{@const grow = preview ?? split.ratios}

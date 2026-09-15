@@ -154,9 +154,9 @@ describe('resizing', () => {
 	});
 
 
-	test('a border is grabbed right beside the + badge, which hangs half over the gap', async () => {
+	test('a border is grabbed right beside the badges, which hang half over the gap', async () => {
 		await withApp(async ({ page }) => {
-			// The tail's badge is centred on its top outline, so half of it
+			// The tail's badges are centred on its top outline, so half of each
 			// hangs into the gap above — the column border between nowview and
 			// tail — and no further: 8px of a 16px badge in an 8px gap (da-om9v).
 			const border = pane(page, 'side').locator('.split.column > [role="separator"]').first();
@@ -165,7 +165,13 @@ describe('resizing', () => {
 			const middle = more.y + more.height / 2;
 			assert.ok(Math.abs(middle - (tailBefore.y + 0.5)) <= 1, `the badge's middle (${middle}) is not on the outline (${tailBefore.y})`);
 			assert.ok(Math.abs(more.y - (gap.y + gap.height - 8)) <= 1, `the badge's top (${more.y}) is not 8px above the gap's end (${gap.y + gap.height})`);
-			const x = more.x + more.width + 6;
+			// The gap the border is grabbed by is the one past the LAST badge,
+			// not past the `+`: maximize follows it (da-00am) and a third badge
+			// would follow that, so read the badges and take the far edge.
+			const past = await pane(page, 'tail').evaluate((section) =>
+				Math.max(...[...section.querySelectorAll(':scope > .titlebar .along button.badge')].map((b) => b.getBoundingClientRect().right))
+			);
+			const x = past + 6;
 			const y = gap.y + gap.height / 2;
 			await page.mouse.move(x, y);
 			await page.mouse.down();

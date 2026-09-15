@@ -89,6 +89,7 @@ import {
 	versions
 } from './store.js';
 import { EMPTY_KIND, allIds, closeTab, findTab, newId, newWidget, normalize, setActive, setLocked, setWidget, shedLayout } from './tree.js';
+import { unmaximize } from './maximize.js';
 import { defaultsOfKind } from './registry.js';
 
 export { versions };
@@ -447,6 +448,9 @@ async function followSaves(): Promise<void> {
  */
 export async function open(name: string): Promise<boolean> {
 	await boot();
+	// Leaving the layout, whether to a tab that is already open or to a new
+	// one: a maximize is not sticky (da-00am).
+	unmaximize();
 	const n = canonicalName(name);
 	const at = rootTabs(get(layout)).findIndex((t) => t.layout === n);
 	if (at >= 0) {
@@ -459,7 +463,12 @@ export async function open(name: string): Promise<boolean> {
 	return true;
 }
 
-export const activate = (index: number) => apply((l) => setActive(l, l.root.id, index));
+export const activate = (index: number) => {
+	// «coming back should unmaximize the pane» (vividn, da-00am): leaving the
+	// layout drops the maximize, so the tab returned to is drawn whole.
+	unmaximize();
+	apply((l) => setActive(l, l.root.id, index));
+};
 
 /** Close a root tab; the last one stays (tree.ts). Its draft, if any, is kept for next time. */
 export const close = (index: number) => apply((l) => closeTab(l, l.root.id, index));
@@ -493,6 +502,8 @@ export async function restore(tabId: NodeId, version?: number): Promise<void> {
 	const name = tab.layout as string;
 	const saved = version === undefined && get(modified).has(tabId) ? await resolve(name) : await restoreSaved(name, version);
 	if (!saved) return;
+	// A different tree arrives: whatever was filling the page is not it.
+	unmaximize();
 	baselines.update((b) => ({ ...b, [name]: baselineOf(saved) }));
 	await replaceCopies(name, saved);
 }
@@ -543,7 +554,9 @@ export async function resetLayout(tabId: NodeId): Promise<void> {
 	const tab = copyOf(tabId);
 	if (!tab) return;
 	const shipped = shippedTree(tab.layout as string);
-	if (shipped) await replaceCopies(tab.layout as string, shipped);
+	if (!shipped) return;
+	unmaximize();
+	await replaceCopies(tab.layout as string, shipped);
 }
 
 /**

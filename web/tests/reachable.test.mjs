@@ -392,7 +392,7 @@ describe('the layout engine, by keyboard', () => {
 			const controls = await page.evaluate(() =>
 				[
 					...document.querySelectorAll(
-						'button.title, button.add, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear, .prompt-bar .hint-button'
+						'button.title, button.add, button.maximize, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear, .prompt-bar .hint-button'
 					)
 				]
 					.filter((el) => el.getClientRects().length > 0)
@@ -406,7 +406,9 @@ describe('the layout engine, by keyboard', () => {
 									? 'menu of the root bar'
 									: el.matches('button.add')
 										? `the + of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
-										: el.matches('.nowview-steps button')
+										: el.matches('button.maximize')
+											? `the maximize of ${el.closest('section')?.dataset.title}`
+											: el.matches('.nowview-steps button')
 											? el.getAttribute('aria-label')
 											: el.matches('.hint-button')
 												? 'the beta hint'
@@ -477,10 +479,10 @@ describe('the layout engine, by keyboard', () => {
 
 	// The floors a pointer needs, after the margins came down (da-jgrn) and
 	// the title row with them (da-om9v): a border is at least 8px across;
-	// what opens a pane's menu — its title (da-9vtw) — and the `+` beside
-	// it are the row's height (16px) where the pointer is fine and a
-	// fingertip's 24px where it is coarse; the root bar's are 24px under
-	// either.
+	// what opens a pane's menu — its title (da-9vtw) — and the two badges
+	// beside it, the `+` and the maximize (da-00am), are the row's height
+	// (16px) where the pointer is fine and a fingertip's 24px where it is
+	// coarse; the root bar's are 24px under either.
 	for (const [name, options] of [
 		['1280x900', { viewport: { width: 1280, height: 900 } }],
 		['390x844', { viewport: { width: 390, height: 844 } }],
@@ -497,7 +499,7 @@ describe('the layout engine, by keyboard', () => {
 					return {
 						coarse: matchMedia('(pointer: coarse)').matches,
 						borders: shown('[role="separator"]').map((el) => Math.min(...box(el))),
-						panes: shown('section button.title, section button.add').map(box),
+						panes: shown('section button.title, section button.add, section button.maximize').map(box),
 						root: shown('.root-bar button.add, .root-bar button.gear, .root-bar [role="tab"]').map(box)
 					};
 				});

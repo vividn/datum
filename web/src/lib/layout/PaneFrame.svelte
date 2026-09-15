@@ -104,6 +104,7 @@
 	import { choose, fillTab, put } from './chooser.js';
 	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock } from './shell.js';
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, splitPane } from './tree.js';
+	import { inForce, toggleMaximize } from './maximize.js';
 	import { labelOf, titleOf } from './registry.js';
 	import { layoutActs, menuItems } from './menu.js';
 	import PaneMenu from './PaneMenu.svelte';
@@ -197,6 +198,14 @@
 
 	/** This pane's own lock: one above it, or its active tab's own. */
 	$: lockedHere = locked || !!active.locked;
+
+	/**
+	 * Whether this pane is the one filling the root (da-00am) — which is
+	 * what turns the badge round into its restore state. The store alone is
+	 * not the answer: a maximize belongs to the root tab it was made in, and
+	 * stops applying when another is in front (`isMaximized`).
+	 */
+	$: big = $inForce?.pane === pane.id;
 
 	/**
 	 * A failed act: reported where a developer sees it. The root bar has a
@@ -551,8 +560,10 @@
 					{/if}
 				</div>
 			{/if}
-			<!-- Inside `.along`, after the title or the last tab: the badge
-			     goes where the alignment puts them, and right beside them. -->
+			<!-- Inside `.along`, after the title or the last tab: the badges
+			     go where the alignment puts them, and right beside them. The
+			     order is title/tabs, `+`, maximize — `align: end` mirrors the
+			     row, so it is asserted rather than assumed. -->
 			{#if !lockedHere}
 				<button
 					type="button"
@@ -562,6 +573,27 @@
 					on:click={() => void addChosen()}>+</button
 				>
 			{/if}
+			<!-- Maximize (da-00am): not under the lock, since a lock keeps the
+			     LAYOUT from changing and this changes nothing saved. -->
+			<button
+				type="button"
+				class="control badge maximize"
+				aria-label="{big ? 'restore' : 'maximize'} the {title} pane"
+				title={big ? 'restore' : 'maximize'}
+				aria-pressed={big}
+				on:click={() => toggleMaximize(pane.id)}
+			>
+				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+					{#if big}
+						<!-- Two offset boxes: this one comes back among the others. -->
+						<path d="M5.5 5.5h7v7h-7z" />
+						<path d="M3.5 10.5v-7h7" />
+					{:else}
+						<!-- Four corner ticks: the box opens out to the page's. -->
+						<path d="M2.5 6v-3.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />
+					{/if}
+				</svg>
+			</button>
 		</div>
 	</div>
 	{/if}
@@ -790,11 +822,30 @@
 		border-color: var(--accent);
 	}
 
-	/* The `+` does not stretch, and takes the pointer where the line it
-	   sits on does not. */
-	.add {
+	/* The badges do not stretch, and take the pointer where the line they
+	   sit on does not. */
+	.add,
+	.maximize {
 		flex: none;
 		pointer-events: auto;
+	}
+
+	/* A flat mono-colour mark in `currentColor` (da-tnv3's rule for the
+	   lock): strokes, so the two states are the same weight, and `block`
+	   so a rotated bar does not give the box a baseline's slack. */
+	.maximize svg {
+		display: block;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.25;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	/* Filling the page is a state, so it is drawn as one. */
+	.maximize[aria-pressed='true'] {
+		color: var(--accent);
+		border-color: var(--accent);
 	}
 
 	.tabs {
