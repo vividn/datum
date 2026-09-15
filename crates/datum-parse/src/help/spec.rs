@@ -93,6 +93,7 @@ pub struct CommandSpec {
 }
 
 /// One CLI flag.
+#[derive(Clone, Copy)]
 pub struct FlagSpec {
     pub short: Option<char>,
     /// Empty string means short-only.

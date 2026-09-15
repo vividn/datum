@@ -87,7 +87,11 @@ fn first_positional_is_field_literal_unbound_trailing_errors() {
     // da-5ns.3: trailing unbound positional is rejected (used to land
     // as the primary value in datum's TS implementation). The error
     // points the user at `KEY=VALUE`, `-K`, or `-R` as the route.
-    let err = run_cli(&["note", "another_field", "dataField"], &db).unwrap_err();
+    //
+    // Asked of `add`, not `note`: da-py5w gave `note` an implicit `-C`, so
+    // its bare words are prose and have somewhere to land. `add` is the
+    // half of the family that still has nowhere to put them.
+    let err = run_cli(&["add", "another_field", "dataField"], &db).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("unexpected positional") || msg.contains("dataField"),

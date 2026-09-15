@@ -417,6 +417,47 @@ describe('in the app', () => {
 		});
 	});
 
+	// da-py5w: the comment is prose — only the person can type it — so the
+	// panel's `note` fills the bar and runs nothing, exactly as a record's
+	// button does. What makes it worth a press is the CLI end of the same
+	// bead: `note` routes the bare words that follow into the comment, so
+	// what the person types after the prefill needs no quotes and no `-C`.
+	test('the panel’s `note` prefills `note <field> ` and the words typed after it are the comment', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of FIXTURE) await type(page, line);
+
+			await page.locator('.bar [data-field="coffee"]').click({ button: 'right' });
+			const note = page.locator('.bar .panel button.note');
+			await note.waitFor();
+
+			const echoes = (await app.echoes()).length;
+			await note.click();
+			await page.waitForFunction(() => {
+				const input = document.querySelector('.prompt-bar input');
+				return (
+					input.value === 'note coffee ' &&
+					document.activeElement === input &&
+					input.selectionStart === input.value.length
+				);
+			});
+			assert.equal((await app.echoes()).length, echoes, 'the press ran a command');
+			await page.locator('.bar .panel').waitFor({ state: 'detached' });
+
+			// Typed on, as a person does — no quotes around the words.
+			const input = page.locator('.prompt-bar input');
+			await input.press('End');
+			await input.type('too strong');
+			await input.press('Enter');
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
+
+			assert.equal((await app.echoes()).at(-1), 'note coffee too strong');
+			await app.idle();
+			const stored = (await app.entries()).find((e) => e.field === 'coffee');
+			assert.deepEqual(stored.data, { comment: 'too strong' });
+		});
+	});
+
 	test('Track + is there on an empty database, the hint one line beside it', async () => {
 		await withApp(async ({ page }) => {
 			const track = await page.locator('.bar button.track').boundingBox();

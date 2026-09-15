@@ -19,7 +19,9 @@
 	walkthrough to take over.
 
 	Press to log. Press and hold (or right-click, or the menu key) to open
-	the `-t` / `dur` bubbles first.
+	the `-t` / `dur` bubbles first — and `note`, which fills the bar with
+	`note <field> ` and runs nothing (da-py5w): the CLI routes the bare
+	words that follow into the comment, so the person just types.
 
 	A multi-state field asks WHICH, so its button reads `name:` and a press
 	fills the bar with that field's states in place of the fields — `< Back`
@@ -188,6 +190,18 @@
 		close();
 		back();
 		dispatch('run', argv);
+	}
+
+	/**
+	 * `note` in the panel: the bar gets `note <field> `, focused, and
+	 * nothing runs (da-py5w). The comment is prose — only the person can
+	 * type it — and the CLI's `note` joins the bare words that follow into
+	 * `extra_data.comment` on its own, so no flag goes in the line.
+	 */
+	function note(button: FieldButton) {
+		close();
+		back();
+		dispatch('line', `note ${button.field} `);
 	}
 
 	/** Open the form that tracks a field, with `field` in it. */
@@ -501,6 +515,8 @@
 							{/each}
 						</div>
 
+						<button class="note" on:click={() => note(button)}>note</button>
+
 						{#if button.shape.kind === 'states'}
 							{#if statesOf(button.shape).length === 0}
 								<p class="hint">
@@ -722,7 +738,8 @@
 		color: var(--ink-bright);
 	}
 
-	.commit {
+	.commit,
+	.panel button.note {
 		align-self: flex-start;
 	}
 

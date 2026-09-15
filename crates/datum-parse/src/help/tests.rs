@@ -197,7 +197,12 @@ fn snapshot_note_help() {
         )
         .replace(
             "  datum add <FIELD> -K <KEY> [KEY=VALUE]...\n  datum add <FIELD> --id <VALUE>\n",
-            "  datum note <FIELD> [VALUE | KEY=VALUE]...\n",
+            "  datum note <FIELD> [WORD | KEY=VALUE]...\n      the WORDs join into extra_data.comment \u{2014} no quotes, no -C\n",
+        )
+        // da-py5w: `-C` is implicit on `note`, so its OPTIONS drop the row.
+        .replace(
+            "  -C, --comment-remainder  Remainder positionals \u{2192} extra_data.comment string\n",
+            "",
         );
     assert_eq!(actual, expected, "datum note --help drifted from snapshot");
 }

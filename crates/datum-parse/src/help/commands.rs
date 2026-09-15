@@ -894,6 +894,30 @@ pub const TOP_LEVEL_FOOTER: &str = "Run `datum <command> --help` for per-command
 // COMMANDS table — listed in display order for each category.
 // ---------------------------------------------------------------------------
 
+/// `note`'s flag table: [`LOG_FLAGS`] without `-C`.
+///
+/// da-py5w made `-C` implicit on `note` — every bare word after the field
+/// joins the comment already — so listing the flag would offer a reader a
+/// switch that turns nothing on.
+const NOTE_FLAGS: &[FlagSpec] = &drop_short(LOG_FLAGS, 'C');
+
+/// Copy `src` minus the flag whose short form is `short`.
+const fn drop_short(src: &[FlagSpec], short: char) -> [FlagSpec; LOG_FLAGS.len() - 1] {
+    let mut out = [src[0]; LOG_FLAGS.len() - 1];
+    let (mut i, mut j) = (0, 0);
+    while i < src.len() {
+        match src[i].short {
+            Some(c) if c == short => {}
+            _ => {
+                out[j] = src[i];
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
 pub const COMMANDS: &[CommandSpec] = &[
     // ----- LOGGING -----
     CommandSpec {
@@ -920,11 +944,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "jot a timeless entry (auto create_time id)",
         top_summary: Some("Jot a timeless entry (auto create_time id)"),
         long_description: Some(
-            "Timeless jot identified by *when* — auto-ids on its create_time (slug field:c<create_time>), so many notes per field coexist. \"Record this moment, won't look it up.\" Sibling of `add`, which instead requires an explicit id for a keyed record.",
+            "Timeless jot identified by *when* — auto-ids on its create_time (slug field:c<create_time>), so many notes per field coexist. \"Record this moment, won't look it up.\" Sibling of `add`, which instead requires an explicit id for a keyed record.\n\nBare words are the note: every un-keyed word after the field joins `extra_data.comment`, in order and single-spaced, so `datum note coffee too strong today` needs no quotes and no `-C` (`note` always behaves as if `-C` were given). `KEY=VALUE` anywhere in the line is still data, a leading `-` is still a flag, and an explicit `-R <bucket>` still names where the words go instead.",
         ),
-        usage: &["datum note <FIELD> [VALUE | KEY=VALUE]..."],
+        usage: &[
+            "datum note <FIELD> [WORD | KEY=VALUE]...",
+            "    the WORDs join into extra_data.comment — no quotes, no -C",
+        ],
         args: NO_ARGS,
-        flags: LOG_FLAGS,
+        flags: NOTE_FLAGS,
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,

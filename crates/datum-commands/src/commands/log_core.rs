@@ -49,6 +49,15 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
 
+    // da-py5w: `note` is the one verb whose bare words are prose, not a
+    // state or a typo — it behaves as if `-C` were given, so
+    // `note coffee too strong today` ≡ `note coffee -C too strong today`.
+    // `-R <bucket>` names where the remainder goes, so an explicit one
+    // still wins (and keeps its own array shape).
+    if matches!(action, Action::Note) && args.remainder.is_none() {
+        args.comment_remainder = true;
+    }
+
     // da-ooe2: restore v2's flexiblePositional duration model. The verb-
     // specific trailing-duration peelers are gone; `prepare_log_args`
     // declares an optional `dur=` slot last for the duration-bearing verbs
