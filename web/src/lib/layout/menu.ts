@@ -19,6 +19,10 @@
 //   pane's sometimes does.
 // - `export backup…` is the root's alone: there is one database.
 //
+// Close is the LAST item of either menu, whatever else the caller hands
+// in, and wears an `×` (da-ygc9): the one destructive act, at the far end
+// of the list from `Choose…` and marked as itself.
+//
 // `layout-menu.test.mjs` asserts exactly that arithmetic, so any OTHER
 // divergence between the two fails.
 
@@ -28,9 +32,13 @@ import type { Toward } from './tree.js';
 export type Choice = { label: string; title: string; icon: number[]; checked: boolean; run: () => void };
 /** A row's button: `text` is what it shows, `title` its name. */
 export type Short = { text: string; title: string; run: () => void };
-/** One item of a menu. `marked` is the act to notice now — see `layoutActs`. */
+/**
+ * One item of a menu. `marked` is the act to notice now — see `layoutActs`;
+ * `glyph` is a character drawn before the label, which `Close` wears (da-ygc9).
+ */
 export type Item = {
 	label: string;
+	glyph?: string;
 	run?: () => void;
 	sub?: Choice[][];
 	row?: Short[];
@@ -83,9 +91,13 @@ export const layoutActs = (a: Acts): Item[] => [
 	{ label: a.locked ? 'Unlock layout' : 'Lock layout', run: a.toggleLock }
 ];
 
+/** The glyph Close wears (da-ygc9) — the multiplication sign, not the letter x. */
+export const CLOSE = '\u00d7';
+
 /**
- * The menu, in the one order. Every optional part is left out when the
- * thing it belongs to has no such part — never reordered, never renamed.
+ * The menu, in the one order — Close last (da-ygc9). Every optional part
+ * is left out when the thing it belongs to has no such part — never
+ * reordered, never renamed.
  */
 export function menuItems(spec: {
 	choose: () => void;
@@ -101,9 +113,9 @@ export function menuItems(spec: {
 		{ label: 'Choose…', run: spec.choose },
 		...(spec.split ? [{ label: 'Split', row: aimed(spec.split.what, spec.split.run) }] : []),
 		...(spec.breakOut ? [{ label: 'Break out', row: aimed(spec.breakOut.what, spec.breakOut.run) }] : []),
-		{ label: spec.close.label, disabled: spec.close.disabled, run: spec.close.run },
 		...(spec.bar ? [spec.bar] : []),
 		...(spec.acts ? layoutActs(spec.acts) : []),
-		...(spec.extra ?? [])
+		...(spec.extra ?? []),
+		{ label: spec.close.label, glyph: CLOSE, disabled: spec.close.disabled, run: spec.close.run }
 	];
 }

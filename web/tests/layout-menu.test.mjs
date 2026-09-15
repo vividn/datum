@@ -38,7 +38,7 @@ after(stopApp);
 
 describe('the menu the title opens', () => {
 	/** The menu of the default layout's tail pane: one tab, in the side column. */
-	const TAIL_MENU = ['Choose…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Close pane', 'Bar'];
+	const TAIL_MENU = ['Choose…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Bar', '× Close pane'];
 
 	test('the title is the button, and Choose… is the first item', async () => {
 		await withApp(async ({ page }) => {
@@ -55,6 +55,29 @@ describe('the menu the title opens', () => {
 			await chooser(page).locator('button').filter({ hasText: exactly('aliases') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'aliases', 'command', 'fields']);
+		}, DESKTOP);
+	});
+
+	// vividn (da-ygc9): "let's add an icon on Close pane, and move close pane
+	// to be the last entry in the menu." Last means last — after the acts
+	// and after the root's own `export backup…` — in BOTH menus, since one
+	// builder makes them (`menu.ts`). The × is decoration, so the item's
+	// name is still its label alone and the keyboard still finds it there.
+	test('Close is the last item of either menu, and wears an ×', async () => {
+		await withApp(async ({ page }) => {
+			await menuButton(page, 'tail').click();
+			const lines = await menuLines(page);
+			assert.equal(lines.at(-1), '× Close pane');
+			const close = page.getByRole('menuitem', { name: 'Close pane', exact: true });
+			assert.equal(await close.locator('.glyph').innerText(), '×');
+			assert.equal(await close.locator('.glyph').getAttribute('aria-hidden'), 'true');
+			await page.keyboard.press('Escape');
+			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+
+			await rootMenuButton(page).click();
+			const root = await menuLines(page);
+			assert.deepEqual(root.slice(-2), ['export backup…', '× Close tab'], 'Close is not after export backup…');
+			await page.keyboard.press('Escape');
 		}, DESKTOP);
 	});
 
@@ -164,7 +187,7 @@ describe('the menu the title opens', () => {
 			await page.locator('[role="menu"]').waitFor();
 			// With tabs it is the TAB that closes, and Break out gives the
 			// tab in front a pane of its own.
-			assert.deepEqual(await menuLines(page), ['Choose…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Close tab', 'Bar']);
+			assert.deepEqual(await menuLines(page), ['Choose…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Bar', '× Close tab']);
 			await page.getByRole('menuitem', { name: 'break out: this widget below', exact: true }).click();
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			// The tab that left is a pane of its own, under the pane it left;
@@ -202,8 +225,11 @@ describe('the menu the title opens', () => {
 				// The root's tabs are the root bar's (da-0a5o), and the last
 				// of them cannot be closed from its own menu.
 				await rootMenuButton(page).click();
-				const close = page.locator('[role="menu"] button').filter({ hasText: exactly('Close tab') });
+				// Named by the label alone: the × is decoration, `aria-hidden`.
+				const close = page.getByRole('menuitem', { name: 'Close tab', exact: true });
 				assert.equal(await close.isDisabled(), true);
+				// Disabled, it keeps both its glyph and its place (da-ygc9).
+				assert.equal((await menuLines(page)).at(-1), '× Close tab');
 				await page.keyboard.press('Escape');
 			},
 			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, ONE_PANE) }
@@ -236,6 +262,7 @@ describe("the root bar's menu", () => {
 	const NO_SPLIT = 'Split ← → ↑ ↓'; // the root pane IS the shell: nothing outside it to split against
 	const NO_BAR = 'Bar'; //            the root draws no bar of its own — this one is the shell's
 	const ROOT_ONLY = ['export backup…']; // there is one database
+	const CLOSE = '× Close tab'; //        last in both, after `export backup…` (da-ygc9)
 
 	/** Open a menu, read its lines, close it. */
 	async function linesOf(page, open) {
@@ -298,16 +325,19 @@ describe("the root bar's menu", () => {
 				'Choose…',
 				NO_SPLIT,
 				'Break out ← → ↑ ↓',
-				'Close tab',
 				NO_BAR,
 				'Save layout',
 				'Restore layout',
 				'Save layout as…',
-				'Lock layout'
+				'Lock layout',
+				CLOSE
 			]);
 
+			// The same arithmetic, with Close held at the end of both
+			// (da-ygc9): the root's own item goes in before it, not after.
 			const rootLines = await linesOf(page, () => rootMenuButton(page).click());
-			assert.deepEqual(rootLines, [...paneLines.filter((l) => l !== NO_SPLIT && l !== NO_BAR), ...ROOT_ONLY]);
+			const shared = paneLines.filter((l) => l !== NO_SPLIT && l !== NO_BAR);
+			assert.deepEqual(rootLines, [...shared.slice(0, -1), ...ROOT_ONLY, CLOSE]);
 		}, DESKTOP);
 	});
 
@@ -359,7 +389,7 @@ describe('the Bar submenu', () => {
 		await withApp(async ({ page }) => {
 			await menuButton(page, 'tail').click();
 			const items = page.locator('[role="menu"] button');
-			assert.deepEqual(await menuLines(page), ['Choose…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Close pane', 'Bar']);
+			assert.deepEqual(await menuLines(page), ['Choose…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Bar', '× Close pane']);
 			assert.equal(await items.filter({ hasText: /Bar:|Align:/ }).count(), 0);
 			await items.filter({ hasText: exactly('Bar') }).click();
 			const cells = await row(page);
@@ -546,13 +576,16 @@ describe('the pane menu by pointer', () => {
 				'split: a new pane above'
 			]);
 			// And ArrowDown from the row's last button goes on to the next
-			// item — the four arrows of Break out, then Close pane.
+			// item — the four arrows of Break out, then Bar, then Close
+			// pane, which is last (da-ygc9).
 			await page.keyboard.press('ArrowRight');
 			await page.keyboard.press('ArrowRight');
 			await page.keyboard.press('ArrowDown');
 			assert.equal(await focused(), 'break out: this widget to the left');
 			for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
-			assert.equal(await focused(), 'Close pane');
+			assert.equal(await focused(), 'Bar');
+			await page.keyboard.press('ArrowDown');
+			assert.equal(await focused(), '× Close pane');
 		}, DESKTOP);
 	});
 

@@ -22,6 +22,10 @@
 	as choosing does (da-13bc: "bar submenu should open immediately on
 	mouse over").
 
+	An item with `glyph` draws that character before its label — `Close`,
+	the last item of every menu, wears an `×` (da-ygc9). It is decoration,
+	so it is `aria-hidden`: the item's name is still its label alone.
+
 	An item with `row` is its label and a few short buttons on one line —
 	the pane's `Split | −` (da-13bc). The buttons are menu items like any
 	other, walked by ArrowUp/ArrowDown in order and by ArrowLeft/ArrowRight
@@ -100,19 +104,25 @@
 		if (returnFocus) button.focus();
 	}
 
-	// Beside its item — to the right of the menu when there is room, else
-	// below the item — and, like the menu, never off-screen.
+	// Beside its item — clear of the menu, to its right when there is room
+	// and to its left when there is not — and, like the menu, never
+	// off-screen. Only when neither side fits does it drop BELOW the item,
+	// the one placement that lies over the items under it: the pointer's
+	// way in then crosses one of them, which closes the submenu it was
+	// going to (da-13bc, and Close is under `Bar` now — da-ygc9).
 	async function showSub(item: (typeof items)[number], opener: HTMLButtonElement, focus = true) {
 		sub = { item, opener };
 		await tick();
 		const box = opener.getBoundingClientRect();
-		const right = (menu?.getBoundingClientRect().right ?? box.right) + 2;
+		const own = menu?.getBoundingClientRect();
 		const width = subMenu?.offsetWidth ?? 0;
 		const height = subMenu?.offsetHeight ?? 0;
-		const beside = right + width <= window.innerWidth - 4;
+		const right = (own?.right ?? box.right) + 2;
+		const left = (own?.left ?? box.left) - 2 - width;
+		const beside = right + width <= window.innerWidth - 4 ? right : left >= 4 ? left : null;
 		subAt = {
-			top: fit(beside ? box.top : box.bottom + 2, height, window.innerHeight),
-			left: fit(beside ? right : box.left, width, window.innerWidth)
+			top: fit(beside === null ? box.bottom + 2 : box.top, height, window.innerHeight),
+			left: fit(beside ?? box.left, width, window.innerWidth)
 		};
 		if (focus) focusItem(enabled(subMenu), 0);
 	}
@@ -277,9 +287,8 @@
 					aria-expanded={item.sub ? sub?.item === item : undefined}
 					on:pointerenter={(e) => hover(e, item)}
 					on:click={(e) => (item.sub ? showSub(item, e.currentTarget) : choose(item))}
+				>{#if item.glyph}<span class="glyph" aria-hidden="true">{item.glyph}</span> {/if}{item.label}</button
 				>
-					{item.label}
-				</button>
 			{/if}
 		{/each}
 	</div>
@@ -387,6 +396,19 @@
 	.menu button.marked {
 		color: var(--warn);
 		font-weight: bold;
+	}
+
+	/* The glyph before a label (da-ygc9): the same size as the words, muted
+	   so the words lead, and a fixed width so every label starts where the
+	   ones without a glyph do. */
+	.menu button .glyph {
+		inline-size: 0.8em;
+		color: var(--muted);
+	}
+
+	.menu button:hover:not(:disabled) .glyph,
+	.menu button:focus-visible .glyph {
+		color: inherit;
 	}
 
 	.menu button:disabled {

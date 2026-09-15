@@ -161,7 +161,8 @@ describe('the shell', () => {
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
-				['Choose…', 'Break out ← → ↑ ↓', 'Close tab', 'Save layout', 'Restore layout', 'Save layout as…', 'Lock layout', 'export backup…']
+				// Close last, after `export backup…` (da-ygc9), wearing its ×.
+				['Choose…', 'Break out ← → ↑ ↓', 'Save layout', 'Restore layout', 'Save layout as…', 'Lock layout', 'export backup…', '× Close tab']
 			);
 			assert.deepEqual(errors, []);
 		}, DESKTOP);

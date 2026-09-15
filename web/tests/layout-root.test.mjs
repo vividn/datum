@@ -253,7 +253,7 @@ describe('holders', () => {
 				// No Split — the children of the split it holds split
 				// themselves — and Break out, which takes the tab in front out
 				// of the strip, is still offered.
-				assert.deepEqual(await menuLines(page), ['Choose…', 'Break out ← → ↑ ↓', 'Close tab', 'Bar']);
+				assert.deepEqual(await menuLines(page), ['Choose…', 'Break out ← → ↑ ↓', 'Bar', '× Close tab']);
 				await page.keyboard.press('Escape');
 			},
 			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(tabbedHolder())) }
