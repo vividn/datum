@@ -205,6 +205,41 @@ export const NOWVIEW: PaneSpec = {
 export const NOWVIEW_STEPS = ['0', '5m', '10m', '15m', '20m', '30m', '45m', '60m', '90m', '2h', '3h', '6h', '12h'];
 export const NOWVIEW_HISTORY = '30m';
 
+/** A step of the ladder as minutes. It reads the ladder's own spellings, no more. */
+function stepMinutes(step: string): number {
+	const m = /^(\d+(?:\.\d+)?)\s*([mh])?$/.exec(step);
+	if (!m) return NaN;
+	return Number(m[1]) * (m[2] === 'h' ? 60 : 1);
+}
+
+/**
+ * The window a zoom of `scale` asks for: the step nearest the scaled one
+ * (da-5goc).
+ *
+ * `scale` is the gesture's own — fingers apart is greater than 1, and a
+ * picture magnified shows LESS time, so the window is divided by it.
+ *
+ * Nearest by RATIO, not by minutes: the ladder is geometric, and 6h's
+ * neighbour is 12h at a distance nothing near the short end of the ladder
+ * can rival in minutes. Which also means a small pinch lands back on the
+ * step it started from — a zoom is not a ratchet, and the re-ask a
+ * quarter-turn of the fingers would cost is not made.
+ *
+ * The snapshot has no span to divide, so it stands in at half the shortest
+ * window: one pinch out off `0` reaches 5m, and one pinch in off 5m
+ * reaches `0`.
+ */
+export function zoomHistory(history: string, scale: number): string {
+	const minutes = NOWVIEW_STEPS.map(stepMinutes);
+	const from = stepMinutes(NOWVIEW_STEPS.includes(history) ? history : NOWVIEW_HISTORY);
+	const target = (from || minutes[1] / 2) / Math.max(scale, 0.001);
+	if (target < minutes[1] / 2) return NOWVIEW_STEPS[0];
+	let best = 1;
+	const off = (i: number) => Math.abs(Math.log(minutes[i] / target));
+	for (let i = 2; i < minutes.length; i++) if (off(i) < off(best)) best = i;
+	return NOWVIEW_STEPS[best];
+}
+
 /** NOWVIEW at a window of `history`, centred on `at` when there is one (da-pcis). */
 export const nowviewSpec = (history: string, at?: string): PaneSpec => ({
 	...NOWVIEW,

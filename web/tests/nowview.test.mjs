@@ -9,8 +9,8 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
-import { chooseRoot } from './support/layout.mjs';
+import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { DESKTOP, chooseRoot, draft } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -133,6 +133,182 @@ describe('the nowview widget', () => {
 				assert.ok(await longer(page).isVisible());
 			},
 			{ viewport: { width: 360, height: 640 } }
+		);
+	});
+});
+
+// ── the zoom (da-5goc) ───────────────────────────────────────────────
+//
+// Two fingers over the picture, or ctrl+wheel, scale the same window the
+// + / − step — and land on the same ladder, so the two controls never
+// disagree about where the window can be.
+//
+// The anchor is the instant the picture is about: now, or `--at`'s when a
+// tree carries one. What is held here is that the anchor does not move
+// under the gesture — the band scales about the now-line's own x, so the
+// column the fingers are anchored to is the one column that stays.
+//
+// After the release the anchor's x is datum's to place, and for a window
+// that ENDS at now it moves: nowview reserves a now strip of
+// `NOW_WIDTH_MINUTES` at the window's own scale (nowview.rs, the original
+// datum's proportions), so a shorter window spends proportionally more of
+// the band on it and the now-line slides left. A CENTRED window — `--at` —
+// has no strip and its anchor is the middle of the band whatever the
+// window, which is the case asserted to the pixel below.
+
+/** The x of the picture's now-line — the anchor datum drew. */
+const anchorX = (page) =>
+	page.locator(`${PANE} svg.svg .current-time-line`).evaluate((line) => {
+		const box = line.getBoundingClientRect();
+		return box.x + box.width / 2;
+	});
+
+/** The picture's own box. */
+const pictureBox = (page) => page.locator(`${PANE} svg.svg`).boundingBox();
+
+/** A layout of one nowview pane, as the `day` tab's draft. */
+const soloNowview = (settings) =>
+	JSON.stringify({
+		version: 1,
+		name: 'day',
+		root: {
+			id: 'only',
+			tabs: [{ id: 'only-tab', content: { id: 'only-widget', kind: 'nowview', settings } }],
+			active: 0,
+			bar: { edge: 'top', align: 'start' }
+		}
+	});
+
+/**
+ * Two fingers over `box`, `from` px apart, drawn to `to` px apart.
+ *
+ * Through CDP, as every other touch in this suite: Playwright's
+ * touchscreen only taps, and a pinch made of mouse events would be a test
+ * of the wrong handler. `midway` is called with the fingers still down —
+ * the gesture's preview is only on screen until they lift.
+ */
+async function pinch(page, box, from, to, midway) {
+	const y = box.y + box.height / 2;
+	const x = box.x + box.width / 2;
+	const cdp = await page.context().newCDPSession(page);
+	const both = (apart) => [
+		{ id: 1, x: x - apart / 2, y },
+		{ id: 2, x: x + apart / 2, y }
+	];
+	const at = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+	try {
+		// One finger, then the second: the fingers land as fingers do, and
+		// the widget's count of them is what starts the pinch.
+		await at('touchStart', [both(from)[0]]);
+		await at('touchStart', both(from));
+		for (let i = 1; i <= 6; i++) await at('touchMove', both(from + ((to - from) * i) / 6));
+		await midway?.();
+		await at('touchEnd', []);
+	} finally {
+		await cdp.detach();
+	}
+}
+
+const TOUCH = { device: { hasTouch: true, isMobile: true }, viewport: { width: 390, height: 640 } };
+
+describe('the nowview widget zooms', () => {
+	test('a pinch steps the window on the ladder, about the anchor', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.spyOnRunner();
+				const box = await pictureBox(page);
+				const before = await anchorX(page);
+
+				// Fingers apart by half again: the picture magnified 1.5×,
+				// which is 30m ÷ 1.5 — the ladder's own next rung down.
+				await pinch(page, box, 80, 120, async () => {
+					const during = await anchorX(page);
+					assert.ok(
+						Math.abs(during - before) <= 2,
+						`the anchor moved under the pinch: ${before} → ${during}`
+					);
+				});
+				await asked(page, '20m');
+				assert.deepEqual(await titles(page), ['longer window (30m)', 'shorter window (15m)']);
+
+				// And back: fingers together by the same ratio is 20m × 1.5,
+				// which rounds onto 30m.
+				await pinch(page, box, 120, 80);
+				await asked(page, '30m');
+				assert.deepEqual(await titles(page), ['longer window (45m)', 'shorter window (20m)']);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, prepare: (context) => context.addInitScript(draft, soloNowview({ history: '30m' })) }
+		);
+	});
+
+	test('ctrl+wheel steps the same ladder, and the buttons still read it', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.spyOnRunner();
+				const box = await pictureBox(page);
+				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+				await page.keyboard.down('Control');
+
+				await page.mouse.wheel(0, -100); // up: a shorter window
+				await asked(page, '20m');
+				assert.deepEqual(await titles(page), ['longer window (30m)', 'shorter window (15m)']);
+
+				await page.mouse.wheel(0, 100); // down: a longer one
+				await asked(page, '30m');
+				await page.keyboard.up('Control');
+
+				// A bare wheel is the pane's own scroll, not a zoom.
+				await page.mouse.wheel(0, -100);
+				await app.idle();
+				assert.deepEqual(await titles(page), ['longer window (45m)', 'shorter window (20m)']);
+
+				// The buttons pick up from where the wheel left the window.
+				await longer(page).click();
+				await asked(page, '45m');
+				assert.deepEqual(await titles(page), ['longer window (60m)', 'shorter window (30m)']);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...DESKTOP }
+		);
+	});
+
+	test('with --at set the pinch keeps that instant, not now', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.spyOnRunner();
+				const box = await pictureBox(page);
+				const before = await anchorX(page);
+				// A centred window: the anchor is the middle of the band, and
+				// nowhere near the right edge where a window ending at now
+				// would draw it.
+				assert.ok(
+					Math.abs(before - (box.x + box.width / 2)) <= 4,
+					`09:00 is not the middle of the band: ${before} of ${JSON.stringify(box)}`
+				);
+
+				await pinch(page, box, 80, 120);
+				await asked(page, '20m');
+				await app.idle();
+				assert.deepEqual(await titles(page), ['longer window (30m)', 'shorter window (15m)']);
+				const after = await anchorX(page);
+				assert.ok(Math.abs(after - before) <= 2, `09:00 moved: ${before} → ${after}`);
+				// And the window is still that instant's, not the clock's.
+				const argv = (await page.evaluate(() => window.__datumSeen))
+					.filter((a) => a[0] === 'nowview')
+					.at(-1);
+				assert.equal(argv[argv.indexOf('--at') + 1], '09:00');
+				assert.deepEqual(app.errors, []);
+			},
+			{
+				...TOUCH,
+				clock: todayAt(12, 0),
+				prepare: (context) =>
+					context.addInitScript(draft, soloNowview({ history: '30m', at: '09:00' }))
+			}
 		);
 	});
 });
