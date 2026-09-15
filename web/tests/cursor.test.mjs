@@ -62,16 +62,14 @@ const spot = (page, picture, f, from) =>
 			const box = svg.getBoundingClientRect();
 			const view = svg.viewBox.baseVal;
 			const user = num('data-lo') + f * (num('data-hi') - num('data-lo'));
-			const label = svg
-				.querySelector(`.day-label[data-day="${day.getAttribute('data-day')}"]`)
-				.getBoundingClientRect();
 			const t0 = Date.parse(day.getAttribute('data-from'));
 			const t1 = Date.parse(day.getAttribute('data-to'));
 			return {
 				x: box.left + ((user - view.x) * box.width) / view.width,
-				// Level with the day's date label — inside its slot — or, on a
-				// one-day band, below the title lying over its top (da-13bc).
-				y: from ? label.top + label.height / 2 : box.top + box.height * 0.6,
+				// Below the title lying over the band's top (da-13bc). Every
+				// band is one day since da-iu9i, so this is that day's slot
+				// whichever band it is.
+				y: box.top + box.height * 0.6,
 				at: t0 + f * (t1 - t0)
 			};
 		},

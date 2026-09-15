@@ -525,7 +525,7 @@ describe('snapsOfKind', () => {
 			return next(url.href.replace(/\.js$/, '.ts'), context);
 		}
 	});
-	const todayBox = (dayHeight) => dayHeight + 2 * 2 + 15; // panes.ts: the day, datum's margins and the hour axis
+	const todayBox = (dayHeight) => dayHeight + 15; // panes.ts: the day, and the ruler row the strip draws under it
 
 	test('is one day at the strip\'s day height, plus 16px of padding, and nothing for the others', async () => {
 		const { snapsOfKind } = await import('../src/lib/layout/registry.ts');

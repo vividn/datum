@@ -165,6 +165,33 @@ describe('on a phone-sized screen', () => {
 		});
 	}
 
+	// The day strip's own two controls (da-iu9i): the `+` on the divider,
+	// which drags the day height and the date column, and the freeze-today
+	// toggle at the far left of the same line. Both are drawn INSIDE the
+	// strip, so a phone that leaves the strip a few dozen pixels is the
+	// case that puts them off the screen — and both are fingertips.
+	for (const viewport of [PHONE, SHORT]) {
+		const size = `${viewport.width}x${viewport.height}`;
+
+		test(`the strip's + handle and freeze toggle are fingertips on screen at ${size}`, async () => {
+			await withApp(async ({ page }) => {
+				for (const [selector, what] of [
+					['.strip button.day-grip', "the strip's + handle"],
+					['.strip button.freeze', "the strip's freeze-today toggle"]
+				]) {
+					await assertOnScreen(page, selector, what);
+					const box = await page.locator(selector).boundingBox();
+					const width = await page.evaluate(() => document.documentElement.clientWidth);
+					assert.ok(box.width >= 24 && box.height >= 24, `${what} is ${box.width}x${box.height}`);
+					assert.ok(
+						box.x >= 0 && box.x + box.width <= width + 1,
+						`${what} is ${box.x}–${box.x + box.width} on a ${width}px screen`
+					);
+				}
+			}, { viewport });
+		});
+	}
+
 	// The one chooser (da-uyx1) is a modal over the whole page, so the
 	// screen it has to fit is the narrowest one: 320px, with every item a
 	// fingertip's 24px and the dialog itself inside the viewport.

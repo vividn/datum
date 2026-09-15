@@ -121,13 +121,39 @@ function assertLabelled(shown, sizes) {
 
 describe('a drawn view', () => {
 	for (const { name, viewport } of VIEWPORTS) {
+		// The strip's pane is the one place the labels are NOT datum's since
+		// da-iu9i: it asks for bands only and writes the date stamps and
+		// the hour ruler itself. So the claim splits in two — the picture
+		// arrives at the size it was drawn (a scaled band is what made the
+		// text illegible in the first place), and the strip's own text
+		// clears the same floor.
 		test(`is legible in the dayview pane on ${name}`, async () => {
 			await withApp(
 				async (app) => {
 					await logADay(app);
 
 					const shown = await measure(paneImage(app, 'dayview'));
-					assertLabelled(shown, assertLegible(shown, `dayview pane at ${viewport.width}px`));
+					const sizes = `dayview pane at ${viewport.width}px: ${shown.natural} → ${shown.rendered.toFixed(1)} (×${shown.scale.toFixed(3)})`;
+					assert.ok(Math.abs(shown.scale - 1) <= 0.005, `the band is scaled — ${sizes}`);
+					assert.equal(shown.dateLines, 0, `the band still carries date labels — ${sizes}`);
+					assert.equal(shown.ticks, 0, `the band still carries the hour axis — ${sizes}`);
+
+					const drawn = await app.page.evaluate(() => {
+						const strip = document.querySelector('.strip');
+						const stamp = strip.querySelector('.row.pinned .stamp');
+						const labels = [...strip.querySelectorAll('.axis text.tick-label')];
+						const px = (el) => parseFloat(getComputedStyle(el).fontSize);
+						return {
+							lines: stamp.querySelectorAll('span').length,
+							stamp: px(stamp),
+							ticks: labels.length,
+							tick: labels.length ? Math.min(...labels.map(px)) : 0
+						};
+					});
+					assert.equal(drawn.lines, 3, `date stamp missing — ${sizes}`);
+					assert.ok(drawn.ticks >= 4, `only ${drawn.ticks} hour labels — ${sizes}`);
+					assert.ok(drawn.stamp >= FLOOR, `the date stamp is ${drawn.stamp}px — ${sizes}`);
+					assert.ok(drawn.tick >= FLOOR, `the hour labels are ${drawn.tick}px — ${sizes}`);
 				},
 				{ viewport }
 			);

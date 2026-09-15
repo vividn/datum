@@ -194,6 +194,14 @@ export function picture(node: HTMLElement, text: string) {
 		tip.textContent = tipText(mark, clientX);
 		// Beside the pointer, and turned back inside the window at its
 		// edges — a phone's included.
+		// Measured from a known origin. The tip is `position: fixed` with no
+		// offsets until the two lines below, so until then it sits at its
+		// STATIC position — and a shrink-to-fit box there is only as wide as
+		// the room to the right of it. In the day strip, whose bands start
+		// after the date column (da-iu9i), that read ~70px narrow and the
+		// clamp let the label off the right of a 390px screen.
+		tip.style.left = '0px';
+		tip.style.top = '0px';
 		const { width, height } = tip.getBoundingClientRect();
 		tip.style.left = `${Math.max(4, Math.min(x + 12, innerWidth - width - 4))}px`;
 		tip.style.top = `${y + 16 + height <= innerHeight ? y + 16 : Math.max(4, y - height - 8)}px`;

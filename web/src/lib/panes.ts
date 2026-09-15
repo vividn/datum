@@ -150,44 +150,101 @@ export const MIN_DAY_HEIGHT = 40;
 export const MAX_DAY_HEIGHT = 240;
 
 /**
- * datum's own outer margin, top and bottom (`--margin`, default 2 —
- * `DayviewArgs::default`), and the hour-axis strip under today's band
- * (`--time-axis-height`, default 15).
+ * The date-label column the STRIP draws itself, in pixels (da-iu9i).
  *
- * Named here because the strip reserves each band's box in CSS before its
- * picture has decoded. Without that the stack grows under the reader a
- * frame after a drag, and the scroll position it was anchored to —
- * yesterday against today — is a position it no longer has.
+ * datum used to write the date stamps into the picture, which is why the
+ * bands could only be stitched at one label width — `label_width` is
+ * derived from the label font, which is derived from the day height, so
+ * moving either moved where the data area began. The strip asks for
+ * `--label-width 0` now and draws the stamps in its own column, so the
+ * column's width is a SETTING like the day height: the `+` handle on the
+ * divider drags it sideways.
+ *
+ * The floor is a fingertip, not zero: the freeze-today toggle sits at the
+ * far left of the divider, inside this column, and a column narrower than
+ * the toggle is a toggle under the handle.
  */
-const MARGIN = 2;
-const TIME_AXIS = 15;
-/** The space datum leaves between two days of one picture (`DEFAULT_INTERDAY_MARGIN`). */
-const INTERDAY = 15;
-
-/** The box one day of the past occupies at `dayHeight`. It has no hour axis. */
-export const bandBox = (dayHeight: number) => dayHeight + 2 * MARGIN;
-
-/** What each further day adds to a picture of the past: a day and the space above it. */
-export const dayPitch = (dayHeight: number) => dayHeight + INTERDAY;
-
-/** The box today's band occupies at `dayHeight`. It carries the axis. */
-export const todayBox = (dayHeight: number) => dayHeight + 2 * MARGIN + TIME_AXIS;
+export const DEFAULT_LABEL_WIDTH = 54;
+export const MIN_LABEL_WIDTH = 24;
+export const MAX_LABEL_WIDTH = 200;
 
 /**
- * One picture of the day strip, as argv: `days` days whose newest is
- * `end` days back from today.
- *
- * `end` 0 is today's band, which carries the hour axis. The past is drawn
- * as ONE dayview of several days (da-hnyb), so the hour gridlines run
- * through it and its ground is one; it suppresses the axis with
- * `--time-axis-height 0` — it shares today's x-axis, and the ruler is
- * drawn once, under today.
+ * The line between two days: one pixel (vividn, 2026-09-15 — "make it
+ * thinner (1 px)"). It is the whole distance between them now; datum's
+ * 15px interday margin belonged to a picture holding several days, and
+ * the strip's picture holds one.
  */
-export function bandArgv(width: number, dayHeight: number, end = 0, days = 1): string[] {
-	const argv = ['dayview', '--width', String(width), '--day-height', String(dayHeight)];
-	if (end === 0) return argv;
-	return [...argv, '--time-axis-height', '0', '--n-days', String(days), '--end-date', String(-end)];
+export const DIVIDER = 1;
+
+/**
+ * The hour-axis row the strip draws under today, in pixels — datum's own
+ * `--time-axis-height` default, which the bands are now asked to suppress
+ * so the ruler is drawn once, by the web, from the JSON's `hours[]`.
+ */
+export const AXIS_HEIGHT = 15;
+
+/**
+ * The box one day of the past occupies: the picture and nothing else.
+ *
+ * A band is asked for with `--margin 0`, so the SVG is its data area edge
+ * to edge — which is what lets two bands touch across a 1px divider and
+ * still read as one picture with the gridlines running through.
+ */
+export const bandBox = (dayHeight: number) => dayHeight;
+
+/** What each further day costs the stack: a day and the divider above it. */
+export const dayPitch = (dayHeight: number) => dayHeight + DIVIDER;
+
+/** The box today's band occupies. The hour axis under it is the web's row. */
+export const todayBox = (dayHeight: number) => dayHeight + AXIS_HEIGHT;
+
+/**
+ * One picture of the day strip, as argv: the single day `end` days back.
+ *
+ * One `dayview` per DAY (da-iu9i), and each one bands only — no date
+ * column (`--label-width 0`), no ruler (`--time-axis-height 0`), no outer
+ * margin (`--margin 0`). What comes back is a picture exactly `width` by
+ * `dayHeight`, all of it data area, so the days tile the column and the
+ * strip draws the stamps, the ruler and the gridlines that run across
+ * them itself.
+ *
+ * Every band is asked at the same width and day height, which is what
+ * pins the x of every hour: `time_axis_extent` is the width, and the
+ * gridlines fall at the same fractions of it in each.
+ */
+export function bandArgv(width: number, dayHeight: number, end = 0): string[] {
+	const argv = [
+		'dayview',
+		'--width',
+		String(width),
+		'--day-height',
+		String(dayHeight),
+		'--margin',
+		'0',
+		'--label-width',
+		'0',
+		'--time-axis-height',
+		'0',
+		'--n-days',
+		'1'
+	];
+	return end === 0 ? argv : [...argv, '--end-date', String(-end)];
 }
+
+/**
+ * The geometry every band shares, as argv: today's band asked for its
+ * layout rather than its picture (da-55ru's `--show json`).
+ *
+ * `hours[]` is where each gridline sits along the picture's x, which is
+ * where the strip draws its own continuous ones and its ruler's labels;
+ * `days[0].date` is the day the CLI cut, which the stamps count back
+ * from — so the strip never does civic-day arithmetic of its own.
+ */
+export const geometryArgv = (width: number, dayHeight: number): string[] => [
+	...bandArgv(width, dayHeight),
+	'--show',
+	'json'
+];
 
 // `nowview -o -`, not `now` or bare `nowview`: both of those paint a band
 // for a terminal, and a browser pane is a better place for the picture the

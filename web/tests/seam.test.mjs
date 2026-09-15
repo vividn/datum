@@ -312,7 +312,7 @@ describe('the visual views', () => {
 		);
 
 	test('dayview draws the day as an SVG, and the pane shows it', async () => {
-		await withApp(async ({ run, reload, paneSvg }) => {
+		await withApp(async ({ page, run, reload, paneSvg }) => {
 			const drawn = await run(['dayview']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 			assert.equal(drawn.stderr, '');
@@ -336,11 +336,14 @@ describe('the visual views', () => {
 			// And the pane is that command's output. Not byte-for-byte:
 			// dayview paints a now-line, so the pane's own run of the
 			// command a moment later is the same drawing at a later
-			// instant.
+			// instant — and the strip asks for its bands with
+			// `--label-width 0` (da-iu9i), so the day's name is in the
+			// column the strip writes beside the picture, not in it.
 			await reload();
 			const shown = await paneSvg('dayview');
 			assert.match(shown, /^<svg[\s>]/);
-			assert.match(shown, new RegExp(`>${weekday}<`));
+			assert.ok(!shown.includes('date-label'), 'the band still carries datum\'s date labels');
+			assert.match(await page.locator('.strip .row.pinned .stamp').innerText(), new RegExp(`^${weekday}\\b`));
 		});
 	});
 

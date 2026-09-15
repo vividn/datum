@@ -25,12 +25,11 @@ after(stopApp);
 
 /** The strip body's padding as the strip's snap counts it (registry.ts). */
 const PADDING = 16;
-const todayBox = (dayHeight) => dayHeight + 2 * 2 + 15; // panes.ts: the day, datum's margins and the hour axis
+const todayBox = (dayHeight) => dayHeight + 15; // panes.ts: the day, and the ruler row the strip draws under it
 
 /**
- * The days of the past the strip is holding. The past is one picture of
- * several days (da-hnyb) — a fortnight at most each — so the days are what
- * its pictures claim, not how many there are.
+ * The days of the past the strip is holding — one picture each since
+ * da-iu9i, so the days are what its pictures claim, not how many there are.
  */
 const pastDays = (page) =>
 	pane(page, 'strip')
@@ -52,13 +51,11 @@ const shownDays = (page) =>
 		.evaluate((stack) => {
 			const box = stack.getBoundingClientRect();
 			let n = 0;
-			for (const band of stack.querySelectorAll('.band.past')) {
-				const labels = [...band.querySelectorAll('svg.svg text.date-label')];
-				for (let i = 0; i < labels.length / 3; i++) {
-					const first = labels[3 * i].getBoundingClientRect();
-					const last = labels[3 * i + 2].getBoundingClientRect();
-					if (first.top >= box.top - 1 && last.bottom <= box.bottom + 1) n += 1;
-				}
+			// The date stamps are the strip's own column now (da-iu9i), one
+			// per row, beside the picture rather than inside it.
+			for (const row of stack.querySelectorAll('.row')) {
+				const mark = row.querySelector('.stamp').getBoundingClientRect();
+				if (mark.top >= box.top - 1 && mark.bottom <= box.bottom + 1) n += 1;
 			}
 			return n;
 		});
@@ -223,21 +220,20 @@ describe("the strip's notch", () => {
 				await page.mouse.up();
 				await settled(page);
 				assert.ok(Math.abs((await cellExtents(page, 'column'))[1] - 60) <= 1);
-				await pane(page, 'strip').locator('.band.today svg').waitFor();
+				await pane(page, 'strip').locator('.row.pinned svg').waitFor();
 				const seen = await pane(page, 'strip').evaluate((section) => {
 					const box = (s) => section.querySelector(s).getBoundingClientRect();
 					const body = section.querySelector('.body');
 					return {
 						scrolls: body.scrollHeight - body.clientHeight,
 						strip: box('.strip'),
-						today: box('.band.today'),
-						grip: box('.day-grip')
+						today: box('.row.pinned'),
+						axis: box('.axis')
 					};
 				});
 				assert.ok(seen.scrolls <= 0, `the body scrolls by ${seen.scrolls}px`);
 				assert.ok(seen.today.top < seen.strip.top - 1, 'today\'s band is not clipped at the top');
-				assert.ok(Math.abs(seen.today.bottom - seen.strip.bottom) <= 1, 'today\'s band, and its axis, left the bottom of the strip');
-				assert.ok(seen.grip.top >= seen.strip.top - 0.5 && seen.grip.bottom <= seen.strip.bottom, 'the day-height notch is outside the strip');
+				assert.ok(Math.abs(seen.axis.bottom - seen.strip.bottom) <= 1, 'the hour ruler left the bottom of the strip');
 			},
 			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('strip', 'daystrip')))) }
 		);

@@ -19,7 +19,7 @@
 // What the PAGE keeps is `legible`, content-box pixels measured on the
 // built app (2026-09-10, Chromium, 0.85rem monospace): the pane's body at
 // the size below which the kind stops being legible. The strip: one whole
-// day at its drawn height (`todayBox(85)`, 104px at the default) plus the
+// day at its drawn height (`todayBox(85)`, 100px at the default) plus the
 // body's 16px of padding — its snap. The REPL: three lines of scrollback
 // (18.4px each) plus padding, 71px — the bottom bar is its prompt
 // (da-rfs9), so it has no line of its own to keep. The tail,
@@ -43,7 +43,15 @@ import CliPane from '$lib/CliPane.svelte';
 import CommandPane from '$lib/CommandPane.svelte';
 import DayStrip from '$lib/DayStrip.svelte';
 import Stats from '$lib/Stats.svelte';
-import { DEFAULT_DAY_HEIGHT, MAX_DAY_HEIGHT, MIN_DAY_HEIGHT, NOWVIEW_HISTORY, TAIL, todayBox } from '$lib/panes.js';
+import {
+	DEFAULT_DAY_HEIGHT,
+	DEFAULT_LABEL_WIDTH,
+	MAX_DAY_HEIGHT,
+	MIN_DAY_HEIGHT,
+	NOWVIEW_HISTORY,
+	TAIL,
+	todayBox
+} from '$lib/panes.js';
 import { DEFAULT_STATS } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
 import FieldsPane from './FieldsPane.svelte';
@@ -93,12 +101,20 @@ export const KINDS: Record<string, WidgetKind> = {
 	// today (da-zb0d); how tall a day is drawn is its one setting, which
 	// its notch changes.
 	daystrip: {
-		meta: meta('daystrip', 'dayview', { dayHeight: DEFAULT_DAY_HEIGHT }),
-		component: DayStrip,
-		props: ({ dayHeight }) => ({
-			dayHeight: typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT
+		meta: meta('daystrip', 'dayview', {
+			dayHeight: DEFAULT_DAY_HEIGHT,
+			labelWidth: DEFAULT_LABEL_WIDTH,
+			freezeToday: true
 		}),
-		onChange: (settings, dayHeight) => ({ ...settings, dayHeight }),
+		component: DayStrip,
+		props: ({ dayHeight, labelWidth, freezeToday }) => ({
+			dayHeight: typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT,
+			labelWidth: typeof labelWidth === 'number' ? labelWidth : DEFAULT_LABEL_WIDTH,
+			freezeToday: typeof freezeToday === 'boolean' ? freezeToday : true
+		}),
+		// The strip's `change` names the settings it moved — the `+` handle
+		// moves two at once — so the fold is the same one for all of them.
+		onChange: (settings, moved) => ({ ...settings, ...(moved as Record<string, unknown>) }),
 		// A notch, not a wall: shorter, the strip clips today's band from
 		// the top and keeps its axis.
 		snap: (settings) => ({ height: [oneDay(settings)] }),

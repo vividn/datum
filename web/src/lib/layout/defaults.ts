@@ -19,7 +19,7 @@
 
 import type { Layout, Pane, Split, Tab } from './types.js';
 import { LAYOUT_VERSION } from './types.js';
-import { DEFAULT_DAY_HEIGHT } from '$lib/panes.js';
+import { DEFAULT_DAY_HEIGHT, DEFAULT_LABEL_WIDTH } from '$lib/panes.js';
 
 const bar = { edge: 'top', align: 'start' } as const;
 
@@ -31,7 +31,7 @@ const widgetPane = (id: string, kind: string, settings: Record<string, unknown> 
 });
 
 /** The strip, with its one setting written down rather than implied. */
-const strip = () => widgetPane('strip', 'daystrip', { dayHeight: DEFAULT_DAY_HEIGHT });
+const strip = () => widgetPane('strip', 'daystrip', { dayHeight: DEFAULT_DAY_HEIGHT, labelWidth: DEFAULT_LABEL_WIDTH, freezeToday: true });
 
 const holder = (id: string, split: Split): Pane => ({
 	id,
@@ -62,10 +62,10 @@ const legibly = (heights: number[]): number[] =>
 /**
  * The desktop: strip / [REPL | nowview / tail / command] / fields.
  *
- * The strip (one day, 134), the middle row (the side column's nowview,
+ * The strip (one day, 130), the middle row (the side column's nowview,
  * tail and command at 122, 116 and 116, and their two borders: 370) and
- * the fields pane (63) share the column in that proportion — 0.236 /
- * 0.653 / 0.111, which at a laptop's height is today's band with a
+ * the fields pane (63) share the column in that proportion — 0.231 /
+ * 0.657 / 0.112, which at a laptop's height is today's band with a
  * little of yesterday above it (a taller strip is more past, da-zb0d)
  * and two rows of buttons. The row is the wireframe's 2fr/1fr.
  */
@@ -75,7 +75,7 @@ export const DEFAULT_LAYOUT: Layout = {
 	designedFor: 'desktop',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([134, 370, 63]), [
+		split('main', 'column', legibly([130, 370, 63]), [
 			strip(),
 			holder(
 				'middle',
@@ -108,8 +108,8 @@ const tabbed = (id: string, kinds: string[]): Pane => ({
 /**
  * A phone: strip / REPL / [tail, nowview, command] as tabs / fields,
  * one column — the strip, the REPL, the tabs and the fields pane at
- * their legible 134, 85, 122 (nowview's, the tallest of the three) and
- * 63: 0.332 / 0.210 / 0.302 / 0.156.
+ * their legible 130, 85, 122 (nowview's, the tallest of the three) and
+ * 63: 0.327 / 0.214 / 0.307 / 0.158.
  */
 export const DEFAULT_LAYOUT_MOBILE: Layout = {
 	version: LAYOUT_VERSION,
@@ -117,7 +117,7 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([134, 85, 122, 63]), [
+		split('main', 'column', legibly([130, 85, 122, 63]), [
 			strip(),
 			widgetPane('repl', 'repl'),
 			tabbed('side', ['tail', 'nowview', 'command']),
@@ -152,7 +152,7 @@ const only = (name: string, kind: string, settings: Record<string, unknown> = {}
 /** The built-ins by name; `day` is looked up through `builtinLayout`, since it depends on the screen. */
 export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	day: (phone) => ({ ...defaultLayoutFor(phone), name: 'day' }),
-	dayview: () => only('dayview', 'daystrip', { dayHeight: DEFAULT_DAY_HEIGHT }),
+	dayview: () => only('dayview', 'daystrip', { dayHeight: DEFAULT_DAY_HEIGHT, labelWidth: DEFAULT_LABEL_WIDTH, freezeToday: true }),
 	repl: () => only('repl', 'repl'),
 	nowview: () => only('nowview', 'nowview'),
 	tail: () => only('tail', 'tail'),
