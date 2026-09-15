@@ -320,6 +320,28 @@ mod tests {
         assert_eq!(infer_type("3.5"), Some(json!(3.5)));
     }
 
+    /// The double a person typed is the double we keep — not the one a
+    /// digit short (da-uru7). `0.23633156966490299` is the shortest
+    /// round-trip spelling of its double; serde_json's default parser
+    /// lands one ULP away on mantissas this long, so the workspace turns
+    /// on its `float_roundtrip` feature. This test is what notices if
+    /// that feature is ever dropped.
+    #[test]
+    fn infer_type_keeps_the_exact_double() {
+        for spelling in ["0.23633156966490299", "0.6666666666666666", "1e-320"] {
+            let want: f64 = spelling.parse().unwrap();
+            let got = match infer_type(spelling) {
+                Some(Value::Number(n)) => n.as_f64().unwrap(),
+                other => panic!("{spelling}: expected a number, got {other:?}"),
+            };
+            assert_eq!(
+                got.to_bits(),
+                want.to_bits(),
+                "{spelling} inferred as {got}, a different double"
+            );
+        }
+    }
+
     #[test]
     fn infer_type_arrays_and_objects() {
         assert_eq!(infer_type("[1,2,3]"), Some(json!([1, 2, 3])));

@@ -27,7 +27,12 @@ license = "MIT"
 [workspace.dependencies]
 # Serialization
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# "float_roundtrip" makes serde_json's PARSER exact: without it the default
+# fast path is off by up to one ULP on long mantissas, so a logged
+# `0.23633156966490299` came back as `0.236331569664903` — a different
+# double (da-uru7). The writer (ryu) was always shortest-round-trip; this
+# makes the reader match it, so a number survives argv -> store -> JSON.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 
 # Database
 # "hooks" is dependency-free; it exposes progress_handler, which
