@@ -39,13 +39,21 @@
 	is what says which copy's tree is being saved — so this menu acts on
 	the ROOT tab's layout however deep the layouts under it go.
 
-	At the right end, dim and out of the way, is which build is in front of
-	you: the version, a separator and the short sha (vividn: "Let's move the
-	version string to the top bar"). It came from the bottom bar, which
-	da-xfa4 clears in the same sprint.
+	At the right end is a gear (da-pp1a): the GLOBAL settings menu, the
+	root's alone the way `export backup…` is, and the same `PaneMenu` as
+	every other menu here. vividn, from the train: "Can we add a global
+	settings menu at the top right (little gear icon)? For now, let's add a
+	Reset all layouts, that way I can always reset as we're modifying the
+	defaults. Maybe we can put the version and hash string in that menu as
+	well." So it holds two things — the reset, which asks first and then
+	deletes every saved layout and this device's drafts with them
+	(`shell.ts`), and, dim and disabled at the bottom, which build is in
+	front of you: the version, a separator and the short sha. That stamp
+	was the bottom bar's until da-wjob and this bar's until now; it is out
+	of the way for good, and still one press from anyone looking for it.
 
 	On a phone the tabs scroll sideways rather than wrapping — one row,
-	always — while the `+` and the build stamp stay where they are.
+	always — while the `+` and the gear stay where they are.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -55,7 +63,8 @@
 	import { layoutActs, menuItems } from './menu.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
-	import { activate, close, modified, open, restore, save, saveAs, toggleLock, versions } from './shell.js';
+	import { activate, close, modified, open, resetLayouts, restore, save, saveAs, toggleLock, versions } from './shell.js';
+	import { confirm } from '$lib/confirm.js';
 	import { addEdge } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
 	import type { Toward } from './tree.js';
@@ -146,6 +155,30 @@
 				extra: [{ label: 'export backup…', run: () => void act(downloadBackup) }]
 			});
 
+	/**
+	 * The gear's menu: the page's own settings, which belong to no layout
+	 * and no pane. The reset asks first — it deletes what other devices
+	 * hold too, once the `_internal` database syncs — and the build stamp
+	 * is the bottom item, disabled, because it is a fact and not an act.
+	 *
+	 * A constant: neither item depends on which layout is in front, which
+	 * is the whole of what makes this menu the page's and not a tab's.
+	 */
+	const settings = [
+		{
+			label: 'Reset all layouts…',
+			run: () =>
+				void act(async () => {
+					const yes = await confirm(
+						'Delete every saved layout on this device? The built-in layouts come back.',
+						'Reset'
+					);
+					if (yes) await resetLayouts();
+				})
+		},
+		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true }
+	];
+
 	/** Arrow keys walk the tabs; the tab focused is the tab shown. */
 	async function onTabKey(event: KeyboardEvent, index: number) {
 		const next = event.key === 'ArrowRight' ? index + 1 : event.key === 'ArrowLeft' ? index - 1 : null;
@@ -196,10 +229,13 @@
 	</div>
 	<button type="button" class="control badge add" aria-label="open a layout" title="open a layout" on:click={add}>+</button>
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
-	<!-- Which build is in front of you: a developer's sanity check, dim and
-	     last. It was the bottom bar's until da-wjob; da-xfa4 clears it there. -->
-	<span class="build" title="datum.day {__DATUM_VERSION__} · commit {__DATUM_COMMIT__}"
-		>{__DATUM_VERSION__} · {__DATUM_COMMIT__}</span
+	<PaneMenu
+		items={settings}
+		look="badge"
+		label="settings"
+		title="settings"
+		class="gear"
+		aria-label="settings"><span aria-hidden="true">⚙</span></PaneMenu
 	>
 	{#if trail && !dirty}
 		<ul class="versions">
@@ -281,25 +317,13 @@
 		color: var(--warn);
 	}
 
-	/* Dim on purpose: present for whoever is looking for it. Last on the
-	   bar, so the tabs and the `+` keep their room. */
-	.build {
+	/* The gear: the bar's right end at every width, and a badge like the
+	   `+` — so it is on its 24px floor under a fingertip too
+	   (reachable.test.mjs). `auto` here rather than on the tabs, which
+	   scroll. */
+	.root-bar :global(.gear) {
 		margin-left: auto;
-		flex: 0 1 auto;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-size: 0.7rem;
-		font-variant-numeric: tabular-nums;
-		color: color-mix(in srgb, var(--muted) 60%, transparent);
-	}
-
-	/* A phone: the tabs keep the room, the build stamp goes. */
-	@media (max-width: 480px) {
-		.build {
-			display: none;
-		}
+		flex: none;
 	}
 
 	.versions {

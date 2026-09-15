@@ -43,7 +43,9 @@
 	/**
 	 * Names the menu for assistive tech: which pane it belongs to. It names
 	 * the BUTTON too, where the button has no words of its own — a trigger
-	 * with words (a tab) is named by them.
+	 * with words (a tab) is named by them — unless the caller passes an
+	 * `aria-label` of its own, which is what a trigger whose whole word is
+	 * a GLYPH does (the root bar's gear, da-pp1a).
 	 */
 	export let label: string;
 	export let title = 'pane menu';
@@ -56,11 +58,12 @@
 	 * `role` and `aria-selected`) are passed straight through to the
 	 * button — a `class` among them is ADDED to the look's own rather than
 	 * replacing it, which is how a root tab wears its `modified`
-	 * (RootBar.svelte).
+	 * (RootBar.svelte). `badge` is the square the root bar's `+` is, for a
+	 * button whose whole word is a glyph.
 	 */
-	export let look: 'title' | 'tab' = 'title';
+	export let look: 'title' | 'tab' | 'badge' = 'title';
 
-	const LOOK: Record<typeof look, string> = { title: 'title', tab: 'control tab' };
+	const LOOK: Record<typeof look, string> = { title: 'title', tab: 'control tab', badge: 'control badge' };
 
 	let open = false;
 	let button: HTMLButtonElement;
@@ -230,7 +233,7 @@
 	bind:this={button}
 	aria-haspopup="menu"
 	aria-expanded={open}
-	aria-label={$$slots.default ? undefined : label}
+	aria-label={$$restProps['aria-label'] ?? ($$slots.default ? undefined : label)}
 	{title}
 	on:keydown
 	on:click={() => (open ? close() : show())}><slot /></button

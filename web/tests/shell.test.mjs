@@ -100,6 +100,17 @@ async function rootItems(page) {
 	return seen;
 }
 
+/** The gear's menu — the page's settings (da-pp1a) — open: label and whether it is disabled. */
+async function gearItems(page) {
+	await page.locator('.root-bar button.gear').click();
+	const seen = await page
+		.locator('[role="menu"]')
+		.evaluate((menu) => [...menu.children].map((el) => ({ label: el.textContent.trim(), disabled: el.disabled === true })));
+	await page.keyboard.press('Escape');
+	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+	return seen;
+}
+
 /** One root menu item, as `rootItems` reports it. */
 const rootItem = async (page, label) => (await rootItems(page)).find((i) => i.label === label);
 
@@ -134,10 +145,18 @@ describe('the shell', () => {
 			// Nothing has run, so the result area has nothing to draw.
 			assert.equal(await receipt(page).count(), 0);
 			assert.equal(await rawResult(page).count(), 0);
-			// The build stamp is the ROOT bar's now (da-wjob): version · sha,
-			// dim and last. da-xfa4 clears it from the bottom bar.
+			// The build stamp is in the GEAR's menu now (da-pp1a): version ·
+			// sha, the bottom item and disabled. It was the bottom bar's
+			// until da-wjob and the root bar's until this bead; neither bar
+			// draws it any more.
 			assert.equal(await bar.locator('.build').count(), 0, 'the build stamp is still on the bottom bar');
-			assert.match(await page.locator('.root-bar .build').innerText(), /\S+ · \S+/);
+			assert.equal(await page.locator('.root-bar .build').count(), 0, 'the build stamp is still on the root bar');
+			const gear = await gearItems(page);
+			assert.deepEqual(gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp')), [
+				'Reset all layouts…',
+				'the build stamp'
+			]);
+			assert.deepEqual(gear.map((i) => i.disabled), [false, true]);
 			// The four acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
 			assert.deepEqual(

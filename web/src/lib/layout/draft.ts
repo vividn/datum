@@ -11,9 +11,11 @@
 
 import type { Layout, Pane } from './types.js';
 
-const DRAFT = 'datum.layout.draft.v1.';
-const LOCKED = 'datum.layout.locked.v1.';
-const ROOT = 'datum.layout.root.v1';
+/** What every key here begins with, and so what a reset clears (`clearDevice`). */
+const PREFIX = 'datum.layout.';
+const DRAFT = `${PREFIX}draft.v1.`;
+const LOCKED = `${PREFIX}locked.v1.`;
+const ROOT = `${PREFIX}root.v1`;
 
 function get(key: string): string | null {
 	try {
@@ -99,3 +101,20 @@ function unlocked(pane: Pane): Pane {
  */
 export const isModified = (draft: Layout, saved: Layout) =>
 	canonical({ ...draft, root: unlocked(draft.root) }) !== canonical({ ...saved, root: unlocked(saved.root) });
+
+/**
+ * Every key this module keeps, gone: the drafts, the locks and the open
+ * list (da-pp1a).
+ *
+ * The other half of a reset. A saved layout shadows its built-in, but so
+ * does an unsaved DRAFT of one — it is what a tab is built from — so
+ * deleting the saves alone would promise that "the built-in layouts come
+ * back" and then hand the reader their edit again.
+ */
+export function clearDevice(): void {
+	try {
+		for (const key of Object.keys(localStorage)) if (key.startsWith(PREFIX)) localStorage.removeItem(key);
+	} catch {
+		// Refused: there was nothing kept to clear.
+	}
+}

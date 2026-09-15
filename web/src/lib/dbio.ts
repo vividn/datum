@@ -19,8 +19,8 @@
 // in $lib/wasiFs.ts).
 
 import { writable } from 'svelte/store';
-import Confirm from './Confirm.svelte';
 import { saveFile } from './backup.js';
+import { confirm } from './confirm.js';
 import { fileArgv } from './fileargv.js';
 import { run, type RunResult } from './run.js';
 
@@ -101,17 +101,6 @@ export function kit(argv: string[]): Promise<RunResult> {
 		const text = `${seen.stdout.trim()}\n\nA kit can add SQL views and commands to your database; install only kits you trust.`;
 		if (!(await confirm(text, 'install'))) return nothing(argv, 'kit not installed — nothing ran');
 		return run([...argv, '--yes'], toml);
-	});
-}
-
-/** Whether the reader pressed `action` in a dialog saying `text` (and typed `name`, if one is given). */
-function confirm(text: string, action: string, name = ''): Promise<boolean> {
-	return new Promise((resolve) => {
-		const dialog = new Confirm({ target: document.body, props: { text, action, name } });
-		dialog.$on('close', ({ detail }) => {
-			dialog.$destroy();
-			resolve(detail);
-		});
 	});
 }
 

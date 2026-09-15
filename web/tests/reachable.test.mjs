@@ -131,6 +131,38 @@ describe('on a phone-sized screen', () => {
 		});
 	}
 
+	// The gear (da-pp1a) is the root bar's right end: the global settings
+	// menu, and the only way to the build stamp now. The bar is one row
+	// that never wraps, so the thing that can push the gear off is a
+	// crowded strip of tabs on a narrow screen — and its menu, which opens
+	// from the right edge, has to land on the screen as well.
+	for (const viewport of [...SCREENS, { width: 320, height: 480 }]) {
+		const size = `${viewport.width}x${viewport.height}`;
+
+		test(`the gear and its menu are on screen at ${size}`, async () => {
+			await withApp(async ({ page }) => {
+				await assertOnScreen(page, '.root-bar button.gear', 'the gear');
+				const box = await page.locator('.root-bar button.gear').boundingBox();
+				const width = await page.evaluate(() => document.documentElement.clientWidth);
+				assert.ok(box.width >= 24 && box.height >= 24, `the gear is ${box.width}x${box.height}`);
+				assert.ok(box.x >= 0 && box.x + box.width <= width + 1, `the gear is ${box.x}–${box.x + box.width} on ${width}px`);
+
+				await page.locator('.root-bar button.gear').click();
+				const items = page.locator('[role="menu"][aria-label="settings"] button');
+				// The reset, and the build stamp under it — a fact, so disabled.
+				assert.equal(await items.count(), 2);
+				assert.equal(await items.evaluateAll((all) => all.filter((b) => !b.disabled).length), 1);
+				const menu = await page.locator('[role="menu"][aria-label="settings"]').boundingBox();
+				const screen = await page.evaluate(() => ({
+					width: document.documentElement.clientWidth,
+					height: document.documentElement.clientHeight
+				}));
+				assert.ok(menu.x >= 0 && menu.x + menu.width <= screen.width + 1, `the settings menu is ${menu.x}–${menu.x + menu.width}`);
+				assert.ok(menu.y >= 0 && menu.y + menu.height <= screen.height + 1, 'the settings menu is taller than the screen');
+			}, { viewport });
+		});
+	}
+
 	// The one chooser (da-uyx1) is a modal over the whole page, so the
 	// screen it has to fit is the narrowest one: 320px, with every item a
 	// fingertip's 24px and the dialog itself inside the viewport.
@@ -290,7 +322,7 @@ describe('the layout engine, by keyboard', () => {
 			const controls = await page.evaluate(() =>
 				[
 					...document.querySelectorAll(
-						'button.title, button.add, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .prompt-bar .hint-button'
+						'button.title, button.add, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear, .prompt-bar .hint-button'
 					)
 				]
 					.filter((el) => el.getClientRects().length > 0)
@@ -298,19 +330,22 @@ describe('the layout engine, by keyboard', () => {
 						walk: el.dataset.walk ?? null,
 						what: el.matches('button.title')
 							? `menu of ${el.closest('section')?.dataset.title}`
-							: el.matches('.root-bar [role="tab"]')
-								? 'menu of the root bar'
-								: el.matches('button.add')
-									? `the + of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
-									: el.matches('.nowview-steps button')
-										? el.getAttribute('aria-label')
-										: el.matches('.hint-button')
-											? 'the beta hint'
-											: 'border'
+							: el.matches('.root-bar button.gear')
+								? 'the gear'
+								: el.matches('.root-bar [role="tab"]')
+									? 'menu of the root bar'
+									: el.matches('button.add')
+										? `the + of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
+										: el.matches('.nowview-steps button')
+											? el.getAttribute('aria-label')
+											: el.matches('.hint-button')
+												? 'the beta hint'
+												: 'border'
 					}))
 			);
 			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');
 			assert.equal(controls.filter((c) => c.what === 'menu of the root bar').length, 1, 'the root bar has no menu button');
+			assert.equal(controls.filter((c) => c.what === 'the gear').length, 1, 'the root bar has no gear (da-pp1a)');
 			assert.equal(await page.locator('button.faint').count(), 0, 'the margin handles are back (da-wjob)');
 			assert.ok(controls.some((c) => c.what === 'border'), 'the default layout has no draggable border');
 			for (const control of controls) {
@@ -322,7 +357,7 @@ describe('the layout engine, by keyboard', () => {
 	test('every menu item is on screen and reachable by the arrows', async () => {
 		await withApp(async ({ page }) => {
 			// A pane's title, and the root bar's active tab (da-wjob).
-			const openers = page.locator('button.title:visible, .root-bar [role="tab"][aria-selected="true"]');
+			const openers = page.locator('button.title:visible, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear');
 			const menus = await openers.count();
 			for (let m = 0; m < menus; m++) {
 				await openers.nth(m).focus();
@@ -384,7 +419,7 @@ describe('the layout engine, by keyboard', () => {
 						coarse: matchMedia('(pointer: coarse)').matches,
 						borders: shown('[role="separator"]').map((el) => Math.min(...box(el))),
 						panes: shown('section button.title, section button.add').map(box),
-						root: shown('.root-bar button.add, .root-bar [role="tab"]').map(box)
+						root: shown('.root-bar button.add, .root-bar button.gear, .root-bar [role="tab"]').map(box)
 					};
 				});
 				assert.equal(sizes.coarse, name.endsWith('finger'));

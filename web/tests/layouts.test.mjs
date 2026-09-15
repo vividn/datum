@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { chooseRoot } from './support/layout.mjs';
+import { chooseRoot, chooser, offers } from './support/layout.mjs';
 
 /** A tree with every part of the contract in it, nested once. */
 const tree = (name, kind) => ({
@@ -359,6 +359,162 @@ describe('the controls', () => {
 			// The original was never saved, and keeps no draft of the edit.
 			assert.equal(await draft(app), null);
 			await assert.rejects(layouts(app, 'loadLayout', 'day'));
+		});
+	});
+});
+
+// The reset (da-pp1a). vividn, from the train: "I've started modifying the
+// default layout... let's add a Reset all layouts, that way I can always
+// reset as we're modifying the defaults."
+//
+// A saved `day` shadows `defaults.ts` for good — `resolve` reads the save
+// first — and so does an unsaved DRAFT of it, which is what a tab is built
+// from. Both are what the reset undoes, and what has to come back is the
+// BUILT-IN tree, deep-equal and not by eye.
+//
+// The built-in is captured the way the app itself writes a tree down: a
+// fresh device's `Save layout`, read back through the store. The same read
+// after the reset is the comparison — so nothing about `defaults.ts` is
+// copied into this file to go stale.
+describe('the reset', () => {
+	/** Open the gear and choose `Reset all layouts…`; the Confirm it opens. */
+	async function openReset(page) {
+		await page.locator('.root-bar button.gear').click();
+		await page.getByRole('menuitem', { name: 'Reset all layouts…', exact: true }).click();
+		const dialog = page.locator('dialog.confirm');
+		await dialog.waitFor();
+		return dialog;
+	}
+
+	/** The whole gesture: the gear, the item, `Reset`, and the reload it answers with. */
+	async function reset(app) {
+		const page = app.page;
+		const dialog = await openReset(page);
+		await page.evaluate(() => (window.__beforeReset = true));
+		await dialog.locator('button', { hasText: 'Reset' }).click();
+		// `waitForFunction` re-runs on the new document, so this is the
+		// moment the shell's own `location.reload()` has landed.
+		await page.waitForFunction(() => window.__beforeReset === undefined);
+		await app.reload();
+		await controlsReady(app);
+	}
+
+	/** This device's tree, as the shell writes it down: save it, then read the save. */
+	async function treeOf(app) {
+		await chooseRoot(app.page, 'Save layout');
+		return until(() => layouts(app, 'loadLayout', 'day').catch(() => null), (l) => l !== null);
+	}
+
+	const paneCount = (page) => page.locator('section.pane').count();
+
+	/** The layout keys this device is holding — drafts, locks, the open list. */
+	const kept = (page) =>
+		page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('datum.layout.')).sort());
+
+	/** What the root bar's `+` offers, trimmed, with the chooser dismissed again. */
+	async function chooserOffers(page) {
+		await page.locator('.root-bar button[aria-label="open a layout"]').click();
+		await chooser(page).waitFor();
+		const listed = (await offers(page)).map((o) => o.trim());
+		await page.keyboard.press('Escape');
+		await chooser(page).waitFor({ state: 'detached' });
+		return listed;
+	}
+
+	test('a saved `day` is deleted and the built-in tree comes back', async () => {
+		await withApp(async (app) => {
+			await controlsReady(app);
+			const builtin = await treeOf(app);
+			const panes = await paneCount(app.page);
+
+			// Modified and SAVED: the save now shadows `defaults.ts`, which is
+			// the state a reset exists to undo.
+			await chooseRoot(app.page, 'break out: a new pane to the left');
+			await until(() => paneCount(app.page), (n) => n === panes + 1);
+			const edited = await treeOf(app);
+			assert.notDeepEqual(edited.root, builtin.root);
+
+			// It survives a reload — so what draws it is the save, not a draft.
+			await app.reload();
+			await controlsReady(app);
+			assert.equal(await paneCount(app.page), panes + 1);
+
+			await reset(app);
+
+			assert.deepEqual(await layouts(app, 'listLayouts'), []);
+			await assert.rejects(layouts(app, 'loadLayout', 'day'));
+			assert.equal(await paneCount(app.page), panes);
+			assert.deepEqual((await treeOf(app)).root, builtin.root);
+		});
+	});
+
+	// The other half of the shadow, and the one vividn will actually be
+	// holding while he edits a default: an edit he has NOT saved.
+	test('an unsaved edit goes too, and the device keeps no layout keys', async () => {
+		await withApp(async (app) => {
+			await controlsReady(app);
+			const builtin = await treeOf(app);
+			const panes = await paneCount(app.page);
+
+			await chooseRoot(app.page, 'break out: a new pane to the left');
+			await until(() => paneCount(app.page), (n) => n === panes + 1);
+			await until(() => draft(app), (d) => d !== null);
+			assert.equal(await isModified(app), true);
+
+			await reset(app);
+
+			assert.deepEqual(await kept(app.page), []);
+			assert.equal(await paneCount(app.page), panes);
+			assert.deepEqual((await treeOf(app)).root, builtin.root);
+		});
+	});
+
+	test('every saved layout goes — a phone one too — and the user’s own rows do not', async () => {
+		await withApp(async (app) => {
+			await controlsReady(app);
+			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
+			assert.equal((await app.run(['occur', 'tea', '-t', '0800'])).code, 0);
+			const mine = await app.entries();
+			assert.deepEqual(mine.map((e) => e.field), ['tea', 'coffee']);
+
+			await layouts(app, 'saveLayout', shellTree('mine', 'nowview'));
+			await layouts(app, 'saveLayout', { ...shellTree('pocket', 'tail'), designedFor: 'mobile' });
+			await until(() => layouts(app, 'listLayouts'), (l) => l.length === 2);
+			assert.ok((await chooserOffers(app.page)).includes('mine'), 'the chooser never listed the save');
+
+			await reset(app);
+
+			// «All» means every saved layout, the phone ones included, and
+			// what `del` leaves behind is not live: the store's own
+			// `tail layout --json` finds nothing.
+			assert.deepEqual(await layouts(app, 'listLayouts'), []);
+			// And the chooser, which lists the saves beside the built-ins,
+			// offers the built-ins alone.
+			const listed = await chooserOffers(app.page);
+			assert.ok(!listed.includes('mine') && !listed.includes('pocket'), listed.join(', '));
+
+			// The MAIN database was never touched.
+			assert.deepEqual(await app.entries(), mine);
+		});
+	});
+
+	test('cancel deletes nothing', async () => {
+		await withApp(async (app) => {
+			await controlsReady(app);
+			await layouts(app, 'saveLayout', shellTree('mine', 'nowview'));
+			await until(() => layouts(app, 'listLayouts'), (l) => l.length === 1);
+			const before = await layouts(app, 'listLayouts');
+			const keys = await kept(app.page);
+			const panes = await paneCount(app.page);
+
+			const dialog = await openReset(app.page);
+			await dialog.locator('button', { hasText: 'cancel' }).click();
+			await dialog.waitFor({ state: 'detached' });
+
+			assert.deepEqual(await layouts(app, 'listLayouts'), before);
+			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), shellTree('mine', 'nowview'));
+			assert.deepEqual(await kept(app.page), keys);
+			assert.equal(await paneCount(app.page), panes);
 		});
 	});
 });

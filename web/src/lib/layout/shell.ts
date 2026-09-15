@@ -71,6 +71,7 @@ import { LAYOUT_VERSION, isSplit } from './types.js';
 import { apply, layout, loaded } from './current.js';
 import { ALIASES, PHONE_WIDTH, builtinLayout } from './defaults.js';
 import {
+	clearDevice,
 	clearDraft,
 	isModified,
 	loadDraft,
@@ -81,6 +82,7 @@ import {
 	saveRoot
 } from './draft.js';
 import {
+	deleteAllLayouts,
 	loadLayout,
 	restore as restoreSaved,
 	saveAs as saveAsSaved,
@@ -505,6 +507,27 @@ export async function saveAs(tabId: NodeId, newName: string): Promise<void> {
 	baselines.update((b) => ({ ...b, [newName]: baselineOf(copy) }));
 	clearDraft(name);
 	await replaceCopies(newName, copy);
+}
+
+/**
+ * Reset: every saved layout deleted, this device's drafts, locks and open
+ * list cleared with them, and the shell booted again (da-pp1a).
+ *
+ * vividn, from the train: "I've started modifying the default layout... let's
+ * add a Reset all layouts, that way I can always reset as we're modifying
+ * the defaults." A save of `day` shadows `defaults.ts` for good (`resolve`
+ * reads the save first), so this is what undoes the shadow — both halves of
+ * it, since a draft shadows just as firmly as a save.
+ *
+ * The boot is a page load, which is the whole of it: nothing survives the
+ * reload that was not just deleted, so `day` resolves to `builtinLayout`
+ * again and the engine, the baselines and the draft all start from there.
+ * The saves go first — a failed `del` then leaves the device as it was.
+ */
+export async function resetLayouts(): Promise<void> {
+	await deleteAllLayouts();
+	clearDevice();
+	location.reload();
 }
 
 /**
