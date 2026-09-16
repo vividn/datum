@@ -132,11 +132,11 @@ describe('on a phone-sized screen', () => {
 	}
 
 	// The gear (da-pp1a) is the root bar's right end: the global settings
-	// menu, and since da-luwe the only thing in it is the build stamp —
-	// the reset it also held is a layout's own act now. The bar is one row
-	// that never wraps, so the thing that can push the gear off is a
-	// crowded strip of tabs on a narrow screen — and its menu, which opens
-	// from the right edge, has to land on the screen as well.
+	// menu, holding «Reset default layouts…» (da-jbcv) and the build
+	// stamp. The bar is one row that never wraps, so the thing that can
+	// push the gear off is a crowded strip of tabs on a narrow screen —
+	// and its menu, which opens from the right edge, has to land on the
+	// screen as well.
 	for (const viewport of [...SCREENS, { width: 320, height: 480 }]) {
 		const size = `${viewport.width}x${viewport.height}`;
 
@@ -150,10 +150,10 @@ describe('on a phone-sized screen', () => {
 
 				await page.locator('.root-bar button.gear').click();
 				const items = page.locator('[role="menu"][aria-label="settings"] button');
-				// The build stamp alone — a fact, so disabled, and so the one
-				// menu here with nothing in it to press (da-luwe).
-				assert.equal(await items.count(), 1);
-				assert.equal(await items.evaluateAll((all) => all.filter((b) => !b.disabled).length), 0);
+				// The one act (da-jbcv) and the build stamp, which is a fact
+				// and so disabled.
+				assert.equal(await items.count(), 2);
+				assert.equal(await items.evaluateAll((all) => all.filter((b) => !b.disabled).length), 1);
 				const menu = await page.locator('[role="menu"][aria-label="settings"]').boundingBox();
 				const screen = await page.evaluate(() => ({
 					width: document.documentElement.clientWidth,
@@ -438,8 +438,8 @@ describe('the layout engine, by keyboard', () => {
 				await page.keyboard.press('Enter');
 				const items = page.locator('[role="menu"] button');
 				// The walk is over what can be FOCUSED: a menu whose every item
-				// is disabled — the gear's, since da-luwe — opens, holds focus
-				// on itself, and closes on the Escape below.
+				// is disabled opens, holds focus on itself, and closes on the
+				// Escape below.
 				const enabled = await items.evaluateAll((all) => all.filter((b) => !b.disabled).length);
 				const visited = new Set();
 				for (let i = 0; i < enabled; i++) {

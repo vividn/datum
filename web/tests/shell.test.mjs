@@ -151,12 +151,16 @@ describe('the shell', () => {
 			// draws it any more.
 			assert.equal(await bar.locator('.build').count(), 0, 'the build stamp is still on the bottom bar');
 			assert.equal(await page.locator('.root-bar .build').count(), 0, 'the build stamp is still on the root bar');
-			// And it is all the gear holds: «Reset all layouts…», which
-			// deleted every saved layout on every device, is gone (da-luwe)
-			// — `Reset layout` on a built-in's own tab is what replaced it.
+			// Above it, the gear's one act: «Reset default layouts…»
+			// (da-jbcv), which is the narrow half of the «Reset all
+			// layouts…» that deleted every saved layout on every device and
+			// went for it (da-luwe).
 			const gear = await gearItems(page);
-			assert.deepEqual(gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp')), ['the build stamp']);
-			assert.deepEqual(gear.map((i) => i.disabled), [true]);
+			assert.deepEqual(gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp')), [
+				'Reset default layouts…',
+				'the build stamp'
+			]);
+			assert.deepEqual(gear.map((i) => i.disabled), [false, true]);
 			// The acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
 			assert.deepEqual(

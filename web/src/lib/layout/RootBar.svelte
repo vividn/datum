@@ -49,19 +49,22 @@
 	settings menu at the top right (little gear icon)? ... Maybe we can put
 	the version and hash string in that menu as well." That stamp — the
 	version, a separator and the short sha, dim and disabled because it is
-	a fact and not an act — is what it holds. It was the bottom bar's until
-	da-wjob and this bar's until da-pp1a; it is out of the way for good,
-	and still one press from anyone looking for it.
+	a fact and not an act — is one of the two things it holds. It was the
+	bottom bar's until da-wjob and this bar's until da-pp1a; it is out of
+	the way for good, and still one press from anyone looking for it.
 
-	It held one act as well: «Reset all layouts…», which deleted every
-	saved layout — on every device, once `_internal` synced — and cleared
-	this device's drafts and locks. vividn, 18:15: "Definitely don't want to
-	delete *all* layouts, rather just reset the built-in layouts that ship
-	with datum, but probably it's better just to have a single Reset
-	Layout, rather than do batch." So it is gone (da-luwe), and what a
-	reader wanting a default back reaches for is `Reset layout` on that
-	layout's own tab, which writes nothing and can be undone from the item
-	above it.
+	The other is «Reset default layouts…» (da-jbcv). It held an act of that
+	shape once — «Reset all layouts…», which deleted every saved layout, on
+	every device once `_internal` synced, and cleared this device's drafts
+	and locks — and it went (da-luwe) for doing more than its name said.
+	vividn, 18:15: "Definitely don't want to delete *all* layouts, rather
+	just reset the built-in layouts that ship with datum"; and 18:16,
+	asking for it back: "Reset default layouts, should reset all built in
+	layouts, as well as the tabs shown on the root. Other layouts are still
+	accessible to be added with the + though, and are not reset." That is
+	exactly what `resetDefaults` (shell.ts) does, behind a confirm, because
+	it writes. The per-layout `Reset layout` is unchanged and is still the
+	one that writes nothing.
 
 	On a phone the tabs scroll sideways rather than wrapping — one row,
 	always — while the `+` and the gear stay where they are.
@@ -69,12 +72,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { downloadBackup } from '$lib/backup.js';
+	import { confirm } from '$lib/confirm.js';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, layout, loaded } from './current.js';
 	import { layoutActs, menuItems } from './menu.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
-	import { activate, close, modified, open, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock, versions } from './shell.js';
+	import { activate, close, modified, open, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock, versions } from './shell.js';
 	import { addEdge } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
 	import type { Toward } from './tree.js';
@@ -190,17 +194,34 @@
 			});
 
 	/**
+	 * «Reset default layouts» (da-jbcv), behind a confirm: it writes, and
+	 * what it writes over is the reader's own save of a name datum ships.
+	 * Its narrow aim is the whole of what it says, because the act it
+	 * replaces — «Reset all layouts…», which deleted every saved layout on
+	 * every device — was withdrawn for being wider than its name (da-luwe).
+	 */
+	const doResetDefaults = () =>
+		act(async () => {
+			const yes = await confirm(
+				'Every layout that ships with datum goes back to the way it came, and the tabs at the top of the page go back to just “day”.\n\n' +
+					'Layouts you saved yourself, and layouts a kit installed, are not touched — they stay in the +.',
+				'reset'
+			);
+			if (yes) await resetDefaults();
+		});
+
+	/**
 	 * The gear's menu: the page's own settings, which belong to no layout
-	 * and no pane. Which build is in front of you, disabled, because it is
-	 * a fact and not an act — and, since da-luwe, the only thing here: the
-	 * «Reset all layouts…» that deleted every saved layout on every device
-	 * is gone, and `Reset layout` on a built-in tab's own menu does what it
-	 * was wanted for, to one layout and without writing anything.
+	 * and no pane — the one act above, and which build is in front of you,
+	 * disabled, because it is a fact and not an act.
 	 *
 	 * A constant: it does not depend on which layout is in front, which is
 	 * the whole of what makes this menu the page's and not a tab's.
 	 */
-	const settings = [{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true }];
+	const settings = [
+		{ label: 'Reset default layouts…', run: doResetDefaults },
+		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true }
+	];
 
 	/** Arrow keys walk the tabs; the tab focused is the tab shown. */
 	async function onTabKey(event: KeyboardEvent, index: number) {
@@ -215,6 +236,9 @@
 	}
 
 	let strip: HTMLElement | null = null;
+
+	/** The gear's eight teeth, by the angle each is turned to. */
+	const TEETH = [0, 45, 90, 135, 180, 225, 270, 315];
 </script>
 
 <nav class="root-bar" class:modified={dirty} aria-busy={!ready} aria-label="layouts">
@@ -258,7 +282,11 @@
 		label="settings"
 		title="settings"
 		class="gear"
-		aria-label="settings"><span aria-hidden="true">⚙</span></PaneMenu
+		aria-label="settings"
+		><svg class="cog" viewBox="-12 -12 24 24" width="20" height="20" aria-hidden="true">
+			{#each TEETH as angle}<rect x="-1.9" y="-11.4" width="3.8" height="5.6" rx="1" transform="rotate({angle})" />{/each}
+			<circle class="ring" r="6.2" />
+		</svg></PaneMenu
 	>
 	{#if trail && !dirty}
 		<ul class="versions">
@@ -343,10 +371,29 @@
 	/* The gear: the bar's right end at every width, and a badge like the
 	   `+` — so it is on its 24px floor under a fingertip too
 	   (reachable.test.mjs). `auto` here rather than on the tabs, which
-	   scroll. */
+	   scroll.
+
+	   A BIGGER badge than the rest of the bar's, and a drawn cog rather
+	   than the `⚙` character (da-jbcv). vividn: "Make the gear icon much
+	   bigger, it's almost invisible." The character was the trouble: at
+	   the bar's font size its ink is a 8x16px scratch, and how much of
+	   the em it fills is the reader's font's business and not ours. A
+	   path fills the box it is given, on every device, and the box is
+	   this one. */
 	.root-bar :global(.gear) {
 		margin-left: auto;
 		flex: none;
+		--badge: 28px;
+	}
+
+	.cog {
+		fill: currentColor;
+	}
+
+	.cog .ring {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 3.6;
 	}
 
 	.versions {

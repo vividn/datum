@@ -95,8 +95,8 @@
 		const top = below + height <= window.innerHeight ? below : Math.max(4, box.top - 2 - height);
 		at = { top, left: fit(box.left, width, window.innerWidth) };
 		// The first item that can be focused — or the menu itself, when
-		// none can: the gear's is one disabled line since da-luwe, and a
-		// menu holding focus nowhere is one Escape cannot close.
+		// none can: a menu may be all facts and no acts, and one holding
+		// focus nowhere is one Escape cannot close.
 		const all = enabled(menu);
 		if (all.length > 0) focusItem(all, 0);
 		else menu?.focus();

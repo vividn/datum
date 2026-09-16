@@ -79,10 +79,13 @@ import {
 	loadRoot,
 	saveDraft,
 	saveLocked,
-	saveRoot
+	saveRoot,
+	type RootState
 } from './draft.js';
 import {
+	deleteLayout,
 	kitLayout,
+	listLayouts,
 	loadLayout,
 	refreshKitLayouts,
 	restore as restoreSaved,
@@ -101,6 +104,9 @@ export const NOTICE_KIND = 'notice';
 
 /** The layout every device starts with. */
 const HOME = 'day';
+
+/** The root bar a fresh install shows: the one layout, in front. */
+const FRESH: RootState = { names: [HOME], active: 0 };
 
 const BAR = { edge: 'top', align: 'start' } as const;
 
@@ -361,14 +367,23 @@ async function openTab(name: string, taken: Set<NodeId>): Promise<Tab | null> {
 let booted = false;
 let booting: Promise<void> | null = null;
 
-/** Fill the root from this device's open layouts (`day` alone at first). Once. */
-export function boot(): Promise<void> {
-	return (booting ??= (async () => {
-		await initDb().catch(() => {});
-		// Before the first `resolve`: a kit's layout is one of the trees a
-		// name may mean, and `shippedTree` reads the cache synchronously.
-		await refreshKitLayouts();
-		const state = loadRoot() ?? { names: [HOME], active: 0 };
+/**
+ * The page's tree, built from `state`: one root tab per open layout, each
+ * from its draft or its save. The boot's own step, and the one a reset of
+ * the defaults takes with `FRESH` (da-jbcv).
+ *
+ * `settle` is held off until the tree is whole, because a rebuild is the
+ * one moment the tree and the baselines belong to two different pages:
+ * `openTab` installs a name's baseline BEFORE the tab built from it lands,
+ * so a settle in between reads the tree still on screen against the
+ * baselines of the tree replacing it, calls it modified, and writes it
+ * back out as a draft — which the very next `loadDraft` then builds the
+ * new tab from. The boot never saw it, having nothing on screen yet.
+ */
+async function fillRoot(state: RootState): Promise<void> {
+	const resting = booted;
+	booted = false;
+	try {
 		// A name with another spelling opens under the one name, and only
 		// once: a device with `now` and `nowview` both open gets one
 		// nowview tab, not two tabs wearing the same name.
@@ -387,6 +402,20 @@ export function boot(): Promise<void> {
 				root: { id: 'shell', tabs, active: Math.min(state.active, tabs.length - 1), bar: BAR }
 			})
 		);
+	} finally {
+		booted = resting;
+	}
+	settle();
+}
+
+/** Fill the root from this device's open layouts (`day` alone at first). Once. */
+export function boot(): Promise<void> {
+	return (booting ??= (async () => {
+		await initDb().catch(() => {});
+		// Before the first `resolve`: a kit's layout is one of the trees a
+		// name may mean, and `shippedTree` reads the cache synchronously.
+		await refreshKitLayouts();
+		await fillRoot(loadRoot() ?? FRESH);
 		booted = true;
 		loaded.set(true);
 		onExternalChange(followSaves, '_internal');
@@ -594,6 +623,43 @@ export async function resetLayout(tabId: NodeId): Promise<void> {
 	if (!shipped) return;
 	unmaximize();
 	await replaceCopies(tab.layout as string, shipped);
+}
+
+/**
+ * «Reset default layouts» (da-jbcv): every layout datum SHIPS back to the
+ * tree it ships with, and the root bar back to the tabs a fresh install
+ * shows — and nothing else touched.
+ *
+ * vividn, 18:16: "Reset default layouts, should reset all built in layouts,
+ * as well as the tabs shown on the root. Other layouts are still
+ * accessible to be added with the + though, and are not reset."
+ *
+ * A built-in goes back by having the save that SHADOWS it removed, which
+ * is the only thing standing between the name and `defaults.ts`: after it,
+ * `resolve` answers with the shipped tree again and the chooser lists the
+ * name as `builtin` once more. So the names touched are exactly
+ * `BUILTIN_NAMES` — a layout the reader saved under a name nothing ships,
+ * and a layout a KIT installed (which lives in the data db, not here), are
+ * neither read nor written, and stay in the `+`.
+ *
+ * This one WRITES, which is what separates it from `resetLayout`: a batch
+ * that only moved the drafts would leave every save still shadowing its
+ * built-in, and the next reload would undo the whole act. The confirm on
+ * the gear's menu is what stands in for the undo (RootBar.svelte).
+ */
+export async function resetDefaults(): Promise<void> {
+	unmaximize();
+	// Which of the shipped names the reader has actually saved, asked once:
+	// the rest have no entry to remove, and are the draft alone.
+	const saved = new Set((await listLayouts()).filter((l) => l.source === 'user').map((l) => l.name));
+	for (const name of BUILTIN_NAMES) {
+		clearDraft(name);
+		if (saved.has(name)) await deleteLayout(name);
+	}
+	// The baselines are a record of what the saves WERE; every one of them
+	// is about to be read again from what the names now mean.
+	baselines.set({});
+	await fillRoot(FRESH);
 }
 
 /**
