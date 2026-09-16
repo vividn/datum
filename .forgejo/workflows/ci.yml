@@ -30,10 +30,19 @@ name: CI
 on:
   pull_request:
   push:
-    # main for the gate; hero/** so a hero's branch push reaches the runner
-    # through the mirror before the cutover, when the forge has no PRs yet.
-    # GitHub never reads .forgejo/workflows, so this costs nothing there.
-    branches: [main, 'hero/**']
+    branches: [main]
+    # `hero/**` used to be here so a hero's branch reached the runner through
+    # the mirror before the cutover, when the forge had no PRs. Since
+    # 2026-09-16 17:0x branches are pushed to the forge itself and their PRs
+    # trigger the run — with both triggers every PR head ran TWICE, two
+    # ~40-minute runs on a capacity-1 runner (mayor, 17:03, reading PR 2).
+
+# One run per ref at a time: a newer push cancels the run of the head it
+# replaced instead of queueing behind it. Four runs sat «waiting» at 17:09
+# behind one another, each for a head that no longer mattered.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
