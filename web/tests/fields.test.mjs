@@ -37,10 +37,10 @@ describe('the logic', () => {
 	test('a spec\'s verb wins, whatever the log says; a spec-less field falls back to the log', () => {
 		// occur is a declaration too: a field logged with `true`/`false` under
 		// an occur spec still stays a point (da-u8n7), not a block.
-		assert.deepEqual(shapeFor(spec('sleep', { default_verb: 'occur' }), [true, false]), { kind: 'point' });
-		assert.deepEqual(shapeFor(spec('coffee', { default_verb: 'occur' })), { kind: 'point' });
-		assert.deepEqual(shapeFor(spec('work', { default_verb: 'start' })), { kind: 'state' });
-		assert.deepEqual(shapeFor(spec('note', { default_verb: 'add' })), { kind: 'record' });
+		assert.deepEqual(shapeFor(spec('sleep', { verb: 'occur' }), [true, false]), { kind: 'point' });
+		assert.deepEqual(shapeFor(spec('coffee', { verb: 'occur' })), { kind: 'point' });
+		assert.deepEqual(shapeFor(spec('work', { verb: 'start' })), { kind: 'state' });
+		assert.deepEqual(shapeFor(spec('note', { verb: 'add' })), { kind: 'record' });
 		// No spec: the log is the only evidence. A boolean log is a block...
 		assert.deepEqual(shapeFor(undefined, [true, false]), { kind: 'state' });
 		// ...and named states are a menu.
@@ -51,8 +51,8 @@ describe('the logic', () => {
 		const widgets = buttonsFor(
 			[
 				{ field: 'a', spec: null, states: [true], color: '#111111', state_colors: {}, ignored: false },
-				{ field: 'b', spec: spec('b', { default_verb: 'start' }), states: [], color: '#222222', state_colors: {}, ignored: true },
-				{ field: 'c', spec: spec('c', { default_verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' }, ignored: false }
+				{ field: 'b', spec: spec('b', { verb: 'start' }), states: [], color: '#222222', state_colors: {}, ignored: true },
+				{ field: 'c', spec: spec('c', { verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' }, ignored: false }
 			],
 			[{ field: 'b', state: true }, { field: 'c', state: 'x' }, { field: 'a', state: false }]
 		);
@@ -102,28 +102,22 @@ describe('the logic', () => {
 	});
 
 	test('an occur spec presses `occur`, even once it has been logged with a boolean state (da-u8n7)', () => {
-		const shape = shapeFor(spec('jumps', { default_verb: 'occur' }), [true]);
+		const shape = shapeFor(spec('jumps', { verb: 'occur' }), [true]);
 		assert.deepEqual(shape, { kind: 'point' });
 		assert.deepEqual(pressArgv({ field: 'jumps', shape, tracked: true, stateColors: {} }), ['occur', 'jumps']);
 	});
 
-	// da-emze: a spec exists for many reasons, and only one of them is
-	// "what a press means". A spec that answers `null` there never answered
-	// the question, so it says no more than no spec at all does.
-	test('a spec with no verb says nothing — the log decides, as it does with no spec', () => {
-		assert.deepEqual(shapeFor(spec('sleep', { default_verb: null }), [true, false]), { kind: 'state' });
-		assert.deepEqual(shapeFor(spec('mood', { default_verb: null }), ['sad', 'ok']), {
-			kind: 'states',
-			states: ['ok', 'sad']
-		});
-		assert.deepEqual(shapeFor(spec('coffee', { default_verb: null })), { kind: 'point' });
-		// A colour on the spec is not evidence of anything either.
-		assert.deepEqual(shapeFor(spec('sleep', { color: '#0000ff' }), [true, false]), { kind: 'state' });
+	// da-c8mh: every spec carries a verb, so only a field with NO spec is
+	// read off its log — the one the next log is about to write a spec for.
+	test('only a spec-less field is read off its log', () => {
+		assert.deepEqual(shapeFor(undefined, [true, false]), { kind: 'state' });
+		assert.deepEqual(shapeFor(undefined, ['sad', 'ok']), { kind: 'states', states: ['ok', 'sad'] });
+		assert.deepEqual(shapeFor(undefined), { kind: 'point' });
 	});
 
-	test('«decide from the log» declares the field and no verb', () => {
-		assert.deepEqual(declareArgv('sleep', null), ['spec', 'set', 'sleep']);
-		assert.deepEqual(declareArgv('sleep', { kind: 'state' }), ['spec', 'set', 'sleep', '--default-verb', 'start']);
+	test('the Track + form declares the verb it was given', () => {
+		assert.deepEqual(declareArgv('sleep', { kind: 'state' }), ['spec', 'set', 'sleep', '--verb', 'start']);
+		assert.deepEqual(declareArgv('coffee', { kind: 'point' }), ['spec', 'set', 'coffee', '--verb', 'occur']);
 	});
 });
 
@@ -197,7 +191,7 @@ describe('in the app', () => {
 	test('track tea and occur walk are buttons; an ignored run with a spec is not, and Track + un-ignores it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			for (const line of ['track tea', 'occur walk', 'spec set run --default-verb occur', 'ignore run']) await type(page, line);
+			for (const line of ['track tea --verb occur', 'occur walk', 'spec set run --verb occur', 'ignore run']) await type(page, line);
 			await page.locator('.bar button[data-field="walk"]').waitFor();
 			const drawn = () => page.locator('.bar [data-field]').evaluateAll((all) => all.map((el) => `${el.tagName}:${el.dataset.field}`));
 			assert.deepEqual(await drawn(), ['BUTTON:tea', 'BUTTON:walk']);
@@ -218,7 +212,10 @@ describe('in the app', () => {
 			// The backup's own header and walk's own row, re-keyed as a field
 			// the page has never seen — what an import from elsewhere brings.
 			const [header, ...rows] = (await app.run(['db', 'backup', '-'])).stdout.trim().split('\n');
-			const walk = JSON.parse(rows.find((l) => l.includes('"walk"')));
+			// The ENTRY's row, not the TRACK document that declares the field
+			// (da-c8mh) — a declaration re-keyed to `swim` would make the
+			// button without ever logging anything under it.
+			const walk = JSON.parse(rows.find((l) => l.includes('"walk"') && !l.includes('"track"')));
 			const swim = { ...walk, hid: 'swim0000', slug: walk.slug.replace('walk', 'swim'), field: 'swim', content_hash: '0'.repeat(64), raw_input: 'occur swim' };
 			// Typed, as a person would: the page's own command, so its own beat
 			// refreshes the bar. The chooser is awaited BEFORE the echo, never

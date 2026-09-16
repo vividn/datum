@@ -13,10 +13,9 @@ export interface DatumTime {
  * The intent verbs a field spec may carry as its default.
  *
  * Serialized kebab-case, mirroring `Action` in
- * crates/datum-core/src/action.rs. The slot is OPTIONAL (da-emze): a spec
- * minted to hold a colour or a tag was never asked what a press means, and
- * carries no verb — `null` on the wire — so the log decides, exactly as it
- * does for a field with no spec at all.
+ * crates/datum-core/src/action.rs. Every spec carries one (da-c8mh): the
+ * first log of a field writes the spec that says what a press of it means,
+ * so a spec without a verb does not exist.
  */
 export type DefaultAction = 'occur' | 'start' | 'stop' | 'switch' | 'block' | 'add' | 'note';
 
@@ -24,14 +23,13 @@ export type DefaultAction = 'occur' | 'start' | 'stop' | 'switch' | 'block' | 'a
  * The slice of a field spec the web app reads, as `datum fields --json`
  * reports it — only the keys the widget bar needs are named.
  *
- * The JSON key is `default_verb`, not `default_action` — kept for wire
- * compatibility with stored rows (see `FieldSpec` in
+ * The JSON key is `verb` (see `FieldSpec` in
  * crates/datum-core/src/field_spec/spec.rs).
  */
 export interface FieldSpec {
 	field: string;
-	/** Absent or `null` = «the log decides» (da-emze). */
-	default_verb?: DefaultAction | null;
+	/** What a bare press of the field means. Always present (da-c8mh). */
+	verb: DefaultAction;
 	/** Allowed states for a switch field. Absent/null = unconstrained. */
 	allowed_states?: string[] | null;
 	color?: string | null;

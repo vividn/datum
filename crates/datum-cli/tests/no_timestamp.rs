@@ -30,7 +30,7 @@ fn occur_minus_t_is_timeless_point() {
     let db = fresh_db();
     run_cli(&["occur", "coffee", "-T"], &db).expect("occur -T");
     assert_count!(db, "coffee", 1);
-    let e = &db.entries_for_field("coffee", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     // occur -T: state=None, dur="MOMENT" (da-ju71.2) → Point. `-T`
     // suppresses the timestamp, not the occur-shape intent.
     assert_entry_matches!(e, field: "coffee", verb: "point");
@@ -53,7 +53,7 @@ fn occur_minus_t_is_timeless_point() {
 fn start_minus_t_is_timeless_point() {
     let db = fresh_db();
     run_cli(&["start", "sleep", "-T"], &db).expect("start -T");
-    let e = &db.entries_for_field("sleep", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "sleep")[0];
     // start -T: action canonicalizes state=true, dur=MOMENT → Point.
     assert_entry_matches!(e, verb: "point", state: true);
     assert!(
@@ -68,7 +68,7 @@ fn start_minus_t_is_timeless_point() {
 fn stop_minus_t_is_timeless_point() {
     let db = fresh_db();
     run_cli(&["stop", "task", "-T"], &db).expect("stop -T");
-    let e = &db.entries_for_field("task", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "task")[0];
     // stop -T: action canonicalizes state=false, dur=MOMENT → Point.
     assert_entry_matches!(e, verb: "point", state: false);
     assert!(
@@ -83,7 +83,7 @@ fn stop_minus_t_is_timeless_point() {
 fn end_minus_t_is_timeless_point() {
     let db = fresh_db();
     run_cli(&["end", "task", "-T"], &db).expect("end -T");
-    let e = &db.entries_for_field("task", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "task")[0];
     assert_entry_matches!(e, verb: "point", state: false);
     assert!(
         slug_is_timeless(e.slug.as_str()),
@@ -97,7 +97,7 @@ fn end_minus_t_is_timeless_point() {
 fn switch_minus_t_preserves_value() {
     let db = fresh_db();
     run_cli(&["switch", "mood", "happy", "-T"], &db).expect("switch -T");
-    let e = &db.entries_for_field("mood", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "mood")[0];
     // The primary value ("happy") still lands on the entry — `-T` only
     // suppresses the timestamp, not the payload. state="happy", dur=MOMENT
     // → Point.
@@ -114,7 +114,7 @@ fn switch_minus_t_preserves_value() {
 fn add_minus_t_is_timeless_point() {
     let db = fresh_db();
     run_cli(&["add", "note", "-T"], &db).expect("add -T");
-    let e = &db.entries_for_field("note", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "note")[0];
     // add -T: state=None (Add doesn't canonicalize), dur=None → Point.
     assert_entry_matches!(e, verb: "point");
     assert!(
@@ -137,7 +137,7 @@ fn add_minus_t_is_timeless_point() {
 fn minus_t_entry_is_timeless_occur_time_none() {
     let db = fresh_db();
     run_cli(&["occur", "coffee", "-T"], &db).expect("occur coffee -T");
-    let e = &db.entries_for_field("coffee", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     assert!(
         e.occur_time.is_none(),
         "`-T` must leave occur_time NULL (timeless), got {:?}",
@@ -157,7 +157,7 @@ fn minus_t_keeps_extra_data_kv_pairs() {
     let db = fresh_db();
     run_cli(&["occur", "word", "-T", "pos=verb", "srcLang=pt"], &db)
         .expect("occur word -T pos=verb srcLang=pt");
-    let e = &db.entries_for_field("word", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "word")[0];
     let data = e.data.as_ref().expect("kv pairs land in extra_data");
     assert_eq!(data.get("pos"), Some(&serde_json::json!("verb")));
     assert_eq!(data.get("srcLang"), Some(&serde_json::json!("pt")));
@@ -238,7 +238,7 @@ fn minus_t_with_z_flag_errors() {
 fn without_minus_t_occur_still_timestamps() {
     let db = fresh_db();
     run_cli(&["occur", "coffee"], &db).expect("plain occur");
-    let e = &db.entries_for_field("coffee", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     assert!(
         e.occur_time.is_some(),
         "plain `occur` must still stamp start_time"

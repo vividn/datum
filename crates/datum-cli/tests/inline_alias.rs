@@ -33,7 +33,7 @@ fn alias_flag_records_canonical_form_and_round_trips() {
     // invocation and routes `bedtime` → `start sleep -c naptime`.
     run_cli(&["bedtime"], &db).expect("alias dispatch");
 
-    let entries = db.entries_for_field("sleep", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "sleep");
     // Two entries: the original `start sleep -c naptime --alias bedtime`
     // and the alias-expanded `bedtime` re-run.
     assert_eq!(entries.len(), 2);

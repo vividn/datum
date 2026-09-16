@@ -84,7 +84,7 @@ fn delete_by_slug_tombstones_entry() {
     // interpolation path from A1, which the slug-lookup case relies on.
     // da-ivld: id_structure is body-only; `<field>:` prefix is implicit.
     run_cli(&["occur", "event", "--id", "fixed"], &db).expect("seed event");
-    let seeded = &db.entries_for_field("event", None).unwrap()[0];
+    let seeded = &datum_core::test_util::logged_entries(&db, "event")[0];
     let slug = seeded.slug.clone();
     assert_eq!(slug, "event:fixed", "slug interpolation must resolve");
 
@@ -147,7 +147,7 @@ fn delete_targets_one_row_among_many() {
 
     // Only the targeted row is tombstoned; the sibling survives intact.
     assert_count!(db, "coffee", 1);
-    let surviving = &db.entries_for_field("coffee", None).unwrap()[0];
+    let surviving = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     assert_eq!(surviving.slug, keeper.slug, "non-targeted row must survive");
     assert!(
         db.get_entry(&keeper.slug).is_ok(),

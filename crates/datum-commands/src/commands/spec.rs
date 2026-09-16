@@ -16,7 +16,7 @@ use crate::config::device_id;
 pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
     match sub {
         SpecCommand::Show { field, text } => match db.load_spec(&field)? {
-            Some(spec) if text => render_spec_text(&spec, db.field_verb(&field)?),
+            Some(spec) if text => render_spec_text(&spec),
             Some(spec) => println!("{}", serde_json::to_string_pretty(&spec)?),
             None => println!("No spec defined for field '{field}'"),
         },
@@ -66,15 +66,27 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         s.field = args.field.clone();
         s
     } else {
-        db.load_spec(&args.field)?
-            .unwrap_or_else(|| FieldSpec::new(&args.field))
+        match db.load_spec(&args.field)? {
+            Some(s) => s,
+            // da-c8mh: a spec cannot be born verbless. On a field with a
+            // log, `--verb` is optional and the log answers once; on a new
+            // one the user is asked, because there is nothing to read.
+            // Naming the states a field can be in says it is a switch
+            // field, the same claim `spec add-state` makes.
+            None if args.verb.is_none() && !args.states.is_empty() => {
+                FieldSpec::new(&args.field, Action::Switch)
+            }
+            None => FieldSpec::new(
+                &args.field,
+                crate::commands::track::resolve_verb(&args.field, args.verb.as_deref(), db)?,
+            ),
+        }
     };
 
-    if let Some(dv) = &args.default_verb {
-        spec.default_verb = Some(
-            dv.parse::<Action>()
-                .map_err(|e| anyhow::anyhow!("Invalid --default-verb: {e}"))?,
-        );
+    if let Some(v) = &args.verb {
+        spec.verb = v
+            .parse::<Action>()
+            .map_err(|e| anyhow::anyhow!("Invalid --verb: {e}"))?;
     }
     if !args.states.is_empty() {
         spec.allowed_states = Some(args.states.clone());
@@ -178,8 +190,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         spec.tags = args.tags.clone();
     }
 
-    spec.validate_default_verb()
-        .map_err(|e| anyhow::anyhow!(e))?;
+    spec.validate_verb().map_err(|e| anyhow::anyhow!(e))?;
 
     // Always regenerate derived aliases from the current shape.
     spec.regenerate_derived_aliases();
@@ -222,9 +233,12 @@ fn spec_add_state(
     description: Option<&str>,
     db: &Db,
 ) -> Result<()> {
-    let mut spec = db
-        .load_spec(field)?
-        .unwrap_or_else(|| FieldSpec::new(field));
+    let mut spec = match db.load_spec(field)? {
+        Some(s) => s,
+        // A field named only by its states is a switch field — that is
+        // what `add-state` says about it (da-c8mh).
+        None => FieldSpec::new(field, Action::Switch),
+    };
 
     let states = spec.allowed_states.get_or_insert_with(Vec::new);
     let existed = states.iter().any(|s| s == name);
@@ -239,8 +253,7 @@ fn spec_add_state(
             .insert(name.to_string(), d.to_string());
     }
 
-    spec.validate_default_verb()
-        .map_err(|e| anyhow::anyhow!(e))?;
+    spec.validate_verb().map_err(|e| anyhow::anyhow!(e))?;
     spec.regenerate_derived_aliases();
 
     let report = db.save_field_spec_with_report(&spec)?;
@@ -256,15 +269,9 @@ fn spec_add_state(
 /// for programmatic use, but a typed-out reading of the spec's intent reads
 /// faster for humans. This format prints field-level metadata first, then
 /// per-state lines listing color + description side by side (da-nhzo).
-/// `from_log` is what [`Db::field_verb`] answers for this field — printed
-/// when the spec declares no verb of its own, so the inference a verbless
-/// spec leans on is visible rather than guessed at (da-emze).
-fn render_spec_text(spec: &FieldSpec, from_log: Action) {
+fn render_spec_text(spec: &FieldSpec) {
     println!("{}", spec.field);
-    match spec.default_verb {
-        Some(verb) => println!("  verb: {verb}"),
-        None => println!("  verb: (from the log: {from_log})"),
-    }
+    println!("  verb: {}", spec.verb);
     if let Some(d) = &spec.description {
         println!("  description: {d}");
     }
@@ -323,12 +330,12 @@ mod tests {
     fn cmd_spec_set_flag_flow_creates_derived_aliases() {
         let db = Db::open_in_memory().unwrap();
 
-        // spec set mood --default-verb switch --state happy --state sad \
+        // spec set mood --verb switch --state happy --state sad \
         //               --color green --id-template "%field%:%state%"
         let args = SpecSetArgs {
             field: "mood".to_string(),
             from_json: None,
-            default_verb: Some("switch".to_string()),
+            verb: Some("switch".to_string()),
             states: vec!["happy".to_string(), "sad".to_string()],
             color: Some("green".to_string()),
             state_colors: vec!["happy=00ff00".to_string()],
@@ -370,7 +377,7 @@ mod tests {
         let args2 = SpecSetArgs {
             field: "mood".to_string(),
             from_json: None,
-            default_verb: None,
+            verb: None,
             states: vec!["happy".to_string()],
             color: None,
             state_colors: vec![],
@@ -402,7 +409,7 @@ mod tests {
         spec_set(
             SpecSetArgs {
                 field: "mood".to_string(),
-                default_verb: Some("switch".to_string()),
+                verb: Some("switch".to_string()),
                 states: vec!["happy".to_string(), "sad".to_string()],
                 state_descriptions: vec!["happy=joyful".to_string()],
                 ..Default::default()
@@ -473,6 +480,7 @@ mod tests {
         spec_set(
             SpecSetArgs {
                 field: "mood".to_string(),
+                verb: Some("switch".to_string()),
                 state_colors: vec!["happy=00ff00".to_string()],
                 state_descriptions: vec!["happy=joyful".to_string()],
                 ..Default::default()

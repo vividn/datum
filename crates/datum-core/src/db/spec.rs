@@ -17,6 +17,44 @@ use super::types::{AliasConflict, AliasConflictReason, SaveSpecReport};
 use super::Db;
 
 impl Db {
+    /// Deserialize a stored `spec_json`.
+    ///
+    /// A spec written before da-c8mh spells its verb `default_verb` —
+    /// the serde alias on [`FieldSpec::verb`] reads that — and the
+    /// verbless specs da-emze allowed store it as `null`. Those carry no
+    /// answer at all, so the verb is filled from the field's own log
+    /// ([`Db::verb_from_field_log`]), the same evidence `track` leans on.
+    /// An existing database therefore needs no migration.
+    pub(crate) fn parse_spec(&self, json: &str) -> Result<FieldSpec> {
+        let err = match serde_json::from_str::<FieldSpec>(json) {
+            Ok(spec) => return Ok(spec),
+            Err(err) => err,
+        };
+        let Ok(mut value) = serde_json::from_str::<serde_json::Value>(json) else {
+            return Err(err.into());
+        };
+        let Some(obj) = value.as_object_mut() else {
+            return Err(err.into());
+        };
+        let stated = |key: &str| obj.get(key).is_some_and(|v| !v.is_null());
+        if stated("verb") || stated("default_verb") {
+            // A verb IS stated and the spec still does not read: that is
+            // a real error, not the old shape.
+            return Err(err.into());
+        }
+        let field = obj
+            .get("field")
+            .and_then(|f| f.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let verb = self.verb_from_field_log(&field)?.unwrap_or(Action::Occur);
+        // Both keys would be the same field to serde (they are aliases),
+        // and two of them is a duplicate-field error.
+        obj.remove("default_verb");
+        obj.insert("verb".to_string(), serde_json::to_value(verb)?);
+        Ok(serde_json::from_value(value)?)
+    }
+
     /// Load a field spec by name. None if not defined.
     pub fn load_spec(&self, field: &str) -> Result<Option<FieldSpec>> {
         let json: Option<String> = self
@@ -28,7 +66,7 @@ impl Db {
             )
             .optional()?;
         match json {
-            Some(j) => Ok(Some(serde_json::from_str(&j)?)),
+            Some(j) => Ok(Some(self.parse_spec(&j)?)),
             None => Ok(None),
         }
     }
@@ -36,21 +74,43 @@ impl Db {
     /// What a bare press of `field` means: the verb its spec declares,
     /// else the one its log implies ([`verb_from_log`]).
     ///
-    /// A spec's verb is optional (da-emze) — a spec minted to hold a
-    /// colour or a tag was never asked the question — so every reader that
-    /// wants a verb asks for it here rather than reading the slot, and an
-    /// unspecced field and a verbless spec answer alike.
+    /// Every spec has a verb (da-c8mh), so this only falls back to the log
+    /// for a field with no spec at all — a field the first log is about to
+    /// mint one for.
     pub fn field_verb(&self, field: &str) -> Result<Action> {
-        if let Some(verb) = self.load_spec(field)?.and_then(|s| s.default_verb) {
-            return Ok(verb);
+        if let Some(spec) = self.load_spec(field)? {
+            return Ok(spec.verb);
         }
+        Ok(self.verb_from_field_log(field)?.unwrap_or(Action::Occur))
+    }
+
+    /// The verb `field`'s own log implies, or `None` when the field has
+    /// no logged state to read — the evidence [`Db::field_verb`] and
+    /// `datum track` lean on for a field that has never been specced.
+    /// TRACKED / IGNORED rows are statuses, not states, so they neither
+    /// count as evidence nor as "has a log" (da-5ifp).
+    pub fn verb_from_field_log(&self, field: &str) -> Result<Option<Action>> {
         let states: Vec<serde_json::Value> = self
             .distinct_field_states()?
             .into_iter()
             .filter(|(f, s)| f == field && *s != TRACKED_STATE_VALUE && !is_ignored_state(s))
             .map(|(_, s)| s)
             .collect();
-        Ok(verb_from_log(&states))
+        if states.is_empty() && !self.field_has_entries(field)? {
+            return Ok(None);
+        }
+        Ok(Some(verb_from_log(&states)))
+    }
+
+    /// True when at least one entry exists for `field` (any state,
+    /// including none).
+    pub fn field_has_entries(&self, field: &str) -> Result<bool> {
+        let n: i64 = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM entries WHERE field = ?1)",
+            params![field],
+            |row| row.get(0),
+        )?;
+        Ok(n != 0)
     }
 
     /// Every field that has a declared spec, alphabetical. A spec is a
@@ -90,7 +150,7 @@ impl Db {
         })?;
         for r in rows {
             let (field, json) = r.map_err(DatumError::Db)?;
-            let spec: FieldSpec = serde_json::from_str(&json)?;
+            let spec = self.parse_spec(&json)?;
             out.insert(field, spec);
         }
         Ok(out)
@@ -208,7 +268,7 @@ impl Db {
         let rows = stmt.query_map(params![needle], |row| row.get::<_, String>(0))?;
         let mut out = Vec::new();
         for row in rows {
-            let spec: FieldSpec = serde_json::from_str(&row?)?;
+            let spec = self.parse_spec(&row?)?;
             if spec.has_tag(tag) {
                 out.push(spec);
             }
@@ -222,7 +282,7 @@ impl Db {
         let mut stmt = self.conn.prepare("SELECT spec_json FROM field_specs")?;
         let specs = stmt.query_map([], |row| row.get::<_, String>(0))?;
         for spec_json in specs {
-            let spec: FieldSpec = serde_json::from_str(&spec_json?)?;
+            let spec = self.parse_spec(&spec_json?)?;
             registry.register_field(spec);
         }
 
@@ -256,7 +316,7 @@ mod tag_tests {
     #[test]
     fn save_mirrors_tags_into_column() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::with_verb("dishes", Action::Occur);
+        let mut spec = FieldSpec::new("dishes", Action::Occur);
         spec.tags = vec!["chore".into(), "daily".into()];
         db.save_field_spec(&spec).unwrap();
 
@@ -288,14 +348,14 @@ mod tag_tests {
     #[test]
     fn list_specs_by_tag_filters_membership_not_substring() {
         let db = Db::open_in_memory().unwrap();
-        let mut dishes = FieldSpec::with_verb("dishes", Action::Occur);
+        let mut dishes = FieldSpec::new("dishes", Action::Occur);
         dishes.tags = vec!["chore".into()];
-        let mut laundry = FieldSpec::with_verb("laundry", Action::Occur);
+        let mut laundry = FieldSpec::new("laundry", Action::Occur);
         laundry.tags = vec!["chore".into(), "weekly".into()];
-        let mood = FieldSpec::with_verb("mood", Action::Switch);
+        let mood = FieldSpec::new("mood", Action::Switch);
         // `chores` (with trailing s) must NOT match a search for `chore` —
         // the LIKE prefilter would, but the Rust verifier rejects it.
-        let mut almost = FieldSpec::with_verb("almost", Action::Occur);
+        let mut almost = FieldSpec::new("almost", Action::Occur);
         almost.tags = vec!["chores".into()];
 
         db.save_field_spec(&dishes).unwrap();
@@ -317,7 +377,7 @@ mod tag_tests {
     #[test]
     fn save_leaves_render_json_null_when_render_is_none() {
         let db = Db::open_in_memory().unwrap();
-        let spec = FieldSpec::with_verb("plain", Action::Occur);
+        let spec = FieldSpec::new("plain", Action::Occur);
         db.save_field_spec(&spec).unwrap();
 
         let stored: Option<String> = db
@@ -341,7 +401,7 @@ mod tag_tests {
     #[test]
     fn save_mirrors_render_bool_into_column() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::with_verb("background_telemetry", Action::Occur);
+        let mut spec = FieldSpec::new("background_telemetry", Action::Occur);
         spec.presentation.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 
@@ -362,7 +422,7 @@ mod tag_tests {
     #[test]
     fn save_mirrors_per_surface_render_into_column() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::with_verb("stretch_routine", Action::Occur);
+        let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
         let mut map = HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.presentation.render = Some(Render::PerSurface(map));
@@ -393,7 +453,7 @@ mod tag_tests {
     fn save_field_spec_rejects_colon_in_field_name() {
         use crate::error::DatumError;
         let db = Db::open_in_memory().unwrap();
-        let spec = FieldSpec::with_verb("weird:field", Action::Occur);
+        let spec = FieldSpec::new("weird:field", Action::Occur);
         let err = db.save_field_spec(&spec).unwrap_err();
         assert!(
             matches!(err, DatumError::InvalidFieldSpec(_)),
@@ -404,7 +464,7 @@ mod tag_tests {
     #[test]
     fn re_save_clears_render_json_when_spec_drops_render() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::with_verb("toggle", Action::Occur);
+        let mut spec = FieldSpec::new("toggle", Action::Occur);
         spec.presentation.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 
@@ -421,5 +481,89 @@ mod tag_tests {
             )
             .unwrap();
         assert!(stored.is_none(), "expected NULL after drop, got {stored:?}");
+    }
+}
+
+/// da-c8mh's compatibility half: a spec written before this bead is still
+/// readable. The old key `default_verb` is an alias of `verb`, and the
+/// verbless specs da-emze allowed (`"default_verb": null`) take the verb
+/// their own log implies.
+#[cfg(test)]
+mod stored_verb_tests {
+    use super::Db;
+    use crate::action::Action;
+
+    fn store(db: &Db, field: &str, spec_json: &str) {
+        db.conn()
+            .execute(
+                "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
+                rusqlite::params![field, spec_json],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn the_old_key_is_read_as_the_verb() {
+        let db = Db::open_in_memory().unwrap();
+        store(
+            &db,
+            "activity",
+            r#"{"field":"activity","default_verb":"switch","color":"blue"}"#,
+        );
+
+        let spec = db.load_spec("activity").unwrap().unwrap();
+        assert_eq!(spec.verb, Action::Switch);
+        assert_eq!(spec.color.as_deref(), Some("blue"));
+        assert_eq!(db.field_verb("activity").unwrap(), Action::Switch);
+
+        // Every other reader of a stored spec goes the same way.
+        let batch = db.batch_load_specs(&["activity"]).unwrap();
+        assert_eq!(batch["activity"].verb, Action::Switch);
+        let registry = db.load_registry().unwrap();
+        assert_eq!(
+            registry.field_spec("activity").unwrap().verb,
+            Action::Switch
+        );
+
+        // And a re-save writes the new key.
+        db.save_field_spec(&spec).unwrap();
+        let stored: String = db
+            .conn()
+            .query_row(
+                "SELECT spec_json FROM field_specs WHERE field = 'activity'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let stored: serde_json::Value = serde_json::from_str(&stored).unwrap();
+        assert_eq!(stored["verb"], "switch");
+        assert!(stored["default_verb"].is_null());
+    }
+
+    #[test]
+    fn a_verbless_spec_takes_the_verb_its_log_implies() {
+        let db = Db::open_in_memory().unwrap();
+        store(&db, "mood", r#"{"field":"mood","default_verb":null}"#);
+        store(&db, "shape", r#"{"field":"shape"}"#);
+
+        // No log yet: the fallback verb, and nothing errors.
+        assert_eq!(db.load_spec("mood").unwrap().unwrap().verb, Action::Occur);
+
+        crate::test_util::entry_builder("mood")
+            .state(serde_json::json!("happy"))
+            .insert(&db);
+        crate::test_util::entry_builder("shape")
+            .state(serde_json::json!(true))
+            .insert(&db);
+
+        assert_eq!(db.load_spec("mood").unwrap().unwrap().verb, Action::Switch);
+        assert_eq!(db.load_spec("shape").unwrap().unwrap().verb, Action::Start);
+    }
+
+    #[test]
+    fn a_spec_that_is_broken_for_another_reason_still_errors() {
+        let db = Db::open_in_memory().unwrap();
+        store(&db, "bad", r#"{"field":"bad","verb":"pirouette"}"#);
+        assert!(db.load_spec("bad").is_err());
     }
 }

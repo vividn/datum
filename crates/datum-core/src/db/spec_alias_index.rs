@@ -63,7 +63,7 @@ fn build_spec_alias_index(db: &Db) -> Result<SpecAliasIndex> {
 
     let mut specs: Vec<FieldSpec> = Vec::new();
     for row in rows {
-        specs.push(serde_json::from_str(&row?)?);
+        specs.push(db.parse_spec(&row?)?);
     }
     // The indexing itself is pure — the browser runs the same code over the
     // specs it holds (da-5kbj).

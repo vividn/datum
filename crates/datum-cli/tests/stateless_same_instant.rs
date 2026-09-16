@@ -17,9 +17,7 @@ use datum_core::test_util::fresh_db;
 /// Live (non-superseded, non-tombstoned) rows for a field, oldest first by
 /// slug so the assertions name slugs rather than counting.
 fn live_slugs(db: &Db, field: &str) -> Vec<String> {
-    let mut slugs: Vec<String> = db
-        .entries_for_field(field, None)
-        .unwrap()
+    let mut slugs: Vec<String> = datum_core::test_util::logged_entries(db, field)
         .into_iter()
         .filter(|e| e.deleted_at.is_none() && e.superseded_by.is_none())
         .map(|e| e.slug.to_string())
@@ -70,7 +68,7 @@ fn two_transactions_on_one_day_both_land() {
 
     assert_eq!(live_slugs(&db, "tx"), vec!["tx:electricity", "tx:rent"]);
 
-    let entries = db.entries_for_field("tx", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "tx");
     let times: Vec<String> = entries
         .iter()
         .map(|e| e.occur_time.as_ref().unwrap().utc.to_rfc3339())
@@ -180,7 +178,7 @@ fn multi_invocation_keeps_two_transactions_apart() {
 
     assert_eq!(live_slugs(&db, "tx"), vec!["tx:elec", "tx:rent"]);
     let amounts: Vec<serde_json::Value> = {
-        let mut entries = db.entries_for_field("tx", None).unwrap();
+        let mut entries = datum_core::test_util::logged_entries(&db, "tx");
         entries.sort_by(|a, b| a.slug.cmp(&b.slug));
         entries
             .iter()
@@ -218,7 +216,7 @@ fn multi_invocation_still_folds_two_switches() {
     )
     .expect("both sides land");
 
-    let entries = db.entries_for_field("body", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "body");
     assert_eq!(entries.len(), 1, "the two switches fold to one row");
     assert_eq!(
         entries[0].state,

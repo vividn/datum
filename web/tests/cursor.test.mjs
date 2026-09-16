@@ -113,7 +113,9 @@ async function barRun(page, line) {
 	await page.waitForFunction(
 		`(${receiptNow})() !== ${JSON.stringify(before)} && (${receiptNow})() !== ''`
 	);
-	return page.locator('.prompt-bar .doc .receipt').innerText();
+	// The LAST receipt: a field's first log draws the TRACK document that
+	// declares it as a section of its own (da-c8mh).
+	return page.locator('.prompt-bar .doc .receipt').last().innerText();
 }
 
 describe('the time cursor', () => {
@@ -158,7 +160,9 @@ describe('the time cursor', () => {
 			const [tea] = (await app.entries()).filter((e) => e.field === 'tea');
 			assert.equal(Date.parse(tea.occur_time.utc), cursor, JSON.stringify(tea.occur_time));
 			const tail = await app.paneTable('tail');
-			const row = tail.rows.find((r) => r.includes('tea'));
+			// The LAST tea row: the TRACK document that declared the field
+			// (da-c8mh) is the row above it.
+			const row = tail.rows.filter((r) => r.includes('tea')).at(-1);
 			assert.ok(row?.[tail.keys.indexOf('time')].startsWith(text.slice(3)), JSON.stringify(row));
 			assert.equal(await pillText(page), null);
 			await page.waitForFunction(() => {

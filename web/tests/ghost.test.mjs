@@ -48,7 +48,7 @@ async function slowRunner(page, ms) {
 
 /** Track `coffee` and get its button onto the widget bar. */
 async function withCoffee(app) {
-	assert.equal((await app.run(['spec', 'set', 'coffee', '--default-verb', 'occur'])).code, 0);
+	assert.equal((await app.run(['spec', 'set', 'coffee', '--verb', 'occur'])).code, 0);
 	await app.submit('tail');
 	await app.idle();
 	await app.page.locator('.bar [data-field="coffee"]').waitFor();

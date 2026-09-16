@@ -311,7 +311,7 @@ async function exec(
 	const wasi = new WASI(args, vars, fds, { debug: false });
 	// The shim (0.4.2, the latest) sizes argv in UTF-16 units and writes it
 	// as UTF-8, so a non-ASCII argument overran its buffer into the next one:
-	// `spec set 日本語 --default-verb occur` arrived as `occuS`. Sized in
+	// `spec set 日本語 --verb occur` arrived as `occuS`. Sized in
 	// bytes here, the way it already sizes the environment.
 	const argvBytes = args.reduce((n, arg) => n + new TextEncoder().encode(arg).length + 1, 0);
 	wasi.wasiImport.args_sizes_get = (count: number, size: number) => {

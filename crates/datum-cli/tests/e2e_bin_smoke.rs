@@ -91,8 +91,12 @@ fn live_rows(db: &Db) -> Vec<Row> {
     let mut stmt = db
         .conn()
         .prepare(
+            // The rows a command LOGGED: a field's TRACK document
+            // (da-c8mh) declares it and is not one of them.
             "SELECT field, state, dur FROM entries \
-             WHERE deleted_at IS NULL ORDER BY rowid",
+             WHERE deleted_at IS NULL \
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL \
+             ORDER BY rowid",
         )
         .expect("prepare live_rows");
     stmt.query_map([], |r| {

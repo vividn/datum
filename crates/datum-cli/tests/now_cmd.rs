@@ -395,7 +395,7 @@ fn now_dispatches_end_to_end_via_run_cli() {
     // `datum now -A`). This proves the arg-parse → dispatch path is alive;
     // output content is asserted by the render_* tests above.
     let db = fresh_db();
-    run_cli(&["track", "mood"], &db).expect("track dispatch");
+    run_cli(&["track", "mood", "--verb", "switch"], &db).expect("track dispatch");
     // `-t +1` keeps the switch's timestamp distinct from `track`'s default
     // `now()` — both write Switch entries with slug `mood:<start_time>`, and
     // on fast machines a same-millisecond collision hard-errors (da-p5j,
@@ -415,8 +415,8 @@ fn now_dispatches_end_to_end_via_run_cli() {
     run_cli(&["now", "--bare"], &db).expect("now --bare dispatch");
     run_cli(&["now", "--no-color", "--cols", "60"], &db).expect("now --no-color --cols dispatch");
 
-    // Sanity: both writes landed. da-5ifp: `track` writes a switch to
-    // TRACKED, and the `switch happy` is a second switch entry.
+    // Sanity: both writes landed — `track`'s declaration (da-c8mh marks it
+    // as one) and the `switch happy` beside it.
     let entries = db.entries_for_field("mood", None).unwrap();
     assert_eq!(entries.len(), 2);
     assert!(entries.iter().all(|e| e.verb == Verb::Switch));

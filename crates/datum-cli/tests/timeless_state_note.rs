@@ -59,7 +59,15 @@ fn paint(color: &str, body: &str) -> String {
 /// that renders the state. (The badge is the field's own bg chip on every
 /// row, timed or not.)
 fn state_part(stdout: &str, field: &str) -> String {
-    let line = stdout.lines().nth(1).expect("info line");
+    // The entry's own info line — the one under its `CREATE` header. A
+    // field's first log prints the TRACK document that declares it first
+    // (da-c8mh), and data lines may follow.
+    let lines: Vec<&str> = stdout.lines().collect();
+    let header = lines
+        .iter()
+        .rposition(|l| l.contains("CREATE"))
+        .expect("CREATE header");
+    let line = lines[header + 1];
     let badge_end = line.find(field).expect("field badge") + field.len();
     line[badge_end..].to_string()
 }
@@ -235,7 +243,8 @@ fn tail_state_cell_is_the_same_fg_label() {
     let (_dir, db) = tmp_db();
     ok(&db, &["switch", "environment", "outside", "-T"]);
     let tail = ok(&db, &["tail"]);
-    let line = tail.lines().nth(1).expect("tail row");
+    // The last row: the field's TRACK document (da-c8mh) is the row above.
+    let line = tail.lines().last().expect("tail row");
     let cell = format!(
         "{}{}",
         paint(&fg("outside"), "¢"),

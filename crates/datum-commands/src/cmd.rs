@@ -79,6 +79,15 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
     if !hids.is_empty() {
         let _ = datum_core::last_docs::set_last_docs(db, &hids);
     }
+    // da-c8mh: every TRACK row that just landed declares a field; write
+    // the spec it declares now that the rows are committed.
+    for hid in &hids {
+        if let Ok(row) = db.get_entry(hid.as_str()) {
+            if let Some(verb) = datum_core::track::track_verb(&row) {
+                crate::commands::helpers::save_track_spec(db, &row.field, verb)?;
+            }
+        }
+    }
 
     // da-dayk: render every persisted row through the same
     // `show_create_with_context` path single-row dispatch uses, with
@@ -161,17 +170,37 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
 /// slug get the default `<field>:<timestamp>` rebuild; entries
 /// carrying an `id_structure` template are re-interpolated against
 /// the post-mutation state via [`datum_core::field_spec::interpolate`].
+///
+/// da-c8mh: a TRACK document declares its field one millisecond AHEAD of
+/// the shared instant — the declaration precedes the thing declared, and
+/// it lands on an instant no side can be sitting on, since every side has
+/// just been moved onto `shared`. Two sides declaring the same field
+/// produce identical rows, which the same-field merge collapses to one.
 fn normalize_shared_occur_time(
     mut entries: Vec<datum_core::entry::Entry>,
 ) -> Vec<datum_core::entry::Entry> {
-    let Some(shared) = entries.first().and_then(|e| e.occur_time.clone()) else {
+    let is_track = |e: &datum_core::entry::Entry| datum_core::track::track_verb(e).is_some();
+    let Some(shared) = entries
+        .iter()
+        .find(|e| !is_track(e))
+        .and_then(|e| e.occur_time.clone())
+    else {
         return entries;
     };
-    for entry in entries.iter_mut().skip(1) {
-        if entry.occur_time.as_ref().map(|t| &t.utc) == Some(&shared.utc) {
+    let mut declared = shared.clone();
+    declared.utc -= chrono::Duration::milliseconds(1);
+    declared.uncertainty = None;
+    for entry in entries.iter_mut() {
+        // A timeless TRACK row has no instant to move; it is already ahead
+        // of its entry in the create_time the two are read by.
+        if is_track(entry) && entry.occur_time.is_none() {
             continue;
         }
-        entry.occur_time = Some(shared.clone());
+        let target = if is_track(entry) { &declared } else { &shared };
+        if entry.occur_time.as_ref().map(|t| &t.utc) == Some(&target.utc) {
+            continue;
+        }
+        entry.occur_time = Some(target.clone());
         // da-ivld: every entry now carries an id_structure; rebuild the
         // slug as `<field>:<body>` where body = interpolate(id_structure).
         if let Some(tmpl) = entry.id_structure.clone() {
@@ -181,7 +210,7 @@ fn normalize_shared_occur_time(
             entry.slug = datum_core::ids::Slug(format!("{}:{}", entry.field, body));
         } else {
             entry.slug =
-                datum_core::entry::build_slug(&entry.field, Some(&shared), &entry.create_time);
+                datum_core::entry::build_slug(&entry.field, Some(target), &entry.create_time);
         }
         entry.content_hash = entry.expected_content_hash();
     }
@@ -365,7 +394,10 @@ mod tests {
         let mut args = LogArgs::with_field("coffee");
         args.rest = vec!["2".to_string()];
         log_entry(Action::Switch, args, &db).unwrap();
-        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
+        assert_eq!(
+            datum_core::test_util::logged_entries(&db, "coffee").len(),
+            1
+        );
 
         // Undo via `-u`: same command form with `args.undo = true`. The
         // matching entry is soft-deleted, so the live count drops to 0.
@@ -373,7 +405,10 @@ mod tests {
         undo_args.rest = vec!["2".to_string()];
         undo_args.undo = true;
         log_entry(Action::Switch, undo_args, &db).unwrap();
-        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 0);
+        assert_eq!(
+            datum_core::test_util::logged_entries(&db, "coffee").len(),
+            0
+        );
     }
 
     #[test]
@@ -388,14 +423,17 @@ mod tests {
         let mut b = LogArgs::with_field("coffee");
         b.rest = vec!["2".to_string()];
         log_entry(Action::Switch, b, &db).unwrap();
-        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 2);
+        assert_eq!(
+            datum_core::test_util::logged_entries(&db, "coffee").len(),
+            2
+        );
 
         // Undo only `switch coffee 2` — the `switch coffee 1` entry stays put.
         let mut undo = LogArgs::with_field("coffee");
         undo.rest = vec!["2".to_string()];
         undo.undo = true;
         log_entry(Action::Switch, undo, &db).unwrap();
-        let live = db.entries_for_field("coffee", None).unwrap();
+        let live = datum_core::test_util::logged_entries(&db, "coffee");
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].state, Some(serde_json::json!(1)));
     }
@@ -456,6 +494,7 @@ mod tests {
 
         let track_args = TrackArgs {
             field: "mood".to_string(),
+            verb: Some("switch".to_string()),
             color: Some("ff6600".to_string()),
             state_colors: vec!["happy=00ff00".to_string(), "sad=ff0000".to_string()],
             tags: vec![],
@@ -498,6 +537,7 @@ mod tests {
         crate::commands::track::track(
             TrackArgs {
                 field: "mood".to_string(),
+                verb: None,
                 color: None,
                 state_colors: vec![],
                 tags: vec![],
@@ -572,13 +612,13 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // da-ivld: id_structure is body-only; the `<field>:` prefix is implicit.
-        let mut spec = FieldSpec::with_verb("coffee", Action::Occur);
+        let mut spec = FieldSpec::new("coffee", Action::Occur);
         spec.id_template = Some("%uid%".to_string());
         db.save_field_spec(&spec).unwrap();
 
         log_entry(Action::Occur, log_args("coffee", vec![], None), &db).unwrap();
 
-        let entries = db.entries_for_field("coffee", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "coffee");
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         assert_eq!(
@@ -598,7 +638,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // Spec has one template; --id passes a different one → --id wins.
-        let mut spec = FieldSpec::with_verb("coffee", Action::Occur);
+        let mut spec = FieldSpec::new("coffee", Action::Occur);
         spec.id_template = Some("%uid%".to_string());
         db.save_field_spec(&spec).unwrap();
 
@@ -609,7 +649,7 @@ mod tests {
         )
         .unwrap();
 
-        let entries = db.entries_for_field("coffee", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "coffee");
         let e = &entries[0];
         assert_eq!(e.id_structure.as_deref(), Some("override-%uid%"));
         let uid = e.short_uid();
@@ -629,7 +669,7 @@ mod tests {
         .unwrap();
 
         // Re-open registry path and fetch by slug — must still have id_structure.
-        let entries = db.entries_for_field("coffee", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "coffee");
         let e = &entries[0];
         let fetched = db.get_entry(&e.slug).unwrap();
         assert_eq!(fetched.id_structure.as_deref(), Some("%uid%"));
@@ -643,7 +683,7 @@ mod tests {
 
         log_entry(Action::Occur, log_args("coffee", vec![], None), &db).unwrap();
 
-        let entries = db.entries_for_field("coffee", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "coffee");
         let e = &entries[0];
         // da-ivld: no --id and no spec template ⇒ default-populate id_structure
         // from the entry's occur_time. Slug stays `<field>:<formatted occur_time>`.
@@ -664,7 +704,7 @@ mod tests {
         )
         .unwrap();
 
-        let entries = db.entries_for_field("coffee", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "coffee");
         let e = &entries[0];
         let uid = e.short_uid();
         assert_eq!(e.slug, format!("coffee:{uid}"));
@@ -692,7 +732,7 @@ mod tests {
 
         log_entry(Action::Occur, args, &db).unwrap();
 
-        let entries = db.entries_for_field("field", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "field");
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         assert_eq!(e.id_structure.as_deref(), Some("%occurTime%__%comment%"));
@@ -733,7 +773,7 @@ mod tests {
 
         log_entry(Action::Add, args, &db).unwrap();
 
-        let entries = db.entries_for_field("word__pt", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "word__pt");
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         assert_eq!(e.field, "word__pt");
@@ -764,9 +804,7 @@ mod tests {
         ];
         log_entry(Action::Add, args, &db).unwrap();
 
-        let original = db
-            .entries_for_field("word__pt", None)
-            .unwrap()
+        let original = datum_core::test_util::logged_entries(&db, "word__pt")
             .pop()
             .unwrap();
 
@@ -782,7 +820,7 @@ mod tests {
         )
         .unwrap();
 
-        let live = db.entries_for_field("word__es", None).unwrap();
+        let live = datum_core::test_util::logged_entries(&db, "word__es");
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].field, "word__es");
         assert_eq!(live[0].field_structure.as_deref(), Some("word__%srcLang%"));
@@ -797,7 +835,7 @@ mod tests {
 
         log_entry(Action::Occur, log_args("coffee", vec![], None), &db).unwrap();
 
-        let entries = db.entries_for_field("coffee", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "coffee");
         let e = &entries[0];
         assert_eq!(e.field, "coffee");
         assert_eq!(e.field_structure, None);
@@ -1024,7 +1062,7 @@ mod tests {
         )
         .unwrap();
 
-        let live = db.entries_for_field("gym", None).unwrap();
+        let live = datum_core::test_util::logged_entries(&db, "gym");
         assert_eq!(live.len(), 1, "rekey is a key-rename, not a copy");
         let data = live[0].data.as_ref().unwrap();
         assert_eq!(data["repetitions"], serde_json::json!(10));
@@ -1240,7 +1278,7 @@ mod tests {
         )
         .unwrap();
 
-        let live = db.entries_for_field("mood", None).unwrap();
+        let live = datum_core::test_util::logged_entries(&db, "mood");
         assert_eq!(live.len(), 1, "auto-rekey is in-place; no new row");
         assert_eq!(live[0].slug, "mood:sad");
     }
@@ -1270,7 +1308,7 @@ mod tests {
         )
         .unwrap();
 
-        let live = db.entries_for_field("task", None).unwrap();
+        let live = datum_core::test_util::logged_entries(&db, "task");
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].slug, "task:chore");
         let data = live[0].data.as_ref().unwrap();
@@ -1301,11 +1339,11 @@ mod tests {
         db.insert_entry(&make_entry_at("mood", 300, "d1")).unwrap();
 
         db.soft_delete_entry(&doomed_id).unwrap();
-        assert_eq!(db.entries_for_field("mood", None).unwrap().len(), 2);
+        assert_eq!(datum_core::test_util::logged_entries(&db, "mood").len(), 2);
 
         crate::commands::undo::undo(undo_args(None), &db).unwrap();
 
-        let live = db.entries_for_field("mood", None).unwrap();
+        let live = datum_core::test_util::logged_entries(&db, "mood");
         assert_eq!(live.len(), 3);
         assert!(live.iter().any(|e| e.slug == doomed_id));
     }
@@ -1333,7 +1371,7 @@ mod tests {
             .unwrap();
 
         crate::commands::undo::undo(undo_args(None), &db).unwrap();
-        let live = db.entries_for_field("mood", None).unwrap();
+        let live = datum_core::test_util::logged_entries(&db, "mood");
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].slug, id);
     }
@@ -1358,7 +1396,7 @@ mod tests {
         crate::commands::undo::undo(undo_args(Some(&a_slug)), &db).unwrap();
 
         // A is back, B is still tombstoned.
-        let live: Vec<_> = db.entries_for_field("mood", None).unwrap();
+        let live: Vec<_> = datum_core::test_util::logged_entries(&db, "mood");
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].slug, a_id);
         assert!(db
@@ -1727,16 +1765,18 @@ mod tests {
             &db,
         )
         .unwrap();
-        let inserted = db.entries_for_field("coffee", None).unwrap()[0]
+        let inserted = datum_core::test_util::logged_entries(&db, "coffee")[0]
             .slug
             .clone();
 
         crate::commands::get::get(GetArgs::default(), &db).unwrap();
 
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
-        assert_eq!(pointer.hids.len(), 1);
-        // Pointer hid resolves to the same entry the get rendered.
-        let resolved = datum_core::ids::resolve_quickid_single(&db, &pointer.hids[0]).unwrap();
+        // The entry and the TRACK document that declared its field, one
+        // `_LAST` group (da-c8mh).
+        assert_eq!(pointer.hids.len(), 2);
+        // The last pointer hid resolves to the same entry the get rendered.
+        let resolved = datum_core::ids::resolve_quickid_single(&db, &pointer.hids[1]).unwrap();
         assert_eq!(resolved.slug, inserted);
     }
 
@@ -1753,7 +1793,10 @@ mod tests {
             &db,
         )
         .unwrap();
-        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
+        assert_eq!(
+            datum_core::test_util::logged_entries(&db, "coffee").len(),
+            1
+        );
 
         crate::commands::del::del(
             DeleteArgs {
@@ -1766,7 +1809,10 @@ mod tests {
             &db,
         )
         .unwrap();
-        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 0);
+        assert_eq!(
+            datum_core::test_util::logged_entries(&db, "coffee").len(),
+            0
+        );
     }
 
     /// `_LAST` (no protection) resolves regardless of staleness — and bare
@@ -1863,7 +1909,7 @@ mod tests {
             &db,
         )
         .unwrap();
-        let slug = db.entries_for_field("coffee", None).unwrap()[0]
+        let slug = datum_core::test_util::logged_entries(&db, "coffee")[0]
             .slug
             .clone();
 
@@ -1905,7 +1951,7 @@ mod tests {
             &db,
         )
         .unwrap();
-        let live = db.entries_for_field("focus", None).unwrap();
+        let live = datum_core::test_util::logged_entries(&db, "focus");
         assert_eq!(live.len(), 1);
         let e = &live[0];
         assert_eq!(e.verb, Verb::Block);
@@ -1932,7 +1978,7 @@ mod tests {
             &db,
         )
         .unwrap();
-        let live = db.entries_for_field("phase", None).unwrap();
+        let live = datum_core::test_util::logged_entries(&db, "phase");
         assert_eq!(live.len(), 1);
         let e = &live[0];
         assert_eq!(e.verb, Verb::PointSwitch);
@@ -1957,7 +2003,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         log_entry(Action::Occur, make_add_args("mood", vec!["value=1"]), &db).unwrap();
-        let live = db.entries_for_field("mood", None).unwrap();
+        let live = datum_core::test_util::logged_entries(&db, "mood");
         assert_eq!(live.len(), 1);
         let e = &live[0];
         assert_eq!(

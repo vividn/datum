@@ -628,7 +628,9 @@ pub struct SpecSetArgs {
     /// one. Spelled `--json` until da-qt6z made that the global
     /// `--show json`; vividn picked the new name.
     pub from_json: Option<String>,
-    pub default_verb: Option<String>,
+    /// `--verb <occur|start|switch|add>` — what a bare press of the
+    /// field means. Required when the spec is being created (da-c8mh).
+    pub verb: Option<String>,
     pub states: Vec<String>,
     pub color: Option<String>,
     /// Per-state colors in `STATE=COLOR` form. An empty COLOR clears the
@@ -795,6 +797,9 @@ pub struct NowArgs {
 #[derive(Debug)]
 pub struct TrackArgs {
     pub field: String,
+    /// `--verb <occur|start|switch|add>`. Required for a field that has
+    /// neither a spec nor a log to read the answer off (da-c8mh).
+    pub verb: Option<String>,
     pub color: Option<String>,
     pub state_colors: Vec<String>,
     /// Each `--tag <name>` flag adds the tag to the field's spec

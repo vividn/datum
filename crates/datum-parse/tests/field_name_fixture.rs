@@ -53,14 +53,7 @@ fn judges_every_shared_case() {
 #[test]
 fn spec_set_refuses_every_name_the_fixture_calls_bad() {
     for case in &fixture().cases {
-        let argv = [
-            "datum",
-            "spec",
-            "set",
-            &case.field,
-            "--default-verb",
-            "occur",
-        ];
+        let argv = ["datum", "spec", "set", &case.field, "--verb", "occur"];
         let parsed = parse_argv(&argv.map(str::to_string));
         assert_eq!(parsed.is_ok(), case.ok, "{}: {parsed:?}", case.name);
         if let Err(e) = parsed {

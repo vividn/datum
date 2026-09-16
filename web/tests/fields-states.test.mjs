@@ -106,7 +106,7 @@ describe('a state field fills the widget with its states', () => {
 			await seed(
 				app,
 				[
-					'spec set mood --default-verb switch --state good --state bad --state-color good=#008000 --state-color bad=#ff0000 --color #800080',
+					'spec set mood --verb switch --state good --state bad --state-color good=#008000 --state-color bad=#ff0000 --color #800080',
 					'switch mood good -t 0930'
 				],
 				'mood'
@@ -164,7 +164,7 @@ describe('a state field fills the widget with its states', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			for (const field of ['alfa', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel'])
-				await app.submit(`spec set ${field} --default-verb occur`);
+				await app.submit(`spec set ${field} --verb occur`);
 			await seed(app, MOOD, 'mood');
 
 			const body = page.locator('section[data-pane="bar"] .body');

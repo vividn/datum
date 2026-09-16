@@ -35,7 +35,7 @@ fn double_start_does_not_error() {
     run_cli(&["start", "workout"], &db).expect("first start dispatch");
     run_cli(&["start", "workout"], &db).expect("second start must not error");
 
-    let entries = db.entries_for_field("workout", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "workout");
     assert_eq!(entries.len(), 2, "both start entries must be present");
 }
 
@@ -108,7 +108,7 @@ fn orphan_end_does_not_error() {
     // the stop entry.
     let db = fresh_db();
     run_cli(&["stop", "workout"], &db).expect("orphan stop must not error");
-    let entries = db.entries_for_field("workout", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "workout");
     assert_eq!(entries.len(), 1, "orphan stop entry lands");
     assert_eq!(entries[0].verb, datum_core::entry::Verb::Switch);
 }
@@ -171,7 +171,7 @@ fn auto_resolver_closes_older_open_after_delay() {
     // moves its stored instant to the newer's — a block stores its END —
     // so occur_time no longer separates the two. Tell them apart by
     // whether they carry a `dur`.
-    let entries = db.entries_for_field("workout", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "workout");
     let older = entries
         .iter()
         .find(|e| e.dur.is_some())
@@ -252,7 +252,7 @@ fn auto_resolver_skips_if_kept_both() {
 
     // And the older entry should STILL be ongoing (no end_time was
     // written by anyone).
-    let entries = db.entries_for_field("workout", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "workout");
     for e in &entries {
         assert!(
             e.dur.is_none(),
@@ -268,7 +268,7 @@ fn now_view_shows_overlap_warning() {
     // Two live ongoing entries on the same field produce an overlap
     // warning line above the field's `now` row.
     let db = fresh_db();
-    run_cli(&["track", "workout"], &db).expect("track");
+    // The first `start` declares the field (da-c8mh); no `track` needed.
     run_cli(&["start", "workout", "-t=-5"], &db).expect("older start");
     run_cli(&["start", "workout"], &db).expect("newer start");
 
@@ -422,7 +422,7 @@ fn db_resolve_take_local_updates_entry_and_marks_resolved() {
 
     // The entry referenced by local_entry.slug is still in the table
     // (rewrite_entry_to_snapshot is idempotent here).
-    let entries = db.entries_for_field("workout", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "workout");
     assert!(
         entries.iter().any(|e| e.slug == local_slug),
         "local_entry slug must remain in entries table"
@@ -459,7 +459,7 @@ fn db_resolve_take_remote_updates_entry_and_marks_resolved() {
         .unwrap();
     assert_eq!(resolved.resolution.as_deref(), Some("take_remote"));
 
-    let entries = db.entries_for_field("workout", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "workout");
     assert!(
         entries.iter().any(|e| e.slug == remote_slug),
         "remote_entry slug must remain in entries table"
@@ -499,7 +499,7 @@ fn db_resolve_edit_uses_saved_content() {
         .unwrap();
     assert_eq!(resolved.resolution.as_deref(), Some("edit"));
 
-    let entries = db.entries_for_field("workout", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "workout");
     let row = entries
         .iter()
         .find(|e| e.slug == edited.slug)

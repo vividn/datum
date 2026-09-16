@@ -25,7 +25,7 @@ fn switch_comma_separated_states_becomes_array_value() {
     run_cli(&["switch", "task", "reading,writing"], &db)
         .expect("switch with comma-separated states");
 
-    let entries = db.entries_for_field("task", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "task");
     assert_eq!(entries.len(), 1);
     assert_eq!(
         entries[0].state.as_ref(),
@@ -41,7 +41,7 @@ fn switch_single_state_stays_scalar() {
 
     run_cli(&["switch", "task", "reading"], &db).expect("single-state switch");
 
-    let entries = db.entries_for_field("task", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "task");
     assert_eq!(entries[0].state.as_ref(), Some(&json!("reading")));
 }
 
@@ -56,7 +56,7 @@ fn switch_trailing_comma_tolerated() {
     run_cli(&["switch", "task", "reading,writing,"], &db)
         .expect("trailing comma should be tolerated");
 
-    let entries = db.entries_for_field("task", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "task");
     assert_eq!(entries.len(), 1);
     assert_eq!(
         entries[0].state.as_ref(),
@@ -72,7 +72,7 @@ fn switch_leading_comma_tolerated() {
     run_cli(&["switch", "task", ",reading,writing"], &db)
         .expect("leading comma should be tolerated");
 
-    let entries = db.entries_for_field("task", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "task");
     assert_eq!(
         entries[0].state.as_ref(),
         Some(&json!(["reading", "writing"])),
@@ -89,7 +89,7 @@ fn switch_leading_comma_two_states_da_5z01() {
     run_cli(&["switch", "body", ",vertical,ground"], &db)
         .expect("da-5z01: `,vertical,ground` must round-trip to [vertical,ground]");
 
-    let entries = db.entries_for_field("body", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "body");
     assert_eq!(
         entries[0].state.as_ref(),
         Some(&json!(["vertical", "ground"])),
@@ -104,7 +104,7 @@ fn switch_edge_comma_single_state_stays_scalar() {
 
     run_cli(&["switch", "task", ",reading"], &db).expect("leading-edge single state");
 
-    let entries = db.entries_for_field("task", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "task");
     assert_eq!(entries[0].state.as_ref(), Some(&json!("reading")));
 }
 
@@ -116,7 +116,7 @@ fn switch_empty_segment_rejected() {
         .to_string();
     assert!(err.contains("empty segment"), "{err}");
     assert_eq!(
-        db.entries_for_field("task", None).unwrap().len(),
+        datum_core::test_util::logged_entries(&db, "task").len(),
         0,
         "rejected parse must not persist any entry",
     );
@@ -141,7 +141,7 @@ fn array_state_is_queryable_over_timeline() {
 
     run_cli(&["switch", "project", "datum,household"], &db).expect("switch to concurrent states");
 
-    let entries = db.entries_for_field("project", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "project");
     let ts = entries[0].occur_time.as_ref().unwrap().utc;
     assert_eq!(
         db.get_active_state("project", ts).unwrap(),
@@ -286,7 +286,7 @@ fn last_state_assertion_records_array_value() {
 
     run_cli(&["switch", "project", "c", "-L=a,b"], &db).expect("switch with comma-separated -L");
 
-    let entry = &db.entries_for_field("project", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(
         entry.user_asserted_last_state,
         Some(json!(["a", "b"])),

@@ -70,6 +70,9 @@ const cliDocs = async (app, argv) => {
 	return JSON.parse(result.stdout.trim().split('\n').at(-1)).docs;
 };
 
+/** The ENTRY's document: a field's declaration (da-c8mh) reads first. */
+const cliDoc = async (app, argv) => (await cliDocs(app, argv)).at(-1);
+
 const ESC = /\u001b\[[0-9;]*m/g;
 
 describe('the bar never changes height', () => {
@@ -104,10 +107,15 @@ describe('one document', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 
+			// The fields already exist, so each command echoes its own
+			// entry alone — a field's first log echoes the TRACK document
+			// that declares it too (da-c8mh).
+			await app.declare('water');
+			await app.declare('coffee');
 			await app.submit('occur water');
 			await aDoc(page);
 			const plain = await section(page);
-			const [plainDoc] = await cliDocs(app, ['get', 'water']);
+			const plainDoc = await cliDoc(app, ['get', 'water']);
 			assert.equal(plain.lines, 2, 'an entry with no data drew a third line');
 			// No data, no brace: not an empty one, not a hidden one.
 			assert.equal(await page.locator(`${DOC} .brace`).count(), 0);
@@ -120,7 +128,7 @@ describe('one document', () => {
 				plain.hid
 			);
 			const rich = await section(page);
-			const [richDoc] = await cliDocs(app, ['get', 'coffee']);
+			const richDoc = await cliDoc(app, ['get', 'coffee']);
 			assert.equal(rich.lines, 2, 'an entry with data drew a third line');
 			// The CLI's `data` items, one to a row, in the CLI's order — not
 			// `data_inline`, which is the terminal's own join.
@@ -141,11 +149,12 @@ describe('one document', () => {
 	test('past four keys: four rows and a +N, whose sheet lists every one', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			await app.declare('brew');
 			await app.submit('occur brew a=1 b=2 c=3 d=4 e=5 f=6');
 			await page.locator(`${DOC} .brace`).waitFor();
 
 			const shown = await section(page);
-			const [doc] = await cliDocs(app, ['get', 'brew']);
+			const doc = await cliDoc(app, ['get', 'brew']);
 			assert.equal(doc.data.length, 6, doc.data.join(' | '));
 			assert.equal(shown.lines, 2);
 			assert.deepEqual(shown.rows, doc.data.slice(0, 4));
@@ -166,10 +175,11 @@ describe('one document', () => {
 	test('the full id is behind the hid: a title for a pointer, a tap for a finger', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			await app.declare('water');
 			await app.submit('occur water');
 			await aDoc(page);
 			const shown = await section(page);
-			const [doc] = await cliDocs(app, ['get', 'water']);
+			const doc = await cliDoc(app, ['get', 'water']);
 
 			assert.equal(shown.hid, doc.hid, 'the hid on screen is not the CLI’s');
 			assert.equal(shown.id, doc.id, 'the title behind it is not the full id');
@@ -189,6 +199,8 @@ describe('several documents', () => {
 	test('a two-sided command draws a section each', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			await app.declare('coffee');
+			await app.declare('mood', 'switch');
 			await app.submit('occur coffee , switch mood happy');
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .doc').length === 2);
 
@@ -208,6 +220,7 @@ describe('several documents', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const fields = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+			for (const f of fields) await app.declare(f);
 			await app.submit(fields.map((f) => `occur ${f}`).join(' , '));
 			await page.locator(`${BAR} .more`).waitFor();
 
@@ -236,6 +249,7 @@ describe('several documents', () => {
 	test('320px: one whole section, and the box still takes a command', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			for (const f of ['a', 'b', 'c', 'tea']) await app.declare(f);
 			await app.submit('occur a , occur b , occur c');
 			await page.locator(`${BAR} .more`).waitFor();
 
@@ -257,6 +271,7 @@ describe('several documents', () => {
 	test('320px: a section too narrow for the rows draws the count, and the info line is whole', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			await app.declare('brew');
 			await app.submit('occur brew a=1 bean=ethiopian c=3 grind=fine e=5 water=94C');
 			await page.locator(`${DOC} .brace`).waitFor();
 
@@ -334,6 +349,7 @@ describe('a command with no echo', () => {
 				});
 			});
 
+			await app.declare('water');
 			await app.submit('occur water');
 			await page.locator(`${BAR} .raw p`).first().waitFor();
 			assert.equal(await page.locator(DOC).count(), 0, 'a document was drawn from no document');
@@ -470,6 +486,7 @@ describe('the ^', () => {
 	test('a document the tier cut to four rows and a +2 reads whole in the REPL', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			await app.declare('brew');
 			await app.submit('occur brew a=1 b=2 c=3 d=4 e=5 f=6');
 			await page.locator(`${DOC} .brace`).waitFor();
 
@@ -556,7 +573,7 @@ const pillAt = (page) =>
 
 /** Track `coffee` and get its button onto the widget bar, as ghost.test.mjs does. */
 async function withCoffee(app) {
-	assert.equal((await app.run(['spec', 'set', 'coffee', '--default-verb', 'occur'])).code, 0);
+	assert.equal((await app.run(['spec', 'set', 'coffee', '--verb', 'occur'])).code, 0);
 	await app.submit('tail');
 	await app.idle();
 	await app.page.locator('.bar [data-field="coffee"]').waitFor();

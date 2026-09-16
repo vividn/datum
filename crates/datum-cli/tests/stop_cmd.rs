@@ -38,7 +38,7 @@ fn stop_records_false_state_at_time_start() {
     run_cli(&["stop", "dance"], &db).expect("stop dispatch");
 
     assert_count!(db, "dance", 1);
-    let entry = &db.entries_for_field("dance", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
     let ts = entry.occur_time.as_ref().expect("stop anchors occur_time");
     assert!(
@@ -66,7 +66,7 @@ fn stop_last_state_captures_prior_switch_state() {
     run_cli(&["switch", "activity", "cello", "-t=-1"], &db).expect("switch dispatch");
     run_cli(&["stop", "activity", "--last-state"], &db).expect("stop --last-state dispatch");
 
-    let entries = db.entries_for_field("activity", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "activity");
     assert_eq!(entries.len(), 2, "switch + stop produce two entries");
 
     let stop = entries
@@ -109,7 +109,7 @@ fn stop_dur_produces_closed_block_ending_at_occur() {
     run_cli(&["start", "dance", "-t=-20"], &db).expect("anchor start");
     run_cli(&["stop", "dance", "5m"], &db).expect("stop dance 5m");
 
-    let entries = db.entries_for_field("dance", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "dance");
     assert_eq!(entries.len(), 2);
     // stop dance 5m: state=false (action canonicalization) + dur=positive
     // → Verb::Block; the anchor `start` (no dur) is Verb::Switch.
@@ -159,7 +159,7 @@ fn stop_without_dur_is_moment_like() {
 
     run_cli(&["stop", "dance", "-k", "skillPoints=3"], &db).expect("stop with -k");
 
-    let entry = &db.entries_for_field("dance", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
     assert!(entry.occur_time.is_some());
     assert!(
@@ -186,7 +186,7 @@ fn stop_extras_do_not_imply_duration() {
     )
     .expect("stop with multiple -k");
 
-    let entry = &db.entries_for_field("dance", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["skillPoints"], json!(3));
@@ -209,7 +209,7 @@ fn stop_trailing_numeric_positional_lands_as_duration() {
 
     run_cli(&["stop", "field", "50"], &db).expect("stop with trailing duration");
 
-    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_eq!(entry.field, "field");
     assert_eq!(entry.duration_seconds(), Some(50 * 60));
 }
@@ -223,7 +223,7 @@ fn stop_explicit_dur_with_key() {
 
     run_cli(&["stop", "field", "-k", "abc=123", "dur=50"], &db).expect("stop with explicit dur");
 
-    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_eq!(entry.duration_seconds(), Some(50 * 60));
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["abc"], json!(123));
@@ -268,7 +268,7 @@ fn stop_dur_plus_extra_still_marks_verb_stop() {
     )
     .expect("stop field reqVal1 dur=30m -k ... dispatch");
 
-    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_entry_matches!(entry, field: "field", verb: "block", state: false);
     assert_eq!(entry.state.as_ref(), Some(&json!(false)));
     assert_eq!(entry.duration_seconds(), Some(30 * 60));
@@ -293,8 +293,8 @@ fn stop_end_alias_equivalence() {
     run_cli(&["stop", "dance"], &db_stop).expect("stop dispatch");
     run_cli(&["end", "dance"], &db_end).expect("end dispatch");
 
-    let s = &db_stop.entries_for_field("dance", None).unwrap()[0];
-    let e = &db_end.entries_for_field("dance", None).unwrap()[0];
+    let s = &datum_core::test_util::logged_entries(&db_stop, "dance")[0];
+    let e = &datum_core::test_util::logged_entries(&db_end, "dance")[0];
 
     assert_eq!(s.field, e.field);
     assert_eq!(s.verb, e.verb, "end must dispatch to Verb::Switch");
@@ -315,7 +315,7 @@ fn stop_last_state_closes_open_start_block() {
     run_cli(&["start", "working", "-t=-1"], &db).expect("start dispatch");
     run_cli(&["stop", "working", "--last-state"], &db).expect("stop --last-state dispatch");
 
-    let entries = db.entries_for_field("working", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "working");
     let stop = entries
         .iter()
         .find(|e| matches!(e.verb, Verb::Switch))

@@ -79,16 +79,19 @@ fn v2import_and_restore_report_progress_on_stderr_only() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
+    // The backup also carries the TRACK document the import declared
+    // `coffee` with (da-c8mh), so the restore moves one row more.
+    let restored = N + 1;
     assert!(
-        stderr.contains(&format!("restore: reading {N}/{N}\n")),
+        stderr.contains(&format!("restore: reading {restored}/{restored}\n")),
         "{stderr}"
     );
     assert!(
-        stderr.contains(&format!("restore: inserting {N}/{N}\n")),
+        stderr.contains(&format!("restore: inserting {restored}/{restored}\n")),
         "{stderr}"
     );
     assert!(!stdout.contains("restore:"), "{stdout}");
-    assert!(stdout.contains(&format!("{N} inserted")), "{stdout}");
+    assert!(stdout.contains(&format!("{restored} inserted")), "{stdout}");
 
     // Importing the same backup again is still a no-op.
     let out = datum(

@@ -118,7 +118,13 @@ pub fn merge_group_key(entry: &Entry) -> (String, String, String) {
         .as_ref()
         .map(|t| t.utc.to_rfc3339())
         .unwrap_or_default();
-    let identity = if entry.asserts_state() {
+    let identity = if crate::track::track_verb(entry).is_some() {
+        // da-c8mh: a declaration merges only with another declaration of
+        // the same field — never into the entry it was written beside,
+        // which two timeless rows would otherwise do (both have no
+        // occur_time, so field alone would key them together).
+        "\0track".to_string()
+    } else if entry.asserts_state() {
         String::new()
     } else {
         entry.hid.to_string()

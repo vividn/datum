@@ -61,6 +61,9 @@ describe('window.datum.run — the loud door', () => {
 	test('through the mounted REPL: the pane shows the row, the bar receipts the hid, the scrollback echoes it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			// The field exists first, so the bar receipts one document: a
+			// field's first log draws its TRACK declaration too (da-c8mh).
+			await app.declare('coffee');
 			await markNoReload(page);
 
 			const result = await console_(page, 'run', ['occur', 'coffee']);
@@ -78,10 +81,11 @@ describe('window.datum.run — the loud door', () => {
 			const [word, hid] = (await receipt(page).innerText()).split(' ');
 			const { rows } = await app.tailRows();
 			assert.equal(word, 'CREATE');
-			assert.equal(rows.length, 1);
+			// The declaration `declare` wrote, and the entry under it.
+			assert.equal(rows.length, 2);
 			assert.ok(
-				hid.length >= 4 && rows[0].hid.startsWith(hid),
-				`the receipt's ${hid} is not the row's ${rows[0].hid}`
+				hid.length >= 4 && rows.at(-1).hid.startsWith(hid),
+				`the receipt's ${hid} is not the row's ${rows.at(-1).hid}`
 			);
 
 			// And it taught: the command is in the scrollback as typed.
@@ -110,6 +114,7 @@ describe('window.datum.run — the loud door', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			assert.equal(await page.locator('section.pane[data-title="repl"]').count(), 0);
+			await app.declare('cocoa');
 			await markNoReload(page);
 
 			const result = await console_(page, 'run', ['occur', 'cocoa']);
@@ -132,6 +137,7 @@ describe('window.datum.runQuiet — the exception', () => {
 	test('the entry is stored and nothing on the page moves', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			await app.declare('tea');
 			const before = {
 				tail: await app.paneText('tail'),
 				echoes: await app.echoes(),
@@ -144,9 +150,11 @@ describe('window.datum.runQuiet — the exception', () => {
 			// Stored — `tail --json` is the CLI answering about the database,
 			// not the screen.
 			const { rows } = await app.tailRows();
+			// The entry, and the TRACK document declaring its field ahead of
+			// the test's own quiet run (da-c8mh).
 			assert.deepEqual(
 				rows.map((row) => row.field),
-				['tea']
+				['tea', 'tea']
 			);
 
 			// And nothing moved. `idle` first: a refresh, had one been coming,

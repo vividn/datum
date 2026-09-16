@@ -24,14 +24,14 @@ version = "0.1"
 
 [[field]]
 name = "sleep"
-default_verb = "start"
+verb = "start"
 pos = 0.10
 size = 0.30
 color = "#1a3d6e"
 
 [[field]]
 name = "mood"
-default_verb = "switch"
+verb = "switch"
 color = "blue"
 
 states.happy = { color = "#00ff00" }
@@ -82,13 +82,13 @@ states.sad = {}
     assert_eq!(kit.fields.len(), 2);
 
     let sleep = kit.fields.iter().find(|f| f.name == "sleep").unwrap();
-    assert_eq!(sleep.default_verb.as_deref(), Some("start"));
+    assert_eq!(sleep.verb, "start");
     assert_eq!(sleep.pos, Some(0.10));
     assert_eq!(sleep.size, Some(0.30));
     assert_eq!(sleep.color.as_deref(), Some("#1a3d6e"));
 
     let mood = kit.fields.iter().find(|f| f.name == "mood").unwrap();
-    assert_eq!(mood.default_verb.as_deref(), Some("switch"));
+    assert_eq!(mood.verb, "switch");
     // "blue" was resolved to a hex at install time and stored that way.
     assert!(mood.color.as_ref().unwrap().starts_with('#'));
     assert_eq!(mood.states.len(), 2);
@@ -109,11 +109,11 @@ name = "test-kit"
 
 [[field]]
 name = "f1"
-default_verb = "occur"
+verb = "occur"
 
 [[field]]
 name = "f2"
-default_verb = "start"
+verb = "start"
 "##,
     )
     .unwrap();
@@ -159,13 +159,13 @@ name = "anchored"
 
 [[field]]
 name = "body"
-default_verb = "occur"
+verb = "occur"
 pos = 0.20
 size = 0.40
 
 [[field]]
 name = "contacts"
-default_verb = "occur"
+verb = "occur"
 relative_to = "body"
 pos = 0.10
 size = 0.05
@@ -222,21 +222,21 @@ name = "cyclic"
 
 [[field]]
 name = "a"
-default_verb = "occur"
+verb = "occur"
 relative_to = "b"
 pos = 0.1
 size = 0.5
 
 [[field]]
 name = "b"
-default_verb = "occur"
+verb = "occur"
 relative_to = "c"
 pos = 0.1
 size = 0.5
 
 [[field]]
 name = "c"
-default_verb = "occur"
+verb = "occur"
 relative_to = "a"
 pos = 0.1
 size = 0.5
@@ -274,7 +274,7 @@ name = "missing-anchor"
 
 [[field]]
 name = "contacts"
-default_verb = "occur"
+verb = "occur"
 relative_to = "body"
 pos = 0.10
 size = 0.05
@@ -310,7 +310,7 @@ name = "chores"
 
 [[field]]
 name = "dishes"
-default_verb = "occur"
+verb = "occur"
 
 [[alias]]
 name = "chore"
@@ -468,7 +468,7 @@ name = "intruder"
 
 [[field]]
 name = "sleep"
-default_verb = "start"
+verb = "start"
 color = "#000000"
 "##,
     )
@@ -477,7 +477,7 @@ color = "#000000"
     let db = fresh_db();
 
     // Pre-existing user-declared row.
-    let mut existing = FieldSpec::with_verb("sleep", Action::Start);
+    let mut existing = FieldSpec::new("sleep", Action::Start);
     existing.color = Some("#aaaaaa".into());
     db.save_field_spec(&existing).unwrap();
 

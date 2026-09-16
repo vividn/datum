@@ -80,10 +80,10 @@ describe('the widget fits its screen, legibly', () => {
 	// switch in a state then filled itself with the field's colour and
 	// wrote the label in that same colour (da-qnvh).
 	const PLAIN = [
-		'spec set pushups --default-verb occur',
-		'spec set work --default-verb start',
-		'spec set mood --default-verb switch --state good --state bad',
-		'spec set energy --default-verb switch --state high --state low --state-color high=#008000',
+		'spec set pushups --verb occur',
+		'spec set work --verb start',
+		'spec set mood --verb switch --state good --state bad',
+		'spec set energy --verb switch --state high --state low --state-color high=#008000',
 		'start work',
 		'switch mood good',
 		'switch energy high',

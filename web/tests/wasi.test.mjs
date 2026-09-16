@@ -45,7 +45,7 @@ describe('the wasi CLI', () => {
 	// so the argument after a non-ASCII one arrived mangled ($lib/cli.ts).
 	test('a non-ASCII argument arrives intact, and so does the next one', async () => {
 		await withApp(async (app) => {
-			const set = await app.run(['spec', 'set', '日本語', '--default-verb', 'occur']);
+			const set = await app.run(['spec', 'set', '日本語', '--verb', 'occur']);
 			assert.equal(set.code, 0, set.stderr);
 			const logged = await app.run(['occur', 'café', 'note=très bien', '-t', '0700']);
 			assert.equal(logged.code, 0, logged.stderr);
@@ -64,7 +64,9 @@ describe('the wasi CLI', () => {
 			// content-hash idempotent, so "skipped" is the proof it was read.
 			const restored = await app.run(['db', 'restore', '-'], dump.stdout);
 			assert.equal(restored.code, 0, restored.stderr);
-			assert.match(plain(restored.stdout), /0 inserted, 0 updated, 1 skipped/);
+			// Two rows: the entry, and the TRACK document that declared its
+			// field beside it (da-c8mh).
+			assert.match(plain(restored.stdout), /0 inserted, 0 updated, 2 skipped/);
 			const empty = await app.run(['db', 'restore', '-']);
 			assert.match(plain(empty.stdout), /0 inserted, 0 updated, 0 skipped/);
 		});
@@ -90,10 +92,10 @@ describe('the wasi CLI', () => {
 			assert.equal(JSON.parse(header).type, 'daydumb_backup');
 			assert.deepEqual(
 				rows.map((row) => JSON.parse(row).field),
-				['coffee']
+				['coffee', 'coffee']
 			);
 			const restored = await app.run(['db', 'restore', '-'], text);
-			assert.match(plain(restored.stdout), /1 skipped/);
+			assert.match(plain(restored.stdout), /2 skipped/);
 		});
 	});
 
@@ -108,11 +110,13 @@ describe('the wasi CLI', () => {
 			const clock = workerClock(ms);
 			await withApp(
 				async (app) => {
-					assert.equal((await app.run(['track', 'x'])).code, 0);
+					assert.equal((await app.run(['track', 'x', '--verb', 'occur'])).code, 0);
 					assert.equal((await app.run(['ignore', 'y'])).code, 0);
 					const check = await app.run(['check']);
 					assert.doesNotMatch(plain(check.stdout), /tz_offset_mismatch|ERROR/, check.stdout);
-					const stored = (await app.entries())
+					// `allEntries`: `track` writes only a declaration (da-c8mh),
+					// which is the very row this test is about.
+					const stored = (await app.allEntries())
 						.map(({ field, occur_time: t }) => [field, Date.parse(t.utc), t.offset_minutes, t.timezone])
 						.sort();
 					assert.deepEqual(

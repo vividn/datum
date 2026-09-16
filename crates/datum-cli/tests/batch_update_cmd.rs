@@ -280,7 +280,7 @@ fn strict_spec_blocks_update_introducing_undeclared_key() {
         .insert(&db);
 
     let mut spec =
-        datum_core::field_spec::FieldSpec::with_verb("mood", datum_core::action::Action::Switch);
+        datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
     let mut subfields = std::collections::HashMap::new();
     subfields.insert(
         "intensity".to_string(),
@@ -320,7 +320,7 @@ fn strict_spec_blocks_rekey_into_undeclared_name() {
         .insert(&db);
 
     let mut spec =
-        datum_core::field_spec::FieldSpec::with_verb("mood", datum_core::action::Action::Switch);
+        datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
     let mut subfields = std::collections::HashMap::new();
     subfields.insert(
         "intensity".to_string(),

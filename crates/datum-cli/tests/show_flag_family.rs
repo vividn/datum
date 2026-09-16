@@ -231,10 +231,10 @@ fn a_show_the_command_cannot_draw_is_refused_by_name() {
 #[test]
 fn spec_set_takes_the_body_from_from_json() {
     let (_tmp, db) = seeded();
-    let body = r#"{"field":"x","default_verb":"occur"}"#;
+    let body = r#"{"field":"x","verb":"occur"}"#;
     ok(&db, &["spec", "set", "x", "--from-json", body]);
     let shown = ok(&db, &["spec", "show", "x"]);
-    assert!(shown.contains("\"default_verb\": \"occur\""), "{shown:?}");
+    assert!(shown.contains("\"verb\": \"occur\""), "{shown:?}");
 
     let out = datum(&db, &["spec", "set", "y", "--json", body]);
     assert!(!out.status.success(), "the old spelling must not pass");

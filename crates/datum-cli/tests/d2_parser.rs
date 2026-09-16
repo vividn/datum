@@ -27,7 +27,7 @@ fn dash_K_builds_slug_in_order() {
     )
     .expect("add with -K slug keys");
 
-    let entries = db.entries_for_field("person", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "person");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_eq!(e.slug, "person:jake__berlin");
@@ -43,7 +43,7 @@ fn dash_K_with_defaults() {
     let db = fresh_db();
     run_cli(&["add", "book", "-K", "title=untitled"], &db).expect("add with -K default only");
 
-    let entries = db.entries_for_field("book", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "book");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_eq!(e.slug, "book:untitled");
@@ -69,7 +69,7 @@ fn dash_K_optional_absent_drops_segment() {
     )
     .expect("add with trailing optional-no-default -K");
 
-    let entries = db.entries_for_field("book", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "book");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     // Positional "Goldmund" fills title; year has no positional and no
@@ -90,7 +90,7 @@ fn dash_k_affects_data_not_slug() {
     let db = fresh_db();
     run_cli(&["note", "journal", "-k", "topic", "dreams"], &db).expect("note with -k slot");
 
-    let entries = db.entries_for_field("journal", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "journal");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert!(
@@ -113,7 +113,7 @@ fn retime_overwrites_uncertainty_from_new_input() {
     let db = fresh_db();
     // Seed an entry with a well-known uncertainty (exact — column NULL).
     run_cli(&["occur", "coffee", "-t", "12:00"], &db).expect("seed entry");
-    let seeded = &db.entries_for_field("coffee", None).unwrap()[0];
+    let seeded = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     // v3 (da-5ns): the uncertainty is a single ISO-8601 duration string
     // (NULL == not stated), replacing the v=19 (seconds, unit) pair. Since
     // da-b8rs it lives on `occur_time` itself, column
@@ -152,6 +152,6 @@ fn parser_version_increments_in_stored_entries() {
     );
     let db = fresh_db();
     run_cli(&["occur", "coffee"], &db).expect("log coffee");
-    let e = &db.entries_for_field("coffee", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     assert_eq!(e.parser_version, CURRENT_PARSER_VERSION);
 }

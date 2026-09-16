@@ -187,8 +187,12 @@ for (const engine of [chromium, webkit]) {
 			await withApp(
 				async (app) => {
 					const { page } = app;
+					// The field exists first, so the three writes are three
+					// rows: a field's first log writes the TRACK document
+					// that declares it too (da-c8mh).
+					await app.declare('coffee');
 					for (let i = 0; i < 3; i++) await app.submit('occur coffee');
-					await tailShows(page, 3);
+					await tailShows(page, 4);
 
 					// The backup is a download; the transcript has the header, not the rows.
 					const [download] = await Promise.all([
@@ -197,14 +201,14 @@ for (const engine of [chromium, webkit]) {
 					]);
 					const saved = await download.path();
 					const lines = (await readFile(saved, 'utf8')).split('\n').filter(Boolean);
-					assert.equal(lines.length, 4);
+					assert.equal(lines.length, 5);
 					const header = JSON.parse(lines[0]);
 					assert.equal(header.type, 'daydumb_backup');
-					assert.equal(header.entry_count, 3);
+					assert.equal(header.entry_count, 4);
 					assert.match(download.suggestedFilename(), /^datum-\d{4}-\d{2}-\d{2}\.jsonl$/);
 					const said = (await app.outputs()).at(-1);
 					assert.match(said, /daydumb_backup/);
-					assert.match(said, /3 entries/);
+					assert.match(said, /4 entries/);
 					assert.doesNotMatch(said, /coffee/);
 
 					// A layout in `_internal`, which a purge of `datum` must not touch.
@@ -220,7 +224,7 @@ for (const engine of [chromium, webkit]) {
 					await name.press('Enter');
 					await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
 					assert.match((await app.outputs()).at(-1), /aborted/);
-					assert.equal(await count(app), 3);
+					assert.equal(await count(app), 4);
 
 					// The right one does, and every pane follows without a reload.
 					before = await echoes(page);
@@ -233,15 +237,17 @@ for (const engine of [chromium, webkit]) {
 					const layouts = await page.evaluate(() => window.datum.layouts.listLayouts());
 					assert.ok(layouts.some((l) => l.name === 'kept'), JSON.stringify(layouts));
 
-					// The downloaded backup, chosen in the dialog, brings the three back.
+					// The downloaded backup, chosen in the dialog, brings them back.
 					await choose(page, 'db restore', saved);
-					assert.match((await app.stdouts()).at(-1), /3 inserted/);
-					await tailShows(page, 3);
+					assert.match((await app.stdouts()).at(-1), /4 inserted/);
+					await tailShows(page, 4);
 
 					// vividn's legacy backup, twice: the second is all skips.
+					// The import declares every field it brings (da-c8mh), so
+					// its own TRACK documents ride along with the 120 rows.
 					await choose(page, 'db v2import', LEGACY);
 					assert.match((await app.stdouts()).at(-1), /120 imported/);
-					assert.equal(await count(app), 123);
+					const imported = (await count(app)) - 4;
 					await app.submit('dayview --start-date 2025-01-01 --end-date 2025-01-03');
 					const drawn = await page.locator('.repl svg.svg').last().evaluate((svg) => svg.outerHTML);
 					// The imported field draws as a mark: its name is the mark's
@@ -249,12 +255,12 @@ for (const engine of [chromium, webkit]) {
 					assert.match(drawn, /data-title="music /);
 					await choose(page, 'db v2import', LEGACY);
 					assert.match((await app.stdouts()).at(-1), /120 skipped/);
-					assert.equal(await count(app), 123);
+					assert.equal(await count(app), 4 + imported);
 
 					// A cancelled chooser runs nothing and says so once.
 					await choose(page, 'db restore', []);
 					assert.match((await app.outputs()).at(-1), /no file chosen/);
-					assert.equal(await count(app), 123);
+					assert.equal(await count(app), 4 + imported);
 					assert.deepEqual(app.errors, []);
 				},
 				{ engine, viewport: { width: 1280, height: 1000 } }
@@ -389,7 +395,9 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 			await choose(page, 'db v2import --skip-log skips.txt', LEGACY);
 			assert.deepEqual(await asked(), { argv: ['db', 'v2import', '--skip-log', 'skips.txt', '-'], stdin: legacy });
 			assert.match((await app.outputs()).at(-1), /not a file in the browser: skips\.txt$/);
-			assert.equal(await count(app), 120);
+			// The 120 rows, plus the TRACK document each imported field is
+			// declared with (da-c8mh).
+			assert.ok((await count(app)) > 120);
 
 			const [download] = await Promise.all([
 				page.waitForEvent('download'),

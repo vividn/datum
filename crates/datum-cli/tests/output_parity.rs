@@ -36,13 +36,24 @@ fn run(db: &PathBuf, args: &[&str]) -> (String, String) {
     (stdout, stderr)
 }
 
+/// The echo of the ENTRY. A field's FIRST log prints the TRACK document
+/// that declares it first (da-c8mh) — its own header and info line — and
+/// the entry's echo follows.
+fn entry_echo(stdout: &str) -> Vec<&str> {
+    let lines: Vec<&str> = stdout.lines().collect();
+    match lines.iter().rposition(|l| l.starts_with("CREATE")) {
+        Some(i) if i > 0 => lines[i..].to_vec(),
+        _ => lines,
+    }
+}
+
 #[test]
 fn occur_emits_two_line_create_with_hid_and_extra() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
     let (stdout, _) = run(&db, &["occur", "coffee", "amount=200"]);
 
-    let lines: Vec<&str> = stdout.lines().collect();
+    let lines = entry_echo(&stdout);
     assert!(lines.len() >= 3, "expected 3+ lines, got: {stdout:?}");
 
     // Header: action + hid + slug (datum's user-facing `field:time` id).
@@ -154,11 +165,13 @@ fn show_minimal_emits_header_only() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
     let (stdout, _) = run(&db, &["occur", "coffee", "amount=1", "--show", "minimal"]);
-    let lines: Vec<&str> = stdout.lines().collect();
+    // `minimal` is one line per document, and the first log of a field is
+    // two documents (da-c8mh).
+    let lines: Vec<&str> = stdout.lines().skip(1).collect();
     assert_eq!(
         lines.len(),
         1,
-        "minimal should emit 1 line, got: {stdout:?}"
+        "minimal should emit 1 line per doc, got: {stdout:?}"
     );
     assert!(lines[0].contains("CREATE"));
 
@@ -203,7 +216,7 @@ fn format_string_renders_custom_template() {
         &db,
         &["occur", "coffee", "amount=7", "-o", "%field%:%amount%"],
     );
-    let lines: Vec<&str> = stdout.lines().collect();
+    let lines = entry_echo(&stdout);
     assert!(
         lines.len() >= 3,
         "default `-o` should keep the two info lines plus the format string, got: {stdout:?}"
@@ -254,7 +267,7 @@ fn header_has_action_hid_and_slug_not_ulid() {
     let (stdout, _) = run(&db, &["occur", "coffee"]);
     // Header layout (colors off, whitespace-collapsed): CREATE <hid> <slug>
     // The slug is datum-compatible `field:YYYY-MM-DDTHH:MMZ`, NOT the raw ULID.
-    let first = stdout.lines().next().unwrap();
+    let first = entry_echo(&stdout)[0];
     let toks: Vec<&str> = first.split_whitespace().collect();
     assert_eq!(toks.len(), 3, "expected 3 header tokens, got {toks:?}");
     assert_eq!(toks[0], "CREATE");

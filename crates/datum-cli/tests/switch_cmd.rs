@@ -54,7 +54,7 @@ fn switch_creates_entry_with_state() {
     run_cli(&["switch", "field", "newState"], &db).expect("switch dispatch");
 
     assert_count!(db, "field", 1);
-    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_entry_matches!(entry, field: "field", verb: "switch", state: "newState");
     let ts = entry
         .occur_time
@@ -86,7 +86,7 @@ fn switch_prior_state_queryable_via_compilation() {
     run_cli(&["switch", "environment", "outside", "-t=-1"], &db).expect("first switch");
     run_cli(&["switch", "environment", "inside"], &db).expect("second switch");
 
-    let entries = db.entries_for_field("environment", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "environment");
     assert_eq!(entries.len(), 2);
 
     let inside = entries
@@ -123,7 +123,7 @@ fn switch_last_state_records_assertion_on_entry() {
     run_cli(&["switch", "project", "datum", "-t=-1"], &db).expect("seed switch");
     run_cli(&["switch", "project", "household", "-L=datum"], &db).expect("-L=<value> assertion");
 
-    let entries = db.entries_for_field("project", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "project");
     assert_eq!(entries.len(), 2);
     let household = entries
         .iter()
@@ -155,7 +155,7 @@ fn switch_always_anchors_time_no_omit_timestamp_flag() {
     run_cli(&["switch", "vacuum", "true"], &db).expect("first switch");
     run_cli(&["switch", "vacuum", "false"], &db).expect("second switch");
 
-    let entries = db.entries_for_field("vacuum", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "vacuum");
     assert_eq!(entries.len(), 2);
     let falsy = entries
         .iter()
@@ -207,8 +207,8 @@ fn switch_state_null_normalizes_to_null_at_query_time() {
     run_cli(&["switch", "vacuum", "null"], &db).expect("switch vacuum null");
     run_cli(&["switch", "luft", "null"], &db).expect("switch luft null");
 
-    let vacuum = &db.entries_for_field("vacuum", None).unwrap()[0];
-    let luft = &db.entries_for_field("luft", None).unwrap()[0];
+    let vacuum = &datum_core::test_util::logged_entries(&db, "vacuum")[0];
+    let luft = &datum_core::test_util::logged_entries(&db, "luft")[0];
 
     // Stored form: string "null"; the normalization lives in state compile.
     assert_entry_matches!(vacuum, verb: "switch", state: "null");
@@ -236,7 +236,7 @@ fn switch_without_state_promotes_to_true() {
 
     run_cli(&["switch", "eat"], &db).expect("switch with no state");
 
-    let entry = &db.entries_for_field("eat", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "eat")[0];
     assert_entry_matches!(entry, field: "eat", verb: "switch");
     assert_eq!(
         entry.state,
@@ -262,7 +262,7 @@ fn switch_dur_creates_block_ending_at_occur() {
 
     run_cli(&["switch", "project", "household", "10m"], &db).expect("switch household 10m");
 
-    let entry = &db.entries_for_field("project", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "project")[0];
     // v3 (da-5ns): state="household" + dur=positive → derive_verb returns Block.
     assert_entry_matches!(entry, field: "project", verb: "block", state: "household");
     assert_eq!(entry.duration_seconds(), Some(10 * 60));
@@ -332,7 +332,7 @@ fn switch_moment_produces_point_in_time_entry() {
     )
     .expect("switch --moment with -k");
 
-    let entry = &db.entries_for_field("project", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "project")[0];
     // da-64yd: `switch foo -m` yields dur=MOMENT (mirrors `start -m`), not a
     // zero-span PT0S. With state="household" set, derive_verb still returns
     // Point. A moment spans nothing, so computed_start_time() is None.
@@ -370,7 +370,7 @@ fn switch_extras_do_not_imply_duration() {
     )
     .expect("switch with -k");
 
-    let entry = &db.entries_for_field("project", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_entry_matches!(entry, field: "project", verb: "switch", state: "household");
     assert!(
         entry.dur.is_none(),
@@ -397,7 +397,7 @@ fn switch_extras_never_produce_implicit_duration() {
     )
     .expect("switch with optional key");
 
-    let entry = &db.entries_for_field("project", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_entry_matches!(entry, field: "project", verb: "switch", state: "household");
     assert!(
         entry.dur.is_none(),
@@ -420,7 +420,7 @@ fn switch_dot_prefixed_keys_fold_into_structured_state() {
     run_cli(&["switch", "project", "household", ".subtask=mop"], &db)
         .expect("switch with .subtask=mop");
 
-    let entry = &db.entries_for_field("project", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(entry.field, "project");
     let state = entry.state.as_ref().expect("state set");
     assert_eq!(state["id"], json!("household"));
@@ -448,7 +448,7 @@ fn switch_does_not_auto_record_last_state_in_extra_data() {
     run_cli(&["switch", "field", "someState", "-t=-1"], &db).expect("first switch");
     run_cli(&["switch", "field", "anotherState"], &db).expect("second switch");
 
-    let entries = db.entries_for_field("field", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "field");
     let second = entries
         .iter()
         .find(|e| e.state.as_ref() == Some(&json!("anotherState")))
@@ -492,7 +492,7 @@ fn switch_multiple_keys_attach_without_complex_state_synthesis() {
     )
     .expect("switch with multiple -k keys + dur=");
 
-    let entry = &db.entries_for_field("book", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "book")[0];
     // v3: state=set + dur=positive → derive_verb returns Block.
     assert_entry_matches!(
         entry,
@@ -534,7 +534,7 @@ fn switch_dot_syntax_keys_fold_into_structured_state() {
     )
     .expect("switch with dot-prefixed keys");
 
-    let entry = &db.entries_for_field("consume", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "consume")[0];
     assert_eq!(entry.field, "consume");
     let state = entry.state.as_ref().expect("state set");
     assert_eq!(state["id"], json!("book_fiction"));
@@ -565,7 +565,7 @@ fn switch_dot_syntax_keys_fold_into_structured_state() {
 fn derived_alias_from_spec_routes_to_switch_with_extra_keys() {
     let db = fresh_db();
 
-    spec_builder("mood").default_verb(Action::Switch).save(&db);
+    spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
     spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
     spec.regenerate_derived_aliases();
@@ -576,7 +576,7 @@ fn derived_alias_from_spec_routes_to_switch_with_extra_keys() {
 
     run_cli(&["happy", "-k", "intensity=7"], &db).expect("derived alias + extra key");
 
-    let entries = db.entries_for_field("mood", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "mood");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_eq!(e.verb, Verb::Switch);
@@ -601,7 +601,7 @@ fn switch_trailing_bare_positional_becomes_duration_default_minutes() {
     run_cli(&["switch", "project", "ai", "3"], &db)
         .expect("trailing `3` should parse as 3-minute duration");
 
-    let entries = db.entries_for_field("project", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "project");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_eq!(e.field, "project");
@@ -622,7 +622,7 @@ fn switch_trailing_positional_with_unit_suffix_becomes_duration() {
     run_cli(&["switch", "project", "ai", "30m"], &db)
         .expect("trailing `30m` should parse as duration");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(e.state.as_ref(), Some(&json!("ai")));
     assert_eq!(e.duration_seconds(), Some(30 * 60));
 }
@@ -636,7 +636,7 @@ fn switch_trailing_positional_colon_form_becomes_duration() {
     run_cli(&["switch", "project", "ai", "1:30"], &db)
         .expect("trailing `1:30` should parse as 90-minute duration");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(e.state.as_ref(), Some(&json!("ai")));
     assert_eq!(e.duration_seconds(), Some(90 * 60));
 }
@@ -649,7 +649,7 @@ fn switch_trailing_positional_iso_duration_form() {
     run_cli(&["switch", "project", "ai", "PT30M"], &db)
         .expect("trailing `PT30M` should parse as ISO duration");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(e.duration_seconds(), Some(30 * 60));
 }
 
@@ -662,7 +662,7 @@ fn switch_comma_array_with_trailing_duration_positional() {
     run_cli(&["switch", "project", "ai,b", "3"], &db)
         .expect("array state + trailing duration should both apply");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(
         e.state.as_ref(),
         Some(&json!(["ai", "b"])),
@@ -691,7 +691,7 @@ fn switch_trailing_non_duration_positional_rejected() {
         "error should flag the bad duration: {err}",
     );
     assert_eq!(
-        db.entries_for_field("project", None).unwrap().len(),
+        datum_core::test_util::logged_entries(&db, "project").len(),
         0,
         "rejected parse must not persist any entry",
     );
@@ -748,7 +748,7 @@ fn switch_trailing_duration_with_kv_positionals() {
     run_cli(&["switch", "project", "ai", ".note=hi", "3"], &db)
         .expect("KV positional + trailing duration should both apply");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     let state = e.state.as_ref().expect("state set");
     // .note folds into structured state alongside the positional `ai`.
     assert_eq!(state["id"], json!("ai"));
@@ -765,7 +765,7 @@ fn switch_field_end_routes_through_end_verb() {
 
     run_cli(&["switch", "project", "end"], &db).expect("switch <field> end dispatch");
 
-    let entries = db.entries_for_field("project", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "project");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     // `end` is a CLI alias for `stop`; both produce Verb::Switch with state=false.
@@ -780,7 +780,7 @@ fn switch_field_stop_routes_through_end_verb() {
 
     run_cli(&["switch", "project", "stop"], &db).expect("switch <field> stop dispatch");
 
-    let entries = db.entries_for_field("project", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "project");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_entry_matches!(e, field: "project", verb: "switch");
@@ -795,7 +795,7 @@ fn switch_field_start_routes_through_start_verb() {
 
     run_cli(&["switch", "project", "start"], &db).expect("switch <field> start dispatch");
 
-    let entries = db.entries_for_field("project", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "project");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_entry_matches!(e, field: "project", verb: "switch");
@@ -812,8 +812,8 @@ fn switch_field_end_equivalent_to_end_field() {
     run_cli(&["switch", "project", "end"], &db_a).expect("switch end dispatch");
     run_cli(&["end", "project"], &db_b).expect("end dispatch");
 
-    let a = &db_a.entries_for_field("project", None).unwrap()[0];
-    let b = &db_b.entries_for_field("project", None).unwrap()[0];
+    let a = &datum_core::test_util::logged_entries(&db_a, "project")[0];
+    let b = &datum_core::test_util::logged_entries(&db_b, "project")[0];
     assert_eq!(a.field, b.field);
     assert_eq!(a.verb, b.verb);
     assert_eq!(a.state, b.state);
@@ -827,7 +827,7 @@ fn switch_field_non_reserved_state_remains_literal() {
 
     run_cli(&["switch", "project", "ai"], &db).expect("switch <field> <state> dispatch");
 
-    let entries = db.entries_for_field("project", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "project");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_entry_matches!(e, field: "project", verb: "switch", state: "ai");
@@ -843,7 +843,7 @@ fn switch_field_non_reserved_state_remains_literal() {
 fn strict_spec_rejects_undeclared_extra_data_key_at_insert() {
     let db = fresh_db();
 
-    spec_builder("mood").default_verb(Action::Switch).save(&db);
+    spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
     spec.strict = true;
     let mut subfields = std::collections::HashMap::new();
@@ -877,7 +877,7 @@ fn strict_spec_rejects_undeclared_extra_data_key_at_insert() {
 fn strict_spec_accepts_declared_extra_data_key_at_insert() {
     let db = fresh_db();
 
-    spec_builder("mood").default_verb(Action::Switch).save(&db);
+    spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
     spec.strict = true;
     let mut subfields = std::collections::HashMap::new();
@@ -897,7 +897,7 @@ fn strict_spec_accepts_declared_extra_data_key_at_insert() {
     run_cli(&["switch", "mood", "happy", "-k", "intensity=7"], &db)
         .expect("declared key passes strict-mode gate");
 
-    let entry = &db.entries_for_field("mood", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "mood")[0];
     assert_eq!(entry.data.as_ref().unwrap()["intensity"], json!(7));
 }
 
@@ -907,7 +907,7 @@ fn strict_spec_accepts_declared_extra_data_key_at_insert() {
 fn nonstrict_spec_silently_accepts_undeclared_extra_data_key_at_insert() {
     let db = fresh_db();
 
-    spec_builder("mood").default_verb(Action::Switch).save(&db);
+    spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
     let mut subfields = std::collections::HashMap::new();
     subfields.insert(
@@ -926,7 +926,7 @@ fn nonstrict_spec_silently_accepts_undeclared_extra_data_key_at_insert() {
     run_cli(&["switch", "mood", "happy", "-k", "weather=sunny"], &db)
         .expect("non-strict spec accepts any extra_data key");
 
-    let entry = &db.entries_for_field("mood", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "mood")[0];
     assert_eq!(entry.data.as_ref().unwrap()["weather"], json!("sunny"));
 }
 
@@ -959,7 +959,7 @@ fn switch_chain_with_end_keyword_lands_block_switch_at_now() {
     )
     .expect("blockswitch chain dispatch");
 
-    let entries = db.entries_for_field("activity", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "activity");
     let after = chrono::Utc::now();
 
     // The whole bug: the back-date used to make this 14m in the past.
@@ -997,7 +997,7 @@ fn switch_chain_with_stop_keyword_maps_to_state_false() {
     )
     .expect("stop-chain dispatch");
 
-    let e = &db.entries_for_field("activity", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "activity")[0];
     assert_eq!(e.state.as_ref(), Some(&json!(false)));
     assert_eq!(e.following_state.as_ref(), Some(&json!("Y")));
 }
@@ -1014,7 +1014,7 @@ fn switch_chain_with_start_keyword_maps_to_state_true() {
     )
     .expect("start-chain dispatch");
 
-    let e = &db.entries_for_field("activity", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "activity")[0];
     assert_eq!(e.state.as_ref(), Some(&json!(true)));
     assert_eq!(e.following_state.as_ref(), Some(&json!("Y")));
 }
@@ -1032,7 +1032,7 @@ fn switch_chain_with_non_keyword_state_unchanged() {
     )
     .expect("non-keyword chain dispatch");
 
-    let e = &db.entries_for_field("body", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "body")[0];
     assert_eq!(e.state.as_ref(), Some(&json!("vertical")));
     assert_eq!(e.following_state.as_ref(), Some(&json!("sit")));
     assert_eq!(e.duration_seconds(), Some(5 * 60));

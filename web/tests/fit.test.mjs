@@ -461,7 +461,11 @@ describe('the tail pane', () => {
 					// the table: each pull asks for the page above.
 					const tail = app.page.locator('section.pane[data-title="tail"] .body');
 					const count = () => app.page.locator('section.pane[data-title="tail"] tbody tr').count();
-					for (let pulls = 0; pulls < 10 && (await count()) < TEN_ROWS.length; pulls++) {
+					// Ten entries, and one TRACK document per field they bring
+					// into being — coffee, work, mood, posture, nap, project,
+					// water (da-c8mh).
+					const ALL_ROWS = TEN_ROWS.length + 7;
+					for (let pulls = 0; pulls < 10 && (await count()) < ALL_ROWS; pulls++) {
 						const before = await count();
 						await tail.evaluate((body) => (body.scrollTop = 0));
 						const b = await tail.boundingBox();
@@ -473,7 +477,7 @@ describe('the tail pane', () => {
 						);
 					}
 					const table = await app.paneTable('tail');
-					assert.equal(table.rows.length, 10, 'the pane is not showing the full listing');
+					assert.equal(table.rows.length, ALL_ROWS, 'the pane is not showing the full listing');
 
 					const box = await app.page.evaluate(() => {
 						const body = [...document.querySelectorAll('section.pane')]

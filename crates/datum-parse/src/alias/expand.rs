@@ -256,6 +256,19 @@ pub fn try_expand_alias(
         if argv.len() <= name_idx || KNOWN_SUBCOMMANDS.contains(&argv[name_idx].as_str()) {
             return Ok((argv, chain));
         }
+        // da-c8mh: `datum mood switch sad` is the FIELD-FIRST form, one of
+        // the two syntaxes the CLI promises. A verb in the next slot says
+        // so, and the head is that verb's field — not a word to expand.
+        // Every spec now projects a bare-field alias (`mood` → `switch
+        // mood`), so without this the field-first form would expand into
+        // `switch mood switch sad` for every field that has ever been
+        // logged. The swap below turns it into `switch mood sad`.
+        if argv
+            .get(name_idx + 1)
+            .is_some_and(|t| KNOWN_SUBCOMMANDS.contains(&t.as_str()))
+        {
+            return Ok((argv, chain));
+        }
         let name = argv[name_idx].clone();
         if visited.iter().any(|v| v == &name) {
             let mut path = visited;
@@ -343,7 +356,7 @@ pub fn try_expand_alias(
             //
             // Declared fields still work bare, and should:
             // `FieldSpec::regenerate_derived_aliases` gives each spec a
-            // `<field>` → `<default_verb> <field>` alias that this lookup
+            // `<field>` → `<verb> <field>` alias that this lookup
             // finds. Only *undeclared* names error.
             None => return Ok((argv, chain)),
         }

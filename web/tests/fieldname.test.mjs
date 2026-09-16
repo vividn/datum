@@ -141,7 +141,7 @@ describe('a field name the (+) form accepts', () => {
 	test('typing `spec set` refuses the same names', async () => {
 		await withApp(async ({ submit, outputs, run }) => {
 			for (const testCase of refused) {
-				const result = await run(['spec', 'set', testCase.field, '--default-verb', 'occur']);
+				const result = await run(['spec', 'set', testCase.field, '--verb', 'occur']);
 				assert.notEqual(result.code, 0, `${testCase.name}: '✓ Spec saved' for a dead field`);
 				// A lone comma never reaches `spec set` as a name: the CLI
 				// splits its entry chain on it first, and what is left has

@@ -180,13 +180,7 @@ const CASES: &[Case] = &[
     },
     Case {
         setup: &[&[
-            "spec",
-            "set",
-            "mood",
-            "--default-verb",
-            "switch",
-            "--state",
-            "happy",
+            "spec", "set", "mood", "--verb", "switch", "--state", "happy",
         ]],
         argv: &["happy", "-t", "0930"],
         time: TimeMode::Clock,
@@ -239,7 +233,8 @@ fn cli_row(case: &Case) -> (Row, World) {
         .prepare(
             "SELECT field, verb, state, dur, data, occur_time, occur_time_uncertainty, \
                     slug, content_hash, create_time, raw_input, alias_chain \
-             FROM entries WHERE deleted_at IS NULL",
+             FROM entries WHERE deleted_at IS NULL \
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL",
         )
         .unwrap();
     let mut rows = stmt

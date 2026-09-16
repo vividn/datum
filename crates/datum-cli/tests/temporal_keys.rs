@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 
 /// The rows of `field`, oldest first.
 fn rows(db: &Db, field: &str) -> Vec<Entry> {
-    let mut rows = db.entries_for_field(field, None).unwrap();
+    let mut rows = datum_core::test_util::logged_entries(db, field);
     rows.sort_by_key(|e| e.occur_time.as_ref().map(|t| t.utc));
     rows
 }

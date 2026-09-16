@@ -49,7 +49,19 @@ fn run(db: &PathBuf, args: &[&str]) -> String {
 /// info line, then optional extras. Line 1 (zero-indexed 1) is the info
 /// line we care about.
 fn info_line_of(stdout: &str) -> String {
-    stdout.lines().nth(1).unwrap_or_default().trim().to_string()
+    // A field's FIRST log prints the TRACK document that declares it
+    // (da-c8mh) ahead of the entry, so the ENTRY's header is the last one.
+    let lines: Vec<&str> = stdout.lines().collect();
+    let i = lines
+        .iter()
+        .rposition(|l| l.contains("CREATE") || l.contains("UPDATE"))
+        .unwrap_or(0);
+    lines
+        .get(i + 1)
+        .copied()
+        .unwrap_or_default()
+        .trim()
+        .to_string()
 }
 
 /// Strip the timestamp prefix so goldens don't depend on wall-clock. The
@@ -109,13 +121,19 @@ fn switch_switch_tail_reproducer_matches_spec() {
         assert!(header.contains(tok), "header missing {tok:?}:\n{tail}");
     }
     let data: Vec<&str> = tail_lines.collect();
-    assert_eq!(data.len(), 2, "expected 2 data rows:\n{tail}");
+    // The field's TRACK document (da-c8mh) is the oldest row.
+    assert_eq!(
+        data.len(),
+        3,
+        "expected the declaration + 2 data rows:\n{tail}"
+    );
     for row in &data {
         assert!(row.contains("myfield"), "row missing field:\n{row:?}");
     }
-    assert!(data[0].contains("abc"), "first row state missing:\n{tail}");
+    assert!(data[0].contains("TRACK"), "declaration missing:\n{tail}");
+    assert!(data[1].contains("abc"), "first row state missing:\n{tail}");
     assert!(
-        data[1].contains("abcdefg"),
+        data[2].contains("abcdefg"),
         "second row state missing:\n{tail}"
     );
 

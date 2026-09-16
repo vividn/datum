@@ -64,24 +64,33 @@ impl Env {
 /// What cannot match across two databases: the hid, and every digit of the
 /// create_time the timeless slug and the `info` clock are built from.
 /// Flattened so the rest of the echo can be compared as the bytes it is.
-fn mask(json: &str, hid: &str) -> String {
-    json.replace(hid, "HID")
-        .chars()
+fn mask(json: &str, hids: &[String]) -> String {
+    let mut out = json.to_string();
+    for hid in hids {
+        out = out.replace(hid.as_str(), "HID");
+    }
+    out.chars()
         .map(|c| if c.is_ascii_digit() { '0' } else { c })
         .collect()
 }
 
-/// The `hid` field of a one-doc `--show json` echo.
-fn hid_of(json: &str) -> String {
+/// Every `hid` in a `--show json` echo. A field's first log echoes two
+/// documents — the TRACK one that declares it, then the entry (da-c8mh).
+fn hids_of(json: &str) -> Vec<String> {
     let v: serde_json::Value = serde_json::from_str(json.trim()).expect("json echo");
-    v["docs"][0]["hid"].as_str().expect("hid").to_string()
+    v["docs"]
+        .as_array()
+        .expect("docs")
+        .iter()
+        .map(|d| d["hid"].as_str().expect("hid").to_string())
+        .collect()
 }
 
 /// The stored `data` object of the newest entry for `field`.
 fn data_of(env: &Env, field: &str) -> serde_json::Value {
     let json = env.ok(&["tail", "-n", "1", field, "--show", "json"]);
     let v: serde_json::Value = serde_json::from_str(json.trim()).expect("tail json");
-    v["rows"][0]["data"].clone()
+    v["rows"].as_array().expect("rows").last().expect("a row")["data"].clone()
 }
 
 #[test]
@@ -123,8 +132,8 @@ fn explicit_c_is_redundant_not_an_error() {
     let b = flagged.ok(&["note", "coffee", "-C", "same", "words", "--show", "json"]);
 
     assert_eq!(
-        mask(&a, &hid_of(&a)),
-        mask(&b, &hid_of(&b)),
+        mask(&a, &hids_of(&a)),
+        mask(&b, &hids_of(&b)),
         "an explicit `-C` must be accepted and change nothing",
     );
 }

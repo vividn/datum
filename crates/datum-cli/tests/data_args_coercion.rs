@@ -19,7 +19,7 @@ fn time_suffix_coerces_clock_string() {
     let db = fresh_db();
     run_cli(&["occur", "morning", "wake_time=8am"], &db).expect("occur with wake_time=8am");
 
-    let entry = &db.entries_for_field("morning", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "morning")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(
         extra["wake_time"],
@@ -35,7 +35,7 @@ fn time_suffix_camel_case_coerces() {
     let db = fresh_db();
     run_cli(&["occur", "morning", "wakeTime=8am"], &db).expect("occur with wakeTime=8am");
 
-    let entry = &db.entries_for_field("morning", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "morning")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(extra["wakeTime"], json!("08:00:00"));
 }
@@ -47,7 +47,7 @@ fn time_suffix_handles_hhmm_input() {
     let db = fresh_db();
     run_cli(&["occur", "evening", "bed_time=15:13"], &db).expect("occur with bed_time=15:13");
 
-    let entry = &db.entries_for_field("evening", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "evening")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(extra["bed_time"], json!("15:13:00"));
 }
@@ -63,7 +63,7 @@ fn unit_annotation_survives_handle_data_args() {
     run_cli(&["switch", "weight", "75.2kg", "src=morning"], &db)
         .expect("switch weight 75.2kg src=morning");
 
-    let entry = &db.entries_for_field("weight", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "weight")[0];
     assert_eq!(
         entry.state,
         Some(json!({"v": 75.2, "u": "kg"})),
@@ -85,7 +85,7 @@ fn dash_r_routes_remainder_to_named_field() {
     run_cli(&["occur", "note", "-R", "extra", "one", "two"], &db)
         .expect("occur note -R extra one two");
 
-    let entry = &db.entries_for_field("note", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "note")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(extra["extra"], json!(["one", "two"]));
 }
@@ -105,7 +105,7 @@ fn dash_r_dash_s_joins_remainder_into_string_at_field() {
     )
     .expect("occur log -R notes -S this is a long note");
 
-    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(extra["notes"], json!("this is a long note"));
 }
@@ -120,7 +120,7 @@ fn dash_c_joins_remainder_into_comment_string() {
     run_cli(&["occur", "log", "-C", "ate", "too", "many", "tacos"], &db)
         .expect("occur log -C ate too many tacos");
 
-    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(extra["comment"], json!("ate too many tacos"));
 }
@@ -140,7 +140,7 @@ fn dash_sr_bundle_joins_remainder_into_named_bucket() {
     )
     .expect("occur log -SR notes all the rest is one string");
 
-    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(extra["notes"], json!("all the rest is one string"));
 }
@@ -156,7 +156,7 @@ fn dash_s_alone_on_occur_infers_lenient_extra_data() {
     run_cli(&["occur", "log", "-S", "a", "long", "phrase"], &db)
         .expect("occur -S alone should infer lenient and land in extra_data");
 
-    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(
         extra["extra_data"],
@@ -186,7 +186,7 @@ fn dash_c_appends_to_explicit_comment_flag() {
     )
     .expect("occur log -c explicit -C remainder words");
 
-    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(
         extra["comment"],
@@ -213,7 +213,7 @@ fn multiple_comments_become_array() {
     )
     .expect("occur with two -c flags");
 
-    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(extra["comment"], json!(["first comment", "second comment"]));
 }
@@ -223,7 +223,7 @@ fn single_comment_stays_scalar() {
     let db = fresh_db();
     run_cli(&["occur", "log", "-c", "lone comment"], &db).expect("occur with one -c");
 
-    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(extra["comment"], json!("lone comment"));
 }

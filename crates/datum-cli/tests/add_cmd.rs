@@ -46,14 +46,14 @@ fn note_creates_exactly_one_entry() {
 fn note_sets_field_and_collects_extra_kv() {
     let db = fresh_db();
     run_cli(&["note", "field"], &db).expect("note field");
-    let e1 = &db.entries_for_field("field", None).unwrap()[0];
+    let e1 = &datum_core::test_util::logged_entries(&db, "field")[0];
     // da-5ns: verb is derived from (state, dur, following_state). `add field`
     // with no time-shape inputs derives to `point` under the v3 model.
     assert_entry_matches!(e1, field: "field", verb: "point");
     assert!(e1.data.is_none(), "no kv pairs ⇒ extra_data stays None",);
 
     run_cli(&["note", "field2", "foo=bar"], &db).expect("note field2 foo=bar");
-    let e2 = &db.entries_for_field("field2", None).unwrap()[0];
+    let e2 = &datum_core::test_util::logged_entries(&db, "field2")[0];
     assert_entry_matches!(e2, field: "field2");
     let extra = e2.data.as_ref().expect("foo=bar lands in extra_data");
     assert_eq!(extra.get("foo"), Some(&json!("bar")));
@@ -80,7 +80,7 @@ fn first_positional_is_field_literal_unbound_trailing_errors() {
     // `add <field>` — the first positional becomes the field. Bare
     // form succeeds with no other args.
     run_cli(&["note", "foo"], &db).expect("note foo");
-    let entries = db.entries_for_field("foo", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "foo");
     assert_eq!(entries.len(), 1, "first positional is the field literal");
     assert_eq!(entries[0].field, "foo");
 
@@ -111,7 +111,7 @@ fn required_keys_positional_absorption_skipped_no_analog() {
     // value but `parse_log_args` only splits on `=`; it is silently dropped.
     // The positional `value` becomes the primary value.
     run_cli(&["note", "field", "-k", "abc=value"], &db).expect("note field -k abc=value");
-    let e = &db.entries_for_field("field", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "field")[0];
     let extra = e.data.as_ref().expect("-k lands in extra_data");
     assert_eq!(extra.get("abc"), Some(&json!("value")));
 }
@@ -144,7 +144,7 @@ fn fieldless_mode_skipped_no_analog() {
 fn field_kv_overrides_positional_via_flex_slot() {
     let db = fresh_db();
     run_cli(&["note", "fromField", "field=fromData"], &db).expect("note fromField field=fromData");
-    let entries = db.entries_for_field("fromData", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "fromData");
     assert_eq!(entries.len(), 1, "field=... overrides the positional");
     let e = &entries[0];
     assert_eq!(e.field, "fromData", "later `field=...` wins");
@@ -167,7 +167,7 @@ fn bare_note_fails_parse() {
         "expected parse error, got: {msg}",
     );
     assert_eq!(
-        db.entries_for_field("", None).unwrap().len(),
+        datum_core::test_util::logged_entries(&db, "").len(),
         0,
         "no row must have slipped in before the error",
     );
@@ -183,7 +183,7 @@ fn bare_note_fails_parse() {
 fn empty_id_template_produces_empty_slug() {
     let db = fresh_db();
     run_cli(&["add", "field", "--id", ""], &db).expect("note --id ''");
-    let e = &db.entries_for_field("field", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "field")[0];
     // da-ivld: slug = `<field>:<body>` always; empty template ⇒ empty body.
     assert_eq!(e.slug, "field:", "empty template ⇒ `<field>:` slug");
     assert_eq!(
@@ -203,7 +203,7 @@ fn blank_fieldless_with_metadata_skipped_no_analog() {
     // carries populated bookkeeping fields by default.
     let db = fresh_db();
     run_cli(&["note", "field"], &db).expect("note field");
-    let e = &db.entries_for_field("field", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert!(!e.device_id.is_empty(), "device_id populated by default");
     assert_ne!(
         e.create_time,
@@ -221,7 +221,7 @@ fn completely_blank_with_id_skipped_no_analog() {
     // template. Locks in the `--id` wiring.
     let db = fresh_db();
     run_cli(&["add", "field", "--id", "test"], &db).expect("note field --id test");
-    let e = &db.entries_for_field("field", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "field")[0];
     // da-ivld: --id supplies the body; slug is `<field>:<body>`.
     assert_eq!(
         e.slug, "field:test",
@@ -240,7 +240,7 @@ fn internal_insert_spy_skipped_structural_only() {
     let db = fresh_db();
     run_cli(&["add", "field", "foo=abc", "--id", "%foo%"], &db)
         .expect("note field foo=abc --id %foo%");
-    let e = &db.entries_for_field("field", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "field")[0];
     // Observable proxy for "the insert happened with these args":
     assert_eq!(
         e.slug, "field:abc",
@@ -308,7 +308,7 @@ fn identical_content_triggers_exists_outcome() {
     // already produces the same InsertOutcome variants.
     run_cli(&["add", "bob", "foo=bar", "-t", "09:00"], &db).expect("first note");
     assert_count!(db, "bob", 1);
-    let first = db.entries_for_field("bob", None).unwrap()[0].clone();
+    let first = datum_core::test_util::logged_entries(&db, "bob")[0].clone();
 
     // Rebuild an entry with identical content (same field, time, value,
     // extra) and attempt insertion via Ignore — must report as duplicate.
@@ -342,7 +342,7 @@ fn same_id_different_data_errors_on_second() {
         "error must mention the duplicate slug, got: {msg}",
     );
 
-    let entries = db.entries_for_field("field", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "field");
     assert_eq!(entries.len(), 1, "second insert rejected");
     // da-ivld: slug is `<field>:<body>`.
     assert_eq!(entries[0].slug, "field:doug");
@@ -362,7 +362,7 @@ fn id_template_recorded_in_id_structure() {
         &db,
     )
     .expect("add --id rawString__%foo%!!");
-    let e = &db.entries_for_field("field", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_eq!(
         e.id_structure.as_deref(),
         Some("rawString__%foo%!!"),
@@ -413,7 +413,7 @@ fn payload_id_precedence_skipped_no_analog() {
     // Lock-in: `--id` is the single source for daydumb slug templating.
     let db = fresh_db();
     run_cli(&["add", "field", "--id", "explicit-slug"], &db).expect("note --id explicit-slug");
-    let e = &db.entries_for_field("field", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_eq!(e.slug, "field:explicit-slug");
 }
 
@@ -427,7 +427,7 @@ fn payload_id_precedence_skipped_no_analog() {
 fn id_structure_always_set_when_id_given() {
     let db = fresh_db();
     run_cli(&["add", "field", "--id", "rawString"], &db).expect("note --id rawString");
-    let e = &db.entries_for_field("field", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_eq!(e.slug, "field:rawString");
     assert_eq!(
         e.id_structure.as_deref(),
@@ -441,7 +441,7 @@ fn id_structure_always_set_when_id_given() {
     // create_time-identified, so it takes the `%create_time%` branch
     // (the slug renders `other:c<create_time>`).
     run_cli(&["note", "other"], &db).expect("note other");
-    let other = &db.entries_for_field("other", None).unwrap()[0];
+    let other = &datum_core::test_util::logged_entries(&db, "other")[0];
     assert_eq!(
         other.id_structure.as_deref(),
         Some("%create_time%"),
@@ -450,7 +450,7 @@ fn id_structure_always_set_when_id_given() {
 
     // A timed default add (explicit -t) takes the `%occur_time%` branch.
     run_cli(&["add", "timed", "-t", "10:00"], &db).expect("note timed");
-    let timed = &db.entries_for_field("timed", None).unwrap()[0];
+    let timed = &datum_core::test_util::logged_entries(&db, "timed")[0];
     assert_eq!(
         timed.id_structure.as_deref(),
         Some("%occur_time%"),
@@ -493,7 +493,7 @@ fn merge_flag_routes_to_merge_strategy() {
     let db = fresh_db();
     run_cli(&["add", "field", "-t", "09:00", "-k", "foo=abc"], &db).expect("seed note");
     assert_count!(db, "field", 1);
-    let before = db.entries_for_field("field", None).unwrap()[0].clone();
+    let before = datum_core::test_util::logged_entries(&db, "field")[0].clone();
 
     std::thread::sleep(std::time::Duration::from_millis(5));
 
@@ -505,7 +505,7 @@ fn merge_flag_routes_to_merge_strategy() {
     )
     .expect("merge dispatch");
     assert_count!(db, "field", 1);
-    let after = db.entries_for_field("field", None).unwrap()[0].clone();
+    let after = datum_core::test_util::logged_entries(&db, "field")[0].clone();
     assert_eq!(after.slug, before.slug, "merged in place, not rekeyed");
     assert!(
         after.modify_time > before.modify_time,
@@ -524,7 +524,7 @@ fn conflict_update_flag_routes_to_update_strategy() {
     let db = fresh_db();
     run_cli(&["add", "field", "-t", "09:00", "-k", "foo=abc"], &db).expect("seed note");
     assert_count!(db, "field", 1);
-    let before = db.entries_for_field("field", None).unwrap()[0].clone();
+    let before = datum_core::test_util::logged_entries(&db, "field")[0].clone();
 
     std::thread::sleep(std::time::Duration::from_millis(5));
 
@@ -543,7 +543,7 @@ fn conflict_update_flag_routes_to_update_strategy() {
     )
     .expect("--conflict update dispatch");
     assert_count!(db, "field", 1);
-    let after = db.entries_for_field("field", None).unwrap()[0].clone();
+    let after = datum_core::test_util::logged_entries(&db, "field")[0].clone();
     assert_eq!(after.slug, before.slug);
     assert!(after.modify_time > before.modify_time);
 }
@@ -568,7 +568,7 @@ fn slug_template_interpolates_composite_keys() {
         &db,
     )
     .expect("note composite template");
-    let e1 = &db.entries_for_field("field", None).unwrap()[0];
+    let e1 = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_eq!(e1.slug, "field:Testing_Fields");
 
     run_cli(
@@ -583,7 +583,7 @@ fn slug_template_interpolates_composite_keys() {
         &db,
     )
     .expect("note hyphen template");
-    let e2 = &db.entries_for_field("other", None).unwrap()[0];
+    let e2 = &datum_core::test_util::logged_entries(&db, "other")[0];
     assert_eq!(e2.slug, "other:Composite-Test");
 }
 
@@ -603,7 +603,7 @@ fn comment_flag_populates_extra_data_comment() {
         &db,
     )
     .expect("note -c 'comment remainder'");
-    let e = &db.entries_for_field("field", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "field")[0];
     let extra = e.data.as_ref().unwrap();
     assert_eq!(extra.get("foo"), Some(&json!("bar")));
     assert_eq!(
@@ -673,7 +673,7 @@ fn id_positional_alone_produces_field_colon_id_slug() {
 fn no_id_falls_back_to_timestamp_slug() {
     let db = fresh_db();
     run_cli(&["note", "book", "title=anon"], &db).expect("note book title=anon");
-    let e = &db.entries_for_field("book", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "book")[0];
     assert!(
         e.slug.starts_with("book:c"),
         "timeless slug is create_time-derived (field:c<create_time>): {}",
@@ -735,7 +735,7 @@ fn colon_pattern_value_stored_as_plain_string() {
     run_cli(&["add", "book", "title=Goldmund", "id=goldmund"], &db).expect("add book id=goldmund");
     // Create a switch that references it.
     run_cli(&["switch", "consume", "book:goldmund"], &db).expect("switch consume book:goldmund");
-    let switch_entry = &db.entries_for_field("consume", None).unwrap()[0];
+    let switch_entry = &datum_core::test_util::logged_entries(&db, "consume")[0];
     assert_eq!(
         switch_entry.state,
         Some(json!("book:goldmund")),
@@ -757,7 +757,7 @@ fn unresolved_doc_reference_does_not_block_write() {
     let db = fresh_db();
     run_cli(&["switch", "consume", "book:does-not-exist-yet"], &db)
         .expect("forward reference writes successfully");
-    let e = &db.entries_for_field("consume", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "consume")[0];
     assert_eq!(e.state, Some(json!("book:does-not-exist-yet")));
 }
 
@@ -773,8 +773,8 @@ fn note_verb_removed_but_alias_works() {
         .expect("note → add via seeded alias");
     run_cli(&["add", "field", "foo=bar", "-t", "09:00"], &db_add).expect("add dispatch");
 
-    let n = &db_note.entries_for_field("field", None).unwrap()[0];
-    let a = &db_add.entries_for_field("field", None).unwrap()[0];
+    let n = &datum_core::test_util::logged_entries(&db_note, "field")[0];
+    let a = &datum_core::test_util::logged_entries(&db_add, "field")[0];
 
     assert_eq!(n.field, a.field);
     // da-5ns: `add` derives the verb from data shape — `add field foo=bar`
@@ -851,7 +851,7 @@ fn add_dash_sr_bundle_joins_remainder_into_named_bucket() {
     )
     .expect("dm note field -SR key <rest...>");
 
-    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(
         extra["key"],

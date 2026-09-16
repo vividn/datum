@@ -57,10 +57,11 @@ describe('the time an entry is rendered with', () => {
 			// row degrades to its bare date, a clock keeps its clock, and
 			// the `±5m` the CLI paints after a stamp is carried too. The
 			// listing's shared UTC offset rides in the header (da-lkji).
-			assert.deepEqual(rowTexts(tail.stdout), [
-				'time (+0) field s _n hid',
-				`${yesterday} coffee ∅● _3 <hid>`,
-				'09:15:00 tea ∅● _2 <hid>',
+			// Each field's TRACK document (da-c8mh) reads a millisecond above
+			// its entry; the entries are the rows that are not declarations.
+			assert.deepEqual(rowTexts(tail.stdout).filter((r) => !r.startsWith('TRACK')).slice(1), [
+				`${yesterday} coffee ∅● _5 <hid>`,
+				'09:15:00 tea ∅● _3 <hid>',
 				'10:00:00±5m water ∅● _1 <hid>'
 			]);
 
@@ -69,10 +70,14 @@ describe('the time an entry is rendered with', () => {
 			// how the tail pane comes to know about the entries.
 			await reload();
 			const table = await paneTable('tail');
-			const times = table.rows.map((cells) => cells[table.keys.indexOf('time')]);
+			// Each field's TRACK document (da-c8mh) reads just above its
+			// entry, so the entries are every second row.
+			const times = table.rows
+				.filter((_, i) => i % 2 === 1)
+				.map((cells) => cells[table.keys.indexOf('time')]);
 			// The date the coffee owns, the clocks the other two own — and
 			// no midnight invented for the day-precision row.
 			assert.deepEqual(times, [yesterday, '09:15:00', '10:00:00±5m']);
-		});
+		}, { viewport: { width: 1280, height: 1200 } });
 	});
 });

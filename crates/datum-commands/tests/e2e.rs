@@ -155,8 +155,11 @@ fn live_rows(db: &Db) -> Vec<RowView> {
     let mut stmt = db
         .conn()
         .prepare(
+            // The rows a case LOGGED. The TRACK document that declares a
+            // field on its first use (da-c8mh) is not one of them.
             "SELECT field, state, dur, data \
              FROM entries WHERE deleted_at IS NULL \
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL \
              ORDER BY rowid",
         )
         .expect("prepare live_rows query");
@@ -326,9 +329,7 @@ fn seed_oov_alias(db: &Db) {
 }
 
 fn seed_word_spec_with_alias(db: &Db) {
-    spec_builder("word".to_string())
-        .default_verb(Action::Add)
-        .save(db);
+    spec_builder("word".to_string()).verb(Action::Add).save(db);
     alias_builder(
         "vbp".to_string(),
         "note word srcLang=pt pos=verb".to_string(),
@@ -338,7 +339,7 @@ fn seed_word_spec_with_alias(db: &Db) {
 
 fn seed_mood_field_spec(db: &Db) {
     spec_builder("mood".to_string())
-        .default_verb(Action::Switch)
+        .verb(Action::Switch)
         .save(db);
 }
 

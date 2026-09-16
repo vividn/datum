@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use datum_core::db::Db;
 use datum_core::entry::Entry;
-use datum_core::field_spec::FieldSpec;
+use datum_core::field_spec::{FieldSpec, PresentationSpec};
 use datum_core::shape::{
     dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
     is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
@@ -505,9 +505,7 @@ pub(crate) fn build_dayview_fields(
 
         let resolved = match &spec {
             Some(s) => s.presentation.resolve_position(&field),
-            None => FieldSpec::new(field.clone())
-                .presentation
-                .resolve_position(&field),
+            None => PresentationSpec::default().resolve_position(&field),
         };
 
         out.push(DayviewFieldInput {
@@ -629,9 +627,7 @@ pub(crate) fn build_fields(
 
         let resolved = match &spec {
             Some(s) => s.presentation.resolve_position(field),
-            None => FieldSpec::new(field.to_string())
-                .presentation
-                .resolve_position(field),
+            None => PresentationSpec::default().resolve_position(field),
         };
 
         // Per-field fallback color — single hex unless the field has a
@@ -1009,13 +1005,13 @@ mod tests {
 
         let db = Db::open_in_memory().unwrap();
 
-        let mut muted = FieldSpec::with_verb("muted", Action::Occur);
+        let mut muted = FieldSpec::new("muted", Action::Occur);
         let mut map = std::collections::HashMap::new();
         map.insert("nowview".to_string(), false);
         muted.presentation.render = Some(Render::PerSurface(map));
         db.save_field_spec(&muted).unwrap();
 
-        db.save_field_spec(&FieldSpec::with_verb("visible", Action::Occur))
+        db.save_field_spec(&FieldSpec::new("visible", Action::Occur))
             .unwrap();
 
         let now = Utc::now();
@@ -1054,7 +1050,7 @@ mod tests {
         use datum_core::time::DatumTime;
 
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::with_verb("focus", Action::Switch);
+        let mut spec = FieldSpec::new("focus", Action::Switch);
         spec.presentation.y = Some(0.4);
         spec.presentation.height = Some(0.25);
         spec.presentation.z_index = Some(0.7);
@@ -1091,7 +1087,7 @@ mod tests {
         use datum_core::time::DatumTime;
 
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::with_verb("caffeine", Action::Occur);
+        let mut spec = FieldSpec::new("caffeine", Action::Occur);
         spec.color = Some("#643200".into());
         db.save_field_spec(&spec).unwrap();
 
@@ -1124,7 +1120,7 @@ mod tests {
         use datum_core::time::DatumTime;
 
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::with_verb("background_telemetry", Action::Occur);
+        let mut spec = FieldSpec::new("background_telemetry", Action::Occur);
         spec.presentation.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 

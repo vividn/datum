@@ -225,7 +225,7 @@ fn legacy_backup_json_import_still_works() {
     )
     .expect("legacy backup.json import dispatch");
 
-    let entries = db.entries_for_field("coffee", None).expect("list coffee");
+    let entries = datum_core::test_util::logged_entries(&db, "coffee");
     assert_eq!(entries.len(), 1, "backup.json doc must land as one entry");
     assert_eq!(entries[0].field, "coffee");
 }

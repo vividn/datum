@@ -411,6 +411,19 @@ impl FieldStateEvents {
     }
 
     #[cfg(feature = "db")]
+    /// [`FieldStateEvents::load_for_field_up_to`] over the field's
+    /// TRANSITIONS only: the TRACK document that declares a field is not
+    /// one (da-c8mh), so a reader asking "what was this field doing just
+    /// before this row" is not answered with "it exists".
+    pub fn load_transitions_for_field(
+        conn: &Connection,
+        field: &str,
+        max_probe: Option<DateTime<Utc>>,
+    ) -> Result<Self> {
+        Self::load_events(conn, field, max_probe, true)
+    }
+
+    #[cfg(feature = "db")]
     /// Load state-affecting events for `field`, optionally pruned to entries
     /// that could contribute an event ≤ `max_probe`. Reads only the columns
     /// [`compile_state`] needs.
@@ -425,6 +438,16 @@ impl FieldStateEvents {
         conn: &Connection,
         field: &str,
         max_probe: Option<DateTime<Utc>>,
+    ) -> Result<Self> {
+        Self::load_events(conn, field, max_probe, false)
+    }
+
+    #[cfg(feature = "db")]
+    fn load_events(
+        conn: &Connection,
+        field: &str,
+        max_probe: Option<DateTime<Utc>>,
+        transitions_only: bool,
     ) -> Result<Self> {
         let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)> = Vec::new();
         let push = |row: &rusqlite::Row<'_>,
@@ -478,6 +501,11 @@ impl FieldStateEvents {
         };
 
         let participation = crate::db::STATE_PARTICIPATION_SQL;
+        let declarations = if transitions_only {
+            format!("AND {}", crate::track::NOT_A_DECLARATION_SQL)
+        } else {
+            String::new()
+        };
         match max_probe {
             Some(t) => {
                 let sql = format!(
@@ -485,6 +513,7 @@ impl FieldStateEvents {
                      FROM entries
                      WHERE field = ?1
                        AND {participation}
+                       {declarations}
                        AND occur_time <= ?2
                      ORDER BY {order}",
                     order = crate::db::STATE_ORDER_OLDEST_FIRST,
@@ -501,6 +530,7 @@ impl FieldStateEvents {
                      FROM entries
                      WHERE field = ?1
                        AND {participation}
+                       {declarations}
                      ORDER BY {order}",
                     order = crate::db::STATE_ORDER_OLDEST_FIRST,
                 );

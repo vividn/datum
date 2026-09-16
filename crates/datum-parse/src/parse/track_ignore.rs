@@ -6,11 +6,16 @@ use crate::input::{local_value, LiftedSpec};
 pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
     #[derive(Default)]
     struct TrackParsing {
+        verb: Option<String>,
         color: Option<String>,
         state_colors: Vec<String>,
         tags: Vec<String>,
     }
     let registry: Vec<LiftedSpec<TrackParsing>> = vec![
+        local_value(None, Some("verb"), |p, v| {
+            p.verb = Some(v.to_string());
+            Ok(())
+        }),
         local_value(None, Some("color"), |p, v| {
             p.color = Some(v.to_string());
             Ok(())
@@ -37,11 +42,15 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
                 pos.push(s);
                 i += 1;
             }
+            FlagSplit::Long("default-verb") | FlagSplit::LongAttached("default-verb", _) => {
+                return Err(renamed_default_verb())
+            }
             f => return Err(unknown_flag(f)),
         }
     }
     Ok(TrackArgs {
         field: require_pos(&pos, "<FIELD>")?,
+        verb: composed.verb,
         color: composed.color,
         state_colors: composed.state_colors,
         tags: composed.tags,

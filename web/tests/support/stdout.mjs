@@ -38,7 +38,8 @@ export function masker() {
 			// The short hid: after an action word, or closing a tail row,
 			// where it follows the `_n` column.
 			.replace(
-				new RegExp(`((?:CREATE|EXISTS|UPDATE|DELETE)${ESC} ${ESC})([0-9a-z]{5})\\b`, 'g'),
+				// `TRACK<glyph>` is an action word too (da-c8mh).
+				new RegExp(`((?:CREATE|EXISTS|UPDATE|DELETE|TRACK.)${ESC} ${ESC})([0-9a-z]{5})\\b`, 'g'),
 				(_, before, m) => before + id(m)
 			)
 			.replace(new RegExp(`(_\\d+${ESC} +)([0-9a-z]{5})$`, 'gm'), (_, before, m) => before + id(m))

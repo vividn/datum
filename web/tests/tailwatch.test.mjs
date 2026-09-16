@@ -432,7 +432,9 @@ describe('a write', () => {
 				await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
 				assert.deepEqual((await geometry(page)).start, [seedHid(0)]);
 
-				// A day before the first seed, typed while at the top.
+				// A day before the first seed, typed while at the top. The
+				// field is declared first so the write is one row (da-c8mh).
+				await app.declare('tea');
 				await app.submit('occur tea -d 2026-09-09');
 				await app.idle();
 				const tea = (await app.entries(50)).find((entry) => entry.field === 'tea');
@@ -441,7 +443,7 @@ describe('a write', () => {
 				assert.equal(g1.start.length, 0, 'the old first row is still marked as the start after a write');
 
 				await wheelUp(page);
-				await waitRows(page, 'n === arg', 21);
+				await waitRows(page, 'n === arg', 22);
 				const g2 = await geometry(page);
 				assert.equal(g2.hids[0], tea.hid, 'the backdated row is not first');
 				await wheelUp(page);
@@ -489,12 +491,13 @@ describe('a write', () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
+				// Four entries, and the TRACK document each of the two fields
+				// is declared by (da-c8mh): six rows, which is what this pane
+				// must bring down to what its box draws.
 				const LONG = [
 					'switch mood contemplative-about-the-weather -t 0700',
 					'switch project datum-day-tail-table-that-wraps -t 0800',
 					'switch mood restless-in-the-afternoon-light -t 0900',
-					'switch project the-long-and-winding-refactor -t 1000',
-					'switch mood quietly-pleased-with-the-result -t 1100',
 					'switch project another-name-that-wraps-in-a-column -t 1200'
 				];
 				for (const line of LONG) await app.submit(line);
@@ -509,7 +512,10 @@ describe('a write', () => {
 				);
 				const g = await geometry(page);
 				const asks = await page.evaluate(() => window.__tailAsks);
-				assert.ok(g.hids.length > 0 && g.hids.length < LONG.length, `${g.hids.length} rows: the pane holds all six, which tests nothing`);
+				assert.ok(
+					g.hids.length > 0 && g.hids.length < LONG.length + 2,
+					`${g.hids.length} rows: the pane holds all six, which tests nothing`
+				);
 				assert.ok(asks.some((ask) => ask.n > g.hids.length), `no ask beyond what fits was corrected: ${JSON.stringify(asks)}`);
 				assert.equal(asks.at(-1).n, g.hids.length, `the last ask is not the count shown: ${JSON.stringify(asks)}`);
 				assert.ok(g.last <= g.box + 0.5, `the rows overflow the box (${g.last} of ${g.box}px)`);
@@ -529,10 +535,20 @@ describe('a write', () => {
 				async (app) => {
 					const { page } = app;
 					await seed(app, 30);
+					// A declaration already in the listing, so the `action`
+					// column (da-c8mh) is there before the write and the count
+					// does not move when the write brings one of its own.
+					await app.declare('coffee');
+					await app.reload();
 					await atRest(page);
 					const g0 = await geometry(page);
 					assertFits(g0, 'at rest');
-					assert.deepEqual(g0.hids, g0.hids.map((_, i) => seedHid(30 - g0.n + i)), 'not the newest rows');
+					const seeds = g0.hids.slice(0, -1);
+					assert.deepEqual(
+						seeds,
+						seeds.map((_, i) => seedHid(30 - seeds.length + i)),
+						'not the newest rows'
+					);
 
 					await app.submit('occur coffee');
 					await page.waitForFunction(() =>

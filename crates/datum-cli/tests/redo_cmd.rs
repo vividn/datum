@@ -22,7 +22,9 @@ fn kinds(db: &datum_core::db::Db, hid: &str) -> Vec<ChangeKind> {
 }
 
 fn only_hid(db: &datum_core::db::Db) -> String {
-    let entries = db.list_including_deleted().unwrap();
+    // The row the test LOGGED: the TRACK document that declares its field
+    // on the first use (da-c8mh) is not one of them.
+    let entries = datum_core::test_util::logged_all(db);
     assert_eq!(entries.len(), 1, "expected exactly one row");
     entries[0].hid.to_string()
 }
@@ -168,9 +170,7 @@ fn redo_on_a_multi_entry_last_steps_every_row() {
     run_cli(&["occur", "coffee", "cups=2"], &db).expect("create coffee");
     let coffee = only_hid(&db);
     run_cli(&["occur", "tea", "cups=2"], &db).expect("create tea");
-    let tea = db
-        .list_including_deleted()
-        .unwrap()
+    let tea = datum_core::test_util::logged_all(&db)
         .into_iter()
         .find(|e| e.field == "tea")
         .unwrap()

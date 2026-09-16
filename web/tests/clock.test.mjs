@@ -62,17 +62,16 @@ describe('the clock the web app prints', () => {
 			// The CLI's own table (crates/datum-commands/src/render), via the
 			// wasm renderer: a header carrying the listing's UTC offset, then
 			// a 24-hour clock, the field, and `∅` for a field's first entry.
-			assert.deepEqual(rowTexts(tail.stdout), [
-				'time (+0) field s _n hid',
-				'16:07:00 coffee ∅● _1 <hid>'
-			]);
+			// The entry's row. Above it is the TRACK document that declared
+			// the field a millisecond earlier (da-c8mh).
+			assert.deepEqual(rowTexts(tail.stdout).slice(-1), ['16:07:00 coffee ∅● _1 <hid>']);
 
 			// And on the screen, which is where the two conventions sat
 			// next to each other. The panes run their command on mount, so
 			// the reload is how they come to know about the entry.
 			await reload();
 			const table = await paneTable('tail');
-			assert.deepEqual(table.rows[0][table.keys.indexOf('time')], '16:07:00');
+			assert.deepEqual(table.rows.at(-1)[table.keys.indexOf('time')], '16:07:00');
 			const shown = table.rows.flat().join(' ');
 			assert.doesNotMatch(shown, /\b[AP]M\b/i, `the tail pane is still 12-hour: ${shown}`);
 
@@ -109,7 +108,9 @@ describe('the date the web app prints', () => {
 
 			await reload();
 			const table = await paneTable('tail');
-			const shown = table.rows[0][table.keys.indexOf('time')];
+			// The entry's row: the TRACK document that declared its field
+			// (da-c8mh) is the row above it.
+			const shown = table.rows.at(-1)[table.keys.indexOf('time')];
 			assert.equal(shown, day, `the tail pane is on the reader's calendar: "${shown}"`);
 			// (The /now page that once asked `toLocaleDateString()` — da-6eou —
 			// is gone with the shell, da-0a5o: /now is the nowview widget,

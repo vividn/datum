@@ -685,6 +685,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         return Ok(());
     }
 
+    // da-c8mh: the first log of a field with no spec brings the field into
+    // being — the TRACK document is written beside the entry, in the same
+    // atomic write and the same `_LAST` group, so `undo` takes both back.
+    // It sits one millisecond ahead of the entry so the declaration
+    // precedes the thing declared and a `start` is not raced by the
+    // `false` that announces its field — ahead in the entry's own clock,
+    // which for a timeless row is its create_time.
+    let track_doc = db.load_spec(&entry.field)?.is_none().then(|| {
+        datum_core::track::track_entry_for(&entry, datum_core::track::verb_for_action(action))
+    });
+
     // da-gh0.C: when a multi-entry write window is active, hand the
     // fully prepared entry off to the dispatch-layer collector and
     // return. The multi driver normalizes occur_time across sides,
@@ -694,7 +705,28 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // side's `OutputArgs` rides along so the multi driver can honour
     // per-side flags (`--show none`, format strings) when rendering
     // the resulting merged row (da-dayk).
-    if crate::args::push_to_multi_collector(entry.clone(), args.output()?) {
+    if let Some(track) = &track_doc {
+        if crate::args::push_to_multi_collector(track.clone(), args.output()?) {
+            crate::args::push_to_multi_collector(entry.clone(), args.output()?);
+            return Ok(());
+        }
+    } else if crate::args::push_to_multi_collector(entry.clone(), args.output()?) {
+        return Ok(());
+    }
+
+    // The pair goes in atomically — both rows or neither — and `_LAST`
+    // holds both hids, so `undo` reverts the whole declaration.
+    if let Some(track) = track_doc {
+        let hids = db.insert_entries_atomic(vec![track, entry.clone()])?;
+        let _ = datum_core::last_docs::set_last_docs(db, &hids);
+        crate::commands::helpers::save_track_spec(db, &entry.field, action)?;
+        let registry = crate::commands::helpers::load_registry_opt(db);
+        let output = args.output()?;
+        for hid in &hids {
+            let fresh = db.get_entry(hid.as_str())?;
+            let ctx = RenderContext::for_entry(db, &fresh, Surface::Action, None)?;
+            show_create_with_context(&fresh, registry.as_ref(), &ctx, &output);
+        }
         return Ok(());
     }
 
@@ -1841,7 +1873,7 @@ mod tests {
         let mut args = LogArgs::with_field("sleep");
         args.duration.duration = Some("8h".to_string());
         log_entry(Action::Stop, args, &db).unwrap();
-        let entries = db.entries_for_field("sleep", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "sleep");
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         let diff_secs = e.duration_seconds().unwrap();
@@ -2091,7 +2123,7 @@ mod tests {
             "sit".to_string(),
         ];
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("body", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "body");
         assert_eq!(entries.len(), 1, "exactly one row");
         let e = &entries[0];
         assert_eq!(
@@ -2123,7 +2155,7 @@ mod tests {
         args.duration.moment = true;
         args.rest = vec!["vertical".to_string(), ",".to_string(), "sit".to_string()];
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("body", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "body");
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         assert_eq!(e.state, Some(serde_json::json!("vertical")));
@@ -2181,7 +2213,7 @@ mod tests {
         let mut args = LogArgs::with_field("mood");
         args.rest = vec!["happy".to_string()];
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("mood", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "mood");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].state, Some(serde_json::json!("happy")));
     }
@@ -2197,7 +2229,7 @@ mod tests {
         args.rest = vec!["adventure".to_string(), "time".to_string()];
         args.string_state = true;
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("tv", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "tv");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].state, Some(serde_json::json!("adventure time")));
     }
@@ -2209,7 +2241,7 @@ mod tests {
         args.rest = vec!["blueberry".to_string()];
         args.string_state = true;
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("movie", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "movie");
         assert_eq!(entries[0].state, Some(serde_json::json!("blueberry")));
     }
 
@@ -2248,7 +2280,7 @@ mod tests {
         let mut args = LogArgs::with_field("mode");
         args.rest = vec!["_".to_string()];
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("mode", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "mode");
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].state, Some(serde_json::json!("focus")));
     }
@@ -2276,7 +2308,7 @@ mod tests {
         ];
         args.string_state = true;
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("tv", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "tv");
         assert_eq!(entries[0].state, Some(serde_json::json!("adventure time")));
         assert!(entries[0].dur.is_some(), "trailing 30m must land as dur");
     }
@@ -2289,7 +2321,7 @@ mod tests {
         args.rest = vec!["adventure".to_string(), "time".to_string(), ".".to_string()];
         args.string_state = true;
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("tv", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "tv");
         assert_eq!(entries[0].state, Some(serde_json::json!("adventure time")));
         assert!(entries[0].dur.is_none(), ". must skip the dur peek");
     }
@@ -2311,7 +2343,7 @@ mod tests {
             .collect();
         args.string_state = true;
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("body", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "body");
         assert_eq!(entries.len(), 1, "exactly one row");
         let e = &entries[0];
         assert_eq!(e.state, Some(serde_json::json!("a b")));
@@ -2334,7 +2366,7 @@ mod tests {
             .collect();
         args.string_state = true;
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("body", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "body");
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         assert_eq!(e.state, Some(serde_json::json!("a b")));
@@ -2359,7 +2391,7 @@ mod tests {
             .collect();
         args.string_state = true;
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("song", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "song");
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         assert_eq!(e.state, Some(serde_json::json!("end of the road")));
@@ -2381,7 +2413,7 @@ mod tests {
             .collect();
         args.string_state = true;
         log_entry(Action::Switch, args, &db).unwrap();
-        let entries = db.entries_for_field("body", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "body");
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         assert_eq!(e.state, Some(serde_json::json!("a b")));
@@ -2401,7 +2433,7 @@ mod tests {
         args.string_remainder = true;
         args.remainder = Some("title".to_string());
         log_entry(Action::Start, args, &db).unwrap();
-        let entries = db.entries_for_field("movie", None).unwrap();
+        let entries = datum_core::test_util::logged_entries(&db, "movie");
         let data = entries[0].data.clone().expect("entry carries data");
         assert_eq!(data["title"], serde_json::json!("terminator"));
         assert!(entries[0].dur.is_some(), "trailing 90 must land as dur");

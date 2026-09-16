@@ -79,7 +79,9 @@ fn undo_still_accepts_force_even_with_nothing_to_skip() {
 
     run_cli(&["undo", "--force"], &db).expect("--force is still a valid flag");
 
-    let entries = db.list_including_deleted().unwrap();
+    // The rows the command LOGGED: the first is the entry, not the TRACK
+    // document that declared `coffee` on its first use (da-c8mh).
+    let entries = datum_core::test_util::logged_all(&db);
     assert_eq!(
         entries[0].data.as_ref().unwrap()["cups"],
         2,
@@ -98,7 +100,7 @@ fn a_stale_last_no_longer_refuses_undo() {
 
     run_cli(&["undo"], &db).expect("a stale `_LAST` must not refuse");
 
-    let entries = db.list_including_deleted().unwrap();
+    let entries = datum_core::test_util::logged_all(&db);
     assert_eq!(entries.len(), 1);
     assert_eq!(
         entries[0].data.as_ref().unwrap()["cups"],
@@ -113,7 +115,7 @@ fn a_stale_last_no_longer_refuses_undo() {
 fn an_old_tombstone_is_reachable_without_a_flag() {
     let db = fresh_db();
     run_cli(&["occur", "coffee"], &db).expect("create");
-    let hid = db.list_including_deleted().unwrap()[0].hid.to_string();
+    let hid = datum_core::test_util::logged_all(&db)[0].hid.to_string();
     run_cli(&["delete", &hid], &db).expect("delete");
 
     // Age the tombstone AND clear the pointer, so the fallback is the only
@@ -146,7 +148,7 @@ fn an_empty_database_still_has_nothing_to_undo() {
 fn a_stale_last_no_longer_refuses_delete() {
     let db = fresh_db();
     run_cli(&["occur", "coffee"], &db).expect("create");
-    let hid = db.list_including_deleted().unwrap()[0].hid.to_string();
+    let hid = datum_core::test_util::logged_all(&db)[0].hid.to_string();
     age_pointer(&db, 90);
 
     run_cli(&["delete"], &db).expect("a stale `_LAST` must not refuse");
@@ -185,6 +187,6 @@ fn stale_update_still_has_its_own_prompt() {
     run_cli(&["occur", "coffee", "cups=2"], &db).expect("create");
     age_pointer(&db, 90);
     run_cli(&["update", "_", "cups=3"], &db).expect("update answers its own prompt");
-    let entries = db.list_including_deleted().unwrap();
+    let entries = datum_core::test_util::logged_all(&db);
     assert_eq!(entries[0].data.as_ref().unwrap()["cups"], 3);
 }

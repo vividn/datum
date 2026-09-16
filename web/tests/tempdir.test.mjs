@@ -42,8 +42,11 @@ const SPILL_ENTRIES = 20_000;
 async function seed({ page, run }, n) {
 	const logged = await run(['occur', 'coffee', '-t', '0700']);
 	assert.equal(logged.code, 0, logged.stderr);
+	// The header, the TRACK document declaring `coffee` (da-c8mh) and the
+	// entry itself; the template below is that entry.
 	const backup = (await run(['db', 'backup', '-'])).stdout.split('\n');
-	assert.equal(backup.length, 2, `expected a header and one entry: ${backup.join('\n')}`);
+	assert.equal(backup.length, 3, `expected a header and two rows: ${backup.join('\n')}`);
+	backup.splice(1, 1);
 
 	return page.evaluate(
 		async ([header, template, n]) => {

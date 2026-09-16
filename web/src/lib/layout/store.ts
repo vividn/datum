@@ -81,9 +81,16 @@ interface Row {
 	modify_time: string;
 }
 
-/** Every saved layout's entry: `tail --json` on the field, newest first. */
+/**
+ * Every saved layout's entry: `tail --json` on the field, newest first.
+ *
+ * The first save of a layout also writes the TRACK document that declares
+ * the `layout` field (da-c8mh). That row carries no data, and it is not a
+ * layout — a saved one always has a name.
+ */
 async function rows(): Promise<Row[]> {
-	return JSON.parse(await datum('tail', 'layout', '--json', '-n', '100000')).rows;
+	const listed: Row[] = JSON.parse(await datum('tail', 'layout', '--json', '-n', '100000')).rows;
+	return listed.filter((r) => r.data?.name !== undefined);
 }
 
 /** A row's data as a `Layout` — the two stores hold the same shape. */

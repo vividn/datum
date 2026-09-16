@@ -19,7 +19,7 @@ fn run_cli_harness_dispatches_to_occur() {
     // truth table classifies as `Verb::Point` and (post-da-ju71.2) the
     // state stays null — the null→true promotion was dropped.
     assert_count!(db, "coffee", 1);
-    let entry = &db.entries_for_field("coffee", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     assert_entry_matches!(entry, field: "coffee", verb: "point");
     assert!(
         entry.state.is_none(),
@@ -44,7 +44,7 @@ fn run_cli_harness_surfaces_field_verb_swap() {
     run_cli(&["mood", "switch", "happy"], &db).expect("field/verb swap dispatch");
 
     assert_count!(db, "mood", 1);
-    let entry = &db.entries_for_field("mood", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "mood")[0];
     assert_entry_matches!(entry, field: "mood", verb: "switch", state: "happy");
 }
 
@@ -113,7 +113,7 @@ fn log_with_update_flag_routes_to_update_strategy() {
     )
     .expect("initial switch dispatch");
     assert_count!(db, "mood", 1);
-    let before = db.entries_for_field("mood", None).unwrap()[0].clone();
+    let before = datum_core::test_util::logged_entries(&db, "mood")[0].clone();
 
     // Small delay so modified_at can strictly advance.
     std::thread::sleep(std::time::Duration::from_millis(5));
@@ -136,7 +136,7 @@ fn log_with_update_flag_routes_to_update_strategy() {
 
     // Still only one row after the collision — Update, not Rekey.
     assert_count!(db, "mood", 1);
-    let after = db.entries_for_field("mood", None).unwrap()[0].clone();
+    let after = datum_core::test_util::logged_entries(&db, "mood")[0].clone();
     assert_eq!(after.slug, before.slug, "row must be mutated in place");
     assert!(
         after.modify_time > before.modify_time,

@@ -6,11 +6,11 @@ description = "Naps and sleep."
 
 [[field]]
 name = "nap"
-default_verb = "start"
+verb = "start"
 
 [[field]]
 name = "sleep"
-default_verb = "switch"
+verb = "switch"
 
 [[alias]]
 name = "zz"

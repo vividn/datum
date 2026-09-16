@@ -347,7 +347,7 @@ impl Db {
         let mut out = Vec::new();
         for r in rows {
             let json = r.map_err(DatumError::Db)?;
-            let spec: FieldSpec = serde_json::from_str(&json)?;
+            let spec = self.parse_spec(&json)?;
             out.push(spec);
         }
         Ok(out)

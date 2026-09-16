@@ -487,6 +487,25 @@ pub(crate) fn assembled_expansion(raw_input: &str, chain: Option<&JsonValue>) ->
     Some(rendered.join(" "))
 }
 
+/// Write the spec the TRACK document declares, unless the field already
+/// has one (da-c8mh). `action` is the command word that brought the field
+/// into being; [`verb_for_action`](datum_core::track::verb_for_action)
+/// maps it onto one of the four canonical verbs.
+pub fn save_track_spec(
+    db: &Db,
+    field: &str,
+    action: datum_core::action::Action,
+) -> anyhow::Result<()> {
+    if db.load_spec(field)?.is_some() {
+        return Ok(());
+    }
+    let mut spec =
+        datum_core::field_spec::FieldSpec::new(field, datum_core::track::verb_for_action(action));
+    spec.regenerate_derived_aliases();
+    db.save_field_spec(&spec)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -547,7 +566,7 @@ mod tests {
                 unit: None,
             },
         );
-        let mut spec = FieldSpec::with_verb("mood", Action::Switch);
+        let mut spec = FieldSpec::new("mood", Action::Switch);
         spec.subfields = subfields;
         spec.strict = strict;
         spec

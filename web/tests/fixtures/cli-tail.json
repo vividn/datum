@@ -9,5 +9,5 @@
 		["occur", "nap", "dur=30m", "-t", "1300"],
 		["stop", "work", "-t", "1700"]
 	],
-	"table": "time (+0)  field   state    dur  _n  hid\n 07:00:00  coffee  ∅●            _6  <hid>\n 08:00:00  work     start        _5  <hid>\n 09:30:00  mood     happy        _4  <hid>\n 10:15:00  mood     sad          _3  <hid>\n 13:00:00  nap              30m  _2  <hid>\n 17:00:00  work     end          _1  <hid>"
+	"table": "action  time (+0)  field   state      dur  _n   hid\nTRACK●   06:59:59  coffee   TRACKED        _10  <hid>\n         07:00:00  coffee  ∅●              _9   <hid>\nTRACK█   07:59:59  work     end            _8   <hid>\n         08:00:00  work     start          _7   <hid>\nTRACK▞   09:29:59  mood     end            _6   <hid>\n         09:30:00  mood     happy          _5   <hid>\n         10:15:00  mood     sad            _4   <hid>\nTRACK●   12:29:59  nap      TRACKED        _3   <hid>\n         13:00:00  nap                30m  _2   <hid>\n         17:00:00  work     end            _1   <hid>"
 }

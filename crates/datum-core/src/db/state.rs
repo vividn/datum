@@ -14,13 +14,14 @@ use super::types::{
 use super::Db;
 
 impl Db {
-    /// Load the field's spec or return a fresh verbless one. Used by the
-    /// color setters that may need to mint a spec on first write — a
-    /// colour says nothing about what a press means (da-emze).
+    /// Load the field's spec, or mint one carrying the verb the field's
+    /// log implies. Used by the color setters, which may need a spec on
+    /// first write: a colour says nothing about what a press means, but
+    /// every spec has to answer that anyway (da-c8mh), so the log does.
     pub(super) fn load_or_new_spec(&self, field: &str) -> Result<FieldSpec> {
         match self.load_spec(field)? {
             Some(s) => Ok(s),
-            None => Ok(FieldSpec::new(field)),
+            None => Ok(FieldSpec::new(field, self.field_verb(field)?)),
         }
     }
 
@@ -260,8 +261,9 @@ impl Db {
     /// classified either way. At `at = Utc::now()` — every caller but
     /// `now`'s time travel — that excludes nothing.
     pub fn get_tracked_fields(&self, at: DateTime<Utc>) -> Result<Vec<TrackedField>> {
-        let mut names: std::collections::BTreeSet<String> =
+        let logged: std::collections::BTreeSet<String> =
             self.distinct_fields()?.into_iter().collect();
+        let mut names = logged.clone();
         names.extend(self.spec_fields()?);
         let fields: Vec<String> = names.into_iter().collect();
         let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
@@ -279,9 +281,16 @@ impl Db {
         for field in fields {
             let ignored = match states.get(&field) {
                 Some(state) => crate::shape::is_ignored_state(state),
-                // A spec is a standing declaration, not an event, so it
-                // vouches for the field at any anchor.
-                None if existed.contains(&field) || specs.contains_key(&field) => false,
+                // A spec with nothing logged behind it is a standing
+                // declaration, not an event, so it vouches for the field at
+                // any anchor (da-m1l8). Once the field HAS rows, they decide
+                // when it entered the world — every logged field carries a
+                // spec now (da-c8mh), so the spec alone cannot vouch.
+                None if existed.contains(&field)
+                    || (specs.contains_key(&field) && !logged.contains(&field)) =>
+                {
+                    false
+                }
                 None => continue,
             };
             let color = specs.get(&field).and_then(|s| s.color.clone());
@@ -347,7 +356,7 @@ impl Db {
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         let mut map = std::collections::HashMap::new();
         for r in rows {
-            let spec: FieldSpec = serde_json::from_str(&r.map_err(DatumError::Db)?)?;
+            let spec = self.parse_spec(&r.map_err(DatumError::Db)?)?;
             for (state, color) in spec.state_colors {
                 map.insert((spec.field.clone(), state), color);
             }

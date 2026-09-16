@@ -74,7 +74,7 @@ fn alias_remove_nonexistent_reports_not_found() {
 fn alias_remove_derived_alias_points_at_owning_field() {
     let db = fresh_db();
 
-    spec_builder("mood").default_verb(Action::Switch).save(&db);
+    spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
     spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
     spec.regenerate_derived_aliases();

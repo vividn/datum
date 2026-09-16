@@ -299,7 +299,10 @@ impl FieldSnapshots {
         exclude_hid: &str,
     ) -> Result<Option<serde_json::Value>> {
         if !self.states.contains_key(field) {
-            let events = crate::state::FieldStateEvents::load_for_field(conn, field)?;
+            // Transitions only: a TRACK document declares a field, it does
+            // not open or close it (da-c8mh).
+            let events =
+                crate::state::FieldStateEvents::load_transitions_for_field(conn, field, None)?;
             self.states.insert(field.to_string(), events);
         }
         Ok(self.states[field].at(probe, Some(exclude_hid)))
@@ -332,6 +335,13 @@ fn detect_one(
     //   existing Block/BlockSwitch on the same field → Overlap.
     // - LastStateMismatch (S6) is independent of the above.
 
+    // da-c8mh: a TRACK document is a DECLARATION, not a transition. Its
+    // `false` says "this field exists and is off", which is exactly the
+    // shape OrphanEnd is looking for, so detection skips it entirely.
+    if crate::track::track_verb(trigger).is_some() {
+        return Ok(());
+    }
+
     // Deliberately a local verb match, not a shape.rs predicate: detection
     // rules key on per-verb-family STORAGE semantics, and a new verb should
     // conservatively get no detection until a rule is written for it.
@@ -350,7 +360,9 @@ fn detect_one(
         };
 
         // OrphanEnd: a state=false transition arriving at a field that has
-        // never been opened.
+        // never been opened. The probe reads TRANSITIONS only, so the TRACK
+        // document that brought the field into being — which sits in
+        // `false` itself — is not mistaken for an open (da-c8mh).
         if is_close_state(&new_norm) && prior_at_probe.is_none() {
             filed.push(file_warning(
                 conn,
@@ -990,13 +1002,17 @@ pub(crate) fn close_older_at(
 /// The result is `max(0, opens − closes)`. The `datum now` view uses
 /// this to decide whether to print the overlap banner.
 pub fn open_entries_for_field(conn: &Connection, field: &str) -> Result<u32> {
-    let mut stmt = conn.prepare(
-        r#"SELECT state FROM entries
+    // da-c8mh: a TRACK document sits in `false`, but declaring a field is
+    // not closing it.
+    let mut stmt = conn.prepare(&format!(
+        "SELECT state FROM entries
            WHERE field = ?1
              AND deleted_at IS NULL AND superseded_by IS NULL
              AND verb = 'switch'
-             AND state IS NOT NULL"#,
-    )?;
+             AND state IS NOT NULL
+             AND {}",
+        crate::track::NOT_A_DECLARATION_SQL
+    ))?;
     let rows = stmt.query_map(params![field], |row| row.get::<_, String>(0))?;
 
     let mut opens: i64 = 0;

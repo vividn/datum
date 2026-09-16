@@ -176,7 +176,8 @@ impl RenderContext {
             Surface::InfoLine | Surface::NowView => RenderContext::default(),
             Surface::Action | Surface::Table => {
                 let events =
-                    FieldStateEvents::load_for_field(db.conn(), &entry.field).unwrap_or_default();
+                    FieldStateEvents::load_transitions_for_field(db.conn(), &entry.field, None)
+                        .unwrap_or_default();
                 Self::from_events(Some(&events), entry)
             }
         })

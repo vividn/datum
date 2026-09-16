@@ -60,7 +60,7 @@ version = "0.1"
 
 [[field]]
 name = "trash"
-default_verb = "occur"
+verb = "occur"
 
 [[index]]
 name = "by_field_start"

@@ -69,9 +69,7 @@ fn md5_colours_match_the_cli() {
 #[test]
 fn cross_axis_position_matches_the_cli() {
     for name in NAMES {
-        let resolved = FieldSpec::new(name.to_string())
-            .presentation
-            .resolve_position(name);
+        let resolved = datum_core::field_spec::PresentationSpec::default().resolve_position(name);
         assert!(
             (wasm::hash_y(name) - resolved.y).abs() < 1e-12,
             "hash_y drifted for {name}: {} vs {}",
@@ -117,7 +115,7 @@ fn state_value_colours_match_the_cli() {
 
 #[test]
 fn spec_overrides_match_the_cli() {
-    let mut spec = FieldSpec::with_verb("mood".to_string(), Action::Occur);
+    let mut spec = FieldSpec::new("mood".to_string(), Action::Occur);
     spec.color = Some("#ff6600".to_string());
     spec.state_colors
         .insert("happy".to_string(), "00ff00".to_string());

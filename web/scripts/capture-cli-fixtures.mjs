@@ -77,13 +77,23 @@ function cliWith(env, argv) {
 	}
 }
 
-/** The single entry a fresh database holds, via the CLI's own JSONL dump. */
+/**
+ * The single entry a fresh database holds, via the CLI's own JSONL dump.
+ * The TRACK document a field's first log declares it with (da-c8mh) is not
+ * one — it is the same row on both sides, and this fixture is about what
+ * the case's argv itself stores.
+ */
 function onlyEntry(db, dir) {
 	const path = join(dir, 'backup.jsonl');
 	cli(db, ['db', 'backup', path, '--overwrite']);
-	const lines = readFileSync(path, 'utf8').trim().split('\n').slice(1);
-	if (lines.length !== 1) throw new Error(`expected exactly one entry, got ${lines.length}`);
-	return JSON.parse(lines[0]);
+	const rows = readFileSync(path, 'utf8')
+		.trim()
+		.split('\n')
+		.slice(1)
+		.map((line) => JSON.parse(line))
+		.filter((row) => row.extra_metadata?.track === undefined);
+	if (rows.length !== 1) throw new Error(`expected exactly one entry, got ${rows.length}`);
+	return rows[0];
 }
 
 /** Tab-indented JSON, with argv and comment arrays kept on one line. */

@@ -69,8 +69,8 @@ fn both_surviving_spellings_anchor_the_block_at_minus_t() {
     run_cli(&["end", "positional", "12m", "-t", "14:00"], &db).expect("trailing positional dur");
     run_cli(&["end", "reserved", "dur=12m", "-t", "14:00"], &db).expect("dur= key");
 
-    let positional = &db.entries_for_field("positional", None).unwrap()[0];
-    let reserved = &db.entries_for_field("reserved", None).unwrap()[0];
+    let positional = &datum_core::test_util::logged_entries(&db, "positional")[0];
+    let reserved = &datum_core::test_util::logged_entries(&db, "reserved")[0];
 
     assert_eq!(
         positional.occur_time.as_ref().unwrap().utc,

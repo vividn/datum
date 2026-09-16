@@ -86,9 +86,12 @@ describe('the wasm a returning browser runs', () => {
 			// because the harness pins the reader's zone to UTC.
 			const table = await paneTable('tail');
 			assert.deepEqual(table.headers, ['time (+0)', 'field', 'state', '_n', 'hid']);
+			// Two rows: the entry, and the TRACK document that declared its
+			// field (da-c8mh) — which the pane draws without an action
+			// column of its own.
 			assert.deepEqual(
-				table.rows.map((cells) => cells[1]),
-				['coffee']
+				table.rows.map((cells) => cells[table.headers.indexOf('field')]),
+				['coffee', 'coffee']
 			);
 		});
 	});

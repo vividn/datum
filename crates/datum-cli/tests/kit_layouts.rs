@@ -84,10 +84,21 @@ impl Env {
     }
 
     /// The `layout` entries, as `tail --json` lists them.
+    /// The rows of the `layout` field that ARE layouts. da-c8mh's TRACK
+    /// document shares the field — it is the row that declared it — and
+    /// carries no data of its own.
     fn layouts(&self) -> Vec<Json> {
         let listed: Json =
             serde_json::from_str(&self.ok(&["tail", "layout", "--json", "-n", "50"])).unwrap();
-        listed["rows"].as_array().cloned().unwrap_or_default()
+        listed["rows"]
+            .as_array()
+            .map(|rows| {
+                rows.iter()
+                    .filter(|row| !row["data"].is_null())
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -101,6 +112,7 @@ version = "1.0"
 
 [[field]]
 name = "coffee"
+verb = "occur"
 
 [[layout]]
 name = "{layout}"
@@ -235,6 +247,7 @@ name = "bad"
 
 [[field]]
 name = "coffee"
+verb = "occur"
 
 [[layout]]
 name = "broken"

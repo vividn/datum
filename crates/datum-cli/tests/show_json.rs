@@ -66,13 +66,19 @@ impl Env {
     }
 }
 
-/// The bare shape: one doc, the three addressable pieces, no data.
+/// The bare shape: one doc per entry the echo printed, the three
+/// addressable pieces, no data. A field's FIRST log prints two — the
+/// TRACK document that declares it, then the entry (da-c8mh).
 #[test]
 fn occur_emits_one_doc_with_the_addressable_pieces() {
     let env = Env::new();
     let docs = env.docs(&["occur", "coffee", "--show", "json"]);
-    assert_eq!(docs.len(), 1, "one entry, one doc");
-    let d = &docs[0];
+    assert_eq!(docs.len(), 2, "the declaration and the entry");
+    assert_eq!(
+        docs[0]["action"], "TRACK\u{25cf}",
+        "the declaration names itself"
+    );
+    let d = &docs[1];
 
     assert_eq!(d["action"], "CREATE");
     let hid = d["hid"].as_str().unwrap();
@@ -107,7 +113,7 @@ fn data_is_one_string_per_key_and_the_inline_join_holds_them_all() {
         "--show",
         "json",
     ]);
-    let d = &docs[0];
+    let d = &docs[1];
     let items: Vec<&str> = d["data"]
         .as_array()
         .unwrap()
@@ -138,12 +144,18 @@ fn several_entries_emit_several_docs_in_printed_order() {
     env.run(&["occur", "coffee", "cups=2", "--show", "none"]);
 
     let printed = strip_ansi(&env.run(&["get", "coffee"]));
+    // The field's TRACK document names itself, so its header is not
+    // `EXISTS` — both are printed and both are echoed (da-c8mh).
     let printed_hids: Vec<&str> = printed
         .lines()
-        .filter(|l| l.starts_with("EXISTS "))
+        .filter(|l| l.starts_with("EXISTS ") || l.starts_with("TRACK"))
         .map(|l| l.split_whitespace().nth(1).unwrap())
         .collect();
-    assert_eq!(printed_hids.len(), 2, "two entries printed: {printed:?}");
+    assert_eq!(
+        printed_hids.len(),
+        3,
+        "the declaration and two entries: {printed:?}"
+    );
 
     let docs = env.docs(&["get", "coffee", "--show", "json"]);
     let json_hids: Vec<&str> = docs.iter().map(|d| d["hid"].as_str().unwrap()).collect();
@@ -170,7 +182,9 @@ fn header_and_info_are_byte_identical_to_the_default_show() {
         let info = printed_lines.next().unwrap_or_default();
 
         let docs = env.docs(&["get", field, "--show", "json"]);
-        assert_eq!(docs.len(), 1, "one entry on field {field}");
+        // The TRACK document the first log declared the field with, then
+        // the entry — both printed, both echoed (da-c8mh).
+        assert_eq!(docs.len(), 2, "the declaration and the entry on {field}");
         assert_eq!(docs[0]["header"], header, "header drifted on {field}");
         assert_eq!(docs[0]["info"], info, "info drifted on {field}");
     }
@@ -188,8 +202,8 @@ fn the_last_show_wins_over_none_in_both_directions() {
     });
     assert_eq!(
         doc["docs"].as_array().map(Vec::len),
-        Some(1),
-        "one document, not silence: {stdout:?}"
+        Some(2),
+        "the documents, not silence: {stdout:?}"
     );
     assert_eq!(
         env.run(&["occur", "tea", "--show", "json", "--show", "none"]),
@@ -200,7 +214,7 @@ fn the_last_show_wins_over_none_in_both_directions() {
     assert_eq!(
         env.docs(&["occur", "milk", "--show", "json", "--json"])
             .len(),
-        1
+        2
     );
 }
 

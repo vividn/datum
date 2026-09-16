@@ -58,7 +58,9 @@ describe('logging verbs', () => {
 			const listed = await run(['tail']);
 			assert.equal(listed.code, OK);
 			const rows = rowTexts(listed.stdout);
-			assert.equal(rows.length, commands.length + 1, `header plus rows: ${listed.stdout}`);
+			// Header, the four entries, and one TRACK document per field the
+			// commands brought into being — coffee, work, mood (da-c8mh).
+			assert.equal(rows.length, commands.length + 4, `header plus rows: ${listed.stdout}`);
 			assert.ok(
 				rows.slice(1).some((row) => row.includes('mood') && row.includes('happy')),
 				`tail did not show the switch: ${listed.stdout}`
@@ -72,9 +74,13 @@ describe('logging verbs', () => {
 			// holds (da-qrc6), so the screen is tall enough for all four.
 			await reload();
 			const table = await paneTable('tail');
+			// The pane shows the rows its box holds — the newest page of the
+			// listing — and draws no `action` column of its own (da-c8mh),
+			// so the REPL's lines are compared without that first cell.
+			const withoutAction = (line) => line.replace(/^(action|TRACK.) +/, '');
 			assert.deepEqual(
 				rowTexts([table.headers, ...table.rows].map((cells) => cells.join(' ')).join('\n')),
-				rows,
+				[rows[0], ...rows.slice(-table.rows.length)].map(withoutAction),
 				'the pane and the REPL disagree about the same listing'
 			);
 		}, { viewport: { width: 1280, height: 900 } });
@@ -223,7 +229,7 @@ describe('the teach-echo', () => {
 		await withApp(async ({ run, reload, pressWidget, echoes, spyOnRunner }) => {
 			// Give the bar a widget to press: a declared field gets one before
 			// its first entry.
-			assert.equal((await run(['spec', 'set', 'coffee', '--default-verb', 'occur'])).code, OK);
+			assert.equal((await run(['spec', 'set', 'coffee', '--verb', 'occur'])).code, OK);
 			await reload();
 
 			const seen = await spyOnRunner();
@@ -552,7 +558,10 @@ describe('spec', () => {
 
 	test('every spec subcommand answers', async () => {
 		await withApp(async ({ run }) => {
-			assert.equal((await run(['spec', 'set', 'coffee', '--color', '#884400'])).code, OK);
+			assert.equal(
+				(await run(['spec', 'set', 'coffee', '--verb', 'occur', '--color', '#884400'])).code,
+				OK
+			);
 			for (const args of SUBCOMMANDS) {
 				const label = ['spec', ...args].join(' ');
 				const result = await run(['spec', ...args]);
@@ -701,13 +710,16 @@ describe('the tail is the CLI\'s tail', () => {
 			// here, so the two cannot drift apart in either direction.
 			await reload();
 			const { rows, columns } = await tailRows();
+			// Each field's TRACK document sits just ahead of its entry.
 			assert.deepEqual(
 				rows.map((row) => row.field),
-				['coffee', 'mood']
+				['coffee', 'coffee', 'mood', 'mood']
 			);
 			const cells = (key) => columns.find((column) => column.key === key).cells;
 			const painted = async (key) => (await paneCellColors('tail', key)).map(distinct);
-			assert.deepEqual(await painted('field'), cells('field').map(backgrounds));
+			// The pane's newest page, against the listing's last N cells.
+			const shown = await painted('field');
+			assert.deepEqual(shown, cells('field').slice(-shown.length).map(backgrounds));
 			// The state chip too — a different colour from the field's. The
 			// CLI's state cell is `[LEAD][state][TRAIL]` and each slot paints
 			// its own block, so the whole cell is compared, not one chip.

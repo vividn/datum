@@ -374,6 +374,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                 _ => {}
             }
         }
+        write_track_documents(db, &entries)?;
         inserted
     };
 
@@ -528,4 +529,37 @@ fn parse_datum_uncertainty(occur_block: &JsonValue) -> Option<String> {
         "second" => Some("PT1S".to_string()),
         _ => None,
     }
+}
+
+/// da-c8mh: an imported database is whole under the same rule a typed one
+/// is — every field carries a spec with a verb, and a TRACK document
+/// records the declaration. The verb is the one the imported entries
+/// imply; the row sits one millisecond ahead of the field's earliest
+/// imported instant, so the declaration precedes the history it declares.
+fn write_track_documents(db: &Db, entries: &[datum_core::entry::Entry]) -> Result<()> {
+    use std::collections::BTreeMap;
+    let mut earliest: BTreeMap<&str, Option<DatumTime>> = BTreeMap::new();
+    for entry in entries {
+        let slot = earliest.entry(entry.field.as_str()).or_default();
+        match (&slot, &entry.occur_time) {
+            (None, Some(t)) => *slot = Some(t.clone()),
+            (Some(best), Some(t)) if t.utc < best.utc => *slot = Some(t.clone()),
+            _ => {}
+        }
+    }
+    for (field, first) in earliest {
+        if db.load_spec(field)?.is_some() {
+            continue;
+        }
+        let Some(verb) = db.verb_from_field_log(field)? else {
+            continue;
+        };
+        let mut at = first.unwrap_or_else(DatumTime::now);
+        at.utc -= chrono::Duration::milliseconds(1);
+        at.uncertainty = None;
+        let device = crate::config::device_id()?;
+        db.insert_entry(&datum_core::track::track_entry(field, verb, at, &device))?;
+        crate::commands::helpers::save_track_spec(db, field, verb)?;
+    }
+    Ok(())
 }

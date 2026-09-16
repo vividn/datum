@@ -17,7 +17,7 @@ fn stop_last_state_closes_most_recent_open_block() {
     run_cli(&["stop", "working", "--last-state"], &db).expect("stop --last-state");
 
     // Two entries: the start and the closing stop.
-    let entries = db.entries_for_field("working", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "working");
     assert_eq!(entries.len(), 2, "expected start + stop");
 
     // The stop entry records the prior active state under extra_data.last_state.
@@ -62,7 +62,7 @@ fn switch_to_same_state_is_surfaced_live_not_stored() {
     run_cli(&["switch", "mood", "happy", "-t=-1"], &db).expect("first switch");
     run_cli(&["switch", "mood", "happy"], &db).expect("repeat switch must not error");
 
-    let entries = db.entries_for_field("mood", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "mood");
     assert_eq!(entries.len(), 2, "both switches landed");
 
     let stored = db
@@ -142,7 +142,7 @@ fn switch_last_state_assertion_mismatch_files_conflict() {
     // User thinks prior state was "sad", but history says "happy".
     run_cli(&["switch", "mood", "grumpy", "-L=sad"], &db).expect("assertion still lands");
 
-    let entries = db.entries_for_field("mood", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "mood");
     assert_eq!(entries.len(), 2, "grumpy entry still lands");
 
     let conflicts = db
@@ -185,7 +185,7 @@ fn switch_moment_records_point_in_time() {
     let db = fresh_db();
     run_cli(&["switch", "mood", "happy", "--moment"], &db).expect("moment switch");
 
-    let entries = db.entries_for_field("mood", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "mood");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
 
@@ -206,7 +206,7 @@ fn switch_moment_records_point_in_time() {
     // Short-flag form (-m) also works.
     let db2 = fresh_db();
     run_cli(&["switch", "mood", "happy", "-m"], &db2).expect("short -m");
-    let e2 = &db2.entries_for_field("mood", None).unwrap()[0];
+    let e2 = &datum_core::test_util::logged_entries(&db2, "mood")[0];
     assert!(
         e2.dur.as_ref().is_some_and(datum_core::dur::Dur::is_moment),
         "short -m must set dur to MOMENT, got {:?}",
@@ -221,7 +221,7 @@ fn derived_alias_from_spec_routes_to_switch() {
 
     // Define a spec with allowed states — regenerate_derived_aliases creates
     // one alias per state, each expanding to `switch <field> <state>`.
-    spec_builder("mood").default_verb(Action::Switch).save(&db);
+    spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
     spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
     spec.regenerate_derived_aliases();
@@ -234,7 +234,7 @@ fn derived_alias_from_spec_routes_to_switch() {
     // `datum happy` → `datum switch mood happy` — routed through the CLI pre-pass.
     run_cli(&["happy"], &db).expect("derived alias dispatch");
 
-    let entries = db.entries_for_field("mood", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "mood");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].verb, Verb::Switch);
     assert_eq!(entries[0].state.as_ref(), Some(&serde_json::json!("happy")));

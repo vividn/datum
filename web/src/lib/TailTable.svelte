@@ -70,7 +70,7 @@
 	}
 
 	/** The CLI's column order, for a table merged from more than one listing. */
-	const STOCK = ['time', 'field', 'state', 'dur', '_n', 'hid'];
+	const STOCK = ['action', 'time', 'field', 'state', 'dur', '_n', 'hid'];
 	const rank = (key: string) => (STOCK.includes(key) ? STOCK.indexOf(key) : STOCK.length);
 
 	let keys: string[] = [];
@@ -202,12 +202,22 @@
 	 * Take a listing's columns on: new keys join, the newest header word
 	 * wins, and the CLI's shrink of a word (`f` for `field`, `s` for
 	 * `state`, printed when no row is wide) is the whole word.
+	 *
+	 * `action` is the one column the pane does not draw. It exists only
+	 * while a TRACK document (da-c8mh) is among the rows, and WHICH rows
+	 * those are is what this pane's height decides — a column that came
+	 * and went with the count would make the count chase its own width
+	 * (n rows show it, it takes six characters from the state column, the
+	 * rows wrap taller, fewer fit, it leaves, round again), and six
+	 * characters is more than a phone-width pane has to give. The
+	 * declaration still reads as itself: its state cell is `TRACKED`.
 	 */
 	function adopt(columns: TailColumn[], replace: boolean): void {
 		if (replace) {
 			keys = [];
 			headers = {};
 		}
+		columns = columns.filter((column) => column.key !== 'action');
 		for (const column of columns) {
 			headers[column.key] = column.key.startsWith(column.header) ? column.key : column.header;
 			if (!keys.includes(column.key)) keys.push(column.key);

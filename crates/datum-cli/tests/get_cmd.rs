@@ -49,7 +49,7 @@ use std::process::Command;
 fn get_resolves_slug_prefix() {
     let db = fresh_db();
     run_cli(&["occur", "coffee", "--id", "a44quickid"], &db).expect("seed coffee:a44quickid");
-    let seeded = &db.entries_for_field("coffee", None).unwrap()[0];
+    let seeded = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     assert_eq!(seeded.slug, "coffee:a44quickid");
 
     // `get coffee:a44` must resolve to the seeded row via resolve_prefix.
@@ -414,12 +414,15 @@ fn get_o_at_default_show_keeps_info_lines_plus_format() {
     // Default show + `-o`: header + info line + format string; the columnar
     // data block (`reps: 10`, `comment: "hello"`) is replaced by the format.
     let (stdout, _) = run_binary(&db, &["get", "_LAST", "-o", "FMT[%field%|reps=%reps%]"]);
-    let lines: Vec<&str> = stdout.lines().collect();
+    // `_LAST` names the entry AND the TRACK document its field was
+    // declared by (da-c8mh); the entry's three lines are the last three.
+    let all: Vec<&str> = stdout.lines().collect();
     assert_eq!(
-        lines.len(),
-        3,
-        "default `-o` should emit exactly header + info + format, got: {stdout:?}"
+        all.len(),
+        6,
+        "default `-o` should emit header + info + format per doc, got: {stdout:?}"
     );
+    let lines: Vec<&str> = all[3..].to_vec();
     assert!(
         lines[0].starts_with("EXISTS") && lines[0].contains("fmttest:"),
         "first line should be the EXISTS header, got: {stdout:?}"
@@ -451,8 +454,8 @@ fn get_o_at_default_show_keeps_info_lines_plus_format() {
     );
     assert_eq!(
         stdout.trim(),
-        "FMT[fmttest|reps=10]",
-        "`--show format` should emit only the format string, got: {stdout:?}"
+        "FMT[fmttest|reps=]\nFMT[fmttest|reps=10]",
+        "`--show format` should emit only the format string, once per doc, got: {stdout:?}"
     );
 
     let _ = std::fs::remove_file(&db);

@@ -203,12 +203,12 @@ pub struct SpecBuilder {
 impl SpecBuilder {
     pub fn new(field: impl Into<String>) -> Self {
         Self {
-            spec: FieldSpec::new(field),
+            spec: FieldSpec::new(field, Action::Occur),
         }
     }
 
-    pub fn default_verb(mut self, v: Action) -> Self {
-        self.spec.default_verb = Some(v);
+    pub fn verb(mut self, v: Action) -> Self {
+        self.spec.verb = v;
         self
     }
 
@@ -304,7 +304,9 @@ macro_rules! assert_entry_matches {
     }};
 }
 
-/// Assert the number of entries for a given field in a [`Db`].
+/// Assert the number of LOGGED entries for a given field in a [`Db`] —
+/// the TRACK document that declares the field (da-c8mh) is not one of
+/// them, and `track_only!` is where that row is asserted.
 ///
 /// ```ignore
 /// assert_count!(db, "mood", 3);
@@ -312,9 +314,7 @@ macro_rules! assert_entry_matches {
 #[macro_export]
 macro_rules! assert_count {
     ($db:expr, $field:expr, $n:expr) => {{
-        let __entries = $db
-            .entries_for_field($field, None)
-            .expect("entries_for_field failed");
+        let __entries = $crate::test_util::logged_entries(&$db, $field);
         assert_eq!(
             __entries.len(),
             $n,
@@ -324,6 +324,33 @@ macro_rules! assert_count {
             __entries.len()
         );
     }};
+}
+
+/// A field's entries with the TRACK document that declares it filtered
+/// out (da-c8mh) — what a test that logged N rows means by "the entries".
+pub fn logged_entries(db: &Db, field: &str) -> Vec<Entry> {
+    db.entries_for_field(field, None)
+        .expect("entries_for_field failed")
+        .into_iter()
+        .filter(|e| crate::track::track_verb(e).is_none())
+        .collect()
+}
+
+/// Every entry in the database that is not a TRACK document.
+pub fn logged_all(db: &Db) -> Vec<Entry> {
+    db.list_including_deleted()
+        .expect("list_including_deleted failed")
+        .into_iter()
+        .filter(|e| crate::track::track_verb(e).is_none())
+        .collect()
+}
+
+/// The TRACK document a field was declared by, if it has one.
+pub fn track_row(db: &Db, field: &str) -> Option<Entry> {
+    db.entries_for_field(field, None)
+        .expect("entries_for_field failed")
+        .into_iter()
+        .find(|e| crate::track::track_verb(e).is_some())
 }
 
 #[doc(hidden)]
@@ -481,7 +508,7 @@ mod tests {
     fn spec_and_alias_builders_save_and_round_trip() {
         let db = fresh_db();
         spec_builder("word")
-            .default_verb(Action::Add)
+            .verb(Action::Add)
             .description("vocab")
             .save(&db);
         alias_builder("vbp", "note word srcLang=pt pos=verb").save(&db);

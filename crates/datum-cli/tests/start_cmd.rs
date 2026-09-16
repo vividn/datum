@@ -33,7 +33,7 @@ fn start_creates_open_block_with_no_time_end() {
     run_cli(&["start", "dance"], &db).expect("start dispatch");
 
     assert_count!(db, "dance", 1);
-    let entry = &db.entries_for_field("dance", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
     assert!(entry.occur_time.is_some(), "start must set occur_time");
     assert!(entry.dur.is_none(), "moment-shape must not set dur");
@@ -64,7 +64,7 @@ fn start_after_switch_preserves_prior_state() {
     run_cli(&["switch", "machine", "preparing", "-t=-1"], &db).expect("switch dispatch");
     run_cli(&["start", "machine"], &db).expect("start dispatch");
 
-    let entries = db.entries_for_field("machine", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "machine");
     assert_eq!(entries.len(), 2, "switch + start produce two entries");
 
     // Both entries are Verb::Switch under v3 (state=set, dur=null);
@@ -109,7 +109,7 @@ fn trailing_duration_sets_time_end_for_closed_block() {
 
     run_cli(&["start", "dance", "5m"], &db).expect("start dance 5m");
 
-    let entry = &db.entries_for_field("dance", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     // Start with a closed duration → shape=block, generated verb='block'.
     assert_entry_matches!(entry, field: "dance", verb: "block");
     assert_eq!(entry.duration_seconds(), Some(5 * 60));
@@ -156,7 +156,7 @@ fn start_without_dur_is_moment_like() {
 
     run_cli(&["start", "dance", "-k", "skillPoints=3"], &db).expect("start with -k");
 
-    let entry = &db.entries_for_field("dance", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
     assert!(entry.occur_time.is_some());
     assert!(
@@ -177,7 +177,7 @@ fn start_moment_records_point_dot() {
 
     run_cli(&["start", "meeting", "-m"], &db).expect("start -m dispatch");
 
-    let entry = &db.entries_for_field("meeting", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "meeting")[0];
     assert_entry_matches!(entry, field: "meeting", verb: "point");
     assert!(
         entry
@@ -212,7 +212,7 @@ fn start_moment_yields_to_explicit_dur() {
 
     run_cli(&["start", "meeting", "-m", "dur=30m"], &db).expect("start -m dur=30m");
 
-    let entry = &db.entries_for_field("meeting", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "meeting")[0];
     assert!(entry.dur.is_some(), "explicit dur must be kept");
     assert!(
         !entry
@@ -240,7 +240,7 @@ fn start_extras_do_not_imply_duration() {
     )
     .expect("start with multiple -k");
 
-    let entry = &db.entries_for_field("dance", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["skillPoints"], json!(3));
@@ -308,7 +308,7 @@ fn dur_plus_extra_still_marks_verb_start() {
     run_cli(&["start", "field", "dur=30m", "-k", "req1=reqVal1"], &db)
         .expect("start field dur=30m -k req1=reqVal1");
 
-    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_entry_matches!(entry, field: "field", verb: "block");
     assert_eq!(entry.duration_seconds(), Some(30 * 60));
     let extra = entry.data.as_ref().unwrap();
@@ -334,7 +334,7 @@ fn yesterday_flag_consumes_trailing_numeric_as_duration() {
 
     run_cli(&["start", "field", "-y", "315"], &db).expect("start -y 315");
 
-    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_entry_matches!(entry, field: "field", verb: "block");
     assert_eq!(
         entry.duration_seconds(),
@@ -374,7 +374,7 @@ fn start_bare_numeric_positional_is_duration() {
 
     run_cli(&["start", "abc", "3"], &db).expect("start abc 3");
 
-    let entry = &db.entries_for_field("abc", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "abc")[0];
     assert_eq!(entry.field, "abc");
     assert_eq!(entry.duration_seconds(), Some(3 * 60));
     assert_eq!(entry.state.as_ref(), Some(&json!(true)));
@@ -425,7 +425,7 @@ fn start_explicit_state_keyword_plus_duration() {
 
     run_cli(&["start", "abc", "state=sit", "3"], &db).expect("start abc state=sit 3");
 
-    let entry = &db.entries_for_field("abc", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "abc")[0];
     assert_eq!(entry.state.as_ref(), Some(&json!("sit")));
     assert_eq!(entry.duration_seconds(), Some(3 * 60));
 }
@@ -439,7 +439,7 @@ fn start_compound_duration_positional() {
 
     run_cli(&["start", "work", "10m30s"], &db).expect("start work 10m30s");
 
-    let entry = &db.entries_for_field("work", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "work")[0];
     assert_eq!(entry.state.as_ref(), Some(&json!(true)));
     assert_eq!(entry.duration_seconds(), Some(10 * 60 + 30));
 }
@@ -464,7 +464,7 @@ fn start_multi_key_slots_plus_trailing_duration() {
     )
     .expect("multi-key + trailing dur should not choke");
 
-    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
     assert_eq!(entry.duration_seconds(), Some(30 * 60));
     assert_eq!(entry.state.as_ref(), Some(&json!(true)));
     let extra = entry.data.as_ref().unwrap();
@@ -483,7 +483,7 @@ fn start_explicit_dur_anywhere_with_key_slot() {
 
     run_cli(&["start", "acb", "-k", "key1", "dur=5", "10"], &db).expect("flexible dur position");
 
-    let entry = &db.entries_for_field("acb", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "acb")[0];
     assert_eq!(entry.duration_seconds(), Some(5 * 60));
     assert_eq!(entry.data.as_ref().unwrap()["key1"], json!(10));
 }
@@ -497,7 +497,7 @@ fn start_explicit_dur_slot_declaration() {
 
     run_cli(&["start", "work", "-k", "dur=", "30m"], &db).expect("explicit dur slot");
 
-    let entry = &db.entries_for_field("work", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "work")[0];
     assert_eq!(entry.duration_seconds(), Some(30 * 60));
 }
 
@@ -511,7 +511,7 @@ fn stop_bare_numeric_positional_is_duration() {
 
     run_cli(&["stop", "abc", "3"], &db).expect("stop abc 3");
 
-    let entry = &db.entries_for_field("abc", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "abc")[0];
     assert_eq!(entry.duration_seconds(), Some(3 * 60));
 }
 
@@ -531,7 +531,7 @@ fn start_explicit_dur_key_overrides_trailing_positional() {
     run_cli(&["start", "abc", "3", "dur=5m"], &db)
         .expect("dur= and a bare positional share a slot");
 
-    let entry = &db.entries_for_field("abc", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "abc")[0];
     assert_eq!(entry.duration_seconds(), Some(5 * 60));
     assert!(
         entry.data.is_none(),

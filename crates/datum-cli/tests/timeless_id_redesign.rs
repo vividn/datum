@@ -30,7 +30,7 @@ fn slug_is_timeless(slug: &str) -> bool {
 fn note_auto_ids_on_create_time() {
     let db = fresh_db();
     run_cli(&["note", "coffee"], &db).expect("note coffee");
-    let e = &db.entries_for_field("coffee", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "coffee")[0];
     assert!(e.occur_time.is_none(), "note is timeless");
     assert!(
         slug_is_timeless(e.slug.as_str()),
@@ -51,7 +51,7 @@ fn note_many_per_field_distinct_slugs() {
     let db = fresh_db();
     run_cli(&["note", "mood", "x=1"], &db).expect("note mood x=1");
     run_cli(&["note", "mood", "x=2"], &db).expect("note mood x=2");
-    let rows = db.entries_for_field("mood", None).unwrap();
+    let rows = datum_core::test_util::logged_entries(&db, "mood");
     assert_eq!(rows.len(), 2, "both notes persist (no :unset collision)");
     assert_ne!(
         rows[0].slug.as_str(),
@@ -68,7 +68,7 @@ fn note_and_occur_dash_t_do_not_collide() {
     let db = fresh_db();
     run_cli(&["note", "thing", "a=1"], &db).expect("note thing");
     run_cli(&["occur", "thing", "-T", "b=2"], &db).expect("occur thing -T");
-    let rows = db.entries_for_field("thing", None).unwrap();
+    let rows = datum_core::test_util::logged_entries(&db, "thing");
     assert_eq!(rows.len(), 2, "note + occur -T both land");
     assert!(rows.iter().all(|e| e.occur_time.is_none()));
     assert!(rows.iter().all(|e| slug_is_timeless(e.slug.as_str())));
@@ -111,7 +111,7 @@ fn add_with_slug_key_id_or_positional_works() {
 fn add_dash_t_is_note_data_not_an_error() {
     let db = fresh_db();
     run_cli(&["add", "widget", "-T", "note=hi"], &db).expect("add -T is note-data");
-    let e = &db.entries_for_field("widget", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "widget")[0];
     assert!(e.occur_time.is_none());
     assert!(slug_is_timeless(e.slug.as_str()), "got {}", e.slug);
 }
@@ -134,7 +134,7 @@ fn multiple_id_flags_compose_with_occurtime_alias() {
         &db,
     )
     .expect("occur tx --id %occurTime% --id %comment%");
-    let e = &db.entries_for_field("tx", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "tx")[0];
     // The slug body carries BOTH the occur_time and the comment, joined by __.
     assert!(
         e.slug.as_str().ends_with("__txn1"),
@@ -155,7 +155,7 @@ fn occur_time_key_overwrites_column_across_verbs() {
     let db = fresh_db();
     // add: re-anchors a would-be-timeless entry to an absolute occur_time.
     run_cli(&["add", "ev", "occur_time=2026-05-01T10:00:00Z"], &db).expect("add occur_time=");
-    let add_e = &db.entries_for_field("ev", None).unwrap()[0];
+    let add_e = &datum_core::test_util::logged_entries(&db, "ev")[0];
     assert_eq!(
         add_e.occur_time.as_ref().map(|t| t.utc.to_rfc3339()),
         Some("2026-05-01T10:00:00+00:00".to_string()),
@@ -168,7 +168,7 @@ fn occur_time_key_overwrites_column_across_verbs() {
         &db,
     )
     .expect("switch occur_time=");
-    let sw = &db.entries_for_field("mood", None).unwrap()[0];
+    let sw = &datum_core::test_util::logged_entries(&db, "mood")[0];
     assert_eq!(
         sw.occur_time.as_ref().map(|t| t.utc.to_rfc3339()),
         Some("2026-05-01T09:00:00+00:00".to_string())

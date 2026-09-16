@@ -414,7 +414,7 @@ mod tests {
             "now_ms": NOW_MS,
             "offset_minutes": OFFSET,
             "color": true,
-            "specs": [{ "field": "coffee", "default_verb": "occur", "color": "#ff6600" }],
+            "specs": [{ "field": "coffee", "verb": "occur", "color": "#ff6600" }],
         })
         .to_string();
         let res: JsonValue = serde_json::from_str(&tail_rows_json(&body)).unwrap();

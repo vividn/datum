@@ -19,7 +19,7 @@ fn update_field_refields_and_reslugs_in_place() {
     let db = fresh_db();
 
     run_cli(&["occur", "gym", "-k", "reps=10"], &db).expect("seed occur");
-    let before = db.entries_for_field("gym", None).unwrap();
+    let before = datum_core::test_util::logged_entries(&db, "gym");
     assert_eq!(before.len(), 1, "one gym row seeded");
     let before = &before[0];
     let (hid, occur, create) = (
@@ -33,10 +33,10 @@ fn update_field_refields_and_reslugs_in_place() {
 
     // Old field no longer has a live row; the row moved to `cardio`.
     assert!(
-        db.entries_for_field("gym", None).unwrap().is_empty(),
+        datum_core::test_util::logged_entries(&db, "gym").is_empty(),
         "gym row must have been re-fielded away",
     );
-    let after = db.entries_for_field("cardio", None).unwrap();
+    let after = datum_core::test_util::logged_entries(&db, "cardio");
     assert_eq!(after.len(), 1, "row now lives under cardio");
     let after = &after[0];
 

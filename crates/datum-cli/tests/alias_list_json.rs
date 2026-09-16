@@ -34,7 +34,7 @@ fn ok(db: &Path, args: &[&str]) -> String {
 fn alias_list_json_has_user_and_derived() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("t.db");
-    ok(&db, &["spec", "set", "coffee", "--default-verb", "occur"]);
+    ok(&db, &["spec", "set", "coffee", "--verb", "occur"]);
     ok(&db, &["alias", "set", "cof", "occur coffee cups=1"]);
 
     let listed: Value = serde_json::from_str(&ok(&db, &["alias", "list", "--json"])).unwrap();

@@ -24,7 +24,7 @@ fn start_dot_skips_state_with_trailing_dur() {
 
     run_cli(&["start", "project", ".", "30m"], &db).expect("dot-skip dispatch");
 
-    let entries = db.entries_for_field("project", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "project");
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_eq!(
@@ -47,7 +47,7 @@ fn start_lone_dot_skips_state() {
 
     run_cli(&["start", "project", "."], &db).expect("lone dot");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(e.state.as_ref(), Some(&json!(true)));
     assert!(e.dur.is_none(), "no trailing positional → dur stays unset");
 }
@@ -62,7 +62,7 @@ fn stop_dot_skips_state_with_trailing_dur() {
 
     run_cli(&["stop", "project", ".", "30m"], &db).expect("stop dot-skip");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(
         e.state.as_ref(),
         Some(&json!(false)),
@@ -81,7 +81,7 @@ fn switch_dot_skips_state_with_trailing_dur() {
 
     run_cli(&["switch", "project", ".", "30m"], &db).expect("switch dot-skip");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(e.state.as_ref(), Some(&json!(true)));
     assert_eq!(e.duration_seconds(), Some(30 * 60));
 }
@@ -97,7 +97,7 @@ fn switch_dot_in_dur_slot_skips_duration() {
 
     run_cli(&["switch", "project", "active", "."], &db).expect("switch dot in dur slot");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(e.state.as_ref(), Some(&json!("active")));
     assert!(e.dur.is_none(), "`.` in dur slot leaves duration unset");
 }
@@ -112,7 +112,7 @@ fn start_dot_in_dur_slot_skips_duration() {
 
     run_cli(&["start", "project", "state=active", "."], &db).expect("dot in dur slot");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(e.state.as_ref(), Some(&json!("active")));
     assert!(e.dur.is_none());
     // Make sure the trailing `.` didn't leak into the data payload.
@@ -133,7 +133,7 @@ fn switch_escaped_dot_yields_literal_dot_state() {
 
     run_cli(&["switch", "project", r"\."], &db).expect("escaped dot");
 
-    let e = &db.entries_for_field("project", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "project")[0];
     assert_eq!(
         e.state.as_ref(),
         Some(&json!(".")),

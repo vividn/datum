@@ -13,7 +13,8 @@ use datum_core::shape::TRACKED_STATE_VALUE;
 use datum_core::test_util::fresh_db;
 use serde_json::{json, Value as JsonValue};
 
-/// The state of the newest entry on `field`.
+/// The state of the newest entry on `field`, TRACK documents included —
+/// this file is about the row `datum track` writes.
 fn latest_state(db: &Db, field: &str) -> JsonValue {
     let entries = db.entries_for_field(field, None).unwrap();
     let newest = entries
@@ -26,7 +27,7 @@ fn latest_state(db: &Db, field: &str) -> JsonValue {
 #[test]
 fn occur_field_is_tracked_not_on() {
     let db = fresh_db();
-    run_cli(&["track", "coffee"], &db).unwrap();
+    run_cli(&["track", "coffee", "--verb", "occur"], &db).unwrap();
     assert_eq!(latest_state(&db, "coffee"), json!(TRACKED_STATE_VALUE));
 
     let now = db.current_now(&NowFilter::default()).unwrap();
@@ -42,7 +43,7 @@ fn occur_field_is_tracked_not_on() {
 #[test]
 fn block_field_is_tracked_false() {
     let db = fresh_db();
-    db.save_field_spec(&FieldSpec::with_verb("work", Action::Start))
+    db.save_field_spec(&FieldSpec::new("work", Action::Start))
         .unwrap();
     run_cli(&["track", "work"], &db).unwrap();
     assert_eq!(latest_state(&db, "work"), json!(false));
@@ -71,14 +72,12 @@ fn track_unignores_an_ignored_field() {
     assert!(!ignored(&db));
 }
 
-/// da-emze: a colour is not a verb. `track --color` has to mint a spec to
-/// put the colour in, and minting one with `occur` as a placeholder turned
-/// a start/stop field into a one-tap occur button the moment it was
-/// coloured (da-u8n7 honours a spec's verb). The spec it mints now
-/// declares no verb, so the widget still reads the field's shape off its
-/// log — `fields --json`'s `states` — and still draws a block.
+/// da-c8mh (reversing da-emze): a colour is not a verb, but a spec cannot
+/// be born without one. `track --color` on a field that HAS a log takes
+/// the verb the log implies — once — and WRITES it, so the field's shape
+/// stops being a re-reading of its history.
 #[test]
-fn a_colour_alone_mints_no_verb() {
+fn a_colour_writes_the_verb_the_log_implies() {
     let db = fresh_db();
     run_cli(&["start", "sleep", "-t", "-60"], &db).unwrap();
     run_cli(&["end", "sleep", "-t", "-1"], &db).unwrap();
@@ -86,39 +85,77 @@ fn a_colour_alone_mints_no_verb() {
 
     let spec = db.load_spec("sleep").unwrap().unwrap();
     assert_eq!(spec.color.as_deref(), Some("blue"));
-    assert_eq!(spec.default_verb, None, "a colour minted a verb");
-    // …and no bare-field alias either: nothing decided what `datum sleep`
-    // would mean.
-    assert!(
-        spec.derived_aliases.is_empty(),
-        "verbless spec minted aliases: {:?}",
-        spec.derived_aliases
-    );
+    assert_eq!(spec.verb, Action::Start, "the log said start");
+    // …and the bare-field alias every spec projects.
+    let bare = spec
+        .derived_aliases
+        .iter()
+        .find(|a| a.name == "sleep")
+        .expect("every spec projects its bare-field alias");
+    assert_eq!(bare.expands_to, "start sleep");
 
     let listing = compute_fields(&db).unwrap();
     assert_eq!(listing[0]["field"], "sleep");
-    assert_eq!(listing[0]["spec"]["default_verb"], JsonValue::Null);
-    // The widget's evidence: booleans, which is a block button.
+    assert_eq!(listing[0]["spec"]["verb"], json!("start"));
     assert_eq!(listing[0]["states"], json!([false, true]));
-    // And the CLI reads the same shape off the same log.
     assert_eq!(db.field_verb("sleep").unwrap(), Action::Start);
 }
 
-/// The wire format is unchanged: a spec an older build wrote still carries
-/// its verb, and the verb still wins over the log (da-u8n7).
+/// A brand-new field has no log to read, so `track` asks rather than
+/// guesses, and the error names the four choices (da-c8mh).
 #[test]
-fn a_spec_written_with_a_verb_still_loads_with_it() {
+fn track_without_a_verb_or_a_log_names_the_choices() {
+    let db = fresh_db();
+    let err = run_cli(&["track", "x"], &db).unwrap_err().to_string();
+    assert!(err.contains("--verb"), "err = {err}");
+    for choice in ["occur", "start", "switch", "add"] {
+        assert!(err.contains(choice), "err = {err}");
+    }
+    assert!(db.load_spec("x").unwrap().is_none(), "a spec was minted");
+}
+
+/// `spec set` on a new field is the same question, asked the same way.
+#[test]
+fn spec_set_on_a_new_field_needs_a_verb() {
+    let db = fresh_db();
+    let err = run_cli(&["spec", "set", "y", "--color", "red"], &db)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("--verb"), "err = {err}");
+}
+
+/// da-c8mh renamed the flag. The old spelling is an error that names the
+/// new one. (The STORED key is another matter: a spec written before the
+/// rename still reads — `stored_spec_compat.rs`.)
+#[test]
+fn default_verb_flag_is_an_error_naming_verb() {
+    let db = fresh_db();
+    for argv in [
+        vec!["spec", "set", "y", "--default-verb", "occur"],
+        vec!["track", "y", "--default-verb", "occur"],
+    ] {
+        let err = run_cli(&argv, &db).unwrap_err().to_string();
+        assert!(
+            err.contains("--default-verb is now --verb"),
+            "{argv:?} → {err}"
+        );
+    }
+}
+
+/// The stored spec's verb wins over the log, and the wire key is `verb`.
+#[test]
+fn a_stored_verb_wins_over_the_log() {
     let db = fresh_db();
     db.conn()
         .execute(
             "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
-            rusqlite::params!["sleep", r#"{"field":"sleep","default_verb":"occur"}"#],
+            rusqlite::params!["sleep", r#"{"field":"sleep","verb":"occur"}"#],
         )
         .unwrap();
     run_cli(&["start", "sleep", "-t", "-60"], &db).unwrap();
     run_cli(&["end", "sleep", "-t", "-1"], &db).unwrap();
 
     let spec = db.load_spec("sleep").unwrap().unwrap();
-    assert_eq!(spec.default_verb, Some(Action::Occur));
+    assert_eq!(spec.verb, Action::Occur);
     assert_eq!(db.field_verb("sleep").unwrap(), Action::Occur);
 }

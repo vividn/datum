@@ -76,10 +76,15 @@ fn fg_escape(name: &str) -> String {
 /// slots when there's no prior or continuing state to depict (da-25l).
 const IGNORED_BG_ESC: &str = "\x1b[48;2;136;136;136m";
 
-/// Pull the second line out of the two-line `CREATE` output — that's the
-/// info line we want to assert on. The first line is the action header.
+/// Pull the info line out of the two-line `CREATE` output — the line
+/// under the action header. A field's FIRST log prints the TRACK document
+/// that declares it (da-c8mh) first, so the ENTRY's header is the last one.
 fn info_line(stdout: &str) -> String {
-    stdout.lines().nth(1).unwrap_or_default().to_string()
+    let lines: Vec<&str> = stdout.lines().collect();
+    match lines.iter().rposition(|l| l.contains("CREATE")) {
+        Some(i) => lines.get(i + 1).copied().unwrap_or_default().to_string(),
+        None => lines.get(1).copied().unwrap_or_default().to_string(),
+    }
 }
 
 /// Find positions of every state-cell badge body and the surrounding LEAD

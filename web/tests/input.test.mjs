@@ -27,8 +27,12 @@ const BAR = '.prompt-bar input';
 /** What is in a box right now. */
 const valueOf = (page, selector) => page.locator(selector).inputValue();
 
-/** The document a frame's result area is showing — the bar's, or the widget's. */
-const receipt = (page, frame) => page.locator(`${frame} .result .doc`).innerText();
+/** What a frame's result area is showing — the bar's, or the widget's. Every
+ *  document, joined: a field's first log echoes two — the TRACK one that
+ *  declares it and the entry (da-c8mh) — and the claim here is that the two
+ *  frames show the SAME receipt, however many documents that receipt has. */
+const receipt = async (page, frame) =>
+	(await page.locator(`${frame} .result .doc`).allInnerTexts()).join('\n');
 
 /** Type into a box the way a person does, one key at a time. */
 async function typeIn(page, selector, line) {
@@ -129,7 +133,7 @@ describe('the widget and the bar are two views of one command line', () => {
 			// One receipt, drawn twice. Not asserted against a string written
 			// here — what a receipt SAYS is bar.test.mjs's claim, against the
 			// CLI's own echo — only that the widget is showing the same one.
-			await page.locator('.input-widget .result .doc').waitFor();
+			await page.locator('.input-widget .result .doc').first().waitFor();
 			const shown = await receipt(page, '.input-widget');
 			assert.equal(shown, await receipt(page, '.prompt-bar'), 'the two receipts differ');
 			assert.match(shown, /coffee/, `the receipt does not name the field: ${shown}`);
@@ -196,7 +200,7 @@ describe('a focus nobody clicked', () => {
 	test('lands in the input widget when one is on screen', async () => {
 		await withApp(async (app) => {
 			const { page, submit } = app;
-			await submit('spec set coffee --default-verb occur');
+			await submit('spec set coffee --verb occur');
 			await open(app, 'both', ['widgetbar', 'input']);
 			await page.locator('.bar [data-field="coffee"]').waitFor();
 
@@ -218,7 +222,7 @@ describe('a focus nobody clicked', () => {
 	test('lands in the bar when there is none', async () => {
 		await withApp(async (app) => {
 			const { page, submit } = app;
-			await submit('spec set coffee --default-verb occur');
+			await submit('spec set coffee --verb occur');
 			await page.locator('.bar [data-field="coffee"]').waitFor();
 			assert.equal(await page.locator('.input-widget').count(), 0, 'the day page has an input widget');
 

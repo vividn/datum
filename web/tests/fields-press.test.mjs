@@ -28,11 +28,11 @@ describe('a press', () => {
 	before(startApp);
 	after(stopApp);
 
-	// da-emze: the bug, as vividn found it. A colour needs a spec to live in,
-	// and the spec used to be minted with `occur` — so colouring a
-	// start/stop field turned it into a one-tap occur button, because
-	// da-u8n7 honours a spec's verb. A colour is not a verb: the button
-	// stays a block, and an EXPLICIT verb still changes it.
+	// da-emze's bug, as da-c8mh settles it. A colour needs a spec to live
+	// in, and the spec used to be minted with `occur` — so colouring a
+	// start/stop field turned it into a one-tap occur button. A colour is
+	// still not a verb: `track --color` takes the verb the LOG implies and
+	// writes it, so the button stays a block, and an explicit verb changes it.
 	test('colouring a start/stop field leaves it a block; naming a verb is what changes it', async () => {
 		// The shape is on the chip as its class, so the wait is for the bar
 		// to have caught up with the command — not for a beat to have gone by.
@@ -45,32 +45,33 @@ describe('a press', () => {
 			const { page } = app;
 			for (const line of ['start sleep -t -60', 'end sleep -t -1', 'track sleep --color #0000ff']) await type(page, line);
 			await untilFieldStyle(page, 'sleep', 'borderTopColor', BLUE);
-			assert.equal(JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout).default_verb, null);
+			assert.equal(JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout).verb, 'start');
 
 			await untilShape(page, 'state');
 			await app.pressWidget('sleep');
 			assert.equal((await app.echoes()).at(-1), 'start sleep', 'a colour made it a point');
 
 			await type(page, 'end sleep');
-			await type(page, 'spec set sleep --default-verb occur');
+			await type(page, 'spec set sleep --verb occur');
 			await untilShape(page, 'point');
 			await app.pressWidget('sleep');
 			assert.equal((await app.echoes()).at(-1), 'occur sleep', 'an explicit verb was not honoured');
 		});
 	});
 
-	test('the Track + form declares a field with no verb when the log is to decide', async () => {
+	test('the Track + form asks for the verb and writes it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await page.locator('.bar button.track').click();
 			const form = page.locator('form.add');
-			assert.equal(await form.locator('select').inputValue(), 'log', 'a verb was chosen for the user');
+			assert.equal(await form.locator('select').inputValue(), 'point', 'the smallest claim leads');
 
 			await form.locator('input').first().fill('sleep');
-			assert.equal((await form.locator('code.preview').innerText()).trim(), 'spec set sleep');
+			await form.locator('select').selectOption('state');
+			assert.equal((await form.locator('code.preview').innerText()).trim(), 'spec set sleep --verb start');
 			await form.locator('button[type="submit"]').click();
 			await page.locator('.bar button[data-field="sleep"]').waitFor();
-			assert.equal(JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout).default_verb, null);
+			assert.equal(JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout).verb, 'start');
 		});
 	});
 

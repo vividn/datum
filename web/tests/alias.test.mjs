@@ -73,7 +73,7 @@ describe('aliases in the REPL', () => {
 
 	test('a field spec makes its own names commands', async () => {
 		await withApp(async ({ run, entries }) => {
-			await ok(run, ['spec', 'set', 'mood', '--default-verb', 'switch', '--state', 'happy']);
+			await ok(run, ['spec', 'set', 'mood', '--verb', 'switch', '--state', 'happy']);
 
 			// The bare field name, and the state name, both without a verb.
 			await ok(run, ['mood', '-t', '0910']);
@@ -139,7 +139,7 @@ describe('aliases in the REPL', () => {
 
 	test('a derived alias has no row to remove, and says which spec owns it', async () => {
 		await withApp(async ({ run }) => {
-			await ok(run, ['spec', 'set', 'sleep', '--default-verb', 'start']);
+			await ok(run, ['spec', 'set', 'sleep', '--verb', 'start']);
 			const refused = await run(['alias', 'remove', 'sleep']);
 			assert.notEqual(refused.code, 0);
 			assert.match(refused.stderr, /derived alias from the 'sleep' field spec/);
@@ -169,7 +169,7 @@ describe('the aliases widget', () => {
 			// resolved server-side by `crates/datum-commands/src/render/colors.rs`,
 			// which only understands `#rrggbb` (or a legacy ANSI-256 number) —
 			// a name like `orange` would fall through to `md5(field)` (da-yiyj).
-			await ok(run, ['spec', 'set', 'coffee', '--default-verb', 'occur', '--color', '#ffa500']);
+			await ok(run, ['spec', 'set', 'coffee', '--verb', 'occur', '--color', '#ffa500']);
 			await ok(run, ['alias', 'set', 'cof', 'occur coffee cups=1']);
 			await page.locator('section[data-pane="tail"] .titlebar button.title').first().click();
 			await page.getByRole('menuitem', { name: 'split: a new pane to the right', exact: true }).click();

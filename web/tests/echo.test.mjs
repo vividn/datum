@@ -160,8 +160,12 @@ describe('the echo is painted in datum’s colours', () => {
 
 	test('a state gets its own colour, which is not the field’s', async () => {
 		await withApp(async (app) => {
+			// The field exists first, so the echo is its own entry alone.
+			await app.declare('mood', 'switch');
 			await app.submit('switch mood happy');
-			const [doc] = parseEcho((await app.run(['get', 'mood', '--show', 'json'])).stdout);
+			// The entry's document: `get` answers with the field's declaration
+			// (da-c8mh) first.
+			const doc = parseEcho((await app.run(['get', 'mood', '--show', 'json'])).stdout).at(-1);
 			assert.notEqual(doc.state_color, doc.field_color);
 
 			const drawn = await runs(app.page, '.repl');
@@ -227,7 +231,9 @@ const WRITERS = [
 	['stop', 'work'],
 	['switch', 'mood', 'happy'],
 	['get', 'coffee'],
-	['delete', 'mood'],
+	// `_LAST`, not `mood`: a field names its entry AND the TRACK document
+	// that declared it (da-c8mh), which is two rows, not one.
+	['delete', '_LAST'],
 	['undo']
 ];
 

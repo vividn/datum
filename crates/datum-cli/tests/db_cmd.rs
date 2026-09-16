@@ -62,7 +62,7 @@ fn db_purge_yes_recovers_corrupt_db() {
             "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
             rusqlite::params![
                 "doomed",
-                r#"{"field":"doomed","default_verb":"occur","subfields":{}}"#,
+                r#"{"field":"doomed","verb":"occur","subfields":{}}"#,
             ],
         )
         .unwrap();

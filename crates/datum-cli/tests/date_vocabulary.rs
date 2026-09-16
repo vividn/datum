@@ -13,7 +13,7 @@ use datum_core::test_util::fresh_db;
 
 /// The local calendar date the single entry for `field` landed on.
 fn only_entry_date(db: &Db, field: &str) -> NaiveDate {
-    let entries = db.entries_for_field(field, None).unwrap();
+    let entries = datum_core::test_util::logged_entries(db, field);
     assert_eq!(entries.len(), 1, "expected exactly one '{field}' entry");
     entries[0]
         .occur_time

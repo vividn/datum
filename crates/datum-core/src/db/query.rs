@@ -181,8 +181,14 @@ impl Db {
     /// state, ordered by field. The state is the stored JSON, parsed.
     pub fn distinct_field_states(&self) -> Result<Vec<(String, serde_json::Value)>> {
         let mut stmt = self.conn.prepare(&format!(
+            // da-c8mh: a TRACK document's state is a STATUS — the `false`
+            // or TRACKED a declaration sits in — not a state the field has
+            // been switched to, so it is no more evidence here than
+            // IGNORED is (da-5ifp).
             "SELECT DISTINCT field, state FROM entries \
-             WHERE {LIVE_SQL} AND state IS NOT NULL ORDER BY field, state"
+             WHERE {LIVE_SQL} AND state IS NOT NULL AND {} \
+             ORDER BY field, state",
+            crate::track::NOT_A_DECLARATION_SQL
         ))?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))

@@ -137,10 +137,13 @@ describe('the spans one component paints', () => {
 				tail.headers.map((th) => th.text),
 				tail.headers.map((th) => stripAnsi(column(th.key).header))
 			);
+			// The pane shows the rows its box holds — the newest page of the
+			// listing — so the cells it is held to are the listing's last N.
+			const offset = cli.rows.length - tail.rows.length;
 			for (const [i, row] of tail.rows.entries()) {
 				assert.deepEqual(
 					row.map((td) => td.text),
-					row.map((td) => stripAnsi(column(td.key).cells[i]))
+					row.map((td) => stripAnsi(column(td.key).cells[offset + i]))
 				);
 			}
 		}, { clock: AFTERNOON });

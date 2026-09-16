@@ -62,7 +62,7 @@ const FIELDS = ['coffee', 'mood', 'sleep', 'water', 'run'];
 
 /** Track `fields` and wait until every one of them has a button. */
 async function track(page, submit, fields) {
-	for (const field of fields) await submit(`spec set ${field} --default-verb occur`);
+	for (const field of fields) await submit(`spec set ${field} --verb occur`);
 	await page.locator('.bar button.widget').nth(fields.length - 1).waitFor();
 }
 
@@ -102,7 +102,7 @@ describe('on a phone-sized screen', () => {
 
 		test(`a tracked field's button is on screen at ${size}`, async () => {
 			await withApp(async ({ page, submit }) => {
-				await submit('spec set coffee --default-verb occur');
+				await submit('spec set coffee --verb occur');
 				await page.locator('.bar button.widget', { hasText: 'coffee' }).waitFor();
 				await assertOnScreen(page, '.bar button.widget', "the coffee field's chip");
 			}, { viewport });
@@ -267,7 +267,7 @@ describe('on a phone-sized screen', () => {
 	// the one this asserts.
 	test("a field's state bubbles are on screen", async () => {
 		await withApp(async ({ page, submit }) => {
-			await submit('spec set mood --default-verb switch --state happy');
+			await submit('spec set mood --verb switch --state happy');
 			const chip = page.locator('.bar button.widget', { hasText: 'mood' });
 			await chip.waitFor();
 			await chip.click({ button: 'right' });
@@ -278,7 +278,7 @@ describe('on a phone-sized screen', () => {
 	test("the states a press fills the bar with are on screen", async () => {
 		await withApp(async ({ page, submit }) => {
 			// mood is the switch here, so the other four are what wrap the bar.
-			await submit('spec set mood --default-verb switch --state happy --state sad');
+			await submit('spec set mood --verb switch --state happy --state sad');
 			await track(page, submit, FIELDS.filter((f) => f !== 'mood'));
 			const chip = page.locator('.bar button.widget', { hasText: 'mood' });
 			await chip.waitFor();

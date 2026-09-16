@@ -61,6 +61,9 @@ describe('the same argv stores the same entry as the CLI', () => {
 				);
 				if (testCase.cli.code !== 0) return;
 
+				// `entries` drops the TRACK document a field's first log
+				// declares it with (da-c8mh): the same row on both sides,
+				// and this case is about what its own argv stores.
 				const stored = await entries();
 				assert.equal(stored.length, 1, 'expected exactly one entry');
 				assert.deepEqual(comparable(fromBackupRow(stored[0]), testCase.time), testCase.cli.entry);

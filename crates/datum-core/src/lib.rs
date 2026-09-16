@@ -23,6 +23,7 @@ pub mod slug;
 pub mod state;
 #[cfg(feature = "db")]
 pub mod sync_state;
+pub mod track;
 #[cfg(feature = "db")]
 pub mod views;
 

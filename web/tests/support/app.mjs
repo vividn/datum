@@ -302,8 +302,32 @@ function app(page, errors, query) {
 		/** The seam's line form, split by the app's own `shellSplit`. Quiet, as `run` is. */
 		runLine: (line) => page.evaluate((l) => window.datum.runQuietLine(l), line),
 
-		/** What actually got stored, newest first: the CLI's `db backup -` rows. */
-		entries: (limit = 50) => page.evaluate((n) => window.datum.entries(n), limit),
+		/**
+		 * What a test LOGGED, newest first: the CLI's `db backup -` rows
+		 * without the TRACK documents that declare each field on its first
+		 * use (da-c8mh). `allEntries` keeps those.
+		 */
+		entries: async (limit = 50) =>
+			(await page.evaluate((n) => window.datum.entries(n), Math.max(limit * 2, 50)))
+				.filter((row) => row.extra_metadata?.track === undefined)
+				.slice(0, limit),
+
+		/** Every stored row, declarations included. */
+		allEntries: (limit = 50) => page.evaluate((n) => window.datum.entries(n), limit),
+
+		/**
+		 * Declare `field` quietly, before the command a test is watching.
+		 * A field's FIRST log writes the TRACK document that declares it
+		 * beside the entry (da-c8mh), so a test about ONE document has to
+		 * say the field already exists.
+		 */
+		declare: async (field, verb = 'occur') => {
+			const done = await page.evaluate(
+				([f, v]) => window.datum.runQuiet(['track', f, '--verb', v]),
+				[field, verb]
+			);
+			if (done.code !== 0) throw new Error(`track ${field} --verb ${verb}: ${done.stderr}`);
+		},
 
 		/**
 		 * The tail listing as data: the CLI's rows with the colours it

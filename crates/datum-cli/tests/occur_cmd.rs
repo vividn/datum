@@ -43,7 +43,7 @@ fn occur_creates_entry_with_time_start() {
     let after = Utc::now();
 
     assert_count!(db, "field", 1);
-    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
     // da-ju71.2: occur with no explicit dur emits Dur::moment(), locking
     // the verb to Point regardless of state shape.
     assert_entry_matches!(entry, field: "field", verb: "point");
@@ -86,7 +86,7 @@ fn date_and_time_flags_set_absolute_time() {
 
     run_cli(&["occur", "event", "-d", "2021-08-23", "-t", "1200"], &db).expect("occur -d -t");
 
-    let entry = &db.entries_for_field("event", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
     assert_entry_matches!(entry, field: "event", verb: "point");
 
     let ts = entry.occur_time.as_ref().unwrap().utc;
@@ -119,7 +119,7 @@ fn no_metadata_zeros_bookkeeping_fields() {
 
     // With `--no-metadata`: timestamps and device cleared.
     run_cli(&["occur", "event", "--no-metadata"], &db).expect("occur --no-metadata");
-    let entry = &db.entries_for_field("event", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
     assert_eq!(entry.device_id, "", "device_id must be cleared");
     assert_eq!(
         entry.create_time,
@@ -138,7 +138,7 @@ fn no_metadata_zeros_bookkeeping_fields() {
     // Without the flag, a normal occur records metadata as usual — the
     // inverse invariant.
     run_cli(&["occur", "other"], &db).expect("occur other");
-    let other = &db.entries_for_field("other", None).unwrap()[0];
+    let other = &datum_core::test_util::logged_entries(&db, "other")[0];
     assert!(!other.device_id.is_empty(), "device_id must be populated");
     assert!(
         (Utc::now() - other.create_time).num_seconds().abs() < 5,
@@ -170,7 +170,7 @@ fn numeric_offset_flag_applies() {
     )
     .expect("occur -z+3");
 
-    let entry = &db.entries_for_field("event", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
     let start = entry.occur_time.as_ref().unwrap();
     let expected_utc = chrono::NaiveDate::from_ymd_opt(2021, 8, 23)
         .unwrap()
@@ -211,7 +211,7 @@ fn iana_timezone_flag_applies() {
     )
     .expect("occur -z Europe/Berlin");
 
-    let entry = &db.entries_for_field("event", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
     let start = entry.occur_time.as_ref().unwrap();
     let expected_utc = chrono::NaiveDate::from_ymd_opt(2023, 12, 4)
         .unwrap()
@@ -260,7 +260,7 @@ fn occur_flips_state_from_null_to_false() {
     assert_count!(db, "event", 2);
     // Daydumb does not stamp `last_state` on occur entries — the entry's
     // extra_data is None unless the user provided keys.
-    let entries = db.entries_for_field("event", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "event");
     for e in &entries {
         if let Some(extra) = &e.data {
             assert!(
@@ -285,7 +285,7 @@ fn stacked_negative_offsets_subtract_correctly() {
     run_cli(&["occur", "event", "-d=-1", "-t=-60"], &db).expect("occur -d=-1 -t=-60");
     let after = Utc::now();
 
-    let e1 = &db.entries_for_field("event", None).unwrap()[0];
+    let e1 = &datum_core::test_util::logged_entries(&db, "event")[0];
     let ts1 = e1.occur_time.as_ref().unwrap().utc;
     let offset = Duration::days(1) + Duration::hours(1);
     let lo = before - offset - Duration::seconds(2);
@@ -299,7 +299,7 @@ fn stacked_negative_offsets_subtract_correctly() {
     run_cli(&["occur", "event", "-t=-20"], &db).expect("occur -t=-20");
     let after2 = Utc::now();
 
-    let entries = db.entries_for_field("event", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "event");
     assert_eq!(entries.len(), 2);
     // Grab the most-recent entry by created_at.
     let e2 = entries
@@ -330,7 +330,7 @@ fn full_day_writes_uncertainty_and_strips_clock() {
 
     // -D alone → P1D, today 00:00 local.
     run_cli(&["occur", "today_full", "-D"], &db).expect("occur -D");
-    let e = &db.entries_for_field("today_full", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "today_full")[0];
     let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
     assert_eq!(
         e.occur_uncertainty(),
@@ -350,7 +350,7 @@ fn full_day_writes_uncertainty_and_strips_clock() {
 
     // -d -1 (no time, no quick) → P1D, yesterday 00:00 local.
     run_cli(&["occur", "yest_full", "-d", "-1"], &db).expect("occur -d -1");
-    let e = &db.entries_for_field("yest_full", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "yest_full")[0];
     let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
     assert_eq!(
         e.occur_uncertainty(),
@@ -362,7 +362,7 @@ fn full_day_writes_uncertainty_and_strips_clock() {
     // -d -1 -t 14:00 → no uncertainty stated, yesterday 14:00 local.
     run_cli(&["occur", "yest_clock", "-d", "-1", "-t", "14:00"], &db)
         .expect("occur -d -1 -t 14:00");
-    let e = &db.entries_for_field("yest_clock", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "yest_clock")[0];
     let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
     assert!(
         e.occur_uncertainty().is_none(),
@@ -373,7 +373,7 @@ fn full_day_writes_uncertainty_and_strips_clock() {
     // -D -t 14:00 → full-day wins; clock is stripped, P1D recorded.
     run_cli(&["occur", "full_overrides_clock", "-D", "-t", "14:00"], &db)
         .expect("occur -D -t 14:00");
-    let e = &db.entries_for_field("full_overrides_clock", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "full_overrides_clock")[0];
     let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
     assert_eq!(
         e.occur_uncertainty(),
@@ -401,7 +401,7 @@ fn full_day_slugs_on_bare_date() {
     let before = Local::now().date_naive();
     run_cli(&["occur", "fullday_slug", "-D"], &db).expect("occur -D");
     let after = Local::now().date_naive();
-    let e = &db.entries_for_field("fullday_slug", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "fullday_slug")[0];
     let acceptable = [
         format!("fullday_slug:{}", before.format("%Y-%m-%d")),
         format!("fullday_slug:{}", after.format("%Y-%m-%d")),
@@ -414,7 +414,7 @@ fn full_day_slugs_on_bare_date() {
 
     // A timed entry on the same day keeps the full stamp.
     run_cli(&["occur", "timed_slug", "-t", "14:00"], &db).expect("occur -t 14:00");
-    let e = &db.entries_for_field("timed_slug", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "timed_slug")[0];
     assert_eq!(
         e.slug.as_str(),
         format!(
@@ -447,7 +447,7 @@ fn full_day_flag_accepted() {
     // on the requested calendar date in local time (avoiding timezone-induced
     // off-by-one near midnight).
     run_cli(&["occur", "event", "-d", "2024-04-23"], &db).expect("occur -d DATE");
-    let e = &db.entries_for_field("event", None).unwrap()[0];
+    let e = &datum_core::test_util::logged_entries(&db, "event")[0];
     let local_date = e
         .occur_time
         .as_ref()
@@ -478,7 +478,7 @@ fn id_template_interpolates_extra_data_on_occur() {
 
     // Single-key template.
     run_cli(&["occur", "event", "task=Testing", "--id", "%task%"], &db).expect("occur --id %task%");
-    let e1 = &db.entries_for_field("event", None).unwrap()[0];
+    let e1 = &datum_core::test_util::logged_entries(&db, "event")[0];
     // da-ivld: slug = `<field>:<body>`.
     assert_eq!(
         e1.slug, "event:Testing",
@@ -508,7 +508,7 @@ fn id_template_interpolates_extra_data_on_occur() {
         &db2,
     )
     .expect("occur --id %project%-%task%");
-    let e2 = &db2.entries_for_field("event", None).unwrap()[0];
+    let e2 = &datum_core::test_util::logged_entries(&db2, "event")[0];
     assert_eq!(e2.slug, "event:Output-Interpolation");
     assert_eq!(e2.id_structure.as_deref(), Some("%project%-%task%"));
 }
@@ -554,7 +554,7 @@ fn occur_k_key_default_is_overridden_by_positional() {
 
     run_cli(&["occur", "pushup", "-k", "n=1", "10"], &db).expect("occur with -k slot fill");
 
-    let entry = &db.entries_for_field("pushup", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "pushup")[0];
     assert_eq!(entry.field, "pushup");
     assert_ne!(
         entry.state,
@@ -584,7 +584,7 @@ fn occur_k_key_default_applied_when_no_positional() {
 
     run_cli(&["occur", "pushup", "-k", "n=1"], &db).expect("occur with -k default only");
 
-    let entry = &db.entries_for_field("pushup", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "pushup")[0];
     let data = entry.data.as_ref().expect("expected data with n=1");
     assert_eq!(data.get("n"), Some(&json!(1)));
 }
@@ -600,7 +600,7 @@ fn occur_multiple_k_slots_fill_in_order() {
     )
     .expect("occur with two -k slots filled by positionals");
 
-    let entry = &db.entries_for_field("pushup", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "pushup")[0];
     let data = entry.data.as_ref().expect("expected data");
     assert_eq!(data.get("n"), Some(&json!(10)));
     assert_eq!(data.get("set"), Some(&json!(3)));
@@ -627,7 +627,7 @@ fn occur_unbound_positional_is_rejected() {
         "expected an unbound-positional / extra-data error, got: {msg}",
     );
     assert_eq!(
-        db.entries_for_field("pushup", None).unwrap().len(),
+        datum_core::test_util::logged_entries(&db, "pushup").len(),
         0,
         "no entry should have been written when the positional was rejected",
     );
@@ -640,7 +640,7 @@ fn occur_empty_key_token_is_raw_data() {
     let data = |argv: &[&str]| {
         let db = fresh_db();
         run_cli(argv, &db).expect("occur");
-        db.entries_for_field("coffee", None).unwrap()[0]
+        datum_core::test_util::logged_entries(&db, "coffee")[0]
             .data
             .clone()
     };
@@ -661,7 +661,10 @@ fn occur_empty_key_token_is_raw_data() {
         let db = fresh_db();
         let err = run_cli(argv, &db).expect_err("no free key for the raw token");
         assert!(format!("{err:#}").contains("no matching key"), "{err:#}");
-        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 0);
+        assert_eq!(
+            datum_core::test_util::logged_entries(&db, "coffee").len(),
+            0
+        );
     }
 }
 
@@ -679,7 +682,10 @@ fn occur_explicit_state_key_is_rejected() {
         msg.to_lowercase().contains("doesn't carry state") || msg.to_lowercase().contains("state"),
         "expected an occur-stateless error, got: {msg}",
     );
-    assert_eq!(db.entries_for_field("pushup", None).unwrap().len(), 0,);
+    assert_eq!(
+        datum_core::test_util::logged_entries(&db, "pushup").len(),
+        0,
+    );
 }
 
 /// da-ju71.2 acceptance: `occur pushup -k n=1 10` lands as a point-in-time
@@ -693,7 +699,7 @@ fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
     run_cli(&["occur", "pushup", "-k", "n=1", "10"], &db).expect("occur pushup -k n=1 10 dispatch");
 
     assert_count!(db, "pushup", 1);
-    let entry = &db.entries_for_field("pushup", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "pushup")[0];
 
     assert!(
         entry.state.is_none(),
@@ -746,7 +752,7 @@ fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
 fn occur_field_positional_and_field_kv_are_equivalent() {
     let db_pos = fresh_db();
     run_cli(&["occur", "abc"], &db_pos).expect("occur abc");
-    let pos_entries = db_pos.entries_for_field("abc", None).unwrap();
+    let pos_entries = datum_core::test_util::logged_entries(&db_pos, "abc");
     assert_eq!(pos_entries.len(), 1, "occur abc → 1 entry on field=abc");
     assert_eq!(pos_entries[0].field, "abc");
     assert!(
@@ -756,7 +762,7 @@ fn occur_field_positional_and_field_kv_are_equivalent() {
 
     let db_kv = fresh_db();
     run_cli(&["occur", "field=abc"], &db_kv).expect("occur field=abc");
-    let kv_entries = db_kv.entries_for_field("abc", None).unwrap();
+    let kv_entries = datum_core::test_util::logged_entries(&db_kv, "abc");
     assert_eq!(
         kv_entries.len(),
         1,
@@ -776,7 +782,7 @@ fn occur_field_positional_and_field_kv_are_equivalent() {
 fn occur_positional_overrides_dash_k_field_default() {
     let db = fresh_db();
     run_cli(&["occur", "-k", "field=ghi", "abc"], &db).expect("occur -k field=ghi abc");
-    let entries = db.entries_for_field("abc", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "abc");
     assert_eq!(
         entries.len(),
         1,
@@ -784,7 +790,7 @@ fn occur_positional_overrides_dash_k_field_default() {
     );
     assert_eq!(entries[0].field, "abc");
     // The default `ghi` never lands anywhere — it was overridden, not stored.
-    assert!(db.entries_for_field("ghi", None).unwrap().is_empty());
+    assert!(datum_core::test_util::logged_entries(&db, "ghi").is_empty());
     assert!(
         entries[0].data.is_none(),
         "no leftover `field` key in extra_data after override",
@@ -800,7 +806,7 @@ fn occur_alias_baked_field_kv() {
     let db = fresh_db();
     run_cli(&["alias", "set", "abc", "occur field=abc"], &db).expect("alias set abc");
     run_cli(&["abc"], &db).expect("alias abc expands to occur field=abc");
-    let entries = db.entries_for_field("abc", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "abc");
     assert_eq!(entries.len(), 1, "alias-baked field= sets entry.field");
     assert_eq!(entries[0].field, "abc");
     assert!(
@@ -816,7 +822,7 @@ fn occur_alias_baked_field_kv() {
 fn add_field_kv_consumed_onto_column() {
     let db = fresh_db();
     run_cli(&["note", "field=abc"], &db).expect("note field=abc");
-    let entries = db.entries_for_field("abc", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "abc");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].field, "abc");
     assert!(
@@ -831,7 +837,7 @@ fn add_field_kv_consumed_onto_column() {
 fn add_positional_overrides_field_default_extras_preserved() {
     let db = fresh_db();
     run_cli(&["note", "-k", "field=ghi", "abc", "kv=v"], &db).expect("note -k field=ghi abc kv=v");
-    let entries = db.entries_for_field("abc", None).unwrap();
+    let entries = datum_core::test_util::logged_entries(&db, "abc");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].field, "abc");
     let extra = entries[0].data.as_ref().expect("kv=v lands in extra_data");
@@ -887,7 +893,7 @@ fn occur_routes_dur_uncertainty_reserved_key_to_column() {
     .expect("occur with reserved keys must dispatch");
 
     assert_count!(db, "foo", 1);
-    let entry = &db.entries_for_field("foo", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "foo")[0];
     assert_eq!(
         entry.dur_uncertainty(),
         Some("PT30M"),
@@ -953,7 +959,7 @@ fn occur_unit_key_lands_in_data() {
     let db = fresh_db();
     run_cli(&["occur", "weight", "unit=kg"], &db).expect("occur weight unit=kg must dispatch");
 
-    let entry = &db.entries_for_field("weight", None).unwrap()[0];
+    let entry = &datum_core::test_util::logged_entries(&db, "weight")[0];
     let data = entry.data.as_ref().expect("unit= should land in data");
     assert_eq!(
         data.get("unit").and_then(|v| v.as_str()),

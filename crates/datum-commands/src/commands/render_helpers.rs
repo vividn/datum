@@ -61,7 +61,9 @@ pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCon
     let mut cache: HashMap<String, datum_core::state::FieldStateEvents> = HashMap::new();
     for e in entries {
         if !cache.contains_key(&e.field) {
-            let events = datum_core::state::FieldStateEvents::load_for_field_up_to(
+            // Transitions only: a TRACK document declares the field, it
+            // does not move it (da-c8mh).
+            let events = datum_core::state::FieldStateEvents::load_transitions_for_field(
                 db.conn(),
                 &e.field,
                 max_probe,

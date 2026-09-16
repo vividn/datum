@@ -129,14 +129,19 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.from_json = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("default-verb") => {
-                let (v, ni) = take_value(tail, i, None, "--default-verb")?;
-                out.default_verb = Some(v.to_string());
+            FlagSplit::Long("verb") => {
+                let (v, ni) = take_value(tail, i, None, "--verb")?;
+                out.verb = Some(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("default-verb", v) => {
-                out.default_verb = Some(v.to_string());
+            FlagSplit::LongAttached("verb", v) => {
+                out.verb = Some(v.to_string());
                 i += 1;
+            }
+            // da-c8mh: the flag is `--verb`. The old spelling is an error
+            // that names the new one rather than a silent no-op.
+            FlagSplit::Long("default-verb") | FlagSplit::LongAttached("default-verb", _) => {
+                return Err(renamed_default_verb())
             }
             FlagSplit::Long("state") => {
                 let (v, ni) = take_value(tail, i, None, "--state")?;

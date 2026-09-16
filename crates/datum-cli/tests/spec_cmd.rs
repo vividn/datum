@@ -15,7 +15,7 @@ fn spec_set_persists_position_flags() {
             "spec",
             "set",
             "sleep",
-            "--default-verb",
+            "--verb",
             "start",
             "--y",
             "0.05",
@@ -43,8 +43,8 @@ fn spec_set_persists_position_flags() {
 fn spec_set_position_flags_merge_into_existing_spec() {
     let db = fresh_db();
 
-    // First call: set default-verb only. Position fields stay None.
-    run_cli(&["spec", "set", "focus", "--default-verb", "switch"], &db).expect("first spec set");
+    // First call: set the verb only. Position fields stay None.
+    run_cli(&["spec", "set", "focus", "--verb", "switch"], &db).expect("first spec set");
     let spec = db.load_spec("focus").unwrap().unwrap();
     assert!(spec.presentation.y.is_none());
     assert!(spec.presentation.height.is_none());
@@ -75,7 +75,7 @@ fn spec_set_overlap_two_fields_share_y_with_distinct_z_index() {
             "spec",
             "set",
             "sleep",
-            "--default-verb",
+            "--verb",
             "start",
             "--y",
             "0.05",
@@ -92,7 +92,7 @@ fn spec_set_overlap_two_fields_share_y_with_distinct_z_index() {
             "spec",
             "set",
             "focus",
-            "--default-verb",
+            "--verb",
             "switch",
             "--y",
             "0.05",
@@ -124,7 +124,7 @@ fn spec_set_attached_value_form_works_for_position_flags() {
             "spec",
             "set",
             "energy",
-            "--default-verb",
+            "--verb",
             "switch",
             "--y=0.30",
             "--height=0.10",
@@ -150,7 +150,7 @@ fn spec_set_persists_state_descriptions() {
             "spec",
             "set",
             "mood",
-            "--default-verb",
+            "--verb",
             "switch",
             "--state",
             "happy",
@@ -183,15 +183,7 @@ fn spec_add_state_merges_positionally_without_dropping_others() {
     // Seed a two-state field.
     run_cli(
         &[
-            "spec",
-            "set",
-            "mood",
-            "--default-verb",
-            "switch",
-            "--state",
-            "happy",
-            "--state",
-            "sad",
+            "spec", "set", "mood", "--verb", "switch", "--state", "happy", "--state", "sad",
         ],
         &db,
     )
@@ -245,7 +237,7 @@ fn spec_set_state_description_with_empty_text_clears_entry() {
             "spec",
             "set",
             "mood",
-            "--default-verb",
+            "--verb",
             "switch",
             "--state",
             "happy",

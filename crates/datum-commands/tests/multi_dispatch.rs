@@ -13,8 +13,12 @@ fn live_rows(db: &datum_core::db::Db) -> Vec<(String, String, Option<String>, Op
     let mut stmt = db
         .conn()
         .prepare(
+            // The rows a command LOGGED: a field's TRACK document
+            // (da-c8mh) declares it and is not one of them.
             "SELECT field, occur_time, state, data \
-             FROM entries WHERE deleted_at IS NULL ORDER BY rowid",
+             FROM entries WHERE deleted_at IS NULL \
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL \
+             ORDER BY rowid",
         )
         .unwrap();
     stmt.query_map([], |r| {
@@ -118,7 +122,9 @@ fn last_holds_all_n_entries_after_dispatch_multi() {
     dispatch_argv(argv, &db).unwrap();
 
     let last = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
-    assert_eq!(last.hids.len(), 2);
+    // Two sides, and the TRACK document each new field was declared with
+    // (da-c8mh) — one `_LAST` group, so `undo` takes all four back.
+    assert_eq!(last.hids.len(), 4);
 }
 
 /// Section N — a single-row write after a multi resets `_LAST` to the
@@ -140,13 +146,14 @@ fn last_after_multi_then_single_write_holds_only_single_via_dispatch() {
     .map(String::from)
     .collect();
     dispatch_argv(multi, &db).unwrap();
+    // Two sides plus the two TRACK documents that declared their fields.
     assert_eq!(
         datum_core::last_docs::get_last_docs(&db)
             .unwrap()
             .unwrap()
             .hids
             .len(),
-        2
+        4
     );
 
     let single: Vec<String> = vec!["datum", "switch", "body", "sit"]
@@ -222,7 +229,11 @@ fn multi_write_slugs_share_canonical_time_format() {
 
     let mut stmt = db
         .conn()
-        .prepare("SELECT slug FROM entries WHERE deleted_at IS NULL ORDER BY rowid")
+        .prepare(
+            "SELECT slug FROM entries WHERE deleted_at IS NULL \
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL \
+             ORDER BY rowid",
+        )
         .unwrap();
     let slugs: Vec<String> = stmt
         .query_map([], |r| r.get::<_, String>(0))

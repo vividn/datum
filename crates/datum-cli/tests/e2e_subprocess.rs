@@ -84,10 +84,14 @@ impl Env {
         child.wait_with_output().expect("wait datum")
     }
 
+    /// Live rows a command LOGGED — the TRACK document that declares a
+    /// field on its first use (da-c8mh) is not one of them.
     fn entry_count(&self) -> i64 {
         let conn = Connection::open(&self.db).expect("open db");
         conn.query_row(
-            "SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL",
+            "SELECT COUNT(*) FROM entries
+             WHERE deleted_at IS NULL
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL",
             [],
             |r| r.get::<_, i64>(0),
         )
@@ -317,13 +321,22 @@ fn subprocess_undo_past_the_window_warns_and_acts_on_the_pointer() {
     assert_ok(&env.run(&["occur", "tea", "-t", "+1"]), "create Y");
 
     let conn = Connection::open(&env.db).expect("open db");
-    let x_hid: String = conn
-        .query_row("SELECT hid FROM entries WHERE field = 'coffee'", [], |r| {
-            r.get(0)
-        })
-        .expect("X hid");
-    assert_ok(&env.run(&["del", "coffee", "--force"]), "delete X");
-    assert_ok(&env.run(&["del", "tea", "--force"]), "delete Y");
+    // By hid: `coffee` now names two rows — the entry and the TRACK
+    // document that declared the field (da-c8mh).
+    let hid_of = |field: &str| -> String {
+        conn.query_row(
+            "SELECT hid FROM entries
+             WHERE field = ?1
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL",
+            [field],
+            |r| r.get(0),
+        )
+        .expect("hid")
+    };
+    let x_hid = hid_of("coffee");
+    let y_hid = hid_of("tea");
+    assert_ok(&env.run(&["del", &x_hid, "--force"]), "delete X");
+    assert_ok(&env.run(&["del", &y_hid, "--force"]), "delete Y");
 
     // Point `_LAST` at X and age it well past the ten-minute warning line.
     conn.execute(
@@ -407,26 +420,41 @@ fn subprocess_redo_restores_the_undone_state_exactly_once() {
     assert_ok(&env.run(&["occur", "coffee", "cups=2"]), "create");
     assert_ok(&env.run(&["update", "_", "cups=3"]), "update");
 
-    let before = env.run(&["get", "coffee", "--show", "json"]);
+    // By hid. `get coffee` names the entry AND the TRACK document that
+    // declared its field (da-c8mh), and a `get` stamps `_LAST` — so a bare
+    // `undo` after one would step the whole pair, which is not what this
+    // test is about.
+    let hid: String = Connection::open(&env.db)
+        .expect("open db")
+        .query_row(
+            "SELECT hid FROM entries
+             WHERE field = 'coffee'
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .expect("coffee hid");
+
+    let before = env.run(&["get", &hid, "--show", "json"]);
     assert_ok(&before, "get before undo");
 
-    assert_ok(&env.run(&["undo"]), "undo");
-    let undone = env.run(&["get", "coffee", "--show", "json"]);
+    assert_ok(&env.run(&["undo", &hid]), "undo");
+    let undone = env.run(&["get", &hid, "--show", "json"]);
     assert_ne!(
         String::from_utf8_lossy(&undone.stdout),
         String::from_utf8_lossy(&before.stdout),
         "the undo must actually move the entry"
     );
 
-    assert_ok(&env.run(&["redo"]), "redo");
-    let after = env.run(&["get", "coffee", "--show", "json"]);
+    assert_ok(&env.run(&["redo", &hid]), "redo");
+    let after = env.run(&["get", &hid, "--show", "json"]);
     assert_eq!(
         String::from_utf8_lossy(&after.stdout),
         String::from_utf8_lossy(&before.stdout),
         "redo must restore the pre-undo state byte for byte"
     );
 
-    let again = env.run(&["redo"]);
+    let again = env.run(&["redo", &hid]);
     assert_eq!(
         again.status.code(),
         Some(1),
@@ -446,10 +474,16 @@ fn subprocess_redo_of_an_undone_create_brings_the_entry_back() {
     let env = Env::new();
     assert_ok(&env.run(&["occur", "tea"]), "create");
     let conn = Connection::open(&env.db).expect("open db");
+    // tea's OWN row, not the TRACK document that declared the field beside
+    // it (da-c8mh) — `undo` takes both back and `redo` brings both again.
+    let live = "deleted_at IS NULL
+                AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL";
     let hid: String = conn
-        .query_row("SELECT hid FROM entries WHERE field = 'tea'", [], |r| {
-            r.get(0)
-        })
+        .query_row(
+            &format!("SELECT hid FROM entries WHERE field = 'tea' AND {live}"),
+            [],
+            |r| r.get(0),
+        )
         .expect("tea hid");
 
     assert_ok(&env.run(&["undo"]), "undo the create");
@@ -458,11 +492,9 @@ fn subprocess_redo_of_an_undone_create_brings_the_entry_back() {
     assert_ok(&env.run(&["redo"]), "redo the create");
     assert_eq!(env.entry_count(), 1, "redo brings it back");
     let back: String = conn
-        .query_row(
-            "SELECT hid FROM entries WHERE deleted_at IS NULL",
-            [],
-            |r| r.get(0),
-        )
+        .query_row(&format!("SELECT hid FROM entries WHERE {live}"), [], |r| {
+            r.get(0)
+        })
         .expect("the live row");
     assert_eq!(back, hid, "the same hid comes back, not a new entry");
 }
@@ -642,9 +674,10 @@ fn subprocess_migration_announces_itself_and_leaves_a_backup() {
         "the note must not pollute stdout: stdout={stdout}"
     );
     // stdout is still only the payload, machine-readable across the upgrade.
+    // The row and the TRACK document that declared its field (da-c8mh).
     assert_eq!(
         stdout.trim(),
-        "coffee",
+        "coffee\ncoffee",
         "stdout carries the data and nothing else"
     );
 
@@ -731,7 +764,8 @@ fn subprocess_unwritable_backup_refuses_to_migrate() {
     let rows: i64 = conn
         .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
         .expect("count entries");
-    assert_eq!(rows, 1, "the user's row must survive a refused migration");
+    // The row, and the TRACK document that declared its field (da-c8mh).
+    assert_eq!(rows, 2, "the user's row must survive a refused migration");
 }
 
 /// da-c7uw: the whole point of `tail --json` is what a *script* reads off
@@ -755,14 +789,16 @@ fn subprocess_tail_json_is_readable_without_counting_columns() {
         serde_json::from_slice(&out.stdout).expect("tail --json must print parseable JSON");
 
     let rows = doc["rows"].as_array().expect("rows array");
-    assert_eq!(rows.len(), 2, "both rows: {doc}");
+    // The TRACK document the first `start` declared the field with, then
+    // both rows (da-c8mh).
+    assert_eq!(rows.len(), 3, "both rows and the declaration: {doc}");
     // Newest last, as the table renders them.
-    assert_eq!(rows[0]["state_label"], "start");
-    assert_eq!(rows[1]["state_label"], "end");
-    assert_eq!(rows[1]["field"], "activity");
+    assert_eq!(rows[1]["state_label"], "start");
+    assert_eq!(rows[2]["state_label"], "end");
+    assert_eq!(rows[2]["field"], "activity");
     // The hid is the full, prefix-addressable id — a consumer can hand it
     // straight back to the CLI rather than re-deriving one from the table.
-    let hid = rows[1]["hid"].as_str().expect("hid string");
+    let hid = rows[2]["hid"].as_str().expect("hid string");
     let back = env.run(&["get", hid]);
     assert_ok(&back, "get by the hid tail --json reported");
 }
@@ -790,8 +826,17 @@ fn subprocess_tail_json_carries_the_table_columns() {
             .unwrap_or_else(|| panic!("no {key} column: {doc}"))["cells"]
             .clone()
     };
-    assert_eq!(column("field"), serde_json::json!(["coffee", "mood"]));
-    assert_eq!(column("hid").as_array().unwrap().len(), 2);
+    // Each field's TRACK document sits ahead of its entry (da-c8mh), and
+    // the `action` column exists because those rows name themselves.
+    assert_eq!(
+        column("field"),
+        serde_json::json!(["coffee", "coffee", "mood", "mood"])
+    );
+    assert_eq!(
+        column("action"),
+        serde_json::json!(["TRACK\u{25cf}", "", "TRACK\u{259e}", ""])
+    );
+    assert_eq!(column("hid").as_array().unwrap().len(), 4);
     // DATUM_COLOR=0: the cells are plain.
     assert!(!out.stdout.contains(&0x1b), "unpainted under DATUM_COLOR=0");
 }
@@ -809,8 +854,8 @@ fn subprocess_backup_to_stdout_restores_from_stdin() {
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(
         lines.len(),
-        3,
-        "a header and two entries, nothing else: {text}"
+        5,
+        "a header, two entries and their two declarations: {text}"
     );
     assert!(lines[0].contains("daydumb_backup"));
 
@@ -868,7 +913,7 @@ fn subprocess_fields_lists_logged_and_declared_fields() {
     );
     assert_ok(&env.run(&["switch", "mood", "sad", "-t", "0930"]), "switch");
     assert_ok(
-        &env.run(&["spec", "set", "sleep", "--default-verb", "start"]),
+        &env.run(&["spec", "set", "sleep", "--verb", "start"]),
         "spec",
     );
 
@@ -876,10 +921,11 @@ fn subprocess_fields_lists_logged_and_declared_fields() {
     assert_ok(&out, "fields --json");
     let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(doc[0]["field"], "mood");
-    assert_eq!(doc[0]["spec"], serde_json::Value::Null);
+    // The first `switch` declared the field (da-c8mh), so it has a spec.
+    assert_eq!(doc[0]["spec"]["verb"], "switch");
     assert_eq!(doc[0]["states"], serde_json::json!(["happy", "sad"]));
     assert_eq!(doc[1]["field"], "sleep");
-    assert_eq!(doc[1]["spec"]["default_verb"], "start");
+    assert_eq!(doc[1]["spec"]["verb"], "start");
 }
 
 /// `fields --json`'s `ignored` is the latest track/ignore status and
@@ -887,12 +933,9 @@ fn subprocess_fields_lists_logged_and_declared_fields() {
 #[test]
 fn subprocess_fields_ignored_is_the_latest_status_not_the_spec() {
     let env = Env::new();
-    assert_ok(&env.run(&["track", "tea"]), "track");
+    assert_ok(&env.run(&["track", "tea", "--verb", "occur"]), "track");
     assert_ok(&env.run(&["occur", "walk"]), "occur");
-    assert_ok(
-        &env.run(&["spec", "set", "run", "--default-verb", "occur"]),
-        "spec",
-    );
+    assert_ok(&env.run(&["spec", "set", "run", "--verb", "occur"]), "spec");
     assert_ok(&env.run(&["ignore", "run"]), "ignore");
 
     let out = env.run(&["fields", "--json"]);
@@ -954,7 +997,10 @@ fn subprocess_start_time_key_row_equals_its_t_twin_in_tail_json() {
         let out = env.run(&["tail", "posture", "--json"]);
         assert_ok(&out, "tail --json");
         let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-        let mut row = doc["rows"].as_array().expect("rows")[0].clone();
+        // The last row is the entry; ahead of it sits the field's TRACK
+        // document (da-c8mh).
+        let rows = doc["rows"].as_array().expect("rows");
+        let mut row = rows.last().expect("a row").clone();
         for masked in ["hid", "create_time", "modify_time"] {
             row[masked] = serde_json::Value::Null;
         }

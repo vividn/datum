@@ -82,6 +82,8 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
     let now = DatumTime::now().utc;
 
     // Oldest→newest, time-bearing state rows only. `TimeMetric::Occur` drops
+    // TRACK documents too (da-c8mh): declaring a field is not an
+    // observation of it.
     // timeless `add`/`note` rows (NULL occur_time) and the default meta
     // filter drops `flag` / protocol-note markers — the same exclusions
     // tail / dayview / now apply, so the timeline matches what the user sees.
@@ -93,6 +95,7 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
     let entries = db.list_entries(&params)?;
     let timeline: Vec<TimelineRow> = entries
         .iter()
+        .filter(|e| datum_core::track::track_verb(e).is_none())
         .filter_map(|e| {
             Some(TimelineRow {
                 state: state_label(e.state.as_ref()).unwrap_or_else(|| "(none)".to_string()),
