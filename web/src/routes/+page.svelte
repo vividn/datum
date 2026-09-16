@@ -22,6 +22,7 @@
 	import { layout, loaded } from '$lib/layout/current.js';
 	import { epoch, ran } from '$lib/layout/engine.js';
 	import { onExternalChange } from '$lib/changes.js';
+	import { currentDb } from '$lib/database.js';
 
 	// Another tab wrote. Same treatment as a local command finishing — bump
 	// the epoch the panes hang off and rebuild the widget bar — so there is
@@ -35,7 +36,11 @@
 	// a SYNCHRONOUS onMount only, and an async one returns a promise it cannot
 	// call. Safe during init because `onExternalChange` opens nothing outside
 	// a browser (see $lib/changes.ts) and returns an empty teardown there.
-	onDestroy(onExternalChange(ran));
+	// Keyed by THIS page's database (da-vk1x): a write in a `?db=other` tab
+	// is no reason for a `datum` tab to re-run its panes, and the other way
+	// about. `announceChange` already carries which databases a process
+	// wrote to, measured off their change counters ($lib/cli.ts).
+	onDestroy(onExternalChange(ran, currentDb()));
 </script>
 
 <div class="frame">

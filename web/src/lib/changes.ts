@@ -38,8 +38,9 @@ function open(): BroadcastChannel | null {
 }
 
 /**
- * Say that this tab wrote to `dbs` (by name: `datum`, `_internal`), or to
- * all of them when unsaid. Safe to call when nobody is listening.
+ * Say that this tab wrote to `dbs` (by name: `datum`, `_internal`, or
+ * whatever `?db=` named), or to all of them when unsaid. Safe to call when
+ * nobody is listening.
  */
 export function announceChange(dbs?: string[]): void {
 	open()?.postMessage({ from: self_, dbs });
@@ -51,7 +52,10 @@ export function announceChange(dbs?: string[]): void {
  * The `from` check is what stops a write echoing back into the tab that made
  * it and refreshing it a second time — harmless but wasteful, and it would
  * make the refresh count a poor witness in any test. The `db` check is the
- * same economy across databases: a saved layout does not re-run the panes.
+ * same economy across databases: a saved layout does not re-run the panes,
+ * and a write in a `?db=other` tab does not re-run a `datum` one (da-vk1x).
+ * So a caller that reads the page's database passes it — the default here is
+ * the default database, not "whichever this page is on".
  *
  * COALESCED, on the handler's own promise (da-s3pt): a refresh here costs a
  * process per pane, and a BURST next door — forty entries logged in the

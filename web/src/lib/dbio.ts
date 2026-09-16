@@ -14,15 +14,15 @@
 // stays literal. These are the whole table, on purpose: anything else
 // typed runs as typed, and this is not the start of a shell. A main menu
 // on the bottom bar ($lib/PromptBar.svelte) would call `upload` /
-// `download` / `purge` directly; a named target database would put
-// `--db <name>` in front of the argv they run (the names are `DATABASES`
-// in $lib/wasiFs.ts).
+// `download` / `purge` directly. They run through `run`, so the page's
+// own database is already in front of them (da-vk1x, $lib/database.ts):
+// `db backup -` on a `?db=other` page exports `other`.
 
 import { writable } from 'svelte/store';
 import { saveFile } from './backup.js';
 import { confirm } from './confirm.js';
 import { fileArgv } from './fileargv.js';
-import { run, type RunResult } from './run.js';
+import { dbOf, run, type RunResult } from './run.js';
 
 /**
  * `argv` run the browser's way if it is one of the file commands, else
@@ -117,9 +117,17 @@ export async function download(name?: string, argv = ['db', 'backup', '-']): Pro
 
 /** `db purge --yes`, once the reader has typed the database's name. */
 export async function purge(flags: string[] = []): Promise<RunResult> {
-	if (!(await confirm('This will destroy ALL data in datum.', 'purge', 'datum'))) {
+	// The database this will really purge, never the word `datum` written
+	// down here (vremya on #22). The dialog stands in for the CLI's TTY
+	// prompt, and `run` puts the page's `--db` in front of the command
+	// (da-vk1x) — so on a `?db=other` page the old dialog asked the reader
+	// to type the name of a database that SURVIVED while the one they were
+	// standing in was destroyed. `dbOf` reads the argv first, so a typed
+	// `db purge --db x` names `x`.
+	const db = dbOf(['db', 'purge', '--yes', ...flags]);
+	if (!(await confirm(`This will destroy ALL data in ${db}.`, 'purge', db))) {
 		// The CLI's own words for a mismatch at its prompt.
-		return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: 'db purge: aborted (input did not match datum)' };
+		return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: `db purge: aborted (input did not match ${db})` };
 	}
 	return run(['db', 'purge', '--yes', ...flags]);
 }

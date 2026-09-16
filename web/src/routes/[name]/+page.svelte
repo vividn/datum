@@ -19,19 +19,25 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { open } from '$lib/layout/shell.js';
+	import { withDb } from '$lib/database.js';
+
+	// Every way out of this page stays in the database the reader is in
+	// (da-vk1x): `?db` is the page's whole state, so a navigation that drops
+	// it is a navigation into another database.
+	const home = withDb('/');
 
 	let unknown: string | null = null;
 
 	onMount(async () => {
 		const name = $page.params.name ?? '';
-		if (await open(name)) await goto('/', { replaceState: true });
+		if (await open(name)) await goto(home, { replaceState: true });
 		else unknown = name;
 	});
 </script>
 
 {#if unknown !== null}
 	<p class="notice">
-		nothing is called “{unknown}” — no layout, no widget. <a href="/">home</a>
+		nothing is called “{unknown}” — no layout, no widget. <a href={home}>home</a>
 	</p>
 {/if}
 

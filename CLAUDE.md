@@ -136,6 +136,18 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   document (`+N` opens a modal when they do not fit), the bottom 40% the
   prompt with the time-cursor pills riding after the typed text, the clock
   under the logo, and a centred `^` that expands upward into the REPL.
+- `?db=<name>` names the DATABASE the page runs against (da-vk1x,
+  `web/src/lib/database.ts`): the name becomes the CLI's own `--db` at the
+  one seam (`run` in `run.ts`), so no caller carries it, and a caller that
+  names its own database keeps it — which is what leaves the layout store's
+  `--db _internal` alone, layouts being the device's and not the database's.
+  Nothing is prefixed at the default, the query is the whole of the state
+  (it survives a reload, links and `goto` carry it, nothing is stored), the
+  tab is named after it, and `_internal` or a path is refused with a notice.
+  The worker persists whatever database a command NAMES — it reads the name
+  out of argv as the CLI does and opens a handle for `<name>.db` — and the
+  cross-tab refresh is keyed by it, on the names `announceChange` already
+  carries.
 - A burst takes the database files for itself (sync access handles) under
   the `datum-cli-files` Web Lock, so tabs take turns fairly and none is the
   owner. Back-to-back commands share one acquisition (da-dvzx): the handles

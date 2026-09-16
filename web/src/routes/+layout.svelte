@@ -16,6 +16,14 @@
 	import RootBar from '$lib/layout/RootBar.svelte';
 	import { boot as bootEngine } from '$lib/layout/engine.js';
 	import { boot as bootShell } from '$lib/layout/shell.js';
+	import { currentDb, DEFAULT_DB, INTERNAL_DB, refusedDb } from '$lib/database.js';
+	import { page } from '$app/stores';
+
+	// `?db=<name>` (da-vk1x). Off `$page.url` rather than `location`, so a
+	// client-side navigation that changes the query re-renders the title and
+	// the refusal with it; the seam reads the same query for itself.
+	$: db = $page.url ? currentDb() : DEFAULT_DB;
+	$: refused = $page.url ? refusedDb() : null;
 
 	// `window.datum` — the command seam at the browser's own prompt. Mounted
 	// here rather than at module scope because there is no window during
@@ -57,11 +65,32 @@
 	}
 </script>
 
+<svelte:head>
+	<title>{db === DEFAULT_DB ? 'datum' : `datum · ${db}`}</title>
+</svelte:head>
+
 <div class="shell">
 	<RootBar />
 
 	<main>
-		<slot />
+		{#if refused !== null}
+			<!--
+				The one database the page may not be pointed at is the app's own
+				(da-vk1x): `_internal` holds the saved layouts, and a frame drawn
+				on it would be reading its own furniture as data. A path is
+				refused for a plainer reason — there is no filesystem out there
+				for it to be a path into. Either way the app underneath is the
+				default database, so the prompt still works while this is read.
+			-->
+			<p class="notice">
+				{refused === INTERNAL_DB
+					? `“${INTERNAL_DB}” is datum.day's own database — the saved layouts live there, not your entries.`
+					: `“${refused}” is not a database name.`}
+				showing <code>{DEFAULT_DB}</code> instead. <a href="/">home</a>
+			</p>
+		{:else}
+			<slot />
+		{/if}
 	</main>
 
 	<PromptBar />
@@ -74,6 +103,16 @@
 		/* Dynamic viewport units so mobile browser chrome sliding in and out
 		   doesn't push the bottom bar off-screen. */
 		height: 100dvh;
+	}
+
+	.notice {
+		margin: 1rem 0;
+		color: var(--quiet);
+		font-style: italic;
+	}
+
+	.notice a {
+		color: var(--accent);
 	}
 
 	main {

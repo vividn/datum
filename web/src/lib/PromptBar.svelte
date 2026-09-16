@@ -93,6 +93,11 @@
 	import Prompt from '$lib/Prompt.svelte';
 	import Repl from '$lib/Repl.svelte';
 	import { isDegraded, persisted, storage } from '$lib/storageState.js';
+	import { page } from '$app/stores';
+	import { withDb } from '$lib/database.js';
+
+	/** Home, inside the database this page is in (da-vk1x). */
+	$: home = $page.url ? withDb('/') : '/';
 
 	let field: HTMLElement;
 	let hint = false;
@@ -167,7 +172,7 @@
 
 	<div class="brand-block">
 		<div class="brand-top">
-			<a class="brand" href="/">datum<span class="tld">.day</span></a>
+			<a class="brand" href={home}>datum<span class="tld">.day</span></a>
 			<span class="beta-row">
 				<span class="tag">beta</span>
 				<button

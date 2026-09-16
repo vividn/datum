@@ -66,6 +66,7 @@
 
 import { derived, get, writable } from 'svelte/store';
 import { onExternalChange } from '$lib/changes.js';
+import { currentDb } from '$lib/database.js';
 import { initDb } from '$lib/db.js';
 import type { Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
 import { LAYOUT_VERSION, isSplit } from './types.js';
@@ -420,8 +421,9 @@ export function boot(): Promise<void> {
 		loaded.set(true);
 		onExternalChange(followSaves, '_internal');
 		// A kit installed in another tab — into the data db — changes what
-		// the names mean here too.
-		onExternalChange(refreshKitLayouts);
+		// the names mean here too. This page's data db (da-vk1x): under
+		// `?db=other` the kit layouts are `other`'s.
+		onExternalChange(refreshKitLayouts, currentDb());
 	})());
 }
 

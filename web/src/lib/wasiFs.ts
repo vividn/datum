@@ -26,14 +26,25 @@
 import { Directory, Fd, PreopenDirectory, SyncOPFSFile, wasi, type Inode } from '@bjorn3/browser_wasi_shim';
 
 /**
- * The databases that persist: the user's, and `_internal` — the app's own
- * datum database, which holds the saved layouts (da-wpgy). Any other `--db`
- * lives in memory for one process, as every other file does.
+ * The databases that persist before any command has named another: the
+ * user's, and `_internal` — the app's own datum database, which holds the
+ * saved layouts (da-wpgy).
+ *
+ * A page opened on `?db=<name>` (da-vk1x) runs every command with that
+ * name's `--db`, and the worker persists whatever a command names: $lib/cli
+ * keeps the list this seeds and opens a file for each. A `--db` that is a
+ * PATH rather than a name still lives in memory for one process, as every
+ * other file here does — there is no filesystem out there for it to be a
+ * path into.
  */
 export const DATABASES = ['datum', '_internal'];
 
-/** Every file SQLite keeps for them in rollback-journal mode. */
-export const DB_FILES = DATABASES.flatMap((db) => [`${db}.db`, `${db}.db-journal`]);
+/** Every file SQLite keeps for `dbs` in rollback-journal mode. */
+export const dbFiles = (dbs: readonly string[]): string[] =>
+	dbs.flatMap((db) => [`${db}.db`, `${db}.db-journal`]);
+
+/** Those files for the databases that are always open. */
+export const DB_FILES = dbFiles(DATABASES);
 
 /** The part of `FileSystemSyncAccessHandle` the shim uses. */
 export type Handle = ConstructorParameters<typeof SyncOPFSFile>[0];

@@ -537,9 +537,13 @@ function app(page, errors, query) {
 		 * two pages here contend for the single-writer SAH pool exactly as
 		 * two real tabs do. Two *contexts* get separate storage and would
 		 * never reproduce it (da-60ww).
+		 *
+		 * `on` is its query, this tab's unless said — `'?db=other'` for the
+		 * second tab of another database (da-vk1x), which is the same origin
+		 * and so the same OPFS, one file along.
 		 */
-		async newTab() {
-			return open(await page.context().newPage(), query);
+		async newTab(on = query) {
+			return open(await page.context().newPage(), on);
 		},
 
 		/**

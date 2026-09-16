@@ -39,7 +39,7 @@
 
 import { File as MemFile, OpenFile, WASI, type Fd } from '@bjorn3/browser_wasi_shim';
 import cliWasm from './wasm/datum-cli.wasm?url';
-import { DATABASES, DB_FILES, MemoryHandle, opfsDirectory, Sink, type Handle } from './wasiFs.js';
+import { DATABASES, dbFiles, MemoryHandle, opfsDirectory, Sink, type Handle } from './wasiFs.js';
 import type { CliResult, StorageKind } from './dbProtocol.js';
 
 /** Where the CLI's files live in OPFS. */
@@ -88,6 +88,60 @@ let compiled: Promise<WebAssembly.Module> | null = null;
 
 /** The database, while this tab holds it in memory; null while it is on OPFS. */
 let memory: Map<string, Handle> | null = null;
+
+/**
+ * The databases this worker keeps files for: `datum` and `_internal`, plus
+ * every name a command has since asked for (da-vk1x).
+ *
+ * A page on `?db=other` prefixes `--db other` at the seam ($lib/run.ts), and
+ * without this the CLI would make `/data/other.db` inside the process's own
+ * in-memory filesystem and lose it at exit — the entry would be stored and
+ * gone. So the worker reads the name out of argv the way the CLI does and
+ * opens a real file for it: a database is persisted because a command named
+ * it, not because this file knew about it.
+ *
+ * It only ever grows, and a name is added at most once. A tab that moves
+ * between databases without reloading (the query changes under a client-side
+ * navigation) therefore keeps the file of the one it left, which is exactly
+ * what another tab of the app would have open anyway.
+ */
+let databases: readonly string[] = DATABASES;
+
+/**
+ * The database `argv` names, if it names one by NAME.
+ *
+ * The CLI's own pre-scan, in TypeScript: `--db X` or `--db=X`, before any
+ * `--`, and a value that is a name rather than a path
+ * (`extract_global_db_flag` and `looks_like_path`,
+ * `crates/datum-commands/src/config.rs`). A path is left to the process's
+ * own filesystem, as it always has been.
+ */
+function dbNamed(argv: string[]): string | undefined {
+	for (let i = 0; i < argv.length; i += 1) {
+		const word = argv[i];
+		if (word === '--') return undefined;
+		const value = word === '--db' ? argv[i + 1] : word.startsWith('--db=') ? word.slice(5) : undefined;
+		if (value === undefined) continue;
+		if (!value || value.includes('/') || value.startsWith('.') || value.endsWith('.db')) return undefined;
+		return value;
+	}
+	return undefined;
+}
+
+/**
+ * Note that `argv` runs against its database, so this worker opens a file
+ * for it. The files a burst is holding are the wrong set once the list has
+ * grown; `withFiles` gives them back and takes the new set on the next
+ * command, which is the only moment no process is running.
+ */
+function useDatabase(argv: string[]): void {
+	const name = dbNamed(argv);
+	if (name === undefined || databases.includes(name)) return;
+	databases = [...databases, name];
+	// In memory, the new database is another pair of handles in the same map
+	// — there is nothing to reacquire, and the move to OPFS carries it too.
+	if (memory) for (const file of dbFiles([name])) memory.set(file, new MemoryHandle());
+}
 
 /** The env of the latest command, for the handover's own two commands. */
 let lastEnv: string[] = [];
@@ -159,7 +213,7 @@ async function open(): Promise<Map<string, Handle>> {
 	const dir = await root.getDirectoryHandle(OPFS_DIR, { create: true });
 	const handles = new Map<string, Handle>();
 	try {
-		for (const name of DB_FILES) {
+		for (const name of dbFiles(databases)) {
 			const file = await dir.getFileHandle(name, { create: true });
 			// Worker-only, so lib.dom does not declare it.
 			const sync = file as unknown as { createSyncAccessHandle(): Promise<Handle> };
@@ -261,7 +315,19 @@ async function withFiles<T>(job: (handles: Map<string, Handle>, tries: number) =
 	// Past the cap, let go before asking again: the lock is first come, first
 	// served, so the tab behind us is served here rather than at the end of a
 	// burst that never pauses.
-	if (files && performance.now() - files.since > BURST_HOLD_MS) release();
+	//
+	// And let go of a set that does not cover every database a command has
+	// named, so the next acquisition opens the new file. Asked of the HANDLES
+	// and not of a list captured when the hold resolved (vremya on #22): the
+	// captured list was a 1–30 ms hole. `open()` builds `dbFiles(databases)`
+	// once and then awaits per file, so a first-time `--db <name>` arriving
+	// between those awaits grew `databases` AFTER the files were chosen — and
+	// the grown reference is what `hold()` then recorded, so this test saw a
+	// set that matched and the command ran with no `<name>.db` handle: the CLI
+	// made the database in the process's own memory filesystem, exited 0, and
+	// the row evaporated. The handles cannot lie about what they are.
+	const covers = (held: Files) => databases.every((db) => held.handles.has(`${db}.db`));
+	if (files && (performance.now() - files.since > BURST_HOLD_MS || !covers(files))) release();
 	const held = (files ??= await hold());
 	// The opens are the acquiring command's; every command after it on the
 	// same handles opened nothing, and says so.
@@ -293,7 +359,9 @@ async function exec(
 	// A process that creates a database is not a write of the user's: the
 	// first pane to run makes the schema, and that is no reason to ask the
 	// browser to keep anything, or to tell the other tabs (da-frg2).
-	const dbs = DATABASES.map((name) => ({ name, db: handles.get(`${name}.db`)! }));
+	const dbs = databases
+		.map((name) => ({ name, db: handles.get(`${name}.db`) }))
+		.filter((pair): pair is { name: string; db: Handle } => pair.db !== undefined);
 	const before = dbs.map(({ db }) => db.getSize() > 0 && changeCounter(db));
 	const fds: Fd[] = [
 		new OpenFile(new MemFile(new TextEncoder().encode(stdin))),
@@ -371,7 +439,7 @@ export function probe(): Promise<StorageKind> {
 }
 
 function fallToMemory(): void {
-	memory = new Map(DB_FILES.map((name) => [name, new MemoryHandle()]));
+	memory = new Map(dbFiles(databases).map((name) => [name, new MemoryHandle()]));
 	keepTrying(RETRY_FIRST_MS);
 }
 
@@ -399,7 +467,7 @@ function keepTrying(delay: number): void {
 				// restores the first again, which idempotence makes harmless.
 				const restored = await withFiles(async (handles) => {
 					const said: string[] = [];
-					for (const db of DATABASES) {
+					for (const db of databases) {
 						const backup = await exec(module, held, ['--db', db, 'db', 'backup', '-'], lastEnv);
 						if (backup.code !== 0) throw new Error(backup.stderr);
 						const restore = await exec(
@@ -449,6 +517,7 @@ export function runCli(
 	key?: string
 ): Promise<CliResult | null> {
 	lastEnv = env;
+	useDatabase(argv);
 	return enqueue(async () => {
 		const t0 = performance.now();
 		const module = await compile();
