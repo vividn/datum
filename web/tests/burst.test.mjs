@@ -9,6 +9,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -108,6 +109,66 @@ describe('a burst of changes', () => {
 				return (await Promise.all(jobs)).map((r) => (r.superseded ? 'dropped' : r.stdout ? 'ran' : r.stderr));
 			});
 			assert.deepEqual(outcomes, ['ran', 'dropped', 'dropped', 'ran', 'ran', 'ran', 'ran']);
+		});
+	});
+});
+
+// The same economy for a burst that arrives from OUTSIDE the tab (da-s3pt).
+// A write next door refreshes the whole frame — the epoch every pane hangs
+// off, plus the widget bar's own two commands — so twenty entries logged in
+// the other tab bought twenty of those, and every read the reader asked for
+// queued behind the pile. A sync peer handing over a night of changesets
+// would do the same. Held here by counting what the tab was TOLD against
+// what it then ran, so the bound is against the burst that really reached
+// it rather than a number written down.
+describe('a burst of writes in another tab', () => {
+	test('twelve writes next door cost the frame a couple of refreshes, not one each', async () => {
+		await withApp(async (first) => {
+			const second = await first.newTab();
+			const seen = await second.spyOnRunner();
+			// The channel the write is announced on ($lib/changes.ts). Counted
+			// from a second handle in this tab, which hears every message the
+			// page's own listener hears and does nothing else with it.
+			await second.page.evaluate(() => {
+				window.__told = 0;
+				new BroadcastChannel('datum-db-changes').addEventListener(
+					'message',
+					() => (window.__told += 1)
+				);
+			});
+			await second.idle();
+
+			// Fired without awaiting each: the writes land while the second
+			// tab is still refreshing from the first of them, which is the
+			// burst this exists for.
+			const logged = await Promise.all(
+				Array.from({ length: 12 }, (_, i) =>
+					first.run(['occur', `ping${i}`, '-t', `07${String(i).padStart(2, '0')}`])
+				)
+			);
+			logged.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
+
+			// The LAST write is on the second tab's screen: a coalesced burst
+			// still ends in a refresh, and that refresh is after the last of
+			// the writes it stood in for.
+			await until(
+				() => second.paneText('tail'),
+				(text) => text.includes('ping11')
+			);
+			await second.idle();
+
+			const told = await second.page.evaluate(() => window.__told);
+			// `fields --json` is the widget bar's, run exactly once per
+			// refresh ($lib/layout/engine.ts) — and this tab wrote nothing
+			// itself, so each one of them is one external refresh.
+			const refreshes = (await seen()).filter((argv) => argv[0] === 'fields').length;
+			assert.ok(told >= 10, `a burst of ${told} announcements is no burst`);
+			assert.ok(
+				refreshes <= 4,
+				`${refreshes} refreshes for ${told} writes next door — one each is the bug`
+			);
+			assert.ok(refreshes >= 1, 'the other tab\'s writes refreshed nothing at all');
+			assert.deepEqual(second.errors, []);
 		});
 	});
 });

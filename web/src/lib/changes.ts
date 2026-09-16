@@ -52,12 +52,43 @@ export function announceChange(dbs?: string[]): void {
  * it and refreshing it a second time — harmless but wasteful, and it would
  * make the refresh count a poor witness in any test. The `db` check is the
  * same economy across databases: a saved layout does not re-run the panes.
+ *
+ * COALESCED, on the handler's own promise (da-s3pt): a refresh here costs a
+ * process per pane, and a BURST next door — forty entries logged in the
+ * other tab, or a sync peer handing over a night of changesets — bought one
+ * refresh each, so the pile of processes grew with the burst and the next
+ * read the reader asked for queued behind all of it. While a refresh is
+ * outstanding, further changes mark ONE more after it rather than one each,
+ * so the cost of a burst is how long a refresh takes rather than how many
+ * writes there were — twelve next door measured three refreshes, not twelve
+ * (tests/burst.test.mjs). The last of them is after the last write, so what
+ * the panes settle on is still what the database now holds.
+ *
+ * So the handler must be the whole refresh — `onExternalChange(ran)`, not
+ * `onExternalChange(() => void ran())`, whose promise nothing can wait for.
  */
-export function onExternalChange(handler: () => void, db = 'datum'): () => void {
+export function onExternalChange(handler: () => unknown, db = 'datum'): () => void {
 	const c = open();
 	if (!c) return () => {};
+	let outstanding = false;
+	let again = false;
+	async function refresh(): Promise<void> {
+		if (outstanding) return void (again = true);
+		outstanding = true;
+		do {
+			again = false;
+			// A refresh that failed is not a reason to stop hearing the next
+			// change: the handler owns its own errors, this owns the beat.
+			try {
+				await handler();
+			} catch {
+				// Kept quiet, as a missed refresh is.
+			}
+		} while (again);
+		outstanding = false;
+	}
 	const listener = (e: MessageEvent) => {
-		if (e.data?.from !== self_ && (!e.data?.dbs || e.data.dbs.includes(db))) handler();
+		if (e.data?.from !== self_ && (!e.data?.dbs || e.data.dbs.includes(db))) void refresh();
 	};
 	c.addEventListener('message', listener);
 	return () => c.removeEventListener('message', listener);

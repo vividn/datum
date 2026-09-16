@@ -17,8 +17,11 @@ file in the same commit — a convention nobody can read is a convention nobody 
    the REPL scrollback, the device id, the widget picker's last choice. Never entries.
 3. **One beat.** After any command, `engine.ran()` bumps `epoch` and rebuilds the fields widget;
    every pane takes `export let epoch` and re-reads. A write in another tab arrives through
-   `changes.ts` and joins the same beat. Do not invent a second refresh path, and do not try to
-   decide which verbs write — the CLI's list would drift from ours.
+   `changes.ts` and joins the same beat — COALESCED (da-s3pt): while one such refresh is
+   outstanding, a burst next door marks one more after it rather than one each, so the handler
+   passed to `onExternalChange` must be the whole refresh and must be awaitable. Do not invent a
+   second refresh path, and do not try to decide which verbs write — the CLI's list would drift
+   from ours.
 4. **The argv that runs is the argv that is echoed.** A widget composes an argv and dispatches it;
    the prompt shows THAT argv. Nothing rebuilds a display string from a press — a
    reconstruction can drift from the command, and the echo is how a person learns the CLI.

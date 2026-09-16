@@ -27,11 +27,15 @@
 	// the epoch the panes hang off and rebuild the widget bar — so there is
 	// one refresh path rather than two that can disagree.
 	//
+	// `ran` itself, not a call wrapped in `void`: its promise is how the
+	// channel knows this refresh is still out, and a burst next door is
+	// coalesced behind it (da-s3pt, $lib/changes.ts).
+	//
 	// Subscribed here rather than from `onMount`: Svelte takes a teardown from
 	// a SYNCHRONOUS onMount only, and an async one returns a promise it cannot
 	// call. Safe during init because `onExternalChange` opens nothing outside
 	// a browser (see $lib/changes.ts) and returns an empty teardown there.
-	onDestroy(onExternalChange(() => void ran()));
+	onDestroy(onExternalChange(ran));
 </script>
 
 <div class="frame">

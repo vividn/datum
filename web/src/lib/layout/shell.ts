@@ -389,10 +389,10 @@ export function boot(): Promise<void> {
 		);
 		booted = true;
 		loaded.set(true);
-		onExternalChange(() => void followSaves(), '_internal');
+		onExternalChange(followSaves, '_internal');
 		// A kit installed in another tab — into the data db — changes what
 		// the names mean here too.
-		onExternalChange(() => void refreshKitLayouts());
+		onExternalChange(refreshKitLayouts);
 	})());
 }
 
