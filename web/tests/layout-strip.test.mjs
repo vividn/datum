@@ -4,7 +4,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import {
 	CHROME,
 	DESKTOP,
@@ -94,7 +94,10 @@ describe('resizing', () => {
 			assert.equal(during.dayview, 0, `${during.dayview} pictures drawn during a drag inside the fortnight`);
 			assert.equal(after.dayview, 0, `${after.dayview} pictures drawn at the drop of a drag inside the fortnight`);
 			assert.ok(after.nowview - during.nowview <= 1, 'nowview, now shorter, redraws at most once at the drop');
-		}, { viewport: { width: 1280, height: 1000 } });
+			// The clock is HELD (`clock`, da-r61i): a wall-clock minute re-draws
+			// today's band, and this counts the bands a drag draws over a
+			// second of real time. A fixed clock never turns a minute.
+		}, { viewport: { width: 1280, height: 1000 }, clock: todayAt(12) });
 	});
 });
 

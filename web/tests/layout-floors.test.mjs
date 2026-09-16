@@ -4,7 +4,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import {
 	CHROME,
 	DESKTOP,
@@ -89,6 +89,12 @@ const contentWidth = (page, id) =>
 // (`THROTTLE_MS`, resizing.ts) — never at pointer rate — the drop flushes
 // the newest box at once, and a burst of nudges is one redraw. Counted
 // through the seam, never eyeballed, with the denominator printed.
+// The clock is HELD in here (`clock`, da-r61i): a wall-clock minute re-runs
+// the panes whose picture is of now, and a test that counts a drawn pane's
+// runs over a second of real time would now and then count that tick as one
+// of the drag's. A fixed clock never turns a minute.
+const STILL = { ...DESKTOP, clock: todayAt(12) };
+
 describe('resizing', () => {
 	test('a border dragged 200px over a second redraws a drawn pane 2–6 times, and once more at the drop', async () => {
 		await withApp(async (app) => {
@@ -127,7 +133,7 @@ describe('resizing', () => {
 			const img = pane(page, 'nowview').locator('svg.svg');
 			const shown = await img.evaluate((el) => ({ natural: el.width.baseVal.value, box: el.getBoundingClientRect().width }));
 			assert.ok(Math.abs(shown.natural - shown.box) <= 1, `scaled: ${JSON.stringify(shown)}`);
-		}, DESKTOP);
+		}, STILL);
 	});
 
 	test('ten arrow nudges in 300ms are one redraw', async () => {
@@ -150,7 +156,7 @@ describe('resizing', () => {
 			assert.equal(runs.nowview, 1, `nowview ran ${runs.nowview} times for ten nudges`);
 			assert.equal(runs.dayview, 0, `the strip, untouched by this border, ran ${runs.dayview} bands`);
 			assert.equal(await canvasWidth(page, 'nowview'), await contentWidth(page, 'nowview'));
-		}, DESKTOP);
+		}, STILL);
 	});
 
 

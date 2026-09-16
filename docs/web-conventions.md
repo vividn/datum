@@ -22,6 +22,17 @@ file in the same commit — a convention nobody can read is a convention nobody 
    passed to `onExternalChange` must be the whole refresh and must be awaitable. Do not invent a
    second refresh path, and do not try to decide which verbs write — the CLI's list would drift
    from ours.
+   The one beat BESIDE it is the minute clock (da-r61i, `minute` in `$lib/clock.ts`): nowview and
+   dayview are pictures of NOW — an open block's elapsed duration, the now-line — and a pane runs
+   its command once, so they stood still between writes. One timer for the app (a `readable`,
+   started by its first subscriber), on the wall-clock minute rather than 60 s from load, stopped
+   while the document is hidden and ticking once on return if the minute turned. It is NOT the
+   epoch: a pane folds the tick into its own request only when `dependsOnNow(argv)`
+   (`$lib/panes.ts`) says the command reads the clock — `now`, `nowview`, `dayview`, unless pinned
+   with `--at` or `--end-date` — and the day strip re-draws today's band and the geometry beside
+   it. The tail is not re-run and the fields widget is not rebuilt. A test that counts a drawn
+   pane's runs over a stretch of real time therefore pins the clock (`clock:` in `withApp`): a
+   fixed `Date.now()` never turns a minute.
 4. **The argv that runs is the argv that is echoed.** A widget composes an argv and dispatches it;
    the prompt shows THAT argv. Nothing rebuilds a display string from a press — a
    reconstruction can drift from the command, and the echo is how a person learns the CLI.

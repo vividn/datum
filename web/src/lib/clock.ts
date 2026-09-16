@@ -99,3 +99,61 @@ export function stampLabel(date: Date, now: Date): string {
 	if (startOfDay(date).getTime() === startOfDay(now).getTime()) return clock;
 	return `${dateLabel(localTime(date))} ${clock}`;
 }
+
+/**
+ * The minute, counted — one tick on each wall-clock minute boundary.
+ *
+ * What a view of NOW hangs off (da-r61i). `datum now` and `datum dayview`
+ * read the clock inside the wasm process and draw it: elapsed durations,
+ * and the now-line. Run once by their pane, they show the minute they
+ * were run in and stand still until something else — a write, a change
+ * next door, a resize — happens to re-run them. So the panes whose
+ * picture is of now subscribe to this and re-run on it.
+ *
+ * ONE timer for the app, not one per pane: a `readable`'s body runs on
+ * the first subscriber and stops with the last, so every pane that reads
+ * `$minute` shares this one. The value is a COUNT rather than a Date —
+ * two subscribers wanting different things of the same instant would be
+ * asking the browser what time it is, which is the CLI's question, not
+ * the web's (see the note at the head of this file). The web only
+ * decides when to ask again.
+ *
+ * Aligned to :00 seconds, not 60 s from whenever the page loaded: the
+ * minute the reader sees turn on the clock in the bottom bar is the
+ * minute nowview's duration grows by. The timer is re-armed to the next
+ * boundary after every tick, so a browser that fires it a millisecond
+ * early neither counts that minute twice (the minute it lands in is
+ * compared, not assumed) nor drifts.
+ *
+ * Paused while the document is hidden: a backgrounded tab that wakes the
+ * CPU once a minute to redraw a picture nobody can see is a tab that
+ * costs a phone its battery. Coming back visible ticks once if the minute
+ * turned while away — one run, however long the tab was gone.
+ */
+export const minute = readable(0, (set) => {
+	let ticks = 0;
+	let at = Math.floor(Date.now() / 60_000);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const stop = () => clearTimeout(timer);
+	const arm = () => {
+		// Cleared first: two `visible` events in a row would otherwise leave
+		// two timers running, and the tick would double from then on.
+		stop();
+		timer = setTimeout(tick, 60_000 - (Date.now() % 60_000));
+	};
+	function tick(): void {
+		const now = Math.floor(Date.now() / 60_000);
+		if (now !== at) {
+			at = now;
+			set(++ticks);
+		}
+		arm();
+	}
+	const visibility = () => (document.hidden ? stop() : tick());
+	arm();
+	document.addEventListener('visibilitychange', visibility);
+	return () => {
+		stop();
+		document.removeEventListener('visibilitychange', visibility);
+	};
+});

@@ -81,6 +81,27 @@ export function wantsBox(argv: string[]): boolean {
 }
 
 /**
+ * The commands whose answer is a picture of NOW: they read the clock
+ * inside the wasm process and draw what it says — nowview's elapsed
+ * durations, dayview's now-line, `now`'s "for 25m". Run once, they show
+ * the minute they were run in, so a pane running one of them re-runs on
+ * the minute clock (da-r61i, `$lib/clock.ts`).
+ *
+ * Unless it is PINNED: `--at` centres nowview on an instant the reader
+ * chose (the time cursor) and `--end-date` asks dayview for a day of the
+ * past — neither picture has a now in it to move, and the strip's own
+ * bands are asked for that way. By the flag alone, not its value, so
+ * `--end-date 0` — today, spelled the long way, which nothing in the app
+ * writes — is pinned too.
+ */
+const NOW_COMMANDS = new Set(['now', 'nowview', 'dayview']);
+const PINNED = /^--(at|end-date)(=|$)/;
+
+export function dependsOnNow(argv: string[]): boolean {
+	return NOW_COMMANDS.has(argv[0]) && !argv.some((word) => PINNED.test(word));
+}
+
+/**
  * Whether `argv` draws a picture: `dayview` always does, and `nowview` when
  * it is asked for its SVG on stdout (`-o -`) rather than the terminal band
  * it prints bare (da-57dj).

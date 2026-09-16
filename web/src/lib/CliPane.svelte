@@ -17,7 +17,8 @@
 	import TailTable from './TailTable.svelte';
 	import { record } from './replStore.js';
 	import { run, type RunResult } from './run.js';
-	import { paneArgv, wantsBox, type PaneBox, type PaneSpec } from './panes.js';
+	import { minute } from './clock.js';
+	import { dependsOnNow, paneArgv, wantsBox, type PaneBox, type PaneSpec } from './panes.js';
 	import { settle } from './layout/resizing.js';
 
 	export let spec: PaneSpec;
@@ -94,7 +95,14 @@
 	$: table = spec.view === 'tail-table';
 	$: drawn = wantsBox(spec.argv);
 	$: sized = drawn ? box : null;
-	$: request = { argv: table ? null : paneArgv(JSON.parse(words) as string[], sized), epoch };
+	// A pane whose picture is of NOW re-runs when the minute turns
+	// (da-r61i): nowview's durations grow, dayview's now-line moves, and
+	// until this they stood still between writes. The clock is the app's
+	// one timer ($lib/clock.ts) and every such pane shares it; a pane
+	// running anything else — the tail, a `get` — folds in a constant and
+	// so is not invalidated by the tick at all.
+	$: ticks = dependsOnNow(spec.argv) ? $minute : 0;
+	$: request = { argv: table ? null : paneArgv(JSON.parse(words) as string[], sized), epoch, ticks };
 	$: manual = guard && writer === spec;
 	$: if (browser && request.argv && !manual) void refresh();
 	// The picture on screen is not the one asked for: the cursor moved, and

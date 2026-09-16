@@ -78,6 +78,7 @@
 	import { browser } from '$app/environment';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
+	import { minute } from './clock.js';
 	import { run, type RunResult } from './run.js';
 	import {
 		AXIS_HEIGHT,
@@ -362,6 +363,28 @@
 	// the band is what they are shown through (`pictureBox`).
 	$: request = { width: pictureBox, dayHeight, epoch, midnights };
 	$: if (browser && request.width > 0) draw(request, ends);
+
+	// The minute turned (da-r61i, `$lib/clock.ts`): today's band is the one
+	// picture in the stack with a now in it, so the tick asks for that one
+	// and for the geometry, and for nothing else — two processes a minute,
+	// whatever the depth of the stack. The days above today are finished
+	// days and their pictures are still true.
+	//
+	// The geometry goes again because it is what tells the strip what day
+	// it is: a tab left open overnight would otherwise draw the new day's
+	// band under yesterday's date stamps, today's band being the CLI's own
+	// today. A changed date is a midnight, and `midnights` redraws the
+	// stack (see `draw`) — so the strip now follows a midnight by itself,
+	// where before it waited for a command.
+	$: if (browser && $minute > 0) tock();
+
+	function tock(): void {
+		const at = request;
+		if (at.width <= 0) return;
+		for (const argv of [geometryArgv(at.width, at.dayHeight), bandArgv(at.width, at.dayHeight, 0)])
+			cache.runs.delete(argv.join(' '));
+		draw(at, [0]);
+	}
 
 	function draw(
 		at: { width: number; dayHeight: number; epoch: number; midnights: number },
