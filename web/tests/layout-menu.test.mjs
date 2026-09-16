@@ -81,6 +81,37 @@ describe('the menu the title opens', () => {
 		}, DESKTOP);
 	});
 
+	// da-ywp1: a pane's bar is a LINE on the pane's outline, so its title
+	// straddles that line — and on a pane at the page's outer edge the
+	// outer half hangs into the page's margin (the main's 0.75rem
+	// padding). That half was under one of the four `…` edge handles
+	// (da-qk2k, z-index 3), which took the pointer and left the title
+	// unclickable there; the handles went with the root menu (da-wjob),
+	// and this holds the margin clear for the half-row the bars hang into.
+	test("a title hanging into the page's margin still takes the pointer", async () => {
+		await withApp(async ({ page }) => {
+			await chooseBar(page, 'tail', 'right');
+			await settled(page);
+			const [title, inner] = await Promise.all([
+				boxOf(menuButton(page, 'tail')),
+				page
+					.locator('main')
+					.evaluate((m) => m.getBoundingClientRect().right - parseFloat(getComputedStyle(m).paddingRight))
+			]);
+			const x = title.x + title.width - 1;
+			const y = title.y + title.height / 2;
+			assert.ok(x > inner, `the title's outer edge (${x}) does not reach the page's margin (past ${inner})`);
+			const over = await page.evaluate(
+				([x, y]) => document.elementFromPoint(x, y)?.closest('button')?.className ?? 'nothing',
+				[x, y]
+			);
+			assert.match(over, /\btitle\b/, `what lies over the title's outer half is ${over}`);
+			await page.mouse.click(x, y);
+			assert.deepEqual(await menuLines(page), TAIL_MENU);
+			await page.keyboard.press('Escape');
+		}, DESKTOP);
+	});
+
 	test('each Split arrow puts the new pane on its own side', async () => {
 		await withApp(async ({ page }) => {
 			await choose(page, 'tail', 'split: a new pane below');

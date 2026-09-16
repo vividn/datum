@@ -217,12 +217,14 @@ export const barMenu = (page) => page.locator('[role="menu"][aria-label="Bar"]')
 /**
  * Open a pane's menu, then its `Bar ▸`.
  *
- * By key rather than by click: a title on the page's outer edge straddles
- * it, so half of it is in the page's margin — the pointer's own path is
- * tested where nothing is in the way.
+ * By click: a title on the page's outer edge hangs half into the page's
+ * margin, and the margin is empty furniture-wise since the four `…` edge
+ * handles went (da-wjob), so the pointer reaches it. It did not while
+ * they were there (da-ywp1), and this opened the menu with Enter to get
+ * past them; the pointer's own path is tested again now.
  */
 export async function openBar(page, id) {
-	await menuButton(page, id).press('Enter');
+	await menuButton(page, id).click();
 	await page.locator('[role="menu"] button').filter({ hasText: exactly('Bar') }).click();
 	await barMenu(page).waitFor();
 }
