@@ -1471,8 +1471,15 @@ describe('the day strip zooms onto an hour range', () => {
 					`the pan changed how much is on screen: ${shown} → ${panShown}`
 				);
 
-				// Every band is still on the one axis, and the stamps beside
-				// them have not moved.
+				// Every band is still on the one axis — once the strip is at
+				// rest. The zoom re-asked every band at the window's width and
+				// they arrive one CLI process apart; until a band's own answer
+				// lands it is still the pre-zoom picture, stretched by √2 to
+				// show the same hours (`mapFor` in $lib/DayStrip.svelte). That
+				// is the gesture's preview carrying on, not the bands moving
+				// apart, so the one axis is what the SETTLED strip draws
+				// (da-vi1j — the pinch above waits the same way).
+				await app.idle();
 				const after = await bandTransforms(app);
 				assert.deepEqual(after, after.map(() => after[0]), 'the bands moved apart');
 
