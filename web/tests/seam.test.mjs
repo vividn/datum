@@ -479,20 +479,46 @@ describe('the visual views', () => {
 		});
 	});
 
-	test('a block runs forward from its occur time rather than back from it', async () => {
+	test('a block runs back from its occur time rather than forward from it', async () => {
 		await withApp(async ({ run }) => {
-			// `start`/`stop` is a block: occur_time is its leading edge, and
-			// the duration runs forward from it (da-a8rs).
+			// `start`/`stop` brackets a block by its two instants; a
+			// duration declares one — and occur_time is the block's
+			// TRAILING edge, so the span PRECEDES it (da-zwct, reversing
+			// da-a8rs). Both land 20m–5m ago. Read forward, `read` would
+			// run from 5m ago to 10m from now instead, so the direction is
+			// what the geometry below holds the picture to: asserting only
+			// that a band exists is how the wrong wording survived here.
 			assert.equal((await run(['start', 'work', '-t', '-20'])).code, OK);
 			assert.equal((await run(['stop', 'work', '-t', '-5'])).code, OK);
+			assert.equal((await run(['start', 'read', '-t', '-5', '15m'])).code, OK);
 
 			const drawn = await run(['nowview', '-o', '-']);
 			assert.equal(drawn.code, OK, drawn.stderr);
-			assert.match(
-				drawn.stdout,
-				new RegExp(`<rect[^>]*fill="${colorOf('work')}"`),
-				`no band for the block: ${drawn.stdout}`
-			);
+			const svg = drawn.stdout;
+
+			// The window the picture covers, and the now-line at its end:
+			// between them they turn an x back into minutes before now.
+			const seen = /<g class="day-data"[^>]*data-from="([^"]*)" data-to="([^"]*)"/.exec(svg);
+			const nowX = Number(/<line class="current-time-line" x1="([\d.]+)"/.exec(svg)[1]);
+			const minutes = (Date.parse(seen[2]) - Date.parse(seen[1])) / 60000;
+			const minutesAgo = (x) => (1 - x / nowX) * minutes;
+
+			for (const field of ['work', 'read']) {
+				const bands = fieldRects(svg, field, 'block');
+				assert.equal(bands.length, 1, `one band for ${field}: ${svg}`);
+				const [band] = bands;
+				assert.equal(band.fill, colorOf(field), `${field}'s band is not its colour: ${svg}`);
+				// A minute of tolerance: the commands and the drawing are
+				// separate runs, so the window has moved on a little.
+				assert.ok(
+					Math.abs(minutesAgo(band.x) - 20) < 1,
+					`${field} starts ${minutesAgo(band.x)}m ago, not 20m: ${svg}`
+				);
+				assert.ok(
+					Math.abs(minutesAgo(band.x + band.w) - 5) < 1,
+					`${field} ends ${minutesAgo(band.x + band.w)}m ago, not 5m: ${svg}`
+				);
+			}
 		});
 	});
 
