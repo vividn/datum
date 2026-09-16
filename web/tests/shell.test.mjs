@@ -198,7 +198,7 @@ describe('the shell', () => {
 	test('+ lists day, the widget kinds and the saved layouts; nowview opens a tab; a reload keeps it, another device starts fresh', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			assert.deepEqual(await offered(page), ['day', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'stats', 'fields', 'aliases', 'input']);
+			assert.deepEqual(await offered(page), ['day', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'input']);
 
 			await pick(page, 'nowview');
 			await until(() => rootTabs(page), (t) => t.includes('nowview'));
@@ -219,7 +219,7 @@ describe('the shell', () => {
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
 			// The chooser reads the saved layouts each time it opens, so the
 			// save is on the list the first time it is asked.
-			assert.deepEqual(await offered(page), ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'stats', 'fields', 'aliases', 'input']);
+			assert.deepEqual(await offered(page), ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'input']);
 		}, DESKTOP);
 
 		// Which tabs are open is per device (vividn: the selection is not synced).
@@ -285,14 +285,14 @@ describe('a URL', () => {
 		}, DESKTOP);
 	});
 
-	// The kind `command` became `custom` (da-zqop), which frees the id for
-	// the commands widget (da-ltux). Nobody had saved a layout naming it, so
-	// it is a PLAIN rename: no `RETIRED_KINDS` arm, no alias. `/custom` is
-	// the widget, `/command` is nothing, and a layout that still names
-	// `command` draws the unknown-kind pane — asserted here so the absence
-	// of a migration is deliberate rather than forgotten. An arm added «to
-	// be safe» would migrate da-ltux's widget away the day it lands.
-	test('/custom opens the custom widget; /command is nothing, and a layout naming it draws the unknown-kind pane', async () => {
+	// The kind `command` became `custom` (da-zqop), which freed the id for
+	// the commands widget that took it (da-ltux). Nobody had saved a layout
+	// naming it, so it was a PLAIN rename: no `RETIRED_KINDS` arm, no alias
+	// — and the absence of a migration is what lets the id mean the new
+	// widget now. An arm added «to be safe» would have migrated this widget
+	// away the day it landed. Both names are a widget of their own here, and
+	// a layout naming either opens as that one.
+	test('/custom opens the custom widget and /command the commands widget, each under its own name', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.goto('/custom');
@@ -307,24 +307,20 @@ describe('a URL', () => {
 
 			const kinds = await offered(page);
 			assert.ok(kinds.includes('custom'), `the chooser does not offer custom: ${kinds}`);
-			assert.ok(!kinds.includes('command'), `the chooser still offers command: ${kinds}`);
+			assert.ok(kinds.includes('command'), `the chooser does not offer command: ${kinds}`);
 
 			await app.goto('/command');
-			const notice = page.locator('main .notice');
-			await notice.waitFor();
-			assert.match(await notice.innerText(), /nothing is called “command”/);
+			assert.deepEqual(await titles(page), ['command']);
+			await page.locator('section.pane[data-title="command"] button[data-command="undo"]').waitFor();
 
 			await layouts(app, 'saveLayout', {
 				version: 1,
-				name: 'was-command',
+				name: 'a-command',
 				root: { id: 'c', tabs: [{ id: 'c-tab', content: { id: 'c-w', kind: 'command', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } }
 			});
-			await app.goto('/was-command');
+			await app.goto('/a-command');
 			assert.deepEqual(await titles(page), ['command']);
-			assert.equal(
-				await page.locator('section.pane[data-title="command"] p.quiet').innerText(),
-				'no widget of kind “command” in this build'
-			);
+			await page.locator('section.pane[data-title="command"] button[data-command="occur"]').waitFor();
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -830,7 +826,7 @@ describe('the one chooser', () => {
 			// A saved layout, so the Layouts section holds more than `day`.
 			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
 			const fromRoot = await offered(page);
-			assert.deepEqual(fromRoot, ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'stats', 'fields', 'aliases', 'input']);
+			assert.deepEqual(fromRoot, ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'input']);
 
 			await choose(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);

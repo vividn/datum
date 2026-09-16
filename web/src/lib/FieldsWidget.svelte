@@ -10,11 +10,21 @@
 	rectangle, filled while it is on; a switch is a rectangle filled with
 	its current state's colour; a keyed record is its name, underlined, and
 	a click prefills `add <field> ` in the bottom bar rather than running
-	anything. The bar wraps and grows; its pane keeps the height its
-	layout gives it and the bar scrolls inside it (da-mbz2), while its
-	panels, which hang upward out of it, are hung against the screen so
-	that scroller cannot clip them. Ignored fields get no button: the
-	Track modal lists them, and a press runs `track <field>`.
+	anything. The pane keeps the height its layout gives it and the BAR is
+	the scroller (da-mbz2) — one row reached left and right while the pane
+	is one or two button-rows high, wrapped and reached up and down at
+	three or more (da-ltux) — while its panels, which hang upward out of
+	it, are hung against the screen so that scroller cannot clip them.
+	Ignored fields get no button: the Track modal lists them, and a press
+	runs `track <field>`.
+
+	A PENDING VERB (`verb`, da-ltux) is the commands widget talking to this
+	one through the command line they share: the list becomes the fields
+	that verb can be spent on, a press MEANS that verb and runs at once,
+	and Track + is the `+` at the end of the list instead of the button
+	before its start — the one door on the modal that PRESETS a verb, which
+	is what `startTracking`'s note below leaves room for. Which fields, and
+	what a press then runs, are `fieldsUnder` and `verbPress` in commands.ts.
 
 	Track + opens that modal (da-94q1, $lib/track.ts) — a `<dialog>` over
 	the whole page with a pictogram per verb — rather than a form hanging
@@ -44,7 +54,7 @@
 	is no second string built for display that could drift from it.
 -->
 <script lang="ts">
-	import { createEventDispatcher, tick } from 'svelte';
+	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import {
 		lookOf,
 		pressArgv,
@@ -56,11 +66,29 @@
 		type FieldShape
 	} from './fields.js';
 	import { openTrack } from './trackModal.js';
+	import {
+		declaredVerb,
+		fieldsUnder,
+		scrollsSideways,
+		verbPress,
+		watchRows,
+		type Verb
+	} from './commands.js';
 
 	export let fields: FieldButton[] = [];
 	export let disabled = false;
 	/** How a switch in a state is labelled; see `SwitchLabel`. */
 	export let switchLabel: SwitchLabel = 'field';
+	/**
+	 * The verb the command line is pending (da-ltux), or null.
+	 *
+	 * It filters the list to the fields that verb can be spent on and
+	 * makes a press MEAN that verb — so `start` on a switch field with
+	 * `true` among its states runs `start <field>`, not the state list a
+	 * plain press would open. The `+` at the end is then the way to a
+	 * field that does not exist yet, with the verb already chosen.
+	 */
+	export let verb: Verb | null = null;
 
 	const dispatch = createEventDispatcher<{ run: string[]; line: string }>();
 
@@ -73,6 +101,13 @@
 	const FOR = ['', '5m', '15m', '30m', '1h'];
 
 	let bar: HTMLElement;
+	/** The measuring stick the scroll rule counts rows with (da-ltux). */
+	let probe: HTMLElement;
+	let rows = 3;
+
+	onMount(() => watchRows(bar, probe, (n) => (rows = n)));
+
+	$: sideways = scrollsSideways(rows);
 	/**
 	 * The field whose long-press PANEL is open, by name — never the button
 	 * object, for the same reason `picked` is not (da-0n3k): `buttons` is
@@ -97,12 +132,20 @@
 	let newState = '';
 	/** The pane's scroller and where it stood when the states took over. */
 	let scrolled: HTMLElement | null = null;
-	let scrolledTo = 0;
+	/**
+	 * Where the scroller stood when the states took over — BOTH axes, since
+	 * the scroll rule decides which one the bar is on (da-ltux) and a short
+	 * pane is scrolled sideways.
+	 */
+	let scrolledTo = { left: 0, top: 0 };
 
 	let holdTimer: ReturnType<typeof setTimeout> | null = null;
 	let held = false;
 
-	$: buttons = fields.filter((w) => !w.ignored);
+	$: buttons = fieldsUnder(
+		fields.filter((w) => !w.ignored),
+		verb
+	);
 	$: ignored = fields.filter((w) => w.ignored);
 	$: picking = picked === null ? null : (buttons.find((b) => b.field === picked) ?? null);
 
@@ -143,9 +186,13 @@
 		addingState = false;
 		newState = '';
 		const scroller = scrolled;
-		const top = scrolledTo;
+		const at = scrolledTo;
 		scrolled = null;
-		if (scroller) void tick().then(() => (scroller.scrollTop = top));
+		if (scroller)
+			void tick().then(() => {
+				scroller.scrollLeft = at.left;
+				scroller.scrollTop = at.top;
+			});
 	}
 
 	function emit(argv: string[]) {
@@ -161,9 +208,14 @@
 	 * `extra_data.comment` on its own, so no flag goes in the line.
 	 */
 	function note(button: FieldButton) {
+		line(`note ${button.field} `);
+	}
+
+	/** Put a line in the command line, unrun, and leave the lists as they were. */
+	function line(text: string) {
 		close();
 		back();
-		dispatch('line', `note ${button.field} `);
+		dispatch('line', text);
 	}
 
 	/**
@@ -197,23 +249,47 @@
 		// resets it for its own opening; this is the other door in.
 		adjust = {};
 		scrolled = scrollerOf();
-		scrolledTo = scrolled?.scrollTop ?? 0;
+		scrolledTo = { left: scrolled?.scrollLeft ?? 0, top: scrolled?.scrollTop ?? 0 };
 		picked = button.field;
 	}
 
-	/** The scrolling ancestor the bar sits in — FieldsPane's body, in the app. */
+	/** What scrolls, either way: the bar itself, or an ancestor that took the overflow. */
 	function scrollerOf(): HTMLElement | null {
-		for (let node = bar?.parentElement; node; node = node.parentElement) {
-			if (node.scrollHeight > node.clientHeight) return node;
+		for (let node: HTMLElement | null = bar; node; node = node.parentElement) {
+			if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth) return node;
 		}
 		return null;
 	}
 
 	function press(button: FieldButton) {
+		// With a verb pending, the press IS that verb (C1: a field tap runs
+		// at once) — except where `<verb> <field>` is not a command, and
+		// `verbPress` hands back null so the two courtesies below apply.
+		const asked = verb === null ? null : verbPress(verb, button);
+		if (asked) return emit(asked);
+		// A record is typed, never pressed: its line goes to the prompt.
+		if (button.shape.kind === 'record') return line(`add ${button.field} `);
 		// A multi-state field can't be logged without saying which, so a
 		// plain press asks — the bar fills with its states.
 		if (button.shape.kind === 'states') pick(button);
 		else emit(pressArgv(button));
+	}
+
+	/**
+	 * The `+` at the end of a filtered list: the same modal, with the
+	 * pending verb already chosen (da-ltux).
+	 *
+	 * One of the doors `startTracking` above leaves the presetting to. The
+	 * verb is mapped to one a field can be DECLARED with — `end` is not, so
+	 * it declares the block it would have ended (`declaredVerb`).
+	 */
+	async function trackUnder(pending: Verb) {
+		close();
+		const argv = await openTrack({
+			verb: declaredVerb(pending),
+			ignored: ignored.map((w) => w.field)
+		});
+		if (argv) emit(argv);
 	}
 
 	/**
@@ -311,7 +387,13 @@
 
 <svelte:window on:pointerdown={onWindowPointerDown} on:keydown={onWindowKeyDown} />
 
-<div class="bar" bind:this={bar}>
+<!-- The measuring stick for the scroll rule: a button of the ordinary
+     kind, laid out and invisible, so the row height is the buttons' own.
+     Outside the bar and out of flow, so nothing that reads the bar's
+     buttons finds it. -->
+<span class="probe" aria-hidden="true"><button class="widget" bind:this={probe} tabindex="-1">probe</button></span>
+
+<div class="bar" class:sideways bind:this={bar} data-rows={rows}>
 	{#if picking}
 		{@const chosen = picking}
 		<!-- The states, in place of the fields (da-g635): `< Back` first —
@@ -367,15 +449,32 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="slot">
-			<button
-				class="track add-button"
-				{disabled}
-				title="track a new field"
-				on:click={() => void startTracking()}
-			>
-				Track +
-			</button>
+		<!-- Track + leads the whole list — the way into the app on an empty
+		     database. Under a pending verb it is the `+` at the END instead
+		     (vividn: «There should be a + field at the end of this filtered
+		     fields view for adding new fields»), so the filtered list is the
+		     fields that verb can be spent on and then the way to one more. -->
+		<div class="slot" class:last={verb !== null}>
+			{#if verb === null}
+				<button
+					class="track add-button"
+					{disabled}
+					title="track a new field"
+					on:click={() => void startTracking()}
+				>
+					Track +
+				</button>
+			{:else}
+				<button
+					class="nav add-field"
+					data-add-field
+					{disabled}
+					title="track a new {verb} field"
+					on:click={() => void trackUnder(verb)}
+				>
+					+
+				</button>
+			{/if}
 		</div>
 
 		{#if buttons.length === 0}
@@ -398,7 +497,7 @@
 						style={vars(look)}
 						{disabled}
 						title="add {button.field} … — fills the prompt"
-						on:click={() => dispatch('line', `add ${button.field} `)}>{button.field}</button
+						on:click={() => press(button)}>{button.field}</button
 					>
 				{:else}
 					<button
@@ -482,11 +581,50 @@
 </div>
 
 <style>
+	/*
+	 * The bar is the SCROLLER, and the scroll rule decides its axis
+	 * (da-ltux, vividn): one or two button-rows high and it is one row
+	 * reached left and right; three or more and it wraps and is reached up
+	 * and down. Its panels hang against the screen (`hang` above), so
+	 * taking the overflow here cannot clip them.
+	 */
 	.bar {
+		flex: 1;
+		min-height: 0;
+		/* A flex item will not shrink under its content unless told to, and
+		   a row of buttons that cannot shrink spills out of the pane instead
+		   of scrolling inside it. */
+		min-width: 0;
 		display: flex;
 		flex-wrap: wrap;
+		align-content: flex-start;
 		align-items: center;
 		gap: 0.4rem;
+		overflow-x: hidden;
+		overflow-y: auto;
+	}
+
+	.bar.sideways {
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		overflow-y: hidden;
+	}
+
+	.slot {
+		flex: none;
+	}
+
+	/* Under a pending verb the Track slot is the `+` at the END of the
+	   filtered list. `order` rather than a second block of markup: the
+	   button it holds is the same door on the same modal. */
+	.slot.last {
+		order: 1;
+	}
+
+	.probe {
+		position: absolute;
+		visibility: hidden;
+		pointer-events: none;
 	}
 
 	.widget,

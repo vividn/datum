@@ -79,8 +79,8 @@ file in the same commit — a convention nobody can read is a convention nobody 
    before it. A first pass looking only for `<!--` reported a file short and named `AnsiText.svelte`,
    which in fact opens with eleven lines of exactly this.*
 9. **Pure logic lives beside its markup, in a `.ts` a test can call without a browser**:
-   `fields.ts`, `stats.ts`, `tail.ts`, `panes.ts`, `bar.ts`, `cursor.ts`, `fileargv.ts`,
-   `dbio.ts`. The `.svelte` file holds the markup and the wiring.
+   `fields.ts`, `commands.ts`, `stats.ts`, `tail.ts`, `panes.ts`, `bar.ts`, `cursor.ts`,
+   `fileargv.ts`, `dbio.ts`. The `.svelte` file holds the markup and the wiring.
 10. **One widget kind, one name.** A kind's id in `registry.ts` is a saved-layout key and cannot
    change without a migration; the title, the file names and the tests all read as the thing the
    reader sees. (`fields` is `FieldsWidget.svelte`, `layout/FieldsPane.svelte`, `fields.ts` and
@@ -93,7 +93,8 @@ file in the same commit — a convention nobody can read is a convention nobody 
    a kind's id being a saved-layout key BUYS, and not only what it costs.
    A kind renamed BEFORE anyone has saved a layout naming it needs no arm at all — it is a plain
    rename, no migration, no alias, nothing to carry (`command` → `custom`, da-zqop, 2026-09-15,
-   which freed `command` for the commands widget); after that first saved layout it needs one.
+   which freed `command` for the commands widget that took it, da-ltux); after that first saved
+   layout it needs one.
 
 ## Looks
 

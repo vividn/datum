@@ -124,17 +124,69 @@ describe('the widget fits its screen, legibly', () => {
 		{ width: 320, height: 664 },
 		{ width: 1280, height: 800 }
 	]) {
-		test(`at ${viewport.width}x${viewport.height} the widget wraps, every button ≥ 24px, Track + first in the Tab order`, async () => {
+		test(`at ${viewport.width}x${viewport.height} the widget obeys the scroll rule, every button ≥ 24px, Track + first in the Tab order`, async () => {
 			await withApp(async ({ page }) => {
 				for (const line of [...FIXTURE, 'occur tea', 'occur water', 'occur run']) await type(page, line);
 				await page.locator('.bar [data-field="run"]').waitFor();
-				const bar = await page.locator('.bar').evaluate((el) => ({
-					width: el.scrollWidth <= el.clientWidth,
-					rows: new Set([...el.children].map((c) => Math.round(c.getBoundingClientRect().top))).size,
-					heights: [...el.querySelectorAll('button')].map((b) => b.getBoundingClientRect().height)
-				}));
-				assert.ok(bar.width, 'the widget scrolls sideways rather than wrapping');
-				if (viewport.width < 500) assert.ok(bar.rows > 1, 'the widget did not wrap');
+				// The rule is the pane's BOX, not the bar's content (da-ltux,
+				// vividn): one or two button-rows of room and the bar is a single
+				// row reached left and right; three or more and it wraps and is
+				// reached up and down. The bar says which it is in `data-rows`,
+				// and the row a button is drawn on is the MIDDLE of its box —
+				// the bar centres what it lays out, and a record's underlined
+				// name is shorter than a chip.
+				const bar = await page.locator('.bar').evaluate((el) => {
+					const style = getComputedStyle(el);
+					const slots = [...el.children].filter((c) => !c.classList.contains('probe'));
+					const gap = parseFloat(style.columnGap) || 0;
+					return {
+						rows: Number(el.dataset.rows),
+						wrap: style.flexWrap,
+						x: style.overflowX,
+						y: style.overflowY,
+						scrolls: el.scrollWidth > el.clientWidth,
+						// What the buttons WANT along one row, against the room
+						// there is for them: whether the rule has anything to
+						// scroll to, which is a different question from the rule.
+						crowded:
+							slots.reduce((w, c) => w + c.getBoundingClientRect().width, 0) +
+								gap * Math.max(0, slots.length - 1) >
+							el.clientWidth,
+						drawn: new Set(
+							[...el.querySelectorAll('button:not([tabindex="-1"])')].map((b) => {
+								const box = b.getBoundingClientRect();
+								return Math.round(box.top + box.height / 2);
+							})
+						).size,
+						fits: el.getBoundingClientRect().width <= el.parentElement.getBoundingClientRect().width + 1,
+						heights: [...el.querySelectorAll('button')].map((b) => b.getBoundingClientRect().height)
+					};
+				});
+				// The SHAPE of the rule holds at every width; whether there is
+				// anything to scroll to is about how many buttons there happen
+				// to be, and is asserted only where they overflow (`crowded`).
+				assert.ok(bar.fits, 'the bar is wider than the pane it is in');
+				if (bar.rows <= 2) {
+					assert.deepEqual(
+						[bar.wrap, bar.x, bar.y],
+						['nowrap', 'auto', 'hidden'],
+						`${bar.rows} rows of room: one row, reached sideways`
+					);
+					assert.equal(bar.drawn, 1, `${bar.rows} rows of room, but the bar drew ${bar.drawn}`);
+					if (bar.crowded) assert.ok(bar.scrolls, 'the buttons overflow but the bar does not scroll');
+				} else {
+					assert.deepEqual(
+						[bar.wrap, bar.x, bar.y],
+						['wrap', 'hidden', 'auto'],
+						`${bar.rows} rows of room: wrapped, reached downward`
+					);
+					assert.equal(bar.scrolls, false, 'a wrapped bar must not also scroll sideways');
+					assert.equal(
+						bar.drawn > 1,
+						bar.crowded,
+						`the bar drew ${bar.drawn} row(s) with the buttons ${bar.crowded ? 'over' : 'in'}flowing`
+					);
+				}
 				for (const h of bar.heights) assert.ok(h >= 24, `a button is ${h}px tall`);
 
 				const first = await page.locator('.bar').evaluate((el) => {

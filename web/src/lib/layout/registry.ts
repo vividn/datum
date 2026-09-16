@@ -41,6 +41,7 @@ import type { Tab, WidgetKindMeta } from './types.js';
 import { isSplit } from './types.js';
 import type { Floor } from './tree.js';
 import CliPane from '$lib/CliPane.svelte';
+import CommandPane from './CommandPane.svelte';
 import CustomPane from '$lib/CustomPane.svelte';
 import DayStrip from '$lib/DayStrip.svelte';
 import Stats from '$lib/Stats.svelte';
@@ -156,6 +157,12 @@ export const KINDS: Record<string, WidgetKind> = {
 	// widget setting is its own change. Called `command` until da-zqop,
 	// which freed that id for the commands widget (da-ltux).
 	custom: { meta: meta('custom', 'custom'), component: CustomPane, legible: { width: 200, height: 102 } },
+	// The commands widget (da-ltux): every command as a button, Undo
+	// first. It took the id `command` back from the widget above, which
+	// da-zqop renamed to `custom` to free it. Legible at one button row
+	// (33px) plus the body's padding — the scroll rule takes it from
+	// there, and one row reached sideways is still every command.
+	command: { meta: meta('command', 'command'), component: CommandPane, legible: { width: 160, height: 49 } },
 	// The stats widget (da-n7r0): its settings ARE the widget's settings —
 	// the tree keeps them, and a `change` from the widget writes them back
 	// (Layout.svelte).

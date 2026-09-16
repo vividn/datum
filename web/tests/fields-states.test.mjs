@@ -167,16 +167,24 @@ describe('a state field fills the widget with its states', () => {
 				await app.submit(`spec set ${field} --verb occur`);
 			await seed(app, MOOD, 'mood');
 
-			const body = page.locator('section[data-pane="bar"] .body');
-			await body.evaluate((el) => (el.scrollTop = el.scrollHeight));
-			const at = await body.evaluate((el) => el.scrollTop);
-			assert.ok(at > 0, 'the bar fits its pane — there is nothing this test can prove');
+			// The scroller is the BAR, and which way it goes is the scroll
+			// rule's (da-ltux): a pane this short is one row reached sideways.
+			const bar = page.locator('section[data-pane="bar"] .bar');
+			const at = await bar.evaluate((el) => {
+				el.scrollLeft = el.scrollWidth;
+				el.scrollTop = el.scrollHeight;
+				return { left: el.scrollLeft, top: el.scrollTop };
+			});
+			assert.ok(at.left > 0 || at.top > 0, 'the bar fits its pane — there is nothing this test can prove');
 
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-back]').click();
 			await page.locator('.bar [data-field="mood"]').waitFor();
 			await page.waitForFunction(
-				(top) => document.querySelector('section[data-pane="bar"] .body').scrollTop === top,
+				(was) => {
+					const el = document.querySelector('section[data-pane="bar"] .bar');
+					return el.scrollLeft === was.left && el.scrollTop === was.top;
+				},
 				at
 			);
 		}, { clock: todayAt(15), viewport: { width: 390, height: 640 } });

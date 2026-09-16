@@ -32,7 +32,8 @@
 // `ghost` is the narrower thing the prompt itself shows (da-jprg) — see
 // below.
 
-import { get, writable } from 'svelte/store';
+import { derived, get, writable } from 'svelte/store';
+import { pendingVerb as verbOf, type Verb } from './commands.js';
 import { pressWithPills } from './layout/engine.js';
 import type { RunResult } from './run.js';
 import { shellSplit } from './shellSplit.js';
@@ -182,6 +183,34 @@ export const focusLine = (): void => {
 };
 
 export const prefill = writable<string | null>(null);
+
+/**
+ * The verb the command line is PENDING (da-ltux) — the fields widget
+ * filters itself to what that verb can be spent on.
+ *
+ * Derived from `text` and stored nowhere, so a tap on the commands
+ * widget's `occur` and a person typing `occur` are the same event: both
+ * put the word in the one buffer, and this reads it back. A second store
+ * a tap had to remember to set is a second store to fall out of step.
+ */
+export const pending = derived(text, verbOf);
+
+/**
+ * Spend the pending verb: the word a tap put in the box has been used, so
+ * the box is empty again and the fields widget is whole (C1).
+ *
+ * Only when the line is that word ALONE. A box with more in it is a line
+ * the reader is in the middle of typing, and a press must never take that
+ * away (`ghost.test.mjs`: «a line typed while a command is in flight is
+ * not overwritten, by the command or by a press»). The verb stays pending
+ * while the box still says it, which is the same rule read the same way.
+ */
+export const clearPending = (): void => {
+	const line = get(text).trim();
+	if (verbOf(line) !== null && !/\s/.test(line)) text.set('');
+};
+
+export type { Verb };
 
 export interface Ghost {
 	/** The command, as the scrollback echoes it. */

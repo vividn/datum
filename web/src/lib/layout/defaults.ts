@@ -165,6 +165,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	nowview: () => only('nowview', 'nowview'),
 	tail: () => only('tail', 'tail'),
 	custom: () => only('custom', 'custom'),
+	command: () => only('command', 'command'),
 	stats: () => only('stats', 'stats'),
 	fields: () => only('fields', 'widgetbar'),
 	aliases: () => only('aliases', 'aliases'),

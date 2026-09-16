@@ -131,6 +131,7 @@ describe('the menu the title opens', () => {
 				'nowview',
 				'tail',
 				'custom',
+				'command',
 				'stats',
 				'fields',
 				'aliases',

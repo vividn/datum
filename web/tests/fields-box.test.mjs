@@ -57,16 +57,22 @@ describe("the fields pane's box", () => {
 
 	// A phone, where the pane is short enough that a handful of fields
 	// overflows it — the shape da-d08c makes ordinary.
-	test('a button past the bottom of the pane is scrolled to and pressed', async () => {
+	//
+	// The scroller is the BAR (da-ltux), and which way it goes is the
+	// scroll rule's: a pane one or two button-rows high is one row reached
+	// sideways, a taller one wraps and is reached downward. The claim here
+	// is the same either way — the last button is reachable, not clipped
+	// away — so it is made along whichever axis the bar chose.
+	test('a button past the end of the bar is scrolled to and pressed', async () => {
 		await withApp(async ({ page }) => {
 			for (const field of TEN) await type(page, `spec set ${field} --verb occur`);
 			await page.locator('.bar [data-field="juliett"]').waitFor();
 
-			const body = page.locator('section[data-pane="bar"] .body');
-			assert.ok(
-				await body.evaluate((el) => el.scrollHeight > el.clientHeight + 1),
-				'the bar fits its pane — there is nothing this test can prove'
-			);
+			const bar = page.locator('section[data-pane="bar"] .bar');
+			const over = (el) =>
+				el.scrollWidth > el.clientWidth + 1 ? 'x' : el.scrollHeight > el.clientHeight + 1 ? 'y' : null;
+			const axis = await bar.evaluate(over);
+			assert.ok(axis, 'the bar fits its pane — there is nothing this test can prove');
 
 			const echoes = await page.locator('.repl .echo').count();
 			// Playwright refuses to click what is out of view or covered, and
@@ -74,7 +80,10 @@ describe("the fields pane's box", () => {
 			// assertion that the button is reachable, not clipped away.
 			await page.locator('.bar button.widget').last().click();
 			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
-			assert.ok(await body.evaluate((el) => el.scrollTop > 0), 'the pane never scrolled to reach it');
+			assert.ok(
+				await bar.evaluate((el, a) => (a === 'x' ? el.scrollLeft : el.scrollTop) > 0, axis),
+				'the bar never scrolled to reach it'
+			);
 		}, { viewport: { width: 390, height: 640 } });
 	});
 });
