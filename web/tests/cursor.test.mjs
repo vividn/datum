@@ -11,6 +11,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -76,11 +77,31 @@ const spot = (page, picture, f, from) =>
 		[f, from]
 	);
 
-/** The time pill's text, without its ×; `null` when there is none. */
-const pillText = async (page) => {
-	const pills = page.locator(`${PILL}.time`);
-	return (await pills.count()) ? pills.evaluate((p) => p.querySelector('.label').textContent) : null;
-};
+/**
+ * The time pill's ARGV — the words it puts on the command line, which is
+ * what the pill MEANS; `null` when there is none.
+ *
+ * Read off the bar's own store rather than the pill's face, because since
+ * da-ui4i the two are not the same string: the pill is drawn in short
+ * sections (`-y`, `09:00`) and still sends the `-t` the CLI reads.
+ */
+const pillText = (page) =>
+	page.evaluate(() => window.datum.bar.pills().find((p) => p.kind === 'time')?.text ?? null);
+
+/** What the time pill SAYS, one string per section, in the order drawn. */
+const pillFace = (page) =>
+	page.locator(`${PILL}.time .label`).evaluateAll((ls) => ls.map((l) => l.textContent));
+
+/** Wait for the pill to say `want`, and report what it said if it never does. */
+const saysPill = (page, want) =>
+	until(
+		() => pillFace(page),
+		(seen) => seen.join('|') === want.join('|')
+	);
+
+/** Point the page at an instant no click can reach — another year's. */
+const pointAt = (page, iso) =>
+	page.evaluate((iso) => window.datum.cursor.set(new Date(iso)), iso);
 
 /** `-t HH:MM` / `-t YYYY-MM-DDTHH:MM` on 2026-09-10 (UTC) as an instant. */
 const pillInstant = (text) => {
@@ -301,5 +322,80 @@ describe('the time cursor', () => {
 			},
 			{ device: devices['iPhone 13'], viewport: { width: 390, height: 844 } }
 		);
+	});
+});
+
+// da-ui4i. vividn, 2026-09-16: "break the time pill into a -d and -t
+// section (it can be the same pill), for yesterday and the day before use
+// -y and -yy, for other dates, use a short from like sep14 to keep it
+// small unless it is sufficiently far back in time."
+//
+// Both halves are checked separately because they are not the same string
+// any more: what the pill SAYS is short, and what it SENDS is the `-t` the
+// CLI has always been handed — byte for byte what it was before this bead.
+describe('the time pill says a date and a time', () => {
+	// The clock is fixed at 2026-09-10; the cursor is put straight on each
+	// instant, since a click can only reach the days the strip draws and
+	// last year is not one of them.
+	const days = [
+		['2026-09-10T14:05:00Z', ['14:05'], '-t 14:05'],
+		['2026-09-09T09:00:00Z', ['-y', '09:00'], '-t 2026-09-09T09:00'],
+		['2026-09-08T09:00:00Z', ['-yy', '09:00'], '-t 2026-09-08T09:00'],
+		['2026-09-14T09:00:00Z', ['sep14', '09:00'], '-t 2026-09-14T09:00'],
+		['2025-09-14T09:00:00Z', ['2025-09-14', '09:00'], '-t 2025-09-14T09:00']
+	];
+
+	test('today the time alone, then -y, -yy, sep14 and the full date of another year — and the argv unchanged', async () => {
+		await withDay(async ({ page }) => {
+			for (const [iso, face, argv] of days) {
+				await pointAt(page, iso);
+				await saysPill(page, face);
+				assert.deepEqual(await pillFace(page), face, iso);
+				assert.equal(await pillText(page), argv, `the argv at ${iso}`);
+				// ONE pill, in the cursor's own class: hover.ts reads its colour.
+				assert.equal(await page.locator(`${PILL}.time`).count(), 1, iso);
+				assert.equal(await page.locator(PILL).count(), 1, iso);
+			}
+
+			// The two sections are divided, and the division is inside the pill.
+			await pointAt(page, days[1][0]);
+			await saysPill(page, days[1][1]);
+			const seam = await page
+				.locator(`${PILL}.time button.remove`)
+				.nth(1)
+				.evaluate((b) => getComputedStyle(b).borderLeftWidth);
+			assert.notEqual(seam, '0px', 'the sections are not divided');
+		});
+	});
+
+	test('the date section alone leaves the time — today implied — and the time section takes the pill', async () => {
+		await withDay(async ({ page }) => {
+			await pointAt(page, '2026-09-09T09:00:00Z');
+			await saysPill(page, ['-y', '09:00']);
+
+			await page.locator(`${PILL}.time button.remove`).first().click();
+			await saysPill(page, ['09:00']);
+			assert.equal(await pillText(page), '-t 09:00');
+			// And the page is pointed where the pill now says: today at 09:00,
+			// with the dotted line on today's band and none on yesterday's.
+			assert.equal(
+				await page.evaluate(() => window.datum.cursor.at().toISOString()),
+				'2026-09-10T09:00:00.000Z'
+			);
+			await page.locator(`${TODAY} line.cursor`).waitFor({ state: 'attached' });
+			assert.equal((await lineXs(page, TODAY)).length, 1);
+
+			await page.locator(`${PILL}.time button.remove`).last().click();
+			await until(
+				() => page.locator(PILL).count(),
+				(n) => n === 0
+			);
+			assert.equal(await pillText(page), null);
+			assert.equal(await page.evaluate(() => window.datum.cursor.at()), null);
+			await until(
+				() => page.locator('line.cursor').count(),
+				(n) => n === 0
+			);
+		});
 	});
 });

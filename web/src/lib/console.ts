@@ -26,6 +26,7 @@ import { tailListing, type TailColumn, type TailRow } from './tail.js';
 import * as layouts from './layout/store.js';
 import * as shell from './layout/shell.js';
 import { pills, removePill, setPills, type Pill } from './bar.js';
+import { cursor, setCursor } from './cursor.js';
 import { shellSplit } from './shellSplit.js';
 import { get } from 'svelte/store';
 import { apply, layout } from './layout/current.js';
@@ -54,6 +55,8 @@ export interface DatumConsole {
 	shell: typeof shell;
 	/** The bottom bar's pills: what the time cursor will set, and a test does. */
 	bar: { pills(): Pill[]; setPills(next: Pill[]): void; removePill(id: string): void };
+	/** The time cursor (da-wnt2): the instant the page is pointed at, as a click on a day sets it. */
+	cursor: { at(): Date | null; set(at: Date | null): void };
 }
 
 /** Publish the handle on `target` (the window, in the app). */
@@ -71,7 +74,8 @@ export function installConsole(target: Record<string, unknown>): void {
 		layouts,
 		layout: { current: () => get(layout), apply },
 		shell,
-		bar: { pills: () => get(pills), setPills, removePill }
+		bar: { pills: () => get(pills), setPills, removePill },
+		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor }
 	};
 	target.datum = handle;
 }

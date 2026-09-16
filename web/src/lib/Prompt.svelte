@@ -57,10 +57,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import {
+		dropSection,
 		ghost,
 		pills,
 		registerLine,
-		removePill,
+		sectionsOf,
 		spent,
 		submitLine,
 		text,
@@ -156,22 +157,30 @@
 			<!-- vividn, on the deployed build: "click anywhere except lock to
 			     dismiss (so no x)" and then "maybe doch keep the x icon, but
 			     still click anywhere to dismiss" (da-tnv3). So the × is a
-			     MARK, not a target: the pill is two sibling buttons — a
-			     nested one would be invalid HTML — and the remove button is
-			     every pixel that is not the lock, padding and × alike. The
+			     MARK, not a target: the pill is sibling buttons — a nested
+			     one would be invalid HTML — and the remove button is every
+			     pixel that is not the lock, padding and × alike.
+
+			     A pill drawn in SECTIONS (da-ui4i: the time cursor's date
+			     and its time) is that same row of buttons, one per section,
+			     divided by a hairline: a section that leaves something
+			     behind presses down to its `rest`, and the one that does not
+			     — the last — carries the × and takes the pill away. A pill
+			     with no sections IS one section, so there is one path here
+			     and the plain pill is drawn exactly as it was. The
 			     lock is a flat SVG in the pill's own ink: the emoji clashed
 			     with everything around it, and its two states differ by one
 			     path. -->
 			{#each $pills as pill (pill.id)}
 				<span class="pill {pill.kind}" class:locked={pill.locked}
-					><button
-						type="button"
-						class="remove"
-						aria-label="remove {pill.text}"
-						on:click={() => removePill(pill.id)}
-						><span class="label">{pill.text}</span><span class="x" aria-hidden="true">×</span
-						></button
-					><button
+					>{#each sectionsOf(pill) as section, i}<button
+							type="button"
+							class="remove"
+							aria-label={section.rest ? `drop ${section.text}` : `remove ${pill.text}`}
+							on:click={() => dropSection(pill.id, i)}
+							><span class="label">{section.text}</span
+							>{#if !section.rest}<span class="x" aria-hidden="true">×</span>{/if}</button
+						>{/each}<button
 						type="button"
 						class="lock"
 						aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"
@@ -332,6 +341,14 @@
 
 	.pill button.lock {
 		padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+	}
+
+	/* The divider between two sections of one pill: a hairline in the
+	   pill's own ink, thin enough to read as a seam in one pill rather than
+	   as the gap between two. */
+	.pill button.remove + button.remove {
+		border-left: 1px solid color-mix(in srgb, var(--page) 45%, transparent);
+		padding-left: 0.45rem;
 	}
 
 	/* A mark, not a target — the whole of the button beside it removes. */

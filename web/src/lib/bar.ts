@@ -53,13 +53,53 @@ export interface Pill {
 	kind: string;
 	/** A locked pill survives a successful press instead of clearing. */
 	locked?: boolean;
+	/**
+	 * How the pill is DRAWN, when that is not its `text`: one pill divided
+	 * into sections, each pressable on its own (da-ui4i — the time cursor's
+	 * date and its time). Absent, the pill is one section saying `text`.
+	 */
+	sections?: PillSection[];
 }
+
+/**
+ * A pressable part of a pill (da-ui4i).
+ *
+ * `text` is drawn, never sent: the pill's `text` remains the whole of what
+ * the argv gets, so a section is a way of READING the pill, not a second
+ * meaning for it. `rest` is what the pill becomes when this section is
+ * pressed — without one the press takes the whole pill away, which is what
+ * a pill with no sections at all has always done.
+ */
+export interface PillSection {
+	/** What this section says (`-y`, `09:00`). */
+	text: string;
+	/** The pill left behind by a press here; absent → the pill goes. */
+	rest?: { text: string; sections?: PillSection[] };
+}
+
+/** The sections a pill is drawn as — a pill without them is one section. */
+export const sectionsOf = (pill: Pill): PillSection[] => pill.sections ?? [{ text: pill.text }];
 
 export const pills = writable<Pill[]>([]);
 
 export const setPills = (next: Pill[]): void => pills.set(next);
 
 export const removePill = (id: string): void => pills.update((all) => all.filter((p) => p.id !== id));
+
+/**
+ * A press on one section of a pill: the pill becomes that section's `rest`,
+ * or goes when it has none (da-ui4i). The producer of the pill says what a
+ * section leaves behind; whoever derives the pill follows it from here (the
+ * time cursor re-reads its instant off the text, $lib/cursor.ts).
+ */
+export const dropSection = (id: string, index: number): void =>
+	pills.update((all) =>
+		all.flatMap((p) => {
+			if (p.id !== id) return [p];
+			const rest = sectionsOf(p)[index]?.rest;
+			return rest ? [{ ...p, text: rest.text, sections: rest.sections }] : [];
+		})
+	);
 
 export const toggleLockPill = (id: string): void =>
 	pills.update((all) => all.map((p) => (p.id === id ? { ...p, locked: !p.locked } : p)));
