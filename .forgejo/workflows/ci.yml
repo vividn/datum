@@ -39,9 +39,10 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
-  # 3 cores, 3.9 GB, no swap: two rustc at once is the safe shape (the
-  # bead's estimate; the numbers this run prints replace it).
-  CARGO_BUILD_JOBS: 2
+  # 3 cores, 3.9 GB, no swap. Run 235 (2026-09-16, CARGO_BUILD_JOBS=2) peaked
+  # at 728 MB across the whole Rust battery — build 658 MB, clippy 590 MB —
+  # with the box never under ~2 GB available, so all three cores may build.
+  CARGO_BUILD_JOBS: 3
 
 jobs:
   ci:
@@ -89,13 +90,13 @@ jobs:
         run: /usr/bin/time -v cargo build --workspace --all-targets
 
       - name: cargo nextest run --workspace
-        run: /usr/bin/time -v cargo nextest run --workspace --no-fail-fast --test-threads 2
+        run: /usr/bin/time -v cargo nextest run --workspace --no-fail-fast --test-threads 3
 
       - name: cargo test --workspace --doc
         run: /usr/bin/time -v cargo test --workspace --doc
 
       - name: cargo nextest run --features e2e-full (the full cohort, da-1wat)
-        run: /usr/bin/time -v cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads 2
+        run: /usr/bin/time -v cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads 3
 
       - name: cargo xtask check lint (the honesty gates, da-8y2q.7)
         run: cargo run -q -p xtask -- check lint
@@ -159,12 +160,15 @@ jobs:
         working-directory: web
         run: pnpm exec playwright install --with-deps --only-shell chromium
 
-      # Last, so the browser peak never overlaps the link peak. Concurrency 2
-      # rather than GitHub's 3: this box has 3 cores, and da-x38v's rule is
-      # cores − 1 for a dedicated runner. Task 184 ran 3 and cut the same
-      # twelve files as GitHub; whether 2 cuts fewer is what this measures.
+      # Last, so the browser peak never overlaps the link peak. ONE file at a
+      # time: a file under test is about two cores' worth (concurrency.mjs's
+      # own coefficient), and this box has three. Measured 2026-09-16: task
+      # 184 at 3 cut twelve files at the 120 s budget, run 235 at 2 cut nine
+      # (25m28s, 528 pass, 0 fail) — the cuts are oversubscription, not the
+      # suite. GitHub's runner turned out to be 2 cores and runs 1 for the
+      # same reason (da-buqa, #224).
       - name: pnpm test
         working-directory: web
         run: /usr/bin/time -v pnpm test
         env:
-          DATUM_TEST_CONCURRENCY: 2
+          DATUM_TEST_CONCURRENCY: 1
