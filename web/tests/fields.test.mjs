@@ -27,7 +27,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { declareArgv, inkOver, lookOf, pressArgv, shapeFor, buttonsFor } from '../src/lib/fields.ts';
+import { inkOver, lookOf, pressArgv, shapeFor, buttonsFor } from '../src/lib/fields.ts';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
 
@@ -115,10 +115,8 @@ describe('the logic', () => {
 		assert.deepEqual(shapeFor(undefined), { kind: 'point' });
 	});
 
-	test('the Track + form declares the verb it was given', () => {
-		assert.deepEqual(declareArgv('sleep', { kind: 'state' }), ['spec', 'set', 'sleep', '--verb', 'start']);
-		assert.deepEqual(declareArgv('coffee', { kind: 'point' }), ['spec', 'set', 'coffee', '--verb', 'occur']);
-	});
+	// What Track + declares a field WITH is the Track modal's (da-94q1):
+	// `trackArgv` in $lib/track.ts, held to the CLI in tests/track.test.mjs.
 });
 
 /** What the widget's entry for `field` looks like, as computed. */
@@ -191,13 +189,21 @@ describe('in the app', () => {
 	test('track tea and occur walk are buttons; an ignored run with a spec is not, and Track + un-ignores it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			for (const line of ['track tea --verb occur', 'occur walk', 'spec set run --verb occur', 'ignore run']) await type(page, line);
-			await page.locator('.bar button[data-field="walk"]').waitFor();
+			for (const line of ['track tea --verb occur', 'occur walk', 'spec set run --verb occur']) await type(page, line);
+			// Drawn BEFORE it is ignored. `['tea', 'walk']` is also what the bar
+			// says one beat EARLIER, before `spec set run` lands — the store
+			// catches up a refresh behind the echo `type` waits for — so
+			// asserting it without first seeing `run` appear passes on the
+			// wrong state, and the Track modal then opens on an ignored list
+			// that has not heard of `run` either.
+			await page.locator('.bar button[data-field="run"]').waitFor();
+			await type(page, 'ignore run');
+			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"]'));
 			const drawn = () => page.locator('.bar [data-field]').evaluateAll((all) => all.map((el) => `${el.tagName}:${el.dataset.field}`));
 			assert.deepEqual(await drawn(), ['BUTTON:tea', 'BUTTON:walk']);
 
 			await page.locator('.bar button.track').click();
-			await page.locator('.bar [data-ignored="run"]').click();
+			await page.locator('dialog.track [data-ignored="run"]').click();
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			assert.equal((await app.echoes()).at(-1), 'track run');
 			assert.deepEqual(await drawn(), ['BUTTON:run', 'BUTTON:tea', 'BUTTON:walk']);

@@ -28,6 +28,7 @@ import * as shell from './layout/shell.js';
 import { pills, removePill, setPills, type Pill } from './bar.js';
 import { cursor, setCursor } from './cursor.js';
 import { shellSplit } from './shellSplit.js';
+import { openTrack, type TrackOptions } from './trackModal.js';
 import { get } from 'svelte/store';
 import { apply, layout } from './layout/current.js';
 import type { Layout } from './layout/types.js';
@@ -57,6 +58,12 @@ export interface DatumConsole {
 	bar: { pills(): Pill[]; setPills(next: Pill[]): void; removePill(id: string): void };
 	/** The time cursor (da-wnt2): the instant the page is pointed at, as a click on a day sets it. */
 	cursor: { at(): Date | null; set(at: Date | null): void };
+	/**
+	 * Open the Track modal (da-94q1) and run what it answers with, as
+	 * `Track +` does — with a field or a verb already chosen, which is the
+	 * door a filtered list's `+` comes in by. Null if it was dismissed.
+	 */
+	track(options?: TrackOptions): Promise<RunResult | null>;
 }
 
 /** Publish the handle on `target` (the window, in the app). */
@@ -75,7 +82,11 @@ export function installConsole(target: Record<string, unknown>): void {
 		layout: { current: () => get(layout), apply },
 		shell,
 		bar: { pills: () => get(pills), setPills, removePill },
-		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor }
+		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor },
+		track: async (options) => {
+			const argv = await openTrack(options);
+			return argv && (await press(argv));
+		}
 	};
 	target.datum = handle;
 }

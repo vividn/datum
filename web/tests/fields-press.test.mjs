@@ -59,17 +59,20 @@ describe('a press', () => {
 		});
 	});
 
-	test('the Track + form asks for the verb and writes it', async () => {
+	// The modal is tests/track.test.mjs's; what belongs here is that Track +
+	// opens it and that the field it declares is the field the bar then draws.
+	test('the Track modal asks for the verb and writes it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await page.locator('.bar button.track').click();
-			const form = page.locator('form.add');
-			assert.equal(await form.locator('select').inputValue(), 'point', 'the smallest claim leads');
+			const modal = page.locator('dialog.track');
+			await modal.waitFor();
+			assert.equal(await modal.locator('.verb[aria-checked="true"]').count(), 0, 'a verb was chosen for them');
 
-			await form.locator('input').first().fill('sleep');
-			await form.locator('select').selectOption('state');
-			assert.equal((await form.locator('code.preview').innerText()).trim(), 'spec set sleep --verb start');
-			await form.locator('button[type="submit"]').click();
+			await modal.locator('input.field').fill('sleep');
+			await modal.locator('button[data-verb="start"]').click();
+			assert.equal((await modal.locator('code.preview').innerText()).trim(), 'track sleep --verb start');
+			await modal.locator('button.commit').click();
 			await page.locator('.bar button[data-field="sleep"]').waitFor();
 			assert.equal(JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout).verb, 'start');
 		});

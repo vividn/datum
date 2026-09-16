@@ -159,3 +159,48 @@ fn a_stored_verb_wins_over_the_log() {
     assert_eq!(spec.verb, Action::Occur);
     assert_eq!(db.field_verb("sleep").unwrap(), Action::Occur);
 }
+
+/// One `track` declares a switch field whole: `--state NAME` names a state
+/// it may be switched to, `--state NAME=COLOR` paints one, and the `=` is
+/// what tells the two apart (da-94q1). The web's Track modal runs exactly
+/// this argv, so the two forms have to coexist on the one flag.
+#[test]
+fn a_bare_state_is_an_allowed_state_and_a_keyed_one_is_a_colour() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "track",
+            "mood",
+            "--verb",
+            "switch",
+            "--state",
+            "good",
+            "--state",
+            "bad",
+            "--state",
+            "good=#00ff00",
+        ],
+        &db,
+    )
+    .unwrap();
+
+    let spec = db.load_spec("mood").unwrap().unwrap();
+    assert_eq!(spec.verb, Action::Switch);
+    assert_eq!(
+        spec.allowed_states.as_deref(),
+        Some(["good".to_string(), "bad".to_string()].as_slice())
+    );
+    assert_eq!(
+        spec.state_colors.get("good").map(String::as_str),
+        Some("#00ff00")
+    );
+
+    // Naming no state leaves the list alone, so a later `track` — the one
+    // that un-ignores a field — does not empty it.
+    run_cli(&["track", "mood", "--color", "#800080"], &db).unwrap();
+    let again = db.load_spec("mood").unwrap().unwrap();
+    assert_eq!(
+        again.allowed_states.as_deref().map(<[String]>::len),
+        Some(2)
+    );
+}

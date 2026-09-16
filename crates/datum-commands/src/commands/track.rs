@@ -51,14 +51,23 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     if let Some(c) = &args.color {
         spec.color = Some(c.clone());
     }
-    for sc in &args.state_colors {
+    // `--state` carries both halves of a switch field's declaration
+    // (da-94q1): a bare NAME is a state it may be switched to, `NAME=COLOR`
+    // paints one. So `track mood --verb switch --state good --state bad`
+    // declares the field whole, in the one command the web's Track modal
+    // runs.
+    let mut states: Vec<String> = Vec::new();
+    for sc in &args.states {
         match sc.split_once('=') {
             Some((state, color)) => {
                 spec.state_colors
                     .insert(state.to_string(), color.to_string());
             }
-            None => anyhow::bail!("Invalid --state format: expected STATE=COLOR, got '{sc}'"),
+            None => states.push(sc.clone()),
         }
+    }
+    if !states.is_empty() {
+        spec.allowed_states = Some(states);
     }
     // da-a7g: `--tag <name>` is repeatable and idempotent — each flag adds
     // the tag if absent. To replace the full set, use `datum spec set`.

@@ -242,13 +242,13 @@ describe('on a phone-sized screen', () => {
 		}, { viewport: PHONE });
 	});
 
-	// A button whose panel opens off the bottom edge is no more reachable
-	// than a button that is off it: the bar is the frame's bottom row, so
-	// its panels hang upward.
-	test('the form Track + opens is on screen', async () => {
+	// Track + opens a modal now (da-94q1) — over the page rather than
+	// hanging off the bar's bottom row, so what it has to clear is the
+	// screen's own box. Its pictograms are measured in tests/track.test.mjs.
+	test('the modal Track + opens is on screen', async () => {
 		await withApp(async ({ page }) => {
 			await page.locator('.bar button.track').click();
-			await assertOnScreen(page, '.panel.add', "the add-a-field form");
+			await assertOnScreen(page, 'dialog.track', 'the Track modal');
 		}, { viewport: PHONE });
 	});
 
@@ -301,12 +301,12 @@ describe('on a phone-sized screen', () => {
 		}, { viewport: PHONE });
 	});
 
-	test('the form Track + opens is on screen with a wrapped bar', async () => {
+	test('the modal Track + opens is on screen with a wrapped bar', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await track(app, FIELDS);
 			await page.locator('.bar button.track').click();
-			await assertOnScreen(page, '.panel.add', 'the add-a-field form');
+			await assertOnScreen(page, 'dialog.track', 'the Track modal');
 		}, { viewport: PHONE });
 	});
 });

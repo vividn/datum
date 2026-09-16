@@ -14,9 +14,12 @@
 	layout gives it and the bar scrolls inside it (da-mbz2), while its
 	panels, which hang upward out of it, are hung against the screen so
 	that scroller cannot clip them. Ignored fields get no button: the
-	Track + form lists them, and a press runs `track <field>`.
-	`startTracking` is the one place that form opens from, for the set-up
-	walkthrough to take over.
+	Track modal lists them, and a press runs `track <field>`.
+
+	Track + opens that modal (da-94q1, $lib/track.ts) — a `<dialog>` over
+	the whole page with a pictogram per verb — rather than a form hanging
+	off the bar. The widget still runs nothing itself: the modal answers
+	with an argv and it goes out the same `run` as a press.
 
 	Press to log. Press and hold (or right-click, or the menu key) to open
 	the `-t` / `dur` bubbles first — and `note`, which fills the bar with
@@ -43,7 +46,6 @@
 <script lang="ts">
 	import { createEventDispatcher, tick } from 'svelte';
 	import {
-		declareArgv,
 		lookOf,
 		pressArgv,
 		stateLook,
@@ -53,7 +55,7 @@
 		type FieldButton,
 		type FieldShape
 	} from './fields.js';
-	import { fieldNameHint, suggestFieldName } from './fieldName.js';
+	import { openTrack } from './trackModal.js';
 
 	export let fields: FieldButton[] = [];
 	export let disabled = false;
@@ -100,13 +102,6 @@
 	let holdTimer: ReturnType<typeof setTimeout> | null = null;
 	let held = false;
 
-	let adding = false;
-	let newField = '';
-	// da-c8mh: a spec cannot be born without a verb, so the form asks.
-	// `occur` leads because it is the smallest claim a field can make.
-	let newKind: FieldShape['kind'] = 'point';
-	let newStates = '';
-
 	$: buttons = fields.filter((w) => !w.ignored);
 	$: ignored = fields.filter((w) => w.ignored);
 	$: picking = picked === null ? null : (buttons.find((b) => b.field === picked) ?? null);
@@ -120,33 +115,6 @@
 		return shape.kind === 'states' ? shape.states : [];
 	}
 
-	// Reactive, not a function call: Svelte tracks the variables an
-	// expression *names*, so `declareArgv(field, newShape())` in the markup
-	// would never see a change to `newKind` or `newStates` — the preview
-	// would sit at the first option's argv while the form said otherwise,
-	// and a preview that disagrees with the command teaches a lie.
-	$: newShape =
-		newKind === 'states'
-			? ({
-					kind: 'states',
-					states: newStates
-						.split(',')
-						.map((s) => s.trim())
-						.filter(Boolean)
-				} satisfies FieldShape)
-			: ({ kind: newKind } as FieldShape);
-
-	$: addArgv = declareArgv(newField.trim() || '<field>', newShape);
-
-	// What the name would do if it were submitted. A field name is one argv
-	// token, and this form used to accept anything: `my coffee` made a chip
-	// that logged but could not be typed, `cups=2` and `-weird` made chips
-	// that errored when pressed (da-b049). `spec set` refuses all three now,
-	// so the form says so first — and offers the nearest name that works,
-	// because "my coffee" is what a person naturally types.
-	$: hint = newField.trim() === '' ? null : fieldNameHint(newField.trim());
-	$: fixed = hint === null ? null : suggestFieldName(newField.trim());
-
 	/**
 	 * The panel a LONG press opens: the `-t` / `dur` bubbles, and for a
 	 * multi-state field the states to spend them on. A plain press never
@@ -154,14 +122,12 @@
 	 * the bubbles are the whole reason it exists and are always in it.
 	 */
 	function panel(button: FieldButton) {
-		adding = false;
 		adjust = {};
 		open = button.field;
 	}
 
 	function close() {
 		open = null;
-		adding = false;
 	}
 
 	/**
@@ -200,11 +166,19 @@
 		dispatch('line', `note ${button.field} `);
 	}
 
-	/** Open the form that tracks a field, with `field` in it. */
-	function startTracking(field = '') {
+	/**
+	 * Ask «which verb?» and run the answer (da-94q1).
+	 *
+	 * The one door the widget has on the Track modal, so the set-up
+	 * walkthrough has a single place to take it over. Nothing is preset
+	 * from here: the doors that DO preset one — a filtered list's `+`, the
+	 * CLI's own refusal — call `openTrack` themselves. A dismissed modal
+	 * answers null and nothing runs.
+	 */
+	async function startTracking() {
 		close();
-		newField = field;
-		adding = true;
+		const argv = await openTrack({ ignored: ignored.map((w) => w.field) });
+		if (argv) emit(argv);
 	}
 
 	/**
@@ -286,15 +260,6 @@
 		else press(button);
 	}
 
-	function declare() {
-		const field = newField.trim();
-		if (!field || hint !== null) return;
-		const argv = declareArgv(field, newShape);
-		newField = '';
-		newStates = '';
-		emit(argv);
-	}
-
 	function onWindowPointerDown(event: PointerEvent) {
 		if (bar && !bar.contains(event.target as Node)) close();
 	}
@@ -302,8 +267,9 @@
 	function onWindowKeyDown(event: KeyboardEvent) {
 		if (event.key !== 'Escape') return;
 		// Innermost first: the panel a long press opened, then the input the
-		// `+` became, then the state list itself — Escape is its Back.
-		if (open || adding) close();
+		// `+` became, then the state list itself — Escape is its Back. The
+		// modal has its own Escape, and the dialog swallows it.
+		if (open) close();
 		else if (addingState) {
 			addingState = false;
 			newState = '';
@@ -402,46 +368,14 @@
 		</div>
 	{:else}
 		<div class="slot">
-			<button class="track add-button" {disabled} title="track a new field" on:click={() => (adding ? close() : startTracking())}>
+			<button
+				class="track add-button"
+				{disabled}
+				title="track a new field"
+				on:click={() => void startTracking()}
+			>
 				Track +
 			</button>
-			{#if adding}
-				<form class="panel add" use:hang on:submit|preventDefault={declare}>
-					<!-- svelte-ignore a11y-autofocus -->
-					<input bind:value={newField} placeholder="field" spellcheck="false" autofocus />
-					<select bind:value={newKind} aria-label="what a press logs">
-						<option value="point">occur — a thing that happened</option>
-						<option value="state">start — a block that begins and ends</option>
-						<option value="states">switch — one of several states</option>
-						<option value="record">add — a record you type</option>
-					</select>
-					{#if newKind === 'states'}
-						<input bind:value={newStates} placeholder="states, comma-separated" spellcheck="false" />
-					{/if}
-					<button type="submit" disabled={hint !== null}>track it</button>
-					{#if hint === null}
-						<code class="preview">{addArgv.join(' ')}</code>
-					{:else}
-						<p class="hint">
-							{hint}{#if fixed}
-								<button type="button" class="fix" on:click={() => (newField = fixed ?? '')}
-									>use {fixed}</button
-								>{/if}
-						</p>
-					{/if}
-					{#if ignored.length > 0}
-						<!-- Ignored fields get no button; this is the way back (da-d08c). -->
-						<div class="states ignored">
-							<span class="bubble-label">ignored</span>
-							{#each ignored as { field } (field)}
-								<button type="button" data-ignored={field} title="track {field}" on:click={() => emit(['track', field])}
-									>{field}</button
-								>
-							{/each}
-						</div>
-					{/if}
-				</form>
-			{/if}
 		</div>
 
 		{#if buttons.length === 0}
@@ -738,24 +672,12 @@
 		align-self: flex-start;
 	}
 
-	.panel button.fix {
-		margin-left: 0.4rem;
-		font-size: 0.75rem;
-	}
-
-	.add button[disabled] {
-		opacity: 0.4;
-		cursor: default;
-	}
-
 	.preview {
 		color: var(--muted);
 		font-size: 0.75rem;
 		white-space: pre;
 	}
 
-	.add input,
-	.add select,
 	.new-state {
 		background: var(--ground);
 		border: 1px solid var(--rule);

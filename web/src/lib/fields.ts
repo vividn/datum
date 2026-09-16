@@ -224,24 +224,6 @@ export function pressArgv(button: FieldButton, adjust: Adjust = {}, state?: stri
 }
 
 /**
- * The argv `spec set` needs to declare a new field of the given shape.
- *
- * A shape is required: a spec cannot be born without a verb (da-c8mh), so
- * the form asks rather than leaving the question to the log.
- */
-export function declareArgv(field: string, shape: FieldShape): string[] {
-	const argv = ['spec', 'set', field, '--verb'];
-	if (shape.kind === 'point') argv.push('occur');
-	else if (shape.kind === 'state') argv.push('start');
-	else if (shape.kind === 'record') argv.push('add');
-	else {
-		argv.push('switch');
-		for (const state of shape.states) argv.push('--state', state);
-	}
-	return argv;
-}
-
-/**
  * How one state reads in the list a press fills the widget with (da-g635).
  *
  * The state the field is in NOW is marked exactly the way the field's own

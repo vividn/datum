@@ -496,7 +496,7 @@ mod tests {
             field: "mood".to_string(),
             verb: Some("switch".to_string()),
             color: Some("ff6600".to_string()),
-            state_colors: vec!["happy=00ff00".to_string(), "sad=ff0000".to_string()],
+            states: vec!["happy=00ff00".to_string(), "sad=ff0000".to_string()],
             tags: vec![],
         };
         crate::commands::track::track(track_args, &db).unwrap();
@@ -539,7 +539,7 @@ mod tests {
                 field: "mood".to_string(),
                 verb: None,
                 color: None,
-                state_colors: vec![],
+                states: vec![],
                 tags: vec![],
             },
             &db,

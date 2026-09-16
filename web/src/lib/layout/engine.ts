@@ -21,6 +21,8 @@ import { fileCommand } from '$lib/dbio.js';
 import { echoArgv } from '$lib/echo.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
+import { verbAsked } from '$lib/track.js';
+import { openTrack } from '$lib/trackModal.js';
 import { shellSplit } from '$lib/shellSplit.js';
 import { buttonsFor, type FieldButton, type FieldListing, type NowActive } from '$lib/fields.js';
 
@@ -129,8 +131,32 @@ export async function press(
 	// `--width`), and those are the web's, not a command anyone should be
 	// taught to type (da-xfa4).
 	if (!typed) showGhost(echo ?? line ?? argv.join(' '));
-	return result;
+	return (await answerVerb(argv, result)) ?? result;
 }
+
+/**
+ * The CLI's «which verb?» refusal is a question, and the web has somewhere
+ * to ask it: `track <field>` on a field with neither a spec nor a log
+ * comes back asking for `--verb`, and that is the Track modal's own
+ * question (da-94q1). The modal opens with the field already in it, and
+ * what it answers with REPLACES the refused command — the answer is a
+ * `track` with the verb on it, so there is nothing left to retry.
+ *
+ * Null whenever the result was not that refusal, or the modal was
+ * dismissed: the refusal then stands, as any other error does.
+ */
+async function answerVerb(argv: string[], result: RunResult): Promise<RunResult | null> {
+	const field = verbAsked(argv, result);
+	if (field === null) return null;
+	const answer = await openTrack({ field, ignored: ignoredFields() });
+	return answer && (await press(answer));
+}
+
+/** The fields `datum fields` calls ignored — the ones the modal offers back (da-d08c). */
+const ignoredFields = (): string[] =>
+	get(fields)
+		.filter((button) => button.ignored)
+		.map((button) => button.field);
 
 /** With no REPL mounted: run it, record it, and bump the epoch here. */
 async function alone(argv: string[], line?: string, stdin?: string): Promise<RunResult> {

@@ -801,7 +801,11 @@ pub struct TrackArgs {
     /// neither a spec nor a log to read the answer off (da-c8mh).
     pub verb: Option<String>,
     pub color: Option<String>,
-    pub state_colors: Vec<String>,
+    /// Repeatable `--state`. A bare `NAME` is one of the states the field
+    /// may be switched to, as `spec set --state` means it; `NAME=COLOR`
+    /// paints that state instead. The two forms are told apart by the `=`,
+    /// so one flag declares a switch field whole (da-94q1).
+    pub states: Vec<String>,
     /// Each `--tag <name>` flag adds the tag to the field's spec
     /// idempotently. Repeatable; order preserved on first-add.
     pub tags: Vec<String>,

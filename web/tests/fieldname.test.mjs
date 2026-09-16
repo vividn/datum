@@ -1,4 +1,4 @@
-// A field the (+) form creates has to be a field the app can log to.
+// A field Track + creates has to be a field the app can log to.
 //
 // It was not. The form ran `spec set <whatever was typed>`, said "✓ Spec
 // saved", and drew a chip. `my coffee` then logged by pressing that chip
@@ -10,7 +10,7 @@
 // Four things are checked here, and they are four because fixing any one
 // alone leaves the bug:
 //
-//   1. the form refuses a name that cannot be logged to, and says why;
+//   1. the modal refuses a name that cannot be logged to, and says why;
 //   2. `spec set` typed into the REPL refuses it too — otherwise the fix is
 //      a coat of paint on one of the two ways to declare a field;
 //   3. every name the form DOES accept logs from both surfaces, and the
@@ -43,29 +43,37 @@ const THE_BEAD = ['my coffee', 'cups=2', '-weird'];
 
 const acceptable = cases.filter((c) => c.ok);
 // The empty name is not a state the form can be typed into — it is what the
-// form starts as, and (+) has always refused to submit it.
+// modal starts as, and Track + has always refused to submit it.
 const refused = cases.filter((c) => !c.ok && c.field !== '');
 
 before(startApp);
 after(stopApp);
 
-/** Open the (+) panel and type `field` into it, without submitting. */
+/**
+ * Open the Track modal and type `field` into it, without submitting.
+ *
+ * A verb is chosen at the same time: `track it` needs both (da-94q1), so a
+ * test about the NAME has to answer the other half or every case would
+ * read as refused for the wrong reason.
+ */
 async function typeIntoTheForm(page, field) {
-	if ((await page.locator('form.add').count()) === 0) {
+	if ((await page.locator('dialog.track').count()) === 0) {
 		await page.locator('.bar button.add-button').click();
+		await page.locator('dialog.track').waitFor();
 	}
-	const form = page.locator('form.add');
-	await form.locator('input').first().fill(field);
+	const form = page.locator('dialog.track');
+	await form.locator('input.field').fill(field);
+	await form.locator('button[data-verb="occur"]').click();
 	const hint = form.locator('p.hint');
 	return {
-		submittable: await form.locator('button[type="submit"]').isEnabled(),
+		submittable: await form.locator('button.commit').isEnabled(),
 		hint: (await hint.count()) ? (await hint.innerText()).trim() : null
 	};
 }
 
-/** Press "track it" on the open (+) form, the way a user declares a field. */
+/** Press "track it" on the open modal, the way a user declares a field. */
 async function trackIt(app, field) {
-	await app.page.locator('form.add button[type="submit"]').click();
+	await app.page.locator('dialog.track button.commit').click();
 	await chipIndex(app, field);
 }
 
@@ -127,8 +135,8 @@ describe('a field name the (+) form accepts', () => {
 	test('one press of the offered name gets you a usable one', async () => {
 		await withApp(async (app) => {
 			await typeIntoTheForm(app.page, 'my coffee');
-			await app.page.locator('form.add p.hint button.fix').click();
-			assert.equal(await app.page.locator('form.add input').first().inputValue(), 'my_coffee');
+			await app.page.locator('dialog.track p.hint button.fix').click();
+			assert.equal(await app.page.locator('dialog.track input.field').inputValue(), 'my_coffee');
 
 			await trackIt(app, 'my_coffee');
 			await pressChip(app, 'my_coffee');

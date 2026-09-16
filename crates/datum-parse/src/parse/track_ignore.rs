@@ -8,7 +8,7 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
     struct TrackParsing {
         verb: Option<String>,
         color: Option<String>,
-        state_colors: Vec<String>,
+        states: Vec<String>,
         tags: Vec<String>,
     }
     let registry: Vec<LiftedSpec<TrackParsing>> = vec![
@@ -21,7 +21,7 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
             Ok(())
         }),
         local_value(None, Some("state"), |p, v| {
-            p.state_colors.push(v.to_string());
+            p.states.push(v.to_string());
             Ok(())
         }),
         local_value(None, Some("tag"), |p, v| {
@@ -52,7 +52,7 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         field: require_pos(&pos, "<FIELD>")?,
         verb: composed.verb,
         color: composed.color,
-        state_colors: composed.state_colors,
+        states: composed.states,
         tags: composed.tags,
     })
 }
