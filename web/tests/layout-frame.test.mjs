@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
+	activeTab,
 	addTab,
 	boxOf,
 	chooseBar,
@@ -62,6 +63,46 @@ describe('the title on the frame', () => {
 				[...el.querySelectorAll('.hosted-title')].filter((s) => getComputedStyle(s).display !== 'none').length
 			);
 			assert.equal(shown, 0, "the tail's title shows in its content");
+		}, DESKTOP);
+	});
+
+	// A widget's OWN title controls — the custom pane's ✎ and the editor it
+	// opens — are moved into the frame's h2, and a tabbed pane has none
+	// (da-ndjo): they showed as stray text at the top of the content, and
+	// then as nothing at all, which left a tabbed custom pane's command
+	// with nowhere it could be written. The bar keeps a box for them after
+	// the strip.
+	test('two tabs: the active widget’s own controls are on the bar, and work there', async () => {
+		await withApp(async ({ page }) => {
+			await addTab(page, 'custom', 'aliases');
+			const custom = pane(page, 'custom');
+			await custom.locator('[role="tab"]', { hasText: 'custom' }).click();
+			const own = custom.locator('> .titlebar .own');
+			await own.locator('button.edit').waitFor();
+			assert.equal(await custom.locator('> .content button.edit').count(), 0, 'the ✎ is in the content');
+
+			await own.locator('button.edit').click();
+			const line = own.locator('input.command');
+			await line.fill('tail -n 1');
+			await line.press('Enter');
+			await own.filter({ hasText: 'tail -n 1' }).waitFor();
+
+			// The strip still carries the names, and the widget's own box
+			// does not say the same word again beside it.
+			assert.equal(await activeTab(page, 'custom'), 'custom');
+			const tabs = custom.locator('> .titlebar [role="tab"]');
+			assert.deepEqual(await tabs.allInnerTexts(), ['custom', 'aliases']);
+		}, DESKTOP);
+	});
+
+	// A widget with no controls of its own is named by the FRAME: the name
+	// it was passing through (`CliPane`'s `spec.title`) was the same word,
+	// and it silenced the frame's own — the modified dot among it.
+	test('one tab: a widget with no controls of its own leaves the frame to name it', async () => {
+		await withApp(async ({ page }) => {
+			const tail = pane(page, 'tail');
+			assert.equal(await tail.locator('> .titlebar h2').innerText(), 'tail');
+			assert.equal(await tail.locator('.hosted-title').count(), 0, 'the tail pane hosts a title');
 		}, DESKTOP);
 	});
 

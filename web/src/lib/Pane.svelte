@@ -38,6 +38,19 @@
 	 */
 	export let body: HTMLDivElement | undefined = undefined;
 
+	/**
+	 * Whether the title slot is the widget's OWN — the custom pane's ✎ and
+	 * its editor — rather than merely the pane's name.
+	 *
+	 * Only a widget's own controls are moved into the frame (da-ndjo). A
+	 * name the frame draws itself, moved in, costs more than it says: it
+	 * overrides a renamed tab, silences the modified dot, and on a tabbed
+	 * bar it is the same word twice beside the tab already carrying it.
+	 * `CliPane` forwards whatever slot ITS caller gave it, so it passes
+	 * this.
+	 */
+	export let ownTitle = true;
+
 	/** Pin the view to the newest content. The REPL calls this after a run. */
 	export function scrollToBottom(): void {
 		if (body) body.scrollTop = body.scrollHeight;
@@ -58,8 +71,9 @@
 
 	function portal(node: HTMLElement, frame: Frame) {
 		frame.hosted.set(true);
-		// A tabbed frame has no h2: the title waits, hidden, rather than
-		// showing at the top of the content under the tabs.
+		// Hidden until there is a host: a frame draws the box for these
+		// controls once it knows they exist (da-ndjo), and until then they
+		// would show as a stray line at the top of the content.
 		const unsubscribe = frame.titleHost.subscribe((host) => {
 			node.style.display = host ? '' : 'none';
 			if (host && node.parentElement !== host) host.appendChild(node);
@@ -88,7 +102,7 @@
 >
 	{#if !frame}
 		<h2><slot name="title">{title}</slot></h2>
-	{:else if $$slots.title}
+	{:else if $$slots.title && ownTitle}
 		<span class="hosted-title" use:portal={frame}><slot name="title" /></span>
 	{/if}
 	<div class="body" bind:this={body}><slot /></div>

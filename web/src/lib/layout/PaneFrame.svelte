@@ -25,6 +25,16 @@
 	still reach over. The bar itself takes no pointer, so the border
 	between two panes is still grabbed right beside it.
 
+	A widget with title controls of its OWN — the custom pane's ✎ and the
+	editor it opens, which is the only place its command can be written —
+	draws them here: `Pane.svelte` moves them into the h2. With tabs there
+	is no h2, the strip carrying the names, so the bar keeps a box of the
+	same shape — `.own`, a heading of nothing, so not a heading — for the
+	ACTIVE widget's controls right after the strip (da-ndjo).
+	A widget with no controls of its own hosts nothing and is named by the
+	frame, which is what keeps a renamed tab renamed and its modified dot
+	drawn.
+
 	A pane whose tab holds a split rather than a widget is a HOLDER: no
 	border, no background, and — with one tab — no bar at all: a box that
 	is not there, since the children's own titles can split them (vividn's
@@ -162,7 +172,12 @@
 	// reports its alarm here, so the orange reaches whichever pane holds
 	// the REPL.
 	const alarm = writable(false);
-	/** The h2, for a widget that draws its own title (the custom pane's ✎). */
+	/**
+	 * Where a widget that draws its own title puts it (the custom pane's
+	 * ✎): the h2 with one tab, and the box after the strip with more
+	 * (da-ndjo). Null while there is nothing hosting, which is what keeps
+	 * those controls out of the content.
+	 */
 	const titleHost = writable<HTMLElement | null>(null);
 	const hosted = writable(false);
 	setContext('layout-frame', { alarm, titleHost, hosted });
@@ -549,6 +564,16 @@
 						{/if}
 					{/each}
 				</div>
+				{#if $hosted}
+					<!-- A widget's OWN title controls — the custom pane's ✎ and
+					     its editor — with no h2 of the frame's to be moved into
+					     (da-ndjo): the strip carries the names, so the bar keeps
+					     a box of the title's shape for the ACTIVE widget's
+					     controls right after it. In a tabbed pane it is the only
+					     place they can be. Not an h2: the tab is this pane's
+					     heading, and this box has no words of its own. -->
+					<div class="own" bind:this={h2}></div>
+				{/if}
 			{:else}
 				<!-- The title's own box, and the menu's button laid over the
 				     whole of it — beside the h2 rather than inside it, so that
@@ -774,7 +799,8 @@
 	   the bar but the outline, whichever way the bar runs. A widget's own
 	   controls in here (the custom pane's ✎) are lifted above the button
 	   laid over them, and are `:global` because the widget draws them. */
-	h2 {
+	h2,
+	.own {
 		box-sizing: border-box;
 		margin: 0;
 		padding-block: 0;
@@ -801,7 +827,9 @@
 	}
 
 	h2 :global(button),
-	h2 :global(input) {
+	h2 :global(input),
+	.own :global(button),
+	.own :global(input) {
 		position: relative;
 		z-index: 1;
 	}
@@ -814,6 +842,15 @@
 	.tabs :global(.dot) {
 		margin-inline-start: 0.3rem;
 		color: var(--warn);
+	}
+
+	/* The hosted box (da-ndjo) is the widget's controls and nothing else —
+	   no words of its own, so not a heading, and no menu laid over it:
+	   the tab in front is that. It gives its room back before the tabs do,
+	   and it does not say it can be pressed. */
+	.own {
+		flex: 0 1 auto;
+		min-inline-size: 0;
 	}
 
 	/* The whole title says it can be pressed. */

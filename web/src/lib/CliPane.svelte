@@ -152,7 +152,13 @@
 	}
 </script>
 
-<Pane title={spec.title} bind:body>
+<!--
+	`ownTitle` is whether the title slot is a widget's own controls: this
+	pane forwards its caller's, and has none of its own — its name is the
+	frame's to draw (da-ndjo). Its default fills the unframed pane's h2,
+	which is where `spec.title` is still wanted.
+-->
+<Pane title={spec.title} ownTitle={!!$$slots.title} bind:body>
 	<slot name="title" slot="title">{spec.title}</slot>
 	{#if manual}
 		<p class="quiet">
