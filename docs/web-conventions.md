@@ -119,7 +119,7 @@ file in the same commit — a convention nobody can read is a convention nobody 
 16. **Wait for the thing, not for a second.** No fixed sleeps: poll the condition with a
     deadline, so a slow machine does not turn a real assertion into a flake. **A wait's cap is a
     hang-stop, not a speed assertion** — it is there so a condition that will never come true
-    reports itself instead of sitting until the runner's 120 s per-test budget expires. The suite
+    reports itself instead of sitting until the runner's 300 s per-file budget expires. The suite
     has ONE tier: **30 s**, which is playwright's own default. So a playwright wait writes no
     `timeout:` at all, and the one hand-rolled poller (`tests/support/until.mjs`) defaults to the
     same number. A shorter cap asserts speed by accident and fails a test that had a hundred
@@ -171,5 +171,6 @@ file in the same commit — a convention nobody can read is a convention nobody 
     (da-buqa — 60 files at ~26 minutes had outgrown one 4-core runner's 30-minute cap, so main
     was red-or-cancelled for a day and every push deployed blind). Two things follow: **no file
     may depend on another file having run** — shard 3 does not see shard 1's database — and a
-    file that grows past the 120 s per-file budget is still its own loud failure, not something
-    a bigger runner hides.
+    file that grows past the per-file budget (300 s since 2026-09-16, `--test-timeout` in
+    `test.mjs`, one number for every workflow) is still its own loud failure, not something a
+    bigger runner hides.

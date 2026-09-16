@@ -18,6 +18,18 @@
 // M-th — of the files instead of all of them; see `shard.mjs`. The files it
 // took are printed before it runs them. No flag is every file, as before.
 // Any further arguments go to `node --test` unchanged.
+//
+// The per-file budget is FIVE minutes, and it was two until 2026-09-16. Two
+// was set for a smaller suite and had fallen below what the slowest files
+// honestly cost: measured alone on a 24-core box, `reachable.test.mjs` takes
+// 117 s (48 tests) and `daystrip.test.mjs` 76 s. A file that needs 117 s with
+// a whole box to itself cannot fit 120 s on a 2-core runner at any
+// concurrency — which is how ten files came to be cut as «timed out» in a run
+// that reported `# fail 0` (da-buqa). 300 s is about 2.5x the slowest measured
+// standalone: still inside five minutes for a hang, and no honest file trips
+// it. The number lives here alone, so GitHub's four shards and the forge's one
+// job read the same budget. Making the slow files snappier is the follow-up;
+// the budget is not the place to assert speed.
 
 import { availableParallelism, loadavg } from 'node:os';
 import { readdirSync } from 'node:fs';
@@ -54,7 +66,7 @@ if (shard) {
 
 const child = spawn(
 	process.execPath,
-	['--test', `--test-concurrency=${concurrency}`, '--test-timeout=120000', ...files, ...args],
+	['--test', `--test-concurrency=${concurrency}`, '--test-timeout=300000', ...files, ...args],
 	{ stdio: 'inherit' }
 );
 child.on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 1)));

@@ -257,14 +257,15 @@ jobs:
     # A quarter of the suite is a few minutes; the 30 is what one whole suite
     # needed, kept as the ceiling a shard must stay far below.
     timeout-minutes: 30
-    # The suite outgrew one 4-core runner (da-buqa): 60 files, ~26 minutes of
-    # the 30 the job had, and main red-or-cancelled for a day with every push
+    # The suite outgrew this runner (da-buqa): 60 files, ~26 minutes of the 30
+    # the job had, and main red-or-cancelled for a day with every push
     # deploying blind. So the RUN is split, not the files — each file is its
     # own Chromium and its own `before(startApp)`, so splitting files only
     # ever raises the sum. `web/scripts/test.mjs` does the choosing, from the
     # env below, and prints the files it took; this matrix only says how many
-    # parts there are. fail-fast off: a failure in one quarter must not hide
-    # what the other three would have said.
+    # parts there are, and the per-file budget lives in that script too, one
+    # number for every workflow that runs the suite. fail-fast off: a failure
+    # in one quarter must not hide what the other three would have said.
     #
     # `.forgejo/workflows/ci.yml` deliberately stays ONE job: its runner has
     # capacity 1, so a matrix there would serialise four setups on one
@@ -324,7 +325,7 @@ jobs:
       # `test: 2 cores, load 2.0 → 3 files at once (override)`. A file under
       # test is about two cores' worth (a Chromium and the node driving it),
       # so three files on two cores is a 50% oversubscription — and that, not
-      # the job cap, is what cut ten files at the 120 s budget in that run:
+      # the job cap, is what cut ten files at the then 120 s budget in that run:
       # `# fail 0` in all four shards, every red a `test timed out after
       # 120000ms`. Sharding alone could not have fixed it, because each shard
       # still ran three files on the same two cores. One file at a time is
