@@ -143,6 +143,14 @@ impl DatumRuntime {
             // never line up. See chalk@4 supports-color@7 logic.
             .env("FORCE_COLOR", "3")
             .env("COLORTERM", "truecolor")
+            // ...and supports-color@7.2.0 (what chalk@4.1.2 pins) answers
+            // `CI` + `GITHUB_ACTIONS` with level 1 BEFORE it consults
+            // FORCE_COLOR, so on the runner the reference printed 16-colour
+            // SGR against truecolor goldens and the Parity job was red from
+            // its first run (2026-09-04). Measured 2026-09-16 on 7.2.0:
+            // level 1 with the two set, 3 with them removed.
+            .env_remove("CI")
+            .env_remove("GITHUB_ACTIONS")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
