@@ -30,6 +30,13 @@ jobs:
   deploy:
     name: Build, upload, verify
     runs-on: ubuntu-latest
+    # The forge (git.vividn.dev) mirrors this repo and its runner executes
+    # .github/workflows too. There the AWS secrets do not exist, so this job
+    # would build for ~30 min on the shared 3-core runner and then fail. The
+    # marker verified inside a live forge job on 2026-09-16: GITHUB_SERVER_URL
+    # is the instance URL (https://git.vividn.dev), GITHUB_ACTIONS=true, and no
+    # GITEA_/FORGEJO_ variable is set — so the server URL is the discriminator.
+    if: ${{ github.server_url == 'https://github.com' }}
     # Environment-scoped rather than repo-scoped secrets: the bucket key is then
     # unreachable from every other workflow in this repo, and the environment is
     # where a required reviewer or a branch restriction goes if this ever wants

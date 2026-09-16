@@ -43,6 +43,12 @@ jobs:
   parity-runtime:
     name: Cross-runtime goldens vs. vividn/datum
     runs-on: ubuntu-latest
+    # The forge mirror's runner executes .github/workflows too; this job clones
+    # and builds the reference for up to an hour on a shared 3-core box, for a
+    # result GitHub already produces. Skip there. Marker verified inside a live
+    # forge job on 2026-09-16: github.server_url is the instance URL, not
+    # https://github.com (see deploy.yml for the full note).
+    if: ${{ github.server_url == 'https://github.com' }}
     steps:
       - uses: actions/checkout@v4
 
