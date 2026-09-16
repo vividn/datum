@@ -1,0 +1,170 @@
+# The forge's CI (da-uskg): what git.vividn.dev runs at every head, so its
+# merge gate can read a commit status that covers ALL the code — cargo and
+# web/ both. GitHub keeps .github/workflows/ci.yml until the cutover; that
+# file's jobs skip themselves on the forge (job-level `if` on
+# github.server_url), so the two never run side by side on one runner.
+#
+# The runner this is written for, measured 2026-09-16 (task 184, the Web job
+# of the GitHub workflow, which the forge ran from the mirror at 14:58):
+#   · forgejo-runner on the forge box itself: 3 cores, 3.9 GB, no swap,
+#     capacity 1, per-job cap 3 h, default job image node:20-bookworm
+#     (root, gcc 12, make, pkg-config, libssl-dev, python 3.11, curl; no
+#     /usr/bin/time, no rustup).
+#   · Actions resolve from https://data.forgejo.org — but only the ones it
+#     carries: actions/checkout, actions/setup-node and pnpm/action-setup
+#     did; Swatinem/rust-cache and taiki-e/install-action do not exist there
+#     and killed every Rust job of the GitHub workflow in 3 s. So: full URLs
+#     pinned by SHA for the three actions we keep, and no cache or installer
+#     actions at all — rustup and nextest are installed in-job.
+#   · The web suite ran to its end in 21m43s at concurrency 3: 481 pass,
+#     0 fail, 12 files cut at the 120 s budget — the same twelve GitHub's
+#     4-core runner cuts (da-buqa). Memory never below ~2 GB available.
+#
+# One job, sequential steps, on purpose: capacity 1 and 3 cores mean parallel
+# jobs would only queue, and one job keeps the two memory peaks (linking the
+# workspace's test binaries; the browser suite) from ever overlapping. Heavy
+# steps run under /usr/bin/time -v so max RSS and wall time land in the log —
+# those numbers are what decides whether this box carries datum's CI.
+name: CI
+
+on:
+  pull_request:
+  push:
+    # main for the gate; hero/** so a hero's branch push reaches the runner
+    # through the mirror before the cutover, when the forge has no PRs yet.
+    # GitHub never reads .forgejo/workflows, so this costs nothing there.
+    branches: [main, 'hero/**']
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  # 3 cores, 3.9 GB, no swap: two rustc at once is the safe shape (the
+  # bead's estimate; the numbers this run prints replace it).
+  CARGO_BUILD_JOBS: 2
+
+jobs:
+  ci:
+    name: CI (cargo + web)
+    runs-on: ubuntu-latest
+    # GitHub's six jobs sum to ~27 min on separate 4-core runners; serialised
+    # on 3 cores the bead expects 45–75 min. The runner's own cap is 3 h.
+    timeout-minutes: 150
+    steps:
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: System tools the image lacks (time, for max RSS per step)
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends time >/dev/null && /usr/bin/time --version 2>&1 | head -1
+
+      # rust-toolchain.toml is the ONE place the version lives (channel,
+      # profile, components, wasm32-unknown-unknown). rustup with no default
+      # toolchain, then the bare install that reads the file — exactly the
+      # GitHub workflow's step, minus the runner's preinstalled rustup.
+      - name: Install rustup and the pinned toolchain
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup toolchain install --no-self-update
+          rustup target add wasm32-wasip1
+          rustc --version && cargo --version
+
+      # The prebuilt binary taiki-e/install-action would have fetched, fetched
+      # directly: no action, no compile.
+      - name: Install cargo-nextest (prebuilt)
+        run: |
+          set -euo pipefail
+          curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "$HOME/.cargo/bin"
+          cargo nextest --version
+
+      # ── the Rust battery, in scripts/check.sh's order ─────────────────────
+      - name: cargo fmt --all -- --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy --workspace --all-targets -- -D warnings
+        run: /usr/bin/time -v cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo build --workspace --all-targets
+        run: /usr/bin/time -v cargo build --workspace --all-targets
+
+      - name: cargo nextest run --workspace
+        run: /usr/bin/time -v cargo nextest run --workspace --no-fail-fast --test-threads 2
+
+      - name: cargo test --workspace --doc
+        run: /usr/bin/time -v cargo test --workspace --doc
+
+      - name: cargo nextest run --features e2e-full (the full cohort, da-1wat)
+        run: /usr/bin/time -v cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads 2
+
+      - name: cargo xtask check lint (the honesty gates, da-8y2q.7)
+        run: cargo run -q -p xtask -- check lint
+
+      # node 22 for the two capture scripts and the web suite. GitHub's job
+      # uses setup-node's pnpm cache; there is no cache service here, so no
+      # `cache:` — a cache that fails must not fail the gate.
+      - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      # Same gate as GitHub's build-and-test: the committed CLI-parity
+      # fixtures are re-captured from target/debug/datum and must not move.
+      - name: Re-capture the CLI-parity fixtures and compare with the committed copy
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch web/tests/fixtures/cli-parity.json >/dev/null
+          node web/scripts/capture-cli-fixtures.mjs
+          if [ -n "$(git status --porcelain -- web/tests/fixtures)" ]; then
+            git diff -- web/tests/fixtures
+            echo "::error::web/tests/fixtures/cli-parity.json is out of date with the CLI. Fix: pnpm run test:fixtures && git add web/tests/fixtures"
+            exit 1
+          fi
+
+      # ── wasm ──────────────────────────────────────────────────────────────
+      - name: cargo check datum-sync-client (wasm32, --no-default-features --features wasm)
+        run: cargo check -p datum-sync-client --target wasm32-unknown-unknown --no-default-features --features wasm
+
+      # build-cli-wasm.mjs fetches a pinned wasi-sdk and binaryen (~100 MB,
+      # sha256-checked) into target/toolchains/ — uncached here — and rebuilds
+      # the committed module, compared byte-for-byte. Whether the comparison
+      # holds inside this image (a different libc from GitHub's runner) is a
+      # reproducibility fact this step measures; the script remaps absolute
+      # paths, so it should.
+      - name: Rebuild the CLI module and compare with the committed copy
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch web/src/lib/wasm/datum-cli.wasm >/dev/null
+          /usr/bin/time -v node web/scripts/build-cli-wasm.mjs
+          if [ -n "$(git status --porcelain -- web/src/lib/wasm)" ]; then
+            git status --short -- web/src/lib/wasm
+            echo "::error::web/src/lib/wasm/datum-cli.wasm is out of date with the CLI. Fix: pnpm run build:cli-wasm && git add web/src/lib/wasm/datum-cli.wasm"
+            exit 1
+          fi
+
+      # ── web ───────────────────────────────────────────────────────────────
+      # pnpm's version comes from web/package.json's packageManager field;
+      # package_json_file is repo-root-relative because an action's inputs
+      # ignore working-directory.
+      - uses: https://github.com/pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: web/package.json
+
+      - name: pnpm install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      # apt inside the job container; the image runs as root, so --with-deps
+      # works (it did in task 184).
+      - name: Install the headless browser
+        working-directory: web
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
+      # Last, so the browser peak never overlaps the link peak. Concurrency 2
+      # rather than GitHub's 3: this box has 3 cores, and da-x38v's rule is
+      # cores − 1 for a dedicated runner. Task 184 ran 3 and cut the same
+      # twelve files as GitHub; whether 2 cuts fewer is what this measures.
+      - name: pnpm test
+        working-directory: web
+        run: /usr/bin/time -v pnpm test
+        env:
+          DATUM_TEST_CONCURRENCY: 2

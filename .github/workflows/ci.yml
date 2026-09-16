@@ -27,6 +27,10 @@ jobs:
   build-and-test:
     name: Build + test
     runs-on: ubuntu-latest
+    # Skipped on the forge mirror's runner (git.vividn.dev), where
+    # .forgejo/workflows/ci.yml runs instead — see that file. Marker verified
+    # inside a live forge job 2026-09-16: github.server_url is the instance URL.
+    if: ${{ github.server_url == 'https://github.com' }}
     # Measured on the last green main run (2026-09-09): build-and-test took a few minutes.
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
     timeout-minutes: 15
@@ -80,6 +84,10 @@ jobs:
   e2e-full:
     name: E2E full cohort (da-1wat)
     runs-on: ubuntu-latest
+    # Skipped on the forge mirror's runner (git.vividn.dev), where
+    # .forgejo/workflows/ci.yml runs instead — see that file. Marker verified
+    # inside a live forge job 2026-09-16: github.server_url is the instance URL.
+    if: ${{ github.server_url == 'https://github.com' }}
     # Measured on the last green main run (2026-09-09): build-and-test took a few minutes.
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
     timeout-minutes: 15
@@ -108,6 +116,10 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    # Skipped on the forge mirror's runner (git.vividn.dev), where
+    # .forgejo/workflows/ci.yml runs instead — see that file. Marker verified
+    # inside a live forge job 2026-09-16: github.server_url is the instance URL.
+    if: ${{ github.server_url == 'https://github.com' }}
     # Measured on the last green main run (2026-09-09): lint took a few minutes.
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
     timeout-minutes: 10
@@ -129,6 +141,10 @@ jobs:
   wasm-check:
     name: WASM check
     runs-on: ubuntu-latest
+    # Skipped on the forge mirror's runner (git.vividn.dev), where
+    # .forgejo/workflows/ci.yml runs instead — see that file. Marker verified
+    # inside a live forge job 2026-09-16: github.server_url is the instance URL.
+    if: ${{ github.server_url == 'https://github.com' }}
     # The CLI module compiles SQLite's C for wasm32-wasip1 as well as the
     # whole CLI, which is minutes, not seconds. A hung step used to run until
     # GitHub's 6-hour default; now it fails here.
@@ -193,6 +209,10 @@ jobs:
   honesty:
     name: Honesty gates (da-8y2q.7)
     runs-on: ubuntu-latest
+    # Skipped on the forge mirror's runner (git.vividn.dev), where
+    # .forgejo/workflows/ci.yml runs instead — see that file. Marker verified
+    # inside a live forge job 2026-09-16: github.server_url is the instance URL.
+    if: ${{ github.server_url == 'https://github.com' }}
     # Measured on the last green main run (2026-09-09): honesty took a few minutes.
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
     timeout-minutes: 5
@@ -229,6 +249,10 @@ jobs:
   web:
     name: Web (datum.day)
     runs-on: ubuntu-latest
+    # Skipped on the forge mirror's runner (git.vividn.dev), where
+    # .forgejo/workflows/ci.yml runs instead — see that file. Marker verified
+    # inside a live forge job 2026-09-16: github.server_url is the instance URL.
+    if: ${{ github.server_url == 'https://github.com' }}
     # Measured on the last green main run (2026-09-09): web took a few minutes.
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
     timeout-minutes: 30
