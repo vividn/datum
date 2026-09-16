@@ -12,7 +12,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, seedLines } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -500,7 +500,7 @@ describe('a write', () => {
 					'switch mood restless-in-the-afternoon-light -t 0900',
 					'switch project another-name-that-wraps-in-a-column -t 1200'
 				];
-				for (const line of LONG) await app.submit(line);
+				await seedLines(app, LONG);
 				await page.waitForFunction(
 					() => {
 						if (window.__datumInflight !== 0) return false;

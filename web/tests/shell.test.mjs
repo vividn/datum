@@ -25,6 +25,18 @@ after(stopApp);
 
 const DESKTOP = { viewport: { width: 1280, height: 900 } };
 
+/**
+ * The same desktop on the one-pane repl layout.
+ *
+ * For the tests about the BOTTOM BAR alone: the bar is drawn by the app's
+ * own layout above whatever tree is in front (`+layout.svelte`), so it is
+ * the same bar on every page, and the day frame behind it costs a
+ * fortnight of `dayview` bands on every open — better than a second a test
+ * (da-x6ea). The bar tests that DO reach into the frame — the widget-bar
+ * press, the orange alarm — keep the day page.
+ */
+const BAR_ONLY = { ...DESKTOP, query: 'repl' };
+
 /** The root bar's tab labels, in order, the modified dot stripped. */
 const rootTabs = (page) =>
 	page
@@ -668,7 +680,7 @@ describe('the bottom bar', () => {
 			await pill.locator('button.remove').click();
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 0);
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), []);
-		}, DESKTOP);
+		}, BAR_ONLY);
 	});
 
 	test('a submit runs typed + pills, then an unlocked pill clears on success', async () => {
@@ -690,7 +702,7 @@ describe('the bottom bar', () => {
 			);
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill').length === 0);
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), []);
-		}, DESKTOP);
+		}, BAR_ONLY);
 	});
 
 	test('a locked pill survives a successful press; an unlocked one does not', async () => {
@@ -721,7 +733,7 @@ describe('the bottom bar', () => {
 				]
 			);
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'the locked pill survives');
-		}, DESKTOP);
+		}, BAR_ONLY);
 	});
 
 	test('a failed command leaves its pill in place', async () => {
@@ -733,7 +745,7 @@ describe('the bottom bar', () => {
 			await input.press('Enter');
 			await page.locator('.prompt-bar .result.error').waitFor();
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'a failed command keeps the pill');
-		}, DESKTOP);
+		}, BAR_ONLY);
 	});
 
 	// The pills moved INSIDE the prompt in da-xfa4 — vividn: "move the -t
@@ -759,7 +771,7 @@ describe('the bottom bar', () => {
 				seen.pill.left >= seen.field.left - 1 && seen.pill.right <= seen.field.right + 1,
 				'the pill is outside the box'
 			);
-		}, DESKTOP);
+		}, BAR_ONLY);
 	});
 
 	test('the hint opens the beta text and the storage sentence; Escape closes it', async () => {
@@ -771,7 +783,7 @@ describe('the bottom bar', () => {
 			await page.keyboard.press('Escape');
 			await page.locator('.beta-hint').waitFor({ state: 'detached' });
 			assert.equal(await page.locator('.prompt-bar .hint-button').getAttribute('aria-expanded'), 'false');
-		}, DESKTOP);
+		}, BAR_ONLY);
 	});
 });
 

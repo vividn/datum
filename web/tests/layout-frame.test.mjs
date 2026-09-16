@@ -6,7 +6,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
+import { atEachScreen, inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
 	activeTab,
@@ -148,14 +148,15 @@ describe('the title row, as tall as its words', () => {
 			);
 		}, ON_BAR);
 
-	for (const [name, viewport] of [
-		['1280x800', { width: 1280, height: 800 }],
-		['390x844', { width: 390, height: 844 }]
-	]) {
-		for (const edge of ['top', 'bottom', 'left', 'right']) {
-			test(`no title, tab or … lies over a neighbour, every bar on the ${edge}, at ${name}`, async () => {
-				await withApp(async ({ page }) => {
-					assert.ok((await page.locator('section.pane').count()) >= 3, 'fewer than three panes');
+	// Eight cases, two apps: an edge is `layout.apply`, which the page
+	// answers in a frame, and the screen is a resize. Eight boots for them
+	// was seven seconds of `dayview` (da-x6ea).
+	test('no title, tab or … lies over a neighbour, whatever edge every bar is on', async (t) => {
+		await withApp(async ({ page }) => {
+			const screens = [{ width: 1280, height: 800 }, { width: 390, height: 844 }];
+			await atEachScreen(t, page, screens, async () => {
+				assert.ok((await page.locator('section.pane').count()) >= 3, 'fewer than three panes');
+				for (const edge of ['top', 'bottom', 'left', 'right']) {
 					// Every pane's bar at once (the menu's own path is tested above).
 					await page.evaluate((edge) =>
 						window.datum.layout.apply((tree) => {
@@ -175,11 +176,11 @@ describe('the title row, as tall as its words', () => {
 						edge
 					);
 					assert.deepEqual(astray, [], `not on the ${edge}`);
-					assert.deepEqual(await bleeds(page), []);
-				}, { viewport });
+					assert.deepEqual(await bleeds(page), [], `on the ${edge}`);
+				}
 			});
-		}
-	}
+		}, { viewport: { width: 1280, height: 800 } });
+	});
 
 	test('the title is its words and a 1px outline in the frame’s colour; its cross padding is nothing on a left bar', async () => {
 		await withApp(async ({ page }) => {
@@ -256,12 +257,9 @@ describe('the title row, as tall as its words', () => {
 // padding a third off, 0.5rem 0.6rem → 0.33rem 0.4rem. Asserted from the
 // computed styles, on a desktop and on a phone.
 describe('the margins', () => {
-	for (const [name, viewport] of [
-		['1280', { width: 1280, height: 900 }],
-		['390', { width: 390, height: 844 }]
-	]) {
-		test(`the gap is 8px and the body padding 0.33rem 0.4rem at ${name}`, async () => {
-			await withApp(async ({ page }) => {
+	test('the gap is 8px and the body padding 0.33rem 0.4rem', async (t) => {
+		await withApp(async ({ page }) => {
+			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 844 }], async () => {
 				const seen = await page.evaluate(() => {
 					const border = document.querySelector('.split .border:not(.static)');
 					const b = border.getBoundingClientRect();
@@ -276,21 +274,18 @@ describe('the margins', () => {
 				const near = (a, b) => Math.abs(a - b) < 0.05;
 				assert.ok(near(seen.padding[0], 0.33 * rem) && near(seen.padding[2], 0.33 * rem), `top/bottom ${seen.padding}`);
 				assert.ok(near(seen.padding[1], 0.4 * rem) && near(seen.padding[3], 0.4 * rem), `left/right ${seen.padding}`);
-			}, { viewport });
-		});
-	}
+			});
+		}, { viewport: { width: 1280, height: 900 } });
+	});
 });
 
 // The scrollbars (da-2a5y): "The built in ones look terrible with the
 // design, they should be more very tiny, invisible when not in use, and
 // match the frame color." One rule for every scroll container, in app.css.
 describe('scrollbars', () => {
-	for (const [name, viewport] of [
-		['1280', { width: 1280, height: 900 }],
-		['390', { width: 390, height: 844 }]
-	]) {
-		test(`are thin on a pane's body and on the root scroller at ${name}`, async () => {
-			await withApp(async ({ page }) => {
+	test("are thin on a pane's body and on the root scroller", async (t) => {
+		await withApp(async ({ page }) => {
+			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 844 }], async () => {
 				const seen = await page.evaluate(() => {
 					const style = (el) => {
 						const s = getComputedStyle(el);
@@ -305,9 +300,9 @@ describe('scrollbars', () => {
 				assert.equal(seen.root.width, 'thin', `the root scroller: ${JSON.stringify(seen.root)}`);
 				// No pointer over it: the thumb is transparent.
 				assert.match(seen.body.color, /^rgba\(0, 0, 0, 0\) rgba\(0, 0, 0, 0\)$|^transparent transparent$/);
-			}, { viewport });
-		});
-	}
+			});
+		}, { viewport: { width: 1280, height: 900 } });
+	});
 });
 
 // vividn's third look (da-13bc): "The pane tile currently still pushes the
@@ -317,28 +312,32 @@ describe('scrollbars', () => {
 // but slightly larger". Measured in screen coordinates, on all four edges
 // (the left-hand bar is rotated), never "less than before".
 describe('the title on the line', () => {
-	for (const edge of ['top', 'bottom', 'left', 'right']) {
-		test(`bar on the ${edge}: the content has no padding and the title is centred on the outline`, async () => {
-			await withApp(async ({ page }) => {
-				if (edge !== 'top') await chooseBar(page, 'tail', edge);
-				const tail = pane(page, 'tail');
-				const seen = await tail.evaluate((section) => {
-					const s = getComputedStyle(section.querySelector(':scope > .content'));
-					const f = section.getBoundingClientRect();
-					const h = section.querySelector('h2').getBoundingClientRect();
-					return {
-						padding: [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft],
-						// The 1px outline's own middle, on each edge.
-						line: { top: f.top + 0.5, bottom: f.bottom - 0.5, left: f.left + 0.5, right: f.right - 0.5 },
-						middle: { x: h.left + h.width / 2, y: h.top + h.height / 2 }
-					};
+	// One app for the four edges: `chooseBar` walks the tail pane's bar
+	// round the frame, which is what a reader does to it (da-x6ea).
+	test('the content has no padding and the title is centred on the outline, on every edge', async (t) => {
+		await withApp(async ({ page }) => {
+			for (const edge of ['top', 'bottom', 'left', 'right']) {
+				await t.test(`bar on the ${edge}`, async () => {
+					if (edge !== 'top') await chooseBar(page, 'tail', edge);
+					const tail = pane(page, 'tail');
+					const seen = await tail.evaluate((section) => {
+						const s = getComputedStyle(section.querySelector(':scope > .content'));
+						const f = section.getBoundingClientRect();
+						const h = section.querySelector('h2').getBoundingClientRect();
+						return {
+							padding: [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft],
+							// The 1px outline's own middle, on each edge.
+							line: { top: f.top + 0.5, bottom: f.bottom - 0.5, left: f.left + 0.5, right: f.right - 0.5 },
+							middle: { x: h.left + h.width / 2, y: h.top + h.height / 2 }
+						};
+					});
+					assert.deepEqual(seen.padding, ['0px', '0px', '0px', '0px']);
+					const at = edge === 'top' || edge === 'bottom' ? seen.middle.y : seen.middle.x;
+					assert.ok(Math.abs(at - seen.line[edge]) <= 1, `the title's middle is at ${at}, the ${edge} line at ${seen.line[edge]}`);
 				});
-				assert.deepEqual(seen.padding, ['0px', '0px', '0px', '0px']);
-				const at = edge === 'top' || edge === 'bottom' ? seen.middle.y : seen.middle.x;
-				assert.ok(Math.abs(at - seen.line[edge]) <= 1, `the title's middle is at ${at}, the ${edge} line at ${seen.line[edge]}`);
-			}, DESKTOP);
-		});
-	}
+			}
+		}, DESKTOP);
+	});
 
 	test("a title on the page's top edge is whole, and the panes start where the page's margin ends", async () => {
 		await withApp(async ({ page }) => {

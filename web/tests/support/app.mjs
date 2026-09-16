@@ -48,6 +48,57 @@ export function todayAt(hour, minute = 0) {
 	return Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), hour, minute);
 }
 
+/**
+ * Log `lines` and leave the frame showing every one of them.
+ *
+ * Seeding through `submit` is seeding through the REPL, and each one bumps
+ * the frame's epoch: every pane re-runs its command on it — the day strip
+ * once per band it holds — behind one database lock. A five-line day
+ * therefore paid for five whole redraws, when only the last one is ever
+ * looked at (da-x6ea).
+ *
+ * So: all but the last line through the seam's QUIET door, which stores
+ * the same row and moves nothing, and the last one through the bar. The
+ * one redraw it buys is over all of them, because a pane re-reads the
+ * database rather than accumulating what it has been told.
+ *
+ * Then `idle`, because `submit` returns on the REPL's own echo while the
+ * pane commands it set off are still in flight — a measurement taken
+ * straight after it can be of the pane as it was an entry ago.
+ */
+export async function seedLines(app, lines) {
+	if (!lines.length) return;
+	for (const line of lines.slice(0, -1)) await app.runLine(line);
+	await app.submit(lines.at(-1));
+	await app.idle();
+}
+
+/**
+ * Ask `body` the same question at every screen in `screens`, one app.
+ *
+ * A subtest per screen, so the report still names the size that failed —
+ * but ONE boot behind them all. Opening the app is 2.2 s of wasm compile,
+ * database and pane commands; resizing the page is ten milliseconds, and
+ * the frame is CSS, which relays itself on a resize exactly as it lays
+ * itself out on a boot. Asking four screens for four boots is what made
+ * reachable.test.mjs the suite's slowest file at 117 s (da-x6ea).
+ *
+ * Two animation frames after the resize: a ResizeObserver — the strip's,
+ * the tail's — fires on the frame after the layout it observed, so a box
+ * read any sooner can be the box from the screen before.
+ */
+export async function atEachScreen(t, page, screens, body) {
+	for (const viewport of screens) {
+		await t.test(`${viewport.width}x${viewport.height}`, async () => {
+			await page.setViewportSize(viewport);
+			await page.evaluate(
+				() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+			);
+			await body(viewport);
+		});
+	}
+}
+
 let server;
 let browser;
 

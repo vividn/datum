@@ -41,7 +41,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { devices } from 'playwright';
-import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
+import { atEachScreen, startApp, stopApp, withApp, workerClock, seedLines } from './support/app.mjs';
 import { choose, chooseRoot } from './support/layout.mjs';
 
 before(startApp);
@@ -497,8 +497,7 @@ describe('the day strip', () => {
 	test('five days is five one-day dayviews, each asked bands-only', async () => {
 		await withApp(
 			async (app) => {
-				for (const back of [1, 2, 3, 4]) await app.submit(`occur coffee -d -${back}`);
-				await app.submit('occur coffee');
+				await seedLines(app, [...[1, 2, 3, 4].map((back) => `occur coffee -d -${back}`), 'occur coffee']);
 				await sizeWhole(app, 5);
 				await app.idle();
 
@@ -1196,10 +1195,11 @@ describe('the day strip', () => {
 	// The strip is full-width, and the fix for horizontal scrollbars over
 	// it landed the day before this did (1ceada8) — so every depth the
 	// box can hold is swept, at every width the app is read at.
-	for (const width of [360, 390, 768, 1280]) {
-		test(`never scrolls the page sideways at ${width}px, at any depth`, async () => {
-			await withApp(
-				async (app) => {
+	test('never scrolls the page sideways, at any width or depth', async (t) => {
+		await withApp(
+			async (app) => {
+				const widths = [360, 390, 768, 1280].map((width) => ({ width, height: 800 }));
+				await atEachScreen(t, app.page, widths, async ({ width }) => {
 					for (const depth of [0, 1, 5]) {
 						await sizeFor(app, depth);
 						const seen = await app.page.evaluate(() => {
@@ -1211,11 +1211,11 @@ describe('the day strip', () => {
 							`${width}px at ${depth} days deep scrolls sideways: ${seen.scroll} in ${seen.client}`
 						);
 					}
-				},
-				{ viewport: { width, height: 800 } }
-			);
-		});
-	}
+				});
+			},
+			{ viewport: { width: 360, height: 800 } }
+		);
+	});
 
 	// The strip's row is a fixed height now, so it cannot push the thing a
 	// phone user logs with off the bottom of the screen (da-hkpd) — as

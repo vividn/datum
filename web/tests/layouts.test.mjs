@@ -221,7 +221,15 @@ describe('the internal database', () => {
 				return real.apply(this, args);
 			};
 		`;
-		const heals = Date.now() + 8000;
+		// Five seconds, not eight. The worker goes back for the files 2 s
+		// after it gave up and then doubles — so its tries land at 2, 6 and
+		// 14 s, and an outage that ends AT the 8 s mark is a coin toss
+		// between the 6 s try (too early) and the 14 s one. It came up tails
+		// often enough to make this the slowest test in the suite at 17 s.
+		// Ending it at 5 s puts it squarely between two tries, so the 6 s one
+		// heals it — the same outage, read the same way, in half the time
+		// (da-x6ea).
+		const heals = Date.now() + 5000;
 		await withApp(
 			async (app) => {
 				assert.match(await app.bannerText(), /held in memory only/);

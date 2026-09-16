@@ -177,3 +177,27 @@ file in the same commit — a convention nobody can read is a convention nobody 
     file that grows past the per-file budget (300 s since 2026-09-16, `--test-timeout` in
     `test.mjs`, one number for every workflow) is still its own loud failure, not something a
     bigger runner hides.
+
+21. **An app boot is the unit of cost; don't buy one you are not going to look at.** Measured
+    on the 24-core build box (da-x6ea): `withApp` on the **day page is 2.4–2.8 s** — 0.13 s of
+    context, page and navigation, ~0.9 s to the seam being ready (worker, wasm compile, OPFS,
+    schema) and 1.1–1.3 s for the frame's six panes, the day strip alone being one `dayview`
+    process per band it holds. On the **one-pane `repl` layout it is 1.65 s**, and
+    `page.setViewportSize()` is **10 ms**. So a file is, to a first approximation, its number
+    of `withApp`s times one of those two numbers, and the three ways to spend less are:
+    - **`{ query: 'repl' }`** for a test the day page is only scenery for. The bottom bar is
+      drawn by `+layout.svelte` above whatever tree is in front, so it is the same bar on every
+      page; a test that reads the seam, the bar or the banner does not need the frame behind it.
+      A test that reads a pane, the fields widget or the strip does, and says so.
+    - **`atEachScreen(t, page, screens, body)`** (`tests/support/app.mjs`) for a size matrix: a
+      subtest per screen — so the report still names the size that failed — against ONE app,
+      resized, two animation frames apart so the ResizeObservers have run.
+    - **`seedLines(app, lines)`** (same file) for seeding: every `submit` bumps the frame's
+      epoch and re-runs every pane, so N lines through the REPL bought N whole redraws when
+      only the last one is ever looked at. `seedLines` sends all but the last through the quiet
+      door and the last through the bar.
+
+    And a fixed sleep is worth reading against what it is waiting for: the in-memory fallback
+    goes back for the files at 2 s and doubles (2, 6, 14 s after it gave up), so an outage
+    scripted to end at 8 s is a coin toss between the 6 s try and the 14 s one — 5 s sits
+    between two tries and asks the same question in half the time.

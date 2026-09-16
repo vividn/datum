@@ -45,6 +45,12 @@ describe('the same argv stores the same entry as the CLI', () => {
 	for (const testCase of fixture.cases) {
 		const name = 'datum ' + testCase.argv.join(' ');
 		test(name, { todo: testCase.divergence ?? undefined }, async () => {
+			// On the repl layout, not the day page. A case here asks the seam
+			// one question and reads the row back; it never looks at the
+			// screen. Opening the day frame for it draws a fortnight of
+			// dayview bands first — 1.2 s a case, and there are two dozen
+			// (da-x6ea). A context each is still a database each, which is
+			// the isolation these need: one argv, one entry.
 			await withApp(async ({ run, entries }) => {
 				// A case's `setup` runs through the same seam the case does,
 				// so the world the browser logs into is one the browser built
@@ -67,7 +73,7 @@ describe('the same argv stores the same entry as the CLI', () => {
 				const stored = await entries();
 				assert.equal(stored.length, 1, 'expected exactly one entry');
 				assert.deepEqual(comparable(fromBackupRow(stored[0]), testCase.time), testCase.cli.entry);
-			});
+			}, { query: 'repl' });
 		});
 	}
 });

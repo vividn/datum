@@ -30,7 +30,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
-import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
+import { startApp, stopApp, withApp, todayAt, seedLines } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -67,13 +67,15 @@ const A_DAY = [
 ];
 
 /**
- * Log the day through the REPL, then wait for the panes to catch up.
+ * Log the day and wait for the panes to catch up: the harness's `seed`.
  *
- * Through the REPL, not through `run`: the panes re-run their command on
- * the frame's epoch, and the harness's `run` is the quiet door (da-6918)
- * — it stores the row and the panes never hear about it. A test on the
- * seam alone would measure four panes still showing the empty day they
- * mounted with, which is the one arrangement where nothing overflows.
+ * The LAST line goes through the REPL, not through `run`: the panes
+ * re-run their command on the frame's epoch, and the harness's `run` is
+ * the quiet door (da-6918) — it stores the row and the panes never hear
+ * about it. A test on the seam alone would measure four panes still
+ * showing the empty day they mounted with, which is the one arrangement
+ * where nothing overflows. One bump is enough for all five, though, and
+ * that is what `seedLines` is (da-x6ea).
  *
  * And then the wait, because `submit` returns on the REPL's own echo: the
  * pane commands it set off are still in flight, so a measurement taken
@@ -86,10 +88,7 @@ const A_DAY = [
  * unchanged for longer than that while its turn comes. `idle` counts the
  * runs themselves.
  */
-async function logADay(app) {
-	for (const line of A_DAY) await app.submit(line);
-	await app.idle();
-}
+const logADay = (app) => seedLines(app, A_DAY);
 
 /**
  * Bring a pane to the front, where it is a tab.
@@ -455,8 +454,7 @@ describe('the tail pane', () => {
 		test(`fits ten rows at ${width}px`, async () => {
 			await withApp(
 				async (app) => {
-					for (const line of TEN_ROWS) await app.submit(line);
-					await app.idle();
+					await seedLines(app, TEN_ROWS);
 					// Up to the top and the wheel turned, until all ten are in
 					// the table: each pull asks for the page above.
 					const tail = app.page.locator('section.pane[data-title="tail"] .body');

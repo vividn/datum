@@ -21,14 +21,28 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { atEachScreen, startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
 
-const DESKTOP = { viewport: { width: 1280, height: 800 } };
+/**
+ * Both screens open the REPL layout rather than the day page.
+ *
+ * The bar is drawn by the app's own layout, above whatever tree is in
+ * front (`+layout.svelte`), so it is the same bar on every page — and
+ * every one of these reads it alone. Opening the day frame for them draws
+ * a fortnight of `dayview` bands first, better than a second a test and
+ * twenty-odd tests over (da-x6ea).
+ *
+ * `DAY` is for the one claim that is ABOUT the page behind the bar: that
+ * a taller receipt does not reflow the dashboard. That one wants a
+ * dashboard.
+ */
+const DESKTOP = { viewport: { width: 1280, height: 800 }, query: 'repl' };
 /** The narrowest screen the bar has to work on (the bead's trap 2). */
-const NARROW = { viewport: { width: 320, height: 640 } };
+const NARROW = { viewport: { width: 320, height: 640 }, query: 'repl' };
+const DAY = { viewport: DESKTOP.viewport };
 
 const BAR = '.prompt-bar';
 const DOC = `${BAR} .doc`;
@@ -98,7 +112,7 @@ describe('the bar never changes height', () => {
 				assert.equal(await mainHeight(page), was.main, `the dashboard reflowed after \`${line}\``);
 			}
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		}, DAY);
 	});
 });
 
@@ -395,12 +409,11 @@ describe('the ^', () => {
 		await page.locator(`${BAR} .expansion section.pane`).waitFor();
 	}
 
-	for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 640 }]) {
-		const size = `${viewport.width}x${viewport.height}`;
-
-		test(`the control sits on the bar's top line at ${size}`, async () => {
-			await withApp(async (app) => {
-				const { page } = app;
+	test("the control sits on the bar's top line", async (t) => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 640 }], async (viewport) => {
+				const size = `${viewport.width}x${viewport.height}`;
 				const shut = await boxes(page);
 				assert.ok(
 					Math.abs(shut.control.top - shut.bar.top) <= 1,
@@ -421,9 +434,12 @@ describe('the ^', () => {
 					`open, the control's head at ${lit.control.top}, the bar's at ${lit.bar.top}`
 				);
 				assert.deepEqual(app.errors, []);
-			}, { viewport });
-		});
-	}
+				// Shut again, so the next screen presses the same control.
+				await page.keyboard.press('Escape');
+				await page.locator(`${BAR} .expansion`).waitFor({ state: 'detached' });
+			});
+		}, DESKTOP);
+	});
 
 	test('one press opens the REPL, the next closes it, and so does Escape', async () => {
 		await withApp(async (app) => {
@@ -536,13 +552,10 @@ describe('the ^', () => {
 	// The trap of a lid on the bar's top line: the brand's ⓘ and the clock
 	// are on that line too, and a control across all of it would take their
 	// taps.
-	for (const { viewport, size } of [
-		{ viewport: DESKTOP, size: '1280x800' },
-		{ viewport: NARROW, size: '320x640' }
-	]) {
-		test(`the ⓘ and the clock keep their taps at ${size}`, async () => {
-			await withApp(async (app) => {
-				const { page } = app;
+	test('the ⓘ and the clock keep their taps', async (t) => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await atEachScreen(t, page, [DESKTOP.viewport, NARROW.viewport], async () => {
 				const reached = await page.evaluate(() =>
 					['.prompt-bar .hint-button', '.prompt-bar .clock'].map((selector) => {
 						const el = document.querySelector(selector);
@@ -559,9 +572,12 @@ describe('the ^', () => {
 				await page.locator(`${BAR} .hint-button`).click();
 				await page.locator(`${BAR} .beta-hint`).waitFor();
 				assert.deepEqual(app.errors, []);
-			}, viewport);
-		});
-	}
+				// Shut again, so the next screen opens it for itself.
+				await page.locator(`${BAR} .hint-button`).click();
+				await page.locator(`${BAR} .beta-hint`).waitFor({ state: 'detached' });
+			});
+		}, DESKTOP);
+	});
 });
 
 /** Where a pill's left edge is, and where the `❯` ends. */
@@ -646,7 +662,9 @@ describe('the pills ride with the text', () => {
 			);
 			assert.equal(await page.locator(`${BAR} .pill`).count(), 1, 'a locked pill was spent');
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+			// The day page: `withCoffee` presses the FIELDS widget, which is a
+			// pane of the day frame and is not on the repl layout.
+		}, DAY);
 	});
 
 	test('an unlocked pill leaves the live set at once and fades as a spent one', async () => {
@@ -664,7 +682,8 @@ describe('the pills ride with the text', () => {
 			assert.equal(await page.locator(`${BAR} .spent`).count(), 1);
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .spent'));
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+			// The day page, as above: the press is the fields widget's.
+		}, DAY);
 	});
 });
 
@@ -813,12 +832,10 @@ describe('the pills are prominent', () => {
 		}, DESKTOP);
 	});
 
-	for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 640 }]) {
-		const size = `${viewport.width}x${viewport.height}`;
-
-		test(`three pills do not grow the bar at ${size}`, async () => {
-			await withApp(async (app) => {
-				const { page } = app;
+	test('three pills do not grow the bar', async (t) => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 640 }], async () => {
 				const bare = await barHeight(page);
 				await setPills(page, ['-t 14:30', '-d yesterday', '30m']);
 				await page.locator(`${BAR} .pill`).first().waitFor();
@@ -849,9 +866,13 @@ describe('the pills are prominent', () => {
 				);
 				assert.equal(await barHeight(page), bare, 'the pills grew the bar');
 				assert.deepEqual(app.errors, []);
-			}, { viewport });
-		});
-	}
+				// Cleared, so the next screen starts from a bare bar.
+				await setPills(page, []);
+				await page.locator(`${BAR} input`).fill('');
+				await page.locator(`${BAR} .pill`).waitFor({ state: 'detached' });
+			});
+		}, DESKTOP);
+	});
 });
 
 describe('the clock', () => {

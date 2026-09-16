@@ -75,6 +75,32 @@ async function stallNextFlush(page) {
 before(startApp);
 after(stopApp);
 
+/**
+ * The repl layout, for the tests the day page is only scenery for.
+ *
+ * Opening the day frame draws a fortnight of dayview bands before
+ * `withApp` returns, and these tests keep two and three TABS — so the
+ * frame is paid for over and over to reach a question that is never asked
+ * of it (da-x6ea). It is the layout the forty-writes test below already
+ * had to move to, for the reason written above it.
+ *
+ * This is LESS contention, not the same, and the comment here used to say
+ * otherwise: on the repl layout a write in the other tab refreshes one
+ * pane and the bar's two commands, not six panes. What these tests claim
+ * is about the DATA — forty writes land forty rows, once each, by hid,
+ * with `check` clean; the same field in the same minute is a duplicate and
+ * never a loss — and that is true of any pile deep enough to make the tabs
+ * take turns, which the twenty and forty commands each test fires without
+ * awaiting still are. The one timing claim, the burst test's, is already
+ * written as a ratio to the burst's own length rather than a wall clock,
+ * so a shorter queue moves both of its numbers together.
+ *
+ * The tests that DO read the page — the banner at boot when storage never
+ * answers, the tail that has to see the other tab's write — stay where
+ * they are.
+ */
+const REPL = { query: 'repl' };
+
 describe('when durable storage never answers', () => {
 	test('the app opens in memory and says so', async () => {
 		await withApp(
@@ -191,7 +217,7 @@ describe('two tabs', () => {
 					['coffee', 'tea']
 				);
 			}
-		});
+		}, REPL);
 	});
 
 	// On the repl layout: on the day page every write re-runs the other
@@ -221,7 +247,7 @@ describe('two tabs', () => {
 			}
 			const check = await third.run(['check']);
 			assert.equal(check.code, 0, check.stdout + check.stderr);
-		}, { query: 'repl' });
+		}, REPL);
 	});
 
 	// Both tabs logging the same field in the same minute is the one case
@@ -247,7 +273,7 @@ describe('two tabs', () => {
 					['coffee']
 				);
 			}
-		});
+		}, REPL);
 	});
 
 	test('a tab closed mid-write leaves the database whole, and check says so', async () => {
@@ -286,7 +312,7 @@ describe('two tabs', () => {
 				);
 				assert.equal((await next.run(['occur', 'tea', '-t', '0700'])).code, 0);
 			},
-			{ prepare: inWorker(slowFlush(60000)) }
+			{ ...REPL, prepare: inWorker(slowFlush(60000)) }
 		);
 	});
 
@@ -310,7 +336,7 @@ describe('two tabs', () => {
 					['coffee']
 				);
 			},
-			{ prepare: inWorker(slowFlush(3500, { once: true })) }
+			{ ...REPL, prepare: inWorker(slowFlush(3500, { once: true })) }
 		);
 	});
 });
@@ -447,7 +473,7 @@ describe('the files, held across a burst', () => {
 				assert.equal(new Set(rows.map((e) => e.hid)).size, 10);
 				assert.deepEqual(app.errors, []);
 			},
-			{ prepare: inWorker(countOpens) }
+			{ ...REPL, prepare: inWorker(countOpens) }
 		);
 	});
 
@@ -505,7 +531,7 @@ describe('the files, held across a burst', () => {
 			assert.equal(new Set(rows.map((e) => e.hid)).size, 21);
 			const check = await second.run(['check']);
 			assert.equal(check.code, 0, check.stdout + check.stderr);
-		});
+		}, REPL);
 	});
 });
 
@@ -551,7 +577,7 @@ describe('asking the browser to keep it', () => {
 				assert.equal(await persistCalls(app), 0);
 				assert.equal(await app.bannerText(), MAY_CLEAR);
 			},
-			{ prepare: spyOnPersist() }
+			{ ...REPL, prepare: spyOnPersist() }
 		);
 	});
 
@@ -571,7 +597,7 @@ describe('asking the browser to keep it', () => {
 				});
 				await until(app.bannerText, (t) => t === (granted ? KEPT : MAY_CLEAR));
 			},
-			{ prepare: spyOnPersist() }
+			{ ...REPL, prepare: spyOnPersist() }
 		);
 	});
 
@@ -583,7 +609,7 @@ describe('asking the browser to keep it', () => {
 				assert.equal(logged.code, 0, logged.stderr);
 				await until(app.bannerText, (t) => t === KEPT);
 			},
-			{ prepare: spyOnPersist({ answer: true }) }
+			{ ...REPL, prepare: spyOnPersist({ answer: true }) }
 		);
 	});
 
@@ -596,6 +622,7 @@ describe('asking the browser to keep it', () => {
 				assert.match(await app.bannerText(), /held in memory only/);
 			},
 			{
+				...REPL,
 				prepare: async (context) => {
 					await inWorker(NEVER)(context);
 					await spyOnPersist()(context);
@@ -617,7 +644,7 @@ describe('asking the browser to keep it', () => {
 				assert.equal(await app.bannerText(), MAY_CLEAR);
 				assert.deepEqual(app.errors, []);
 			},
-			{ prepare: spyOnPersist({ answer: 'throw' }) }
+			{ ...REPL, prepare: spyOnPersist({ answer: 'throw' }) }
 		);
 	});
 });

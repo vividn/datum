@@ -23,6 +23,21 @@ const tailFixture = JSON.parse(
 before(startApp);
 after(stopApp);
 
+/**
+ * `withApp` on the repl layout: for a test that never looks at the page.
+ *
+ * Most of this file asks the seam a question and reads the answer back
+ * through the seam, and the day frame around it is scenery — scenery that
+ * costs a fortnight of `dayview` bands on every open, better than a second
+ * a test and two dozen tests over (da-x6ea). A context each is still a
+ * database each, which is the isolation these need.
+ *
+ * The tests that DO read the page — the tail table, the two drawn panes, a
+ * widget press, the banner — keep `withApp` and the day page, because the
+ * page is what they are about.
+ */
+const onSeam = (fn, options) => withApp(fn, { query: 'repl', ...options });
+
 /** Exit codes: success, the CLI's generic failure, and its duplicate. */
 const OK = 0;
 const ERROR = 1;
@@ -87,7 +102,7 @@ describe('logging verbs', () => {
 	});
 
 	test('field-first argv means the same as verb-first', async () => {
-		await withApp(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			assert.equal((await run(['mood', 'switch', 'happy'])).code, OK);
 			const [stored] = await entries();
 			assert.equal(stored.field, 'mood');
@@ -96,7 +111,7 @@ describe('logging verbs', () => {
 	});
 
 	test('a state logged twice at the same minute is a duplicate, not a second entry', async () => {
-		await withApp(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '0915'])).code, OK);
 			const again = await run(['switch', 'mood', 'sad', '-t', '0915']);
 			assert.equal(again.code, DUPLICATE, again.stderr);
@@ -108,7 +123,7 @@ describe('logging verbs', () => {
 
 describe('time and duration land on the entry', () => {
 	test('-t HHMM sets the entry to that clock time', async () => {
-		await withApp(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			assert.equal((await run(['occur', 'coffee', '-t', '0915'])).code, OK);
 			const [stored] = await entries();
 			// The browser context runs in UTC (see support/app.mjs), so the
@@ -118,7 +133,7 @@ describe('time and duration land on the entry', () => {
 	});
 
 	test('-t -N backdates by N minutes', async () => {
-		await withApp(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			const before = Date.now();
 			assert.equal((await run(['occur', 'coffee', '-t', '-30'])).code, OK);
 			const [stored] = await entries();
@@ -131,7 +146,7 @@ describe('time and duration land on the entry', () => {
 	});
 
 	test('a duration is stored as ISO-8601 and makes the entry a block', async () => {
-		await withApp(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			assert.equal((await run(['occur', 'nap', 'dur=30m', '-t', '1000'])).code, OK);
 			assert.equal((await run(['occur', 'walk', 'dur=1:30', '-t', '1100'])).code, OK);
 			const stored = await entries();
@@ -144,7 +159,7 @@ describe('time and duration land on the entry', () => {
 	});
 
 	test('no duration leaves a point entry', async () => {
-		await withApp(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			await run(['occur', 'coffee', '-t', '0915']);
 			const [stored] = await entries();
 			// `MOMENT` is datum's in-column spelling of "no duration, this is
@@ -160,7 +175,7 @@ describe('time and duration land on the entry', () => {
 describe('failure', () => {
 	// A word datum has never heard of is the CLI's own error, exit 1.
 	test('a word datum has never heard of fails the way the CLI fails', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			const result = await run(['definitelynotacommand']);
 			assert.equal(result.code, ERROR);
 			assert.match(result.stderr, /unknown subcommand/);
@@ -170,7 +185,7 @@ describe('failure', () => {
 	});
 
 	test('a command the stand-in never had is the CLI’s, and runs', async () => {
-		await withApp(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
 			const result = await run(['grep', 'coffee']);
 			assert.equal(result.code, OK, result.stderr);
@@ -184,7 +199,7 @@ describe('failure', () => {
 	});
 
 	test('an empty argv is a no-op success', async () => {
-		await withApp(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			const result = await run([]);
 			assert.equal(result.code, OK);
 			assert.equal(result.stdout, '');
@@ -195,7 +210,7 @@ describe('failure', () => {
 
 describe('the teach-echo', () => {
 	test('a typed line is echoed back exactly as typed, and shell-split for the runner', async () => {
-		await withApp(async ({ submit, echoes, spyOnRunner }) => {
+		await onSeam(async ({ submit, echoes, spyOnRunner }) => {
 			const line = 'note word correr "to run" srcLang=pt';
 			const seen = await spyOnRunner();
 			await submit(line);
@@ -273,7 +288,7 @@ describe('storage', () => {
 	});
 
 	test('the page throws nothing while logging', async () => {
-		await withApp(async ({ run, errors }) => {
+		await onSeam(async ({ run, errors }) => {
 			await run(['occur', 'coffee']);
 			assert.deepEqual(errors, []);
 		});
@@ -354,7 +369,7 @@ describe('the visual views', () => {
 	});
 
 	test('a switch paints a band in the state colour the CLI would pick', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			// Five minutes back, so the region runs to now inside both the
 			// day window and nowview's 30-minute one whatever the hour.
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-5'])).code, OK);
@@ -404,7 +419,7 @@ describe('the visual views', () => {
 	// history window with no gap, and a field in a state gets exactly one
 	// chunk past the now-line while an occur-only field gets none.
 	test('nowview fills each lane to the now-line and labels only the axis', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			// The first switch is before the window opens, so the lane is
 			// filled from its left edge by the lead-in row alone.
 			assert.equal((await run(['switch', 'mood', 'calm', '-t', '-45'])).code, OK);
@@ -443,7 +458,7 @@ describe('the visual views', () => {
 	});
 
 	test('an empty database still draws both views', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			for (const argv of [['dayview'], ['nowview', '-o', '-']]) {
 				const drawn = await run(argv);
 				assert.equal(drawn.code, OK, `${argv[0]} → ${drawn.stderr}`);
@@ -457,7 +472,7 @@ describe('the visual views', () => {
 		// the seam. Until da-t7ud this dispatch was a hand-written copy of
 		// the table in the browser ($lib/visuals.ts); it is now the CLI's
 		// own, so what this test guards is that the wiring reaches it.
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-10'])).code, OK);
 			assert.equal((await run(['occur', 'coffee', '-t', '-5'])).code, OK);
 			// A switch to `false` terminates a state without opening one.
@@ -486,7 +501,7 @@ describe('the visual views', () => {
 	});
 
 	test('a block runs back from its occur time rather than forward from it', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			// `start`/`stop` brackets a block by its two instants; a
 			// duration declares one — and occur_time is the block's
 			// TRAILING edge, so the span PRECEDES it (da-zwct, reversing
@@ -529,7 +544,7 @@ describe('the visual views', () => {
 	});
 
 	test('the arguments are the CLI’s, and so are the refusals', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
 			for (const argv of [['tail', '-n', '5'], ['dayview', '--n-days', '3']]) {
 				const result = await run(argv);
@@ -557,7 +572,7 @@ describe('spec', () => {
 	];
 
 	test('every spec subcommand answers', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			assert.equal(
 				(await run(['spec', 'set', 'coffee', '--verb', 'occur', '--color', '#884400'])).code,
 				OK
@@ -572,7 +587,7 @@ describe('spec', () => {
 	});
 
 	test('`spec set` still works — it is what the `+` button runs', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			const saved = await run(['spec', 'set', 'mood', '--state', 'happy']);
 			assert.equal(saved.code, OK, saved.stderr);
 			assert.match(saved.stdout, /mood/);
@@ -613,7 +628,7 @@ describe('help and version', () => {
 	// each, and each assertion is on the TEXT: "no `error:`" would pass
 	// against a runner that printed nothing.
 	test('every spelling of help prints the help, exit 0', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			for (const argv of [['help'], ['-h'], ['--help']]) {
 				const result = await run(argv);
 				assert.equal(result.code, OK, `${argv.join(' ')} → ${result.stderr}`);
@@ -625,7 +640,7 @@ describe('help and version', () => {
 	});
 
 	test('every spelling of version prints the banner, exit 0', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			for (const argv of [['--version'], ['-V']]) {
 				const result = await run(argv);
 				assert.equal(result.code, OK, `${argv.join(' ')} → ${result.stderr}`);
@@ -636,7 +651,7 @@ describe('help and version', () => {
 	});
 
 	test('help for one command is that command’s page', async () => {
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			for (const argv of [
 				['help', 'occur'],
 				['occur', '--help']
@@ -678,7 +693,7 @@ describe('the tail is the CLI\'s tail', () => {
 	// which is the thing being ruled out.
 	test('prints, character for character, what the binary printed', async () => {
 		assert.ok(tailFixture.capturedWith, 'run `npm run test:fixtures` to capture');
-		await withApp(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			for (const argv of tailFixture.log) {
 				const result = await run(argv);
 				assert.equal(result.code, OK, `${argv.join(' ')} → ${result.stderr}`);
