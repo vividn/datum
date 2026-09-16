@@ -29,6 +29,7 @@ import {
 	DESKTOP,
 	bar,
 	choose,
+	chooseBar,
 	chooseRoot,
 	chooser,
 	exactly,
@@ -210,8 +211,9 @@ describe('the maximize badge', () => {
 		}, DESKTOP);
 	});
 
-	// `align: end` mirrors the row, so the order is worth asserting rather
-	// than reading off the source: title/tabs, then `+`, then maximize.
+	// The DOM order is the KEYBOARD's, and the CSS moves the badge on
+	// screen without moving it here — so it is worth asserting rather than
+	// reading off the source: title/tabs, then `+`, then maximize.
 	test('the badges come after the title, the `+` first', async () => {
 		await withApp(async ({ page }) => {
 			const along = await pane(page, 'repl')
@@ -224,6 +226,126 @@ describe('the maximize badge', () => {
 			assert.deepEqual(along, ['titlebox', 'add', 'maximize']);
 		}, DESKTOP);
 	});
+});
+
+// vividn, on the deployed build (da-jlgp): «make the maximize icon smaller so
+// it fits in its button, also let's move this button to the other side of
+// the tabs, ideally it would be in the corner».
+describe('the maximize badge, drawn and placed', () => {
+	/** The button's box, its `<svg>`'s, and the box the strokes actually cover. */
+	async function drawn(page, id) {
+		const button = maximizeButton(page, id);
+		const [box, svg, ink] = await Promise.all([
+			boxOf(button),
+			boxOf(button.locator('svg')),
+			button.evaluate((el) => {
+				const rects = [...el.querySelectorAll('svg path')].map((p) => p.getBoundingClientRect());
+				return {
+					x: Math.min(...rects.map((r) => r.left)),
+					y: Math.min(...rects.map((r) => r.top)),
+					right: Math.max(...rects.map((r) => r.right)),
+					bottom: Math.max(...rects.map((r) => r.bottom))
+				};
+			})
+		]);
+		return { box, svg, ink };
+	}
+
+	/** `inner` does not hang out of `outer` on any side. */
+	function inside(inner, outer, what) {
+		const [left, top, right, bottom] = [
+			inner.x,
+			inner.y,
+			inner.right ?? inner.x + inner.width,
+			inner.bottom ?? inner.y + inner.height
+		];
+		assert.ok(left >= outer.x - 0.5, `${what}: ${left.toFixed(1)} is left of the button's ${outer.x.toFixed(1)}`);
+		assert.ok(top >= outer.y - 0.5, `${what}: ${top.toFixed(1)} is above the button's ${outer.y.toFixed(1)}`);
+		const [r, b] = [outer.x + outer.width, outer.y + outer.height];
+		assert.ok(right <= r + 0.5, `${what}: ${right.toFixed(1)} is right of the button's ${r.toFixed(1)}`);
+		assert.ok(bottom <= b + 0.5, `${what}: ${bottom.toFixed(1)} is below the button's ${b.toFixed(1)}`);
+	}
+
+	// The glyph was a fixed 16px square in a 16px button with a 1px
+	// outline, so it hung a pixel out of every side.
+	test('the glyph fits inside its button, on a horizontal bar and on a vertical one', async () => {
+		await withApp(async ({ page }) => {
+			for (const edge of ['top', 'right', 'left', 'bottom']) {
+				if (edge !== 'top') {
+					await chooseBar(page, 'repl', edge);
+					await settled(page);
+				}
+				const { box, svg, ink } = await drawn(page, 'repl');
+				assert.ok(box.width >= 16 && box.height >= 16, `the ${edge} bar's button is ${box.width}x${box.height}`);
+				inside(svg, box, `the ${edge} bar's glyph box`);
+				inside(ink, box, `the ${edge} bar's strokes`);
+				// Smaller than the button, which is what «fits» asks for.
+				assert.ok(svg.width < box.width, `the ${edge} bar's glyph is ${svg.width}px in a ${box.width}px button`);
+			}
+		}, DESKTOP);
+	});
+
+	/**
+	 * How far each badge is from the two ENDS of its bar, reading the way
+	 * the bar reads: `lead` from the end the alignment calls `start`,
+	 * `trail` from the other. Measured in screen coordinates and turned
+	 * round on a left-hand bar, which is drawn upside down so that it
+	 * reads bottom-to-top (PaneFrame.svelte, `rotate(180deg)`).
+	 */
+	async function corner(page, id, flip) {
+		const [along, add, max] = await Promise.all([
+			boxOf(pane(page, id).locator('> .titlebar > .along')),
+			boxOf(pane(page, id).locator('> .titlebar button.add')),
+			boxOf(maximizeButton(page, id))
+		]);
+		// The bar runs along its longer side, whichever edge it is on.
+		const axis = along.width >= along.height ? 'x' : 'y';
+		const size = axis === 'x' ? 'width' : 'height';
+		const lead = (b) => (flip ? along[axis] + along[size] - (b[axis] + b[size]) : b[axis] - along[axis]);
+		const trail = (b) => along[size] - lead(b) - b[size];
+		return { lead: { add: lead(add), max: lead(max) }, trail: { add: trail(add), max: trail(max) } };
+	}
+
+	// `padding-inline: 0.5rem` keeps the badges off the frame's rounded
+	// corners, so "in the corner" is 8px in from the bar's end.
+	const CORNER = 8 + 1;
+
+	for (const edge of ['top', 'left']) {
+		test(`on a ${edge} bar the badge is at the far corner, away from the tabs`, async () => {
+			await withApp(async ({ page }) => {
+				if (edge !== 'top') {
+					await chooseBar(page, 'repl', edge);
+					await settled(page);
+				}
+
+				const flip = edge === 'left';
+
+				// `start`: the title is at the leading end, so the corner away
+				// from it is the trailing one — the badge is the last thing there.
+				const start = await corner(page, 'repl', flip);
+				assert.ok(start.trail.max <= CORNER, `align start: the badge is ${start.trail.max.toFixed(1)}px from the far end`);
+				assert.ok(
+					start.lead.max > start.lead.add + 16,
+					`align start: the badge is still beside the \`+\` (${start.lead.add.toFixed(1)} → ${start.lead.max.toFixed(1)})`
+				);
+
+				// `end`: the title has gone to the trailing end, so the badge
+				// takes the leading one — the first thing along the bar.
+				await chooseBar(page, 'repl', 'end');
+				await settled(page);
+				const done = await corner(page, 'repl', flip);
+				assert.ok(done.lead.max <= CORNER, `align end: the badge is ${done.lead.max.toFixed(1)}px from the near end`);
+				assert.ok(
+					done.lead.add > done.lead.max + 16,
+					`align end: the \`+\` did not stay with the tabs (${done.lead.add.toFixed(1)} vs ${done.lead.max.toFixed(1)})`
+				);
+
+				// Pressing it there still maximizes: the place is all that moved.
+				await press(page, 'repl');
+				assert.deepEqual(await titles(page), ['repl']);
+			}, DESKTOP);
+		});
+	}
 });
 
 /** Two panes side by side, so a nested layout has an INSIDE to maximize out of. */

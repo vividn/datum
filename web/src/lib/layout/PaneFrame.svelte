@@ -585,10 +585,13 @@
 					{/if}
 				</div>
 			{/if}
-			<!-- Inside `.along`, after the title or the last tab: the badges
-			     go where the alignment puts them, and right beside them. The
-			     order is title/tabs, `+`, maximize — `align: end` mirrors the
-			     row, so it is asserted rather than assumed. -->
+			<!-- Inside `.along`, after the title or the last tab: the `+`
+			     goes where the alignment puts them, and right beside them.
+			     The maximize is the one that leaves — the CSS sends it to
+			     the bar's far CORNER, away from the tabs, at either
+			     alignment (da-jlgp). The DOM order stays title/tabs, `+`,
+			     maximize, which is the keyboard's, so it is asserted rather
+			     than assumed. -->
 			{#if !lockedHere}
 				<button
 					type="button"
@@ -608,7 +611,9 @@
 				aria-pressed={big}
 				on:click={() => toggleMaximize(pane.id)}
 			>
-				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+				<!-- No `width`/`height` of its own: the CSS insets it inside
+				     the button, which a fixed 16px could not be. -->
+				<svg viewBox="0 0 16 16" aria-hidden="true">
 					{#if big}
 						<!-- Two offset boxes: this one comes back among the others. -->
 						<path d="M5.5 5.5h7v7h-7z" />
@@ -867,16 +872,47 @@
 		pointer-events: auto;
 	}
 
+	/* The maximize goes to the bar's far CORNER, away from the tabs (vividn,
+	   18:16 — «move this button to the other side of the tabs, ideally it
+	   would be in the corner»): on a bar aligned `start` it is the last
+	   thing along the bar, on one aligned `end` the first. The auto margin
+	   eats the free space the alignment would otherwise leave beside the
+	   title, and `order` moves the button on screen without moving it in
+	   the DOM — so the Tab walk still reaches it after the `+`. Logical,
+	   so it is the bar's own direction on a vertical bar too. A CENTRED
+	   bar keeps the badge beside the `+`: a row in the middle is at no
+	   corner, and dealing it out to one would not be the same row. */
+	.align-start > .maximize {
+		margin-inline-start: auto;
+	}
+	.align-end > .maximize {
+		order: -1;
+		margin-inline-end: auto;
+	}
+
 	/* A flat mono-colour mark in `currentColor` (da-tnv3's rule for the
 	   lock): strokes, so the two states are the same weight, and `block`
-	   so a rotated bar does not give the box a baseline's slack. */
+	   so a rotated bar does not give the box a baseline's slack.
+
+	   The box is INSIDE the button, not the 16px the viewBox is: a badge is
+	   `--badge` square with a 1px outline, so a 16px glyph on a 16px badge
+	   hung a pixel out of each side (da-jlgp). Three pixels in from the
+	   border box at either badge size, and square, so which way the bar
+	   runs makes no difference to it. The stroke does not scale with the
+	   box — a hairline at 10px and a slab at 18px are the same mark drawn
+	   twice — so it stays the 1.25px it was drawn as. */
 	.maximize svg {
 		display: block;
+		inline-size: calc(var(--badge) - 6px);
+		block-size: calc(var(--badge) - 6px);
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 1.25;
 		stroke-linecap: round;
 		stroke-linejoin: round;
+	}
+	.maximize svg path {
+		vector-effect: non-scaling-stroke;
 	}
 
 	/* Filling the page is a state, so it is drawn as one. */

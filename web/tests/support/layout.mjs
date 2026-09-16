@@ -64,7 +64,7 @@ export const menuButton = (page, id) =>
 /** A pane's `+`: the badge where the `…` was. */
 export const addButton = (page, id) => pane(page, id).locator('.titlebar button.add').first();
 
-/** A pane's maximize badge (da-00am): the one right after the `+`. Its own, not a child's. */
+/** A pane's maximize badge (da-00am): at the bar's far corner, away from the tabs (da-jlgp). Its own, not a child's. */
 export const maximizeButton = (page, id) => pane(page, id).locator('> .titlebar button.maximize');
 
 /**
