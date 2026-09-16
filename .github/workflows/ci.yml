@@ -315,11 +315,22 @@ jobs:
       # you forget, `build-and-test` re-captures them and goes red.
       # A runner is dedicated, and the load average it carries here is the
       # STALE trace of the build and the browser install that just finished,
-      # not work competing with the suite — so this job names its number (the
-      # three files four cores gave it before da-x38v) rather than reading a
-      # load that has already ended.
+      # not work competing with the suite — so this job names its number
+      # rather than reading a load that has already ended.
+      #
+      # The number is ONE, and the number it replaces (three) is why main was
+      # red. This job asserted «the three files four cores gave it», and the
+      # runner is not four cores: every shard of run 35105972379 printed
+      # `test: 2 cores, load 2.0 → 3 files at once (override)`. A file under
+      # test is about two cores' worth (a Chromium and the node driving it),
+      # so three files on two cores is a 50% oversubscription — and that, not
+      # the job cap, is what cut ten files at the 120 s budget in that run:
+      # `# fail 0` in all four shards, every red a `test timed out after
+      # 120000ms`. Sharding alone could not have fixed it, because each shard
+      # still ran three files on the same two cores. One file at a time is
+      # what `filesAtOnce` itself gives a 2-core box, said out loud.
       - name: pnpm test
         run: pnpm test
         env:
-          DATUM_TEST_CONCURRENCY: 3
+          DATUM_TEST_CONCURRENCY: 1
           DATUM_TEST_SHARD: ${{ matrix.shard }}/4
