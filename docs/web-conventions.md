@@ -164,3 +164,12 @@ file in the same commit — a convention nobody can read is a convention nobody 
     a failed anchor on `/^add widget$/i` produced the belief "the button is `+`", which then
     sat in working knowledge for a day and sent a later session hunting the wrong control.
 
+20. **A test file is the unit of a run.** Each file gets its own Chromium and its own
+    `before(startApp)`, so files are what CI splits across runners: `web/scripts/test.mjs
+    --shard N/M` (or `DATUM_TEST_SHARD=N/M`) takes the sorted `tests/*.test.mjs` by
+    `index % M === N - 1` and prints what it took, and GitHub's Web job runs four of those
+    (da-buqa — 60 files at ~26 minutes had outgrown one 4-core runner's 30-minute cap, so main
+    was red-or-cancelled for a day and every push deployed blind). Two things follow: **no file
+    may depend on another file having run** — shard 3 does not see shard 1's database — and a
+    file that grows past the 120 s per-file budget is still its own loud failure, not something
+    a bigger runner hides.

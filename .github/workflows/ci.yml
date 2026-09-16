@@ -247,15 +247,33 @@ jobs:
         run: cargo run -q -p xtask -- check lint
 
   web:
-    name: Web (datum.day)
+    name: Web (datum.day) ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     # Skipped on the forge mirror's runner (git.vividn.dev), where
     # .forgejo/workflows/ci.yml runs instead — see that file. Marker verified
     # inside a live forge job 2026-09-16: github.server_url is the instance URL.
     if: ${{ github.server_url == 'https://github.com' }}
-    # Measured on the last green main run (2026-09-09): web took a few minutes.
     # A hung step used to run until GitHub's 6-hour default; now it fails here.
+    # A quarter of the suite is a few minutes; the 30 is what one whole suite
+    # needed, kept as the ceiling a shard must stay far below.
     timeout-minutes: 30
+    # The suite outgrew one 4-core runner (da-buqa): 60 files, ~26 minutes of
+    # the 30 the job had, and main red-or-cancelled for a day with every push
+    # deploying blind. So the RUN is split, not the files — each file is its
+    # own Chromium and its own `before(startApp)`, so splitting files only
+    # ever raises the sum. `web/scripts/test.mjs` does the choosing, from the
+    # env below, and prints the files it took; this matrix only says how many
+    # parts there are. fail-fast off: a failure in one quarter must not hide
+    # what the other three would have said.
+    #
+    # `.forgejo/workflows/ci.yml` deliberately stays ONE job: its runner has
+    # capacity 1, so a matrix there would serialise four setups on one
+    # machine. When the forge has dedicated runners it adopts this matrix —
+    # a workflow-only change, because the script already shards.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: web
@@ -304,3 +322,4 @@ jobs:
         run: pnpm test
         env:
           DATUM_TEST_CONCURRENCY: 3
+          DATUM_TEST_SHARD: ${{ matrix.shard }}/4

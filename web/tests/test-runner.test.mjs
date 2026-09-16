@@ -7,6 +7,7 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { filesAtOnce } from '../scripts/concurrency.mjs';
+import { parseShard, shardFiles } from '../scripts/shard.mjs';
 
 describe('filesAtOnce', () => {
 	test('an idle box gets the cap, or its cores if it has fewer', () => {
@@ -32,5 +33,57 @@ describe('filesAtOnce', () => {
 	test('a platform without loadavg reports 0, which is idle', () => {
 		assert.equal(filesAtOnce(24, 0, 6), 6);
 		assert.equal(filesAtOnce(24, -1, 6), 6);
+	});
+});
+
+// Which files a run takes — the other half of `pnpm test`'s arithmetic. The
+// invariant the CI matrix rests on: the M shards, concatenated, are the suite
+// exactly once (da-buqa).
+
+describe('shardFiles', () => {
+	const files = Array.from({ length: 60 }, (_, i) => `tests/f${i}.test.mjs`);
+
+	test('no shard is every file', () => {
+		assert.deepEqual(shardFiles(files, undefined), files);
+	});
+
+	test('shard N/M takes index % M === N - 1', () => {
+		assert.deepEqual(shardFiles(files, { n: 1, total: 4 }).slice(0, 3), [
+			'tests/f0.test.mjs',
+			'tests/f4.test.mjs',
+			'tests/f8.test.mjs'
+		]);
+		assert.deepEqual(shardFiles(files, { n: 4, total: 4 })[0], 'tests/f3.test.mjs');
+	});
+
+	test('the four shards are the suite, once, and are within one of each other', () => {
+		const shards = [1, 2, 3, 4].map((n) => shardFiles(files, { n, total: 4 }));
+		assert.deepEqual(shards.flat().sort(), [...files].sort());
+		assert.deepEqual(
+			shards.map((s) => s.length),
+			[15, 15, 15, 15]
+		);
+	});
+
+	test('more shards than files leaves the tail empty, and loses nothing', () => {
+		const three = ['a', 'b', 'c'];
+		const shards = [1, 2, 3, 4].map((n) => shardFiles(three, { n, total: 4 }));
+		assert.deepEqual(shards.flat().sort(), three);
+		assert.deepEqual(shards[3], []);
+	});
+});
+
+describe('parseShard', () => {
+	test('N/M, and nothing at all', () => {
+		assert.deepEqual(parseShard('2/4'), { n: 2, total: 4 });
+		assert.deepEqual(parseShard(' 1/1 '), { n: 1, total: 1 });
+		assert.equal(parseShard(undefined), undefined);
+		assert.equal(parseShard(''), undefined); // an unset env var in a workflow
+	});
+
+	test('nonsense is loud, never a silently whole suite', () => {
+		for (const bad of ['0/4', '5/4', '4', 'a/b', '1/0', '-1/4', '1/4/4']) {
+			assert.throws(() => parseShard(bad), /--shard wants/, bad);
+		}
 	});
 });
