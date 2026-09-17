@@ -79,6 +79,30 @@ export const titledMenuButton = (page, title) =>
 
 export const boxOf = (locator) => locator.boundingBox();
 
+/**
+ * Where a tabbed holder's strip lies over the panes under it (da-cesj),
+ * from the boxes on the SCREEN: every inner title the strip's box meets,
+ * and every inner control its `+` meets. `titles` counts the inner titles
+ * looked at, so an empty holder cannot pass for a clear one.
+ */
+export const overStrip = (page, id) =>
+	pane(page, id).evaluate((holder) => {
+		const box = (el) => el.getBoundingClientRect();
+		const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+		const strip = holder.querySelector(':scope > .titlebar');
+		const add = box(strip.querySelector('button.add'));
+		const inner = [...holder.querySelectorAll(':scope > .content section.pane')];
+		const overlaps = inner.flatMap((p) => [
+			...[...p.querySelectorAll(':scope > .titlebar :is(.titlebox, .tabs)')]
+				.filter((t) => meet(box(strip), box(t)))
+				.map(() => `the strip lies over ${p.dataset.title}'s title`),
+			...[...p.querySelectorAll(':scope > .titlebar button')]
+				.filter((b) => meet(add, box(b)))
+				.map((b) => `the strip's + lies over ${p.dataset.title}'s ${b.className}`)
+		]);
+		return { titles: inner.length, overlaps };
+	});
+
 export const activeTab = (page, id) =>
 	pane(page, id).locator('[role="tab"][aria-selected="true"]').innerText();
 

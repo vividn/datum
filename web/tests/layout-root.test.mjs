@@ -29,6 +29,7 @@ import {
 	fill,
 	menuButton,
 	menuLines,
+	overStrip,
 	pane,
 	settled,
 	swipe,
@@ -238,6 +239,8 @@ describe('holders', () => {
 				const holder = page.locator('section.holder[data-pane="tabbed"]');
 				assert.equal(await holder.count(), 1);
 				assert.deepEqual(await holder.locator('> .titlebar [role="tab"]').allInnerTexts(), ['tail | nowview', 'aliases']);
+				// Its children's titles hang into room kept under the strip (da-cesj).
+				assert.deepEqual(await overStrip(page, 'tabbed'), { titles: 2, overlaps: [] });
 				await menuButton(page, 'tabbed').click();
 				// In a strip, Split splits the tab in front, one level deeper
 				// (da-6ji5); Break out takes it out of the strip; and the split

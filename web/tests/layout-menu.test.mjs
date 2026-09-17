@@ -27,6 +27,7 @@ import {
 	offers,
 	openBar,
 	openChooser,
+	overStrip,
 	pane,
 	rootMenuButton,
 	settled,
@@ -275,6 +276,26 @@ describe('the menu the title opens', () => {
 			assert.deepEqual(await names(), [...namesBefore, 'mine'].sort());
 		}, PHONE);
 	});
+
+	// da-cesj: the strip of a tab stack is a row of its own, and the panes
+	// a Split puts in its front tab hang their titles half a row above
+	// their outlines — into room under the strip, not under it. The
+	// phone's `mobile` layout ships such a stack (`[fields, nowview]`).
+	for (const [word, label] of [
+		['right', 'split: a new pane to the right'],
+		['below', 'split: a new pane below']
+	]) {
+		test(`Split ${word} in a tab stack: the strip lies over no inner title, and its + over no inner control`, async () => {
+			await withApp(
+				async ({ page }) => {
+					await choose(page, 'fields', label);
+					await titledPane(page, 'empty').waitFor();
+					assert.deepEqual(await overStrip(page, 'fields'), { titles: 2, overlaps: [] });
+				},
+				{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: null }
+			);
+		});
+	}
 
 	test('the + adds a tab holding what the chooser came back with; dismissed, it adds nothing', async () => {
 		await withApp(async ({ page }) => {

@@ -27,7 +27,8 @@
 
 	Floors: a child's cell is never narrower or shorter than its frame
 	(`floorOf` over `chromeOf`: a widget pane's outline and the inside
-	half of its title's row, a tabbed holder's row of tabs, and nothing
+	half of its title's row, a tabbed holder's row of tabs and the
+	half-row its children's titles hang into under it, and nothing
 	for a holder with one tab, which draws no bar at all — each on the
 	edge the bar is on, so a left-hand title adds width and no height,
 	da-13bc) — the kinds have no floor of their own (da-zh2o), so a pane
@@ -104,9 +105,10 @@
 	};
 	/**
 	 * What a pane's frame adds around its content: see PaneFrame.svelte.
-	 * The bar's row (`ROW`, the frame's `--row`) is the whole of it across
-	 * a tabbed holder's edge, and the inside half of it on a framed pane's,
-	 * where it straddles the outline.
+	 * The bar's row (`ROW`, the frame's `--row`) and half another across a
+	 * tabbed holder's edge — its strip, and the room its children's titles
+	 * straddle their outlines in — and the inside half of it on a framed
+	 * pane's, where it straddles the outline.
 	 *
 	 * A tab carrying a LAYOUT draws the frame too, however its content is
 	 * shaped (da-9puz), and insets its panes from it — the gap all round
@@ -120,8 +122,10 @@
 		const widget = !isSplit(tab.content);
 		const outline = widget || nested ? OUTLINE : 0;
 		// The inset already holds the title's half-row: only a widget pane's
-		// title lies over its content.
-		const bar = widget ? ROW / 2 : nested ? ROW + BORDER : p.tabs.length > 1 ? ROW : 0;
+		// title lies over its content. A tabbed holder's strip is a row, and
+		// the half-row its children's titles hang above them is kept clear
+		// under it (da-cesj).
+		const bar = widget ? ROW / 2 : nested ? ROW + BORDER : p.tabs.length > 1 ? ROW + ROW / 2 : 0;
 		const across = nested ? 2 * BORDER : 0;
 		return p.bar.edge === 'left' || p.bar.edge === 'right'
 			? { width: outline + bar, height: outline + across }

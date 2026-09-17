@@ -1077,6 +1077,24 @@
 		padding-right: var(--row);
 	}
 
+	/* A holder's strip is a row of its own, and the panes under it hang
+	   their titles — and their badges — half a row above their outlines:
+	   the content keeps that half clear on the strip's edge, or the strip
+	   lies over them (da-cesj). Only a holder with a strip; one without
+	   draws none and moves nothing. `chromeOf` counts this. */
+	.holder.edge-top:not(.bare) > .content {
+		padding-top: calc(max(var(--row), var(--badge)) / 2);
+	}
+	.holder.edge-bottom:not(.bare) > .content {
+		padding-bottom: calc(max(var(--row), var(--badge)) / 2);
+	}
+	.holder.edge-left:not(.bare) > .content {
+		padding-left: calc(max(var(--row), var(--badge)) / 2);
+	}
+	.holder.edge-right:not(.bare) > .content {
+		padding-right: calc(max(var(--row), var(--badge)) / 2);
+	}
+
 	/* The titles along the page's own edges hang half their row outside
 	   their panes — their badges half theirs — and the scroller would cut
 	   that half off: it reaches out over the page's margin by that much
