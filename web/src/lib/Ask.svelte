@@ -13,18 +13,23 @@
 
 	`close` carries the trimmed answer, or null for Escape, cancel or an
 	empty field. An empty answer is refused QUIETLY: the button that would
-	take it is disabled, so Enter on an empty field does nothing at all.
+	take it is disabled, so Enter on an empty field does nothing at all —
+	unless the question is `optional`, where an empty field is an answer of
+	its own (`Rename tab…`: back to the name the tab is given, da-6ji5).
+	`value` is what the field starts with.
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 
 	export let text: string;
 	export let action: string;
+	export let value = '';
+	export let optional = false;
 
 	const OK = 'ok';
 	const dispatch = createEventDispatcher<{ close: string | null }>();
 	let dialog: HTMLDialogElement;
-	let typed = '';
+	let typed = value;
 
 	$: answer = typed.trim();
 
@@ -34,7 +39,7 @@
 <dialog
 	class="ask"
 	bind:this={dialog}
-	on:close={() => dispatch('close', dialog.returnValue === OK && answer ? answer : null)}
+	on:close={() => dispatch('close', dialog.returnValue === OK && (answer || optional) ? answer : null)}
 >
 	<form method="dialog">
 		<label>
@@ -42,7 +47,7 @@
 			<input bind:value={typed} spellcheck="false" autocapitalize="none" autocomplete="off" />
 		</label>
 		<div class="buttons">
-			<button value={OK} disabled={!answer}>{action}</button>
+			<button value={OK} disabled={!answer && !optional}>{action}</button>
 			<button type="button" on:click={() => dialog.close()}>cancel</button>
 		</div>
 	</form>

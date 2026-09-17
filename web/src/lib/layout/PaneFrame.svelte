@@ -107,13 +107,14 @@
 
 <script lang="ts">
 	import { setContext, tick } from 'svelte';
+	import { ask } from '$lib/confirm.js';
 	import { writable } from 'svelte/store';
-	import type { BarAlign, BarEdge, Pane } from './types.js';
+	import type { BarAlign, BarEdge, Pane, Tab } from './types.js';
 	import { isSplit } from './types.js';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
 	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock } from './shell.js';
-	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, splitPane } from './tree.js';
+	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, setTitle, splitPane, splitTab } from './tree.js';
 	import { inForce, toggleMaximize } from './maximize.js';
 	import { labelOf, titleOf } from './registry.js';
 	import { layoutActs, menuItems } from './menu.js';
@@ -290,8 +291,14 @@
 				choose: () => void fillTab(active.id),
 				// Beside Choose…, and about the same thing: the widget in front.
 				reset: resetWidget(active),
-				// A holder's children split themselves; its own split is a tab's.
-				split: holder ? undefined : { what: 'split: a new pane', run: (t) => apply((l) => splitPane(l, pane.id, t)) },
+				rename: many && active.layout === undefined ? rename(active) : undefined,
+				// In a strip, Split splits the TAB in front (da-6ji5). A lone
+				// holder's children split themselves; its own split is a tab's.
+				split: many
+					? { what: 'split: a new pane', run: (t) => apply((l) => splitTab(l, pane.id, t)) }
+					: holder
+						? undefined
+						: { what: 'split: a new pane', run: (t) => apply((l) => splitPane(l, pane.id, t)) },
 				breakOut: canBreak ? { what: 'break out: this widget', run: (t) => apply((l) => breakOut(l, pane.id, t)) } : undefined,
 				close: {
 					label: many ? 'Close tab' : 'Close pane',
@@ -299,8 +306,25 @@
 					run: () => apply((l) => closeTab(l, pane.id, pane.active))
 				},
 				bar,
-				acts
+				acts,
+				saveAs: holder && !root ? saveAsLayout(active.id) : undefined
 			});
+
+	/**
+	 * `Rename tab…` (da-6ji5): the answer is the tab's `title`. The field
+	 * starts at the name it wears now; emptied, the title goes and the tab
+	 * wears the name it is given again (`nameOf`).
+	 */
+	const rename = (tab: Tab) => () =>
+		void ask('Rename this tab (empty: its own name again):', 'rename', labelOf(tab), true).then((to) => {
+			if (to !== null && to !== labelOf(tab)) apply((l) => setTitle(l, tab.id, to || undefined));
+		});
+
+	/** `Save as layout…` (da-6ji5): only when asked — a split is never saved by splitting. */
+	const saveAsLayout = (tabId: string) => () =>
+		void ask('Save this tab as the layout:', 'save').then((to) => {
+			if (to) attempt(saveAs(tabId, to));
+		});
 
 	/**
 	 * The `+`: the chooser, then a tab holding what it came back with —
@@ -542,7 +566,7 @@
 								{items}
 								look="tab"
 								label="menu of the {labelOf(tab)} tab"
-								title="tab menu"
+								title={labelOf(tab)}
 								role="tab"
 								aria-selected="true"
 								tabindex="0"
@@ -555,6 +579,7 @@
 								role="tab"
 								class="control tab"
 								class:modified={$modified.has(tab.id)}
+								title={labelOf(tab)}
 								aria-selected={i === pane.active}
 								tabindex={i === pane.active ? 0 : -1}
 								on:click={() => activate(i)}

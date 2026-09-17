@@ -38,8 +38,7 @@
 
 import type { ComponentType } from 'svelte';
 import type { Tab, WidgetKindMeta } from './types.js';
-import { isSplit } from './types.js';
-import type { Floor } from './tree.js';
+import { nameOf, type Floor } from './tree.js';
 import CliPane from '$lib/CliPane.svelte';
 import CommandPane from './CommandPane.svelte';
 import CustomPane from '$lib/CustomPane.svelte';
@@ -215,12 +214,10 @@ export const titleOf = (kind: string): string => KINDS[kind]?.meta.title ?? kind
  *
  * The layout a tab holds is its name — a tab carrying `layout` is one
  * thing with an identity, and wears it. Failing that its own `title`, and
- * failing that what it shows: the widget kind's title, or «split» for a
- * split of panes that is nobody's layout — scaffolding, with no name of
- * its own to wear.
+ * failing that what it shows: the widget kind's title, or for a split the
+ * names of its panes, `tail | nowview` (`nameOf`, tree.ts, da-6ji5).
  */
-export const labelOf = (tab: Tab): string =>
-	tab.layout ?? tab.title ?? (isSplit(tab.content) ? 'split' : titleOf(tab.content.kind));
+export const labelOf = (tab: Tab): string => nameOf(tab, titleOf);
 
 /**
  * The settings a fresh widget of `kind` starts with, or undefined when the

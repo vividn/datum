@@ -30,9 +30,11 @@ import {
 	pane,
 	rootMenuButton,
 	settled,
+	titledMenuButton,
 	titledPane,
 	titles
 } from './support/layout.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -213,6 +215,67 @@ describe('the menu the title opens', () => {
 		}, PHONE);
 	});
 
+	// da-6ji5 (vividn, 2026-09-17): «Split should split the current tab so
+	// that it then has two widgets» — named from them until renamed, and
+	// saved as a layout only when asked.
+	test('Split in a tab stack splits the tab in front: named from its widgets, renamed, saved only when asked', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const strip = () => pane(page, 'side').locator('> .titlebar [role="tab"]');
+			const labels = () => strip().allInnerTexts();
+			const names = () => page.evaluate(async () => (await window.datum.layouts.listLayouts()).map((l) => l.name).sort());
+			const stored = () => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('datum.layout.')).sort());
+			const [namesBefore, storedBefore] = [await names(), await stored()];
+			const tailId = await page.evaluate(() => JSON.stringify(window.datum.layout.current()).match(/"id":"([^"]+)","kind":"tail"/)[1]);
+
+			await choose(page, 'side', 'split: a new pane to the right');
+			await until(labels, (l) => l[0] === 'tail | empty');
+			assert.deepEqual(await labels(), ['tail | empty', 'nowview', 'custom'], 'the other tabs left the strip');
+			assert.equal(await strip().first().getAttribute('title'), 'tail | empty');
+			const [tail, empty] = await Promise.all([titledPane(page, 'tail'), titledPane(page, 'empty')].map(boxOf));
+			assert.ok(empty.x >= tail.x + tail.width - 1 && Math.abs(empty.y - tail.y) < 2, 'the empty half is not right of the tail');
+			const kept = await page.evaluate((id) => JSON.stringify(window.datum.layout.current()).includes(`"id":"${id}","kind":"tail"`), tailId);
+			assert.ok(kept, 'the tail widget lost its id');
+			// Splitting minted no layout: nothing new saved, no new draft name.
+			assert.deepEqual(await names(), namesBefore);
+			// The split is an edit to `day`, the enclosing layout: its draft, its dot.
+			assert.deepEqual((await stored()).filter((k) => !storedBefore.includes(k)), ['datum.layout.draft.v1.day']);
+			assert.equal(await rootMenuButton(page).locator('.dot').count(), 1, 'the edit is not the enclosing layout’s');
+
+			// The empty half filled: the name follows.
+			await titledMenuButton(page, 'empty').click();
+			await page.getByRole('menuitem', { name: 'Choose…', exact: true }).click();
+			await chooser(page).locator('button').filter({ hasText: exactly('aliases') }).click();
+			await until(labels, (l) => l[0] === 'tail | aliases');
+
+			// Renamed: the dialog starts at the name, and the name survives a reload and a further split.
+			await choose(page, 'side', 'Rename tab…');
+			const field = page.locator('dialog.ask input');
+			assert.equal(await field.inputValue(), 'tail | aliases');
+			await field.fill('pair');
+			await page.locator('dialog.ask').getByRole('button', { name: 'rename' }).click();
+			await until(labels, (l) => l[0] === 'pair');
+			await app.reload();
+			await until(labels, (l) => l[0] === 'pair');
+			await choose(page, 'side', 'split: a new pane below');
+			await until(() => titledPane(page, 'empty').count(), (n) => n === 1);
+			assert.deepEqual(await labels(), ['pair', 'nowview', 'custom']);
+			// Emptied, the tab wears the name it is given again.
+			await choose(page, 'side', 'Rename tab…');
+			await page.locator('dialog.ask input').fill('');
+			await page.locator('dialog.ask').getByRole('button', { name: 'rename' }).click();
+			await until(labels, (l) => l[0] === '(tail | aliases) / empty');
+			assert.deepEqual(await names(), namesBefore, 'renaming saved a layout');
+
+			// Save as layout…, asked for: listed, and the tab wears it.
+			await choose(page, 'side', 'Save as layout…');
+			await page.locator('dialog.ask input').fill('mine');
+			await page.locator('dialog.ask').getByRole('button', { name: 'save' }).click();
+			await until(labels, (l) => l[0] === 'mine');
+			assert.deepEqual(await names(), [...namesBefore, 'mine'].sort());
+		}, PHONE);
+	});
+
 	test('the + adds a tab holding what the chooser came back with; dismissed, it adds nothing', async () => {
 		await withApp(async ({ page }) => {
 			await addButton(page, 'tail').click();
@@ -245,7 +308,7 @@ describe('the menu the title opens', () => {
 			await page.locator('[role="menu"]').waitFor();
 			// With tabs it is the TAB that closes, and Break out gives the
 			// tab in front a pane of its own.
-			assert.deepEqual(await menuLines(page), ['Choose…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Bar', '× Close tab']);
+			assert.deepEqual(await menuLines(page), ['Choose…', 'Rename tab…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Bar', '× Close tab']);
 			await page.getByRole('menuitem', { name: 'break out: this widget below', exact: true }).click();
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			// The tab that left is a pane of its own, under the pane it left;

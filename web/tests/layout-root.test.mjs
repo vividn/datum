@@ -232,17 +232,25 @@ describe('holders', () => {
 		}, DESKTOP);
 	});
 
-	test('a holder with two tabs keeps its strip, and its menu offers no Split row', async () => {
+	test('a holder with two tabs keeps its strip, and its menu splits the tab, renames it and saves it as a layout', async () => {
 		await withApp(
 			async ({ page }) => {
 				const holder = page.locator('section.holder[data-pane="tabbed"]');
 				assert.equal(await holder.count(), 1);
-				assert.deepEqual(await holder.locator('> .titlebar [role="tab"]').allInnerTexts(), ['split', 'aliases']);
+				assert.deepEqual(await holder.locator('> .titlebar [role="tab"]').allInnerTexts(), ['tail | nowview', 'aliases']);
 				await menuButton(page, 'tabbed').click();
-				// No Split — the children of the split it holds split
-				// themselves — and Break out, which takes the tab in front out
-				// of the strip, is still offered.
-				assert.deepEqual(await menuLines(page), ['Choose…', 'Break out ← → ↑ ↓', 'Bar', '× Close tab']);
+				// In a strip, Split splits the tab in front, one level deeper
+				// (da-6ji5); Break out takes it out of the strip; and the split
+				// it holds is nobody's layout until Save as layout… is asked.
+				assert.deepEqual(await menuLines(page), [
+					'Choose…',
+					'Rename tab…',
+					'Split ← → ↑ ↓',
+					'Break out ← → ↑ ↓',
+					'Bar',
+					'Save as layout…',
+					'× Close tab'
+				]);
 				await page.keyboard.press('Escape');
 			},
 			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(tabbedHolder())) }
@@ -378,7 +386,7 @@ describe('a tab that holds a layout', () => {
 				// a split that is nobody's layout, beside a widget tab.
 				const tail = page.locator('section.holder[data-pane="tabbed"]');
 				assert.equal(await tail.count(), 1, 'a holder made by splitting drew a frame');
-				assert.deepEqual(await tail.locator('> .titlebar [role="tab"]').allInnerTexts(), ['split', 'aliases']);
+				assert.deepEqual(await tail.locator('> .titlebar [role="tab"]').allInnerTexts(), ['tail | nowview', 'aliases']);
 
 				// And the root, whose tab carries `day`, is still no box at all:
 				// the shell draws its name and its tabs (da-0a5o).

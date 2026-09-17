@@ -743,18 +743,23 @@ export async function restore(tabId: NodeId, version?: number): Promise<void> {
 	await replaceCopies(name, saved);
 }
 
-/** This copy's tree under a new name, and this copy pointed at it; the original keeps its save. */
+/**
+ * This copy's tree under a new name, and this copy pointed at it; the
+ * original keeps its save. A tab holding no layout — a split made by
+ * splitting a tab (da-6ji5) — is saved the same way and becomes a copy of
+ * the new layout, as a tab that holds one is: `Save as layout…`.
+ */
 export async function saveAs(tabId: NodeId, newName: string): Promise<void> {
-	const tab = copyOf(tabId);
+	const tab = findTab(get(layout), tabId);
 	if (!tab || !newName || newName === tab.layout) return;
-	const name = tab.layout as string;
+	const name = tab.layout;
 	const copy = await saveAsSaved(extract(tab), newName);
 	// This copy first, then its baseline, then the old draft: `settle` runs
 	// on each, and would write the edit back under the old name if the tab
 	// still carried it when the new baseline landed.
 	apply((l) => ({ ...l, root: mapTabs(l.root, (t) => (t.id === tabId ? { ...t, layout: newName } : t)) }));
 	baselines.update((b) => ({ ...b, [newName]: baselineOf(copy) }));
-	clearDraft(name);
+	if (name !== undefined) clearDraft(name);
 	await replaceCopies(newName, copy);
 }
 

@@ -258,6 +258,21 @@ function placed(root: Pane, paneId: NodeId, fresh: Pane, toward: Toward): Pane {
 }
 
 /**
+ * Split the TAB in front of a pane with several tabs (da-6ji5): the tab
+ * stays where it is in the strip, and what it holds becomes a split of
+ * that and a new empty pane on the arrow's side — `splitPane` one level
+ * deeper. So on the phone's `COL(daystrip, TABS[tail · nowview · custom], widgetbar)`,
+ * right gives `COL(daystrip, TABS[ROW(tail, empty) · nowview · custom], widgetbar)`.
+ * A tab already holding a split the arrow's way takes the new pane at
+ * that end; any other is wrapped. The widget keeps its id.
+ */
+export function splitTab(layout: Layout, paneId: NodeId, toward: Toward): Layout {
+	const pane = findPane(layout, paneId);
+	if (!pane) return layout;
+	return withRoot(layout, beside(layout.root, pane.tabs[pane.active].id, null, newPane(), toward));
+}
+
+/**
  * Whether `breakOut` has anywhere to go: every pane in a split, and a tab
  * stack anywhere — the root's own included, unless a tab of it holds a
  * layout: those are the shell's root bar (shell.ts), not a stack of
@@ -547,6 +562,43 @@ export function shedLayout(layout: Layout, tabId: NodeId): Layout {
 			})
 		}))
 	);
+}
+
+/** Name a tab, or — with no title — give it back the name it is given (`nameOf`). */
+export function setTitle(layout: Layout, tabId: NodeId, title?: string): Layout {
+	return withRoot(
+		layout,
+		mapPanes(layout.root, (pane) => ({
+			...pane,
+			tabs: pane.tabs.map((tab) => {
+				if (tab.id !== tabId) return tab;
+				const { title: _, ...rest } = tab;
+				return title ? { ...rest, title } : rest;
+			})
+		}))
+	);
+}
+
+/**
+ * What a tab is called: the layout it holds, else its own title, else
+ * what it shows — its widget kind's title (`kindTitle`), or for a split
+ * the names of its panes' front tabs in the notation vividn writes by hand
+ * (da-6ji5): ` | ` across a row, ` / ` down a column, a nested split in
+ * parentheses — `tail | (nowview / custom)`. Derived on every read, so it
+ * is always true; it is a label and never an identity.
+ */
+export function nameOf(tab: Tab, kindTitle: (kind: string) => string): string {
+	if (tab.layout !== undefined) return tab.layout;
+	if (tab.title !== undefined) return tab.title;
+	if (!isSplit(tab.content)) return kindTitle(tab.content.kind);
+	const { children, direction } = tab.content;
+	return children
+		.map(({ tabs, active }) => {
+			const front = tabs[active];
+			const name = nameOf(front, kindTitle);
+			return front.layout === undefined && front.title === undefined && isSplit(front.content) ? `(${name})` : name;
+		})
+		.join(direction === 'row' ? ' | ' : ' / ');
 }
 
 /** Every node id in the tree, for a uniqueness check. */

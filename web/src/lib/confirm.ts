@@ -24,10 +24,11 @@ export function confirm(text: string, action: string, name = ''): Promise<boolea
 /**
  * What the reader typed in answer to `text`, trimmed — or null for Escape,
  * cancel, or nothing typed (`Ask.svelte`, da-y992). The app's own `prompt()`.
+ * The field starts at `value`; `optional` takes an empty field as `''`.
  */
-export function ask(text: string, action: string): Promise<string | null> {
+export function ask(text: string, action: string, value = '', optional = false): Promise<string | null> {
 	return new Promise((resolve) => {
-		const dialog = new Ask({ target: document.body, props: { text, action } });
+		const dialog = new Ask({ target: document.body, props: { text, action, value, optional } });
 		dialog.$on('close', ({ detail }) => {
 			dialog.$destroy();
 			resolve(detail);

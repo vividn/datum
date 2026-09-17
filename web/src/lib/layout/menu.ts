@@ -136,21 +136,27 @@ export function menuItems(spec: {
 	 * Beside `Choose…`, because like it it is about the widget in front.
 	 */
 	reset?: () => void;
+	/** `Rename tab…` (da-6ji5): a tab of a strip that holds no layout — a layout tab wears its layout's name. */
+	rename?: () => void;
 	split?: Aimed;
 	breakOut?: Aimed;
 	close: { label: string; disabled?: boolean; run: () => void };
 	bar?: Item;
 	acts?: Acts;
+	/** `Save as layout…` (da-6ji5): a tab holding a split that is nobody's layout yet. */
+	saveAs?: () => void;
 	/** The root's own, appended: `export backup…`. */
 	extra?: Item[];
 }): Item[] {
 	return [
 		{ label: 'Choose…', run: spec.choose },
 		...(spec.reset ? [{ label: 'Reset widget', run: spec.reset }] : []),
+		...(spec.rename ? [{ label: 'Rename tab…', run: spec.rename }] : []),
 		...(spec.split ? [{ label: 'Split', row: aimed(spec.split.what, spec.split.run) }] : []),
 		...(spec.breakOut ? [{ label: 'Break out', row: aimed(spec.breakOut.what, spec.breakOut.run) }] : []),
 		...(spec.bar ? [spec.bar] : []),
 		...(spec.acts ? layoutActs(spec.acts) : []),
+		...(spec.saveAs ? [{ label: 'Save as layout…', run: spec.saveAs }] : []),
 		...(spec.extra ?? []),
 		{ label: spec.close.label, glyph: CLOSE, disabled: spec.close.disabled, run: spec.close.run }
 	];

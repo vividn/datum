@@ -30,10 +30,13 @@ import {
 	setActive,
 	setBar,
 	setLocked,
+	nameOf,
 	setRatios,
+	setTitle,
 	setWidget,
 	shedLayout,
 	splitPane,
+	splitTab,
 	floorOf,
 	rootFloorOf
 } from '../src/lib/layout/tree.ts';
@@ -309,6 +312,112 @@ describe('breakOut', () => {
 		const kept = after.root.tabs[0].content.children[2];
 		assert.deepEqual(kinds(kept), ['tail', EMPTY_KIND]);
 		assert.equal(findPane(after, q.id), undefined, 'the survivor pane itself is gone');
+	});
+});
+
+// da-6ji5 (vividn, 2026-09-17: «Split should split the current tab so that
+// it then has two widgets»): in a strip, Split goes one level deeper.
+describe('splitTab', () => {
+	/** The phone’s `day` column: COL(daystrip, TABS[tail · nowview · custom], widgetbar). */
+	function phone() {
+		const stack = newPane([widgetTab('tail'), widgetTab('nowview'), widgetTab('custom')]);
+		const column = newSplit('column', [newPane([widgetTab('daystrip')]), stack, newPane([widgetTab('widgetbar')])]);
+		column.ratios = [0.25, 0.5, 0.25];
+		return { layout: { version: 1, name: 'test', root: newPane([newTab(column)]) }, stack };
+	}
+	const stackOf = (layout) => layout.root.tabs[0].content.children[1];
+	const label = (tab) => nameOf(tab, (kind) => kind);
+
+	test('the tab in front holds a split of what it held and a new empty pane, on the arrow’s side', () => {
+		const { layout, stack } = phone();
+		for (const [toward, want] of [
+			['right', 'COL(daystrip, TABS[ROW(tail, empty) · nowview · custom], widgetbar)'],
+			['left', 'COL(daystrip, TABS[ROW(empty, tail) · nowview · custom], widgetbar)'],
+			['down', 'COL(daystrip, TABS[COL(tail, empty) · nowview · custom], widgetbar)'],
+			['up', 'COL(daystrip, TABS[COL(empty, tail) · nowview · custom], widgetbar)']
+		]) {
+			const after = splitTab(layout, stack.id, toward);
+			assert.ok(isCanonical(after), toward);
+			assert.equal(shape(after.root), want, toward);
+			assert.deepEqual(after.root.tabs[0].content.ratios, [0.25, 0.5, 0.25], `${toward}: the enclosing ratios moved`);
+			const tab = stackOf(after).tabs[0];
+			assert.equal(tab.id, stack.tabs[0].id, `${toward}: the tab kept its place`);
+			assert.deepEqual(tab.content.ratios, [0.5, 0.5], toward);
+			const widget = tab.content.children.flatMap((c) => c.tabs).find((t) => t.content.kind === 'tail').content;
+			assert.equal(widget.id, stack.tabs[0].content.id, `${toward}: the widget’s id`);
+			const ids = allIds(after);
+			assert.equal(new Set(ids).size, ids.length, `${toward}: an id was reused`);
+		}
+	});
+
+	test('a tab already split joins that split the same way, and wraps it across', () => {
+		const { layout, stack } = phone();
+		const once = splitTab(layout, stack.id, 'right');
+		const same = splitTab(once, stack.id, 'right');
+		assert.equal(shape(same.root), 'COL(daystrip, TABS[ROW(tail, empty, empty) · nowview · custom], widgetbar)');
+		assert.deepEqual(stackOf(same).tabs[0].content.ratios, [0.5, 0.25, 0.25]);
+		assert.equal(
+			shape(splitTab(once, stack.id, 'left').root),
+			'COL(daystrip, TABS[ROW(empty, tail, empty) · nowview · custom], widgetbar)'
+		);
+		const across = splitTab(once, stack.id, 'down');
+		assert.ok(isCanonical(across));
+		assert.equal(shape(across.root), 'COL(daystrip, TABS[COL(ROW(tail, empty), empty) · nowview · custom], widgetbar)');
+	});
+
+	test('closing the empty half gives the tab back its widget, and its name', () => {
+		const { layout, stack } = phone();
+		const split = splitTab(layout, stack.id, 'right');
+		assert.equal(label(stackOf(split).tabs[0]), 'tail | empty');
+		const empty = stackOf(split).tabs[0].content.children[1];
+		const closed = closeTab(split, empty.id, 0);
+		assert.ok(isCanonical(closed));
+		assert.equal(shape(closed.root), 'COL(daystrip, TABS[tail · nowview · custom], widgetbar)');
+		assert.equal(label(stackOf(closed).tabs[0]), 'tail');
+		assert.equal(stackOf(closed).tabs[0].content.id, stack.tabs[0].content.id);
+	});
+
+	test('a tab holding a layout is split inside it, and keeps its name', () => {
+		const { layout, stack } = phone();
+		const held = { ...stack, tabs: [{ ...stack.tabs[0], layout: 'mine' }, ...stack.tabs.slice(1)] };
+		const column = layout.root.tabs[0].content;
+		const before = { ...layout, root: { ...layout.root, tabs: [{ ...layout.root.tabs[0], content: { ...column, children: [column.children[0], held, column.children[2]] } }] } };
+		const tab = stackOf(splitTab(before, stack.id, 'right')).tabs[0];
+		assert.equal(tab.layout, 'mine');
+		assert.equal(shape({ tabs: [tab] }), 'ROW(tail, empty)');
+	});
+});
+
+describe('nameOf', () => {
+	const label = (tab) => nameOf(tab, (kind) => kind);
+	const pane = (...kinds) => newPane(kinds.map(widgetTab));
+
+	test('a widget tab is its kind, a titled one its title, a layout its name', () => {
+		assert.equal(label(widgetTab('tail')), 'tail');
+		assert.equal(label({ ...widgetTab('tail'), title: 'log' }), 'log');
+		assert.equal(label({ ...widgetTab('tail'), title: 'log', layout: 'day' }), 'day');
+	});
+
+	test('a row is ` | `, a column ` / `, a nested split in parentheses, each pane by its front tab', () => {
+		assert.equal(label(newTab(newSplit('row', [pane('tail'), pane('nowview')]))), 'tail | nowview');
+		assert.equal(label(newTab(newSplit('column', [pane('tail'), pane('nowview')]))), 'tail / nowview');
+		const nested = newTab(newSplit('row', [pane('tail'), newPane([newTab(newSplit('column', [pane('nowview'), pane('custom')]))])]));
+		assert.equal(label(nested), 'tail | (nowview / custom)');
+		const stacked = { ...pane('repl', 'aliases'), active: 1 };
+		assert.equal(label(newTab(newSplit('row', [pane('tail'), stacked]))), 'tail | aliases');
+		const renamed = newPane([{ ...newTab(newSplit('column', [pane('nowview'), pane('custom')])), title: 'side' }]);
+		assert.equal(label(newTab(newSplit('row', [pane('tail'), renamed]))), 'tail | side');
+	});
+
+	test('setTitle pins a name, and an empty one gives the derived name back', () => {
+		const layout = { version: 1, name: 'test', root: newPane([newTab(newSplit('row', [pane('tail'), pane('nowview')])), widgetTab('custom')]) };
+		const id = layout.root.tabs[0].id;
+		const named = setTitle(layout, id, 'mine');
+		assert.equal(label(named.root.tabs[0]), 'mine');
+		const back = setTitle(named, id, undefined);
+		assert.equal(label(back.root.tabs[0]), 'tail | nowview');
+		assert.equal('title' in back.root.tabs[0], false);
+		assert.deepEqual(back, layout);
 	});
 });
 
@@ -706,7 +815,7 @@ describe('any sequence of operations', () => {
 		for (let i = 0; i < 1000; i++) {
 			const pane = pick(everyPane(layout));
 			const dir = pick(['left', 'right', 'up', 'down']);
-			switch (Math.floor(rand() * 7)) {
+			switch (Math.floor(rand() * 8)) {
 				case 0:
 					layout = splitPane(layout, pane.id, dir);
 					break;
@@ -727,6 +836,9 @@ describe('any sequence of operations', () => {
 				}
 				case 5:
 					layout = addEdge(layout, pick(['top', 'bottom', 'left', 'right']));
+					break;
+				case 6:
+					layout = splitTab(layout, pane.id, dir);
 					break;
 				default:
 					layout = setActive(layout, pane.id, Math.floor(rand() * 4));
