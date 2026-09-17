@@ -111,7 +111,7 @@ function boxes({ page }) {
 	return page.evaluate(() =>
 		Object.fromEntries(
 			[...document.querySelectorAll('section.pane')].map((pane) => {
-				const body = pane.querySelector('.body');
+				const body = pane.querySelector('.body:not(.behind .body)');
 				return [
 					pane.dataset.title,
 					{
@@ -457,7 +457,7 @@ describe('the tail pane', () => {
 					await seedLines(app, TEN_ROWS);
 					// Up to the top and the wheel turned, until all ten are in
 					// the table: each pull asks for the page above.
-					const tail = app.page.locator('section.pane[data-title="tail"] .body');
+					const tail = app.page.locator('section.pane[data-title="tail"] .body:not(.behind .body)');
 					const count = () => app.page.locator('section.pane[data-title="tail"] tbody tr').count();
 					// Ten entries, and one TRACK document per field they bring
 					// into being — coffee, work, mood, posture, nap, project,
@@ -480,7 +480,7 @@ describe('the tail pane', () => {
 					const box = await app.page.evaluate(() => {
 						const body = [...document.querySelectorAll('section.pane')]
 							.find((p) => p.dataset.title === 'tail')
-							.querySelector('.body');
+							.querySelector('.body:not(.behind .body)');
 						return { scrollWidth: body.scrollWidth, clientWidth: body.clientWidth };
 					});
 					assert.ok(

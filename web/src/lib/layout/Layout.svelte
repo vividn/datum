@@ -49,6 +49,7 @@
 <script lang="ts">
 	import Pane from '$lib/Pane.svelte';
 	import PaneFrame, { ROW } from './PaneFrame.svelte';
+	import TabBody from './TabBody.svelte';
 	import { fillTab } from './chooser.js';
 	import type { NodeId, Pane as PaneNode, Split } from './types.js';
 	import { isSplit } from './types.js';
@@ -86,10 +87,7 @@
 
 	$: active = pane.tabs[pane.active];
 	$: content = active.content;
-
-	$: kind = isSplit(content) || content.kind === EMPTY_KIND ? undefined : KINDS[content.kind];
 	$: canClose = !(pane.id === rootId && pane.tabs.length === 1);
-	$: lockedHere = locked || !!active.locked;
 	/**
 	 * The maximized pane (da-00am), resolved HERE and nowhere else: the root
 	 * render is the one place that substitutes a subtree, so there is no
@@ -145,7 +143,8 @@
 
 	// ---- dragging a border -----------------------------------------------
 
-	let splitEl: HTMLDivElement | undefined;
+	/** Every mounted tab's split, by id: a hidden tab keeps its own (da-rjmg). */
+	const splitEls: Record<NodeId, HTMLDivElement> = {};
 	let drag: {
 		index: number;
 		origin: number;
@@ -159,8 +158,9 @@
 	/** The ratios being dragged, shown on the cells and not yet in the tree. */
 	let preview: number[] | null = null;
 
-	function cells(): HTMLElement[] {
-		return splitEl ? [...splitEl.querySelectorAll<HTMLElement>(':scope > .cell')] : [];
+	function cells(split: Split): HTMLElement[] {
+		const el = splitEls[split.id];
+		return el ? [...el.querySelectorAll<HTMLElement>(':scope > .cell')] : [];
 	}
 
 	function extent(el: HTMLElement, split: Split): number {
@@ -170,7 +170,7 @@
 
 	/** Each child's floor as a share of the split, from what is on screen. */
 	function minRatios(split: Split): number[] {
-		const boxes = cells();
+		const boxes = cells(split);
 		let free = 0;
 		let share = 0;
 		split.children.forEach((child, i) => {
@@ -189,7 +189,7 @@
 		const border = event.currentTarget as HTMLElement;
 		border.setPointerCapture(event.pointerId);
 		border.focus();
-		const boxes = cells();
+		const boxes = cells(split);
 		if (!boxes[index] || !boxes[index + 1]) return;
 		const span = extent(boxes[index], split) + extent(boxes[index + 1], split);
 		drag = {
@@ -272,78 +272,89 @@
 		     and nothing in the tree changed, so the press that puts it back
 		     puts everything back with it. -->
 		<svelte:self pane={big.pane} {epoch} {rootId} locked={big.locked} />
-	{:else if isSplit(content)}
-		{@const split = content}
-		{@const least = pane.id === rootId ? legible(pane) : undefined}
-		{@const grow = preview ?? split.ratios}
-		<div
-			class="split {split.direction}"
-			bind:this={splitEl}
-			data-split={split.id}
-			style:min-width={least && `${least.width}px`}
-			style:min-height={least && `${least.height}px`}
-		>
-			{#each split.children as child, i (child.id)}
-				{#if i > 0}
-					{#if lockedHere}
-						<div class="border static" aria-hidden="true"></div>
-					{:else}
-						<!-- A focusable separator is a widget in ARIA (it carries a
-						     value), which is what the keyboard needs it to be. -->
-						<!-- svelte-ignore a11y-no-noninteractive-tabindex a11y-no-noninteractive-element-interactions -->
-						<div
-							class="border"
-							role="separator"
-							tabindex="0"
-							aria-orientation={split.direction === 'row' ? 'vertical' : 'horizontal'}
-							aria-valuenow={Math.round((preview ?? split.ratios)[i - 1] * 100)}
-							aria-valuemin="0"
-							aria-valuemax="100"
-							aria-label="resize"
-							on:pointerdown={(e) => down(e, split, i - 1)}
-							on:pointermove={(e) => move(e, split)}
-							on:pointerup={() => up(split)}
-							on:pointercancel={() => up(split)}
-							on:keydown={(e) => nudge(e, split, i - 1)}
-						></div>
-					{/if}
-				{/if}
-				<div
-					class="cell {named(child)}"
-					style:--ratio={grow[i]}
-					style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
-				>
-					<svelte:self pane={child} {epoch} {rootId} locked={lockedHere} />
-				</div>
-			{/each}
-		</div>
-	{:else if content.kind === EMPTY_KIND}
-		{@const tabId = active.id}
-		<Pane title="empty">
-			<div class="choose">
-				<button type="button" class="control" on:click={() => void fillTab(tabId)}
-					>Choose Widget/Layout</button
-				>
-			</div>
-		</Pane>
-	{:else if kind}
-		{@const widget = content}
-		{@const fold = kind.onChange}
-		<!-- A widget that changes its own settings (the strip's day height,
-		     the stats widget's pickers) says so with `change`, and the tree
-		     keeps them — through the kind's `onChange`, which knows what
-		     the event's detail is. -->
-		<svelte:component
-			this={kind.component}
-			{...kind.props ? kind.props(widget.settings) : { settings: widget.settings }}
-			{epoch}
-			on:change={(e) =>
-				fold && apply((l) => setWidget(l, active.id, { ...widget, settings: fold(widget.settings, e.detail) }))}
-		/>
 	{:else}
-		<Pane title={content.kind}>
-			<p class="quiet">no widget of kind “{content.kind}” in this build</p>
-		</Pane>
+		<!-- Every tab of the pane is mounted, the one in front and the ones
+		     behind it (da-rjmg), so a swipe moves a picture already drawn.
+		     Not the root's: its tabs are whole layouts, and one is plenty. -->
+		{#each pane.id === rootId ? [active] : pane.tabs as tab (tab.id)}
+		{@const content = tab.content}
+		<TabBody active={tab === active}>
+			{#if isSplit(content)}
+				{@const split = content}
+				{@const least = pane.id === rootId ? legible(pane) : undefined}
+				{@const grow = (tab === active && preview) || split.ratios}
+				<div
+					class="split {split.direction}"
+					bind:this={splitEls[split.id]}
+					data-split={split.id}
+					style:min-width={least && `${least.width}px`}
+					style:min-height={least && `${least.height}px`}
+				>
+					{#each split.children as child, i (child.id)}
+						{#if i > 0}
+							{#if locked || tab.locked}
+								<div class="border static" aria-hidden="true"></div>
+							{:else}
+								<!-- A focusable separator is a widget in ARIA (it carries a
+								     value), which is what the keyboard needs it to be. -->
+								<!-- svelte-ignore a11y-no-noninteractive-tabindex a11y-no-noninteractive-element-interactions -->
+								<div
+									class="border"
+									role="separator"
+									tabindex="0"
+									aria-orientation={split.direction === 'row' ? 'vertical' : 'horizontal'}
+									aria-valuenow={Math.round(grow[i - 1] * 100)}
+									aria-valuemin="0"
+									aria-valuemax="100"
+									aria-label="resize"
+									on:pointerdown={(e) => down(e, split, i - 1)}
+									on:pointermove={(e) => move(e, split)}
+									on:pointerup={() => up(split)}
+									on:pointercancel={() => up(split)}
+									on:keydown={(e) => nudge(e, split, i - 1)}
+								></div>
+							{/if}
+						{/if}
+						<div
+							class="cell {named(child)}"
+							style:--ratio={grow[i]}
+							style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
+						>
+							<svelte:self pane={child} {epoch} {rootId} locked={locked || !!tab.locked} />
+						</div>
+					{/each}
+				</div>
+			{:else if content.kind === EMPTY_KIND}
+				{@const tabId = tab.id}
+				<Pane title="empty">
+					<div class="choose">
+						<button type="button" class="control" on:click={() => void fillTab(tabId)}
+							>Choose Widget/Layout</button
+						>
+					</div>
+				</Pane>
+			{:else if KINDS[content.kind]}
+				{@const widget = content}
+				{@const kind = KINDS[content.kind]}
+				{@const fold = kind.onChange}
+				<!-- A widget that changes its own settings (the strip's day height,
+				     the stats widget's pickers) says so with `change`, and the tree
+				     keeps them — through the kind's `onChange`, which knows what
+				     the event's detail is. -->
+				<svelte:component
+					this={kind.component}
+					{...kind.props ? kind.props(widget.settings) : { settings: widget.settings }}
+					{epoch}
+					on:change={(e) =>
+						fold && apply((l) => setWidget(l, tab.id, { ...widget, settings: fold(widget.settings, e.detail) }))}
+				/>
+			{:else}
+				<Pane title={content.kind}>
+					<p class="quiet">no widget of kind “{content.kind}” in this build</p>
+				</Pane>
+			{/if}
+		</TabBody>
+		{/each}
 	{/if}
 </PaneFrame>
 

@@ -41,7 +41,7 @@ const boxes = (page) =>
 		};
 		const empty = document.querySelector('section.pane[data-title="empty"]');
 		return {
-			split: rect(document.querySelector('section.root > .content > .split')),
+			split: rect(document.querySelector('section.root > .content > .tab-body > .split')),
 			fresh: empty ? rect(empty) : null
 		};
 	});

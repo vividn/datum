@@ -234,7 +234,9 @@ export function registerLine(el: HTMLInputElement, widget: boolean): () => void 
  * blur, and whenever the line empties — run, cleared, or a verb spent.
  */
 export const focusLine = (keyboard = true): void => {
-	const widgets = lines.filter((l) => l.widget);
+	// A widget in a tab behind is mounted too (da-rjmg), and inert: it can
+	// take no caret, so the next widget line or the bar's takes it.
+	const widgets = lines.filter((l) => l.widget && !l.el.closest('[inert]'));
 	const el = (widgets.at(-1) ?? lines.find((l) => !l.widget))?.el;
 	if (!el) return;
 	if (keyboard) el.removeAttribute('inputmode');

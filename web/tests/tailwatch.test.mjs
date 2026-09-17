@@ -21,7 +21,7 @@ after(stopApp);
 const geometry = (page) =>
 	page.evaluate(() => {
 		const pane = document.querySelector('section.pane[data-title="tail"]');
-		const body = pane.querySelector('.body');
+		const body = pane.querySelector('.body:not(.behind .body)');
 		const style = getComputedStyle(body);
 		const box = body.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
 		const thead = pane.querySelector('thead');
@@ -76,7 +76,7 @@ const atRest = (page) =>
 		() => {
 			if (window.__datumInflight !== 0) return false;
 			const pane = document.querySelector('section.pane[data-title="tail"]');
-			const body = pane?.querySelector('.body');
+			const body = pane?.querySelector('.body:not(.behind .body)');
 			const trs = [...(pane?.querySelectorAll('tbody tr') ?? [])];
 			if (!body || trs.length === 0) return false;
 			const style = getComputedStyle(body);
@@ -150,7 +150,7 @@ const seedIndex = (hid) => Number(hid.slice(4));
  */
 const toTop = (page) =>
 	page.evaluate(() => {
-		const body = document.querySelector('section.pane[data-title="tail"] .body');
+		const body = document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)');
 		body.scrollTop = 0;
 		const top = body.getBoundingClientRect().top;
 		const trs = [...body.querySelectorAll('tbody tr')];
@@ -159,7 +159,7 @@ const toTop = (page) =>
 
 /** Turn the wheel up over the tail's body. */
 async function wheelUp(page) {
-	const b = await page.locator('section.pane[data-title="tail"] .body').boundingBox();
+	const b = await page.locator('section.pane[data-title="tail"] .body:not(.behind .body)').boundingBox();
 	await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
 	await page.mouse.wheel(0, -120);
 }
@@ -280,7 +280,7 @@ describe('scrolling up', () => {
 				// A finger pulling down over the table, as the device's own
 				// input — not a synthetic DOM event. From its middle: the
 				// pane's tabs sit on its outline, over the body's top edge.
-				const b = await page.locator('section.pane[data-title="tail"] .body').boundingBox();
+				const b = await page.locator('section.pane[data-title="tail"] .body:not(.behind .body)').boundingBox();
 				const cdp = await page.context().newCDPSession(page);
 				const x = b.x + b.width / 2;
 				const y = b.y + b.height / 2 - 30;
@@ -377,7 +377,7 @@ describe('a write', () => {
 				// Up the older rows, a little short of the top — the top asks
 				// for the page above, and this is about a write, not a page.
 				await page.evaluate(() => {
-					document.querySelector('section.pane[data-title="tail"] .body').scrollTop = 10;
+					document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)').scrollTop = 10;
 				});
 				const g1 = await geometry(page);
 				assert.equal(g1.scrollTop, 10);
@@ -474,7 +474,7 @@ describe('a write', () => {
 				// layout --json` of the data db for what a kit shipped
 				// (da-gg0v), and that is not a listing this pane asked for.
 				if (message?.op === 'cli' && message.argv[0] === 'tail' && message.argv[1] === '--json') {
-					const body = document.querySelector('section.pane[data-title="tail"] .body');
+					const body = document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)');
 					const style = body && getComputedStyle(body);
 					window.__tailAsks.push({
 						n: Number(message.argv[message.argv.indexOf('-n') + 1]),
@@ -506,7 +506,7 @@ describe('a write', () => {
 				await page.waitForFunction(
 					() => {
 						if (window.__datumInflight !== 0) return false;
-						const body = document.querySelector('section.pane[data-title="tail"] .body');
+						const body = document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)');
 						const trs = [...body.querySelectorAll('tbody tr')];
 						return trs.at(-1)?.textContent.includes('another-name') && body.scrollHeight <= body.clientHeight + 1;
 					},

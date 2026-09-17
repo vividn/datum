@@ -68,7 +68,7 @@ describe('the default layout', () => {
 			await app.submit('switch mood happy');
 			await app.page.waitForFunction(
 				() =>
-					document.querySelector('section[data-pane="tail"] .body')?.textContent.includes('mood') &&
+					document.querySelector('section[data-pane="tail"] .body:not(.behind .body)')?.textContent.includes('mood') &&
 					(document.querySelector('section[data-pane="nowview"] svg.svg')?.outerHTML ?? '').includes(
 						'data-field="mood"'
 					)
@@ -172,7 +172,7 @@ describe('on a phone', () => {
 			await app.submit('tail');
 			await addTab(page, 'repl', 'aliases');
 			await pane(page, 'repl').locator('[role="tab"]', { hasText: 'repl' }).click();
-			const body = pane(page, 'repl').locator('.body');
+			const body = pane(page, 'repl').locator('.body:not(.behind .body)');
 			assert.ok(
 				await body.evaluate((el) => el.scrollWidth > el.clientWidth),
 				'the REPL body does not scroll sideways — this case needs a wider line'
@@ -226,7 +226,7 @@ describe('holders', () => {
 			assert.equal(await tail.locator('> .titlebar button.title').count(), 1);
 			assert.equal(await tail.locator('> .titlebar button.add').count(), 1);
 			// And the holder's box is its split's box: no row above it.
-			const [holder, split] = await Promise.all([boxOf(side), boxOf(side.locator('> .content > .split'))]);
+			const [holder, split] = await Promise.all([boxOf(side), boxOf(side.locator('> .content > .tab-body > .split'))]);
 			assert.equal(Math.round(holder.y), Math.round(split.y), 'the split does not start where the holder does');
 			assert.equal(Math.round(holder.height), Math.round(split.height));
 		}, DESKTOP);
@@ -278,7 +278,7 @@ describe('holders', () => {
 		await withApp(async ({ page }) => {
 			const root = page.locator('section.root');
 			assert.equal(await root.locator('> .titlebar').count(), 0);
-			const [frame, split] = await Promise.all([boxOf(root), boxOf(root.locator('> .content > .split'))]);
+			const [frame, split] = await Promise.all([boxOf(root), boxOf(root.locator('> .content > .tab-body > .split'))]);
 			assert.equal(Math.round(frame.y), Math.round(split.y));
 		}, DESKTOP);
 	});
@@ -352,7 +352,7 @@ describe('a tab that holds a layout', () => {
 			// bar's edge) is what keeps the two outlines two.
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'mine', 'nowview', 'stats', 'custom', 'fields']);
 			const [frame] = await boxes(mine);
-			const inside = await boxes(mine.locator(':scope > .content > .split > .cell section.pane'));
+			const inside = await boxes(mine.locator(':scope > .content > .tab-body > .split > .cell section.pane'));
 			assert.equal(inside.length, 2);
 			for (const p of inside)
 				assert.ok(p.x > frame.x && p.y > frame.y && p.right < frame.right && p.bottom < frame.bottom, `a pane of the layout is not inside its frame: ${JSON.stringify(p)} in ${JSON.stringify(frame)}`);
@@ -409,7 +409,7 @@ describe('a tab that holds a layout', () => {
 			await settled(page);
 			const mine = page.locator('section.pane[data-title="mine"]');
 			const [frame] = await boxes(mine);
-			const inside = await boxes(mine.locator(':scope > .content > .split > .cell section.pane'));
+			const inside = await boxes(mine.locator(':scope > .content > .tab-body > .split > .cell section.pane'));
 			assert.equal(inside.length, 2);
 			for (const p of inside)
 				assert.ok(p.x >= frame.x && p.right <= frame.right, `a pane of the layout runs out of its frame: ${JSON.stringify(p)} in ${JSON.stringify(frame)}`);

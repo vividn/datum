@@ -552,10 +552,12 @@ function app(page, errors, query) {
 		 * pane's title is its `data-title` (da-jdop): the h2 when it has one
 		 * tab, the active tab's label when it has several — so a pane
 		 * behind another tab is not "showing" anything, and is not found.
+		 * The tabs behind it are mounted too (da-rjmg): the body read is
+		 * the one in front.
 		 */
 		paneText: (title) =>
 			page
-				.locator(`section.pane[data-title="${title}"]`)
+				.locator(`section.pane[data-title="${title}"] > .content > .tab-body:not(.behind)`)
 				.locator('.body')
 				.innerText(),
 

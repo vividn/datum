@@ -73,7 +73,7 @@ describe('resizing', () => {
 			const held = await pastDays(page);
 			const before = await shownDays(page);
 			// The root's column border, under the strip: down is a taller strip.
-			const border = page.locator('section.root > .content > .split.column > [role="separator"]').first();
+			const border = page.locator('section.root > .content > .tab-body > .split.column > [role="separator"]').first();
 			const took = await dragFor(page, border, 0, 200, 1000);
 			const during = drawnRuns(await seen());
 			const mid = await shownDays(page);

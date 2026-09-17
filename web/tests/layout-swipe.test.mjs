@@ -89,7 +89,7 @@ describe('the root swipes between layouts', () => {
 	async function wideRepl(app) {
 		await app.submit(`occur ${'x'.repeat(60)}`);
 		await app.submit('tail');
-		const body = pane(app.page, 'repl').locator('.body');
+		const body = pane(app.page, 'repl').locator('.body:not(.behind .body)');
 		assert.ok(
 			await body.evaluate((el) => el.scrollWidth > el.clientWidth),
 			'the REPL does not scroll sideways — this case needs a wider line'
@@ -112,7 +112,7 @@ describe('the root swipes between layouts', () => {
 				await until(() => shown(page), (name) => name === 'tail');
 				assert.deepEqual(await titles(page), ['tail'], 'the second layout is not what is on screen');
 
-				const back = page.locator('section.pane .body').first();
+				const back = page.locator('section.pane .body:not(.behind .body)').first();
 				await scrollX(back, false);
 				await swipeOver(page, back, 120, 0);
 				await until(() => shown(page), (name) => name === 'day');
@@ -195,7 +195,7 @@ describe('a scroller keeps the gesture until its end', () => {
 				// pane has to scroll to show.
 				await app.submit(`occur ${'x'.repeat(60)}`);
 				await app.submit('tail');
-				const body = pane(page, 'wide').locator('.body');
+				const body = pane(page, 'wide').locator('.body:not(.behind .body)');
 				assert.ok(
 					await body.evaluate((el) => el.scrollWidth > el.clientWidth),
 					'the REPL does not scroll sideways — this case needs a wider line'
@@ -229,7 +229,7 @@ describe('the innermost frame that can move takes the gesture', () => {
 	test("a tabbed pane moves its own tab; on its last it lets the root move the layout", async () => {
 		await withApp(
 			async ({ page }) => {
-				const body = pane(page, 'side').locator('.body');
+				const body = pane(page, 'side').locator('.body:not(.behind .body)');
 				await scrollX(body, true);
 				await swipeOver(page, body, -120, 0);
 				await until(() => activeTab(page, 'side'), (t) => t === 'nowview');
@@ -238,13 +238,13 @@ describe('the innermost frame that can move takes the gesture', () => {
 				// On the pane's LAST tab there is nowhere for it to go, so the
 				// same swipe reaches the root and moves the whole layout.
 				await pane(page, 'side').locator('[role="tab"]', { hasText: 'custom' }).click();
-				const last = pane(page, 'side').locator('.body');
+				const last = pane(page, 'side').locator('.body:not(.behind .body)');
 				await scrollX(last, true);
 				await swipeOver(page, last, -120, 0);
 				await until(() => shown(page), (name) => name === 'tail');
 
 				// And the pane it left is as it was: the root moved, not it.
-				const back = page.locator('section.pane .body').first();
+				const back = page.locator('section.pane .body:not(.behind .body)').first();
 				await scrollX(back, false);
 				await swipeOver(page, back, 120, 0);
 				await until(() => shown(page), (name) => name === 'day');
@@ -295,7 +295,7 @@ describe('the frame always swipes', () => {
 
 				// The widget inside is a scroller, and mid-scroll: it would keep
 				// a gesture that started over it. The finger does not.
-				const inner = pane(page, 'm-tail').locator('.body');
+				const inner = pane(page, 'm-tail').locator('.body:not(.behind .body)');
 				await inner.evaluate((el) => (el.scrollLeft = Math.floor(el.scrollWidth / 2)));
 				const content = pane(page, id).locator('> .content');
 				await swipeOver(page, content, -120, 0, { x: 0.01, y: 0.5 });
@@ -311,7 +311,7 @@ describe('the motion', () => {
 	test('the content follows the finger, slides on, and comes back to rest', async () => {
 		await withApp(async ({ page }) => {
 			const content = pane(page, 'side').locator('> .content');
-			const body = pane(page, 'side').locator('.body');
+			const body = pane(page, 'side').locator('.body:not(.behind .body)');
 			const rows = await pane(page, 'side').locator('tbody tr').count();
 			await scrollX(body, true);
 			await watch(content);
@@ -335,7 +335,7 @@ describe('the motion', () => {
 	test('a swipe too short comes back, and the tab does not move', async () => {
 		await withApp(async ({ page }) => {
 			const content = pane(page, 'side').locator('> .content');
-			const body = pane(page, 'side').locator('.body');
+			const body = pane(page, 'side').locator('.body:not(.behind .body)');
 			await scrollX(body, true);
 			await watch(content);
 			await swipeOver(page, body, -20, 0);

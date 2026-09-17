@@ -92,7 +92,8 @@
 
 	Then the content follows the finger, and the release slides it the rest
 	of the way off and brings the next tab in from the far side — two
-	phases through the one box, so no two tabs are ever mounted at once.
+	phases through the one box. Every tab is mounted and drawn already
+	(da-rjmg, `TabBody.svelte`), so what moves is a picture, not a mount.
 -->
 <script lang="ts" context="module">
 	/**
@@ -495,8 +496,8 @@
 	 * The swap, with the motion: the content goes the rest of the way off
 	 * the way the finger went, the tab is switched under it, and what the
 	 * box holds now comes in from the far side. Two phases, ONE box — the
-	 * neighbour is never mounted beside the tab in front, so no widget runs
-	 * twice. A tab pressed in the strip, or reached by an arrow, still
+	 * tab behind is already drawn in it (da-rjmg), so the switch runs
+	 * nothing. A tab pressed in the strip, or reached by an arrow, still
 	 * switches instantly: the motion belongs to the swipe.
 	 */
 	async function slide(next: number, way: number) {
