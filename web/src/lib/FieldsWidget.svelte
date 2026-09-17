@@ -393,7 +393,7 @@
      buttons finds it. -->
 <span class="probe" aria-hidden="true"><button class="widget" bind:this={probe} tabindex="-1">probe</button></span>
 
-<div class="bar" class:sideways bind:this={bar} data-rows={rows}>
+<div class="bar" class:sideways bind:this={bar} data-rows={rows} style:--rows={rows}>
 	{#if picking}
 		{@const chosen = picking}
 		<!-- The states, in place of the fields (da-g635): `< Back` first —
@@ -604,8 +604,19 @@
 		overflow-y: auto;
 	}
 
+	/* Sideways: as many rows as fit, flowing by column, reached left and
+	   right — the commands bar's rule and its grid, for its reasons
+	   (CommandsWidget.svelte, da-hs6c). The rows share the box equally
+	   rather than sizing to their content, so `Track +`, taller than the
+	   chip the rows were counted with, cannot push the second row out of
+	   the box. `order` (`.slot.last`) is honoured by the grid as by flex. */
 	.bar.sideways {
-		flex-wrap: nowrap;
+		display: grid;
+		grid-auto-flow: column;
+		grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+		grid-auto-columns: max-content;
+		justify-content: start;
+		justify-items: start;
 		overflow-x: auto;
 		overflow-y: hidden;
 	}

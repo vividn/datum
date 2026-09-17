@@ -142,6 +142,7 @@ describe('the widget fits its screen, legibly', () => {
 					return {
 						rows: Number(el.dataset.rows),
 						wrap: style.flexWrap,
+						display: style.display,
 						x: style.overflowX,
 						y: style.overflowY,
 						scrolls: el.scrollWidth > el.clientWidth,
@@ -168,12 +169,13 @@ describe('the widget fits its screen, legibly', () => {
 				assert.ok(bar.fits, 'the bar is wider than the pane it is in');
 				if (bar.rows <= 2) {
 					assert.deepEqual(
-						[bar.wrap, bar.x, bar.y],
-						['nowrap', 'auto', 'hidden'],
-						`${bar.rows} rows of room: one row, reached sideways`
+						[bar.display, bar.x, bar.y],
+						['grid', 'auto', 'hidden'],
+						`${bar.rows} rows of room: as many rows as fit, reached sideways`
 					);
-					assert.equal(bar.drawn, 1, `${bar.rows} rows of room, but the bar drew ${bar.drawn}`);
-					if (bar.crowded) assert.ok(bar.scrolls, 'the buttons overflow but the bar does not scroll');
+					// A column-flow grid fills every row it has (da-hs6c).
+					assert.equal(bar.drawn, bar.rows, `${bar.rows} rows of room, but the bar drew ${bar.drawn}`);
+					if (bar.rows === 1 && bar.crowded) assert.ok(bar.scrolls, 'the buttons overflow but the bar does not scroll');
 				} else {
 					assert.deepEqual(
 						[bar.wrap, bar.x, bar.y],

@@ -14,6 +14,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp as withAnyApp, seedLines, workerClock } from './support/app.mjs';
 import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
+import { atRows, axes, boxes, lastReached } from './support/rows.mjs';
 
 before(startApp);
 after(stopApp);
@@ -242,98 +243,52 @@ describe('a verb fills the line and filters the fields', () => {
 });
 
 describe('the scroll rule', () => {
-	/**
-	 * Resize the page until the commands bar reports `want` rows.
-	 *
-	 * The bar says how many rows its box holds (`data-rows`), and the box
-	 * is a share of the page: three panes divide the column, so how much
-	 * of a change in the page's height reaches this one is measured
-	 * between two sizes rather than assumed. The box aimed at is the
-	 * middle of the band that holds `want` rows, so a pixel of rounding
-	 * cannot land on the edge of the next one.
-	 */
-	async function atRows(page, want) {
-		const GAP = 6.4;
-		let last = null;
-		for (let i = 0; i < 14; i += 1) {
-			const { rows, row, box } = await page.evaluate(() => {
-				const pane = document.querySelector('section[data-pane="cmd"]');
-				return {
-					rows: Number(pane.querySelector('.bar').dataset.rows),
-					row: pane.querySelector('.probe button').offsetHeight,
-					box: pane.querySelector('.bar').clientHeight
-				};
-			});
-			if (rows === want) return;
-			const { width, height } = page.viewportSize();
-			const measured = last && last.height !== height ? (box - last.box) / (height - last.height) : 0;
-			const slope = measured > 0.05 ? measured : 1 / 3;
-			const target = (want + 0.5) * (row + GAP) - GAP;
-			last = { height, box };
-			const next = Math.round(height + (target - box) / slope);
-			await page.setViewportSize({ width, height: Math.min(3000, Math.max(200, next)) });
-			await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-		}
-		assert.fail(`the bar never reported ${want} rows`);
-	}
-
-	/**
-	 * How a bar scrolls, and how many rows its buttons are drawn on.
-	 *
-	 * The rows are counted by the middle of each button, since the bar
-	 * centres what it lays out and two buttons of different heights on one
-	 * line share only that. The probe is not one of them.
-	 */
-	const axes = (locator) =>
-		locator.evaluate((bar) => {
-			const style = getComputedStyle(bar);
-			const lines = new Set(
-				[...bar.querySelectorAll('button:not([tabindex="-1"])')].map((b) => {
-					const box = b.getBoundingClientRect();
-					return Math.round(box.top + box.height / 2);
-				})
-			);
-			return {
-				x: style.overflowX,
-				y: style.overflowY,
-				wrap: style.flexWrap,
-				rows: lines.size,
-				/** Does the bar hold its buttons, or spill them out of the pane? */
-				fits: bar.getBoundingClientRect().width <= bar.parentElement.getBoundingClientRect().width + 1
-			};
-		});
-
-	test('two rows high is one row reached sideways; four rows wraps and is reached down', async () => {
+	test('one row high draws one row and two draw two, both reached sideways; three wraps and is reached down', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 
-			await atRows(page, 2);
-			assert.deepEqual(await axes(commands(page)), {
-				x: 'auto',
-				y: 'hidden',
-				wrap: 'nowrap',
-				rows: 1,
-				fits: true
-			});
-			// And the row really is reached by scrolling, not by spilling.
-			assert.ok(
-				await commands(page).evaluate((bar) => bar.scrollWidth > bar.clientWidth + 1),
-				'every command already fits: nothing is being scrolled to'
-			);
-			// The fields widget alike — the same rule, the same box.
-			const short = await axes(fieldsBar(page));
-			assert.deepEqual(
-				[short.x, short.y, short.wrap, short.rows, short.fits],
-				['auto', 'hidden', 'nowrap', 1, true]
-			);
+			for (const want of [1, 2]) {
+				await atRows(page, 'cmd', want);
+				assert.deepEqual(await axes(commands(page)), {
+					x: 'auto',
+					y: 'hidden',
+					display: 'grid',
+					rows: want,
+					fits: true
+				});
+				const drawn = await boxes(commands(page), 'button[data-command]');
+				assert.deepEqual(drawn.filter((b) => !b.inside).map((b) => b.name), [], `${want} rows: clipped`);
+				if (want === 2) {
+					// Column-major: Undo over Redo, then occur over start.
+					const [undo, redo, occur, start] = drawn;
+					assert.deepEqual(
+						[undo.left === redo.left, undo.line < redo.line, occur.left === start.left, occur.line < start.line],
+						[true, true, true, true],
+						'the first two columns are not Undo/Redo and occur/start'
+					);
+					assert.ok(occur.left > undo.left, 'occur is not right of Undo');
+				}
+				// And the rest really is reached by scrolling, not by spilling.
+				assert.ok(
+					await commands(page).evaluate((bar) => bar.scrollWidth > bar.clientWidth + 1),
+					'every command already fits: nothing is being scrolled to'
+				);
+				assert.ok(await lastReached(commands(page), 'button[data-command]'), `${want} rows: the last command is not reached`);
 
-			await atRows(page, 4);
+				// The fields widget alike — the same rule, the same box.
+				const short = await axes(fieldsBar(page));
+				assert.deepEqual([short.x, short.y, short.display, short.fits], ['auto', 'hidden', 'grid', true]);
+			}
+
+			// Narrow enough that the commands need three lines to wrap onto.
+			await page.setViewportSize({ width: 390, height: page.viewportSize().height });
+			await atRows(page, 'cmd', 3);
 			const tall = await axes(commands(page));
-			assert.deepEqual([tall.x, tall.y, tall.wrap, tall.fits], ['hidden', 'auto', 'wrap', true]);
-			assert.ok(tall.rows > 1, 'the commands did not wrap');
+			assert.deepEqual([tall.x, tall.y, tall.display, tall.fits], ['hidden', 'auto', 'flex', true]);
+			assert.ok(tall.rows >= 3, `the commands drew ${tall.rows} rows`);
 			const fields = await axes(fieldsBar(page));
-			assert.deepEqual([fields.x, fields.y, fields.wrap, fields.fits], ['hidden', 'auto', 'wrap', true]);
+			assert.deepEqual([fields.x, fields.y, fields.display, fields.fits], ['hidden', 'auto', 'flex', true]);
 		});
 	});
 });

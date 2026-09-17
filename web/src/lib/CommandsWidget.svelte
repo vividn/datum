@@ -23,7 +23,8 @@
 
 	The SCROLL RULE (vividn): one or two button-rows high and the bar is one
 	row that scrolls left and right; three or more and it wraps and
-	scrolls up and down. The rows are counted from the box the layout
+	scrolls up and down. «One row» is the scrolling, not the buttons: two
+	rows high draws the buttons on two rows (da-hs6c). The rows are counted from the box the layout
 	gave the bar and the height of `probe` — a real button, drawn and
 	hidden — so the bar's own height never enters the question.
 -->
@@ -49,7 +50,7 @@
      out of flow, so nothing that reads the bar's buttons finds it. -->
 <span class="probe" aria-hidden="true"><button class="command" bind:this={probe} tabindex="-1">probe</button></span>
 
-<div class="bar commands" class:sideways bind:this={bar} data-rows={rows}>
+<div class="bar commands" class:sideways bind:this={bar} data-rows={rows} style:--rows={rows}>
 	{#each COMMANDS as command (command.name)}
 		<button
 			class="command"
@@ -84,10 +85,22 @@
 		overflow-y: auto;
 	}
 
-	/* One row, reached sideways: at one or two rows high there is no room
-	   to wrap into, so the bar stops wrapping instead of hiding buttons. */
+	/* Reached sideways: at one or two rows high the buttons fill as many
+	   rows as fit and the bar scrolls left and right (da-hs6c). A grid
+	   flowing by COLUMN, not a column-wrapping flex box: it keeps the DOM
+	   order (tab order, reading order) while drawing Undo over Redo, occur
+	   over start, so the commands used most stay together at the left
+	   edge. `--rows` is the measured count, never the content's height;
+	   each row takes an equal share of the box and centres its buttons, as
+	   the one-row flex line did. A column is as wide as its widest button,
+	   and the narrower one keeps its label's width, ragged left. */
 	.bar.sideways {
-		flex-wrap: nowrap;
+		display: grid;
+		grid-auto-flow: column;
+		grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+		grid-auto-columns: max-content;
+		justify-content: start;
+		justify-items: start;
 		overflow-x: auto;
 		overflow-y: hidden;
 	}
