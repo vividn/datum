@@ -95,6 +95,26 @@ const contentWidth = (page, id) =>
 // of the drag's. A fixed clock never turns a minute.
 const STILL = { ...DESKTOP, clock: todayAt(12) };
 
+/**
+ * Wait for a drop's redraw of `id`, and give up 400ms later.
+ *
+ * The drop may have nothing to ask for — the last throttle tick can
+ * already have had the final box — so the wait needs a bound, and the
+ * bound has to be measured on the same clock as the waiting. Playwright's
+ * `timeout` is node's own; a `Date.now() - <node timestamp>` INSIDE the
+ * page is not, because `STILL` freezes the page's clock (da-r61i). That
+ * subtraction is a constant there: large and positive before the pinned
+ * hour, negative for the rest of the day after it — so for most of the
+ * day it never passed 200 and the wait hung on a redraw the assertion
+ * below says may never come (da-ru9t).
+ */
+const waitForRedraw = (page, id, before) =>
+	page
+		.waitForFunction(([of, was]) => window.__datumSeen.filter((a) => a[0] === of).length > was, [id, before], { timeout: 400 })
+		.catch((e) => {
+			if (e.name !== 'TimeoutError') throw e;
+		});
+
 describe('resizing', () => {
 	test('a border dragged 200px over a second redraws a drawn pane 2–6 times, and once more at the drop', async () => {
 		await withApp(async (app) => {
@@ -116,11 +136,7 @@ describe('resizing', () => {
 			// The drop is the leading edge: the newest box is asked for at
 			// once, not a throttle period later — unless the last tick had it
 			// already, in which case there is nothing left to ask.
-			await page.waitForFunction(
-				([before, at]) =>
-					window.__datumSeen.filter((a) => a[0] === 'nowview').length > before || Date.now() - at > 200,
-				[during.nowview, dropped]
-			);
+			await waitForRedraw(page, 'nowview', during.nowview);
 			await app.idle();
 			const after = drawnRuns(await seen());
 			const atDrop = after.nowview - during.nowview;
@@ -133,6 +149,41 @@ describe('resizing', () => {
 			const img = pane(page, 'nowview').locator('svg.svg');
 			const shown = await img.evaluate((el) => ({ natural: el.width.baseVal.value, box: el.getBoundingClientRect().width }));
 			assert.ok(Math.abs(shown.natural - shown.box) <= 1, `scaled: ${JSON.stringify(shown)}`);
+		}, STILL);
+	});
+
+	// The case above's other branch, made certain rather than waited for
+	// (da-ru9t): hold the pointer still until the throttle's tick has taken
+	// the final box, and the drop's flush finds nothing pending — so no
+	// redraw is coming and the wait can only end on its bound. This is the
+	// test of the test. Under a bound read from the page's held clock it
+	// ended nowhere, and the file died on the 30s timeout instead.
+	test('a drop whose box the last tick already had asks for nothing, and the wait still ends', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const seen = await app.spyOnRunner();
+			const border = page.locator('.split.row > [role="separator"]');
+			const at = await grab(page, border);
+			for (let i = 1; i <= 5; i++) await page.mouse.move(at.x + i * 20, at.y);
+			// A throttle period after the first of those moves, the trailing
+			// tick draws the newest box — the one the pointer came to rest on.
+			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'nowview'));
+			await app.idle();
+			const before = drawnRuns(await seen()).nowview;
+			// It is the FINAL box: the picture already fits the pane it is in,
+			// which is what leaves the drop nothing to ask for.
+			assert.equal(await canvasWidth(page, 'nowview'), await contentWidth(page, 'nowview'));
+
+			const from = Date.now();
+			await page.mouse.up();
+			await waitForRedraw(page, 'nowview', before);
+			const waited = Date.now() - from;
+			await app.idle();
+			const atDrop = drawnRuns(await seen()).nowview - before;
+			console.log(`  drop: nowview ran ${atDrop}x, waited ${waited}ms for it`);
+			assert.equal(atDrop, 0, `the drop asked ${atDrop}x for a box the tick already had`);
+			assert.ok(waited < 5000, `the wait for a redraw that was never coming took ${waited}ms`);
+			assert.equal(await canvasWidth(page, 'nowview'), await contentWidth(page, 'nowview'));
 		}, STILL);
 	});
 
