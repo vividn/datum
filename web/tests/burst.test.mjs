@@ -1,6 +1,10 @@
-// A burst of changes to a pane costs at most two processes and paints only
-// the last (da-eoq3): the run already out, then the newest request — never
-// the ones between. And the worker's queue drops a keyed job that has not
+// A burst of changes to a pane runs one process at a time and paints only
+// the newest (da-eoq3): the run already out, then the newest request — never
+// the ones between. How many runs that is depends on how many came back
+// DURING the burst, which is the box's speed and not the page's: under load
+// none does and the burst costs two; on an idle box one returns mid-burst
+// and a third is rightly asked for (da-w2oj). So the bound is counted
+// against the returns the page really saw. And the worker's queue drops a keyed job that has not
 // started when a newer one with the same key arrives; a keyless one never.
 //
 // Delta-blind on purpose: runs are counted at the seam, paints off the DOM,
@@ -37,8 +41,13 @@ describe('a burst of changes', () => {
 				const burst = await page.evaluate(
 					async ([band, scope]) => {
 						const ran = [];
+						const nowview = { out: 0, most: 0, back: 0, bursting: true };
 						const previous = window.datum.setRunner(async (argv, ...rest) => {
+							const mine = argv[0] === 'nowview';
+							if (mine) nowview.most = Math.max(nowview.most, ++nowview.out);
 							const result = await previous(argv, ...rest);
+							if (mine) nowview.out--;
+							if (mine && nowview.bursting) nowview.back++;
 							if (!result.superseded) ran.push(argv);
 							return result;
 						});
@@ -63,7 +72,8 @@ describe('a burst of changes', () => {
 							await new Promise((r) => setTimeout(r, 0));
 							dimmed ||= !!document.querySelector(`${scope} .picture.behind`);
 						}
-						return { dimmed };
+						nowview.bursting = false;
+						return { dimmed, most: nowview.most, back: nowview.back };
 					},
 					[TODAY, NOWVIEW]
 				);
@@ -76,8 +86,16 @@ describe('a burst of changes', () => {
 					behind: document.querySelectorAll(`${scope} .behind`).length
 				}), NOWVIEW);
 				assert.ok(requested.length >= 2, `a burst of ${requested.length} requests is no burst`);
-				assert.ok(ran.length <= 2, `${ran.length} nowview processes for one burst: ${JSON.stringify(ran)}`);
-				assert.equal(paints, 1, 'an intermediate picture was painted');
+				assert.equal(burst.most, 1, `${burst.most} nowview runs out at once`);
+				// Each return during the burst may start one more; past those,
+				// the run still out when it ends and then the newest request.
+				assert.ok(
+					ran.length <= burst.back + 2,
+					`${ran.length} nowview processes for one burst: ${JSON.stringify(ran)} (${burst.back} came back during it)`
+				);
+				// A return with nothing newer behind it is the newest picture
+				// of its moment; one with a newer request waiting is never drawn.
+				assert.ok(paints >= 1 && paints <= burst.back + 1, `an intermediate picture was painted: ${paints} paints, ${burst.back} returns during the burst`);
 				assert.deepEqual(ran.at(-1), requested.at(-1), 'the last run is not the last request');
 				assert.ok(burst.dimmed, 'the old picture was not dimmed while the new one was on its way');
 				assert.equal(behind, 0, 'the final picture is still dimmed');

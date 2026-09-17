@@ -21,7 +21,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -91,6 +91,9 @@ describe('a database too big to sort in cache', () => {
 			// the one the template was taken from), so the window function
 			// over the whole table really ran.
 			assert.match(stats.stdout, new RegExp(`over ${SPILL_ENTRIES + 1} entries`));
-		});
+			// Held at noon: the template is logged at 07:00 today, and before
+			// 07:00 that entry is in the future, which `stats` leaves out —
+			// 20 000, one short, every night until 07:00 (da-w2oj).
+		}, { clock: todayAt(12) });
 	});
 });
