@@ -9,27 +9,84 @@
 	comment beside it is the contract: as long as a colour keeps doing that
 	job, changing it stays a colour change and touches one line.
 */
+/*
+	The logo's face (da-y992): Gemunu Libre Light, weight 300. vividn on PR
+	#25 chose the face — "let's use Gemunu Libre, at it's thinnest weight"
+	(it was Geo before that) — and then, having seen 200: "Let's increase
+	the font weight to 300, otherwise it looks good". A long name at the
+	mark's floor size had gone faint at 200. SIL OFL 1.1, vendored under `static/fonts/` with
+	its own licence beside it — local-first means the app looks the same
+	offline, so nothing here is fetched from fonts.gstatic. The static
+	directory is what `$service-worker`'s `files` precaches, so the face is
+	offline from the first visit on.
+
+	ONE weight, and the file is a static instance of it, not the variable
+	font: the mark asks for 300 (Brand.svelte), and a face that holds only
+	300 cannot be drawn heavier or lighter by the browser behind our back.
+
+	The latin subset. The mark draws the database's NAME, and the subset has
+	every letter, digit, `-`, `_` and `.` a name is made of, and the accented
+	latin letters too — measured in Chromium, glyph by glyph — so a name is
+	never drawn in two faces. A character outside it (a CJK name, say) is
+	drawn from the fallback stack in Brand.svelte, a character at a time.
+*/
+@font-face {
+	font-family: 'Gemunu Libre';
+	font-style: normal;
+	font-weight: 300;
+	font-display: swap;
+	src: url('/fonts/gemunu-libre-latin-300.woff2') format('woff2');
+}
+
 :root {
+	/*
+		WHICH DATABASE THE PAGE IS ON (da-y992). vividn, 2026-09-16 22:26:
+		"the base color of the app changes depending on the db you select.
+		That way it is both a logo and functional." And on PR #25: "change
+		the subtle background color too, not just the accent color."
+
+		So every colour below down to `--ink-bright` is ONE hue — they were
+		all hue 240, the page's blue, already — and only that hue moves:
+		`hueOf` in $lib/database.ts derives it from the database's name and
+		the shell writes it here (routes/+layout.svelte). Each keeps the
+		saturation and lightness it had, which is why `datum`, at 240, is
+		today's palette to the byte (#0a0a1a … #adadff).
+
+		That is also the contrast guarantee, rather than a clamp on the
+		hash: with S and L fixed, what a hue can change is only how light a
+		colour LOOKS, and every pair the app reads text on was measured at
+		all 360 hues — no pair that is legible at 240 falls under 4.5:1 at
+		any other. Accent on `--tint` is the tightest, 4.76:1, and blue
+		(today) is its worst hue; body text on `--tint` is 9.5:1 at its
+		worst. (`--muted` and `--quiet` are under 4.5:1 today, as a
+		control's rest and a placeholder are meant to be, and no hue makes
+		them fainter than 240 does.)
+
+		The colours that MEAN something are outside it and do not move with
+		the database: `--alarm`, `--error`, `--warn` below, the beta mark's
+		amber, and every field's own colour, which the CLI picks.
+	*/
+	--hue: 240;
 	/* The ground behind the panes: the page itself, and the ink on a filled accent. */
-	--page: #0a0a1a;
+	--page: hsl(var(--hue) 44.4% 7.1%);
 	/* A pane's, a bar's, a menu's own background — one step up from the page. */
-	--ground: #0d0d1a;
+	--ground: hsl(var(--hue) 33.3% 7.6%);
 	/* A hovered row's ground, and a rule quiet enough to sit inside a pane. */
-	--tint: #1e1e38;
+	--tint: hsl(var(--hue) 30.2% 16.9%);
 	/* Every outline, border and separator. */
-	--rule: #2a2a4a;
+	--rule: hsl(var(--hue) 27.6% 22.7%);
 	/* The app's one colour: a pane's title, a link, the thing that is chosen. */
-	--accent: #7c7cff;
+	--accent: hsl(var(--hue) 100% 74.3%);
 	/* The accent under the pointer or the keyboard. */
-	--accent-bright: #adadff;
+	--accent-bright: hsl(var(--hue) 100% 83.9%);
 	/* A control at rest, and the labels that stand beside one. */
-	--muted: #55558a;
+	--muted: hsl(var(--hue) 23.8% 43.7%);
 	/* Secondary text: a hint, a timestamp, a placeholder, a disabled word. */
-	--quiet: #444466;
+	--quiet: hsl(var(--hue) 20% 33.3%);
 	/* Body text. */
-	--ink: #c8c8e8;
+	--ink: hsl(var(--hue) 41% 84.7%);
 	/* Body text under the pointer, or text that carries more than the rest. */
-	--ink-bright: #e0e0ff;
+	--ink-bright: hsl(var(--hue) 100% 93.9%);
 	/* "Your data is not safe yet" — a warning about the future, not a
 	   report of a failure, which is why it is orange and not red. */
 	--alarm: #e8820c;

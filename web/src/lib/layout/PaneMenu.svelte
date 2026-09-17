@@ -65,9 +65,17 @@
 	 * (RootBar.svelte). `badge` is the square the root bar's `+` is, for a
 	 * button whose whole word is a glyph.
 	 */
-	export let look: 'title' | 'tab' | 'badge' = 'title';
+	export let look: 'title' | 'tab' | 'badge' | 'plain' = 'title';
 
-	const LOOK: Record<typeof look, string> = { title: 'title', tab: 'control tab', badge: 'control badge' };
+	const LOOK: Record<typeof look, string> = {
+		title: 'title',
+		tab: 'control tab',
+		badge: 'control badge',
+		// A button with no look at all, for a trigger whose appearance is
+		// its caller's own — the bottom bar's logo (da-y992, Brand.svelte),
+		// which is a word in a typeface and not a control in a frame.
+		plain: 'plain'
+	};
 
 	let open = false;
 	let button: HTMLButtonElement;
@@ -81,19 +89,31 @@
 	/** `start`, moved in so that `size` from it still ends 4px inside `limit`. */
 	const fit = (start: number, size: number, limit: number) => Math.max(4, Math.min(start, limit - size - 4));
 
-	// Placed after it has rendered, so its own size is known: below the
-	// button when there is room, above it when the button is near the
-	// bottom (a bottom bar, a left-hand bar's end), and never past either
-	// edge of the screen — a menu item off-screen is one nobody can reach.
-	async function show() {
-		open = true;
-		await tick();
+	// Placed from its own size: below the button when there is room, above
+	// it when the button is near the bottom (a bottom bar, a left-hand
+	// bar's end), and never past either edge of the screen — a menu item
+	// off-screen is one nobody can reach.
+	//
+	// Called again whenever the menu's box changes, because a menu can
+	// GROW after it has opened: the logo's list of databases is read off
+	// OPFS while the menu is already on the screen (da-y992), and a menu
+	// that fitted under a bottom bar as two items hung half off the screen
+	// as four. Placement follows the size, rather than a size measured
+	// once.
+	function place() {
+		if (!open || !button) return;
 		const box = button.getBoundingClientRect();
 		const width = menu?.offsetWidth ?? 0;
 		const height = menu?.offsetHeight ?? 0;
 		const below = box.bottom + 2;
 		const top = below + height <= window.innerHeight ? below : Math.max(4, box.top - 2 - height);
 		at = { top, left: fit(box.left, width, window.innerWidth) };
+	}
+
+	async function show() {
+		open = true;
+		await tick();
+		place();
 		// The first item that can be focused — or the menu itself, when
 		// none can: a menu may be all facts and no acts, and one holding
 		// focus nowhere is one Escape cannot close.
@@ -222,9 +242,20 @@
 		event.preventDefault();
 	}
 
-	function portal(node: HTMLElement) {
+	/**
+	 * Out to `document.body`, and — when `replace` is given — placed again
+	 * on every change of the node's own box (see `place`).
+	 */
+	function portal(node: HTMLElement, replace?: () => void) {
 		document.body.appendChild(node);
-		return { destroy: () => node.remove() };
+		const watch = replace && new ResizeObserver(() => replace());
+		watch?.observe(node);
+		return {
+			destroy: () => {
+				watch?.disconnect();
+				node.remove();
+			}
+		};
 	}
 
 	function choose(item: { run?: () => void }) {
@@ -251,6 +282,8 @@
 	aria-label={$$restProps['aria-label'] ?? ($$slots.default ? undefined : label)}
 	{title}
 	on:keydown
+	on:pointerenter
+	on:focus
 	on:click={() => (open ? close() : show())}><slot /></button
 >
 
@@ -261,7 +294,7 @@
 		tabindex="-1"
 		aria-label={label}
 		bind:this={menu}
-		use:portal
+		use:portal={place}
 		style:top="{at.top}px"
 		style:left="{at.left}px"
 		on:keydown={onMenuKey}
@@ -284,7 +317,8 @@
 			{:else}
 				<button
 					type="button"
-					role="menuitem"
+					role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+					aria-checked={item.checked}
 					class:opens={item.sub}
 					class:marked={item.marked}
 					disabled={item.disabled}
@@ -355,6 +389,18 @@
 	.title:focus-visible {
 		outline: 1px solid var(--accent);
 		outline-offset: -1px;
+	}
+
+	/* Nothing of its own: the caller draws it (see `LOOK`). */
+	.plain {
+		display: block;
+		padding: 0;
+		background: none;
+		border: none;
+		color: inherit;
+		font: inherit;
+		text-align: inherit;
+		cursor: pointer;
 	}
 
 	.menu {

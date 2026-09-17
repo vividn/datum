@@ -40,10 +40,8 @@
 import { File as MemFile, OpenFile, WASI, type Fd } from '@bjorn3/browser_wasi_shim';
 import cliWasm from './wasm/datum-cli.wasm?url';
 import { DATABASES, dbFiles, MemoryHandle, opfsDirectory, Sink, type Handle } from './wasiFs.js';
+import { OPFS_DIR } from './databases.js';
 import type { CliResult, StorageKind } from './dbProtocol.js';
-
-/** Where the CLI's files live in OPFS. */
-const OPFS_DIR = 'datum-cli';
 
 /**
  * How long a command waits for the files before failing.

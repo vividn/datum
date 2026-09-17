@@ -9,7 +9,7 @@
 // and the repl frame are rendering the SAME fact and should never be able to
 // disagree about it.
 
-import { readable } from 'svelte/store';
+import { derived, readable } from 'svelte/store';
 import { browser } from '$app/environment';
 import {
 	initDb,
@@ -90,3 +90,23 @@ export const persisted = readable<boolean | null>(null, (set) => {
 export function isDegraded(kind: StorageState): boolean {
 	return kind === 'failed' || kind === 'memory';
 }
+
+/**
+ * What the app says about where the entries are — the beta hint's sentence
+ * (Beta.svelte), and the bottom bar's title while storage is degraded
+ * (PromptBar.svelte). One store, because the two are the same claim and
+ * must never be able to disagree, wherever each of them is drawn (da-y992
+ * moved the hint to the top bar and left the alarm on the bottom one).
+ */
+export const storageSentence = derived([storage, persisted], ([$storage, $persisted]) =>
+	$storage === 'failed'
+		? 'The database could not be opened, so nothing you log here will be saved.'
+		: $storage === null
+			? 'Checking where your entries are stored…'
+			: $storage === 'memory'
+				? 'Entries are held in memory only — reloading this page discards them.'
+				: 'Your entries are stored in this browser only: clearing site data deletes them, there is no sync yet, and ' +
+					($persisted
+						? 'the browser has promised to keep them.'
+						: 'the browser may clear them if space runs short — install the app to keep them.')
+);

@@ -54,6 +54,14 @@ export type Item = {
 	row?: Short[];
 	disabled?: boolean;
 	marked?: boolean;
+	/**
+	 * One of a set the menu is CHOOSING BETWEEN, and whether this is the
+	 * one — the logo's databases (da-y992). Present makes the item a
+	 * `menuitemradio` carrying its own `aria-checked`, which is what the
+	 * keyboard and a screen reader read the choice off; absent leaves an
+	 * ordinary `menuitem`, which is every other item in the app.
+	 */
+	checked?: boolean;
 };
 
 /**

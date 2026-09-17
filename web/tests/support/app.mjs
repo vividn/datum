@@ -464,7 +464,7 @@ function app(page, errors, query) {
 
 		/**
 		 * The beta hint's sentence about the data (da-0a5o: the banner's
-		 * text, behind the ⓘ under the brand in the bottom bar).
+		 * text, behind the ⓘ beside `beta` in the root bar since da-y992).
 		 *
 		 * The hint reads the storage that actually opened, so this is the
 		 * app's own on-screen claim about whether entries survive a reload.
@@ -472,7 +472,7 @@ function app(page, errors, query) {
 		 */
 		async bannerText() {
 			const hint = page.locator('.beta-hint p');
-			if ((await hint.count()) === 0) await page.locator('.prompt-bar .hint-button').click();
+			if ((await hint.count()) === 0) await page.locator('.root-bar .hint-button').click();
 			return hint.innerText();
 		},
 

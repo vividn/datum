@@ -74,11 +74,16 @@
 	Keeping it saves the tree under its name and the italics go; closing it
 	writes nothing at all.
 
+	Just before the gear, the `beta` mark and its ⓘ (Beta.svelte): vividn on
+	PR #25, "move the beta marker up to the top bar near the gear logo"
+	(da-y992). They were under the logo on the bottom bar until then.
+
 	On a phone the tabs scroll sideways rather than wrapping — one row,
-	always — while the `+` and the gear stay where they are.
+	always — while the `+`, the beta pair and the gear stay where they are.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
+	import Beta from '$lib/Beta.svelte';
 	import { downloadBackup } from '$lib/backup.js';
 	import { confirm } from '$lib/confirm.js';
 	import { choose, fillTab } from './chooser.js';
@@ -303,6 +308,7 @@
 	</div>
 	<button type="button" class="control badge add" aria-label="open a layout" title="open a layout" on:click={add}>+</button>
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
+	<span class="end"><Beta /></span>
 	<PaneMenu
 		items={settings}
 		look="badge"
@@ -404,10 +410,10 @@
 		font-style: italic;
 	}
 
-	/* The gear: the bar's right end at every width, and a badge like the
+	/* The gear: at the bar's right end at every width, and a badge like the
 	   `+` — so it is on its 24px floor under a fingertip too
-	   (reachable.test.mjs). `auto` here rather than on the tabs, which
-	   scroll.
+	   (reachable.test.mjs). It rides at the end because `.end`, just
+	   before it, carries the `auto`.
 
 	   A BIGGER badge than the rest of the bar's, and a drawn cog rather
 	   than the `⚙` character (da-jbcv). vividn: "Make the gear icon much
@@ -416,8 +422,20 @@
 	   the em it fills is the reader's font's business and not ours. A
 	   path fills the box it is given, on every device, and the box is
 	   this one. */
-	.root-bar :global(.gear) {
+	/* The bar's right end: the beta pair, then the gear. `auto` on the pair
+	   rather than on the tabs, which scroll.
+
+	   NOT positioned, on purpose, and nothing between it and the bar may
+	   be: the beta note (Beta.svelte) is placed against the ROOT BAR, the
+	   nearest positioned ancestor. Placed against the pair instead, a
+	   phone-wide note ran off the screen's left by the gear's width
+	   (brand.test.mjs, «its note opens DOWN … whole on a phone»). */
+	.end {
 		margin-left: auto;
+		flex: none;
+	}
+
+	.root-bar :global(.gear) {
 		flex: none;
 		--badge: 28px;
 	}

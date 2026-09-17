@@ -215,8 +215,12 @@ describe('the shell', () => {
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
 
 			const bar = page.locator('.prompt-bar');
-			assert.equal(await bar.locator('.brand').innerText(), 'datum.day');
-			assert.equal(await bar.locator('.tag').evaluate((el) => el.textContent), 'beta');
+			// The mark is the database's NAME since da-y992, and this page is
+			// on the default database, which is called `datum`. The `beta`
+			// mark went up to the root bar, beside the gear.
+			assert.equal(await bar.locator('.brand').innerText(), 'datum');
+			assert.equal(await page.locator('.root-bar .tag').evaluate((el) => el.textContent), 'beta');
+			assert.equal(await bar.locator('.tag').count(), 0, 'the beta mark is still on the bottom bar');
 			assert.equal(await bar.locator('input').count(), 1);
 			// Nothing has run, so the result area has nothing to draw.
 			assert.equal(await receipt(page).count(), 0);
@@ -839,12 +843,12 @@ describe('the bottom bar', () => {
 	test('the hint opens the beta text and the storage sentence; Escape closes it', async () => {
 		await onBar(async ({ page }) => {
 			assert.equal(await page.locator('.beta-hint').count(), 0);
-			await page.locator('.prompt-bar .hint-button').click();
+			await page.locator('.root-bar .hint-button').click();
 			const text = await page.locator('.beta-hint p').innerText();
 			assert.match(text, /^datum\.day is early software\. Your entries are stored in this browser only/);
 			await page.keyboard.press('Escape');
 			await page.locator('.beta-hint').waitFor({ state: 'detached' });
-			assert.equal(await page.locator('.prompt-bar .hint-button').getAttribute('aria-expanded'), 'false');
+			assert.equal(await page.locator('.root-bar .hint-button').getAttribute('aria-expanded'), 'false');
 		});
 	});
 });

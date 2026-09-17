@@ -16,7 +16,8 @@
 	import RootBar from '$lib/layout/RootBar.svelte';
 	import { boot as bootEngine } from '$lib/layout/engine.js';
 	import { boot as bootShell } from '$lib/layout/shell.js';
-	import { currentDb, DEFAULT_DB, INTERNAL_DB, refusedDb } from '$lib/database.js';
+	import { currentDb, DEFAULT_DB, hueOf, INTERNAL_DB, refusedDb } from '$lib/database.js';
+	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 
 	// `?db=<name>` (da-vk1x). Off `$page.url` rather than `location`, so a
@@ -24,6 +25,16 @@
 	// the refusal with it; the seam reads the same query for itself.
 	$: db = $page.url ? currentDb() : DEFAULT_DB;
 	$: refused = $page.url ? refusedDb() : null;
+
+	// The page's base colour says which database it is (da-y992): one hue,
+	// derived from the name, and every accent in app.css is drawn from it.
+	//
+	// Written on the DOCUMENT rather than on `.shell`, because the things
+	// that most need to agree with the page are not inside it: a menu, a
+	// chooser and a confirm dialog are all moved out to `document.body`
+	// (PaneMenu's `portal`), where a custom property set on the shell does
+	// not reach.
+	$: if (browser) document.documentElement.style.setProperty('--hue', String(hueOf(db)));
 
 	// `window.datum` — the command seam at the browser's own prompt. Mounted
 	// here rather than at module scope because there is no window during

@@ -7,12 +7,27 @@
 // rewritten command (`dbio.ts`: `db purge`, installing a kit) ask from
 // wherever it was run.
 
+import Ask from './Ask.svelte';
 import Confirm from './Confirm.svelte';
 
 /** Whether the reader pressed `action` in a dialog saying `text` (and typed `name`, if one is given). */
 export function confirm(text: string, action: string, name = ''): Promise<boolean> {
 	return new Promise((resolve) => {
 		const dialog = new Confirm({ target: document.body, props: { text, action, name } });
+		dialog.$on('close', ({ detail }) => {
+			dialog.$destroy();
+			resolve(detail);
+		});
+	});
+}
+
+/**
+ * What the reader typed in answer to `text`, trimmed — or null for Escape,
+ * cancel, or nothing typed (`Ask.svelte`, da-y992). The app's own `prompt()`.
+ */
+export function ask(text: string, action: string): Promise<string | null> {
+	return new Promise((resolve) => {
+		const dialog = new Ask({ target: document.body, props: { text, action } });
 		dialog.$on('close', ({ detail }) => {
 			dialog.$destroy();
 			resolve(detail);

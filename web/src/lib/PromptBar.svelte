@@ -11,10 +11,11 @@
 	- the INPUT row below — the prompt line every command on the page goes
 	  through (Prompt.svelte), with the pills riding after what is typed.
 
-	At the left, spanning both, the brand with `beta` and the ⓘ that opens
-	what the beta banner used to say — that this is early software, and
-	where the entries are (the storage sentence, read off the database that
-	actually opened) — and UNDER it the clock, bright, in the input row's
+	At the left, spanning both, the brand — the NAME of the database the
+	page is on, in Gemunu Libre and in that database's colour, which is also the
+	menu of databases (da-y992, Brand.svelte). The `beta`
+	mark and its ⓘ went up to the root bar beside the gear (vividn on PR #25,
+	Beta.svelte). UNDER the brand is the clock, bright, in the input row's
 	40% so it lines up with the prompt (vividn: "Move the clock underneath
 	the logo, and make it nice and bright, takes up 40% to align with
 	command"). Which build this is went to the root bar in da-wjob.
@@ -88,19 +89,14 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import BarResult from '$lib/BarResult.svelte';
+	import Brand from '$lib/Brand.svelte';
 	import { focusLine, last, prefill, text } from '$lib/bar.js';
 	import { clockSecondsLabel, now } from '$lib/clock.js';
 	import Prompt from '$lib/Prompt.svelte';
 	import Repl from '$lib/Repl.svelte';
-	import { isDegraded, persisted, storage } from '$lib/storageState.js';
-	import { page } from '$app/stores';
-	import { withDb } from '$lib/database.js';
-
-	/** Home, inside the database this page is in (da-vk1x). */
-	$: home = $page.url ? withDb('/') : '/';
+	import { isDegraded, storage, storageSentence } from '$lib/storageState.js';
 
 	let field: HTMLElement;
-	let hint = false;
 	let expanded = false;
 
 	$: if ($prefill !== null) take($prefill);
@@ -135,33 +131,16 @@
 
 	$: degraded = isDegraded($storage);
 
-	$: sentence =
-		$storage === 'failed'
-			? 'The database could not be opened, so nothing you log here will be saved.'
-			: $storage === null
-				? 'Checking where your entries are stored…'
-				: $storage === 'memory'
-					? 'Entries are held in memory only — reloading this page discards them.'
-					: 'Your entries are stored in this browser only: clearing site data deletes them, there is no sync yet, and ' +
-						($persisted
-							? 'the browser has promised to keep them.'
-							: 'the browser may clear them if space runs short — install the app to keep them.');
-
 	function onKey(event: KeyboardEvent): void {
-		if (event.key !== 'Escape') return;
-		if (hint) {
-			hint = false;
-			event.preventDefault();
-		} else if (expanded) {
-			expanded = false;
-			event.preventDefault();
-		}
+		if (event.key !== 'Escape' || !expanded) return;
+		expanded = false;
+		event.preventDefault();
 	}
 </script>
 
 <svelte:window on:keydown={onKey} />
 
-<footer class="prompt-bar" class:alarm={degraded} title={degraded ? sentence : undefined}>
+<footer class="prompt-bar" class:alarm={degraded} title={degraded ? $storageSentence : undefined}>
 	{#if expanded}
 		<!-- Upward, over the page: the INPUT ROW is the bottom edge, so the
 		     result tier is under the scrollback's last entry. -->
@@ -172,18 +151,7 @@
 
 	<div class="brand-block">
 		<div class="brand-top">
-			<a class="brand" href={home}>datum<span class="tld">.day</span></a>
-			<span class="beta-row">
-				<span class="tag">beta</span>
-				<button
-					type="button"
-					class="hint-button"
-					aria-label="about datum.day"
-					aria-expanded={hint}
-					title="about datum.day"
-					on:click={() => (hint = !hint)}>ⓘ</button
-				>
-			</span>
+			<Brand />
 		</div>
 		<!-- Live, not restored: a command's stamp is history, this one is the
 		     clock. On a narrow screen the seconds go and the minutes stay.
@@ -198,11 +166,6 @@
 				></span
 			></span
 		>
-		{#if hint}
-			<aside class="beta-hint" role="dialog" aria-label="about datum.day">
-				<p>datum.day is early software. {sentence}</p>
-			</aside>
-		{/if}
 	</div>
 
 	<div class="tiers">
@@ -266,12 +229,15 @@
 		box-shadow: 0 -1px 0 var(--alarm) inset;
 	}
 
+	/* At least a short name's worth of room even where the clock is only
+	   `HH:MM` (a phone), and the same room whatever the name is: fixed, so
+	   a database's name never moves the prompt. */
 	.brand-block {
 		position: relative;
 		display: flex;
 		flex-direction: column;
 		flex: none;
-		min-width: 0;
+		min-width: 4.5rem;
 		line-height: 1.1;
 	}
 
@@ -284,6 +250,11 @@
 		justify-content: center;
 		flex: 1 1 auto;
 		min-height: 0;
+		/* A size container: what is in it — the database's name, which can
+		   be any length — does not widen the brand block, and so never takes
+		   room from the prompt. The block is as wide as the clock under it
+		   makes it, and the name's type is fitted to that (Brand.svelte). */
+		container-type: inline-size;
 	}
 
 	.stamp {
@@ -294,76 +265,6 @@
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 1.15rem;
 		font-variant-numeric: tabular-nums;
-	}
-
-	.brand {
-		color: var(--ink-bright);
-		text-decoration: none;
-		font-size: 1.25rem;
-	}
-
-	.tld {
-		color: var(--muted);
-	}
-
-	.beta-row {
-		display: flex;
-		align-items: center;
-		gap: 0.3rem;
-	}
-
-	/* The beta mark, the ⓘ beside it and the note it opens are an amber of
-	   their own — #f0b429 and the four shades under it — and not in the
-	   palette: they say "this software is early", which is a thing the app
-	   says about ITSELF, said once, in a corner. None of them is `--warn`,
-	   which means unsaved work. */
-	.tag {
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		font-size: 0.75rem;
-		color: var(--page);
-		background: #f0b429;
-		border-radius: 3px;
-		padding: 0 0.3rem;
-	}
-
-	.hint-button {
-		background: none;
-		border: none;
-		padding: 0;
-		font: inherit;
-		font-size: 0.95rem;
-		line-height: 1;
-		color: #c0a060;
-		cursor: pointer;
-	}
-
-	.hint-button:hover,
-	.hint-button:focus-visible,
-	.hint-button[aria-expanded='true'] {
-		color: #f0b429;
-	}
-
-	/* Above the bar, over the page: the bar is the bottom edge. */
-	.beta-hint {
-		position: absolute;
-		bottom: calc(100% + 0.6rem);
-		left: 0;
-		z-index: 20;
-		width: max-content;
-		max-width: min(28rem, calc(100vw - 2rem));
-		padding: 0.5rem 0.75rem;
-		background: #2a2010;
-		border: 1px solid #5a4418;
-		border-radius: 6px;
-		box-shadow: 0 4px 16px #00000088;
-		font-size: 0.8rem;
-		line-height: 1.35;
-	}
-
-	.beta-hint p {
-		margin: 0;
-		color: #e8d5a8;
 	}
 
 	/* The bar's own two tiers, and everything that is not the brand.
@@ -490,11 +391,9 @@
 		min-width: 0;
 	}
 
-	/* A phone: the prompt keeps the room. The brand is `datum` alone with
-	   `beta` under it, and the clock keeps its minutes and drops its
-	   seconds. */
+	/* A phone: the prompt keeps the room, and the clock keeps its minutes
+	   and drops its seconds. */
 	@media (max-width: 480px) {
-		.tld,
 		.stamp .seconds {
 			display: none;
 		}

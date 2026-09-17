@@ -144,15 +144,19 @@ describe('a database the page may not be pointed at', () => {
 });
 
 describe('navigating inside a database', () => {
-	test('a /<name> tab and the brand link both stay in it', async () => {
+	test('a /<name> tab stays in it, and the logo says which one', async () => {
 		await withApp(async (app) => {
 			// `/tail` opens that tab and puts the page back at `/` — with the
 			// query, or the reader has silently changed database.
 			await app.goto('/tail?db=other');
 			assert.equal(new URL(app.page.url()).searchParams.get('db'), 'other');
 
-			const brand = await app.page.locator('.prompt-bar a.brand').getAttribute('href');
-			assert.equal(new URL(brand, app.page.url()).searchParams.get('db'), 'other');
+			// The brand was a link home until da-y992 and is the database
+			// menu now: what it says about the page is the checked item.
+			await app.page.locator('.prompt-bar .brand').click();
+			const checked = app.page.locator('[role="menu"][aria-label="databases"] [aria-checked="true"]');
+			assert.equal((await checked.innerText()).replace(/[\u2713\u00a0]/g, '').trim(), 'other');
+			await app.page.keyboard.press('Escape');
 
 			// And the page is still running `other` after the navigation.
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);

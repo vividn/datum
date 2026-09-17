@@ -549,15 +549,17 @@ describe('the ^', () => {
 		}, DESKTOP);
 	});
 
-	// The trap of a lid on the bar's top line: the brand's ⓘ and the clock
-	// are on that line too, and a control across all of it would take their
-	// taps.
-	test('the ⓘ and the clock keep their taps', async (t) => {
+	// The trap of a lid on the bar's top line: the brand and the clock are
+	// on that line too, and a control across all of it would take their
+	// taps. (The ⓘ was the brand's neighbour here until da-y992 moved it to
+	// the root bar; the brand, which is a menu button now, took its place in
+	// this test.)
+	test('the brand and the clock keep their taps', async (t) => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await atEachScreen(t, page, [DESKTOP.viewport, NARROW.viewport], async () => {
 				const reached = await page.evaluate(() =>
-					['.prompt-bar .hint-button', '.prompt-bar .clock'].map((selector) => {
+					['.prompt-bar .brand', '.prompt-bar .clock'].map((selector) => {
 						const el = document.querySelector(selector);
 						const { left, right, top, bottom } = el.getBoundingClientRect();
 						const at = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
@@ -565,16 +567,16 @@ describe('the ^', () => {
 					})
 				);
 				assert.deepEqual(reached, [
-					'.prompt-bar .hint-button reached',
+					'.prompt-bar .brand reached',
 					'.prompt-bar .clock reached'
 				]);
 
-				await page.locator(`${BAR} .hint-button`).click();
-				await page.locator(`${BAR} .beta-hint`).waitFor();
+				await page.locator(`${BAR} .brand`).click();
+				await page.locator('[role="menu"][aria-label="databases"]').waitFor();
 				assert.deepEqual(app.errors, []);
 				// Shut again, so the next screen opens it for itself.
-				await page.locator(`${BAR} .hint-button`).click();
-				await page.locator(`${BAR} .beta-hint`).waitFor({ state: 'detached' });
+				await page.keyboard.press('Escape');
+				await page.locator('[role="menu"][aria-label="databases"]').waitFor({ state: 'detached' });
 			});
 		}, DESKTOP);
 	});

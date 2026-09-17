@@ -296,7 +296,7 @@ describe('on a phone-sized screen', () => {
 				await assertOnScreen(page, '.stats .range button', 'the range picker');
 				// And the bottom bar's prompt, whatever tab is in front.
 				await assertOnScreen(page, '.prompt-bar input', "the bottom bar's prompt");
-				await assertOnScreen(page, '.prompt-bar .hint-button', 'the beta hint');
+				await assertOnScreen(page, '.root-bar .hint-button', 'the beta hint');
 			});
 		}, { viewport: PHONE });
 	});
@@ -378,12 +378,13 @@ describe('the layout engine, by keyboard', () => {
 		await withApp(async ({ page }) => {
 			const reached = await tabWalk(page);
 			// The root bar's `+` and its active tab — which is the page's own
-			// menu button (da-wjob) — and the beta hint (da-0a5o) are walked
-			// too, and each pane's title and `+` (da-9vtw).
+			// menu button (da-wjob) — the beta hint (da-0a5o) and the logo,
+			// which is the database menu (da-y992), are walked too, and each
+			// pane's title and `+` (da-9vtw).
 			const controls = await page.evaluate(() =>
 				[
 					...document.querySelectorAll(
-						'button.title, button.add, button.maximize, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear, .prompt-bar .hint-button'
+						'button.title, button.add, button.maximize, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear, .root-bar .hint-button, .prompt-bar .brand'
 					)
 				]
 					.filter((el) => el.getClientRects().length > 0)
@@ -403,7 +404,9 @@ describe('the layout engine, by keyboard', () => {
 											? el.getAttribute('aria-label')
 											: el.matches('.hint-button')
 												? 'the beta hint'
-												: 'border'
+												: el.matches('.brand')
+													? 'the logo’s database menu'
+													: 'border'
 					}))
 			);
 			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');
