@@ -38,7 +38,7 @@
 		verb={$pending}
 		{switchLabel}
 		on:run={(e) => run(e.detail)}
-		on:line={(e) => prefill.set(e.detail)}
+		on:line={(e) => prefill.set({ line: e.detail, keyboard: true })}
 	/>
 </div>
 

@@ -40,7 +40,16 @@ export interface CommandButton {
 	/** What the button says. `Undo` and `Redo` are named, not typed. */
 	label: string;
 	press: Press;
+	/**
+	 * What the person does after a `verb` or `fill` press (da-k34p): `tap`
+	 * — a field, a pill — so the line is focused WITHOUT a phone's
+	 * keyboard; `type`, and the keyboard opens with it.
+	 */
+	next?: 'tap' | 'type';
 }
+
+/** The fillers a tap completes: an id or a time pill is what comes next. */
+const TAPPED = ['retime', 'delete', 'get', 'history'];
 
 /**
  * The commands, in the order the widget draws them: Undo (and Redo beside
@@ -53,7 +62,7 @@ export interface CommandButton {
 export const COMMANDS: CommandButton[] = [
 	{ name: 'undo', label: 'Undo', press: 'run' },
 	{ name: 'redo', label: 'Redo', press: 'run' },
-	...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb' })),
+	...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap' })),
 	...[
 		'retime',
 		'update',
@@ -80,7 +89,9 @@ export const COMMANDS: CommandButton[] = [
 		'info',
 		'config',
 		'sync'
-	].map((name): CommandButton => ({ name, label: name, press: 'fill' }))
+	].map(
+		(name): CommandButton => ({ name, label: name, press: 'fill', next: TAPPED.includes(name) ? 'tap' : 'type' })
+	)
 ];
 
 /**

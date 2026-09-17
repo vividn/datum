@@ -90,6 +90,16 @@
 
 	onMount(() => registerLine(box, widget));
 
+	/**
+	 * The keyboard back (da-k34p). A command button focuses the box with
+	 * `inputmode="none"` (`focusLine`); a `none` left behind is a prompt
+	 * nobody can type in on a phone. So it goes on pointerdown — before the
+	 * browser handles the tap, so the keyboard opens on THAT tap — on blur,
+	 * and whenever the line is empty again.
+	 */
+	const keyboard = () => box?.removeAttribute('inputmode');
+	$: if (!$text) keyboard();
+
 	/** What the pills follow: what is typed, or the ghost while one is up. */
 	$: mirrored = $text || ($ghost ? $ghost.line : '');
 	$: pillsLeft = Math.max(GAP, Math.min(textWidth + GAP, boxWidth - pillsWidth));
@@ -136,6 +146,8 @@
 			bind:this={box}
 			bind:value={$text}
 			on:keydown={recall}
+			on:pointerdown={keyboard}
+			on:blur={keyboard}
 			disabled={!$ready}
 			placeholder={$ready ? '' : 'opening database…'}
 			spellcheck="false"

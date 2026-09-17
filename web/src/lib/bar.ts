@@ -18,8 +18,9 @@
 // contract.
 //
 // `prefill` puts a line into the command line without running it — the
-// fields widget's `add <field> ` (da-c7u8); the bar takes the signal and
-// clears it, and `focusLine` decides which box the caret lands in.
+// fields widget's `add <field> ` (da-c7u8), or a command button's `occur `;
+// the bar takes the signal and clears it, and `focusLine` decides which box
+// the caret lands in and whether the phone's keyboard comes with it.
 //
 // `last` is every command run anywhere — a widget-bar press, a command
 // pane's ▶, the bar itself — because every one
@@ -224,12 +225,29 @@ export function registerLine(el: HTMLInputElement, widget: boolean): () => void 
 	};
 }
 
-export const focusLine = (): void => {
+/**
+ * Put the caret in the command line. `keyboard: false` focuses it with
+ * `inputmode="none"` (da-k34p): the caret, a hardware key and Enter all
+ * work, and a phone's on-screen keyboard stays down — a tap on `occur` is
+ * far more often followed by a tap on a field than by typing. The box
+ * gives the keyboard back itself (`Prompt.svelte`): on a tap on it, on
+ * blur, and whenever the line empties — run, cleared, or a verb spent.
+ */
+export const focusLine = (keyboard = true): void => {
 	const widgets = lines.filter((l) => l.widget);
-	(widgets.at(-1) ?? lines.find((l) => !l.widget))?.el.focus();
+	const el = (widgets.at(-1) ?? lines.find((l) => !l.widget))?.el;
+	if (!el) return;
+	if (keyboard) el.removeAttribute('inputmode');
+	else el.inputMode = 'none';
+	el.focus();
 };
 
-export const prefill = writable<string | null>(null);
+/**
+ * A line to put in the command line unrun, and whether the person is
+ * expected to TYPE next: the fields widget's `add <field> ` is (the
+ * keyboard opens), a command button's `occur ` is not (da-k34p).
+ */
+export const prefill = writable<{ line: string; keyboard: boolean } | null>(null);
 
 /**
  * The verb the command line is PENDING (da-ltux) — the fields widget

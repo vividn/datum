@@ -107,11 +107,11 @@
 	 * choice, which is an input widget when the reader has put one on the
 	 * page (da-3zon).
 	 */
-	async function take(line: string): Promise<void> {
+	async function take({ line, keyboard }: { line: string; keyboard: boolean }): Promise<void> {
 		prefill.set(null);
 		text.set(line);
 		await tick();
-		focusLine();
+		focusLine(keyboard);
 	}
 
 	const focusInput = () => field?.querySelector('input')?.focus();

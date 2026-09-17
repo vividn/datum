@@ -42,7 +42,7 @@
 	export let grammar: Grammar | null = null;
 	export let pills: Pill[] = [];
 
-	const dispatch = createEventDispatcher<{ run: string[]; line: string }>();
+	const dispatch = createEventDispatcher<{ run: string[]; line: { name: string; line: string; keyboard: boolean } }>();
 
 	let bar: HTMLElement;
 	let probe: HTMLElement;
@@ -70,7 +70,7 @@
 			on:click={() =>
 				command.press === 'run'
 					? dispatch('run', [command.name])
-					: dispatch('line', `${command.name} `)}
+					: dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' })}
 		>
 			{command.label}
 		</button>
