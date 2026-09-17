@@ -6,7 +6,15 @@
 		<!-- iOS reads neither the manifest's icons nor `rel="icon"` for a home
 		     screen tile; this link is the only one it takes. -->
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/icons/apple-touch-icon.png" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!-- `viewport-fit=cover` so the shell reaches under a notch or a home
+		     indicator and pads itself with `env(safe-area-inset-*)`;
+		     `interactive-widget=resizes-content` so Chromium's on-screen
+		     keyboard shrinks the viewport the shell is fixed to, rather than
+		     covering the prompt (da-31ts). -->
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+		/>
 		<title>datum</title>
 		<!-- The browser's own chrome around the page. A literal because a
 		     meta tag is read before any stylesheet, so no token can reach it. -->

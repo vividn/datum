@@ -5,8 +5,16 @@
 	viewport-height main that never scrolls itself (da-0a5o). Panes inside
 	the page scroll individually (see $lib/Pane.svelte), so the bottom bar
 	— the prompt, the brand, the receipt — stays put whatever the page
-	does, on a phone too: `100dvh`, so the browser's own chrome sliding
-	in and out does not push it off.
+	does, on a phone too.
+
+	The shell is FIXED to the viewport the browser paints, not sized in
+	viewport units (da-31ts): an installed PWA resolved `100dvh` before its
+	system bars settled, too tall, and hung the bottom bar below the screen
+	until a rotation re-resolved it. A fixed box follows the browser's own
+	chrome sliding in and out, which is what `100dvh` was there for, and
+	`followViewport` narrows it to what is VISIBLE — above an on-screen
+	keyboard that only shrinks the visual viewport (iOS) — measured on every
+	viewport change and once more after load.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -46,7 +54,47 @@
 		void bootEngine();
 		void bootShell();
 		reloadOnceForIsolation();
+		return followViewport();
 	});
+
+	/**
+	 * Hand the shell the visible viewport's height and top as
+	 * `--viewport-height` / `--viewport-top` (da-31ts), on every change a
+	 * phone makes to it — the visual viewport's own `resize` and `scroll`
+	 * (a keyboard, the URL bar), `orientationchange`, `pageshow` (a PWA
+	 * brought back) — and once more a frame after mounting, because a launch that
+	 * measured wrong sends no event to correct itself. vividn: a rotation
+	 * cured it, «so maybe just one size refresh is necessary after the page
+	 * loads». Not while pinch-zoomed: there the visible part is a
+	 * magnifier's view, not a smaller screen.
+	 */
+	function followViewport() {
+		const viewport = window.visualViewport;
+		if (!viewport) return;
+		const root = document.documentElement.style;
+		const measure = () => {
+			if (viewport.scale > 1.01) {
+				root.removeProperty('--viewport-height');
+				root.removeProperty('--viewport-top');
+				return;
+			}
+			root.setProperty('--viewport-height', `${viewport.height}px`);
+			root.setProperty('--viewport-top', `${viewport.offsetTop}px`);
+		};
+		measure();
+		const frame = requestAnimationFrame(measure);
+		viewport.addEventListener('resize', measure);
+		viewport.addEventListener('scroll', measure);
+		addEventListener('orientationchange', measure);
+		addEventListener('pageshow', measure);
+		return () => {
+			cancelAnimationFrame(frame);
+			viewport.removeEventListener('resize', measure);
+			viewport.removeEventListener('scroll', measure);
+			removeEventListener('orientationchange', measure);
+			removeEventListener('pageshow', measure);
+		};
+	}
 
 	/**
 	 * The service worker adds the isolation headers to everything it serves —
@@ -108,12 +156,23 @@
 </div>
 
 <style>
+	/* See the note above. `100%` is the layout viewport the shell is fixed
+	   to; `--viewport-height` the visible part of it, which is never taller,
+	   so a stale measurement can only be ignored, never hang the bar below
+	   the screen. The insets keep a notch or a home indicator off the
+	   prompt. A size container, so the REPL's height is a share of THIS box
+	   rather than of `vh`. */
 	.shell {
+		position: fixed;
+		top: var(--viewport-top, 0px);
+		left: 0;
+		right: 0;
 		display: flex;
 		flex-direction: column;
-		/* Dynamic viewport units so mobile browser chrome sliding in and out
-		   doesn't push the bottom bar off-screen. */
-		height: 100dvh;
+		height: min(100%, var(--viewport-height, 100%));
+		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+			env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+		container-type: size;
 	}
 
 	.notice {

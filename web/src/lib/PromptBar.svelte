@@ -380,7 +380,9 @@
 		right: 0;
 		z-index: 19;
 		display: flex;
-		height: min(60vh, 32rem);
+		/* Of the shell (a size container), not of `vh`: the viewport units are
+		   what an installed PWA resolves too tall at launch (da-31ts). */
+		height: min(60cqh, 32rem);
 		background: var(--ground);
 		border-top: 1px solid var(--rule);
 		box-shadow: 0 -8px 24px #00000088;
