@@ -278,6 +278,10 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
         "reparse" => Command::Reparse(parse_reparse_args(rest)?),
 
         "help" => {
+            // `datum help --json` → the command table itself (da-r13j).
+            if show == Some(Show::Json) {
+                return Err(ParseError::GrammarRequested);
+            }
             // `datum help <cmd>` → help request with that cmd.
             let cmd = rest.first().map(|s| s.to_string());
             return Err(ParseError::HelpRequested(cmd));

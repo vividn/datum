@@ -56,6 +56,9 @@
 <script lang="ts">
 	import type { EchoDoc, InfoSegment } from '$lib/echo.js';
 	import Sheet from '$lib/Sheet.svelte';
+	import { select, selected } from '$lib/bar.js';
+	import { isSelected } from '$lib/selection.js';
+	import { tapped } from '$lib/tap.js';
 
 	export let doc: EchoDoc;
 	/** The section is too narrow for a row to read: show the count alone. */
@@ -80,9 +83,30 @@
 	$: rows = doc.data ?? [];
 	$: visible = tight ? [] : all ? rows : rows.slice(0, ROWS);
 	$: hidden = rows.length - visible.length;
+
+	/**
+	 * A tap on the document selects its entry (da-r13j); the hid and the
+	 * `+N` are buttons of their own and keep their taps. A range runs over
+	 * the documents drawn around it — the pane's, the bar's, the sheet's —
+	 * in the order they are drawn.
+	 */
+	function tap(e: MouseEvent): void {
+		const el = e.currentTarget as HTMLElement;
+		if ((e.target as HTMLElement).closest('button') || !tapped(e)) return;
+		const scope = el.closest('dialog, section, .prompt-bar') ?? document.body;
+		const order = [...scope.querySelectorAll<HTMLElement>('.doc[data-hid]')].map((d) => d.dataset.hid ?? '');
+		select(doc.hid, e, order);
+	}
 </script>
 
-<div class="doc">
+<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+<div
+	class="doc"
+	class:selected={isSelected($selected, doc.hid)}
+	data-hid={doc.hid}
+	on:mousedown={(e) => e.shiftKey && e.preventDefault()}
+	on:click={tap}
+>
 	<div class="lines">
 		<div class="receipt">
 			<span class="action">{doc.action}</span>
@@ -146,6 +170,12 @@
 		   is the band's deepest document case (PromptBar.svelte). */
 		font-size: 1rem;
 		line-height: 1.35;
+		cursor: pointer;
+	}
+
+	/* A selected entry (da-r13j): the accent the hid pill is filled with. */
+	.doc.selected {
+		background: color-mix(in srgb, var(--accent) 22%, transparent);
 	}
 
 	/* Only as wide as the lines themselves: the brace then HUGS them —

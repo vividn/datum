@@ -21,6 +21,11 @@
 	- anything else puts `<name> ` on the line too — a command with an
 	  argument to finish, and nothing to filter.
 
+	The loaded PILLS filter it (da-r13j): a command whose grammar — `datum
+	help --json` — cannot take every pill on the bar is not drawn
+	(`commandsUnder`). A selected hid leaves the id commands; a `-t` the
+	ones that take a time.
+
 	The SCROLL RULE (vividn): one or two button-rows high and the bar is one
 	row that scrolls left and right; three or more and it wraps and
 	scrolls up and down. «One row» is the scrolling, not the buttons: two
@@ -30,9 +35,12 @@
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { COMMANDS, scrollsSideways, watchRows } from './commands.js';
+	import type { Pill } from './bar.js';
+	import { commandsUnder, scrollsSideways, watchRows, type Grammar } from './commands.js';
 
 	export let disabled = false;
+	export let grammar: Grammar | null = null;
+	export let pills: Pill[] = [];
 
 	const dispatch = createEventDispatcher<{ run: string[]; line: string }>();
 
@@ -43,6 +51,7 @@
 	onMount(() => watchRows(bar, probe, (n) => (rows = n)));
 
 	$: sideways = scrollsSideways(rows);
+	$: listed = commandsUnder(grammar, pills);
 </script>
 
 <!-- The measuring stick: a button of the ordinary kind, laid out and
@@ -51,7 +60,7 @@
 <span class="probe" aria-hidden="true"><button class="command" bind:this={probe} tabindex="-1">probe</button></span>
 
 <div class="bar commands" class:sideways bind:this={bar} data-rows={rows} style:--rows={rows}>
-	{#each COMMANDS as command (command.name)}
+	{#each listed as command (command.name)}
 		<button
 			class="command"
 			class:act={command.press === 'run'}

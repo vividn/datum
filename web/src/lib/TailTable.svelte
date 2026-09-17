@@ -56,6 +56,9 @@
 	import { onDestroy, tick } from 'svelte';
 	import { ansiSpans } from './ansi.js';
 	import AnsiText from './AnsiText.svelte';
+	import { select, selected } from './bar.js';
+	import { isSelected } from './selection.js';
+	import { tapped } from './tap.js';
 	import type { PaneBox } from './panes.js';
 	import { tailListing, type TailColumn, type TailRow } from './tail.js';
 
@@ -518,8 +521,13 @@
 		</thead>
 		<tbody bind:this={tbody}>
 			{#each visible as row, i (row.hid)}
+				<!-- A tap selects the entry, as its hid pill (da-r13j). The
+				     rows are not focusable, so there is no keyboard selection. -->
 				<tr
 					data-hid={row.hid}
+					class:selected={isSelected($selected, row.hid)}
+					on:mousedown={(e) => e.shiftKey && e.preventDefault()}
+					on:click={(e) => tapped(e) && select(row.hid, e, visible.map((r) => r.hid))}
 					class:start={exhausted && i === 0}
 					title={exhausted && i === 0 ? 'the start of the log' : undefined}
 				>
@@ -541,6 +549,15 @@
 {/if}
 
 <style>
+	/* A selected entry (da-r13j): the accent the hid pill is filled with. */
+	tr.selected {
+		background: color-mix(in srgb, var(--accent) 22%, transparent);
+	}
+
+	tbody tr {
+		cursor: pointer;
+	}
+
 	table {
 		/* Fill the pane and never exceed it: the cells that can wrap do,
 		   and the pane does not scroll sideways at any width. */

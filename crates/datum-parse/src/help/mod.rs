@@ -22,7 +22,7 @@ pub mod render;
 pub mod spec;
 
 pub use commands::{find_command, COMMANDS, GLOBAL_FLAGS};
-pub use render::{render_help_text, render_markdown, render_roff};
+pub use render::{render_help_text, render_json, render_markdown, render_roff};
 pub use spec::{ArgSpec, Category, CommandSpec, ExampleSpec, FlagSpec};
 
 pub const DATUM_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -67,6 +67,7 @@ pub fn special_output(e: &crate::ParseError) -> Option<String> {
         // every caller writes the same bytes.
         E::VersionRequested => Some(format!("{}\n", version_banner())),
         E::ManRequested(cmd) => Some(render_roff(cmd.as_deref())),
+        E::GrammarRequested => Some(render_json()),
         _ => None,
     }
 }

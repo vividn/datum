@@ -556,7 +556,7 @@ const EXPECTED_UPDATE: &str = "\
 datum update — mutate an existing entry
 
 USAGE:
-  datum update <ID_OR_SLUG> [VALUE | KEY=VALUE]...
+  datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]...
 
 OPTIONS:
       --strategy <S>      update|merge|rekey

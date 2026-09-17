@@ -119,6 +119,9 @@ impl From<datum_parse::ParseError> for DatumError {
             datum_parse::ParseError::ManRequested(None) => {
                 DatumError::Other("man requested".to_string())
             }
+            datum_parse::ParseError::GrammarRequested => {
+                DatumError::Other("grammar requested".to_string())
+            }
         }
     }
 }

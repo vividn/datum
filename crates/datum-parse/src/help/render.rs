@@ -51,6 +51,30 @@ pub fn render_help_text(cmd: Option<&str>) -> String {
     }
 }
 
+/// The command table as JSON — `datum help --json` (da-r13j).
+///
+/// Each command's name, aliases, usage lines and flags, straight out of
+/// [`COMMANDS`], for a caller that asks the grammar rather than keeping a
+/// copy of it: the web's commands widget reads which commands take an id
+/// or `-t` from here.
+pub fn render_json() -> String {
+    let commands: Vec<_> = COMMANDS
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "name": c.name,
+                "aliases": c.aliases,
+                "usage": c.usage,
+                "flags": c.flags.iter().map(|f| serde_json::json!({
+                    "short": f.short.map(String::from),
+                    "long": f.long,
+                })).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    format!("{}\n", serde_json::Value::from(commands))
+}
+
 // ---------------------------------------------------------------------------
 // Top-level rendering — purely structural, driven by COMMANDS + GLOBAL_FLAGS.
 // ---------------------------------------------------------------------------

@@ -5,21 +5,24 @@
 	else: the BAR is the scroller (CommandsWidget.svelte), because the
 	scroll rule is about the bar's rows and the axis it scrolls on.
 
-	`Undo` and `Redo` go through `press` and not `pressWithPills`: the
-	pills are a time cursor for the log verbs and neither of these takes a
-	time. Everything else only writes a line into the bottom bar's prompt,
-	unrun, for a person to finish.
+	`Undo` and `Redo` go through `pressWithPills`, which hands a command
+	only the pills its grammar takes: a selected hid (`undo <hid>`), never
+	the time cursor. Everything else only writes a line into the bottom
+	bar's prompt, unrun, for a person to finish. The loaded pills decide
+	which buttons are active and in what order (da-r13j).
 -->
 <script lang="ts">
 	import CommandsWidget from '$lib/CommandsWidget.svelte';
-	import { prefill } from '$lib/bar.js';
-	import { press, ready } from './engine.js';
+	import { pills, prefill } from '$lib/bar.js';
+	import { grammar, pressWithPills, ready } from './engine.js';
 </script>
 
 <div class="body">
 	<CommandsWidget
 		disabled={!$ready}
-		on:run={(e) => void press(e.detail)}
+		grammar={$grammar}
+		pills={$pills}
+		on:run={(e) => void pressWithPills(e.detail)}
 		on:line={(e) => prefill.set(e.detail)}
 	/>
 </div>

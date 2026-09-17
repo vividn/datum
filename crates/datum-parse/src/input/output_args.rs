@@ -195,6 +195,8 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         // `spec show` prints its document by default, so `--show json` is
         // the explicit form of that; it has no silent mode to offer.
         "spec" => &[Show::Default, Show::Json],
+        // `help --json` is the command table itself (da-r13j).
+        "help" => &[Show::Default, Show::Json],
         // Everything else prints one thing, one way.
         _ => &[Show::Default],
     }

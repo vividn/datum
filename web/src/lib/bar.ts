@@ -33,9 +33,10 @@
 // below.
 
 import { derived, get, writable } from 'svelte/store';
-import { pendingVerb as verbOf, type Verb } from './commands.js';
+import { hidsOf, pendingVerb as verbOf, type Verb } from './commands.js';
 import { pressWithPills } from './layout/engine.js';
 import type { RunResult } from './run.js';
+import { hidPill, pickOf, picked, same } from './selection.js';
 import { shellSplit } from './shellSplit.js';
 
 /**
@@ -124,12 +125,58 @@ export const spent = writable<Pill[]>([]);
  * pills should be used with the ghost text, so they can be part of it and
  * fade with it" — and are gone after it.
  */
-export const clearUnlockedPills = (): void => {
-	const doomed = get(pills).filter((p) => !p.locked);
+export const clearUnlockedPills = (used: Pill[] = get(pills)): void => {
+	const doomed = used.filter((p) => !p.locked);
 	if (!doomed.length) return;
-	pills.update((all) => all.filter((p) => p.locked));
+	pills.update((all) => all.filter((p) => !doomed.includes(p)));
 	spent.set(doomed);
 	setTimeout(() => spent.update((all) => (all === doomed ? [] : all)), GHOST_MS);
+};
+
+/**
+ * The selected entries' hids — the `hid` pill's, and none without one
+ * (da-r13j, $lib/selection.ts). Every surface that draws an entry reads it,
+ * so a selection is shown in tail and on the documents at once.
+ */
+export const selected = derived(pills, (all) => {
+	const pill = all.find((p) => p.kind === 'hid');
+	return pill ? hidsOf(pill) : [];
+});
+
+// A section dropped from the `hid` pill leaves the others as text alone
+// (`hidPill` in $lib/selection.ts): draw them as sections again.
+pills.subscribe((all) => {
+	const pill = all.find((p) => p.kind === 'hid' && !p.sections);
+	if (pill) setHids(hidsOf(pill), !!pill.locked);
+});
+
+/** The last entry tapped: where a shift-click's range starts. */
+let anchor: string | null = null;
+
+/** Put `hids` on the `hid` pill, where it was, keeping its lock; none takes it away. */
+function setHids(hids: string[], locked: boolean): void {
+	const next = hidPill(hids, locked);
+	pills.update((all) => {
+		if (!all.some((p) => p.kind === 'hid')) return next ? [...all, next] : all;
+		return all.flatMap((p) => (p.kind !== 'hid' ? [p] : next ? [next] : []));
+	});
+}
+
+/**
+ * A tap on an entry — a tail row, a document. `order` is the hids of the
+ * entries that surface draws, in its order, for a shift-click's range.
+ */
+export function select(hid: string, e: MouseEvent, order: string[]): void {
+	const pill = get(pills).find((p) => p.kind === 'hid');
+	const locked = !!pill?.locked;
+	setHids(picked(get(selected), hid, pickOf(e, locked), order, anchor, locked), locked);
+	anchor = hid;
+}
+
+/** Entries that are gone (a `delete` ran) leave the selection. */
+export const dropHids = (gone: string[]): void => {
+	const pill = get(pills).find((p) => p.kind === 'hid');
+	if (pill) setHids(hidsOf(pill).filter((h) => !gone.some((g) => same(g, h))), !!pill.locked);
 };
 
 /**

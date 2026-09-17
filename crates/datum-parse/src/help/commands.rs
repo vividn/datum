@@ -763,7 +763,7 @@ const WHY_BODY: &str = "USAGE:\n  datum why <ID_OR_SLUG> [--full]\n";
 
 const EDIT_BODY: &str = "USAGE:\n  datum edit <ID_OR_SLUG>\n";
 
-const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG] [SHIFT]\n  datum retime [SLUG] [-r] [-t T] [-y]... [-q]... [-d D]\n  datum retime [SLUG] --offset DUR [--field F] [--after BND] [--before BND]\n\nDEFAULTS:\n  SLUG omitted        → `_LAST` (matches update/delete/undo)\n  No time-args        → set to now\n  SHIFT (bare int)    → minutes-offset shorthand; `retime <id> -5` shifts -5 min\n  -r/--relative       → interpret time-args as a delta from now, applied to the\n                        entry's current occur_time (rather than absolute target).\n                        Same flag is `--reverse` on tail; namespaces don't collide.\n  --offset DUR        → explicit ISO duration shift (legacy form)\n\nBULK FILTERS (--field/--after/--before select rows instead of _LAST):\n  BND                 → a duration ago (1d, 30m, 1:30), a date (2026-06-01,\n                        apr29, today, yesterday), or any -t time. Both bounds\n                        are inclusive, and a bare date names that day's\n                        opening midnight — so --before 2026-06-01 excludes\n                        June 1.\n";
+const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG[,SLUG]...] [SHIFT]\n  datum retime [SLUG[,SLUG]...] [-r] [-t T] [-y]... [-q]... [-d D]\n  datum retime [SLUG[,SLUG]...] --offset DUR [--field F] [--after BND] [--before BND]\n\nDEFAULTS:\n  SLUG omitted        → `_LAST` (matches update/delete/undo)\n  No time-args        → set to now\n  SHIFT (bare int)    → minutes-offset shorthand; `retime <id> -5` shifts -5 min\n  -r/--relative       → interpret time-args as a delta from now, applied to the\n                        entry's current occur_time (rather than absolute target).\n                        Same flag is `--reverse` on tail; namespaces don't collide.\n  --offset DUR        → explicit ISO duration shift (legacy form)\n\nBULK FILTERS (--field/--after/--before select rows instead of _LAST):\n  BND                 → a duration ago (1d, 30m, 1:30), a date (2026-06-01,\n                        apr29, today, yesterday), or any -t time. Both bounds\n                        are inclusive, and a bare date names that day's\n                        opening midnight — so --before 2026-06-01 excludes\n                        June 1.\n";
 
 const SPEC_BODY: &str = "USAGE:\n  datum spec show <FIELD> [--text]\n  datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]\n  datum spec set <FIELD> [--from-json JSON] [--verb V] [--state S]... [--tag T]... ...\n  datum spec list [--tag T]\n  datum spec remove <FIELD>\n\n`add-state` merges one state into a field spec without dropping the others\n(unlike `set --state`, which replaces the whole list). Use `-` in the COLOR\nslot to set only a description: `datum spec add-state mood meh - \"so-so\"`.\n";
 
@@ -1205,7 +1205,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "mutate an existing entry",
         top_summary: Some("Replace keys on an existing entry"),
         long_description: None,
-        usage: &["datum update <ID_OR_SLUG> [VALUE | KEY=VALUE]..."],
+        usage: &["datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
         flags: UPDATE_FLAGS,
         examples: NO_EXAMPLES,
@@ -1220,7 +1220,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "mutate an existing entry",
         top_summary: Some("Deep-merge new values into an entry"),
         long_description: None,
-        usage: &["datum merge <ID_OR_SLUG> [VALUE | KEY=VALUE]..."],
+        usage: &["datum merge <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
         flags: UPDATE_FLAGS,
         examples: NO_EXAMPLES,
@@ -1251,9 +1251,9 @@ pub const COMMANDS: &[CommandSpec] = &[
         top_summary: None,
         long_description: None,
         usage: &[
-            "datum retime [SLUG] [SHIFT]",
-            "datum retime [SLUG] [-r] [-t T] [-y]... [-q]... [-d D]",
-            "datum retime [SLUG] --offset DUR [--field F] [--after BND] [--before BND]",
+            "datum retime [SLUG[,SLUG]...] [SHIFT]",
+            "datum retime [SLUG[,SLUG]...] [-r] [-t T] [-y]... [-q]... [-d D]",
+            "datum retime [SLUG[,SLUG]...] --offset DUR [--field F] [--after BND] [--before BND]",
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
@@ -1269,7 +1269,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "delete an entry (alias: del)",
         top_summary: None,
         long_description: None,
-        usage: &["datum delete <ID_OR_SLUG> [--force] [--dry-run] [--strict]"],
+        usage: &["datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--force] [--dry-run] [--strict]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,

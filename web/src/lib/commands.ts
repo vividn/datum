@@ -16,6 +16,7 @@
 // which arrives on the button as `current` — never anything remembered
 // here.
 
+import type { Pill } from './bar.js';
 import type { FieldButton } from './fields.js';
 import type { Verb as TrackVerb } from './track.js';
 
@@ -151,6 +152,88 @@ export function verbPress(verb: Verb, button: FieldButton): string[] | null {
  * `start`.
  */
 export const declaredVerb = (verb: Verb): TrackVerb => (verb === 'end' ? 'start' : verb);
+
+// ---- the pills a command takes (da-r13j) --------------------------------
+//
+// vividn, 2026-09-16: «loaded pills and interactions with the app should
+// filter all other widgets. So when a -t pill is loaded in, only commands
+// that take -t will available to click … when a doc is clicked or an entry
+// in tail, it's hid is loaded as a pill … and then only commands that take
+// an hid should be active». Which command takes what is never written down
+// here: it is read off `datum help --json`, the CLI's own command table, so
+// a new flag or a new id argument reaches the widget without a change here.
+
+/** One command of `datum help --json`. */
+export interface GrammarEntry {
+	name: string;
+	aliases: string[];
+	usage: string[];
+	flags: { short: string | null; long: string }[];
+}
+
+/** What a command's grammar takes of the pills the bar can hold. */
+export interface Takes {
+	/**
+	 * Its first argument names entries: `one` (`get <ID_OR_SLUG>`), or a
+	 * comma-batched `list` (`delete [ID_OR_SLUG[,ID_OR_SLUG]...]`); `false`
+	 * when it names none. Several ids only ever go as ONE comma-joined word:
+	 * `update A B` takes B as a state (measured, vremya 09-17).
+	 */
+	id: false | 'one' | 'list';
+	/** `-t` is among its flags or in a usage line. */
+	time: boolean;
+}
+
+/** Commands by name AND by alias (`end` is `stop`'s). */
+export type Grammar = Map<string, Takes>;
+
+/** An id right after the command's name, and a `[,` after it when it takes a list. */
+const ID_ARG = /^datum \S+ [<[](?:ID_OR_SLUG|SLUG|HID)(\[,)?/;
+
+export function takesOf(entry: GrammarEntry): Takes {
+	const ids = entry.usage.map((u) => ID_ARG.exec(u.trim())).filter((m) => m !== null);
+	const id = ids.some((m) => m[1]) ? 'list' : ids.length ? 'one' : false;
+	const time = entry.flags.some((f) => f.short === 't') || entry.usage.some((u) => /[\s[]-t[\s\]]/.test(u));
+	return { id, time };
+}
+
+export function grammarOf(entries: GrammarEntry[]): Grammar {
+	return new Map(entries.flatMap((e) => [e.name, ...e.aliases].map((name) => [name, takesOf(e)] as const)));
+}
+
+/** The hids an `hid` pill holds, in the order they were selected. */
+export const hidsOf = (pill: Pill): string[] => pill.text.split(',').filter(Boolean);
+
+/**
+ * Can a command whose grammar is `takes` spend this pill? A `time` pill
+ * wants `-t`; an `hid` pill wants an id, and more than one hid wants a
+ * command that takes several. A kind this does not know is let through.
+ *
+ * A command the grammar does not know — a field-first line, an alias, or no
+ * grammar at all — takes every pill but an hid: `coffee <hid>` would log
+ * the hid as coffee's STATE (vremya, review 1498). The time cursor it
+ * takes, as it always has.
+ */
+export function fits(takes: Takes | undefined, pill: Pill): boolean {
+	if (!takes) return pill.kind !== 'hid';
+	if (pill.kind === 'time') return takes.time;
+	if (pill.kind === 'hid') return hidsOf(pill).length > 1 ? takes.id === 'list' : !!takes.id;
+	return true;
+}
+
+/**
+ * The commands the widget draws under `pills`: the ones whose grammar takes
+ * every pill, in their usual order. The rest are HIDDEN (vividn, 09-17: «let's
+ * do hidden»), as the fields widget hides what a pending verb cannot be
+ * spent on. No pills is the whole list; with no grammar, an hid pill is
+ * taken by nothing and hides every command until the grammar is read.
+ */
+export function commandsUnder(grammar: Grammar | null, pills: Pill[]): CommandButton[] {
+	return COMMANDS.filter((command) => {
+		const takes = grammar?.get(command.name);
+		return pills.every((p) => fits(takes, p));
+	});
+}
 
 // ---- the scroll rule (both widgets) ------------------------------------
 //

@@ -15,15 +15,16 @@
 // nowhere to put, and comes back the moment a REPL is added.
 
 import { get, writable } from 'svelte/store';
-import { clearUnlockedPills, pills, showGhost } from '$lib/bar.js';
+import { clearUnlockedPills, dropHids, pills, showGhost } from '$lib/bar.js';
+import { grammarOf, type Grammar, type GrammarEntry } from '$lib/commands.js';
+import { withPills } from '$lib/selection.js';
 import { initDb } from '$lib/db.js';
 import { fileCommand } from '$lib/dbio.js';
-import { echoArgv } from '$lib/echo.js';
+import { echoArgv, parseEcho } from '$lib/echo.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
 import { verbAsked } from '$lib/track.js';
 import { openTrack } from '$lib/trackModal.js';
-import { shellSplit } from '$lib/shellSplit.js';
 import { buttonsFor, type FieldButton, type FieldListing, type NowActive } from '$lib/fields.js';
 
 /** Bumped after every command; the panes re-run theirs when it changes. */
@@ -49,8 +50,22 @@ export function registerRepl(instance: ReplLike): () => void {
 	};
 }
 
+/**
+ * The CLI's command table, `datum help --json` (da-r13j): which command
+ * takes an id, which takes `-t`. Null until it is read, or if it could not
+ * be — and a press then carries every pill but a selected hid, which no
+ * command is known to take.
+ */
+export const grammar = writable<Grammar | null>(null);
+
 export async function boot(): Promise<void> {
 	await initDb();
+	const help = await run(['help', '--json']);
+	try {
+		if (help.code === 0) grammar.set(grammarOf(JSON.parse(help.stdout) as GrammarEntry[]));
+	} catch {
+		// No grammar: every command stays active.
+	}
 	ready.set(true);
 	await refresh();
 }
@@ -168,26 +183,41 @@ async function alone(argv: string[], line?: string, stdin?: string): Promise<Run
 }
 
 /**
- * A command from the bottom bar's line or the fields widget, with the
- * bar's pills (a `-t 14:30` cursor) after it — after, because the CLI
- * takes no flag before its verb. The one path both take (da-c7u8), so a
- * pill lands on a press exactly as on a typed line. A typed `line` is
- * echoed as typed, the pills' text after it.
+ * A command from the bottom bar's line or the widgets, with the bar's pills
+ * — the ones its grammar takes (`withPills` in $lib/selection.ts): a `-t
+ * 14:30` cursor after the words, the selected hids right after the
+ * command's name. The one path they all take (da-c7u8), so a pill lands on
+ * a press exactly as on a typed line. A typed `line` is echoed as typed,
+ * with the pills where the argv has them.
  *
- * A SUCCEEDING press clears the unlocked pills, so the bar is ready for
- * the next line; a failure leaves them, so a retry keeps its time.
+ * A SUCCEEDING press clears the unlocked pills it spent, so the bar is
+ * ready for the next line; a failure leaves them, so a retry keeps its
+ * time. A pill the command did not take stays loaded. An entry the press
+ * DELETED leaves the selection, locked or not.
  *
  * The GHOST is the argv alone: the pills that went with it are drawn as
  * pills beside it and fade with it (da-xfa4, `spent` in $lib/bar.ts).
  */
 export const pressWithPills = async (argv: string[], line?: string): Promise<RunResult> => {
+	const { argv: full, used } = withPills(get(grammar), argv, get(pills));
 	const result = await press(
-		[...argv, ...get(pills).flatMap((pill) => shellSplit(pill.text))],
-		line === undefined ? undefined : [line, ...get(pills).map((pill) => pill.text)].join(' '),
+		full,
+		line === undefined ? undefined : echoed(line, used),
 		undefined,
 		line !== undefined,
 		line ?? argv.join(' ')
 	);
-	if (result.code === 0) clearUnlockedPills();
+	if (result.code === 0) {
+		clearUnlockedPills(used);
+		dropHids((parseEcho(result.stdout) ?? []).filter((d) => d.action === 'DELETE').map((d) => d.hid));
+	}
 	return result;
 };
+
+/** A typed line with its pills where `withPills` put them: the hids after the first word. */
+function echoed(line: string, used: { kind: string; text: string }[]): string {
+	const hid = used.find((p) => p.kind === 'hid');
+	const [, word, rest] = /^\s*(\S*)(.*)$/.exec(line) ?? ['', line, ''];
+	const head = hid ? `${word} ${hid.text}${rest}` : line;
+	return [head, ...used.filter((p) => p !== hid).map((p) => p.text)].join(' ');
+}

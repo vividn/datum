@@ -52,6 +52,12 @@ pub enum ParseError {
     /// top-level `datum(1)` page. Callers render the roff and exit 0.
     #[error("man requested{}", .0.as_deref().map(|s| format!(" for '{s}'")).unwrap_or_default())]
     ManRequested(Option<String>),
+
+    /// `datum help --json` was requested: every command's name, aliases,
+    /// usage lines and flags as one JSON document (da-r13j). Callers
+    /// print it and exit 0.
+    #[error("grammar requested")]
+    GrammarRequested,
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;
