@@ -88,7 +88,8 @@
 	import { confirm } from '$lib/confirm.js';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, layout, loaded } from './current.js';
-	import { layoutActs, menuItems } from './menu.js';
+	import { layoutActs, menuItems, optionsItem } from './menu.js';
+	import { widgetOptions } from './options.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
 	import { activate, close, keepTab, modified, open, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock, versions } from './shell.js';
@@ -195,15 +196,14 @@
 				};
 
 	$: items = locked
-		? acts
-			? layoutActs(acts)
-			: []
+		? [...optionsItem(widgetOptions(active)), ...(acts ? layoutActs(acts) : [])]
 		: menuItems({
 				choose: () => id !== undefined && void fillTab(id),
 				// The same rule a pane's frame reads: a root tab holding a bare
 				// widget — one whose kind has no built-in layout (da-y2f6) — can
 				// be reset like any other. One holding a layout cannot.
 				reset: resetWidget(active),
+				options: widgetOptions(active),
 				// No `breakOut`: a tab breaks out of its strip, and this bar is the
 				// shell, not a strip (da-a642, da-n632). No `bar`: this bar IS the root's.
 				split: { what: 'split: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },

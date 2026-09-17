@@ -191,9 +191,13 @@ describe('the dot and the acts on a nested layout', () => {
 			const inner = page.locator('section.pane[data-title="mine"]').first();
 
 			await act(page, 'Lock layout');
-			// Nothing under the lock can be split or resized: no menu on the
-			// panes inside, and the border between them is static.
-			assert.equal(await inner.locator('section.pane button.title').count(), 0);
+			// Nothing under the lock can be split or resized: the panes inside
+			// keep a menu only for their options (nowview and fields declare
+			// some, da-gvdc), and the border between them is static.
+			await inner.locator('section.pane button.title').first().click();
+			assert.deepEqual(await menuLines(page), ['Options…']);
+			await page.keyboard.press('Escape');
+			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			assert.equal(await inner.locator('.border.static').count(), 1);
 
 			// The layout's own menu is still there — a lock you cannot undo

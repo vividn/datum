@@ -118,7 +118,8 @@
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, setTitle, splitPane, splitTab } from './tree.js';
 	import { inForce, toggleMaximize } from './maximize.js';
 	import { labelOf, titleOf } from './registry.js';
-	import { layoutActs, menuItems } from './menu.js';
+	import { layoutActs, menuItems, optionsItem } from './menu.js';
+	import { widgetOptions } from './options.js';
 	import PaneMenu from './PaneMenu.svelte';
 
 	export let pane: Pane;
@@ -285,13 +286,12 @@
 	 * locked pane keeps only the acts, so `Unlock layout` is reachable.
 	 */
 	$: items = lockedHere
-		? acts
-			? layoutActs(acts)
-			: []
+		? [...optionsItem(widgetOptions(active)), ...(acts ? layoutActs(acts) : [])]
 		: menuItems({
 				choose: () => void fillTab(active.id),
 				// Beside Choose…, and about the same thing: the widget in front.
 				reset: resetWidget(active),
+				options: widgetOptions(active),
 				rename: many && active.layout === undefined ? rename(active) : undefined,
 				// In a strip, Split splits the TAB in front (da-6ji5). A lone
 				// holder's children split themselves; its own split is a tab's.

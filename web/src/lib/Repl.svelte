@@ -24,6 +24,12 @@
 	one store every prompt shares ($lib/replStore.ts, da-0dhc), which is
 	also what keeps them across a reload. A command typed into the input
 	widget is in this scrollback too, output and all.
+
+	`reversed` (da-gvdc, the repl widget's option) draws the entries newest
+	first — each entry keeps its own order, the command and then its answer
+	— and pins the view to the top wherever it pins it to the bottom
+	otherwise: on mount, on every run, and under a progress line, which is
+	drawn first with them.
 -->
 <script lang="ts">
 	import { now, stampLabel } from '$lib/clock.js';
@@ -38,6 +44,9 @@
 	import { fitArgv } from './panes.js';
 	import { run, type RunResult } from './run.js';
 
+	/** Newest entry first, the view pinned to the top. */
+	export let reversed = false;
+
 	const dispatch = createEventDispatcher<{ ran: RunResult }>();
 
 	let pane: Pane;
@@ -45,11 +54,20 @@
 	/** The scrollback's content width, in whole pixels, once measured. */
 	let width: number | null = null;
 
+	$: entries = reversed ? [...$repl.scrollback].reverse() : $repl.scrollback;
+
+	/** The view to the newest entry: the bottom, or the top when reversed. */
+	function pin(): void {
+		if (reversed && body) body.scrollTop = 0;
+		else pane?.scrollToBottom();
+	}
+
 	// The scrollback is restored before the first paint ($lib/replStore.ts);
-	// pin the view to its end the way a run does.
-	onMount(() => pane.scrollToBottom());
-	// A progress line lands under the scrollback; keep it in view.
-	$: if ($progress && pane) tick().then(() => pane.scrollToBottom());
+	// pin the view to its newest entry the way a run does, once the pane is
+	// mounted — and again when the order flips.
+	$: reversed, pane && tick().then(pin);
+	// A progress line lands beside the newest entry; keep it in view.
+	$: if ($progress && pane) tick().then(pin);
 
 	// What a drawn command has to be told (`fitArgv`): the content box, not
 	// the element's own width — the body is padded, and an image a fraction
@@ -98,7 +116,7 @@
 	async function land(line: string, result: RunResult, ranAt: number): Promise<void> {
 		record(line, ranAt, result);
 		await tick();
-		pane.scrollToBottom();
+		pin();
 		dispatch('ran', result);
 	}
 </script>
@@ -107,7 +125,13 @@
 	{#if $repl.scrollback.length === 0}
 		<p class="quiet">type a command — <code>switch mood happy</code>, <code>tail</code></p>
 	{/if}
-	{#each $repl.scrollback as entry, i (i)}
+	{#if $progress && reversed}
+		<p class="progress">{$progress}</p>
+	{/if}
+	<!-- Keyed by the entry itself, not its position: newest-first puts every
+	     new command at position 0, and a key by index rebuilt the whole
+	     scrollback on each one (review on #33). -->
+	{#each entries as entry, i (entry)}
 		{#if i > 0}
 			<hr class="rule" />
 		{/if}
@@ -141,7 +165,7 @@
 			<CliOutput text={entry.result.stderr} stream="stderr" error={entry.result.code !== 0} />
 		{/if}
 	{/each}
-	{#if $progress}
+	{#if $progress && !reversed}
 		<!-- A file command still running says how far it is (da-h9vj). -->
 		<p class="progress">{$progress}</p>
 	{/if}

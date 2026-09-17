@@ -31,7 +31,8 @@ import { shellSplit } from './shellSplit.js';
 import { openTrack, type TrackOptions } from './trackModal.js';
 import { get } from 'svelte/store';
 import { apply, layout } from './layout/current.js';
-import type { Layout } from './layout/types.js';
+import type { Layout, WidgetKindMeta } from './layout/types.js';
+import { KINDS } from './layout/registry.js';
 
 export interface DatumConsole {
 	/** Run one command as the page does — echoed, receipted, panes refreshed. Argv without the program name. */
@@ -51,7 +52,7 @@ export interface DatumConsole {
 	/** The layout store: the person's own in `_internal` and a kit's in the data db (da-gg0v). */
 	layouts: typeof layouts;
 	/** The live tree (da-jdop): what is on screen, and the one way to change it. */
-	layout: { current(): Layout; apply(op: (layout: Layout) => Layout): void };
+	layout: { current(): Layout; apply(op: (layout: Layout) => Layout): void; kinds(): WidgetKindMeta[] };
 	/** The root tabs (da-0a5o): open a layout by name, save, restore, save as, lock. */
 	shell: typeof shell;
 	/** The bottom bar's pills: what the time cursor will set, and a test does. */
@@ -79,7 +80,7 @@ export function installConsole(target: Record<string, unknown>): void {
 		entries: storedEntries,
 		tailRows: tailListing,
 		layouts,
-		layout: { current: () => get(layout), apply },
+		layout: { current: () => get(layout), apply, kinds: () => Object.values(KINDS).map((k) => k.meta) },
 		shell,
 		bar: { pills: () => get(pills), setPills, removePill },
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor },

@@ -118,6 +118,14 @@ export const layoutActs = (a: Acts): Item[] => [
 	{ label: a.locked ? 'Unlock layout' : 'Lock layout', run: a.toggleLock }
 ];
 
+/**
+ * `Options…`, where there is a modal to open. A LOCKED menu keeps it
+ * (da-gvdc): a lock stops the layout being split, tabbed or resized, and a
+ * widget's own controls change its settings under one — nowview's `+` does
+ * — so the modal, being the same setting, does too.
+ */
+export const optionsItem = (run?: () => void): Item[] => (run ? [{ label: 'Options…', run }] : []);
+
 /** The glyph Close wears (da-ygc9) — the multiplication sign, not the letter x. */
 export const CLOSE = '\u00d7';
 
@@ -136,6 +144,12 @@ export function menuItems(spec: {
 	 * Beside `Choose…`, because like it it is about the widget in front.
 	 */
 	reset?: () => void;
+	/**
+	 * `Options…` (da-gvdc): the widget in front's options modal, after
+	 * `Reset widget`. Undefined when its kind declares no options
+	 * (`widgetOptions` in `options.ts`).
+	 */
+	options?: () => void;
 	/** `Rename tab…` (da-6ji5): a tab of a strip that holds no layout — a layout tab wears its layout's name. */
 	rename?: () => void;
 	split?: Aimed;
@@ -151,6 +165,7 @@ export function menuItems(spec: {
 	return [
 		{ label: 'Choose…', run: spec.choose },
 		...(spec.reset ? [{ label: 'Reset widget', run: spec.reset }] : []),
+		...optionsItem(spec.options),
 		...(spec.rename ? [{ label: 'Rename tab…', run: spec.rename }] : []),
 		...(spec.split ? [{ label: 'Split', row: aimed(spec.split.what, spec.split.run) }] : []),
 		...(spec.breakOut ? [{ label: 'Break out', row: aimed(spec.breakOut.what, spec.breakOut.run) }] : []),

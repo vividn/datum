@@ -119,7 +119,19 @@ export interface WidgetKindMeta {
 	title: string;
 	/** What a fresh instance starts with. */
 	defaultSettings: Record<string, unknown>;
+	/**
+	 * The settings a reader may set from the pane menu's `Options…` (da-gvdc),
+	 * one row each in the modal drawn from this list. Each `key` has its
+	 * default in `defaultSettings`.
+	 */
+	options?: WidgetOption[];
 }
+
+/** One setting the options modal draws: a switch, or one of a few named values. */
+export type WidgetOption = { key: string; label: string } & (
+	| { type: 'boolean' }
+	| { type: 'choice'; choices: { value: string; label: string }[] }
+);
 
 /** Type guards, so a tab's content can be told apart without a `kind` tag. */
 export const isSplit = (content: Widget | Split): content is Split => 'children' in content;

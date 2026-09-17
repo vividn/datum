@@ -37,7 +37,7 @@
 // sees these numbers.
 
 import type { ComponentType } from 'svelte';
-import type { Tab, WidgetKindMeta } from './types.js';
+import type { Tab, WidgetKindMeta, WidgetOption } from './types.js';
 import { nameOf, type Floor } from './tree.js';
 import CliPane from '$lib/CliPane.svelte';
 import CommandPane from './CommandPane.svelte';
@@ -52,6 +52,7 @@ import {
 	MAX_DAY_HEIGHT,
 	MIN_DAY_HEIGHT,
 	NOWVIEW_HISTORY,
+	NOWVIEW_STEPS,
 	TAIL,
 	todayBox
 } from '$lib/panes.js';
@@ -106,8 +107,9 @@ const oneDay = ({ dayHeight }: Record<string, unknown>): number => {
 const meta = (
 	kind: string,
 	title: string,
-	defaultSettings: Record<string, unknown> = {}
-): WidgetKindMeta => ({ kind, title, defaultSettings });
+	defaultSettings: Record<string, unknown> = {},
+	options?: WidgetOption[]
+): WidgetKindMeta => ({ kind, title, defaultSettings, ...(options ? { options } : {}) });
 
 export const KINDS: Record<string, WidgetKind> = {
 	// The strip fills its box and shows as much of the past as fits above
@@ -123,7 +125,7 @@ export const KINDS: Record<string, WidgetKind> = {
 			freezeToday: true,
 			hourFrom: HOUR_FROM,
 			hourTo: HOUR_TO
-		}),
+		}, [{ key: 'freezeToday', label: 'today frozen at the bottom', type: 'boolean' }]),
 		component: DayStrip,
 		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo }) => ({
 			dayHeight: typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT,
@@ -140,12 +142,25 @@ export const KINDS: Record<string, WidgetKind> = {
 		snap: (settings) => ({ height: [oneDay(settings)] }),
 		legible: (settings) => ({ width: 240, height: oneDay(settings) })
 	},
-	repl: { meta: meta('repl', 'repl'), component: ReplWidget, legible: { width: 200, height: 71 } },
+	// `reversed` (da-gvdc): the newest entry first, and the view pinned to the top.
+	repl: {
+		meta: meta('repl', 'repl', { reversed: false }, [{ key: 'reversed', label: 'newest first', type: 'boolean' }]),
+		component: ReplWidget,
+		props: ({ reversed }) => ({ reversed: reversed === true }),
+		legible: { width: 200, height: 71 }
+	},
 	// How far back nowview reaches is its setting, which its − / + step
 	// (da-pcis); `at` centres it on an instant, which the time cursor
 	// overrides while it is set (NowviewWidget.svelte).
 	nowview: {
-		meta: meta('nowview', 'nowview', { history: NOWVIEW_HISTORY }),
+		meta: meta('nowview', 'nowview', { history: NOWVIEW_HISTORY }, [
+			{
+				key: 'history',
+				label: 'history',
+				type: 'choice',
+				choices: NOWVIEW_STEPS.map((value) => ({ value, label: value === '0' ? 'now' : value }))
+			}
+		]),
 		component: NowviewWidget,
 		props: ({ history, at }) => ({
 			history: typeof history === 'string' ? history : NOWVIEW_HISTORY,
@@ -186,7 +201,17 @@ export const KINDS: Record<string, WidgetKind> = {
 	// the widget is called `fields` everywhere else (da-850j). How a switch in
 	// a state is labelled is its one setting (`SwitchLabel` in fields.ts).
 	widgetbar: {
-		meta: meta('widgetbar', 'fields'),
+		meta: meta('widgetbar', 'fields', { switchLabel: 'field' }, [
+			{
+				key: 'switchLabel',
+				label: 'a switch is labelled with its',
+				type: 'choice',
+				choices: [
+					{ value: 'field', label: 'field' },
+					{ value: 'state', label: 'state' }
+				]
+			}
+		]),
 		component: FieldsPane,
 		props: ({ switchLabel }) => ({ switchLabel: switchLabel === 'state' ? 'state' : 'field' }),
 		legible: { width: 160, height: 49 }
@@ -198,7 +223,13 @@ export const KINDS: Record<string, WidgetKind> = {
 	// Enter. Legible at its prompt row (36.4px measured) plus one line of
 	// receipt above it (a document line at 1rem/1.35, 21.6px): the least
 	// that is still a command line with an answer over it.
-	input: { meta: meta('input', 'input'), component: InputWidget, legible: { width: 200, height: 58 } },
+	// `reversed` (da-gvdc): the prompt row on top, the receipt under it.
+	input: {
+		meta: meta('input', 'input', { reversed: false }, [{ key: 'reversed', label: 'prompt on top', type: 'boolean' }]),
+		component: InputWidget,
+		props: ({ reversed }) => ({ reversed: reversed === true }),
+		legible: { width: 200, height: 58 }
+	},
 	// What the shell shows in a tab whose layout cannot be inlined (da-0a5o).
 	notice: { meta: meta('notice', 'notice'), component: Notice, hidden: true, legible: { width: 120, height: 40 } }
 };
@@ -229,6 +260,12 @@ export const labelOf = (tab: Tab): string => nameOf(tab, titleOf);
 export const defaultsOfKind = (kind: string): Record<string, unknown> | undefined => {
 	const declared = KINDS[kind]?.meta.defaultSettings;
 	return declared && Object.keys(declared).length > 0 ? { ...declared } : undefined;
+};
+
+/** The options a kind declares for `Options…` (da-gvdc), or undefined when it declares none. */
+export const optionsOfKind = (kind: string): WidgetOption[] | undefined => {
+	const declared = KINDS[kind]?.meta.options;
+	return declared && declared.length > 0 ? declared : undefined;
 };
 
 /** A kind's snaps, from its settings; a kind that declares none (or an unknown one) has none. */

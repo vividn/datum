@@ -81,9 +81,9 @@ describe('Reset widget', () => {
 			await chooseRoot(page, 'Save layout');
 			await page.waitForFunction(() => !document.querySelector('.root-bar [role="tab"].modified'));
 
-			// Second in the menu, beside Choose… and before Split.
+			// Second in the menu, beside Choose… and before Options… and Split.
 			const lines = await linesOf(page, 'strip');
-			assert.deepEqual(lines, ['Choose…', RESET, 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Bar', '× Close pane']);
+			assert.deepEqual(lines, ['Choose…', RESET, 'Options…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Bar', '× Close pane']);
 
 			await choose(page, 'strip', RESET);
 			await dayHeightIs(page, fallback);

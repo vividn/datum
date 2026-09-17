@@ -15,6 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { choose, chooser, exactly } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -236,5 +237,80 @@ describe('a focus nobody clicked', () => {
 			);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
+	});
+});
+
+// `reversed` (da-gvdc, vividn 16:25: «options about being reversed or not,
+// which then determine if the input bar of the input widget is on the top
+// or the bottom»): only where the two rows sit changes.
+describe('reversed', () => {
+	/** The prompt row's box and the receipt's, top edges. */
+	const tops = (page) =>
+		page.evaluate(() => {
+			const top = (sel) => {
+				const { top, bottom, height } = document.querySelector(`.input-widget ${sel}`).getBoundingClientRect();
+				return { top, bottom, height };
+			};
+			return { prompt: top('.line'), receipt: top('.receipt') };
+		});
+
+	test('from Options…: the prompt row on top, and typing, a pill and Enter work as before', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await choose(page, 'custom', 'Choose…');
+			await chooser(page).waitFor();
+			await chooser(page).locator('button').filter({ hasText: exactly('input') }).click();
+			await chooser(page).waitFor({ state: 'detached' });
+			await page.locator(WIDGET).waitFor();
+			// A receipt to measure: with nothing run it is an empty row.
+			await app.submit('occur water');
+			await page.locator('.input-widget .result .doc').first().waitFor();
+			let box = await tops(page);
+			assert.ok(box.receipt.height > 0 && box.receipt.bottom <= box.prompt.top + 1, `the default: ${JSON.stringify(box)}`);
+
+			await choose(page, 'custom', 'Options…');
+			await page.locator('dialog.options [data-option="reversed"] input').setChecked(true);
+			await page.keyboard.press('Escape');
+			await page.locator('dialog.options').waitFor({ state: 'detached' });
+			box = await tops(page);
+			assert.ok(box.prompt.bottom <= box.receipt.top + 1, `reversed: ${JSON.stringify(box)}`);
+
+			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 14:30', kind: 'time' }]));
+			await page.locator('.input-widget .pill').waitFor();
+			await typeIn(page, WIDGET, 'occur coffee');
+			assert.equal(await valueOf(page, BAR), 'occur coffee');
+			await page.locator(WIDGET).press('Enter');
+			await page.waitForFunction(async () => (await window.datum.entries(50)).some((e) => e.field === 'coffee'));
+			const entry = (await app.entries()).find((e) => e.field === 'coffee');
+			assert.match(entry.occur_time.utc, /T14:30/);
+			assert.equal(await valueOf(page, WIDGET), '');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('at /input on a phone, reversed, both rows are on the screen', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.goto('/input');
+				await page.locator(WIDGET).waitFor();
+				// No REPL here to wait on: the widget's own Enter, and its receipt.
+				await page.locator(WIDGET).fill('occur water');
+				await page.locator(WIDGET).press('Enter');
+				await page.locator('.input-widget .result .doc').first().waitFor();
+				await page.evaluate(() =>
+					window.datum.layout.apply((l) =>
+						JSON.parse(JSON.stringify(l), (key, v) => (v?.kind === 'input' ? { ...v, settings: { reversed: true } } : v))
+					)
+				);
+				await page.waitForFunction(() => document.querySelector('.input-widget.reversed'));
+				const box = await tops(page);
+				assert.ok(box.prompt.bottom <= box.receipt.top + 1, JSON.stringify(box));
+				for (const b of [box.prompt, box.receipt]) {
+					assert.ok(b.top >= 0 && b.bottom <= 640 && b.height > 0, JSON.stringify(b));
+				}
+			},
+			{ device: { viewport: { width: 360, height: 640 }, hasTouch: true, isMobile: true } }
+		);
 	});
 });

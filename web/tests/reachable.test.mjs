@@ -562,21 +562,25 @@ describe('the layout engine, by keyboard', () => {
 	});
 
 	// Locked (da-2a5y), a layout has FEWER targets, not unreachable ones:
-	// no menu, no `+` and no border is in the DOM at all, and what is left
+	// no `+` and no border is in the DOM at all, a menu only where a widget
+	// has options (da-gvdc: it reads `Options…` alone), and what is left
 	// — the tabs — is still walked to. The lock is this device's, on the `day`
 	// tab (da-0a5o); the root bar above the layout keeps its own menu, which
 	// is where `Unlock layout` is (da-crp5).
-	test('a locked layout has no menu and no border, and its tabs are still in the Tab order', async () => {
+	test('a locked layout has no `+` and no border, a menu only for options, and its tabs are still in the Tab order', async () => {
 		await withApp(
 			async ({ page }) => {
 				const reached = await tabWalk(page);
 				const controls = await page.evaluate(() => ({
 					hidden: document.querySelectorAll(
-						'section.root button.title, section.root button.add, section.root [role="separator"]'
+						'section.root button.add, section.root [role="separator"]'
 					).length,
+					// A menu is left only where a widget has options (da-gvdc): the repl's.
+					titles: [...document.querySelectorAll('section.root button.title')].map((b) => b.closest('section.pane')?.dataset.title),
 					tabs: [...document.querySelectorAll('section.root [role="tab"]')].map((el) => el.dataset.walk ?? null)
 				}));
-				assert.equal(controls.hidden, 0, 'a locked layout still offers a menu, a `+` or a border');
+				assert.equal(controls.hidden, 0, 'a locked layout still offers a `+` or a border');
+				assert.deepEqual(controls.titles, ['repl'], 'a locked layout offers a menu beyond a widget’s options');
 				assert.equal(controls.tabs.length, 2);
 				// The active tab is the strip's one stop; the arrows walk the rest.
 				assert.ok(controls.tabs.some((walk) => walk && reached.has(walk)), 'the tab strip is not in the Tab order');

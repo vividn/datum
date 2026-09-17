@@ -26,14 +26,20 @@
 
 	The receipt takes whatever height the pane has left; the prompt row is
 	pinned at the bottom, because a command line you cannot see is not one.
+	`reversed` (its option, da-gvdc) turns the two round: the prompt row
+	pinned at the top and the receipt under it — the same buffer, pills and
+	Enter, only where the rows sit.
 -->
 <script lang="ts">
 	import BarResult from '$lib/BarResult.svelte';
 	import { last } from '$lib/bar.js';
 	import Prompt from '$lib/Prompt.svelte';
+
+	/** The prompt row on top, the receipt under it. */
+	export let reversed = false;
 </script>
 
-<section class="input-widget">
+<section class="input-widget" class:reversed>
 	<div class="receipt">
 		<BarResult result={$last?.result ?? null} />
 	</div>
@@ -47,6 +53,10 @@
 		justify-content: flex-end;
 		min-width: 0;
 		min-height: 0;
+	}
+
+	.reversed {
+		flex-direction: column-reverse;
 	}
 
 	/* As the bar's top tier is: it shrinks away before the prompt does. */
