@@ -137,6 +137,49 @@ export function fieldsUnder(buttons: FieldButton[], verb: Verb | null): FieldBut
 }
 
 /**
+ * Does the bar hold a DURATION — a length waiting to be spent (da-qu16)?
+ *
+ * One `dur=` pill today: what a range selected in the nowview carries
+ * (`DUR_ID` in $lib/cursor.ts). The dayview's `start_time=` + `end_time=`
+ * pair (da-ku7y) is a second shape of the same thing, and it is one more
+ * clause here — which is the whole of what that bead has to add.
+ */
+export const hasDuration = (all: Pill[]): boolean => all.some((p) => p.kind === 'dur');
+
+/**
+ * The fields a loaded duration leaves showing: the BLOCKS — a `start`
+ * field and a `switch`, the two shapes that draw a span (vividn, 09-17: «if
+ * a duration is selected, filter down to start/switch based fields»).
+ *
+ * A point has no length and a record is typed, so a loaded `dur=` hides
+ * them and dismissing it brings them back. It COMPOSES with a pending
+ * verb: this filter and `fieldsUnder` both apply, exactly as the `-t`
+ * pill and the verb do.
+ */
+export function fieldsWithDuration(buttons: FieldButton[], duration: boolean): FieldButton[] {
+	if (!duration) return buttons;
+	return buttons.filter((b) => b.shape.kind === 'state' || b.shape.kind === 'states');
+}
+
+/**
+ * `buttons` with the fields a press landed on or near brought to the
+ * FRONT, best rank first (`nearest` in $lib/lanes.ts) and everything else
+ * in its usual order.
+ *
+ * Nothing is removed — the press prioritises, it does not hide. A stable
+ * sort, so a tie (several rows a few px tall under one finger) keeps the
+ * order it had, which is the CLI's alphabetical one: a tie is not a
+ * ranking and must not be invented into one.
+ */
+export function promoted(buttons: FieldButton[], rank: Map<string, number> | null): FieldButton[] {
+	if (!rank?.size) return buttons;
+	return buttons
+		.map((button, i) => ({ button, i, at: rank.get(button.field) ?? Infinity }))
+		.sort((a, b) => a.at - b.at || a.i - b.i)
+		.map((e) => e.button);
+}
+
+/**
  * What a tap on `button` runs while `verb` is pending — `<verb> <field>`,
  * at once (C1).
  *

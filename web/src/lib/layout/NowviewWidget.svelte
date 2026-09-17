@@ -298,14 +298,19 @@
 
 	/** A tap: the selection lands where it fell, and the window is left alone. */
 	function tap(x: number, y: number): void {
-		const svg = svgEl();
+		const at = axis ? instantOn(axis, snapTo(along(x, y), gridlines())) : null;
+		if (at !== null) pointAt(selection(at));
 		// The lanes the press crossed, for the fields widget to answer
 		// (da-qu16, $lib/lanes.ts): the band takes the pointer itself, so
 		// nothing else on the page would hear the press.
-		if (svg) readLanes(svg, y);
-		if (!axis) return;
-		const snapped = snapTo(along(x, y), gridlines());
-		pointAt(selection(instantOn(axis, snapped)));
+		//
+		// AFTER the selection, and not before it: a selection cleared
+		// clears the lanes, and a tap at now IS a cleared selection
+		// ($lib/cursor.ts) — yet it still re-orders the fields by its
+		// height. The snapshot has no axis and so selects no time at all;
+		// there the height is the whole of what a press says (vividn, 17:01).
+		const svg = svgEl();
+		if (svg) readLanes(svg, { x, y, t: at });
 	}
 
 	/** The window the pan has dragged it to: the drag moves the content, so the span moves the other way. */

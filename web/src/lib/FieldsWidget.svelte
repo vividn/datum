@@ -26,6 +26,15 @@
 	is what `startTracking`'s note below leaves room for. Which fields, and
 	what a press then runs, are `fieldsUnder` and `verbPress` in commands.ts.
 
+	A SELECTION talks to it too (da-qu16). A `dur=` pill on the bar leaves
+	the fields a length can be spent on — the blocks — and composes with a
+	pending verb, both filters applying. And a press on a PICTURE brings
+	the fields drawn at that height to the front (`rank`, $lib/lanes.ts):
+	that one only ORDERS, so everything is still there, with a hairline
+	after the promoted few to say why the bar changed. Nothing moves under
+	a finger: while a pointer is over the bar the order is held until it
+	leaves.
+
 	Track + opens that modal (da-94q1, $lib/track.ts) — a `<dialog>` over
 	the whole page with a pictogram per verb — rather than a form hanging
 	off the bar. The widget still runs nothing itself: the modal answers
@@ -69,6 +78,8 @@
 	import {
 		declaredVerb,
 		fieldsUnder,
+		fieldsWithDuration,
+		promoted,
 		scrollsSideways,
 		verbPress,
 		watchRows,
@@ -89,6 +100,21 @@
 	 * field that does not exist yet, with the verb already chosen.
 	 */
 	export let verb: Verb | null = null;
+	/**
+	 * Whether the bar holds a DURATION — a `dur=` pill (da-qu16).
+	 *
+	 * It leaves the fields a length can be spent on: the blocks. It
+	 * COMPOSES with `verb` — both filters apply.
+	 */
+	export let duration = false;
+	/**
+	 * What a press on a picture landed on or near, field by rank
+	 * (`nearest` in $lib/lanes.ts), or null.
+	 *
+	 * Those fields come FIRST. Nothing is hidden by it: a person who
+	 * clicked empty space still finds every field, in its usual order.
+	 */
+	export let rank: Map<string, number> | null = null;
 
 	const dispatch = createEventDispatcher<{ run: string[]; line: string }>();
 
@@ -142,10 +168,31 @@
 	let holdTimer: ReturnType<typeof setTimeout> | null = null;
 	let held = false;
 
-	$: buttons = fieldsUnder(
-		fields.filter((w) => !w.ignored),
-		verb
+	/** Whether a pointer — a mouse, a finger — is over the bar right now. */
+	let over = false;
+	/**
+	 * The ranking the bar is DRAWN under.
+	 *
+	 * It follows `rank`, except while a pointer is over the bar: no button
+	 * is moved out from under a finger (vividn asked for calm). It catches
+	 * up the moment the pointer leaves, which is what this statement
+	 * re-running on `over` is for.
+	 */
+	let shown: Map<string, number> | null = null;
+	$: if (!over) shown = rank;
+
+	$: buttons = promoted(
+		fieldsUnder(
+			fieldsWithDuration(
+				fields.filter((w) => !w.ignored),
+				duration
+			),
+			verb
+		),
+		shown
 	);
+	/** How many of `buttons` the press promoted: the hairline falls after them. */
+	$: lead = buttons.filter((b) => shown?.has(b.field)).length;
 	$: ignored = fields.filter((w) => w.ignored);
 	$: picking = picked === null ? null : (buttons.find((b) => b.field === picked) ?? null);
 
@@ -393,7 +440,15 @@
      buttons finds it. -->
 <span class="probe" aria-hidden="true"><button class="widget" bind:this={probe} tabindex="-1">probe</button></span>
 
-<div class="bar" class:sideways bind:this={bar} data-rows={rows} style:--rows={rows}>
+<div
+	class="bar"
+	class:sideways
+	bind:this={bar}
+	data-rows={rows}
+	style:--rows={rows}
+	on:pointerenter={() => (over = true)}
+	on:pointerleave={() => (over = false)}
+>
 	{#if picking}
 		{@const chosen = picking}
 		<!-- The states, in place of the fields (da-g635): `< Back` first —
@@ -485,9 +540,13 @@
 			<p class="hint empty">nothing tracked yet — or type a command to log something</p>
 		{/if}
 
-		{#each buttons as button (button.field)}
+		{#each buttons as button, i (button.field)}
 			{@const look = lookOf(button, switchLabel)}
-			<div class="slot">
+			<div
+				class="slot"
+				class:edge={i + 1 === lead && lead < buttons.length}
+				data-promoted={i < lead ? '' : undefined}
+			>
 				{#if button.shape.kind === 'record'}
 					<!-- Not a button: nothing runs. The line goes to the bar's prompt. -->
 					<button
@@ -623,6 +682,17 @@
 
 	.slot {
 		flex: none;
+	}
+
+	/* The press's own quiet mark (da-qu16): a hairline after the fields a
+	   click promoted, so the reader can SEE why the bar changed. It says
+	   where the promotion ends and nothing else — no fill, no animation,
+	   and the buttons themselves are drawn exactly as they always are.
+	   Nothing is drawn when the press promoted them ALL: a line with
+	   nothing on the far side of it says nothing. */
+	.slot.edge {
+		padding-right: 0.4rem;
+		border-right: 1px solid var(--rule);
 	}
 
 	/* Under a pending verb the Track slot is the `+` at the END of the

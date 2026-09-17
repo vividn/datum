@@ -12,6 +12,7 @@
 
 import { clockLabel } from './clock.js';
 import { pointAt, pointed, setCursor, type Cursor } from './cursor.js';
+import { readLanes } from './lanes.js';
 
 /** The outermost `<svg>` an element is drawn in. */
 function pictureOf(el: Element): SVGSVGElement | null {
@@ -413,7 +414,13 @@ export function picture(node: HTMLElement, text: string) {
 		if (own()) return;
 		if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > CLICK_SLOP) return;
 		const when = e.target instanceof Element && timeAt(e.target, e.clientX, e.clientY);
-		if (when) setCursor(when);
+		if (!when) return;
+		setCursor(when);
+		// And the fields drawn at this height come first in the fields
+		// widget (da-qu16) — published after the selection, which is what
+		// clears them again.
+		const svg = node.querySelector<SVGSVGElement>('svg');
+		if (svg) readLanes(svg, { x: e.clientX, y: e.clientY, t: +when });
 	};
 	// Enter on a focused mark selects the mark's own time — and it does so
 	// even where the POINTER is somebody else's. The nowview's band takes

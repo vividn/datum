@@ -35,6 +35,7 @@
 import { derived, get, writable } from 'svelte/store';
 import { pills, type Pill, type PillSection } from './bar.js';
 import { minute } from './clock.js';
+import { lanes } from './lanes.js';
 import { relArg } from './nowpoint.js';
 
 /**
@@ -200,9 +201,16 @@ export const pointed = derived([cursor, minute], ([c]) =>
 	!c || c.rel === undefined ? c : { ...c, at: back(c.rel) }
 );
 
-cursor.subscribe((c) =>
-	pills.update((all) => [...all.filter((p) => p.kind !== 'time' && p.id !== DUR_ID), ...(c ? cursorPills(c) : [])])
-);
+cursor.subscribe((c) => {
+	// The lanes a press published are the selection's other half, and a
+	// selection CLEARED clears them (da-qu16, $lib/lanes.ts): the pill's
+	// ×, `now →` and the reconciler below are every door out of one, and
+	// all three pass through here. A press that lands at now clears the
+	// selection and still re-orders — which is why the pictures publish
+	// their lanes AFTER they point.
+	if (!c) lanes.set(null);
+	pills.update((all) => [...all.filter((p) => p.kind !== 'time' && p.id !== DUR_ID), ...(c ? cursorPills(c) : [])]);
+});
 
 // The pills are the selection's other face, and a press on one of them
 // changes the selection: the `dur=` pill's × takes the range's length away
