@@ -350,9 +350,12 @@ describe('a widget that takes the axis itself', () => {
 	test('a one-finger drag across the nowview band leaves the tab alone', async () => {
 		await withApp(async ({ page }) => {
 			await pane(page, 'side').locator('[role="tab"]', { hasText: 'nowview' }).click();
-			const band = pane(page, 'side').locator('.nowview');
+			// The BAND declares the axis, not the widget: the margin above it
+			// is room a swipe may start in (da-rskp).
+			const band = pane(page, 'side').locator('.nowview-band');
 			await band.locator('svg.svg').waitFor();
 			assert.equal(await band.getAttribute('data-pans'), 'x');
+			assert.equal(await pane(page, 'side').locator('.nowview').getAttribute('data-pans'), null);
 			const content = pane(page, 'side').locator('> .content');
 			await swipeOver(page, band, -120, 0);
 			await atRest(content);

@@ -1,0 +1,103 @@
+// The nowview's gestures and the argv a selection is, in node (da-rskp).
+//
+// `advance` is the truth table at the head of $lib/nowpoint.ts — what a
+// press becomes after how many ms and how many px, and what cannot become
+// what — and `snapTo` is the finger's width around a gridline. `relArg`
+// is the other half: what a relative selection PUTS on the command line,
+// which is the whole of what it means to the CLI.
+//
+// The same rules as a reader meets them are `nowpoint.test.mjs`.
+
+import test, { describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
+
+registerHooks({
+	resolve(specifier, context, next) {
+		if (/^\.\/.*\.js$/.test(specifier) && context.parentURL?.includes('/src/lib/'))
+			return next(specifier.replace(/\.js$/, '.ts'), context);
+		return next(specifier, context);
+	}
+});
+
+const { LONG_MS, SLOP_PX, SNAP_PX, advance, relArg, snapTo } = await import('../src/lib/nowpoint.ts');
+
+/** A press at (100, 50), with whatever it landed on. */
+const press = (extra = {}) => ({ x: 100, y: 50, inNow: false, shift: false, ...extra });
+
+describe('a press on the band becomes one gesture', () => {
+	test('a still press is undecided, and becomes a range once it has lasted long enough', () => {
+		const p = press();
+		assert.equal(advance('press', p, 100, 50, false), 'press');
+		assert.equal(advance('press', p, 100 + SLOP_PX, 50, false), 'press', 'inside the slop is still still');
+		assert.equal(advance('press', p, 100, 50, true), 'range', 'the bar drops before any movement');
+		assert.ok(LONG_MS >= 300, `${LONG_MS}ms is what the timer waits, and a tap must not reach it`);
+	});
+
+	test('a drag sideways pans; a drag mostly downward is the page’s scroll, not ours', () => {
+		const p = press();
+		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'pan');
+		assert.equal(advance('press', p, 100 - SLOP_PX - 1, 50, false), 'pan', 'either way along the band');
+		assert.equal(advance('press', p, 100 + 10, 50 + 40, false), 'press', 'mostly vertical belongs to the browser');
+		assert.equal(advance('press', p, 100 + 10, 50 + 10, false), 'pan', 'exactly diagonal is ours');
+	});
+
+	test('shift+drag is a range at once — a long press with a mouse is nobody’s habit', () => {
+		const p = press({ shift: true });
+		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'range');
+		assert.equal(advance('press', p, 100, 50, false), 'press', 'shift alone selects nothing');
+	});
+
+	test('in the now region a drag LEFT is a duration ending now, and rightward is nothing', () => {
+		const p = press({ inNow: true });
+		assert.equal(advance('press', p, 100 - SLOP_PX - 1, 50, false), 'now');
+		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'press', 'nothing lies right of now');
+		assert.equal(advance('press', p, 100, 50, true), 'press', 'and no long press either: it is the now flow');
+	});
+
+	test('what a gesture became is decided ONCE', () => {
+		const p = press();
+		// A pan that outlives the long press is still a pan.
+		assert.equal(advance('pan', p, 100, 50, true), 'pan');
+		// A range whose finger then runs sideways is still a range.
+		assert.equal(advance('range', p, 400, 50, true), 'range');
+		assert.equal(advance('now', p, 400, 50, true), 'now');
+	});
+});
+
+describe('a press snaps to a gridline it lands near', () => {
+	const marks = [100, 200, 300];
+
+	test('within a finger’s width of a mark it IS the mark; past it, it is where it fell', () => {
+		assert.equal(snapTo(100 + SNAP_PX - 1, marks), 100);
+		assert.equal(snapTo(200 - SNAP_PX, marks), 200, 'the edge of the width counts');
+		assert.equal(snapTo(250, marks), 250, 'between the marks is between the marks');
+		assert.equal(snapTo(200 + SNAP_PX + 1, marks), 200 + SNAP_PX + 1);
+	});
+
+	test('the NEAREST mark, the first of a tie, and nothing at all with no marks', () => {
+		assert.equal(snapTo(208, [200, 210]), 210);
+		assert.equal(snapTo(202, [200, 210]), 200);
+		assert.equal(snapTo(205, [200, 210]), 200, 'a tie lands on the first, twice running');
+		assert.equal(snapTo(205, [210, 200]), 210);
+		assert.equal(snapTo(150, []), 150);
+	});
+});
+
+describe('what a selection puts on the command line', () => {
+	test('the -q ladder on the four five-minute marks, the relative -t everywhere else', () => {
+		assert.deepEqual(
+			[5, 10, 15, 20].map(relArg),
+			['-q', '-qq', '-qqq', '-qqqq'],
+			'five minutes a letter (vividn: "use -q, -qq, -qqq, -qqqq as the pill")'
+		);
+		assert.equal(relArg(7), '-t -7', 'the CLI reads -t -7 as seven minutes back');
+		assert.equal(relArg(25), '-t -25', 'past -qqqq there is no letter for it');
+		assert.equal(relArg(1), '-t -1');
+	});
+
+	// What an ABSOLUTE selection says, and the range that says no time at
+	// all because its entry's time is already now, are read off the live
+	// pills in `nowpoint.test.mjs`: `cursorArg` composes this with the
+	// `-t HH:MM` the bar has always drawn, which is the bar's own module.
+});

@@ -26,7 +26,7 @@ import { tailListing, type TailColumn, type TailRow } from './tail.js';
 import * as layouts from './layout/store.js';
 import * as shell from './layout/shell.js';
 import { pills, removePill, setPills, type Pill } from './bar.js';
-import { cursor, setCursor } from './cursor.js';
+import { cursor, pointAt, setCursor, type Cursor } from './cursor.js';
 import { shellSplit } from './shellSplit.js';
 import { openTrack, type TrackOptions } from './trackModal.js';
 import { get } from 'svelte/store';
@@ -57,8 +57,18 @@ export interface DatumConsole {
 	shell: typeof shell;
 	/** The bottom bar's pills: what the time cursor will set, and a test does. */
 	bar: { pills(): Pill[]; setPills(next: Pill[]): void; removePill(id: string): void };
-	/** The time cursor (da-wnt2): the instant the page is pointed at, as a click on a day sets it. */
-	cursor: { at(): Date | null; set(at: Date | null): void };
+	/**
+	 * The time cursor (da-wnt2): the instant the page is pointed at, as a
+	 * click on a day sets it. `of()` is the whole SELECTION (da-rskp) — its
+	 * `rel` when it is relative and its `span` when it is a range — and
+	 * `point()` is the one door that sets any of those.
+	 */
+	cursor: {
+		at(): Date | null;
+		set(at: Date | null): void;
+		of(): Cursor | null;
+		point(sel: (Partial<Cursor> & { at?: Date }) | null): void;
+	};
 	/**
 	 * Open the Track modal (da-94q1) and run what it answers with, as
 	 * `Track +` does — with a field or a verb already chosen, which is the
@@ -83,7 +93,7 @@ export function installConsole(target: Record<string, unknown>): void {
 		layout: { current: () => get(layout), apply, kinds: () => Object.values(KINDS).map((k) => k.meta) },
 		shell,
 		bar: { pills: () => get(pills), setPills, removePill },
-		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor },
+		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },
 		track: async (options) => {
 			const argv = await openTrack(options);
 			return argv && (await press(argv));

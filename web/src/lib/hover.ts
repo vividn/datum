@@ -11,7 +11,7 @@
 // over the page's, so `inlineSvg` moves its text onto the mark.
 
 import { clockLabel } from './clock.js';
-import { cursor, setCursor } from './cursor.js';
+import { pointAt, pointed, setCursor, type Cursor } from './cursor.js';
 
 /** The outermost `<svg>` an element is drawn in. */
 function pictureOf(el: Element): SVGSVGElement | null {
@@ -67,48 +67,213 @@ export function timeAt(el: Element, clientX: number, clientY = 0): Date | null {
 	return new Date(day.from + f * (day.to - day.from));
 }
 
-/** Where on `svg` the instant `at` is drawn — the day it falls on, and how far along — or `null` if on none. */
-function placeOf(svg: SVGSVGElement, at: Date) {
+/**
+ * Where on `svg` a selection is drawn: the day it belongs to, how far
+ * along that day's axis it falls, and how much of the cross axis the day's
+ * slot takes. `'snapshot'` for a picture with no time axis at all, `null`
+ * when the selection is on none of the days drawn.
+ *
+ * A RELATIVE selection belongs to the day whose span ENDS at now — the
+ * nowview's window — and is measured back from that end, so `-qq` lands
+ * on the −10m gridline exactly and STAYS there: the window moves with the
+ * minute and the line moves with it. Any other picture, the dayview's day
+ * running to midnight, places it at the instant it currently is — and
+ * «seven minutes ago» is a later instant every minute, so there the same
+ * selection creeps FORWARD tick by tick.
+ */
+function placeOf(svg: SVGSVGElement, c: Cursor) {
 	const days = [...svg.querySelectorAll('[data-lo]')].map((d) => readDay(svg, d));
-	const i = days.findIndex((d) => d.from <= +at && +at < d.to && d.hi > d.lo);
-	if (i < 0) return null;
-	const day = days[i];
-	const along = day.lo + ((+at - day.from) / (day.to - day.from)) * (day.hi - day.lo);
+	if (!days.length) return null;
+	// No day with a span at all is the SNAPSHOT — which is not «the instant
+	// is off this picture», the window a selection has been panned out of.
+	if (!days.some((d) => d.hi > d.lo)) return 'snapshot' as const;
 	const view = svg.viewBox.baseVal;
-	const end = days[i + 1]?.start ?? (day.y ? view.x + view.width : view.y + view.height);
-	return { ...day, along, end };
+	const at = (i: number) => {
+		const day = days[i];
+		const perMs = (day.hi - day.lo) / (day.to - day.from);
+		// A picture with no date column has no label group to read a slot
+		// origin from, and `readDay` says so with `-Infinity` (which is what
+		// makes `timeAt` fall back to it). The slot is then the whole
+		// picture across, which for nowview's one day it is.
+		const near = day.y ? view.x : view.y;
+		const far = day.y ? view.x + view.width : view.y + view.height;
+		const start = Number.isFinite(day.start) ? day.start : near;
+		const next = days[i + 1]?.start;
+		return { ...day, perMs, start, end: next !== undefined && Number.isFinite(next) ? next : far };
+	};
+	const now = c.rel === undefined ? null : nowAlong(svg, days[0].y);
+	const ending = now === null ? -1 : days.findIndex((d) => d.hi > d.lo && Math.abs(d.hi - now) <= 1);
+	if (ending >= 0) {
+		const day = at(ending);
+		return { ...day, along: day.hi - (c.rel ?? 0) * 60_000 * day.perMs };
+	}
+	const i = days.findIndex((d) => d.from <= +c.at && +c.at < d.to && d.hi > d.lo);
+	if (i < 0) return null;
+	const day = at(i);
+	return { ...day, along: day.lo + (+c.at - day.from) * day.perMs };
 }
 
-/** The cursor's dotted line across the day of `svg` it falls on, replacing any before it. */
-function drawCursor(svg: SVGSVGElement | null, at: Date | undefined): void {
-	svg?.querySelectorAll('line.cursor, line.cursor-casing').forEach((l) => l.remove());
-	const place = svg && at && placeOf(svg, at);
-	if (!place) return;
-	const [a, b] = place.y ? ['y', 'x'] : ['x', 'y'];
-	// Bright white, the selection's colour (yellow is NOW's alone), over a
-	// dark casing so a dash still reads across a pale block. Written here,
-	// not as a token: these are SVG attributes, where `var()` does not reach.
-	for (const [cls, stroke, width] of [
-		['cursor-casing', 'rgba(0, 0, 0, 0.6)', 3.5],
-		['cursor', '#ffffff', 1.5]
-	] as const) {
-		const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-		for (const [name, value] of Object.entries({
-			class: cls,
-			[`${a}1`]: place.along,
-			[`${a}2`]: place.along,
-			[`${b}1`]: place.start,
-			[`${b}2`]: place.end,
+/**
+ * The picture's time axis ON SCREEN: where its span begins and ends in px
+ * along the axis it runs, and the two instants those are.
+ *
+ * What a gesture over the band needs and `timeAt` cannot give it — how
+ * much TIME a pixel is worth, for the length of a drag and the distance a
+ * pan moves the window (da-rskp). Read through `readDay`, the same reader
+ * `timeAt` and `placeOf` go through, so the three cannot come to disagree
+ * about where the picture put the hour. `null` for a picture with no time
+ * axis at all: nowview's snapshot.
+ */
+export function timeAxis(svg: SVGSVGElement): { y: boolean; from: number; to: number; lo: number; hi: number } | null {
+	const el = svg.querySelector('[data-lo]');
+	const ctm = el && svg.getScreenCTM();
+	if (!el || !ctm) return null;
+	const day = readDay(svg, el);
+	if (!(day.hi > day.lo) || !(day.to > day.from)) return null;
+	const screen = (u: number) => {
+		const p = new DOMPoint(day.y ? 0 : u, day.y ? u : 0).matrixTransform(ctm);
+		return day.y ? p.y : p.x;
+	};
+	return { y: day.y, from: day.from, to: day.to, lo: screen(day.lo), hi: screen(day.hi) };
+}
+
+/** The instant `pos` px along `axis` is, unclamped: a drag may run past the picture. */
+export function instantOn(axis: { from: number; to: number; lo: number; hi: number }, pos: number): number {
+	return axis.from + ((pos - axis.lo) / (axis.hi - axis.lo)) * (axis.to - axis.from);
+}
+
+/** How many milliseconds one pixel along `axis` is worth. */
+export const msPerPx = (axis: { from: number; to: number; lo: number; hi: number }): number =>
+	(axis.to - axis.from) / (axis.hi - axis.lo);
+
+/** The element the selection's marks are drawn as, ready to append. */
+function mark(name: string, attrs: Record<string, string | number>): SVGElement {
+	const el = document.createElementNS('http://www.w3.org/2000/svg', name);
+	for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, String(value));
+	el.setAttribute('pointer-events', 'none');
+	return el;
+}
+
+/**
+ * The selection's line: bright white over a dark casing.
+ *
+ * Yellow is NOW's alone (da-ex56), so white is the selection's everywhere
+ * — this one function draws it for every picture, the nowview's and the
+ * dayview's alike, which is what makes the two colours mean one thing each
+ * across the page. Written here, not as a token: these are SVG attributes,
+ * where `var()` does not reach.
+ */
+function dottedLine(a: string, b: string, along: number, from: number, to: number): SVGElement[] {
+	return (
+		[
+			['cursor-casing', 'rgba(0, 0, 0, 0.6)', 3.5],
+			['cursor', '#ffffff', 1.5]
+		] as const
+	).map(([cls, stroke, width]) =>
+		mark('line', {
+			class: `selection ${cls}`,
+			[`${a}1`]: along,
+			[`${a}2`]: along,
+			[`${b}1`]: from,
+			[`${b}2`]: to,
 			stroke,
 			'stroke-width': width,
 			'stroke-dasharray': '3 3',
-			'vector-effect': 'non-scaling-stroke',
-			'pointer-events': 'none'
-		})) {
-			line.setAttribute(name, String(value));
-		}
-		svg.append(line);
+			'vector-effect': 'non-scaling-stroke'
+		})
+	);
+}
+
+/**
+ * The arrow at the selection's head (da-rskp — vividn's «maybe … with a
+ * little arrow pointing at it too??»): a small solid triangle sitting on
+ * the day's leading edge and pointing down the line.
+ *
+ * Small on purpose: it says WHICH of two dotted lines is the selection
+ * without becoming a third mark competing with them. In the picture's own
+ * units, which a sized pane asks for at one unit per pixel.
+ */
+const HEAD = { half: 4, deep: 7 };
+
+function arrowHead(y: boolean, along: number, start: number): SVGElement {
+	const { half, deep } = HEAD;
+	const points = y
+		? [`${start},${along - half}`, `${start},${along + half}`, `${start + deep},${along}`]
+		: [`${along - half},${start}`, `${along + half},${start}`, `${along},${start + deep}`];
+	return mark('polygon', { class: 'selection cursor-head', points: points.join(' '), fill: '#ffffff' });
+}
+
+/**
+ * Where the picture puts NOW along a day's axis, when it draws it at all.
+ *
+ * The CLI's own yellow line (`current-time-line`), read off the picture:
+ * present only where now falls inside the window (da-5flt). It is what a
+ * RELATIVE selection is measured back from — see `drawCursor`.
+ */
+function nowAlong(svg: SVGSVGElement, y: boolean): number | null {
+	const line = svg.querySelector('.current-time-line');
+	const box = line?.getBoundingClientRect();
+	const p = box && userPoint(svg, box.left + box.width / 2, box.top + box.height / 2);
+	return p ? (y ? p.y : p.x) : null;
+}
+
+/**
+ * The selection on `svg`, replacing whatever was drawn before it: the
+ * white dotted line where `placeOf` puts it, the arrow at its head, and —
+ * when it has a length — the band of the range it covers, behind them both.
+ *
+ * A picture with no time axis at all is the nowview's SNAPSHOT: one
+ * instant, no span to place anything along. There a selection is said by
+ * drawing the line THROUGH the chips, top to bottom, so the snapshot reads
+ * as «a selected time» rather than as now (da-rskp).
+ */
+function drawCursor(svg: SVGSVGElement | null, c: Cursor | null | undefined): void {
+	svg?.querySelectorAll('.selection').forEach((el) => el.remove());
+	if (!svg || !c) return;
+	const place = placeOf(svg, c);
+	if (!place) return;
+	if (place === 'snapshot') return drawOnSnapshot(svg);
+	const [a, b] = place.y ? ['y', 'x'] : ['x', 'y'];
+	const along = place.along;
+	// A window the selection has been panned out of draws none of it.
+	if (along < place.lo - 0.5 || along > place.hi + 0.5) return;
+	if (c.span) {
+		// The range, behind the line that ends it: from `span` minutes
+		// before the selection to the selection, clamped to the day drawn.
+		const from = Math.max(place.lo, Math.min(place.hi, along - c.span * 60_000 * place.perMs));
+		const [lo, hi] = [Math.min(from, along), Math.max(from, along)];
+		svg.append(
+			mark('rect', {
+				class: 'selection cursor-span',
+				[place.y ? 'y' : 'x']: lo,
+				[place.y ? 'x' : 'y']: place.start,
+				[place.y ? 'height' : 'width']: Math.max(0, hi - lo),
+				[place.y ? 'width' : 'height']: Math.max(0, place.end - place.start),
+				fill: 'rgba(255, 255, 255, 0.22)'
+			}),
+			...dottedLine(a, b, from, place.start, place.end)
+		);
 	}
+	svg.append(...dottedLine(a, b, along, place.start, place.end), arrowHead(place.y, along, place.start));
+}
+
+/**
+ * The snapshot's line: the same white dashes, drawn through the middle of
+ * the chips rather than at an instant, because the snapshot HAS no axis to
+ * put one on. A selection at now is not drawn at all (it is not a
+ * selection, $lib/cursor.ts), so a line here always means «not now».
+ *
+ * The chips are the CLI's own `.now-chunk` rects, so their middle is read
+ * off the picture rather than guessed from a canvas width.
+ */
+function drawOnSnapshot(svg: SVGSVGElement): void {
+	const chunks = [...svg.querySelectorAll('.now-chunk')].map((r) => r.getBoundingClientRect());
+	if (!chunks.length) return;
+	const middle = (Math.min(...chunks.map((r) => r.left)) + Math.max(...chunks.map((r) => r.right))) / 2;
+	const p = userPoint(svg, middle, 0);
+	if (!p) return;
+	const view = svg.viewBox.baseVal;
+	svg.append(...dottedLine('x', 'y', p.x, view.y, view.y + view.height), arrowHead(false, p.x, view.y));
 }
 
 /** Where a block's drawing begins: its start, or its day's if it began before. */
@@ -169,6 +334,18 @@ let tips = 0;
 const CLICK_SLOP = 5;
 
 /**
+ * Whether something ABOVE this picture takes the pointer itself.
+ *
+ * The nowview's band does (da-rskp): a press there is one of four
+ * gestures, and what a tap on it MEANS is a relative selection that does
+ * not move the window — not the absolute instant this action sets. One
+ * attribute and no import either way, the same idiom as `data-pans`
+ * (PaneFrame.svelte). Asked at the press rather than at mount, because a
+ * picture outlives the trees it is drawn in.
+ */
+const ownsPointer = (node: HTMLElement) => !!node.closest('[data-points="own"]');
+
+/**
  * Svelte action: draw `text` into `node` and make its marks answer a
  * pointer, a tap and the keyboard with a label — the time and what the
  * mark is. Nothing is shown over empty space.
@@ -185,6 +362,8 @@ export function picture(node: HTMLElement, text: string) {
 	tip.id = `picture-tip-${++tips}`;
 	tip.setAttribute('role', 'tooltip');
 	tip.hidden = true;
+
+	const own = () => ownsPointer(node);
 
 	let shown: Element | null = null;
 	const marks = () => [...node.querySelectorAll('[data-state]')];
@@ -224,20 +403,30 @@ export function picture(node: HTMLElement, text: string) {
 		for (const mark of drawn) mark.setAttribute('tabindex', '0');
 		// A redraw replaces every mark; the keyboard keeps its place.
 		(drawn[focused] as SVGElement | undefined)?.focus();
-		drawCursor(svg, at);
+		drawCursor(svg, sel);
 	}
 
-	let at: Date | undefined;
+	let sel: Cursor | null = null;
 	let down = { x: NaN, y: NaN };
 	const press = (e: PointerEvent) => (down = { x: e.clientX, y: e.clientY });
 	const click = (e: MouseEvent) => {
+		if (own()) return;
 		if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > CLICK_SLOP) return;
 		const when = e.target instanceof Element && timeAt(e.target, e.clientX, e.clientY);
 		if (when) setCursor(when);
 	};
+	// Enter on a focused mark selects the mark's own time — and it does so
+	// even where the POINTER is somebody else's. The nowview's band takes
+	// clicks (`data-points="own"`), and returning early here took the
+	// keyboard's way to select with them: on main Enter in the band made
+	// `-t 14:30`, and on the first head of da-rskp it made no pill at all
+	// (vremya on PR #48). There the selection is marked as the band's, so
+	// it leaves the window where it is — the same rule a tap there follows.
 	const enter = (e: KeyboardEvent) => {
 		const mark = e.key === 'Enter' && markAt(e.target);
-		if (mark) setCursor(markTime(mark));
+		if (!mark) return;
+		if (own()) pointAt({ at: markTime(mark), from: 'nowview' });
+		else setCursor(markTime(mark));
 	};
 
 	const point = (e: PointerEvent) => show(markAt(e.target), e.clientX, e.clientY, e.clientX);
@@ -262,9 +451,9 @@ export function picture(node: HTMLElement, text: string) {
 	node.addEventListener('pointerdown', press);
 	node.addEventListener('click', click);
 	node.addEventListener('keydown', enter);
-	const unsubscribe = cursor.subscribe((c) => {
-		at = c?.at;
-		drawCursor(node.querySelector('svg'), at);
+	const unsubscribe = pointed.subscribe((c) => {
+		sel = c ?? null;
+		drawCursor(node.querySelector('svg'), sel);
 	});
 	return {
 		update: draw,

@@ -53,9 +53,15 @@ describe('a burst of changes', () => {
 						});
 						window.__ran = ran;
 						window.__paints = 0;
+						// A PICTURE, not any `<svg>`: `CliOutput` classes the one it
+						// draws `svg.svg`, and the pane holds other svgs that are
+						// nobody's picture — a margin pill's lock glyph
+						// (da-rskp), which mounting once would have counted as a
+						// repaint of the band.
 						new MutationObserver((records) => {
 							for (const r of records)
-								for (const n of r.addedNodes) if (n.nodeName.toLowerCase() === 'svg') window.__paints++;
+								for (const n of r.addedNodes)
+									if (n.nodeName.toLowerCase() === 'svg' && n.classList?.contains('svg')) window.__paints++;
 						}).observe(document.querySelector(scope), { childList: true, subtree: true });
 						window.__datumSeen.length = 0;
 
