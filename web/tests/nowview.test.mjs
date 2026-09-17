@@ -1,8 +1,9 @@
-// The nowview widget's + / − (da-pcis): they step how far back the picture
+// The nowview widget's − / + (da-pcis): they step how far back the picture
 // reaches, down to 0 — the snapshot — and the step is the widget's setting,
-// kept in the draft and in a saved layout. They sit at the picture's
-// top-left, + first, with no label: each one's title names where it goes
-// (da-rex1).
+// kept in the draft and in a saved layout. They have no label: each one's
+// title names where it goes (da-rex1). They sit, tiny, just right of the
+// axis's far label — how far back the window reaches — and the snapshot,
+// which draws no axis, has none: nothing lies over its chips (da-ndzl).
 //
 // Delta-blind on purpose: each step is held to the `--history` the seam was
 // handed and to the buttons' titles, never to "the picture changed".
@@ -10,7 +11,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
-import { DESKTOP, chooseRoot, draft } from './support/layout.mjs';
+import { DESKTOP, activeTab, chooseRoot, draft, pane, settled, swipe } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -39,28 +40,85 @@ function nowviewSettings(node, out = []) {
 	return out;
 }
 
+/**
+ * Where the steps of the nowview in `pane` sit against its picture: the far
+ * label's words, and what is wrong — each step must be whole, right of the
+ * far label, on its row, below the axis, off every band, and not over the
+ * other step. Waits for the steps to be drawn.
+ */
+async function beside(page, pane) {
+	await page.locator(`${pane} .nowview-steps button`).first().waitFor();
+	return page.locator(pane).evaluate((p) => {
+		const r = (el) => el.getBoundingClientRect();
+		const over = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+		const all = [...p.querySelectorAll('svg.svg .tick-label')];
+		const far = all.reduce((a, b) => (r(b).x < r(a).x ? b : a));
+		// A label the steps take the place of is not drawn; the far one is.
+		const labels = all.filter((l) => getComputedStyle(l).visibility !== 'hidden');
+		const label = r(far);
+		const axis = r(p.querySelector('svg.svg line.axis'));
+		const bands = [...p.querySelectorAll('svg.svg .day-data rect')].map(r);
+		const steps = [...p.querySelectorAll('.nowview-steps button')].map(r);
+		const wrong = [];
+		steps.forEach((s, i) => {
+			if (s.width < 20 || s.height < 20) wrong.push(`step ${i} is ${s.width}×${s.height}`);
+			if (s.left < label.right - 0.5) wrong.push(`step ${i} starts at ${s.left}, the label ends at ${label.right}`);
+			if (s.top > label.bottom || s.bottom < label.top) wrong.push(`step ${i} is off the label's row`);
+			if (s.top < axis.top - 0.5) wrong.push(`step ${i} reaches above the axis`);
+			for (const b of bands) if (over(s, b)) wrong.push(`step ${i} is over a band`);
+			for (const l of labels) if (over(s, r(l))) wrong.push(`step ${i} is over ${l.textContent}`);
+		});
+		if (!labels.includes(far)) wrong.push(`the far label ${far.textContent} is hidden`);
+		if (steps.length !== 2) wrong.push(`${steps.length} steps`);
+		else if (over(steps[0], steps[1])) wrong.push('the steps overlap');
+		return { far: far.textContent, wrong };
+	});
+}
+
+/**
+ * The chips of the nowview in `pane` that something lies over: at each
+ * state label's middle, the element there must be the label.
+ */
+const coveredChips = (page, pane) =>
+	page.locator(pane).evaluate((p) =>
+		[...p.querySelectorAll('svg.svg .state-label')]
+			.filter((chip) => {
+				const b = chip.getBoundingClientRect();
+				return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2) !== chip;
+			})
+			.map((chip) => chip.textContent)
+	);
+
 describe('the nowview widget', () => {
-	test('sit at the top-left, + then −, with no label', async () => {
+	test('sit just right of the far axis label, − then +, with no label', async () => {
 		await withApp(async ({ page }) => {
-			const steps = page.locator(`${PANE} .nowview-steps`);
-			const [box, content] = await Promise.all([
-				steps.boundingBox(),
-				page.locator(`${PANE} .nowview`).boundingBox()
-			]);
-			assert.ok(box.x - content.x <= 8, `steps at ${box.x}, content at ${content.x}`);
-			// The title lies over the content's top strip (da-13bc): the steps
-			// sit below it, not under it.
-			const title = await page.locator(`${PANE} h2`).boundingBox();
-			assert.ok(box.y >= title.y + title.height, `steps at ${box.y}, the title ends at ${title.y + title.height}`);
-			assert.equal(await steps.locator('span').count(), 0);
+			const where = await beside(page, PANE);
+			assert.equal(where.far, '-30m');
+			assert.deepEqual(where.wrong, []);
 			assert.deepEqual(
-				await steps.locator('button').evaluateAll((bs) => bs.map((b) => [b.textContent, b.ariaLabel])),
+				await page.locator(`${PANE} .nowview-steps button`).evaluateAll((bs) => bs.map((b) => [b.textContent, b.ariaLabel])),
 				[
-					['+', 'longer window'],
-					['−', 'shorter window']
+					['−', 'shorter window'],
+					['+', 'longer window']
 				]
 			);
 		});
+	});
+
+	test('with the cursor set the far label is the leftmost, and the steps follow it', async () => {
+		await withApp(
+			async ({ page }) => {
+				await page.evaluate((ms) => window.datum.cursor.set(new Date(ms)), todayAt(9, 0));
+				await page.waitForFunction(
+					(pane) => document.querySelector(`${pane} svg.svg .tick-label`)?.textContent === '-15m',
+					PANE
+				);
+				const where = await beside(page, PANE);
+				assert.equal(where.far, '-15m');
+				assert.deepEqual(where.wrong, []);
+			},
+			{ clock: todayAt(12, 0) }
+		);
 	});
 
 	test('steps its window with + and −, through the seam, down to the snapshot and up to 12h', async () => {
@@ -80,12 +138,18 @@ describe('the nowview widget', () => {
 			await shorter(page).click();
 			await asked(page, '0');
 			await app.idle();
-			assert.ok(await shorter(page).isDisabled(), '− is live at 0');
-			assert.deepEqual(await titles(page), ['longer window (5m)', 'shorter window']);
 			const snapshot = await app.paneSvg('nowview');
 			assert.ok(!snapshot.includes('tick-label') && !snapshot.includes('class="axis"'), snapshot);
+			// No axis, no steps: the way out of the snapshot is the zoom.
+			await page.locator(`${PANE} .nowview-steps`).waitFor({ state: 'detached' });
+			const box = await pictureBox(page);
+			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+			await page.keyboard.down('Control');
+			await page.mouse.wheel(0, 100);
+			await page.keyboard.up('Control');
+			await asked(page, '5m');
 
-			for (let i = 0; i < 12; i++) await longer(page).click();
+			for (let i = 0; i < 11; i++) await longer(page).click();
 			await asked(page, '12h');
 			assert.ok(await longer(page).isDisabled(), '+ is live at 12h');
 			assert.deepEqual(await titles(page), ['longer window', 'shorter window (6h)']);
@@ -309,6 +373,93 @@ describe('the nowview widget zooms', () => {
 				prepare: (context) =>
 					context.addInitScript(draft, soloNowview({ history: '30m', at: '09:00' }))
 			}
+		);
+	});
+});
+
+// ── off the picture (da-ndzl) ────────────────────────────────────────
+//
+// vividn, 2026-09-17: the corner + / − lay over the tiny snapshot's first
+// chip — «music: true» read «sic: true». The steps now sit beside the far
+// axis label, and the snapshot, having no axis, has none.
+
+describe('the nowview steps stay off the picture', () => {
+	test('390×664 in `mobile`: the snapshot has no steps and every chip is clear; the full window has them beside its far label', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await app.runLine('switch music true');
+				await app.runLine('switch mood happy');
+				await page.evaluate(() => window.datum.run(['occur', 'coffee']));
+				const now = pane(page, 'now');
+				await now.locator('svg.svg .state-label').nth(1).waitFor();
+				const width = (await now.boundingBox()).width;
+				assert.ok(width < 130, `the snapshot's pane is ${width}px wide`);
+				assert.equal(await now.locator('.nowview-steps, button[aria-label$="window"]').count(), 0);
+				assert.deepEqual(await coveredChips(page, `section[data-pane="now"]`), []);
+
+				await pane(page, 'fields').locator('[role="tab"]', { hasText: 'nowview' }).click();
+				const where = await beside(page, `section[data-pane="fields"]`);
+				assert.equal(where.far, '-30m');
+				assert.deepEqual(where.wrong, []);
+				assert.deepEqual(app.errors, []);
+			},
+			{ viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: null }
+		);
+	});
+
+	test('a tap on a step fires it; a pan that begins on one neither fires it nor moves the tab', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const fields = pane(page, 'fields');
+				await fields.locator('[role="tab"]', { hasText: 'nowview' }).click();
+				await beside(page, 'section[data-pane="fields"]');
+				await app.spyOnRunner();
+				/** Every `--history` a nowview was asked for; the snapshot beside it asks too. */
+				const histories = () =>
+					page.evaluate(() =>
+						window.__datumSeen.filter((a) => a[0] === 'nowview').map((a) => a[a.indexOf('--history') + 1])
+					);
+				const step = fields.locator('button[aria-label="longer window"]');
+				await step.tap();
+				await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'nowview' && a.includes('45m')));
+
+				// Now 60m is the step: a pan from it either way asks for nothing.
+				await beside(page, 'section[data-pane="fields"]');
+				const box = await step.boundingBox();
+				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, 120, 0);
+				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, -120, 0);
+				await settled(page);
+				await app.idle();
+				assert.equal(await activeTab(page, 'fields'), 'nowview', 'a pan on a step moved the tab');
+				assert.ok(!(await histories()).includes('60m'), `a pan fired the step: ${await histories()}`);
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...TOUCH, viewport: { width: 390, height: 664 }, home: null }
+		);
+	});
+
+	test('a redraw mid-press does not lose the press', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await beside(page, PANE);
+				await app.spyOnRunner();
+				const box = await longer(page).boundingBox();
+				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+				await page.mouse.down();
+				await page.locator(`${PANE} svg.svg`).evaluate((svg) => (svg.dataset.old = '1'));
+				await page.evaluate(() => window.datum.run(['occur', 'coffee']));
+				await page.waitForFunction((p) => {
+					const svg = document.querySelector(`${p} svg.svg`);
+					return svg && !svg.dataset.old;
+				}, PANE);
+				await page.mouse.up();
+				await asked(page, '45m');
+				assert.deepEqual(app.errors, []);
+			},
+			{ ...DESKTOP, clock: todayAt(12, 0) }
 		);
 	});
 });

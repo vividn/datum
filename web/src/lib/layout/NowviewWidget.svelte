@@ -1,10 +1,13 @@
 <!--
 	The nowview widget (da-pcis): datum's nowview picture through a CliPane,
-	and a + / − over its top-left corner stepping how far back the picture
-	reaches — down to 0, the snapshot of each field's state. The window's size
-	is written nowhere: each button's title names the step it goes to
-	(da-rex1). The step is the widget's setting, handed out with `change`, so
-	the tree keeps it with the layout.
+	and a tiny − / + beside the axis's far label (da-ndzl) stepping how far
+	back the picture reaches — down to 0, the snapshot of each field's state.
+	The window's size is written nowhere: each button's title names the step
+	it goes to (da-rex1). The step is the widget's setting, handed out with
+	`change`, so the tree keeps it with the layout.
+
+	The snapshot draws no axis, so it has no steps: nothing lies over its
+	chips, and the way out of it is the zoom below.
 
 	The band takes sideways motion of its own, so it says so with
 	`data-pans="x"` (da-kcmp): a one-finger drag across it is never a swipe
@@ -21,11 +24,11 @@
 	it, over the `at` a hand-written tree may carry; its dotted line is the
 	picture's own (the `picture` action draws it wherever the cursor falls).
 
-	The controls sit beside the pane, not inside its picture: a redraw
-	replaces the picture, never them.
+	The steps are the widget's, not the picture's: a redraw replaces the
+	picture, never them — it only moves them to wherever the new far label is.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onDestroy } from 'svelte';
+	import { createEventDispatcher, onDestroy, onMount } from 'svelte';
 	import CliPane from '$lib/CliPane.svelte';
 	import { cursor } from '$lib/cursor.js';
 	import { NOWVIEW_HISTORY, NOWVIEW_STEPS, nowviewSpec, zoomHistory } from '$lib/panes.js';
@@ -173,6 +176,48 @@
 		settle = setTimeout(commit, 120);
 	}
 
+	// ── the steps ──────────────────────────────────────────────────────
+
+	/** The steps' row: 2px gap, then two 22px targets. See the style. */
+	const STEPS_WIDTH = 2 + 22 + 22;
+
+	/**
+	 * Where the far label ends, in px across and down the widget's box:
+	 * the leftmost tick label, which is how far back the window reaches
+	 * (`-30m`, or `-15m` with the window centred on the cursor). Read off
+	 * the picture as `anchorX` reads the now-line; none when it draws no
+	 * axis — the snapshot. A nearer label the steps would lie over is not
+	 * drawn: the far one says the window, and the steps take its
+	 * neighbour's place.
+	 */
+	let far: { x: number; y: number } | null = null;
+
+	function place(): void {
+		const labels = [...(el?.querySelectorAll<SVGElement>('svg.svg .tick-label') ?? [])];
+		if (!el || !labels.length) return void (far = null);
+		const box = (l: SVGElement) => l.getBoundingClientRect();
+		const label = box(labels.reduce((a, b) => (box(b).x < box(a).x ? b : a)));
+		for (const l of labels) {
+			const b = box(l);
+			const under = b.x > label.x && b.left < label.right + STEPS_WIDTH;
+			l.style.visibility = under ? 'hidden' : '';
+		}
+		const home = el.getBoundingClientRect();
+		far = { x: label.right - home.x, y: label.y + label.height / 2 - home.y };
+	}
+
+	onMount(() => {
+		if (!el) return;
+		const redrawn = new MutationObserver(place);
+		redrawn.observe(el, { childList: true, subtree: true });
+		const resized = new ResizeObserver(place);
+		resized.observe(el);
+		return () => {
+			redrawn.disconnect();
+			resized.disconnect();
+		};
+	});
+
 	onDestroy(() => {
 		clearTimeout(settle);
 		listen(false);
@@ -191,24 +236,26 @@
 	on:wheel|nonpassive={onWheel}
 >
 	<CliPane {spec} {epoch} />
-	<div class="nowview-steps">
-		<button
-			type="button"
-			class="control badge step"
-			aria-label="longer window"
-			title={up ? `longer window (${up})` : 'longer window'}
-			disabled={!up}
-			on:click={() => dispatch('change', up)}>+</button
-		>
-		<button
-			type="button"
-			class="control badge step"
-			aria-label="shorter window"
-			title={down ? `shorter window (${down === '0' ? 'now' : down})` : 'shorter window'}
-			disabled={!down}
-			on:click={() => dispatch('change', down)}>−</button
-		>
-	</div>
+	{#if far && !zoom}
+		<div class="nowview-steps" style:left="{far.x}px" style:top="{far.y}px">
+			<button
+				type="button"
+				class="step"
+				aria-label="shorter window"
+				title={down ? `shorter window (${down === '0' ? 'now' : down})` : 'shorter window'}
+				disabled={!down}
+				on:click={() => dispatch('change', down)}>−</button
+			>
+			<button
+				type="button"
+				class="step"
+				aria-label="longer window"
+				title={up ? `longer window (${up})` : 'longer window'}
+				disabled={!up}
+				on:click={() => dispatch('change', up)}>+</button
+			>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -237,18 +284,30 @@
 		transform-origin: var(--zoom-x) center;
 	}
 
-	/* Clear of a title lying over that corner (PaneFrame.svelte). */
+	/* Just right of the far label, on its middle. The glyph is tiny; the
+	   target is a fingertip's, and the two sit edge to edge. */
 	.nowview-steps {
 		position: absolute;
-		top: calc(4px + var(--under-top, 0px));
-		left: calc(4px + var(--under-left, 0px));
 		display: flex;
-		gap: 2px;
-		/* `.control.badge` (app.css) draws the steps, and its box is
-		   `--badge` — which a pane sets to its title row and these would
-		   inherit, being inside one. A step is a fingertip's 24px wherever
-		   it is drawn, so the row says so once, for both of them. */
-		--badge: 24px;
+		margin-left: 2px;
+		transform: translateY(-50%);
+	}
+
+	.step {
+		width: 22px;
+		height: 24px;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--muted);
+		font: inherit;
+		font-size: 13px;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.step:hover:not(:disabled) {
+		color: inherit;
 	}
 
 	.step:disabled {

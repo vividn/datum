@@ -141,8 +141,8 @@ body {
 /*
 	One control (da-a2xl, docs/web-conventions.md §11).
 
-	The small square button the frame is made of — a pane's `…` badge, the
-	nowview's − / +, the root bar's acts — and the pills beside them: the
+	The small square button the frame is made of — a pane's `…` badge and
+	the root bar's acts — and the pills beside them: the
 	root bar's tabs and a pane's. The same box, ground, outline, radius and
 	muted ink was written out in five places; this is that rule set, once.
 	Global because Svelte scopes a component's CSS, so a class shared
