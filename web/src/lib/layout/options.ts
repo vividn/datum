@@ -13,9 +13,17 @@ import { isWidget } from './types.js';
  * and so no item — when the tab holds no widget of its own or its kind
  * declares no options. The rule `resetWidget` (shell.ts) reads, asked of
  * the options instead of the defaults.
+ *
+ * The question is the tab's SHAPE and not whether it names a layout
+ * (da-ze1x): a saved layout of ONE widget is lifted into the tab that
+ * holds it (`inline`, shell.ts), so the widget is that tab's own content
+ * and this is the door to it. `datum.day/repl` and `/nowview` are exactly
+ * that tab, and on a phone they are the whole page. A layout of more than
+ * one widget arrives under a split instead — `isWidget` is false, there is
+ * no one widget to mean, and the panes inside carry their own.
  */
 export function widgetOptions(tab: Tab | undefined): (() => void) | undefined {
-	if (!tab || tab.layout !== undefined || !isWidget(tab.content) || !optionsOfKind(tab.content.kind)) return undefined;
+	if (!tab || !isWidget(tab.content) || !optionsOfKind(tab.content.kind)) return undefined;
 	const tabId = tab.id;
 	return () => {
 		const modal = new Options({ target: document.body, props: { tabId } });

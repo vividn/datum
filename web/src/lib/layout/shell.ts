@@ -862,17 +862,23 @@ export async function resetDefaults(): Promise<void> {
 /**
  * `Reset widget` (da-7ymx): the act that puts the kind's declared defaults
  * back on the widget `tab` holds, or undefined when there is nothing to
- * reset — a tab holding a LAYOUT or a SPLIT holds no widget of its own, and
- * a kind that declares no defaults has none to restore. The registry is the
- * only place the defaults are written down (`defaultsOfKind`); the menu
- * asks, and never keeps a copy.
+ * reset — a tab holding a SPLIT holds no widget of its own, and a kind that
+ * declares no defaults has none to restore. The registry is the only place
+ * the defaults are written down (`defaultsOfKind`); the menu asks, and never
+ * keeps a copy.
+ *
+ * SHAPE, not name (da-ze1x): a tab that HOLDS a layout of exactly one
+ * widget holds that widget too, because `inline` lifts a one-tab root pane
+ * into the tab — so `/repl` and `/nowview` answer here, and a layout of
+ * several widgets, which arrives under a split, does not.
  *
  * A DRAFT change, down the same `setWidget` path the widget's own `change`
  * takes (Layout.svelte): the layout holding the tab shows its dot, and Save
- * is what writes it.
+ * is what writes it — and for a one-widget layout that is the layout the
+ * tab names, so its dot lights and `Restore layout` is the way back.
  */
 export function resetWidget(tab: Tab | undefined): (() => void) | undefined {
-	if (!tab || tab.layout !== undefined || isSplit(tab.content)) return undefined;
+	if (!tab || isSplit(tab.content)) return undefined;
 	const widget = tab.content;
 	const settings = defaultsOfKind(widget.kind);
 	if (!settings) return undefined;

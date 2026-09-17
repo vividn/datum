@@ -199,9 +199,12 @@
 		? [...optionsItem(widgetOptions(active)), ...(acts ? layoutActs(acts) : [])]
 		: menuItems({
 				choose: () => id !== undefined && void fillTab(id),
-				// The same rule a pane's frame reads: a root tab holding a bare
-				// widget — one whose kind has no built-in layout (da-y2f6) — can
-				// be reset like any other. One holding a layout cannot.
+				// The same rule a pane's frame reads, and it is about SHAPE: a
+				// root tab showing ONE widget — a bare one, or the one-widget
+				// layout `/repl` and `/nowview` open (da-ze1x) — offers that
+				// widget's acts beside the layout's own. On a phone that tab is
+				// the whole page, so this menu is the only door to it. A layout
+				// of several widgets shows a split here and offers neither.
 				reset: resetWidget(active),
 				options: widgetOptions(active),
 				// No `breakOut`: a tab breaks out of its strip, and this bar is the

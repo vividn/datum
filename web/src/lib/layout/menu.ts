@@ -21,10 +21,14 @@
 //   layout that SHIPPED — with datum (da-luwe) or in a kit (da-gg0v) —
 //   which is a fact about the layout and not about which of the two menus
 //   is open.
-// - `Reset widget` (da-7ymx) is on a tab that HOLDS A WIDGET of its own —
-//   not a layout, not a split — and whose kind declares defaults to put
-//   back. The root's tab almost always holds a layout, so the root menu
-//   almost never shows it; that is the same rule, not a second one.
+// - `Reset widget` (da-7ymx) and `Options…` (da-gvdc) are on a tab that
+//   SHOWS ONE WIDGET and whose kind declares defaults, or options, to
+//   offer. That is a question of the tab's shape, not of whether it names
+//   a layout: a saved layout of exactly one widget is lifted into the tab
+//   that holds it (`inline`, shell.ts), so the root tab of `datum.day/repl`
+//   or `/nowview` is that widget and gets both (da-ze1x). A layout of
+//   several widgets arrives under a split and gets neither — its panes
+//   have their own. Same rule either menu, as ever.
 // - `export backup…` is the root's alone: there is one database. So is
 //   `Keep tab` (da-xamd), which rides in beside it: only a root tab can be
 //   a PREVIEW, and only a preview has a keeping left to do.
@@ -138,9 +142,10 @@ export function menuItems(spec: {
 	choose: () => void;
 	/**
 	 * `Reset widget` (da-7ymx): the widget in front, back to the defaults
-	 * its kind declares. Undefined — and so left out — when the tab holds
-	 * no widget of its own (a layout, a split) or its kind declares no
-	 * defaults, which is `resetWidget` in `shell.ts` asking the registry.
+	 * its kind declares. Undefined — and so left out — when the tab shows
+	 * no one widget (a split, and so a layout of more than one) or its kind
+	 * declares no defaults, which is `resetWidget` in `shell.ts` asking the
+	 * registry.
 	 * Beside `Choose…`, because like it it is about the widget in front.
 	 */
 	reset?: () => void;
