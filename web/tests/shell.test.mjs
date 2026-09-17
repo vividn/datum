@@ -8,6 +8,34 @@
 // listing — never "more tabs than before". Where the shell talks to the
 // store, the store is read back through `window.datum.layouts`, which is
 // CLI commands through the seam.
+//
+// ONE APP behind most of this file (da-xamd). A browser context is 2.5 s of
+// wasm compile, database and pane commands, and this file used to open
+// thirty-one of them. What a shared app costs is shared state, and for the
+// shell that state is the LAYOUT: what a test splits, saves and locks is
+// what the next test opens onto. So a test that mutates takes a ROOM —
+// `app.room('acts')` is `day`'s tree as a preview tab under a name of its
+// own, written nowhere — and `app.solo()` puts the world back to `day`
+// alone before each one. A room's panes carry the room's name (`inRoom`),
+// because a second copy of one layout has its ids re-minted (shell.ts).
+//
+// What still opens an app of its own, and why:
+//
+//   - a test about ANOTHER DEVICE, which is another browser context by
+//     definition — the second half of the `+` test, `a saved day is what
+//     another device opens`, the second half of the lock test;
+//   - `an edit in tab A survives a save from tab B`, which wants two pages
+//     that both booted from the same saved `day`;
+//   - the two cycle-guard tests and `the one chooser`, which are about
+//     `day` ITSELF being the tab in front — the layout a room exists not
+//     to touch;
+//   - the lock test, which reloads, and a preview does not survive a
+//     reload: that is what it is for;
+//   - the bottom-bar tests that LOG — one app is one database, so a test
+//     that counts rows, or that logs `tea` in the same minute as its
+//     neighbour, still wants its own (da-vk1x, the `?db=` bead);
+//   - the phone, the memory-only storage prelude and the fallback-only
+//     server, each of which is a different browser.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,14 +44,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright';
-import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
+import { inWorker, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { addTab, chooseRoot, chooser, fill, menuLines, offers, openChooser, rootMenuButton, settled } from './support/layout.mjs';
+import { chooseRoot, chooser, fill, offers, openChooser, rootMenuButton, settled, titledMenuButton, titledPane } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
 
 const DESKTOP = { viewport: { width: 1280, height: 900 } };
+
+/** The one desktop app most of this file shares (da-xamd). */
+const shared = sharedApp(DESKTOP);
 
 /**
  * The same desktop on the one-pane repl layout.
@@ -36,6 +67,19 @@ const DESKTOP = { viewport: { width: 1280, height: 900 } };
  * press, the orange alarm — keep the day page.
  */
 const BAR_ONLY = { ...DESKTOP, query: 'repl' };
+
+/**
+ * The one repl-page app the bar tests share, and the state they do share:
+ * the PILLS, which a test that leaves one behind would hand to the next.
+ * Not `shared.solo`, which puts the root bar back to `day` alone and would
+ * take the cheap page out from under them.
+ */
+const barShared = sharedApp(BAR_ONLY);
+const onBar = async (fn) => {
+	const app = await barShared();
+	await app.page.evaluate(() => window.datum.bar.setPills([]));
+	return fn(app);
+};
 
 /** The root bar's tab labels, in order, the modified dot stripped. */
 const rootTabs = (page) =>
@@ -78,11 +122,31 @@ async function offered(page) {
 	return items.map((t) => t.trim());
 }
 
-/** Open a pane's menu — its title — and choose an item by its exact label. */
-async function choose(page, id, label) {
-	await page.locator(`section[data-pane="${id}"] .titlebar button.title`).first().click();
+/**
+ * Open a pane's menu — its title — and choose an item by its exact label.
+ *
+ * By TITLE, not by the id `day` gives the pane: inside a room the same
+ * pane is `tail@<room>` (shell.ts re-mints a second copy's ids) and its
+ * title is `tail` in both.
+ */
+async function choose(page, title, label) {
+	await titledMenuButton(page, title).click();
 	await page.getByRole('menuitem', { name: label, exact: true }).click();
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+}
+
+/** Add a tab to a titled pane: the `+`, then `name` in the chooser it opens. */
+async function addTab(page, title, name) {
+	await titledPane(page, title).locator('> .titlebar button.add').first().click();
+	await chooser(page).waitFor();
+	await chooser(page).locator('button').filter({ hasText: exactly(name) }).click();
+	await chooser(page).waitFor({ state: 'detached' });
+}
+
+/** Bring a root tab to the front by its label, and wait for it. */
+async function front(page, label) {
+	await page.locator('.root-bar [role="tab"]', { hasText: exactly(label) }).click();
+	await until(() => activeRootTab(page), (t) => t === label);
 }
 
 /** The four acts, as the root menu names them (da-wjob). */
@@ -143,7 +207,7 @@ const PRONOUNCED = 'rgb(255, 209, 102)';
 
 describe('the shell', () => {
 	test('no header; the root bar shows day active; the bottom bar has the brand, beta, the prompt, an empty result area', async () => {
-		await withApp(async ({ page, errors }) => {
+		await shared.solo(async ({ page, errors }) => {
 			assert.equal(await page.locator('header').count(), 0, 'the header is still there');
 			assert.equal(await page.locator('aside.beta').count(), 0, 'the beta banner is still there');
 			assert.deepEqual(await rootTabs(page), ['day']);
@@ -192,11 +256,11 @@ describe('the shell', () => {
 				]
 			);
 			assert.deepEqual(errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('+ lists day, the widget kinds and the saved layouts; nowview opens a tab; a reload keeps it, another device starts fresh', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			assert.deepEqual(await offered(page), ['day', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'input']);
 
@@ -220,7 +284,7 @@ describe('the shell', () => {
 			// The chooser reads the saved layouts each time it opens, so the
 			// save is on the list the first time it is asked.
 			assert.deepEqual(await offered(page), ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'input']);
-		}, DESKTOP);
+		});
 
 		// Which tabs are open is per device (vividn: the selection is not synced).
 		await withApp(async ({ page }) => {
@@ -231,7 +295,7 @@ describe('the shell', () => {
 
 describe('a URL', () => {
 	test('/nowview, /stats and /now open that tab; a reload on /stats lands on stats', async () => {
-		await withApp(async (app) => {
+		await shared.wipe(async (app) => {
 			const { page } = app;
 			await app.goto('/nowview');
 			assert.deepEqual(await rootTabs(page), ['day', 'nowview']);
@@ -249,12 +313,12 @@ describe('a URL', () => {
 			assert.deepEqual(await rootTabs(page), ['day', 'nowview', 'stats']);
 			assert.equal(await activeRootTab(page), 'nowview');
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// The widget bar became the fields widget (da-c7u8); its old name is an alias.
 	test('/fields, /widgets and /widgetbar open the fields widget alone', async () => {
-		await withApp(async (app) => {
+		await shared.wipe(async (app) => {
 			const { page } = app;
 			for (const path of ['/fields', '/widgets', '/widgetbar']) {
 				await app.goto(path);
@@ -264,14 +328,14 @@ describe('a URL', () => {
 				assert.deepEqual(await titles(page), ['fields']);
 			}
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// The widget's files are called Fields* now (da-850j) but its KIND ID is
 	// `widgetbar` still, because that id is the key in every layout already
 	// saved. This is the JSON an older build wrote: it must still draw.
 	test('a layout saved under the old kind id still opens the fields widget', async () => {
-		await withApp(async (app) => {
+		await shared.wipe(async (app) => {
 			const { page } = app;
 			await layouts(app, 'saveLayout', {
 				version: 1,
@@ -282,7 +346,7 @@ describe('a URL', () => {
 			assert.deepEqual(await titles(page), ['fields']);
 			await page.locator('section.pane[data-title="fields"] button.track').waitFor();
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// The kind `command` became `custom` (da-zqop), which freed the id for
@@ -293,7 +357,7 @@ describe('a URL', () => {
 	// away the day it landed. Both names are a widget of their own here, and
 	// a layout naming either opens as that one.
 	test('/custom opens the custom widget and /command the commands widget, each under its own name', async () => {
-		await withApp(async (app) => {
+		await shared.wipe(async (app) => {
 			const { page } = app;
 			await app.goto('/custom');
 			assert.deepEqual(await rootTabs(page), ['day', 'custom']);
@@ -322,18 +386,18 @@ describe('a URL', () => {
 			assert.deepEqual(await titles(page), ['command']);
 			await page.locator('section.pane[data-title="command"] button[data-command="occur"]').waitFor();
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('/no-such-thing is a quiet notice with a link home', async () => {
-		await withApp(async (app) => {
+		await shared.wipe(async (app) => {
 			await app.page.goto(new URL('/no-such-thing', app.page.url()).href);
 			const notice = app.page.locator('main .notice');
 			await notice.waitFor();
 			assert.match(await notice.innerText(), /no-such-thing/);
 			assert.equal(await notice.locator('a[href="/"]').count(), 1);
 			assert.deepEqual(await rootTabs(app.page), ['day']);
-		}, DESKTOP);
+		});
 	});
 
 	// The deployed site serves every path from adapter-static's fallback
@@ -366,14 +430,16 @@ describe('a URL', () => {
 
 describe('the acts', () => {
 	test('a split shows the dot and marks Save and Restore; restore undoes it; save keeps it', async () => {
-		await withApp(async (app) => {
+		// In a ROOM (da-xamd): the tree is `day`'s, the name is this test's,
+		// and the save this makes is nobody else's to meet.
+		await shared.room('act-split', async (app, room) => {
 			const { page } = app;
 			assert.deepEqual(await dotted(page), []);
 			const quiet = (await rootItem(page, 'Save layout')).color;
 
 			await choose(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
-			assert.deepEqual(await dotted(page), ['day']);
+			assert.deepEqual(await dotted(page), [room]);
 			// The dot's meaning, in the menu beside it: exactly the two acts
 			// that answer it are marked, and in the dot's own amber.
 			const marked = await rootItems(page);
@@ -393,14 +459,14 @@ describe('the acts', () => {
 			await until(() => dotted(page), (d) => d.length === 0);
 			assert.deepEqual(
 				(await layouts(app, 'listLayouts')).map((l) => l.name),
-				['day']
+				[room]
 			);
-			const saved = await layouts(app, 'loadLayout', 'day');
+			const saved = await layouts(app, 'loadLayout', room);
 			// The save is the tree as shown: the tail's row split, nowview beside it.
 			const kinds = JSON.stringify(saved.root).match(/"kind":"nowview"/g);
 			assert.equal(kinds.length, 2, 'the second nowview was not saved');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'custom', 'fields']);
-		}, DESKTOP);
+		});
 
 		// A second device loads the saved tree.
 		// (A second CONTEXT is a second OPFS, so the save is carried across
@@ -427,38 +493,38 @@ describe('the acts', () => {
 		}, DESKTOP);
 	});
 
-	test('save as makes a mine tab beside day, and both are saved', async () => {
-		await withApp(async (app) => {
+	test('save as renames this copy to mine and leaves the layout it came from alone', async () => {
+		// The room stands in for what `day` was here: `save as` moves THIS
+		// copy to the new name, and the layout it was a copy of keeps its own.
+		await shared.room('act-as', async (app) => {
 			const { page } = app;
 			await choose(page, 'tail', 'split: a new pane to the right');
 			page.once('dialog', (dialog) => dialog.accept('mine'));
 			await act(page, 'save-as');
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
-			assert.deepEqual(await rootTabs(page), ['mine']);
+			assert.deepEqual(await rootTabs(page), ['day', 'mine']);
 			assert.deepEqual(await dotted(page), []);
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
 			assert.deepEqual(
 				(await layouts(app, 'listLayouts')).map((l) => l.name),
 				['mine']
 			);
-			// day was never saved and keeps no draft of the edit; opening it
-			// again is the default.
-			await pick(page, 'day');
-			await until(() => rootTabs(page), (t) => t.includes('day'));
-			assert.deepEqual(await rootTabs(page), ['mine', 'day']);
+			// day was never saved and keeps no draft of the edit; it is the
+			// default still.
+			await front(page, 'day');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
 			assert.deepEqual(await dotted(page), []);
 
 			// Both open, both tail panes editable on their own: a split in
 			// mine's tail leaves day's alone.
-			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).click();
+			await front(page, 'mine');
 			await addTab(page, 'tail', 'aliases');
 			assert.deepEqual(await page.locator('section.pane [role="tablist"] [role="tab"]').allInnerTexts(), ['tail', 'aliases']);
-			await page.locator('.root-bar [role="tab"]', { hasText: 'day' }).click();
+			await front(page, 'day');
 			assert.equal(await page.locator('section.pane [role="tablist"]').count(), 0, 'the tab strip leaked into day');
 			assert.deepEqual(await dotted(page), ['mine']);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('lock is per device: kept across a reload here, absent on another device and in the save; never the dot', async () => {
@@ -501,7 +567,7 @@ describe('the acts', () => {
 	});
 
 	test('an unmodified restore lists the versions, and one of them can be picked', async () => {
-		await withApp(async (app) => {
+		await shared.room('act-trail', async (app) => {
 			const { page } = app;
 			await choose(page, 'custom', 'Close pane');
 			await act(page, 'save');
@@ -524,7 +590,7 @@ describe('the acts', () => {
 			await until(() => titles(page), (t) => t.length === 5);
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
 			assert.deepEqual(await dotted(page), []);
-		}, DESKTOP);
+		});
 	});
 
 	// The review thread on #168: the cross-tab refresh decided "unmodified"
@@ -666,7 +732,7 @@ describe('the bottom bar', () => {
 	});
 
 	test('a pill set programmatically shows, and a press on it removes it', async () => {
-		await withApp(async (app) => {
+		await onBar(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time' }]));
 			const pill = page.locator('.prompt-bar .pill');
@@ -676,7 +742,7 @@ describe('the bottom bar', () => {
 			await pill.locator('button.remove').click();
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 0);
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), []);
-		}, BAR_ONLY);
+		});
 	});
 
 	test('a submit runs typed + pills, then an unlocked pill clears on success', async () => {
@@ -733,7 +799,7 @@ describe('the bottom bar', () => {
 	});
 
 	test('a failed command leaves its pill in place', async () => {
-		await withApp(async (app) => {
+		await onBar(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time' }]));
 			const input = page.locator('.prompt-bar input');
@@ -741,7 +807,7 @@ describe('the bottom bar', () => {
 			await input.press('Enter');
 			await page.locator('.prompt-bar .result.error').waitFor();
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'a failed command keeps the pill');
-		}, BAR_ONLY);
+		});
 	});
 
 	// The pills moved INSIDE the prompt in da-xfa4 — vividn: "move the -t
@@ -750,7 +816,7 @@ describe('the bottom bar', () => {
 	// longer DOM order but where they are drawn: past the caret, over the
 	// box, and inside it.
 	test('the pills are drawn inside the box, past the caret', async () => {
-		await withApp(async (app) => {
+		await onBar(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time' }]));
 			await page.locator('.prompt-bar .pill').waitFor();
@@ -767,11 +833,11 @@ describe('the bottom bar', () => {
 				seen.pill.left >= seen.field.left - 1 && seen.pill.right <= seen.field.right + 1,
 				'the pill is outside the box'
 			);
-		}, BAR_ONLY);
+		});
 	});
 
 	test('the hint opens the beta text and the storage sentence; Escape closes it', async () => {
-		await withApp(async ({ page }) => {
+		await onBar(async ({ page }) => {
 			assert.equal(await page.locator('.beta-hint').count(), 0);
 			await page.locator('.prompt-bar .hint-button').click();
 			const text = await page.locator('.beta-hint p').innerText();
@@ -779,7 +845,7 @@ describe('the bottom bar', () => {
 			await page.keyboard.press('Escape');
 			await page.locator('.beta-hint').waitFor({ state: 'detached' });
 			assert.equal(await page.locator('.prompt-bar .hint-button').getAttribute('aria-expanded'), 'false');
-		}, BAR_ONLY);
+		});
 	});
 });
 
@@ -871,7 +937,7 @@ describe('a layout naming the widget that went and came back', () => {
 	const ROOT_BAR = { edge: 'top', align: 'start' };
 
 	test('a saved layout whose widget is `input` opens as an input widget, unmodified, and saves back as one', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await layouts(app, 'saveLayout', {
 				version: 1,
@@ -901,11 +967,11 @@ describe('a layout naming the widget that went and came back', () => {
 				() => layouts(app, 'loadLayout', 'mine'),
 				(saved) => saved.root.tabs[0].content.kind === 'input'
 			);
-		}, DESKTOP);
+		});
 	});
 
 	test('/input opens the input widget, and the chooser offers it again', async () => {
-		await withApp(async (app) => {
+		await shared.wipe(async (app) => {
 			const { page } = app;
 			await app.goto('/input');
 			await until(() => rootTabs(page), (t) => t.includes('input'));
@@ -913,7 +979,7 @@ describe('a layout naming the widget that went and came back', () => {
 			assert.deepEqual(await titles(page), ['input']);
 			await page.locator('.input-widget input').waitFor();
 			assert.ok((await offered(page)).includes('input'), 'the chooser does not offer the input widget');
-		}, DESKTOP);
+		});
 	});
 });
 

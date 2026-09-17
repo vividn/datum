@@ -14,6 +14,7 @@
 // what the tests exercise is what deploys: the same worker chunk, the same
 // cross-origin-isolation headers (see web/vite.config.ts).
 
+import { after } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -242,20 +243,27 @@ function baseUrl() {
  * or reads what is current NOW wants one, with `todayAt` above; a test
  * that also has to move the clock builds its own with `workerClock`.
  */
-export async function withApp(
-	fn,
-	{
-		prepare,
-		clock,
-		locale,
-		viewport,
-		device,
-		query = '',
-		engine,
-		reducedMotion,
-		timezone = TIMEZONE
-	} = {}
-) {
+export async function withApp(fn, options) {
+	const { app, close } = await openApp(options);
+	try {
+		await fn(app);
+	} finally {
+		await close();
+	}
+}
+
+/** `withApp`'s own body: the app, and the one call that takes it down again. */
+async function openApp({
+	prepare,
+	clock,
+	locale,
+	viewport,
+	device,
+	query = '',
+	engine,
+	reducedMotion,
+	timezone = TIMEZONE
+} = {}) {
 	const options = {
 		...device,
 		timezoneId: timezone,
@@ -267,6 +275,10 @@ export async function withApp(
 	const context = engine
 		? await engine.launchPersistentContext(profile, options)
 		: await browser.newContext(options);
+	const close = async () => {
+		await context.close();
+		if (profile) await rm(profile, { recursive: true, force: true });
+	};
 	try {
 		if (clock !== undefined) {
 			await context.clock.setFixedTime(new Date(clock));
@@ -274,12 +286,74 @@ export async function withApp(
 		}
 		await prepare?.(context);
 		const page = await context.newPage();
-		const app = await open(page, query);
-		await fn(app);
-	} finally {
-		await context.close();
-		if (profile) await rm(profile, { recursive: true, force: true });
+		return { app: await open(page, query), close };
+	} catch (e) {
+		await close();
+		throw e;
 	}
+}
+
+/**
+ * ONE app for a whole file, and a ROOM of its own for each test (da-xamd).
+ *
+ * `withApp` opens a browser context per test, and a context is 2.5 s of
+ * wasm compile, database and pane commands (docs/web-conventions.md #21).
+ * Six files reach the runner's budget only by sharing one app, and what a
+ * shared app costs is shared STATE — for the shell and the layout menu,
+ * the layout state a test mutates on its way through.
+ *
+ * `app().room('acts')` is the answer: `/acts?from=day` opens `day`'s tree
+ * as a PREVIEW tab under a name of the test's own, written nowhere
+ * (shell.ts), so the test may split it, drag it, lock it and save it
+ * without the next test ever meeting any of it. The room is taken fresh:
+ * every root tab but `day` is closed, every layout the reader saved is
+ * deleted and every draft and lock this device kept is dropped, so what a
+ * test opens onto is the layout world a fresh install has.
+ *
+ * What a room does NOT isolate is the DATABASE: one app is one OPFS, so
+ * entries a test logs are entries the next test sees (da-vk1x). A test
+ * that counts rows, or that logs a field a neighbour logs in the same
+ * minute, still wants `withApp` of its own.
+ *
+ * Usage: `const shared = sharedApp(DESKTOP)` at the top of a file, then
+ * either shape inside a test —
+ *
+ *     await shared.solo(async (app) => { … })        // `day` alone
+ *     await shared.room('acts', async (app, room) => { … })
+ *
+ * — or `await shared()` for the app itself. It opens on the FIRST ask
+ * rather than in a `before`, so it cannot race the file's own
+ * `before(startApp)`, and it books the `after` that takes it down.
+ */
+export function sharedApp(options) {
+	let shared = null;
+	let close = null;
+	after(async () => {
+		// The browser may already be gone: `after(stopApp)` is registered
+		// first and closing a browser closes its contexts.
+		await close?.().catch(() => {});
+		shared = null;
+		close = null;
+	});
+	const open = async () => {
+		if (!shared) ({ app: shared, close } = await openApp(options));
+		return shared;
+	};
+	/** `fn` against the shared app with the layout world back to `day` alone. */
+	open.solo = async (fn) => fn(await (await open()).solo());
+	/**
+	 * `fn` against the shared app with every layout this device kept
+	 * dropped and the page NOT rebuilt: for a test whose first act is a
+	 * navigation, which builds the page itself.
+	 */
+	open.wipe = async (fn) => fn(await (await open()).wipe());
+	/** `fn` against a room of its own; the room's name comes second. */
+	open.room = async (name, fn) => {
+		const app = await open();
+		await app.room(name);
+		return fn(app, name);
+	};
+	return open;
 }
 
 /** Navigate to the day frame and wait until the database is open. */
@@ -331,7 +405,7 @@ async function ready(page) {
 }
 
 function app(page, errors, query) {
-	return {
+	const self = {
 		page,
 		/** Uncaught errors the page threw, in order. */
 		errors,
@@ -547,6 +621,144 @@ function app(page, errors, query) {
 		},
 
 		/**
+		 * Every layout this device kept, gone (da-xamd): the reader's saved
+		 * layouts and every `datum.layout.*` key, the open list included.
+		 *
+		 * The page in front of you is NOT rebuilt, which is the point: a test
+		 * that is about to NAVIGATE gets its fresh world for nothing, since
+		 * the navigation builds the page from what is left — and a rebuild
+		 * here would be one day frame drawn for no one. A test that stays on
+		 * this page wants `solo`.
+		 *
+		 * THE INVARIANT, because the deletion goes behind a page that is
+		 * still alive: nothing may run a shell act between this and the next
+		 * navigation. The open list is written by `settle` on every change to
+		 * the tree, so one act in that window would put the stale list back
+		 * over the world just wiped. `solo` and `room` are safe by settling
+		 * it again on purpose (`settleRoot`); a caller of `wipe` alone must
+		 * navigate next.
+		 */
+		async wipe() {
+			await page.evaluate(async () => {
+				const { layouts } = window.datum;
+				for (const l of await layouts.listLayouts())
+					if (l.source === 'user') await layouts.deleteLayout(l.name);
+				for (const key of Object.keys(localStorage))
+					if (key.startsWith('datum.layout.')) localStorage.removeItem(key);
+			});
+			return self;
+		},
+
+		/**
+		 * `wipe`, and the page in front of you back to `day` alone, as it
+		 * came: every other root tab closed and `day` itself restored if the
+		 * test before it left a mark.
+		 *
+		 * At most ONE frame is drawn — the tabs are closed before the saves
+		 * are dropped, and `day` is put back while it is behind another tab
+		 * wherever it can be.
+		 */
+		async solo() {
+			await self.home();
+			await page.evaluate(async () => {
+				const { layout, shell } = window.datum;
+				const tabs = () => layout.current().root.tabs;
+				for (let i = tabs().length - 1; i >= 0; i--) if (tabs()[i].layout !== 'day') shell.close(i);
+			});
+			await self.wipe();
+			await self.restoreDay();
+			await self.settleRoot();
+			await ready(page);
+			return self;
+		},
+
+		/**
+		 * Back to `/`, if the test before left the app somewhere else — a
+		 * notice page (`/nothing`) draws no tree at all.
+		 *
+		 * The QUERY is kept, because `?db=<name>` is the page's whole state
+		 * (da-vk1x) and a navigation that drops it is a navigation into
+		 * another database.
+		 */
+		async home() {
+			const url = new URL(page.url());
+			if (url.pathname !== '/') await self.goto('/' + url.search);
+			return self;
+		},
+
+		/**
+		 * Write the open list out again: `wipe` took it with everything else,
+		 * and a test that stays on this page wants the device to say what is
+		 * actually open. An identity `apply` is the shell's own settle.
+		 */
+		async settleRoot() {
+			await page.evaluate(() => window.datum.layout.apply((l) => l));
+			return self;
+		},
+
+		/** `day` back to the tree it ships with, if something moved it. Draws nothing on its own. */
+		async restoreDay() {
+			await page.evaluate(async () => {
+				const { layout, shell } = window.datum;
+				const day = layout.current().root.tabs.find((t) => t.layout === 'day');
+				// Svelte's `get`, by hand: a store calls a new subscriber at
+				// once with the value it holds, and `subscribe` hands back the
+				// unsubscriber — named here rather than invoked on the same
+				// line, which three reviews in a row read as a leak.
+				let dirty = false;
+				const stop = shell.modified.subscribe((m) => (dirty = !!day && m.has(day.id)));
+				stop();
+				if (dirty) await shell.restore(day.id);
+			});
+			return self;
+		},
+
+		/**
+		 * A ROOM of this test's own in a shared app (da-xamd): `day`'s tree
+		 * as a PREVIEW tab called `name`, written nowhere, on a fresh world.
+		 *
+		 * Whatever the test does in here — split it, drag it, lock it, save
+		 * it under its own name — is the room's and not `day`'s, and a
+		 * preview leaves no trace at all unless the test asks for one.
+		 *
+		 * The room is opened FIRST and the world tidied behind it, so ONE
+		 * day frame is drawn: the room's. Closing the last test's tabs first
+		 * would draw `day` on the way past, which is the whole cost of a
+		 * boot again. Closing them AFTER draws nothing: every one of them is
+		 * behind the room by then, the renderer draws the active tab alone,
+		 * and the tab in front is the same object throughout — `closeTab`
+		 * moves the active INDEX when it removes a tab before it, never the
+		 * tab, and the strip is keyed by tab id, so nothing remounts.
+		 *
+		 * A room's panes carry the room's name: the tree is `day`'s inlined
+		 * a SECOND time, so `inline` re-mints the ids it already has as
+		 * `<id>@<room>` (shell.ts). `inRoom` in `support/layout.mjs` names one.
+		 */
+		async room(name) {
+			await self.home();
+			// The route's own door (`routes/[name]/+page.svelte`), called
+			// where the route calls it. Not `goto`: a real navigation is a
+			// whole boot again — a fresh wasm compile and every pane's first
+			// command — which is the cost a shared app is here to avoid.
+			// That the URL reaches this is `preview.test.mjs`'s to say.
+			const missing = await page.evaluate((n) => window.datum.shell.openPreview(n, 'day'), name);
+			if (missing !== null) throw new Error(`a room seeded from a layout that is nothing: ${missing}`);
+			await page.evaluate(async (keep) => {
+				const { layout, shell } = window.datum;
+				const tabs = () => layout.current().root.tabs;
+				for (let i = tabs().length - 1; i >= 0; i--) {
+					const held = tabs()[i].layout;
+					if (held !== 'day' && held !== keep) shell.close(i);
+				}
+			}, name);
+			await self.wipe();
+			await self.restoreDay();
+			await self.settleRoot();
+			await ready(page);
+			return name;
+		},
+
+		/**
 		 * Navigate this tab to `path` — `/`, `/input` — and wait for it to
 		 * come up. A `/<name>` opens that tab and then the page is `/`
 		 * again, or a notice for a name that is nothing (da-0a5o); either
@@ -605,4 +817,5 @@ function app(page, errors, query) {
 			return () => page.evaluate(() => window.__datumSeen);
 		}
 	};
+	return self;
 }

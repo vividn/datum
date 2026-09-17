@@ -55,6 +55,15 @@
 // one guard: a name already open above it (`day` inside `day`) is a
 // notice, not a recursion.
 //
+// A PREVIEW is a root tab that is none of this device's business
+// (da-xamd). `/<name>?from=<layout>` seeds one with another layout's tree
+// under a name of its own; it is drawn in italics and nothing about it is
+// written down — not the open list, not a draft, not a save — so it lives
+// exactly as long as the page does. `previews` holds those names, and
+// `settle` reads it at the moment it writes, which is the only place the
+// exclusion can be honest: every change to the tree comes back through
+// there. `Keep tab` is the door out, and it is a save under the name.
+//
 // A nested tab takes the id `inline` gives it — the saved root pane's,
 // re-minted where it is taken — rather than the id the outer tree had for
 // it, because `extract` rebuilds the root pane from the tab's own id, and
@@ -322,6 +331,28 @@ async function expandTab(tab: Tab, path: string[], taken: Set<NodeId>): Promise<
 /** Each open layout's save, in `baselineOf` form, by name. */
 const baselines = writable<Record<string, Layout>>({});
 
+/**
+ * The names open as a PREVIEW (da-xamd): a root tab seeded from another
+ * layout by `/<name>?from=<layout>` and WRITTEN NOWHERE — not this
+ * device's open list, not a draft, not the store. A reload has never heard
+ * of it, and `Keep tab` is what makes one real.
+ *
+ * A store rather than a plain set, because `settle` has to run again when
+ * a name joins or leaves it — that is the whole of what "written nowhere"
+ * means — and the root bar draws the italics from it.
+ */
+export const previews = writable<Set<string>>(new Set());
+
+/** Whether `name` is open as a preview: what the italics and `Keep tab` read. */
+export const isPreview = (name: string): boolean => get(previews).has(name);
+
+const forget = (name: string) =>
+	previews.update((open) => {
+		const rest = new Set(open);
+		rest.delete(name);
+		return rest;
+	});
+
 export const rootTabs = (l: Layout): Tab[] => l.root.tabs;
 
 /**
@@ -367,6 +398,24 @@ async function openTab(name: string, taken: Set<NodeId>): Promise<Tab | null> {
 
 let booted = false;
 let booting: Promise<void> | null = null;
+
+/**
+ * Run `act` with `settle` held off, and nothing written until it is whole.
+ *
+ * The same device `fillRoot` uses for the same reason: there are moments
+ * when the tree and what hangs off it — a baseline, a preview's name —
+ * belong to two different pages, and a settle in the middle of one writes
+ * that disagreement down.
+ */
+function quiet(act: () => void): void {
+	const resting = booted;
+	booted = false;
+	try {
+		act();
+	} finally {
+		booted = resting;
+	}
+}
 
 /**
  * The page's tree, built from `state`: one root tab per open layout, each
@@ -436,9 +485,38 @@ export function boot(): Promise<void> {
 function settle(): void {
 	if (!booted) return;
 	const $layout = get(layout);
+	const shown = get(previews);
+	// A PREVIEW IS A NAME A TAB CARRIES (kimi-k3 on #23). `saveAs` renames a
+	// copy, the chooser replaces one with another layout or with a bare
+	// widget — every act that takes a name off a tab passes through here, so
+	// the set is pruned here rather than at each of them, which is the same
+	// argument the exclusion below rests on. A name left behind would make a
+	// real layout that later took it a preview: italic, kept out of the open
+	// list, and passed over by `followSaves`.
+	const carried = new Set(layoutTabs($layout).map((t) => t.layout as string));
+	if ([...shown].some((name) => !carried.has(name))) {
+		// That write runs this again, with the set it leaves behind.
+		previews.set(new Set([...shown].filter((name) => carried.has(name))));
+		return;
+	}
+	// A PREVIEW is left out of what this device remembers (da-xamd) — here,
+	// where the writing happens, and not merely at the moment it is opened:
+	// every change to the tree comes back through this function.
+	const kept = (t: Tab): boolean => t.layout !== undefined && !shown.has(t.layout);
+	const tabs = rootTabs($layout);
+	const names = tabs.filter(kept);
+	// The tab a reload lands on, as an index into the names WRITTEN: the one
+	// in front when it is written, and otherwise — a preview in front being
+	// written nowhere — the last one before it. Worked:
+	//
+	//   [day, x*]        active 1 → none in front is kept, one before → 0 (day)
+	//   [day, mine, x*]  active 2 → two before → 1 (mine)
+	//   [x*, day]        active 0 → none before → 0 (day, the only name left)
+	const front = names.indexOf(tabs[$layout.root.active]);
+	const before = tabs.slice(0, $layout.root.active).filter(kept).length;
 	saveRoot({
-		names: rootTabs($layout).map((t) => t.layout).filter((n): n is string => n !== undefined),
-		active: $layout.root.active
+		names: names.map((t) => t.layout as string),
+		active: front >= 0 ? front : Math.max(0, before - 1)
 	});
 	const bases = get(baselines);
 	const drafted = new Set<string>();
@@ -446,7 +524,7 @@ function settle(): void {
 	for (const tab of layoutTabs($layout)) {
 		const name = tab.layout as string;
 		const base = bases[name];
-		if (!base || drafted.has(name)) continue;
+		if (!base || drafted.has(name) || shown.has(name)) continue;
 		const tree = extract(tab);
 		if (isModified(tree, base)) {
 			drafted.add(name);
@@ -457,6 +535,7 @@ function settle(): void {
 }
 layout.subscribe(settle);
 baselines.subscribe(settle);
+previews.subscribe(settle);
 
 /**
  * Every copy of `name`, at any depth, re-inlined from `saved`; `unless`
@@ -497,6 +576,10 @@ function idsOf(tab: Tab | undefined): Set<NodeId> {
  */
 async function followSaves(): Promise<void> {
 	for (const name of new Set(layoutTabs(get(layout)).map((t) => t.layout as string))) {
+		// A preview holds a COPY of the tree it was seeded from and answers to
+		// nobody's save, not even one written under its name meanwhile
+		// (da-xamd): it is neither replaced nor dropped here.
+		if (isPreview(name)) continue;
 		const next = await loadLayout(name).catch(() => null);
 		if (!next) continue;
 		const before = get(baselines)[name];
@@ -531,6 +614,60 @@ export async function open(name: string): Promise<boolean> {
 	return true;
 }
 
+/**
+ * `/<name>?from=<layout>` (da-xamd): `name` as a PREVIEW root tab, seeded
+ * with `<layout>`'s tree — anything `open` answers to, saved, shipped or a
+ * widget kind. It is drawn in italics and written nowhere, so a reload has
+ * never heard of it and `keepTab` is what makes it real.
+ *
+ * AN EXISTING NAME WINS. Whatever `name` already means here — a tab in
+ * front of you, a save, a built-in, a kind — opens exactly as it does
+ * today and `from` is ignored, so a link can never seed over a layout
+ * somebody has. A second link to a preview already open brings that one
+ * forward rather than making a second copy.
+ *
+ * Nothing for a link that worked; the name that is NOTHING for one that
+ * did not, which is what the page's notice says out loud.
+ */
+export async function openPreview(name: string, from: string): Promise<string | null> {
+	await boot();
+	const n = canonicalName(name);
+	// Anything the name already MEANS wins — a tab in front of you (a
+	// preview of it included, which is brought forward), a save, a kit's, a
+	// built-in, a widget kind. `/day?from=day` lands here on `resolve`, so a
+	// name that exists is never seeded over even when `from` names it too.
+	if (rootTabs(get(layout)).some((t) => t.layout === n) || (await resolve(n))) {
+		await open(n);
+		return null;
+	}
+	const seed = await resolve(canonicalName(from));
+	if (!seed) return from;
+	// As `open` does: arriving at a layout is not arriving at a maximized pane.
+	unmaximize();
+	const tab = await tabHolding(n, seed, [n], new Set(allIds(get(layout))));
+	// The name and the tab it belongs to land TOGETHER, with `settle` held
+	// off between them: a preview is a name a tab carries, so a settle in
+	// the middle would see one without the other and either prune the name
+	// or write the tab into this device's open list.
+	quiet(() => {
+		previews.update((shown) => new Set(shown).add(n));
+		baselines.update((b) => ({ ...b, [n]: baselineOf({ ...seed, name: n }) }));
+		apply((l) => normalize({ ...l, root: { ...l.root, tabs: [...l.root.tabs, tab], active: l.root.tabs.length } }));
+	});
+	settle();
+	return null;
+}
+
+/**
+ * `Keep tab` (da-xamd): the preview becomes real — its tree saved as a
+ * layout of the reader's own under the name it was opened with, and the
+ * tab in this device's open list, where every later act finds it like any
+ * other. Which is a SAVE, and `save` is where a saved name stops being a
+ * preview: one act under two names, because what the reader is doing is
+ * keeping the tab and what the shell is doing is writing the layout.
+ */
+export const keepTab = save;
+
 export const activate = (index: number) => {
 	// «coming back should unmaximize the pane» (vividn, da-00am): leaving the
 	// layout drops the maximize, so the tab returned to is drawn whole.
@@ -538,7 +675,12 @@ export const activate = (index: number) => {
 	apply((l) => setActive(l, l.root.id, index));
 };
 
-/** Close a root tab; the last one stays (tree.ts). Its draft, if any, is kept for next time. */
+/**
+ * Close a root tab; the last one stays (tree.ts). Its draft, if any, is kept
+ * for next time, and a PREVIEW closed writes nothing at all — `settle` gives
+ * its name back, the tab no longer carrying one (da-xamd). A preview that
+ * stayed, being the last tab, still carries its name and is still a preview.
+ */
 export const close = (index: number) => apply((l) => closeTab(l, l.root.id, index));
 
 /**
@@ -556,6 +698,10 @@ export async function save(tabId: NodeId): Promise<void> {
 	const tree = extract(tab);
 	await saveLayout(tree);
 	baselines.update((b) => ({ ...b, [name]: baselineOf(tree) }));
+	// A PREVIEW that has been saved is not a preview any more (da-xamd):
+	// the name means something now, so the tab joins this device's open
+	// list like any other. No-op for every other copy.
+	forget(name);
 }
 
 /**
@@ -568,7 +714,20 @@ export async function restore(tabId: NodeId, version?: number): Promise<void> {
 	const tab = copyOf(tabId);
 	if (!tab) return;
 	const name = tab.layout as string;
-	const saved = version === undefined && get(modified).has(tabId) ? await resolve(name) : await restoreSaved(name, version);
+	// A PREVIEW has no save to go back to, and its BASELINE is the tree it
+	// was seeded from — which is the only thing "back" can mean for one
+	// (da-xamd), and what the dot beside the act is measured against. Its
+	// baseline FIRST, not `resolve`: a layout saved under that name
+	// somewhere else meanwhile is a different tree, and `followSaves` has
+	// deliberately not moved this copy to it — restoring to it would be the
+	// one write a preview must never make on the reader's behalf.
+	//
+	// `version` is a reader picking from the save's own trail, which a
+	// preview has none of: `versions(name)` answers with nothing for one, so
+	// the list under the bar says «not saved yet» and offers no button. The
+	// arm below is therefore unreachable for a preview rather than silent.
+	const seed = isPreview(name) ? (get(baselines)[name] ?? null) : await resolve(name);
+	const saved = version === undefined && get(modified).has(tabId) ? seed : await restoreSaved(name, version);
 	if (!saved) return;
 	// A different tree arrives: whatever was filling the page is not it.
 	unmaximize();
@@ -661,6 +820,7 @@ export async function resetDefaults(): Promise<void> {
 	// The baselines are a record of what the saves WERE; every one of them
 	// is about to be read again from what the names now mean.
 	baselines.set({});
+	previews.set(new Set());
 	await fillRoot(FRESH);
 }
 

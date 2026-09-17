@@ -11,11 +11,51 @@
 // `data-title`, which is the h2 with one tab and the active tab's label
 // with more.
 
+import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { until } from './until.mjs';
 
 export const DESKTOP = { viewport: { width: 1280, height: 900 } };
 export const PHONE = { device: devices['iPhone 12'] };
+
+/**
+ * A pane of a ROOM, by the id `day` gives it (da-xamd).
+ *
+ * A room is `day`'s tree inlined a SECOND time — `day` itself is still a
+ * root tab — and `inline` re-mints an id the tree already holds as
+ * `<id>@<name>` (shell.ts), so `day`'s own `tail` is `tail@acts` inside
+ * the room called `acts`.
+ */
+export const inRoom = (room, id) => `${id}@${room}`;
+
+/** Every layout key this device has stored: the open list, the drafts, the locks. */
+export const layoutStorage = (page) =>
+	page.evaluate(() =>
+		Object.fromEntries(
+			Object.keys(localStorage)
+				.filter((k) => k.startsWith('datum.layout.'))
+				.sort()
+				.map((k) => [k, localStorage.getItem(k)])
+		)
+	);
+
+/**
+ * Take a room in a shared app, and hand back the assertion that it left no
+ * trace (da-xamd).
+ *
+ * A preview is written NOWHERE, so this device's layout storage at the end
+ * of the test is what it was the moment the room opened, byte for byte,
+ * and the room's own name is in none of it. The `clean()` a test calls
+ * last is the whole of what makes one app safe for the next test.
+ */
+export async function takeRoom(app, name) {
+	await app.room(name);
+	const before = await layoutStorage(app.page);
+	assert.ok(!JSON.stringify(before).includes(name), `the room “${name}” was written on the way in`);
+	return async () => {
+		assert.deepEqual(await layoutStorage(app.page), before, `the room “${name}” wrote to this device`);
+	};
+}
 
 /** The widget panes' titles, in DOM order. */
 export const titles = (page) =>
@@ -23,6 +63,19 @@ export const titles = (page) =>
 
 /** A pane, by the id the layout gives it. */
 export const pane = (page, id) => page.locator(`section[data-pane="${id}"]`);
+
+/**
+ * A pane by its TITLE, which is what a copy of a layout keeps when its ids
+ * are re-minted (da-xamd): `day`'s `tail` is `tail@acts` inside the room
+ * called `acts`, and its title is `tail` in both.
+ */
+export const titledPane = (page, title) => page.locator(`section.pane[data-title="${title}"]`);
+
+/** What opens a titled pane's menu: its title, or — with several tabs — the tab in front. */
+export const titledMenuButton = (page, title) =>
+	titledPane(page, title)
+		.locator('> .titlebar button.title, > .titlebar [role="tab"][aria-selected="true"]')
+		.first();
 
 export const boxOf = (locator) => locator.boundingBox();
 

@@ -25,7 +25,9 @@
 //   not a layout, not a split — and whose kind declares defaults to put
 //   back. The root's tab almost always holds a layout, so the root menu
 //   almost never shows it; that is the same rule, not a second one.
-// - `export backup…` is the root's alone: there is one database.
+// - `export backup…` is the root's alone: there is one database. So is
+//   `Keep tab` (da-xamd), which rides in beside it: only a root tab can be
+//   a PREVIEW, and only a preview has a keeping left to do.
 //
 // Close is the LAST item of either menu, whatever else the caller hands
 // in, and wears an `×` (da-ygc9): the one destructive act, at the far end

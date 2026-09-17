@@ -66,6 +66,14 @@
 	it writes. The per-layout `Reset layout` is unchanged and is still the
 	one that writes nothing.
 
+	A PREVIEW tab (da-xamd) is drawn in ITALICS, and its menu has one item
+	nobody else's has: «Keep tab», beside the Close that is the other
+	answer to it. vividn: "it could be in italics until a user says keep tab
+	after opening from a link" — so the slant is the whole of the state,
+	and what it says is that nothing about this tab is written down yet.
+	Keeping it saves the tree under its name and the italics go; closing it
+	writes nothing at all.
+
 	On a phone the tabs scroll sideways rather than wrapping — one row,
 	always — while the `+` and the gear stay where they are.
 -->
@@ -78,7 +86,7 @@
 	import { layoutActs, menuItems } from './menu.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
-	import { activate, close, modified, open, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock, versions } from './shell.js';
+	import { activate, close, keepTab, modified, open, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock, versions } from './shell.js';
 	import { addEdge } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
 	import type { Toward } from './tree.js';
@@ -97,6 +105,12 @@
 	/** The acts work on THIS COPY of the layout (da-crp5): its tab id, not its name. */
 	$: id = active?.id;
 	$: dirty = id !== undefined && $modified.has(id);
+	/**
+	 * A PREVIEW (da-xamd): seeded from a link and italic, and written
+	 * NOWHERE yet — not this device's open list, not a draft, not the layout
+	 * store — so it is gone on a reload. `Keep tab` below is what writes it.
+	 */
+	$: preview = name !== undefined && $previews.has(name);
 	$: locked = !!active?.locked;
 	/** Loaded, and no act in flight: what a test waits for before pressing. */
 	$: ready = $loaded && !busy && active !== undefined;
@@ -190,7 +204,13 @@
 				split: { what: 'split: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },
 				close: { label: 'Close tab', disabled: tabs.length < 2, run: () => close($layout.root.active) },
 				acts,
-				extra: [{ label: 'export backup…', run: () => void act(downloadBackup) }]
+				extra: [
+					{ label: 'export backup…', run: () => void act(downloadBackup) },
+					// `Keep tab` (da-xamd), next to the Close that is the other
+					// answer to a preview: only a preview has it, because only a
+					// preview is not kept already.
+					...(preview ? [{ label: 'Keep tab', run: () => void act(async () => id !== undefined && keepTab(id)) }] : [])
+				]
 			});
 
 	/**
@@ -237,6 +257,12 @@
 
 	let strip: HTMLElement | null = null;
 
+	/** A tab's marks: the dot's class, and the italics of a preview. */
+	const marks = (tab: Tab, dots: Set<string>, shown: Set<string>) =>
+		[dots.has(tab.id) ? 'modified' : '', tab.layout !== undefined && shown.has(tab.layout) ? 'preview' : '']
+			.filter(Boolean)
+			.join(' ');
+
 	/** The gear's eight teeth, by the angle each is turned to. */
 	const TEETH = [0, 45, 90, 135, 180, 225, 270, 315];
 </script>
@@ -254,7 +280,7 @@
 					role="tab"
 					aria-selected="true"
 					tabindex="0"
-					class={$modified.has(tab.id) ? 'modified' : ''}
+					class={marks(tab, $modified, $previews)}
 					on:keydown={(e) => onTabKey(e, i)}
 					>{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}</PaneMenu
 				>
@@ -264,6 +290,7 @@
 					role="tab"
 					class="control tab"
 					class:modified={$modified.has(tab.id)}
+					class:preview={tab.layout !== undefined && $previews.has(tab.layout)}
 					aria-selected={i === $layout.root.active}
 					tabindex={i === $layout.root.active ? 0 : -1}
 					on:click={() => activate(i)}
@@ -366,6 +393,15 @@
 	.dot {
 		margin-left: 0.3rem;
 		color: var(--warn);
+	}
+
+	/* A PREVIEW is italic (da-xamd) — vividn: "it could be in italics until a
+	   user says keep tab after opening from a link", the way an editor
+	   draws a file it is only showing you. The tab is a tab in every other
+	   respect; what the slant says is that nothing about it is written
+	   down, and `Keep tab` in its menu is what writes it. */
+	.tabs :global(.preview) {
+		font-style: italic;
 	}
 
 	/* The gear: the bar's right end at every width, and a badge like the
