@@ -42,6 +42,15 @@
 	ResizeObserver on the table would). A row whose state wraps is taller
 	than one line, so a pane full of long states overflows and scrolls —
 	never a gap.
+
+	And the columns, when the pane is too narrow for all of them: `hid`
+	goes first, then `_n` (da-kk0d) — the two a row is also reached by
+	(a tap on it), and the two that broke `field` and `state` mid-word on
+	a phone. Too narrow is measured, not written down: a second hidden
+	probe draws every held row at its narrowest with words whole, and the
+	widest set of columns whose widths the box holds is the one drawn. The
+	probe draws every column whichever are shown, so what it says never
+	depends on the decision.
 -->
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
@@ -72,6 +81,8 @@
 	/** The CLI's column order, for a table merged from more than one listing. */
 	const STOCK = ['action', 'time', 'field', 'state', 'dur', '_n', 'hid'];
 	const rank = (key: string) => (STOCK.includes(key) ? STOCK.indexOf(key) : STOCK.length);
+	/** The columns a narrow pane gives up, in the order it gives them up. */
+	const SACRIFICE = ['hid', '_n'];
 
 	let keys: string[] = [];
 	let headers: Record<string, string> = {};
@@ -87,6 +98,12 @@
 	/** The probe: a header row and a one-line row, hidden, to measure by. */
 	let probeHead: HTMLTableSectionElement | undefined;
 	let probeRows: HTMLTableSectionElement | undefined;
+	/** The width probe: every column, every held row, words whole. */
+	let probeWide: HTMLDivElement | undefined;
+	/** How many of `SACRIFICE` are not drawn; and the fewest the box and epoch allow. */
+	let dropped = 0;
+	let least = 0;
+	$: cols = keys.filter((key) => !SACRIFICE.slice(0, dropped).includes(key));
 	/** Where the widget itself last scrolled to: the event that reports it is not the reader's. */
 	let own: number | null = null;
 
@@ -113,8 +130,14 @@
 	 */
 	const unsettled = { n: null as number | null, fits: 0, over: Infinity };
 	let drawn = { box: null as PaneBox | null, epoch: -1, ...unsettled, slack: Infinity };
-	$: if (box !== drawn.box) drawn = { box, epoch, ...unsettled, slack: Infinity };
-	$: if (epoch !== drawn.epoch) drawn = { ...drawn, epoch, ...unsettled };
+	$: if (box !== drawn.box) {
+		drawn = { box, epoch, ...unsettled, slack: Infinity };
+		least = 0;
+	}
+	$: if (epoch !== drawn.epoch) {
+		drawn = { ...drawn, epoch, ...unsettled };
+		least = 0;
+	}
 
 	/** The count the box holds, and the slack under it. Null until measured, or while the pane is hidden. */
 	$: fit = measure(box, probeHead, probeRows);
@@ -179,6 +202,42 @@
 		}
 		const most = fits === shown ? Math.max(drawn.fits, shown) : drawn.fits;
 		drawn = { ...drawn, n, over, fits: most, slack: Math.max(0, room) };
+	}
+
+	/**
+	 * Decide the columns from the width probe, as drawn: the fewest of
+	 * `SACRIFICE` given up for the rest to fit the box — and, while the
+	 * box and the epoch stand, never fewer than already were, so paging in
+	 * or asking for more rows cannot bring a column back to crowd them. A
+	 * change forgets the counts that did not fit: the rows rewrap.
+	 */
+	async function decide(): Promise<void> {
+		await tick();
+		const cells = probeWide?.firstElementChild?.children;
+		if (!box || !cells?.length) return;
+		const width: Record<string, number> = {};
+		const pad: Record<string, number> = {};
+		for (const cell of cells) {
+			const key = (cell as HTMLElement).dataset.key ?? '';
+			width[key] = cell.getBoundingClientRect().width;
+			pad[key] = parseFloat(getComputedStyle(cell).paddingRight);
+		}
+		// A probe not laid out — the pane on a tab not shown — measures nothing.
+		if (Object.values(width).some((w) => w <= 0)) return;
+		// The last column drawn has no right padding; in the probe it may not be last.
+		const needs = (set: string[]) =>
+			set.reduce((sum, key) => sum + width[key], 0) - (set.length ? pad[set[set.length - 1]] : 0);
+		let fits = least;
+		while (fits < SACRIFICE.length) {
+			const set = keys.filter((key) => !SACRIFICE.slice(0, fits).includes(key));
+			if (needs(set) <= box.width + 0.5) break;
+			fits++;
+		}
+		least = fits;
+		if (fits === dropped) return;
+		dropped = fits;
+		drawn = { ...drawn, fits: 0, over: Infinity };
+		await tick();
 	}
 
 	/** Scroll to `top` as the widget, not the reader: the event it raises is told apart by where it landed. */
@@ -287,7 +346,7 @@
 			rows = page;
 			adopt(table.columns, true);
 			unseen = false;
-			await tick();
+			await decide();
 			// The screen as drawn can change the room under it; pinned is
 			// pinned under that room, not the one before it.
 			redraw(_epoch, count);
@@ -312,6 +371,7 @@
 				adopt(table.columns, false);
 			}
 			if (fresh) unseen = true;
+			await decide();
 			await keep(a);
 		}
 	}
@@ -338,6 +398,7 @@
 				unseen = true;
 			}
 			adopt(table.columns, false);
+			await decide();
 			await keep(a);
 		} catch {
 			// A page that failed is a page not shown; the table stands.
@@ -420,6 +481,24 @@
 	<tfoot bind:this={probeHead}><tr><th>&nbsp;</th></tr></tfoot>
 	<tfoot bind:this={probeRows}><tr><td>&nbsp;</td></tr></tfoot>
 </table>
+<!-- The width probe: each column at its narrowest with no word broken,
+     so a cell's width here is what its column needs. Laid out as a table,
+     but no `table`, `tr` or `td`: nothing that looks for the table's cells
+     finds its words twice. -->
+<div class="probe wide" aria-hidden="true" bind:this={probeWide}>
+	<div class="tr">
+		{#each keys as key (key)}
+			<div class="cell {key}" data-key={key}><AnsiText spans={ansiSpans(headers[key] ?? key)} /></div>
+		{/each}
+	</div>
+	{#each rows as row (row.hid)}
+		<div class="tr">
+			{#each keys as key (key)}
+				<div class="cell {key}"><AnsiText spans={ansiSpans(row.cells[key] ?? '')} /></div>
+			{/each}
+		</div>
+	{/each}
+</div>
 {#if shown < 0}
 	<p class="quiet">…</p>
 {:else if error}
@@ -430,7 +509,7 @@
 	<table>
 		<thead bind:this={thead}>
 			<tr>
-				{#each keys as key (key)}
+				{#each cols as key (key)}
 					<th class={key} data-key={key}
 						><AnsiText spans={ansiSpans(headers[key] ?? key)} /></th
 					>
@@ -444,7 +523,7 @@
 					class:start={exhausted && i === 0}
 					title={exhausted && i === 0 ? 'the start of the log' : undefined}
 				>
-					{#each keys as key (key)}
+					{#each cols as key (key)}
 						<td class={key} data-key={key}
 							><AnsiText spans={ansiSpans(row.cells[key] ?? '')} /></td
 						>
@@ -478,6 +557,31 @@
 		width: auto;
 		visibility: hidden;
 		pointer-events: none;
+	}
+
+	/* At its narrowest: 1px wide, the columns at their min-content, and a
+	   word of `field` or `state` one unbreakable run. */
+	.wide {
+		display: table;
+		width: 1px;
+	}
+
+	.wide .tr {
+		display: table-row;
+	}
+
+	.wide .cell {
+		display: table-cell;
+		padding: 0.1em 0.4em 0.1em 0;
+	}
+
+	.wide .cell:last-child {
+		padding-right: 0;
+	}
+
+	.wide .field,
+	.wide .state {
+		overflow-wrap: normal;
 	}
 
 	/* Pinned, as `tail -w` pins its header. A sticky box stops at the

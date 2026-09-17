@@ -200,10 +200,12 @@ describe('rows from height', () => {
 					assert.deepEqual(g.hids, g.hids.map((_, i) => seedHid(40 - g.n + i)), 'the rows are not the newest n');
 					// The CLI shrinks `field` and `state` to `f` and `s` when no
 					// row is wide — here none is — and the pane says the whole
-					// words, as `tail -w` over a wide terminal would.
+					// words, as `tail -w` over a wide terminal would. The 240px
+					// pane at 768 gives up `hid` and `_n` to keep them whole
+					// (da-kk0d; tailcolumns.test.mjs).
 					assert.deepEqual(
 						g.headers.map((h) => h.split(' ')[0]),
-						['time', 'field', 'state', '_n', 'hid'],
+						width > 768 ? ['time', 'field', 'state', '_n', 'hid'] : ['time', 'field', 'state'],
 						'the header words are not the whole words'
 					);
 				},

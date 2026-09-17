@@ -1,0 +1,258 @@
+// The tail pane's columns in a narrow pane (da-kk0d).
+//
+// vividn, 2026-09-17: «Sacrifice the _n and hid columns in the tail view at
+// smaller widths» — `hid` first, `_n` only if the table still does not fit
+// without it. On a phone the two took two of five columns and broke
+// `field` and `state` mid-word.
+//
+// Too narrow is measured: the pane's hidden width probe (TailTable.svelte)
+// draws every column at its narrowest with words whole, and the widths a
+// test sizes the pane by are read off it, never written down. A broken word
+// is a row taller than the one-line probe's row.
+
+import test, { before, after, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { startApp, stopApp, withApp } from './support/app.mjs';
+import { draft, widgetPane } from './support/layout.mjs';
+import { until } from './support/until.mjs';
+
+before(startApp);
+after(stopApp);
+
+const SEED = ['switch activity working', 'start music', 'occur coffee'];
+
+/** The `day` tab as one tail pane, so the pane's width is the viewport's less its frame. */
+const ONLY_TAIL = (context) =>
+	context.addInitScript(draft, JSON.stringify({ version: 1, name: 'day', root: widgetPane('only', 'tail') }));
+
+/** Store `lines` through the seam's quiet door, then a fresh visit: these layouts have no REPL to type into. */
+async function seedLines(app, lines) {
+	for (const line of lines) await app.runLine(line);
+	await app.reload();
+}
+
+const TAIL = 'section.pane[data-title="tail"]';
+
+/** The tail as drawn: its box, header keys, rows, whether any row is taller than a line, and the probe's widths. */
+const table = (page) =>
+	page.evaluate((sel) => {
+		const pane = document.querySelector(sel);
+		const body = pane.querySelector('.body');
+		const style = getComputedStyle(body);
+		const line = pane.querySelector('table.probe:not(.wide) tfoot:last-child tr').getBoundingClientRect().height;
+		const trs = [...pane.querySelectorAll('tbody tr')];
+		// What each set of columns needs, as the component reckons it: the
+		// cells' widths, less the right padding the last one drawn drops.
+		const cells = [...pane.querySelectorAll('div.probe.wide > .tr:first-child > .cell')];
+		const needs = (drop) => {
+			const set = cells.filter((c) => !drop.includes(c.dataset.key));
+			const sum = set.reduce((s, c) => s + c.getBoundingClientRect().width, 0);
+			return sum - parseFloat(getComputedStyle(set.at(-1)).paddingRight);
+		};
+		return {
+			width: body.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+			keys: [...pane.querySelectorAll('thead th')].map((th) => th.dataset.key),
+			hids: trs.map((tr) => tr.dataset.hid),
+			tall: trs.filter((tr) => tr.getBoundingClientRect().height > line + 0.5).map((tr) => tr.textContent),
+			sideways: body.scrollWidth > body.clientWidth + 1,
+			needs: { all: needs([]), noHid: needs(['hid']), neither: needs(['hid', '_n']) }
+		};
+	}, TAIL);
+
+/** The tail as drawn, once its width probe has measured every column. */
+async function measured(page) {
+	await page.waitForFunction(
+		(sel) =>
+			window.__datumInflight === 0 &&
+			[...document.querySelectorAll(`${sel} div.probe.wide > .tr:first-child > .cell`)].every(
+				(cell, _, all) => all.length > 0 && cell.getBoundingClientRect().width > 0
+			),
+		TAIL
+	);
+	return table(page);
+}
+
+/** Wait until the tail, at rest, draws the columns `keys`; say what it drew if it does not. */
+const drawsKeys = (page, keys) =>
+	page
+		.waitForFunction(
+			([sel, keys]) =>
+				window.__datumInflight === 0 &&
+				JSON.stringify([...document.querySelectorAll(`${sel} thead th`)].map((th) => th.dataset.key)) === JSON.stringify(keys),
+			[TAIL, keys],
+			{ timeout: 10_000 }
+		)
+		.catch(async (e) => {
+			throw new Error(`not ${keys}: ${JSON.stringify(await table(page))}`, { cause: e });
+		});
+
+/** Resize the viewport so the tail's content box is `width` wide. */
+async function paneWidth(page, width) {
+	const { width: now } = await table(page);
+	const viewport = page.viewportSize();
+	await page.setViewportSize({ width: viewport.width + Math.round(width - now), height: viewport.height });
+	await page.waitForFunction(
+		([sel, width]) => {
+			const body = document.querySelector(`${sel} .body`);
+			const style = getComputedStyle(body);
+			return Math.abs(body.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - width) < 1;
+		},
+		[TAIL, width]
+	);
+}
+
+const ALL = ['time', 'field', 'state', '_n', 'hid'];
+const NO_HID = ['time', 'field', 'state', '_n'];
+const THREE = ['time', 'field', 'state'];
+
+/** The columns a box `width` wide draws, by the probe's `needs`: the widest set that fits. */
+const drops = (needs, width) => (needs.all <= width ? ALL : needs.noHid <= width ? NO_HID : THREE);
+
+describe('a narrow tail gives up hid, then _n', () => {
+	test('at 250px: hid goes, no word broken, every row keeps its hid', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seedLines(app, SEED);
+				await paneWidth(page, 250);
+				const { needs } = await measured(page);
+				assert.ok(needs.all > 250, `all five fit 250px (${needs.all}px), which tests nothing`);
+				await drawsKeys(page, drops(needs, 250));
+				const t = await table(page);
+				assert.ok(!t.keys.includes('hid'), `hid is drawn: ${t.keys}`);
+				assert.ok(t.hids.length >= SEED.length, `rows: ${t.hids}`);
+				assert.ok(t.hids.every((hid) => hid), 'a row without its data-hid');
+				assert.deepEqual(t.tall, [], 'a row taller than one line');
+				assert.ok(!t.sideways, 'the pane scrolls sideways');
+				assert.deepEqual(app.errors, []);
+			},
+			{ viewport: { width: 400, height: 700 }, prepare: ONLY_TAIL }
+		);
+	});
+
+	test('narrower than _n needs: time, field, state', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seedLines(app, SEED);
+				const { needs } = await measured(page);
+				await paneWidth(page, Math.ceil(needs.neither) + 1);
+				await drawsKeys(page, THREE);
+				const t = await table(page);
+				assert.ok(t.hids.every((hid) => hid), 'a row without its data-hid');
+				assert.deepEqual(t.tall, [], 'a row taller than one line');
+				assert.ok(!t.sideways, 'the pane scrolls sideways');
+			},
+			{ viewport: { width: 400, height: 700 }, prepare: ONLY_TAIL }
+		);
+	});
+
+	test('at 420px: all five columns', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seedLines(app, SEED);
+				await paneWidth(page, 420);
+				await drawsKeys(page, ALL);
+				const t = await table(page);
+				assert.deepEqual(t.tall, [], 'a row taller than one line');
+			},
+			{ viewport: { width: 400, height: 700 }, prepare: ONLY_TAIL }
+		);
+	});
+
+	test('between the two: _n stays, hid goes', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seedLines(app, SEED);
+				const { needs } = await measured(page);
+				assert.ok(needs.all - needs.noHid > 4, `no room between the two widths: ${JSON.stringify(needs)}`);
+				await paneWidth(page, Math.ceil(needs.noHid) + 1);
+				await drawsKeys(page, NO_HID);
+				assert.deepEqual((await table(page)).tall, [], 'a row taller than one line');
+			},
+			{ viewport: { width: 600, height: 700 }, prepare: ONLY_TAIL }
+		);
+	});
+
+	test('across the boundary both ways: the columns go and come back, the reader keeps their place', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seedLines(app, Array.from({ length: 60 }, (_, i) => `occur coffee -t 05${String(i).padStart(2, '0')}`));
+				const { needs } = await measured(page);
+				const wide = Math.ceil(needs.all) + 20;
+				const narrow = Math.ceil(needs.neither) + 2;
+				await paneWidth(page, wide);
+				await drawsKeys(page, ALL);
+
+				// Page the rows above in twice, then scroll to the middle:
+				// scrolled up, so a resize keeps the place, not the live end.
+				const b = await page.locator(`${TAIL} .body`).boundingBox();
+				await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+				for (let i = 0; i < 2; i++) {
+					const before = await page.locator(`${TAIL} tbody tr`).count();
+					await page.evaluate((sel) => (document.querySelector(`${sel} .body`).scrollTop = 0), TAIL);
+					await page.mouse.wheel(0, -120);
+					await page.waitForFunction(([sel, n]) => document.querySelectorAll(`${sel} tbody tr`).length > n, [TAIL, before]);
+					await page.waitForFunction(() => window.__datumInflight === 0);
+				}
+				// The scroll event lands on a frame: let it, before the resize.
+				await page.evaluate(async (sel) => {
+					document.querySelector(`${sel} .body`).scrollTop = 200;
+					for (let i = 0; i < 2; i++) await new Promise((resolve) => requestAnimationFrame(resolve));
+				}, TAIL);
+				/** The reader's row: the first whole one under the header, and where it is. */
+				const at = await page.evaluate((sel) => {
+					const body = document.querySelector(`${sel} .body`);
+					const top = body.getBoundingClientRect().top;
+					const tr = [...body.querySelectorAll('tbody tr')].find((tr) => tr.getBoundingClientRect().top > top + 40);
+					return { hid: tr.dataset.hid, y: tr.getBoundingClientRect().top - top };
+				}, TAIL);
+				const y = () =>
+					page.evaluate(
+						([sel, hid]) => {
+							const body = document.querySelector(`${sel} .body`);
+							const tr = body.querySelector(`tbody tr[data-hid="${hid}"]`);
+							return tr ? tr.getBoundingClientRect().top - body.getBoundingClientRect().top : null;
+						},
+						[TAIL, at.hid]
+					);
+				// Put back once the box lands and the columns change: polled.
+				const kept = (seen) => seen !== null && Math.abs(seen - at.y) < 2;
+
+				await paneWidth(page, narrow);
+				await drawsKeys(page, THREE);
+				await until(y, kept, 5000);
+
+				await paneWidth(page, wide);
+				await drawsKeys(page, ALL);
+				await until(y, kept, 5000);
+			},
+			{ viewport: { width: 600, height: 400 }, prepare: ONLY_TAIL }
+		);
+	});
+
+	for (const [width, height] of [
+		[390, 664],
+		[360, 640]
+	]) {
+		test(`the mobile layout at ${width}x${height}: no hid, no word broken`, async () => {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					await seedLines(app, SEED);
+					const { needs, width: box } = await measured(page);
+					assert.ok(needs.all > box, `all five fit the phone's tail (${needs.all} of ${box}px), which tests nothing`);
+					await drawsKeys(page, drops(needs, box));
+					const t = await table(page);
+					assert.ok(t.hids.length > 0, 'no rows');
+					assert.deepEqual(t.tall, [], 'a row taller than one line');
+					assert.ok(!t.sideways, 'the pane scrolls sideways');
+				},
+				{ viewport: { width, height }, device: { isMobile: true, hasTouch: true }, home: null }
+			);
+		});
+	}
+});
