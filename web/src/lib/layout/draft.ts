@@ -45,9 +45,18 @@ export function loadDraft(name: string): Layout | null {
 export const saveDraft = (layout: Layout) => set(DRAFT + layout.name, JSON.stringify(layout));
 export const clearDraft = (name: string) => set(DRAFT + name, null);
 
-/** Whether this device has `name` locked. */
-export const loadLocked = (name: string) => get(LOCKED + name) === '1';
-export const saveLocked = (name: string, locked: boolean) => set(LOCKED + name, locked ? '1' : null);
+/**
+ * Whether this device has `name` locked — or null when it has never said,
+ * which is what lets a layout that shipped open locked the first time
+ * while an unlock, once made, is remembered (da-gshh).
+ */
+export function loadLocked(name: string): boolean | null {
+	const stored = get(LOCKED + name);
+	return stored === null ? null : stored === '1';
+}
+export const saveLocked = (name: string, locked: boolean) => set(LOCKED + name, locked ? '1' : '0');
+/** Forget this device's say on `name`, so it opens as a first time would. */
+export const clearLocked = (name: string) => set(LOCKED + name, null);
 
 /** The root bar as this device left it: the open layouts, and which is active. */
 export interface RootState {

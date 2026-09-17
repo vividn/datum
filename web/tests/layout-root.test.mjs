@@ -25,6 +25,7 @@ import {
 	boxOf,
 	chooseBar,
 	choose,
+	chooseRoot,
 	draft,
 	fill,
 	menuButton,
@@ -99,6 +100,9 @@ describe('the draft', () => {
 		await withApp(
 			async (app) => {
 				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
+				// Nothing remembers an unlock here, so `day` opens locked as a
+				// first open does (da-gshh) — and unlocks for the visit.
+				await chooseRoot(app.page, 'Unlock layout');
 				await addTab(app.page, 'tail', 'aliases');
 				assert.equal(await activeTab(app.page, 'tail'), 'aliases');
 				assert.deepEqual(app.errors, []);

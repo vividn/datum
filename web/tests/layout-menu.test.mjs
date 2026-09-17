@@ -288,6 +288,8 @@ describe('the menu the title opens', () => {
 		test(`Split ${word} in a tab stack: the strip lies over no inner title, and its + over no inner control`, async () => {
 			await withApp(
 				async ({ page }) => {
+					// A fresh phone's `mobile` opens locked (da-gshh).
+					await chooseRoot(page, 'Unlock layout');
 					await choose(page, 'fields', label);
 					await titledPane(page, 'empty').waitFor();
 					assert.deepEqual(await overStrip(page, 'fields'), { titles: 2, overlaps: [] });

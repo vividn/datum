@@ -83,6 +83,7 @@ import { apply, layout, loaded } from './current.js';
 import { ALIASES, BUILTIN_NAMES, PHONE_WIDTH, builtinLayout } from './defaults.js';
 import {
 	clearDraft,
+	clearLocked,
 	isModified,
 	loadDraft,
 	loadLocked,
@@ -155,14 +156,19 @@ const pick = (...candidates: (Layout | null)[]): Layout | null =>
 /** The name a URL or the chooser means: the old routes and kind names map to one layout each. */
 export const canonicalName = (name: string): string => ALIASES[name] ?? name;
 
-/** The layout `name` means here: the save, else the kit's, else the built-in. */
-export async function resolve(name: string): Promise<Layout | null> {
-	return pick(
-		await loadLayout(name).catch(() => null),
-		kitLayout(name),
-		builtinLayout(name, phone())
-	);
+/**
+ * The layout `name` means here — the save, else the kit's, else the
+ * built-in — and whether it SHIPPED (a kit's or a built-in) rather than
+ * being the person's own save: what a lock defaults to (da-gshh).
+ */
+async function meaning(name: string): Promise<{ layout: Layout | null; shipped: boolean }> {
+	const own = await loadLayout(name).catch(() => null);
+	const layout = pick(own, kitLayout(name), builtinLayout(name, phone()));
+	return { layout, shipped: !!layout && layout !== own };
 }
+
+/** The layout `name` means here: the save, else the kit's, else the built-in. */
+export const resolve = async (name: string): Promise<Layout | null> => (await meaning(name)).layout;
 
 // ---- walking ----------------------------------------------------------
 
@@ -309,11 +315,15 @@ async function expandContent(content: Widget | Split, path: string[], taken: Set
  * draft, a version restored — its own nested layouts expanded under it,
  * and this device's lock for the name on it. `path` is the names open
  * above it, `name` included.
+ *
+ * A device that has never locked or unlocked the name gets the lock a
+ * first open does (da-gshh): a layout that SHIPPED opens locked, one a
+ * person made opens unlocked.
  */
-async function tabHolding(name: string, source: Layout, path: string[], taken: Set<NodeId>): Promise<Tab> {
+async function tabHolding(name: string, source: Layout, path: string[], taken: Set<NodeId>, shipped = false): Promise<Tab> {
 	const inlined = inline(normalize({ ...source, name }), taken);
 	const filled: Tab = { ...inlined, content: await expandContent(inlined.content, path, taken) };
-	return loadLocked(name) ? { ...filled, locked: true } : filled;
+	return (loadLocked(name) ?? shipped) ? { ...filled, locked: true } : filled;
 }
 
 /** A tab with its nested layouts (any depth) filled in from their drafts, else their saves. */
@@ -321,13 +331,13 @@ async function expandTab(tab: Tab, path: string[], taken: Set<NodeId>): Promise<
 	if (tab.layout === undefined) return { ...tab, content: await expandContent(tab.content, path, taken) };
 	const name = tab.layout;
 	if (path.includes(name)) return { ...tab, content: notice(`the layout “${name}” cannot hold itself`) };
-	const saved = await resolve(name);
+	const { layout: saved, shipped } = await meaning(name);
 	if (!saved) return { ...tab, content: notice(`no layout named “${name}”`) };
 	baselines.update((b) => ({ ...b, [name]: baselineOf(saved) }));
 	// The id this tab has is the one the inner root pane took last time:
 	// let it go, so it takes it again rather than minting a new one.
 	taken.delete(tab.id);
-	return tabHolding(name, loadDraft(name) ?? saved, [...path, name], taken);
+	return tabHolding(name, loadDraft(name) ?? saved, [...path, name], taken, shipped);
 }
 
 // ---- the root ---------------------------------------------------------
@@ -394,10 +404,10 @@ const tabOf = (name: string): Tab | undefined => layoutTabs(get(layout)).find((t
 
 /** A root tab for `name` — the draft this device has of it, else its save — or null for an unknown name. */
 async function openTab(name: string, taken: Set<NodeId>): Promise<Tab | null> {
-	const saved = await resolve(name);
+	const { layout: saved, shipped } = await meaning(name);
 	if (!saved) return null;
 	baselines.update((b) => ({ ...b, [name]: baselineOf(saved) }));
-	return tabHolding(name, loadDraft(name) ?? saved, [name], taken);
+	return tabHolding(name, loadDraft(name) ?? saved, [name], taken, shipped);
 }
 
 let booted = false;
@@ -563,7 +573,8 @@ async function replaceCopies(name: string, saved: Layout, unless?: (tab: Tab) =>
 			root: mapTabs(l.root, (was) => {
 				const to = was.layout === name ? next.get(was.id) : undefined;
 				if (!to || unless?.(was)) return was;
-				return { ...to, ...(was.locked ? { locked: true } : {}) };
+				// A new tree, the same lock: the copy keeps whichever it wore.
+				return { ...without(to, 'locked'), ...(was.locked ? { locked: true } : {}) };
 			})
 		})
 	);
@@ -757,7 +768,13 @@ export async function saveAs(tabId: NodeId, newName: string): Promise<void> {
 	// This copy first, then its baseline, then the old draft: `settle` runs
 	// on each, and would write the edit back under the old name if the tab
 	// still carried it when the new baseline landed.
-	apply((l) => ({ ...l, root: mapTabs(l.root, (t) => (t.id === tabId ? { ...t, layout: newName } : t)) }));
+	// A layout the person has just made opens unlocked (da-gshh), unless this
+	// device has said otherwise of the name.
+	const locked = !!loadLocked(newName);
+	apply((l) => ({
+		...l,
+		root: mapTabs(l.root, (t) => (t.id === tabId ? { ...without(t, 'locked'), ...(locked ? { locked } : {}), layout: newName } : t))
+	}));
 	baselines.update((b) => ({ ...b, [newName]: baselineOf(copy) }));
 	if (name !== undefined) clearDraft(name);
 	await replaceCopies(newName, copy);
@@ -816,6 +833,9 @@ export async function resetLayout(tabId: NodeId): Promise<void> {
  * and a layout a KIT installed (which lives in the data db, not here), are
  * neither read nor written, and stay in the `+`.
  *
+ * This device's lock on each built-in is forgotten too, so each opens
+ * locked again, as a first open does (da-gshh).
+ *
  * This one WRITES, which is what separates it from `resetLayout`: a batch
  * that only moved the drafts would leave every save still shadowing its
  * built-in, and the next reload would undo the whole act. The confirm on
@@ -828,6 +848,8 @@ export async function resetDefaults(): Promise<void> {
 	const saved = new Set((await listLayouts()).filter((l) => l.source === 'user').map((l) => l.name));
 	for (const name of BUILTIN_NAMES) {
 		clearDraft(name);
+		// Locked again, as a first open is (da-gshh).
+		clearLocked(name);
 		if (saved.has(name)) await deleteLayout(name);
 	}
 	// The baselines are a record of what the saves WERE; every one of them

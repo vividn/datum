@@ -242,6 +242,7 @@ function baseUrl() {
  * here before — `day` unless a test says otherwise, because the suite is
  * written against `day` and a FRESH phone opens `mobile` (da-shzs). Written
  * only where nothing is stored, so a reload keeps what the test changed.
+ * It has also unlocked it (da-gshh), which a fresh device finds locked.
  * `home: null` is a device that has never opened the site.
  *
  * `clock` is the instant the app is held at — the page's and, because
@@ -294,8 +295,12 @@ async function openApp({
 		if (home)
 			await context.addInitScript((name) => {
 				const key = 'datum.layout.root.v1';
+				const lock = `datum.layout.locked.v1.${name}`;
 				try {
 					if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({ names: [name], active: 0 }));
+					// A device that has been here has unlocked its home (da-gshh):
+					// the suite drags, splits and closes its panes.
+					if (localStorage.getItem(lock) === null) localStorage.setItem(lock, '0');
 				} catch {}
 			}, home);
 		await prepare?.(context);

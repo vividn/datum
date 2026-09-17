@@ -561,13 +561,17 @@ describe('the acts', () => {
 			await act(page, 'unlock');
 			await until(locked, (l) => l === false);
 			assert.ok((await rootItems(page)).some((i) => i.label === 'Lock layout'));
-			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), null);
+			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), '0');
 		}, DESKTOP);
 
+		// Another device, FRESH: the unlock above did not travel — it has
+		// nothing said of `day`, so it opens as a first open does, locked
+		// (da-gshh).
 		await withApp(async ({ page }) => {
-			assert.equal(await page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked), false);
-			assert.ok((await rootItems(page)).some((i) => i.label === 'Lock layout'));
-		}, DESKTOP);
+			assert.equal(await page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked), true);
+			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), null);
+			assert.ok((await rootItems(page)).some((i) => i.label === 'Unlock layout'));
+		}, { ...DESKTOP, home: null });
 	});
 
 	test('an unmodified restore lists the versions, and one of them can be picked', async () => {

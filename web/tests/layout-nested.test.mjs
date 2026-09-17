@@ -403,10 +403,11 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			assert.equal(await page.locator('.root-bar [role="tab"] .dot').count(), 0, 'the built-in came up modified');
 			assert.equal(await page.locator('section.pane[data-title="mine"]').count(), 0);
 
-			// A named tab keeps the four acts.
+			// A named tab keeps the four acts — a built-in's lock among them as
+			// `Unlock layout`, since what shipped opens locked (da-gshh).
 			await rootMenuButton(page).click();
 			const lines = await menuLines(page);
-			for (const act of ['Save layout', 'Restore layout', 'Save layout as…', 'Lock layout'])
+			for (const act of ['Save layout', 'Restore layout', 'Save layout as…', 'Unlock layout'])
 				assert.ok(lines.includes(act), `${act} is missing: ${lines.join(' | ')}`);
 			await page.keyboard.press('Escape');
 
