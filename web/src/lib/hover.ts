@@ -81,28 +81,34 @@ function placeOf(svg: SVGSVGElement, at: Date) {
 
 /** The cursor's dotted line across the day of `svg` it falls on, replacing any before it. */
 function drawCursor(svg: SVGSVGElement | null, at: Date | undefined): void {
-	svg?.querySelector('line.cursor')?.remove();
+	svg?.querySelectorAll('line.cursor, line.cursor-casing').forEach((l) => l.remove());
 	const place = svg && at && placeOf(svg, at);
 	if (!place) return;
-	const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
 	const [a, b] = place.y ? ['y', 'x'] : ['x', 'y'];
-	for (const [name, value] of Object.entries({
-		class: 'cursor',
-		[`${a}1`]: place.along,
-		[`${a}2`]: place.along,
-		[`${b}1`]: place.start,
-		[`${b}2`]: place.end,
-		// The time cursor's own blue (PromptBar.svelte's `.pill.time`), not a
-		// token: this is an SVG attribute, where `var()` does not reach.
-		stroke: '#7c9cff',
-		'stroke-width': 1,
-		'stroke-dasharray': '3 3',
-		'vector-effect': 'non-scaling-stroke',
-		'pointer-events': 'none'
-	})) {
-		line.setAttribute(name, String(value));
+	// Bright white, the selection's colour (yellow is NOW's alone), over a
+	// dark casing so a dash still reads across a pale block. Written here,
+	// not as a token: these are SVG attributes, where `var()` does not reach.
+	for (const [cls, stroke, width] of [
+		['cursor-casing', 'rgba(0, 0, 0, 0.6)', 3.5],
+		['cursor', '#ffffff', 1.5]
+	] as const) {
+		const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+		for (const [name, value] of Object.entries({
+			class: cls,
+			[`${a}1`]: place.along,
+			[`${a}2`]: place.along,
+			[`${b}1`]: place.start,
+			[`${b}2`]: place.end,
+			stroke,
+			'stroke-width': width,
+			'stroke-dasharray': '3 3',
+			'vector-effect': 'non-scaling-stroke',
+			'pointer-events': 'none'
+		})) {
+			line.setAttribute(name, String(value));
+		}
+		svg.append(line);
 	}
-	svg.append(line);
 }
 
 /** Where a block's drawing begins: its start, or its day's if it began before. */

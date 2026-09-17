@@ -1,5 +1,5 @@
 // The time cursor (da-wnt2): a click on the dayview points the page at the
-// time under it — a dotted blue line there, ONE `-t` pill in the bar, and
+// time under it — a dotted white line there, ONE `-t` pill in the bar, and
 // the nowview centred on it with a dotted line of its own. A line typed
 // with the pill is logged at it; a press on the pill takes all of it away.
 //
@@ -154,7 +154,7 @@ describe('the time cursor', () => {
 
 			const [line] = await lineXs(page, TODAY);
 			assert.ok(line && Math.abs(line.x - at.x) <= 1, `the line at ${line?.x}, the click at ${at.x}`);
-			assert.deepEqual([line.stroke, line.dash], ['#7c9cff', '3 3']);
+			assert.deepEqual([line.stroke, line.dash], ['#ffffff', '3 3']);
 
 			const iso = new Date(cursor).toISOString();
 			await page.waitForFunction(
@@ -352,7 +352,7 @@ describe('the time pill says a date and a time', () => {
 				await saysPill(page, face);
 				assert.deepEqual(await pillFace(page), face, iso);
 				assert.equal(await pillText(page), argv, `the argv at ${iso}`);
-				// ONE pill, in the cursor's own class: hover.ts reads its colour.
+				// ONE pill, in the cursor's own class.
 				assert.equal(await page.locator(`${PILL}.time`).count(), 1, iso);
 				assert.equal(await page.locator(PILL).count(), 1, iso);
 			}

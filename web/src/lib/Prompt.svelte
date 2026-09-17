@@ -378,15 +378,6 @@
 		box-shadow: inset 0 0 0 2px var(--page);
 	}
 
-	/* The time cursor's own blue, as its dotted lines are drawn — not a
-	   token, because the lines are drawn from $lib/hover.ts as an SVG
-	   attribute, where `var()` does not reach, and one colour written in
-	   two places is better than a token only one of them can use. */
-	.pill.time,
-	.spent.time {
-		--pill: #7c9cff;
-	}
-
 	/* Which half the pointer is over — the only thing that says the lock is
 	   a target of its own now that the rest of the pill is one press. */
 	.pill button:hover {
