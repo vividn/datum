@@ -15,7 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
-import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
+import { inWorker, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 import { chooseRoot, chooser, menuLines, offers, rootMenuButton, titles } from './support/layout.mjs';
 
@@ -207,7 +207,9 @@ describe('the internal database', () => {
 			const logged = await first.run(['occur', 'coffee', '-t', '0700']);
 			assert.deepEqual(logged.changed, ['datum']);
 			await until(seen, (argvs) => argvs.some((argv) => argv[0] === 'tail'));
-		});
+			// Pinned: a minute tick in the window re-runs the strip and the
+			// nowview, which is not the save re-running them (da-6ehq).
+		}, { clock: todayAt(12) });
 	});
 
 	// The fallback covers both files or neither: half the data durable is

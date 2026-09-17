@@ -254,7 +254,9 @@ describe('the teach-echo', () => {
 			// The ECHO is the argv the widget asked for, without the web's own
 			// `--show json` (da-xfa4): the plumbing is not a command to teach.
 			assert.equal((await echoes()).at(-1), 'occur coffee');
-		});
+			// Pinned: the first run seen is the press only while no minute
+			// tick re-draws the strip inside the window (da-6ehq).
+		}, { clock: todayAt(12) });
 	});
 });
 

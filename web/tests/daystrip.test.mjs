@@ -390,11 +390,24 @@ const scrollToDay = ({ page }, daysAgo) =>
 			.offsetTop;
 	}, daysAgo);
 
-/** Let the page have its frames: a scroll is answered on one, not inline. */
-const beat = ({ page }) =>
-	page.evaluate(
-		() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+/**
+ * Wait for the stack to have left `top` and for a scroll event past the
+ * `seen`-th to have reached the strip, then give it the frame it answers
+ * a scroll on. Waited for, not counted in frames: under a pinned clock
+ * `requestAnimationFrame` is Playwright's fake, and two of them passed
+ * before the wheel had landed about one run in nine (da-6ehq). The strip's
+ * own frame is asked for inside that scroll event, so it runs before ours.
+ */
+async function scrolledFrom({ page }, top, seen) {
+	await page.waitForFunction(
+		([top, seen]) => document.querySelector('.stack').scrollTop !== top && window.__scrolls > seen,
+		[top, seen]
 	);
+	return page.evaluate(async () => {
+		await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+		return window.__scrolls;
+	});
+}
 
 /**
  * Which days the `dayview` PICTURES a spy saw were for, as days ago — the
@@ -520,6 +533,14 @@ describe('the day strip', () => {
 					was + 7
 				);
 				await waitForDays(app, heldFor(5));
+				// The minute tick re-runs today and the geometry (da-r61i), so
+				// a window across :00 counted today twice (da-6ehq). The clock
+				// is pinned below; the tick's own re-check is driven here, in
+				// the window, to show the pin holds — see «one more day».
+				await app.page.evaluate(async () => {
+					document.dispatchEvent(new Event('visibilitychange'));
+					await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+				});
 				await app.idle();
 
 				const views = (await seen()).filter((argv) => argv[0] === 'dayview');
@@ -546,7 +567,7 @@ describe('the day strip', () => {
 				// ruler and the stamps come off a single `--show json`.
 				assert.equal(views.length - pictures.length, 1, 'the geometry was asked for more than once');
 			},
-			{ viewport: { width: 1280, height: 1000 } }
+			{ viewport: { width: 1280, height: 1000 }, clock: todayAt(12) }
 		);
 	});
 
@@ -812,7 +833,7 @@ describe('the day strip', () => {
 			// the fortnight above it, and not the geometry, which is at this
 			// epoch already.
 			assert.deepEqual(await viewsOf(seen), [10]);
-		});
+		}, { clock: todayAt(12) });
 	});
 
 	test('a scroll over bands already at this epoch asks for nothing', async () => {
@@ -823,12 +844,16 @@ describe('the day strip', () => {
 			// Nothing has run since the stack was drawn, so every band in it
 			// is at the epoch on screen — and scrolling is just scrolling.
 			const seen = await app.spyOnRunner();
+			await app.page.locator('.stack').evaluate((stack) => {
+				window.__scrolls = 0;
+				stack.addEventListener('scroll', () => window.__scrolls++);
+			});
 			const rest = await stackScroll(app);
 			await wheelOverPast(app, -600);
-			await beat(app);
+			const scrolls = await scrolledFrom(app, rest.top, 0);
 			const moved = await stackScroll(app);
 			await wheelOverPast(app, 600);
-			await beat(app);
+			await scrolledFrom(app, moved.top, scrolls);
 			await app.idle();
 
 			// The wheel really did turn — an assertion about what a scroll
@@ -836,7 +861,7 @@ describe('the day strip', () => {
 			assert.ok(moved.top < rest.top, `the wheel moved the stack ${rest.top - moved.top}px`);
 
 			assert.deepEqual(await viewsOf(seen), []);
-		});
+		}, { clock: todayAt(12) });
 	});
 
 	test('the day height comes in as a prop and goes out as a change', async () => {
@@ -993,7 +1018,7 @@ describe('the day strip', () => {
 				.locator('.band[data-days-ago="0"] svg.svg')
 				.evaluate((el) => el.getBoundingClientRect().height);
 			assert.ok(Math.abs(after - (was + 40)) <= 1, `the drawn band is ${after}px, not ${was + 40}`);
-		});
+		}, { clock: todayAt(12) });
 	});
 
 	test('the keyboard works both axes of the handle', async () => {
@@ -1434,7 +1459,7 @@ describe('the day strip zooms onto an hour range', () => {
 			// window does moves them.
 			assert.deepEqual(await stampXs(app), stamps, 'the date stamps moved');
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		}, { ...PHONE, clock: todayAt(12) });
 	});
 
 	test('a double-tap gives the whole day back', async () => {
