@@ -41,7 +41,15 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { devices } from 'playwright';
-import { atEachScreen, startApp, stopApp, withApp, workerClock, seedLines } from './support/app.mjs';
+import {
+	atEachScreen,
+	startApp,
+	stopApp,
+	withApp,
+	workerClock,
+	seedLines,
+	todayAt
+} from './support/app.mjs';
 import { choose, chooseRoot } from './support/layout.mjs';
 
 before(startApp);
@@ -720,6 +728,15 @@ describe('the day strip', () => {
 		// The shortest day, so a box past the fortnight fits on a screen:
 		// inside the fortnight the stack holds the same days however the
 		// box moves, and no argv changes, so nothing is re-drawn.
+		//
+		// This is a count of what ran, so the OTHER thing that runs a
+		// `dayview` has to be held still: the minute tick (da-r61i) re-runs
+		// today's band and the geometry — two `dayview`s with no
+		// `--end-date` — on every wall-clock minute boundary, and a window
+		// that happened to straddle :00 counted those two as well. That is
+		// what reddened main's run 296 (da-y7r9); it is a clock, so the
+		// clock is pinned, as this file's other clock-sensitive tests pin
+		// theirs. A `Date.now()` that never changes minute never ticks.
 		await withApp(
 			async (app) => {
 				await say(app, { dayHeight: 40 });
@@ -733,6 +750,19 @@ describe('the day strip', () => {
 				await sizeFor(app, 16);
 				await app.idle();
 
+				// The pin, proved rather than assumed: `clock.ts` re-checks
+				// the minute on `visibilitychange` — the very `tick()` its
+				// timer calls, and the path the flake was reproduced through
+				// — so drive it here, inside the window. Under the pin it
+				// finds the same minute and draws nothing.
+				await app.page.evaluate(async () => {
+					document.dispatchEvent(new Event('visibilitychange'));
+					// Past Svelte's flush, so a tick that DID fire would have
+					// started its runs before `idle` below looks for them.
+					await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+				});
+				await app.idle();
+
 				// Every dayview the strip ran for the taller box: the ONE day
 				// it gained. Every other day, and today, and the geometry, are
 				// the same argv as before and came out of the cache.
@@ -742,7 +772,7 @@ describe('the day strip', () => {
 					.map((argv) => [flag(argv, '--n-days'), flag(argv, '--end-date')]);
 				assert.deepEqual(views, [['1', '-16']]);
 			},
-			{ viewport: { width: 1280, height: 1400 } }
+			{ viewport: { width: 1280, height: 1400 }, clock: todayAt(12) }
 		);
 	});
 
