@@ -1,6 +1,7 @@
 use super::core::*;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
+use crate::input::LiftedSpec;
 
 pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
     let mut out = DayviewArgs::default();
@@ -168,9 +169,20 @@ pub(crate) fn parse_orientation(s: &str) -> Result<DayviewOrientation> {
 }
 
 pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
+    // da-5flt: the shared time flags centre the window, as they aim a verb
+    // or `tail`. `-T`/`-D` shape an entry, not a moment, and are refused.
+    let time: Vec<LiftedSpec<NowviewArgs>> = crate::input::time_args::FLAG_SPECS
+        .iter()
+        .filter(|s| !matches!(s.short, Some('T') | Some('D')))
+        .map(|s| crate::input::lift(|a: &mut NowviewArgs| &mut a.time, s))
+        .collect();
     let mut out = NowviewArgs::default();
     let mut i = 0;
     while i < tail.len() {
+        if let Some(ni) = walk_registry(tail, i, &mut out, &time)? {
+            i = ni;
+            continue;
+        }
         let tok = tail[i];
         match split_flag(tok) {
             FlagSplit::Long("history") => {
@@ -180,15 +192,6 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
             }
             FlagSplit::LongAttached("history", v) => {
                 out.history = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("at") => {
-                let (v, ni) = take_value(tail, i, None, "--at")?;
-                out.at = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("at", v) => {
-                out.at = Some(v.to_string());
                 i += 1;
             }
             FlagSplit::Long("width") => {

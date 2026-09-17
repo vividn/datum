@@ -161,7 +161,7 @@ try {
 		const nowviews = started.filter((r) => r.argv[0] === 'nowview');
 		const others = {};
 		for (const r of started.filter((r) => r.argv[0] !== 'nowview')) others[r.argv[0]] = (others[r.argv[0]] ?? 0) + 1;
-		const finalAt = nowviews.at(-1)?.argv[nowviews.at(-1).argv.indexOf('--at') + 1];
+		const finalAt = nowviews.at(-1)?.argv[nowviews.at(-1).argv.indexOf('-t') + 1];
 		// Where a process's time went, over every process the burst started —
 		// not just the nowviews, since they all share the one acquisition.
 		const timed = started.filter((r) => r.ms);
@@ -191,7 +191,7 @@ try {
 		const t = performance.now();
 		const runs = await Promise.all(
 			Array.from({ length: 10 }, (_, i) =>
-				window.datum.runQuiet(['nowview', '-o', '-', '--width', '400', '--height', '300', '--at', at(i)])
+				window.datum.runQuiet(['nowview', '-o', '-', '--width', '400', '--height', '300', '-t', at(i)])
 			)
 		);
 		return { spanMs: Math.round(performance.now() - t), ms: runs.map((r) => r.ms), codes: runs.map((r) => r.code) };

@@ -185,6 +185,12 @@ following are deliberate divergences and **not** regressions:
   were captured on and `+0` on a CI runner in UTC — a failure that
   looks like a parity regression and isn't.
 
+* **`nowview` at an instant.** Datum's nowview always ends at now
+  (`nowviewCmd.ts` takes no time argument). Daydumb's takes the shared
+  time flags (`-t -d -q -y -z`, da-5flt) and centres the window on the
+  instant they name, its yellow now-line drawn only where now falls
+  inside it. With no time flag the two agree.
+
 [`GOLDEN_TZ`]: src/runtime.rs
 
 ## Adding fixtures

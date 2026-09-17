@@ -239,7 +239,7 @@ describe('the minute tick', () => {
 				const { page } = app;
 				// A press on the day band sets the time cursor ($lib/cursor.ts)
 				// and the nowview is centred on that instant from then on
-				// (`--at`): a picture with no now in it, and so nothing for a
+				// (`-t`): a picture with no now in it, and so nothing for a
 				// minute to move.
 				await page.locator(TODAY).click();
 				// The cursor's own dotted line, drawn by datum where the

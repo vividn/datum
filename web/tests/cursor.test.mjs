@@ -160,7 +160,7 @@ describe('the time cursor', () => {
 			await page.waitForFunction(
 				(iso) => {
 					const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
-					return argv?.[argv.indexOf('--at') + 1] === iso;
+					return argv?.[argv.indexOf('-t') + 1] === iso;
 				},
 				iso
 			);
@@ -188,7 +188,7 @@ describe('the time cursor', () => {
 			assert.equal(await pillText(page), null);
 			await page.waitForFunction(() => {
 				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
-				return argv && !argv.includes('--at');
+				return argv && !argv.includes('-t');
 			});
 			assert.equal(await page.locator('line.cursor').count(), 0);
 
@@ -200,7 +200,7 @@ describe('the time cursor', () => {
 			assert.equal(await page.locator(PILL).count(), 0);
 			await page.waitForFunction(() => {
 				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
-				return argv && !argv.includes('--at');
+				return argv && !argv.includes('-t');
 			});
 			assert.equal(await page.locator('line.cursor').count(), 0);
 		});

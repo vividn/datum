@@ -15,7 +15,7 @@
 
 	The same window is also ZOOMED (da-5goc): two fingers pinching over the
 	picture, or ctrl+wheel on a desktop, scale it about the anchor — now, or
-	the `--at` instant when one is set — which stays where it is on screen.
+	the `-t` instant when one is set — which stays where it is on screen.
 	The gesture scales the band as a transform and asks for nothing; the
 	release rounds the scale to a step of the same ladder the buttons walk,
 	so the two controls always agree about where the window can be.
@@ -35,7 +35,7 @@
 
 	/** How far back the window reaches: one of NOWVIEW_STEPS. */
 	export let history = NOWVIEW_HISTORY;
-	/** The instant the window is centred on (`--at`); none is now. */
+	/** The instant the window is centred on (`-t`); none is now. */
 	export let at: string | undefined = undefined;
 	export let epoch = 0;
 
@@ -57,18 +57,16 @@
 	/**
 	 * Where the anchor is drawn, in px across the picture's own box.
 	 *
-	 * Off the picture, not off the clock: datum draws the anchor as the
-	 * now-line (`current-time-line`, dayview_svg.rs) wherever its geometry
-	 * puts it, and the label column on the left means that is not a
-	 * fraction of the box anyone here should be deriving. Without a line to
-	 * read — the snapshot draws none — the widget's own argv says which
-	 * edge it would be: a window with `--at` is centred on the instant, and
-	 * one without ends at now.
+	 * A window with `-t` is centred on its instant (da-5flt: the yellow
+	 * line there is now, wherever now falls, not the instant). One without
+	 * ends at now, which datum draws as the now-line (`current-time-line`,
+	 * dayview_svg.rs) wherever its geometry puts it; the snapshot draws
+	 * none, and its anchor is the right edge.
 	 */
 	function anchorX(svg: Element): number {
 		const box = svg.getBoundingClientRect();
 		const line = svg.querySelector('.current-time-line');
-		if (!line) return instant ? box.width / 2 : box.width;
+		if (instant || !line) return instant ? box.width / 2 : box.width;
 		const marker = line.getBoundingClientRect();
 		return marker.x + marker.width / 2 - box.x;
 	}

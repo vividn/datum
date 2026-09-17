@@ -105,7 +105,10 @@ fn the_cost_of_a_normal_read_does_not_grow_with_the_history() {
 
     let nowview_args = |history: &str| datum_commands::args::NowviewArgs {
         history: Some(history.to_string()),
-        at: Some(at_str.clone()),
+        time: datum_parse::input::TimeArgs {
+            time: Some(at_str.clone()),
+            ..Default::default()
+        },
         width: Some(400.0),
         height: 300.0,
         output_file: Some(svg.clone()),

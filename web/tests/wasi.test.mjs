@@ -135,7 +135,7 @@ describe('the wasi CLI', () => {
 	test("the nowview's clock is the zone's", async () => {
 		await withApp(
 			async (app) => {
-				const view = await app.run(['nowview', '-o', '-', '--history', '15m', '--at', '2026-09-11T10:26:00Z']);
+				const view = await app.run(['nowview', '-o', '-', '--history', '15m', '-t', '2026-09-11T10:26:00Z']);
 				assert.equal(view.code, 0, view.stderr);
 				const labels = [...view.stdout.matchAll(/class="tick-label"[^>]*>([^<]*)</g)].map((m) => m[1]);
 				assert.ok(labels.includes('12:26') && !labels.includes('10:26'), labels.join(' '));

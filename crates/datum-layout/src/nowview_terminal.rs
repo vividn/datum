@@ -48,8 +48,12 @@ pub enum RenderMode {
 /// Inputs to [`render_nowview_terminal`].
 #[derive(Debug, Clone)]
 pub struct TerminalConfig {
-    /// "Now" — UTC epoch ms. End of the visible window.
+    /// End of the visible window — now, unless the window is centred on
+    /// another instant — in UTC epoch ms.
     pub end_ms: i64,
+    /// Now, in UTC epoch ms. Flow draws its now-line in the column now
+    /// falls in, and none when now is outside the window (da-5flt).
+    pub now_ms: i64,
     /// Total history shown in the left panel. 0 → no history panel (or no
     /// history axis, for [`RenderMode::Snapshot`]).
     pub history_minutes: f64,
@@ -74,6 +78,7 @@ impl Default for TerminalConfig {
     fn default() -> Self {
         Self {
             end_ms: 0,
+            now_ms: 0,
             history_minutes: 60.0,
             now_width_minutes: 5.0,
             cols: 80,
@@ -216,6 +221,7 @@ fn render_visual(fields: &[NowviewField], config: &TerminalConfig, with_history:
                     field,
                     history_start_ms,
                     config.end_ms,
+                    config.now_ms,
                     cols,
                     config.use_color,
                 );
@@ -341,17 +347,22 @@ fn push_flow_data_row(
     field: &NowviewField,
     history_start_ms: i64,
     end_ms: i64,
+    now_ms: i64,
     cols: usize,
     use_color: bool,
 ) {
     let span_ms = (end_ms - history_start_ms).max(1) as f64;
     let cell_ms = span_ms / cols as f64;
     let last_col = cols.saturating_sub(1);
+    // The column now falls in carries the now-line (overwriting any band
+    // fill so the user sees a continuous yellow stripe); none when now is
+    // outside the window.
+    let now_col = (history_start_ms..=end_ms)
+        .contains(&now_ms)
+        .then(|| (((now_ms - history_start_ms) as f64 / cell_ms) as usize).min(last_col));
 
     for i in 0..cols {
-        // Right-most column always carries the now-line (overwrites any
-        // band fill so the user sees a continuous yellow stripe).
-        if i == last_col {
+        if Some(i) == now_col {
             push_now_line_cell(out, use_color);
             continue;
         }
@@ -793,6 +804,7 @@ mod tests {
     fn cfg(now_ms: i64) -> TerminalConfig {
         TerminalConfig {
             end_ms: now_ms,
+            now_ms,
             history_minutes: 60.0,
             now_width_minutes: 5.0,
             cols: 50,
@@ -1002,6 +1014,7 @@ mod tests {
     fn snap_cfg(now_ms: i64) -> TerminalConfig {
         TerminalConfig {
             end_ms: now_ms,
+            now_ms,
             history_minutes: 0.0,
             now_width_minutes: 0.0,
             cols: 20,
@@ -1126,6 +1139,7 @@ mod tests {
     fn flow_cfg(now_ms: i64) -> TerminalConfig {
         TerminalConfig {
             end_ms: now_ms,
+            now_ms,
             history_minutes: 30.0,
             now_width_minutes: 0.0,
             cols: 40,
@@ -1182,6 +1196,42 @@ mod tests {
         }];
         let s = render_nowview_terminal(&fields, &flow_cfg(now));
         assert!(s.contains('┊'), "expected dashed now-line glyph in:\n{s}");
+    }
+
+    /// da-5flt: the now-line is drawn where now falls — mid-window for a
+    /// window centred on it, and not at all for one that misses it.
+    #[test]
+    fn flow_now_line_is_now_and_only_now() {
+        let now = 1_700_000_000_000_i64;
+        let line = |cfg: TerminalConfig| {
+            let fields = [NowviewField {
+                field: "mood".into(),
+                blocks: vec![],
+                points: vec![],
+                y_frac: 0.0,
+                height_frac: 1.0,
+                z_index: 0.0,
+                default_colors: vec![],
+            }];
+            let s = render_nowview_terminal(&fields, &cfg);
+            s.lines()
+                .filter_map(|l| l.chars().position(|c| c == '┊'))
+                .collect::<Vec<_>>()
+        };
+        let centred = TerminalConfig {
+            end_ms: now + 15 * 60_000,
+            ..flow_cfg(now)
+        };
+        let cols = line(centred);
+        assert!(
+            !cols.is_empty() && cols.iter().all(|&c| c == 20),
+            "{cols:?}"
+        );
+        let past = TerminalConfig {
+            end_ms: now - 60 * 60_000,
+            ..flow_cfg(now)
+        };
+        assert!(line(past).is_empty());
     }
 
     #[test]

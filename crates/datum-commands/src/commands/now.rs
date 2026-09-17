@@ -157,6 +157,7 @@ fn print_now_band(args: &NowArgs, db: &Db) {
     let use_color = !args.no_color && colors::color_enabled();
     let cfg = TerminalConfig {
         end_ms: end.timestamp_millis(),
+        now_ms: end.timestamp_millis(),
         history_minutes: HISTORY_MINUTES,
         now_width_minutes: NOW_WIDTH_MINUTES,
         cols,

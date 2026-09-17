@@ -6,7 +6,7 @@
 //! per-command `body_override`, the top-level layout, or the `tail`
 //! flag table will trip these.
 
-use super::{command_help, top_level_help};
+use super::{command_help, render_json, top_level_help};
 
 // ---------------------------------------------------------------------------
 // Top-level — fully structurally rendered.
@@ -631,4 +631,24 @@ OUTPUT:
 #[test]
 fn snapshot_ids_help() {
     assert_eq!(command_help("ids"), EXPECTED_IDS);
+}
+
+/// da-5flt: the grammar the web reads says nowview takes `-t` and the other
+/// time flags, so its commands bar offers nowview under a time pill.
+#[test]
+fn json_nowview_takes_the_time_flags() {
+    let table: serde_json::Value = serde_json::from_str(&render_json()).unwrap();
+    let nowview = table
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "nowview")
+        .unwrap();
+    let shorts: Vec<_> = nowview["flags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f["short"].as_str())
+        .collect();
+    assert_eq!(shorts, ["t", "d", "q", "y", "z"]);
 }

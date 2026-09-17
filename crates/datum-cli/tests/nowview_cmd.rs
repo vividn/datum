@@ -534,7 +534,7 @@ fn nowview_chunk_carries_the_state_switched_into_inside_the_window() {
 }
 
 // ---------------------------------------------------------------------
-// da-pcis: `--history 0` is the snapshot, and `--at` centres the window
+// da-pcis: `--history 0` is the snapshot, and a time flag (`-t -d -q -y -z`, da-5flt) centres the window
 // on an instant instead of ending it at now.
 // ---------------------------------------------------------------------
 
@@ -605,37 +605,100 @@ fn ms(iso: &str) -> i64 {
         .timestamp_millis()
 }
 
+/// Pin the clock at `iso` (UTC) for `f` — `-q` and `-t 14:00` resolve
+/// against it, exactly as a verb's would.
+fn at_clock<T>(iso: &str, f: impl FnOnce() -> T) -> T {
+    use datum_parse::time::clock::{install, uninstall, MockClock};
+    let prev = install(std::sync::Arc::new(MockClock::new(
+        datum_parse::time::DatumTime {
+            utc: iso.parse().unwrap(),
+            offset_minutes: 0,
+            timezone: Some("UTC".into()),
+            uncertainty: None,
+        },
+    )));
+    let out = f();
+    uninstall();
+    if let Some(p) = prev {
+        install(p);
+    }
+    out
+}
+
+fn nowview_json(db: &datum_core::db::Db, args: &[&str]) -> serde_json::Value {
+    let mut argv = vec!["--json"];
+    argv.extend_from_slice(args);
+    serde_json::from_str(&nowview_out(db, &argv, ".json")).unwrap()
+}
+
+// da-5flt: the shared time flags centre the window, however they are spelled.
 #[test]
-fn nowview_at_centres_the_window_on_the_instant() {
+fn nowview_time_flags_centre_the_window() {
+    let db = two_switch_db();
+    for flags in [
+        &["-t", "14:00"][..],
+        &["-t", "-60"],
+        &["-qqqqqqqqqqqq"],
+        &["-d", "2026-09-10", "-t", "14:00"],
+        &["-y", "-d", "2026-09-11", "-t", "14:00"],
+        &["-d", "2026-09-10", "-t", "16:00", "-z", "Europe/Berlin"],
+    ] {
+        let mut args = flags.to_vec();
+        args.extend_from_slice(&["--history", "30m"]);
+        let v = at_clock("2026-09-10T15:00:00Z", || nowview_json(&db, &args));
+        assert_eq!(
+            v["at_ms"].as_i64(),
+            Some(ms("2026-09-10T14:00:00Z")),
+            "{flags:?}"
+        );
+        assert_eq!(v["start_ms"].as_i64(), Some(ms("2026-09-10T13:45:00Z")));
+        assert_eq!(v["end_ms"].as_i64(), Some(ms("2026-09-10T14:15:00Z")));
+        assert_eq!(v["now_ms"].as_i64(), Some(ms("2026-09-10T15:00:00Z")));
+        assert_eq!(v["panel"][0]["state_label"], "before", "{flags:?}");
+    }
+
+    // No flag: the window ends at now.
+    let v = at_clock("2026-09-10T15:00:00Z", || {
+        nowview_json(&db, &["--history", "30m"])
+    });
+    assert!(v["at_ms"].is_null());
+    assert_eq!(v["end_ms"].as_i64(), Some(ms("2026-09-10T15:00:00Z")));
+
+    // `--at` is gone, and the entry-shaping time flags are no view's.
+    for gone in [
+        &["--at", "14:00"][..],
+        &["-D"],
+        &["--full-day"],
+        &["-T"],
+        &["-m", "x"],
+    ] {
+        let mut argv = vec!["nowview"];
+        argv.extend_from_slice(gone);
+        assert!(run_cli(&argv, &db).is_err(), "{gone:?} accepted");
+    }
+}
+
+#[test]
+fn nowview_centred_window_draws_no_yellow_for_its_instant() {
     use chrono::Timelike;
     let db = two_switch_db();
     let at = "2026-09-10T14:00:00Z";
+    let lines = |svg: &str| svg.matches(r#"class="current-time-line""#).count();
 
-    let v: serde_json::Value = serde_json::from_str(&nowview_out(
-        &db,
-        &["--json", "--at", at, "--history", "30m"],
-        ".json",
-    ))
-    .unwrap();
-    assert_eq!(v["at_ms"].as_i64(), Some(ms(at)));
-    assert_eq!(v["start_ms"].as_i64(), Some(ms("2026-09-10T13:45:00Z")));
-    assert_eq!(v["end_ms"].as_i64(), Some(ms("2026-09-10T14:15:00Z")));
-    assert_eq!(v["panel"][0]["state_label"], "before");
-
-    let svg = nowview_out(
-        &db,
-        &["--at", at, "--history", "30m", "--width", "404"],
-        ".svg",
-    );
-    // The at-line in the middle (x = width/2 on the page; the plot group
-    // is translated by the 2px margin), both switches drawn either side of
-    // it, and the instant's clock under the line.
-    let line = now_x(&svg) + 2.0;
-    assert!((line - 202.0).abs() <= 1.0, "at-line off centre: {svg}");
+    let svg = at_clock("2026-09-10T15:00:00Z", || {
+        nowview_out(
+            &db,
+            &["-t", "14:00", "--history", "30m", "--width", "404"],
+            ".svg",
+        )
+    });
+    // Now (15:00) is outside 13:45–14:15: no yellow line at all.
+    assert_eq!(lines(&svg), 0, "{svg}");
+    assert!(!svg.contains("#ffcc00"), "{svg}");
     let blocks = field_rects(&svg, "mood", "block");
     assert_eq!(blocks.len(), 2, "both switches inside the window: {svg}");
     assert!(
-        blocks[0].x + 2.0 < line && blocks[1].x + 2.0 > line,
+        blocks[0].x + 2.0 < 202.0 && blocks[1].x + 2.0 > 202.0,
         "{svg}"
     );
     assert!(field_rects(&svg, "mood", "now-chunk").is_empty(), "{svg}");
@@ -649,23 +712,48 @@ fn nowview_at_centres_the_window_on_the_instant() {
         "no {clock}: {svg}"
     );
 
+    // A centred window that still holds now draws one line, AT now: ten
+    // minutes back, a 30m window runs five minutes past now.
+    let svg = at_clock("2026-09-10T14:10:00Z", || {
+        nowview_out(&db, &["-qq", "--history", "30m", "--width", "404"], ".svg")
+    });
+    assert_eq!(lines(&svg), 1, "{svg}");
+    let x = now_x(&svg) + 2.0;
+    assert!(
+        (x - 202.0 - 400.0 / 3.0).abs() <= 1.0,
+        "now-line at {x}: {svg}"
+    );
+
+    // No flag: the line is now, at the right edge of the band.
+    let svg = at_clock("2026-09-10T14:10:00Z", || nowview_out(&db, &[], ".svg"));
+    assert_eq!(lines(&svg), 1, "{svg}");
+
     // A window with nothing in it is a picture, not an error.
-    let empty = nowview_out(&db, &["--at", "2000-01-01T00:00:00Z"], ".svg");
-    assert!(empty.contains("current-time-line"), "{empty}");
+    let empty = nowview_out(&db, &["-d", "2000-01-01", "-t", "00:00"], ".svg");
     assert!(field_rects(&empty, "mood", "block").is_empty(), "{empty}");
+    assert_eq!(lines(&empty), 0, "{empty}");
 }
 
 #[test]
 fn nowview_snapshot_at_an_instant_shows_the_state_then() {
     let db = two_switch_db();
-    let args = ["--history", "0", "--at", "2026-09-10T13:55:00Z"];
+    let args = [
+        "--history",
+        "0",
+        "-z",
+        "UTC",
+        "-d",
+        "2026-09-10",
+        "-t",
+        "13:55",
+    ];
 
     let svg = nowview_out(&db, &args, ".svg");
     assert!(svg.contains(">mood: before</text>"), "{svg}");
     assert!(!svg.contains("mood: after"), "{svg}");
 
-    let mut json = vec!["--json"];
-    json.extend_from_slice(&args);
-    let v: serde_json::Value = serde_json::from_str(&nowview_out(&db, &json, ".json")).unwrap();
-    assert_eq!(v["panel"][0]["state_label"], "before");
+    assert_eq!(
+        nowview_json(&db, &args)["panel"][0]["state_label"],
+        "before"
+    );
 }

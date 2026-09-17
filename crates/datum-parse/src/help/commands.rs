@@ -334,6 +334,61 @@ const LOG_FLAGS: &[FlagSpec] = &[
 // Tail flag table (used both as structured render and also matches body).
 // ---------------------------------------------------------------------------
 
+/// nowview's time flags (da-5flt): the grammar `help --json` hands the web,
+/// which offers nowview under a `-t` pill. The text is `NOWVIEW_BODY`'s.
+const NOWVIEW_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        short: Some('t'),
+        long: "time",
+        takes_value: true,
+        value_hint: Some("TIME"),
+        value_optional: false,
+        summary: "Centre the window on this instant",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: Some('d'),
+        long: "date",
+        takes_value: true,
+        value_hint: Some("DATE"),
+        value_optional: false,
+        summary: "Date of the instant",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: Some('q'),
+        long: "quick",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "5 min back (stackable)",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: Some('y'),
+        long: "yesterday",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "A day back (stackable)",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: Some('z'),
+        long: "timezone",
+        takes_value: true,
+        value_hint: Some("TZ"),
+        value_optional: false,
+        summary: "Zone -t and -d are read in",
+        long_description: None,
+        left_override: None,
+    },
+];
+
 const TAIL_FLAGS: &[FlagSpec] = &[
     FlagSpec {
         short: Some('n'),
@@ -782,7 +837,7 @@ const CHECK_BODY: &str = "USAGE:\n  datum check [CHECKER]... [--fix]\n  datum ch
 
 const DAYVIEW_BODY: &str = "USAGE:\n  datum dayview [OPTIONS]\n\nOPTIONS:\n  --start-date <DATE>      Start date (ISO YYYY-MM-DD or relative offset like -3, 0)\n  --end-date <DATE>, -d    End date (default: today)\n  --n-days <N>, -n         Number of days (default: 1)\n  --width <N>              SVG width in pixels (default: 2000)\n  --height <N>             Total SVG height (auto from day-height + n-days when unset)\n  --day-height <N>         Per-day band height (default: 100)\n  --time-axis-height <N>   Bottom time-axis strip height (default: 15)\n  --label-width <N>        Date-label column width (default: from the label font).\n                           0 draws no date labels — the bands start at the margin\n  --margin <N>             Outer margin (default: 2)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  -w, --watch              Redraw on a 5-minute poll loop\n";
 
-const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --history <DUR>          History window before \"now\" (e.g. 15m, 1h). Default: 30m.\n                           0 = the snapshot: each field's state, no time band\n  --at <TIME>              Centre the window on TIME (as -t takes it) instead of\n                           ending it at now\n  --width <N>              SVG width in pixels (auto-scales with --history when unset)\n  --height <N>             SVG height in pixels (default 300)\n  --margin <N>             Outer margin (default 2)\n  --time-axis-height <N>   Time-axis strip height (default 15)\n  -o, --output-file <PATH> .svg / .png / .html, or - for the SVG on stdout\n                           (default: the terminal band)\n  -w, --watch              Redraw on DB change (60s idle refresh)\n";
+const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --history <DUR>          History window before \"now\" (e.g. 15m, 1h). Default: 30m.\n                           0 = the snapshot: each field's state, no time band\n  -t, --time <TIME>        Centre the window on this instant instead of ending it\n  -d, --date <DATE>        at now; the time flags as the verbs take them\n  -q, --quick              (-q = 5 min back, stackable)\n  -y, --yesterday          (a day back, stackable)\n  -z, --timezone <TZ>      The zone -t and -d are read in\n  --width <N>              SVG width in pixels (auto-scales with --history when unset)\n  --height <N>             SVG height in pixels (default 300)\n  --margin <N>             Outer margin (default 2)\n  --time-axis-height <N>   Time-axis strip height (default 15)\n  -o, --output-file <PATH> .svg / .png / .html, or - for the SVG on stdout\n                           (default: the terminal band)\n  -w, --watch              Redraw on DB change (60s idle refresh)\n";
 
 const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n";
 
@@ -1131,7 +1186,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: None,
         usage: &["datum nowview [OPTIONS]"],
         args: NO_ARGS,
-        flags: NO_FLAGS,
+        flags: NOWVIEW_FLAGS,
         examples: NO_EXAMPLES,
         summary_col: 27,
         body_override: Some(NOWVIEW_BODY),

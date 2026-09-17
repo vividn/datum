@@ -36,7 +36,7 @@ use datum_layout::nowview_svg::{
     render_nowview_at_svg, render_nowview_svg, with_xml_declaration, wrap_svg_in_html,
 };
 use datum_parse::time::dur::parse_duration;
-use datum_parse::time::{parse_time, TimeBuilder, TimeCtx};
+use datum_parse::time::DatumTime;
 use serde_json::Value as JsonValue;
 
 use crate::args::{NowviewArgs, ShowFlag};
@@ -104,8 +104,6 @@ fn nowview_terminal_periodic_refresh(stdout_is_tty: bool) -> Option<std::time::D
 fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
 
-    let end = Utc::now();
-
     let (mode, history_minutes) = match args.window.as_deref() {
         Some(s) => {
             let m = duration_minutes(s).with_context(|| format!("invalid --window: '{s}'"))?;
@@ -115,6 +113,16 @@ fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
             (RenderMode::Flow, m)
         }
         None => (RenderMode::Snapshot, 0.0),
+    };
+
+    // da-5flt: a time flag centres the Flow window on its instant (the
+    // Snapshot reads the states at it); the now-line stays at now.
+    let now = DatumTime::now();
+    let built = args.time.build(&now)?;
+    let now = now.utc;
+    let end = match built.time.filter(|_| !built.unmodified) {
+        Some(t) => t.utc + chrono::Duration::milliseconds((history_minutes * 30_000.0) as i64),
+        None => now,
     };
 
     // Snapshot doesn't sample history, but build_fields still wants a
@@ -142,6 +150,7 @@ fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
 
     let cfg = TerminalConfig {
         end_ms: end.timestamp_millis(),
+        now_ms: now.timestamp_millis(),
         history_minutes,
         now_width_minutes: 0.0,
         cols,
@@ -181,7 +190,7 @@ fn nowview_periodic_refresh(
 /// ([`render_once`]) and the JSON emitter ([`render_json_once`]).
 struct NowComputed {
     now_ms: i64,
-    /// The instant the picture is about: `--at`'s, or now.
+    /// The instant the picture is about: the time flags', or now.
     anchor: DateTime<Utc>,
     at: Option<DateTime<Utc>>,
     history_minutes: f64,
@@ -196,17 +205,14 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         Some(s) => duration_minutes(s).with_context(|| format!("invalid --history: '{s}'"))?,
         None => DEFAULT_HISTORY_MINUTES,
     };
-    // da-pcis: `--at` names its instant exactly as `-t` does.
-    let at = match args.at.as_deref() {
-        Some(s) => {
-            let arg = parse_time(s, TimeCtx::now())
-                .map_err(|e| anyhow::anyhow!("invalid --at '{s}': {e}"))?;
-            Some(TimeBuilder::now().with_time_arg(arg).build().utc)
-        }
-        None => None,
-    };
-
-    let now = Utc::now();
+    // da-5flt: the shared time flags name the instant, resolved against
+    // the clock at every render so `--watch` and `-q` move with it.
+    let now = DatumTime::now();
+    let built = args.time.build(&now)?;
+    let at = (!built.unmodified)
+        .then(|| built.time.map(|t| t.utc))
+        .flatten();
+    let now = now.utc;
     let anchor = at.unwrap_or(now);
     // Geometry lives in `datum_layout::nowview` so the PWA reaches the same
     // config from its own store (da-6h6p) instead of re-deriving it.
@@ -227,7 +233,9 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     // The snapshot's window is an instant; a minute of lookback still
     // gives every field in a state a band for its state to be read from.
     let fields = build_dayview_fields(db, window_end, history_minutes.max(1.0))?;
-    let config = nowview_config(fields, anchor.timestamp_millis(), &geometry);
+    let mut config = nowview_config(fields, anchor.timestamp_millis(), &geometry);
+    // The yellow line is now, and only now: absent when now is outside.
+    config.now_ms = now.timestamp_millis();
     let window = (config.days[0].start_ms, config.days[0].end_ms);
 
     let layout = compute_dayview(&config);
@@ -400,9 +408,9 @@ pub(crate) fn build_dayview_fields(
 ) -> Result<Vec<DayviewFieldInput>> {
     let day_end_ms = end.timestamp_millis();
     let day_start_ms = day_end_ms - (history_minutes * 60_000.0) as i64;
-    // da-pcis: a window centred on `--at` can reach past now, and the
+    // da-pcis: a window centred on an instant can reach past now, and the
     // record holds nothing there — a state still open runs up to now.
-    let open_end_ms = day_end_ms.min(Utc::now().timestamp_millis());
+    let open_end_ms = day_end_ms.min(DatumTime::now().utc.timestamp_millis());
 
     let day_start_utc = Utc
         .timestamp_millis_opt(day_start_ms)
@@ -924,6 +932,25 @@ mod tests {
     use datum_core::action::Action;
     use datum_core::entry::Verb;
 
+    /// da-5flt: the time flags resolve at every render, so each `--watch`
+    /// redraw (`compute_now` again) centres `-q` on the clock of THAT redraw.
+    #[test]
+    fn time_flags_resolve_again_at_each_redraw() {
+        use datum_parse::time::clock::{install, uninstall, MockClock};
+        let clock = std::sync::Arc::new(MockClock::new(DatumTime::now()));
+        install(clock.clone());
+        let db = Db::open_in_memory().unwrap();
+        let mut args = NowviewArgs::default();
+        args.time.quick = 1;
+        let first = compute_now(&args, &db).unwrap();
+        clock.advance(chrono::Duration::minutes(1));
+        let second = compute_now(&args, &db).unwrap();
+        uninstall();
+        let (a, b) = (first.at.unwrap(), second.at.unwrap());
+        assert_eq!(b - a, chrono::Duration::minutes(1));
+        assert_eq!(second.now_ms - a.timestamp_millis(), 6 * 60_000);
+    }
+
     /// Without the `png` feature, requesting a `.png` output path must
     /// return a friendly error pointing at the missing feature, not panic.
     #[cfg(not(feature = "png"))]
@@ -1441,6 +1468,7 @@ mod tests {
             &fields,
             &TerminalConfig {
                 end_ms: now.timestamp_millis(),
+                now_ms: now.timestamp_millis(),
                 history_minutes: 60.0,
                 now_width_minutes: 5.0,
                 cols: 80,

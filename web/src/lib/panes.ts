@@ -87,18 +87,25 @@ export function wantsBox(argv: string[]): boolean {
  * the minute they were run in, so a pane running one of them re-runs on
  * the minute clock (da-r61i, `$lib/clock.ts`).
  *
- * Unless it is PINNED: `--at` centres nowview on an instant the reader
- * chose (the time cursor) and `--end-date` asks dayview for a day of the
- * past — neither picture has a now in it to move, and the strip's own
- * bands are asked for that way. By the flag alone, not its value, so
- * `--end-date 0` — today, spelled the long way, which nothing in the app
- * writes — is pinned too.
+ * Unless it is PINNED: `-t <instant>` centres nowview on an instant the
+ * reader chose (the time cursor) and `--end-date` asks dayview for a day of
+ * the past — the strip's own bands are asked for that way. `--end-date` by
+ * the flag alone, not its value, so `--end-date 0` — today, spelled the long
+ * way, which nothing in the app writes — is pinned too; nowview's `-t` only
+ * when its value is not an offset (`-t -7` moves with the clock, da-5flt).
  */
 const NOW_COMMANDS = new Set(['now', 'nowview', 'dayview']);
-const PINNED = /^--(at|end-date)(=|$)/;
+const PINNED = /^--end-date(=|$)/;
 
 export function dependsOnNow(argv: string[]): boolean {
-	return NOW_COMMANDS.has(argv[0]) && !argv.some((word) => PINNED.test(word));
+	return (
+		NOW_COMMANDS.has(argv[0]) &&
+		!argv.some(
+			(word, i) =>
+				PINNED.test(word) ||
+				(argv[0] === 'nowview' && word === '-t' && !/^[+-]/.test(argv[i + 1] ?? '-'))
+		)
+	);
 }
 
 /**
@@ -428,7 +435,7 @@ export function zoomHistory(history: string, scale: number): string {
 /** NOWVIEW at a window of `history`, centred on `at` when there is one (da-pcis). */
 export const nowviewSpec = (history: string, at?: string): PaneSpec => ({
 	...NOWVIEW,
-	argv: [...NOWVIEW.argv, '--history', history, ...(at ? ['--at', at] : [])]
+	argv: [...NOWVIEW.argv, '--history', history, ...(at ? ['-t', at] : [])]
 });
 
 export const TAIL: PaneSpec = {

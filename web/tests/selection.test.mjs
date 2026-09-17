@@ -91,6 +91,9 @@ describe('a tap on a tail row', () => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const help = await page.evaluate(() => window.datum.runQuiet(['help', '--json']));
+			// da-5flt: nowview takes `-t`, so a time pill leaves it drawn.
+			const nowview = JSON.parse(help.stdout).find((c) => c.name === 'nowview');
+			assert.ok(nowview.flags.some((f) => f.short === 't'), JSON.stringify(nowview));
 			const takesId = new Set(
 				JSON.parse(help.stdout)
 					.filter((c) => c.usage.some((u) => /^datum \S+ [<[](ID_OR_SLUG|SLUG|HID)\b/.test(u.trim())))

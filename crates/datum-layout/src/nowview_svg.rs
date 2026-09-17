@@ -54,10 +54,10 @@ pub fn render_nowview_svg(
     svg
 }
 
-/// Render a window centred on an instant (`--at`, da-pcis): the dayview
-/// picture with its now-line at the instant, no now strip, and the
-/// instant's `HH:MM` as the axis label under the line — where the labels
-/// either side of it make room for it like any other tick's.
+/// Render a window centred on an instant (a time flag, da-pcis): the dayview
+/// picture with no now strip, and the instant's `HH:MM` as the axis label
+/// under the middle — making room like any other tick's. Its now-line is
+/// dayview's own, at now if now is in the window (da-5flt).
 pub fn render_nowview_at_svg(layout: &DayviewLayout, at_label: &str) -> String {
     let mut layout = layout.clone();
     if let Some(tick) = layout.axis_ticks.iter_mut().find(|t| t.label.is_empty()) {

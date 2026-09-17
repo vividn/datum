@@ -177,7 +177,7 @@ pub fn nowview_axis_ticks(time_axis_extent: f64, history_minutes: f64) -> Vec<Da
 }
 
 /// [`nowview_axis_ticks`] for a window reaching `before` minutes back and
-/// `after` minutes on past the line it is about (`--at`, da-pcis): ticks
+/// `after` minutes on past the line it is about (a time flag, da-pcis): ticks
 /// step out from that line both ways, `-15m` before it and `+15m` after,
 /// and the line's own tick is the one without a label.
 pub fn nowview_axis_ticks_around(
@@ -329,7 +329,7 @@ pub struct NowviewGeometry {
     pub margin: f64,
     pub time_axis_height: f64,
     /// Centre the window on the instant instead of ending it there
-    /// (`--at`, da-pcis): half the history either side of the line, and no
+    /// (a time flag, da-pcis): half the history either side of the line, and no
     /// now strip, since the half after the line is drawn from the record.
     #[serde(default)]
     pub centred: bool,
@@ -352,7 +352,7 @@ impl Default for NowviewGeometry {
 /// `[now - history, now]`, no date label, relative-minute axis ticks, and a
 /// reservation on the right for the current-state panel.
 ///
-/// `now_ms` is the instant the picture is about — now, or `--at`'s. A
+/// `now_ms` is the instant the picture is about — now, or the one a time flag names. A
 /// zero history is the snapshot (da-pcis): no time band and no axis, the
 /// whole plot the strip carrying each field's state at that instant.
 ///
@@ -502,7 +502,7 @@ mod config_tests {
         assert!(cfg.axis_ticks_override.unwrap().is_empty());
     }
 
-    /// da-pcis: `--at` centres the window on the instant, with no strip,
+    /// da-pcis: a time flag centres the window on the instant, with no strip,
     /// and the instant's unlabelled tick in the middle of the axis.
     #[test]
     fn centred_window_straddles_the_instant() {

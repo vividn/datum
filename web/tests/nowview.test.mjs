@@ -207,7 +207,7 @@ describe('the nowview widget', () => {
 // + / − step — and land on the same ladder, so the two controls never
 // disagree about where the window can be.
 //
-// The anchor is the instant the picture is about: now, or `--at`'s when a
+// The anchor is the instant the picture is about: now, or `-t`'s when a
 // tree carries one. What is held here is that the anchor does not move
 // under the gesture — the band scales about the now-line's own x, so the
 // column the fingers are anchored to is the one column that stays.
@@ -216,7 +216,7 @@ describe('the nowview widget', () => {
 // that ENDS at now it moves: nowview reserves a now strip of
 // `NOW_WIDTH_MINUTES` at the window's own scale (nowview.rs, the original
 // datum's proportions), so a shorter window spends proportionally more of
-// the band on it and the now-line slides left. A CENTRED window — `--at` —
+// the band on it and the now-line slides left. A CENTRED window — `-t` —
 // has no strip and its anchor is the middle of the band whatever the
 // window, which is the case asserted to the pixel below.
 
@@ -339,13 +339,23 @@ describe('the nowview widget zooms', () => {
 		);
 	});
 
-	test('with --at set the pinch keeps that instant, not now', async () => {
+	test('with -t set the pinch keeps that instant, not now', async () => {
+		// The instant is the axis label under the middle of the band; the
+		// yellow line is now (da-5flt), and 12:00 is not in 08:45–09:15.
+		const instantX = (page) =>
+			page
+				.locator(`${PANE} svg.svg text.tick-label`, { hasText: '09:00' })
+				.evaluate((label) => {
+					const box = label.getBoundingClientRect();
+					return box.x + box.width / 2;
+				});
 		await withApp(
 			async (app) => {
 				const { page } = app;
 				await app.spyOnRunner();
 				const box = await pictureBox(page);
-				const before = await anchorX(page);
+				assert.equal(await page.locator(`${PANE} svg.svg .current-time-line`).count(), 0);
+				const before = await instantX(page);
 				// A centred window: the anchor is the middle of the band, and
 				// nowhere near the right edge where a window ending at now
 				// would draw it.
@@ -358,13 +368,13 @@ describe('the nowview widget zooms', () => {
 				await asked(page, '20m');
 				await app.idle();
 				assert.deepEqual(await titles(page), ['longer window (30m)', 'shorter window (15m)']);
-				const after = await anchorX(page);
+				const after = await instantX(page);
 				assert.ok(Math.abs(after - before) <= 2, `09:00 moved: ${before} → ${after}`);
 				// And the window is still that instant's, not the clock's.
 				const argv = (await page.evaluate(() => window.__datumSeen))
 					.filter((a) => a[0] === 'nowview')
 					.at(-1);
-				assert.equal(argv[argv.indexOf('--at') + 1], '09:00');
+				assert.equal(argv[argv.indexOf('-t') + 1], '09:00');
 				assert.deepEqual(app.errors, []);
 			},
 			{

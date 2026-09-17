@@ -1115,9 +1115,10 @@ pub struct NowviewArgs {
     /// History duration string ("15m", "1h", "2h"). None → 30m default.
     /// `0` is the snapshot: each field's state, no time band (da-pcis).
     pub history: Option<String>,
-    /// `--at <TIME>`, parsed as `-t` is: centre the window on that
-    /// instant instead of ending it at now (da-pcis). None → now.
-    pub at: Option<String>,
+    /// `-t/-d/-q/-y`, the shared time flags, centre the window on the instant
+    /// they name instead of ending it at now; `-z` only reframes them
+    /// (da-5flt). Resolved at each render, so `--watch` follows the clock.
+    pub time: TimeArgs,
     /// SVG width in pixels. None → scale from `history` (datum behavior).
     pub width: Option<f64>,
     /// SVG height in pixels. Default 300.
@@ -1159,7 +1160,7 @@ impl Default for NowviewArgs {
     fn default() -> Self {
         Self {
             history: None,
-            at: None,
+            time: TimeArgs::default(),
             width: None,
             height: 300.0,
             margin: 2.0,

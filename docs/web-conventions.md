@@ -29,7 +29,7 @@ file in the same commit — a convention nobody can read is a convention nobody 
    while the document is hidden and ticking once on return if the minute turned. It is NOT the
    epoch: a pane folds the tick into its own request only when `dependsOnNow(argv)`
    (`$lib/panes.ts`) says the command reads the clock — `now`, `nowview`, `dayview`, unless pinned
-   with `--at` or `--end-date` — and the day strip re-draws today's band and the geometry beside
+   with an absolute `-t` or `--end-date` — and the day strip re-draws today's band and the geometry beside
    it. The tail is not re-run and the fields widget is not rebuilt. A test that counts a drawn
    pane's runs over a stretch of real time therefore pins the clock (`clock:` in `withApp`): a
    fixed `Date.now()` never turns a minute.
