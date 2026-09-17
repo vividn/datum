@@ -6,13 +6,19 @@ use datum_core::db::Db;
 
 use crate::args::WhyArgs;
 use crate::commands::helpers::{
-    assembled_expansion, format_version_row, resolve_prefix_or_tombstone,
+    assembled_expansion, for_each_id, format_version_row, resolve_prefix_or_tombstone,
 };
 use crate::render::action::now_local;
 
+/// `why A,B` answers for each entry in turn, each under its own `hid:` line
+/// (da-9p3o).
 pub fn why(args: WhyArgs, db: &Db) -> Result<()> {
-    let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)
-        .with_context(|| format!("entry not found: {}", args.id_or_slug))?;
+    for_each_id(&args.id_or_slug, |id| why_of(&args, id, db))
+}
+
+fn why_of(args: &WhyArgs, id: &str, db: &Db) -> Result<()> {
+    let current =
+        resolve_prefix_or_tombstone(db, id).with_context(|| format!("entry not found: {id}"))?;
 
     println!("hid: {}  slug: {}", current.hid, current.slug);
     let raw = current.raw_input.as_deref().filter(|s| !s.is_empty());

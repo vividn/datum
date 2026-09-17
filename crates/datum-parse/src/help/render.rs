@@ -184,6 +184,14 @@ fn render_command_body_structured(spec: &CommandSpec, displayed_name: &str) -> S
         }
         s.push('\n');
     }
+    if !spec.args.is_empty() {
+        s.push_str("\nARGS:\n");
+        for a in spec.args {
+            let left = format!("  {}", a.name);
+            let pad = spec.summary_col.saturating_sub(left.len()).max(2);
+            s.push_str(&format!("{left}{}{}\n", " ".repeat(pad), a.summary));
+        }
+    }
     let options = render_options_block(spec.flags, spec.summary_col);
     if !options.is_empty() {
         s.push('\n');

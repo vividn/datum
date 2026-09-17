@@ -16,7 +16,24 @@ use datum_core::error::DatumError;
 /// Kept to this single distinct code — exit-code sprawl is its own footgun.
 const EXIT_DUPLICATE: i32 = 11;
 
+/// Exit code when the reader of stdout goes away (`datum tail | head -1`):
+/// 128 + SIGPIPE, what a shell reports for any unix tool killed that way.
+const EXIT_BROKEN_PIPE: i32 = 141;
+
 fn main() {
+    // Rust ignores SIGPIPE, so a closed stdout makes `println!` panic and the
+    // process exits 101 with a panic message (da-9p3o). End quietly instead,
+    // the way a unix tool does. Only stdout's broken pipe: a socket's EPIPE
+    // (sync) is still an error, and every other panic keeps its report.
+    let report = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if info.payload_as_str().is_some_and(|m| {
+            m.starts_with("failed printing to stdout") && m.contains("Broken pipe")
+        }) {
+            std::process::exit(EXIT_BROKEN_PIPE);
+        }
+        report(info)
+    }));
     match datum_cli::run(std::env::args().collect()) {
         Ok(()) => {
             if datum_cli::args::took_duplicate_noop() {

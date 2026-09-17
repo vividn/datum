@@ -147,7 +147,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 - `tail` — Show recent entries
 - `head` — Show oldest entries
-- `get` — Print a single entry by id or slug
+- `get` — Print entries by id or slug
 - `grep` — Regex search over entry JSON content
 - `history` — Show the full modification trail for an entry
 - `why` — Explain the intent behind an entry

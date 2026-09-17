@@ -35,6 +35,13 @@
 use super::spec::{ArgSpec, Category, CommandSpec, ExampleSpec, FlagSpec};
 
 const NO_ARGS: &[ArgSpec] = &[];
+
+const UPDATE_ARGS: &[ArgSpec] = &[ArgSpec {
+    name: "<ID_OR_SLUG>",
+    required: true,
+    variadic: false,
+    summary: "Several ids are joined with commas (`a1b2,c3d4`): a word after a space is a VALUE",
+}];
 const NO_EXAMPLES: &[ExampleSpec] = &[];
 const NO_FLAGS: &[FlagSpec] = &[];
 
@@ -804,17 +811,17 @@ const IDS_FLAGS: &[FlagSpec] = &[
 
 const NOW_BODY: &str = "USAGE:\n  datum now [-A] [--bare] [--no-color] [--cols N]\n\n  -A           Show ignored fields too (dim)\n      --bare   Suppress the terminal nowview band; only show the state list\n      --no-color   Disable ANSI color in the nowview band\n      --cols N Override terminal width in cells (auto-detected from $COLUMNS)\n";
 
-const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG> [--pretty]\n\nStructured states (objects with `id` and other fields) render as an `{id}`\nchip on the main info line, with sub-fields broken out on a state second\nline below. Parallel states wrap in `[ … ]` with one inner state per line.\nThe per-entry data block follows the same alignment convention — keys are\nright-aligned so their trailing `:` shares a column when the block goes\nmultiline.\n";
+const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG[,ID_OR_SLUG]...> [--pretty]\n\nA comma list prints each entry in the order given (`--pretty` and `--show json`\ntoo). An id that does not resolve is named on stderr after the documents that\ndid, and the command exits 1.\n\nStructured states (objects with `id` and other fields) render as an `{id}`\nchip on the main info line, with sub-fields broken out on a state second\nline below. Parallel states wrap in `[ … ]` with one inner state per line.\nThe per-entry data block follows the same alignment convention — keys are\nright-aligned so their trailing `:` shares a column when the block goes\nmultiline.\n";
 
 const DELETE_BODY: &str = "USAGE:\n  datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--force] [--dry-run] [--strict]\n                [-A | -o FMT]\n\nARGS:\n  [ID_OR_SLUG]  QuickId(s) — hid prefix, slug, `_`/`_LAST`, `<field>:_`,\n                slug wildcard. Multiple targets may be comma-batched\n                (`<id>,<id>,...`); resolution is per-token.\n                Omitting the arg targets `_LAST`. Nothing refuses on\n                age: past ten minutes delete warns on stderr with\n                the pointer's age and proceeds (`datum undo` is the\n                way back).\n\nOPTIONS:\n      --force       Accepted, but there is no longer a prompt to skip.\n      --dry-run     Print what would be deleted and exit; no DB writes.\n      --strict      With comma-batched tokens, abort up-front if ANY\n                    token failed to resolve (default: delete the\n                    resolved subset, skip-and-warn on the failures).\n  -A, --show-all    Show the full entry document for each deleted row.\n  -o, --format-string <FMT>\n                    Render each deleted row through datum's format-string DSL.\n\nEXAMPLES:\n  datum delete                    # delete _LAST (warns if > 10 min stale)\n  datum delete activity:_         # delete latest activity row\n  datum delete a1b2,c3d4          # batched\n  datum delete a1b2,c3d4 --dry-run\n                                  # preview only — no DB writes\n";
 
-const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG] [--to-version N]\n\nReverts an entry to a prior version via its entry_history trail. By default,\nrestores the immediately-previous version; --to-version N picks an explicit\nversion. With no ID_OR_SLUG it acts on `_LAST`, falling back to the most\nrecent tombstone for legacy entries with no trail.\n\nUndo never refuses on age. Past ten minutes it names the age on stderr and\nproceeds anyway: `datum redo` is the way forward again.\n";
+const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG[,ID_OR_SLUG]...] [--to-version N]\n\nReverts an entry to a prior version via its entry_history trail. By default,\nrestores the immediately-previous version; --to-version N picks an explicit\nversion. With no ID_OR_SLUG it acts on `_LAST`, falling back to the most\nrecent tombstone for legacy entries with no trail. A comma list steps each\nentry back along its own trail; --to-version with a list is refused.\n\nUndo never refuses on age. Past ten minutes it names the age on stderr and\nproceeds anyway: `datum redo` is the way forward again.\n";
 
-const REDO_BODY: &str = "USAGE:\n  datum redo [ID_OR_SLUG]\n\nThe inverse of `datum undo`: re-applies the version the last undo stepped\nback from. Redo of an undone create re-creates the entry under the same hid;\nredo of an undone delete deletes it again. With no ID_OR_SLUG it acts on\n`_LAST`, and every row of a multi-entry `_LAST` steps together.\n\nExits 1 with 'nothing to redo' when the entry's newest step is not an undo,\nso `undo; redo; redo` moves once, not twice.\n";
+const REDO_BODY: &str = "USAGE:\n  datum redo [ID_OR_SLUG[,ID_OR_SLUG]...]\n\nThe inverse of `datum undo`: re-applies the version the last undo stepped\nback from. Redo of an undone create re-creates the entry under the same hid;\nredo of an undone delete deletes it again. With no ID_OR_SLUG it acts on\n`_LAST`, and every row of a multi-entry `_LAST` steps together, as every entry\nof a comma list does.\n\nExits 1 with 'nothing to redo' when the entry's newest step is not an undo,\nso `undo; redo; redo` moves once, not twice.\n";
 
-const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG> [--version N | --diff A B]\n";
+const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG[,ID_OR_SLUG]...> [--version N | --diff A B]\n\nA comma list prints each entry's trail in turn, each under its own `hid:` line\n(`--show json`: one array of `{hid, versions}`). `--version` and `--diff` number\nONE entry's versions, so with a list they are refused.\n";
 
-const WHY_BODY: &str = "USAGE:\n  datum why <ID_OR_SLUG> [--full]\n";
+const WHY_BODY: &str = "USAGE:\n  datum why <ID_OR_SLUG[,ID_OR_SLUG]...> [--full]\n\nA comma list answers for each entry in turn, each under its own `hid:` line.\n";
 
 const EDIT_BODY: &str = "USAGE:\n  datum edit <ID_OR_SLUG>\n";
 
@@ -857,7 +864,7 @@ const KIT_BODY: &str = "USAGE:\n  datum kit install <PATH|-> [--force] [--yes] [
 
 const VIEW_BODY: &str = "USAGE:\n  datum view <NAME> [--format FMT] [--watch]\n  datum view --list\n\nARGS:\n  <NAME>           Installed view name (see `datum view --list`).\n\nOPTIONS:\n  -f, --format <FMT>   pretty | tsv | csv | json | auto (default auto).\n  -w, --watch          Re-run the query every 2s; clear-screen between\n                       redraws.\n  --list               Print installed view names and exit.\n\nViews execute under PRAGMA query_only = 1, so a malicious or buggy\nview cannot mutate the DB.\n";
 
-const REPARSE_BODY: &str = "USAGE:\n  datum reparse <HID>... [--fix]\n\nARGS:\n  <HID>...      One or more entries to replay. At least one is required;\n                reparse never walks the entry log implicitly.\n\nOPTIONS:\n  --fix         UPDATE rows where the parser produced a different shape\n                from the persisted columns; bumps `parser_version` and\n                recomputes `content_hash`. Default is dry-run (report only).\n\nReplay is hermetic to the alias state at write time — the entry's\nstored `alias_chain` is rehydrated as the resolver, never the live\n`aliases` table (da-bkak).\n";
+const REPARSE_BODY: &str = "USAGE:\n  datum reparse <HID[,HID]...>... [--fix]\n\nARGS:\n  <HID>...      One or more entries to replay. At least one is required;\n                reparse never walks the entry log implicitly.\n\nOPTIONS:\n  --fix         UPDATE rows where the parser produced a different shape\n                from the persisted columns; bumps `parser_version` and\n                recomputes `content_hash`. Default is dry-run (report only).\n\nReplay is hermetic to the alias state at write time — the entry's\nstored `alias_chain` is rehydrated as the resolver, never the live\n`aliases` table (da-bkak).\n";
 
 // ---------------------------------------------------------------------------
 // Global flags shown in `datum --help` under `GLOBAL OPTIONS:`.
@@ -1136,10 +1143,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "get",
         aliases: &[],
         category: Category::Read,
-        summary: "print a single entry",
-        top_summary: Some("Print a single entry by id or slug"),
+        summary: "print entries by id or slug",
+        top_summary: Some("Print entries by id or slug"),
         long_description: None,
-        usage: &["datum get <ID_OR_SLUG> [--pretty]"],
+        usage: &["datum get <ID_OR_SLUG[,ID_OR_SLUG]...> [--pretty]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,
@@ -1214,7 +1221,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "modification trail for an entry",
         top_summary: Some("Show the full modification trail for an entry"),
         long_description: None,
-        usage: &["datum history <ID_OR_SLUG> [--version N | --diff A B]"],
+        usage: &["datum history <ID_OR_SLUG[,ID_OR_SLUG]...> [--version N | --diff A B]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,
@@ -1229,7 +1236,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "explain the intent behind an entry",
         top_summary: None,
         long_description: None,
-        usage: &["datum why <ID_OR_SLUG> [--full]"],
+        usage: &["datum why <ID_OR_SLUG[,ID_OR_SLUG]...> [--full]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,
@@ -1261,7 +1268,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         top_summary: Some("Replace keys on an existing entry"),
         long_description: None,
         usage: &["datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
-        args: NO_ARGS,
+        args: UPDATE_ARGS,
         flags: UPDATE_FLAGS,
         examples: NO_EXAMPLES,
         summary_col: 26,
@@ -1290,7 +1297,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "mutate an existing entry",
         top_summary: Some("Copy an entry to a new id (old row stays)"),
         long_description: None,
-        usage: &["datum rekey <ID_OR_SLUG> [VALUE | KEY=VALUE]..."],
+        usage: &["datum rekey <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
         flags: UPDATE_FLAGS,
         examples: NO_EXAMPLES,
@@ -1346,7 +1353,7 @@ pub const COMMANDS: &[CommandSpec] = &[
              most recent tombstone. Undo never refuses on age: past ten minutes \
              it warns and proceeds, and `datum redo` is the way forward again.",
         ),
-        usage: &["datum undo [ID_OR_SLUG] [--to-version N]"],
+        usage: &["datum undo [ID_OR_SLUG[,ID_OR_SLUG]...] [--to-version N]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,
@@ -1366,7 +1373,7 @@ pub const COMMANDS: &[CommandSpec] = &[
              hid; redo of an undone delete deletes it again. With no ID_OR_SLUG \
              it acts on `_LAST`. Exits 1 when there is nothing ahead.",
         ),
-        usage: &["datum redo [ID_OR_SLUG]"],
+        usage: &["datum redo [ID_OR_SLUG[,ID_OR_SLUG]...]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,
@@ -1707,7 +1714,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "replay stored raw_input against the current parser",
         top_summary: Some("Replay an entry's stored raw_input through the current parser; --fix rewrites drifted columns"),
         long_description: None,
-        usage: &["datum reparse <HID>... [--fix]"],
+        usage: &["datum reparse <HID[,HID]...>... [--fix]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,

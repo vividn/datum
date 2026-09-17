@@ -1,6 +1,7 @@
-//! `datum get <id_or_slug>` — print a single entry, or, in search
-//! mode (da-yhh1), every entry on a field matching the supplied
-//! matchers.
+//! `datum get <id_or_slug>[,<id_or_slug>...]` — print entries by id or
+//! slug (a list in the order given; an id that does not resolve is named
+//! after the ones that did), or, in search mode (da-yhh1), every entry on a
+//! field matching the supplied matchers.
 
 use anyhow::Result;
 use datum_core::db::Db;
@@ -41,15 +42,13 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
     // entries (`expand_ambiguous = true`) rather than erroring.
     let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live, true);
 
-    // get fails the whole command if any token can't resolve, so a
-    // bad piece surfaces as an error rather than being silently dropped.
-    // Check before stamping the pointer so a partial set never sticks.
-    if let Some((_, err)) = token_errors.into_iter().next() {
-        return Err(err);
-    }
+    // A token that can't resolve fails the command, but only after the
+    // ones that did are printed — `delete`'s precedent for a partly-bad
+    // list (da-9p3o). Nothing resolved: its error, verbatim.
     if entries.is_empty() {
-        return Err(anyhow::Error::from(
-            datum_core::error::DatumError::NotFound(pattern.to_string()),
+        return Err(token_errors.into_iter().next().map_or_else(
+            || datum_core::error::DatumError::NotFound(pattern.to_string()).into(),
+            |(_, err)| err,
         ));
     }
 
@@ -68,6 +67,16 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
                 &output,
             );
         }
+    }
+
+    // Named on stderr after the documents; the pointer is not stamped, so
+    // a partial set never sticks.
+    if !token_errors.is_empty() {
+        for (tok, err) in &token_errors {
+            eprintln!("{tok}: {err}");
+        }
+        let toks: Vec<&str> = token_errors.iter().map(|(t, _)| t.as_str()).collect();
+        anyhow::bail!("not found: {}", toks.join(","));
     }
 
     // Stamp the pointer at the resolved hids so a follow-up bare command

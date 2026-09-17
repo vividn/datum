@@ -148,8 +148,8 @@ describe('selecting several', () => {
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill.hid button.remove').length === 2);
 			assert.equal(await hidPill(page).count(), 1);
 			assert.deepEqual(await sections(page), hids.map((h) => h.slice(0, 5)));
-			await page.waitForFunction(() => !document.querySelector('.bar.commands [data-command="get"]'));
-			assert.deepEqual(await drawn(page), ['retime', 'update', 'delete']);
+			// Every id command takes a comma list (da-9p3o), so two hids keep them all.
+			assert.deepEqual(await drawn(page), ID_COMMANDS);
 
 			// A locked pill survives the update, for the delete after it.
 			await hidPill(page).locator('button.lock').click();
@@ -176,6 +176,29 @@ describe('selecting several', () => {
 			await button(page, 'undo').click();
 			await app.idle();
 			await page.waitForFunction((n) => document.querySelectorAll('section[data-title="tail"] tbody tr[data-hid]').length === n, before);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('two selected: get is offered, and runs on both — one document each', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seedLines(app, SEED);
+			const [first, , third] = await last(page, 4);
+			const hids = [await first.getAttribute('data-hid'), await third.getAttribute('data-hid')];
+			await first.click({ modifiers: ['ControlOrMeta'] });
+			await third.click({ modifiers: ['ControlOrMeta'] });
+			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill.hid button.remove').length === 2);
+			await button(page, 'get').waitFor();
+
+			await run(app, 'get');
+			assert.equal((await app.echoes()).at(-1), `get ${hids.join(',')}`);
+			const docs = await page.locator('.repl .doc[data-hid]').evaluateAll((all) => all.slice(-2).map((d) => d.dataset.hid));
+			assert.deepEqual(
+				docs.map((d, i) => hids[i].startsWith(d) || d.startsWith(hids[i])),
+				[true, true],
+				`the last two documents are the two entries, in order: ${docs}`
+			);
 			assert.deepEqual(app.errors, []);
 		});
 	});

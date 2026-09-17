@@ -544,7 +544,7 @@ pub struct DeleteArgs {
     pub output: OutputArgs,
 }
 
-/// `datum undo [ID_OR_SLUG] [--to-version N]` — one step back along the
+/// `datum undo [ID_OR_SLUG[,ID_OR_SLUG]...] [--to-version N]` — one step back along the
 /// entry's history trail.
 ///
 /// There is no staleness flag here any more (da-s6no): `undo` used to refuse
@@ -563,7 +563,7 @@ pub struct UndoArgs {
     pub output: OutputArgs,
 }
 
-/// `datum redo [ID_OR_SLUG]` — one step FORWARD along the trail, undoing the
+/// `datum redo [ID_OR_SLUG[,ID_OR_SLUG]...]` — one step FORWARD along the trail, undoing the
 /// last `undo`. No `--to-version`: an explicit version number is what `undo`
 /// is for, and `redo` is the word for the step a hand already took back.
 #[derive(Debug, Default)]

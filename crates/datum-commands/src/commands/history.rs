@@ -5,13 +5,44 @@ use datum_core::{db::Db, entry::Entry};
 use serde_json::Value as JsonValue;
 
 use crate::args::{HistoryArgs, ShowFlag};
-use crate::commands::helpers::{format_version_row, resolve_prefix_or_tombstone};
+use crate::commands::helpers::{
+    for_each_id, format_version_row, is_id_list, resolve_prefix_or_tombstone,
+};
 use crate::render::action::now_local;
 
+/// `history A,B` prints each entry's trail in turn, each under its own
+/// `hid:` line (da-9p3o). A version number belongs to ONE entry's trail, so
+/// `--version` / `--diff` with a list is refused rather than guessed at.
+/// `--show json` with a list is ONE array of `{hid, versions}`, one per entry.
 pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
+    if is_id_list(&args.id_or_slug) && (args.version.is_some() || args.diff.is_some()) {
+        anyhow::bail!(
+            "--version and --diff name versions of ONE entry's history; \
+             give one id, not the list '{}'",
+            args.id_or_slug
+        );
+    }
+    if args.show == ShowFlag::Json && is_id_list(&args.id_or_slug) {
+        let mut trails = Vec::new();
+        let done = for_each_id(&args.id_or_slug, |id| {
+            history_of(&args, id, db, Some(&mut trails))
+        });
+        println!("{}", serde_json::to_string_pretty(&trails)?);
+        return done;
+    }
+    for_each_id(&args.id_or_slug, |id| history_of(&args, id, db, None))
+}
+
+/// One entry's history. `trails` collects a list's JSON instead of printing it.
+fn history_of(
+    args: &HistoryArgs,
+    id: &str,
+    db: &Db,
+    trails: Option<&mut Vec<JsonValue>>,
+) -> Result<()> {
     let json = args.show == ShowFlag::Json;
-    let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)
-        .with_context(|| format!("entry not found: {}", args.id_or_slug))?;
+    let current =
+        resolve_prefix_or_tombstone(db, id).with_context(|| format!("entry not found: {id}"))?;
     let hid = current.hid.clone();
 
     // `--version N` wins over `--diff` when both are set. The snapshot is
@@ -60,7 +91,10 @@ pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&payload)?);
+        match trails {
+            Some(trails) => trails.push(serde_json::json!({ "hid": hid, "versions": payload })),
+            None => println!("{}", serde_json::to_string_pretty(&payload)?),
+        }
         return Ok(());
     }
 

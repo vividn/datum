@@ -42,7 +42,7 @@ MUTATE:
 READ:
   tail     Show recent entries
   head     Show oldest entries
-  get      Print a single entry by id or slug
+  get      Print entries by id or slug
   grep     Regex search over entry JSON content
   history  Show the full modification trail for an entry
   why      Explain the intent behind an entry
@@ -557,6 +557,9 @@ datum update — mutate an existing entry
 
 USAGE:
   datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]...
+
+ARGS:
+  <ID_OR_SLUG>            Several ids are joined with commas (`a1b2,c3d4`): a word after a space is a VALUE
 
 OPTIONS:
       --strategy <S>      update|merge|rekey

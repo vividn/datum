@@ -25,7 +25,9 @@ use datum_core::{
 
 use crate::{
     args::{OutputFlagsExt, RedoArgs, UndoArgs},
-    commands::helpers::{load_registry_opt, resolve_prefix_or_tombstone, warn_if_stale},
+    commands::helpers::{
+        for_each_id, is_id_list, load_registry_opt, resolve_prefix_or_tombstone, warn_if_stale,
+    },
     render::{show_create, show_delete, show_update, OutputArgs},
 };
 
@@ -37,50 +39,17 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
     // the prior recorded version. Fall back to the legacy undelete path when
     // no history exists for the entry (e.g. a pre-D4 tombstone imported from
     // a backup) so the command remains useful for those rows.
-    if let Some(id_or_slug) = args.id_or_slug.as_deref() {
-        let current = resolve_prefix_or_tombstone(db, id_or_slug)?;
-        let latest = history::latest_version(db.conn(), &current.hid)?;
-
-        match (args.to_version, latest) {
-            (Some(v), _) => {
-                // Bounds-check against the entry's version range [1, latest].
-                // `state_at_version` is version-agnostic by design and misbehaves
-                // silently at the edges (v=0 reverts to create-state; v>latest
-                // no-ops), so the clarity check belongs here where `latest` is
-                // known. An out-of-range version must point at the problem, not
-                // quietly do the wrong thing (da-96yy).
-                let latest_n = latest.unwrap_or(0);
-                if v < 1 || v > latest_n {
-                    anyhow::bail!("version {v} doesn't exist; entry has {latest_n} version(s)");
-                }
-                step_to(
-                    db,
-                    &current,
-                    v,
-                    ChangeKind::Undo,
-                    registry.as_ref(),
-                    &output,
-                )
-            }
-            (None, Some(n)) if n >= 2 => step_to(
-                db,
-                &current,
-                n - 1,
-                ChangeKind::Undo,
-                registry.as_ref(),
-                &output,
-            ),
-            _ => {
-                // No prior version to revert to — fall back to legacy undelete
-                // so tombstoned entries without history still come back. Use
-                // the resolved full slug/hid so prefixes keep working here too.
-                db.undelete(&current.slug)?;
-                if let Ok(entry) = db.get_entry(&current.slug) {
-                    show_step(&current, &entry, registry.as_ref(), &output);
-                }
-                Ok(())
-            }
+    // A list steps each entry back along its OWN trail (da-9p3o); a version
+    // number belongs to one trail, so `--to-version` with a list is refused.
+    if let Some(list) = args.id_or_slug.as_deref() {
+        if args.to_version.is_some() && is_id_list(list) {
+            anyhow::bail!(
+                "--to-version names a version of ONE entry's history; give one id, not the list '{list}'"
+            );
         }
+        for_each_id(list, |id| {
+            undo_one(db, id, args.to_version, registry.as_ref(), &output)
+        })
     } else {
         if args.to_version.is_some() {
             anyhow::bail!("--to-version requires an <id_or_slug> to target");
@@ -126,6 +95,47 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
     }
 }
 
+/// Undo one named entry: back to `to_version`, or one step back.
+fn undo_one(
+    db: &Db,
+    id_or_slug: &str,
+    to_version: Option<u32>,
+    registry: Option<&SpecRegistry>,
+    output: &OutputArgs,
+) -> Result<()> {
+    let current = resolve_prefix_or_tombstone(db, id_or_slug)?;
+    let latest = history::latest_version(db.conn(), &current.hid)?;
+
+    match (to_version, latest) {
+        (Some(v), _) => {
+            // Bounds-check against the entry's version range [1, latest].
+            // `state_at_version` is version-agnostic by design and misbehaves
+            // silently at the edges (v=0 reverts to create-state; v>latest
+            // no-ops), so the clarity check belongs here where `latest` is
+            // known. An out-of-range version must point at the problem, not
+            // quietly do the wrong thing (da-96yy).
+            let latest_n = latest.unwrap_or(0);
+            if v < 1 || v > latest_n {
+                anyhow::bail!("version {v} doesn't exist; entry has {latest_n} version(s)");
+            }
+            step_to(db, &current, v, ChangeKind::Undo, registry, output)
+        }
+        (None, Some(n)) if n >= 2 => {
+            step_to(db, &current, n - 1, ChangeKind::Undo, registry, output)
+        }
+        _ => {
+            // No prior version to revert to — fall back to legacy undelete
+            // so tombstoned entries without history still come back. Use
+            // the resolved full slug/hid so prefixes keep working here too.
+            db.undelete(&current.slug)?;
+            if let Ok(entry) = db.get_entry(&current.slug) {
+                show_step(&current, &entry, registry, output);
+            }
+            Ok(())
+        }
+    }
+}
+
 /// `datum redo [ID_OR_SLUG]` — the step back that `undo` just took, taken
 /// forward again.
 ///
@@ -138,13 +148,20 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
     let registry = load_registry_opt(db);
     let output = args.output()?;
 
-    let targets: Vec<Hid> = match args.id_or_slug.as_deref() {
-        Some(id_or_slug) => vec![resolve_prefix_or_tombstone(db, id_or_slug)?.hid],
+    // A list's ids that do not resolve are named and make the command fail,
+    // after the ones that do have moved — `delete`'s precedent (da-9p3o).
+    let mut targets: Vec<Hid> = Vec::new();
+    let resolved = match args.id_or_slug.as_deref() {
+        Some(list) => for_each_id(list, |id| {
+            targets.push(resolve_prefix_or_tombstone(db, id)?.hid);
+            Ok(())
+        }),
         None => {
             let reference = pointer_with_live_targets(db)
                 .context("Nothing to redo — no entry has been touched yet")?;
             warn_if_stale("redoing a change", reference.time);
-            reference.hids
+            targets = reference.hids;
+            Ok(())
         }
     };
 
@@ -174,12 +191,13 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
     }
 
     if moved.is_empty() {
+        resolved?;
         anyhow::bail!("Nothing to redo — the last change here was not an undo");
     }
     // `_LAST` follows the entries that moved, the way undo's does, so a
     // second `undo` after a `redo` lands on the same rows.
     let _ = last_docs::set_last_docs(db, &moved);
-    Ok(())
+    resolved
 }
 
 /// The version `redo` must revert to, or `None` when nothing lies ahead.

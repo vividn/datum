@@ -78,7 +78,7 @@ An entry logs *now* unless you place it:
 datum tail                          # recent entries
 datum tail mood                     # filtered to one field
 datum now                           # current state of tracked fields + a terminal timeline band
-datum get <id-or-slug>              # one entry by id or slug
+datum get <id-or-slug>[,<id>...]    # entries by id or slug
 datum grep <regex>                  # regex search over entry JSON
 datum count --group-by field        # counts, optionally grouped / --since-bounded
 datum dayview                       # render a day as an SVG timeline ("data as art")
