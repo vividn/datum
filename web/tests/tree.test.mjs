@@ -57,6 +57,15 @@ function pair() {
 
 const kinds = (pane) => pane.tabs.map((t) => t.content.kind);
 
+/** A pane as the bead draws it: `COL(a, TABS[b · c])`, a one-tab pane by what it holds. */
+function shape(pane) {
+	const one = (tab) =>
+		'children' in tab.content
+			? `${tab.content.direction === 'row' ? 'ROW' : 'COL'}(${tab.content.children.map(shape).join(', ')})`
+			: tab.content.kind;
+	return pane.tabs.length === 1 ? one(pane.tabs[0]) : `TABS[${pane.tabs.map(one).join(' · ')}]`;
+}
+
 describe('splitPane', () => {
 	test('the pane becomes one child of a new split, beside a new empty pane', () => {
 		const before = single('tail');
@@ -148,9 +157,21 @@ describe('breakOut', () => {
 		const layout = single('tail');
 		assert.equal(canBreakOut(layout, layout.root.id), false);
 		assert.equal(breakOut(layout, layout.root.id, 'left'), layout);
-		// Nor with tabs on it: the root pane is in no split either way.
-		const tabbed = addTab(layout, layout.root.id);
-		assert.equal(canBreakOut(tabbed, tabbed.root.id), false);
+	});
+
+	// Flipped by da-n632: a stack at the root has its own box to be wrapped.
+	test('a tab stack at the root breaks out beside itself', () => {
+		const root = newPane([widgetTab('tail'), widgetTab('nowview')]);
+		const layout = { version: 1, name: 'test', root };
+		assert.equal(canBreakOut(layout, root.id), true);
+		const after = breakOut(layout, root.id, 'right');
+		assert.ok(isCanonical(after));
+		assert.equal(shape(after.root), 'ROW(nowview, tail)');
+		assert.deepEqual(after.root.tabs[0].content.ratios, [0.5, 0.5]);
+		// A root whose tabs hold layouts is the shell’s bar, not a stack.
+		const bar = { ...layout, root: { ...root, tabs: [{ ...root.tabs[0], layout: 'day' }, root.tabs[1]] } };
+		assert.equal(canBreakOut(bar, root.id), false);
+		assert.equal(breakOut(bar, root.id, 'right'), bar);
 	});
 
 	test('with several tabs the active one leaves the strip and lands beside the pane', () => {
@@ -169,15 +190,72 @@ describe('breakOut', () => {
 		assert.deepEqual(split.ratios, [0.25, 0.25, 0.5]);
 	});
 
-	test('a tab breaking out across the split wraps the whole grouping', () => {
+	// da-n632 (vividn, 2026-09-17: «it breaks out of the next larger split,
+	// which is too far»): across the split, only the STACK is wrapped.
+	test('a tab breaking out across the split wraps the stack, not the grouping', () => {
 		const { layout, left } = pair();
 		const tabbed = addTab(layout, left.id);
 		const after = breakOut(tabbed, left.id, 'down');
 		assert.ok(isCanonical(after));
-		const outer = after.root.tabs[0].content;
-		assert.equal(outer.direction, 'column');
-		assert.equal(outer.children[0].tabs[0].content.direction, 'row', 'the row is not under the column');
-		assert.deepEqual(kinds(outer.children[1]), [EMPTY_KIND], 'the tab that left is not the bottom band');
+		assert.equal(shape(after.root), 'ROW(COL(repl, empty), tail)');
+		const row = after.root.tabs[0].content;
+		assert.deepEqual(row.ratios, [0.5, 0.5], 'the enclosing split’s ratios moved');
+		assert.deepEqual(row.children[0].tabs[0].content.ratios, [0.5, 0.5]);
+		assert.equal(row.children[0].tabs[0].content.children[0].id, left.id, 'the stack keeps its id');
+	});
+
+	/** The phone’s `day` column: COL(daystrip, TABS[tail · nowview · custom], widgetbar). */
+	function phone() {
+		const stack = newPane([widgetTab('tail'), widgetTab('nowview'), widgetTab('custom')]);
+		const column = newSplit('column', [newPane([widgetTab('daystrip')]), stack, newPane([widgetTab('widgetbar')])]);
+		column.ratios = [0.25, 0.5, 0.25];
+		return { layout: { version: 1, name: 'test', root: newPane([newTab(column)]) }, column, stack };
+	}
+
+	test('a tab stack breaks out beside the STACK, in its own box', () => {
+		const { layout, stack } = phone();
+		for (const [toward, want, ratios] of [
+			['right', 'COL(daystrip, ROW(TABS[nowview · custom], tail), widgetbar)', [0.25, 0.5, 0.25]],
+			['left', 'COL(daystrip, ROW(tail, TABS[nowview · custom]), widgetbar)', [0.25, 0.5, 0.25]],
+			['down', 'COL(daystrip, TABS[nowview · custom], tail, widgetbar)', [0.25, 0.25, 0.25, 0.25]],
+			['up', 'COL(daystrip, tail, TABS[nowview · custom], widgetbar)', [0.25, 0.25, 0.25, 0.25]]
+		]) {
+			const after = breakOut(layout, stack.id, toward);
+			assert.ok(isCanonical(after), toward);
+			assert.equal(shape(after.root), want, toward);
+			const column = after.root.tabs[0].content;
+			assert.deepEqual(column.ratios, ratios, toward);
+			if (column.children.length === 3)
+				assert.deepEqual(column.children[1].tabs[0].content.ratios, [0.5, 0.5], toward);
+		}
+		// The picture `splitPane` makes of the same pane, with the tab where the empty pane is.
+		assert.equal(
+			shape(splitPane(layout, stack.id, 'right').root),
+			'COL(daystrip, ROW(TABS[tail · nowview · custom], empty), widgetbar)'
+		);
+	});
+
+	test('a tab holding a split and a layout travels whole', () => {
+		const { layout, column, stack } = phone();
+		const inner = newSplit('row', [newPane([widgetTab('repl')]), newPane([widgetTab('dayview')])]);
+		const held = { ...newTab(inner), layout: 'mine' };
+		const stacked = { ...stack, tabs: [...stack.tabs, held], active: 3 };
+		const content = { ...column, children: [column.children[0], stacked, column.children[2]] };
+		const before = { ...layout, root: { ...layout.root, tabs: [{ ...layout.root.tabs[0], content }] } };
+		const after = breakOut(before, stack.id, 'right');
+		assert.ok(isCanonical(after));
+		assert.equal(shape(after.root), 'COL(daystrip, ROW(TABS[tail · nowview · custom], ROW(repl, dayview)), widgetbar)');
+		const landed = after.root.tabs[0].content.children[1].tabs[0].content.children[1];
+		assert.deepEqual(landed.tabs[0], held, 'the tab lost its layout name or ids');
+	});
+
+	test('a tab that broke out, now a one-tab pane, walks up as before', () => {
+		const { layout, stack } = phone();
+		const once = breakOut(layout, stack.id, 'right');
+		const tail = once.root.tabs[0].content.children[1].tabs[0].content.children[1];
+		const twice = breakOut(once, tail.id, 'right');
+		assert.ok(isCanonical(twice));
+		assert.equal(shape(twice.root), 'ROW(COL(daystrip, TABS[nowview · custom], widgetbar), tail)');
 	});
 
 	test('with one tab the pane leaves its split for the grouping above', () => {

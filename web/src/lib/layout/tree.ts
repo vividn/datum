@@ -233,65 +233,84 @@ export function normalize(layout: Layout): Layout {
  * the same picture with one fewer level of tree.
  */
 export function splitPane(layout: Layout, paneId: NodeId, toward: Toward): Layout {
+	return withRoot(layout, placed(layout.root, paneId, newPane(), toward));
+}
+
+/** `fresh` on the arrow's side of pane `paneId`, in that pane's own box: `splitPane`'s picture. */
+function placed(root: Pane, paneId: NodeId, fresh: Pane, toward: Toward): Pane {
 	const direction = AXIS[toward];
 	const before = BEFORE[toward];
 	let done = false;
-	const joined = mapPanes(layout.root, (pane) => ({
+	const joined = mapPanes(root, (pane) => ({
 		...pane,
 		tabs: pane.tabs.map((tab) => {
 			if (!isSplit(tab.content) || tab.content.direction !== direction) return tab;
 			const at = tab.content.children.findIndex((child) => child.id === paneId);
 			if (at < 0) return tab;
 			done = true;
-			return { ...tab, content: inserted(tab.content, at, newPane(), before) };
+			return { ...tab, content: inserted(tab.content, at, fresh, before) };
 		})
 	}));
-	if (done) return withRoot(layout, joined);
-	const wrapped = mapPanes(layout.root, (pane) =>
-		pane.id === paneId ? newPane([newTab(newSplit(direction, ordered(pane, newPane(), before)))]) : pane
+	if (done) return joined;
+	return mapPanes(root, (pane) =>
+		pane.id === paneId ? newPane([newTab(newSplit(direction, ordered(pane, fresh, before)))]) : pane
 	);
-	return withRoot(layout, wrapped);
-}
-
-/** Whether `breakOut` has anywhere to go: every pane but the root's own. */
-export function canBreakOut(layout: Layout, paneId: NodeId): boolean {
-	return !!spotOf(layout.root, paneId)?.in;
 }
 
 /**
- * Break a widget out of the group it is in, one level (da-9vtw): it
- * leaves that group and lands on the arrow's side of the grouping above.
+ * Whether `breakOut` has anywhere to go: every pane in a split, and a tab
+ * stack anywhere — the root's own included, unless a tab of it holds a
+ * layout: those are the shell's root bar (shell.ts), not a stack of
+ * widgets, and wrapping it would bury every layout in one untitled tab.
+ */
+export function canBreakOut(layout: Layout, paneId: NodeId): boolean {
+	const spot = spotOf(layout.root, paneId);
+	if (!spot) return false;
+	const { pane } = spot;
+	return !!spot.in || (pane.tabs.length > 1 && pane.tabs.every((tab) => tab.layout === undefined));
+}
+
+/**
+ * Break a widget out of the group it is in, one level (da-9vtw, da-n632).
  *
- * WHICH GROUP it leaves is the first step, and the only difference
- * between the two cases. A pane with several tabs leaves its TAB STRIP:
- * the active tab becomes a pane of its own, and the other tabs stay. A
- * pane with one leaves its SPLIT: the pane itself goes, and what is left
- * of the split closes up behind it (`normalize`, which shares its ratios
- * out again). Either way the box it leaves behind — the pane whose strip
- * it left, or the pane that held the split — is what it lands beside,
- * and `beside` is the one second step for both: into the grouping that
- * holds that box when it runs the arrow's way, else around the whole of
- * that grouping, in a new split of the right direction, rather than
- * forcing the pane in sideways. So repeating the operation walks a widget
- * up the tree, out of one grouping after another, until it is a band
- * across the layout; the root's own pane has nothing to leave and comes
- * back unchanged (`canBreakOut`).
+ * A pane with several tabs leaves its TAB STRIP: the active tab becomes a
+ * pane of its own, beside the stack, in the stack's own box — what
+ * `splitPane` does to the pane, with the tab where the empty pane would
+ * be (vividn: "it acts similar to split when there is only one tab"). So on
+ * the phone's `COL(daystrip, TABS[tail · nowview · custom], widgetbar)`:
+ *
+ *   right : COL(daystrip, ROW(TABS[nowview · custom], tail), widgetbar)
+ *   left  : COL(daystrip, ROW(tail, TABS[nowview · custom]), widgetbar)
+ *   down  : COL(daystrip, TABS[nowview · custom], tail, widgetbar)
+ *   up    : COL(daystrip, tail, TABS[nowview · custom], widgetbar)
+ *
+ * A pane with one tab leaves its SPLIT: the pane itself goes, what is left
+ * of the split closes up behind it (`normalize`), and it lands beside the
+ * pane that held that split — in the grouping holding it when that runs
+ * the arrow's way, else around the whole of that grouping, in a new split
+ * of the right direction. So repeating the operation walks a widget up
+ * the tree, out of one grouping after another, until it is a band across
+ * the layout; a root with nothing to leave comes back unchanged
+ * (`canBreakOut`).
  */
 export function breakOut(layout: Layout, paneId: NodeId, toward: Toward): Layout {
 	const spot = spotOf(layout.root, paneId);
-	if (!spot?.in) return layout;
+	if (!spot || !canBreakOut(layout, paneId)) return layout;
 	const { pane } = spot;
-	const strip = pane.tabs.length > 1;
-	const moving = strip ? newPane([pane.tabs[pane.active]], pane.bar) : pane;
-	const root = strip ? withoutTab(layout.root, pane.id, pane.active) : withoutPane(layout.root, pane.id);
+	if (pane.tabs.length > 1) {
+		const moving = newPane([pane.tabs[pane.active]], pane.bar);
+		return withRoot(layout, placed(withoutTab(layout.root, pane.id, pane.active), pane.id, moving, toward));
+	}
+	const within = spot.in!;
+	const root = withoutPane(layout.root, pane.id);
 	// The box left behind, and where that box itself sits: that is the
 	// grouping to land in, and the box is what it lands beside. A box in no
 	// split of its own is the root's, and the grouping is then the tab the
 	// moving pane has just come out of — with no box to land beside.
-	const box = strip ? spot : spotOf(root, spot.in.holder.id);
+	const box = spotOf(root, within.holder.id);
 	const where =
-		box && box.in ? { tab: box.in.tab.id, anchor: box.pane.id } : { tab: spot.in.tab.id, anchor: null };
-	return withRoot(layout, beside(root, where.tab, where.anchor, moving, toward));
+		box && box.in ? { tab: box.in.tab.id, anchor: box.pane.id } : { tab: within.tab.id, anchor: null };
+	return withRoot(layout, beside(root, where.tab, where.anchor, pane, toward));
 }
 
 /** The pane without tab `index`: the tab a break-out takes with it. */

@@ -30,6 +30,7 @@ import {
 	pane,
 	rootMenuButton,
 	settled,
+	titledPane,
 	titles
 } from './support/layout.mjs';
 
@@ -186,6 +187,30 @@ describe('the menu the title opens', () => {
 			assert.ok(again.x < strip.x, 'the tail is not left of the day strip');
 			assert.ok(again.height > tail.height, `the tail is ${again.height}px tall, was ${tail.height}`);
 		}, DESKTOP);
+	});
+
+	// da-n632 (vividn, 2026-09-17): a tab breaking out of a stack lands beside
+	// the STACK, in its own box — as Split would put a new pane there —
+	// not beside the whole column it sits in.
+	test('Break out of a tab stack lands the tab beside the stack, inside its row of the column', async () => {
+		await withApp(async ({ page }) => {
+			await choose(page, 'side', 'break out: this widget to the right');
+			const tail = titledPane(page, 'tail');
+			await tail.waitFor();
+			const [stack, moved, strip, fields] = await Promise.all(
+				[pane(page, 'side'), tail, pane(page, 'strip'), pane(page, 'bar')].map(boxOf)
+			);
+			assert.equal(await pane(page, 'side').getAttribute('data-title'), 'nowview', 'the stack did not keep its other tabs');
+			assert.ok(moved.x >= stack.x + stack.width - 1, 'the tail is not right of the stack');
+			assert.ok(Math.abs(moved.y - stack.y) < 2 && Math.abs(moved.height - stack.height) < 2, 'the tail is not in the stack’s row');
+			assert.ok(moved.y > strip.y && moved.y < fields.y, 'the tail left the column');
+			// The strip above and the fields below still span the full width, and the pair fills it.
+			assert.ok(Math.abs(strip.width - fields.width) < 2, 'the strip and the fields no longer match');
+			assert.ok(
+				Math.abs(stack.x - strip.x) < 2 && Math.abs(moved.x + moved.width - (strip.x + strip.width)) < 2,
+				`the pair does not fill the column’s width: ${JSON.stringify({ stack, moved, strip })}`
+			);
+		}, PHONE);
 	});
 
 	test('the + adds a tab holding what the chooser came back with; dismissed, it adds nothing', async () => {

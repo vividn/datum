@@ -6,7 +6,7 @@
 // menu, where it is `Split` with the same four arrows every other menu
 // row has — the root pane being the shell, splitting beside it is a new
 // pane down one whole side. (It wore `Break out` until da-a642: a tab
-// breaks out of its STRIP, and the root has no strip to leave.) The
+// breaks out of its STRIP, and the root bar is the shell, not a strip.) The
 // BEHAVIOUR is what this file tests, so it stayed and only its entry
 // point moved.
 //

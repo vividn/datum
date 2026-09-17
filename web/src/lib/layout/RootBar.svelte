@@ -204,8 +204,8 @@
 				// widget — one whose kind has no built-in layout (da-y2f6) — can
 				// be reset like any other. One holding a layout cannot.
 				reset: resetWidget(active),
-				// No `breakOut`: a tab breaks out of its strip, and the root has
-				// no strip to leave (da-a642). No `bar`: this bar IS the root's.
+				// No `breakOut`: a tab breaks out of its strip, and this bar is the
+				// shell, not a strip (da-a642, da-n632). No `bar`: this bar IS the root's.
 				split: { what: 'split: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },
 				close: { label: 'Close tab', disabled: tabs.length < 2, run: () => close($layout.root.active) },
 				acts,
