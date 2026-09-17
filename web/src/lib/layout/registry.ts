@@ -82,6 +82,15 @@ export interface WidgetKind {
 	legible: Floor | ((settings: Record<string, unknown>) => Floor);
 }
 
+/**
+ * How narrow nowview's snapshot (`history: '0'`) stays legible: its chips
+ * carry no time axis, and at a 92px body each still reads about eleven
+ * characters — «mood: happ», a field and the head of its state (measured
+ * on the built app, 2026-09-17, da-shzs). A 160px floor held a phone's
+ * tail | snapshot row, and so the root, at 372px: wider than a 360px phone.
+ */
+const SNAPSHOT_WIDTH = 90;
+
 /** The strip body's padding, top and bottom, as its snap counts it. */
 const STRIP_PADDING = 16;
 
@@ -144,7 +153,7 @@ export const KINDS: Record<string, WidgetKind> = {
 			at: typeof at === 'string' ? at : undefined
 		}),
 		onChange: (settings, history) => ({ ...settings, history }),
-		legible: { width: 160, height: 108 }
+		legible: ({ history }) => ({ width: history === '0' ? SNAPSHOT_WIDTH : 160, height: 108 })
 	},
 	tail: {
 		meta: meta('tail', 'tail'),

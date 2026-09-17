@@ -238,6 +238,12 @@ function baseUrl() {
  * no animation, which is a different app: what fades for everyone else has
  * to be shown and taken away instead (da-jprg).
  *
+ * `home` is the layout this device already has open, as if it had been
+ * here before — `day` unless a test says otherwise, because the suite is
+ * written against `day` and a FRESH phone opens `mobile` (da-shzs). Written
+ * only where nothing is stored, so a reload keeps what the test changed.
+ * `home: null` is a device that has never opened the site.
+ *
  * `clock` is the instant the app is held at — the page's and, because
  * the CLI runs there, the worker's. Any test that seeds a bare `HH:MM`
  * or reads what is current NOW wants one, with `todayAt` above; a test
@@ -262,6 +268,7 @@ async function openApp({
 	query = '',
 	engine,
 	reducedMotion,
+	home = 'day',
 	timezone = TIMEZONE
 } = {}) {
 	const options = {
@@ -284,6 +291,13 @@ async function openApp({
 			await context.clock.setFixedTime(new Date(clock));
 			await workerClock(clock).prepare(context);
 		}
+		if (home)
+			await context.addInitScript((name) => {
+				const key = 'datum.layout.root.v1';
+				try {
+					if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({ names: [name], active: 0 }));
+				} catch {}
+			}, home);
 		await prepare?.(context);
 		const page = await context.newPage();
 		return { app: await open(page, query), close };

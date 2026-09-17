@@ -112,16 +112,20 @@ export { versions };
 /** The widget kind a refused or missing layout is shown as. */
 export const NOTICE_KIND = 'notice';
 
-/** The layout every device starts with. */
-const HOME = 'day';
-
-/** The root bar a fresh install shows: the one layout, in front. */
-const FRESH: RootState = { names: [HOME], active: 0 };
-
 const BAR = { edge: 'top', align: 'start' } as const;
 
 const phone = () =>
 	typeof matchMedia === 'function' && matchMedia(`(max-width: ${PHONE_WIDTH}px)`).matches;
+
+/**
+ * The layout a device starts with: `mobile` on a phone (da-shzs), `day`
+ * elsewhere. Asked only where nothing is stored — once the open list is
+ * written, turning or widening the screen never swaps it.
+ */
+const home = () => (phone() ? 'mobile' : 'day');
+
+/** The root bar a fresh install shows: the one layout, in front. */
+const fresh = (): RootState => ({ names: [home()], active: 0 });
 
 /** This screen, in the word a layout's `designedFor` uses. */
 export const device = (): NonNullable<Layout['designedFor']> => (phone() ? 'mobile' : 'desktop');
@@ -420,7 +424,7 @@ function quiet(act: () => void): void {
 /**
  * The page's tree, built from `state`: one root tab per open layout, each
  * from its draft or its save. The boot's own step, and the one a reset of
- * the defaults takes with `FRESH` (da-jbcv).
+ * the defaults takes with `fresh()` (da-jbcv).
  *
  * `settle` is held off until the tree is whole, because a rebuild is the
  * one moment the tree and the baselines belong to two different pages:
@@ -444,7 +448,7 @@ async function fillRoot(state: RootState): Promise<void> {
 			const tab = await openTab(name, taken);
 			if (tab) tabs.push(tab);
 		}
-		if (tabs.length === 0) tabs.push((await openTab(HOME, taken)) as Tab);
+		if (tabs.length === 0) tabs.push((await openTab(home(), taken)) as Tab);
 		layout.set(
 			normalize({
 				version: LAYOUT_VERSION,
@@ -458,15 +462,19 @@ async function fillRoot(state: RootState): Promise<void> {
 	settle();
 }
 
-/** Fill the root from this device's open layouts (`day` alone at first). Once. */
+/** Fill the root from this device's open layouts (`day` or `mobile` alone at first). Once. */
 export function boot(): Promise<void> {
 	return (booting ??= (async () => {
 		await initDb().catch(() => {});
 		// Before the first `resolve`: a kit's layout is one of the trees a
 		// name may mean, and `shippedTree` reads the cache synchronously.
 		await refreshKitLayouts();
-		await fillRoot(loadRoot() ?? FRESH);
+		const stored = loadRoot();
+		await fillRoot(stored ?? fresh());
 		booted = true;
+		// A fresh device's home is decided here, once (da-shzs): written now,
+		// so a phone turned or widened later does not reopen as a desktop.
+		if (!stored) settle();
 		loaded.set(true);
 		onExternalChange(followSaves, '_internal');
 		// A kit installed in another tab — into the data db — changes what
@@ -821,7 +829,7 @@ export async function resetDefaults(): Promise<void> {
 	// is about to be read again from what the names now mean.
 	baselines.set({});
 	previews.set(new Set());
-	await fillRoot(FRESH);
+	await fillRoot(fresh());
 }
 
 /**
@@ -892,7 +900,7 @@ export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
  * no act is left over for a copy that is not there.
  *
  * At the ROOT it is the built-in ONE-WIDGET LAYOUT the kind is instead
- * (da-y2f6): every built-in but `day` is exactly that widget alone, named
+ * (da-y2f6): every built-in but `day` and `mobile` is exactly that widget alone, named
  * as its pane is titled, so the tab can be the widget AND have a name —
  * and it has to have one, because this device's open list is a list of
  * NAMES (`settle`, `saveRoot`) and a nameless root tab has nothing to
