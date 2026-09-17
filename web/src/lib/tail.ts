@@ -12,7 +12,7 @@ import { run } from './run.js';
 
 /** One column of the CLI's table: its header word and one cell per row. */
 export interface TailColumn {
-	/** `time` | `field` | `state` | `dur` | `_n` | `hid`. */
+	/** `_n` | `action` | `time` | `field` | `state` | `dur` | `hid`. */
 	key: string;
 	/** The header word the CLI prints, painted. */
 	header: string;

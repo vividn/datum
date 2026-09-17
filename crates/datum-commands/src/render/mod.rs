@@ -713,7 +713,7 @@ pub fn format_grid(headers: &[&str], rows: &[Vec<String>]) -> String {
     out
 }
 
-/// Render entries as a table with `time | field | state | dur | _n | hid` columns
+/// Render entries as a table with `_n | time | field | state | dur | hid` columns
 /// (plus any extra `columns`). Empty result → `[No data]`. Silenced by
 /// `--show none`.
 pub fn print_table(entries: &[Entry], registry: Option<&SpecRegistry>, args: &TableArgs) {
@@ -1128,6 +1128,9 @@ pub fn format_table_with(
     // Header row.
     if !args.suppress_header {
         let mut header = String::new();
+        if show_quick {
+            push_cell(&mut header, quick_header, quick_w, false);
+        }
         if show_action_col {
             push_cell(&mut header, action_header, action_w, false);
         }
@@ -1148,9 +1151,6 @@ pub fn format_table_with(
         if show_dur {
             push_cell(&mut header, dur_header, dur_w, false);
         }
-        if show_quick {
-            push_cell(&mut header, quick_header, quick_w, false);
-        }
         if show_hid {
             push_cell(&mut header, hid_header, hid_w, false);
         }
@@ -1164,6 +1164,9 @@ pub fn format_table_with(
     // Data rows.
     for (i, r) in rows.iter().enumerate() {
         let mut line = String::new();
+        if show_quick {
+            push_cell(&mut line, &r.quick, quick_w, false);
+        }
         if show_action_col {
             push_cell(&mut line, &r.action, action_w, false);
         }
@@ -1226,9 +1229,6 @@ pub fn format_table_with(
         if show_dur {
             push_cell(&mut line, &r.dur, dur_w, false);
         }
-        if show_quick {
-            push_cell(&mut line, &r.quick, quick_w, false);
-        }
         if show_hid {
             push_cell(&mut line, &r.hid, hid_w, false);
         }
@@ -1249,7 +1249,7 @@ pub fn format_table_with(
 /// way the table paints it — the colour is the CLI's, not the caller's.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct TableColumn {
-    /// `time` | `field` | `state` | `dur` | `_n` | `hid`, or the name of a
+    /// `_n` | `action` | `time` | `field` | `state` | `dur` | `hid`, or the name of a
     /// `--column` extra. Stable across the header's own shrinking: the
     /// `field` column keys `field` even when its header word reads `f`.
     pub key: String,
@@ -1282,11 +1282,16 @@ pub fn table_columns_with(
     let (rows, reference_offset) = build_rows(entries, contexts, now, registry, args);
     let shown = Shown::of(&rows);
     let headers = Headers::of(&rows, reference_offset);
-    // The CLI's order, which is the reader's: what the row IS when that is
-    // not just "an entry" (da-c8mh), when it landed, what it is about, what
-    // it says, how long, what to type, what to keep. A column no row fills
-    // is dropped here exactly as the table drops it.
+    // The CLI's order, which is the reader's: what to type (da-431c, vividn:
+    // «move that column to be the first column on both CLI and web»), what
+    // the row IS when that is not just "an entry" (da-c8mh), when it landed,
+    // what it is about, what it says, how long, what to keep. The terminal
+    // table pads the same order. A column no row fills is dropped here
+    // exactly as the table drops it.
     let stock: [StockColumn; 7] = [
+        (shown.quick, "_n", Headers::QUICK.to_string(), |r| {
+            r.quick.clone()
+        }),
         (shown.action, "action", Headers::ACTION.to_string(), |r| {
             r.action.clone()
         }),
@@ -1305,9 +1310,6 @@ pub fn table_columns_with(
         }),
         (shown.dur, "dur", Headers::DUR.to_string(), |r| {
             r.dur.clone()
-        }),
-        (shown.quick, "_n", Headers::QUICK.to_string(), |r| {
-            r.quick.clone()
         }),
         (shown.hid, "hid", Headers::HID.to_string(), |r| {
             r.hid.clone()

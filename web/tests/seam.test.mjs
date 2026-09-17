@@ -91,8 +91,9 @@ describe('logging verbs', () => {
 			const table = await paneTable('tail');
 			// The pane shows the rows its box holds — the newest page of the
 			// listing — and draws no `action` column of its own (da-c8mh),
-			// so the REPL's lines are compared without that first cell.
-			const withoutAction = (line) => line.replace(/^(action|TRACK.) +/, '');
+			// so the REPL's lines are compared without that cell, which
+			// follows `_n` (da-431c).
+			const withoutAction = (line) => line.replace(/^(_\S* +)?(action|TRACK.) +/, '$1');
 			assert.deepEqual(
 				rowTexts([table.headers, ...table.rows].map((cells) => cells.join(' ')).join('\n')),
 				[rows[0], ...rows.slice(-table.rows.length)].map(withoutAction),

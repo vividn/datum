@@ -559,8 +559,10 @@ mod tests {
         assert!(visible_window::<usize>(&[], 0, 4).is_empty());
     }
 
-    fn leading_spaces(line: &str) -> usize {
-        line.chars().take_while(|c| *c == ' ').count()
+    /// Where a row's clock starts: the width everything before it takes,
+    /// `_n` (da-431c) and the time cell's padding included.
+    fn clock_column(line: &str) -> usize {
+        line.find("09:").expect("a clock in the row")
     }
 
     /// da-z2u5: a dated row sitting off-screen in the history buffer must
@@ -603,14 +605,14 @@ mod tests {
         // A viewport tall enough to include the dated row: it pads every
         // same-day row across the width of its date.
         let all = render(0, buffer.len());
-        let padded = leading_spaces(&all[1]);
+        let padded = clock_column(&all[1]);
 
         // Scrolled one row past it: the dated row is off-screen and stops
         // paying for its width.
         let windowed = render(1, 4);
         assert_eq!(windowed.len(), 4, "one body line per windowed entry");
         assert!(
-            leading_spaces(&windowed[0]) < padded,
+            clock_column(&windowed[0]) < padded,
             "the off-screen dated row still shifts the visible rows: \
              {:?} vs {:?}",
             windowed[0],

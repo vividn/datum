@@ -35,14 +35,14 @@ export function masker() {
 			// Over-masking is harmless — both sides get the same function —
 			// so every 12-character token is taken for a hid.
 			.replace(/\b[0-9a-z]{12}\b/g, hid)
-			// The short hid: after an action word, or closing a tail row,
-			// where it follows the `_n` column.
+			// The short hid: after an action word, or closing a tail row —
+			// a row that opens with its `_n` (da-431c).
 			.replace(
 				// `TRACK<glyph>` is an action word too (da-c8mh).
 				new RegExp(`((?:CREATE|EXISTS|UPDATE|DELETE|TRACK.)${ESC} ${ESC})([0-9a-z]{5})\\b`, 'g'),
 				(_, before, m) => before + id(m)
 			)
-			.replace(new RegExp(`(_\\d+${ESC} +)([0-9a-z]{5})$`, 'gm'), (_, before, m) => before + id(m))
+			.replace(new RegExp(`^(${ESC}_\\d+${ESC} .* )([0-9a-z]{5})$`, 'gm'), (_, before, m) => before + id(m))
 			// And as a JSON string — `tail --json`'s hid column — when it is
 			// the head of a hid this run has already seen.
 			.replace(/"([0-9a-z]{5})"/g, (m, head) => {

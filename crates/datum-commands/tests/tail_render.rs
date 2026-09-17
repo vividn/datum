@@ -10,8 +10,8 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 use datum_commands::render::{
-    colors::strip_ansi, format_info_line_at, format_state_group, format_table_with, RenderContext,
-    TableArgs, TimeMetricCol,
+    colors::strip_ansi, format_info_line_at, format_state_group, format_table_with,
+    table_columns_with, RenderContext, TableArgs, TimeMetricCol,
 };
 use datum_core::{
     entry::{Entry, Verb},
@@ -419,6 +419,145 @@ fn tail_table_leaves_gaps_for_rows_past_the_cap() {
     assert!(lines.next().unwrap_or("").contains("_n"), "{table:?}");
     assert!(!lines.next().unwrap_or("").contains('_'), "{table:?}");
     assert!(lines.next().unwrap_or("").contains("_1"), "{table:?}");
+}
+
+// ─── da-431c: `_n` is the first column ──────────────────────────────────────
+
+/// A switch row with a duration, and the context that numbers it `_1`.
+fn numbered_block() -> (Entry, RenderContext) {
+    let e = Entry::new(
+        "posture",
+        Verb::BlockSwitch,
+        Some(json!("standing")),
+        None,
+        Some(dt(2026, 5, 22, 9, 15)),
+        Some(datum_parse::Dur::of(chrono::Duration::minutes(30))),
+        "test-device",
+    );
+    let ctx = RenderContext {
+        quick_ordinal: Some(1),
+        ..Default::default()
+    };
+    (e, ctx)
+}
+
+/// The header's words, in the order the terminal prints them.
+fn header_words(entries: &[Entry], ctxs: &[RenderContext]) -> Vec<String> {
+    let table = render_table_with_ctxs(entries, ctxs);
+    let header = table.lines().next().unwrap_or("");
+    // `time (+0)` carries its offset; keep the word.
+    header
+        .split_whitespace()
+        .filter(|w| !w.starts_with('('))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The keys `--json` hands the browser, in its order.
+fn column_keys(entries: &[Entry], ctxs: &[RenderContext]) -> Vec<String> {
+    let args = TableArgs {
+        metric: TimeMetricCol::Occur,
+        ..Default::default()
+    };
+    let now = dt(2026, 5, 22, 17, 0);
+    table_columns_with(entries, Some(ctxs), Some(&now), None, &args)
+        .into_iter()
+        .map(|c| c.key)
+        .collect()
+}
+
+#[test]
+fn quick_column_leads_the_table_with_and_without_dur() {
+    let _g = no_color_scope();
+    let (block, ctx) = numbered_block();
+    assert_eq!(
+        header_words(std::slice::from_ref(&block), std::slice::from_ref(&ctx)),
+        ["_n", "time", "field", "state", "dur", "hid"]
+    );
+    assert_eq!(
+        column_keys(std::slice::from_ref(&block), std::slice::from_ref(&ctx)),
+        ["_n", "time", "field", "state", "dur", "hid"]
+    );
+
+    let point = entry_at("coffee", Verb::Point, None, dt(2026, 5, 22, 9, 15));
+    assert_eq!(
+        header_words(std::slice::from_ref(&point), std::slice::from_ref(&ctx)),
+        ["_n", "time", "field", "s", "hid"]
+    );
+    assert_eq!(
+        column_keys(std::slice::from_ref(&point), std::slice::from_ref(&ctx))[0],
+        "_n"
+    );
+}
+
+#[test]
+fn action_column_follows_the_quick_column() {
+    let _g = no_color_scope();
+    let (block, ctx) = numbered_block();
+    let track = datum_core::track::track_entry_for(&block, datum_core::action::Action::Switch);
+    let entries = [track, block];
+    let ctxs = [
+        RenderContext {
+            quick_ordinal: Some(2),
+            ..Default::default()
+        },
+        ctx,
+    ];
+    assert_eq!(
+        header_words(&entries, &ctxs),
+        ["_n", "action", "time", "field", "state", "dur", "hid"]
+    );
+    assert_eq!(
+        column_keys(&entries, &ctxs),
+        ["_n", "action", "time", "field", "state", "dur", "hid"]
+    );
+    let table = render_table_with_ctxs(&entries, &ctxs);
+    assert!(
+        table.lines().nth(1).unwrap_or("").starts_with("_2  TRACK▞"),
+        "{table:?}"
+    );
+}
+
+#[test]
+fn narrow_terminal_still_squeezes_the_state_not_the_quick_column() {
+    // The width budget sacrifices by column KIND — state takes what is
+    // left, field shrinks toward its floor — so moving `_n` to the front
+    // changes nothing about which column gives way.
+    let _g = no_color_scope();
+    let e = entry_at(
+        "body",
+        Verb::Switch,
+        Some(json!(["vertical", "sit", "sofa", "office", "kitchen"])),
+        dt(2026, 5, 22, 9, 15),
+    );
+    let ctx = RenderContext {
+        quick_ordinal: Some(1),
+        ..Default::default()
+    };
+    let args = TableArgs {
+        metric: TimeMetricCol::Occur,
+        max_total_width: Some(36),
+        ..Default::default()
+    };
+    let now = dt(2026, 5, 22, 17, 0);
+    let table = strip_ansi(
+        &format_table_with(
+            std::slice::from_ref(&e),
+            Some(std::slice::from_ref(&ctx)),
+            Some(&now),
+            None,
+            &args,
+        )
+        .unwrap_or_default(),
+    );
+    let row = table.lines().nth(1).unwrap_or("");
+    assert!(row.starts_with("_1  "), "{table:?}");
+    assert!(row.contains("body"), "{table:?}");
+    assert!(
+        !row.contains("vertical,sit,sofa,office,kitchen"),
+        "{table:?}"
+    );
+    assert_no_row_wider_than(&table, 36);
 }
 
 // ─── da-ftw3: per-state and per-field truncation in the table path ──────────

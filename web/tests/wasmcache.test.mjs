@@ -85,7 +85,7 @@ describe('the wasm a returning browser runs', () => {
 			// The CLI's own header words, whole (da-qrc6). `time (+0)`
 			// because the harness pins the reader's zone to UTC.
 			const table = await paneTable('tail');
-			assert.deepEqual(table.headers, ['time (+0)', 'field', 'state', '_n', 'hid']);
+			assert.deepEqual(table.headers, ['_n', 'time (+0)', 'field', 'state', 'hid']);
 			// Two rows: the entry, and the TRACK document that declared its
 			// field (da-c8mh) — which the pane draws without an action
 			// column of its own.

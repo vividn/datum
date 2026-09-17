@@ -262,10 +262,10 @@ mod tests {
         let plain = strip_ansi(&text(&rows, false));
         let lines: Vec<&str> = plain.lines().collect();
         assert_eq!(lines.len(), 3, "header plus two rows: {plain}");
-        // `time (+2)` — the offset rides in the header (da-lkji), and the
+        // `_n` first (da-431c), then `time (+2)` — the offset rides in the header (da-lkji), and the
         // rest of the words are the CLI's own column names.
-        assert!(lines[0].starts_with("time (+2)"), "{}", lines[0]);
-        for word in ["field", "state", "_n", "hid"] {
+        assert!(lines[0].starts_with("_n  time (+2)"), "{}", lines[0]);
+        for word in ["field", "state", "hid"] {
             assert!(lines[0].contains(word), "no `{word}` column: {}", lines[0]);
         }
         assert!(lines[1].contains("coffee"), "{}", lines[1]);
@@ -330,7 +330,7 @@ mod tests {
         let listing = listed(&rows, true);
         let columns = listing["columns"].as_array().unwrap();
         let keys: Vec<&str> = columns.iter().map(|c| c["key"].as_str().unwrap()).collect();
-        assert_eq!(keys, vec!["time", "field", "state", "_n", "hid"]);
+        assert_eq!(keys, vec!["_n", "time", "field", "state", "hid"]);
 
         let table = strip_ansi(&text(&rows, false));
         let header = table.lines().next().unwrap();

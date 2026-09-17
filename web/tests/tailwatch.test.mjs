@@ -205,7 +205,7 @@ describe('rows from height', () => {
 					// (da-kk0d; tailcolumns.test.mjs).
 					assert.deepEqual(
 						g.headers.map((h) => h.split(' ')[0]),
-						width > 768 ? ['time', 'field', 'state', '_n', 'hid'] : ['time', 'field', 'state'],
+						width > 768 ? ['_n', 'time', 'field', 'state', 'hid'] : ['time', 'field', 'state'],
 						'the header words are not the whole words'
 					);
 				},

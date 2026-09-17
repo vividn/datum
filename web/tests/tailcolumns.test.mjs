@@ -101,8 +101,8 @@ async function paneWidth(page, width) {
 	);
 }
 
-const ALL = ['time', 'field', 'state', '_n', 'hid'];
-const NO_HID = ['time', 'field', 'state', '_n'];
+const ALL = ['_n', 'time', 'field', 'state', 'hid'];
+const NO_HID = ['_n', 'time', 'field', 'state'];
 const THREE = ['time', 'field', 'state'];
 
 /** The columns a box `width` wide draws, by the probe's `needs`: the widest set that fits. */

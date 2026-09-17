@@ -82,7 +82,7 @@
 	}
 
 	/** The CLI's column order, for a table merged from more than one listing. */
-	const STOCK = ['action', 'time', 'field', 'state', 'dur', '_n', 'hid'];
+	const STOCK = ['_n', 'action', 'time', 'field', 'state', 'dur', 'hid'];
 	const rank = (key: string) => (STOCK.includes(key) ? STOCK.indexOf(key) : STOCK.length);
 	/** The columns a narrow pane gives up, in the order it gives them up. */
 	const SACRIFICE = ['hid', '_n'];

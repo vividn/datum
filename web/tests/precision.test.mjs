@@ -59,10 +59,10 @@ describe('the time an entry is rendered with', () => {
 			// listing's shared UTC offset rides in the header (da-lkji).
 			// Each field's TRACK document (da-c8mh) reads a millisecond above
 			// its entry; the entries are the rows that are not declarations.
-			assert.deepEqual(rowTexts(tail.stdout).filter((r) => !r.startsWith('TRACK')).slice(1), [
-				`${yesterday} coffee ∅● _5 <hid>`,
-				'09:15:00 tea ∅● _3 <hid>',
-				'10:00:00±5m water ∅● _1 <hid>'
+			assert.deepEqual(rowTexts(tail.stdout).filter((r) => !/^_\d+ TRACK/.test(r)).slice(1), [
+				`_5 ${yesterday} coffee ∅● <hid>`,
+				'_3 09:15:00 tea ∅● <hid>',
+				'_1 10:00:00±5m water ∅● <hid>'
 			]);
 
 			// And on the screen, which is where the invented midnight was

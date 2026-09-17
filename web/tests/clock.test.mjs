@@ -64,7 +64,7 @@ describe('the clock the web app prints', () => {
 			// a 24-hour clock, the field, and `∅` for a field's first entry.
 			// The entry's row. Above it is the TRACK document that declared
 			// the field a millisecond earlier (da-c8mh).
-			assert.deepEqual(rowTexts(tail.stdout).slice(-1), ['16:07:00 coffee ∅● _1 <hid>']);
+			assert.deepEqual(rowTexts(tail.stdout).slice(-1), ['_1 16:07:00 coffee ∅● <hid>']);
 
 			// And on the screen, which is where the two conventions sat
 			// next to each other. The panes run their command on mount, so
