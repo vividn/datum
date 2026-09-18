@@ -357,35 +357,64 @@ describe('two tabs', () => {
 const HOLD_MS = 250;
 
 /**
- * Count the worker's handle opens, askable from the page over the
- * `datum-test-opens` channel.
+ * Count the worker's handle opens, and the acquisitions its replies report,
+ * askable from the page over the `datum-test-opens` channel.
+ *
+ * Both in the worker, because the page cannot see every command: on a
+ * loaded box one of its own (`now --json`, the layout store's `tail`) lands
+ * inside the window a test is counting, and a count of opens set against
+ * the test's commands alone reads that as a command that opened handles
+ * without saying so (da-wtne). The worker sees every request, every open and
+ * every reply, and answers with all three in one task.
  */
 const countOpens = `
 	const real = FileSystemFileHandle.prototype.createSyncAccessHandle;
-	let opens = 0;
+	let opens = 0, acquired = 0, pending = 0;
 	FileSystemFileHandle.prototype.createSyncAccessHandle = function (...args) {
 		opens++;
 		return real.apply(this, args);
 	};
+	// Trusted only: \`inWorker\` dispatches again what arrived before the module.
+	self.addEventListener('message', (e) => e.isTrusted && pending++);
+	const post = self.postMessage.bind(self);
+	self.postMessage = (message, ...rest) => {
+		if (message?.notice === undefined) {
+			pending--;
+			if (message?.cli?.ms?.tries > 0) acquired++;
+		}
+		return post(message, ...rest);
+	};
 	const channel = new BroadcastChannel('datum-test-opens');
-	channel.onmessage = (e) => e.data === 'how many?' && channel.postMessage({ opens });
+	channel.onmessage = (e) => e.data === 'how many?' && channel.postMessage({ opens, acquired, pending });
 `;
 
-/** How many handles the worker has opened since it started. */
-const opens = (page) =>
-	page.evaluate(
-		() =>
-			new Promise((resolve) => {
-				const channel = new BroadcastChannel('datum-test-opens');
-				channel.onmessage = (e) => {
-					if (typeof e.data?.opens === 'number') {
-						channel.close();
-						resolve(e.data.opens);
-					}
-				};
-				channel.postMessage('how many?');
-			})
-	);
+/**
+ * The handles the worker has opened since it started, and the acquisitions
+ * its commands reported — asked again until no command is in flight, so
+ * every open counted belongs to an acquisition counted.
+ */
+async function counts(page) {
+	for (;;) {
+		const { opens, acquired, pending } = await page.evaluate(
+			() =>
+				new Promise((resolve) => {
+					const channel = new BroadcastChannel('datum-test-opens');
+					channel.onmessage = (e) => {
+						if (typeof e.data?.opens === 'number') {
+							channel.close();
+							resolve(e.data);
+						}
+					};
+					channel.postMessage('how many?');
+				})
+		);
+		if (pending === 0) return { opens, acquired };
+		await page.waitForTimeout(10);
+	}
+}
+
+/** What passed between two `counts`. */
+const since = (a, b) => ({ opens: b.opens - a.opens, acquired: b.acquired - a.acquired });
 
 /**
  * Every `argvs` fired at once, so the queue behind the first is never empty.
@@ -425,23 +454,28 @@ describe('the files, held across a burst', () => {
 				await app.idle();
 				// What one acquisition costs in opens, measured rather than
 				// written down: one handle per file SQLite may touch.
-				let before = await opens(app.page);
+				let before = await counts(app.page);
 				assert.equal((await app.run(['--version'])).code, 0);
-				const perAcquire = (await opens(app.page)) - before;
-				assert.ok(perAcquire > 0, 'nothing was opened at all — the count is not reaching the worker');
+				const measured = since(before, await counts(app.page));
+				const perAcquire = measured.opens / measured.acquired;
+				assert.ok(
+					Number.isInteger(perAcquire) && perAcquire > 0,
+					`${measured.opens} opens over ${measured.acquired} acquisitions — the count is not reaching the worker`
+				);
 
-				before = await opens(app.page);
+				before = await counts(app.page);
 				const burst = await fireAtOnce(app.page, versions);
 				burst.runs.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
 
 				// Each acquisition is one command's: the one that opened the
 				// handles reports the tries, the ones after it opened nothing.
-				const acquisitions = burst.runs.filter((r) => r.tries > 0).length;
+				const spent = since(before, await counts(app.page));
 				assert.equal(
-					(await opens(app.page)) - before,
-					acquisitions * perAcquire,
+					spent.opens,
+					spent.acquired * perAcquire,
 					'the handles opened do not match the commands that say they opened them'
 				);
+				const acquisitions = burst.runs.filter((r) => r.tries > 0).length;
 				assert.ok(acquisitions < 10, `ten commands, ${acquisitions} acquisitions — nothing was shared`);
 				// One per cap window the burst spanned, plus the one it opened with.
 				const allowed = Math.ceil(burst.spanMs / HOLD_MS) + 1;
@@ -453,13 +487,11 @@ describe('the files, held across a burst', () => {
 				// Nothing was written, so no pane is refreshing behind this: the
 				// queue drained, the files went back, and the next command has to
 				// open them again.
-				before = await opens(app.page);
+				before = await counts(app.page);
 				assert.equal((await app.run(['tail'])).code, 0);
-				assert.equal(
-					(await opens(app.page)) - before,
-					perAcquire,
-					'the files were still held across an idle page'
-				);
+				const reopened = since(before, await counts(app.page));
+				assert.ok(reopened.acquired > 0, 'the files were still held across an idle page');
+				assert.equal(reopened.opens, reopened.acquired * perAcquire);
 
 				// And a burst of writes on shared handles keeps the database
 				// whole: each created a journal and deleted it again, so a
