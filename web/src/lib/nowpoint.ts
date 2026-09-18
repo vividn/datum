@@ -12,7 +12,7 @@
 //     │
 //     └─ one finger, mode `press`
 //          ├─ in the NOW REGION and |dx| > 6px leftward ──► NOW    (a duration ending now)
-//          ├─ shift held and |dx| > 6px ──────────────────► RANGE  (a desktop's long press)
+//          ├─ `atOnce` and |dx| > 6px ────────────────────► RANGE  (no long press needed)
 //          ├─ down for 400 ms ────────────────────────────► RANGE  (the bar drops at once)
 //          ├─ |dx| > 6px and |dx| ≥ |dy| ─────────────────► PAN    (the window moves)
 //          └─ up, still `press` ──────────────────────────► CLICK  (a selection where it fell)
@@ -40,8 +40,16 @@ export interface Press {
 	y: number;
 	/** In the NOW region — the strip at and right of the now-line. */
 	inNow: boolean;
-	/** Shift was held: a long press with a mouse is nobody's habit. */
-	shift: boolean;
+	/**
+	 * A drag here is a RANGE with no waiting.
+	 *
+	 * Two views say it for two reasons, and the recogniser needs only the
+	 * answer: shift is held, because a long press with a mouse is nobody's
+	 * habit (the nowview), or the view is zoomed all the way out and has
+	 * nowhere to pan to, so a drag can be nothing else (the day strip,
+	 * da-ku7y).
+	 */
+	atOnce: boolean;
 }
 
 /** How long a still press takes to become a range. */
@@ -73,7 +81,7 @@ export function advance(mode: Mode, p: Press, x: number, y: number, long: boolea
 	const [dx, dy] = [x - p.x, y - p.y];
 	const sideways = Math.abs(dx) > SLOP_PX && Math.abs(dx) >= Math.abs(dy);
 	if (p.inNow) return sideways && dx < 0 ? 'now' : 'press';
-	if (p.shift) return sideways ? 'range' : 'press';
+	if (p.atOnce) return sideways ? 'range' : 'press';
 	if (long) return 'range';
 	return sideways ? 'pan' : 'press';
 }

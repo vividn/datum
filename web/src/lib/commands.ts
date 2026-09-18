@@ -139,10 +139,11 @@ export function fieldsUnder(buttons: FieldButton[], verb: Verb | null): FieldBut
 /**
  * Does the bar hold a DURATION — a length waiting to be spent (da-qu16)?
  *
- * One `dur=` pill today: what a range selected in the nowview carries
- * (`DUR_ID` in $lib/cursor.ts). The dayview's `start_time=` + `end_time=`
- * pair (da-ku7y) is a second shape of the same thing, and it is one more
- * clause here — which is the whole of what that bead has to add.
+ * The pill a RANGE carries, whichever view made it (`SPAN_ID` in
+ * $lib/cursor.ts): `dur=25m` from the nowview, `start_time=09:00` from the
+ * day strip (da-ku7y). The two spellings are one pill of one KIND, so this
+ * needs no clause for the second — which is what asking the kind rather
+ * than reading the text buys.
  */
 export const hasDuration = (all: Pill[]): boolean => all.some((p) => p.kind === 'dur');
 

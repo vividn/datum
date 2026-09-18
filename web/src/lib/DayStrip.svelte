@@ -68,6 +68,58 @@
 	within the gesture. So the stack holds a FORTNIGHT at least, however
 	short the box, and that past is what the reader scrolls back through.
 
+	A BAND IS A PLACE YOU POINT INTO TOO (da-ku7y). The nowview's
+	recogniser is reused whole (`$lib/nowpoint.ts`) rather than written a
+	second time, and this is the table it runs here — a band lies over a
+	stack that scrolls, inside a pane that may swipe between tabs, so what
+	belongs to whom is written down before the code:
+
+	  down on a band
+	    ├─ two fingers ────────────────────► PINCH: the hour window (da-ukcf)
+	    └─ one finger or the mouse
+	         ├─ mostly DOWNWARD ───────────► the STACK's scroll, never ours,
+	         │                               and the long-press timer may not
+	         │                               take it back
+	         ├─ the whole day on screen ───► a RANGE at once: there is nowhere
+	         │    and sideways               to pan to, so a drag can be nothing
+	         │                               else (vividn: «if already zoomed out
+	         │                               to the max then just automatically
+	         │                               do a selection»)
+	         ├─ shift held, sideways ──────► the same range on a desk
+	         ├─ zoomed in, down 400 ms ────► a RANGE, its bar dropped the moment
+	         │                               the press is long enough
+	         ├─ zoomed in, sideways ───────► PAN: the hour window follows the
+	         │                               finger, as shift+wheel does
+	         └─ up, still still ───────────► the CLICK the `picture` action has
+	                                         always taken: the time cursor, and
+	                                         the nowview centres on it
+
+	A press that starts on the `+` handle, the freeze toggle or the jagged
+	line is THEIRS, and one that starts off a band — the date column, the
+	ruler, the room around them — is the pane's, so a swipe there still
+	changes tabs. The bands say so themselves with `data-pans="x"`.
+
+	A range made here is the page's one selection ($lib/cursor.ts), marked
+	`from: 'daystrip'`, which is how it comes to spell itself
+	`start_time=09:00 end_time=10:30` rather than `-t` and `dur=`: a range
+	on a day is long and is read as two clock times, and the two words on
+	the bar are how a person finds out the CLI has them. It is ALWAYS one
+	day's: the day is the day the press began in and the x along the band
+	is the time, so a finger that wanders into the band above or below —
+	which a drag along an 85px band mostly does — keeps selecting on its
+	own day, at the hours it crossed. Dragged off either END of the band
+	it stops at that day's midnight, which is `timeAt`'s own clamp
+	($lib/hover.ts) and not a rule of this file's. The nowview draws the
+	range, and the strip draws the nowview's, because `drawCursor` draws
+	the one selection on every picture; neither re-spells the other's
+	pills.
+
+	The pills it makes are drawn twice, as the nowview's are: in the bottom
+	bar and in the strip's own MARGIN, each over the mark it names. The
+	margin lies over the top of the stack rather than taking a row from it
+	— a row would cost the strip a day of past on every screen, selection
+	or no selection — and it is there only while there is a selection.
+
 	What the reader sets — `dayHeight`, `labelWidth`, `freezeToday`,
 	`hourFrom`/`hourTo` — is a prop in and a `change` out; the dashboard
 	keeps them in the widget's settings, and the strip itself writes
@@ -78,7 +130,12 @@
 	import { browser } from '$app/environment';
 	import Pane from './Pane.svelte';
 	import CliOutput from './CliOutput.svelte';
+	import Pill from './Pill.svelte';
+	import { pills } from './bar.js';
 	import { minute } from './clock.js';
+	import { pointAt, pointed, SPAN_ID } from './cursor.js';
+	import { timeAt } from './hover.js';
+	import { advance, LONG_MS, SLOP_PX, type Mode, type Press } from './nowpoint.js';
 	import { run, type RunResult } from './run.js';
 	import {
 		AXIS_HEIGHT,
@@ -703,7 +760,7 @@
 		for (const [type, handler] of [
 			['pointermove', onPointerMove],
 			['pointerup', onPointerUp],
-			['pointercancel', onPointerUp]
+			['pointercancel', onPointerCancel]
 		] as [string, EventListener][]) {
 			if (on) window.addEventListener(type, handler);
 			else window.removeEventListener(type, handler);
@@ -716,9 +773,21 @@
 		// them, and a press on one is not the start of a gesture.
 		if ((event.target as HTMLElement).closest('button')) return;
 		tapped(event);
-		if (event.pointerType === 'mouse') return;
+		if (event.pointerType === 'mouse') {
+			// The mouse has no finger to register, but its drag still needs
+			// the window's listeners: it may leave the strip mid-gesture.
+			listen(true);
+			return begin(event);
+		}
 		fingers.set(event.pointerId, event.clientX);
-		if (fingers.size === 1) listen(true);
+		if (fingers.size === 1) {
+			listen(true);
+			return begin(event);
+		}
+		// A second finger is a pinch, and the first finger's gesture was
+		// never one: whatever it had become is dropped before the scale
+		// starts, so nothing of it is committed on the way out.
+		dropPress();
 		if (fingers.size !== 2) return;
 		const box = bandBoxNow();
 		if (!box) return;
@@ -728,28 +797,249 @@
 	}
 
 	function onPointerMove(event: PointerEvent): void {
-		if (!fingers.has(event.pointerId)) return;
-		fingers.set(event.pointerId, event.clientX);
-		if (!pinching || fingers.size !== 2) return;
-		const { window: was, apart, mid, box } = pinching;
-		const by = apart >= PINCH_FLOOR ? spread() / apart : 1;
-		live = zoomWindow(was, by, (mid - box.x) / box.width, (middle() - box.x) / box.width);
+		if (fingers.has(event.pointerId)) {
+			fingers.set(event.pointerId, event.clientX);
+			if (pinching && fingers.size === 2) {
+				const { window: was, apart, mid, box } = pinching;
+				const by = apart >= PINCH_FLOOR ? spread() / apart : 1;
+				live = zoomWindow(was, by, (mid - box.x) / box.width, (middle() - box.x) / box.width);
+				return;
+			}
+		}
+		if (!press) return;
+		last = { x: event.clientX, y: event.clientY };
+		step(event.clientX, event.clientY);
 	}
 
 	function onPointerUp(event: PointerEvent): void {
 		fingers.delete(event.pointerId);
+		if (pinching && fingers.size < 2) {
+			commit();
+			dropPress();
+		} else finish();
+		if (fingers.size === 0 && !press) listen(false);
+	}
+
+	/**
+	 * A cancel is the browser taking the gesture — the stack's own scroll,
+	 * most often. Nothing of a pan is kept: the preview goes with it.
+	 */
+	function onPointerCancel(event: PointerEvent): void {
+		fingers.delete(event.pointerId);
 		if (pinching && fingers.size < 2) commit();
+		dropPress();
 		if (fingers.size === 0) listen(false);
 	}
 
 	/**
 	 * `touch-action: pan-y` keeps the browser off a pinch, but a two-finger
 	 * drag is still a scroll it may claim — and claiming it sends
-	 * `pointercancel` mid-gesture. While two fingers are down the move is
-	 * ours.
+	 * `pointercancel` mid-gesture. A gesture of ours along a band is the
+	 * same: once it has committed, the move is ours.
 	 */
 	function onTouchMove(event: TouchEvent): void {
-		if (fingers.size >= 2) event.preventDefault();
+		if (fingers.size >= 2 || mode !== 'press') event.preventDefault();
+	}
+
+	// ── pointing into a band: a range, or a pan (da-ku7y) ──────────────
+	//
+	// The recogniser is the nowview's, whole (`$lib/nowpoint.ts`); the
+	// table it runs here is in this file's header. What is the strip's own
+	// is `atOnce` — the whole day on screen has nowhere to pan to, so a
+	// drag there is a range without waiting — and the vertical guard, the
+	// stack's scroll being a real gesture a band lies over.
+
+	/** The press in hand on a band, and what it has become. */
+	let press: Press | null = null;
+	let mode: Mode = 'press';
+	/** Where the pointer is, for the timer that has no event of its own. */
+	let last = { x: 0, y: 0 };
+	/** Whether the press has lasted long enough to be a range. */
+	let long = false;
+	let longTimer: ReturnType<typeof setTimeout> | undefined;
+	/**
+	 * The DAY the press went down in — the picture's own group, whose
+	 * `data-from` / `data-to` every instant of this gesture is read
+	 * against (`timeAt`, $lib/hover.ts).
+	 *
+	 * Which is the whole of «a range is one day's»: held for the length of
+	 * the gesture, so wherever the finger goes it is asking THIS day what
+	 * time it is there, and `timeAt`'s clamp stops it at the day's own
+	 * midnights when it runs off an end.
+	 */
+	let pressDay: Element | null = null;
+	/** The window a pan began from, and the band it began over. */
+	let panning: { window: [number, number]; box: DOMRect } | null = null;
+
+	function begin(event: PointerEvent): void {
+		if (event.button > 0) return;
+		const day = (event.target as HTMLElement)
+			.closest('.band')
+			?.querySelector('svg.svg [data-lo]');
+		// Off the bands — the date column, the ruler, the room around them
+		// — there is no day to point into, and the gesture is the pane's.
+		if (!day) return;
+		pressDay = day;
+		press = {
+			x: event.clientX,
+			y: event.clientY,
+			// The now region is the nowview's: this axis runs to midnight.
+			inNow: false,
+			atOnce: event.shiftKey || !zoomed
+		};
+		mode = 'press';
+		long = false;
+		last = { x: event.clientX, y: event.clientY };
+		clearTimeout(longTimer);
+		longTimer = setTimeout(() => {
+			long = true;
+			step(last.x, last.y);
+		}, LONG_MS);
+	}
+
+	/** Let go of the press: a cancel, a pinch taking over, or the end of it. */
+	function dropPress(): void {
+		clearTimeout(longTimer);
+		if (mode === 'pan') live = null;
+		press = null;
+		pressDay = null;
+		panning = null;
+		mode = 'press';
+		long = false;
+	}
+
+	/** Run the machine to where the pointer is now, and do what the mode does. */
+	function step(x: number, y: number): void {
+		if (!press) return;
+		const [dx, dy] = [x - press.x, y - press.y];
+		// A mostly-vertical finger is the STACK's scroll. It is dropped
+		// rather than merely ignored, because `advance` gives a long press
+		// a range whichever way it has travelled, and the timer would
+		// otherwise take a slow scroll away from the reader 400ms in.
+		if (mode === 'press' && Math.abs(dy) > SLOP_PX && Math.abs(dy) > Math.abs(dx)) return dropPress();
+		const was = mode;
+		mode = advance(mode, press, x, y, long);
+		if (mode === 'range' && was !== 'range') {
+			// The bar drops the moment the press is long enough, before any
+			// movement, so the finger knows it is no longer panning.
+			const at = instantAt(press.x, press.y);
+			if (at) pointAt({ at, from: 'daystrip' });
+		}
+		if (mode === 'pan' && was !== 'pan') {
+			const box = bandBoxNow();
+			if (!box) return dropPress();
+			panning = { window: committed, box };
+		}
+		if (mode === 'pan') panTo(x);
+		if (mode === 'range') range(x, y);
+	}
+
+	/** The instant a point on screen is, on the day the press went down in. */
+	const instantAt = (x: number, y: number): Date | null => pressDay && timeAt(pressDay, x, y);
+
+	/**
+	 * The range between the press and the pointer: it ENDS at the later
+	 * instant, because a duration runs back from an entry's time (da-zwct),
+	 * and it is the STRIP's, which is how it comes to be spelled
+	 * `start_time=` / `end_time=`.
+	 */
+	function range(x: number, y: number): void {
+		const [a, b] = [instantAt(press!.x, press!.y), instantAt(x, y)];
+		if (!a || !b) return;
+		// Both ENDS to the minute before the length is taken, because the
+		// length is what the start pill is read back from (`startOf`,
+		// $lib/cursor.ts) and a length rounded on its own disagrees with
+		// them: 08:59:43 to 10:30:22 is 90.6 minutes, and «10:30 less 91»
+		// is an 08:59 pill over a band the reader dropped on 09:00.
+		const [from, to] = +a <= +b ? [onTheMinute(a), onTheMinute(b)] : [onTheMinute(b), onTheMinute(a)];
+		pointAt({ at: new Date(to), span: (to - from) / 60_000, from: 'daystrip' });
+	}
+
+	/** An instant to the minute a pill can say. */
+	const onTheMinute = (at: Date) => Math.round(+at / 60_000) * 60_000;
+
+	/**
+	 * The window the pan has dragged to, previewed as the pinch's is: the
+	 * content follows the finger, so the hours move against it. Nothing is
+	 * asked of datum until the release (`commit`).
+	 */
+	function panTo(x: number): void {
+		if (!panning) return;
+		const f = (x - press!.x) / panning.box.width;
+		live = zoomWindow(panning.window, 1, 0.5, 0.5 + f);
+	}
+
+	/**
+	 * The end of a one-pointer gesture. A press that committed to nothing
+	 * is left alone: it is the CLICK the `picture` action takes, which has
+	 * set the time cursor since da-wnt2 and centres the nowview on it.
+	 */
+	function finish(): void {
+		if (!press) return;
+		if (mode === 'pan') commit();
+		dropPress();
+	}
+
+	// ── the selection's pills, in the strip's own margin ───────────────
+
+	/** The pills the selection made — the ones drawn over their own marks. */
+	$: marginPills = $pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID);
+
+	/**
+	 * Where each margin pill's LEFT edge goes, in px across the strip's box.
+	 *
+	 * A range's two pills BRACKET it — the start pill's right edge against
+	 * the band's leading edge, the end pill's left edge against its
+	 * trailing one — rather than sitting centred over their marks as the
+	 * nowview's do. Its pills are `-qq` and `dur=25m`; these are
+	 * `start_time=09:00` and `end_time=10:30`, three times as wide, over a
+	 * range that on a whole day's band is often a few dozen pixels: centred,
+	 * each would be drawn over the other. Bracketing, each still touches
+	 * the edge it names and the pair can never collide. A selection with no
+	 * length is one pill, and that one IS centred on its line.
+	 *
+	 * Read off the DRAWN marks (`drawCursor`, $lib/hover.ts), so a pill and
+	 * the mark under it cannot disagree by a pixel. Only one band draws them
+	 * — the one whose day holds the instant — whichever day of the stack the
+	 * press fell in.
+	 */
+	let spots: { time: number | null; span: number | null } = { time: null, span: null };
+
+	// Re-placed after anything that MOVES a mark: the selection itself, a
+	// band's picture, the window, the box. After `tick`, so the placing
+	// reads the marks this change drew and not the ones it replaced.
+	$: void [$pointed, shown, view, width, shownDayHeight, shownLabelWidth], void placePills();
+
+	/**
+	 * Twice, because the first pass is what puts the pills on screen: with
+	 * no pill drawn there is no width to hold one inside the strip by, and
+	 * a pill placed by a width of zero is a pill half off the end.
+	 */
+	async function placePills(): Promise<void> {
+		for (let pass = 0; pass < 2; pass++) {
+			await tick();
+			measurePills();
+		}
+	}
+
+	function measurePills(): void {
+		if (!stripEl) return;
+		const home = stripEl.getBoundingClientRect();
+		const box = (selector: string) => stripEl?.querySelector(selector)?.getBoundingClientRect() ?? null;
+		const wide = (selector: string) => box(selector)?.width ?? 0;
+		const band = box('svg.svg .cursor-span');
+		const head = box('svg.svg .cursor-head');
+		const held = (x: number, w: number) => Math.max(0, Math.min(Math.max(0, home.width - w), x));
+		const [startW, endW] = [wide('.daystrip-margin .pill.dur'), wide('.daystrip-margin .pill.time')];
+		spots = {
+			span: band ? held(band.left - home.x - startW, startW) : null,
+			time: head
+				? held(
+						band ? band.right - home.x : head.left + head.width / 2 - home.x - endW / 2,
+						endW
+					)
+				: null
+		};
 	}
 
 	/**
@@ -801,6 +1091,7 @@
 
 	onDestroy(() => {
 		clearTimeout(settling);
+		clearTimeout(longTimer);
 		listen(false);
 	});
 
@@ -816,6 +1107,7 @@
 	<div
 		class="strip"
 		bind:this={stripEl}
+		data-mode={mode}
 		on:pointerdown={onPointerDown}
 		on:touchmove|nonpassive={onTouchMove}
 		on:wheel|nonpassive={onWheel}
@@ -842,6 +1134,7 @@
 							class:past={end > 0}
 							data-days-ago={end}
 							data-days="1"
+							data-pans="x"
 							style:--zoom-x="{bandZoom(end).offset}px"
 							style:--zoom={bandZoom(end).scale}
 						>
@@ -932,6 +1225,7 @@
 					class="band"
 					data-days-ago="0"
 					data-days="1"
+					data-pans="x"
 					style:--zoom-x="{bandZoom(0).offset}px"
 					style:--zoom={bandZoom(0).scale}
 				>
@@ -962,6 +1256,28 @@
 				</svg>
 			{/if}
 		</div>
+
+		<!--
+			The selection's pills, each over the mark it names (da-ku7y).
+
+			OVER the stack rather than a row of its own: a reserved row
+			would cost the strip a day of past on every screen and in every
+			box, selection or none, and the strip's whole argument is how
+			much past a box can hold. Nothing in it declares `data-pans`, so
+			a swipe that starts here changes the pane's tab, exactly as the
+			nowview's margin does; it takes the pointer only where a pill
+			actually is.
+		-->
+		{#if marginPills.length}
+			<div class="daystrip-margin" aria-label="selection">
+				{#each marginPills as pill (pill.id)}
+					{@const x = pill.id === SPAN_ID ? spots.span : spots.time}
+					{#if x !== null}
+						<span class="margin-pill" style:left="{x}px"><Pill {pill} /></span>
+					{/if}
+				{/each}
+			</div>
+		{/if}
 
 		<!--
 			The gridlines the whole stack shares, at the x `--show json`
@@ -1118,6 +1434,17 @@
 	.band :global(svg.svg) {
 		transform: translateX(var(--zoom-x)) scaleX(var(--zoom));
 		transform-origin: 0 0;
+		/* And laid out at its OWN width, which is what the map above is
+		   written against. CliOutput shrinks any picture to its box
+		   (`max-width: 100%`, da-m0cj) — right for a nowview's fixed
+		   canvas, and for a WINDOWED band it squeezed the whole day into
+		   the band and then translated that squeezed copy off the left:
+		   a zoomed strip drew a 30px-tall sliver of the day's last hours
+		   and nothing else (found while building da-ku7y, whose gesture
+		   reads the instant off this picture's own geometry). It looked
+		   right because the gridlines, the ruler and the hour numbers
+		   over it are the STRIP's own, drawn from the JSON. */
+		max-width: none;
 	}
 
 	/* The spine: the same 1px rule, the other way, at the 00 mark. */
@@ -1248,6 +1575,32 @@
 	}
 	.tick-label {
 		fill: var(--ink-bright);
+	}
+
+	/* The margin: a strip's width of room across the top of the stack,
+	   the pills held inside it (see `placePills`). It lies over a band, so
+	   it takes no pointer of its own — only the pills in it do, and they
+	   are there only while there is a selection. */
+	.daystrip-margin {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 1.75rem;
+		pointer-events: none;
+		z-index: 3;
+		/* The pill reads at the command line's size where the bar draws it;
+		   here it is a label over a picture and takes a smaller one. */
+		--input-font: 0.7rem;
+	}
+
+	/* Against the mark it names (see `measurePills`), and pressable where
+	   the strip is not. */
+	.margin-pill {
+		position: absolute;
+		top: 0;
+		max-width: 100%;
+		pointer-events: auto;
 	}
 
 	/* The stitching: over the bands, under nothing, and never in the way

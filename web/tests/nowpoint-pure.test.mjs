@@ -23,7 +23,7 @@ registerHooks({
 const { LONG_MS, SLOP_PX, SNAP_PX, advance, relArg, snapTo } = await import('../src/lib/nowpoint.ts');
 
 /** A press at (100, 50), with whatever it landed on. */
-const press = (extra = {}) => ({ x: 100, y: 50, inNow: false, shift: false, ...extra });
+const press = (extra = {}) => ({ x: 100, y: 50, inNow: false, atOnce: false, ...extra });
 
 describe('a press on the band becomes one gesture', () => {
 	test('a still press is undecided, and becomes a range once it has lasted long enough', () => {
@@ -42,10 +42,18 @@ describe('a press on the band becomes one gesture', () => {
 		assert.equal(advance('press', p, 100 + 10, 50 + 10, false), 'pan', 'exactly diagonal is ours');
 	});
 
-	test('shift+drag is a range at once — a long press with a mouse is nobody’s habit', () => {
-		const p = press({ shift: true });
+	// Two views say `atOnce` for two reasons — shift on a desk (the
+	// nowview), and a day strip zoomed all the way out, which has nowhere
+	// to pan to (da-ku7y) — and the recogniser knows only the answer.
+	test('atOnce makes a drag a range with no waiting, and a still press still nothing', () => {
+		const p = press({ atOnce: true });
 		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'range');
-		assert.equal(advance('press', p, 100, 50, false), 'press', 'shift alone selects nothing');
+		assert.equal(advance('press', p, 100, 50, false), 'press', 'holding alone selects nothing');
+		assert.equal(
+			advance('press', p, 100 + 10, 50 + 40, false),
+			'press',
+			'mostly vertical is still the browser’s, however little waiting there is'
+		);
 	});
 
 	test('in the now region a drag LEFT is a duration ending now, and rightward is nothing', () => {

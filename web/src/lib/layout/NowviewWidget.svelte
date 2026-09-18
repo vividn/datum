@@ -68,7 +68,7 @@
 	import CliPane from '$lib/CliPane.svelte';
 	import Pill from '$lib/Pill.svelte';
 	import { pills } from '$lib/bar.js';
-	import { cursor, DUR_ID, pointAt, pointed, type Cursor } from '$lib/cursor.js';
+	import { cursor, SPAN_ID, pointAt, pointed, type Cursor } from '$lib/cursor.js';
 	import { instantOn, msPerPx, timeAxis } from '$lib/hover.js';
 	import { readLanes } from '$lib/lanes.js';
 	import { advance, LONG_MS, SLOP_PX, snapTo, type Mode, type Press } from '$lib/nowpoint.js';
@@ -248,7 +248,7 @@
 			x: event.clientX,
 			y: event.clientY,
 			inNow: inNowRegion(event.clientX, event.clientY),
-			shift: event.shiftKey
+			atOnce: event.shiftKey
 		};
 		mode = 'press';
 		long = false;
@@ -556,7 +556,7 @@
 	}
 
 	/** The pills the selection made: the ones the margin draws beside their instants. */
-	$: marginPills = $pills.filter((p) => p.id === 'cursor' || p.id === DUR_ID);
+	$: marginPills = $pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID);
 
 	/**
 	 * Which way a selection the window does not contain lies.
@@ -604,7 +604,7 @@
 	{#if roomy}
 		<div class="nowview-margin" aria-label="selection">
 			{#each marginPills as pill (pill.id)}
-				{@const x = pill.id === DUR_ID ? spots.dur : spots.time}
+				{@const x = pill.id === SPAN_ID ? spots.dur : spots.time}
 				{#if x !== null}
 					<span class="margin-pill" style:left="{x}px"><Pill {pill} /></span>
 				{/if}

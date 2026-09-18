@@ -272,16 +272,15 @@ describe('the time cursor', () => {
 		});
 	});
 
-	test('a drag on the notch, a drag across the band and a scroll of the stack set no cursor', async () => {
+	// A drag ACROSS a band used to belong here too — it set no cursor,
+	// because nothing on the strip took a drag. Since da-ku7y it is a
+	// RANGE (`tests/daypoint.test.mjs`), so what this test still holds is
+	// the two gestures that are somebody else's: the `+` handle's own
+	// drag, and the stack scrolling back through the days.
+	test('a drag on the notch and a scroll of the stack set no cursor', async () => {
 		await withDay(async ({ page }) => {
 			await page.evaluate(() => (document.querySelector('.cell.dayview').style.flex = '0 0 400px'));
 			await page.locator(`${PAST} svg.svg`).waitFor();
-
-			const at = await spot(page, TODAY, 0.5);
-			await page.mouse.move(at.x, at.y);
-			await page.mouse.down();
-			await page.mouse.move(at.x + 40, at.y, { steps: 4 });
-			await page.mouse.up();
 
 			const past = await page.locator(`${PAST} svg.svg`).boundingBox();
 			await page.mouse.move(past.x + past.width / 2, past.y + past.height - 10);

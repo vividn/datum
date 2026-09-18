@@ -26,11 +26,21 @@
 // that is what `pointed` is for, and every picture draws from it.
 //
 // A selection may also have a LENGTH: `span` whole minutes ENDING at the
-// selection, drawn as a white band and carried as a second `dur=` pill,
-// because a duration runs back from the entry's time (da-zwct). `rel: 0`
-// is the length that ends NOW — the nowview's own gesture — and makes the
-// `dur=` pill alone, since the entry's time is already now and needs no
-// `-t` at all.
+// selection, drawn as a white band and carried as a second pill, because
+// a duration runs back from the entry's time (da-zwct). `rel: 0` is the
+// length that ends NOW — the nowview's own gesture — and makes the length
+// pill alone, since the entry's time is already now and needs no `-t` at
+// all.
+//
+// HOW a range spells itself is the view it was MADE in (da-ku7y), and
+// nothing else: the two spellings are the same block to the CLI, and
+// which one a person reads is what teaches them the flag they did not
+// know. A range dragged in the nowview is minutes, so it says `-t` and
+// `dur=30m`. One dragged across a day of the strip is two clock times
+// read off a wall — usually long, usually remembered as "nine to
+// half ten" — so it says `start_time=09:00 end_time=10:30`, which is the
+// pair the CLI lifts onto occur_time and dur (da-mjwq). The other view
+// DRAWS the range all the same; it does not re-spell it.
 
 import { derived, get, writable } from 'svelte/store';
 import { pills, type Pill, type PillSection } from './bar.js';
@@ -53,8 +63,12 @@ export interface Cursor {
 	rel?: number;
 	/** Whole minutes of range ENDING at the selection — the `dur=` pill. */
 	span?: number;
-	/** What set it: a nowview does not re-centre its own window on its own click. */
-	from?: 'nowview';
+	/**
+	 * What made it. The nowview does not re-centre its own window on its
+	 * own click; the day strip is how a range comes to be spelled with the
+	 * CLI's two keys rather than with `dur=`.
+	 */
+	from?: 'nowview' | 'daystrip';
 }
 
 export const cursor = writable<Cursor | null>(null);
@@ -127,36 +141,58 @@ const back = (rel: number, now = Date.now()) => new Date(Math.floor(now / MINUTE
 const whole = (n: number | undefined) => (n === undefined ? undefined : Math.max(0, Math.round(n)));
 
 /**
- * The `-t` a selection puts on the command line, or `null` when it has
+ * Whether this selection is a range that says its two EDGES — the day
+ * strip's spelling (da-ku7y). Anything else says an instant and a length.
+ */
+const edged = (c: Cursor): boolean => c.from === 'daystrip' && !!c.span;
+
+/** Where a range begins: its length before the instant it ends at. */
+const startOf = (c: Cursor): Date => new Date(+c.at - (c.span ?? 0) * MINUTE);
+
+/**
+ * The instant a selection puts on the command line, or `null` when it has
  * none to put there: `rel: 0` ends its range at now, and now is what an
  * entry's time already is.
  */
 export function cursorArg(c: Cursor, now = new Date()): string | null {
 	if (c.rel === 0) return null;
-	return c.rel === undefined ? `-t ${timeArg(c.at, now)}` : relArg(c.rel);
+	if (c.rel !== undefined) return relArg(c.rel);
+	// The strip's range ENDS here, and `end_time=` is the CLI's word for
+	// that — the same `-t` value, under the key that says which edge it is.
+	return `${edged(c) ? 'end_time=' : '-t '}${timeArg(c.at, now)}`;
 }
 
-/** The `dur=` pill's id — the range's half of a selection. */
-export const DUR_ID = 'cursor-dur';
+/** The LENGTH pill's id — the second half of a range, however it is spelled. */
+export const SPAN_ID = 'cursor-span';
 
-/** The pills a selection is: its time, when it has one, and its length, when it has one. */
+/** What the length pill says: the range's other edge, or the minutes between them. */
+const spanArg = (c: Cursor, now = new Date()): string =>
+	edged(c) ? `start_time=${timeArg(startOf(c), now)}` : `dur=${c.span}m`;
+
+/**
+ * The pills a selection is: its time, when it has one, and its length,
+ * when it has one — the edged range reading `start_time=` first, because
+ * that is the order a person says a block in and the order the two words
+ * teach best.
+ */
 function cursorPills(c: Cursor): Pill[] {
 	const arg = cursorArg(c);
-	return [
-		...(arg === null
+	const time =
+		arg === null
 			? []
 			: [
 					{
 						id: 'cursor',
 						kind: 'time',
 						text: arg,
-						// A relative pill is one short word already; only the
-						// absolute one is long enough to want dividing (da-ui4i).
-						...(c.rel === undefined ? { sections: pillSections(c.at) } : {})
+						// A relative pill is one short word already, and a keyed
+						// one says which edge it is in the word itself; only the
+						// bare absolute pill wants dividing (da-ui4i).
+						...(c.rel === undefined && !edged(c) ? { sections: pillSections(c.at) } : {})
 					}
-				]),
-		...(c.span ? [{ id: DUR_ID, kind: 'dur', text: `dur=${c.span}m` }] : [])
-	];
+				];
+	const span = c.span ? [{ id: SPAN_ID, kind: 'dur', text: spanArg(c) }] : [];
+	return edged(c) ? [...span, ...time] : [...time, ...span];
 }
 
 /**
@@ -209,7 +245,7 @@ cursor.subscribe((c) => {
 	// selection and still re-orders — which is why the pictures publish
 	// their lanes AFTER they point.
 	if (!c) lanes.set(null);
-	pills.update((all) => [...all.filter((p) => p.kind !== 'time' && p.id !== DUR_ID), ...(c ? cursorPills(c) : [])]);
+	pills.update((all) => [...all.filter((p) => p.kind !== 'time' && p.id !== SPAN_ID), ...(c ? cursorPills(c) : [])]);
 });
 
 // The pills are the selection's other face, and a press on one of them
@@ -224,8 +260,9 @@ cursor.subscribe((c) => {
 //
 // THE ORDER MATTERS, and getting it wrong wrote a wrong time into the next
 // entry (vremya on PR #48, da-rskp). A command spends BOTH of a range's
-// pills in one update. Answering the missing `dur=` first — «a span and no
-// dur pill» → keep the instant, drop the length — put the cursor back, and
+// pills in one update — the strip's `start_time=` / `end_time=` pair as
+// much as the nowview's. Answering the missing length first — «a span and
+// no length pill» → keep the instant, drop the length — put the cursor back, and
 // `cursor.subscribe` then drew a fresh time pill over a line the person had
 // just watched be spent; the next plain `occur` was logged at it. So the
 // TIME pill's absence is asked about FIRST, because it takes the whole
@@ -236,7 +273,7 @@ pills.subscribe((all) => {
 	const want = cursorArg(c);
 	const pill = all.find((p) => p.kind === 'time');
 	if (want !== null && !pill) return void cursor.set(null);
-	if (c.span !== undefined && !all.some((p) => p.id === DUR_ID))
+	if (c.span !== undefined && !all.some((p) => p.id === SPAN_ID))
 		return void (want === null ? cursor.set(null) : pointAt({ ...c, span: undefined }));
 	if (want === null || !pill || pill.text === want) return;
 	// A relative pill has one section and no other text it can become, so
