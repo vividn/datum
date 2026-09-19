@@ -188,6 +188,8 @@ else
   echo "  \"could not be opened\"          -> broken; nothing is being saved"
   echo
   echo "Also check a deep link, which needs the bucket error document set to"
-  echo "index.html (see web/DEPLOY.md):"
-  echo "  curl -sI https://datum.day/now | head -1     # must be 200, not 404"
+  echo "index.html (see web/DEPLOY.md). CHECK ITS BODY, NOT ITS STATUS: website"
+  echo "hosting serves the error document with the error status, so a correct"
+  echo "bucket answers /now with 404 carrying the whole app."
+  echo "  just verify        # compares /now's body against /'s"
 fi

@@ -65,14 +65,25 @@ Any S3-compatible object storage. Scaleway Object Storage is the intended one.
   /now   -> 404 File not found
   ```
 
-  So verify it on the deployed site, not in the dashboard:
+  So verify it on the deployed site, not in the dashboard — **and verify it by CONTENT, not by
+  status code.** S3 website hosting serves the error document *with the error status*, so a correctly
+  configured bucket answers `/now` with **404 carrying the whole app**, and the browser routes
+  client-side. Asserting 200 there failed against a bucket that was already right, for an hour on
+  2026-09-08, and sent someone to re-check a setting that needed no change (`justfile`'s `verify`
+  recipe carries the same warning, and is what you should actually run):
 
   ```sh
-  curl -sI https://datum.day/now | head -1     # must be 200, not 404
+  just verify        # / is 200, and /now's body is compared against /'s
+
+  # by hand, if you want to see it:
+  curl -sS -o /tmp/root.html https://datum.day/
+  curl -sS -o /tmp/deep.html https://datum.day/now
+  cmp /tmp/root.html /tmp/deep.html && echo "the deep link serves the app"
   ```
 
-  Note this differs from local `npm run preview`, which redirects and falls back on its own — a
-  route that works locally can still 404 in the bucket.
+  A deep link is BROKEN when the body is the bucket's own XML or an error page — not when the status
+  says 404. Note this differs from local `npm run preview`, which redirects and falls back on its
+  own, so a route can behave differently there than in the bucket.
 - Generate an API key scoped to this bucket only.
 
 ## Step 2: DNS and CDN
