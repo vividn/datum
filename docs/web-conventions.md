@@ -95,6 +95,14 @@ file in the same commit — a convention nobody can read is a convention nobody 
    rename, no migration, no alias, nothing to carry (`command` → `custom`, da-zqop, 2026-09-15,
    which freed `command` for the commands widget that took it, da-ltux); after that first saved
    layout it needs one.
+   **A kind only one DATABASE offers says so with `db` on the kind** (da-o2wm8): the chooser lists
+   `pickableIn(currentDb())`, that kind is out of `PICKABLE` and so out of `PICKABLE ⊆ BUILTIN` —
+   the built-ins are every database's, and a gated kind's one-widget layout is the one its OWN
+   database carries as a kit layout (`installKitLayout`, `layout/store.ts`), which `widgetInto`
+   reaches exactly as it reaches a built-in. The gate is the database and not a build flag, so the
+   widget reaches the deployed site, where the question it answers can be asked. And because a
+   saved layout is the DEVICE's and opens in every database, the WIDGET says where it lives when it
+   is drawn anywhere else — an empty pane and a crash are the two answers a reader cannot act on.
 
 ## Looks
 

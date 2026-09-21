@@ -5,7 +5,8 @@
 // included. A kind is its `WidgetKindMeta` (the contract in types.ts:
 // title and default settings) plus the Svelte component that draws
 // it and, where the component wants something other than `settings`, the
-// props to hand it. The chooser lists `PICKABLE`; the tree's empty tab
+// props to hand it. The chooser lists `pickableIn(db)` — every kind but
+// the ones another database gates (`db` below); the tree's empty tab
 // (`EMPTY_KIND`, tree.ts) is not a kind here — Layout.svelte draws the
 // button that opens the chooser for it.
 //
@@ -44,6 +45,7 @@ import { nameOf, type Floor } from './tree.js';
 import CliPane from '$lib/CliPane.svelte';
 import CommandPane from './CommandPane.svelte';
 import CustomPane from '$lib/CustomPane.svelte';
+import DebugPane from '$lib/DebugPane.svelte';
 import DayStrip from '$lib/DayStrip.svelte';
 import Stats from '$lib/Stats.svelte';
 import {
@@ -59,6 +61,7 @@ import {
 	todayBox
 } from '$lib/panes.js';
 import { REACH_PX } from '$lib/lanes.js';
+import { DEBUG_DB } from './defaults.js';
 import { DEFAULT_STATS } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
 import FieldsPane from './FieldsPane.svelte';
@@ -81,6 +84,15 @@ export interface WidgetKind {
 	snap?: (settings: Record<string, unknown>) => { width?: number[]; height?: number[] };
 	/** Not offered by the chooser: a kind the app puts in a tab itself. */
 	hidden?: boolean;
+	/**
+	 * Offered ONLY when the open database is this one (da-o2wm8).
+	 *
+	 * vividn's own reason for the DEBUG widget: "The DEBUG widget is only
+	 * available from the DEBUG db". The gate is which database you are
+	 * in, not what you typed — safe by construction rather than by care.
+	 * A gated kind is left out of `PICKABLE` as well; see the note there.
+	 */
+	db?: string;
 	/** The content box the kind is legible in, fixed or from the settings: see the note above. */
 	legible: Floor | ((settings: Record<string, unknown>) => Floor);
 }
@@ -155,6 +167,14 @@ const meta = (
 	defaultSettings: Record<string, unknown> = {},
 	options?: WidgetOption[]
 ): WidgetKindMeta => ({ kind, title, defaultSettings, ...(options ? { options } : {}) });
+
+/** A widget of the DEBUG database: `db`-gated, and named as it is titled. */
+const debugKind = (kind: string, component: ComponentType, legible: Floor): WidgetKind => ({
+	meta: meta(kind, kind),
+	component,
+	db: DEBUG_DB,
+	legible
+});
 
 export const KINDS: Record<string, WidgetKind> = {
 	// The strip fills its box and shows as much of the past as fits above
@@ -297,12 +317,34 @@ export const KINDS: Record<string, WidgetKind> = {
 		props: ({ reversed }) => ({ reversed: reversed === true }),
 		legible: { width: 200, height: 58 }
 	},
+	// The debug widget (da-o2wm8), offered in the DEBUG database alone: the
+	// bottom bar's TAU and DETENT as live knobs, so that the one person who
+	// can judge how the bar FEELS can move them on his own phone. Legible
+	// at its two knob rows and the report line under them (3 × 26px) plus
+	// the body's padding — narrower or shorter and a slider is not a
+	// slider. "we could even have different DEBUG widgets eventually": the
+	// next one is another `debugKind` line here, not a rewrite of this one.
+	debug: debugKind('debug', DebugPane, { width: 200, height: 94 }),
 	// What the shell shows in a tab whose layout cannot be inlined (da-0a5o).
 	notice: { meta: meta('notice', 'notice'), component: Notice, hidden: true, legible: { width: 120, height: 40 } }
 };
 
-/** The kinds the chooser offers, in the order it shows them. */
-export const PICKABLE = Object.keys(KINDS).filter((kind) => !KINDS[kind].hidden);
+/** The kinds the chooser offers in `db`, in the order it shows them. */
+export const pickableIn = (db: string): string[] =>
+	Object.keys(KINDS).filter((kind) => !KINDS[kind].hidden && (KINDS[kind].db ?? db) === db);
+
+/**
+ * The kinds EVERY database offers — the ungated ones.
+ *
+ * A kind gated to one database (`db` above) is deliberately not among
+ * them, because this list carries a second rule: at the root a chosen
+ * widget becomes a one-widget LAYOUT by name, so every kind here needs
+ * its line in `BUILTIN` (`PICKABLE ⊆ BUILTIN`, tests/tree.test.mjs). The
+ * built-ins are the same in every database and a gated kind's layout is
+ * not — it is the one its OWN database carries, which is why `widgetInto`
+ * (shell.ts) accepts a kit layout's name there as it accepts a built-in's.
+ */
+export const PICKABLE = Object.keys(KINDS).filter((kind) => !KINDS[kind].hidden && !KINDS[kind].db);
 
 export const titleOf = (kind: string): string => KINDS[kind]?.meta.title ?? kind;
 

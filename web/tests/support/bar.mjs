@@ -77,3 +77,56 @@ export async function fold(page) {
 	await page.locator(`${BAR} .section.output`).waitFor({ state: 'detached' });
 	await barSettled(page);
 }
+
+/**
+ * Drag the bar by `dy` px WITH TIME IN IT, so the release carries speed.
+ *
+ * `dragBar` above dispatches its whole run of moves synchronously, so
+ * every one carries the same stamp and `settle` reads no velocity — which
+ * is exactly what its callers want. A test about MOMENTUM needs the
+ * opposite, and `swipe` (./layout.mjs, through CDP) is the other way to
+ * get it. This is the cheap one: the moves are a frame apart, so the
+ * gesture measures about `dy / (steps * gap)` px/ms and the bar glides on
+ * after the finger.
+ *
+ * It settles at `now + speed * TAU`, so the GLIDE's own length is
+ * `3 * distance / speed` = `3 * TAU` whatever the speed turned out to be
+ * — which is how a test can ask about `TAU` without pinning a velocity
+ * this machine may not produce (da-o2wm8).
+ */
+export function timedDrag(page, dy, steps = 6, gap = 16) {
+	return page.evaluate(
+		([dy, steps, gap]) =>
+			new Promise((done) => {
+				const el = document.querySelector('.prompt-bar');
+				const r = el.getBoundingClientRect();
+				const x = r.left + r.width / 2;
+				const y = r.top + r.height / 2;
+				const send = (type, at) =>
+					el.dispatchEvent(
+						new PointerEvent(type, {
+							pointerId: 7,
+							pointerType: 'touch',
+							isPrimary: true,
+							clientX: x,
+							clientY: at,
+							bubbles: true,
+							cancelable: true
+						})
+					);
+				send('pointerdown', y);
+				let i = 0;
+				const step = () => {
+					i += 1;
+					send('pointermove', y + (dy * i) / steps);
+					if (i < steps) return void setTimeout(step, gap);
+					setTimeout(() => {
+						send('pointerup', y + dy);
+						done();
+					}, gap);
+				};
+				setTimeout(step, gap);
+			}),
+		[dy, steps, gap]
+	);
+}

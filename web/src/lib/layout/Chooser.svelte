@@ -12,8 +12,10 @@
 	rather than silently widened.
 
 	The order: the layouts `chooser.ts` handed it (`day`, then the rest by
-	device, less what is open above the tab), and then every `PICKABLE`
-	kind by its title, in the registry's order.
+	device, less what is open above the tab), and then every kind this
+	DATABASE offers by its title, in the registry's order — `pickableIn`,
+	which is every kind but the ones another database gates (da-o2wm8:
+	"The DEBUG widget is only available from the DEBUG db").
 
 	A layout says where it came from (da-gg0v): `data-source` is
 	`builtin`, `user` or `kit:<name>`, and a kit's layout wears the kit's
@@ -28,7 +30,8 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { CHANGE } from './menu.js';
-	import { PICKABLE, titleOf } from './registry.js';
+	import { currentDb } from '$lib/database.js';
+	import { pickableIn, titleOf } from './registry.js';
 	import type { Choice, Offer } from './chooser.js';
 
 	/** The layouts this tab could hold, in order (chooser.ts). */
@@ -80,7 +83,7 @@
 	{/if}
 	<h3>Widgets</h3>
 	<div class="group" role="group" aria-label="Widgets">
-		{#each PICKABLE as kind (kind)}
+		{#each pickableIn(currentDb()) as kind (kind)}
 			<button type="button" class="widget" on:click={() => pick({ kind })}>{titleOf(kind)}</button>
 		{/each}
 	</div>

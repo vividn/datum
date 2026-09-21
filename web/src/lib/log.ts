@@ -49,7 +49,8 @@
 // rule and it is unchanged.
 
 import { derived, get, writable } from 'svelte/store';
-import { TAU, rest } from './detent.js';
+import { rest } from './detent.js';
+import { tuningNow } from './tuning.js';
 import { PHONE_WIDTH } from './layout/defaults.js';
 
 /** Where the fold is remembered, per device (never synced: it is a screen's). */
@@ -67,9 +68,16 @@ const SETTLE_MS = 220;
  * lands exactly there. Clamping it any nearer would put a step back into
  * the one thing vividn asked never to step — "It is jarring if it suddenly
  * changes speed".
+ *
+ * ⛔ A FUNCTION AND NOT A CONSTANT (da-o2wm8). It used to be `const
+ * GLIDE_MAX_MS = 3 * TAU`, computed once at import from the compile-time
+ * `TAU` — so a reader who raised `TAU` to 900 with the debug widget still
+ * had every glide clamped at 960ms by a ceiling derived from 320, and the
+ * bar did not do what the number said. A wrong answer that looks like a
+ * measurement is worse than no instrument.
  */
 const GLIDE_MIN_MS = 140;
-const GLIDE_MAX_MS = 3 * TAU;
+const glideMax = (): number => 3 * tuningNow().tau;
 
 const reduced = (): boolean =>
 	typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -270,7 +278,7 @@ export function moveTo(px: number): void {
  * curve that carries the bar there.
  */
 export function settle(up: boolean, speed = 0): void {
-	glide(rest(get(reveal), speed, up, out(), get(ceilingH)), speed);
+	glide(rest(get(reveal), speed, up, out(), get(ceilingH), tuningNow()), speed);
 }
 
 /**
@@ -347,7 +355,7 @@ export function stop(): void {
  * sets the DURATION so that the curve leaves at that same speed: an ease-out
  * cubic starts at 3·distance/duration, so duration = 3·distance/speed is the
  * one that carries on from where the finger stopped instead of restarting
- * the motion. Clamped at both ends — see `GLIDE_MAX_MS`.
+ * the motion. Clamped at both ends — see `glideMax`.
  */
 function glide(target: number, speed = 0): void {
 	stop();
@@ -359,7 +367,7 @@ function glide(target: number, speed = 0): void {
 		return reveal.set(to);
 	}
 	const ms = speed
-		? Math.min(GLIDE_MAX_MS, Math.max(GLIDE_MIN_MS, (3 * Math.abs(to - from)) / Math.abs(speed)))
+		? Math.min(glideMax(), Math.max(GLIDE_MIN_MS, (3 * Math.abs(to - from)) / Math.abs(speed)))
 		: SETTLE_MS;
 	aim = to;
 	const started = performance.now();

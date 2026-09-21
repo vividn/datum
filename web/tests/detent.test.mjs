@@ -24,7 +24,7 @@ registerHooks({
 	}
 });
 
-const { DETENT, TAU, rest } = await import('../src/lib/detent.ts');
+const { DEFAULT_TUNING, DETENT, TAU, rest } = await import('../src/lib/detent.ts');
 
 /** A phone's numbers: the output section is 58px and the page leaves 600. */
 const NOTCH = 58;
@@ -135,5 +135,52 @@ describe('a coast snags, a finger does not', () => {
 		// The finger is at 20px when it lets go: it dragged THROUGH the
 		// notch, so there is no edge above it left to snag on.
 		assert.equal(at(20, -3, false), 0);
+	});
+});
+
+// A TUNING THAT IS NOT THE DEFAULT (da-o2wm8).
+//
+// `DEBUG bar` moves these two numbers at runtime, because nobody here can
+// judge them and a thumb can. The rule stays PURE: the tuning is the last
+// argument, defaulting to the exported constants — which is why every case
+// above still reads those constants and still passes word for word. What
+// is asserted here is that a different pair moves the resting place as the
+// table says it should, so the instrument reports on a feel the bar really
+// produces.
+describe('a tuning that is not the default', () => {
+	const tuned =
+		(tau, detent) =>
+		(now, speed = 0, up = speed >= 0) =>
+			rest(now, speed, up, NOTCH, CEILING, { tau, detent });
+
+	test('the default IS the exported pair, so an untouched install is unchanged', () => {
+		assert.deepEqual(DEFAULT_TUNING, { tau: TAU, detent: DETENT });
+		assert.equal(at(300, 0.7), tuned(TAU, DETENT)(300, 0.7));
+	});
+
+	// `speed * TAU` is the whole of what a release carries, so twice the
+	// time constant is twice the glide — at a speed whose landing is near
+	// no detent, which is the arithmetic on its own.
+	test('a longer TAU carries the same push proportionally further', () => {
+		const normal = tuned(TAU, DETENT)(300, 0.3) - 300;
+		const twice = tuned(2 * TAU, DETENT)(300, 0.3) - 300;
+		assert.equal(normal, 0.3 * TAU);
+		assert.equal(twice, 2 * normal);
+	});
+
+	// "DETENT = 0 must be reachable — that is no detents at all, and
+	// feeling it is how he finds out whether he wants them."
+	test('DETENT = 0 is no detents at all, and the snag is not one of them', () => {
+		const none = tuned(TAU, 0);
+		assert.equal(none(NOTCH + 1, 0), NOTCH + 1, 'a rest one px above the notch was taken by it');
+		assert.equal(none(CEILING - 1, 0), CEILING - 1, 'a rest one px under the ceiling was taken by it');
+		// The SNAG is a separate rule and is untouched by the knob: a coast
+		// down from a tall log still stops at the notch it came from above.
+		assert.equal(none(500, -3, false), NOTCH);
+	});
+
+	test('a wider DETENT catches from further away than the default reaches', () => {
+		assert.equal(tuned(TAU, 60)(NOTCH + 40, 0), NOTCH, 'a 60px detent did not reach 40px');
+		assert.equal(at(NOTCH + 40, 0), NOTCH + 40, 'the default caught it anyway');
 	});
 });

@@ -297,3 +297,37 @@ export function builtinLayout(name: string, phone: boolean): Layout | null {
 
 /** The built-in names, `day` first, in the order the chooser offers them. */
 export const BUILTIN_NAMES = Object.keys(BUILTIN);
+
+// ---- the DEBUG database (da-o2wm8) -------------------------------------
+//
+// vividn, 2026-09-21: "A db named DEBUG, which has a layout preloaded into
+// it this DEBUG widget. It only gets loaded for the DEBUG db. how about
+// that. That seems safer and also easier to access for me." So the GATE is
+// which database you are in, not what you typed: a debug surface that
+// cannot appear in his real database is safe by construction rather than
+// by care, and it is already on screen when he arrives.
+
+/** The one database the debug widgets are offered in. Case-sensitive. */
+export const DEBUG_DB = 'DEBUG';
+
+/** The layout that database carries, and the kit that is said to ship it. */
+export const DEBUG_LAYOUT = 'debug';
+export const DEBUG_KIT = 'debug';
+
+/**
+ * The tree `DEBUG` is shipped: the debug widget alone, filling the root.
+ *
+ * The widget's whole subject is the BOTTOM BAR, which is on every screen
+ * and needs room to travel — so a screen of nothing but knobs and bar is
+ * the layout this instrument wants. A second debug widget (da-6ecm5)
+ * makes this a split; that is a line here, not a rewrite.
+ *
+ * ⚑ NOT IN `BUILTIN`, and that is the point. It is installed as a KIT
+ * layout into the DEBUG database itself (`shipDebugLayout`, shell.ts), so
+ * the name `debug` means a tree THERE and nothing anywhere else. A
+ * `debug` tab left in this device's open list by a visit to DEBUG is
+ * therefore skipped in another database rather than opening onto a widget
+ * whose only word would be that it is in the wrong place — and `settle`
+ * writes the list back without it.
+ */
+export const DEBUG_LAYOUT_TREE: Layout = only(DEBUG_LAYOUT, 'debug');

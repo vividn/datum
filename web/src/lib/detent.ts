@@ -67,6 +67,25 @@ export const TAU = 320;
 export const DETENT = 24;
 
 /**
+ * The two numbers the rule is made of, as one value a caller can vary.
+ *
+ * ONE OBJECT AND NOT TWO MORE POSITIONAL ARGUMENTS (da-o2wm8): `rest`
+ * already takes five, and `rest(now, speed, up, notch, ceiling, 900, 0)`
+ * is a line nobody can read. The pair also travels together everywhere —
+ * the debug widget moves them as a pair, `$lib/tuning.ts` keeps them as
+ * a pair — so it is one thing, not two.
+ */
+export interface Tuning {
+	/** `TAU`, in ms. */
+	tau: number;
+	/** `DETENT`, in px. */
+	detent: number;
+}
+
+/** What an untouched install feels: the two constants above, as a pair. */
+export const DEFAULT_TUNING: Tuning = { tau: TAU, detent: DETENT };
+
+/**
  * Where a release at `now` px, travelling at `speed` px/ms (positive is
  * opening), comes to rest — given the notch and the ceiling.
  *
@@ -79,9 +98,21 @@ export const DETENT = 24;
  *
  * The answer is unclamped: how far the bar may actually go is the page's
  * and the list's business ($lib/log.ts), not this table's.
+ *
+ * `tuning` is the two numbers, PASSED IN and never read off ambient state
+ * (da-o2wm8). The debug widget moves them at runtime so that the one
+ * person who can judge them can, and the rule stays a pure function of
+ * them — which is what keeps the table above answerable in node.
  */
-export function rest(now: number, speed: number, up: boolean, notch: number, ceiling: number): number {
-	let to = now + speed * TAU;
+export function rest(
+	now: number,
+	speed: number,
+	up: boolean,
+	notch: number,
+	ceiling: number,
+	{ tau, detent }: Tuning = DEFAULT_TUNING
+): number {
+	let to = now + speed * tau;
 	// THE SNAG, at the first threshold this glide would cross downward.
 	//
 	// `now > edge + 0.5` and not `now >= edge - 0.5`: a release AT an edge
@@ -97,7 +128,7 @@ export function rest(now: number, speed: number, up: boolean, notch: number, cei
 			break;
 		}
 	}
-	if (Math.abs(to - notch) <= DETENT) return notch;
-	if (Math.abs(to - ceiling) <= DETENT) return ceiling;
+	if (Math.abs(to - notch) <= detent) return notch;
+	if (Math.abs(to - ceiling) <= detent) return ceiling;
 	return to < notch ? (up ? notch : 0) : to;
 }

@@ -80,7 +80,16 @@ import { initDb } from '$lib/db.js';
 import type { Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
 import { LAYOUT_VERSION, isSplit } from './types.js';
 import { apply, layout, loaded } from './current.js';
-import { ALIASES, BUILTIN_NAMES, PHONE_WIDTH, builtinLayout } from './defaults.js';
+import {
+	ALIASES,
+	BUILTIN_NAMES,
+	DEBUG_DB,
+	DEBUG_KIT,
+	DEBUG_LAYOUT,
+	DEBUG_LAYOUT_TREE,
+	PHONE_WIDTH,
+	builtinLayout
+} from './defaults.js';
 import {
 	clearDraft,
 	clearLocked,
@@ -95,6 +104,7 @@ import {
 } from './draft.js';
 import {
 	deleteLayout,
+	installKitLayout,
 	kitLayout,
 	listLayouts,
 	loadLayout,
@@ -473,6 +483,50 @@ async function fillRoot(state: RootState): Promise<void> {
 	settle();
 }
 
+/**
+ * The DEBUG database carries the debug layout (da-o2wm8).
+ *
+ * vividn asked for "A db named DEBUG, which has a layout preloaded into it
+ * this DEBUG widget", and a preloaded layout is a KIT LAYOUT — a row in
+ * the DATA database (store.ts's note, da-gg0v), so it is that database's
+ * by construction and reaches every device of it, because the data syncs.
+ * There is no kit file to install, so the app writes the row itself the
+ * first time it opens a database of that name without one.
+ *
+ * WHO CREATES THE DATABASE is the reader: the logo menu's `new database…`
+ * already does it, and `?db=DEBUG` on its own is enough. Nothing new.
+ *
+ * A failure is not fatal and is not retried in a loop: the write is
+ * attempted once per load, and until it lands the name simply means
+ * nothing — which is what it means in every other database anyway.
+ */
+async function shipDebugLayout(): Promise<void> {
+	if (currentDb() !== DEBUG_DB || kitLayout(DEBUG_LAYOUT)) return;
+	try {
+		await installKitLayout(DEBUG_LAYOUT_TREE, DEBUG_KIT);
+	} catch {
+		// The slug is taken by a row that is not a kit's, or the write
+		// failed. Either way there is nothing here to put right.
+		return;
+	}
+	await refreshKitLayouts();
+}
+
+/**
+ * In the DEBUG database, the debug layout is open and in front.
+ *
+ * "It only gets loaded for the DEBUG db" — so it is added HERE, at the
+ * boot, rather than written into this device's open list: the list is one
+ * per device and not per database (layouts are the device's, da-vk1x), and
+ * a `debug` written into it would follow him back to his own database. It
+ * cannot: the name means nothing there, so `openTab` passes over it and
+ * `settle` writes the list back without it.
+ */
+const withDebug = (state: RootState): RootState =>
+	currentDb() === DEBUG_DB && !state.names.includes(DEBUG_LAYOUT)
+		? { names: [DEBUG_LAYOUT, ...state.names], active: 0 }
+		: state;
+
 /** Fill the root from this device's open layouts (`day` or `mobile` alone at first). Once. */
 export function boot(): Promise<void> {
 	return (booting ??= (async () => {
@@ -480,8 +534,9 @@ export function boot(): Promise<void> {
 		// Before the first `resolve`: a kit's layout is one of the trees a
 		// name may mean, and `shippedTree` reads the cache synchronously.
 		await refreshKitLayouts();
+		await shipDebugLayout();
 		const stored = loadRoot();
-		await fillRoot(stored ?? fresh());
+		await fillRoot(withDebug(stored ?? fresh()));
 		booted = true;
 		// A fresh device's home is decided here, once (da-shzs): written now,
 		// so a phone turned or widened later does not reopen as a desktop.
@@ -947,14 +1002,20 @@ export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
  * and it has to have one, because this device's open list is a list of
  * NAMES (`settle`, `saveRoot`) and a nameless root tab has nothing to
  * write there, so it would be gone after a reload. It is the same path
- * the root bar's `+` takes for a built-in name. A pickable kind with no
- * built-in still sheds, and then it is a root tab like any other nameless
+ * the root bar's `+` takes for a built-in name. A KIT's layout of that
+ * name serves the same turn (da-o2wm8): a kind offered in one database
+ * alone has no built-in — the built-ins are every database's — and its
+ * layout is the one its own database carries. A pickable kind with
+ * neither still sheds, and then it is a root tab like any other nameless
  * one: it lives as long as the page does.
  */
 export async function widgetInto(tabId: NodeId, kind: string): Promise<void> {
 	const name = findTab(get(layout), tabId)?.layout;
 	const builtin = canonicalName(kind);
-	if (rootTabs(get(layout)).some((t) => t.id === tabId) && BUILTIN_NAMES.includes(builtin))
+	if (
+		rootTabs(get(layout)).some((t) => t.id === tabId) &&
+		(BUILTIN_NAMES.includes(builtin) || !!kitLayout(builtin))
+	)
 		return inlineInto(tabId, builtin);
 	apply((l) => shedLayout(setWidget(l, tabId, newWidget(kind)), tabId));
 	if (name !== undefined && !tabOf(name)) baselines.update(({ [name]: _gone, ...rest }) => rest);

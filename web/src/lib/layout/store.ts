@@ -129,11 +129,44 @@ export async function refreshKitLayouts(): Promise<void> {
 	}
 	const next = new Map<string, { layout: Layout; kit: string }>();
 	for (const row of listed) {
-		const kit = (row.data as { kit_id?: unknown }).kit_id;
+		// `row.data` may be NULL: a field's first log writes the TRACK
+		// document that declares it beside the entry (da-c8mh), and that
+		// row carries no data. Nothing wrote a `layout` row into a data
+		// database until `installKitLayout` did (da-o2wm8), so this list
+		// had never held one and the dereference had never been reached.
+		const kit = (row.data as { kit_id?: unknown } | null)?.kit_id;
 		if (typeof kit !== 'string' || !row.data?.name) continue;
 		if (!next.has(row.data.name)) next.set(row.data.name, { layout: layoutOf(row), kit });
 	}
 	kits = next;
+}
+
+/**
+ * Install `layout` into the DATA database as `kit`'s (da-o2wm8).
+ *
+ * The same row `crates/datum-core/src/db/kit_layout.rs` writes — field
+ * `layout`, slug `layout:<name>`, the tree in its data and a `kit_id`
+ * naming the kit — because `refreshKitLayouts` above reads exactly that
+ * and a kit layout is how a DATABASE carries a layout of its own. It is
+ * how the app ships the DEBUG database its debug layout without there
+ * being a kit file to install.
+ *
+ * REJECTS WHEN THE SLUG IS TAKEN, which is the install path's own
+ * conflict policy: an entry already under the name is left alone, kit's
+ * or person's.
+ */
+export async function installKitLayout(layout: Layout, kit: string): Promise<void> {
+	await data(
+		'occur',
+		'layout',
+		'--id',
+		'%name',
+		'-k',
+		`name=${JSON.stringify(layout.name)}`,
+		...keys(layout),
+		'-k',
+		`kit_id=${JSON.stringify(kit)}`
+	);
 }
 
 async function row(name: string): Promise<Row> {

@@ -917,4 +917,37 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 			assert.deepEqual(kinds(only.root), [kind], `the ${name} built-in is the ${kind} widget alone`);
 		}
 	});
+
+	// AND THE EXEMPTION IS NOT SILENT (da-o2wm8). A kind gated to one
+	// database is deliberately outside the rule above, because the
+	// built-ins are every database's and a gated kind's layout is not: it
+	// is the one its OWN database carries, which `widgetInto` reaches the
+	// same way it reaches a built-in. So the trade is stated here — a
+	// gated kind must be out of `PICKABLE`, must still be offered by
+	// `pickableIn` in its own database, and must have a tree of that
+	// database's to become.
+	test('a kind gated to a database is out of PICKABLE, and its database carries its tree', async () => {
+		const { KINDS, PICKABLE, pickableIn, titleOf } = await import('../src/lib/layout/registry.ts');
+		const { DEBUG_DB, DEBUG_LAYOUT, DEBUG_LAYOUT_TREE, BUILTIN_NAMES } = await import(
+			'../src/lib/layout/defaults.ts'
+		);
+		const gated = Object.keys(KINDS).filter((kind) => KINDS[kind].db);
+		assert.deepEqual(gated, ['debug'], 'a new gated kind wants its line here');
+		for (const kind of gated) {
+			assert.ok(!PICKABLE.includes(kind), `${kind} is gated and still in PICKABLE`);
+			assert.ok(!BUILTIN_NAMES.includes(kind), `${kind} is gated and still has a built-in layout`);
+			assert.ok(!pickableIn('datum').includes(kind), `${kind} is offered outside ${KINDS[kind].db}`);
+			assert.ok(pickableIn(KINDS[kind].db).includes(kind), `${kind} is not offered in ${KINDS[kind].db} either`);
+		}
+		// Every ungated kind is offered everywhere, gated database included.
+		assert.deepEqual(pickableIn('datum'), PICKABLE);
+		assert.deepEqual(pickableIn(DEBUG_DB), [...PICKABLE, ...gated].sort((a, b) =>
+			Object.keys(KINDS).indexOf(a) - Object.keys(KINDS).indexOf(b)
+		));
+		// The tree the DEBUG database is shipped is that widget alone, named
+		// as the kind is titled — which is what lets a root tab hold it.
+		assert.equal(DEBUG_LAYOUT_TREE.name, DEBUG_LAYOUT);
+		assert.equal(DEBUG_LAYOUT, titleOf('debug'));
+		assert.deepEqual(kinds(DEBUG_LAYOUT_TREE.root), ['debug']);
+	});
 });
