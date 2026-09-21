@@ -1,14 +1,19 @@
-//! da-c8mh: the first log of a field writes its TRACK document beside it.
+//! da-gvcen: the first log of a field is ONE entry, and it declares its
+//! own field.
 //!
-//! Driven through the real binary: the declaration is defined by what the
-//! *process* writes and echoes, and the bead's acceptance list is phrased
-//! that way — a fresh db, one command, two documents.
+//! da-c8mh wrote a second row beside it — a TRACK document a millisecond
+//! earlier, carrying the TRACKED sentinel. vividn, 2026-09-21: "a separate
+//! entry gets logged at a separate time point (slightly earlier iirc). I
+//! don't like this. It's very clunky. […] we should use following_state,
+//! so a POINT_SWITCH." So the declaration now rides in the entry's own
+//! trailing edge, and the SPEC is what records that the field exists.
 //!
-//! `show_json.rs` covers the shape of a doc and `e2e_subprocess.rs` the
-//! table's `action` column. What lives here is the matrix the other two
-//! leave out: one case per verb, each asserting its own glyph, plus the
-//! `_LAST` group `undo` takes back whole and the import that declares
-//! every field it brings.
+//! Driven through the real binary: what the *process* writes and echoes
+//! is the contract. `show_json.rs` covers the shape of a doc and
+//! `e2e_subprocess.rs` the table; what lives here is the matrix the other
+//! two leave out — one case per verb, the spec that is written either
+//! way, the `_LAST` group `undo` takes back, the IGNORED field a first
+//! log brings back, and the import that still declares with a TRACK row.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -58,6 +63,23 @@ impl Env {
         String::from_utf8(out.stdout).expect("utf-8 stdout")
     }
 
+    /// `args` through the binary without demanding success: the exit
+    /// code and stdout, for the paths whose contract IS a non-zero exit.
+    fn try_run(&self, args: &[&str]) -> (Option<i32>, String) {
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", &self.db)
+            .env("DATUM_HOME", &self.home)
+            .env("DATUM_CONFIG_HOME", &self.config_home)
+            .env("DATUM_COLOR", "0")
+            .args(args)
+            .output()
+            .expect("spawn datum");
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    }
+
     /// The `action` of every doc `args` echoed, in printed order.
     fn actions(&self, args: &[&str]) -> Vec<String> {
         let argv: Vec<&str> = args.iter().copied().chain(["--show", "json"]).collect();
@@ -73,92 +95,304 @@ impl Env {
     }
 }
 
-/// One case per verb: the FIRST log of a field emits two documents, the
-/// declaration first, and its action word carries the glyph for the verb
-/// the log implies — `occur` → `●`, `start` and `end` → `█`, `switch` →
-/// `▞`, `note` → `¢`.
-///
-/// `end` on a field that was never started is in here on purpose: vividn
-/// settled it at 19:13 — the end brings the field into being too, rather
-/// than refusing to close what does not exist.
+/// One case per verb, through the real process: the first log of a field
+/// echoes ONE document, and it is the log itself.
 #[test]
-fn the_first_log_of_a_field_declares_it_with_its_verbs_glyph() {
-    for (argv, glyph) in [
-        (vec!["occur", "coffee"], "TRACK\u{25cf}"),
-        (vec!["start", "work"], "TRACK\u{2588}"),
-        (vec!["end", "chore"], "TRACK\u{2588}"),
-        (vec!["switch", "mood", "happy"], "TRACK\u{259e}"),
-        (vec!["note", "idea", "words"], "TRACK\u{a2}"),
+fn the_first_log_of_a_field_is_one_document() {
+    for argv in [
+        vec!["occur", "coffee"],
+        vec!["start", "work"],
+        vec!["end", "chore"],
+        vec!["switch", "mood", "happy"],
+        vec!["note", "idea", "words"],
     ] {
         // A fresh db per case: what is under test is the FIRST log.
         let env = Env::new();
-        let actions = env.actions(&argv);
         assert_eq!(
-            actions,
-            vec![glyph.to_string(), "CREATE".to_string()],
-            "{argv:?} should echo its declaration, then the entry",
+            env.actions(&argv),
+            vec!["CREATE".to_string()],
+            "{argv:?} should echo the entry and nothing beside it",
         );
     }
 }
 
-/// Six characters, like `CREATE` — the column the CLI aligns by display
-/// width has one cell per row, and a glyph that measured two would push
-/// every later cell out of true.
+/// The trailing edge is where the declaration goes — so a shape that HAS
+/// one carries a `following_state` and becomes a compound verb, and a
+/// shape that does not is declared by its spec alone.
+///
+/// What the trailing state SAYS is `track::declared_state` (da-5ifp),
+/// unchanged: `false` for a field that has an off state to sit in, the
+/// TRACKED sentinel for one that does not. The declaration moved column,
+/// not content — so `stats` and the state cell read a first-log block
+/// exactly as they read an ordinary `end`.
+///
+/// `end chore 30m` is in here on purpose twice over: vividn settled at
+/// 19:13 (da-c8mh) that an end brings its field into being too, and a
+/// closed block is the other first-log shape with a trailing instant —
+/// so it declares the same way the dot does. Without it, `end` on a
+/// field that had been IGNORED would leave it ignored, because a plain
+/// `Block` HANDS THE FIELD BACK to the state before it (da-611d) and
+/// that state is IGNORED.
 #[test]
-fn a_track_action_word_is_six_columns_wide() {
-    let env = Env::new();
-    for glyph in env.actions(&["occur", "coffee"]) {
+fn a_first_log_declares_in_its_own_trailing_edge_where_it_has_one() {
+    for (argv, verb, following) in [
+        (vec!["occur", "coffee"], "point-switch", Some("\"TRACKED\"")),
+        (
+            vec!["occur", "nap", "dur=30m"],
+            "block-switch",
+            Some("\"TRACKED\""),
+        ),
+        (vec!["start", "work", "30m"], "block-switch", Some("false")),
+        (vec!["end", "chore", "30m"], "block-switch", Some("false")),
+        // No trailing instant: an open start and a switch say what the
+        // field is with their own state, and a timeless note has no
+        // instant at all.
+        (vec!["start", "work"], "switch", None),
+        (vec!["switch", "mood", "happy"], "switch", None),
+        (vec!["note", "idea", "words"], "point", None),
+    ] {
+        let env = Env::new();
+        env.run(&[argv.clone(), vec!["--show", "none"]].concat());
+        let field = argv[1];
+        let conn = rusqlite::Connection::open(&env.db).expect("open db");
+        let (stored_verb, stored_following): (String, Option<String>) = conn
+            .query_row(
+                "SELECT verb, following_state FROM entries WHERE field = ?1",
+                [field],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap_or_else(|e| panic!("one row for {argv:?}: {e}"));
+        assert_eq!(stored_verb, verb, "{argv:?} verb");
         assert_eq!(
-            datum_cli::output::visible_width(&glyph),
-            6,
-            "{glyph:?} is not six columns"
+            stored_following.as_deref(),
+            following,
+            "{argv:?} following_state",
         );
     }
 }
 
-/// A field is declared ONCE. The second log of the same field is one
-/// document, because the declaration is already written down.
+/// Whichever shape the log took, the SPEC is written — that is what
+/// records the field's existence now, and what the next log of the field
+/// reads its verb from instead of guessing from the log.
 #[test]
-fn only_the_first_log_declares() {
-    let env = Env::new();
-    assert_eq!(env.actions(&["occur", "coffee"]).len(), 2, "the first log");
-    assert_eq!(
-        env.actions(&["occur", "coffee"]),
-        vec!["CREATE".to_string()],
-        "the second log has nothing left to declare",
-    );
+fn the_spec_is_the_record_that_the_field_exists() {
+    for (argv, verb) in [
+        (vec!["occur", "coffee"], "occur"),
+        (vec!["start", "work"], "start"),
+        (vec!["end", "chore"], "start"),
+        (vec!["switch", "mood", "happy"], "switch"),
+        (vec!["note", "idea", "words"], "add"),
+    ] {
+        let env = Env::new();
+        env.run(&[argv.clone(), vec!["--show", "none"]].concat());
+        let field = argv[1];
+        let conn = rusqlite::Connection::open(&env.db).expect("open db");
+        let spec: String = conn
+            .query_row(
+                "SELECT spec_json FROM field_specs WHERE field = ?1",
+                [field],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|e| panic!("no spec for {argv:?}: {e}"));
+        let spec: Value = serde_json::from_str(&spec).unwrap();
+        assert_eq!(spec["verb"], verb, "{argv:?} spec verb");
+
+        // And nothing in the log names itself a declaration any more.
+        let declarations: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM entries
+                 WHERE json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(declarations, 0, "{argv:?} wrote a TRACK row");
+    }
 }
 
-/// The pair is one `_LAST` group: `get _LAST` names both, and `undo`
-/// takes both back. This is the whole reason the declaration rides in
-/// the entry's own atomic write — a half-undone field would leave a spec
-/// vouching for a history that is no longer there.
+/// The trailing switch is not decoration — it is the whole of how a field
+/// that was IGNORED comes back. `datum ignore` writes no spec, so the
+/// next log of an ignored field is still a FIRST log, and its
+/// `following_state` is the switch that supersedes the IGNORED one.
 #[test]
-fn the_declaration_and_the_entry_undo_together() {
+fn a_first_log_brings_an_ignored_field_back() {
+    for argv in [
+        vec!["occur", "zap"],
+        vec!["end", "zap", "30m"],
+        vec!["start", "zap"],
+        vec!["switch", "zap", "on"],
+    ] {
+        let env = Env::new();
+        env.run(&["ignore", "zap"]);
+        env.run(&[argv.clone(), vec!["--show", "none"]].concat());
+        let listing = env.run(&["fields", "--show", "json"]);
+        let listing: Value = serde_json::from_str(listing.trim_end()).expect("fields json");
+        let ignored = listing
+            .as_array()
+            .expect("array")
+            .iter()
+            .find(|f| f["field"] == "zap")
+            .expect("zap is listed")["ignored"]
+            .clone();
+        assert_eq!(ignored, Value::Bool(false), "{argv:?} left zap ignored");
+    }
+}
+
+/// ⚠ TRACKED is a status, not a state a field is ON in
+/// (`is_inactive_state`, da-5ifp). A `following_state` of TRACKED must
+/// not make the field read as active — `now --json`'s `active` rows are
+/// what the web's `FieldButton.active` is drawn from.
+#[test]
+fn a_field_declared_by_its_first_log_is_not_active() {
+    for argv in [
+        vec!["occur", "coffee"],
+        vec!["end", "chore", "30m"],
+        vec!["start", "work", "30m"],
+    ] {
+        let env = Env::new();
+        env.run(&[argv.clone(), vec!["--show", "none"]].concat());
+        let now = env.run(&["now", "--json"]);
+        let now: Value = serde_json::from_str(now.trim_end()).expect("now json");
+        assert_eq!(
+            now["active"].as_array().map(Vec::len),
+            Some(0),
+            "{argv:?} left the field active: {now}",
+        );
+    }
+}
+
+/// `_LAST` is the one row, and `undo` takes it back. The pair da-c8mh
+/// had to keep together is now a single write, so there is nothing left
+/// to half-undo.
+#[test]
+fn the_first_log_undoes_in_one() {
     let env = Env::new();
     env.run(&["occur", "coffee", "--show", "none"]);
 
     let last = env.run(&["get", "_LAST"]);
-    let headers: Vec<&str> = last
-        .lines()
-        .filter(|l| l.starts_with("TRACK") || l.starts_with("EXISTS "))
-        .collect();
-    assert_eq!(
-        headers.len(),
-        2,
-        "`_LAST` is the declaration and the entry: {last:?}"
-    );
-    assert!(headers[0].starts_with("TRACK"), "{headers:?}");
+    let headers: Vec<&str> = last.lines().filter(|l| l.starts_with("EXISTS ")).collect();
+    assert_eq!(headers.len(), 1, "`_LAST` is the entry: {last:?}");
 
     let undone = env.run(&["undo"]);
     assert_eq!(
         undone.lines().filter(|l| l.starts_with("DELETE ")).count(),
-        2,
-        "one `undo` takes the whole group: {undone:?}"
+        1,
+        "one `undo`, one row: {undone:?}"
     );
     assert!(
         env.run(&["tail"]).contains("[No data]"),
         "nothing should be left standing",
+    );
+}
+
+/// `datum track` still writes its TRACK row, and that is not legacy: the
+/// explicit command has no entry of its own to carry a trailing state,
+/// and the row is what un-ignores a field (ignored-ness is read off the
+/// log, da-d08c).
+///
+/// Where the row NAMES itself is `get` — a single document, the whole of
+/// the output. da-ftg8p took the action column out of the TABLE, so the
+/// same row in `tail` is its state and no action word; both surfaces are
+/// asserted here so neither half can drift alone.
+///
+/// The action word is still SIX display columns, like `CREATE` — the
+/// column the CLI aligns by display width has one cell per row, and a
+/// glyph that measured two would push every later cell out of true.
+#[test]
+fn the_explicit_track_command_still_writes_its_document() {
+    for (verb, glyph) in [
+        ("occur", "TRACK\u{25cf}"),
+        ("start", "TRACK\u{2588}"),
+        ("switch", "TRACK\u{259e}"),
+        ("add", "TRACK\u{a2}"),
+    ] {
+        let env = Env::new();
+        env.run(&["track", "coffee", "--verb", verb]);
+
+        // The single-document surface names it.
+        let got = env.run(&["get", "_LAST"]);
+        let header = got.lines().next().unwrap_or_default();
+        assert!(header.starts_with(glyph), "{verb}: {header:?}");
+        assert_eq!(
+            datum_cli::output::visible_width(glyph),
+            6,
+            "{glyph:?} is not six columns"
+        );
+
+        // And the row is really in the log — in the table as its state,
+        // with no action word beside it (da-ftg8p).
+        let tail = env.run(&["tail"]);
+        assert!(
+            tail.lines().any(|l| l.contains("coffee")),
+            "{verb}: the declaration is not in the log: {tail:?}"
+        );
+        // The GLYPH, not the substring: an occur field's declaration sits
+        // in the TRACKED state (da-5ifp), so `tail` says TRACKED in its
+        // state cell — what must be absent is the action WORD and the
+        // column it would conjure.
+        assert!(
+            !tail.contains(glyph),
+            "{verb}: a table names no action: {tail:?}"
+        );
+        assert!(
+            !tail.lines().next().unwrap_or_default().contains("action"),
+            "{verb}: no action column: {tail:?}"
+        );
+    }
+}
+
+/// The declaration is hashed into the entry's content (da-4vyw), so a
+/// field's DECLARING log and a later identical one are not the same
+/// bytes — and without a rule for it, re-running the exact command that
+/// first declared a field would reach the duplicate-IDENTITY refusal
+/// da-2fkr wrote for two different events at one instant, instead of the
+/// benign no-op da-9sfm reserves exit 11 for.
+///
+/// `is_relog_of_a_declaring_row` is that rule, and this is it end to end:
+/// the same command twice is EXISTS and one row, exactly as it is for a
+/// field that was already declared.
+#[test]
+fn re_running_the_declaring_log_is_the_benign_no_op() {
+    let env = Env::new();
+    env.run(&["occur", "coffee", "-t", "0900", "--show", "none"]);
+    // A pinned time: a bare log lands on a fresh millisecond and never
+    // collides, so only an explicit `-t` can reproduce the shape.
+    let (code, stdout) = env.try_run(&["occur", "coffee", "-t", "0900"]);
+    assert_eq!(code, Some(11), "the duplicate exit code: {stdout:?}");
+    assert!(
+        stdout.contains("EXISTS"),
+        "the re-log renders the existing entry: {stdout:?}"
+    );
+    let tail: Value =
+        serde_json::from_str(env.run(&["tail", "--json"]).trim_end()).expect("tail json");
+    assert_eq!(
+        tail["rows"].as_array().map(Vec::len),
+        Some(1),
+        "no second row: {tail}",
+    );
+}
+
+/// ⚠ And the rule does NOT swallow a real duplicate identity. A second,
+/// DIFFERENT assertion at the declaring row's instant is still refused
+/// loudly, with the message that names the way out (da-2fkr) — the
+/// narrowness is the point, or the declaration would become a licence to
+/// drop writes.
+#[test]
+fn a_different_event_at_the_declaring_rows_instant_still_refuses() {
+    let env = Env::new();
+    env.run(&["occur", "coffee", "-t", "0900", "--show", "none"]);
+    let (code, stdout) = env.try_run(&["occur", "coffee", "-t", "0900", "cups=2"]);
+    assert_eq!(code, Some(11), "still exit 11: {stdout:?}");
+    assert!(
+        !stdout.contains("EXISTS"),
+        "a different assertion is not a no-op: {stdout:?}"
+    );
+    let tail: Value =
+        serde_json::from_str(env.run(&["tail", "--json"]).trim_end()).expect("tail json");
+    assert_eq!(
+        tail["rows"].as_array().map(Vec::len),
+        Some(1),
+        "and nothing was written: {tail}",
     );
 }
 

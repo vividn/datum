@@ -9,7 +9,7 @@
 				"code": 0,
 				"entry": {
 					"field": "coffee",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": null,
@@ -109,7 +109,7 @@
 				"code": 0,
 				"entry": {
 					"field": "nap",
-					"verb": "block",
+					"verb": "block-switch",
 					"state": null,
 					"dur": "PT30M",
 					"data": null,
@@ -129,7 +129,7 @@
 				"code": 0,
 				"entry": {
 					"field": "walk",
-					"verb": "block",
+					"verb": "block-switch",
 					"state": null,
 					"dur": "PT1H30M",
 					"data": null,
@@ -149,7 +149,7 @@
 				"code": 0,
 				"entry": {
 					"field": "nap",
-					"verb": "block",
+					"verb": "block-switch",
 					"state": null,
 					"dur": "PT30M",
 					"data": null,
@@ -169,7 +169,7 @@
 				"code": 0,
 				"entry": {
 					"field": "coffee",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": {
@@ -191,7 +191,7 @@
 				"code": 0,
 				"entry": {
 					"field": "coffee",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": null,
@@ -211,7 +211,7 @@
 				"code": 0,
 				"entry": {
 					"field": "coffee",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": null,
@@ -231,7 +231,7 @@
 				"code": 0,
 				"entry": {
 					"field": "coffee",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": null,
@@ -251,7 +251,7 @@
 				"code": 0,
 				"entry": {
 					"field": "coffee",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": null,
@@ -272,7 +272,7 @@
 				"code": 0,
 				"entry": {
 					"field": "coffee",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": null,
@@ -293,7 +293,7 @@
 				"code": 0,
 				"entry": {
 					"field": "weight",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": {
@@ -318,7 +318,7 @@
 				"code": 0,
 				"entry": {
 					"field": "work",
-					"verb": "block",
+					"verb": "block-switch",
 					"state": false,
 					"dur": "PT30M",
 					"data": null,
@@ -379,7 +379,7 @@
 				"code": 0,
 				"entry": {
 					"field": "coffee",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": null,
@@ -403,7 +403,7 @@
 				"code": 0,
 				"entry": {
 					"field": "coffee",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": {
@@ -433,7 +433,7 @@
 				"code": 0,
 				"entry": {
 					"field": "tx",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": {
@@ -465,7 +465,7 @@
 				"code": 0,
 				"entry": {
 					"field": "coffee",
-					"verb": "point",
+					"verb": "point-switch",
 					"state": null,
 					"dur": null,
 					"data": {

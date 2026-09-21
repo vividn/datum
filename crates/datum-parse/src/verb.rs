@@ -81,10 +81,18 @@ impl std::str::FromStr for Verb {
 ///
 /// Moment rule (da-ju71.2): when `dur` parses as `Dur::moment()`, the
 /// verb is `Verb::Point` regardless of state shape. This locks occur
-/// entries to Point even when they carry structured state data.
+/// entries to Point even when they carry structured state data — unless
+/// a `following_state` rides along, and then it is `Verb::PointSwitch`
+/// (da-gvcen). A moment IS a point, so a moment that also hands the
+/// field a trailing state is the same shape `(state, PT0S, fs)` already
+/// names; swallowing the `following_state` here would store a `Point`
+/// carrying a column no reader of a `Point` looks at. This is the one
+/// place the leading state may be absent: `occur newfield` asserts
+/// nothing at its dot and still declares its field past it.
 ///
 /// Rejects:
-/// - `state = None` + `following_state = Some` — fs implies a leading state.
+/// - `state = None` + `following_state = Some` — fs implies a leading state
+///   (except under the moment rule above).
 /// - `state = Some` + `dur = None` + `following_state = Some` — fs requires
 ///   a duration to delimit the trailing edge.
 /// - malformed ISO-8601 duration string.
@@ -95,7 +103,12 @@ pub fn derive_verb(
     following_state: Option<JsonValue>,
 ) -> Result<(Verb, Option<JsonValue>)> {
     if dur.is_some_and(Dur::is_moment) {
-        return Ok((Verb::Point, state));
+        let verb = if following_state.is_some() {
+            Verb::PointSwitch
+        } else {
+            Verb::Point
+        };
+        return Ok((verb, state));
     }
 
     let dur_kind = match dur {
@@ -343,6 +356,21 @@ mod tests {
         let (v, s) = ok(Some(json!("happy")), Some("MOMENT"), None);
         assert_eq!(v, Verb::Point);
         assert_eq!(s, Some(json!("happy")));
+    }
+
+    /// da-gvcen: a moment that hands the field a trailing state is a
+    /// PointSwitch, not a Point with an ignored column. This is the
+    /// shape the first log of an untracked field writes — the dot, and
+    /// TRACKED after it.
+    #[test]
+    fn moment_with_following_state_is_point_switch() {
+        let (v, s) = ok(None, Some("MOMENT"), Some(json!("TRACKED")));
+        assert_eq!(v, Verb::PointSwitch);
+        assert_eq!(s, None, "a stateless occur keeps its null state");
+
+        let (v, s) = ok(Some(json!(3)), Some("MOMENT"), Some(json!("TRACKED")));
+        assert_eq!(v, Verb::PointSwitch);
+        assert_eq!(s, Some(json!(3)));
     }
 
     #[test]

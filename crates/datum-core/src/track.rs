@@ -2,10 +2,13 @@
 //!
 //! `datum track <field>` has always written a switch row into the log
 //! (da-2sr): tracking is evidence, not a spec flag. da-c8mh made that row
-//! travel with the field's FIRST log too — `occur newfield` writes the
-//! TRACK document beside the entry, in one atomic write and one `_LAST`
-//! group, so `undo` takes both back and the field never exists without an
-//! answer to "what does a bare press of this mean".
+//! travel with the field's FIRST log too; da-gvcen took that half back —
+//! a first log declares its field in its OWN `following_state`, and the
+//! spec is what records that the field exists. What still writes a TRACK
+//! row is the EXPLICIT act: `datum track`, which has no entry of its own
+//! to carry a trailing state and whose row is what un-ignores a field
+//! (ignored-ness is read off the log, da-d08c), and `db v2import`, which
+//! declares each field it brings ahead of the history it brings.
 //!
 //! The row carries that answer in `extra_metadata.track`, which is also
 //! how every reader recognises it: a TRACK row's state is `false` or the
@@ -70,63 +73,34 @@ pub fn verb_for_action(action: Action) -> Action {
     }
 }
 
-/// The TRACK document for `field` declared with `verb`, at `at`.
+/// The state a declaration of `verb` sits in — da-5ifp: a field that
+/// holds a state is tracked `false`, because it has an off state to sit
+/// in, and one that does not gets the TRACKED sentinel. Either way it is
+/// not IGNORED, which is what un-ignores a field.
 ///
-/// da-5ifp picks the state: a field that holds a state is tracked `false`
-/// — it has an off state to sit in — and one that does not gets the
-/// TRACKED sentinel. Either way the row is not IGNORED, which is what
-/// un-ignores a field.
-pub fn track_entry(field: &str, verb: Action, at: DatumTime, device_id: &str) -> Entry {
-    timed_or_timeless(field, verb, Some(at), None, device_id)
-}
-
-/// The TRACK document that declares the field an entry is about, placed
-/// just ahead of that entry: one millisecond before its instant, or —
-/// when the entry is timeless and has no instant — one millisecond before
-/// its create_time, which is the clock a timeless row is read by.
-pub fn track_entry_for(entry: &Entry, verb: Action) -> Entry {
-    let ms = chrono::Duration::milliseconds(1);
-    // Ahead of the entry's LEADING edge: a block's occur_time is its end
-    // and its duration precedes it (da-zwct), so anchoring on occur_time
-    // would drop the declaration inside the block it declares.
-    let at = entry.occur_time.clone().map(|mut t| {
-        t.utc = entry
-            .computed_start_time()
-            .map(|s| s.utc)
-            .unwrap_or(t.utc)
-            .min(t.utc)
-            - ms;
-        t.uncertainty = None;
-        t
-    });
-    timed_or_timeless(
-        &entry.field,
-        verb,
-        at,
-        Some(entry.create_time - ms),
-        &entry.device_id,
-    )
-}
-
-fn timed_or_timeless(
-    field: &str,
-    verb: Action,
-    at: Option<DatumTime>,
-    created: Option<chrono::DateTime<chrono::Utc>>,
-    device_id: &str,
-) -> Entry {
-    let holds_state = matches!(verb, Action::Start | Action::Switch);
-    let state = if holds_state {
+/// One rule, two places: the row `datum track` writes, and the
+/// `following_state` a field's FIRST log declares itself with (da-gvcen).
+/// The declaration changed which column it lives in, not what it says.
+pub fn declared_state(verb: Action) -> JsonValue {
+    if matches!(verb, Action::Start | Action::Switch) {
         JsonValue::Bool(false)
     } else {
         JsonValue::String(TRACKED_STATE_VALUE.to_string())
-    };
-    let mut entry = Entry::new_legacy(field, Verb::Switch, Some(state), None, at, None, device_id);
-    if let Some(created) = created {
-        entry.create_time = created;
-        entry.modify_time = created;
-        entry.slug = crate::entry::build_slug(field, entry.occur_time.as_ref(), &created);
     }
+}
+
+/// The TRACK document for `field` declared with `verb`, at `at`.
+pub fn track_entry(field: &str, verb: Action, at: DatumTime, device_id: &str) -> Entry {
+    let state = declared_state(verb);
+    let mut entry = Entry::new_legacy(
+        field,
+        Verb::Switch,
+        Some(state),
+        None,
+        Some(at),
+        None,
+        device_id,
+    );
     entry.extra_metadata = Some(json!({ TRACK_META_KEY: verb.to_string() }));
     entry
 }

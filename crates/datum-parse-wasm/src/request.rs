@@ -177,6 +177,10 @@ mod tests {
     const NOW_MS: i64 = 1_773_669_600_000;
 
     fn run(argv: &[&str]) -> JsonValue {
+        run_with_specs(argv, Vec::new())
+    }
+
+    fn run_with_specs(argv: &[&str], field_specs: Vec<JsonValue>) -> JsonValue {
         let request = ParseRequest {
             argv: argv.iter().map(|s| s.to_string()).collect(),
             now_ms: NOW_MS,
@@ -185,7 +189,7 @@ mod tests {
             device_id: "web-test".to_string(),
             hid_bytes: vec![7; 12],
             aliases: Vec::new(),
-            field_specs: Vec::new(),
+            field_specs,
         };
         response(&request)
     }
@@ -196,9 +200,18 @@ mod tests {
         out["entry"].clone()
     }
 
+    /// The same, with `field` already declared — so the row under test is
+    /// an ordinary log rather than the field's FIRST, which carries the
+    /// declaration in its own `following_state` (da-gvcen).
+    fn entry_declared(argv: &[&str], field: &str, verb: &str) -> JsonValue {
+        let out = run_with_specs(argv, vec![json!({ "field": field, "verb": verb })]);
+        assert!(out.get("entry").is_some(), "expected an entry, got {out}");
+        out["entry"].clone()
+    }
+
     #[test]
     fn occur_is_a_point_with_no_state() {
-        let e = entry(&["occur", "coffee", "-t", "0915"]);
+        let e = entry_declared(&["occur", "coffee", "-t", "0915"], "coffee", "occur");
         assert_eq!(e["field"], "coffee");
         assert_eq!(e["verb"], "point");
         assert!(e.get("state").is_none());
@@ -263,7 +276,7 @@ mod tests {
             ("dur=1:30", "PT1H30M"),
             ("dur=PT30M", "PT30M"),
         ] {
-            let e = entry(&["occur", "nap", spelling]);
+            let e = entry_declared(&["occur", "nap", spelling], "nap", "occur");
             assert_eq!(e["dur"], iso, "for {spelling}");
             assert_eq!(e["verb"], "block", "for {spelling}");
         }

@@ -414,15 +414,15 @@ fn get_o_at_default_show_keeps_info_lines_plus_format() {
     // Default show + `-o`: header + info line + format string; the columnar
     // data block (`reps: 10`, `comment: "hello"`) is replaced by the format.
     let (stdout, _) = run_binary(&db, &["get", "_LAST", "-o", "FMT[%field%|reps=%reps%]"]);
-    // `_LAST` names the entry AND the TRACK document its field was
-    // declared by (da-c8mh); the entry's three lines are the last three.
+    // `_LAST` names one document — the entry, which declared its own
+    // field (da-gvcen) — so its three lines are the whole of stdout.
     let all: Vec<&str> = stdout.lines().collect();
     assert_eq!(
         all.len(),
-        6,
+        3,
         "default `-o` should emit header + info + format per doc, got: {stdout:?}"
     );
-    let lines: Vec<&str> = all[3..].to_vec();
+    let lines: Vec<&str> = all.clone();
     assert!(
         lines[0].starts_with("EXISTS") && lines[0].contains("fmttest:"),
         "first line should be the EXISTS header, got: {stdout:?}"
@@ -454,7 +454,7 @@ fn get_o_at_default_show_keeps_info_lines_plus_format() {
     );
     assert_eq!(
         stdout.trim(),
-        "FMT[fmttest|reps=]\nFMT[fmttest|reps=10]",
+        "FMT[fmttest|reps=10]",
         "`--show format` should emit only the format string, once per doc, got: {stdout:?}"
     );
 

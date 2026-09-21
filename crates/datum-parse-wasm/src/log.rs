@@ -44,6 +44,7 @@ use datum_parse::cli::{Command, LogArgs};
 use datum_parse::entry_id::{self, HashInputs};
 use datum_parse::input::data_args::{handle_data_args, DataArgs};
 use datum_parse::input::flexible_positional::flexible_positional;
+use datum_parse::shape::TRACKED_STATE_VALUE;
 use datum_parse::time::{
     parse_date, parse_time, resolve_timezone, DatumTime, TimeBuilder, TimeCtx, Zone,
 };
@@ -339,6 +340,27 @@ fn build_entry(
             Action::Stop => state = Some(JsonValue::Bool(false)),
             Action::Start | Action::Switch => state = Some(JsonValue::Bool(true)),
             Action::Occur => {}
+        }
+    }
+
+    // da-gvcen (`log_core`): the first log of a field the caller holds no
+    // spec for brings the field into being, and the ENTRY says so — a
+    // `following_state` at its own trailing edge, rather than a second
+    // TRACK row a millisecond earlier. The state it declares is
+    // `datum_core::track::declared_state` (da-5ifp): `false` for a field
+    // that has an off state to sit in, the TRACKED sentinel for one that
+    // does not. The truth table decides whether the shape can carry one;
+    // where it refuses (an open `start`, a `switch`), the entry's own
+    // state is the switch. Every row this module builds has an instant —
+    // the timeless verbs are `unsupported` here — so the CLI's "needs an
+    // occur_time" half of the rule is satisfied by construction.
+    if host.spec(&field).is_none() && reserved.following_state.is_none() {
+        let declared = match action {
+            Action::Start | Action::Stop | Action::Switch => JsonValue::Bool(false),
+            Action::Occur => JsonValue::String(TRACKED_STATE_VALUE.to_string()),
+        };
+        if derive_verb(state.clone(), dur.as_ref(), Some(declared.clone())).is_ok() {
+            reserved.following_state = Some(declared);
         }
     }
 

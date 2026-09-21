@@ -674,10 +674,10 @@ fn subprocess_migration_announces_itself_and_leaves_a_backup() {
         "the note must not pollute stdout: stdout={stdout}"
     );
     // stdout is still only the payload, machine-readable across the upgrade.
-    // The row and the TRACK document that declared its field (da-c8mh).
+    // One row: the log declared its own field (da-gvcen).
     assert_eq!(
         stdout.trim(),
-        "coffee\ncoffee",
+        "coffee",
         "stdout carries the data and nothing else"
     );
 
@@ -764,8 +764,8 @@ fn subprocess_unwritable_backup_refuses_to_migrate() {
     let rows: i64 = conn
         .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
         .expect("count entries");
-    // The row, and the TRACK document that declared its field (da-c8mh).
-    assert_eq!(rows, 2, "the user's row must survive a refused migration");
+    // One row: the log declared its own field (da-gvcen).
+    assert_eq!(rows, 1, "the user's row must survive a refused migration");
 }
 
 /// da-c7uw: the whole point of `tail --json` is what a *script* reads off
@@ -789,16 +789,16 @@ fn subprocess_tail_json_is_readable_without_counting_columns() {
         serde_json::from_slice(&out.stdout).expect("tail --json must print parseable JSON");
 
     let rows = doc["rows"].as_array().expect("rows array");
-    // The TRACK document the first `start` declared the field with, then
-    // both rows (da-c8mh).
-    assert_eq!(rows.len(), 3, "both rows and the declaration: {doc}");
+    // Two logs, two rows: the first declared the field in its own columns
+    // (da-gvcen).
+    assert_eq!(rows.len(), 2, "both rows: {doc}");
     // Newest last, as the table renders them.
-    assert_eq!(rows[1]["state_label"], "start");
-    assert_eq!(rows[2]["state_label"], "end");
-    assert_eq!(rows[2]["field"], "activity");
+    assert_eq!(rows[0]["state_label"], "start");
+    assert_eq!(rows[1]["state_label"], "end");
+    assert_eq!(rows[1]["field"], "activity");
     // The hid is the full, prefix-addressable id — a consumer can hand it
     // straight back to the CLI rather than re-deriving one from the table.
-    let hid = rows[2]["hid"].as_str().expect("hid string");
+    let hid = rows[1]["hid"].as_str().expect("hid string");
     let back = env.run(&["get", hid]);
     assert_ok(&back, "get by the hid tail --json reported");
 }
@@ -826,18 +826,17 @@ fn subprocess_tail_json_carries_the_table_columns() {
             .unwrap_or_else(|| panic!("no {key} column: {doc}"))["cells"]
             .clone()
     };
-    // Each field's TRACK document sits ahead of its entry (da-c8mh).
-    assert_eq!(
-        column("field"),
-        serde_json::json!(["coffee", "coffee", "mood", "mood"])
-    );
-    // da-ftg8p: and no `action` column names them. These columns ARE the
+    // One row per log: each declared its own field in its own columns
+    // (da-gvcen), so there is no TRACK document ahead of either.
+    assert_eq!(column("field"), serde_json::json!(["coffee", "mood"]));
+    // da-ftg8p: and no `action` column, which is a fact about the TABLE
+    // and not about what happens to be in it. These columns ARE the
     // table's, so the pane that lays them out drops it with the table.
     assert!(
         columns.iter().all(|c| c["key"] != "action"),
         "no action column: {doc}"
     );
-    assert_eq!(column("hid").as_array().unwrap().len(), 4);
+    assert_eq!(column("hid").as_array().unwrap().len(), 2);
     // DATUM_COLOR=0: the cells are plain.
     assert!(!out.stdout.contains(&0x1b), "unpainted under DATUM_COLOR=0");
 }
@@ -855,8 +854,8 @@ fn subprocess_backup_to_stdout_restores_from_stdin() {
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(
         lines.len(),
-        5,
-        "a header, two entries and their two declarations: {text}"
+        3,
+        "a header and the two entries, each declaring its own field: {text}"
     );
     assert!(lines[0].contains("daydumb_backup"));
 

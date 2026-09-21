@@ -200,7 +200,7 @@ impl RenderContext {
         // state just before this row is absent or IGNORED. The state-bearing
         // verbs read that off `lead_state` in their LEAD slot; the bare dot
         // reads the ambient state, so it takes the same predicate from there.
-        let prior = if has_state_badge(entry.verb) {
+        let prior = if has_state_badge(entry.verb, entry.dur.as_ref()) {
             lead_state.as_ref()
         } else {
             ongoing_state.as_ref()
@@ -232,7 +232,7 @@ impl RenderContext {
 /// — they don't drive a state cell to mark. A `None` prior or a missing
 /// row state likewise can't form a repeat.
 pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) -> bool {
-    if !has_state_badge(row.verb) {
+    if !has_state_badge(row.verb, row.dur.as_ref()) {
         return false;
     }
     let (Some(prior), Some(row_state)) = (prior, row.state.as_ref()) else {
@@ -246,7 +246,7 @@ pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) ->
 fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
     // The LEAD/TRAIL slots exist only on the state-badge group, so the
     // gate is exactly `has_state_badge` — shape.rs owns the verb set.
-    if !has_state_badge(entry.verb) {
+    if !has_state_badge(entry.verb, entry.dur.as_ref()) {
         return None;
     }
     // da-zwct: a block's duration PRECEDES `occur_time`, so the state
@@ -258,7 +258,7 @@ fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Optio
 }
 
 fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
-    if !has_state_badge(entry.verb) {
+    if !has_state_badge(entry.verb, entry.dur.as_ref()) {
         return None;
     }
     if matches!(entry.shape(), EntryShape::Block) {
@@ -274,7 +274,7 @@ fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Opti
 fn compute_ongoing_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
     // Ongoing-state probes apply only to the badge-less verb (the bare
     // dot reads ambient state) — exactly the complement of the badge set.
-    if has_state_badge(entry.verb) {
+    if has_state_badge(entry.verb, entry.dur.as_ref()) {
         return None;
     }
     let at = entry.occur_time.as_ref()?.utc;
@@ -297,13 +297,13 @@ pub fn format_state_group(
     // NON_OCCUR glyph. The dispatch table in `datum_core::shape` doesn't
     // distinguish timeless points; we gate it here before consulting the
     // verb-keyed renderer split.
-    if entry.occur_time.is_none() && !has_state_badge(entry.verb) {
+    if entry.occur_time.is_none() && !has_state_badge(entry.verb, entry.dur.as_ref()) {
         return Some(render_timeless(entry, spec));
     }
     // State-bearing verbs render the `[LEAD][cell][TRAIL]` group; the
     // lone non-stateful verb (`Verb::Point`) renders a bare dot. Adding
     // a new verb only updates `has_state_badge` in `shape.rs`.
-    if has_state_badge(entry.verb) {
+    if has_state_badge(entry.verb, entry.dur.as_ref()) {
         Some(render_state_transition_group(entry, spec, ctx))
     } else {
         Some(render_occur(entry, spec, ctx))
@@ -495,7 +495,7 @@ fn render_state_cell(entry: &Entry, spec: Option<&FieldSpec>) -> String {
     // Verbs without a state badge (`Verb::Point`) never reach this
     // function — `format_state_group` short-circuits them to the dot
     // renderer.
-    if has_state_badge(entry.verb) {
+    if has_state_badge(entry.verb, entry.dur.as_ref()) {
         render_switch_badge(entry.state.as_ref(), &entry.field, spec)
     } else {
         String::new()
@@ -577,7 +577,7 @@ pub fn entry_self_trail_state(entry: &Entry) -> Option<JsonValue> {
     // returns the same `Some(Bool(true|false))` the legacy arms
     // produced explicitly. Non-state-bearing verbs (Verb::Point) yield
     // no trail state.
-    if has_state_badge(entry.verb) {
+    if has_state_badge(entry.verb, entry.dur.as_ref()) {
         entry.state.clone()
     } else {
         None

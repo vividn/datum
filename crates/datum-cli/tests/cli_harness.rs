@@ -13,6 +13,11 @@ fn run_cli_harness_dispatches_to_occur() {
     // Verb-first form: `datum occur coffee` — occur is stateless and
     // takes no bare positional value (da-k5o6 contract). Per-entry data
     // attaches via `-k`, e.g. `occur coffee -k amount=2`.
+    // da-gvcen: declare the field first — a FIRST log declares its own
+    // field in a `following_state`, which makes it a compound verb. What
+    // is under test here is the harness dispatch, not the declaration.
+    run_cli(&["spec", "set", "coffee", "--verb", "occur"], &db).expect("declare coffee");
+
     run_cli(&["occur", "coffee", "-k", "amount=2"], &db).expect("occur dispatch");
 
     // Exactly one coffee entry. With no state set and no duration, the

@@ -73,9 +73,10 @@ describe('logging verbs', () => {
 			const listed = await run(['tail']);
 			assert.equal(listed.code, OK);
 			const rows = rowTexts(listed.stdout);
-			// Header, the four entries, and one TRACK document per field the
-			// commands brought into being — coffee, work, mood (da-c8mh).
-			assert.equal(rows.length, commands.length + 4, `header plus rows: ${listed.stdout}`);
+			// Header and the four entries. da-gvcen: each first log declares
+			// its own field in its own `following_state`, so no TRACK
+			// document sits beside any of them.
+			assert.equal(rows.length, commands.length + 1, `header plus rows: ${listed.stdout}`);
 			assert.ok(
 				rows.slice(1).some((row) => row.includes('mood') && row.includes('happy')),
 				`tail did not show the switch: ${listed.stdout}`
@@ -90,9 +91,9 @@ describe('logging verbs', () => {
 			await reload();
 			const table = await paneTable('tail');
 			// The pane shows the rows its box holds — the newest page of the
-			// listing — and draws no `action` column of its own (da-c8mh),
-			// so the REPL's lines are compared without that cell, which
-			// follows `_n` (da-431c).
+			// listing. No table draws an `action` column at all any more
+			// (da-ftg8p), and da-gvcen leaves no TRACK row to name, so the
+			// shim only has to survive both being absent.
 			const withoutAction = (line) => line.replace(/^(_\S* +)?(action|TRACK.) +/, '$1');
 			assert.deepEqual(
 				rowTexts([table.headers, ...table.rows].map((cells) => cells.join(' ')).join('\n')),
@@ -148,6 +149,11 @@ describe('time and duration land on the entry', () => {
 
 	test('a duration is stored as ISO-8601 and makes the entry a block', async () => {
 		await onSeam(async ({ run, entries }) => {
+			// Declared first: a FIRST log declares its field in its own
+			// `following_state` and is compound for that reason (da-gvcen).
+			// What is under test here is the DURATION.
+			assert.equal((await run(['spec', 'set', 'nap', '--verb', 'occur'])).code, OK);
+			assert.equal((await run(['spec', 'set', 'walk', '--verb', 'occur'])).code, OK);
 			assert.equal((await run(['occur', 'nap', 'dur=30m', '-t', '1000'])).code, OK);
 			assert.equal((await run(['occur', 'walk', 'dur=1:30', '-t', '1100'])).code, OK);
 			const stored = await entries();
@@ -161,6 +167,8 @@ describe('time and duration land on the entry', () => {
 
 	test('no duration leaves a point entry', async () => {
 		await onSeam(async ({ run, entries }) => {
+			// Declared first, for the reason above: this is about MOMENT.
+			await run(['spec', 'set', 'coffee', '--verb', 'occur']);
 			await run(['occur', 'coffee', '-t', '0915']);
 			const [stored] = await entries();
 			// `MOMENT` is datum's in-column spelling of "no duration, this is
@@ -749,10 +757,10 @@ describe('the tail is the CLI\'s tail', () => {
 			// here, so the two cannot drift apart in either direction.
 			await reload();
 			const { rows, columns } = await tailRows();
-			// Each field's TRACK document sits just ahead of its entry.
+			// One row per log: each declared its own field (da-gvcen).
 			assert.deepEqual(
 				rows.map((row) => row.field),
-				['coffee', 'coffee', 'mood', 'mood']
+				['coffee', 'mood']
 			);
 			const cells = (key) => columns.find((column) => column.key === key).cells;
 			const painted = async (key) => (await paneCellColors('tail', key)).map(distinct);

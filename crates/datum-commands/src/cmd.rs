@@ -79,16 +79,6 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
     if !hids.is_empty() {
         let _ = datum_core::last_docs::set_last_docs(db, &hids);
     }
-    // da-c8mh: every TRACK row that just landed declares a field; write
-    // the spec it declares now that the rows are committed.
-    for hid in &hids {
-        if let Ok(row) = db.get_entry(hid.as_str()) {
-            if let Some(verb) = datum_core::track::track_verb(&row) {
-                crate::commands::helpers::save_track_spec(db, &row.field, verb)?;
-            }
-        }
-    }
-
     // da-dayk: render every persisted row through the same
     // `show_create_with_context` path single-row dispatch uses, with
     // the per-group `OutputArgs` so `--show none` (and friends) still
@@ -171,36 +161,21 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
 /// carrying an `id_structure` template are re-interpolated against
 /// the post-mutation state via [`datum_core::field_spec::interpolate`].
 ///
-/// da-c8mh: a TRACK document declares its field one millisecond AHEAD of
-/// the shared instant — the declaration precedes the thing declared, and
-/// it lands on an instant no side can be sitting on, since every side has
-/// just been moved onto `shared`. Two sides declaring the same field
-/// produce identical rows, which the same-field merge collapses to one.
+/// da-gvcen: every row here is a side's own entry. A first log used to
+/// hand the collector a second, TRACK row to place a millisecond ahead of
+/// the shared instant; it now declares its field in its own
+/// `following_state`, so there is one kind of row to move.
 fn normalize_shared_occur_time(
     mut entries: Vec<datum_core::entry::Entry>,
 ) -> Vec<datum_core::entry::Entry> {
-    let is_track = |e: &datum_core::entry::Entry| datum_core::track::track_verb(e).is_some();
-    let Some(shared) = entries
-        .iter()
-        .find(|e| !is_track(e))
-        .and_then(|e| e.occur_time.clone())
-    else {
+    let Some(shared) = entries.iter().find_map(|e| e.occur_time.clone()) else {
         return entries;
     };
-    let mut declared = shared.clone();
-    declared.utc -= chrono::Duration::milliseconds(1);
-    declared.uncertainty = None;
     for entry in entries.iter_mut() {
-        // A timeless TRACK row has no instant to move; it is already ahead
-        // of its entry in the create_time the two are read by.
-        if is_track(entry) && entry.occur_time.is_none() {
+        if entry.occur_time.as_ref().map(|t| &t.utc) == Some(&shared.utc) {
             continue;
         }
-        let target = if is_track(entry) { &declared } else { &shared };
-        if entry.occur_time.as_ref().map(|t| &t.utc) == Some(&target.utc) {
-            continue;
-        }
-        entry.occur_time = Some(target.clone());
+        entry.occur_time = Some(shared.clone());
         // da-ivld: every entry now carries an id_structure; rebuild the
         // slug as `<field>:<body>` where body = interpolate(id_structure).
         if let Some(tmpl) = entry.id_structure.clone() {
@@ -210,7 +185,7 @@ fn normalize_shared_occur_time(
             entry.slug = datum_core::ids::Slug(format!("{}:{}", entry.field, body));
         } else {
             entry.slug =
-                datum_core::entry::build_slug(&entry.field, Some(target), &entry.create_time);
+                datum_core::entry::build_slug(&entry.field, Some(&shared), &entry.create_time);
         }
         entry.content_hash = entry.expected_content_hash();
     }
@@ -1772,11 +1747,11 @@ mod tests {
         crate::commands::get::get(GetArgs::default(), &db).unwrap();
 
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
-        // The entry and the TRACK document that declared its field, one
-        // `_LAST` group (da-c8mh).
-        assert_eq!(pointer.hids.len(), 2);
-        // The last pointer hid resolves to the same entry the get rendered.
-        let resolved = datum_core::ids::resolve_quickid_single(&db, &pointer.hids[1]).unwrap();
+        // One entry, one hid: the first log declares its field in its own
+        // `following_state` rather than beside a second row (da-gvcen).
+        assert_eq!(pointer.hids.len(), 1);
+        // The pointer hid resolves to the same entry the get rendered.
+        let resolved = datum_core::ids::resolve_quickid_single(&db, &pointer.hids[0]).unwrap();
         assert_eq!(resolved.slug, inserted);
     }
 

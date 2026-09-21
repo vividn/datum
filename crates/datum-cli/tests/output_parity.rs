@@ -165,9 +165,9 @@ fn show_minimal_emits_header_only() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
     let (stdout, _) = run(&db, &["occur", "coffee", "amount=1", "--show", "minimal"]);
-    // `minimal` is one line per document, and the first log of a field is
-    // two documents (da-c8mh).
-    let lines: Vec<&str> = stdout.lines().skip(1).collect();
+    // `minimal` is one line per document, and a log is one document —
+    // the first log of a field declares it in its own columns (da-gvcen).
+    let lines: Vec<&str> = stdout.lines().collect();
     assert_eq!(
         lines.len(),
         1,

@@ -219,14 +219,18 @@ fn cli_row(case: &Case) -> (Row, World) {
         dispatch_argv(full, &db)
             .unwrap_or_else(|e| panic!("setup `datum {}` failed: {e}", setup.join(" ")));
     }
-    let mut full: Vec<String> = vec!["datum".to_string()];
-    full.extend(argv.iter().map(|s| s.to_string()));
-    dispatch_argv(full, &db).unwrap_or_else(|e| panic!("`datum {}` failed: {e}", argv.join(" ")));
-
+    // The world as it stood when the command was TYPED — read after the
+    // setup and before the argv. da-gvcen made that distinction matter:
+    // whether a field has a spec decides whether the row declares it, and
+    // the CLI's own write creates the spec the argv ran without.
     let world = World {
         aliases: db.list_user_aliases().unwrap(),
         specs: db.load_registry().unwrap().fields.into_values().collect(),
     };
+
+    let mut full: Vec<String> = vec!["datum".to_string()];
+    full.extend(argv.iter().map(|s| s.to_string()));
+    dispatch_argv(full, &db).unwrap_or_else(|e| panic!("`datum {}` failed: {e}", argv.join(" ")));
 
     let mut stmt = db
         .conn()

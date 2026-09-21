@@ -500,7 +500,15 @@ fn quick_column_leads_the_table_with_and_without_dur() {
 fn a_track_row_adds_no_column_of_its_own() {
     let _g = no_color_scope();
     let (block, ctx) = numbered_block();
-    let track = datum_core::track::track_entry_for(&block, datum_core::action::Action::Switch);
+    // da-gvcen: `datum track` is what writes a TRACK row now — a first log
+    // declares its field in its own `following_state` instead — so the row
+    // is built the way that command builds it, at an instant of its own.
+    let track = datum_core::track::track_entry(
+        &block.field,
+        datum_core::action::Action::Switch,
+        dt(2026, 5, 22, 8, 45),
+        "test-device",
+    );
     let track_ctx = RenderContext {
         quick_ordinal: Some(2),
         ..Default::default()

@@ -254,7 +254,13 @@ describe('widget options', () => {
 			const { page, submit } = app;
 			await toggleOption(page, 'repl', NEWEST);
 			const body = page.locator(`${REPL} .body`);
-			for (let i = 0; i < 16; i++) await submit('occur water');
+			// Enough to overflow with room to spare, not exactly enough: at
+			// 16 the scrollback measured 469px in a 469px box once da-gvcen
+			// made a first log ONE document instead of two — the echoes fell
+			// from five rows of four columns to four, and the test lost the
+			// scrolling it exists to check. The assertion below is the guard
+			// that says so, so the count may be raised but never trusted.
+			for (let i = 0; i < 24; i++) await submit('occur water');
 			const dims = await body.evaluate((b) => [b.scrollHeight, b.clientHeight]);
 			assert.ok(dims[0] > dims[1], `the scrollback does not overflow: ${dims}`);
 			await body.evaluate((b) => (b.scrollTop = b.scrollHeight));

@@ -107,6 +107,11 @@ fn start_after_switch_preserves_prior_state() {
 fn trailing_duration_sets_time_end_for_closed_block() {
     let db = fresh_db();
 
+    // da-gvcen: declare the field first — a FIRST log declares its own
+    // field in a `following_state`, which makes it a compound verb. What
+    // is under test here is the trailing duration, not the declaration.
+    run_cli(&["spec", "set", "dance", "--verb", "start"], &db).expect("declare dance");
+
     run_cli(&["start", "dance", "5m"], &db).expect("start dance 5m");
 
     let entry = &datum_core::test_util::logged_entries(&db, "dance")[0];
@@ -174,6 +179,11 @@ fn start_without_dur_is_moment_like() {
 #[test]
 fn start_moment_records_point_dot() {
     let db = fresh_db();
+
+    // da-gvcen: declare the field first — a FIRST log declares its own
+    // field in a `following_state`, which makes it a compound verb. What
+    // is under test here is the `-m` moment rule, not the declaration.
+    run_cli(&["spec", "set", "meeting", "--verb", "start"], &db).expect("declare meeting");
 
     run_cli(&["start", "meeting", "-m"], &db).expect("start -m dispatch");
 
@@ -305,6 +315,11 @@ fn invalid_dur_is_rejected() {
 fn dur_plus_extra_still_marks_verb_start() {
     let db = fresh_db();
 
+    // da-gvcen: declare the field first — a FIRST log declares its own
+    // field in a `following_state`, which makes it a compound verb. What
+    // is under test here is the verb a `dur=` lands, not the declaration.
+    run_cli(&["spec", "set", "field", "--verb", "start"], &db).expect("declare field");
+
     run_cli(&["start", "field", "dur=30m", "-k", "req1=reqVal1"], &db)
         .expect("start field dur=30m -k req1=reqVal1");
 
@@ -331,6 +346,11 @@ fn dur_plus_extra_still_marks_verb_start() {
 #[test]
 fn yesterday_flag_consumes_trailing_numeric_as_duration() {
     let db = fresh_db();
+
+    // da-gvcen: declare the field first — a FIRST log declares its own
+    // field in a `following_state`, which makes it a compound verb. What
+    // is under test here is the `-y` flag, not the declaration.
+    run_cli(&["spec", "set", "field", "--verb", "start"], &db).expect("declare field");
 
     run_cli(&["start", "field", "-y", "315"], &db).expect("start -y 315");
 

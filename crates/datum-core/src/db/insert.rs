@@ -37,10 +37,17 @@ use super::Db;
 fn derive_verb_for_storage(
     entry: &Entry,
 ) -> Result<(String, Option<String>, Option<serde_json::Value>)> {
-    // The promotable set is exactly the switching family — shape.rs's
-    // `is_switching_verb` owns it, so a new verb forces a decision there.
+    // The promotable verb is the one whose own state IS the switch —
+    // shape.rs's `state_is_the_switch` owns the set, so a new verb forces
+    // a decision there. da-gvcen narrowed it from the whole switching
+    // family: a compound verb carries its switch in `following_state`,
+    // and `occur newfield` is compound only because it declares its
+    // field. Promoting its leading state would log a `true` nobody typed
+    // and put it in the field's list of logged states.
     let state_in = match entry.state.clone() {
-        None if crate::shape::is_switching_verb(entry.verb) => Some(serde_json::Value::Bool(true)),
+        None if crate::shape::state_is_the_switch(entry.verb) => {
+            Some(serde_json::Value::Bool(true))
+        }
         s => s,
     };
     let (verb, canonical_state) =
@@ -48,6 +55,61 @@ fn derive_verb_for_storage(
     let verb_str = verb.to_string();
     let state_str = canonical_state.as_ref().map(|v| v.to_string());
     Ok((verb_str, state_str, canonical_state))
+}
+
+/// True when `incoming` is a re-log of the row that DECLARED its field —
+/// the same event, differing only in that the stored row also brought the
+/// field into being.
+///
+/// da-gvcen puts a field's declaration in its first log's own
+/// `following_state`, and `following_state` is content (da-4vyw). So the
+/// SECOND, identical command hashes differently from the row it is a
+/// re-log of, and would reach the duplicate-IDENTITY path — the loud
+/// refusal da-2fkr wrote for two different events at one instant —
+/// instead of the benign no-op da-9sfm reserves exit 11 for. A
+/// declaration is a fact about the FIELD, not about the event: two rows
+/// that agree on the event and differ only in whether one of them also
+/// declared the field are the same event.
+///
+/// The guard is deliberately narrow, so that a row which really does
+/// switch at its trailing edge still collides loudly: the stored row must
+/// be the field's OLDEST (only a first log declares), its trailing state
+/// must be one of the two values `track::declared_state` produces
+/// ([`crate::shape::is_off_state`]), the incoming row must carry none,
+/// and everything else the hash covers must already agree.
+///
+/// Runs only where the insert is about to fail, so it costs the hot path
+/// nothing.
+fn is_relog_of_a_declaring_row(conn: &Connection, incoming: &Entry) -> bool {
+    if incoming.following_state.is_some() {
+        return false;
+    }
+    let Ok(stored) = fetch_entry_any(conn, &incoming.slug) else {
+        return false;
+    };
+    if stored.deleted_at.is_some() {
+        return false;
+    }
+    if !stored
+        .following_state
+        .as_ref()
+        .is_some_and(crate::shape::is_off_state)
+    {
+        return false;
+    }
+    let oldest: std::result::Result<String, _> = conn.query_row(
+        "SELECT slug FROM entries
+         WHERE field = ?1 AND deleted_at IS NULL AND superseded_by IS NULL
+         ORDER BY COALESCE(occur_time, create_time), create_time LIMIT 1",
+        params![stored.field],
+        |row| row.get(0),
+    );
+    if oldest.ok().as_deref() != Some(stored.slug.as_str()) {
+        return false;
+    }
+    let mut undeclared = stored.clone();
+    undeclared.following_state = None;
+    undeclared.expected_content_hash() == incoming.expected_content_hash()
 }
 
 /// Recompute the content_hash from the columns about to be persisted so
@@ -732,6 +794,19 @@ fn write_entry_in_tx(
                 // bulk-import fast path takes the opposite stance — see
                 // `insert_entry_bulk_in_tx` — because backups commonly carry
                 // legitimate same-instant rows already accepted as historical.)
+                //
+                // da-gvcen is the one exception: a re-log of the row that
+                // declared this field is not a different assertion, it is
+                // the same event typed twice — see
+                // `is_relog_of_a_declaring_row`.
+                if is_relog_of_a_declaring_row(conn, entry) {
+                    return Ok((
+                        InsertOutcome::Ignored {
+                            slug: entry.slug.clone(),
+                        },
+                        None,
+                    ));
+                }
                 let (stored_slug, stored_hid) = raw_insert(conn, entry)?;
                 let inserted = fetch_entry_any(conn, &stored_slug)?;
                 history::record(conn, &inserted, ChangeKind::Create)?;

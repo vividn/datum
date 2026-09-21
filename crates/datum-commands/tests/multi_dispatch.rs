@@ -122,9 +122,10 @@ fn last_holds_all_n_entries_after_dispatch_multi() {
     dispatch_argv(argv, &db).unwrap();
 
     let last = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
-    // Two sides, and the TRACK document each new field was declared with
-    // (da-c8mh) — one `_LAST` group, so `undo` takes all four back.
-    assert_eq!(last.hids.len(), 4);
+    // Two sides, two rows: each declares its own new field in its own
+    // columns rather than beside a second TRACK row (da-gvcen). One
+    // `_LAST` group, so `undo` takes both back.
+    assert_eq!(last.hids.len(), 2);
 }
 
 /// Section N — a single-row write after a multi resets `_LAST` to the
@@ -146,14 +147,14 @@ fn last_after_multi_then_single_write_holds_only_single_via_dispatch() {
     .map(String::from)
     .collect();
     dispatch_argv(multi, &db).unwrap();
-    // Two sides plus the two TRACK documents that declared their fields.
+    // Two sides, two rows (da-gvcen).
     assert_eq!(
         datum_core::last_docs::get_last_docs(&db)
             .unwrap()
             .unwrap()
             .hids
             .len(),
-        4
+        2
     );
 
     let single: Vec<String> = vec!["datum", "switch", "body", "sit"]

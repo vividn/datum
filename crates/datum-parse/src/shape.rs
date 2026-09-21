@@ -229,6 +229,24 @@ pub fn is_block_verb(verb: Verb) -> bool {
     }
 }
 
+/// True for the verb whose own `state` IS the switch, so an absent state
+/// means "on" and is promoted to `true` on the way to storage.
+///
+/// Only [`Verb::Switch`] qualifies. The compound switching verbs carry
+/// their switch in `following_state`; their leading `state` is the
+/// block's or the dot's own, and its absence is a shape the truth table
+/// names outright — `(state null, dur set, following_state set)` is a
+/// row of it. da-gvcen made that reachable from the command line: `occur
+/// newfield` and `occur nap dur=30m` on a field with no spec are
+/// compound only because they declare their field, and promoting their
+/// leading state would log a `true` nobody typed.
+pub fn state_is_the_switch(verb: Verb) -> bool {
+    match verb {
+        Verb::Switch => true,
+        Verb::Block | Verb::BlockSwitch | Verb::Point | Verb::PointSwitch => false,
+    }
+}
+
 /// True for verbs whose *primary* visual is a switch region (a
 /// state-prevailing band from `occur_time` to the next switching event,
 /// colored by `entry.state`). Only [`Verb::Switch`] qualifies — the
@@ -293,13 +311,22 @@ pub fn dot_fg_uses_state(verb: Verb) -> bool {
     }
 }
 
-/// True for verbs whose action-line rendering shows a state badge
-/// (`[LEAD][state cell][TRAIL]`). All state-bearing verbs qualify
+/// True for entries whose action-line rendering shows a state badge
+/// (`[LEAD][state cell][TRAIL]`). Every state-bearing verb qualifies
 /// (switching family + [`Verb::Block`]); [`Verb::Point`] is the lone
 /// exception — its action surface is a bare dot at `occur_time`.
-pub fn has_state_badge(verb: Verb) -> bool {
+///
+/// da-gvcen: the `dur` is asked for as well as the verb, because a
+/// MOMENT is a point whatever else it carries. The first log of an
+/// untracked field declares the field in its `following_state`, which
+/// makes `occur newfield` and `switch mood happy --moment` compound
+/// verbs; they must still draw what the same command on an already
+/// tracked field draws — the dot, and the state name beside it — rather
+/// than turning into a state cell on the strength of a declaration.
+pub fn has_state_badge(verb: Verb, dur: Option<&Dur>) -> bool {
     match verb {
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => true,
+        Verb::PointSwitch => !dur.is_some_and(Dur::is_moment),
+        Verb::Switch | Verb::Block | Verb::BlockSwitch => true,
         Verb::Point => false,
     }
 }
@@ -521,9 +548,22 @@ mod tests {
             Verb::BlockSwitch,
             Verb::PointSwitch,
         ] {
-            assert!(has_state_badge(v), "expected badge for {v}");
+            assert!(has_state_badge(v, None), "badge for {v}");
         }
-        assert!(!has_state_badge(Verb::Point));
+        assert!(!has_state_badge(Verb::Point, None));
+    }
+
+    /// da-gvcen: a MOMENT reads as the point it is. The first log of an
+    /// untracked field is a PointSwitch — the declaration rides in its
+    /// `following_state` — and still draws the dot, not a state cell.
+    /// A deliberate zero-span PointSwitch keeps its badge.
+    #[test]
+    fn a_moment_has_no_badge_even_as_a_point_switch() {
+        let moment = Dur::parse("MOMENT").expect("MOMENT parses");
+        let zero = Dur::parse("PT0S").expect("PT0S parses");
+        assert!(!has_state_badge(Verb::PointSwitch, Some(&moment)));
+        assert!(has_state_badge(Verb::PointSwitch, Some(&zero)));
+        assert!(has_state_badge(Verb::PointSwitch, None));
     }
 
     // ─── is_unrendered_switch_value ──────────────────────────────────

@@ -57,25 +57,22 @@ describe('the time an entry is rendered with', () => {
 			// row degrades to its bare date, a clock keeps its clock, and
 			// the `±5m` the CLI paints after a stamp is carried too. The
 			// listing's shared UTC offset rides in the header (da-lkji).
-			// Each field's TRACK document (da-c8mh) reads a millisecond above
-			// its entry; the entries are the rows that are not declarations.
 			//
-			// A declaration is told by its STATE cell — `TRACKED`, which no
-			// entry wears — and NEVER by a column's position. The filter this
-			// replaces looked for TRACK right after the ordinal, which is
-			// where the ACTION column used to put it; da-ftg8p took that
-			// column away and the pattern silently stopped matching anything
-			// (da-vug0d). So the drop is ASSERTED and not assumed: a filter
+			// EVERY ROW IS AN ENTRY: nothing is filtered, and the quick ids
+			// run straight. da-vug0d filtered the declarations out by their
+			// `TRACKED` state cell and ASSERTED the drop, because "a filter
 			// matching nothing reads exactly like a filter with nothing to
-			// drop, and that indistinguishability IS the defect. Had the
-			// action column changed its contents instead of going, this test
-			// would have passed on the wrong rows.
-			const rows = rowTexts(tail.stdout).slice(1);
-			const declared = rows.filter((r) => / TRACKED /.test(r));
-			assert.equal(declared.length, 3, `no TRACK declaration was dropped from: ${rows.join(' | ')}`);
-			assert.deepEqual(rows.filter((r) => !/ TRACKED /.test(r)), [
-				`_5 ${yesterday} coffee ∅● <hid>`,
-				'_3 09:15:00 tea ∅● <hid>',
+			// drop, and that indistinguishability IS the defect". That is
+			// right, and it is why BOTH the filter and its drop-count go
+			// here rather than only the count: da-gvcen gives a first log
+			// ONE document, so there are no declaration rows left to drop —
+			// and a filter that can never match is precisely what that
+			// assertion existed to catch. Asserting the whole list
+			// unfiltered makes the indistinguishability impossible instead
+			// of merely guarded against.
+			assert.deepEqual(rowTexts(tail.stdout).slice(1), [
+				`_3 ${yesterday} coffee ∅● <hid>`,
+				'_2 09:15:00 tea ∅● <hid>',
 				'_1 10:00:00±5m water ∅● <hid>'
 			]);
 
@@ -84,11 +81,8 @@ describe('the time an entry is rendered with', () => {
 			// how the tail pane comes to know about the entries.
 			await reload();
 			const table = await paneTable('tail');
-			// Each field's TRACK document (da-c8mh) reads just above its
-			// entry, so the entries are every second row.
-			const times = table.rows
-				.filter((_, i) => i % 2 === 1)
-				.map((cells) => cells[table.keys.indexOf('time')]);
+			// One row per log (da-gvcen), so every row is an entry.
+			const times = table.rows.map((cells) => cells[table.keys.indexOf('time')]);
 			// The date the coffee owns, the clocks the other two own — and
 			// no midnight invented for the day-precision row.
 			assert.deepEqual(times, [yesterday, '09:15:00', '10:00:00±5m']);

@@ -64,9 +64,10 @@ describe('the wasi CLI', () => {
 			// content-hash idempotent, so "skipped" is the proof it was read.
 			const restored = await app.run(['db', 'restore', '-'], dump.stdout);
 			assert.equal(restored.code, 0, restored.stderr);
-			// Two rows: the entry, and the TRACK document that declared its
-			// field beside it (da-c8mh).
-			assert.match(plain(restored.stdout), /0 inserted, 0 updated, 2 skipped/);
+			// One row: the entry, which declared its own field in its own
+			// `following_state` rather than beside a TRACK document
+			// (da-gvcen).
+			assert.match(plain(restored.stdout), /0 inserted, 0 updated, 1 skipped/);
 			const empty = await app.run(['db', 'restore', '-']);
 			assert.match(plain(empty.stdout), /0 inserted, 0 updated, 0 skipped/);
 		});
@@ -92,10 +93,10 @@ describe('the wasi CLI', () => {
 			assert.equal(JSON.parse(header).type, 'daydumb_backup');
 			assert.deepEqual(
 				rows.map((row) => JSON.parse(row).field),
-				['coffee', 'coffee']
+				['coffee']
 			);
 			const restored = await app.run(['db', 'restore', '-'], text);
-			assert.match(plain(restored.stdout), /2 skipped/);
+			assert.match(plain(restored.stdout), /1 skipped/);
 		});
 	});
 

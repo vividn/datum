@@ -649,6 +649,45 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.id_structure = Some(id_structure);
     }
 
+    // da-gvcen: the first log of a field with no spec brings the field
+    // into being, and the ENTRY says so — the declaration rides in its
+    // own trailing edge as a `following_state`. vividn, 2026-09-21, on the
+    // second row da-c8mh wrote a millisecond earlier for this: "a
+    // separate entry gets logged at a separate time point (slightly
+    // earlier iirc). I don't like this. It's very clunky. […] we should
+    // use following_state, so a POINT_SWITCH."
+    //
+    // The state it declares is the one the TRACK row carried —
+    // `declared_state`, da-5ifp — so the declaration changed which column
+    // it lives in and not what it says: TRACKED for a field with no off
+    // state to sit in, `false` for one that has.
+    //
+    // That trailing switch is not decoration: it is what un-ignores a
+    // field that was IGNORED before, which is the one job the old TRACK
+    // row's state did (`batch_state_at` reads a compound verb's
+    // `following_state` past its trailing edge, da-2i8g). What records
+    // that the field EXISTS is the spec, written below.
+    //
+    // An entry with no trailing instant — an open `start`, a `switch`, a
+    // timeless `note` — cannot carry one, and none is invented: the truth
+    // table is asked, the row is asked for an instant, and where either
+    // refuses, the entry's own state is the switch. A caller that spelled
+    // `following_state=` itself keeps it.
+    let declares_field = db.load_spec(&entry.field)?.is_none();
+    if declares_field && entry.following_state.is_none() && entry.occur_time.is_some() {
+        let declared =
+            datum_core::track::declared_state(datum_core::track::verb_for_action(action));
+        if datum_core::derive_verb(
+            entry.state.clone(),
+            entry.dur.as_ref(),
+            Some(declared.clone()),
+        )
+        .is_ok()
+        {
+            entry.following_state = Some(declared);
+        }
+    }
+
     // da-8y2q.2: derive the storage verb up-front so the lead/trail-state
     // capture (which dispatches on `entry.verb`) sees the same shape the
     // insert path will write. Without this, `capture_lead_state` would key
@@ -685,16 +724,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         return Ok(());
     }
 
-    // da-c8mh: the first log of a field with no spec brings the field into
-    // being — the TRACK document is written beside the entry, in the same
-    // atomic write and the same `_LAST` group, so `undo` takes both back.
-    // It sits one millisecond ahead of the entry so the declaration
-    // precedes the thing declared and a `start` is not raced by the
-    // `false` that announces its field — ahead in the entry's own clock,
-    // which for a timeless row is its create_time.
-    let track_doc = db.load_spec(&entry.field)?.is_none().then(|| {
-        datum_core::track::track_entry_for(&entry, datum_core::track::verb_for_action(action))
-    });
+    // da-c8mh, da-gvcen: the spec is the field's record of existence, and
+    // it is written before the entry for the reason the old TRACK row sat
+    // a millisecond ahead of it — the declaration precedes the thing
+    // declared. Past the dry-run, so a preview still writes nothing.
+    if declares_field {
+        crate::commands::helpers::save_track_spec(db, &entry.field, action)?;
+    }
 
     // da-gh0.C: when a multi-entry write window is active, hand the
     // fully prepared entry off to the dispatch-layer collector and
@@ -705,28 +741,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // side's `OutputArgs` rides along so the multi driver can honour
     // per-side flags (`--show none`, format strings) when rendering
     // the resulting merged row (da-dayk).
-    if let Some(track) = &track_doc {
-        if crate::args::push_to_multi_collector(track.clone(), args.output()?) {
-            crate::args::push_to_multi_collector(entry.clone(), args.output()?);
-            return Ok(());
-        }
-    } else if crate::args::push_to_multi_collector(entry.clone(), args.output()?) {
-        return Ok(());
-    }
-
-    // The pair goes in atomically — both rows or neither — and `_LAST`
-    // holds both hids, so `undo` reverts the whole declaration.
-    if let Some(track) = track_doc {
-        let hids = db.insert_entries_atomic(vec![track, entry.clone()])?;
-        let _ = datum_core::last_docs::set_last_docs(db, &hids);
-        crate::commands::helpers::save_track_spec(db, &entry.field, action)?;
-        let registry = crate::commands::helpers::load_registry_opt(db);
-        let output = args.output()?;
-        for hid in &hids {
-            let fresh = db.get_entry(hid.as_str())?;
-            let ctx = RenderContext::for_entry(db, &fresh, Surface::Action, None)?;
-            show_create_with_context(&fresh, registry.as_ref(), &ctx, &output);
-        }
+    if crate::args::push_to_multi_collector(entry.clone(), args.output()?) {
         return Ok(());
     }
 

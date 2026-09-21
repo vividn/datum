@@ -39,6 +39,11 @@ fn occur_creates_entry_with_time_start() {
     let db = fresh_db();
 
     let before = Utc::now();
+    // da-gvcen: declare the field first — a FIRST log declares its own
+    // field in a `following_state`, which makes it a compound verb. What
+    // is under test here is `occur`'s own shape, not the declaration.
+    run_cli(&["spec", "set", "field", "--verb", "occur"], &db).expect("declare field");
+
     run_cli(&["occur", "field"], &db).expect("occur field");
     let after = Utc::now();
 
@@ -83,6 +88,11 @@ fn occur_creates_entry_with_time_start() {
 #[test]
 fn date_and_time_flags_set_absolute_time() {
     let db = fresh_db();
+
+    // da-gvcen: declare the field first — a FIRST log declares its own
+    // field in a `following_state`, which makes it a compound verb. What
+    // is under test here is the time flags, not the declaration.
+    run_cli(&["spec", "set", "event", "--verb", "occur"], &db).expect("declare event");
 
     run_cli(&["occur", "event", "-d", "2021-08-23", "-t", "1200"], &db).expect("occur -d -t");
 
@@ -248,6 +258,11 @@ fn occur_flips_state_from_null_to_false() {
 
     // Distinct explicit times: two stateless occurs in one millisecond share
     // a slug and the second is a duplicate by contract (da-2fkr, da-lq8a).
+    // da-gvcen: declare the field first — a FIRST log declares its own
+    // field in a `following_state`, which makes it a compound verb. What
+    // is under test here is the state an occur compiles to, not the declaration.
+    run_cli(&["spec", "set", "event", "--verb", "occur"], &db).expect("declare event");
+
     run_cli(&["occur", "event", "-t=-2"], &db).expect("first occur");
     let after_one = db.get_active_state("event", Utc::now()).unwrap();
     assert_eq!(
@@ -695,6 +710,11 @@ fn occur_explicit_state_key_is_rejected() {
 #[test]
 fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
     let db = fresh_db();
+
+    // da-gvcen: declare the field first — a FIRST log declares its own
+    // field in a `following_state`, which makes it a compound verb. What
+    // is under test here is the MOMENT rule, not the declaration.
+    run_cli(&["spec", "set", "pushup", "--verb", "occur"], &db).expect("declare pushup");
 
     run_cli(&["occur", "pushup", "-k", "n=1", "10"], &db).expect("occur pushup -k n=1 10 dispatch");
 

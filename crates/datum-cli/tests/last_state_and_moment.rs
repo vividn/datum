@@ -183,6 +183,10 @@ fn bare_switch_last_state_is_noop_assertion_wise() {
 #[test]
 fn switch_moment_records_point_in_time() {
     let db = fresh_db();
+    // da-gvcen: declare the field first — a FIRST log declares its own
+    // field in a `following_state`, which makes it a compound verb. What
+    // is under test here is the `--moment` rule, not the declaration.
+    run_cli(&["spec", "set", "mood", "--verb", "switch"], &db).expect("declare mood");
     run_cli(&["switch", "mood", "happy", "--moment"], &db).expect("moment switch");
 
     let entries = datum_core::test_util::logged_entries(&db, "mood");

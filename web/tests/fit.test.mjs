@@ -462,10 +462,10 @@ describe('the tail pane', () => {
 					// the table: each pull asks for the page above.
 					const tail = app.page.locator('section.pane[data-title="tail"] .body:not(.behind .body)');
 					const count = () => app.page.locator('section.pane[data-title="tail"] tbody tr').count();
-					// Ten entries, and one TRACK document per field they bring
-					// into being — coffee, work, mood, posture, nap, project,
-					// water (da-c8mh).
-					const ALL_ROWS = TEN_ROWS.length + 7;
+					// Ten entries and ten rows: da-gvcen makes a first log
+					// declare its own field in its own `following_state`, so
+					// no TRACK document rides beside any of them.
+					const ALL_ROWS = TEN_ROWS.length;
 					for (let pulls = 0; pulls < 10 && (await count()) < ALL_ROWS; pulls++) {
 						const before = await count();
 						await tail.evaluate((body) => (body.scrollTop = 0));

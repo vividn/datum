@@ -121,24 +121,21 @@ fn switch_switch_tail_reproducer_matches_spec() {
         assert!(header.contains(tok), "header missing {tok:?}:\n{tail}");
     }
     let data: Vec<&str> = tail_lines.collect();
-    // The field's TRACK document (da-c8mh) is the oldest row.
-    assert_eq!(
-        data.len(),
-        3,
-        "expected the declaration + 2 data rows:\n{tail}"
-    );
+    // Two logs, two rows: the first declared the field in its own
+    // columns rather than beside a TRACK row (da-gvcen).
+    assert_eq!(data.len(), 2, "expected 2 data rows:\n{tail}");
     for row in &data {
         assert!(row.contains("myfield"), "row missing field:\n{row:?}");
     }
-    // The declaration reads as itself in the `state` column — `end`, the
-    // off state of a switch field. It names no ACTION: a table has no such
-    // column (da-ftg8p), because one row must not conjure a column the
-    // other rows leave empty and shift them all sideways to pay for it.
-    assert!(data[0].contains(" end "), "declaration missing:\n{tail}");
+    // da-ftg8p: a table names no ACTION — one row must not conjure a
+    // column the other rows leave empty and shift them all sideways to
+    // pay for it. da-gvcen makes that doubly true here: there is no
+    // declaration ROW left to name, so the first data row is the first
+    // real entry.
     assert!(!tail.contains("TRACK"), "a table names no action:\n{tail}");
-    assert!(data[1].contains("abc"), "first row state missing:\n{tail}");
+    assert!(data[0].contains("abc"), "first row state missing:\n{tail}");
     assert!(
-        data[2].contains("abcdefg"),
+        data[1].contains("abcdefg"),
         "second row state missing:\n{tail}"
     );
 

@@ -729,10 +729,11 @@ describe('folded, a command still answers', () => {
 			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0, 'the phone did not start folded');
 
 			// NOT declared first: the clock is held, and `track` would stamp
-			// its own document at the very instant `occur` wants. It is the
-			// better shape anyway — vividn asked for "all the ACTION words", and
-			// a field's first log echoes its declaration beside its entry
-			// (da-c8mh), so this is the two-document case.
+			// its own document at the very instant `occur` wants. Since
+			// da-gvcen a first log is ONE document — it declares its field in
+			// its own `following_state` — so this is the single-document
+			// case, and what is asserted is that the words it DOES say are
+			// the CLI's own, read off the scrollback of the same run.
 			await app.submit('occur coffee');
 			await marks(page).waitFor();
 			const words = await page.locator(`${BAR} .marks .action`).allInnerTexts();
@@ -837,14 +838,27 @@ describe('folded, a command still answers', () => {
 			await marks(page).waitFor();
 			const one = await boxWidth(page);
 
-			// Four sides, each a field's first log: eight documents.
-			await app.submit('occur bravo , occur charlie , occur delta , occur echo');
+			// Enough documents to overflow 360px. A first log used to echo
+			// TWO — the entry and the TRACK row that declared its field — so
+			// four sides were eight words; da-gvcen made a first log one
+			// document, so the crowding has to come from the sides
+			// themselves. Eight of them, and the assertions below MEASURE
+			// that it really overflowed rather than trusting the count.
+			await app.submit(
+				'occur bravo , occur charlie , occur delta , occur echo , ' +
+					'occur foxtrot , occur golf , occur hotel , occur india'
+			);
 			await page.waitForFunction(
 				() => document.querySelectorAll('.prompt-bar .marks .action').length > 2
 			);
 			const many = await boxWidth(page);
 
 			assert.ok(many >= 100, `eight documents left the box ${many.toFixed(0)}px at 360px`);
+			assert.equal(
+				await page.locator(`${BAR} .marks .action`).count(),
+				8,
+				'eight sides, eight documents'
+			);
 			assert.ok(
 				Math.abs(many - one) <= 0.5,
 				`the words moved the box: ${one.toFixed(1)}px for one, ${many.toFixed(1)}px for eight`
