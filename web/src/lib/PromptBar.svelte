@@ -62,19 +62,12 @@
 	Nothing unfolds by itself.
 
 	THE LOG IS REACHED THROUGH THE BAR AND NOWHERE ELSE. How far open the
-	bar is, is ONE number of pixels ($lib/log.ts has the arithmetic and the
-	notch); the page itself never scrolls. This file owns the two gestures
-	that move that number, and both begin on the bar:
-
-	- a DRAG, by finger or pointer, from anywhere on the bar. The whole bar
-	  is the handle — a phone's bottom 30px belong to the system's own
-	  home gesture, so nothing may require starting there. A drag becomes a
-	  drag only past `DRAG_START`, so a tap on the box, the mark, a pill or
-	  the caret is still a tap, and the click that would follow a real drag
-	  is swallowed.
-	- a WHEEL while the pointer is over the bar. One notch down goes to the
-	  log, one notch up comes back. A wheel that started over a pane and
-	  drifted here on its inertia is still the pane's (`INERTIA_MS`).
+	bar is, is ONE number of pixels ($lib/log.ts has the arithmetic, the
+	notch and the scroll past it); the page itself never scrolls. The two
+	gestures that move that number — a drag and a wheel — are `use:grip`
+	($lib/grip.ts), which is on this bar AND on the log below it, because
+	the two are one handle: vividn, 2026-09-21, "you should be able to grab
+	from anywhere in the repl and it behaves as one unit".
 
 	Escape comes back too. Entering the log from the keyboard is not built:
 	vividn wants the whole app keyboard-navigable "once the shape starts to
@@ -89,45 +82,17 @@
 	title is the storage sentence.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { tick } from 'svelte';
 	import Brand from '$lib/Brand.svelte';
 	import ReplEntry from '$lib/ReplEntry.svelte';
 	import { repl } from '$lib/replStore.js';
 	import { ACTION_MS, ERROR_MS, focusLine, marks, prefill, text } from '$lib/bar.js';
 	import { clockSecondsLabel, now } from '$lib/clock.js';
-	import { arm, at, closeLog, inLog, moveTo, moving, notch, openOutput, output, resume, settle, shown, stop, toggleOutput } from '$lib/log.js';
+	import { closeLog, inLog, openOutput, output, shown, toggleOutput } from '$lib/log.js';
+	import { grip } from '$lib/grip.js';
 	import Prompt from '$lib/Prompt.svelte';
 	import { isDegraded, storage, storageSentence } from '$lib/storageState.js';
 
-	/**
-	 * How far a pointer travels before it is a drag and not a tap.
-	 *
-	 * This and `SWALLOW_MS` are asserted with SYNTHETIC pointer events
-	 * (barlog.test.mjs), which is the right instrument for them: a synthetic
-	 * event carries the exact coordinates and the exact order a threshold is
-	 * about. What it cannot carry is TIME — every move in a dispatched loop
-	 * shares one stamp — nor can the browser cancel it. So the two things that
-	 * need either, `touch-action` and the fling, are driven by a real CDP
-	 * touch instead, in the same file. Neither instrument replaces the other.
-	 */
-	const DRAG_START = 8;
-	/** A wheel this soon after one elsewhere is that gesture's inertia. */
-	const INERTIA_MS = 150;
-	/**
-	 * How long after a drag a click is still that drag's tail.
-	 *
-	 * A browser dispatches the click straight after the pointerup it came
-	 * from, so this only has to outlast one task; it is wide because being
-	 * wide costs nothing (no click is expected in that window anyway) and
-	 * being narrow would let a drag press the caret it ended on.
-	 *
-	 * The pointerup's stamp and the click's are comparable: both are
-	 * `DOMHighResTimeStamp` against the document's one time origin, which is
-	 * what `event.timeStamp` is for every event a page receives.
-	 */
-	const SWALLOW_MS = 300;
-
-	let bar: HTMLElement;
 	let field: HTMLElement;
 
 	$: if ($prefill !== null) take($prefill);
@@ -170,201 +135,19 @@
 		event.preventDefault();
 	}
 
-	/** When a wheel last turned somewhere that is not the bar. */
-	let foreignAt = -Infinity;
-
-	onMount(() => {
-		const elsewhere = (event: WheelEvent): void => {
-			if (!bar?.contains(event.target as Node)) foreignAt = event.timeStamp;
-		};
-		addEventListener('wheel', elsewhere, { capture: true, passive: true });
-		return () => removeEventListener('wheel', elsewhere, { capture: true });
-	});
-
-	/**
-	 * A wheel over the bar opens it further, or less.
-	 *
-	 * The same one number a drag moves, so a trackpad and a finger agree —
-	 * and settled the same way, which is what puts the notch under a wheel
-	 * too. A notch's worth per event, so one flick of a mouse's wheel opens
-	 * the output exactly as the `^` does.
-	 */
-	// A DIAGONAL wheel is vertical: only `deltaY` is read, so a trackpad
-	// gesture carrying both moves the bar by its vertical part and a
-	// horizontal-only one is left alone — which is the prompt's own sideways
-	// scroll, and not the bar's business (canary on PR #46).
-	function onWheel(event: WheelEvent): void {
-		if (event.timeStamp - foreignAt < INERTIA_MS || !event.deltaY) return;
-		event.preventDefault();
-		arm();
-		moveTo(at() + (event.deltaY > 0 ? notch() : -notch()));
-		settle(event.deltaY > 0);
-	}
-
-	/** The pointer that is down on the bar, and where the page was under it. */
-	let from: { y: number; open: number; id: number } | null = null;
-	/**
-	 * The moves of the last `WINDOW_MS`, so a release knows how fast the
-	 * finger was going at the END of the gesture.
-	 *
-	 * The end and not the whole drag: a finger that raced and then stopped to
-	 * place the bar means the place, not the race. The stamps are
-	 * `DOMHighResTimeStamp` against the document's one time origin, so the
-	 * difference is milliseconds.
-	 */
-	let track: { y: number; t: number }[] = [];
-
-	/** How far back a release looks for its speed. */
-	const WINDOW_MS = 80;
-	/**
-	 * And the least it will measure over.
-	 *
-	 * A real finger reports a move a frame at a time, so any gesture a person
-	 * made spans tens of milliseconds. Synthetic pointer events dispatched in
-	 * a loop all carry the SAME stamp, which over 200px would read as
-	 * hundreds of px/ms — a fling nobody threw. Under this floor there is no
-	 * reading, so a script that sends a drag without time in it gets the
-	 * let-go rules, which is what it is describing.
-	 */
-	const MIN_MS = 8;
-	/** Faster than this is a slip of the sensor, not a thumb. */
-	const MAX_SPEED = 4;
-
-	/** px/ms over the window, positive when the bar is opening. */
-	function speed(y: number, t: number): number {
-		const first = track[0];
-		if (!first) return 0;
-		const ms = t - first.t;
-		if (ms < MIN_MS) return 0;
-		const px = (first.y - y) / ms;
-		return Math.max(-MAX_SPEED, Math.min(MAX_SPEED, px));
-	}
-	let dragging = false;
-	/** Whether the press interrupted a settle that has to be finished for it. */
-	let settling = false;
-	/** A click this instant or sooner is the tail of a drag, and is not a tap. */
-	let swallowUntil = -Infinity;
-
-	/** Put the bar back on its way, after a press that turned out to be a tap. */
-	function unpause(): void {
-		if (!settling) return;
-		settling = false;
-		// Where the glide WAS GOING, not "shut" ($lib/log.ts's `aim`): a tap
-		// that lands inside a settle is not a request to undo what started it.
-		resume();
-	}
-
-	function onPointerDown(event: PointerEvent): void {
-		if (event.pointerType === 'mouse' && event.button !== 0) return;
-		// A FINGER ALWAYS WINS OVER AN ANIMATION, so a press stops whatever
-		// glide is in flight — and then it owes the bar a resting place, which
-		// is what `settling` is for: a press that turns out to be a TAP puts
-		// the bar back where the glide was taking it. Without that, a tap on
-		// the box or the mark during a settle left the bar frozen part-way,
-		// and a fling's settle is up to 520ms long, so the window is wide
-		// enough to hit (canary on PR #46).
-		settling = moving();
-		stop();
-		from = { y: event.clientY, open: at(), id: event.pointerId };
-		track = [{ y: event.clientY, t: event.timeStamp }];
-		dragging = false;
-	}
-
-	function onPointerMove(event: PointerEvent): void {
-		if (!from || event.pointerId !== from.id) return;
-		const moved = from.y - event.clientY;
-
-		// STILL A TAP — nothing below this line runs, and in particular
-		// nothing is prevented: the box keeps its caret, its selection and
-		// its keyboard until the finger has said it means a drag.
-		//
-		// A guard at the top rather than an early `return` nested inside the
-		// block below, which is the same thing and read as the opposite by
-		// two reviewers in a row (PR #46). The shape was the problem, not the
-		// order.
-		if (!dragging && Math.abs(moved) < DRAG_START) return;
-
-		// The first move past it, once.
-		if (!dragging) {
-			dragging = true;
-			// Not on pointerdown — see `armed` in $lib/log.ts.
-			arm();
-			// So a finger that wanders off the bar mid-pull keeps pulling.
-			// It can refuse — a synthetic pointer has no capture to give —
-			// and the drag is fine without it.
-			try {
-				bar.setPointerCapture(event.pointerId);
-			} catch {
-				// no capture; the listeners on the bar are enough
-			}
-		}
-
-		// And EVERY move from here on, which is why it is not inside the
-		// block above: the browser would otherwise select text under the
-		// finger for the whole rest of the pull.
-		event.preventDefault();
-		track = [...track, { y: event.clientY, t: event.timeStamp }].filter(
-			(sample) => event.timeStamp - sample.t <= WINDOW_MS
-		);
-		moveTo(from.open + moved);
-	}
-
-	function onPointerUp(event: PointerEvent): void {
-		if (!from || event.pointerId !== from.id) return;
-		const from0 = from;
-		from = null;
-		if (!dragging) return unpause();
-		dragging = false;
-		settling = false;
-		swallowUntil = event.timeStamp + SWALLOW_MS;
-		// Where it comes to rest is `settle`'s to say, and how fast the finger
-		// was going when it let go is half of that answer ($lib/log.ts): a
-		// fling carries on, a let-go falls where it lies.
-		settle(from0.y - event.clientY > 0, speed(event.clientY, event.timeStamp));
-	}
-
-	function onPointerCancel(): void {
-		if (!from) return;
-		from = null;
-		if (!dragging) return unpause();
-		dragging = false;
-		settling = false;
-		// A gesture the system took away (a call, a notification) still has to
-		// leave the bar somewhere it is ALLOWED to be, and it decided nothing —
-		// so it settles as a release with no speed in it. Below the notch that
-		// is back the way it came; above it, where the reader had already
-		// pulled it to, which is a height they chose and the system interrupted
-		// (a canary on PR #46 read the old comment as promising the first of
-		// those in every case).
-		settle(false);
-	}
-
-	function swallow(event: MouseEvent): void {
-		if (event.timeStamp > swallowUntil) return;
-		swallowUntil = -Infinity;
-		event.stopPropagation();
-		event.preventDefault();
-	}
 </script>
 
 <svelte:window on:keydown={onKey} />
 
-<!-- The footer's own listeners are the DRAG, and a drag has no keyboard
-     equivalent to offer: everything it reaches — the box, the mark, `return
-     to top`, Escape — is a control or a key of its own.
-     `swallow` is not an act; it is how a drag declines to be a click. -->
-<!-- svelte-ignore a11y-no-noninteractive-element-interactions a11y-click-events-have-key-events -->
+<!-- `grip` is the DRAG, and a drag has no keyboard equivalent to offer:
+     everything it reaches — the box, the mark, `close history`, Escape — is
+     a control or a key of its own. The same action is on the log
+     ($lib/BarLog.svelte): one handle, one gesture, one number. -->
 <footer
 	class="prompt-bar"
 	class:alarm={degraded}
 		title={degraded ? $storageSentence : undefined}
-	bind:this={bar}
-	on:wheel={onWheel}
-	on:pointerdown={onPointerDown}
-	on:pointermove={onPointerMove}
-	on:pointerup={onPointerUp}
-	on:pointercancel={onPointerCancel}
-	on:click|capture={swallow}
+	use:grip
 >
 	<div class="section input">
 		<!-- A size container: the database's name, whatever its length, does
@@ -429,24 +212,41 @@
 		     pulled ($lib/log.ts), so a drag grows it smoothly and the notch
 		     is where it has finished. Clipped while it is part-way. -->
 		<div class="section output">
-			<!-- ROW ONE OF THE HISTORY, not a second rendering of it. vividn,
-			     2026-09-21: "the output section … should actually *be* the
-			     first line of the repl. That is, it shouldn't be repeated
-			     when you drag it up. It's just the last entry of the last
-			     entries … It should also have the same format as the rest of
-			     the repl." So it mounts the same `ReplEntry` the log does —
-			     stamp, echo line and all — and the log starts at row two
-			     (`skip={1}` in BarLog.svelte).
+			<!-- THE ROW RIDES UP. Past the ceiling the bar cannot open further
+			     and the pull becomes the list scrolling — and "the REPL then
+			     scroll all together (including the most recent command)", which
+			     is THIS row (vividn, 2026-09-21). It is drawn by the bar and the
+			     rest of the list by the log, so the two are made one list by
+			     one number: this box keeps its full `--output-height` and slides
+			     up by `--rolled` while the section around it gives exactly that
+			     many pixels to the log below ($lib/log.ts). The row is never
+			     handed to the other renderer, so there is nothing to flicker or
+			     to draw twice.
 
-			     Straight from the scrollback rather than from `last`: both
-			     say the same thing (bar.ts's `noteRun` IS what `record`
-			     calls), and one list with one source cannot drift from
-			     itself. `all` is left off, so a multi-document command draws
-			     what fits here and `+N` for the rest — the history has the
-			     room and passes it. -->
-			{#if newest}
-				<ReplEntry entry={newest} cap={4} />
-			{/if}
+			     The wrapper below is what is LIFTED — it exists so the row can
+			     ride up without the section around it moving, the section
+			     being the thing that clips it. The arithmetic is in the
+			     stylesheet, on `.roll`. -->
+			<div class="roll">
+				<!-- ROW ONE OF THE HISTORY, not a second rendering of it. vividn,
+				     2026-09-21: "the output section … should actually *be* the
+				     first line of the repl. That is, it shouldn't be repeated
+				     when you drag it up. It's just the last entry of the last
+				     entries … It should also have the same format as the rest of
+				     the repl." So it mounts the same `ReplEntry` the log does —
+				     stamp, echo line and all — and the log starts at row two
+				     (`skip={1}` in BarLog.svelte).
+
+				     Straight from the scrollback rather than from `last`: both
+				     say the same thing (bar.ts's `noteRun` IS what `record`
+				     calls), and one list with one source cannot drift from
+				     itself. `all` is left off, so a multi-document command draws
+				     what fits here and `+N` for the rest — the history has the
+				     room and passes it. -->
+				{#if newest}
+					<ReplEntry entry={newest} cap={4} />
+				{/if}
+			</div>
 		</div>
 	{/if}
 
@@ -573,19 +373,35 @@
 	   squashing it. */
 	.section.output {
 		flex: none;
-		/* A COLUMN, because what is in it is a row of the history now
-		   (ReplEntry.svelte): its head — the time and the command — sits
-		   ABOVE what the command answered, exactly as it does in the log.
-		   `.section` is a flex row for the input's four things, and an entry
-		   laid out that way put its head beside its answer instead of over
-		   it: at 320px the head measured 540px wide and the document had
-		   nowhere left to be. */
 		flex-direction: column;
 		align-items: stretch;
-		justify-content: center;
+		/* The box inside is the row at its full height; this one is however
+		   much of it is showing, and clips the rest. Anchored at the TOP, so
+		   an opening section shows the top of what it says (rather than
+		   squashing it) and a rolling one shows the bottom. */
+		justify-content: flex-start;
 		height: var(--shown, 0px);
 		overflow: hidden;
 		border-top: 1px solid var(--tint);
+	}
+
+	/* A COLUMN, because what is in it is a row of the history now
+	   (ReplEntry.svelte): its head — the time and the command — sits ABOVE
+	   what the command answered, exactly as it does in the log. `.section`
+	   is a flex row for the input's four things, and an entry laid out that
+	   way put its head beside its answer instead of over it: at 320px the
+	   head measured 540px wide and the document had nowhere left to be.
+
+	   ALWAYS THE ROW'S WHOLE HEIGHT, and lifted by `--rolled`: what makes
+	   this row part of the list's scroll rather than a thing that stays put
+	   while the list moves under it. */
+	.roll {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		flex: none;
+		height: var(--output-height);
+		margin-top: calc(-1 * var(--rolled, 0px));
 	}
 
 	.section.output :global(.result) {

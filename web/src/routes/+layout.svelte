@@ -25,7 +25,7 @@
 	import '../app.css';
 	import { installConsole } from '$lib/console.js';
 	import BarLog from '$lib/BarLog.svelte';
-	import { attach, logHeight, shown } from '$lib/log.js';
+	import { attach, logHeight, rolled, shown } from '$lib/log.js';
 	import PromptBar from '$lib/PromptBar.svelte';
 	import RootBar from '$lib/layout/RootBar.svelte';
 	import { boot as bootEngine } from '$lib/layout/engine.js';
@@ -140,7 +140,7 @@
 	<title>{db === DEFAULT_DB ? 'datum' : `datum · ${db}`}</title>
 </svelte:head>
 
-<div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px">
+<div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px; --rolled: {$rolled}px">
 	<RootBar />
 
 	<!-- The page. Moved by the bar and by nothing else: see the header. -->

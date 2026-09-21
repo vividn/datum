@@ -69,7 +69,11 @@ const where = (page) =>
 			top: box('.log .top'),
 			main: box('main'),
 			shown: px('--shown'),
-			height: px('--log-height')
+			height: px('--log-height'),
+			// How far the list has scrolled, in its two halves: the bar's own
+			// row riding off the top, and then the log's box (da-tj6m).
+			rolled: px('--rolled'),
+			scroll: Math.round(document.querySelector('.log .body')?.scrollTop ?? 0)
 		};
 	});
 
@@ -78,18 +82,23 @@ const where = (page) =>
  *
  * It settles on an animation frame curve now ($lib/log.ts) rather than by a
  * scroll, so what a test waits for is the number holding still — two reads
- * the same, a few frames apart.
+ * the same, a few frames apart. ALL of the number: past the ceiling the
+ * bar's height stops changing and the list scrolls instead (da-tj6m), so a
+ * watch on `--log-height` alone would call a glide through the history
+ * finished before it began.
  */
 const settled = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((done) => {
-				let last = -1;
+				let last = '';
 				let same = 0;
 				const tick = () => {
-					const now = Math.round(
-						parseFloat(getComputedStyle(document.querySelector('.shell')).getPropertyValue('--log-height')) || 0
-					);
+					const style = getComputedStyle(document.querySelector('.shell'));
+					const px = (name) => Math.round(parseFloat(style.getPropertyValue(name)) || 0);
+					const now = `${px('--log-height')}/${px('--rolled')}/${Math.round(
+						document.querySelector('.log .body')?.scrollTop ?? 0
+					)}`;
 					same = now === last ? same + 1 : 0;
 					last = now;
 					if (same > 4) return done();
@@ -820,5 +829,237 @@ describe('the seam between the bar’s row and the log', () => {
 			);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
+	});
+});
+
+// ONE GESTURE, THREE PHASES, IN SEQUENCE (da-tj6m).
+//
+// vividn, 2026-09-21, of the deployed bar: "2-N in the repl seem to scroll
+// independently, so if I pull up the input section a bit, I can then scroll
+// through the old history independently. This behavior is incorrect,
+// instead, you should be able to grab from anywhere in the repl and it
+// behaves as one unit, so it will just pull the input section up more. When
+// and only when the input bar reaches the top of the screen, does the REPL
+// then scroll all together (including the most recent command). Then I can
+// scroll around. When I get back to the top, then trying to scroll up
+// further starts closing the input section".
+//
+//     phase 1   drag anywhere in the repl  ->  the input section GROWS
+//     phase 2   at full height             ->  the list scrolls, ALL ROWS
+//                                              AS ONE, the newest included
+//     phase 3   back at the list's top,    ->  the section starts CLOSING
+//               still pulling
+//
+// The handoffs are inside ONE drag, so what these assert is the SEQUENCE —
+// sampled at every step of the gesture — and not merely where it ends up.
+describe('the bar and the log are one handle', () => {
+	/**
+	 * A history taller than the screen, so there is something to scroll.
+	 *
+	 * The SCROLLBACK is what the log draws, and only a command that went
+	 * through the bar is in it — `runLine` writes to the database and to
+	 * nothing else. So the rows are seeded with entries (cheap) and then
+	 * three commands whose ANSWER is tall are submitted through the bar,
+	 * which buys a list twice the screen's height for four round trips
+	 * instead of forty.
+	 */
+	const seed = async (app, lines = ['tail -n 25', 'tail -n 25', 'tail -n 25', 'occur coffee']) => {
+		for (let i = 0; i < 25; i += 1) await app.runLine(`occur field${i}`);
+		for (const line of lines) await app.submit(line);
+		await app.idle();
+	};
+
+	/**
+	 * Drag `selector` by `dy`, reading the bar and the list at EVERY step.
+	 *
+	 * A frame between the moves, because Svelte writes the DOM on a
+	 * microtask: a sample taken in a tight loop would report the state
+	 * before the move that caused it, which is the one thing a sequence
+	 * cannot be asserted from. It also gives the moves real stamps, so this
+	 * gesture has a speed in it like a thumb's — where it SETTLES is
+	 * `detent.test.mjs`'s business and not this one's.
+	 */
+	const dragWatching = (page, selector, dy, steps = 14) =>
+		page.evaluate(
+			async ([selector, dy, steps]) => {
+				const el = document.querySelector(selector);
+				const r = el.getBoundingClientRect();
+				const x = r.left + r.width / 2;
+				const y = r.top + r.height / 2;
+				const send = (type, at) =>
+					el.dispatchEvent(
+						new PointerEvent(type, {
+							pointerId: 31,
+							pointerType: 'touch',
+							isPrimary: true,
+							clientX: x,
+							clientY: at,
+							bubbles: true,
+							cancelable: true
+						})
+					);
+				const px = (name) =>
+					Math.round(
+						parseFloat(getComputedStyle(document.querySelector('.shell')).getPropertyValue(name)) || 0
+					);
+				const read = () => ({
+					log: px('--log-height'),
+					shown: px('--shown'),
+					rolled: px('--rolled'),
+					scroll: Math.round(document.querySelector('.log .body')?.scrollTop ?? 0),
+					main: Math.round(document.querySelector('main').getBoundingClientRect().height)
+				});
+				const frame = () => new Promise((done) => requestAnimationFrame(done));
+				send('pointerdown', y);
+				const seen = [];
+				for (let i = 1; i <= steps; i += 1) {
+					send('pointermove', y + (dy * i) / steps);
+					await frame();
+					seen.push(read());
+				}
+				send('pointerup', y + dy);
+				return seen;
+			},
+			[selector, dy, steps]
+		);
+
+	// THE COMPLAINT ITSELF, and it is about the rows and not about the bar:
+	// a finger on the history used to move the history. The box's own
+	// vertical scroll is what did that, and it is inert now — asserted as
+	// the RULE (the computed value) and as what the rule is for (the drag).
+	test('a drag on the rows pulls the bar up; it does not scroll them', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seed(app);
+
+			// Part-way open, so there is a log to put a finger on and room
+			// above it for the bar still to grow.
+			await dragBy(page, BAR, -300);
+			await settled(page);
+			const part = await where(page);
+			assert.ok(part.height > 40, `the log is ${part.height}px — nothing to grab`);
+			assert.ok(part.main.height > 40, `the bar is already at the top: ${part.main.height}px of dashboard`);
+
+			assert.equal(
+				await page.locator('.log .body').evaluate((el) => getComputedStyle(el).overflowY),
+				'hidden',
+				'the rows still scroll on their own'
+			);
+
+			await dragBy(page, '.log', -120);
+			await settled(page);
+			const pulled = await where(page);
+			assert.ok(
+				pulled.height > part.height + 60,
+				`the drag on the rows opened the bar by ${pulled.height - part.height}px`
+			);
+			assert.equal(pulled.scroll, 0, `the rows scrolled ${pulled.scroll}px under the finger`);
+			assert.equal(pulled.rolled, 0, "the bar's own row moved before the bar was at the top");
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	test('the list starts scrolling when, and only when, the input row reaches the top', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seed(app);
+			await dragBy(page, BAR, -200);
+			await settled(page);
+			// Open and unrolled, so this IS the output section's whole height.
+			const whole = (await where(page)).shown;
+
+			const seen = await dragWatching(page, '.log', -1400);
+			for (const step of seen)
+				if (step.rolled + step.scroll > 0)
+					assert.ok(
+						step.main <= 1,
+						`the list scrolled with ${step.main}px of dashboard still showing: ${JSON.stringify(step)}`
+					);
+			const end = seen.at(-1);
+			assert.ok(end.scroll > 0, `the pull never reached the list: ${JSON.stringify(end)}`);
+			// AND THE NEWEST COMMAND WENT WITH IT. The bar's own row is the
+			// first thing the list scrolls, and the output section gives the
+			// log exactly the pixels the row takes with it — one list, drawn
+			// by two renderers, and no row handed between them.
+			const rolled = seen.find((step) => step.rolled > 0 && step.rolled < whole);
+			assert.ok(rolled, `the bar's row never rolled: ${JSON.stringify(seen.map((s) => s.rolled))}`);
+			assert.ok(
+				Math.abs(rolled.shown + rolled.rolled - whole) <= 1,
+				`the row rolled ${rolled.rolled}px and the section kept ${rolled.shown}px of ${whole}px`
+			);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	test('and pulling the other way scrolls back to the top before it closes anything', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seed(app);
+			// TWO DRAGS, and the first one is what MOUNTS the log: the
+			// scrollback down there is drawn on the first gesture and not
+			// before ($lib/log.ts's `armed`), and `dragBy` dispatches its
+			// whole run of moves synchronously — so a drag that arms the log
+			// cannot also reach into it, there being no frame in the middle
+			// for it to be drawn in. A finger has frames.
+			await dragBy(page, BAR, -200);
+			await settled(page);
+			await dragBy(page, '.log', -900);
+			await settled(page);
+			const deep = await where(page);
+			assert.ok(deep.scroll > 0, `the list is at ${deep.scroll}px — there is nothing to come back from`);
+
+			const seen = await dragWatching(page, '.log', 900, 20);
+			for (const step of seen)
+				if (step.main > 1)
+					assert.deepEqual(
+						[step.rolled, step.scroll],
+						[0, 0],
+						`the bar began closing with the list at ${step.scroll}px: ${JSON.stringify(step)}`
+					);
+			const end = seen.at(-1);
+			assert.ok(end.main > 1, `the pull never started closing: ${JSON.stringify(end)}`);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	// "it should allow little bits of acceleration sliding the section up
+	// and down, and just have a nice notch at closed or open" — the rule is
+	// `detent.test.mjs`; what is asserted HERE is that a real thumb's push
+	// reaches the bar at all, which is the half no pure test can make.
+	test('a real finger’s push keeps the bar moving after the finger has gone', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seed(app, ['occur coffee']);
+			const r = await page.locator(BAR).boundingBox();
+			const middle = [r.x + r.width / 2, r.y + r.height / 2];
+
+			// THE SAME DISTANCE TWICE, and the only difference is the TIME in
+			// it. A synthetic drag's moves all carry one stamp, so it has no
+			// speed and comes to rest exactly where the finger stopped; a real
+			// touch through CDP has stamps a frame apart and so has a push in
+			// it. Comparing them is what makes this claim independent of how
+			// fast this machine happens to be — the numbers themselves are
+			// `detent.test.mjs`'s, and where a thumb lands is nobody's but a
+			// thumb's.
+			await dragBy(page, BAR, -220);
+			await settled(page);
+			// Both numbers are the LOG's height, which is the bar's own travel
+			// less the notch — the same yardstick for both arms, which is all
+			// the comparison needs (canary on PR #59: the message used to read
+			// as though it were quoting the travel itself).
+			const placedLog = (await where(page)).height;
+			await dragBy(page, BAR, 900);
+			await settled(page);
+			assert.equal((await where(page)).height, 0, 'the bar did not come back shut');
+
+			await swipe(page, ...middle, 0, -220, 6);
+			await settled(page);
+			const thrownLog = (await where(page)).height;
+			assert.ok(
+				thrownLog > placedLog,
+				`a 220px push left the log ${thrownLog}px tall; the same 220px placed left it ${placedLog}px`
+			);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
 	});
 });

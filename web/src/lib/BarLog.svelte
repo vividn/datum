@@ -40,16 +40,31 @@
 	button is simply at the bottom of the box.
 -->
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import Repl from '$lib/Repl.svelte';
-	import { armed, closeLog, inLog } from '$lib/log.js';
+	import { repl } from '$lib/replStore.js';
+	import { armed, closeLog, inLog, scrolled, toNewest, trackLog } from '$lib/log.js';
+	import { grip } from '$lib/grip.js';
+
+	/** The box the rows are in — the ONE NUMBER's to scroll, and nobody else's. */
+	let scroller: HTMLDivElement | undefined;
+	$: trackLog(scroller ?? null);
+	// PHASE 2, and it is the same pull as phase 1: past the ceiling the bar
+	// cannot open further, so the number becomes the list moving ($lib/log.ts).
+	$: if (scroller) scroller.scrollTop = $scrolled;
+	// A command that lands is row one again, so the list comes back to its
+	// newest — the same pin `Repl.svelte` does after a run, said to the
+	// number, so the two cannot disagree about where the list is.
+	$: $repl.scrollback, toNewest();
+	onDestroy(() => trackLog(null));
 </script>
 
 <!-- `inert` is for the REPL inside: `close history` is already out of the
      DOM until the log is reached, and a scrollback nobody can see must not
      be in the Tab order either (canary on PR #46). -->
-<div class="log" class:reached={$inLog} inert={!$inLog}>
+<div class="log" class:reached={$inLog} inert={!$inLog} use:grip>
 	{#if $armed}
-		<Repl reversed bare skip={1} />
+		<Repl reversed bare skip={1} bind:body={scroller} />
 	{/if}
 	{#if $inLog}
 		<button type="button" class="top" on:click={closeLog}>close history</button>
@@ -70,6 +85,29 @@
 		overflow: hidden;
 		min-width: 0;
 		background: var(--page);
+		/* The log is a vertical handle exactly as the bar is. */
+		touch-action: pan-x;
+	}
+
+	/* THE ROWS DO NOT SCROLL UNDER A FINGER — the NUMBER scrolls them.
+	
+	   vividn, 2026-09-21, of the build before this: "2-N in the repl seem to
+	   scroll independently, so if I pull up the input section a bit, I can
+	   then scroll through the old history independently. This behavior is
+	   incorrect". That was this box's own vertical scroll, live at every
+	   height: a finger on the rows moved the rows instead of the bar. So it
+	   is inert to the reader — `overflow-y: hidden` is still scrollable
+	   PROGRAMMATICALLY, which is how `scrollTop` above gets set — while
+	   `overflow-x` stays the pane's own, because a CLI table is wide and
+	   reaching its right-hand columns is not the bar's gesture.
+	
+	   `touch-action` for the same reason it is on the prompt's box: the
+	   value resolves from the touch's target up to the NEAREST SCROLL
+	   CONTAINER and no further, and this box is one. Without it the browser
+	   claims every vertical drag that starts on a row. */
+	.log :global(.body) {
+		overflow-y: hidden;
+		touch-action: pan-x;
 	}
 
 	.log :global(section.pane) {

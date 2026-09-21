@@ -68,7 +68,13 @@
 	const dispatch = createEventDispatcher<{ ran: RunResult }>();
 
 	let pane: Pane;
-	let body: HTMLDivElement | undefined;
+	/**
+	 * The scrolling box, bindable.
+	 *
+	 * The bar's log is the caller (da-tj6m): down there the ONE NUMBER owns
+	 * this box's vertical scroll, so it has to be able to reach it.
+	 */
+	export let body: HTMLDivElement | undefined = undefined;
 	/** The scrollback's content width, in whole pixels, once measured. */
 	let width: number | null = null;
 
