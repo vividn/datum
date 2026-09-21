@@ -10,7 +10,10 @@
 
 	A field pill on the bar outlines that field's own marks in whatever
 	picture is on screen (da-8810n): the group datum named is marked
-	`data-pilled` and the halo below is the whole of it.
+	`data-pilled` and the halo below is the whole of it. A SELECTED entry
+	(da-pzzoz) is marked `data-selected` on the mark that names it and
+	wears the same halo, wherever the selection was made — a row in the
+	tail, a document in the REPL, a double tap on the mark itself.
 
 	`datum dayview` is the exception that proves the pane is rendering CLI
 	output faithfully: its stdout is an SVG document, so it is shown as a
@@ -114,7 +117,15 @@
 	   one: a single 2px blur around a 1px dot is a smudge, while two 1px
 	   passes read as an edge. Nothing is done to the other fields at all:
 	   whatever is not pilled is drawn exactly as datum drew it. */
-	.picture :global(.field[data-pilled]) {
+	/* A SELECTED ENTRY wears the very same halo (da-pzzoz). vividn: "the
+	   field outline will highlight all data in that field, the hid will
+	   highlight just one block, I suppose they should look the same" — so
+	   one rule says both, and a reader who has learned what the glow means
+	   for a field has learned it for an entry. The difference is only what
+	   it is ON: a field's whole group, or the one mark that names the
+	   entry (`bringOut` in $lib/hover.ts). */
+	.picture :global(.field[data-pilled]),
+	.picture :global([data-selected]) {
 		filter: drop-shadow(0 0 1px var(--ink-bright)) drop-shadow(0 0 1px var(--ink-bright));
 	}
 

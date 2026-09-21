@@ -213,10 +213,20 @@ function setHids(hids: string[], locked: boolean): void {
 }
 
 /**
- * A tap on an entry — a tail row, a document. `order` is the hids of the
- * entries that surface draws, in its order, for a shift-click's range.
+ * A tap on an entry — a tail row, a document, a mark in a picture.
+ * `order` is the hids of the entries that surface draws, in its order,
+ * for a shift-click's range.
+ *
+ * The MODIFIERS and not the event: a picture's inspect gesture takes
+ * shift for itself and hands this the same press with shift off
+ * (`inspectMods`, $lib/inspect.ts), and there is nothing else of an event
+ * a selection ever read.
  */
-export function select(hid: string, e: MouseEvent, order: string[]): void {
+export function select(
+	hid: string,
+	e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+	order: string[]
+): void {
 	const pill = get(pills).find((p) => p.kind === 'hid');
 	const locked = !!pill?.locked;
 	setHids(picked(get(selected), hid, pickOf(e, locked), order, anchor, locked), locked);

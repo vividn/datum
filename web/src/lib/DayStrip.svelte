@@ -86,13 +86,24 @@
 	         │                               to the max then just automatically
 	         │                               do a selection»)
 	         ├─ shift held, sideways ──────► the same range on a desk
-	         ├─ zoomed in, down 400 ms ────► a RANGE, its bar dropped the moment
-	         │                               the press is long enough
+	         ├─ down 400 ms, THEN sideways ► a RANGE, as it always was
+	         ├─ down 400 ms, then LIFTING ─► INSPECT: the entry behind the mark
+	         │                               under the finger (da-pzzoz)
+	         ├─ double tap on a MARK ──────► the same inspect; on the picture's
+	         │                               GROUND, still the whole day back
 	         ├─ zoomed in, sideways ───────► PAN: the hour window follows the
 	         │                               finger, as shift+wheel does
 	         └─ up, still still ───────────► the CLICK the `picture` action has
 	                                         always taken: the time cursor, and
 	                                         the nowview centres on it
+
+	The 400ms stopped COMMITTING (da-pzzoz): a still long press is now an
+	inspect and only a travelling one is a range. The bar dropping at 400ms
+	was the feedback that the press had registered, so `.hold-mark` — a
+	ring closing over the wait, the nowview's own — is what replaces it.
+	Shift+click and right click are the inspect on a desk, and they live in
+	the `picture` action with the double tap, because every drawn picture
+	has that action on it and only these two views have a recogniser.
 
 	A press that starts on the `+` handle, the freeze toggle or the jagged
 	line is THEIRS, and one that starts off a band — the date column, the
@@ -134,7 +145,8 @@
 	import { pills } from './bar.js';
 	import { minute } from './clock.js';
 	import { pointAt, pointed, SPAN_ID } from './cursor.js';
-	import { timeAt } from './hover.js';
+	import { inspectMark, timeAt } from './hover.js';
+	import { markOf } from './inspect.js';
 	import { advance, LONG_MS, SLOP_PX, type Mode, type Press } from './nowpoint.js';
 	import { run, type RunResult } from './run.js';
 	import {
@@ -816,7 +828,7 @@
 		if (pinching && fingers.size < 2) {
 			commit();
 			dropPress();
-		} else finish();
+		} else finish(event);
 		if (fingers.size === 0 && !press) listen(false);
 	}
 
@@ -857,6 +869,15 @@
 	/** Whether the press has lasted long enough to be a range. */
 	let long = false;
 	let longTimer: ReturnType<typeof setTimeout> | undefined;
+	/** What the press went down ON, for the inspect that may end it (da-pzzoz). */
+	let onMark: Element | null = null;
+	/**
+	 * Where the wait is DRAWN, in px across the strip's box, while a press
+	 * is still undecided — the nowview's `.hold-mark`, for the same reason:
+	 * the 400ms no longer commits to a range, so the bar it used to drop is
+	 * no longer the signal that the press registered.
+	 */
+	let waiting: { x: number; y: number } | null = null;
 	/**
 	 * The DAY the press went down in — the picture's own group, whose
 	 * `data-from` / `data-to` every instant of this gesture is read
@@ -889,7 +910,10 @@
 		};
 		mode = 'press';
 		long = false;
+		onMark = markOf(event.target);
 		last = { x: event.clientX, y: event.clientY };
+		const home = stripEl?.getBoundingClientRect();
+		waiting = home ? { x: event.clientX - home.x, y: event.clientY - home.y } : null;
 		clearTimeout(longTimer);
 		longTimer = setTimeout(() => {
 			long = true;
@@ -904,6 +928,8 @@
 		press = null;
 		pressDay = null;
 		panning = null;
+		onMark = null;
+		waiting = null;
 		mode = 'press';
 		long = false;
 	}
@@ -919,6 +945,8 @@
 		if (mode === 'press' && Math.abs(dy) > SLOP_PX && Math.abs(dy) > Math.abs(dx)) return dropPress();
 		const was = mode;
 		mode = advance(mode, press, x, y, long);
+		// The wait's mark belongs to a press that is still undecided.
+		if (mode !== 'press' && mode !== 'hold') waiting = null;
 		if (mode === 'range' && was !== 'range') {
 			// The bar drops the moment the press is long enough, before any
 			// movement, so the finger knows it is no longer panning.
@@ -973,12 +1001,23 @@
 	 * The end of a one-pointer gesture. A press that committed to nothing
 	 * is left alone: it is the CLICK the `picture` action takes, which has
 	 * set the time cursor since da-wnt2 and centres the nowview on it.
+	 *
+	 * Except a STILL LONG PRESS, which is the inspect (da-pzzoz): it takes
+	 * the entry behind the mark under the finger, and SPENDS the press, so
+	 * the click that follows makes no time pill over the top of it
+	 * (`pressSpent`, $lib/inspect.ts). Over ground that names no entry it
+	 * returns false and the click has the press as it always did.
 	 */
-	function finish(): void {
+	function finish(event: PointerEvent): void {
 		if (!press) return;
+		const still = Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP_PX;
+		if (mode === 'hold' && still) inspectMark(markOf(event.target) ?? onMark, event, bandSvg());
 		if (mode === 'pan') commit();
 		dropPress();
 	}
+
+	/** The picture the press went down in — the `order` a range of marks would run over. */
+	const bandSvg = (): ParentNode | null => pressDay?.closest('svg') ?? null;
 
 	// ── the selection's pills, in the strip's own margin ───────────────
 
@@ -1050,6 +1089,13 @@
 	const DOUBLE_TAP = 350;
 	let tap = { at: -Infinity, x: 0, y: 0 };
 	function tapped(event: PointerEvent): void {
+		// A double tap ON A MARK is the INSPECT (da-pzzoz, $lib/hover.ts's
+		// `picture` action, which every band's picture carries): vividn asked
+		// for «double clicking or tapping in dayview or nowview selects an
+		// existing piece of data». The whole day back is what a double tap
+		// on the picture's GROUND still means — the gesture a map gives its
+		// world back for, and `Reset widget` says it in words either way.
+		if (markOf(event.target)) return void (tap = { at: -Infinity, x: 0, y: 0 });
 		const near = Math.abs(event.clientX - tap.x) < 30 && Math.abs(event.clientY - tap.y) < 30;
 		if (near && event.timeStamp - tap.at < DOUBLE_TAP) {
 			tap = { at: -Infinity, x: 0, y: 0 };
@@ -1276,6 +1322,24 @@
 						<span class="margin-pill" style:left="{x}px"><Pill {pill} /></span>
 					{/if}
 				{/each}
+			</div>
+		{/if}
+
+		<!-- The wait's mark, the nowview's own (da-pzzoz): a ring closing
+		     over the 400ms, and the range's dashes once it is up. The 400ms
+		     stopped committing, so the bar it used to drop is no longer the
+		     sign that the press was heard. -->
+		{#if waiting && (mode === 'press' || mode === 'hold')}
+			<div
+				class="hold-mark"
+				class:held={mode === 'hold'}
+				aria-hidden="true"
+				style:left="{waiting.x}px"
+				style:top="{waiting.y}px"
+				style:--long="{LONG_MS}ms"
+			>
+				<span class="stem"></span>
+				<span class="ring"></span>
 			</div>
 		{/if}
 
@@ -1581,6 +1645,70 @@
 	   the pills held inside it (see `placePills`). It lies over a band, so
 	   it takes no pointer of its own — only the pills in it do, and they
 	   are there only while there is a selection. */
+	/* THE WAIT'S MARK (da-pzzoz). The nowview's, to the pixel and to the
+	   millisecond: one gesture across two views cannot have two looks. The
+	   stem is short here — a band is one day of a stack, and a line down
+	   the whole strip would cross days the gesture is not about. */
+	.hold-mark {
+		position: absolute;
+		width: 0;
+		height: 0;
+		pointer-events: none;
+		z-index: 4;
+	}
+
+	.hold-mark .ring {
+		position: absolute;
+		left: -11px;
+		top: -11px;
+		width: 22px;
+		height: 22px;
+		box-sizing: border-box;
+		border: 1.5px solid #ffffff;
+		border-radius: 50%;
+		opacity: 0;
+		animation: hold-wait var(--long) ease-out forwards;
+	}
+
+	@keyframes hold-wait {
+		from {
+			transform: scale(1.9);
+			opacity: 0;
+		}
+		to {
+			transform: scale(1);
+			opacity: 0.8;
+		}
+	}
+
+	.hold-mark.held .ring {
+		animation: none;
+		opacity: 1;
+		background: rgba(255, 255, 255, 0.25);
+	}
+
+	.hold-mark .stem {
+		display: none;
+	}
+
+	.hold-mark.held .stem {
+		display: block;
+		position: absolute;
+		left: -0.75px;
+		top: calc(-1 * var(--band) / 2);
+		width: 1.5px;
+		height: var(--band);
+		background: repeating-linear-gradient(to bottom, #ffffff 0 3px, transparent 3px 6px);
+		opacity: 0.8;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.hold-mark .ring {
+			animation: none;
+			opacity: 0.8;
+		}
+	}
+
 	.daystrip-margin {
 		position: absolute;
 		top: 0;

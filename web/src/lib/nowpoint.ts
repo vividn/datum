@@ -13,12 +13,30 @@
 //     └─ one finger, mode `press`
 //          ├─ in the NOW REGION and |dx| > 6px leftward ──► NOW    (a duration ending now)
 //          ├─ `atOnce` and |dx| > 6px ────────────────────► RANGE  (no long press needed)
-//          ├─ down for 400 ms ────────────────────────────► RANGE  (the bar drops at once)
+//          ├─ down for 400 ms, still ─────────────────────► HOLD   (undecided: see below)
 //          ├─ |dx| > 6px and |dx| ≥ |dy| ─────────────────► PAN    (the window moves)
 //          └─ up, still `press` ──────────────────────────► CLICK  (a selection where it fell)
 //
-// The transitions are ONE-WAY: a drag that became a pan never becomes a
-// range, and a long press that has dropped its bar never becomes a pan.
+//   and from HOLD, which is the one mode that is NOT yet committed:
+//          ├─ |dx| > 6px and |dx| ≥ |dy| ─────────────────► RANGE  (a long press that TRAVELS)
+//          └─ up, still ──────────────────────────────────► INSPECT (the entry under the finger)
+//
+// THE 400 MS DOES NOT COMMIT (da-pzzoz). It used to: `long` returned
+// `range` outright, and vividn's «long press to select, as long as it's not
+// a long press drag» would have been a fifth gesture colliding with it.
+// It is not a new gesture — it is this one letter of the table. A still
+// long press stays UNDECIDED in `hold`; the finger decides it by moving
+// (a RANGE, exactly as before) or by lifting (an INSPECT, which is what
+// is new).
+//
+// The price is FEEDBACK. The bar dropping at 400 ms was how a thumb
+// learned the press had registered, and a mode that commits to nothing
+// has none — so the two widgets that run this machine draw a mark of
+// their own for the wait instead (`.hold-mark`, NowviewWidget.svelte and
+// DayStrip.svelte). It is owed, not optional.
+//
+// The other transitions are ONE-WAY: a drag that became a pan never
+// becomes a range, and a range never becomes anything else.
 // `|dx| ≥ |dy|` is what leaves the page its vertical scroll — `touch-action`
 // is `pan-y`, so a mostly-vertical finger belongs to the browser and this
 // never claims it.
@@ -29,10 +47,14 @@
 /**
  * What a press has become.
  *
- * `press` is undecided — still a click if the finger lifts there. The
- * other three are committed and final.
+ * `press` and `hold` are both UNDECIDED — a lift there is a gesture of
+ * its own (a click, an inspect) and a move can still turn either into
+ * something else. `pan`, `range` and `now` are committed and final.
  */
-export type Mode = 'press' | 'pan' | 'range' | 'now';
+export type Mode = 'press' | 'hold' | 'pan' | 'range' | 'now';
+
+/** Whether a mode is still open to becoming another one. */
+export const undecided = (mode: Mode): boolean => mode === 'press' || mode === 'hold';
 
 /** Where a press went down, and what it landed on. */
 export interface Press {
@@ -73,17 +95,27 @@ export const SLOP_PX = 6;
  * hold still, and a gesture the app cannot make under a fixed clock is a
  * gesture nothing can assert.
  *
- * A mode past `press` is returned unchanged: what a gesture became is
- * decided once.
+ * A COMMITTED mode is returned unchanged: what a gesture became is decided
+ * once. `hold` is not committed — it is «still down, and long enough» —
+ * so it is asked again on every move, and the move is what decides it.
+ *
+ * A long press that travels is a RANGE wherever it started from; one that
+ * has not yet lasted `LONG_MS` and travels is a PAN. That single line is
+ * the whole of «long press to select, as long as it's not a long press
+ * drag» (da-pzzoz): the same two gestures the recogniser always had, told
+ * apart by the ORDER of the wait and the movement rather than by the wait
+ * alone.
  */
 export function advance(mode: Mode, p: Press, x: number, y: number, long: boolean): Mode {
-	if (mode !== 'press') return mode;
+	if (!undecided(mode)) return mode;
 	const [dx, dy] = [x - p.x, y - p.y];
 	const sideways = Math.abs(dx) > SLOP_PX && Math.abs(dx) >= Math.abs(dy);
-	if (p.inNow) return sideways && dx < 0 ? 'now' : 'press';
-	if (p.atOnce) return sideways ? 'range' : 'press';
-	if (long) return 'range';
-	return sideways ? 'pan' : 'press';
+	// Nothing has happened yet: `hold` once the wait is up, `press` until.
+	const waiting = long ? 'hold' : 'press';
+	if (p.inNow) return sideways && dx < 0 ? 'now' : waiting;
+	if (p.atOnce) return sideways ? 'range' : waiting;
+	if (sideways) return mode === 'hold' ? 'range' : 'pan';
+	return waiting;
 }
 
 /**

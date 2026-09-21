@@ -10,10 +10,26 @@
 // not come along (da-8jb8): inline, it is the browser's own tooltip, drawn
 // over the page's, so `inlineSvg` moves its text onto the mark.
 
-import { fieldPill } from './bar.js';
+import { fieldPill, select, selected } from './bar.js';
 import { clockLabel } from './clock.js';
 import { pointAt, pointed, setCursor, type Cursor } from './cursor.js';
+import {
+	NO_TAP,
+	doubled,
+	hidOf,
+	inspectClick,
+	inspectMods,
+	markOf,
+	marksIn,
+	pressSpent,
+	spendPress,
+	tapOf,
+	tipOf,
+	type Tap,
+	type Tip
+} from './inspect.js';
 import { readLanes } from './lanes.js';
+import { isSelected } from './selection.js';
 
 /** The outermost `<svg>` an element is drawn in. */
 function pictureOf(el: Element): SVGSVGElement | null {
@@ -353,6 +369,89 @@ function highlight(svg: SVGSVGElement | null, field: string | null): void {
 		g.setAttribute('data-pilled', '');
 }
 
+/**
+ * THE SELECTED ENTRIES, brought out in the picture (da-pzzoz).
+ *
+ * vividn: «when a piece of data is selected through other means (like
+ * clicking in tail), then it should be highlighted in the dayview (and
+ * nowview if that particular piece of data is represented there)». So this
+ * is driven by the bar's `selected` store and by nothing a picture did:
+ * every surface that selects an entry — a tail row, a document in the
+ * REPL, a double tap on a mark — reaches every picture through it.
+ *
+ * «the field outline will highlight all data in that field, the hid will
+ * highlight just one block, I suppose they should look the same» — so
+ * `data-selected` wears the SAME halo `data-pilled` does, one rule for
+ * both in CliOutput.svelte, and nothing is done to the marks around it.
+ */
+function bringOut(svg: SVGSVGElement | null, hids: string[]): void {
+	svg?.querySelectorAll('[data-selected]').forEach((m) => m.removeAttribute('data-selected'));
+	if (!svg || !hids.length) return;
+	for (const mark of marksIn(svg)) {
+		const hid = hidOf(mark);
+		if (hid && isSelected(hids, hid)) mark.setAttribute('data-selected', '');
+	}
+}
+
+/**
+ * The tip for the entries selected in `root`, and the box their marks
+ * cover on screen; `null` when none of them is drawn here.
+ *
+ * What the nowview floats its tooltip over (da-pzzoz, `NowviewWidget`),
+ * read here because this is the module that knows what a mark is.
+ */
+export function selectedTip(root: ParentNode, hids: string[]): { tip: Tip; box: DOMRect } | null {
+	if (!hids.length) return null;
+	const marks = marksIn(root).filter((m) => {
+		const hid = hidOf(m);
+		return hid && isSelected(hids, hid);
+	});
+	if (!marks.length) return null;
+	const tip = tipOf(
+		marks.map((m) => ({
+			field: m.getAttribute('data-field') ?? m.closest('.field')?.getAttribute('data-field') ?? null,
+			state: m.getAttribute('data-state'),
+			from: m.getAttribute('data-from'),
+			to: m.getAttribute('data-to'),
+			at: m.getAttribute('data-at')
+		}))
+	);
+	if (!tip) return null;
+	const boxes = marks.map((m) => m.getBoundingClientRect());
+	const [left, right] = [Math.min(...boxes.map((b) => b.left)), Math.max(...boxes.map((b) => b.right))];
+	const [top, bottom] = [Math.min(...boxes.map((b) => b.top)), Math.max(...boxes.map((b) => b.bottom))];
+	return { tip, box: new DOMRect(left, top, right - left, bottom - top) };
+}
+
+/**
+ * Select the entry `mark` names, as a deliberate gesture in a picture
+ * does: the hid pill, and the time pill it replaces taken away.
+ *
+ * vividn: «double clicking or tapping in dayview or nowview selects an
+ * existing piece of data and creates an hid pill RATHER THAN a time
+ * pill». The tap that opened the gesture has usually just made one —
+ * every double tap begins with a single tap — so the cursor is cleared
+ * here, and the press is marked spent so the click and the lift that
+ * share this finger do not make another.
+ *
+ * `false` over ground that names no entry: the caller then does whatever
+ * it would have done, which everywhere is «select the time», and no
+ * gesture is ever dead.
+ */
+export function inspectMark(
+	mark: Element | null,
+	e: { ctrlKey: boolean; metaKey: boolean },
+	root: ParentNode | null = pictureOf(mark ?? document.body)
+): boolean {
+	const hid = hidOf(mark);
+	if (!hid || !mark) return false;
+	const order = root ? marksIn(root).map(hidOf).filter((h): h is string => !!h) : [hid];
+	pointAt(null);
+	select(hid, inspectMods(e), order);
+	spendPress();
+	return true;
+}
+
 let tips = 0;
 
 /** How far a press may travel and still be a click, in pixels: past it, it was a drag or a scroll. */
@@ -430,14 +529,62 @@ export function picture(node: HTMLElement, text: string) {
 		(drawn[focused] as SVGElement | undefined)?.focus();
 		drawCursor(svg, sel);
 		highlight(svg, pilled);
+		bringOut(svg, chosen);
 	}
 
 	let sel: Cursor | null = null;
 	/** The field the bar's pill names, as the last change left it. */
 	let pilled: string | null = null;
+	/** The entries the bar's hid pill names, as the last change left it. */
+	let chosen: string[] = [];
 	let down = { x: NaN, y: NaN };
-	const press = (e: PointerEvent) => (down = { x: e.clientX, y: e.clientY });
+	/** The last press on this picture: what a second one is measured against. */
+	let last: Tap = NO_TAP;
+
+	/**
+	 * A press on a picture — and, on the SECOND of two in the same place,
+	 * the inspect gesture (da-pzzoz).
+	 *
+	 * Here and not in the widgets that run the press recogniser, because
+	 * every drawn picture has this action on it: the nowview's band, each
+	 * band of the day strip, and a `dayview` printed into the REPL alike.
+	 * The widgets own the LONG press, which is a state of their recogniser;
+	 * a double tap is not, and would have been written twice.
+	 */
+	const press = (e: PointerEvent) => {
+		down = { x: e.clientX, y: e.clientY };
+		const on = markOf(e.target);
+		const hid = hidOf(on);
+		const mark = doubled(last, e, hid) ? on : null;
+		last = mark ? NO_TAP : tapOf(e, hid);
+		if (mark) inspectMark(mark, e, node);
+	};
+
+	/**
+	 * The desk's two: shift+click and the right button — «on desktop right
+	 * click or shift click or also long click». Over ground that names no
+	 * entry both fall through to what they always did.
+	 *
+	 * On the LIFT rather than the press, which is what lets a shift+DRAG
+	 * still be the nowview's range: a press that travelled is not a click,
+	 * and the slop below is the same one a click is measured by.
+	 */
+	const chord = (e: MouseEvent) => {
+		// `pressSpent` FIRST: one right press fires `pointerup` and
+		// `contextmenu`, and a double tap has already inspected by the time
+		// its second lift arrives — so the question «has this finger already
+		// said its piece» comes before «is this the desk's gesture».
+		if (pressSpent() || !inspectClick(e)) return;
+		if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > CLICK_SLOP) return;
+		if (!inspectMark(markOf(e.target), e, node)) return;
+		// A right click's menu is the browser's; a gesture of ours takes it.
+		e.preventDefault();
+	};
+
 	const click = (e: MouseEvent) => {
+		// A press this gesture already spent says all it has to say: an
+		// inspect makes an hid pill RATHER THAN a time pill.
+		if (pressSpent()) return;
 		if (own()) return;
 		if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > CLICK_SLOP) return;
 		const when = e.target instanceof Element && timeAt(e.target, e.clientX, e.clientY);
@@ -483,6 +630,8 @@ export function picture(node: HTMLElement, text: string) {
 	node.addEventListener('focusout', blur);
 	document.addEventListener('pointerdown', away);
 	node.addEventListener('pointerdown', press);
+	node.addEventListener('pointerup', chord);
+	node.addEventListener('contextmenu', chord);
 	node.addEventListener('click', click);
 	node.addEventListener('keydown', enter);
 	const unsubscribe = pointed.subscribe((c) => {
@@ -496,12 +645,20 @@ export function picture(node: HTMLElement, text: string) {
 		pilled = field;
 		highlight(node.querySelector('svg'), pilled);
 	});
+	// The selection, the same way and for the same reason — and from the
+	// STORE, so an entry selected in the tail is brought out here without
+	// the two surfaces knowing about each other.
+	const unchosen = selected.subscribe((hids) => {
+		chosen = hids;
+		bringOut(node.querySelector('svg'), chosen);
+	});
 	return {
 		update: draw,
 		destroy: () => {
 			document.removeEventListener('pointerdown', away);
 			unsubscribe();
 			unpilled();
+			unchosen();
 		}
 	};
 }

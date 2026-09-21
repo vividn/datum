@@ -20,18 +20,46 @@ registerHooks({
 	}
 });
 
-const { LONG_MS, SLOP_PX, SNAP_PX, advance, relArg, snapTo } = await import('../src/lib/nowpoint.ts');
+const { LONG_MS, SLOP_PX, SNAP_PX, advance, relArg, snapTo, undecided } = await import(
+	'../src/lib/nowpoint.ts'
+);
 
 /** A press at (100, 50), with whatever it landed on. */
 const press = (extra = {}) => ({ x: 100, y: 50, inNow: false, atOnce: false, ...extra });
 
 describe('a press on the band becomes one gesture', () => {
-	test('a still press is undecided, and becomes a range once it has lasted long enough', () => {
+	test('a still press is undecided, and the wait does not decide it either', () => {
 		const p = press();
 		assert.equal(advance('press', p, 100, 50, false), 'press');
 		assert.equal(advance('press', p, 100 + SLOP_PX, 50, false), 'press', 'inside the slop is still still');
-		assert.equal(advance('press', p, 100, 50, true), 'range', 'the bar drops before any movement');
 		assert.ok(LONG_MS >= 300, `${LONG_MS}ms is what the timer waits, and a tap must not reach it`);
+	});
+
+	// da-pzzoz. The 400ms used to return `range` outright, which is why
+	// «long press to select, as long as it's not a long press drag» could
+	// not be said at all: the range had already taken the press. Now the
+	// wait says only that the press is OLD ENOUGH, and the finger decides.
+	test('the 400ms makes a press HELD, not a range: the finger decides which', () => {
+		const p = press();
+		assert.equal(advance('press', p, 100, 50, true), 'hold', 'the wait alone commits to nothing');
+		assert.ok(undecided('hold'), 'a hold is still open to becoming something else');
+		assert.equal(advance('hold', p, 100 + SLOP_PX + 1, 50, true), 'range', 'a hold that TRAVELS is the range');
+		assert.equal(advance('hold', p, 100 - SLOP_PX - 1, 50, true), 'range', 'either way along the band');
+		assert.equal(advance('hold', p, 100, 50, true), 'hold', 'and one that does not travel stays held');
+		assert.equal(
+			advance('hold', p, 100 + 10, 50 + 40, true),
+			'hold',
+			'a mostly-vertical finger is the browser’s, held or not'
+		);
+	});
+
+	// The order of the wait and the movement is the WHOLE difference
+	// between the two gestures: move first and it is a pan, wait first and
+	// it is a range.
+	test('travel BEFORE the wait is a pan; travel AFTER it is a range', () => {
+		const p = press();
+		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'pan');
+		assert.equal(advance('hold', p, 100 + SLOP_PX + 1, 50, true), 'range');
 	});
 
 	test('a drag sideways pans; a drag mostly downward is the page’s scroll, not ours', () => {
@@ -49,6 +77,8 @@ describe('a press on the band becomes one gesture', () => {
 		const p = press({ atOnce: true });
 		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'range');
 		assert.equal(advance('press', p, 100, 50, false), 'press', 'holding alone selects nothing');
+		assert.equal(advance('press', p, 100, 50, true), 'hold', 'and the wait only makes it HELD');
+		assert.equal(advance('hold', p, 100 + SLOP_PX + 1, 50, true), 'range', 'a held finger that travels');
 		assert.equal(
 			advance('press', p, 100 + 10, 50 + 40, false),
 			'press',
@@ -60,13 +90,23 @@ describe('a press on the band becomes one gesture', () => {
 		const p = press({ inNow: true });
 		assert.equal(advance('press', p, 100 - SLOP_PX - 1, 50, false), 'now');
 		assert.equal(advance('press', p, 100 + SLOP_PX + 1, 50, false), 'press', 'nothing lies right of now');
-		assert.equal(advance('press', p, 100, 50, true), 'press', 'and no long press either: it is the now flow');
+		// A long press here is not a range — nothing in the now region ever
+		// was one — but it IS held, and a lift on a held press is the
+		// inspect: «if you double tap a color, that color is an open block,
+		// so it should select the datum entry that generated that open
+		// block», and the colour is drawn in this very region.
+		assert.equal(advance('press', p, 100, 50, true), 'hold', 'the now region’s chunk can be inspected too');
+		assert.equal(advance('hold', p, 100 - SLOP_PX - 1, 50, true), 'now', 'and a drag left is still the duration');
 	});
 
-	test('what a gesture became is decided ONCE', () => {
+	test('what a COMMITTED gesture became is decided ONCE', () => {
 		const p = press();
 		// A pan that outlives the long press is still a pan.
 		assert.equal(advance('pan', p, 100, 50, true), 'pan');
+		assert.equal(undecided('pan'), false);
+		assert.equal(undecided('range'), false);
+		assert.equal(undecided('now'), false);
+		assert.equal(undecided('press'), true);
 		// A range whose finger then runs sideways is still a range.
 		assert.equal(advance('range', p, 400, 50, true), 'range');
 		assert.equal(advance('now', p, 400, 50, true), 'now');

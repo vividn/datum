@@ -391,7 +391,13 @@ describe('zoomed in, a drag pans and a long press selects', () => {
 		});
 	});
 
-	test('a long press drops the bar before any movement; the drag after it is a range', async () => {
+	// da-pzzoz moved the wait's FEEDBACK. The bar used to drop the moment
+	// the press was long enough, because the press committed to a range
+	// there and then; it no longer commits — a still long press is an
+	// INSPECT and only a travelling one is a range ($lib/nowpoint.ts) — so
+	// what the finger is shown at 400ms is the `.hold-mark`, and the bar
+	// drops on the first pixel of travel after it.
+	test('a long press marks the wait before any movement; the drag after it is a range', async () => {
 		await withStrip(async (app) => {
 			const { page } = app;
 			await zoomIn(app, await geom(page));
@@ -403,19 +409,45 @@ describe('zoomed in, a drag pans and a long press selects', () => {
 			await page.mouse.move(a.x, a.y);
 			await page.mouse.down();
 			await page.waitForTimeout(HOLD);
-			// The bar is down before the finger has moved at all: one
-			// instant, no length — which is how a finger knows it has
-			// stopped panning and started selecting.
-			await saysPills(page, [`time:-t ${hhmm(from)}`]);
-			await until(
-				() => drawn(page, TODAY).then((d) => d.lines),
-				(n) => n === 1
-			);
+			// The wait's own mark is down before the finger has moved at all:
+			// how a finger knows it has stopped panning. Nothing is selected
+			// yet — the gesture is still undecided.
+			// `attached`, not `visible`: the mark is a 0x0 anchor whose ring and
+			// stem are drawn AROUND it, so it has no box of its own to be
+			// visible by.
+			await page.locator(`${STRIP} .hold-mark.held`).waitFor({ state: 'attached' });
+			assert.deepEqual(await pillsOf(page), [], 'the wait alone selected something');
 
 			await page.mouse.move(b.x, b.y, { steps: 8 });
+			// And the first pixel of travel is what drops the bar: one
+			// instant, the range's leading edge, before the finger arrives.
+			await saysPills(page, rangePills(from, to));
 			await page.mouse.up();
 			await saysPills(page, rangePills(from, to));
 			assert.equal((await drawn(page, TODAY)).lines, 2);
+			await page.locator(`${STRIP} .hold-mark`).waitFor({ state: 'detached' });
+		});
+	});
+
+	// The other half of vividn's sentence, on the strip: «as long as it's not
+	// a long press drag». The same wait, ended by a LIFT instead of a drag,
+	// selects the entry under the finger — which is `inspect.test.mjs`'s to
+	// prove; here it only has to not be a range.
+	test('a long press that lifts where it fell selects no TIME at all', async () => {
+		await withStrip(async (app) => {
+			const { page } = app;
+			await zoomIn(app, await geom(page));
+			const g = await geom(page);
+			// Above the lanes, on the band's own ground: no entry to inspect,
+			// so the gesture falls through to the click the strip has always
+			// taken, which is one instant and no range.
+			const a = { x: Math.round(g.left + g.width * 0.3), y: g.y };
+			await page.mouse.move(a.x, a.y);
+			await page.mouse.down();
+			await page.waitForTimeout(HOLD);
+			await page.mouse.up();
+			await saysPills(page, [`time:-t ${hhmm(instantOf(g, a.x))}`]);
+			assert.equal((await drawn(page, TODAY)).lines, 1, 'a still long press made a range');
 		});
 	});
 

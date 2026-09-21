@@ -20,14 +20,33 @@
 
 	  tap                     → a SELECTION where it fell; the window does not move
 	  drag sideways           → PAN in time; the selection does not move
-	  press 400 ms, then drag → a RANGE, its bar dropped the moment the press
-	                            is long enough so the finger knows it is not panning
+	  press 400 ms, then drag → a RANGE, as it always has been
+	  press 400 ms, then LIFT → INSPECT: the entry behind the mark under the
+	                            finger, as an hid pill (da-pzzoz)
+	  double tap              → the same inspect, without the wait
 	  shift+drag (desktop)    → the same range; a long press with a mouse is
 	                            nobody's habit (MY reading, not vividn's words)
+	  shift+click, right click→ the same inspect, on a desk
 	  drag left from the NOW  → a duration ending NOW — the sentence «I have been
 	    region                  doing this for the last N minutes», which is most
 	                            of the blocks a person logs, so it needs no long press
 	  two fingers / ctrl+wheel→ the window's LENGTH (da-5goc), untouched here
+
+	⛔ A PLAIN TAP AND A PLAIN DRAG STILL MEAN TIME. vividn: «When you have
+	enough data, like me, everywhere has data under it, and being able to
+	select time (at least in nowview) is a much more important operation
+	than selecting the data.» Every inspect above is a deliberate gesture,
+	and the tap is not one of them.
+
+	The 400ms no longer COMMITS (da-pzzoz): it used to drop the range's bar
+	the moment it was up, and that drop was the only sign a thumb had that
+	the press had registered. What replaces it is the `.hold-mark` below —
+	a ring closing over the wait, and the range's own dashes through the
+	band once it is up. The feedback is owed, not optional.
+
+	An inspect, wherever it is made, floats a TOOLTIP over the mark: the
+	field, the state and the two instants (vividn's «bare info»). Not the
+	comment — a mark does not carry one, and see $lib/inspect.ts.
 
 	What a tap MEANS depends on where the window is. On now the axis is
 	RELATIVE, so the selection is too: the −5 / −10 / −15 / −20 gridlines
@@ -64,16 +83,18 @@
 	them against the new picture's geometry.
 
 	The band carries its own `data-mode` — `press` between gestures, then
-	`pan`, `range` or `now` — so someone driving it by hand can see in
-	devtools which gesture the machine took.
+	`hold`, `pan`, `range` or `now` — so someone driving it by hand can see
+	in devtools which gesture the machine took.
 -->
 <script lang="ts">
 	import { createEventDispatcher, onDestroy, onMount } from 'svelte';
 	import CliPane from '$lib/CliPane.svelte';
 	import Pill from '$lib/Pill.svelte';
-	import { pills } from '$lib/bar.js';
+	import { pills, selected } from '$lib/bar.js';
+	import { clockLabel } from '$lib/clock.js';
 	import { cursor, SPAN_ID, pointAt, pointed, type Cursor } from '$lib/cursor.js';
-	import { instantOn, msPerPx, timeAxis } from '$lib/hover.js';
+	import { inspectMark, instantOn, msPerPx, selectedTip, timeAxis } from '$lib/hover.js';
+	import { markOf, pressSpent } from '$lib/inspect.js';
 	import { readLanes } from '$lib/lanes.js';
 	import { advance, LONG_MS, SLOP_PX, snapTo, type Mode, type Press } from '$lib/nowpoint.js';
 	import { NOWVIEW_HISTORY, NOWVIEW_STEPS, nowviewSpec, zoomHistory } from '$lib/panes.js';
@@ -245,6 +266,27 @@
 	/** How far the band is dragged while a pan is in hand, in px. */
 	let panned = 0;
 	let held: ReturnType<typeof setTimeout> | undefined;
+	/**
+	 * What the press went down ON, for the inspect that may end it
+	 * (da-pzzoz). The element and not the id: a picture is redrawn under a
+	 * finger by the minute tick, so the id is read at the LIFT — off the
+	 * element under the pointer then, which `finish` is handed.
+	 */
+	let onMark: Element | null = null;
+	/**
+	 * Where the wait is DRAWN, in px across the widget's box, while a press
+	 * is still undecided.
+	 *
+	 * The 400ms used to commit to a range, and the bar dropping at that
+	 * moment was how a thumb learned the press had registered (da-rskp). It
+	 * does not commit any more — a still long press is an INSPECT and a
+	 * travelling one a range — so the feedback it took with it is owed back,
+	 * and this is it: a ring that closes over the wait, and a dashed stem
+	 * through the band once the wait is up, which is the shape the range's
+	 * own line has. Nothing is selected while it shows: it says only that
+	 * the finger has been heard.
+	 */
+	let waiting: { x: number; y: number } | null = null;
 
 	function begin(event: PointerEvent): void {
 		if (event.button > 0) return;
@@ -256,7 +298,10 @@
 		};
 		mode = 'press';
 		long = false;
+		onMark = markOf(event.target);
 		last = { x: event.clientX, y: event.clientY };
+		const home = el?.getBoundingClientRect();
+		waiting = home ? { x: event.clientX - home.x, y: event.clientY - home.y } : null;
 		clearTimeout(held);
 		held = setTimeout(() => {
 			long = true;
@@ -268,6 +313,8 @@
 	function drop(): void {
 		clearTimeout(held);
 		press = null;
+		onMark = null;
+		waiting = null;
 		mode = 'press';
 		long = false;
 		panned = 0;
@@ -278,6 +325,9 @@
 		if (!press || !axis) return;
 		const was = mode;
 		mode = advance(mode, press, x, y, long);
+		// The wait's mark belongs to a press that is still undecided; a
+		// gesture that has committed draws its own thing.
+		if (mode !== 'press' && mode !== 'hold') waiting = null;
 		if (mode === 'range' && was !== 'range') pointAt(selection(instantAt(press.x, press.y)));
 		if (mode === 'pan') panned = along(x, y) - along(press.x, press.y);
 		if (mode === 'range') range(instantAt(press.x, press.y), instantAt(x, y));
@@ -328,10 +378,18 @@
 	function finish(event: PointerEvent): void {
 		if (!press) return;
 		const still = Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP_PX;
+		// A STILL LONG PRESS INSPECTS (da-pzzoz) — vividn: «maybe long press
+		// could as well, as long as it's not a long press drag, which should
+		// be for selecting a time range». One that travelled is that range
+		// and committed long ago; one that lifts here never did.
+		if (mode === 'hold' && still) inspectMark(markOf(event.target) ?? onMark, event, svgEl());
 		if (mode === 'pan') commitPan();
 		// A press that never committed and never travelled is a tap; one
 		// that travelled is a scroll the browser took, and points nowhere.
-		else if (mode === 'press' && still) tap(press.x, press.y);
+		// A hold over ground that names no entry falls through to the same
+		// tap, so no gesture is ever dead — and TIME stays what a press on
+		// the band is for.
+		else if (!pressSpent() && (mode === 'press' || mode === 'hold') && still) tap(press.x, press.y);
 		drop();
 	}
 
@@ -528,6 +586,10 @@
 		roomy = home.width >= TINY_PX;
 		const svg = svgEl();
 		axis = svg && timeAxis(svg);
+		// Before the early returns below: a snapshot draws no tick labels
+		// and leaves by the first of them, and a selection is drawn there
+		// too.
+		readTip($selected);
 		const centreOf = (selector: string) => {
 			const r = el?.querySelector(selector)?.getBoundingClientRect();
 			return r ? r.left + r.width / 2 - home.x : null;
@@ -561,6 +623,54 @@
 
 	/** The pills the selection made: the ones the margin draws beside their instants. */
 	$: marginPills = $pills.filter((p) => p.id === 'cursor' || p.id === SPAN_ID);
+
+	// ── the tooltip on a selected entry ────────────────────────────────
+	//
+	// vividn: «maybe when something is selected in the nowview, it could also
+	// surface some bare info about it in a floating tooltip (start and end
+	// time as well as field and state + comment (maybe?)».
+	//
+	// Whatever SELECTED it: a double tap here, a long press, a row tapped
+	// in the tail. The picture is asked which of its marks name the
+	// selected entries (`selectedTip`, $lib/hover.ts) and the tooltip
+	// floats over them, so a selection this window does not draw shows
+	// nothing — «and nowview if that particular piece of data is
+	// represented there».
+	//
+	// The COMMENT is left out, and $lib/inspect.ts says why: a mark carries
+	// its field, its state and its instants and nothing else, so a comment
+	// would be a whole `datum get` per gesture.
+
+	/** What the tooltip says and where it floats, in the viewport's own px. */
+	let tip: { field: string; state: string; when: string; x: number; y: number } | null = null;
+
+	/** The two instants as one label: a span, or the one instant of a dot. */
+	function whenOf(from: number | null, to: number | null): string {
+		if (from === null || to === null) return '';
+		return from === to
+			? clockLabel(new Date(from))
+			: `${clockLabel(new Date(from))}–${clockLabel(new Date(to))}`;
+	}
+
+	function readTip(hids: string[]): void {
+		const svg = svgEl();
+		const found = svg && selectedTip(svg, hids);
+		if (!found) return void (tip = null);
+		const { box } = found;
+		tip = {
+			field: found.tip.field,
+			state: found.tip.state,
+			when: whenOf(found.tip.from, found.tip.to),
+			x: Math.max(8, Math.min(box.left + box.width / 2, window.innerWidth - 8)),
+			y: Math.min(box.bottom + 8, window.innerHeight - 44)
+		};
+	}
+
+	// Read again whenever the selection changes AND whenever the picture is
+	// redrawn or the box resized — `place` is the one that knows the latter,
+	// and it runs off the same MutationObserver the margin pills are placed
+	// by, so the tooltip cannot be left floating over a mark that is gone.
+	$: readTip($selected);
 
 	/**
 	 * Which way a selection the window does not contain lies.
@@ -632,6 +742,24 @@
 		<CliPane {spec} {epoch} />
 	</div>
 
+	<!-- The wait's mark: a ring that closes over LONG_MS, and a dashed stem
+	     through the band once it is up. `pointer-events: none`, so it is a
+	     picture of the gesture and never part of it. -->
+	{#if waiting && (mode === 'press' || mode === 'hold')}
+		<div
+			class="hold-mark"
+			class:held={mode === 'hold'}
+			data-mode={mode}
+			aria-hidden="true"
+			style:left="{waiting.x}px"
+			style:top="{waiting.y}px"
+			style:--long="{LONG_MS}ms"
+		>
+			<span class="stem"></span>
+			<span class="ring"></span>
+		</div>
+	{/if}
+
 	{#if far && !zoom}
 		<div class="nowview-steps" data-pans="x" style:left="{far.x}px" style:top="{far.y}px">
 			<button
@@ -675,6 +803,17 @@
 			title="the window onto the selection"
 			on:click={toSelection}>{away === 'left' ? '← sel' : 'sel →'}</button
 		>
+	{/if}
+
+	{#if tip}
+		<div class="nowview-tip" role="status" style:left="{tip.x}px" style:top="{tip.y}px">
+			<span class="what"
+				><span class="field">{tip.field}</span>{#if tip.state}<span class="state"
+						>{tip.state}</span
+					>{/if}</span
+			>
+			{#if tip.when}<span class="when">{tip.when}</span>{/if}
+		</div>
 	{/if}
 </div>
 
@@ -810,5 +949,126 @@
 
 	.nowview-jump.selection.right {
 		right: 62px;
+	}
+
+	/* THE WAIT'S MARK (da-pzzoz): what the bar dropping at 400ms used to
+	   say, now that the 400ms commits to nothing.
+
+	   A ring that closes over exactly `--long` — it is drawn the instant
+	   the finger lands and finishes as the press becomes a HOLD, so the
+	   wait is something the thumb can WATCH rather than something it finds
+	   out about at the end. Held, the ring fills and a dashed stem runs
+	   through the band at the press: the selection's own dashes
+	   ($lib/hover.ts), because what a drag from here makes is a range, and
+	   the mark should look like the thing it is about to become. */
+	.hold-mark {
+		position: absolute;
+		width: 0;
+		height: 0;
+		pointer-events: none;
+		z-index: 3;
+	}
+
+	.hold-mark .ring {
+		position: absolute;
+		left: -11px;
+		top: -11px;
+		width: 22px;
+		height: 22px;
+		box-sizing: border-box;
+		border: 1.5px solid #ffffff;
+		border-radius: 50%;
+		opacity: 0;
+		animation: hold-wait var(--long) ease-out forwards;
+	}
+
+	@keyframes hold-wait {
+		from {
+			transform: scale(1.9);
+			opacity: 0;
+		}
+		to {
+			transform: scale(1);
+			opacity: 0.8;
+		}
+	}
+
+	.hold-mark.held .ring {
+		animation: none;
+		opacity: 1;
+		background: rgba(255, 255, 255, 0.25);
+	}
+
+	/* Only once the wait is up: before that the ring alone is the whole of
+	   it, so a plain tap — which lifts long before 400ms — leaves no line
+	   across the band behind it. */
+	.hold-mark .stem {
+		display: none;
+	}
+
+	.hold-mark.held .stem {
+		display: block;
+		position: absolute;
+		left: -0.75px;
+		top: -50vh;
+		width: 1.5px;
+		height: 100vh;
+		background: repeating-linear-gradient(
+			to bottom,
+			#ffffff 0 3px,
+			transparent 3px 6px
+		);
+		opacity: 0.8;
+	}
+
+	/* A person's own reading of "the wait is up" is the ring; a person who
+	   has asked for less motion gets it without the sweep. */
+	@media (prefers-reduced-motion: reduce) {
+		.hold-mark .ring {
+			animation: none;
+			opacity: 0.8;
+		}
+	}
+
+	/* THE SELECTED ENTRY'S TOOLTIP (da-pzzoz) — vividn: «surface some bare
+	   info about it in a floating tooltip (start and end time as well as
+	   field and state». Fixed like the picture's hover label, and for the
+	   same reason: a band clips its picture, and a tooltip inside it would
+	   be clipped with it. `pointer-events: none` — the band under it keeps
+	   every gesture. */
+	.nowview-tip {
+		position: fixed;
+		z-index: 11;
+		transform: translateX(-50%);
+		display: flex;
+		gap: 0.5em;
+		align-items: baseline;
+		max-width: calc(100vw - 16px);
+		box-sizing: border-box;
+		padding: 2px 8px;
+		border: 1px solid #ffffff;
+		border-radius: 6px;
+		background: var(--ground);
+		color: var(--ink);
+		font-size: 0.72rem;
+		line-height: 1.4;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		pointer-events: none;
+	}
+
+	.nowview-tip .field {
+		font-weight: 600;
+	}
+
+	.nowview-tip .state::before {
+		content: ': ';
+		font-weight: 400;
+		color: var(--muted);
+	}
+
+	.nowview-tip .when {
+		color: var(--muted);
 	}
 </style>
