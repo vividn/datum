@@ -23,15 +23,34 @@ export async function atRows(page, id, want) {
 				const pane = document.querySelector(`section[data-pane="${id}"]`);
 				const box = pane.querySelector('.bar').clientHeight;
 				const row = pane.querySelector('.probe button').offsetHeight;
-				const rows = Number(pane.querySelector('.bar').dataset.rows);
-				return { rows, row, box, counted: rows === Math.max(1, Math.floor((box + gap) / (row + gap))) };
+				const el = pane.querySelector('.bar');
+				const rows = Number(el.dataset.rows);
+				// The TALLEST button, not the probe's: a bar's rows are as tall
+				// as the tallest thing in them (`Track +` is taller than a
+				// field's chip), so a box that holds `want` probe rows can
+				// still be a few pixels short of the real ones — measured at
+				// 280x275, box 61px against two 27px probes, every button 3px
+				// above the top (da-ckw3, found when the bar got shorter and
+				// the search landed on that height instead of beside it).
+				const tall = Math.max(
+					row,
+					...[...el.querySelectorAll('button:not([tabindex=\"-1\"])')].map((b) => b.offsetHeight)
+				);
+				return {
+					rows,
+					row,
+					box,
+					tall,
+					counted: rows === Math.max(1, Math.floor((box + gap) / (row + gap)))
+				};
 			},
 			{ id, gap: GAP }
 		);
 	let last = null;
 	for (let i = 0; i < 14; i += 1) {
-		const { rows, row, box } = await read();
-		if (rows === want) return;
+		const { rows, row, box, tall } = await read();
+		// The rows drawn AND the room for them at their real height.
+		if (rows === want && box + 0.5 >= want * tall + (want - 1) * GAP) return;
 		const { width, height } = page.viewportSize();
 		const measured = last && last.height !== height ? (box - last.box) / (height - last.height) : 0;
 		const slope = measured > 0.05 ? measured : 1 / 3;

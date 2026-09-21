@@ -342,7 +342,11 @@ describe('the title on the line', () => {
 	test("a title on the page's top edge is whole, and the panes start where the page's margin ends", async () => {
 		await withApp(async ({ page }) => {
 			const seen = await page.evaluate(() => {
-				const main = document.querySelector('main');
+				// The page's air is `.frame`'s, not `main`'s (da-ckw3): a padded
+				// box cannot be shorter than its padding, and `main` has to be
+				// able to reach zero when the bar's log is pulled to its tallest.
+				// So the margin a pane starts after is measured where it now is.
+				const main = document.querySelector('main > .frame');
 				const h2 = document.querySelector('section[data-pane="strip"] h2');
 				const box = h2.closest('.titlebox');
 				const h = h2.getBoundingClientRect();

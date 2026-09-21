@@ -34,6 +34,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { atEachScreen, seedLines, startApp, stopApp, withApp } from './support/app.mjs';
+import { dragBar } from './support/bar.mjs';
 import { chooser } from './support/layout.mjs';
 
 before(startApp);
@@ -79,6 +80,24 @@ function boxOf(page, selector) {
 		const { top, bottom } = el.getBoundingClientRect();
 		return { top, bottom, screen: document.documentElement.clientHeight };
 	}, selector);
+}
+
+/** Wait until `selector` exists and its height has stopped changing. */
+async function atRest(page, selector) {
+	await page.locator(selector).waitFor();
+	await page.waitForFunction(
+		(s) => {
+			const el = document.querySelector(s);
+			if (!el) return false;
+			const now = el.getBoundingClientRect().height;
+			const was = window.__atRest;
+			window.__atRest = now;
+			return now > 0 && Math.abs(now - was) < 0.5;
+		},
+		selector,
+		{ polling: 'raf' }
+	);
+	await page.evaluate(() => delete window.__atRest);
 }
 
 async function assertOnScreen(page, selector, what) {
@@ -218,27 +237,96 @@ describe('on a phone-sized screen', () => {
 		}, { viewport: NARROW });
 	});
 
-	// The REPL's own control (da-bhvy) is on the bottom bar's top line, and
-	// what it opens hangs upward from there. A lid a thumb cannot find is
-	// no lid: it is asserted here at every screen, box and all.
-	test('the REPL control is on screen, and opens there', async (t) => {
+	// The output folds away and a DRAG is what folds it (da-ckw3). There was
+	// a `^` button on the bar's top line until vividn, 2026-09-18: "The ^
+	// button obscures the text. Let's just get rid of this button and instead
+	// just put a little carrat above the input bar to suggest that it can be
+	// pulled up." So there is no control to be reachable any more, and what
+	// this holds instead is the pair that replaced it: the HINT is on the
+	// screen at every phone width (a mark off the edge suggests nothing), and
+	// the output the drag opens is on the screen too.
+	test('the arrow is on screen, and the output it opens is too', async (t) => {
 		await withApp(async ({ page }) => {
 			await atEachScreen(t, page, SCREENS, async () => {
-				await assertOnScreen(page, '.prompt-bar .caret', 'the REPL control');
+				await assertOnScreen(page, '.prompt-bar .caret', 'the arrow');
 				const box = await page.locator('.prompt-bar .caret').boundingBox();
 				const width = await page.evaluate(() => document.documentElement.clientWidth);
-				assert.ok(box.height >= 24, `the REPL control is ${box.height}px tall`);
 				assert.ok(
 					box.x >= 0 && box.x + box.width <= width + 1,
-					`the REPL control is ${box.x}–${box.x + box.width} on a ${width}px screen`
+					`the arrow is ${box.x}–${box.x + box.width} on a ${width}px screen`
 				);
 
-				await page.locator('.prompt-bar .caret').click();
-				await assertOnScreen(page, '.prompt-bar .expansion', 'the REPL it opens');
-				// Shut again, so the next screen presses the same control.
-				await page.locator('.prompt-bar .caret').click();
-				await page.locator('.prompt-bar .expansion').waitFor({ state: 'detached' });
+				await dragBar(page, -40);
+				// The bar GLIDES (da-ckw3, $lib/log.ts): the section is in the
+				// DOM on the first frame and grows for ~220ms after it, so what
+				// has to be on the screen is where it comes to REST — measured a
+				// frame too early it is a 0px box that would pass, or, on the
+				// frame before that, no box at all.
+				await atRest(page, '.prompt-bar .section.output');
+				await assertOnScreen(page, '.prompt-bar .section.output', 'the output it shows');
+				// Folded again, so the next screen starts where this one did.
+				await dragBar(page, 40);
+				await page.locator('.prompt-bar .section.output').waitFor({ state: 'detached' });
 			});
+		}, { viewport: PHONE });
+	});
+
+	// And the history itself: a phone reaches it by pulling the bar up
+	// (da-ckw3), and what it must find there is the bar at the top and
+	// `close history` on the screen — a control at the END of a history
+	// thousands of entries long would be no control at all.
+	test('the log a pull on the bar opens, and its way back, are on screen', async (t) => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.submit('occur coffee');
+			await atEachScreen(t, page, SCREENS, async () => {
+				await page.evaluate(() => {
+					const el = document.querySelector('.prompt-bar');
+					const r = el.getBoundingClientRect();
+					const x = r.left + r.width / 2;
+					const y = r.top + r.height / 2;
+					const send = (type, at) =>
+						el.dispatchEvent(
+							new PointerEvent(type, {
+								pointerId: 5,
+								pointerType: 'touch',
+								isPrimary: true,
+								clientX: x,
+								clientY: at,
+								bubbles: true,
+								cancelable: true
+							})
+						);
+					send('pointerdown', y);
+					for (let d = 20; d <= 200; d += 20) send('pointermove', y - d);
+					send('pointerup', y - 200);
+				});
+				// The log is OPEN when the bar has been pulled past the notch.
+				// The page itself never scrolls (da-ckw3, $lib/log.ts sizes three
+				// boxes off one number), so `--log-height` is the only truth
+				// there is — a `scrollTop` check here would pass on a page that
+				// never moved at all.
+				await page.waitForFunction(
+					() =>
+						parseFloat(
+							getComputedStyle(document.querySelector('.shell')).getPropertyValue('--log-height')
+						) > 0
+				);
+				await assertOnScreen(page, '.prompt-bar .section.input', 'the input section in the log');
+				await assertOnScreen(page, '.log .top', '`close history`');
+				const back = await page.locator('.log .top').boundingBox();
+				assert.ok(back.height >= 24, '`close history` is ' + back.height + 'px tall');
+
+				// Back to the dashboard, so the next screen pulls from rest.
+				await page.locator('.log .top').click();
+				await page.waitForFunction(
+					() =>
+						parseFloat(
+							getComputedStyle(document.querySelector('.shell')).getPropertyValue('--log-height')
+						) < 0.5
+				);
+			});
+			assert.deepEqual(app.errors, []);
 		}, { viewport: PHONE });
 	});
 

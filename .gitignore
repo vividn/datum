@@ -1,8 +1,13 @@
 /target
-/.beads
+# The agent tooling's own directories, wherever a tool happens to run.
+# NOT anchored: `/.beads` and `/.runtime` matched the repo root only, so a
+# `gt` run inside `web/` left `web/.runtime/agent.lock` — a hostname and a
+# pid — and `web/.beads/redirect` untracked, and the auto-checkpoint swept
+# them into four commits of PR #46 before a canary read one back to us.
+.beads/
 /.claude/*
 !/.claude/skills/
-/.runtime
+.runtime/
 /embeddeddolt
 /man
 

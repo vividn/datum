@@ -200,8 +200,15 @@ const layouts = (app, fn, ...args) =>
  */
 const receipt = (page) => page.locator('.prompt-bar .doc .receipt');
 
-/** The result area's raw lines — what a command with no action echo shows. */
-const rawResult = (page) => page.locator('.prompt-bar .result .raw');
+/**
+ * The output section's raw lines — what a command with no action echo shows.
+ *
+ * No `.result` wrapper any more: the bar's output section is ROW ONE OF THE
+ * HISTORY now (da-ckw3, vividn 2026-09-21), so it is a `ReplEntry` like every
+ * row below it, and the raw lines are `RawLines.svelte`'s own box. The input
+ * widget's receipt still has the wrapper, because it is still a `BarResult`.
+ */
+const rawResult = (page) => page.locator('.prompt-bar .raw');
 
 const PRONOUNCED = 'rgb(255, 209, 102)';
 
@@ -666,7 +673,7 @@ describe('the bottom bar', () => {
 			// own stderr lines and is marked (da-xfa4).
 			await input.fill('foo');
 			await input.press('Enter');
-			await page.locator('.prompt-bar .result.error').waitFor();
+			await page.locator('.prompt-bar .raw.error').waitFor();
 			assert.equal(await receipt(page).count(), 0, 'an error drew a document');
 			const said = await app.runLine('foo');
 			const firstLine = said.stderr.replace(/\x1b\[[0-9;]*m/g, '').split('\n').find((l) => l.trim()).trim();
@@ -682,9 +689,17 @@ describe('the bottom bar', () => {
 	// The page's one command line and its status line (da-rfs9): tall
 	// enough to stand out — absolute heights, not "bigger than before" —
 	// and the REPL is only the scrollback it types into. da-xfa4 gave it a
-	// result area above the input row and fixed the whole thing at 6rem,
-	// so the window is around that number and still absolute.
-	test('stands out at 92–104px with a ≥1.05rem prompt; the REPL has no prompt, and the bar and a chip land in its scrollback', async () => {
+	// result area above the input row and fixed the whole thing at 6rem;
+	// da-ckw3 made the two sections EQUAL (vividn: "so 50/50") at 3.6rem
+	// each, and then vividn on that build: "Decrease the height of the input
+	// bar. There is a lot of wasted padding" and "increase the size of the
+	// font in the input bar slightly". So they are no longer equal: the
+	// input is 2.9rem — one row of 1.25rem text over the 1.1rem strip the
+	// ACTION words stand in — the output is still 3.6rem, and the hairline
+	// between the bar and the dashboard is the odd pixel. 46.4 + 57.6 + 1.
+	// The window moves with the shape and stays absolute, and it is the
+	// OPEN bar's, which is what a desktop starts on.
+	test('stands out at 100–112px with a ≥1.05rem prompt; the REPL has no prompt, and the bar and a chip land in its scrollback', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -693,7 +708,7 @@ describe('the bottom bar', () => {
 					font: parseFloat(getComputedStyle(document.querySelector('.prompt-bar input')).fontSize),
 					rem: parseFloat(getComputedStyle(document.documentElement).fontSize)
 				}));
-				assert.ok(height >= 92 && height <= 104, `the bottom bar is ${height}px tall at 1280x800`);
+				assert.ok(height >= 100 && height <= 112, `the bottom bar is ${height}px tall at 1280x800`);
 				assert.ok(font >= 1.05 * rem, `the prompt's input is ${font}px on a ${rem}px rem`);
 
 				const repl = page.locator('section[data-pane="repl"]');
@@ -813,7 +828,7 @@ describe('the bottom bar', () => {
 			const input = page.locator('.prompt-bar input');
 			await input.fill('foo');
 			await input.press('Enter');
-			await page.locator('.prompt-bar .result.error').waitFor();
+			await page.locator('.prompt-bar .raw.error').waitFor();
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'a failed command keeps the pill');
 		});
 	});
@@ -998,7 +1013,11 @@ describe('on a phone', () => {
 			const screen = await page.evaluate(() => document.documentElement.clientHeight);
 			const bar = await page.locator('.prompt-bar').boundingBox();
 			assert.ok(bar.y >= 0 && bar.y + bar.height <= screen + 1, `the bottom bar is off-screen: ${JSON.stringify(bar)} on ${screen}`);
-			assert.ok(bar.height >= 52, `the bottom bar is ${bar.height}px tall on a phone`);
+			// A phone starts FOLDED (da-ckw3), so the bar is the input row and
+			// the hairline alone — 2.9rem + 1px — and not the open bar's 105.
+			// The floor is still a fingertip: the row carries the mark, the
+			// clock, the `❯`, the box and the caret, all of them 24px controls.
+			assert.ok(bar.height >= 44, `the bottom bar is ${bar.height}px tall on a phone`);
 			const input = await page.locator('.prompt-bar input').boundingBox();
 			assert.ok(input.width >= 100, `the prompt is ${input.width}px wide`);
 

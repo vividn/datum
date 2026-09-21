@@ -10,8 +10,9 @@
 	runs it, and both empty together. Two local strings synced by effects is
 	how two boxes drift by a keystroke.
 
-	The clock left in da-xfa4: it is under the logo now, in the bar's left
-	block, where it lines up with this row.
+	The clock left in da-xfa4: it is BESIDE the logo now (da-ckw3), on this
+	one row, almost touching it — vividn: "decrease margin between db/logo and
+	clock, they are different colors so they can be almost touching".
 
 	Enter empties the box the way a shell consumes a line. Up and down walk
 	the history every prompt shares ($lib/replStore.ts), shell-style: the
@@ -48,14 +49,18 @@
 	when it fades. Each instance measures its OWN text, so a widget's pills
 	sit past what was typed in the widget.
 
-	When text and pills outgrow the box the pills STOP following and stand
-	at its right edge, and the box reserves their width as padding so the
-	text scrolls under the caret rather than under the pills: what a pill
-	says is state the next command carries, and it has to stay both legible
-	and clickable however long the line is.
+	When text and pills outgrow the box the pills KEEP following: they go
+	off the right edge, and the reader scrolls the line rightward to reach
+	them, exactly as they would to read the end of what they typed. vividn,
+	2026-09-18: "They should never go over the > at all. They should be to
+	right, and just go off the right edge of the screen." Text and pills are
+	ONE STRIP in one scrollport (`.field` and `.run` below), so that is one
+	scroll and not two. (Two earlier rules stood here and he has ruled out
+	both: parking the pills at the box's right edge, and letting them reach
+	back over the `❯`.)
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
 	import Pill from '$lib/Pill.svelte';
 	import { ready } from '$lib/layout/engine.js';
@@ -67,14 +72,19 @@
 	 */
 	export let widget = false;
 
-	/** The air between the `❯` and a pill, so the box stays easy to click into. */
+	/** The air between what is typed and the first pill. */
 	const GAP = 10;
+	/** Room for the caret past the last character, so it is never clipped. */
+	const CARET = 3;
 
 	/** Index into the history, or -1 while editing a fresh line. */
 	let cursor = -1;
 	let draft = '';
 
 	let box: HTMLInputElement;
+	/** The scrollport: `.field`, which the run is longer than. */
+	let port: HTMLElement;
+	/** The scrollport's width: what the run has before it goes off the edge. */
 	let boxWidth = 0;
 	let textWidth = 0;
 	let pillsWidth = 0;
@@ -93,7 +103,74 @@
 
 	/** What the pills follow: what is typed, or the ghost while one is up. */
 	$: mirrored = $text || ($ghost ? $ghost.line : '');
-	$: pillsLeft = Math.max(GAP, Math.min(textWidth + GAP, boxWidth - pillsWidth));
+	/**
+	 * THE LINE IS ONE SCROLLING RUN: the box, a gap, then the pills.
+	 *
+	 * vividn, 2026-09-18: "They should never go over the > at all. They should
+	 * be to right, and just go off the right edge of the screen. The user can
+	 * scroll to the right when input text gets long, so it should be
+	 * equivalently present in this rightwards scroll."
+	 *
+	 * So the pills are not an overlay pinned over the box any more — they are
+	 * the far end of the line itself. `.field` is the scrollport, `.run` is
+	 * the line inside it, and the pills sit at the end of the run. What goes
+	 * past the right edge is reached by scrolling right, which is the same
+	 * gesture that reaches the end of a long command, and the two are the
+	 * same scroll because they are the same strip.
+	 *
+	 * The BOX takes what is left of the row and never less than the text, so
+	 * the caret is always inside it and the browser keeps the caret on screen
+	 * by scrolling the run — never by scrolling the text out from under the
+	 * pills. That was the fault in the first build of this rule: the box
+	 * reserved the pills' width as its own right padding, and a border-box
+	 * element cannot be narrower than its padding, so on a 390px phone two
+	 * pills made the box 365px wide inside a 211px slot. Everything typed was
+	 * drawn off the right of the screen. Measured, and in the PR.
+	 *
+	 * Two earlier rules vividn has ruled out: standing the pills at the box's
+	 * RIGHT EDGE when they outgrow it, and (this bead's own, which vremya
+	 * asked for and he overruled) letting them reach leftward over the `❯`.
+	 */
+	/**
+	 * The box: the whole visible row, and never narrower than what is in it.
+	 *
+	 * The row, so a press anywhere in it puts the caret there. Never under
+	 * the text, so the caret is always inside the box and the box itself
+	 * never scrolls — the ONE scroll is the run's, which is what makes the
+	 * pills part of the same gesture.
+	 */
+	$: inputWidth = Math.max(textWidth + CARET, boxWidth);
+	/** The pills, straight after the typed text, and the run they end. */
+	$: pillsLeft = textWidth + GAP;
+	$: runWidth = pillsWidth ? Math.max(inputWidth, pillsLeft + pillsWidth) : inputWidth;
+	$: void follow(inputWidth);
+
+	/**
+	 * Keep the caret on the screen after the box has been RESIZED.
+	 *
+	 * The browser does reveal a caret by scrolling the scrollport — but it
+	 * does it on the keystroke, with the width the box had before it grew for
+	 * the character just typed. And the box grows a beat later still: its
+	 * width comes from the mirror, which is measured by a resize observer and
+	 * not by the keystroke. So the browser's scroll is always a character or
+	 * two behind, and on a long line the tail is drawn off the right edge.
+	 *
+	 * Hence: react to the WIDTH, not to the keystroke, and put a caret at the
+	 * END of the line back at the edge — which is where a terminal keeps it.
+	 * A caret in the middle is left to the browser, whose error there is one
+	 * character and invisible. Nothing happens unless this box has the focus,
+	 * so a pill appearing beside an idle prompt moves nothing.
+	 */
+	async function follow(width: number): Promise<void> {
+		await tick();
+		if (!port || !box || document.activeElement !== box) return;
+		if (box.selectionStart !== box.value.length) return;
+		// An EMPTY box is at its start, whatever the run is long: a ghost is
+		// what widens it there (the mirror carries the ghost's line), and a
+		// ghost the reader did not type is no reason to scroll their caret
+		// off the left edge (canary on PR #46).
+		port.scrollLeft = box.value ? Math.max(0, width + CARET - port.clientWidth) : 0;
+	}
 
 	function submit(): void {
 		const line = $text;
@@ -131,9 +208,11 @@
 
 <form class="line" on:submit|preventDefault={submit}>
 	<span class="prompt">❯</span>
-	<span class="field" style="--pills: {pillsWidth}px" bind:clientWidth={boxWidth}>
+	<span class="field" bind:this={port} bind:clientWidth={boxWidth}>
+		<span class="run" style="width: {runWidth}px">
 		<input
 			type="text"
+			style="width: {inputWidth}px"
 			bind:this={box}
 			bind:value={$text}
 			on:keydown={recall}
@@ -171,18 +250,31 @@
 				<span class="spent {pill.kind}">{pill.text}</span>
 			{/each}
 		</span>
+		</span>
 	</span>
 </form>
 
 <style>
+	/* NO RULE ABOVE IT. The line used to draw its own `border-top`, which
+	   is a claim about what is ABOVE it — and the line does not know: in the
+	   bar's input row nothing is (da-ckw3), and in an input widget the
+	   receipt is. So the rule belongs to the surface, and the one that wants
+	   it draws it (InputWidget.svelte).
+
+	   It was not a free leftover in the bar. Svelte bumps a scoped
+	   selector's specificity by repeating the class — `.line.svelte-x
+	   .svelte-x.svelte-x` — so PromptBar's `.prompt :global(.line)` override
+	   could not win, and a hairline the code said was gone was drawn from
+	   the `❯` to the right edge (vremya on PR #46). An override that loses
+	   is worth less than the declaration never being made. */
 	.line {
 		/* What is typed, and so what a pill beside it reads at — vividn asked
-		   for the two to be one size (da-tnv3), so they are one number. */
-		--input-font: 1.15rem;
+		   for the two to be one size (da-tnv3), so they are one number. A
+		   step up on 2026-09-18: "increase fontsize of input bar slightly". */
+		--input-font: 1.25rem;
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		border-top: 1px solid var(--tint);
 		padding: 0.45rem 0.6rem;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	}
@@ -191,22 +283,43 @@
 		color: var(--accent);
 	}
 
-	/* The box, the ghost over it, the mirror behind it and the pills on
-	   top, one on top of the other. */
+	/* THE SCROLLPORT: what of the line is on the screen. What runs past its
+	   right edge — the end of a long command, a pill, both — is reached by
+	   scrolling it right, which is the one gesture vividn asked for. Its bar is
+	   hidden: this is a 24px row, and a scrollbar drawn in it would be half
+	   the row. */
 	.field {
 		position: relative;
-		display: flex;
 		flex: 1;
 		min-width: 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: none;
 	}
 
+	.field::-webkit-scrollbar {
+		display: none;
+	}
+
+	/* THE LINE ITSELF, as long as it is: the box, a gap, the pills. The
+	   ghost and the mirror hang off it too, so they scroll with the text
+	   they belong to rather than standing still over it. */
+	.run {
+		position: relative;
+		display: flex;
+		align-items: center;
+	}
+
+	/* Its width is the run's to give (`inputWidth`), so `flex: none`: a box
+	   that grew to the scrollport would put the caret past the right edge on
+	   every long line, which is the fault this shape replaced. */
 	input {
-		flex: 1;
+		flex: none;
 		min-width: 0;
 		background: transparent;
 		border: none;
 		outline: none;
-		padding: 0 var(--pills) 0 0;
+		padding: 0;
 		color: var(--ink-bright);
 		font: inherit;
 		font-size: var(--input-font);
@@ -219,7 +332,7 @@
 	   dim and fading dimmer is a change too small to read. */
 	.ghost {
 		position: absolute;
-		inset: 0 var(--pills) 0 0;
+		inset: 0;
 		display: flex;
 		align-items: center;
 		overflow: hidden;

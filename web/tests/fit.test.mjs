@@ -297,16 +297,19 @@ describe('a pane', () => {
 	// input WIDGET (da-3zon) draws the very same line in a pane, so it is
 	// held to the same width wherever a reader parks it.
 	//
-	// The clock is no longer ON that line: da-xfa4 moved it under the logo,
-	// in the bar's left block, where it lines up with the prompt row. It
-	// still drops its seconds at 360px, and that is still the claim — of
-	// the bar, which is the one that has a clock.
+	// The clock is ON that line again: da-xfa4 moved it under the logo, and
+	// da-ckw3 put the four things of the input on ONE row — and gave the
+	// clock its seconds back at every width (vividn: "On mobile too please
+	// show seconds on the clock"). So the claim that was "it drops its
+	// seconds at 360px" is now "it keeps them, and the box still has room
+	// to type in", which is the width assertion below and the reason it is
+	// the one that matters.
 	const PROMPTS = [
 		{
 			what: "the bottom bar's input",
 			path: '/',
 			line: '.prompt-bar .line',
-			clock: '.prompt-bar .stamp',
+			clock: '.prompt-bar .section.input .stamp',
 			frame: '.prompt-bar'
 		},
 		{
@@ -326,7 +329,7 @@ describe('a pane', () => {
 					if (path !== '/') await app.goto(path);
 					if (clockSelector) {
 						const clock = await page.locator(clockSelector).innerText();
-						assert.match(clock, /^\d{2}:\d{2}$/, `the prompt clock kept its seconds at 360px: ${clock}`);
+						assert.match(clock, /^\d{2}:\d{2}:\d{2}$/, `the prompt clock dropped its seconds at 360px: ${clock}`);
 					}
 
 					const { input, line, pane } = await page.evaluate(

@@ -109,7 +109,7 @@
 >
 	<div class="lines">
 		<div class="receipt">
-			<span class="action">{doc.action}</span>
+			<span class="action" style:color={doc.action_color}>{doc.action}</span>
 			<button
 				type="button"
 				class="hid"
@@ -205,6 +205,8 @@
 		color: #8888aa;
 	}
 
+	/* datum's own colour for the tag when the module carries one (da-ckw3);
+	   the page's accent when it does not, which is what it always was. */
 	.action {
 		color: var(--accent-bright);
 	}

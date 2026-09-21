@@ -51,6 +51,20 @@
 	 */
 	export let ownTitle = true;
 
+	/**
+	 * Draw the BODY alone: no title strip, no outline.
+	 *
+	 * For a surface that is not a pane of the dashboard and must not read as
+	 * one. The bar's log is the case (da-ckw3): it shows the REPL under the
+	 * command line, and vividn, 2026-09-21: "Remove the 'repl' header line."
+	 * A titled box under a reader's own prompt says "this is a widget"; what
+	 * it has to say is "this is the rest of what you just saw".
+	 *
+	 * Separate from `frame`, which also draws no title here — that one hands
+	 * the title UP to a frame that draws it. This one has no title at all.
+	 */
+	export let bare = false;
+
 	/** Pin the view to the newest content. The REPL calls this after a run. */
 	export function scrollToBottom(): void {
 		if (body) body.scrollTop = body.scrollHeight;
@@ -97,12 +111,13 @@
 <svelte:element
 	this={frame ? 'div' : 'section'}
 	class:pane={!frame}
+	class:bare={!frame && bare}
 	class:framed={!!frame}
-	class:alarm={!frame && alarm}
+	class:alarm={!frame && !bare && alarm}
 >
-	{#if !frame}
+	{#if !frame && !bare}
 		<h2><slot name="title">{title}</slot></h2>
-	{:else if $$slots.title && ownTitle}
+	{:else if frame && $$slots.title && ownTitle}
 		<span class="hosted-title" use:portal={frame}><slot name="title" /></span>
 	{/if}
 	<div class="body" bind:this={body}><slot /></div>
@@ -111,6 +126,13 @@
 <style>
 	.framed {
 		display: contents;
+	}
+
+	/* No outline and no strip: the body is the whole of it. */
+	.pane.bare {
+		border: none;
+		border-radius: 0;
+		background: none;
 	}
 
 	.hosted-title {

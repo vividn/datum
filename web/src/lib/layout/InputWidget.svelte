@@ -72,7 +72,19 @@
 		height: 100%;
 	}
 
+	/* The receipt stands above the prompt row here, so this is the surface
+	   that rules it off (da-ckw3 moved the declaration out of Prompt.svelte,
+	   which cannot know what is above it).
+
+	   In the default order only. REVERSED the column turns over, the line is
+	   at the widget's TOP and its border-top is drawn on that outside edge,
+	   with nothing where the two actually meet — measured by vremya on PR
+	   #46: the line at y 52–88, the receipt at 88–131. That is what the
+	   widget did before this bead too, so nothing here changed it; whether a
+	   reversed widget wants a seam of its own is da-gvdc's to say, not
+	   this bead's. */
 	.input-widget :global(.line) {
 		flex: none;
+		border-top: 1px solid var(--tint);
 	}
 </style>

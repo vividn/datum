@@ -32,8 +32,15 @@ const valueOf = (page, selector) => page.locator(selector).inputValue();
  *  document, joined: a field's first log echoes two — the TRACK one that
  *  declares it and the entry (da-c8mh) — and the claim here is that the two
  *  frames show the SAME receipt, however many documents that receipt has. */
+/**
+ * What a surface's receipt says, wherever that surface keeps it.
+ *
+ * No `.result` in the path: the bar's output section is row one of the
+ * history now (da-ckw3) and so has no `BarResult` wrapper, while the input
+ * widget's receipt still does. `.doc` is what both draw.
+ */
 const receipt = async (page, frame) =>
-	(await page.locator(`${frame} .result .doc`).allInnerTexts()).join('\n');
+	(await page.locator(`${frame} .doc`).allInnerTexts()).join('\n');
 
 /** Type into a box the way a person does, one key at a time. */
 async function typeIn(page, selector, line) {

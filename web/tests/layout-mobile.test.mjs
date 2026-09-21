@@ -11,6 +11,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { unfold as openBar } from './support/bar.mjs';
 import { DESKTOP, pane, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
@@ -43,7 +44,11 @@ const screen = (page) =>
 	page.evaluate(() => ({
 		width: innerWidth,
 		prompt: document.querySelector('.prompt-bar').getBoundingClientRect().top,
-		panes: [...document.querySelectorAll('section.pane')].map((p) => {
+		// The DASHBOARD's panes: `main`'s, not the page's. The log under the
+		// bar holds a REPL pane of its own, and it mounts on the first drag
+		// (da-ckw3) — which is now how the output is unfolded, since the `^`
+		// button went. A pane below the fold is not a pane on this screen.
+		panes: [...document.querySelectorAll('main section.pane')].map((p) => {
 			const { left, right, top, bottom } = p.getBoundingClientRect();
 			return { id: p.dataset.pane, left, right, top, bottom };
 		})
@@ -107,20 +112,40 @@ describe('a fresh phone', () => {
 				const { page } = app;
 				await app.declare('coffee');
 				await app.reload();
-				// `main` clips rather than scrolls, so the scroll metrics say
-				// nothing: each pane's own box against the screen does.
-				const s = await screen(page);
-				assert.equal(s.panes.length, 5);
-				for (const p of s.panes) {
-					assert.ok(p.left >= 0 && p.right <= s.width, `${p.id} is off the side: ${p.left}…${p.right} of ${s.width}`);
-					assert.ok(p.bottom <= s.prompt, `${p.id} runs under the bottom bar: ${p.bottom} past ${s.prompt}`);
+				// A fresh phone opens FOLDED (da-ckw3), which is the state
+				// this layout is drawn for and which gives it back the
+				// output section's ~58px. Both states are asked, because the
+				// reader may pull the bar open: what is CUT when the output
+				// is showing is what the second pass says out loud.
+				for (const folded of [true, false]) {
+					if (!folded) await openBar(page);
+					// `main` clips rather than scrolls, so the scroll metrics say
+					// nothing: each pane's own box against the screen does.
+					const s = await screen(page);
+					assert.equal(s.panes.length, 5);
+					const under = s.panes.filter((p) => p.bottom > s.prompt).map((p) => p.id);
+					for (const p of s.panes)
+						assert.ok(p.left >= 0 && p.right <= s.width, `${p.id} is off the side: ${p.left}…${p.right} of ${s.width}`);
+					if (folded)
+						assert.deepEqual(under, [], `folded, ${under.join(', ')} runs under the bottom bar`);
+					else if (under.length)
+						// Not a failure, a MEASUREMENT: the tree sits on its own
+						// floors at these sizes, so an open bar takes the last
+						// pane's tail. Named here so it is a decision and not a
+						// surprise, and it is why a phone starts folded.
+						assert.deepEqual(
+							under,
+							['command'],
+							`open, the panes cut are ${under.join(', ')} — not the last one alone`
+						);
+					const commands = await whole(commandBar(page));
+					// Four at 360: the fifth, `end`, is a scroll away, since the
+					// five are wider than a 360px phone's pane (da-shzs).
+					if (folded)
+						for (const name of ['Undo', 'Redo', 'occur', 'start', ...(width > 360 ? ['end'] : [])])
+							assert.ok(commands.includes(name), `${name} is not whole: ${commands.join(' · ')}`);
+					assert.ok((await whole(fieldsBar(page))).includes('Track +'), 'Track + is not whole');
 				}
-				const commands = await whole(commandBar(page));
-				// Four at 360: the fifth, `end`, is a scroll away, since the
-				// five are wider than a 360px phone's pane (da-shzs).
-				for (const name of ['Undo', 'Redo', 'occur', 'start', ...(width > 360 ? ['end'] : [])])
-					assert.ok(commands.includes(name), `${name} is not whole: ${commands.join(' · ')}`);
-				assert.ok((await whole(fieldsBar(page))).includes('Track +'), 'Track + is not whole');
 				assert.deepEqual(app.errors, []);
 			}, phone(width, height));
 		});

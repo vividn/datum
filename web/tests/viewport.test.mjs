@@ -85,7 +85,7 @@ for (const engine of [chromium, webkit]) {
 					const units = await page.evaluate(() =>
 						[...document.styleSheets]
 							.flatMap((sheet) => [...sheet.cssRules])
-							.filter((rule) => /\.(shell|prompt-bar|expansion)\b/.test(rule.selectorText ?? ''))
+							.filter((rule) => /\.(shell|pages|prompt-bar|log)\b/.test(rule.selectorText ?? ''))
 							.map((rule) => rule.cssText)
 							.filter((text) => /\d[dsl]?v(h|b|max|min)\b/.test(text))
 					);
@@ -105,6 +105,53 @@ for (const engine of [chromium, webkit]) {
 					await fitsTo(page, 700);
 				},
 				onPhone(engine)
+			);
+		});
+
+		// The measurement that corrects a LAUNCH, which sends no event at all
+		// (da-ckw3 owns this one; da-31ts built the cure and left it
+		// untested). vividn: a rotation cured it, «so maybe just one size
+		// refresh is necessary after the page loads» — that refresh is the
+		// `requestAnimationFrame` in `followViewport`. Here the first read of
+		// `visualViewport.height` is too TALL, as an installed PWA's is
+		// before its system bars settle, and every read after it is the
+		// truth. Nothing is dispatched: if that one frame's re-measure were
+		// deleted, nothing else in this suite would go red and only an
+		// installed phone would ever notice.
+		test('a launch that measured too tall is corrected a frame later, with no event', async () => {
+			const TALL = 640;
+			const TRUE = 400;
+			await withApp(
+				async ({ page }) => {
+					await until(
+						() => edges(page),
+						(e) => e.shell === TRUE && e.bar === TRUE,
+						5000
+					);
+					// And it really was the wrong number that was read first:
+					// a test whose fake never lied would pass for nothing.
+					const reads = await page.evaluate(() => window.__viewportReads);
+					assert.equal(reads[0], TALL, `the first read was ${reads[0]}, not the too-tall one`);
+					assert.ok(reads.length > 1, 'nothing read the height a second time');
+				},
+				{
+					...onPhone(engine),
+					prepare: (context) =>
+						context.addInitScript(
+							([tall, truth]) => {
+								window.__viewportReads = [];
+								Object.defineProperty(visualViewport, 'height', {
+									configurable: true,
+									get() {
+										const answer = window.__viewportReads.length === 0 ? tall : truth;
+										window.__viewportReads.push(answer);
+										return answer;
+									}
+								});
+							},
+							[TALL, TRUE]
+						)
+				}
 			);
 		});
 

@@ -35,6 +35,7 @@
 
 import { derived, get, writable } from 'svelte/store';
 import { hidsOf, pendingVerb as verbOf, type Verb } from './commands.js';
+import { parseEcho } from './echo.js';
 import { pressWithPills } from './layout/engine.js';
 import type { RunResult } from './run.js';
 import { hidPill, pickOf, picked, same } from './selection.js';
@@ -323,5 +324,70 @@ export interface LastRun {
 export const last = writable<LastRun | null>(null);
 
 /** `record` says a command ran. */
-export const noteRun = (line: string, ranAt: number, result: RunResult): void =>
+export const noteRun = (line: string, ranAt: number, result: RunResult): void => {
 	last.set({ line, ranAt, result });
+	mark(result);
+};
+
+/**
+ * How long a command's ACTION words stay on a FOLDED bar (da-ckw3).
+ *
+ * vividn: "ACTION words should fade, but on a longer timescale than the input
+ * text, maybe over 15 seconds or something." The ghost's `GHOST_MS` is the
+ * input text's second and is untouched.
+ */
+export const ACTION_MS = 15_000;
+
+/**
+ * And how long a failed command's `ERROR` stays: "Maybe FAILED should take
+ * even longer?" A minute — long enough to come back to the phone and still
+ * find out that the thing you logged did not land.
+ */
+export const ERROR_MS = 60_000;
+
+/**
+ * What a folded bar says about the command just run (da-ckw3).
+ *
+ * `words` is the action of each document the CLI echoed, in the CLI's own
+ * order — CREATE, UPDATE, DELETE — each with the colour datum paints it
+ * (`action_color`, da-ckw3), and nothing else: a command that echoes
+ * no document (a `tail`, a `now`) leaves the corner empty, and the caret is
+ * one tap from what it actually answered.
+ *
+ * `failed` replaces them with one red `ERROR`, which opens the output on a
+ * tap. It does NOT open by itself: vividn chose that word over an automatic
+ * unfold, and the whole point of the fold is that the dashboard reflows
+ * when a PERSON says so.
+ *
+ * The timer is here rather than in the view, as `ghost`'s and `spent`'s
+ * are: the bar folds and unfolds under it, and a countdown a view owned
+ * would start again every time the section it lives in came back.
+ */
+export interface Marks {
+	words: { text: string; color?: string }[];
+	failed: boolean;
+}
+
+export const marks = writable<Marks | null>(null);
+
+let fading: ReturnType<typeof setTimeout> | undefined;
+
+function mark(result: RunResult): void {
+	clearTimeout(fading);
+	const failed = result.code !== 0;
+	const words = failed
+		? []
+		: (parseEcho(result.stdout) ?? []).map((doc) => ({
+				text: doc.action,
+				color: doc.action_color
+			}));
+	if (!failed && !words.length) return marks.set(null);
+	// A fresh object every run, identical words or not, so a second command
+	// restarts the fade instead of riding out the first one's.
+	const next: Marks = { words, failed };
+	marks.set(next);
+	fading = setTimeout(
+		() => marks.update((m) => (m === next ? null : m)),
+		failed ? ERROR_MS : ACTION_MS
+	);
+}

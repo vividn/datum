@@ -37,15 +37,32 @@
 	import { isDegraded, storage } from '$lib/storageState.js';
 	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import Pane from './Pane.svelte';
-	import CliOutput from './CliOutput.svelte';
+	import ReplEntry from './ReplEntry.svelte';
 	import { fileCommand, progress } from './dbio.js';
-	import Docs from './Docs.svelte';
-	import { echoArgv, parseEcho } from './echo.js';
+	import { echoArgv } from './echo.js';
 	import { fitArgv } from './panes.js';
 	import { run, type RunResult } from './run.js';
 
 	/** Newest entry first, the view pinned to the top. */
 	export let reversed = false;
+
+	/**
+	 * Draw the body alone — no title strip, no outline (Pane's `bare`).
+	 *
+	 * The bar's log is the caller. vividn, 2026-09-21: "Remove the 'repl'
+	 * header line."
+	 */
+	export let bare = false;
+
+	/**
+	 * How many of the newest entries this view does NOT draw.
+	 *
+	 * The bar's log passes 1, because the bar's own output section is row
+	 * one and dragging the log up must not meet it again (vividn, 2026-09-21:
+	 * "it shouldn't be repeated when you drag it up"). One list, and the two
+	 * surfaces show different slices of it.
+	 */
+	export let skip = 0;
 
 	const dispatch = createEventDispatcher<{ ran: RunResult }>();
 
@@ -54,7 +71,9 @@
 	/** The scrollback's content width, in whole pixels, once measured. */
 	let width: number | null = null;
 
-	$: entries = reversed ? [...$repl.scrollback].reverse() : $repl.scrollback;
+	$: ordered = reversed ? [...$repl.scrollback].reverse() : $repl.scrollback;
+	// `skip` takes from the NEWEST end whichever way the list runs.
+	$: entries = skip ? (reversed ? ordered.slice(skip) : ordered.slice(0, -skip)) : ordered;
 
 	/** The view to the newest entry: the bottom, or the top when reversed. */
 	function pin(): void {
@@ -109,9 +128,6 @@
 		return result;
 	}
 
-	/** A command's documents, when it echoed any ($lib/echo.ts). */
-	const docsOf = (result: RunResult) => parseEcho(result.stdout);
-
 	/** Into the shared store, and the view pinned to it. */
 	async function land(line: string, result: RunResult, ranAt: number): Promise<void> {
 		record(line, ranAt, result);
@@ -121,8 +137,8 @@
 	}
 </script>
 
-<Pane title="repl" alarm={isDegraded($storage)} bind:this={pane} bind:body>
-	{#if $repl.scrollback.length === 0}
+<Pane title="repl" {bare} alarm={isDegraded($storage)} bind:this={pane} bind:body>
+	{#if entries.length === 0}
 		<p class="quiet">type a command — <code>switch mood happy</code>, <code>tail</code></p>
 	{/if}
 	{#if $progress && reversed}
@@ -135,35 +151,9 @@
 		{#if i > 0}
 			<hr class="rule" />
 		{/if}
-		<div class="head">
-			<span class="stamp">{stampLabel(new Date(entry.ranAt), $now)}</span>
-			<!-- The stamp is a sibling of `.echo`, not a child of it: the
-			     echo's text is the command and nothing else, which is what
-			     every reader of it — a test, a copy-paste — already assumes. -->
-			<div class="echo"><span class="prompt">❯</span> {entry.line}</div>
-		</div>
-		{#if docsOf(entry.result)}
-			<!-- The same sections the bottom bar draws, one per document
-			     (da-xfa4): the web appends `--show json` to every command it
-			     runs, so both surfaces get the documents and a multi-document
-			     result is side by side in each.
-			     `--show json` carries the CLI's strings with its ANSI
-			     stripped, which for a while cost the echo datum's field and
-			     state colours while a table, a picture and an error kept
-			     theirs — they carry no echo and arrive as the CLI printed
-			     them. The document now carries the colours as DATA
-			     (`info_segments`, da-yu9s) and `Doc.svelte` paints from
-			     those, so the separation vividn asked for ("The whole web
-			     interface can take use json as the default show and then
-			     render on it's own terms which is nice separation") no
-			     longer costs the colour. -->
-			<Docs docs={docsOf(entry.result) ?? []} all />
-		{:else if entry.result.stdout}
-			<CliOutput text={entry.result.stdout} />
-		{/if}
-		{#if entry.result.stderr}
-			<CliOutput text={entry.result.stderr} stream="stderr" error={entry.result.code !== 0} />
-		{/if}
+		<!-- The row itself is `ReplEntry.svelte`, which the bar's output
+		     section mounts too: one list, one shape for a row of it. -->
+		<ReplEntry {entry} all />
 	{/each}
 	{#if $progress && !reversed}
 		<!-- A file command still running says how far it is (da-h9vj). -->
@@ -183,39 +173,11 @@
 		color: var(--accent);
 	}
 
-	.head {
-		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
-	}
-
-	.echo {
-		flex: 1;
-		min-width: 0;
-		white-space: pre-wrap;
-		/* Not a token: the same step between `--quiet` and `--ink` the
-		   bottom bar's receipt uses (PromptBar.svelte). */
-		color: #8888aa;
-	}
-
-	/* Dimmer than the echoed command and much dimmer than the data under
-	   it: this is when you typed, and the entry's own occur_time — which
-	   the renderer prints two lines down — is what actually matters. */
-	.stamp {
-		flex: none;
-		color: var(--quiet);
-		font-variant-numeric: tabular-nums;
-	}
-
 	/* One dim hairline between commands, and the air either side of it. */
 	.rule {
 		margin: 0.5rem 0;
 		border: none;
 		border-top: 1px solid var(--tint);
-	}
-
-	.prompt {
-		color: var(--accent);
 	}
 
 	.progress {

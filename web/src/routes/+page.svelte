@@ -50,11 +50,15 @@
 </div>
 
 <style>
+	/* The page's air lives here rather than on `main` (routes/+layout.svelte):
+	   a padded box cannot be shorter than its padding, and `main` has to be
+	   able to reach zero when the bar's log is pulled to its tallest. */
 	.frame {
 		position: relative;
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+		padding: 0.75rem;
 	}
 
 </style>

@@ -52,6 +52,14 @@ export interface EchoDoc {
 	field?: string;
 	/** The state as logged — a string, a bool, null, an object. */
 	state?: unknown;
+	/**
+	 * `#rrggbb` for the ACTION word — the colour the terminal paints the tag
+	 * (da-ckw3, `Outcome::hex`): green a CREATE, red a DELETE or a FAILED,
+	 * yellow an EXISTS, cyan an UPDATE/RENAME/RETIME, blue an OWRITE, orange
+	 * a NODIFF. Absent from a module too old to carry it, which is why every
+	 * surface falls back to its own accent.
+	 */
+	action_color?: string;
 	/** `#rrggbb` for the field, as `fields --json` publishes it. */
 	field_color?: string;
 	/** `#rrggbb` for the state, or null where the state paints none. */

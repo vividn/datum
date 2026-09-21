@@ -24,8 +24,8 @@
 	printed a long answer.
 -->
 <script lang="ts">
-	import { stripAnsi } from '$lib/ansi.js';
 	import Docs from '$lib/Docs.svelte';
+	import RawLines from '$lib/RawLines.svelte';
 	import { parseEcho } from '$lib/echo.js';
 	import type { RunResult } from '$lib/run.js';
 
@@ -34,8 +34,6 @@
 	/** How many lines of raw output the band holds. */
 	const LINES = 4;
 
-	const SVG_START = /^\s*(?:<\?xml[\s?]|<svg[\s>])/;
-
 	$: docs = result ? parseEcho(result.stdout) : null;
 	$: error = !!result && result.code !== 0;
 	// stdout while there is any: a warning on stderr beside a good answer is
@@ -43,28 +41,13 @@
 	// reports progress — stderr is all the CLI said, so it is what is shown.
 	// Both are datum's; neither is rewritten.
 	$: raw = result ? (result.stdout.trim() ? result.stdout : result.stderr) : '';
-	$: drawing = SVG_START.test(raw);
-	$: all = stripAnsi(raw).replace(/\n+$/, '').split('\n');
-	$: lines = drawing ? [] : all.slice(-LINES);
 </script>
 
 <div class="result" class:error role="status">
 	{#if docs}
 		<Docs {docs} />
 	{:else if result}
-		<div class="raw">
-			{#if drawing}
-				<!-- The one string on this surface that is not datum's: its
-				     stdout is an SVG document, and four lines of XML is not
-				     what "show the output" means. The picture itself is in
-				     the REPL, one tap away. -->
-				<p class="aside">a drawing</p>
-			{:else}
-				{#each lines as line, i (i)}
-					<p>{line}</p>
-				{/each}
-			{/if}
-		</div>
+		<RawLines text={raw} {error} lines={LINES} />
 	{/if}
 </div>
 
@@ -76,37 +59,6 @@
 		min-width: 0;
 		min-height: 0;
 		overflow: hidden;
-	}
-
-	.raw {
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		min-width: 0;
-		width: 100%;
-		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		/* Four lines inside the tier; see the bar's own height note. */
-		font-size: 0.68rem;
-		line-height: 1.25;
-		/* Not a token: the same step between `--quiet` and `--ink` the
-		   REPL's echoed line uses (Repl.svelte). */
-		color: #8888aa;
-	}
-
-	.result.error .raw {
-		color: var(--error);
-	}
-
-	.raw p {
-		margin: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: pre;
-	}
-
-	.aside {
-		font-style: italic;
-		color: var(--quiet);
 	}
 
 </style>

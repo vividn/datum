@@ -1,4 +1,5 @@
-// The bottom bar as the app's status line (da-xfa4).
+// The bottom bar as the app's status line (da-xfa4), reshaped into the seam
+// (da-ckw3).
 //
 // The bar is the one fixed thing on the screen, and da-xfa4 made it say
 // what the last command answered as well as take the next one. Everything
@@ -8,6 +9,12 @@
 // with six keys of data, and one that returns a table. A status line that
 // grew with its content would reflow the dashboard above it on every entry
 // logged, which is the bug this shape exists to make impossible.
+//
+// da-ckw3 gave it its anatomy: INPUT over OUTPUT, each the height the
+// result tier alone used to have, the input row holding the mark, the
+// clock WITH SECONDS at every width, the `❯` and the box — and a caret
+// that folds the output away rather than opening a REPL upward. What the
+// bar opens onto now is the log UNDER it, which is `tests/barlog.test.mjs`.
 //
 // A document is TWO lines whatever it carries (da-f4mw): its data stands
 // beside them in a brace, up to four rows and then a `+N`. So the rows
@@ -21,7 +28,8 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { atEachScreen, startApp, stopApp, withApp } from './support/app.mjs';
+import { atEachScreen, startApp, stopApp, todayAt, withApp, workerClock } from './support/app.mjs';
+import { fold as foldBar, unfold as openBar } from './support/bar.mjs';
 
 before(startApp);
 after(stopApp);
@@ -42,6 +50,8 @@ after(stopApp);
 const DESKTOP = { viewport: { width: 1280, height: 800 }, query: 'repl' };
 /** The narrowest screen the bar has to work on (the bead's trap 2). */
 const NARROW = { viewport: { width: 320, height: 640 }, query: 'repl' };
+/** A phone, which is where this is judged (da-ckw3). */
+const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, query: 'repl' };
 const DAY = { viewport: DESKTOP.viewport };
 
 const BAR = '.prompt-bar';
@@ -73,6 +83,16 @@ const section = (page, i = 0) =>
 			linesHigh: el.querySelector('.lines').getBoundingClientRect().height,
 			braceHigh: el.querySelector('.brace')?.getBoundingClientRect().height ?? 0
 		}));
+
+/**
+ * The OUTPUT section showing, whatever this screen's default is (da-ckw3).
+ *
+ * A phone-width screen starts FOLDED, so every claim about what the output
+ * says has to unfold it first — and the fold is the reader's, so it is done
+ * here the way a reader does it: a drag. There is no button to press any
+ * more (`support/bar.mjs` has the why).
+ */
+const unfold = openBar;
 
 /** Wait until the bar's result area has drawn a document at all. */
 const aDoc = (page) => page.locator(DOC).first().waitFor();
@@ -263,6 +283,7 @@ describe('several documents', () => {
 	test('320px: one whole section, and the box still takes a command', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			await unfold(page);
 			for (const f of ['a', 'b', 'c', 'tea']) await app.declare(f);
 			await app.submit('occur a , occur b , occur c');
 			await page.locator(`${BAR} .more`).waitFor();
@@ -285,6 +306,7 @@ describe('several documents', () => {
 	test('320px: a section too narrow for the rows draws the count, and the info line is whole', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			await unfold(page);
 			await app.declare('brew');
 			await app.submit('occur brew a=1 bean=ethiopian c=3 grind=fine e=5 water=94C');
 			await page.locator(`${DOC} .brace`).waitFor();
@@ -338,7 +360,10 @@ describe('a command with no echo', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.submit('occur');
-			await page.locator(`${BAR} .result.error`).waitFor();
+			// `.raw.error` — the error mark went with the raw lines when they
+			// moved into `RawLines.svelte`, which both fixed-height surfaces
+			// now share (da-ckw3: the bar's row IS the history's first row).
+			await page.locator(`${BAR} .raw.error`).waitFor();
 			const shown = await page.locator(`${BAR} .raw p`).allInnerTexts();
 			const printed = (await app.run(['occur'])).stderr.replace(ESC, '').replace(/\n+$/, '').split('\n');
 			assert.ok(shown.length > 0);
@@ -375,185 +400,273 @@ describe('a command with no echo', () => {
 	});
 });
 
-describe('the ^', () => {
-	// One control, at the bar's TOP EDGE, and it toggles (da-bhvy). vividn:
-	// "The (tap to expand) should be at the top — it can overlay the top
-	// line of the entire input bar. And it should toggle, hitting it again
-	// should close the repl." And what it opens stands ON the input row:
-	// "the bottom of the repl should actually be on top of the output bar,
-	// so that the repl perfectly overlays the output of the last command".
-	// So the scrollback's last entry is the very answer the tier was
-	// showing — and whole, where the tier had cut it.
+describe('the anatomy: INPUT over OUTPUT', () => {
+	// vividn, 2026-09-17: "Increase the size of the input section to be the
+	// same size the output section is now, so 50/50. Put dbname, clock, >
+	// and input all on the input section. The output section is reserved
+	// just for output. Put the input section on top of the output section."
+	// The 50/50 did not survive its own build — see the test below.
 
-	/** Where the control, the two tiers and the open REPL are drawn. */
-	const boxes = (page) =>
+	/** The boxes the bar is made of, and the two heights it declares. */
+	const parts = (page) =>
 		page.evaluate(() => {
 			const box = (s) => {
 				const el = document.querySelector(s);
 				if (!el) return null;
-				const { top, bottom, left, right, height } = el.getBoundingClientRect();
-				return { top, bottom, left, right, height };
+				const { top, bottom, left, right, height, width } = el.getBoundingClientRect();
+				return { top, bottom, left, right, height, width };
+			};
+			// The declared heights, in the pixels they resolve to: a custom
+			// property computes to the token it was written as (`3.6rem`),
+			// and only something drawn in it says how tall that is.
+			const px = (name) => {
+				const probe = document.createElement('div');
+				probe.style.height = `var(${name})`;
+				document.querySelector('.shell').append(probe);
+				const drawn = probe.getBoundingClientRect().height;
+				probe.remove();
+				return drawn;
 			};
 			return {
 				bar: box('.prompt-bar'),
-				control: box('.prompt-bar .caret'),
-				tier: box('.prompt-bar .tier.top'),
-				prompt: box('.prompt-bar .tier.bottom'),
-				expansion: box('.prompt-bar .expansion')
+				input: box('.prompt-bar .section.input'),
+				output: box('.prompt-bar .section.output'),
+				mark: box('.prompt-bar .brand'),
+				clock: box('.prompt-bar .section.input .stamp'),
+				caret: box('.prompt-bar .line > .prompt'),
+				field: box('.prompt-bar input'),
+				reads: document.querySelector('.prompt-bar .section.input .stamp').textContent,
+				// The prompt line's own rule, which this row overrides: read
+				// COMPUTED, because the override and the rule it overrides are
+				// the same specificity until one of them says `form` (#46).
+				rule: getComputedStyle(document.querySelector('.prompt-bar form.line')).borderTopWidth,
+				declared: { input: px('--input-height'), output: px('--output-height') }
 			};
 		});
 
-	/** Open the REPL and wait for it. A REPL here is a bare `Pane`. */
-	async function open(page) {
-		await page.locator(`${BAR} .caret`).click();
-		await page.locator(`${BAR} .expansion section.pane`).waitFor();
-	}
-
-	test("the control sits on the bar's top line", async (t) => {
+	// They were equal — vividn's own "so 50/50" — until he looked at it built:
+	// "decrease height of input bar so that there is not so much wasted space
+	// with padding" (2026-09-18). So the claim is no longer that they match,
+	// it is that each is the height the shell declares for it and the input
+	// is the SHORTER of the two, which is the change he asked for.
+	test('the input section is above the output, each is its declared height, and the input is the shorter', async (t) => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 640 }], async (viewport) => {
-				const size = `${viewport.width}x${viewport.height}`;
-				const shut = await boxes(page);
+			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 664 }], async () => {
+				const p = await parts(page);
+				assert.ok(p.output, 'the output section is not there to measure');
 				assert.ok(
-					Math.abs(shut.control.top - shut.bar.top) <= 1,
-					`the control's head at ${shut.control.top}, the bar's at ${shut.bar.top}`
+					p.input.bottom <= p.output.top + 1,
+					`the input ends at ${p.input.bottom}, the output starts at ${p.output.top}`
 				);
-				// A fingertip, at every pointer (conventions #12).
-				assert.ok(shut.control.height >= 24, `the control is ${shut.control.height}px tall`);
 				assert.ok(
-					shut.control.left >= 0 && shut.control.right <= viewport.width,
-					`the control is ${shut.control.left}–${shut.control.right} on ${size}`
+					p.declared.input < p.declared.output,
+					`the input row is ${p.declared.input}px against the output's ${p.declared.output}px`
 				);
-
-				// And it stays where it was: the way out is the way in.
-				await open(page);
-				const lit = await boxes(page);
 				assert.ok(
-					Math.abs(lit.control.top - lit.bar.top) <= 1,
-					`open, the control's head at ${lit.control.top}, the bar's at ${lit.bar.top}`
+					Math.abs(p.input.height - p.declared.input) <= 1,
+					`the input row is ${p.input.height}px against a declared ${p.declared.input}px`
 				);
-				assert.deepEqual(app.errors, []);
-				// Shut again, so the next screen presses the same control.
-				await page.keyboard.press('Escape');
-				await page.locator(`${BAR} .expansion`).waitFor({ state: 'detached' });
+				assert.ok(
+					Math.abs(p.output.height - p.declared.output) <= 1,
+					`the output is ${p.output.height}px against a declared ${p.declared.output}px`
+				);
+				// Output only, and the whole width of the bar: nothing stands
+				// beside it any more.
+				assert.ok(
+					Math.abs(p.output.left - p.bar.left) <= 1 && Math.abs(p.output.right - p.bar.right) <= 1,
+					`the output is ${p.output.left}–${p.output.right} in a bar of ${p.bar.left}–${p.bar.right}`
+				);
 			});
-		}, DESKTOP);
-	});
-
-	test('one press opens the REPL, the next closes it, and so does Escape', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			await app.submit('occur coffee');
-			const control = page.locator(`${BAR} .caret`);
-			const expansion = page.locator(`${BAR} .expansion`);
-			assert.equal(await expansion.count(), 0);
-			assert.equal(await control.getAttribute('aria-expanded'), 'false');
-
-			await open(page);
-			assert.equal(await control.getAttribute('aria-expanded'), 'true');
-			// It is the scrollback: the command just typed is in it.
-			assert.ok((await expansion.innerText()).includes('occur coffee'));
-
-			await control.click();
-			await expansion.waitFor({ state: 'detached' });
-			assert.equal(await control.getAttribute('aria-expanded'), 'false');
-
-			await open(page);
-			await page.keyboard.press('Escape');
-			await expansion.waitFor({ state: 'detached' });
-			assert.equal(await control.getAttribute('aria-expanded'), 'false');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
 
-	test('open, its foot is on the input row and the prompt keeps the focus', async () => {
+	test('the input row is the mark, the clock with seconds, the ❯ and the box — in that order, at every width', async (t) => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await app.submit('occur coffee');
-			await open(page);
+			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 664 }, { width: 360, height: 640 }], async (viewport) => {
+				const p = await parts(page);
+				// vividn: "On mobile too please show seconds on the clock."
+				assert.match(p.reads, /^\d\d:\d\d:\d\d$/, `the clock reads ${p.reads} at ${viewport.width}px`);
+				const order = [
+					['the mark', p.mark],
+					['the clock', p.clock],
+					['the ❯', p.caret],
+					['the box', p.field]
+				];
+				for (let i = 1; i < order.length; i += 1)
+					assert.ok(
+						order[i - 1][1].right <= order[i][1].left + 1,
+						`${order[i - 1][0]} ends at ${order[i - 1][1].right}, ${order[i][0]} starts at ${order[i][1].left}`
+					);
+				// One row: every one of them is inside the input section and
+				// none of them is in the output.
+				for (const [what, box] of order)
+					assert.ok(
+						box.top >= p.input.top - 1 && box.bottom <= p.input.bottom + 1,
+						`${what} is ${box.top}–${box.bottom}, the input row ${p.input.top}–${p.input.bottom}`
+					);
+				// And the box is still a box you can type a command into.
+				assert.ok(
+					p.field.width >= 150,
+					`the box is ${p.field.width.toFixed(0)}px wide at ${viewport.width}px`
+				);
+				// Nothing stands above this row, so nothing rules it off: the
+				// line's own border drew a hairline from the `❯` to the right
+				// edge until the override was made to win (vremya on #46).
+				assert.equal(p.rule, '0px', `the prompt line still rules itself off with ${p.rule}`);
+			});
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+});
 
-			const { bar, tier, prompt, expansion } = await boxes(page);
+describe('the arrow folds the output, and a drag does too', () => {
+	// vividn: "The ^ and down carret now should toggle between just the input
+	// section being shown and the input over output section." And, on the
+	// default: "Height on phones, yes on mobile start collapsed on desktop
+	// start open."
+	//
+	// The `^` was a BUTTON for two rounds. vividn, 2026-09-18: "The ^ button
+	// obscures the text. Let's just get rid of this button and instead just
+	// put a little carrat above the input bar to suggest that it can be
+	// pulled up." So what these tests press is the GESTURE, and what the
+	// chevron has to be is a mark that takes no pointer at all.
+
+	const output = (page) => page.locator(`${BAR} .section.output`);
+
+	test('a fresh phone starts folded, a fresh desktop open, and the choice survives a reload', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			assert.equal(await output(page).count(), 0, 'a fresh phone opened with the output showing');
+
+			await openBar(page);
+			await app.reload();
+			await output(page).waitFor();
+			assert.deepEqual(app.errors, []);
+		}, { ...PHONE, home: null });
+	});
+
+	// THE ARROW IS A CONTROL, and it is drawn above the row's text.
+	//
+	// Three asks in three rounds, and the test holds all three at once. vividn,
+	// 2026-09-18: "Hitting ^ should not focus on the input bar or open the
+	// keyboard. That is jarring." Then: "The ^ button obscures the text. Let's
+	// just get rid of this button and instead just put a little carrat above
+	// the input bar." Then, 2026-09-21: "tapping the arrow should open/close
+	// the output section."
+	//
+	// Answering the second by deleting the press took more than he asked for —
+	// it cost the tap target and left the fold with no keyboard or accessible
+	// way in. So: a real button, labelled and focusable, whose INK AND HIT
+	// AREA are both clear of the row's text, which is what "obscures" meant.
+	test('the arrow toggles the output, never focuses the box, and clears the row’s text', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const caret = page.locator(`${BAR} .caret`);
+			const output = page.locator(`${BAR} .section.output`);
+			const focused = () => page.evaluate(() => document.activeElement?.tagName.toLowerCase() ?? 'none');
+
+			const seen = await page.evaluate(() => {
+				const el = document.querySelector('.prompt-bar .caret');
+				const box = document.querySelector('.prompt-bar input').getBoundingClientRect();
+				const r = el.getBoundingClientRect();
+				return {
+					tag: el.tagName.toLowerCase(),
+					label: el.getAttribute('aria-label'),
+					hidden: el.getAttribute('aria-hidden'),
+					height: r.height,
+					// Its lowest pixel is above the box's highest: neither the
+					// glyph nor the target reaches what is typed.
+					clearsTextBy: box.top - r.bottom,
+					// And a press at its middle reaches IT, not something under it.
+					takesThePress: document
+						.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+						?.closest('button')
+						?.classList.contains('caret')
+				};
+			});
+			assert.equal(seen.tag, 'button', `the arrow is a <${seen.tag}>`);
+			assert.ok(seen.label, 'the arrow has no label');
+			assert.notEqual(seen.hidden, 'true', 'the arrow is hidden from a screen reader');
+			assert.ok(seen.height >= 24, `the arrow is ${seen.height}px tall`);
+			assert.ok(seen.clearsTextBy > 0, `the arrow overlaps the box's text by ${-seen.clearsTextBy}px`);
+			assert.equal(seen.takesThePress, true, 'a press at the arrow does not reach it');
+
+			// It folds, and it unfolds, and neither takes the keyboard.
+			assert.equal(await output.count(), 0, 'a fresh phone opened with the output showing');
+			await caret.click();
+			await output.waitFor();
+			assert.notEqual(await focused(), 'input', 'the arrow opened the keyboard');
+			// `aria-expanded` follows the bar's number, which GLIDES there over
+			// ~220ms — the section is in the DOM on the first frame of that, so
+			// waiting for the section is not waiting for the state.
+			await page.locator(`${BAR} .caret[aria-expanded="true"]`).waitFor();
+
+			await caret.click();
+			await output.waitFor({ state: 'detached' });
+			assert.notEqual(await focused(), 'input', 'the arrow opened the keyboard');
+			await page.locator(`${BAR} .caret[aria-expanded="false"]`).waitFor();
+
+			// Nor when there is a half-typed line under it to come back to.
+			await page.locator(`${BAR} input`).click({ position: { x: 4, y: 12 } });
+			await page.locator(`${BAR} input`).type('occur cof');
+			await caret.click();
+			await output.waitFor();
+			assert.notEqual(await focused(), 'input', 'the arrow opened the keyboard');
+			assert.equal(await page.locator(`${BAR} input`).inputValue(), 'occur cof');
+			assert.deepEqual(app.errors, []);
+		}, { ...PHONE, home: null });
+	});
+
+	test('a fresh desktop starts open, and folds', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await output(page).waitFor();
+			await foldBar(page);
+			await app.reload();
+			await page.locator(`${BAR} input:not([disabled])`).waitFor();
+			assert.equal(await output(page).count(), 0, 'the reload forgot the fold');
+			assert.deepEqual(app.errors, []);
+		}, { viewport: { width: 1280, height: 900 }, home: null });
+	});
+
+	test('the dashboard reflows when a person folds, and never when a command answers', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const open = { bar: await barHeight(page), main: await mainHeight(page) };
+
+			await foldBar(page);
+			const folded = { bar: await barHeight(page), main: await mainHeight(page) };
+			assert.ok(folded.bar < open.bar, `folded the bar is ${folded.bar}px, open ${open.bar}px`);
 			assert.ok(
-				Math.abs(expansion.bottom - tier.bottom) <= 1,
-				`the REPL's foot at ${expansion.bottom}, the result tier's at ${tier.bottom}`
+				folded.main > open.main,
+				`folded the dashboard is ${folded.main}px, open ${open.main}px — it gained nothing`
 			);
+			// What it gained is exactly what the output section was.
 			assert.ok(
-				expansion.bottom <= prompt.top + 1,
-				`the REPL's foot at ${expansion.bottom} is past the prompt's head at ${prompt.top}`
+				Math.abs(folded.main - open.main - (open.bar - folded.bar)) <= 1,
+				`the dashboard gained ${folded.main - open.main}px for a bar that lost ${open.bar - folded.bar}px`
 			);
-			// Upward, over the page — not into the bar, which never moves.
-			assert.ok(expansion.top < bar.top, `the REPL's head at ${expansion.top}, the bar's at ${bar.top}`);
 
-			assert.ok(
-				await page.locator(`${BAR} input`).evaluate((el) => el === document.activeElement),
-				'the prompt lost the focus to the control'
-			);
-			// And the line under it still runs: the new command lands in the
-			// REPL, and in the tier it is covering.
-			await app.submit('occur tea');
-			await page.waitForFunction(() =>
-				document.querySelector('.prompt-bar .expansion').innerText.includes('occur tea')
-			);
+			// And now a command, folded and open alike, moves neither.
+			for (const line of ['occur water', 'occur brew a=1 b=2 c=3 d=4 e=5 f=6', 'tail']) {
+				await app.submit(line);
+				await app.idle();
+				assert.equal(await barHeight(page), folded.bar, `folded, the bar moved after \`${line}\``);
+				assert.equal(await mainHeight(page), folded.main, `folded, the dashboard reflowed after \`${line}\``);
+			}
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		}, DAY);
 	});
 
-	test('a document the tier cut to four rows and a +2 reads whole in the REPL', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			await app.declare('brew');
-			await app.submit('occur brew a=1 b=2 c=3 d=4 e=5 f=6');
-			await page.locator(`${DOC} .brace`).waitFor();
-
-			const cut = await section(page);
-			assert.equal(cut.rows.length, 4);
-			assert.equal(cut.more, '+2');
-
-			await open(page);
-			// The scrollback's LAST entry — the one the tier was showing.
-			const doc = page.locator(`${BAR} .expansion .doc`).last();
-			const keys = await doc.locator('.brace .row').allInnerTexts();
-			assert.deepEqual(keys, cut.rows.concat(['e: 5', 'f: 6']), 'the REPL cut the data too');
-			assert.equal(await doc.locator('.brace .more').count(), 0, 'the REPL still counts rows it did not draw');
-
-			// Closed again, the tier shows what it showed before.
-			await page.locator(`${BAR} .caret`).click();
-			await page.locator(`${BAR} .expansion`).waitFor({ state: 'detached' });
-			const again = await section(page);
-			assert.deepEqual(again.rows, cut.rows);
-			assert.equal(again.more, '+2');
-			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
-	});
-
-	test('a table the tier cut to four lines reads whole in the REPL', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			for (const f of ['a', 'b', 'c', 'd', 'e', 'f']) assert.equal((await app.run(['occur', f])).code, 0);
-			await app.submit('tail');
-			await page.locator(`${BAR} .raw p`).first().waitFor();
-
-			const printed = (await app.run(['tail'])).stdout.replace(ESC, '').replace(/\n+$/, '').split('\n');
-			assert.ok(printed.length > 4, 'the tail fitted — nothing to prove');
-			assert.deepEqual(await page.locator(`${BAR} .raw p`).allInnerTexts(), printed.slice(-4));
-
-			await open(page);
-			const out = page.locator(`${BAR} .expansion pre[data-stream="stdout"]`).last();
-			const whole = (await out.innerText())
-				.replace(/\n+$/, '')
-				.split('\n')
-				.map((line) => line.trimEnd());
-			assert.deepEqual(whole, printed.map((line) => line.trimEnd()));
-			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
-	});
-
-	// The trap of a lid on the bar's top line: the brand and the clock are
-	// on that line too, and a control across all of it would take their
-	// taps. (The ⓘ was the brand's neighbour here until da-y992 moved it to
-	// the root bar; the brand, which is a menu button now, took its place in
-	// this test.)
+	// The trap a lid on the bar's top line used to be: the brand and the
+	// clock are on that line too, and a control across all of it would take
+	// their taps. There is no lid any more — the hint takes no pointer — so
+	// what this now holds is that nothing ELSE has taken their place. (The ⓘ
+	// was the brand's neighbour here until da-y992 moved it to the root bar;
+	// the brand, which is a menu button now, took its place in this test.)
 	test('the brand and the clock keep their taps', async (t) => {
 		await withApp(async (app) => {
 			const { page } = app;
@@ -581,6 +694,244 @@ describe('the ^', () => {
 		}, DESKTOP);
 	});
 });
+
+describe('folded, a command still answers', () => {
+	// vividn: "When just the input section is shown, show all the ACTION words
+	// on the right side after a command is run"; "ACTION words should fade,
+	// but on a longer timescale than the input text, maybe over 15 seconds
+	// or something. Maybe FAILED should take even longer?"; and on the
+	// failure: "red Error that opens on tap is enough I think, as long as
+	// the ERROR is prominent enough".
+
+	/** The app with a clock the test holds, page and CLI together. */
+	const held = (at) => ({
+		...PHONE,
+		prepare: async (context) => {
+			await context.clock.install({ time: new Date(at) });
+			await workerClock(at).prepare(context);
+		}
+	});
+
+	const marks = (page) => page.locator(`${BAR} .marks`);
+
+	/** What is left to type in, to the pixel it is drawn at. */
+	const boxWidth = (page) =>
+		page.locator(`${BAR} input`).evaluate((el) => el.getBoundingClientRect().width);
+
+	test('its ACTION words stand at the bottom of the row, over by the ❯, in the CLI’s own colours, and fade', async () => {
+		const AT = todayAt(12, 0);
+		await withApp(async (app) => {
+			const { page } = app;
+			// A held clock does not settle by itself: the pane's own box
+			// arrives through a timer (tick.test.mjs).
+			await page.clock.runFor(200);
+			await app.idle();
+			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0, 'the phone did not start folded');
+
+			// NOT declared first: the clock is held, and `track` would stamp
+			// its own document at the very instant `occur` wants. It is the
+			// better shape anyway — vividn asked for "all the ACTION words", and
+			// a field's first log echoes its declaration beside its entry
+			// (da-c8mh), so this is the two-document case.
+			await app.submit('occur coffee');
+			await marks(page).waitFor();
+			const words = await page.locator(`${BAR} .marks .action`).allInnerTexts();
+			// The CLI's own action words, in the CLI's order — read off the
+			// documents the very same run drew in the scrollback, so nothing
+			// here is a word this file made up and nothing is run twice.
+			assert.ok(words.length > 0, 'the folded bar said nothing about a CREATE');
+			assert.deepEqual(words, await page.locator('.repl .doc .action').allInnerTexts());
+			// IN THE BOTTOM OF THE SECTION, AND OVER BY THE `❯`. vividn asked
+			// first for the right of the row ("show all the ACTION words on the
+			// right side"), then for the padding under it ("move the ACTION
+			// results in the padding underneath the input"), and then, seeing
+			// that on a phone, 2026-09-18: "Center the text vertically in the
+			// input section. For the output ACTION items when the output
+			// section is hidden. but them still in bottom part like this, but
+			// over by the >. Over on the right side they are hidden."
+			//
+			// So the row no longer gives up a strip's height to them — it is
+			// centred in the whole section — and the words OVERLAY the bottom
+			// of it, which they can because they begin at the `❯` and the box's
+			// own text begins after it. The claims are therefore where they
+			// END (the section's floor), which half they are in (the bottom),
+			// and where they START (at the `❯`, not at the right edge).
+			const where = await page.evaluate(() => {
+				const box = (s) => document.querySelector(s).getBoundingClientRect();
+				return {
+					marks: box('.prompt-bar .marks'),
+					field: box('.prompt-bar input'),
+					caret: box('.prompt-bar .line > .prompt'),
+					clock: box('.prompt-bar .section.input .stamp'),
+					section: box('.prompt-bar .section.input'),
+					bar: box('.prompt-bar')
+				};
+			});
+			assert.ok(
+				Math.abs(where.marks.bottom - where.section.bottom) <= 1,
+				`the words end at ${where.marks.bottom}, the input section at ${where.section.bottom}`
+			);
+			const middle = where.section.top + where.section.height / 2;
+			assert.ok(
+				where.marks.top >= middle,
+				`the words start at ${where.marks.top}, above the section's middle at ${middle}`
+			);
+			// Over by the `❯`: at it, not at the right edge and not back at the
+			// clock. Within a character of the `❯`'s own left edge.
+			assert.ok(
+				Math.abs(where.marks.left - where.caret.left) <= 12,
+				`the words start at ${where.marks.left}, the ❯ at ${where.caret.left}`
+			);
+			assert.ok(
+				where.marks.left > where.clock.right,
+				`the words start at ${where.marks.left}, back over the clock which ends at ${where.clock.right}`
+			);
+			assert.ok(where.marks.right <= where.bar.right + 1);
+
+			// "Make sure these ACTIONs are colored appropriately" (vividn). The
+			// colour is datum's, not the web's: `Outcome::hex` publishes it as
+			// `action_color` on `--show json` and both surfaces paint from it,
+			// so the bar and the scrollback cannot disagree. A CREATE's green
+			// is named here too, so a palette that quietly went grey would not
+			// pass by matching a grey scrollback.
+			const painted = await page.locator(`${BAR} .marks .action`).evaluateAll((els) =>
+				els.map((el) => getComputedStyle(el).color)
+			);
+			assert.deepEqual(
+				painted,
+				await page.locator('.repl .doc .action').evaluateAll((els) => els.map((el) => getComputedStyle(el).color))
+			);
+			assert.ok(
+				painted.includes('rgb(38, 162, 105)'),
+				`no CREATE green (#26a269) among ${painted.join(', ')}`
+			);
+
+			// Driven, not slept: fifteen seconds is not a wait a suite takes.
+			await page.clock.fastForward(16_000);
+			await marks(page).waitFor({ state: 'detached' });
+
+			// A `tail` echoes no document, so there is nothing to say for it.
+			await app.submit('tail');
+			await app.idle();
+			await page.clock.runFor(100);
+			assert.equal(await marks(page).count(), 0, 'a reader saw a word for a command with no document');
+			assert.deepEqual(app.errors, []);
+		}, held(AT));
+	});
+
+	// The words cost the box NOTHING. They were capped at a share of the row
+	// (45%), which is not a floor: a four-sided command echoes eight
+	// documents, filled the whole share, and left a 360px phone twenty pixels
+	// to type in for fifteen seconds (measured after vremya's 127px for one
+	// word, PR #46). Since vividn moved them into the strip under the row they
+	// are not on the row at all, so the claim is the stronger one — the box
+	// does not move — and the words are cut against the bar's width instead.
+	test('however many documents a command echoes, the box does not move and the words are cut instead', async () => {
+		const AT = todayAt(12, 0);
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.clock.runFor(200);
+			await app.idle();
+
+			await app.submit('occur alfa');
+			await marks(page).waitFor();
+			const one = await boxWidth(page);
+
+			// Four sides, each a field's first log: eight documents.
+			await app.submit('occur bravo , occur charlie , occur delta , occur echo');
+			await page.waitForFunction(
+				() => document.querySelectorAll('.prompt-bar .marks .action').length > 2
+			);
+			const many = await boxWidth(page);
+
+			assert.ok(many >= 100, `eight documents left the box ${many.toFixed(0)}px at 360px`);
+			assert.ok(
+				Math.abs(many - one) <= 0.5,
+				`the words moved the box: ${one.toFixed(1)}px for one, ${many.toFixed(1)}px for eight`
+			);
+			// Cut, not wrapped, and not taken out of the box.
+			const cut = await page
+				.locator(`${BAR} .marks`)
+				.evaluate((el) => ({ over: el.scrollWidth - el.clientWidth, height: el.getBoundingClientRect().height }));
+			assert.ok(cut.over > 0, 'eight words fitted, so nothing was being held back');
+			assert.ok(cut.height <= 32, `the words wrapped to ${cut.height}px instead of being cut`);
+			assert.deepEqual(app.errors, []);
+		}, { ...held(AT), viewport: { width: 360, height: 640 } });
+	});
+
+	test('a failure says ERROR, in red, for longer — and a tap opens the output on what went wrong', async () => {
+		const AT = todayAt(12, 0);
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.clock.runFor(200);
+			await app.idle();
+
+			await app.submit('occur nope --nonsense');
+			await page.locator(`${BAR} .failed`).waitFor();
+			const failed = page.locator(`${BAR} .failed`);
+			assert.equal((await failed.innerText()).trim(), 'ERROR');
+			assert.ok(
+				await failed.evaluate((el) => el.getBoundingClientRect().height >= 24),
+				'the ERROR is not a fingertip'
+			);
+			assert.equal(
+				await failed.locator('.chip').evaluate((el) => getComputedStyle(el).backgroundColor),
+				await page.evaluate(() => {
+					const probe = document.createElement('span');
+					probe.style.backgroundColor = 'var(--error)';
+					document.body.append(probe);
+					const painted = getComputedStyle(probe).backgroundColor;
+					probe.remove();
+					return painted;
+				}),
+				"the ERROR is not the page's own error colour"
+			);
+
+			// Past the moment a CREATE would have gone, and still there.
+			await page.clock.fastForward(16_000);
+			assert.equal(await failed.count(), 1, 'the ERROR went with the ACTION words');
+			// It does NOT open by itself: vividn chose the word over an unfold.
+			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0);
+
+			await failed.click();
+			await page.locator(`${BAR} .section.output`).waitFor();
+			const shown = (await page.locator(`${BAR} .raw`).innerText()).replace(ESC, '');
+			const printed = (await app.run(['occur', 'nope', '--nonsense'])).stderr.replace(ESC, '');
+			assert.ok(
+				printed.split('\n').filter(Boolean).some((line) => shown.includes(line.trim().slice(0, 30))),
+				`the output says ${JSON.stringify(shown)} for ${JSON.stringify(printed)}`
+			);
+			assert.deepEqual(app.errors, []);
+		}, held(AT));
+	});
+});
+
+/**
+ * Wait until the pills have stopped moving.
+ *
+ * Two lags to outlast, and neither is a keystroke: the mirror's width is
+ * measured by a resize observer, and `.pills` transitions its `left` so a
+ * pill left behind by a ghost is seen going back. Measured before both, a
+ * pill is still standing where the previous line put it.
+ */
+const settlePills = (page) =>
+	page.evaluate(
+		() =>
+			new Promise((done) => {
+				let last = '';
+				let same = 0;
+				const tick = () => {
+					const now = [...document.querySelectorAll('.prompt-bar .pill')]
+						.map((p) => Math.round(p.getBoundingClientRect().left))
+						.join(',');
+					same = now === last ? same + 1 : 0;
+					last = now;
+					if (same > 4) return done();
+					requestAnimationFrame(tick);
+				};
+				tick();
+			})
+	);
 
 /** Where a pill's left edge is, and where the `❯` ends. */
 const pillAt = (page) =>
@@ -623,15 +974,38 @@ describe('the pills ride with the text', () => {
 				empty.pill
 			);
 
-			// It never leaves the box, however long the line gets.
+			// However long the line gets it goes OFF THE RIGHT EDGE with it,
+			// and the box scrolls right to reach it. vividn, 2026-09-18: "They
+			// should be to right, and just go off the right edge of the screen.
+			// The user can scroll to the right when input text gets long, so it
+			// should be equivalently present in this rightwards scroll." This
+			// replaces the claim that stood here — that the pill never leaves
+			// the box, which is what parked it at the box's right edge.
 			await input.fill('occur coffee ' + 'x'.repeat(400));
 			await app.idle();
+			await settlePills(page);
 			const long = await page.evaluate(() => {
 				const pill = document.querySelector('.prompt-bar .pill').getBoundingClientRect();
-				const box = document.querySelector('.prompt-bar .field').getBoundingClientRect();
-				return { pill: pill.right, box: box.right };
+				const mirror = document.querySelector('.prompt-bar .mirror').getBoundingClientRect();
+				const port = document.querySelector('.prompt-bar .field');
+				return {
+					pill: pill.left,
+					text: mirror.right,
+					reach: port.scrollWidth - port.clientWidth
+				};
 			});
-			assert.ok(long.pill <= long.box + 1, `the pill at ${long.pill} is outside the box at ${long.box}`);
+			// Still after the text, wherever the text has got to, and with
+			// somewhere to scroll to it.
+			assert.ok(long.pill >= long.text - 1, `the pill at ${long.pill} is over the text ending at ${long.text}`);
+			assert.ok(long.reach > 0, 'a line 400 characters long left the run with nothing to scroll');
+
+			// And a scroll to the end of the run brings it whole into the box.
+			await page.locator(`${BAR} .field`).evaluate((el) => (el.scrollLeft = el.scrollWidth));
+			await page.waitForFunction(() => {
+				const pill = document.querySelector('.prompt-bar .pill').getBoundingClientRect();
+				const box = document.querySelector('.prompt-bar .field').getBoundingClientRect();
+				return pill.left >= box.left - 1 && pill.right <= box.right + 1;
+			});
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -848,6 +1222,18 @@ describe('the pills are prominent', () => {
 				// still ride AFTER what is typed, not over it — or, when the
 				// line has outgrown the box, stand at its right edge, which is
 				// the clamp Prompt.svelte documents.
+				//
+				// Three pills are wider than a 390px phone's whole row — 435px
+				// of them against a 390px screen — so there the second case is
+				// the only one available and not every pill CAN be on screen.
+				// What is asked of it is the bound that is achievable: the set
+				// reaches leftward to the screen's edge and no further, so the
+				// leftmost pill is always reachable. (A set wider than the
+				// screen still runs off the right; showing all of it would
+				// want a scroll or a wrap, which no flow of the app asks for
+				// today — the pair a `retime` makes is two, and that pair is
+				// held whole by the test above.) Riding after the `❯` is the
+				// FIRST case's claim, made where the pills fit.
 				await page.locator(`${BAR} input`).fill('occur coffee');
 				await settled(page, `${BAR} .pills`, 'occur coffee');
 				const after = await page.evaluate(() => {
@@ -858,10 +1244,20 @@ describe('the pills are prominent', () => {
 						caret: at('.line > .prompt').right,
 						text: at('.mirror').right,
 						pillsRight: pills.right,
-						box: at('.field').right
+						pillsWidth: pills.width,
+						box: at('.field').right,
+						boxWidth: at('.field').width,
+						screen: document.documentElement.clientWidth
 					};
 				});
-				assert.ok(after.pill > after.caret, `the pill at ${after.pill}, the ❯ ends at ${after.caret}`);
+				const fits = after.pillsWidth <= after.boxWidth;
+				if (fits)
+					assert.ok(after.pill > after.caret, `the pill at ${after.pill}, the ❯ ends at ${after.caret}`);
+				else
+					assert.ok(
+						after.pill >= -0.5,
+						`the pills reach to ${after.pill}, past the screen's left edge`
+					);
 				assert.ok(
 					after.pill >= after.text - 1 || after.pillsRight >= after.box - 1,
 					`the pill at ${after.pill} is over the typed text, which ends at ${after.text}`
@@ -877,25 +1273,136 @@ describe('the pills are prominent', () => {
 	});
 });
 
+describe('two pills on a phone', () => {
+	// vividn's own flow: a tail row, a dayview tap, one tap on `retime` — which
+	// puts a hid pill AND a time pill in the prompt at once. On this bead's
+	// row they no longer fit the box, and where they go was settled twice.
+	//
+	// vremya asked, and I built, pills that reach LEFTWARD to stay on the
+	// screen. vividn overruled it (2026-09-18): "About pills overlapping the
+	// clock, this is not correct behavior. They should never go over the >
+	// at all. They should be to right, and just go off the right edge of the
+	// screen. The user can scroll to the right when input text gets long, so
+	// it should be equivalently present in this rightwards scroll."
+	//
+	// So the claim is HIS, and it is the one this file holds now: the `❯` is
+	// a wall the pills never cross, they ride after the typed text, and they
+	// come back with it when a long line is scrolled right. Going off the
+	// right edge is allowed — it is what he asked for — so nothing here
+	// asserts they are all on the screen.
+	const TWO = [
+		{ id: 'h', kind: 'hid', text: '35mtf', locked: true },
+		{ id: 't', kind: 'time', text: '-t 14:30', locked: true }
+	];
+
+	const settle = settlePills;
+
+	/** Every pill's left edge, the scrollport's box, and where the `❯` ends. */
+	const where = (page) =>
+		page.evaluate(() => {
+			const port = document.querySelector('.prompt-bar .field');
+			const box = port.getBoundingClientRect();
+			return {
+				pills: [...document.querySelectorAll('.prompt-bar .pill')].map((p) =>
+					Math.round(p.getBoundingClientRect().left)
+				),
+				ends: [...document.querySelectorAll('.prompt-bar .pill')].map((p) =>
+					Math.round(p.getBoundingClientRect().right)
+				),
+				// The one wall: nothing of the run is PAINTED outside this,
+				// whatever the run's own layout says, because the port clips.
+				port: { left: Math.round(box.left), right: Math.round(box.right) },
+				left: port.scrollLeft,
+				reach: port.scrollWidth - port.clientWidth,
+				caret: Math.round(document.querySelector('.prompt-bar .line > .prompt').getBoundingClientRect().right)
+			};
+		});
+
+	for (const width of [360, 390]) {
+		test(`at ${width} the pills stay right of the \u276f, typed line or not`, async (t) => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await page.evaluate((p) => window.datum.bar.setPills(p), TWO);
+				await page.locator(`${BAR} .pill`).nth(1).waitFor();
+				await settle(page);
+
+				const empty = await where(page);
+				for (const left of empty.pills)
+					assert.ok(left >= empty.caret, `a pill starts at ${left}, left of the \u276f at ${empty.caret}`);
+
+				// A line long enough to push them: they follow the text, and
+				// still never reach the `\u276f`.
+				await page.locator(`${BAR} input`).fill('occur coffee beans=ethiopian roast=dark');
+				await settle(page);
+				const typed = await where(page);
+				for (const left of typed.pills)
+					assert.ok(left >= typed.caret, `typing put a pill at ${left}, left of the \u276f at ${typed.caret}`);
+				assert.ok(
+					typed.pills[0] > empty.pills[0],
+					`the pills did not follow the text: ${empty.pills[0]} then ${typed.pills[0]}`
+				);
+
+				// And scrolling that line right brings them back onto the screen
+				// — "equivalently present in this rightwards scroll". The
+				// SCROLLPORT is what the `\u276f` is walled off by: the run may
+				// lie left of it, and what lies left of it is clipped away.
+				assert.ok(
+					typed.reach > 0,
+					'the pills are off the edge with nothing left to scroll to them'
+				);
+				assert.ok(
+					typed.port.left >= typed.caret,
+					`the box starts at ${typed.port.left}, over the \u276f at ${typed.caret}`
+				);
+				await page.locator(`${BAR} .field`).evaluate((el) => (el.scrollLeft = el.scrollWidth));
+				await settle(page);
+				const scrolled = await where(page);
+				assert.ok(
+					scrolled.pills[0] < typed.pills[0],
+					`scrolling right did not bring the pills back: ${typed.pills[0]} then ${scrolled.pills[0]}`
+				);
+				// The END of the run is inside the port, which is what makes the
+				// last pill reachable — the pair together is wider than a
+				// 360px phone's box, so no scroll can hold both of them at
+				// once and asking for that would be asking for the impossible.
+				const end = scrolled.ends[scrolled.ends.length - 1];
+				assert.ok(
+					end <= scrolled.port.right + 1,
+					`the last pill ends at ${end}, past the box's ${scrolled.port.right}`
+				);
+				assert.equal(scrolled.left, scrolled.reach, 'the run did not scroll to its end');
+				assert.deepEqual(app.errors, []);
+			}, { viewport: { width, height: 720 }, device: { isMobile: true, hasTouch: true }, query: 'repl' });
+		});
+	}
+});
+
 describe('the clock', () => {
-	test('is under the logo, on the input row’s line', async () => {
+	// It was UNDER the logo while the bar was two tiers with the mark
+	// spanning both (da-xfa4). da-ckw3 put the four things of the input on
+	// ONE row, so the claim moves with it: the clock is BESIDE the mark, on
+	// the row, and still on the box's own line.
+	test('is beside the logo, on the input row’s line', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const boxes = await page.evaluate(() => {
 				const rect = (s) => {
 					const r = document.querySelector(s).getBoundingClientRect();
-					return { top: r.top, bottom: r.bottom, mid: r.top + r.height / 2, text: '' };
+					return { top: r.top, bottom: r.bottom, left: r.left, mid: r.top + r.height / 2 };
 				};
 				return {
 					brand: rect('.prompt-bar .brand'),
-					stamp: rect('.prompt-bar .stamp'),
+					stamp: rect('.prompt-bar .section.input .stamp'),
 					input: rect('.prompt-bar input'),
-					clock: document.querySelector('.prompt-bar .stamp').textContent
+					clock: document.querySelector('.prompt-bar .section.input .stamp').textContent
 				};
 			});
 			assert.match(boxes.clock, /^\d\d:\d\d:\d\d$/, `the clock reads ${boxes.clock}`);
-			assert.ok(boxes.stamp.top >= boxes.brand.bottom - 1, 'the clock is not under the logo');
-			// On the prompt's line: the input row's 40% is the clock's band too.
+			assert.ok(boxes.stamp.left > boxes.brand.left, 'the clock is not past the logo');
+			assert.ok(
+				Math.abs(boxes.stamp.mid - boxes.brand.mid) < 6,
+				`the clock's middle at ${boxes.stamp.mid}, the mark's at ${boxes.brand.mid} — not one row`
+			);
 			assert.ok(
 				Math.abs(boxes.stamp.mid - boxes.input.mid) < 12,
 				`the clock's middle at ${boxes.stamp.mid}, the prompt's at ${boxes.input.mid}`

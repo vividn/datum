@@ -1,11 +1,15 @@
 <!--
 	The app shell.
 
-	The root tab bar above, the fixed bottom bar below, and between them a
-	viewport-height main that never scrolls itself (da-0a5o). Panes inside
-	the page scroll individually (see $lib/Pane.svelte), so the bottom bar
-	— the prompt, the brand, the receipt — stays put whatever the page
-	does, on a phone too.
+	The root tab bar above, and under it the PAGE: a scroller holding three
+	boxes — the dashboard, the bottom bar, and the log below the fold
+	(da-ckw3). The document itself still never scrolls, and neither does
+	this box under any gesture of the browser's: it is `overflow: hidden`
+	and the only thing that moves it is the bar's own drag and wheel
+	($lib/log.ts, which has the arithmetic that makes the two rest states
+	exact). Panes inside the page scroll individually (see $lib/Pane.svelte),
+	so at rest the bottom bar — the prompt, the brand, the receipt — stays
+	put whatever the page does, on a phone too.
 
 	The shell is FIXED to the viewport the browser paints, not sized in
 	viewport units (da-31ts): an installed PWA resolved `100dvh` before its
@@ -20,6 +24,8 @@
 	import { onMount } from 'svelte';
 	import '../app.css';
 	import { installConsole } from '$lib/console.js';
+	import BarLog from '$lib/BarLog.svelte';
+	import { attach, logHeight, shown } from '$lib/log.js';
 	import PromptBar from '$lib/PromptBar.svelte';
 	import RootBar from '$lib/layout/RootBar.svelte';
 	import { boot as bootEngine } from '$lib/layout/engine.js';
@@ -56,6 +62,12 @@
 		reloadOnceForIsolation();
 		return followViewport();
 	});
+
+	/**
+	 * Hand the page's scroller to the bar, which is the only thing that
+	 * moves it (da-ckw3, $lib/log.ts).
+	 */
+	const page_scroller = (el: HTMLElement) => ({ destroy: attach(el) });
 
 	/**
 	 * Hand the shell the visible viewport's height and top as
@@ -128,31 +140,35 @@
 	<title>{db === DEFAULT_DB ? 'datum' : `datum · ${db}`}</title>
 </svelte:head>
 
-<div class="shell">
+<div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px">
 	<RootBar />
 
-	<main>
-		{#if refused !== null}
-			<!--
-				The one database the page may not be pointed at is the app's own
-				(da-vk1x): `_internal` holds the saved layouts, and a frame drawn
-				on it would be reading its own furniture as data. A path is
-				refused for a plainer reason — there is no filesystem out there
-				for it to be a path into. Either way the app underneath is the
-				default database, so the prompt still works while this is read.
-			-->
-			<p class="notice">
-				{refused === INTERNAL_DB
-					? `“${INTERNAL_DB}” is datum.day's own database — the saved layouts live there, not your entries.`
-					: `“${refused}” is not a database name.`}
-				showing <code>{DEFAULT_DB}</code> instead. <a href="/">home</a>
-			</p>
-		{:else}
-			<slot />
-		{/if}
-	</main>
+	<!-- The page. Moved by the bar and by nothing else: see the header. -->
+	<div class="pages" use:page_scroller>
+		<main>
+			{#if refused !== null}
+				<!--
+					The one database the page may not be pointed at is the app's own
+					(da-vk1x): `_internal` holds the saved layouts, and a frame drawn
+					on it would be reading its own furniture as data. A path is
+					refused for a plainer reason — there is no filesystem out there
+					for it to be a path into. Either way the app underneath is the
+					default database, so the prompt still works while this is read.
+				-->
+				<p class="notice">
+					{refused === INTERNAL_DB
+						? `“${INTERNAL_DB}” is datum.day's own database — the saved layouts live there, not your entries.`
+						: `“${refused}” is not a database name.`}
+					showing <code>{DEFAULT_DB}</code> instead. <a href="/">home</a>
+				</p>
+			{:else}
+				<slot />
+			{/if}
+		</main>
 
-	<PromptBar />
+		<PromptBar />
+		<BarLog />
+	</div>
 </div>
 
 <style>
@@ -160,9 +176,37 @@
 	   to; `--viewport-height` the visible part of it, which is never taller,
 	   so a stale measurement can only be ignored, never hang the bar below
 	   the screen. The insets keep a notch or a home indicator off the
-	   prompt. A size container, so the REPL's height is a share of THIS box
-	   rather than of `vh`. */
+	   prompt. A size container, so a box inside is a share of THIS box
+	   rather than of `vh`.
+
+	   THE BAR'S TWO HEIGHTS ARE DECLARED HERE, together and nowhere else
+	   (da-ckw3): the bar is the sum of them, and the dashboard is what is
+	   left of the page when that sum is taken off it, so the two numbers
+	   have to be read in one place by both. vividn: «we may have to play
+	   around with the heights some» — this is where. Folded, the bar is the
+	   input row alone and the dashboard gains the output's height back;
+	   that is the only thing that ever reflows the dashboard. */
 	.shell {
+		/* vividn, 2026-09-18: "increase fontsize of input bar slightly, and
+		   decrease height of input bar so that there is not so much wasted
+		   space with padding". The row was 3.6rem for symmetry with the
+		   output section; it only ever needed to hold a 1.25rem line, and the
+		   rest was padding. The OUTPUT keeps its 3.6rem — that number is the
+		   four raw lines and the two-line document it has to hold
+		   (BarResult.svelte), and it is not the row's to shrink. */
+		--input-height: 2.9rem;
+		--output-height: 3.6rem;
+		/* The hairline that separates the bar from the dashboard is part of
+		   the bar's box, so it belongs in the sum: without it the sections
+		   add up to a pixel more than the bar they are in, and the output's
+		   foot hangs one pixel below the screen. */
+		--bar-rule: 1px;
+		/* The bar is the input row, the rule, and HOWEVER MUCH of the output
+		   section is open right now — `--shown`, which the drag moves and
+		   which is 0 shut and `--output-height` at the notch ($lib/log.ts).
+		   The dashboard is the page less the bar and less the log, so all
+		   three follow one number and none of them can disagree. */
+		--bar-height: calc(var(--input-height) + var(--shown, 0px) + var(--bar-rule));
 		position: fixed;
 		top: var(--viewport-top, 0px);
 		left: 0;
@@ -175,8 +219,32 @@
 		container-type: size;
 	}
 
+	/* The page: the dashboard, the bar, the log. `overflow: hidden` and a
+	   size container — hidden because the browser must never move this box
+	   (a rubber-band, a flick, a focus), and a container because the three
+	   heights inside are shares of it and `cqh` is the one unit that says
+	   so without a percentage chain. The bar's own code moves it
+	   ($lib/log.ts).
+
+	   TWO SIZE CONTAINERS, NESTED, ON PURPOSE (a canary on PR #46 asked why).
+	   `cqh` resolves against the NEAREST one, so `100cqh` in `main` and in
+	   `.log` is this box — the page under the root tab bar — and never the
+	   shell, which is that bar plus this box. That is exactly what the
+	   arithmetic wants: the travel is the dashboard's height, and the
+	   dashboard is the page less the bar. The shell keeps its own container
+	   because it is what a box measured against the WHOLE window wants. */
+	.pages {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		overscroll-behavior: none;
+		container-type: size;
+	}
+
 	.notice {
-		margin: 1rem 0;
+		margin: 1rem 0.75rem;
 		color: var(--quiet);
 		font-style: italic;
 	}
@@ -185,11 +253,22 @@
 		color: var(--accent);
 	}
 
+	/* The dashboard: the page less the bar. That number is also the whole of
+	   the travel into the log, which is what puts the bar's top on the top
+	   of the screen exactly when the scroll runs out ($lib/log.ts). */
 	main {
-		flex: 1;
+		flex: none;
+		height: calc(100cqh - var(--bar-height) - var(--log-height, 0px));
+		/* A flex item will not shrink under its content unless told, and this
+		   one has to reach ZERO: at the log's tallest the dashboard is gone
+		   and the bar's top is the top of the page. Without this it stopped
+		   24px short and the three boxes overflowed the one they are in. */
 		min-height: 0;
 		/* The frame fills this box exactly and scrolls its own panes. */
 		overflow: auto;
-		padding: 0.75rem;
+		/* NO PADDING HERE. A box-sized element cannot be shorter than its own
+		   padding, so 0.75rem all round was a 24px floor — and this box has to
+		   reach ZERO when the log is at its tallest. The air moved inside, to
+		   the frame and the notice, which collapse with it. */
 	}
 </style>

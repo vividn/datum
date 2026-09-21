@@ -133,6 +133,31 @@ impl Outcome {
         }
     }
 
+    /// `#rrggbb` for the action tag — the same six roles [`Self::ansi_color`]
+    /// paints, as a colour a surface that is not a terminal can use.
+    ///
+    /// A REPRESENTATIVE hex for each basic ANSI colour, the way
+    /// [`colors::Rgb::IGNORED`] is `#888888` for bright black: a terminal's
+    /// own theme decides what its green looks like, and nothing outside one
+    /// has a green until somebody names it. These are legible on a dark
+    /// ground, which is every surface that asks for them. `NoDiff` is the one
+    /// that is not a choice — it is already truecolor orange in the escape.
+    ///
+    /// Published as `action_color` by `--show json` (da-ckw3, vividn:
+    /// "Make sure these ACTIONs are colored appropriately"), beside
+    /// `field_color` and `state_color`, so the web paints datum's own colours
+    /// rather than keeping a second palette of its own.
+    pub fn hex(self) -> &'static str {
+        match self {
+            Outcome::Create => "#26a269",                   // green
+            Outcome::Delete | Outcome::Failed => "#e01b24", // red
+            Outcome::Exists => "#e5a50a",                   // yellow
+            Outcome::Update | Outcome::Rename | Outcome::Retime => "#2aa1b3", // cyan
+            Outcome::OWrite => "#3584e4",                   // blue
+            Outcome::NoDiff => "#ffa500",                   // orange, as emitted
+        }
+    }
+
     /// Foreground ANSI color for the action tag.
     fn ansi_color(self) -> &'static str {
         match self {
@@ -363,6 +388,9 @@ pub struct ActionLines {
     /// The entry's state as logged — a JSON string / bool / null / object,
     /// or `None` where the entry carries none.
     pub state: Option<JsonValue>,
+    /// `#rrggbb` for [`Self::action`] — the colour the terminal paints the
+    /// action tag, as data (da-ckw3). See [`Outcome::hex`].
+    pub action_color: String,
     /// `#rrggbb` for [`Self::field`], from `colors::field_hex` — the very
     /// derivation the terminal badge and `fields --json` paint with.
     pub field_color: String,
@@ -447,6 +475,7 @@ pub fn action_lines_at(
         data_inline,
         field: entry.field.clone(),
         state: entry.state.clone(),
+        action_color: action.hex().to_string(),
         field_color: self::colors::field_hex(&entry.field, spec),
         state_color: entry
             .state
@@ -1913,6 +1942,39 @@ mod tests {
     // NOT re-acquire the lock (and so doesn't deadlock). The mutex
     // is poison-tolerant and process-wide (da-3ywd).
     use datum_test_util::{env_lock, ScopedEnv};
+
+    /// Every outcome has a hex, and it says the same thing its escape does.
+    ///
+    /// The web paints the ACTION word from `action_color` (da-ckw3), so the
+    /// two palettes have to agree about which outcomes share a colour — the
+    /// day one of them gains a role the other has not, a DELETE and a FAILED
+    /// stop matching on one surface and keep matching on the other.
+    #[test]
+    fn every_outcome_hex_matches_the_role_its_escape_paints() {
+        use Outcome::*;
+        let all = [
+            Create, Update, Delete, Exists, OWrite, Rename, Retime, NoDiff, Failed,
+        ];
+        for a in all {
+            let hex = a.hex();
+            assert_eq!(hex.len(), 7, "{} has no #rrggbb: {hex:?}", a.name());
+            assert!(hex.starts_with('#'), "{} has no #rrggbb: {hex:?}", a.name());
+            assert!(
+                hex[1..].chars().all(|c| c.is_ascii_hexdigit()),
+                "{} has no #rrggbb: {hex:?}",
+                a.name()
+            );
+            for b in all {
+                assert_eq!(
+                    a.hex() == b.hex(),
+                    a.ansi_color() == b.ansi_color(),
+                    "{} and {} agree in one palette and not the other",
+                    a.name(),
+                    b.name()
+                );
+            }
+        }
+    }
 
     #[test]
     fn show_none_propagates_as_silent() {

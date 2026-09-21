@@ -87,8 +87,9 @@ describe('the menu the title opens', () => {
 
 	// da-ywp1: a pane's bar is a LINE on the pane's outline, so its title
 	// straddles that line — and on a pane at the page's outer edge the
-	// outer half hangs into the page's margin (the main's 0.75rem
-	// padding). That half was under one of the four `…` edge handles
+	// outer half hangs into the page's margin (`.frame`'s 0.75rem padding,
+	// which is where the page's air moved in da-ckw3 so that `main` can
+	// reach zero under a fully-pulled log). That half was under one of the four `…` edge handles
 	// (da-qk2k, z-index 3), which took the pointer and left the title
 	// unclickable there; the handles went with the root menu (da-wjob),
 	// and this holds the margin clear for the half-row the bars hang into.
@@ -99,7 +100,7 @@ describe('the menu the title opens', () => {
 			const [title, inner] = await Promise.all([
 				boxOf(menuButton(page, 'tail')),
 				page
-					.locator('main')
+					.locator('main > .frame')
 					.evaluate((m) => m.getBoundingClientRect().right - parseFloat(getComputedStyle(m).paddingRight))
 			]);
 			const x = title.x + title.width - 1;

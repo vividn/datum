@@ -106,12 +106,40 @@ describe('widget options', () => {
 			const first = await page.locator(`${REPL} .body > *`).evaluateAll((els) => els.map((e) => e.className));
 			assert.match(first[0], /head/, `the first entry opens with ${first[0]}`);
 
-			// The bottom bar's expansion stays oldest-first (da-ckw3 changes it).
-			await page.locator('.prompt-bar .caret').click();
-			const expansion = page.locator('.prompt-bar .expansion .echo');
-			await expansion.first().waitFor();
-			assert.deepEqual((await expansion.allInnerTexts()).map((t) => t.replace(/^\s*❯\s*/, '').trim()), oldestFirst);
-			await page.locator('.prompt-bar .caret').click();
+			// The bar's own log is newest-first WHATEVER this widget's option
+			// says (da-ckw3): it is not the widget, and the option is not its.
+			// The widget is reversed here, so what this catches is the log
+			// reading the widget's setting rather than its own.
+			const bar = await page.locator('.prompt-bar').boundingBox();
+			await page.mouse.move(bar.x + bar.width / 2, bar.y + 10);
+			await page.mouse.wheel(0, 120);
+			await page.locator('.log .echo').first().waitFor();
+			// Rows TWO and onward: the bar's output section is row one of the
+			// same list (da-ckw3, vividn 2026-09-21), so the newest is up there
+			// and not repeated down here. What this still catches is the one
+			// it was written for — the log reading the widget's `reversed`
+			// instead of its own — because the order below is still newest
+			// first while the widget is reversed too.
+			assert.deepEqual(
+				(await page.locator('.log .echo').allInnerTexts()).map((t) => t.replace(/^\s*❯\s*/, '').trim()),
+				[...oldestFirst].reverse().slice(1)
+			);
+			assert.deepEqual(
+				(await page.locator('.prompt-bar .section.output .echo').allInnerTexts()).map((t) =>
+					t.replace(/^\s*❯\s*/, '').trim()
+				),
+				[oldestFirst[oldestFirst.length - 1]]
+			);
+			await page.keyboard.press('Escape');
+			// The LOG's height, not `.pages.scrollTop`: the page never scrolls
+			// under the one-number model (da-ckw3), so a scrollTop check here
+			// was 0 before Escape and 0 after it, and waited for nothing.
+			await page.waitForFunction(
+				() =>
+					parseFloat(
+						getComputedStyle(document.querySelector('.shell')).getPropertyValue('--log-height')
+					) < 0.5
+			);
 
 			// The draft survives a reload; Restore takes the edit back.
 			await app.reload();

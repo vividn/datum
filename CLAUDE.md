@@ -131,11 +131,41 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   in `web/src/lib/echo.ts`), so the bottom bar and the REPL PLACE the
   CLI's own action echo — action, hid, id, info, data — instead of
   parsing its printed lines; a command with no echo falls back to them.
-- The bottom bar is the page's command line AND its status line (da-xfa4):
-  a fixed 6rem, the top 60% the last command's result as one section per
-  document (`+N` opens a modal when they do not fit), the bottom 40% the
-  prompt with the time-cursor pills riding after the typed text, the clock
-  under the logo, and a centred `^` that expands upward into the REPL.
+- The bottom bar is the page's command line AND its status line (da-xfa4)
+  and the SEAM between the dashboard and the history (da-ckw3): an INPUT
+  section over an OUTPUT section, `--input-height` (2.9rem) and
+  `--output-height` (3.6rem) on the shell. The input is one row — the mark,
+  the clock with seconds at every width, `❯`, the box with its time-cursor
+  pills, which stand to the RIGHT of the box and never over the `❯`, going
+  off the screen's right edge and coming back on the box's own sideways
+  scroll (text and pills are ONE strip in one scrollport, `.field` and
+  `.run` in Prompt.svelte); the output is the last command's result as one
+  section per document (`+N` opens a modal when they do not fit). The row's
+  items are centred in the whole input section, and folded a command
+  answers with its ACTION words along the bottom of it STARTING AT THE `❯`,
+  in the colour the CLI paints the tag (`Outcome::hex`, carried as
+  `action_color` on `--show json`), fading, or a red `ERROR` that opens the
+  output on a tap. UNDER the bar, below the fold, is the newest-first REPL
+  (`$lib/BarLog.svelte`).
+- THE BAR MOVES BY GESTURE ALONE — a drag anywhere on it, or a wheel over
+  it. The `^` on its top rule is a HINT and not a control (`pointer-events:
+  none`, `aria-hidden`): vividn, "The ^ button obscures the text… just put a
+  little carrat above the input bar to suggest that it can be pulled up."
+  HOW FAR OPEN it is, is ONE number of pixels (`reveal` in `$lib/log.ts`)
+  that three boxes are sized from — the page itself never scrolls. The
+  output opens over the first `--output-height` of it, which is the NOTCH;
+  past it the log grows to whatever height the finger leaves it at, up to
+  the whole page. A release CARRIES ITS SPEED: past 0.5 px/ms it is a
+  FLING, which goes all the way up, or down as far as the notch and no
+  further — the snag, so a fling closes the log and leaves the output open,
+  and a second one shuts it. Slower than that the let-go rules apply, so a
+  deliberate drag ending below the notch closes. Every settle is one
+  ease-out cubic whose duration is set to leave at the finger's own speed.
+  A phone starts folded, anything wider open, remembered per device.
+  `return to top` sits pinned at the bottom of the screen and Escape does
+  the same. NB `touch-action: pan-x` is on `.field` as well as the bar: the
+  value resolves only up to the nearest scroll container, so without it the
+  browser claims every drag that starts on the box.
 - `?db=<name>` names the DATABASE the page runs against (da-vk1x,
   `web/src/lib/database.ts`): the name becomes the CLI's own `--db` at the
   one seam (`run` in `run.ts`), so no caller carries it, and a caller that

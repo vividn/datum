@@ -21,8 +21,8 @@
 	  title and in the ⓘ's note.
 	- a name can be long, and it must never cost the prompt beside it any
 	  room. So the name does not size the bottom bar's brand block at all —
-	  the block is a size container (PromptBar.svelte), as wide as the clock
-	  under it makes it — and the name's type is fitted INTO that width:
+	  the block is a size container of a FIXED width (PromptBar.svelte) —
+	  and the name's type is fitted INTO that width:
 	  `100cqi` shared across the name's length, between a floor and the full
 	  size. Past the floor the name ellipsizes; the whole name is in the
 	  button's title, its label and the menu.
@@ -138,6 +138,7 @@
 
 	.brand-menu :global(.brand) {
 		min-height: 24px;
+		position: relative;
 		display: flex;
 		align-items: center;
 		min-width: 0;
@@ -152,8 +153,20 @@
 		   face's glyphs average 0.44em at weight 300 (`datum` is 2.2em,
 		   measured in Chromium), a little more for a name heavy with `m`
 		   and `w`, and the arrow after the name takes most of another em. Full size for a short name, a floor for
-		   a long one — and past the floor, the ellipsis below. */
-		font-size: clamp(0.95rem, 100cqi / (var(--len) * 0.46 + 0.8), 1.45rem);
+		   a long one — and past the floor, the ellipsis below.
+
+		   The full size is 1.15rem rather than the 1.45rem it was: da-ckw3
+		   put the mark on ONE row beside the clock, and vividn — "The size of
+		   the db/logo can be reduced some to save some space" — asked that
+		   row's space back for the box. It went back up on 2026-09-18:
+		   "Increase the size of the db/logo, you can sacrifice the margin in
+		   between it and the clock more."
+
+		   No `+ 0.8` for the arrow any more: it is out of the flow below, so
+		   the name has the whole block and ends where the block ends — which
+		   is what puts it beside the clock rather than an arrow's width short
+		   of it. */
+		font-size: clamp(0.85rem, 100cqi / (var(--len) * 0.46), 1.5rem);
 		line-height: 1;
 		letter-spacing: 0.02em;
 	}
@@ -183,8 +196,15 @@
 	   whichever fallback happened to have one. It is a control's mark, not
 	   a letter of the name, and a monospace triangle is the same shape
 	   everywhere. */
+	/* OUT OF THE FLOW, so it reserves no width: it is invisible until a
+	   pointer is over the name, and a phone has no pointer at all — an arrow
+	   nobody will ever see should not push the mark away from the clock
+	   (vividn, 2026-09-18). It hangs just past the name, where it was. */
 	.brand-menu :global(.brand::after) {
-		flex: none;
+		position: absolute;
+		left: 100%;
+		top: 50%;
+		transform: translateY(-50%);
 		content: '\25BE' / '';
 		margin-left: 0.15em;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
