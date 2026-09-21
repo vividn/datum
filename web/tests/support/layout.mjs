@@ -170,6 +170,11 @@ export async function toggleRootLock(page) {
 	await page.locator(`.root-bar button.lock[aria-pressed="${was === 'true' ? 'false' : 'true'}"]`).waitFor();
 }
 
+/** Unlock the root tab in front if it is locked; a layout that SHIPPED opens locked (da-gshh). */
+export async function unlockRoot(page) {
+	if ((await lockButton(page).getAttribute('aria-pressed')) === 'true') await toggleRootLock(page);
+}
+
 /** A pane's maximize badge (da-00am): before the tab names (da-bzhq). Its own, not a child's. */
 export const maximizeButton = (page, id) => pane(page, id).locator('> .titlebar button.maximize');
 
@@ -193,6 +198,63 @@ export async function choose(page, id, label) {
 	await menuButton(page, id).click();
 	await page.getByRole('menuitem', { name: label, exact: true }).click();
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+}
+
+/** What opens a widget's own options: a pane's name, or the root tab's. */
+const optionMenu = (page, id) => (id === null ? rootMenuButton(page) : menuButton(page, id));
+
+/**
+ * A widget's SWITCH in the menu its name opens (da-vhwq): pressed, waited
+ * for, and the menu closed again. `id` is null for the root tab's menu.
+ */
+export const switchItem = (page, label, on) =>
+	page.locator(`[role="menuitemcheckbox"]${on === undefined ? '' : `[aria-checked="${on}"]`}`).filter({ hasText: exactly(label) });
+
+export async function toggleOption(page, id, label) {
+	await optionMenu(page, id).click();
+	const was = (await switchItem(page, label).getAttribute('aria-checked')) === 'true';
+	await switchItem(page, label).click();
+	// The item stays, and says it went the other way: a switch does not
+	// close the menu (PaneMenu.svelte), so this is the settle to wait for.
+	await switchItem(page, label, !was).waitFor();
+	await page.keyboard.press('Escape');
+	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+}
+
+/** One of a widget's CHOICES, from the submenu its item opens; both menus close. */
+export async function pickOption(page, id, label, value) {
+	await optionMenu(page, id).click();
+	await page.locator('[role="menu"] > button').filter({ hasText: exactly(label) }).click();
+	await page.locator('[role="menu"][aria-orientation="vertical"]').waitFor();
+	await page
+		.locator('[role="menu"][aria-orientation="vertical"] button')
+		.filter({ hasText: new RegExp(`^\\s*${value}(\\s·\\sdefault)?\\s*$`) })
+		.click();
+	await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+}
+
+/** Whether a widget's switch reads ON, without changing it. */
+export async function optionChecked(page, id, label) {
+	await optionMenu(page, id).click();
+	const on = await switchItem(page, label).getAttribute('aria-checked');
+	await page.keyboard.press('Escape');
+	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+	return on === 'true';
+}
+
+/** The values a widget's CHOICE offers, and which is in force. */
+export async function choiceLines(page, id, label) {
+	await optionMenu(page, id).click();
+	await page.locator('[role="menu"] > button').filter({ hasText: exactly(label) }).click();
+	const list = page.locator('[role="menu"][aria-orientation="vertical"]');
+	await list.waitFor();
+	const lines = await list.locator('button').evaluateAll((bs) =>
+		bs.map((b) => `${b.getAttribute('aria-checked') === 'true' ? '✓ ' : ''}${b.textContent.trim()}`)
+	);
+	await page.keyboard.press('Escape');
+	await page.keyboard.press('Escape');
+	await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+	return lines;
 }
 
 /** Open a pane's `▾` and choose an item — `break out: this widget below`, `Close pane`. */

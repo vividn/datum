@@ -111,8 +111,9 @@
 	import { confirm } from '$lib/confirm.js';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, layout, loaded } from './current.js';
-	import { layoutActs, managed, menuItems, named, optionsItem } from './menu.js';
+	import { layoutActs, managed, menuItems, named } from './menu.js';
 	import { widgetOptions } from './options.js';
+	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
 	import { activate, close, keepTab, modified, open, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock, versions } from './shell.js';
@@ -141,6 +142,16 @@
 	 */
 	$: preview = name !== undefined && $previews.has(name);
 	$: locked = !!active?.locked;
+
+	/**
+	 * The widget's own options, inline (da-vhwq), for a root tab that SHOWS
+	 * ONE widget — on a phone that tab is the whole page, so this menu is
+	 * the only door to them. The scope a session setting is held against is
+	 * the layout this tab names, which is the outermost there is.
+	 */
+	$: sessionOf = keyOf($layout, id ?? '');
+	$: held = $session[sessionOf] ?? {};
+	$: options = widgetOptions(active, held, sessionOf, locked);
 	/** Loaded, and no act in flight: what a test waits for before pressing. */
 	$: ready = $loaded && !busy && active !== undefined;
 
@@ -233,7 +244,7 @@
 	const doToggleLock = () => id !== undefined && toggleLock(id);
 
 	$: all = locked
-		? [...optionsItem(widgetOptions(active)), ...(acts ? layoutActs(acts) : [])]
+		? [...options, ...(acts ? layoutActs(acts) : [])]
 		: menuItems({
 				choose: () => id !== undefined && void fillTab(id),
 				// The same rule a pane's frame reads, and it is about SHAPE: a
@@ -243,7 +254,7 @@
 				// the whole page, so this menu is the only door to it. A layout
 				// of several widgets shows a split here and offers neither.
 				reset: resetWidget(active),
-				options: widgetOptions(active),
+				options,
 				// No `breakOut`: a tab breaks out of its strip, and this bar is the
 				// shell, not a strip (da-a642, da-n632). No `bar`: this bar IS the root's.
 				split: { what: 'split: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },

@@ -8,15 +8,23 @@
 // (`menu.ts`) both bars are built from.
 //
 // The rule these hold to: the defaults come from the registry and nowhere
-// else, the act is a DRAFT change down the same `setWidget` path the
-// widget's own `change` takes — so the layout wears its dot and `Save
-// layout` is what writes it — and a tab with no widget of its own (it
-// holds a layout, or a split) has no such act at all.
+// else, the act is a DRAFT change down `setWidget` — so the layout wears
+// its dot and `Save layout` is what writes it — and a tab with no widget
+// of its own (it holds a layout, or a split) has no such act at all.
+//
+// Since da-vhwq the widget's own `change` does NOT take that path: the
+// strip's handle is this session's until «Save options with layout» is
+// asked for. So the reset is one of the two acts that still write a widget
+// into the tree, and it drops what the session holds as well — «defaults»
+// means the widget as it STARTS.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, addTab, chooseRoot, chooser, choose, exactly, menuButton, menuLines, pane } from './support/layout.mjs';
+
+/** «Save options with layout» (da-vhwq): what makes a widget's own move the layout's. */
+const SAVE = 'Save options with layout';
 
 before(startApp);
 after(stopApp);
@@ -74,17 +82,21 @@ describe('Reset widget', () => {
 
 			await dragBy(page, grip, -grow);
 			await dayHeightIs(page, fallback + grow);
-			assert.equal(await dotted(page, 'day'), true, 'a changed setting left the layout unmodified');
+			// da-vhwq: the drag is what THIS TAB shows, and nothing more —
+			// until it is asked for, which is what lights the dot.
+			assert.equal(await dotted(page, 'day'), false, 'a session setting dirtied the layout');
+			await choose(page, 'strip', SAVE);
+			await page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
 
 			// Saved, so that `Restore layout` has something of its own to put
 			// back and the dot below is the reset's alone.
 			await chooseRoot(page, 'Save layout');
 			await page.waitForFunction(() => !document.querySelector('.root-bar [role="tab"].modified'));
 
-			// Second in the menu, beside Change Widget and before Options….
-			// Split and the rest are the `▾`'s now (da-bzhq).
+			// Second in the menu, beside Change Widget and before the widget's
+			// own options (da-vhwq). Split and the rest are the `▾`'s (da-bzhq).
 			const lines = await linesOf(page, 'strip');
-			assert.deepEqual(lines, ['Change Widget', RESET, 'Options…']);
+			assert.deepEqual(lines, ['Change Widget', RESET, 'today frozen at the bottom']);
 
 			await choose(page, 'strip', RESET);
 			await dayHeightIs(page, fallback);

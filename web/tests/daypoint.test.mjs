@@ -171,14 +171,20 @@ async function barRun(page, line) {
 	return page.locator('.prompt-bar .doc .receipt').last().innerText();
 }
 
-/** The strip widget's settings in the live tree — what its owner last heard. */
+/**
+ * The settings the strip widget is DRAWN from — what its owner last heard,
+ * with whatever THIS SESSION holds over it. Since da-vhwq a move of the
+ * strip's own (the zoom below is one) lands in the session and reaches the
+ * tree only on «Save options with layout», so the tree alone is no longer
+ * what the strip was told.
+ */
 const stripSettings = () => {
 	const walk = (pane) => {
 		for (const tab of pane.tabs) {
 			if ('children' in tab.content) {
 				const hit = tab.content.children.map(walk).find(Boolean);
 				if (hit) return hit;
-			} else if (tab.content.kind === 'daystrip') return tab.content.settings;
+			} else if (tab.content.kind === 'daystrip') return window.datum.layout.settings(tab.id);
 		}
 	};
 	return walk(window.datum.layout.current().root);

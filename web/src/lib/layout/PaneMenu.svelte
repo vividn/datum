@@ -26,6 +26,20 @@
 	the last item of every menu, wears an `×` (da-ygc9). It is decoration,
 	so it is `aria-hidden`: the item's name is still its label alone.
 
+	An item with `list` opens a submenu of WORDS in the same place and by
+	the same ways in (da-vhwq): one of a set of named values, each a
+	`menuitemradio` carrying whether it is the one in force — a widget
+	option of type `choice`, where the modal had a `<select>`. It stands
+	DOWN the screen rather than across it, so ArrowUp/ArrowDown walk it and
+	ArrowLeft goes back to the item that opened it.
+
+	An item with `toggled` is a SWITCH: a `menuitemcheckbox` that says
+	whether it is on and turns over when it is pressed — a widget option of
+	type `boolean`. It is the one item that does NOT close the menu, because
+	it is not a place to go: the tick moves under the finger, a second
+	switch is one press away, and «Save options with layout» appears in the
+	list the moment there is something to save.
+
 	An item with `row` is its label and a few short buttons on one line —
 	the pane's `Split | −` (da-13bc). The buttons are menu items like any
 	other, walked by ArrowUp/ArrowDown in order and by ArrowLeft/ArrowRight
@@ -83,6 +97,8 @@
 	let at = { top: 0, left: 0 };
 	/** The open submenu: its item, and the button that opened it. */
 	let sub: { item: (typeof items)[number]; opener: HTMLButtonElement } | null = null;
+	/** Whether an item opens a submenu at all — icons (`sub`) or words (`list`). */
+	const opens = (item?: (typeof items)[number]) => !!(item?.sub || item?.list);
 	let subMenu: HTMLDivElement | undefined;
 	let subAt = { top: 0, left: 0 };
 
@@ -160,8 +176,8 @@
 	/** The pointer on an item: a `sub` opens, anything else closes the open one. */
 	function hover(event: PointerEvent, item?: (typeof items)[number]) {
 		if (event.pointerType === 'touch') return;
-		if (item?.sub) {
-			if (sub?.item !== item) showSub(item, event.currentTarget as HTMLButtonElement, false);
+		if (opens(item)) {
+			if (sub?.item !== item) showSub(item!, event.currentTarget as HTMLButtonElement, false);
 		} else if (sub) closeSub(!!subMenu?.contains(document.activeElement));
 	}
 
@@ -216,13 +232,26 @@
 	function onSubKey(event: KeyboardEvent) {
 		const all = enabled(subMenu);
 		const here = all.indexOf(document.activeElement as HTMLButtonElement);
+		// The keys that walk a submenu are the ones that point ALONG it: a
+		// words submenu stands down the screen, an icons one across it. `back`
+		// is the way out, and for icons it IS `prev` — ArrowLeft walks left
+		// and leaves at the first item. Written as one map per orientation
+		// rather than two `case`s that can shadow each other, which left a
+		// dead `case 'ArrowLeft'` for icons (the panel on #64).
+		const keys = sub?.item.list
+			? { prev: 'ArrowUp', next: 'ArrowDown', back: 'ArrowLeft' }
+			: { prev: 'ArrowLeft', next: 'ArrowRight', back: null };
 		switch (event.key) {
-			case 'ArrowRight':
+			case keys.next:
 				focusItem(all, here + 1);
 				break;
-			case 'ArrowLeft':
-				if (here <= 0) closeSub();
+			case keys.prev:
+				// Icons: the first item's `prev` is the way back out.
+				if (keys.back === null && here <= 0) closeSub();
 				else focusItem(all, here - 1);
+				break;
+			case keys.back:
+				closeSub();
 				break;
 			case 'Home':
 				focusItem(all, 0);
@@ -317,15 +346,21 @@
 			{:else}
 				<button
 					type="button"
-					role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
-					aria-checked={item.checked}
-					class:opens={item.sub}
+					role={item.toggled !== undefined
+						? 'menuitemcheckbox'
+						: item.checked === undefined
+							? 'menuitem'
+							: 'menuitemradio'}
+					aria-checked={item.toggled ?? item.checked}
+					class:opens={opens(item)}
+					class:ticked={!item.glyph && (item.toggled ?? item.checked) !== undefined}
 					class:marked={item.marked}
 					disabled={item.disabled}
-					aria-haspopup={item.sub ? 'menu' : undefined}
-					aria-expanded={item.sub ? sub?.item === item : undefined}
+					aria-haspopup={opens(item) ? 'menu' : undefined}
+					aria-expanded={opens(item) ? sub?.item === item : undefined}
 					on:pointerenter={(e) => hover(e, item)}
-					on:click={(e) => (item.sub ? showSub(item, e.currentTarget) : choose(item))}
+					on:click={(e) =>
+						opens(item) ? showSub(item, e.currentTarget) : item.toggled !== undefined ? item.run?.() : choose(item)}
 				>{#if item.glyph}<span class="glyph" aria-hidden="true">{item.glyph}</span> {/if}{item.label}</button
 				>
 			{/if}
@@ -335,17 +370,28 @@
 
 {#if open && sub}
 	<div
-		class="menu icons"
+		class="menu"
+		class:icons={!sub.item.list}
 		role="menu"
 		tabindex="-1"
 		aria-label={sub.item.label}
-		aria-orientation="horizontal"
+		aria-orientation={sub.item.list ? 'vertical' : 'horizontal'}
 		bind:this={subMenu}
 		use:portal
 		style:top="{subAt.top}px"
 		style:left="{subAt.left}px"
 		on:keydown={onSubKey}
 	>
+		{#each sub.item.list ?? [] as pick (pick.label)}
+			<button
+				type="button"
+				class="ticked"
+				role="menuitemradio"
+				aria-checked={pick.checked}
+				title={pick.title}
+				on:click={() => choose(pick)}>{pick.label}</button
+			>
+		{/each}
 		{#each sub.item.sub ?? [] as group, g}
 			{#if g > 0}<div class="sep" role="separator" aria-orientation="vertical" />{/if}
 			{#each group as choice (choice.label)}
@@ -434,6 +480,18 @@
 		cursor: pointer;
 	}
 
+	/* A finger's 24px where the pointer is COARSE (da-vhwq). The options are
+	   items of this menu now, and a switch is a thing a thumb presses again
+	   and again; the modal they came out of gave its rows a finger's height
+	   and these have to have one too. The same number `$lib/lanes.ts` calls
+	   `REACH_PX` and the bar's badges are drawn at. A mouse's rows are left
+	   as they were. */
+	@media (pointer: coarse) {
+		.menu button {
+			min-height: 24px;
+		}
+	}
+
 	.menu button:hover:not(:disabled),
 	.menu button:focus-visible {
 		background: var(--tint);
@@ -468,9 +526,35 @@
 	}
 
 	.menu button.opens::after {
-		content: '▸';
+		content: '▸' / '';
 		margin-inline-start: auto;
 		color: var(--muted);
+	}
+
+	/* Whether a switch is ON, and which of a set of words is in force
+	   (da-vhwq): the same tick at the end of the row either way — the roles
+	   differ, `menuitemcheckbox` and `menuitemradio`, and the eye should
+	   not have to. The blank keeps the unticked row the same width as the
+	   ticked one, so a list does not shuffle as it is walked.
+
+	   `ticked` and not `[aria-checked]` alone: an ICONS submenu carries its
+	   state in the picture, and an item that brings a `glyph` of its own has
+	   already said it — the logo's databases wear a leading ✓ (Brand.svelte),
+	   and a second one at the other end would be the same fact twice.
+
+	   `/ ''` is the tick's ALTERNATIVE TEXT, and it is empty on purpose:
+	   generated content counts towards the accessible name, so without it
+	   the item is named «newest first ✓» and says its state twice — once
+	   in `aria-checked`, where it belongs, and once in its own name. */
+	.menu button.ticked::after {
+		content: '' / '';
+		margin-inline-start: auto;
+		padding-inline-start: 0.75rem;
+	}
+
+	.menu button.ticked[aria-checked='true']::after {
+		content: '✓' / '';
+		color: var(--accent);
 	}
 
 	/* A row: its label where an item's words are, its buttons at the end,

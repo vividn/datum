@@ -4,7 +4,11 @@
 	back the picture reaches — down to 0, the snapshot of each field's state.
 	The window's size is written nowhere: each button's title names the step
 	it goes to (da-rex1). The step is the widget's setting, handed out with
-	`change`, so the tree keeps it with the layout.
+	`change` — and since da-vhwq that lands in THIS SESSION, not the tree:
+	pressing − under a LOCKED layout used to move `history` in the tree and
+	light the layout's dot, which is the defect that bead was written
+	against. «Save options with layout» is what hands the step to the
+	layout, and a lock takes that act away.
 
 	The snapshot draws no axis, so it has no steps: nothing lies over its
 	chips, and the way out of it is the zoom below.

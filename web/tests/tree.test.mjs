@@ -690,7 +690,12 @@ describe('floorOf', () => {
 	// any more (da-mbz2), so nothing is counted at a drawn height — a
 	// pane's floor is its LARGEST tab's, and a hidden tab keeps its room.
 	test("the root's is every pane legible, keeping a larger hidden tab", () => {
-		const legible = (kind) => ({ repl: { width: 200, height: 106 }, widgetbar: { width: 160, height: 45 }, stats: { width: 240, height: 140 } })[kind];
+		// `minOf` is given the TAB since da-vhwq, so a caller can merge in
+		// what this session holds over the tree's settings.
+		const legible = (tab) =>
+			({ repl: { width: 200, height: 106 }, widgetbar: { width: 160, height: 45 }, stats: { width: 240, height: 140 } })[
+				tab.content.kind
+			];
 		const bar = newPane([widgetTab('widgetbar'), widgetTab('stats')]);
 		const root = newPane([newTab(newSplit('column', [newPane([widgetTab('repl')]), bar]))]);
 		// repl 106 + its frame 20, the border, stats 140 + its frame 20; the root holder draws no frame.
@@ -734,7 +739,9 @@ describe('snapsOfKind', () => {
 		for (const layout of [DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE]) {
 			for (const split of columns(layout.root).filter((s) => s.direction === 'column')) {
 				const shared = split.children.filter((c) => !KINDS[c.tabs[c.active].content.kind]?.fit);
-				const want = shared.map((c) => floorOf(c, legibleOfKind, 8, chrome).height);
+				const want = shared.map(
+					(c) => floorOf(c, (tab) => legibleOfKind(tab.content.kind, tab.content.settings), 8, chrome).height
+				);
 				const share = shared.map((c) => split.ratios[split.children.indexOf(c)]);
 				const total = share.reduce((a, b) => a + b, 0);
 				const room = want.reduce((a, b) => a + b, 0);

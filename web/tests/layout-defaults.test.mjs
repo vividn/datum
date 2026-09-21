@@ -18,7 +18,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, PHONE, chooseRoot, chooser, exactly } from './support/layout.mjs';
+import { DESKTOP, PHONE, choose, chooseRoot, chooser, exactly } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -146,8 +146,11 @@ async function stage(app) {
 
 	// A built-in, modified and saved: `day`'s save now shadows the tree
 	// `defaults.ts` holds, which is the only thing a reset has to undo.
+	// The drag is this session's until it is handed over (da-vhwq), so the
+	// layout hears of it through «Save options with layout» first.
 	await dragBy(page, grip, -40);
 	await dayHeightIs(page, grown);
+	await choose(page, 'strip', 'Save options with layout');
 	await chooseRoot(page, 'Save layout');
 	await page.waitForFunction(() => !document.querySelector('.root-bar [role="tab"].modified'));
 

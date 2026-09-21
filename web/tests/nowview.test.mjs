@@ -11,7 +11,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
-import { DESKTOP, activeTab, chooseRoot, draft, pane, settled, swipe } from './support/layout.mjs';
+import { DESKTOP, activeTab, choose, chooseRoot, draft, pane, settled, swipe } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -143,18 +143,43 @@ describe('the nowview widget', () => {
 		});
 	});
 
-	test('the step is kept in the draft and in a saved layout', async () => {
+	// da-vhwq: the step is a setting the widget moves ITSELF, so it is THIS
+	// SESSION'S — it changes what this tab shows, the layout is not dirtied,
+	// and a reload starts back at what the layout says. «Save options with
+	// layout» is what hands it over; only then is it a draft edit, and only
+	// then does `Save layout` write it down.
+	test('the step is this session’s, and the draft and a save take it only when asked', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
 			await longer(page).click();
 			await asked(page, '45m');
+			assert.equal(
+				await page.locator('.root-bar [role="tab"].modified').count(),
+				0,
+				'the widget’s own + dirtied the layout'
+			);
 
 			await app.reload();
 			assert.deepEqual(
 				await titles(page),
+				['longer window (45m)', 'shorter window (20m)'],
+				'a session setting survived a reload'
+			);
+
+			// The spy is a page hook, so the reload took it: arm it again.
+			await app.spyOnRunner();
+			await longer(page).click();
+			await asked(page, '45m');
+			await choose(page, 'nowview', 'Save options with layout');
+			await page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
+
+			// Now it is the draft's, and survives a reload on its own.
+			await app.reload();
+			assert.deepEqual(
+				await titles(page),
 				['longer window (60m)', 'shorter window (30m)'],
-				'the step did not survive a reload'
+				'the draft did not keep the handed-over step'
 			);
 
 			// The root bar's save icon, on the `day` tab (da-0a5o).

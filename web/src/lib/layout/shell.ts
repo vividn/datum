@@ -117,7 +117,7 @@ import {
 import { EMPTY_KIND, allIds, closeTab, findTab, newId, newWidget, normalize, setActive, setLocked, setWidget, shedLayout } from './tree.js';
 import { unmaximize } from './maximize.js';
 import { defaultsOfKind } from './registry.js';
-import { clearSession } from './session.js';
+import { clearSession, keyOf } from './session.js';
 
 export { versions };
 
@@ -933,10 +933,11 @@ export async function resetDefaults(): Promise<void> {
  * is what writes it — and for a one-widget layout that is the layout the
  * tab names, so its dot lights and `Restore layout` is the way back.
  *
- * Whatever this SESSION set on the tab goes with it (da-xhio): «defaults»
- * means the widget as it starts, and a session option left standing over
- * the settings just written would be exactly the thing it did not go back
- * to.
+ * Whatever this SESSION set on the tab goes with it (da-xhio, da-vhwq):
+ * «defaults» means the widget as it starts, and a session setting left
+ * standing over the settings just written would be exactly the thing it
+ * did not go back to. It is also the one act that writes the tree from the
+ * widget's side — an explicit one, and already out of a locked menu.
  */
 export function resetWidget(tab: Tab | undefined): (() => void) | undefined {
 	if (!tab || isSplit(tab.content)) return undefined;
@@ -944,7 +945,7 @@ export function resetWidget(tab: Tab | undefined): (() => void) | undefined {
 	const settings = defaultsOfKind(widget.kind);
 	if (!settings) return undefined;
 	return () => {
-		clearSession(tab.id);
+		clearSession(keyOf(get(layout), tab.id));
 		apply((l) => setWidget(l, tab.id, { ...widget, settings }));
 	};
 }

@@ -1,44 +1,60 @@
-// Widget options (da-gvdc): a kind declares its options in the registry,
-// and `Options…` in the pane menu opens one modal drawn from them.
+// Widget options (da-gvdc, da-vhwq): a kind declares its options in the
+// registry, and the menu the widget's NAME opens draws one item each.
 //
 // vividn, 2026-09-17: «have the REPL be in reverse order (also allow the repl
 // widget to be reversed as well as a widget option. (widgets in general
 // should support options, a modal that can be opened from the menu.»
 //
-// What these hold to: the declarations are sound for every kind; the item is
-// there exactly for a kind that declares options; the modal keeps no copy of
-// the settings — a change is a draft edit of the enclosing layout (its dot,
-// Restore, Save) and a change made behind it shows in it; and the first
-// customer, the REPL's `reversed`, flips the order of entries and pins the
-// view to the top.
+// And, 2026-09-21, the change this file is now written against: «Clicking
+// on the widget name instead opens a menu to select session-level widget
+// options, most of which can be changed and manipulated directly in the
+// menu/submenus without having to open a new modal», and «when unlocked,
+// maybe we have an extra option in this menu, something like "save options
+// with layout" that then modifies the actual layout. When locked, nothing
+// should be able to modify the layout like currently happens.»
 //
-// And ONE option is not the layout's at all: an option declared `session`
-// (da-xhio) is this tab's for as long as the page lives, so it leaves no dot
-// and no draft and a reload starts it back at its default. The fields
-// widget's «show ignored fields» is the first of them, at the bottom here.
+// ⚑ THE THREE ARE ONE. What is held to here is that whole contract:
+//
+//  - a switch is an item that carries its own state and turns over in
+//    place; a choice is a submenu of words. No modal.
+//  - EVERY change is THIS SESSION'S — it changes what this tab shows, it
+//    leaves the layout's dot alone, and a reload starts back at what the
+//    layout says. A widget moving a setting of its own (nowview's − / +)
+//    goes down that same path, which is why
+//  - a LOCKED layout cannot be modified by anything, the widget's own
+//    in-body controls included: the only writer left is «Save options with
+//    layout», and the lock hides it.
+//  - `Reset widget` still means the kind's defaults, session and all.
+//  - a key this build does not declare is kept, not dropped.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
+	choiceLines,
 	choose,
 	chooseRoot,
 	chooser,
 	exactly,
 	menuButton,
 	menuLines,
+	optionChecked,
 	pane,
+	pickOption,
+	switchItem,
 	titledMenuButton,
+	titledPane,
+	toggleOption,
 	toggleRootLock
 } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
 
-const OPTIONS = 'Options…';
-const modal = (page) => page.locator('dialog.options');
+const SAVE = 'Save options with layout';
 const REPL = 'section.pane[data-title="repl"]';
+const NEWEST = 'newest first';
 
 /** Open a pane's menu, read its lines, and close it again. */
 async function linesOf(page, id) {
@@ -49,17 +65,6 @@ async function linesOf(page, id) {
 	return lines;
 }
 
-/** `Options…` on pane `id`, and the modal it opens. */
-async function openOptions(page, id) {
-	await choose(page, id, OPTIONS);
-	await modal(page).waitFor();
-}
-
-const closeModal = async (page) => {
-	await page.keyboard.press('Escape');
-	await modal(page).waitFor({ state: 'detached' });
-};
-
 /** The REPL pane's echoed commands, top to bottom. */
 const replEchoes = (page) =>
 	page.locator(`${REPL} .echo`).allInnerTexts().then((ts) => ts.map((t) => t.replace(/^\s*❯\s*/, '').trim()));
@@ -67,12 +72,8 @@ const replEchoes = (page) =>
 const dotted = async (page, name) =>
 	(await page.locator('.root-bar [role="tab"].modified').filter({ hasText: name }).count()) > 0;
 
-/** Set `reversed` on the REPL through the modal, and close it. */
-async function setReversed(page, on) {
-	await openOptions(page, 'repl');
-	await modal(page).locator('[data-option="reversed"] input').setChecked(on);
-	await closeModal(page);
-}
+/** The tree as one string: what a session setting must never appear in. */
+const tree = (page) => page.evaluate(() => JSON.stringify(window.datum.layout.current()));
 
 describe('widget options', () => {
 	test('every declared option has a default, and a choice default is one of its choices', async () => {
@@ -101,39 +102,82 @@ describe('widget options', () => {
 		}, DESKTOP);
 	});
 
-	// `tail` moved from the second list to the first in da-hkjp, which gave
-	// it a declared `type`. The contrast the test is making is unchanged —
-	// a kind with options has the item and a kind without has not — and
-	// `command` is still an example of the second.
-	test('the item: on repl, nowview, fields, dayview and tail; not on command', async () => {
+	// The rows are IN the menu now, not behind an `Options…` that opens a
+	// modal: a kind with options reads them under Change Widget and Reset
+	// widget, and a kind without reads what it always did.
+	//
+	// `tail` gained an option in da-hkjp (its `type`), so the kind standing
+	// here for «declares none» is `custom`. The contrast is the point, not
+	// which kind makes it.
+	test('the options are items of the name’s menu; a kind with none has none', async () => {
 		await withApp(async ({ page }) => {
-			for (const id of ['repl', 'nowview', 'bar', 'strip', 'tail']) {
-				const lines = await linesOf(page, id);
-				assert.ok(lines.includes(OPTIONS), `${id} reads ${lines.join(' | ')}`);
-			}
+			assert.deepEqual(await linesOf(page, 'repl'), ['Change Widget', 'Reset widget', NEWEST]);
+			assert.deepEqual(await linesOf(page, 'nowview'), ['Change Widget', 'Reset widget', 'history']);
+			assert.deepEqual(await linesOf(page, 'bar'), [
+				'Change Widget',
+				'Reset widget',
+				'a switch is labelled with its',
+				'show ignored fields'
+			]);
+			assert.deepEqual(await linesOf(page, 'strip'), ['Change Widget', 'Reset widget', 'today frozen at the bottom']);
+			assert.deepEqual(await linesOf(page, 'tail'), ['Change Widget', 'Reset widget', 'type']);
+			assert.deepEqual(await linesOf(page, 'custom'), ['Change Widget']);
+			// No modal is left anywhere in the app.
+			assert.equal(await page.locator('dialog.options').count(), 0);
 
 			await choose(page, 'custom', 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('command') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
-			const command = await linesOf(page, 'custom');
-			assert.ok(!command.includes(OPTIONS), `command reads ${command.join(' | ')}`);
+			assert.deepEqual(await linesOf(page, 'custom'), ['Change Widget']);
 		}, DESKTOP);
 	});
 
-	test('repl reversed: newest first, a draft edit, kept by a save, undone by Reset widget and «defaults»', async () => {
+	// A switch says whether it is on in the role the keyboard and a screen
+	// reader read it off, and turns over WITHOUT closing the menu — so a
+	// second switch is one press away and `Save options with layout`
+	// appears in the list the moment there is something to save.
+	test('a switch is a menuitemcheckbox that turns over in place, and the save appears beside it', async () => {
+		await withApp(async ({ page }) => {
+			await menuButton(page, 'repl').click();
+			assert.equal(await switchItem(page, NEWEST).getAttribute('aria-checked'), 'false');
+			assert.equal(await page.getByRole('menuitem', { name: SAVE, exact: true }).count(), 0, 'nothing held, and a save offered');
+			await switchItem(page, NEWEST).click();
+			await switchItem(page, NEWEST, true).waitFor();
+			assert.ok(await page.locator('[role="menu"]').isVisible(), 'the switch closed the menu');
+			await page.getByRole('menuitem', { name: SAVE, exact: true }).waitFor();
+			await page.keyboard.press('Escape');
+			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+		}, DESKTOP);
+	});
+
+	// A choice is a submenu of WORDS, one of them ticked — the `<select>`
+	// the modal had, in the menu. The default is named as one.
+	test('a choice opens a submenu of its values, the one in force ticked', async () => {
+		await withApp(async ({ page }) => {
+			assert.deepEqual(await choiceLines(page, 'bar', 'a switch is labelled with its'), ['✓ field · default', 'state']);
+			const windows = await choiceLines(page, 'nowview', 'history');
+			assert.equal(windows.length, 13, windows.join(' | '));
+			assert.equal(windows[0], 'now');
+			assert.ok(windows.includes('✓ 30m · default'), windows.join(' | '));
+		}, DESKTOP);
+	});
+
+	test('repl reversed: newest first, this session’s, saved only when asked, undone by Reset widget', async () => {
 		await withApp(async (app) => {
 			const { page, submit } = app;
 			for (const line of ['occur coffee', 'occur water', 'occur tea']) await submit(line);
 			const oldestFirst = ['occur coffee', 'occur water', 'occur tea'];
 			assert.deepEqual(await replEchoes(page), oldestFirst);
 
-			await setReversed(page, true);
+			await toggleOption(page, 'repl', NEWEST);
 			assert.deepEqual(await replEchoes(page), [...oldestFirst].reverse());
-			assert.equal(await dotted(page, 'day'), true, 'the option left the layout unmodified');
+			// ⚑ The change this bead is: the layout never heard of it.
+			assert.equal(await dotted(page, 'day'), false, 'a session setting dirtied the layout');
+			assert.ok(!(await tree(page)).includes('"reversed":true'), 'a session setting reached the tree');
+
 			// An entry keeps its own order: the command, then what it
-			// answered. Inside its own cell since da-5iyo — the body's one
-			// child is the grid the entries stand in.
+			// answered. Inside its own cell since da-5iyo.
 			const first = await page
 				.locator(`${REPL} .body .entry`)
 				.first()
@@ -142,62 +186,60 @@ describe('widget options', () => {
 
 			// The bar's own log is newest-first WHATEVER this widget's option
 			// says (da-ckw3): it is not the widget, and the option is not its.
-			// The widget is reversed here, so what this catches is the log
-			// reading the widget's setting rather than its own.
 			const bar = await page.locator('.prompt-bar').boundingBox();
 			await page.mouse.move(bar.x + bar.width / 2, bar.y + 10);
 			await page.mouse.wheel(0, 120);
 			await page.locator('.log .echo').first().waitFor();
-			// Rows TWO and onward: the bar's output section is row one of the
-			// same list (da-ckw3, vividn 2026-09-21), so the newest is up there
-			// and not repeated down here. What this still catches is the one
-			// it was written for — the log reading the widget's `reversed`
-			// instead of its own — because the order below is still newest
-			// first while the widget is reversed too.
 			assert.deepEqual(
 				(await page.locator('.log .echo').allInnerTexts()).map((t) => t.replace(/^\s*❯\s*/, '').trim()),
 				[...oldestFirst].reverse().slice(1)
 			);
-			assert.deepEqual(
-				(await page.locator('.prompt-bar .section.output .echo').allInnerTexts()).map((t) =>
-					t.replace(/^\s*❯\s*/, '').trim()
-				),
-				[oldestFirst[oldestFirst.length - 1]]
-			);
 			await page.keyboard.press('Escape');
-			// The LOG's height, not `.pages.scrollTop`: the page never scrolls
-			// under the one-number model (da-ckw3), so a scrollTop check here
-			// was 0 before Escape and 0 after it, and waited for nothing.
 			await page.waitForFunction(
 				() =>
-					parseFloat(
-						getComputedStyle(document.querySelector('.shell')).getPropertyValue('--log-height')
-					) < 0.5
+					parseFloat(getComputedStyle(document.querySelector('.shell')).getPropertyValue('--log-height')) < 0.5
 			);
 
-			// The draft survives a reload; Restore takes the edit back.
+			// A reload starts back at what the LAYOUT says — the session is
+			// memory, and nothing was asked of the draft.
 			await app.reload();
-			assert.deepEqual(await replEchoes(page), [...oldestFirst].reverse(), 'the draft lost the option');
-			await chooseRoot(page, 'Restore layout');
-			await page.waitForFunction(() => !document.querySelector('.root-bar [role="tab"].modified'));
-			assert.deepEqual(await replEchoes(page), oldestFirst);
+			assert.deepEqual(await replEchoes(page), oldestFirst, 'a session setting survived a reload');
 
-			// Saved, it is the layout's.
-			await setReversed(page, true);
+			// Asked, it becomes the layout's: the dot lights, and a save keeps it.
+			await toggleOption(page, 'repl', NEWEST);
+			await choose(page, 'repl', SAVE);
+			await page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
+			assert.ok((await tree(page)).includes('"reversed":true'), 'the save did not reach the tree');
+			// And the session let go of it, so the menu no longer offers a save.
+			assert.deepEqual(await linesOf(page, 'repl'), ['Change Widget', 'Reset widget', NEWEST]);
+			assert.equal(await optionChecked(page, 'repl', NEWEST), true);
+
 			await chooseRoot(page, 'Save layout');
 			await page.waitForFunction(() => !document.querySelector('.root-bar [role="tab"].modified'));
 			await app.reload();
 			assert.deepEqual(await replEchoes(page), [...oldestFirst].reverse(), 'the save lost the option');
 
+			// `Reset widget` is the kind's defaults, and it is a layout edit.
 			await choose(page, 'repl', 'Reset widget');
 			assert.deepEqual(await replEchoes(page), oldestFirst);
+			assert.equal(await optionChecked(page, 'repl', NEWEST), false);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
 
-			await setReversed(page, true);
-			await openOptions(page, 'repl');
-			await modal(page).getByRole('button', { name: 'defaults' }).click();
-			assert.equal(await modal(page).locator('[data-option="reversed"] input').isChecked(), false);
-			await closeModal(page);
-			assert.deepEqual(await replEchoes(page), oldestFirst);
+	// `Reset widget` means the widget as it STARTS, so what this session
+	// set goes with it — a session setting left standing over freshly
+	// written defaults is exactly the thing «defaults» did not go back to.
+	test('Reset widget drops what this session set as well as what the layout says', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await toggleOption(page, 'repl', NEWEST);
+			await choose(page, 'repl', SAVE);
+			await page.waitForFunction(() => JSON.stringify(window.datum.layout.current()).includes('"reversed":true'));
+			await toggleOption(page, 'repl', NEWEST);
+			await choose(page, 'repl', 'Reset widget');
+			assert.equal(await optionChecked(page, 'repl', NEWEST), false);
+			assert.ok(!(await tree(page)).includes('"reversed":true'));
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -205,7 +247,7 @@ describe('widget options', () => {
 	test('repl reversed pins to the top on every run, as it pins to the bottom otherwise', async () => {
 		await withApp(async (app) => {
 			const { page, submit } = app;
-			await setReversed(page, true);
+			await toggleOption(page, 'repl', NEWEST);
 			const body = page.locator(`${REPL} .body`);
 			for (let i = 0; i < 16; i++) await submit('occur water');
 			const dims = await body.evaluate((b) => [b.scrollHeight, b.clientHeight]);
@@ -247,7 +289,7 @@ describe('widget options', () => {
 					return page.evaluate(() => (window.__observer.disconnect(), window.__records));
 				};
 				const oldestFirst = await cost('occur water');
-				await setReversed(page, true);
+				await toggleOption(page, 'repl', NEWEST);
 				const newestFirst = await cost('occur tea');
 				assert.equal((await replEchoes(page))[0], 'occur tea');
 				assert.ok(newestFirst <= 2 * oldestFirst + 20, `newest-first ${newestFirst} records, oldest-first ${oldestFirst}`);
@@ -263,31 +305,77 @@ describe('widget options', () => {
 		);
 	});
 
-	test('nowview: the modal asks for the history, and follows the widget’s own +', async () => {
+	// The menu keeps no copy: a setting the widget moves itself is what the
+	// menu says the next time it is opened, and it went to the SESSION, so
+	// the layout is as clean as it was.
+	test('nowview: the menu asks for the history, and follows the widget’s own +', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
-			await openOptions(page, 'nowview');
-			const select = modal(page).locator('[data-option="history"] select');
-			assert.equal(await select.inputValue(), '30m');
-			assert.equal(await select.locator('option[value="0"]').innerText(), 'now');
-			assert.match(await select.locator('option[value="30m"]').innerText(), /default/);
-
-			await select.selectOption('45m');
+			await pickOption(page, 'nowview', 'history', '45m');
 			await page.waitForFunction(() => {
 				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
 				return argv?.[argv.indexOf('--history') + 1] === '45m';
 			});
+			assert.equal(await dotted(page, 'day'), false, 'a session setting dirtied the layout');
 
-			// Behind the modal: the widget's own + (the page under a modal is
-			// inert to the pointer, so the button is pressed from script).
-			await page.locator('section.pane[data-title="nowview"] button[aria-label="longer window"]').evaluate((b) => b.click());
-			await page.waitForFunction(() => document.querySelector('dialog.options select')?.value === '60m');
+			await page.locator('section.pane[data-title="nowview"] button[aria-label="longer window"]').click();
+			await page.waitForFunction(() => {
+				const argv = window.__datumSeen.filter((a) => a[0] === 'nowview').at(-1);
+				return argv?.[argv.indexOf('--history') + 1] === '60m';
+			});
+			assert.ok((await choiceLines(page, 'nowview', 'history')).includes('✓ 60m'));
+			assert.equal(await dotted(page, 'day'), false, 'the widget’s own + dirtied the layout');
+			assert.ok(!(await tree(page)).includes('"history":"60m"'), 'the widget’s own + reached the tree');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
 
-	test('a key this build does not declare survives a change', async () => {
+	// ⚠ THE DEFECT THIS BEAD NAMES, driven rather than read: before
+	// da-vhwq, pressing nowview's − under a locked layout moved `history`
+	// in the tree and lit the dot, because the lock hid the chrome and
+	// never defended the data path. It is not a guard that fixes it: the
+	// path itself goes to the session now, and the one act that writes the
+	// tree is the one the lock takes away.
+	test('under a lock: the options still change, the save is gone, and the widget’s own − leaves the tree alone', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await toggleRootLock(page);
+			// AFTER the lock: the lock is a field of the tree too (`setLocked`),
+			// so the tree to hold everything below to is the LOCKED one.
+			const before = await tree(page);
+
+			// The locked menu of a PANE that holds no layout of its own is the
+			// options alone — no Change Widget, no Reset widget, no save, and
+			// no acts, which belong to the tab that HOLDS a layout (da-crp5).
+			const lines = await linesOf(page, 'repl');
+			assert.deepEqual(lines, [NEWEST]);
+			// A kind that declares NO options has no menu left at all under a
+			// lock. That kind is `custom`: `tail` gained its `type` in
+			// da-hkjp, so it KEEPS its menu — and what it keeps is the option
+			// alone, which is the rule this test is about.
+			assert.equal(await pane(page, 'custom').locator('button.title').count(), 0, 'a kind with no options kept a menu');
+			assert.deepEqual(await linesOf(page, 'tail'), ['type'], 'a kind with options lost its menu under a lock');
+
+			// The option still works, and is still the session's.
+			await toggleOption(page, 'repl', NEWEST);
+			assert.ok(!(await tree(page)).includes('"reversed":true'));
+			assert.equal(await dotted(page, 'day'), false, 'a session setting dirtied a LOCKED layout');
+			assert.equal(await page.getByRole('menuitem', { name: SAVE, exact: true }).count(), 0);
+
+			// And the widget's own in-body control — the one the lock never
+			// hid — leaves the tree byte for byte as it found it.
+			await page.locator('section.pane[data-title="nowview"] button[aria-label="shorter window"]').click();
+			await page.waitForFunction(
+				() => document.querySelectorAll('section.pane[data-title="nowview"] svg').length > 0
+			);
+			assert.equal(await dotted(page, 'day'), false, 'the widget’s own − dirtied a LOCKED layout');
+			assert.equal(await tree(page), before, 'a locked layout was modified');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('a key this build does not declare survives a save', async () => {
 		await withApp(async ({ page }) => {
 			const settings = () =>
 				page.evaluate(() => {
@@ -309,21 +397,10 @@ describe('widget options', () => {
 				});
 				window.datum.layout.apply((l) => ({ ...l, root: walk(l.root) }));
 			});
-			await setReversed(page, true);
+			await toggleOption(page, 'repl', NEWEST);
+			await choose(page, 'repl', SAVE);
+			await page.waitForFunction(() => JSON.stringify(window.datum.layout.current()).includes('"reversed":true'));
 			assert.deepEqual(await settings(), { future: 1, reversed: true });
-		}, DESKTOP);
-	});
-
-	test('under a lock the menu keeps Options…, as the widget keeps its own controls', async () => {
-		await withApp(async ({ page }) => {
-			await toggleRootLock(page);
-			assert.deepEqual(await linesOf(page, 'repl'), [OPTIONS]);
-			// `custom` is the kind with no options here: `tail` has one since
-			// da-hkjp, so under a lock it KEEPS its menu rather than losing it.
-			assert.equal(await pane(page, 'custom').locator('button.title').count(), 0, 'a kind with no options kept a menu');
-			assert.deepEqual(await linesOf(page, 'tail'), [OPTIONS], 'the tail lost its Options… under a lock');
-			await setReversed(page, true);
-			assert.equal(await page.evaluate(() => JSON.stringify(window.datum.layout.current()).includes('"reversed":true')), true);
 		}, DESKTOP);
 	});
 
@@ -331,13 +408,11 @@ describe('widget options', () => {
 	// should probably be a toggle for it, let's put it in the options menu for
 	// now», and of how long it lasts: «I guess it should just live per session?»
 	//
-	// So this option is the first of a KIND — declared `session`, it is this
-	// tab's for as long as the page lives and the layout never hears of it.
-	// What is held to here is that whole contract, not just the filter: the
-	// button comes back, it is visibly still ignored, Track + still offers it,
-	// the layout is not dirtied, «defaults» puts it back, and a reload starts
-	// it off again. da-vhwq moves the row out of this modal; none of the above
-	// should change when it does.
+	// The first option that was this session's, and now the rule rather than
+	// the exception. What is held to is the whole contract, not just the
+	// filter: the button comes back, it is visibly still ignored, Track +
+	// still offers it, the layout is not dirtied, «defaults» puts it back,
+	// and a reload starts it off again.
 	test('fields: «show ignored fields» is this session’s — marked, composing, and never the layout’s', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
@@ -346,18 +421,12 @@ describe('widget options', () => {
 			// only because the field beside it does not wear it.
 			await app.submit('track walk --verb occur');
 			await app.submit('track run --verb occur');
-			// Drawn before it is taken away, as track.test.mjs is careful to do:
-			// a bar that has not got round to drawing `run` satisfies "no run
-			// button" too.
+			// Drawn before it is taken away, as track.test.mjs is careful to do.
 			await button.waitFor();
 			await app.submit('ignore run');
 			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"]'));
 
-			await openOptions(page, 'bar');
-			const row = modal(page).locator('[data-option="showIgnored"]');
-			assert.equal(await row.locator('small').innerText(), 'this session', 'the row claims a default it does not keep');
-			await row.locator('input').setChecked(true);
-			await closeModal(page);
+			await toggleOption(page, 'bar', 'show ignored fields');
 
 			// Back in the bar, and saying what it is: the word in the title, the
 			// dashes and the fade in the drawing.
@@ -387,24 +456,16 @@ describe('widget options', () => {
 
 			// The layout never hears of it: no dot, and the key is nowhere in
 			// the tree the draft is written from.
-			assert.equal(await dotted(page, 'day'), false, 'a session option dirtied the layout');
-			assert.equal(
-				await page.evaluate(() => JSON.stringify(window.datum.layout.current()).includes('showIgnored')),
-				false,
-				'a session option reached the tree'
-			);
+			assert.equal(await dotted(page, 'day'), false, 'a session setting dirtied the layout');
+			assert.equal((await tree(page)).includes('showIgnored'), false, 'a session setting reached the tree');
 
 			// «defaults» means the widget as it starts, session and all.
-			await openOptions(page, 'bar');
-			await modal(page).getByRole('button', { name: 'defaults' }).click();
-			assert.equal(await modal(page).locator('[data-option="showIgnored"] input').isChecked(), false);
-			await closeModal(page);
+			await choose(page, 'bar', 'Reset widget');
 			await button.waitFor({ state: 'detached' });
+			assert.equal(await optionChecked(page, 'bar', 'show ignored fields'), false);
 
 			// And a reload starts it off, however the draft was left.
-			await openOptions(page, 'bar');
-			await modal(page).locator('[data-option="showIgnored"] input').setChecked(true);
-			await closeModal(page);
+			await toggleOption(page, 'bar', 'show ignored fields');
 			await button.waitFor();
 			await app.reload();
 			await page.locator('.bar button.track').waitFor();
@@ -413,23 +474,96 @@ describe('widget options', () => {
 		}, DESKTOP);
 	});
 
-	test('a phone, 360×640: the modal whole on the screen, rows tappable, Escape and ✕ close it and focus goes back', async () => {
+	// ⛔ `defaults.ts` mints tab ids from a literal name, so `day` and
+	// `mobile` both hold a `strip-tab` — and a session setting keyed by the
+	// bare tab id would have been one layout's AND the other's the moment
+	// options went session-level. So the key carries the LAYOUT (da-vhwq,
+	// `session.ts`).
+	//
+	// ⚑ In the LIVE tree the two never collide anyway, because `inline`
+	// (shell.ts) re-mints an id the tree already holds as `<id>@<name>`.
+	// That is a second mechanism and not this one: it is about drawing two
+	// trees at once, it depends on the ORDER they were opened in, and a key
+	// that leant on it would be a key that changed when it stopped. What is
+	// driven here is the property both of them are for.
+	test('a setting on one layout’s widget is not another layout’s', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const FROZEN = 'today frozen at the bottom';
+			const dayStrip = await titledPane(page, 'dayview').first().getAttribute('data-pane');
+			await toggleOption(page, dayStrip, FROZEN);
+			assert.equal(await optionChecked(page, dayStrip, FROZEN), false);
+
+			await page.evaluate(() => window.datum.shell.open('mobile'));
+			await page.locator('.root-bar [role="tab"][aria-selected="true"]').filter({ hasText: 'mobile' }).waitFor();
+			const mobileStrip = await titledPane(page, 'dayview').first().getAttribute('data-pane');
+			assert.equal(await optionChecked(page, mobileStrip, FROZEN), true, 'the two layouts shared one tab’s setting');
+
+			// BOTH DIRECTIONS (the panel on #64): day's write not showing on
+			// mobile is half the claim. Write on mobile too and hold the two
+			// to their own values — a collision the other way round, where the
+			// second layout's write lands on the first layout's entry, reads
+			// the same as isolation until this is asserted.
+			await toggleOption(page, mobileStrip, FROZEN);
+			assert.equal(await optionChecked(page, mobileStrip, FROZEN), false);
+
+			// Back on `day`: its own strip still holds what was set on it, so
+			// leaving a root tab and coming back keeps this session's — and
+			// mobile's write did not reach it.
+			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly('day') }).click();
+			await page.locator('section.pane[data-title="repl"]').waitFor();
+			assert.equal(await optionChecked(page, dayStrip, FROZEN), false, 'leaving a root tab lost what it held');
+
+			// And once more the other way, with the two now set apart: put
+			// day's back to the default and mobile's must not follow.
+			await toggleOption(page, dayStrip, FROZEN);
+			assert.equal(await optionChecked(page, dayStrip, FROZEN), true);
+			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly('mobile') }).click();
+			await titledPane(page, 'dayview').first().waitFor();
+			assert.equal(await optionChecked(page, mobileStrip, FROZEN), false, 'day’s write reached mobile');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	// A tab that has gone takes what this session set with it, so a later
+	// tab minted with the same literal id does not inherit it.
+	test('closing a tab forgets what this session set on it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await toggleOption(page, 'repl', NEWEST);
+			const held = () => page.evaluate(() => Object.keys(window.datum.layout.session()).length);
+			assert.equal(await held(), 1);
+			await page.evaluate(() => window.datum.layout.apply((l) => l));
+			assert.equal(await held(), 1, 'a change that closed nothing dropped a setting');
+			await page.locator('section.pane[data-title="repl"] .titlebar button.manage').click();
+			await page.getByRole('menuitem', { name: 'Close pane', exact: true }).click();
+			await page.locator('section.pane[data-title="repl"]').waitFor({ state: 'detached' });
+			assert.equal(await held(), 0, 'a closed tab kept its session setting');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('a phone, 360×640: the menu whole on the screen, rows tappable, Escape closes it and focus goes back', async () => {
 		await withApp(
 			async ({ page }) => {
 				const button = titledMenuButton(page, 'nowview').first();
-				for (const close of [() => page.keyboard.press('Escape'), () => modal(page).getByRole('button', { name: 'close' }).click()]) {
-					await button.click();
-					await page.getByRole('menuitem', { name: OPTIONS, exact: true }).click();
-					await modal(page).waitFor();
-					const box = await modal(page).boundingBox();
-					assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 360 && box.y + box.height <= 640, JSON.stringify(box));
-					for (const row of await modal(page).locator('.row').all()) {
-						assert.ok((await row.boundingBox()).height >= 44, 'a row too small to tap');
-					}
-					await close();
-					await modal(page).waitFor({ state: 'detached' });
-					assert.equal(await button.evaluate((b) => b === document.activeElement), true, 'focus did not go back');
+				await button.click();
+				const menu = page.locator('[role="menu"]');
+				const box = await menu.boundingBox();
+				assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 360 && box.y + box.height <= 640, JSON.stringify(box));
+				for (const item of await menu.locator('> button').all()) {
+					assert.ok((await item.boundingBox()).height >= 24, 'an item too small to tap');
 				}
+				// The submenu of words is on the screen too.
+				await page.locator('[role="menu"] > button').filter({ hasText: exactly('history') }).click();
+				const list = page.locator('[role="menu"][aria-orientation="vertical"]');
+				await list.waitFor();
+				const sub = await list.boundingBox();
+				assert.ok(sub.x >= 0 && sub.y >= 0 && sub.x + sub.width <= 360 && sub.y + sub.height <= 640, JSON.stringify(sub));
+				await page.keyboard.press('Escape');
+				await page.keyboard.press('Escape');
+				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+				assert.equal(await button.evaluate((b) => b === document.activeElement), true, 'focus did not go back');
 			},
 			{ device: { viewport: { width: 360, height: 640 }, hasTouch: true, isMobile: true }, home: null }
 		);

@@ -664,8 +664,9 @@ describe('the layout engine, by keyboard', () => {
 
 	// Locked (da-2a5y), a layout has FEWER targets, not unreachable ones:
 	// no `+`, no `▾` (da-bzhq) and no border is in the DOM at all, a menu
-	// only where a widget has options (da-gvdc: it reads `Options…` alone),
-	// and what is left — the tabs — is still walked to. The lock is this
+	// only where a widget has options (da-gvdc, and since da-vhwq it reads
+	// those options and nothing else), and what is left — the tabs — is
+	// still walked to. The lock is this
 	// device's, on the `day` tab (da-0a5o); the way out is the lock button
 	// beside the gear, which the walk above reaches.
 	test('a locked layout has no `+`, no `▾` and no border, a menu only for options, and its tabs are still in the Tab order', async () => {

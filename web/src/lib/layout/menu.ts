@@ -21,14 +21,15 @@
 //   layout that SHIPPED — with datum (da-luwe) or in a kit (da-gg0v) —
 //   which is a fact about the layout and not about which of the two menus
 //   is open.
-// - `Reset widget` (da-7ymx) and `Options…` (da-gvdc) are on a tab that
-//   SHOWS ONE WIDGET and whose kind declares defaults, or options, to
-//   offer. That is a question of the tab's shape, not of whether it names
-//   a layout: a saved layout of exactly one widget is lifted into the tab
-//   that holds it (`inline`, shell.ts), so the root tab of `datum.day/repl`
-//   or `/nowview` is that widget and gets both (da-ze1x). A layout of
-//   several widgets arrives under a split and gets neither — its panes
-//   have their own. Same rule either menu, as ever.
+// - `Reset widget` (da-7ymx) and the widget's OWN OPTIONS, one item each
+//   (da-vhwq, `options.ts`), are on a tab that SHOWS ONE WIDGET and whose
+//   kind declares defaults, or options, to offer. That is a question of
+//   the tab's shape, not of whether it names a layout: a saved layout of
+//   exactly one widget is lifted into the tab that holds it (`inline`,
+//   shell.ts), so the root tab of `datum.day/repl` or `/nowview` is that
+//   widget and gets both (da-ze1x). A layout of several widgets arrives
+//   under a split and gets neither — its panes have their own. Same rule
+//   either menu, as ever.
 // - `export backup…` is the root's alone: there is one database. So is
 //   `Keep tab` (da-xamd), which rides in beside it: only a root tab can be
 //   a PREVIEW, and only a preview has a keeping left to do.
@@ -52,6 +53,13 @@ import type { Toward } from './tree.js';
 
 /** A submenu's button: `icon` is the thick bar `[x, y, w, h]` drawn in a 16px square. */
 export type Choice = { label: string; title: string; icon: number[]; checked: boolean; run: () => void };
+/**
+ * A submenu of WORDS (da-vhwq): one of a set of named values, the one in
+ * force marked — a widget option of type `choice`, drawn where a modal's
+ * `<select>` was. `title` names it in full where the label is a value on
+ * its own («now», «45m»).
+ */
+export type Pick = { label: string; title?: string; checked: boolean; run: () => void };
 /** A row's button: `text` is what it shows, `title` its name. */
 export type Short = { text: string; title: string; run: () => void };
 /**
@@ -63,6 +71,8 @@ export type Item = {
 	glyph?: string;
 	run?: () => void;
 	sub?: Choice[][];
+	/** Opens a submenu of words instead of icons: `Pick` above. */
+	list?: Pick[];
 	row?: Short[];
 	disabled?: boolean;
 	marked?: boolean;
@@ -80,6 +90,13 @@ export type Item = {
 	 * ordinary `menuitem`, which is every other item in the app.
 	 */
 	checked?: boolean;
+	/**
+	 * A SWITCH, and whether it is on (da-vhwq): a widget option of type
+	 * `boolean`, changed by pressing the item itself. Present makes the
+	 * item a `menuitemcheckbox` — a thing turned on and off, which is not
+	 * what `checked` above means (one of a set).
+	 */
+	toggled?: boolean;
 };
 
 /**
@@ -148,14 +165,6 @@ export const layoutActs = (a: Acts): Item[] => [
 	...(a.toggleLock ? [{ label: a.locked ? 'Unlock layout' : 'Lock layout', run: a.toggleLock }] : [])
 ];
 
-/**
- * `Options…`, where there is a modal to open. A LOCKED menu keeps it
- * (da-gvdc): a lock stops the layout being split, tabbed or resized, and a
- * widget's own controls change its settings under one — nowview's `+` does
- * — so the modal, being the same setting, does too.
- */
-export const optionsItem = (run?: () => void): Item[] => (run ? [{ label: 'Options…', run }] : []);
-
 /** The glyph Close wears (da-ygc9) — the multiplication sign, not the letter x. */
 export const CLOSE = '\u00d7';
 
@@ -188,11 +197,14 @@ export function menuItems(spec: {
 	 */
 	reset?: () => void;
 	/**
-	 * `Options…` (da-gvdc): the widget in front's options modal, after
-	 * `Reset widget`. Undefined when its kind declares no options
-	 * (`widgetOptions` in `options.ts`).
+	 * The widget in front's own options, one item each, after `Reset
+	 * widget` (da-vhwq): `widgetOptions` in `options.ts` builds them from
+	 * the registry's declarations and this session's settings, and ends
+	 * them with «Save options with layout» where there is something to
+	 * save and the layout is unlocked. Empty where the tab shows no one
+	 * widget, or its kind declares nothing and nothing is held.
 	 */
-	options?: () => void;
+	options?: Item[];
 	/**
 	 * `Rename…` (da-6ji5, da-s7sdm): the name the thing wears, typed. Only
 	 * where the tab holds no layout — a layout tab wears its layout's name.
@@ -216,7 +228,7 @@ export function menuItems(spec: {
 	return [
 		{ label: CHANGE, run: spec.choose },
 		...(spec.reset ? [{ label: 'Reset widget', run: spec.reset }] : []),
-		...optionsItem(spec.options),
+		...(spec.options ?? []),
 		...(spec.rename ? [{ label: spec.rename.label, run: spec.rename.run, manage: true as const }] : []),
 		...(spec.split ? [{ label: 'Split', row: aimed(spec.split.what, spec.split.run), manage: true as const }] : []),
 		...(spec.breakOut
@@ -232,8 +244,8 @@ export function menuItems(spec: {
 
 /**
  * The slice the thing's NAME opens: what it SHOWS and what it is SAVED as
- * — Change Widget, Reset widget, Options…, the layout's own acts, the
- * root's `export backup…`.
+ * — Change Widget, Reset widget, the widget's own options, the layout's
+ * own acts, the root's `export backup…`.
  */
 export const named = (items: Item[]): Item[] => items.filter((item) => !item.manage);
 

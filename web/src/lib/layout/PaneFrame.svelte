@@ -125,8 +125,9 @@
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, setTitle, splitPane, splitTab } from './tree.js';
 	import { inForce, toggleMaximize } from './maximize.js';
 	import { labelOf, titleOf } from './registry.js';
-	import { layoutActs, managed, menuItems, named, optionsItem } from './menu.js';
+	import { layoutActs, managed, menuItems, named } from './menu.js';
 	import { widgetOptions } from './options.js';
+	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
 
 	export let pane: Pane;
@@ -227,6 +228,22 @@
 	$: lockedHere = locked || !!active.locked;
 
 	/**
+	 * What this session has set on the tab in front (da-vhwq): the option
+	 * items' state. `keyOf` walks the tab's own path, which is the ONE
+	 * derivation the renderer and the store use too — see Layout.svelte.
+	 */
+	$: sessionOf = keyOf($layout, active.id);
+	$: held = $session[sessionOf] ?? {};
+	/**
+	 * The widget's own options, inline (da-vhwq): drawn from the registry's
+	 * declarations and changed in the menu, and — unlocked, with something
+	 * held — ending in «Save options with layout». A LOCKED menu keeps the
+	 * rows and loses that one act, which is the whole of why nothing under
+	 * a lock can reach the tree any more.
+	 */
+	$: options = widgetOptions(active, held, sessionOf, lockedHere);
+
+	/**
 	 * Whether this pane is the one filling the root (da-00am) — which is
 	 * what turns the badge round into its restore state. The store alone is
 	 * not the answer: a maximize belongs to the root tab it was made in, and
@@ -295,12 +312,12 @@
 	 * locked pane keeps only the acts, so `Unlock layout` is reachable.
 	 */
 	$: items = lockedHere
-		? [...optionsItem(widgetOptions(active)), ...(acts ? layoutActs(acts) : [])]
+		? [...options, ...(acts ? layoutActs(acts) : [])]
 		: menuItems({
 				choose: () => void fillTab(active.id),
 				// Beside Change Widget, and about the same thing: the widget in front.
 				reset: resetWidget(active),
-				options: widgetOptions(active),
+				options,
 				// A PANE IS RENAMEABLE TOO (da-s7sdm), not just a tab of a
 				// strip: with one tab the tab IS the pane, and the name on the
 				// frame is that tab's. Named after whichever it is, as `close`

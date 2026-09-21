@@ -78,6 +78,11 @@ export interface WidgetKind {
 	/**
 	 * What the component's `change` event means for its settings: the
 	 * detail folded into them. A kind without one has nothing to keep.
+	 *
+	 * It is given the settings as SHOWN and what it returns lands in THIS
+	 * SESSION (da-vhwq, Layout.svelte), not in the tree — so a widget
+	 * moving one of its own settings cannot modify the layout, locked or
+	 * not.
 	 */
 	onChange?: (settings: Record<string, unknown>, detail: unknown) => Record<string, unknown>;
 	/** Content-box sizes a border drag snaps to, from the settings: see the note above. */
@@ -266,9 +271,12 @@ export const KINDS: Record<string, WidgetKind> = {
 	// (33px) plus the body's padding — the scroll rule takes it from
 	// there, and one row reached sideways is still every command.
 	command: { meta: meta('command', 'command'), component: CommandPane, legible: { width: 160, height: 49 } },
-	// The stats widget (da-n7r0): its settings ARE the widget's settings —
-	// the tree keeps them, and a `change` from the widget writes them back
-	// (Layout.svelte).
+	// The stats widget (da-n7r0): its settings ARE the widget's settings, and
+	// its pickers move them with a `change` like any other widget's own
+	// control — so since da-vhwq THIS SESSION keeps them, not the tree, and
+	// «Save options with layout» is what hands a selection over
+	// (Layout.svelte). Which is why a reload starts the widget back at what
+	// the layout says.
 	stats: {
 		meta: meta('stats', 'stats', { ...DEFAULT_STATS }),
 		component: Stats,
@@ -294,7 +302,7 @@ export const KINDS: Record<string, WidgetKind> = {
 					{ value: 'state', label: 'state' }
 				]
 			},
-			{ key: 'showIgnored', label: 'show ignored fields', type: 'boolean', session: true }
+			{ key: 'showIgnored', label: 'show ignored fields', type: 'boolean' }
 		]),
 		component: FieldsPane,
 		props: ({ switchLabel, showIgnored }) => ({
@@ -371,7 +379,7 @@ export const defaultsOfKind = (kind: string): Record<string, unknown> | undefine
 	return declared && Object.keys(declared).length > 0 ? { ...declared } : undefined;
 };
 
-/** The options a kind declares for `Options…` (da-gvdc), or undefined when it declares none. */
+/** The options a kind declares for its menu (da-gvdc, da-vhwq), or undefined when it declares none. */
 export const optionsOfKind = (kind: string): WidgetOption[] | undefined => {
 	const declared = KINDS[kind]?.meta.options;
 	return declared && declared.length > 0 ? declared : undefined;

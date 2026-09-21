@@ -449,12 +449,14 @@ describe('the lock', () => {
 				assert.equal(await page.locator('[role="separator"]').count(), 0);
 				// The root bar's `+` and `…` (da-0a5o) are above the layout, not under its lock.
 				assert.equal(await page.locator('section.root button.add').count(), 0);
-				// A menu is left only where a widget has options (da-gvdc): the
-				// repl's, which reads `Options…` and nothing else. The tabbed
-				// pane shows `tail`, which has none.
+				// A menu is left only where a widget has options (da-gvdc, and
+				// the options are its ITEMS since da-vhwq): the repl's, which
+				// reads its one switch and nothing else — no Change Widget, no
+				// Reset widget, no save. The tabbed pane shows `tail`, which
+				// declares none.
 				assert.equal(await page.locator('section.root button.title').count(), 1);
 				await pane(page, 'repl').locator('button.title').click();
-				assert.deepEqual(await menuLines(page), ['Options…']);
+				assert.deepEqual(await menuLines(page), ['newest first']);
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				// The gap is still there, as a static border, and dragging across it moves nothing.

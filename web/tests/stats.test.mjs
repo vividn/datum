@@ -8,6 +8,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp as withAnyApp, workerClock } from './support/app.mjs';
+import { chooseRoot, unlockRoot } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -155,17 +156,42 @@ describe('/stats', () => {
 		});
 	});
 
-	test('a reload keeps the selection', async () => {
+	// da-vhwq: the pickers move a setting of the widget's OWN, so what they
+	// pick is THIS SESSION'S — it changes what this tab shows and the layout
+	// does not hear of it. A reload therefore starts back at what the layout
+	// says, and «Save options with layout» is what hands the selection over.
+	test('a reload goes back to what the layout says; the save is what keeps the selection', async () => {
 		await withApp(async (app) => {
+			const pick = async () => {
+				await field(app.page, 'mood').click();
+				await app.page.locator('.stats button.state', { hasText: 'happy' }).click();
+				await app.page.locator('.stats .range button', { hasText: 'week' }).click();
+				await expectStats(app, ['stats', 'mood:happy', '--week']);
+			};
+			const reloaded = async () => {
+				await app.page.reload();
+				await app.page.waitForFunction(() => typeof window.datum?.run === 'function');
+				await app.page.locator('section.pane[data-title="stats"]').waitFor();
+			};
+
 			await seed(app);
 			await openStats(app);
-			await field(app.page, 'mood').click();
-			await app.page.locator('.stats button.state', { hasText: 'happy' }).click();
-			await app.page.locator('.stats .range button', { hasText: 'week' }).click();
-			await expectStats(app, ['stats', 'mood:happy', '--week']);
+			await pick();
 
-			await app.page.reload();
-			await app.page.waitForFunction(() => typeof window.datum?.run === 'function');
+			await reloaded();
+			// Back at what the LAYOUT says, which is no field at all: the
+			// widget shows the hint, and `statsArgv` gives it nothing to run,
+			// so the line it would have printed the argv on is not there.
+			await app.page.locator('.stats section .quiet', { hasText: 'pick a field' }).waitFor();
+			assert.equal(await app.page.locator('.stats .argv').count(), 0, 'a session setting survived a reload');
+
+			// `/stats` is one widget, so the acts are on the ROOT tab's menu
+			// (da-ze1x) — and a layout that shipped opens locked, which is the
+			// one thing that hides the save.
+			await pick();
+			await unlockRoot(app.page);
+			await chooseRoot(app.page, 'Save options with layout');
+			await reloaded();
 			await expectStats(app, ['stats', 'mood:happy', '--week']);
 		});
 	});

@@ -52,6 +52,9 @@ import {
 } from './support/app.mjs';
 import { choose, chooseRoot } from './support/layout.mjs';
 
+/** «Save options with layout» (da-vhwq): what hands a widget's own move to the layout. */
+const SAVE_OPTIONS = 'Save options with layout';
+
 before(startApp);
 after(stopApp);
 
@@ -281,8 +284,11 @@ const widthOf = async ({ page }) =>
 	Number(await page.locator('button.day-grip').getAttribute('data-label-width'));
 
 /**
- * In the page: the strip widget's settings in the live tree — what the
- * strip's owner, the layout (da-jdop), last heard from it.
+ * In the page: the settings the strip widget is DRAWN from — what the
+ * strip's owner (the layout, da-jdop) last heard from it, with whatever
+ * THIS SESSION holds over it. Since da-vhwq a move of the strip's own
+ * lands in the session and reaches the tree only on «Save options with
+ * layout», so the tree alone is no longer what the strip was told.
  */
 const stripSettings = () => {
 	const walk = (pane) => {
@@ -290,7 +296,7 @@ const stripSettings = () => {
 			if ('children' in tab.content) {
 				const hit = tab.content.children.map(walk).find(Boolean);
 				if (hit) return hit;
-			} else if (tab.content.kind === 'daystrip') return tab.content.settings;
+			} else if (tab.content.kind === 'daystrip') return window.datum.layout.settings(tab.id);
 		}
 	};
 	return walk(window.datum.layout.current().root);
@@ -1549,7 +1555,7 @@ describe('the day strip zooms onto an hour range', () => {
 		);
 	});
 
-	test('the window is a setting: saved with the layout, and reset with the widget', async () => {
+	test('the window is a setting: this session’s, saved with the layout when asked, reset with the widget', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -1565,6 +1571,11 @@ describe('the day strip zooms onto an hour range', () => {
 				await app.idle();
 				const shown = await hoursShown(app);
 
+				// The zoom is a setting the widget moved ITSELF, so since
+				// da-vhwq it is this session's and the layout has not heard of
+				// it: «Save options with layout» is what hands it over, and
+				// `Save layout` then writes it down.
+				await choose(page, 'strip', SAVE_OPTIONS);
 				await chooseRoot(page, 'Save layout');
 				await app.reload();
 				await app.idle();

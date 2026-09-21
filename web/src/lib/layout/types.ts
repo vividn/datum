@@ -41,6 +41,11 @@ export interface Bar {
  * custom pane's argv, an embedded layout's name) and is saved with the
  * tree, which is how two day views can differ. Unknown keys are kept, not
  * dropped: a newer app may have written them.
+ *
+ * What the widget is DRAWN from is this WITH THIS SESSION'S OVER IT
+ * (da-vhwq, `session.ts`): a setting changed from the menu, or by the
+ * widget itself, is the session's until «Save options with layout» folds
+ * it in here. So this is what the LAYOUT says, not what is on the screen.
  */
 export interface Widget {
 	id: NodeId;
@@ -120,23 +125,27 @@ export interface WidgetKindMeta {
 	/** What a fresh instance starts with. */
 	defaultSettings: Record<string, unknown>;
 	/**
-	 * The settings a reader may set from the pane menu's `Options…` (da-gvdc),
-	 * one row each in the modal drawn from this list. Each `key` has its
-	 * default in `defaultSettings`.
+	 * The settings a reader may set from the menu the widget's NAME opens
+	 * (da-gvdc, moved out of a modal and into the menu by da-vhwq), one
+	 * item each drawn from this list. Each `key` has its default in
+	 * `defaultSettings`.
 	 */
 	options?: WidgetOption[];
 }
 
 /**
- * One setting the options modal draws: a switch, or one of a few named
- * values.
+ * One setting the widget's menu draws: a switch (one item that turns over
+ * when pressed) or one of a few named values (a submenu of words).
  *
- * `session` says the option is THIS session's and not the layout's
- * (da-xhio, `session.ts`): it is held in memory against the tab, it never
- * dirties the draft, and a reload starts it back at its default. Every
- * option still declares that default in `defaultSettings`, session or not.
+ * EVERY one of them is THIS SESSION'S (da-vhwq, `session.ts`) — held in
+ * memory against the tab, dirtying no draft, and starting back at what the
+ * layout says on a reload. `da-xhio` marked the one option that was, with
+ * a `session` flag; the flag is gone because there is nothing left for it
+ * to tell apart. What writes a setting into the layout is «Save options
+ * with layout», and nothing else. Every option declares its default in
+ * `defaultSettings`.
  */
-export type WidgetOption = { key: string; label: string; session?: true } & (
+export type WidgetOption = { key: string; label: string } & (
 	| { type: 'boolean' }
 	| { type: 'choice'; choices: { value: string; label: string }[] }
 );

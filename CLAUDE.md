@@ -217,12 +217,25 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   panes hold widgets or splits of panes, each pane has tabs and draggable
   borders, and its bar reads maximize · title-or-tabs · `+` · `▾`
   (da-bzhq): the NAME opens what the pane shows and what it is saved as
-  (Change Widget, Reset widget, Options…, the layout's acts), the `▾`
-  beside the `+` what is DONE to it (Split, Break out, Bar, Rename tab…,
-  Close), and a lock hides that pair. One builder, `menu.ts`, one order,
-  two filters — `named` and `managed`. The contract is `types.ts`; the
-  pure operations and the canon (no single-child split, no empty pane,
-  ratios sum to 1) are `tree.ts` (`tests/tree.test.mjs`, node); the
+  (Change Widget, Reset widget, the widget's OWN OPTIONS one item each,
+  the layout's acts), the `▾` beside the `+` what is DONE to it (Split,
+  Break out, Bar, Rename tab…, Close), and a lock hides that pair. One
+  builder, `menu.ts`, one order, two filters — `named` and `managed`.
+  A WIDGET OPTION IS SESSION STATE (da-vhwq, `session.ts` + `options.ts`):
+  the kind declares it in the registry, the menu draws it inline — a
+  switch is a `menuitemcheckbox` that turns over without closing the menu,
+  a choice a submenu of words — and setting it changes what THIS TAB shows
+  and never the layout. So does a widget moving a setting of its own
+  (nowview's − / +, the strip's handle): `Layout.svelte`'s `on:change`
+  goes to the session too. The one writer to the tree from the widget's
+  side is «Save options with layout», which only an UNLOCKED menu carries
+  and which only appears when something is held — so «when locked, nothing
+  modifies the layout» is true by construction rather than by a guard. The
+  overlay is the DIFFERENCE from the tree, keyed by layout + tab + widget,
+  pruned when a tab closes or its widget is changed, and gone on a reload;
+  `Reset widget` drops it along with writing the kind's defaults.
+  The contract is `types.ts`; the pure operations and the canon (no
+  single-child split, no empty pane, ratios sum to 1) are `tree.ts` (`tests/tree.test.mjs`, node); the
   widget kinds and their components,
   floors and settings are `registry.ts`; today's page as data is
   `defaults.ts` (a desktop and a phone tree); the one live store is

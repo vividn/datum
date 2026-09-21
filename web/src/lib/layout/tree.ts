@@ -641,9 +641,10 @@ export interface Floor {
 
 /**
  * The least box a pane can be drawn in: the largest floor among its
- * tabs' kinds (`minOf`, given the widget's settings — Layout.svelte has
- * two: the drag's gives none, so a pane drags down to its frame, da-zh2o,
- * and the root's minimum gives each kind's `legible`), where a tab
+ * tabs (`minOf`, given the TAB — so a caller can read the settings the
+ * widget is DRAWN from and not just the tree's, da-vhwq; Layout.svelte
+ * has two: the drag's gives none, so a pane drags down to its frame,
+ * da-zh2o, and the root's minimum gives each kind's `legible`), where a tab
  * holding a split needs its children's floors laid along the split's
  * direction with a `border`
  * between each pair — plus the frame's own `chrome` (its title bar and
@@ -655,14 +656,14 @@ export interface Floor {
  */
 export function floorOf(
 	pane: Pane,
-	minOf: (kind: string, settings: Record<string, unknown>) => Floor,
+	minOf: (tab: Tab) => Floor,
 	border: number,
 	chrome: (pane: Pane) => Floor
 ): Floor {
 	let width = 0;
 	let height = 0;
 	for (const tab of pane.tabs) {
-		const f = isSplit(tab.content) ? splitFloor(tab.content) : minOf(tab.content.kind, tab.content.settings);
+		const f = isSplit(tab.content) ? splitFloor(tab.content) : minOf(tab);
 		width = Math.max(width, f.width);
 		height = Math.max(height, f.height);
 	}
@@ -686,11 +687,38 @@ export function floorOf(
  */
 export function rootFloorOf(
 	root: Pane,
-	minOf: (kind: string, settings: Record<string, unknown>) => Floor,
+	minOf: (tab: Tab) => Floor,
 	border: number,
 	chrome: (pane: Pane) => Floor
 ): Floor {
 	const f = floorOf(root, minOf, border, chrome);
 	const c = chrome(root);
 	return { width: f.width - c.width, height: f.height - c.height };
+}
+
+/**
+ * Every tab in the tree, against the OUTERMOST layout name above it — the
+ * root tab's, since a root tab always holds one (shell.ts) — and the id of
+ * what that tab holds.
+ *
+ * What a session key is made of (da-vhwq, `session.ts`). A tab id alone is
+ * unique within ONE layout and not across several: `defaults.ts` mints them
+ * from a literal name, so `day` and `mobile` both hold a `tail-tab`, and
+ * two layouts open side by side would otherwise share one tab's session
+ * settings. The CONTENT's id is in it for the other direction: `Change
+ * Widget` leaves the tab where it is and puts a freshly minted widget in
+ * it, and what this session set on the widget that was there is not about
+ * the one that is there now.
+ */
+export function scopes(layout: Layout): Map<NodeId, { scope: string; content: NodeId }> {
+	const found = new Map<NodeId, { scope: string; content: NodeId }>();
+	const walk = (pane: Pane, outer: string): void => {
+		for (const tab of pane.tabs) {
+			const scope = outer || tab.layout || '';
+			found.set(tab.id, { scope, content: tab.content.id });
+			if (isSplit(tab.content)) for (const child of tab.content.children) walk(child, scope);
+		}
+	};
+	walk(layout.root, '');
+	return found;
 }

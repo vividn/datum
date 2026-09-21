@@ -13,6 +13,7 @@
 import { writable } from 'svelte/store';
 import type { Layout } from './types.js';
 import { defaultLayoutFor } from './defaults.js';
+import { pruneSession } from './session.js';
 
 export const layout = writable<Layout>(defaultLayoutFor(false));
 
@@ -21,3 +22,9 @@ export const loaded = writable(false);
 export function apply(op: (layout: Layout) => Layout): void {
 	layout.update(op);
 }
+
+// A tab that has gone takes what this session set on it with it (da-vhwq):
+// the tree is the only thing that can close a tab, so every change of it is
+// where that is noticed. Set here rather than in `session.ts` so the store
+// module stays a store and does not reach back for the tree.
+layout.subscribe(pruneSession);

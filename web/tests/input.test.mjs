@@ -15,7 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { choose, chooser, exactly } from './support/layout.mjs';
+import { choose, chooser, exactly, toggleOption } from './support/layout.mjs';
 import { openPanel } from './support/fields.mjs';
 
 before(startApp);
@@ -262,7 +262,7 @@ describe('reversed', () => {
 			return { prompt: top('.line'), receipt: top('.receipt') };
 		});
 
-	test('from Options…: the prompt row on top, and typing, a pill and Enter work as before', async () => {
+	test('from the menu: the prompt row on top, and typing, a pill and Enter work as before', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await choose(page, 'custom', 'Change Widget');
@@ -276,10 +276,7 @@ describe('reversed', () => {
 			let box = await tops(page);
 			assert.ok(box.receipt.height > 0 && box.receipt.bottom <= box.prompt.top + 1, `the default: ${JSON.stringify(box)}`);
 
-			await choose(page, 'custom', 'Options…');
-			await page.locator('dialog.options [data-option="reversed"] input').setChecked(true);
-			await page.keyboard.press('Escape');
-			await page.locator('dialog.options').waitFor({ state: 'detached' });
+			await toggleOption(page, 'custom', 'prompt on top');
 			box = await tops(page);
 			assert.ok(box.prompt.bottom <= box.receipt.top + 1, `reversed: ${JSON.stringify(box)}`);
 

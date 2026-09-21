@@ -17,10 +17,10 @@
 	it, are hung against the screen so that scroller cannot clip them.
 	Ignored fields get no button: the Track modal lists them, and a press
 	runs `track <field>`. `showIgnored` (da-xhio) is the way to SEE them
-	without going through Track + — a session option in the pane's
-	`Options…`, off by default. It adds them to the list; it does not
-	change what they are, so each is drawn faint and dashed and says
-	«ignored» when a pointer rests on it.
+	without going through Track + — a switch in the menu the pane's NAME
+	opens (da-vhwq), this session's and off by default. It adds them to the
+	list; it does not change what they are, so each is drawn faint and
+	dashed and says «ignored» when a pointer rests on it.
 
 	A PENDING VERB (`verb`, da-ltux) is the commands widget talking to this
 	one through the command line they share: the list becomes the fields

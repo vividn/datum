@@ -50,16 +50,20 @@ describe('the menu the title opens', () => {
 	 * The default layout's tail pane, in two slices (da-bzhq): what its
 	 * NAME opens, and what the `▾` beside the `+` opens.
 	 *
-	 * `Reset widget` and `Options…` are in the NAME slice since da-hkjp gave
-	 * the tail kind a declared `type`: both items are the registry's
-	 * arithmetic over what a kind declares, so a kind that declares
-	 * something has them. The kind with neither is `custom`, which the tests
-	 * below that need one now use. The `▾` slice is untouched by da-hkjp —
-	 * it is about the PANE, not the widget in it — and `Rename pane…` is at
-	 * the head of it since da-s7sdm, which is the same distinction from the
-	 * other side: renaming is done TO the pane.
+	 * `Reset widget` and the widget's own options are in the NAME slice
+	 * since da-hkjp gave the tail kind a declared `type`: both are the
+	 * registry's arithmetic over what a kind declares, so a kind that
+	 * declares something has them. The kind with neither is `custom`, which
+	 * the tests below that need one now use. The `▾` slice is untouched by
+	 * da-hkjp — it is about the PANE, not the widget in it — and `Rename
+	 * pane…` is at the head of it since da-s7sdm, which is the same
+	 * distinction from the other side: renaming is done TO the pane.
+	 *
+	 * The option is the ITEM `type` rather than an `Options…` that opens a
+	 * modal (da-vhwq): a choice is a submenu of its values, opened from the
+	 * row that names the setting.
 	 */
-	const TAIL_MENU = ['Change Widget', 'Reset widget', 'Options…'];
+	const TAIL_MENU = ['Change Widget', 'Reset widget', 'type'];
 	const TAIL_MANAGE = ['Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane'];
 
 	test('the title is the button, the `▾` beside the `+` holds the acts on the pane', async () => {

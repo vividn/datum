@@ -53,14 +53,14 @@
 	import TabBody from './TabBody.svelte';
 	import { fillTab } from './chooser.js';
 	import { CHANGE } from './menu.js';
-	import type { NodeId, Pane as PaneNode, Split } from './types.js';
+	import type { NodeId, Pane as PaneNode, Split, Tab } from './types.js';
 	import { isSplit } from './types.js';
-	import { apply } from './current.js';
-	import { EMPTY_KIND, floorOf, rootFloorOf, setRatios, setWidget } from './tree.js';
+	import { apply, layout } from './current.js';
+	import { EMPTY_KIND, floorOf, rootFloorOf, setRatios } from './tree.js';
 	import { maximized, maximizedIn } from './maximize.js';
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
-	import { session, withSession } from './session.js';
+	import { keyOf, session, setSession, withSession } from './session.js';
 
 	export let pane: PaneNode;
 	export let epoch = 0;
@@ -133,17 +133,45 @@
 			? { width: outline + bar, height: outline + across }
 			: { width: outline + across, height: outline + bar };
 	};
+	/**
+	 * The settings a tab's widget is DRAWN from (da-vhwq): the tree's with
+	 * this session's over them, the same merge the widget itself is handed.
+	 *
+	 * Everything that SIZES a widget reads this and not the tree, or a
+	 * session-level day height would be drawn at one height and snapped and
+	 * floored at another.
+	 *
+	 * `keyOf` is the ONE derivation of a session key, here and at the write
+	 * below and in PaneFrame and RootBar (da-vhwq, the panel on #64). It was
+	 * a `scope` prop threaded down beside the lock, which agreed with
+	 * `scopes()` for every tree that ships — but only because a root tab
+	 * always names a layout. A pane's `scope` came from its pane's ACTIVE
+	 * tab, and `scopes()` walks the tab's own path, so a nameless root tab
+	 * over a pane whose tabs carry layouts of their own had the writer and
+	 * the reader disagreeing: the setting would be written under one key,
+	 * read under another, and pruned as dead. One derivation cannot
+	 * disagree with itself.
+	 */
+	const shownOf = (tab: Tab): Record<string, unknown> =>
+		isSplit(tab.content) ? {} : withSession(tab.content.settings, $session[keyOf($layout, tab.id)]);
+
 	// One function, two callers, two `minOf`s — keep them apart: the drag's
 	// floor is the frame alone, the root's is every pane legible.
 	const floor = (child: PaneNode) => floorOf(child, () => NONE, BORDER, chromeOf);
 	/** The root split's least box: its panes' legible boxes, laid out as the tree lays them. */
-	const legible = (root: PaneNode) => rootFloorOf(root, legibleOfKind, BORDER, chromeOf);
+	const legible = (root: PaneNode) =>
+		rootFloorOf(
+			root,
+			(tab) => (isSplit(tab.content) ? NONE : legibleOfKind(tab.content.kind, shownOf(tab))),
+			BORDER,
+			chromeOf
+		);
 	/** A child's snaps as extents along the split: its widget tabs' snaps, plus its frame. */
 	const snapsOf = (child: PaneNode, split: Split): number[] => {
 		const axis = split.direction === 'row' ? 'width' : 'height';
 		const chrome = chromeOf(child)[axis];
 		return child.tabs.flatMap((t) =>
-			isSplit(t.content) ? [] : snapsOfKind(t.content.kind, t.content.settings)[axis].map((s) => s + chrome)
+			isSplit(t.content) ? [] : snapsOfKind(t.content.kind, shownOf(t))[axis].map((s) => s + chrome)
 		);
 	};
 
@@ -343,21 +371,30 @@
 				{@const widget = content}
 				{@const kind = KINDS[content.kind]}
 				{@const fold = kind.onChange}
+				{@const key = keyOf($layout, tab.id)}
 				<!-- What the widget is DRAWN from: the tree's settings with this
-				     session's over them (da-xhio, session.ts). A session option
+				     session's over them (da-vhwq, session.ts). A session setting
 				     never reaches the tree, so a widget asks for neither — it is
 				     handed one set of settings and cannot tell which is which. -->
-				{@const settings = withSession(widget.settings, $session[tab.id])}
-				<!-- A widget that changes its own settings (the strip's day height,
-				     the stats widget's pickers) says so with `change`, and the tree
-				     keeps them — through the kind's `onChange`, which knows what
-				     the event's detail is. -->
+				{@const settings = withSession(widget.settings, $session[key])}
+				<!-- A widget that changes a setting of its own (nowview's − / +,
+				     the strip's handle, the stats pickers) says so with `change`,
+				     and it lands in THIS SESSION, exactly where the menu's option
+				     rows land — through the kind's `onChange`, which knows what
+				     the event's detail is. The layout hears of it only when the
+				     reader asks («Save options with layout»), which is what makes
+				     a locked layout safe from a widget's own in-body controls
+				     without a guard on every one of them.
+
+				     `fold` is given the settings as SHOWN, so a change folds onto
+				     what this session already set rather than onto the tree
+				     underneath it; `setSession` keeps only what differs from the
+				     tree, so a setting moved back leaves nothing held. -->
 				<svelte:component
 					this={kind.component}
 					{...kind.props ? kind.props(settings) : { settings }}
 					{epoch}
-					on:change={(e) =>
-						fold && apply((l) => setWidget(l, tab.id, { ...widget, settings: fold(widget.settings, e.detail) }))}
+					on:change={(e) => fold && setSession(key, widget.settings, fold(settings, e.detail))}
 				/>
 			{:else}
 				<Pane title={content.kind}>
