@@ -229,6 +229,9 @@ pub(super) const RESUME_LOOKBACK: usize = 64;
 /// [`Entry`]s) and [`Db::batch_state_at`] (which selects six columns)
 /// resolve through the SAME code and cannot drift (da-phoe).
 pub(super) struct StateRow {
+    /// The row's whole hid, so a caller that wants the ENTRY behind a
+    /// resolved state can name it (da-6hg6v).
+    pub id: String,
     pub verb: crate::entry::Verb,
     pub state: Option<JsonValue>,
     pub occur: Option<DateTime<Utc>>,
@@ -239,6 +242,7 @@ pub(super) struct StateRow {
 impl StateRow {
     pub(super) fn from_entry(e: &Entry) -> Self {
         StateRow {
+            id: e.hid.to_string(),
             verb: e.verb,
             state: e.state.clone(),
             occur: e.occur_time.as_ref().map(|t| t.utc),

@@ -112,6 +112,14 @@ pub struct NowviewCurrentState {
     /// 1-element vector paints a solid chunk; a 2+-element vector paints
     /// the 45° stripes dayview already uses for parallel-state blocks.
     pub colors: Vec<String>,
+    /// The whole hid of the entry that OPENED this state (da-6hg6v) — the
+    /// chunk is that entry's open block, so it names it the way every
+    /// other mark names its own entry. `None` when no row governs the
+    /// field at the anchor. `datum nowview --json` carries it on the
+    /// panel row, so a caller reading the panel and a caller reading the
+    /// SVG select the same entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 /// Pick the default SVG width when the user didn't pass `--width`. Mirrors

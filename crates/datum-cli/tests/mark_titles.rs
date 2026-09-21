@@ -1,8 +1,8 @@
 //! Every mark in a drawn dayview / nowview says what it is (da-s5da): its
-//! field, its state as the tail prints it, its instants, and a `<title>`
-//! reading the row the way the tail does — checked here against the
-//! tail's own `--json` rows for the same database, not against a second
-//! copy of the rules.
+//! field, its state as the tail prints it, its instants, the WHOLE hid of
+//! the entry that generated it (da-6hg6v), and a `<title>` reading the row
+//! the way the tail does — checked here against the tail's own `--json`
+//! rows for the same database, not against a second copy of the rules.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -101,8 +101,9 @@ fn instant(iso: &str) -> i64 {
 
 /// Each mark is its row as the tail reads it: same field, the tail's
 /// state label (`∅` for none), the row's instant as one of the mark's
-/// own, and a title naming `field: state` and the row's own `HH:MM` —
-/// the clock the tail's time column starts with.
+/// own, the row's own `hid` as `data-id`, and a title naming `field:
+/// state` and the row's own `HH:MM` — the clock the tail's time column
+/// starts with.
 fn assert_marks_are_the_tail_rows(svg: &str, rows: &[Value]) -> Vec<String> {
     let marks = marks(svg);
     assert!(!marks.is_empty(), "no marks in: {svg}");
@@ -123,6 +124,13 @@ fn assert_marks_are_the_tail_rows(svg: &str, rows: &[Value]) -> Vec<String> {
             .unwrap_or_else(|| panic!("no tail row for {m:?} in {rows:#?}"));
         let state = row["state_label"].as_str();
         assert_eq!(m.attr("data-state").as_deref(), Some(state.unwrap_or("∅")));
+        // da-6hg6v: the mark names the entry that generated it, whole —
+        // the same hid the tail prints, not the short prefix.
+        assert_eq!(
+            m.attr("data-id").as_deref(),
+            row["hid"].as_str(),
+            "{m:?} does not name its entry"
+        );
         let name = match state {
             Some(s) => format!("{field}: {s}"),
             None => field.clone(),
@@ -196,5 +204,113 @@ fn html_output_carries_the_titles() {
     let path = tmp.path().join("day.html");
     env.run(&["dayview", "-d", "2026-01-15", "-o", path.to_str().unwrap()]);
     let html = std::fs::read_to_string(&path).unwrap();
-    assert!(html.contains(r#"data-field="coffee" data-state="∅" data-at="2026-01-15T20:05:00.000Z"><title>coffee</title></circle>"#), "{html}");
+    // The dot's own row, not the TRACK row the first log also wrote.
+    let rows = env.tail_rows();
+    let hid = rows
+        .iter()
+        .find(|r| r["time"].as_str().is_some_and(|t| t.contains("T14:05")))
+        .expect("the 14:05 row")["hid"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        html.contains(&format!(
+            r#"data-field="coffee" data-state="∅" data-id="{hid}" data-at="2026-01-15T20:05:00.000Z"><title>coffee</title></circle>"#
+        )),
+        "{html}"
+    );
+}
+
+/// da-6hg6v, the reason the browser could not derive this: WHICH END of a
+/// block holds the entry that generated it depends on how the block was
+/// made. A state change runs FORWARD from its entry, so the entry is at
+/// `data-from`; a duration runs BACK to its entry, so the entry is at
+/// `data-to`. Here two blocks cover the very same span and their ids sit
+/// at opposite ends of it — no rule over `from`/`to` alone could tell
+/// them apart.
+#[test]
+fn the_end_holding_the_entry_depends_on_how_the_block_was_made() {
+    let env = Env::new();
+    for line in [
+        // A state change: its entry opens the block at 14:00.
+        "switch state on -d 2026-01-15 -t 1400",
+        "switch state off -d 2026-01-15 -t 1430",
+        // A duration: its entry CLOSES the block at 14:30.
+        "start span 30m -d 2026-01-15 -t 1430",
+    ] {
+        env.run(&line.split(' ').collect::<Vec<_>>());
+    }
+    let svg = env.run(&["dayview", "-d", "2026-01-15"]);
+    let rows = env.tail_rows();
+    let hid_at = |field: &str, clock: &str| {
+        rows.iter()
+            .find(|r| r["field"] == field && r["time"].as_str().is_some_and(|t| t.contains(clock)))
+            .unwrap_or_else(|| panic!("no {field} row at {clock} in {rows:#?}"))["hid"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let marked = |field: &str| {
+        marks(&svg)
+            .into_iter()
+            .find(|m| {
+                m.attr("data-field").as_deref() == Some(field)
+                    && m.attr("data-from").as_deref() == Some("2026-01-15T20:00:00.000Z")
+                    && m.attr("data-to").as_deref() == Some("2026-01-15T20:30:00.000Z")
+            })
+            .unwrap_or_else(|| panic!("no 14:00–14:30 block on {field} in {svg}"))
+            .attr("data-id")
+            .expect("data-id")
+    };
+    // Same span, opposite ends.
+    assert_eq!(marked("state"), hid_at("state", "T14:00"));
+    assert_eq!(marked("span"), hid_at("span", "T14:30"));
+}
+
+/// da-6hg6v, vividn: «if you double tap a color, that color is an open
+/// block, so it should select the datum entry that generated that open
+/// block». The now-chunk is that open block, so it names the entry that
+/// OPENED the state — even though that entry is drawn, as a mark, back
+/// in the band to its left.
+#[test]
+fn the_now_chunk_names_the_entry_that_opened_the_state() {
+    let env = Env::new();
+    env.run(&["switch", "mood", "happy", "-t", "-20"]);
+    // Its own row — not the TRACK marker the first log on a field writes.
+    let rows = env.tail_rows();
+    let opener = rows
+        .iter()
+        .find(|r| r["field"] == "mood" && r["state_label"] == "happy")
+        .expect("the switch row")["hid"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // A second field the chunk must not borrow an id from.
+    env.run(&["switch", "posture", "sitting", "-t", "-10"]);
+
+    let svg = env.run(&["nowview", "--history", "30m", "-o", "-"]);
+    let mood = svg
+        .split(r#"<g class="field" data-field="mood">"#)
+        .nth(1)
+        .unwrap_or_else(|| panic!("no mood band in {svg}"));
+    let chunk = mood
+        .split(r#"<rect class="now-chunk"#)
+        .nth(1)
+        .unwrap_or_else(|| panic!("no now-chunk in {svg}"));
+    let chunk = &chunk[..chunk.find('>').expect("tag close")];
+    assert!(
+        chunk.contains(&format!(r#"data-id="{opener}""#)),
+        "chunk {chunk} does not name {opener}"
+    );
+
+    // And the panel `--json` names the same entry, so a caller reading
+    // the panel and a caller reading the SVG select the same row.
+    let panel: Value = serde_json::from_str(&env.run(&["nowview", "--json"])).expect("json");
+    let mood = panel["panel"]
+        .as_array()
+        .expect("panel")
+        .iter()
+        .find(|r| r["field"] == "mood")
+        .expect("a mood row");
+    assert_eq!(mood["id"].as_str(), Some(opener.as_str()));
 }

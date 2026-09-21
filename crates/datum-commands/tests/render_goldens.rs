@@ -653,6 +653,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
                 end_ms: DAY_START_MS + 11 * HOUR_MS,
                 fill: BlockFill::Single("#4488cc".into()),
                 state_label: Some("focused".into()),
+                id: None,
                 title: None,
             }],
             points: vec![DayviewPoint {
@@ -660,6 +661,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
                 fg_color: "#cc4488".into(),
                 bg_color: "#000000".into(),
                 state_label: Some("coffee".into()),
+                id: None,
                 title: None,
             }],
         }],
@@ -699,6 +701,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
                     end_ms: DAY_START_MS + 10 * HOUR_MS,
                     fill: BlockFill::Single("#cc8844".into()),
                     state_label: Some("solo".into()),
+                    id: None,
                     title: None,
                 },
                 DayviewBlock {
@@ -706,6 +709,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
                     end_ms: DAY_START_MS + 15 * HOUR_MS,
                     fill: BlockFill::MultiState(vec!["#aa3333".into(), "#33aa33".into()]),
                     state_label: Some("multi".into()),
+                    id: None,
                     title: None,
                 },
             ],
@@ -750,6 +754,7 @@ fn dayview_scene_today_now_line() -> DayviewLayoutResult {
                 end_ms: now_ms,
                 fill: BlockFill::Single("#4488cc".into()),
                 state_label: Some("focused".into()),
+                id: None,
                 title: None,
             }],
             points: vec![],
@@ -803,6 +808,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
                 end_ms,
                 fill: BlockFill::Single("#4488cc".into()),
                 state_label: Some("focused".into()),
+                id: None,
                 title: None,
             }],
             points: vec![DayviewPoint {
@@ -810,6 +816,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
                 fg_color: "#cc4488".into(),
                 bg_color: "#000000".into(),
                 state_label: Some("coffee".into()),
+                id: None,
                 title: None,
             }],
         }],
@@ -833,6 +840,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
         field: "mood".into(),
         state_label: Some("focused".into()),
         colors: vec!["#4488cc".into()],
+        id: None,
     }];
     let svg = render_nowview_svg(&layout, "14:30", &current_states, false);
     DayviewLayoutResult { svg }
@@ -874,6 +882,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
                 end_ms,
                 fill: BlockFill::Single("#4488cc".into()),
                 state_label: Some("focused".into()),
+                id: None,
                 title: None,
             }],
             points: vec![],
@@ -898,6 +907,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
         field: "mood".into(),
         state_label: Some("focused".into()),
         colors: vec!["#4488cc".into()],
+        id: None,
     }];
     let svg = render_nowview_svg(&layout, "14:30", &current_states, false);
     DayviewLayoutResult { svg }

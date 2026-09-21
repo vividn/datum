@@ -472,7 +472,10 @@ pub(crate) fn build_dayview_fields(
     // instant for all of them, so the batch answers every call.
     let field_names: Vec<&str> = by_field.keys().map(String::as_str).collect();
     let specs = db.batch_load_specs(&field_names)?;
-    let leading_states = db.batch_state_at(&field_names, fetch_start)?;
+    // da-6hg6v: the governing ROW, not just its state — the synthesized
+    // leading region is the open block of an entry BEFORE the window, and
+    // it names that entry like every other mark.
+    let leading_states = db.batch_governing_at(&field_names, fetch_start)?;
     drop(field_names);
 
     let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
@@ -493,7 +496,7 @@ pub(crate) fn build_dayview_fields(
         // the fetch window — no in-window entry opens it, so without this
         // the band falls back to the field-default color.
         let mut blocks: Vec<DayviewBlock> = Vec::new();
-        if let Some((start_ms, end_ms, state)) = leading_state_region(
+        if let Some((start_ms, end_ms, state, id)) = leading_state_region(
             leading_states.get(&field),
             &entries_for_field,
             fetch_start,
@@ -502,6 +505,7 @@ pub(crate) fn build_dayview_fields(
             push_switch_region(
                 &mut blocks,
                 Some(&state),
+                id.as_deref(),
                 start_ms,
                 end_ms,
                 &field,
@@ -595,7 +599,7 @@ pub(crate) fn build_fields(
     }
     let field_names: Vec<&str> = all_fields.iter().map(String::as_str).collect();
     let specs = db.batch_load_specs(&field_names)?;
-    let leading_states = db.batch_state_at(&field_names, window_start)?;
+    let leading_states = db.batch_governing_at(&field_names, window_start)?;
 
     let mut out: Vec<NowviewField> = Vec::with_capacity(all_fields.len());
     for field in &all_fields {
@@ -625,7 +629,9 @@ pub(crate) fn build_fields(
         // include_empty=false path — omits the field entirely while the
         // state list above still shows it.
         let mut blocks: Vec<NowviewBlock> = Vec::new();
-        if let Some((start_ms, end_ms, state)) = leading_state_region(
+        // The terminal band draws no identity, so the governing entry
+        // the oracle names goes unused here.
+        if let Some((start_ms, end_ms, state, _)) = leading_state_region(
             leading_states.get(field),
             &entries_for_field,
             window_start,
@@ -694,11 +700,16 @@ fn build_current_states(
     // all — this used to be two queries per rendered field.
     let names: Vec<&str> = day.fields.iter().map(|f| f.field.as_str()).collect();
     let specs = db.batch_load_specs(&names).unwrap_or_default();
-    let states = db.batch_state_at(&names, end).unwrap_or_default();
+    // da-6hg6v: the governing ROW as well as its state — the chunk is
+    // that entry's open block and carries its hid.
+    let states = db.batch_governing_at(&names, end).unwrap_or_default();
     let mut out: Vec<NowviewCurrentState> = Vec::with_capacity(day.fields.len());
     for f in &day.fields {
         let spec = specs.get(&f.field).cloned();
-        let state = states.get(&f.field).cloned();
+        let (state, id) = match states.get(&f.field).cloned() {
+            Some((v, id)) => (Some(v), id),
+            None => (None, None),
+        };
         let (state_label, colors) = match state.as_ref() {
             None => (None, vec![rgb_to_hex(field_rgb(&f.field, spec.as_ref()))]),
             Some(v) if is_unrendered_switch_value(Some(v)) => {
@@ -720,10 +731,14 @@ fn build_current_states(
                 (Some(label), hex)
             }
         };
+        // A field in no state gets no chunk, so it names no entry
+        // either — the id follows the label.
+        let id = state_label.as_ref().and(id);
         out.push(NowviewCurrentState {
             field: f.field.clone(),
             state_label,
             colors,
+            id,
         });
     }
     out
@@ -731,11 +746,12 @@ fn build_current_states(
 
 /// Leading-state synthesis (da-ncoa): the entry fetch only reaches back to
 /// `window_start`, so a state set BEFORE that instant has no in-window
-/// switching entry to open its region. The caller passes the state
-/// [`Db::batch_state_at`] resolved at `window_start` — the same oracle
-/// that drives the SVG state panel — and this returns the region the
-/// missing entry would have opened: `[window_start, first in-window
-/// switching entry or fallback_end_ms]`. `entries` must be sorted by
+/// switching entry to open its region. The caller passes the state and
+/// the entry that set it, as [`Db::batch_governing_at`] resolved them at
+/// `window_start` — the same oracle that drives the SVG state panel —
+/// and this returns the region the missing entry would have opened:
+/// `[window_start, first in-window switching entry or fallback_end_ms]`,
+/// named with that entry's hid (da-6hg6v). `entries` must be sorted by
 /// occur_time ascending.
 ///
 /// Returns `None` when an in-window switching entry already covers
@@ -743,11 +759,11 @@ fn build_current_states(
 /// that doesn't render (null / false / IGNORED) is still returned — the
 /// push helpers' existing [`is_unrendered_switch_value`] gate drops it.
 fn leading_state_region(
-    state_at_window_start: Option<&JsonValue>,
+    state_at_window_start: Option<&(JsonValue, Option<String>)>,
     entries: &[Entry],
     window_start: DateTime<Utc>,
     fallback_end_ms: i64,
-) -> Option<(i64, i64, JsonValue)> {
+) -> Option<(i64, i64, JsonValue, Option<String>)> {
     let window_start_ms = window_start.timestamp_millis();
     let lead_end_ms = entries
         .iter()
@@ -757,7 +773,8 @@ fn leading_state_region(
     if lead_end_ms <= window_start_ms {
         return None;
     }
-    state_at_window_start.map(|state| (window_start_ms, lead_end_ms, state.clone()))
+    state_at_window_start
+        .map(|(state, id)| (window_start_ms, lead_end_ms, state.clone(), id.clone()))
 }
 
 /// Verb-driven render targeting the terminal-band [`NowviewField`] shape

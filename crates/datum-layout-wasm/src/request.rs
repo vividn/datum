@@ -344,6 +344,11 @@ pub fn build_fields(
                 end_ms: b.end_ms,
                 fill: block_fill(b.state.as_ref(), &f.field, style),
                 state_label: state_label(b.state.as_ref()),
+                // da-6hg6v names every mark's entry through the CLI's own
+                // walk; this crate is the retired browser renderer (nothing
+                // in `web/` loads it) and its request shape carries no hid
+                // to name one with.
+                id: None,
                 title: None,
             })
             .collect();
@@ -355,6 +360,7 @@ pub fn build_fields(
                 fg_color: dot_color(p.fg.as_ref(), p.fg_fallback, &f.field, style),
                 bg_color: dot_color(p.bg.as_ref(), p.bg_fallback, &f.field, style),
                 state_label: state_label(p.state_label.as_ref().or(p.fg.as_ref())),
+                id: None,
                 title: None,
             })
             .collect();
@@ -445,6 +451,7 @@ fn build_current_states(
                 field: f.field.clone(),
                 state_label,
                 colors,
+                id: None,
             }
         })
         .collect()

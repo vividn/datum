@@ -178,6 +178,7 @@ fn block(start_ms: i64, end_ms: i64, color: &str, state: &str) -> DayviewBlock {
         end_ms,
         fill: BlockFill::Single(color.into()),
         state_label: Some(state.into()),
+        id: None,
         title: None,
     }
 }
@@ -208,6 +209,7 @@ fn day_fields(start_ms: i64, end_ms: i64) -> Vec<DayviewFieldInput> {
                 fg_color: "#cc7722".into(),
                 bg_color: "#000000".into(),
                 state_label: None,
+                id: None,
                 title: None,
             }],
         },
@@ -277,11 +279,13 @@ fn nowview_at(width: f64, history_minutes: f64) -> String {
             field: "mood".into(),
             state_label: Some("good".into()),
             colors: vec!["#44aa77".into()],
+            id: None,
         },
         NowviewCurrentState {
             field: "coffee".into(),
             state_label: None,
             colors: vec!["#cc7722".into()],
+            id: None,
         },
     ];
     render_nowview_svg(&layout, "23:05", &panel, false)

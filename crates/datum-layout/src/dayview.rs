@@ -108,6 +108,14 @@ pub struct DayviewBlock {
     pub end_ms: i64,
     pub fill: BlockFill,
     pub state_label: Option<String>,
+    /// The hid of THE ENTRY THAT GENERATED this block (da-6hg6v), whole,
+    /// as the durable identity — not the short prefix the CLI prints.
+    /// Which end of the span holds that entry depends on how the block
+    /// was made (a state change runs forward from it, a duration back to
+    /// it), so only the walk that emitted it can say; the renderer just
+    /// carries it out to `data-id`.
+    #[serde(default)]
+    pub id: Option<String>,
     /// What the mark says on hover (da-s5da) — `work: coding 14:00–14:30`.
     /// The caller writes it, since it owns the clock; the renderer puts it
     /// in the mark's `<title>`.
@@ -134,6 +142,9 @@ pub struct DayviewPoint {
     pub fg_color: String,
     pub bg_color: String,
     pub state_label: Option<String>,
+    /// As [`DayviewBlock::id`] — a dot's own entry.
+    #[serde(default)]
+    pub id: Option<String>,
     /// As [`DayviewBlock::title`].
     #[serde(default)]
     pub title: Option<String>,
@@ -309,6 +320,9 @@ pub struct RenderedBlock {
     pub time_extent: f64,
     pub fill: BlockFill,
     pub state_label: Option<String>,
+    /// As [`DayviewBlock::id`].
+    #[serde(default)]
+    pub id: Option<String>,
     /// The block's own span in UTC ms, before clipping to the day.
     #[serde(default)]
     pub start_ms: i64,
@@ -328,6 +342,9 @@ pub struct RenderedPoint {
     pub fg_color: String,
     pub bg_color: String,
     pub state_label: Option<String>,
+    /// As [`DayviewBlock::id`].
+    #[serde(default)]
+    pub id: Option<String>,
     #[serde(default)]
     pub time_ms: i64,
     #[serde(default)]
@@ -551,6 +568,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     time_extent: t_ext,
                     fill: b.fill.clone(),
                     state_label: b.state_label.clone(),
+                    id: b.id.clone(),
                     start_ms: b.start_ms,
                     end_ms: b.end_ms,
                     title: b.title.clone(),
@@ -580,6 +598,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     fg_color: p.fg_color.clone(),
                     bg_color: p.bg_color.clone(),
                     state_label: p.state_label.clone(),
+                    id: p.id.clone(),
                     time_ms: p.time_ms,
                     title: p.title.clone(),
                 });
@@ -876,6 +895,7 @@ mod tests {
                         fg_color: "#ff0000".into(),
                         bg_color: "#000000".into(),
                         state_label: None,
+                        id: None,
                         title: None,
                     }],
                 },
@@ -909,6 +929,7 @@ mod tests {
                 end_ms: DAY_START + 2 * HOUR,
                 fill: BlockFill::Single("#abcdef".into()),
                 state_label: None,
+                id: None,
                 title: None,
             }],
             points: vec![],
@@ -955,6 +976,7 @@ mod tests {
                     end_ms: DAY_START + 25 * HOUR,
                     fill: BlockFill::Single("#abcdef".into()),
                     state_label: None,
+                    id: None,
                     title: None,
                 }],
                 points: vec![],
@@ -1027,6 +1049,7 @@ mod tests {
                         "#0000ff".into(),
                     ]),
                     state_label: Some("happy,calm,focused".into()),
+                    id: None,
                     title: None,
                 }],
                 points: vec![],
@@ -1160,6 +1183,7 @@ mod tests {
                     end_ms: DAY_START + 25 * HOUR,
                     fill: BlockFill::Single("#abcdef".into()),
                     state_label: None,
+                    id: None,
                     title: None,
                 }],
                 points: vec![],

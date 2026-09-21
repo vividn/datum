@@ -64,6 +64,27 @@ impl Db {
         fields: &[&str],
         t: DateTime<Utc>,
     ) -> Result<std::collections::HashMap<String, JsonValue>> {
+        Ok(self
+            .batch_governing_at(fields, t)?
+            .into_iter()
+            .map(|(field, (state, _))| (field, state))
+            .collect())
+    }
+
+    /// [`Db::batch_state_at`] with the GOVERNING ROW named: for each
+    /// field, the state it holds at `t` and the whole hid of the entry
+    /// that established it (da-6hg6v) — the row a picture's mark points
+    /// at when it is the open block of that state. The id is `None` when
+    /// the state came from no single row: every row handed the field
+    /// back, and nothing preceded them.
+    ///
+    /// This is the walk; [`Db::batch_state_at`] is this with the id
+    /// dropped, so the two oracles cannot disagree about which row won.
+    pub fn batch_governing_at(
+        &self,
+        fields: &[&str],
+        t: DateTime<Utc>,
+    ) -> Result<std::collections::HashMap<String, (JsonValue, Option<String>)>> {
         // One row per field answers the common case — and is the whole
         // of the pre-da-phoe cost. A field whose newest row is a block
         // that has already handed the field back needs the row behind
@@ -83,7 +104,11 @@ impl Db {
         }
         Ok(rows
             .into_iter()
-            .map(|(field, rows)| (field, super::now::resolve_effective(&rows, t).state))
+            .map(|(field, rows)| {
+                let eff = super::now::resolve_effective(&rows, t);
+                let id = eff.governing.map(|i| rows[i].id.clone());
+                (field, (eff.state, id))
+            })
             .collect())
     }
 
@@ -391,7 +416,7 @@ pub(super) fn state_rows_sql(depth: usize) -> String {
     // an ISO-8601 string, which SQL cannot add to a time.
     let endbound = time_expr_endbound();
     format!(
-        "SELECT field, state, verb, occur_time, dur, following_state
+        "SELECT field, state, verb, occur_time, dur, following_state, hid
            FROM entries
           WHERE field = ?1
             AND {STATE_PARTICIPATION_SQL}
@@ -407,7 +432,7 @@ pub(super) fn state_rows_sql(depth: usize) -> String {
 pub(super) fn spanning_blocks_sql(limit: usize) -> String {
     let endbound = time_expr_endbound();
     format!(
-        "SELECT field, state, verb, occur_time, dur, following_state
+        "SELECT field, state, verb, occur_time, dur, following_state, hid
            FROM entries
           WHERE field = ?1
             AND {STATE_PARTICIPATION_SQL}
@@ -418,7 +443,7 @@ pub(super) fn spanning_blocks_sql(limit: usize) -> String {
     )
 }
 
-/// The six columns both state-row readers select, decoded as far as
+/// The seven columns both state-row readers select, decoded as far as
 /// rusqlite alone can take them. The JSON columns stay as strings here so
 /// a parse failure surfaces as a [`DatumError`] rather than being flattened
 /// into a rusqlite error — [`decode_state_row`] finishes the job.
@@ -429,6 +454,7 @@ type StateColumns = (
     Option<DateTime<Utc>>,
     Option<crate::dur::Dur>,
     Option<String>,
+    String,
 );
 
 fn read_state_columns(row: &rusqlite::Row) -> rusqlite::Result<StateColumns> {
@@ -445,11 +471,12 @@ fn read_state_columns(row: &rusqlite::Row) -> rusqlite::Result<StateColumns> {
         .as_deref()
         .and_then(crate::dur::Dur::parse);
     let following: Option<String> = row.get(5)?;
-    Ok((field, value, verb, occur_utc, dur, following))
+    let id: String = row.get(6)?;
+    Ok((field, value, verb, occur_utc, dur, following, id))
 }
 
 fn decode_state_row(cols: StateColumns) -> Result<(String, super::now::StateRow)> {
-    let (field, value, verb, occur, dur, following) = cols;
+    let (field, value, verb, occur, dur, following, id) = cols;
     let state: Option<JsonValue> = match value {
         None => None,
         Some(s) => Some(serde_json::from_str(&s)?),
@@ -461,6 +488,7 @@ fn decode_state_row(cols: StateColumns) -> Result<(String, super::now::StateRow)
     Ok((
         field,
         super::now::StateRow {
+            id,
             verb,
             state,
             occur,

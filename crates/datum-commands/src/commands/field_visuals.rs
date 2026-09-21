@@ -208,6 +208,7 @@ pub(crate) fn render_field_visuals(
                 push_switch_region(
                     &mut blocks,
                     entry.state.as_ref(),
+                    Some(entry.hid.as_str()),
                     occur_ms,
                     switch_region_ends[idx],
                     field,
@@ -244,6 +245,7 @@ pub(crate) fn render_field_visuals(
                         fg_color: rgb_to_hex(fg),
                         bg_color: rgb_to_hex(bg),
                         state_label: mark_state(entry.state.as_ref()),
+                        id: Some(entry.hid.to_string()),
                         title: None,
                     });
                 }
@@ -263,6 +265,7 @@ pub(crate) fn render_field_visuals(
                 push_switch_region(
                     &mut blocks,
                     entry.following_state.as_ref(),
+                    Some(entry.hid.as_str()),
                     band_start_ms,
                     switch_region_ends[idx],
                     field,
@@ -384,12 +387,16 @@ pub(crate) fn push_block_window(
         end_ms,
         fill,
         state_label: mark_state(entry.state.as_ref()),
+        id: Some(entry.hid.to_string()),
         title: None,
     });
 }
 
 /// Emit a switch-region block from `start_ms` to `region_end_ms`, colored by
-/// `value`. No-op when the value is the "ended" sentinel (null/false/IGNORED)
+/// `value`. `id` is the hid of the entry that OPENED the region — a switch
+/// region runs FORWARD from its entry, so the entry is at the region's
+/// `data-from` end, where a duration block's is at its `data-to` (da-6hg6v).
+/// No-op when the value is the "ended" sentinel (null/false/IGNORED)
 /// or the region falls outside the day window.
 // Internal helper — eight params group three independently varying axes
 // (block bounds, day window, field/spec). Folding them into a struct
@@ -398,6 +405,7 @@ pub(crate) fn push_block_window(
 pub(crate) fn push_switch_region(
     blocks: &mut Vec<DayviewBlock>,
     value: Option<&JsonValue>,
+    id: Option<&str>,
     start_ms: i64,
     region_end_ms: i64,
     field: &str,
@@ -417,6 +425,7 @@ pub(crate) fn push_switch_region(
         end_ms: region_end_ms,
         fill,
         state_label: mark_state(value),
+        id: id.map(str::to_string),
         title: None,
     });
 }

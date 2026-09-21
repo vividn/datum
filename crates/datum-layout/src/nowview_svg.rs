@@ -162,6 +162,7 @@ fn now_strip_fills(current_states: &[NowviewCurrentState]) -> Vec<RightPanelFill
             Some(RightPanelFill {
                 field: e.field.clone(),
                 fill,
+                id: e.id.clone(),
             })
         })
         .collect()
@@ -410,6 +411,7 @@ mod tests {
                     end_ms: now_ms,
                     fill: BlockFill::Single("#abcdef".into()),
                     state_label: Some("happy".into()),
+                    id: None,
                     title: None,
                 }],
                 points: vec![DayviewPoint {
@@ -417,6 +419,7 @@ mod tests {
                     fg_color: "#ff0000".into(),
                     bg_color: "#000000".into(),
                     state_label: None,
+                    id: None,
                     title: None,
                 }],
             }],
@@ -492,6 +495,7 @@ mod tests {
                         end_ms: now_ms,
                         fill: BlockFill::Single("#abcdef".into()),
                         state_label: Some("focused".into()),
+                        id: None,
                         title: None,
                     }],
                     points: vec![],
@@ -507,6 +511,7 @@ mod tests {
                         fg_color: "#ff0000".into(),
                         bg_color: "#000000".into(),
                         state_label: None,
+                        id: None,
                         title: None,
                     }],
                 },
@@ -538,11 +543,13 @@ mod tests {
                 field: "mood".into(),
                 state_label: Some("focused".into()),
                 colors: vec!["#abcdef".into()],
+                id: None,
             },
             NowviewCurrentState {
                 field: "coffee".into(),
                 state_label: None,
                 colors: vec!["#ff0000".into()],
+                id: None,
             },
         ];
         let svg = render_nowview_svg(&layout, "12:00", &entries, false);
@@ -589,6 +596,7 @@ mod tests {
                     end_ms: now_ms,
                     fill: BlockFill::Single("#abcdef".into()),
                     state_label: Some("focused".into()),
+                    id: None,
                     title: None,
                 }],
                 points: vec![],
@@ -613,6 +621,7 @@ mod tests {
             field: "mood".into(),
             state_label: Some("focused".into()),
             colors: vec!["#abcdef".into()],
+            id: None,
         }];
 
         // Unasked for, no label and no gutter: the canvas is the layout's.
@@ -642,6 +651,7 @@ mod tests {
             field: "mood".into(),
             state_label: None,
             colors: vec![],
+            id: None,
         }];
         let empty = render_nowview_svg(&layout, "", &none, true);
         assert!(!empty.contains("nowview-labels"), "{empty}");
@@ -668,6 +678,7 @@ mod tests {
                     end_ms: now_ms,
                     fill: BlockFill::Single("#abcdef".into()),
                     state_label: None,
+                    id: None,
                     title: None,
                 }],
                 points: vec![],
@@ -692,6 +703,7 @@ mod tests {
             field: "ghost".into(),
             state_label: Some("nope".into()),
             colors: vec!["#888888".into()],
+            id: None,
         }];
         let svg = render_nowview_svg(&layout, "", &entries, false);
         assert!(!svg.contains(r#"data-field="ghost""#));
@@ -734,6 +746,7 @@ mod tests {
                     end_ms: now_ms,
                     fill: BlockFill::Single("#aa3333".into()),
                     state_label: Some("vertical,sit".into()),
+                    id: None,
                     title: None,
                 }],
                 points: vec![],
@@ -759,6 +772,7 @@ mod tests {
             field: "body".into(),
             state_label: Some("vertical,sit".into()),
             colors: vec!["#aa3333".into(), "#33aa33".into()],
+            id: None,
         }];
         let svg = render_nowview_svg(&layout, "12:00", &entries, false);
         // The chunk is striped the way dayview stripes a parallel-state
@@ -794,6 +808,7 @@ mod tests {
                     end_ms: now_ms,
                     fill: BlockFill::Single("#abcdef".into()),
                     state_label: Some("focused".into()),
+                    id: None,
                     title: None,
                 }],
                 points: vec![],
@@ -818,6 +833,7 @@ mod tests {
             field: "mood".into(),
             state_label: Some("focused".into()),
             colors: vec!["#abcdef".into()],
+            id: None,
         }];
         let svg = render_nowview_svg(&layout, "12:00", &entries, false);
         assert!(

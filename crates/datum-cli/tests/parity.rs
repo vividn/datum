@@ -496,7 +496,28 @@ fn render_dayview_json(db_path: &Path) -> JsonValue {
     );
 
     let raw = std::fs::read_to_string(&out_path).expect("read dayview json");
-    serde_json::from_str(&raw).expect("parse dayview json")
+    let mut doc: JsonValue = serde_json::from_str(&raw).expect("parse dayview json");
+    mask_mark_ids(&mut doc);
+    doc
+}
+
+/// da-6hg6v: every mark names the entry that generated it, and a hid is
+/// minted at random on insert — so the golden records that the id is
+/// THERE, not which one it was. Masks the value, never the key: a mark
+/// that stopped naming its entry drops the key and still fails here.
+fn mask_mark_ids(v: &mut JsonValue) {
+    match v {
+        JsonValue::Object(map) => {
+            if let Some(id) = map.get_mut("id") {
+                *id = JsonValue::String("<hid>".into());
+            }
+            for (_, child) in map.iter_mut() {
+                mask_mark_ids(child);
+            }
+        }
+        JsonValue::Array(items) => items.iter_mut().for_each(mask_mark_ids),
+        _ => {}
+    }
 }
 
 /// Sub-test: end-to-end snapshot. Render the fixture entries via the

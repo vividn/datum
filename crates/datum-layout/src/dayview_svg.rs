@@ -55,6 +55,10 @@ pub(crate) const AXIS_LABEL_GAP: f64 = 4.0;
 pub struct RightPanelFill {
     pub field: String,
     pub fill: BlockFill,
+    /// The hid of the entry that OPENED the state the strip is painted in
+    /// (da-6hg6v) — the chunk is that entry's open block, so it names it
+    /// like any other mark. `None` when the state came from no single row.
+    pub id: Option<String>,
 }
 
 /// Knobs the nowview overlay needs the dayview renderer to honour.
@@ -256,6 +260,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         "rect",
                         &field.field,
                         b.state_label.as_deref(),
+                        b.id.as_deref(),
                         &[("from", b.start_ms), ("to", b.end_ms)],
                         b.title.as_deref(),
                     ),
@@ -291,7 +296,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         rect_w,
                         rect_h,
                         field.cross_extent,
-                        "/>",
+                        &now_chunk_close(pf.id.as_deref()),
                     );
                 }
             }
@@ -312,6 +317,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         "circle",
                         &field.field,
                         p.state_label.as_deref(),
+                        p.id.as_deref(),
                         &[("at", p.time_ms)],
                         p.title.as_deref(),
                     ),
@@ -474,13 +480,22 @@ fn push_fill_rect(
 }
 
 /// The rest of a mark's tag after its geometry (da-s5da): what it is as
-/// data — its field, its state as the CLI prints it (`∅` for none) and its
-/// instants — and a `<title>` child, which any SVG viewer shows on hover
-/// with no script. Closes the `tag` element.
+/// data — its field, its state as the CLI prints it (`∅` for none), the
+/// whole hid of the entry that generated it (da-6hg6v) and its instants —
+/// and a `<title>` child, which any SVG viewer shows on hover with no
+/// script. Closes the `tag` element.
+///
+/// `data-id` is omitted rather than emitted empty when a mark has no
+/// single entry behind it, so a reader tests for the attribute and never
+/// for a sentinel. It is the WHOLE hid, not the short prefix the CLI
+/// prints: `web/src/lib/selection.ts`'s `same()` matches either against
+/// the other by prefix, and on a long record only the whole one cannot
+/// be matched by a different entry.
 fn mark_close(
     tag: &str,
     field: &str,
     state: Option<&str>,
+    id: Option<&str>,
     times: &[(&str, i64)],
     title: Option<&str>,
 ) -> String {
@@ -489,6 +504,9 @@ fn mark_close(
         escape_xml(field),
         escape_xml(state.unwrap_or("∅")),
     );
+    if let Some(id) = id {
+        let _ = write!(out, r#" data-id="{}""#, escape_xml(id));
+    }
     for (name, ms) in times {
         let _ = write!(out, r#" data-{name}="{}""#, iso(*ms));
     }
@@ -499,6 +517,20 @@ fn mark_close(
         None => out.push_str("/>"),
     }
     out
+}
+
+/// How the now-chunk's rect closes (da-6hg6v). It is the OPEN BLOCK of
+/// the state the field is in, so it names the entry that opened that
+/// state — vividn: «if you double tap a color, that color is an open
+/// block, so it should select the datum entry that generated that open
+/// block». It carries no `data-field` / `data-state` / times of its own:
+/// it never has, `lanes.ts` reads it as the `.now-chunk` inside its
+/// field's group, and this bead adds identity, not description.
+fn now_chunk_close(id: Option<&str>) -> String {
+    match id {
+        Some(id) => format!(r#" data-id="{}"/>"#, escape_xml(id)),
+        None => "/>".to_string(),
+    }
 }
 
 /// An instant as a mark's data carries it: ISO, UTC, to the millisecond —
@@ -814,6 +846,7 @@ mod tests {
                         end_ms: DAY_START + 7 * HOUR,
                         fill: BlockFill::Single("#abcdef".into()),
                         state_label: Some("happy".into()),
+                        id: None,
                         title: None,
                     }],
                     points: vec![DayviewPoint {
@@ -821,6 +854,7 @@ mod tests {
                         fg_color: "#ff0000".into(),
                         bg_color: "#000000".into(),
                         state_label: None,
+                        id: None,
                         title: None,
                     }],
                 }],
@@ -987,5 +1021,66 @@ mod tests {
         let html = wrap_dayview_svg_in_html("<svg></svg>");
         assert!(html.starts_with("<!DOCTYPE html>"));
         assert!(html.contains("<svg></svg>"));
+    }
+
+    /// da-6hg6v: a mark that HAS an entry names it; one that has none
+    /// carries no `data-id` at all, so a reader tests for the attribute
+    /// and never has to know a sentinel.
+    #[test]
+    fn a_mark_names_its_entry_and_omits_the_attribute_when_it_has_none() {
+        let mut cfg = one_day_with_block(false, Orientation::Horizontal);
+        let field = &mut cfg.days[0].fields[0];
+        field.blocks[0].id = Some("b17ew04s0c85".into());
+        let svg = render_dayview_svg(&compute_dayview(&cfg));
+        assert!(svg.contains(r#"data-id="b17ew04s0c85""#), "{svg}");
+        // The dot was left without one.
+        let dot = svg
+            .split(r#"<circle class="point-bg""#)
+            .nth(1)
+            .expect("a dot");
+        let dot = &dot[..dot.find('>').expect("tag close")];
+        assert!(!dot.contains("data-id"), "{dot}");
+    }
+
+    /// da-6hg6v: the now-chunk is the open block of the state a field is
+    /// in, so it names the entry that opened that state — and, having
+    /// never carried any other attribute, it carries only that one.
+    #[test]
+    fn the_now_chunk_names_its_entry_and_nothing_else() {
+        let mut cfg = one_day_with_block(false, Orientation::Horizontal);
+        cfg.right_panel_width = 40.0;
+        let layout = compute_dayview(&cfg);
+        let named = render_dayview_svg_with(
+            &layout,
+            DayviewSvgOpts {
+                axis_end_reserved: 0.0,
+                right_panel_fills: &[RightPanelFill {
+                    field: "mood".into(),
+                    fill: BlockFill::Single("#abcdef".into()),
+                    id: Some("d9plbzg641as".into()),
+                }],
+            },
+        );
+        let chunk = named
+            .split(r#"<rect class="now-chunk"#)
+            .nth(1)
+            .unwrap_or_else(|| panic!("no now-chunk in {named}"));
+        let chunk = &chunk[..chunk.find('>').expect("tag close")];
+        assert!(chunk.contains(r#"data-id="d9plbzg641as""#), "{chunk}");
+        assert!(!chunk.contains("data-field"), "{chunk}");
+
+        let unnamed = render_dayview_svg_with(
+            &layout,
+            DayviewSvgOpts {
+                axis_end_reserved: 0.0,
+                right_panel_fills: &[RightPanelFill {
+                    field: "mood".into(),
+                    fill: BlockFill::Single("#abcdef".into()),
+                    id: None,
+                }],
+            },
+        );
+        assert!(unnamed.contains(r#"class="now-chunk""#), "{unnamed}");
+        assert!(!unnamed.contains("data-id"), "{unnamed}");
     }
 }

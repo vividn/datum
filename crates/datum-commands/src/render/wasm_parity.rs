@@ -234,16 +234,34 @@ fn same_marks(case: &str, entries: Vec<Entry>) -> (Vec<DayviewBlock>, Vec<Dayvie
             None => (Vec::new(), Vec::new()),
         };
 
-    assert_eq!(
-        serde_json::to_value(&web_blocks).unwrap(),
-        serde_json::to_value(&cli_blocks).unwrap(),
-        "{case}: blocks drifted"
-    );
-    assert_eq!(
-        serde_json::to_value(&web_points).unwrap(),
-        serde_json::to_value(&cli_points).unwrap(),
-        "{case}: points drifted"
-    );
+    // da-6hg6v: the CLI's walk names the ENTRY behind every mark it
+    // draws. The browser half cannot — its request shape carries no hid
+    // (`marks::EntryReq`) — and it is not given one: naming the entry is
+    // the renderer's job, which is the whole reason the attribute lives
+    // in the CLI. So the identity is asserted here and then dropped, and
+    // what is compared is what this module is about: the DRAWING.
+    for b in &cli_blocks {
+        assert!(b.id.is_some(), "{case}: a block names no entry");
+    }
+    for p in &cli_points {
+        assert!(p.id.is_some(), "{case}: a dot names no entry");
+    }
+    let drawing = |v: &mut JsonValue| {
+        for mark in v.as_array_mut().expect("an array of marks") {
+            mark.as_object_mut().expect("a mark").remove("id");
+        }
+    };
+    let mut cli_drawn = serde_json::to_value(&cli_blocks).unwrap();
+    let mut web_drawn = serde_json::to_value(&web_blocks).unwrap();
+    drawing(&mut cli_drawn);
+    drawing(&mut web_drawn);
+    assert_eq!(web_drawn, cli_drawn, "{case}: blocks drifted");
+
+    let mut cli_drawn = serde_json::to_value(&cli_points).unwrap();
+    let mut web_drawn = serde_json::to_value(&web_points).unwrap();
+    drawing(&mut cli_drawn);
+    drawing(&mut web_drawn);
+    assert_eq!(web_drawn, cli_drawn, "{case}: points drifted");
     (web_blocks, web_points)
 }
 
