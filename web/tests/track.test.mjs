@@ -8,11 +8,13 @@
 //
 // The claim that rots if nobody watches it is the first one: the four
 // glyphs are the CLI's, not the web's. `track_action_label` in
-// crates/datum-core/src/track.rs paints `TRACK●`/`█`/`▞`/`¢` in every
-// action column there is, so a pictogram here that drifted from it would
-// teach the wrong shape for the row the press is about to write. The test
-// below declares one field per verb through the real CLI and reads the
-// glyph back out of `tail --json`'s own painted cells.
+// crates/datum-core/src/track.rs paints `TRACK●`/`█`/`▞`/`¢` where a
+// SINGLE document names itself — the write echo and `get` — so a pictogram
+// here that drifted from it would teach the wrong shape for the row the
+// press is about to write. The test below declares one field per verb
+// through the real CLI and reads the glyph back out of `get --show json`.
+// Not out of `tail`: a table names no action at all (da-ftg8p), because a
+// column only a declaration fills re-lays-out every row around it.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,6 +24,16 @@ import { stripAnsi } from './support/tail.mjs';
 
 const MODAL = 'dialog.track';
 const PHONE = { width: 320, height: 480 };
+
+/**
+ * The action word the CLI prints for the document that declared `field` —
+ * read off `get --show json`, the surface a single document names itself
+ * on. A table has no action column (da-ftg8p).
+ */
+async function actionWord(app, field) {
+	const { stdout } = await app.run(['get', field, '--show', 'json']);
+	return stripAnsi(JSON.parse(stdout).docs[0].action).trim();
+}
 
 /** Open the modal from the widget bar's `Track +` and wait for it. */
 async function openIt(page) {
@@ -78,14 +90,13 @@ describe('in the app', () => {
 	test('the four pictograms are the glyphs the CLI prints for the row each one writes', async () => {
 		await withApp(async (app) => {
 			for (const { verb } of VERBS) await app.run(trackArgv(`f_${verb}`, verb));
-			const { rows, columns } = await app.tailRows();
-			const action = columns.find((c) => c.key === 'action');
-			assert.ok(action, '`tail --json` published no action column for the declarations');
-			const drawn = new Map(rows.map((row, i) => [row.field, stripAnsi(action.cells[i]).trim()]));
 			for (const { verb, glyph } of VERBS) {
-				assert.equal(drawn.get(`f_${verb}`), `TRACK${glyph}`, `the ${verb} pictogram is not the CLI's`);
+				assert.equal(await actionWord(app, `f_${verb}`), `TRACK${glyph}`, `the ${verb} pictogram is not the CLI's`);
 				assert.equal(trackLabel(verb), `TRACK${glyph}`);
 			}
+			// And the table names none of them: no `action` column at all.
+			const { columns } = await app.tailRows();
+			assert.deepEqual(columns.filter((c) => c.key === 'action'), []);
 			// The day frame is scenery here — nothing but the seam is read
 			// (docs/web-conventions.md #21).
 		}, { query: 'repl' });
@@ -138,9 +149,7 @@ describe('in the app', () => {
 			assert.equal(spec.verb, 'switch');
 			assert.deepEqual(spec.allowed_states, ['good', 'bad']);
 
-			const { rows, columns } = await app.tailRows();
-			const action = columns.find((c) => c.key === 'action');
-			assert.equal(stripAnsi(action.cells[rows.findIndex((r) => r.field === 'mood')]).trim(), 'TRACK▞');
+			assert.equal(await actionWord(app, 'mood'), 'TRACK▞');
 			assert.equal(await page.locator(MODAL).count(), 0, 'the modal stayed open');
 		});
 	});

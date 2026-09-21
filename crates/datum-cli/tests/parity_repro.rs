@@ -130,7 +130,12 @@ fn switch_switch_tail_reproducer_matches_spec() {
     for row in &data {
         assert!(row.contains("myfield"), "row missing field:\n{row:?}");
     }
-    assert!(data[0].contains("TRACK"), "declaration missing:\n{tail}");
+    // The declaration reads as itself in the `state` column — `end`, the
+    // off state of a switch field. It names no ACTION: a table has no such
+    // column (da-ftg8p), because one row must not conjure a column the
+    // other rows leave empty and shift them all sideways to pay for it.
+    assert!(data[0].contains(" end "), "declaration missing:\n{tail}");
+    assert!(!tail.contains("TRACK"), "a table names no action:\n{tail}");
     assert!(data[1].contains("abc"), "first row state missing:\n{tail}");
     assert!(
         data[2].contains("abcdefg"),

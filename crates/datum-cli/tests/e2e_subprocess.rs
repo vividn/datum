@@ -826,15 +826,16 @@ fn subprocess_tail_json_carries_the_table_columns() {
             .unwrap_or_else(|| panic!("no {key} column: {doc}"))["cells"]
             .clone()
     };
-    // Each field's TRACK document sits ahead of its entry (da-c8mh), and
-    // the `action` column exists because those rows name themselves.
+    // Each field's TRACK document sits ahead of its entry (da-c8mh).
     assert_eq!(
         column("field"),
         serde_json::json!(["coffee", "coffee", "mood", "mood"])
     );
-    assert_eq!(
-        column("action"),
-        serde_json::json!(["TRACK\u{25cf}", "", "TRACK\u{259e}", ""])
+    // da-ftg8p: and no `action` column names them. These columns ARE the
+    // table's, so the pane that lays them out drops it with the table.
+    assert!(
+        columns.iter().all(|c| c["key"] != "action"),
+        "no action column: {doc}"
     );
     assert_eq!(column("hid").as_array().unwrap().len(), 4);
     // DATUM_COLOR=0: the cells are plain.

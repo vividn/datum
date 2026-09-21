@@ -10,8 +10,10 @@
 //! The row carries that answer in `extra_metadata.track`, which is also
 //! how every reader recognises it: a TRACK row's state is `false` or the
 //! TRACKED sentinel (da-5ifp), and `false` alone is indistinguishable from
-//! a plain `end`. The marker is what lets `tail`, `get` and the write echo
-//! print `TRACK●` where they would otherwise print an action.
+//! a plain `end`. The marker is what lets `get` and the write echo print
+//! `TRACK●` where they would otherwise print an action. A TABLE does not
+//! (da-ftg8p): a column only a declaration fills is one row re-laying-out
+//! the rows around it.
 
 use serde_json::{json, Value as JsonValue};
 

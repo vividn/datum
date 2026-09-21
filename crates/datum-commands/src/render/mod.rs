@@ -244,11 +244,15 @@ pub(crate) fn extract_with_context_at(
     let spec = registry.and_then(|r| r.fields.get(&entry.field));
     // da-c8mh: a TRACK document says what a field IS, so it names itself
     // in the action slot — `TRACK●`/`█`/`▞`/`¢`, six columns like
-    // `CREATE` — on every surface that has one, and in the table's
-    // `action` column, which exists only when such a row is present.
-    // Only where the word would otherwise say "a write landed" or "this
-    // row is already here" — a DELETE of a TRACK row is still a DELETE,
-    // and saying so is the whole value of that column.
+    // `CREATE` — on the single-document surfaces that have one: the write
+    // echo and `get`. Only where the word would otherwise say "a write
+    // landed" or "this row is already here" — a DELETE of a TRACK row is
+    // still a DELETE, and saying so is the whole value of that slot.
+    // da-ftg8p: NOT in a table. A table reads one row against the others,
+    // and an action slot no other row fills is a column one row conjures
+    // into being, shifting every other row's cells sideways to pay for it.
+    // The `∅` the following row already wears says the field was IGNORED
+    // before, which is the information the word carried.
     let names_the_row = matches!(action, None | Some(Outcome::Create) | Some(Outcome::Exists));
     let action_text = match datum_core::track::track_verb(entry).filter(|_| names_the_row) {
         Some(verb) => Some(paint_track(verb)),
@@ -772,10 +776,6 @@ pub fn print_table_with(
 /// table can be the same cells in `<td>`s rather than a second derivation
 /// of them — see [`table_columns_with`].
 struct Row {
-    /// da-c8mh: the action word, filled only for a TRACK document
-    /// (`TRACK●`/`█`/`▞`/`¢`). Empty for every other row, so the column
-    /// drops out of a listing that has no field declaration in it.
-    action: String,
     time: String,
     time_metric_prefix: &'static str,
     field: String,
@@ -901,7 +901,6 @@ fn build_rows(
             hid.push_str(&paint(CONFLICT_FG, "*"));
         }
         rows.push(Row {
-            action: ex.action.clone().unwrap_or_default(),
             time,
             time_metric_prefix: prefix,
             field: ex.field.unwrap_or_default(),
@@ -920,7 +919,6 @@ fn build_rows(
 /// out entirely, so `datum tail` on point entries carries no `state` and
 /// `dur` columns at all.
 struct Shown {
-    action: bool,
     time: bool,
     field: bool,
     state: bool,
@@ -933,7 +931,6 @@ impl Shown {
     fn of(rows: &[Row]) -> Self {
         let any = |f: fn(&Row) -> &str| rows.iter().any(|r| !f(r).is_empty());
         Self {
-            action: any(|r| &r.action),
             time: any(|r| &r.time),
             field: any(|r| &r.field),
             state: any(|r| &r.state),
@@ -954,7 +951,6 @@ struct Headers {
 }
 
 impl Headers {
-    const ACTION: &'static str = "action";
     const DUR: &'static str = "dur";
     const QUICK: &'static str = "_n";
     const HID: &'static str = "hid";
@@ -1023,7 +1019,6 @@ pub fn format_table_with(
     let (rows, reference_offset) = build_rows(entries, contexts, now, registry, args);
 
     let Shown {
-        action: show_action_col,
         time: show_time,
         field: show_field,
         state: show_state,
@@ -1039,7 +1034,6 @@ pub fn format_table_with(
         field: field_header,
         state: state_header,
     } = Headers::of(&rows, reference_offset);
-    let action_header = Headers::ACTION;
     let dur_header = Headers::DUR;
     let quick_header = Headers::QUICK;
     let hid_header = Headers::HID;
@@ -1074,10 +1068,6 @@ pub fn format_table_with(
     } else {
         usize::MAX
     };
-    let action_w = std::iter::once(action_header.len())
-        .chain(rows.iter().map(|r| vw(&r.action)))
-        .max()
-        .unwrap_or(0);
     let field_w = std::iter::once(field_header.len())
         .chain(rows.iter().map(|r| vw(&r.field).min(field_cap)))
         .max()
@@ -1122,7 +1112,6 @@ pub fn format_table_with(
         let gap = 2usize;
         let nonstate_fixed = |fw: usize| -> usize {
             [
-                show_action_col.then_some(action_w),
                 show_time.then_some(time_w),
                 show_field.then_some(fw),
                 show_dur.then_some(dur_w),
@@ -1160,9 +1149,6 @@ pub fn format_table_with(
         if show_quick {
             push_cell(&mut header, quick_header, quick_w, false);
         }
-        if show_action_col {
-            push_cell(&mut header, action_header, action_w, false);
-        }
         if show_time {
             // Right-align on the core (matching the rows' HH:MM:SS edge),
             // then pad across the ± suffix margin.
@@ -1195,9 +1181,6 @@ pub fn format_table_with(
         let mut line = String::new();
         if show_quick {
             push_cell(&mut line, &r.quick, quick_w, false);
-        }
-        if show_action_col {
-            push_cell(&mut line, &r.action, action_w, false);
         }
         if show_time {
             let body = if r.time_metric_prefix.is_empty() {
@@ -1278,7 +1261,7 @@ pub fn format_table_with(
 /// way the table paints it — the colour is the CLI's, not the caller's.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct TableColumn {
-    /// `_n` | `action` | `time` | `field` | `state` | `dur` | `hid`, or the name of a
+    /// `_n` | `time` | `field` | `state` | `dur` | `hid`, or the name of a
     /// `--column` extra. Stable across the header's own shrinking: the
     /// `field` column keys `field` even when its header word reads `f`.
     pub key: String,
@@ -1312,17 +1295,13 @@ pub fn table_columns_with(
     let shown = Shown::of(&rows);
     let headers = Headers::of(&rows, reference_offset);
     // The CLI's order, which is the reader's: what to type (da-431c, vividn:
-    // «move that column to be the first column on both CLI and web»), what
-    // the row IS when that is not just "an entry" (da-c8mh), when it landed,
-    // what it is about, what it says, how long, what to keep. The terminal
-    // table pads the same order. A column no row fills is dropped here
-    // exactly as the table drops it.
-    let stock: [StockColumn; 7] = [
+    // «move that column to be the first column on both CLI and web»), when
+    // it landed, what it is about, what it says, how long, what to keep.
+    // The terminal table pads the same order. A column no row fills is
+    // dropped here exactly as the table drops it.
+    let stock: [StockColumn; 6] = [
         (shown.quick, "_n", Headers::QUICK.to_string(), |r| {
             r.quick.clone()
-        }),
-        (shown.action, "action", Headers::ACTION.to_string(), |r| {
-            r.action.clone()
         }),
         (shown.time, "time", headers.time, |r| {
             if r.time_metric_prefix.is_empty() {

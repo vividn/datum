@@ -490,31 +490,53 @@ fn quick_column_leads_the_table_with_and_without_dur() {
     );
 }
 
+/// da-ftg8p: a TRACK document in the window adds no column of its own.
+/// The `action` word it used to write was the only thing that ever filled
+/// one in a table, so a single declaration conjured a column into being
+/// and every other row's cells slid sideways to pay for it. vividn: "that is
+/// really jarring and unneccessary… the null sign already indicates well
+/// that something was IGNORED before".
 #[test]
-fn action_column_follows_the_quick_column() {
+fn a_track_row_adds_no_column_of_its_own() {
     let _g = no_color_scope();
     let (block, ctx) = numbered_block();
     let track = datum_core::track::track_entry_for(&block, datum_core::action::Action::Switch);
-    let entries = [track, block];
-    let ctxs = [
-        RenderContext {
-            quick_ordinal: Some(2),
-            ..Default::default()
-        },
-        ctx,
-    ];
+    let track_ctx = RenderContext {
+        quick_ordinal: Some(2),
+        ..Default::default()
+    };
+    let alone = [block.clone()];
+    let alone_ctxs = [ctx.clone()];
+    let with_track = [track, block];
+    let with_track_ctxs = [track_ctx, ctx];
+
+    // The same columns, in the same order, with the same header words.
     assert_eq!(
-        header_words(&entries, &ctxs),
-        ["_n", "action", "time", "field", "state", "dur", "hid"]
+        header_words(&with_track, &with_track_ctxs),
+        header_words(&alone, &alone_ctxs)
     );
     assert_eq!(
-        column_keys(&entries, &ctxs),
-        ["_n", "action", "time", "field", "state", "dur", "hid"]
+        column_keys(&with_track, &with_track_ctxs),
+        column_keys(&alone, &alone_ctxs)
     );
-    let table = render_table_with_ctxs(&entries, &ctxs);
     assert!(
-        table.lines().nth(1).unwrap_or("").starts_with("_2  TRACK▞"),
-        "{table:?}"
+        !column_keys(&with_track, &with_track_ctxs).contains(&"action".to_string()),
+        "no action column"
+    );
+
+    // And the shared row is laid out identically — same widths, so the
+    // cells fall in the same columns whether the declaration is in the
+    // window or a narrower `-n` has cut it off.
+    let table = render_table_with_ctxs(&with_track, &with_track_ctxs);
+    let alone_table = render_table_with_ctxs(&alone, &alone_ctxs);
+    assert_eq!(
+        table.lines().last(),
+        alone_table.lines().last(),
+        "{table:?} vs {alone_table:?}"
+    );
+    assert!(
+        !table.contains("TRACK"),
+        "the declaration names no action in a table: {table:?}"
     );
 }
 
