@@ -39,8 +39,9 @@
 	import Pane from './Pane.svelte';
 	import ReplEntry from './ReplEntry.svelte';
 	import { fileCommand, progress } from './dbio.js';
-	import { echoArgv } from './echo.js';
+	import { echoArgv, parseEcho } from './echo.js';
 	import { fitArgv } from './panes.js';
+	import { GAP, columnsIn, rowsOf } from './scrollback.js';
 	import { run, type RunResult } from './run.js';
 
 	/** Newest entry first, the view pinned to the top. */
@@ -74,6 +75,19 @@
 	$: ordered = reversed ? [...$repl.scrollback].reverse() : $repl.scrollback;
 	// `skip` takes from the NEWEST end whichever way the list runs.
 	$: entries = skip ? (reversed ? ordered.slice(skip) : ordered.slice(0, -skip)) : ordered;
+
+	// AS MANY ENTRIES SIDE BY SIDE AS THE BOX HOLDS (da-5iyo, $lib/scrollback.ts).
+	// The same `width` a drawn command is asked for is what says how many:
+	// it is the body's CONTENT box, which is the room the columns have.
+	$: columns = columnsIn(width);
+	// An entry whose command answered with its own printed text rather than
+	// an action echo — a table, a picture, an error — takes the whole row.
+	$: wide = entries.map((entry) => !parseEcho(entry.result.stdout));
+	$: rows = rowsOf(wide, columns);
+	// The hairline stands on a SEAM (da-qdm7), so it is drawn above every
+	// row but the first — and above that one too when this view begins at
+	// `skip`, because then there is a row above that it does not draw.
+	$: ruled = rows.map((row) => row > 0 || skip > 0);
 
 	/** The view to the newest entry: the bottom, or the top when reversed. */
 	function pin(): void {
@@ -144,28 +158,27 @@
 	{#if $progress && reversed}
 		<p class="progress">{$progress}</p>
 	{/if}
-	<!-- Keyed by the entry itself, not its position: newest-first puts every
+	<!-- THE SCROLLBACK IS COLUMNS, not one column of a phone's width
+	     (da-5iyo). vividn: "the output of a single entry should be narrow
+	     enough to comfortably fit 2 on mobile side by side." How many is
+	     measured — `columnsIn` over the body's own box — and the hairline
+	     that used to be `<hr>` between two entries is now the top edge of
+	     every cell on a row past the first, which is the same seam drawn
+	     where a grid can draw it.
+
+	     Keyed by the entry itself, not its position: newest-first puts every
 	     new command at position 0, and a key by index rebuilt the whole
 	     scrollback on each one (review on #33). -->
-	{#each entries as entry, i (entry)}
-		<!-- A rule stands on a SEAM — between this row and one above it —
-		     and `i > 0` asked a narrower question: "is this my first row".
-		     Those were the same question while the repl was the whole list.
-		     They stopped being it when the bar's output section became row
-		     one and this view began at `skip` (da-qdm7, vividn: "there is a
-		     missing line between the first entry in the repl and the
-		     second"): the seam above the log's first row is the one edge
-		     neither renderer owns, and it went undrawn. `skip` is what says
-		     there IS a row above that this view does not draw — and it is 0
-		     in a pane, where the first row is the first row and a rule over
-		     it would be a rule against the pane's own body. -->
-		{#if i > 0 || skip}
-			<hr class="rule" />
-		{/if}
-		<!-- The row itself is `ReplEntry.svelte`, which the bar's output
-		     section mounts too: one list, one shape for a row of it. -->
-		<ReplEntry {entry} all />
-	{/each}
+	<div class="entries" data-columns={columns} style:--columns={columns} style:--gap="{GAP}px">
+		{#each entries as entry, i (entry)}
+			<div class="entry" class:ruled={ruled[i]} class:whole={wide[i]}>
+				<!-- The row itself is `ReplEntry.svelte`, which the bar's
+				     output section mounts too: one list, one shape for a row
+				     of it. -->
+				<ReplEntry {entry} all />
+			</div>
+		{/each}
+	</div>
 	{#if $progress && !reversed}
 		<!-- A file command still running says how far it is (da-h9vj). -->
 		<p class="progress">{$progress}</p>
@@ -184,10 +197,27 @@
 		color: var(--accent);
 	}
 
-	/* One dim hairline between commands, and the air either side of it. */
-	.rule {
-		margin: 0.5rem 0;
-		border: none;
+	.entries {
+		display: grid;
+		grid-template-columns: repeat(var(--columns, 1), minmax(0, 1fr));
+		column-gap: var(--gap);
+		/* Entries are not the same height, and a short one stretched to its
+		   neighbour's height would put its hairline nowhere near its text. */
+		align-items: start;
+	}
+
+	/* An entry the columns cannot carry — a table, a drawn day, an error —
+	   takes the whole row, at the width the CLI printed it for. */
+	.entry.whole {
+		grid-column: 1 / -1;
+	}
+
+	/* The same dim hairline `<hr class="rule">` drew, and the same air
+	   either side of it: a top edge, so every cell on a row starts it at
+	   the same y and the row reads as one rule with the gap in it. */
+	.entry.ruled {
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
 		border-top: 1px solid var(--tint);
 	}
 

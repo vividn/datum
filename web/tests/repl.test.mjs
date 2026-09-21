@@ -176,22 +176,44 @@ describe('a command in the scrollback', () => {
 });
 
 describe('the space between commands', () => {
-	test('is one dim rule, between them and not around them', async () => {
-		await withApp(async ({ page, submit }) => {
-			const rules = () => page.locator('.repl hr.rule').count();
+	// THE RULE STANDS ON A SEAM, and since da-5iyo the scrollback is
+	// COLUMNS: two entries side by side have no seam between them, and the
+	// one above them is the top edge of every cell on their row. So this
+	// counts rules against ROWS — read off the screen, so it holds at any
+	// width and does not care how many columns the pane happens to give.
+	const seams = (page) =>
+		page.evaluate(() => {
+			const cells = [...document.querySelectorAll('.repl .entry')];
+			const top = (el) => Math.round(el.getBoundingClientRect().top);
+			const first = cells.length ? top(cells[0]) : 0;
+			return {
+				rows: new Set(cells.map(top)).size,
+				below: cells.filter((el) => top(el) !== first).length,
+				ruled: cells.filter((el) => getComputedStyle(el).borderTopWidth !== '0px').length
+			};
+		});
 
+	test('is one dim rule, on every seam between two rows and not around them', async () => {
+		await withApp(async ({ page, submit }) => {
 			await submit('occur coffee');
-			assert.equal(await rules(), 0, 'a lone command got a separator');
+			assert.deepEqual(await seams(page), { rows: 1, below: 0, ruled: 0 }, 'a lone command got a separator');
 
 			await submit('occur tea');
-			assert.equal(await rules(), 1, 'two commands did not get exactly one separator');
+			const two = await seams(page);
+			assert.equal(two.ruled, two.below, 'the rules did not fall on the seams');
 
+			// A `tail` answers with a table, which takes a row of its own
+			// however many columns there are — so there is certainly a seam
+			// here, whatever the first two entries did.
 			await submit('tail');
-			assert.equal(await rules(), 2);
+			const three = await seams(page);
+			assert.ok(three.rows > 1, 'a table did not start a row of its own');
+			assert.equal(three.ruled, three.below, 'the rules did not fall on the seams');
+			assert.ok(three.ruled > 0, 'a second row got no rule above it');
 
 			// Dim: the pane's own hairline, not a bright line across it.
 			const colour = await page.evaluate(
-				() => getComputedStyle(document.querySelector('.repl hr.rule')).borderTopColor
+				() => getComputedStyle(document.querySelector('.repl .entry.ruled')).borderTopColor
 			);
 			assert.ok(brightness(colour) < 60, `the rule between commands is not dim: ${colour}`);
 		});
@@ -213,7 +235,9 @@ describe('the scrollback across a reload', () => {
 			assert.deepEqual(await echoes(), before.echoes, 'the scrollback did not come back');
 			assert.deepEqual(await stamps(page), before.stamps, 'the times did not come back');
 			assert.deepEqual(await app.outputs(), outputs, 'the output did not come back');
-			assert.equal(await page.locator('.repl hr.rule').count(), 1);
+			// `tail`'s table takes a row of its own, so there is one seam
+			// above it whatever the pane's width (da-5iyo).
+			assert.equal(await page.locator('.repl .entry.ruled').count(), 1);
 
 			// Restored, not re-run: `tail` printed one coffee before the
 			// reload and would print it again — but a second execution would

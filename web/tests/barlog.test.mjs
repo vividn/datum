@@ -752,15 +752,22 @@ describe('down there it is still the bar', () => {
 // seam neither renderer owns went undrawn.
 //
 // So this counts rules against rows ACROSS BOTH SURFACES, which is the
-// count no earlier assertion made — every one of them counted rows. n rows
-// have n-1 seams between them, wherever the two renderers divide them.
+// count no earlier assertion made — every one of them counted rows.
+//
+// Since da-5iyo the log is COLUMNS, which settles the count for good: the
+// row above every row of the log is a row the log draws or the bar does,
+// so EVERY cell in it is ruled, and there is no arithmetic left to get
+// wrong. In a pane, where the first row is the first row, the first row
+// is the one that is not.
 describe('the seam between the bar’s row and the log', () => {
 	/** Rows and rules, over the output section and the log together. */
 	const drawn = (page) =>
 		page.evaluate(() => ({
 			barRows: document.querySelectorAll('.prompt-bar .section.output .head').length,
 			logRows: document.querySelectorAll('.log .head').length,
-			logRules: document.querySelectorAll('.log hr.rule').length
+			logUnruled: [...document.querySelectorAll('.log .entry')].filter(
+				(el) => getComputedStyle(el).borderTopWidth === '0px'
+			).length
 		}));
 
 	test('every seam between two rows has a hairline, the bar’s own included', async () => {
@@ -772,16 +779,12 @@ describe('the seam between the bar’s row and the log', () => {
 			await dragBy(page, BAR, -900);
 			await settled(page);
 
-			const { barRows, logRows, logRules } = await drawn(page);
+			const { barRows, logRows, logUnruled } = await drawn(page);
 			assert.equal(barRows, 1, 'the bar drew no row of its own');
 			assert.equal(logRows, 2, `the log drew ${logRows} rows of three entries`);
-			// n rows, n-1 seams: the log owns every one of them, because the
-			// row above its first is the bar's.
-			assert.equal(
-				logRules,
-				barRows + logRows - 1,
-				`${barRows + logRows} rows drew ${logRules} hairlines`
-			);
+			// The log owns every seam it has, because the row above its
+			// first is the bar's: not one of its entries goes unruled.
+			assert.equal(logUnruled, 0, `${logUnruled} of the log's entries drew no hairline`);
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
@@ -798,7 +801,23 @@ describe('the seam between the bar’s row and the log', () => {
 			const pane = page.locator('.pane.repl, [data-title="repl"]').first();
 			await pane.waitFor();
 			assert.equal(await pane.locator('.head').count(), 2, 'the widget drew the wrong rows');
-			assert.equal(await pane.locator('hr.rule').count(), 1, 'the widget ruled its first row');
+			// Whatever the columns do with those two entries, the ones on
+			// the pane's first row carry no rule: there is nothing above
+			// them but the top of the pane's own body.
+			const firstRow = await pane.evaluate((el) => {
+				const cells = [...el.querySelectorAll('.entry')];
+				const top = (c) => Math.round(c.getBoundingClientRect().top);
+				const first = top(cells[0]);
+				return cells
+					.filter((c) => top(c) === first)
+					.map((c) => getComputedStyle(c).borderTopWidth);
+			});
+			assert.ok(firstRow.length > 0, 'the widget drew no entries');
+			assert.deepEqual(
+				firstRow,
+				firstRow.map(() => '0px'),
+				'the widget ruled its first row'
+			);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});

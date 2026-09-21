@@ -107,8 +107,13 @@ describe('widget options', () => {
 			await setReversed(page, true);
 			assert.deepEqual(await replEchoes(page), [...oldestFirst].reverse());
 			assert.equal(await dotted(page, 'day'), true, 'the option left the layout unmodified');
-			// An entry keeps its own order: the command, then what it answered.
-			const first = await page.locator(`${REPL} .body > *`).evaluateAll((els) => els.map((e) => e.className));
+			// An entry keeps its own order: the command, then what it
+			// answered. Inside its own cell since da-5iyo — the body's one
+			// child is the grid the entries stand in.
+			const first = await page
+				.locator(`${REPL} .body .entry`)
+				.first()
+				.evaluate((el) => [...el.children].map((e) => e.className));
 			assert.match(first[0], /head/, `the first entry opens with ${first[0]}`);
 
 			// The bar's own log is newest-first WHATEVER this widget's option

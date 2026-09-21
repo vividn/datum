@@ -62,7 +62,7 @@
 	$: raw = entry.result.stdout.trim() ? entry.result.stdout : entry.result.stderr;
 </script>
 
-<div class="head" class:capped={!!cap}>
+<div class="head" class:capped={!!cap} class:all>
 	<span class="stamp">{stampLabel(new Date(entry.ranAt), $now)}</span>
 	<!-- The stamp is a sibling of `.echo`, not a child of it: the echo's
 	     text is the command and nothing else, which is what every reader of
@@ -125,6 +125,22 @@
 		/* Not a token: the same step between `--quiet` and `--ink` the
 		   bottom bar's receipt uses (PromptBar.svelte). */
 		color: #8888aa;
+	}
+
+	/* BESIDE THE TIME WHEN IT FITS THERE, UNDER IT WHEN IT DOES NOT
+	   (da-5iyo). The history's columns are narrow enough for two on a
+	   phone, and a stamp taking 65px off the front of a 169px one left
+	   `occur brew bean=ethiopian …` breaking mid-word in the strip that
+	   was left. `flex: 1 1 auto` is what asks the question: the echo's
+	   basis is the command's own width, so a line that cannot sit beside
+	   the stamp wraps under it and takes the whole column. A command
+	   short enough is where it always was, at every width. */
+	.head.all {
+		flex-wrap: wrap;
+	}
+
+	.head.all .echo {
+		flex: 1 1 auto;
 	}
 
 	/* ONE LINE on a surface that cannot scroll. A command long enough to wrap

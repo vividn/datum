@@ -147,6 +147,21 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   `action_color` on `--show json`), fading, or a red `ERROR` that opens the
   output on a tap. UNDER the bar, below the fold, is the newest-first REPL
   (`$lib/BarLog.svelte`).
+- THE SCROLLBACK STANDS IN COLUMNS (da-5iyo, `$lib/scrollback.ts`) — vividn,
+  "the output of a single entry should be narrow enough to comfortably fit
+  2 on mobile side by side". As many entries abreast as fit at the width an
+  entry's lines WANT (270px, measured), and never fewer than two wherever
+  two clear what an entry NEEDS (160px, measured against the width it
+  starts being cut at): a 390px phone gets two, a 1280px screen four, a box
+  narrower than two columns the single column it always had. The REPL cuts
+  nothing to pay for it — it has the vertical room the bar's fixed band has
+  not, so a line too long for its column wraps and the brace drops under it
+  (`.doc.all` in Doc.svelte); a command whose answer is the CLI's own
+  printed text — a table, a drawn day, an error — takes a whole row at the
+  width it was printed for. The hairline between commands is the top edge
+  of every cell on a row past the first, so two entries side by side share
+  one rule and never stand either side of it. `tests/scrollback.test.mjs`
+  takes both measurements again against the built app.
 - THE BAR MOVES BY GESTURE ALONE — a drag anywhere on it, or a wheel over
   it. The `^` on its top rule is a HINT and not a control (`pointer-events:
   none`, `aria-hidden`): vividn, "The ^ button obscures the text… just put a

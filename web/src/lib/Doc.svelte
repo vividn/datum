@@ -102,6 +102,7 @@
 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
 <div
 	class="doc"
+	class:all
 	class:selected={isSelected($selected, doc.hid)}
 	data-hid={doc.hid}
 	on:mousedown={(e) => e.shiftKey && e.preventDefault()}
@@ -197,6 +198,38 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: pre;
+	}
+
+	/* A SURFACE WITH NO BAND TO FIT CUTS NOTHING (da-5iyo). The REPL and the
+	   sheet have the vertical room the bar's fixed band has not, so a line
+	   too long for its column wraps there instead of ellipsizing, and the
+	   brace drops under the lines rather than squeezing them. That is what
+	   lets an entry stay whole in a column narrow enough for two of them on
+	   a phone; the bar's row still clips, because a fixed-height band that
+	   wrapped would push the dashboard.
+
+	   `pre-wrap` and not plain wrapping: datum lays the info line out with
+	   runs of spaces, and a browser that collapses them has changed what
+	   the CLI printed. At a width the line already fits — the single column
+	   it has had until now — nothing about it moves. */
+	.doc.all .receipt,
+	.doc.all .info,
+	.doc.all .row {
+		overflow: visible;
+		text-overflow: clip;
+		white-space: pre-wrap;
+	}
+
+	.doc.all {
+		flex-wrap: wrap;
+	}
+
+	/* No 40% cap once it is on a line of its own: the cap is there to keep
+	   the band's info line ahead of the data, and under the lines there is
+	   nothing left for it to take. */
+	.doc.all .brace {
+		flex: 0 1 auto;
+		max-width: 100%;
 	}
 
 	.receipt {
