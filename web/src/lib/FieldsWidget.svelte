@@ -44,10 +44,21 @@
 	off the bar. The widget still runs nothing itself: the modal answers
 	with an argv and it goes out the same `run` as a press.
 
-	Press to log. Press and hold (or right-click, or the menu key) to open
-	the `-t` / `dur` bubbles first — and `note`, which fills the bar with
-	`note <field> ` and runs nothing (da-py5w): the CLI routes the bare
-	words that follow into the comment, so the person just types.
+	Press to log. HOLD — or right-click, or shift+click, or the menu key —
+	to put the field on the bar as a PILL (da-8810n), which is how the rest
+	of the page is narrowed to it: the stats widget and the tail show that
+	field, the commands widget keeps the commands that take one, and the
+	pictures outline that field's own marks. The pill is minted in the
+	field's own colour and cleared like any other pill, by its ×.
+
+	THE SAME GESTURE AGAIN, on a field already pilled, opens the `-t` /
+	`dur` bubbles it opened before da-8810n — and `note`, which fills the
+	bar with `note <field> ` and runs nothing (da-py5w): the CLI routes the
+	bare words that follow into the comment, so the person just types. vividn
+	asked for the pill on «long press … on desktop right click or shift
+	click or also long click», which is every gesture the panel had, so the
+	panel is a step behind the pill rather than beside it: nothing is lost
+	and the new thing is first.
 
 	A multi-state field asks WHICH, so its button reads `name:` and a press
 	fills the bar with that field's states in place of the fields — `< Back`
@@ -57,8 +68,8 @@
 	press on a state runs `switch <field> <state>` — plainly, with no `-t`,
 	because the list carries no bubbles — and comes back; `+` is an input,
 	and Enter on it runs the same command with a state the field has never
-	been in, which is how one is learned. A LONG press still opens the
-	panel, states and all, so the `-t` / `dur` bubbles can be set first.
+	been in, which is how one is learned. The gesture still pills the field,
+	and twice still opens the panel, states and all.
 
 	The widget never runs anything itself: it composes an argv and
 	dispatches it, and the page runs it through `run()` and echoes the
@@ -78,6 +89,7 @@
 		type FieldButton,
 		type FieldShape
 	} from './fields.js';
+	import { fieldPill, setFieldPill } from './bar.js';
 	import { promoted, type Near } from './lanes.js';
 	import { openTrack } from './trackModal.js';
 	import {
@@ -151,7 +163,7 @@
 
 	$: sideways = scrollsSideways(rows);
 	/**
-	 * The field whose long-press PANEL is open, by name — never the button
+	 * The field whose PANEL is open, by name — never the button
 	 * object, for the same reason `picked` is not (da-0n3k): `buttons` is
 	 * rebuilt from the fields store on every beat, so an `open === button`
 	 * identity check goes false the next time anything runs, and the panel
@@ -222,10 +234,10 @@
 	}
 
 	/**
-	 * The panel a LONG press opens: the `-t` / `dur` bubbles, and for a
-	 * multi-state field the states to spend them on. A plain press never
-	 * opens it — that fills the bar with the states instead (`pick`) — so
-	 * the bubbles are the whole reason it exists and are always in it.
+	 * The panel: the `-t` / `dur` bubbles, and for a multi-state field the
+	 * states to spend them on. A plain press never opens it — that fills the
+	 * bar with the states instead (`pick`) — so the bubbles are the whole
+	 * reason it exists and are always in it.
 	 */
 	function panel(button: FieldButton) {
 		adjust = {};
@@ -234,6 +246,39 @@
 
 	function close() {
 		open = null;
+	}
+
+	/**
+	 * What the HOLD gesture does — the long press, the right click, the
+	 * shift+click and the menu key, which are the four vividn named
+	 * (da-8810n).
+	 *
+	 * The field goes on the bar as a pill, in its own colour, and the page
+	 * narrows to it. On a field ALREADY pilled it opens the panel instead:
+	 * the gesture vividn gave the pill is the one the panel had, so the two
+	 * are a step apart rather than fighting over it, and the panel is still
+	 * reachable by finger, mouse and keyboard alike.
+	 */
+	function hold(button: FieldButton) {
+		if ($fieldPill === button.field) return panel(button);
+		close();
+		setFieldPill(button.field, button.color);
+	}
+
+	/**
+	 * What a button says it does, which is the one place the two gestures
+	 * are named: the press, then the hold — and, once the field is pilled,
+	 * what a second hold reaches.
+	 */
+	function titleOf(button: FieldButton, pilled: boolean): string {
+		const press =
+			button.shape.kind === 'record' ? `add ${button.field} … — fills the prompt` : 'press to log';
+		return [
+			...(button.ignored ? ['ignored'] : []),
+			press,
+			'hold to filter the page to it',
+			...(pilled ? ['hold again for when / how long'] : [])
+		].join(' · ');
 	}
 
 	/**
@@ -383,18 +428,21 @@
 		holdTimer = setTimeout(() => {
 			holdTimer = null;
 			held = true;
-			panel(button);
+			hold(button);
 		}, HOLD_MS);
 	}
 
 	// The click still fires after a long press (and after the keyboard's
 	// Enter/Space, which never sends a pointerdown at all) — swallow the one
 	// that follows a hold, and treat everything else as a short press.
-	function click(button: FieldButton) {
+	function click(button: FieldButton, event: MouseEvent) {
 		if (held) {
 			held = false;
 			return;
 		}
+		// Shift+click is the desktop hold (da-8810n) — the one of vividn's
+		// three that is not already an event of its own.
+		if (event.shiftKey) return hold(button);
 		if (open === button.field) close();
 		else press(button);
 	}
@@ -564,17 +612,26 @@
 				data-promoted={i < lead ? '' : undefined}
 			>
 				{#if button.shape.kind === 'record'}
-					<!-- Not a button: nothing runs. The line goes to the bar's prompt. -->
+					<!-- A PRESS runs nothing: the line goes to the bar's prompt. The
+					     HOLD is every field's (da-8810n) — a record is a field like
+					     any other, and only what a press MEANS is its own. -->
 					<button
 						class="record"
 						class:ignored={button.ignored}
+						class:pilled={$fieldPill === button.field}
 						role="link"
 						data-field={button.field}
 						data-ignored={button.ignored ? '' : undefined}
+						data-pilled={$fieldPill === button.field ? '' : undefined}
 						style={vars(look)}
 						{disabled}
-						title="{button.ignored ? 'ignored · ' : ''}add {button.field} … — fills the prompt"
-						on:click={() => press(button)}>{button.field}</button
+						title={titleOf(button, $fieldPill === button.field)}
+						on:pointerdown={() => down(button)}
+						on:pointerup={clearHold}
+						on:pointerleave={clearHold}
+						on:pointercancel={clearHold}
+						on:contextmenu|preventDefault={() => hold(button)}
+						on:click={(event) => click(button, event)}>{button.field}</button
 					>
 				{:else}
 					<button
@@ -582,18 +639,20 @@
 						class:on={look.fill !== null}
 						class:active={open === button.field}
 						class:ignored={button.ignored}
+						class:pilled={$fieldPill === button.field}
 						style={vars(look)}
 						{disabled}
 						data-field={button.field}
 						data-ignored={button.ignored ? '' : undefined}
+						data-pilled={$fieldPill === button.field ? '' : undefined}
 						aria-expanded={open === button.field}
-						title="{button.ignored ? 'ignored · ' : ''}press to log · hold for when / how long"
+						title={titleOf(button, $fieldPill === button.field)}
 						on:pointerdown={() => down(button)}
 						on:pointerup={clearHold}
 						on:pointerleave={clearHold}
 						on:pointercancel={clearHold}
-						on:contextmenu|preventDefault={() => panel(button)}
-						on:click={() => click(button)}
+						on:contextmenu|preventDefault={() => hold(button)}
+						on:click={(event) => click(button, event)}
 					>{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
 				{/if}
 
@@ -764,6 +823,23 @@
 
 	.widget.active {
 		box-shadow: 0 0 0 2px var(--ink-bright);
+	}
+
+	/* The field whose PILL is on the bar (da-8810n): a ring in the app's
+	   ink, so a reader can see where the pill came from and hold again on
+	   the same button for the bubbles. The same ring `.active` draws, dimmer
+	   — the panel being open is the louder of the two states and stays so —
+	   and in the ink rather than in the field's colour, because the button
+	   is already drawn in that and a ring of it would read as part of the
+	   shape. */
+	.widget.pilled:not(.active),
+	.record.pilled {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink-bright) 55%, transparent);
+	}
+
+	/* A record has no box of its own, so its ring needs one to sit on. */
+	.record.pilled {
+		border-radius: 3px;
 	}
 
 	/* An IGNORED field, drawn because `showIgnored` asked for it (da-xhio).

@@ -9,10 +9,18 @@
 
 	`settings` is the widget's state and `change` hands a new one out, so the
 	dashboard engine can save it with the layout.
+
+	A FIELD PILL on the bar overrides the field in it (da-8810n, vividn: "So
+	stats widget would filter to this field"). Overrides, and does not
+	write: the pill is a filter a reader holds for a moment and the settings
+	are what the layout keeps, so a picked field is still picked when the
+	pill clears. Its state goes with it — the pilled field has states of its
+	own, and the one picked for another field is not among them.
 -->
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { browser } from '$app/environment';
+	import { fieldPill } from './bar.js';
 	import CliOutput from './CliOutput.svelte';
 	import { run, type RunResult } from './run.js';
 	import type { FieldListing } from './fields.js';
@@ -49,9 +57,15 @@
 	let started = 0;
 	let shown = -1;
 
-	$: argv = statsArgv(settings);
+	/**
+	 * What the widget SHOWS: its settings, narrowed by a field pill.
+	 *
+	 * Not `shown`, which is this file's newest-run-on-screen counter.
+	 */
+	$: view = $fieldPill ? { ...settings, field: $fieldPill, state: undefined } : settings;
+	$: argv = statsArgv(view);
 	$: custom = typeof settings.range === 'object' ? settings.range : null;
-	$: states = statesOf(fields.find((f) => f.field === settings.field));
+	$: states = statesOf(fields.find((f) => f.field === view.field));
 	$: tiles = summary ? tilesOf(summary) : [];
 
 	// Not on mount: there is no `run` outside the browser.
@@ -128,8 +142,8 @@
 			{#each fields as { field } (field)}
 				<button
 					class="field"
-					class:on={settings.field === field}
-					aria-pressed={settings.field === field}
+					class:on={view.field === field}
+					aria-pressed={view.field === field}
 					on:click={() => set({ field, state: undefined })}>{field}</button
 				>
 			{:else}
@@ -137,13 +151,13 @@
 			{/each}
 		</div>
 		{#if states.length}
-			<div class="chips" role="group" aria-label="states of {settings.field}">
+			<div class="chips" role="group" aria-label="states of {view.field}">
 				{#each states as state (state)}
 					<button
 						class="state"
-						class:on={settings.state === state}
-						aria-pressed={settings.state === state}
-						on:click={() => set({ state: settings.state === state ? undefined : state })}
+						class:on={view.state === state}
+						aria-pressed={view.state === state}
+						on:click={() => set({ state: view.state === state ? undefined : state })}
 						>{state}</button
 					>
 				{/each}

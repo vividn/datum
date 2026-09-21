@@ -36,6 +36,7 @@ import assert from 'node:assert/strict';
 import { atEachScreen, seedLines, startApp, stopApp, withApp } from './support/app.mjs';
 import { dragBar } from './support/bar.mjs';
 import { chooser } from './support/layout.mjs';
+import { openPanel } from './support/fields.mjs';
 
 before(startApp);
 after(stopApp);
@@ -342,14 +343,15 @@ describe('on a phone-sized screen', () => {
 
 	// A PLAIN press fills the bar with the field's states in place (da-g635)
 	// — nothing floats, so there is no panel to be off the screen. The panel
-	// a LONG press opens is still one, bubbles and states together, and it is
-	// the one this asserts.
+	// the HOLD gesture opens, twice over since da-8810n (once for the field
+	// pill, once for the bubbles), is still one — bubbles and states
+	// together — and it is the one this asserts.
 	test("a field's state bubbles are on screen", async () => {
 		await withApp(async ({ page, submit }) => {
 			await submit('spec set mood --verb switch --state happy');
 			const chip = page.locator('.bar button.widget', { hasText: 'mood' });
 			await chip.waitFor();
-			await chip.click({ button: 'right' });
+			await openPanel(page, chip);
 			await assertOnScreen(page, '.bar .panel', "mood's state panel");
 		}, { viewport: PHONE });
 	});

@@ -31,7 +31,7 @@
 	export let pill: Pill;
 </script>
 
-<span class="pill {pill.kind}" class:locked={pill.locked}
+<span class="pill {pill.kind}" class:locked={pill.locked} style:--pill={pill.color}
 	>{#each sectionsOf(pill) as section, i}<button
 			type="button"
 			class="remove"
@@ -64,7 +64,10 @@
 
 	   `--pill` is that colour, and the only thing a kind sets: the fill,
 	   the ink and the locked ring are all derived from it here, so a new
-	   kind stays one line. */
+	   kind stays one line. A pill carrying its OWN colour sets the same
+	   property inline (`pill.color`, da-8810n: a field pill is drawn in the
+	   field's colour, which is data and cannot be a token), so that case
+	   costs no rule either. */
 	.pill {
 		--pill: var(--accent);
 		display: inline-flex;

@@ -58,6 +58,18 @@ export interface Pill {
 	/** A locked pill survives a successful press instead of clearing. */
 	locked?: boolean;
 	/**
+	 * The colour this pill is painted, when its KIND's is not it
+	 * (`#rrggbb`).
+	 *
+	 * One pill per field would otherwise need one CSS rule per field: a
+	 * `field` pill is drawn in the FIELD's own colour (da-8810n, vividn:
+	 * "let's color them with the field color"), which is
+	 * `fields --json`'s resolved `color` and so is data, not a token.
+	 * `Pill.svelte` sets `--pill` from it and derives the fill, the ink and
+	 * the locked ring from that as it does for every other pill.
+	 */
+	color?: string;
+	/**
 	 * How the pill is DRAWN, when that is not its `text`: one pill divided
 	 * into sections, each pressable on its own (da-ui4i — the time cursor's
 	 * date and its time). Absent, the pill is one section saying `text`.
@@ -107,6 +119,42 @@ export const dropSection = (id: string, index: number): void =>
 
 export const toggleLockPill = (id: string): void =>
 	pills.update((all) => all.map((p) => (p.id === id ? { ...p, locked: !p.locked } : p)));
+
+// ---- the FIELD pill (da-8810n) -----------------------------------------
+//
+// vividn, 2026-09-21: «Create a field pill for this field and let's filter
+// widgets accordingly. So stats widget would filter to this field. tail
+// widget too. command widget would filter to commands that take fields.»
+//
+// ONE field at a time, as the time cursor holds one instant: the id is
+// fixed, so minting on a second field REPLACES the first rather than
+// asking every reader what two of them would mean. Its `text` is the bare
+// field name, which is the word the CLI's field-first line takes — where
+// that word lands in an argv, and which commands may have it at all, is
+// `fits` and `withPills` ($lib/commands.ts, $lib/selection.ts).
+//
+// UNLOCKED, because vividn said it behaves like the others: a successful
+// press spends it, so running a command drops the filter (`clearUnlockedPills`).
+
+/** The one field pill's id. */
+export const FIELD_ID = 'field';
+
+/**
+ * The field the bar is narrowed to, or `null`. Every widget that CAN
+ * narrow reads this one store — the stats widget, the tail table, and the
+ * pictures, which outline that field's own marks instead.
+ */
+export const fieldPill = derived(pills, (all) => all.find((p) => p.kind === 'field')?.text ?? null);
+
+/**
+ * Mint the field pill — `null` takes it away. `color` is the field's own
+ * resolved colour, which is what the pill is painted in.
+ */
+export const setFieldPill = (field: string | null, color?: string): void =>
+	pills.update((all) => [
+		...all.filter((p) => p.kind !== 'field'),
+		...(field ? [{ id: FIELD_ID, kind: 'field', text: field, ...(color ? { color } : {}) }] : [])
+	]);
 
 /**
  * The pills a press has just spent, on their way out (da-xfa4).

@@ -1,5 +1,6 @@
-// The long-press panel's bubbles, and the states list they must not
-// follow a press into — the describe below says why.
+// The HOLD panel's bubbles, and the states list they must not follow a
+// press into — the describe below says why. (The gesture opens it on a
+// field already pilled since da-8810n; `openPanel` is that gesture.)
 //
 // The six: `fields` (the pure logic, and the widget as it is drawn),
 // `fields-press` (what a press runs), `fields-fit` (at a screen's size,
@@ -22,7 +23,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
-import { MOOD, seed } from './support/fields.mjs';
+import { MOOD, openPanel, seed } from './support/fields.mjs';
 
 describe('the panel\'s bubbles and the states list', () => {
 	before(startApp);
@@ -34,9 +35,9 @@ describe('the panel\'s bubbles and the states list', () => {
 	// nothing on screen saying so (da-vlc0, a regression of da-g635). The list
 	// draws no bubbles, so it must carry none.
 
-	/** Long-press `mood:` and set `when` to -15m, then dismiss the panel. */
+	/** Open `mood:`'s panel and set `when` to -15m, then dismiss it. */
 	async function setThenDismiss(page) {
-		await page.locator('.bar [data-field="mood"]').click({ button: 'right' });
+		await openPanel(page, 'mood');
 		await page.locator('.bar .panel .bubbles button', { hasText: '-15m' }).click();
 		await page.keyboard.press('Escape');
 		await page.locator('.bar .panel').waitFor({ state: 'detached' });
@@ -97,7 +98,7 @@ describe('the panel\'s bubbles and the states list', () => {
 			const { page } = app;
 			await seed(app, MOOD, 'mood');
 
-			await page.locator('.bar [data-field="mood"]').click({ button: 'right' });
+			await openPanel(page, 'mood');
 			await page.locator('.bar .panel .bubbles button', { hasText: '-15m' }).click();
 
 			const before = (await app.echoes()).length;
@@ -125,7 +126,7 @@ describe('the panel\'s bubbles and the states list', () => {
 			await seed(app, MOOD, 'mood');
 			await app.idle();
 
-			await page.locator('.bar [data-field="mood"]').click({ button: 'right' });
+			await openPanel(page, 'mood');
 			await page.locator('.bar .panel .bubbles button', { hasText: '-15m' }).click();
 
 			// A beat with nothing near the bar: a read-only command through the

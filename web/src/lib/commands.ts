@@ -57,7 +57,8 @@ const TAPPED = ['retime', 'delete', 'get', 'history'];
  * reaches for them.
  *
  * `note` is NOT here (vividn, 2026-09-15 19:08): it lives in a field's
- * long-press menu (da-py5w), where the field it annotates already is.
+ * hold panel (da-py5w, reached through its field pill since da-8810n),
+ * where the field it annotates already is.
  */
 export const COMMANDS: CommandButton[] = [
 	{ name: 'undo', label: 'Undo', press: 'run' },
@@ -219,6 +220,17 @@ export interface Takes {
 	id: false | 'one' | 'list';
 	/** `-t` is among its flags or in a usage line. */
 	time: boolean;
+	/**
+	 * WHICH POSITIONAL its FIELD argument is, or `false` when it names no
+	 * field (da-8810n): `1` for `tail [FIELD]` and `occur <FIELD>`, `2` for
+	 * `spec show <FIELD>`, where a subcommand comes first.
+	 *
+	 * The slot and not a flag, because a field pill's word has to land IN
+	 * it: datum's line is field-first, so a field appended to an argv that
+	 * already carries one is read as that field's STATE — silently, as data
+	 * (`fieldSlotOpen` in $lib/selection.ts is the other half of this).
+	 */
+	field: false | 1 | 2;
 }
 
 /** Commands by name AND by alias (`end` is `stop`'s). */
@@ -227,11 +239,31 @@ export type Grammar = Map<string, Takes>;
 /** An id right after the command's name, and a `[,` after it when it takes a list. */
 const ID_ARG = /^datum \S+ [<[](?:ID_OR_SLUG|SLUG|HID)(\[,)?/;
 
+/**
+ * A FIELD as the command's first positional, with at most a SUBCOMMAND
+ * before it: `datum tail [FIELD]`, `datum spec show <FIELD>`.
+ *
+ * The middle word must be a bare one, so `datum stats <FIELD[:STATE]>`
+ * reads as the field at slot 1 rather than as a subcommand. A field behind
+ * a FLAG — `datum grep <PATTERN>... [-f FIELD]`, `retime --field F` — is
+ * not this: a bare word put in its place would be a second pattern, not a
+ * field, so those commands take no field pill.
+ */
+const FIELD_ARG = /^datum \S+(?: ([a-z][\w-]*))? [<[]FIELD/;
+
 export function takesOf(entry: GrammarEntry): Takes {
 	const ids = entry.usage.map((u) => ID_ARG.exec(u.trim())).filter((m) => m !== null);
 	const id = ids.some((m) => m[1]) ? 'list' : ids.length ? 'one' : false;
 	const time = entry.flags.some((f) => f.short === 't') || entry.usage.some((u) => /[\s[]-t[\s\]]/.test(u));
-	return { id, time };
+	// The shallowest slot any usage line puts it in: `meta <FIELD> <TEXT>`
+	// and `meta show <FIELD>` are one command, and 1 is the one a bare
+	// `meta` leaves open.
+	const slots = entry.usage
+		.map((u) => FIELD_ARG.exec(u.trim()))
+		.filter((m) => m !== null)
+		.map((m): 1 | 2 => (m[1] === undefined ? 1 : 2));
+	const field = slots.length ? (Math.min(...slots) as 1 | 2) : false;
+	return { id, time, field };
 }
 
 export function grammarOf(entries: GrammarEntry[]): Grammar {
@@ -244,17 +276,21 @@ export const hidsOf = (pill: Pill): string[] => pill.text.split(',').filter(Bool
 /**
  * Can a command whose grammar is `takes` spend this pill? A `time` pill
  * wants `-t`; an `hid` pill wants an id, and more than one hid wants a
- * command that takes several. A kind this does not know is let through.
+ * command that takes several; a `field` pill wants a command that names a
+ * field. A kind this does not know is let through.
  *
  * A command the grammar does not know — a field-first line, an alias, or no
- * grammar at all — takes every pill but an hid: `coffee <hid>` would log
- * the hid as coffee's STATE (vremya, review 1498). The time cursor it
+ * grammar at all — takes every pill but an hid and a FIELD: `coffee <hid>`
+ * would log the hid as coffee's STATE (vremya, review 1498), and `coffee`
+ * typed under a `mood` pill would log `mood` as coffee's state the same
+ * way — the same shape, so the same refusal (da-8810n). The time cursor it
  * takes, as it always has.
  */
 export function fits(takes: Takes | undefined, pill: Pill): boolean {
-	if (!takes) return pill.kind !== 'hid';
+	if (!takes) return pill.kind !== 'hid' && pill.kind !== 'field';
 	if (pill.kind === 'time') return takes.time;
 	if (pill.kind === 'hid') return hidsOf(pill).length > 1 ? takes.id === 'list' : !!takes.id;
+	if (pill.kind === 'field') return takes.field !== false;
 	return true;
 }
 

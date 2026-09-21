@@ -16,6 +16,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { choose, chooser, exactly } from './support/layout.mjs';
+import { openPanel } from './support/fields.mjs';
 
 before(startApp);
 after(stopApp);
@@ -199,7 +200,7 @@ describe('the widget and the bar are two views of one command line', () => {
 describe('a focus nobody clicked', () => {
 	/** Press a tracked field's `note`, which prefills the command line and runs nothing. */
 	async function pressNote(page) {
-		await page.locator('.bar [data-field="coffee"]').click({ button: 'right' });
+		await openPanel(page, 'coffee');
 		const note = page.locator('.bar .panel button.note');
 		await note.waitFor();
 		await note.click();

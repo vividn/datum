@@ -22,7 +22,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { BLUE, CLEAR, FIXTURE, type, untilFieldStyle } from './support/fields.mjs';
+import { BLUE, CLEAR, FIXTURE, openPanel, type, untilFieldStyle } from './support/fields.mjs';
 
 describe('a press', () => {
 	before(startApp);
@@ -143,7 +143,7 @@ describe('a press', () => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
 
-			await page.locator('.bar [data-field="coffee"]').click({ button: 'right' });
+			await openPanel(page, 'coffee');
 			const note = page.locator('.bar .panel button.note');
 			await note.waitFor();
 

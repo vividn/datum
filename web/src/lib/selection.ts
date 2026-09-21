@@ -10,7 +10,7 @@
 // here is pure; `select` in $lib/bar.ts applies it to the store.
 
 import type { Pill, PillSection } from './bar.js';
-import { fits, type Grammar } from './commands.js';
+import { fits, type Grammar, type Takes } from './commands.js';
 import { shellSplit } from './shellSplit.js';
 
 /** What a tap does to the selection. */
@@ -74,15 +74,41 @@ export const hidPill = (hids: string[], locked = false): Pill | null =>
 	hids.length ? { id: 'hid', kind: 'hid', text: hids.join(','), locked, sections: drawn(hids) } : null;
 
 /**
+ * Whether `argv`'s FIELD slot is still empty, and so a field pill's word
+ * may fill it (da-8810n).
+ *
+ * `takes.field` is which positional the command's field is — 1 for `tail
+ * [FIELD]`, 2 for `spec show <FIELD>` — so the slot is open exactly when
+ * the argv is that many words short of it. THIS IS WHERE THE SILENT ONE
+ * WOULD BE: datum's line is field-first, so a press from the fields widget
+ * already carries its own field (`occur coffee`), and a second field
+ * appended to it is read as coffee's STATE — no error, just a wrong row. A
+ * refused pill stays loaded, as any other pill a command cannot take does.
+ *
+ * CONSERVATIVE IN BOTH DIRECTIONS, on purpose (canary deepseek, PR #62): a
+ * line carrying a flag — `tail -n 20` — has words this rule cannot tell
+ * apart from a field, so the pill is refused there too and the reader types
+ * the field. Placing it precisely would mean knowing which flags take a
+ * VALUE, and `datum help --json` gives each flag's names and not its arity;
+ * guessing wrong would put a second field into `tail -n 20 coffee`. A
+ * refusal is VISIBLE — the pill stays on the bar — where a misplacement is
+ * a wrong row, so this is the side to err on until the grammar says more.
+ */
+const fieldSlotOpen = (takes: Takes | undefined, argv: string[]): boolean =>
+	!!takes && takes.field !== false && argv.length === takes.field;
+
+/**
  * The argv a press runs with the pills, and the pills it spent.
  *
  * A command gets only the pills its grammar takes — the rest stay loaded
  * for the next one. A first word the grammar does not know (a field-first
- * line, an alias, or no grammar yet) gets every pill but the hid (`fits`).
- * The hids go right after the command's name, where every id-taking usage
- * line has them (`retime <id> -5` parses, `retime -5 <id>` does not),
- * several as ONE comma-joined word (`update A B` takes B as a state); the
- * other pills after the words.
+ * line, an alias, or no grammar yet) gets every pill but the hid and the
+ * field (`fits`). The hids go right after the command's name, where every
+ * id-taking usage line has them (`retime <id> -5` parses, `retime -5 <id>`
+ * does not), several as ONE comma-joined word (`update A B` takes B as a
+ * state); a FIELD goes at the end of the command's own words, which is its
+ * positional slot; the other pills after that, since `stats -t 09:00
+ * coffee` is not the command `stats coffee --today` is.
  */
 export function withPills(
 	grammar: Grammar | null,
@@ -90,9 +116,15 @@ export function withPills(
 	pills: Pill[]
 ): { argv: string[]; used: Pill[] } {
 	const takes = argv.length ? grammar?.get(argv[0]) : undefined;
-	const used = pills.filter((p) => fits(takes, p));
+	const used = pills.filter(
+		(p) => fits(takes, p) && (p.kind !== 'field' || fieldSlotOpen(takes, argv))
+	);
 	const hid = used.find((p) => p.kind === 'hid');
+	const field = used.find((p) => p.kind === 'field');
 	const ids = hid ? [hid.text] : [];
-	const rest = used.filter((p) => p !== hid).flatMap((p) => shellSplit(p.text));
-	return { argv: [...argv.slice(0, 1), ...ids, ...argv.slice(1), ...rest], used };
+	const rest = used.filter((p) => p !== hid && p !== field).flatMap((p) => shellSplit(p.text));
+	return {
+		argv: [...argv.slice(0, 1), ...ids, ...argv.slice(1), ...(field ? [field.text] : []), ...rest],
+		used
+	};
 }

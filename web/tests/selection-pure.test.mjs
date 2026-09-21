@@ -41,12 +41,21 @@ const GRAMMAR = grammarOf([
 	entry('undo', ['datum undo [ID_OR_SLUG] [--to-version N]']),
 	entry('flag', ['datum flag <FIELD> [COMMENT...]']),
 	entry('reparse', ['datum reparse <HID>... [--fix]']),
-	entry('conflicts', ['datum conflicts resolve <HID> (--take-local | --take-remote)'])
+	entry('conflicts', ['datum conflicts resolve <HID> (--take-local | --take-remote)']),
+	// The field pill's own cases (da-8810n): a field at slot 1, a field
+	// behind a SUBCOMMAND at slot 2, a field behind a FLAG (not a slot at
+	// all), and `stats`, whose `<FIELD[:STATE]>` must not read as one.
+	entry('stats', ['datum stats <FIELD[:STATE]> [SLICE] [--since TIME]']),
+	entry('spec', ['datum spec show <FIELD> [--text]', 'datum spec list [--tag T]']),
+	entry('grep', ['datum grep <PATTERN>... [-f FIELD]']),
+	entry('count', ['datum count [FIELD] [--group-by KEY]'])
 ]);
 
 const time = { id: 'c', kind: 'time', text: '-t 14:30' };
 const one = hidPill(['abcde12345xy']);
 const two = hidPill(['abcde12345xy', 'fghij']);
+/** The field pill a hold on `mood` mints (da-8810n): the bare field name. */
+const mood = { id: 'field', kind: 'field', text: 'mood', color: '#dc27c0' };
 
 describe('what the grammar says a command takes', () => {
 	test('an id right after the name — one, or a comma list', () => {
@@ -68,8 +77,21 @@ describe('what the grammar says a command takes', () => {
 	test('takesOf reads one entry', () => {
 		assert.deepEqual(takesOf(entry('history', ['datum history <ID_OR_SLUG> [--version N | --diff A B]'])), {
 			id: 'one',
-			time: false
+			time: false,
+			field: false
 		});
+	});
+
+	// da-8810n. The SLOT, not a boolean: a field pill's word has to land in
+	// the positional the command keeps for it, and `spec show <FIELD>` keeps
+	// the second.
+	test('a FIELD is the positional it sits at — 1, or 2 behind a subcommand', () => {
+		const field = (name) => GRAMMAR.get(name).field;
+		assert.deepEqual(['occur', 'end', 'tail', 'flag', 'stats', 'count'].map(field), [1, 1, 1, 1, 1, 1]);
+		assert.equal(field('spec'), 2, 'the field is behind `show`');
+		// Not a positional at all: a bare word in `grep`'s place is a second
+		// PATTERN, and `get`/`now` name no field.
+		assert.deepEqual(['grep', 'get', 'now', 'delete'].map(field), [false, false, false, false]);
 	});
 });
 
@@ -89,6 +111,49 @@ describe('what a press runs with the pills', () => {
 	// hids are one comma-joined word, never words of their own.
 	test('several hids are ONE word, joined by commas', () => {
 		assert.deepEqual(withPills(GRAMMAR, ['update', 'note=x'], [two]).argv, ['update', 'abcde12345xy,fghij', 'note=x']);
+	});
+
+	// da-8810n. The field goes in the command's OWN field slot — after
+	// `spec show`, not after `spec` — and BEFORE the other pills, since
+	// `tail -t 14:30 mood` is not the command `tail mood -t 14:30` is.
+	test('a field pill fills the field slot, wherever that is, ahead of the other pills', () => {
+		assert.deepEqual(withPills(GRAMMAR, ['tail'], [mood]).argv, ['tail', 'mood']);
+		assert.deepEqual(withPills(GRAMMAR, ['spec', 'show'], [mood]).argv, ['spec', 'show', 'mood']);
+		assert.deepEqual(withPills(GRAMMAR, ['stats'], [mood]).argv, ['stats', 'mood']);
+		assert.deepEqual(withPills(GRAMMAR, ['tail'], [mood, time]).argv, ['tail', 'mood', '-t', '14:30']);
+	});
+
+	// THE SILENT ONE. datum's line is field-first, so `occur coffee` with a
+	// `mood` pill on the bar would log `mood` as coffee's STATE — a wrong
+	// row, not an error. The slot is taken, so the pill is refused and stays.
+	test('a command that already names a field does not get a second one', () => {
+		const { argv, used } = withPills(GRAMMAR, ['occur', 'coffee'], [mood, time]);
+		assert.deepEqual(argv, ['occur', 'coffee', '-t', '14:30']);
+		assert.deepEqual(used, [time], 'the field pill was spent on a filled slot');
+		assert.deepEqual(withPills(GRAMMAR, ['spec', 'show', 'coffee'], [mood]).argv, [
+			'spec',
+			'show',
+			'coffee'
+		]);
+	});
+
+	// And refused on a line with a FLAG in it, where the slot rule cannot
+	// tell a flag's value from a field: `datum help --json` gives no flag
+	// arity, so placing one would risk `tail -n 20 coffee` — two fields.
+	// The refusal is visible (the pill stays on the bar); a misplacement
+	// would be a wrong row. Canary deepseek raised it on PR #62.
+	test('and refused on a line carrying a flag, which the slot rule cannot read', () => {
+		const { argv, used } = withPills(GRAMMAR, ['tail', '-n', '20'], [mood]);
+		assert.deepEqual(argv, ['tail', '-n', '20']);
+		assert.deepEqual(used, []);
+	});
+
+	// The same refusal the hid has (review 1498), for the same reason.
+	test('a first word the grammar does not know gets no field pill either', () => {
+		const { argv, used } = withPills(GRAMMAR, ['coffee'], [mood, time]);
+		assert.deepEqual(argv, ['coffee', '-t', '14:30']);
+		assert.deepEqual(used, [time]);
+		assert.deepEqual(withPills(null, ['tail'], [mood]).argv, ['tail']);
 	});
 
 	test('a pill the command does not take is not given, and not spent', () => {
@@ -141,6 +206,25 @@ describe('which commands are active under the pills', () => {
 		const names = active([time]);
 		for (const n of ['occur', 'end', 'retime', 'tail']) assert.ok(names.includes(n), n);
 		for (const n of ['now', 'get', 'delete', 'undo']) assert.ok(!names.includes(n), n);
+	});
+
+	// da-8810n, and the trap the bead names: `fits` FAILS OPEN, so a kind it
+	// has not been taught leaves every command visible and the filter
+	// silently does nothing. What is held here is the HIDING.
+	test('a field pill: what names a field — and `spec`, which the spec editor is reached by', () => {
+		const names = active([mood]);
+		for (const n of ['occur', 'end', 'tail', 'flag', 'stats', 'count', 'spec'])
+			assert.ok(names.includes(n), `${n} takes a field and was hidden`);
+		for (const n of ['get', 'now', 'delete', 'update', 'retime', 'grep', 'conflicts'])
+			assert.ok(!names.includes(n), `${n} takes no field and was not hidden`);
+	});
+
+	test('a field pill and a -t pill compose: both filters apply', () => {
+		const names = active([mood, time]);
+		for (const n of ['occur', 'end', 'tail']) assert.ok(names.includes(n), n);
+		// `flag` names a field and takes no -t; `retime` takes -t and names
+		// no field. Each pill hides the other's.
+		for (const n of ['flag', 'retime']) assert.ok(!names.includes(n), n);
 	});
 });
 

@@ -44,11 +44,19 @@ export interface TailRow {
 export interface TailPage {
 	count?: number;
 	before?: string;
+	/**
+	 * Only this field's rows — `datum tail [FIELD]`, its first positional
+	 * (da-8810n). What the bar's field pill narrows the pane to; absent is
+	 * every field, which is what `tail` prints on its own.
+	 */
+	field?: string;
 }
 
 /** The listing, oldest first, the way `tail` prints. Rejects on a failed command. */
 export async function tailListing(page: TailPage = {}): Promise<{ rows: TailRow[]; columns: TailColumn[] }> {
-	const argv = ['tail', '--json'];
+	// The field FIRST: it is the command's positional, and a flag between
+	// `tail` and it would make it the flag's value.
+	const argv = ['tail', ...(page.field ? [page.field] : []), '--json'];
 	if (page.count !== undefined) argv.push('-n', String(page.count));
 	if (page.before !== undefined) argv.push('-t', page.before);
 	const result = await run(argv);

@@ -10,6 +10,7 @@
 // not come along (da-8jb8): inline, it is the browser's own tooltip, drawn
 // over the page's, so `inlineSvg` moves its text onto the mark.
 
+import { fieldPill } from './bar.js';
 import { clockLabel } from './clock.js';
 import { pointAt, pointed, setCursor, type Cursor } from './cursor.js';
 import { readLanes } from './lanes.js';
@@ -329,6 +330,29 @@ export function inlineSvg(text: string): SVGSVGElement | null {
 	return document.importNode(svg, true);
 }
 
+/**
+ * A FIELD PILL brought out in the picture (da-8810n).
+ *
+ * vividn, on what a view that cannot filter should do instead: "maybe a
+ * highlight outline, so that all the occurences or data of that field is
+ * brought out a little bit. nothing too intense, it must still be possible
+ * to see all the other data well." So it is an outline around the marks
+ * THAT field drew, and nothing at all is done to the others: no dimming,
+ * no reordering, no second colour — a reader of a narrowed dayview still
+ * reads the whole day.
+ *
+ * `data-pilled` on the CLI's own `.field[data-field]` groups, and the halo
+ * is CSS (`CliOutput.svelte`). No geometry is invented and no field name is
+ * guessed: the group already says which field it is, exactly as
+ * $lib/lanes.ts reads it.
+ */
+function highlight(svg: SVGSVGElement | null, field: string | null): void {
+	svg?.querySelectorAll('.field[data-pilled]').forEach((g) => g.removeAttribute('data-pilled'));
+	if (!svg || field === null) return;
+	for (const g of svg.querySelectorAll(`.field[data-field="${CSS.escape(field)}"]`))
+		g.setAttribute('data-pilled', '');
+}
+
 let tips = 0;
 
 /** How far a press may travel and still be a click, in pixels: past it, it was a drag or a scroll. */
@@ -405,9 +429,12 @@ export function picture(node: HTMLElement, text: string) {
 		// A redraw replaces every mark; the keyboard keeps its place.
 		(drawn[focused] as SVGElement | undefined)?.focus();
 		drawCursor(svg, sel);
+		highlight(svg, pilled);
 	}
 
 	let sel: Cursor | null = null;
+	/** The field the bar's pill names, as the last change left it. */
+	let pilled: string | null = null;
 	let down = { x: NaN, y: NaN };
 	const press = (e: PointerEvent) => (down = { x: e.clientX, y: e.clientY });
 	const click = (e: MouseEvent) => {
@@ -462,11 +489,19 @@ export function picture(node: HTMLElement, text: string) {
 		sel = c ?? null;
 		drawCursor(node.querySelector('svg'), sel);
 	});
+	// Marked on the picture already drawn, not by redrawing it: a pill is
+	// not a new command, and asking datum for the day again to outline one
+	// of its fields would be a process per gesture.
+	const unpilled = fieldPill.subscribe((field) => {
+		pilled = field;
+		highlight(node.querySelector('svg'), pilled);
+	});
 	return {
 		update: draw,
 		destroy: () => {
 			document.removeEventListener('pointerdown', away);
 			unsubscribe();
+			unpilled();
 		}
 	};
 }

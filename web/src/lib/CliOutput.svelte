@@ -8,6 +8,10 @@
 	wider than its pane scrolls sideways inside it instead — and only then:
 	the block is as wide as its longest line and no wider.
 
+	A field pill on the bar outlines that field's own marks in whatever
+	picture is on screen (da-8810n): the group datum named is marked
+	`data-pilled` and the halo below is the whole of it.
+
 	`datum dayview` is the exception that proves the pane is rendering CLI
 	output faithfully: its stdout is an SVG document, so it is shown as a
 	picture. Inline, so its marks are elements a pointer, a finger and the
@@ -96,6 +100,22 @@
 	   passes through them to the mark beneath. */
 	.picture :global(line) {
 		pointer-events: none;
+	}
+
+	/* A FIELD PILL on the bar brings that field's marks out (da-8810n,
+	   `highlight` in $lib/hover.ts). vividn: "maybe a highlight outline, so
+	   that all the occurences or data of that field is brought out a little
+	   bit. nothing too intense, it must still be possible to see all the
+	   other data well."
+
+	   A halo, so it works on every shape the CLI draws — a 2px dot, a block
+	   half a pixel wide, the now strip's chip — without the browser inventing
+	   any geometry of its own. Two passes of one shadow rather than one wide
+	   one: a single 2px blur around a 1px dot is a smudge, while two 1px
+	   passes read as an edge. Nothing is done to the other fields at all:
+	   whatever is not pilled is drawn exactly as datum drew it. */
+	.picture :global(.field[data-pilled]) {
+		filter: drop-shadow(0 0 1px var(--ink-bright)) drop-shadow(0 0 1px var(--ink-bright));
 	}
 
 	/* Fixed, so a band that clips its picture does not clip the label. */

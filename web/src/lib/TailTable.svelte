@@ -43,6 +43,11 @@
 	than one line, so a pane full of long states overflows and scrolls —
 	never a gap.
 
+	A FIELD PILL on the bar narrows the listing to that field (da-8810n,
+	vividn: "tail widget too") — `tail <field>`, its own first positional, and
+	the rows on screen are dropped when it changes, because they are another
+	field's.
+
 	And the columns, when the pane is too narrow for all of them: `hid`
 	goes first, then `_n` (da-kk0d) — the two a row is also reached by
 	(a tap on it), and the two that broke `field` and `state` mid-word on
@@ -56,7 +61,7 @@
 	import { onDestroy, tick } from 'svelte';
 	import { ansiSpans } from './ansi.js';
 	import AnsiText from './AnsiText.svelte';
-	import { select, selected } from './bar.js';
+	import { fieldPill, select, selected } from './bar.js';
 	import { isSelected } from './selection.js';
 	import { tapped } from './tap.js';
 	import type { PaneBox } from './panes.js';
@@ -110,6 +115,13 @@
 	/** Where the widget itself last scrolled to: the event that reports it is not the reader's. */
 	let own: number | null = null;
 
+	/**
+	 * The field the listing is narrowed to — the bar's field pill (da-8810n)
+	 * — or null for every field. Read inside `refresh` and `page`, so both
+	 * the screen and the pages above it are of the same field.
+	 */
+	let field: string | null = null;
+
 	/** Rows landed below the reader's view (or the live end was let go). */
 	let unseen = false;
 	/** The page above came back with nothing new: the listing's beginning. */
@@ -150,6 +162,27 @@
 	// header. A new box asks again at the same count: its width rewraps.
 	$: if (n !== null && box) void refresh(Math.max(1, n), epoch);
 	$: visible = n === 0 ? [] : rows;
+
+	/**
+	 * A new field is a new listing: the rows held are another field's, so
+	 * they go, and the next `refresh` takes the pinned branch and asks
+	 * afresh. The counts that were settled against the old rows go with
+	 * them — a narrowed listing wraps differently and is measured again.
+	 */
+	$: narrow($fieldPill);
+
+	function narrow(next: string | null): void {
+		if (next === field) return;
+		field = next;
+		rows = [];
+		exhausted = false;
+		unseen = false;
+		extra = 0;
+		least = 0;
+		generation++;
+		drawn = { box, epoch, ...unsettled, slack: Infinity };
+		if (n !== null) void refresh(Math.max(1, n), epoch, true);
+	}
 
 	/**
 	 * How many rows `box` holds: the header row, then rows of the one-line
@@ -324,7 +357,7 @@
 		const started_at = ++started;
 		let table: { rows: TailRow[]; columns: TailColumn[] };
 		try {
-			table = await tailListing({ count });
+			table = await tailListing({ count, ...(field ? { field } : {}) });
 		} catch (e) {
 			if (started_at < shown) return;
 			shown = started_at;
@@ -389,7 +422,7 @@
 		try {
 			// One more than a page: the bound is inclusive, so the oldest row
 			// comes back with the page above it and is dropped again by hid.
-			const table = await tailListing({ count: n + 1, before: oldest.time });
+			const table = await tailListing({ count: n + 1, before: oldest.time, ...(field ? { field } : {}) });
 			if (of !== generation) return;
 			const held = new Set(rows.map((row) => row.hid));
 			const fresh = toShown(table).filter((row) => !held.has(row.hid));

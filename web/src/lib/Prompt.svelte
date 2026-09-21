@@ -247,7 +247,7 @@
 			     into. A different class for a different thing, so a reader of
 			     `.pill` — a test included — is never handed one. -->
 			{#each $spent as pill (pill.id)}
-				<span class="spent {pill.kind}">{pill.text}</span>
+				<span class="spent {pill.kind}" style:--pill={pill.color}>{pill.text}</span>
 			{/each}
 		</span>
 		</span>

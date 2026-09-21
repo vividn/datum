@@ -14,6 +14,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, activeTab, addTab, pane, swipeOver } from './support/layout.mjs';
+import { openPanel } from './support/fields.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -159,7 +160,7 @@ describe('a tab behind takes no focus and no key', () => {
 
 			/** Press `note` on coffee, clear the line, and say where the caret went. */
 			const note = async () => {
-				await page.locator('.bar [data-field="coffee"]').click({ button: 'right' });
+				await openPanel(page, 'coffee');
 				await page.locator('.bar .panel button.note').click();
 				await page.waitForFunction(() => document.activeElement?.value === 'note coffee ');
 				const where = await page.evaluate(() =>
