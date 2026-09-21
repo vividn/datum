@@ -36,6 +36,12 @@
 	 * too. A new `spec` is a new command, and runs once again.
 	 */
 	export let guard = false;
+	/**
+	 * The body's type, as a scale on the pane's 0.85rem (da-hkjp). The tail
+	 * kind declares it as an option and the registry resolves the name to
+	 * this number; every other CLI pane is 1.
+	 */
+	export let scale = 1;
 
 	let result: RunResult | null = null;
 	/** The argv on screen, as its words. */
@@ -166,7 +172,7 @@
 	frame's to draw (da-ndjo). Its default fills the unframed pane's h2,
 	which is where `spec.title` is still wanted.
 -->
-<Pane title={spec.title} ownTitle={!!$$slots.title} bind:body>
+<Pane title={spec.title} ownTitle={!!$$slots.title} {scale} bind:body>
 	<slot name="title" slot="title">{spec.title}</slot>
 	{#if manual}
 		<p class="quiet">

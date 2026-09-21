@@ -400,8 +400,10 @@ describe('the nowview steps stay off the picture', () => {
 				// chips behind the CLI's `--labels`, which nothing here passes.
 				assert.equal(await now.locator('svg.svg .state-label').count(), 0, 'the webview asks for no labels');
 
-				await pane(page, 'fields').locator('[role="tab"]', { hasText: 'nowview' }).click();
-				const where = await beside(page, `section[data-pane="fields"]`);
+				// The full window stands BESIDE the fields widget now rather
+				// than behind a tab of it (da-hkjp), so there is nothing to
+				// tap: it is already drawn.
+				const where = await beside(page, `section[data-pane="nowview"]`);
 				assert.equal(where.far, '-30m');
 				assert.deepEqual(where.wrong, []);
 				assert.deepEqual(app.errors, []);
@@ -410,13 +412,17 @@ describe('the nowview steps stay off the picture', () => {
 		);
 	});
 
+	// The tab stack is the phone's `day` tree (`[tail, nowview, custom]`)
+	// rather than `mobile`, whose row 3 stopped being tabs (da-hkjp). What
+	// is under test is a pan that begins on a step inside a STACK, so any
+	// shipped stack holding a nowview answers it.
 	test('a tap on a step fires it; a pan that begins on one neither fires it nor moves the tab', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				const fields = pane(page, 'fields');
+				const fields = pane(page, 'side');
 				await fields.locator('[role="tab"]', { hasText: 'nowview' }).click();
-				await beside(page, 'section[data-pane="fields"]');
+				await beside(page, 'section[data-pane="side"]');
 				await app.spyOnRunner();
 				/** Every `--history` a nowview was asked for; the snapshot beside it asks too. */
 				const histories = () =>
@@ -428,17 +434,17 @@ describe('the nowview steps stay off the picture', () => {
 				await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'nowview' && a.includes('45m')));
 
 				// Now 60m is the step: a pan from it either way asks for nothing.
-				await beside(page, 'section[data-pane="fields"]');
+				await beside(page, 'section[data-pane="side"]');
 				const box = await step.boundingBox();
 				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, 120, 0);
 				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, -120, 0);
 				await settled(page);
 				await app.idle();
-				assert.equal(await activeTab(page, 'fields'), 'nowview', 'a pan on a step moved the tab');
+				assert.equal(await activeTab(page, 'side'), 'nowview', 'a pan on a step moved the tab');
 				assert.ok(!(await histories()).includes('60m'), `a pan fired the step: ${await histories()}`);
 				assert.deepEqual(app.errors, []);
 			},
-			{ ...TOUCH, viewport: { width: 390, height: 664 }, home: null }
+			{ ...TOUCH, viewport: { width: 390, height: 664 } }
 		);
 	});
 

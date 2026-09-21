@@ -1,12 +1,20 @@
-// `mobile` (da-shzs): the layout a phone opens first.
+// `mobile` (da-shzs, da-hkjp): the layout a phone opens first.
 //
 // vividn, 2026-09-17: «a layout "mobile" that is the default one loaded when
 // the site is opened on a phone» — dayview / tail | a tiny nowview /
-// [fields, nowview] / commands, over the app's own bottom bar. So this file
+// fields + nowview / commands, over the app's own bottom bar. So this file
 // holds the tree, that every pane of it is on the screen at a phone's
 // sizes, that the two taps of a log work inside it, and that only a FRESH
 // phone gets it: a device with an open list keeps it, and a desktop still
 // opens `day`.
+//
+// vividn, 2026-09-21, changed three things about it (da-hkjp): the strip
+// shows ONE day, the tail's type is smaller, and row 3 is a SPLIT of the
+// fields widget and a nowview rather than two tabs. The first and the
+// third are geometry that was MEASURED rather than reasoned about — see
+// the note over `MOBILE_LAYOUT` — so the sweep below asserts them at the
+// four sizes the measurement was taken at, the fourth (412×563) added
+// here because it is where a column split of row 3 cut the commands pane.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,6 +35,20 @@ const phone = (width = 390, height = 844) => ({
 
 /** A desktop that has never opened the site. */
 const FRESH_DESKTOP = { ...DESKTOP, home: null };
+
+/**
+ * The four screens the tree's geometry was measured at (da-shzs, redone
+ * for da-hkjp): a tall iPhone, the same one in Safari with its bars
+ * showing, an older Android, and the shortest of the four — which is
+ * where a COLUMN split of row 3 cut the commands pane off the bottom, and
+ * so the size that decided row 3 is a row.
+ */
+const SIZES = [
+	[390, 844],
+	[390, 664],
+	[360, 640],
+	[412, 563]
+];
 
 /** The names the root bar's tabs hold, in order. */
 const rootNames = (page) =>
@@ -73,40 +95,133 @@ const whole = (bar) =>
 	});
 
 const commandBar = (page) => pane(page, 'command').locator('.bar.commands');
-const fieldsBar = (page) => pane(page, 'fields').locator('.bar').first();
+// `fields` names the HOLDER of row 3's split now (da-hkjp); the widget
+// itself is the pane `bar` inside it.
+const fieldsBar = (page) => pane(page, 'bar').locator('.bar').first();
+
+/** The hour ruler under today's band (`AXIS_HEIGHT`, $lib/panes.ts). */
+const AXIS = 15;
+
+/**
+ * The day strip's own box, and how much of each band it reveals.
+ *
+ * «Just 1 day» (vividn, 2026-09-21) is a claim about what is DRAWN, so it is
+ * read off the bands: today's whole, and nothing of yesterday. The strip
+ * holds a fortnight whatever its box shows (da-bewc), so counting the
+ * bands in the DOM would answer fourteen at every size — what the box
+ * reveals of each is the only honest count.
+ */
+const bands = (page) =>
+	pane(page, 'strip').evaluate((p) => {
+		const box = p.querySelector('.strip').getBoundingClientRect();
+		const seen = (back) => {
+			const el = p.querySelector(`[data-days-ago="${back}"]`);
+			if (!el) return null;
+			const r = el.getBoundingClientRect();
+			return {
+				of: Math.round(r.height),
+				seen: Math.round(Math.max(0, Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top)))
+			};
+		};
+		return { inner: Math.round(box.height), today: seen(0), yesterday: seen(1) };
+	});
+
+/** A pane's body type size, in px — what the tail's `type` option sets. */
+const typeSize = (page, id) =>
+	pane(page, id).evaluate((p) => parseFloat(getComputedStyle(p.querySelector('.body')).fontSize));
 
 describe('a fresh phone', () => {
-	test('opens `mobile`: dayview / tail | nowview / [fields, nowview] / command', async () => {
+	test('opens `mobile`: dayview / tail | nowview / fields + nowview / command', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
 			assert.deepEqual(await rootNames(page), ['mobile']);
-			assert.deepEqual(await titles(page), ['dayview', 'tail', 'nowview', 'fields', 'command']);
-			assert.deepEqual(await pane(page, 'fields').locator('[role="tab"]').allInnerTexts(), ['fields', 'nowview']);
-			assert.equal(
-				await pane(page, 'fields').locator('[role="tab"][aria-selected="true"]').innerText(),
-				'fields'
-			);
+			// Six panes, not five: row 3 shows the fields widget and a
+			// nowview side by side (da-hkjp) where it used to show one of
+			// two tabs, so BOTH are on the screen and neither wears a tab.
+			assert.deepEqual(await titles(page), [
+				'dayview',
+				'tail',
+				'nowview',
+				'fields',
+				'nowview',
+				'command'
+			]);
+			// The root bar's own tab is not the dashboard's: `main`'s panes
+			// are what row 3 stopped tabbing.
+			assert.equal(await page.locator('main [role="tab"]').count(), 0, 'something in `mobile` is still tabbed');
 			// Unmodified as it opens: its extract is its baseline, and nothing
 			// was written for it.
 			assert.equal(await page.locator('.root-bar').evaluate((el) => el.classList.contains('modified')), false);
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.draft.v1.mobile')), null);
 
-			// The row's nowview is the snapshot, asked again on a write; the
-			// one behind `fields` is the default window, asked once in front.
+			// The row's nowview is the snapshot and the one beside `fields`
+			// is the default window — both drawn at once now, so both are
+			// asked for without anything being tapped.
 			await page.evaluate(() => window.datum.run(['occur', 'coffee']));
 			await asked(page, '0');
-			await pane(page, 'fields').locator('[role="tab"]', { hasText: 'nowview' }).click();
 			await asked(page, '30m');
 			assert.deepEqual(app.errors, []);
 		}, phone());
 	});
 
-	for (const [width, height] of [
-		[390, 844],
-		[390, 664],
-		[360, 640]
-	]) {
+	// vividn: «decrease fontsize of tail a little bit». It is a declared
+	// option of the tail KIND rather than a size written into the layout
+	// (da-hkjp), and what it sets is a SCALE on the one `font-size` rule
+	// every pane body shares. So the claim to assert is that ratio, against
+	// a pane that did not ask — not merely "smaller than its neighbour".
+	//
+	// The baseline has to be a plain widget pane. `command` and the fields
+	// widget draw their own 13px inside their bars, so measuring against
+	// either reads 0.89 and says nothing about the option; the strip, the
+	// snapshot and the windowed nowview are all at the shared 13.6px.
+	test("the tail's type is 0.85 of the rule every other pane body keeps", async () => {
+		await withApp(async ({ page }) => {
+			const tail = await typeSize(page, 'tail');
+			const plain = await typeSize(page, 'nowview');
+			assert.equal(plain, await typeSize(page, 'strip'), 'the panes that asked for nothing disagree');
+			assert.ok(
+				Math.abs(tail - plain * 0.85) < 0.01,
+				`the tail's type is ${tail}px, not 0.85 of the ${plain}px every other body keeps`
+			);
+		}, phone());
+	});
+
+	// vividn: «decrease dayview height to be just 1 day». One day is today's
+	// band whole with none of yesterday under the strip's box — and it is
+	// asserted at all four sizes because the strip's share is the one ratio
+	// in this tree that is NOT `legibly`'s, and a drift in any pane's
+	// legible box moves it.
+	test('the strip shows one day, and only today is clipped where it must be', async () => {
+		for (const [width, height] of SIZES)
+			await withApp(async ({ page }) => {
+				const b = await bands(page);
+				const yesterday = b.yesterday?.seen ?? 0;
+				// The margin is thin on purpose — one day is the ~3px window
+				// between today's band whole and yesterday's showing — so
+				// this is the assertion a change elsewhere in the column
+				// trips first. `STRIP_WEIGHT` in defaults.ts is the number to
+				// move, and the note over `MOBILE_LAYOUT` says what against.
+				assert.equal(
+					yesterday,
+					0,
+					`${width}×${height}: ${yesterday}px of yesterday shows — the strip is ${b.inner}px inside, and one day is ${b.today.of} of band plus ${AXIS} of axis`
+				);
+				assert.ok(b.today.seen > 0, `${width}×${height}: today does not show at all`);
+				// What one day costs at the sizes too short for it: the strip
+				// clips today from the top and keeps the axis (its own notch).
+				// Measured, so a change to it is a decision — see defaults.ts.
+				if (width === 390 && height === 844)
+					assert.equal(b.today.seen, b.today.of, `390×844: today is clipped to ${b.today.seen} of ${b.today.of}`);
+				else
+					assert.ok(
+						b.today.seen >= b.today.of / 2 - 1,
+						`${width}×${height}: today shows ${b.today.seen} of ${b.today.of} — less than half`
+					);
+			}, phone(width, height));
+	});
+
+	for (const [width, height] of SIZES) {
 		test(`at ${width}x${height} every pane is on the screen, and the bars' buttons are whole`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
@@ -122,7 +237,7 @@ describe('a fresh phone', () => {
 					// `main` clips rather than scrolls, so the scroll metrics say
 					// nothing: each pane's own box against the screen does.
 					const s = await screen(page);
-					assert.equal(s.panes.length, 5);
+					assert.equal(s.panes.length, 6);
 					const under = s.panes.filter((p) => p.bottom > s.prompt).map((p) => p.id);
 					for (const p of s.panes)
 						assert.ok(p.left >= 0 && p.right <= s.width, `${p.id} is off the side: ${p.left}…${p.right} of ${s.width}`);
@@ -223,7 +338,7 @@ describe('who gets it', () => {
 			await app.goto('/mobile?db=x');
 			await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'mobile' }).waitFor();
 			assert.equal(await page.locator('main .notice').count(), 0);
-			assert.deepEqual(await titles(page), ['dayview', 'tail', 'nowview', 'fields', 'command']);
+			assert.deepEqual(await titles(page), ['dayview', 'tail', 'nowview', 'fields', 'nowview', 'command']);
 			assert.match(await page.evaluate(() => location.search), /db=x/);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);

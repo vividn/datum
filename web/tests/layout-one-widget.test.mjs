@@ -155,17 +155,19 @@ describe('a root tab whose layout is one widget', () => {
 		}, DESKTOP);
 	});
 
-	// `tail` declares neither options nor defaults (registry.ts), so it has
+	// `custom` declares neither options nor defaults (registry.ts), so it has
 	// nothing to offer and the items are left out — the same arithmetic a
-	// pane's menu does.
-	test('/tail: neither item, because its kind declares neither', async () => {
+	// pane's menu does. It is the example here because `tail` stopped being
+	// one: da-hkjp gave that kind a declared `type`, and a kind that declares
+	// something has both items.
+	test('/custom: neither item, because its kind declares neither', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await openPage(app, 'tail');
+			await openPage(app, 'custom');
 			await toggleRootLock(page);
 			const lines = await rootLines(page);
-			assert.ok(!lines.includes(OPTIONS), `tail reads ${lines.join(' | ')}`);
-			assert.ok(!lines.includes(RESET_WIDGET), `tail reads ${lines.join(' | ')}`);
+			assert.ok(!lines.includes(OPTIONS), `custom reads ${lines.join(' | ')}`);
+			assert.ok(!lines.includes(RESET_WIDGET), `custom reads ${lines.join(' | ')}`);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});

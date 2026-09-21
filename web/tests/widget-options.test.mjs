@@ -79,7 +79,17 @@ describe('widget options', () => {
 		await withApp(async ({ page }) => {
 			const kinds = await page.evaluate(() => window.datum.layout.kinds());
 			const declared = kinds.filter((k) => k.options);
-			assert.deepEqual(declared.map((k) => k.kind).sort(), ['daystrip', 'input', 'nowview', 'repl', 'widgetbar']);
+			// `tail` since da-hkjp: its type size is a declared option of the
+			// KIND rather than a number written into a layout, so it is here
+			// and its default must be one of its choices like any other.
+			assert.deepEqual(declared.map((k) => k.kind).sort(), [
+				'daystrip',
+				'input',
+				'nowview',
+				'repl',
+				'tail',
+				'widgetbar'
+			]);
 			for (const { kind, options, defaultSettings } of declared) {
 				for (const o of options) {
 					assert.ok(o.key in defaultSettings, `${kind}.${o.key} has no default`);
@@ -91,13 +101,16 @@ describe('widget options', () => {
 		}, DESKTOP);
 	});
 
-	test('the item: on repl, nowview, fields and dayview; not on tail or command', async () => {
+	// `tail` moved from the second list to the first in da-hkjp, which gave
+	// it a declared `type`. The contrast the test is making is unchanged —
+	// a kind with options has the item and a kind without has not — and
+	// `command` is still an example of the second.
+	test('the item: on repl, nowview, fields, dayview and tail; not on command', async () => {
 		await withApp(async ({ page }) => {
-			for (const id of ['repl', 'nowview', 'bar', 'strip']) {
+			for (const id of ['repl', 'nowview', 'bar', 'strip', 'tail']) {
 				const lines = await linesOf(page, id);
 				assert.ok(lines.includes(OPTIONS), `${id} reads ${lines.join(' | ')}`);
 			}
-			assert.ok(!(await linesOf(page, 'tail')).includes(OPTIONS));
 
 			await choose(page, 'custom', 'Change Widget');
 			await chooser(page).waitFor();
@@ -305,7 +318,10 @@ describe('widget options', () => {
 		await withApp(async ({ page }) => {
 			await toggleRootLock(page);
 			assert.deepEqual(await linesOf(page, 'repl'), [OPTIONS]);
-			assert.equal(await pane(page, 'tail').locator('button.title').count(), 0, 'a kind with no options kept a menu');
+			// `custom` is the kind with no options here: `tail` has one since
+			// da-hkjp, so under a lock it KEEPS its menu rather than losing it.
+			assert.equal(await pane(page, 'custom').locator('button.title').count(), 0, 'a kind with no options kept a menu');
+			assert.deepEqual(await linesOf(page, 'tail'), [OPTIONS], 'the tail lost its Options… under a lock');
 			await setReversed(page, true);
 			assert.equal(await page.evaluate(() => JSON.stringify(window.datum.layout.current()).includes('"reversed":true')), true);
 		}, DESKTOP);

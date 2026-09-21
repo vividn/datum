@@ -132,8 +132,10 @@ describe('Reset widget', () => {
 			// item is read in the same app as the kinds that have not.
 			assert.equal((await linesOf(page, 'strip'))[1], RESET, 'the strip has no Reset widget');
 
-			// `tail` declares no settings, so there is nothing to put back.
-			assert.deepEqual(await linesOf(page, 'tail'), ['Change Widget']);
+			// `custom` declares no settings, so there is nothing to put back.
+			// It is the example since da-hkjp gave `tail` a declared `type`,
+			// which puts both items in that kind's NAME menu.
+			assert.deepEqual(await linesOf(page, 'custom'), ['Change Widget']);
 
 			// The root tab holds the `day` layout, so the root menu has none
 			// either — the same rule, not a second one.

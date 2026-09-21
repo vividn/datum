@@ -24,7 +24,9 @@
 // (18.4px each) plus padding, 71px — the bottom bar is its prompt
 // (da-rfs9), so it has no line of its own to keep. The tail,
 // and a custom pane showing one: its header row and three rows (21.6px
-// each) plus padding, 102px. The fields widget: one row, as tall as its
+// each) plus padding, 102px — and the tail's follows its `type` option
+// (da-hkjp), the 16px of padding standing still while the text in it
+// scales. The fields widget: one row, as tall as its
 // Track + (33px), plus padding. The aliases list: three of its lines
 // (18.4px each) plus padding, 72px. The input widget: its prompt row
 // (36.4px) and one document line of receipt (21.6px), 58px. nowview: datum draws it no shorter than a 50px band plus its
@@ -123,6 +125,21 @@ const SNAPSHOT_WIDTH = 2 * REACH_PX + 2 * SVG_MARGIN_PX;
 const STRIP_PADDING = 16;
 
 /**
+ * The tail's type, by name, as a scale on the pane body's own 0.85rem
+ * (da-hkjp — vividn: "decrease fontsize of tail a little bit").
+ *
+ * A DECLARED option of the kind rather than a size written into a layout:
+ * the size a layout asks for has to be reachable from the widget's name
+ * (da-vhwq), and a number hardcoded in `defaults.ts` is reachable from
+ * nowhere. What it sets is `Pane`'s `scale`, since the 0.85rem is one rule
+ * over every pane's body and not the tail's to override from inside.
+ */
+const TAIL_TYPE: Record<string, number> = { normal: 1, small: 0.85 };
+
+const tailScale = ({ type }: Record<string, unknown>): number =>
+	TAIL_TYPE[typeof type === 'string' ? type : 'normal'] ?? 1;
+
+/**
  * One whole day at the height the strip's days are DRAWN — today's band
  * with its axis, the setting clamped as the strip clamps it — plus the
  * body's padding.
@@ -197,11 +214,26 @@ export const KINDS: Record<string, WidgetKind> = {
 		onChange: (settings, history) => ({ ...settings, history }),
 		legible: ({ history }) => ({ width: history === '0' ? SNAPSHOT_WIDTH : 160, height: 108 })
 	},
+	// Its type size is a declared option (da-hkjp): `small` is 0.85 of the
+	// pane body's 0.85rem. The legible box follows it, as the strip's and
+	// nowview's follow theirs — the padding is the same 16px either way and
+	// the text inside it is what shrinks, so smaller type is legible in a
+	// shorter, narrower box rather than merely fitting more into the old one.
 	tail: {
-		meta: meta('tail', 'tail'),
+		meta: meta('tail', 'tail', { type: 'normal' }, [
+			{
+				key: 'type',
+				label: 'type',
+				type: 'choice',
+				choices: Object.keys(TAIL_TYPE).map((value) => ({ value, label: value }))
+			}
+		]),
 		component: CliPane,
-		props: () => ({ spec: TAIL }),
-		legible: { width: 200, height: 102 }
+		props: (settings) => ({ spec: TAIL, scale: tailScale(settings) }),
+		legible: (settings) => {
+			const s = tailScale(settings);
+			return { width: Math.round(200 * s), height: Math.round(16 + 86 * s) };
+		}
 	},
 	// The custom widget (da-wb2n): one command line the reader writes. It
 	// keeps that line in its own localStorage key for now; making it a

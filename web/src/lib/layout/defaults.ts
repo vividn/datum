@@ -68,6 +68,18 @@ const legibly = (heights: number[]): number[] =>
 	heights.map((h) => h / heights.reduce((a, b) => a + b, 0));
 
 /**
+ * What the day strip weighs in the phone's column (da-hkjp).
+ *
+ * The numbers `legibly` takes are PIXELS — each pane's legible box plus
+ * its 14px frame — and it turns them into ratios. The strip's own is
+ * 130px, and this is 59 in its place: the one number in `MOBILE_LAYOUT`
+ * that is not a pane's legible height. See the note there for why, and
+ * for what it was measured against. Here, apart from the tree, so it
+ * cannot be read as one of the floors beside it.
+ */
+const STRIP_WEIGHT = 59;
+
+/**
  * The desktop: strip / [REPL | nowview / tail / custom] / fields.
  *
  * The strip (one day, 130), the middle row (the side column's nowview,
@@ -136,21 +148,62 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
 
 /**
  * `mobile` (vividn, 2026-09-17: "the default one loaded when the site is
- * opened on a phone"): dayview / tail | a tiny nowview / [fields, nowview]
- * as tabs / commands, one column. The tiny nowview is the snapshot
+ * opened on a phone"): dayview / tail | a tiny nowview / fields beside a
+ * nowview / commands, one column. The tiny nowview is the snapshot
  * (`history: '0'`) — each field's current state and no time axis — and
  * tail takes most of its row. His «input bar» is the app's own bottom
  * bar, which every layout already has: an `input` pane here would draw
  * the same command line twice, one above the other.
  *
- * The column's ratios are the house rule's, the rows' legible heights —
- * strip 130, the row max(tail 116, nowview 122), the tabs max(fields 63,
- * nowview 122), commands 63 — and NOT a strip held at one day with the
- * commands one thin row. Those ratios (140 / 250 / 250 / 66) look closest
- * to his words at 390×844 and crush the commands pane to 39–45px, not one
- * button whole, at 390×664 (Safari with its bars), 360×640 and 412×563.
- * Ratios are proportional; no constant does both, and `legibly` keeps
- * every command button whole at all four (measured, da-shzs).
+ * vividn, 2026-09-21, on what it should be instead of what da-shzs built:
+ * «decrease dayview height to be just 1 day / decrease fontsize of tail a
+ * little bit / let's make the fields widget and nowview widget in the
+ * third row a split rather than tabs so they're both visible by default».
+ * All three are here (da-hkjp), and the two that are not just a number
+ * are written down below because they were MEASURED, at the four screens
+ * da-shzs measured: 390×844, 390×664 (Safari with its bars), 360×640 and
+ * 412×563. The acceptance is da-shzs's: every command button whole at all
+ * four.
+ *
+ * ⚑ ROW 3 IS A ROW, NOT A COLUMN — «fields BESIDE nowview». Measured: a
+ * COLUMN split of the two does not fit 412×563 at ANY day height. Stacked,
+ * their legible heights SUM (63 + 122 + a border = 193) where tabs took
+ * their MAX (122), which puts 71px onto the root's legible minimum; the
+ * shortest day the strip may draw (`MIN_DAY_HEIGHT`, panes.ts) gives back
+ * only 45, and `main` does not scroll — its scrollHeight is its clientHeight
+ * at every size — so the commands pane is not pushed down, it is CUT. At
+ * 412×563 it measured 457…518 against a bottom bar starting at 516, and
+ * that is the acceptance test failing. Side by side the row's legible
+ * height is their max again, 122, exactly as the tabs' was, so the
+ * column's arithmetic is the one da-shzs measured and only the strip's
+ * share has moved. Their widths fit too: 160 + 160 + a border = 328,
+ * inside a 360px phone.
+ *
+ * ⚑ THE STRIP'S SHARE IS NOT `legibly`'s, AND THAT IS DELIBERATE. `legibly`
+ * gives every pane its legible box at the root's minimum and grows them
+ * all alike above it — so the strip shows the SAME number of days at every
+ * size, and at a phone's height that number is two or three, never one. It
+ * cannot be one: the four screens' column heights differ by 1.59× (734px
+ * at 390×844 against 453px at 412×563) while a day is a FIXED height, and
+ * «exactly one day» is the ~3px window between today's band showing whole
+ * (`todayBox`) and yesterday's beginning to show (`todayBox + 1`). No
+ * ratio holds a 3px window across a 1.59× spread. So the strip is weighted
+ * at 59 rather than its legible 130 — the largest weight that still shows
+ * ONE day at 390×844, measured, not derived — and the other three rows
+ * keep their legible proportions to each other: the row max(tail 103,
+ * nowview 122), row 3 max(fields 63, nowview 122), commands 63. Only the
+ * strip's number has left the floors; the rest is still the house rule.
+ *
+ * ⚑ WHAT THAT COSTS, MEASURED, SO IT IS A DECISION AND NOT A SURPRISE: the
+ * strip's inner box is 102 / 73 / 69 / 57 px at the four sizes against a
+ * 100px band, so today shows whole at 390×844 and is CLIPPED FROM THE TOP
+ * at the three shorter ones — the strip's own notch (registry.ts: "a
+ * notch, not a wall"). The other side of that wall is worse: holding
+ * today whole at 412×563 forces the strip back to ~162px of inner box at
+ * 390×844 — today plus two thirds of yesterday, which is where it already
+ * was. The commands pane is the thing this must not cost, and it does not:
+ * 122 / 91 / 87 / 74 px against the 63 it needs, where the tabbed tree
+ * measured 102 / 76 / 73 / 62.
  */
 export const MOBILE_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -158,16 +211,25 @@ export const MOBILE_LAYOUT: Layout = {
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([130, 122, 122, 63]), [
+		split('main', 'column', legibly([STRIP_WEIGHT, 122, 122, 63]), [
 			strip(),
 			holder(
 				'row',
 				split('glance', 'row', [0.7, 0.3], [
-					widgetPane('tail', 'tail'),
+					widgetPane('tail', 'tail', { type: 'small' }),
 					widgetPane('now', 'nowview', { history: '0' })
 				])
 			),
-			tabbed('fields', ['widgetbar', 'nowview']),
+			holder(
+				'fields',
+				// `legibly` of their legible WIDTHS, which is a half each
+				// today — written as the rule rather than as 0.5, so it
+				// follows if either kind's floor moves.
+				split('pair', 'row', legibly([160, 160]), [
+					widgetPane('bar', 'widgetbar'),
+					widgetPane('nowview', 'nowview')
+				])
+			),
 			widgetPane('command', 'command')
 		])
 	)

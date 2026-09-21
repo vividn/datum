@@ -65,6 +65,17 @@
 	 */
 	export let bare = false;
 
+	/**
+	 * The body's type, as a scale on the pane's own 0.85rem (da-hkjp).
+	 *
+	 * A pane's type size is not its widget's to write down in CSS: every
+	 * body shares this one rule, so a widget that wants smaller type has to
+	 * ask for it from OUT here. The tail asks (`type` in registry.ts, a
+	 * declared option of the kind, so `da-vhwq` can reach it by name); one
+	 * is every other pane, unchanged.
+	 */
+	export let scale = 1;
+
 	/** Pin the view to the newest content. The REPL calls this after a run. */
 	export function scrollToBottom(): void {
 		if (body) body.scrollTop = body.scrollHeight;
@@ -120,7 +131,7 @@
 	{:else if frame && $$slots.title && ownTitle}
 		<span class="hosted-title" use:portal={frame}><slot name="title" /></span>
 	{/if}
-	<div class="body" bind:this={body}><slot /></div>
+	<div class="body" bind:this={body} style:--type-scale={scale === 1 ? null : scale}><slot /></div>
 </svelte:element>
 
 <style>
@@ -180,7 +191,7 @@
 		/* A third off 0.5rem 0.6rem (vividn: "reduce margins some", da-jgrn). */
 		padding: 0.33rem 0.4rem;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-		font-size: 0.85rem;
+		font-size: calc(0.85rem * var(--type-scale, 1));
 		line-height: 1.35;
 		color: var(--ink);
 	}

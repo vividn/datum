@@ -49,8 +49,17 @@ describe('the menu the title opens', () => {
 	/**
 	 * The default layout's tail pane, in two slices (da-bzhq): what its
 	 * NAME opens, and what the `▾` beside the `+` opens.
+	 *
+	 * `Reset widget` and `Options…` are in the NAME slice since da-hkjp gave
+	 * the tail kind a declared `type`: both items are the registry's
+	 * arithmetic over what a kind declares, so a kind that declares
+	 * something has them. The kind with neither is `custom`, which the tests
+	 * below that need one now use. The `▾` slice is untouched by da-hkjp —
+	 * it is about the PANE, not the widget in it — and `Rename pane…` is at
+	 * the head of it since da-s7sdm, which is the same distinction from the
+	 * other side: renaming is done TO the pane.
 	 */
-	const TAIL_MENU = ['Change Widget'];
+	const TAIL_MENU = ['Change Widget', 'Reset widget', 'Options…'];
 	const TAIL_MANAGE = ['Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane'];
 
 	test('the title is the button, the `▾` beside the `+` holds the acts on the pane', async () => {
@@ -364,7 +373,10 @@ describe('the menu the title opens', () => {
 	// da-cesj: the strip of a tab stack is a row of its own, and the panes
 	// a Split puts in its front tab hang their titles half a row above
 	// their outlines — into room under the strip, not under it. The
-	// phone's `mobile` layout ships such a stack (`[fields, nowview]`).
+	// phone's `mobile` layout used to ship such a stack (`[fields,
+	// nowview]`); row 3 is a split of the two now (da-hkjp), so the stack
+	// is BUILT here — a nowview added as a second tab of the fields
+	// widget, which is the shape that layout had.
 	for (const [word, label] of [
 		['right', 'split: a new pane to the right'],
 		['below', 'split: a new pane below']
@@ -374,9 +386,16 @@ describe('the menu the title opens', () => {
 				async ({ page }) => {
 					// A fresh phone's `mobile` opens locked (da-gshh).
 					await toggleRootLock(page);
-					await manage(page, 'fields', label);
+					// `mobile` stopped shipping a tab stack in da-hkjp — its
+					// row 3 is a split of fields and a nowview now — so the
+					// stack this is about is BUILT: a nowview added as a
+					// second tab of the fields widget, the shape that layout
+					// had. `fields` names the holder of the split; `bar` is
+					// the widget pane inside it.
+					await addTab(page, 'bar', 'nowview');
+					await manage(page, 'bar', label);
 					await titledPane(page, 'empty').waitFor();
-					assert.deepEqual(await overStrip(page, 'fields'), { titles: 2, overlaps: [] });
+					assert.deepEqual(await overStrip(page, 'bar'), { titles: 2, overlaps: [] });
 				},
 				{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: null }
 			);
@@ -410,10 +429,14 @@ describe('the menu the title opens', () => {
 			await tabs.nth(0).click();
 			assert.equal(await page.locator('[role="menu"]').count(), 0, 'switching opened the menu');
 			assert.equal(await activeTab(page, 'tail'), 'tail');
-			// Now the tail is the tab in front: the same click opens the menu.
+			// Now the tail is the tab in front: the same click opens the menu,
+			// and it is the TAIL's — the tab in front is what the name slice
+			// is about, so the tail's declared `type` (da-hkjp) puts its two
+			// widget items in it while `aliases`, which declares nothing,
+			// would not.
 			await tabs.nth(0).click();
 			await page.locator('[role="menu"]').waitFor();
-			assert.deepEqual(await menuLines(page), ['Change Widget']);
+			assert.deepEqual(await menuLines(page), TAIL_MENU);
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			// With tabs it is the TAB that closes, and Break out gives the
