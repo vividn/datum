@@ -113,6 +113,16 @@ thread_local! {
     /// `--format`, etc.) for the corresponding merged row.
     static MULTI_COLLECTOR: RefCell<Option<Vec<(datum_core::entry::Entry, OutputArgs)>>> =
         const { RefCell::new(None) };
+    /// da-gvcen: the field declarations a multi window's sides made, to be
+    /// written as specs only once the atomic insert has COMMITTED. The
+    /// declaration rides in the entry's own `following_state`, but the
+    /// SPEC is a second write in a second table, and both-or-neither is
+    /// the property da-c8mh paid for with an atomic pair: a spec left
+    /// behind by a failed insert makes every later log of that field see
+    /// a spec, so `declares_field` is false and the field is never
+    /// declared again — an IGNORED field would stay ignored for good.
+    static PENDING_DECLARATIONS: RefCell<Vec<(String, datum_core::action::Action)>> =
+        const { RefCell::new(Vec::new()) };
     /// da-9sfm: set when a content-identical re-log dedups to an existing row
     /// (`InsertOutcome::Ignored`). A dedup is a *successful* no-op — rendered
     /// as `EXISTS`, not an error — so it must not travel the error channel
@@ -142,6 +152,45 @@ pub fn peek_intent_context() -> Option<IntentContext> {
 /// buffer and atomically write at the end of the multi dispatch.
 pub fn begin_multi_collector() {
     MULTI_COLLECTOR.with(|slot| *slot.borrow_mut() = Some(Vec::new()));
+    PENDING_DECLARATIONS.with(|slot| slot.borrow_mut().clear());
+}
+
+/// Record that a side's entry declares its field, so the spec can be
+/// written once the multi window's atomic insert has committed (da-gvcen).
+pub fn push_pending_declaration(field: &str, action: datum_core::action::Action) {
+    PENDING_DECLARATIONS.with(|slot| slot.borrow_mut().push((field.to_string(), action)));
+}
+
+/// Drain the declarations a multi window collected. Called ONLY after the
+/// atomic insert succeeds; a failed window leaves them undrained and the
+/// next `begin_multi_collector` clears them, so nothing is written for
+/// rows that never landed.
+pub fn take_pending_declarations() -> Vec<(String, datum_core::action::Action)> {
+    PENDING_DECLARATIONS.with(|slot| std::mem::take(&mut *slot.borrow_mut()))
+}
+
+/// True when an earlier side of THIS window already declared `field`.
+///
+/// A field is declared ONCE, and the spec is no longer written eagerly to
+/// say so, so the window has to remember for itself. It matters beyond
+/// bookkeeping: a declaration makes a row a switching verb, and
+/// `merge_group_key` keys a state-asserting row on its field and instant
+/// alone — so two stateless sides that both declared would merge into one
+/// where two distinct `--id` rows are meant (da-gvcen).
+///
+/// ⛔ "THIS window" is load-bearing and is checked, not assumed. The
+/// buffer is a thread-local and a failed window's entries outlive it; in
+/// a long-lived process (the REPL, an in-process harness) a later SINGLE
+/// log of the same field would otherwise read a stale entry, decline to
+/// declare, and land undeclared with no spec — which is exactly the
+/// failure the buffer exists to prevent, reintroduced through the buffer
+/// (canary-kimi-k3 on #75). With no window open the answer is no,
+/// whatever the buffer still holds.
+pub fn field_declared_in_window(field: &str) -> bool {
+    if MULTI_COLLECTOR.with(|slot| slot.borrow().is_none()) {
+        return false;
+    }
+    PENDING_DECLARATIONS.with(|slot| slot.borrow().iter().any(|(f, _)| f == field))
 }
 
 /// Drain the multi-collector buffer, leaving the thread-local empty.

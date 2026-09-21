@@ -673,7 +673,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // table is asked, the row is asked for an instant, and where either
     // refuses, the entry's own state is the switch. A caller that spelled
     // `following_state=` itself keeps it.
-    let declares_field = db.load_spec(&entry.field)?.is_none();
+    // A field is declared ONCE. The spec used to say so the moment it was
+    // written; now that it is written only after the entry lands, an
+    // earlier side of the same multi window is the other thing that can
+    // have declared this field already.
+    let declares_field = db.load_spec(&entry.field)?.is_none()
+        && !crate::args::field_declared_in_window(&entry.field);
     if declares_field && entry.following_state.is_none() && entry.occur_time.is_some() {
         let declared =
             datum_core::track::declared_state(datum_core::track::verb_for_action(action));
@@ -725,12 +730,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
 
     // da-c8mh, da-gvcen: the spec is the field's record of existence, and
-    // it is written before the entry for the reason the old TRACK row sat
-    // a millisecond ahead of it — the declaration precedes the thing
-    // declared. Past the dry-run, so a preview still writes nothing.
-    if declares_field {
-        crate::commands::helpers::save_track_spec(db, &entry.field, action)?;
-    }
+    // it is written ONLY ONCE THE ENTRY HAS LANDED — below on the single
+    // path, and by the multi driver after its atomic insert. da-c8mh
+    // bought both-or-neither with an atomic pair of rows; the pair is
+    // gone, but the property is not optional. A spec left behind by a
+    // failed insert makes every later log of that field see a spec, so
+    // `declares_field` is false and the declaration is never written
+    // again — an IGNORED field would stay ignored until someone thought
+    // to run `datum track`. "The declaration precedes the thing declared"
+    // is already true in the row's own columns and needs no help from
+    // write order.
 
     // da-gh0.C: when a multi-entry write window is active, hand the
     // fully prepared entry off to the dispatch-layer collector and
@@ -742,11 +751,19 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // per-side flags (`--show none`, format strings) when rendering
     // the resulting merged row (da-dayk).
     if crate::args::push_to_multi_collector(entry.clone(), args.output()?) {
+        // The window owns the spec write, once its atomic insert lands.
+        if declares_field {
+            crate::args::push_pending_declaration(&entry.field, action);
+        }
         return Ok(());
     }
 
     let strategy = args.conflict_strategy();
     let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
+    // The entry landed, so the field exists: now the spec may be written.
+    if declares_field {
+        crate::commands::helpers::save_track_spec(db, &entry.field, action)?;
+    }
     let registry = crate::commands::helpers::load_registry_opt(db);
     let output = args.output()?;
     // Per da-9p2u: all four context fields (lead/trail/ongoing/first) are

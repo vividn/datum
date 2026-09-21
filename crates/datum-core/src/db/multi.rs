@@ -118,6 +118,20 @@ pub fn merge_group_key(entry: &Entry) -> (String, String, String) {
         .as_ref()
         .map(|t| t.utc.to_rfc3339())
         .unwrap_or_default();
+    // ⚠ A ROW'S IDENTITY HERE DEPENDS ON WHETHER IT ASSERTS A STATE, so
+    // anything that changes `asserts_state` changes whether two rows
+    // COLLIDE — which is a property of the data model and not of any one
+    // caller. `asserts_state` is true for every switching verb, so giving
+    // a row a `following_state` (da-gvcen's first-log declaration does
+    // exactly that) flips it from keying on its own hid, where it can
+    // never merge, to keying on field-and-instant alone, where it merges
+    // with any sibling. Two stateless sides of one multi window that both
+    // declared their field therefore collapse into ONE row even when they
+    // carry distinct `--id` templates and are plainly two events
+    // (da-4t9mt). da-gvcen keeps that from arising by declaring a field
+    // once per window, but the sharp edge is here: if you are about to
+    // give some new class of row a state or a trailing state, this is the
+    // line that decides whether it starts merging with its neighbours.
     let identity = if crate::track::track_verb(entry).is_some() {
         // da-c8mh: a declaration merges only with another declaration of
         // the same field — never into the entry it was written beside,

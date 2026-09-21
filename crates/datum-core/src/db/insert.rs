@@ -73,10 +73,18 @@ fn derive_verb_for_storage(
 ///
 /// The guard is deliberately narrow, so that a row which really does
 /// switch at its trailing edge still collides loudly: the stored row must
-/// be the field's OLDEST (only a first log declares), its trailing state
-/// must be one of the two values `track::declared_state` produces
-/// ([`crate::shape::is_off_state`]), the incoming row must carry none,
-/// and everything else the hash covers must already agree.
+/// be the field's FIRST-WRITTEN row (only a first log declares), its
+/// trailing state must be one of the two values `track::declared_state`
+/// produces ([`crate::shape::is_off_state`]), the incoming row must carry
+/// none, and everything else the hash covers must already agree.
+///
+/// ⚠ FIRST-WRITTEN, by `create_time`, and not first-HAPPENED by
+/// `occur_time`. Backfill separates them: `occur foo -t 0900` declares
+/// the field, `occur foo -t 0800` then sorts earlier by occur_time
+/// without being a declaration, and re-running the 0900 command would
+/// stop being recognised as the re-log it is. What "only a first log
+/// declares" is about is the order the rows were LOGGED in, which is the
+/// clock `create_time` keeps.
 ///
 /// Runs only where the insert is about to fail, so it costs the hot path
 /// nothing.
@@ -97,14 +105,14 @@ fn is_relog_of_a_declaring_row(conn: &Connection, incoming: &Entry) -> bool {
     {
         return false;
     }
-    let oldest: std::result::Result<String, _> = conn.query_row(
+    let first_written: std::result::Result<String, _> = conn.query_row(
         "SELECT slug FROM entries
          WHERE field = ?1 AND deleted_at IS NULL AND superseded_by IS NULL
-         ORDER BY COALESCE(occur_time, create_time), create_time LIMIT 1",
+         ORDER BY create_time LIMIT 1",
         params![stored.field],
         |row| row.get(0),
     );
-    if oldest.ok().as_deref() != Some(stored.slug.as_str()) {
+    if first_written.ok().as_deref() != Some(stored.slug.as_str()) {
         return false;
     }
     let mut undeclared = stored.clone();

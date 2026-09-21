@@ -293,3 +293,61 @@ fn different_field_same_data_key_independent_no_conflict_via_dispatch() {
     assert_eq!(body_data, serde_json::json!({"doseMg": 80}));
     assert_eq!(caf_data, serde_json::json!({"doseMg": 100}));
 }
+
+/// ⛔ A FAILED WINDOW MUST NOT POISON THE THREAD. In a long-lived process
+/// — the REPL, or this harness — the pending-declaration buffer that
+/// da-4t9mt added to write specs after the commit outlives the window
+/// that filled it unless something clears it. If a later single log then
+/// consults it, `declares_field` is false for a field that has no spec
+/// and no declaration, and the entry lands undeclared: precisely the
+/// "the field exists so it is never declared" failure the buffer exists
+/// to prevent, reintroduced through the buffer (canary-kimi-k3 on #75).
+///
+/// The process tests cannot see this — each `try_run` is a fresh process
+/// and a fresh thread-local — so it has to be driven in-process.
+#[test]
+fn a_failed_window_does_not_suppress_a_later_single_log() {
+    let db = fresh_db();
+    // A row the second side of the window below will collide with.
+    dispatch_argv(
+        ["datum", "occur", "bb", "-t", "1100"]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        &db,
+    )
+    .expect("seed lands");
+
+    // The window fails: side 1 declares `newfield`, side 2 collides.
+    let failed: Vec<String> = [
+        "datum", "occur", "newfield", "-t", "1100", ",", "occur", "bb", "-t", "1100", "cups=2",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    assert!(dispatch_argv(failed, &db).is_err(), "the window must fail");
+
+    // Now a first log of that same field, on the single path, in the
+    // SAME process. It is still the field's first log and must declare.
+    dispatch_argv(
+        ["datum", "occur", "newfield", "-t", "1500"]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        &db,
+    )
+    .expect("the later log lands");
+
+    let rows = datum_core::test_util::logged_entries(&db, "newfield");
+    assert_eq!(rows.len(), 1, "one row for newfield");
+    assert!(
+        rows[0].following_state.is_some(),
+        "the first log of `newfield` landed UNDECLARED — a stale pending \
+         declaration from the failed window suppressed it: {:?}",
+        rows[0]
+    );
+    assert!(
+        db.load_spec("newfield").expect("load_spec").is_some(),
+        "and no spec was written either",
+    );
+}

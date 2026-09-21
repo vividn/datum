@@ -51,6 +51,20 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
 
     let result = run_sides();
     let collected = crate::args::end_multi_collector().unwrap_or_default();
+    // da-4t9mt: THE WINDOW IS OVER HERE, BY EVERY EXIT — so its buffered
+    // declarations are taken here, beside the entries, and never left in
+    // the thread-local for a later dispatch to read. They are written as
+    // specs further down, only once `insert_entries_atomic` has
+    // committed; if it fails, this local is simply dropped.
+    //
+    // ⚠ Draining CONDITIONALLY on `result` would not do, and looked as
+    // though it did: the collision in
+    // `a_failed_window_does_not_suppress_a_later_single_log` happens in
+    // the atomic insert BELOW, after `result?`, so `run_sides()` returns
+    // Ok and an `if result.is_err()` drain never fires. Taking it
+    // unconditionally is what makes "a buffer must not outlive its
+    // window" true rather than nearly true.
+    let declared = crate::args::take_pending_declarations();
     result?;
 
     if collected.is_empty() {
@@ -78,6 +92,14 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
     let hids = db.insert_entries_atomic(normalized)?;
     if !hids.is_empty() {
         let _ = datum_core::last_docs::set_last_docs(db, &hids);
+    }
+    // da-gvcen: the rows are committed, so the fields they declared exist
+    // and their specs may be written. Past the `?` above on purpose — a
+    // failed window writes no spec, which is the both-or-neither property
+    // da-c8mh's atomic pair used to give for free. `declared` was taken
+    // when the window closed.
+    for (field, action) in declared {
+        crate::commands::helpers::save_track_spec(db, &field, action)?;
     }
     // da-dayk: render every persisted row through the same
     // `show_create_with_context` path single-row dispatch uses, with

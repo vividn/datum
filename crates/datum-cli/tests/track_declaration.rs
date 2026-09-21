@@ -372,6 +372,97 @@ fn re_running_the_declaring_log_is_the_benign_no_op() {
     );
 }
 
+/// ⚠ FIRST-WRITTEN, not first-HAPPENED. `is_relog_of_a_declaring_row`
+/// asks whether the stored row is the field's first LOG, and backfill
+/// separates the two orders: a row logged later can sit earlier on the
+/// clock. Keyed on `occur_time` the re-log below stopped being
+/// recognised the moment anything was backdated in front of it
+/// (canary-kimi-k3 on #68). `create_time` is the order things were
+/// logged in, which is what the rule is about.
+#[test]
+fn a_backfill_in_front_of_the_declaring_log_does_not_unmake_it() {
+    let env = Env::new();
+    env.run(&["occur", "foo", "-t", "0900", "--show", "none"]);
+    // Logged second, but it sits EARLIER on the clock than the row that
+    // declared the field.
+    env.run(&["occur", "foo", "-t", "0800", "--show", "none"]);
+
+    let (code, stdout) = env.try_run(&["occur", "foo", "-t", "0900"]);
+    assert_eq!(code, Some(11), "the duplicate exit code: {stdout:?}");
+    assert!(
+        stdout.contains("EXISTS"),
+        "the backfill must not unmake the declaring log: {stdout:?}"
+    );
+    let tail: Value =
+        serde_json::from_str(env.run(&["tail", "--json"]).trim_end()).expect("tail json");
+    assert_eq!(
+        tail["rows"].as_array().map(Vec::len),
+        Some(2),
+        "no third row: {tail}",
+    );
+
+    // The complement, so the rule is pinned from both sides: re-running
+    // the BACKFILL is a no-op too, but it reaches it as an ordinary
+    // content-hash duplicate rather than through the declaring-row rule —
+    // the 0800 row carries no declaration. If the rule ever started
+    // recognising non-declaring rows this would still pass, so it is the
+    // row count that carries the claim.
+    let (code, stdout) = env.try_run(&["occur", "foo", "-t", "0800"]);
+    assert_eq!(
+        code,
+        Some(11),
+        "the backfill re-log is a no-op too: {stdout:?}"
+    );
+    let tail: Value =
+        serde_json::from_str(env.run(&["tail", "--json"]).trim_end()).expect("tail json");
+    assert_eq!(
+        tail["rows"].as_array().map(Vec::len),
+        Some(2),
+        "still two rows: {tail}",
+    );
+}
+
+/// ⛔ BOTH OR NEITHER. da-c8mh bought that with an atomic PAIR of rows;
+/// da-gvcen has one row and a spec in a second table, and the property is
+/// not optional. A spec written before an insert that then fails makes
+/// every later log of the field see a spec — so `declares_field` is
+/// false, no trailing switch is ever written, and an IGNORED field would
+/// stay ignored until someone thought to run `datum track`
+/// (canary-kimi-k3 on #68).
+#[test]
+fn a_failed_first_log_leaves_no_spec_behind() {
+    let env = Env::new();
+    // A row at the instant the multi below will share, so the second
+    // side collides with it and the atomic insert fails.
+    env.run(&["occur", "bb", "-t", "1100", "--show", "none"]);
+
+    let (code, _) = env.try_run(&[
+        "occur", "brandnew", "-t", "1100", ",", "occur", "bb", "-t", "1100", "cups=2",
+    ]);
+    assert_ne!(code, Some(0), "the colliding side must fail the window");
+
+    let conn = rusqlite::Connection::open(&env.db).expect("open db");
+    let specs: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM field_specs WHERE field = 'brandnew'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        specs, 0,
+        "a failed window wrote a spec for a field with no rows"
+    );
+    let rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE field = 'brandnew'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(rows, 0, "and no row either");
+}
+
 /// ⚠ And the rule does NOT swallow a real duplicate identity. A second,
 /// DIFFERENT assertion at the declaring row's instant is still refused
 /// loudly, with the message that names the way out (da-2fkr) — the
