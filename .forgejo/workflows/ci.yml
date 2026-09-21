@@ -37,12 +37,15 @@ on:
     # trigger the run — with both triggers every PR head ran TWICE, two
     # ~40-minute runs on a capacity-1 runner (mayor, 17:03, reading PR 2).
 
-# One run per ref at a time: a newer push cancels the run of the head it
-# replaced instead of queueing behind it. Four runs sat «waiting» at 17:09
-# behind one another, each for a head that no longer mattered.
+# One run per ref at a time. On a PR ref a newer push cancels the run of the
+# head it replaced instead of queueing behind it: four runs sat «waiting» at
+# 17:09 behind one another, each for a head that no longer mattered. NOT on
+# main (da-rwbq9) — a merge asks a new question about a new commit, it does
+# not supersede the answer to the old one, so main's runs QUEUE, oldest
+# first, and every merged commit gets its own verdict.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
