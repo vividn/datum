@@ -1544,6 +1544,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         top_summary: Some("Count, total duration, and per-state ratio over a time slice"),
         long_description: None,
         usage: &[
+            "datum stats  (no FIELD: every field, ranked by tracked time)",
             "datum stats <FIELD[:STATE]> [SLICE] [--since TIME] [--until TIME]",
             "datum stats <FIELD[:STATE]> (--today | --week | --last-week | --month | --last-month)",
             "datum stats <FIELD[:STATE]> [-d DATE | -y* | -t TIME | -q*] [--until TIME]",

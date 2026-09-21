@@ -62,7 +62,7 @@ import {
 } from '$lib/panes.js';
 import { REACH_PX } from '$lib/lanes.js';
 import { DEBUG_DB } from './defaults.js';
-import { DEFAULT_STATS } from '$lib/stats.js';
+import { DEFAULT_STATS, type StatsRange } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
 import FieldsPane from './FieldsPane.svelte';
 import InputWidget from './InputWidget.svelte';
@@ -272,15 +272,19 @@ export const KINDS: Record<string, WidgetKind> = {
 	// there, and one row reached sideways is still every command.
 	command: { meta: meta('command', 'command'), component: CommandPane, legible: { width: 160, height: 49 } },
 	// The stats widget (da-n7r0): its settings ARE the widget's settings, and
-	// its pickers move them with a `change` like any other widget's own
+	// its range chips move them with a `change` like any other widget's own
 	// control — so since da-vhwq THIS SESSION keeps them, not the tree, and
-	// «Save options with layout» is what hands a selection over
-	// (Layout.svelte). Which is why a reload starts the widget back at what
-	// the layout says.
+	// «Save options with layout» is what hands a window over (Layout.svelte).
+	// Which is why a reload starts the widget back at what the layout says.
+	//
+	// And the window is the whole of them since da-ptuwr: the field selector
+	// is gone, so there is no selection left for a session or a layout to
+	// keep. `range` is lifted out by NAME rather than spread, so a `field`
+	// left in a layout saved before the change is not carried back in.
 	stats: {
 		meta: meta('stats', 'stats', { ...DEFAULT_STATS }),
 		component: Stats,
-		props: (settings) => ({ settings: { ...DEFAULT_STATS, ...settings } }),
+		props: ({ range }) => ({ settings: { range: (range ?? DEFAULT_STATS.range) as StatsRange } }),
 		onChange: (_, settings) => settings as Record<string, unknown>,
 		legible: { width: 240, height: 140 }
 	},

@@ -9,7 +9,7 @@ mod common;
 use chrono::{DateTime, Utc};
 use common::run_cli;
 use datum_cli::args::{StatsArgs, StatsPeriod};
-use datum_commands::commands::stats::compute_stats;
+use datum_commands::commands::stats::{compute_all_fields, compute_stats};
 use datum_core::entry::Verb;
 use datum_core::test_util::{entry_builder, freeze_time, fresh_db};
 use serde_json::json;
@@ -317,6 +317,8 @@ fn stats_stored_dur_block_does_not_gap_fill() {
     assert_eq!(r.total_duration_seconds, 3000);
 }
 
+/// The per-field API still insists on a field. A bare `stats` is not an
+/// error any more — it goes to [`compute_all_fields`] instead (da-ptuwr).
 #[test]
 fn stats_missing_selector_errors() {
     let db = fresh_db();
@@ -853,4 +855,107 @@ fn period_and_timing_flags_parse_and_dispatch() {
 
     // Two different period flags contradict rather than refine.
     assert!(run_cli(&["stats", "activity", "--today", "--week"], &db).is_err());
+}
+
+// ─── Every field, ranked: a bare `stats` (da-ptuwr) ─────────────────────────
+
+/// Three shapes at once, so the table has something of each to rank:
+/// a switch field (activity, 1h30m of coding + 30m of meeting), a block
+/// field (work, one 1h block), and a point field (coffee, two instants and
+/// no duration at all). `now` is 12:00.
+fn seed_three_shapes(db: &datum_core::db::Db) {
+    seed_activity(db);
+    entry_builder("work")
+        .verb(Verb::Block)
+        .state(json!(true))
+        .time_start_utc(at("2026-06-15T09:00:00Z"))
+        .time_end_utc(at("2026-06-15T10:00:00Z"))
+        .insert(db);
+    for t in ["2026-06-15T08:00:00Z", "2026-06-15T09:30:00Z"] {
+        entry_builder("coffee")
+            .verb(Verb::Point)
+            .state(json!(null))
+            .time_start_utc(at(t))
+            .insert(db);
+    }
+}
+
+#[test]
+fn bare_stats_ranks_every_field_by_tracked_time() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    seed_three_shapes(&db);
+
+    let r = compute_all_fields(&StatsArgs::default(), &db).unwrap();
+
+    let names: Vec<&str> = r.fields.iter().map(|f| f.field.as_str()).collect();
+    assert_eq!(names, ["activity", "work", "coffee"], "ranked by duration");
+
+    let activity = &r.fields[0];
+    assert_eq!(activity.duration_seconds, 7200, "90m coding + 30m meeting");
+    assert_eq!(activity.count, 3);
+    let work = &r.fields[1];
+    assert_eq!(work.duration_seconds, 3600, "the stored 1h block");
+    assert_eq!(work.count, 1);
+    let coffee = &r.fields[2];
+    assert_eq!(coffee.duration_seconds, 0, "a point field takes no time");
+    assert_eq!(coffee.count, 2, "and is still counted");
+
+    assert_eq!(r.tracked_duration_seconds, 10800);
+    assert_eq!(r.total_count, 6);
+    assert_eq!(activity.ratio, Some(2.0 / 3.0));
+    assert_eq!(work.ratio, Some(1.0 / 3.0));
+    assert_eq!(coffee.ratio, Some(0.0));
+}
+
+#[test]
+fn bare_stats_ranks_on_tracked_time_not_wall_clock() {
+    // The reason the row is a field's TRACKED duration: `activity`'s total
+    // is the whole 2h, of which 75m is the closed state — and a table
+    // ranked on totals would rank every block field the same (da-icba, one
+    // level out).
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    seed_with_closed(&db);
+
+    let r = compute_all_fields(&StatsArgs::default(), &db).unwrap();
+    assert_eq!(r.fields.len(), 1);
+    assert_eq!(r.fields[0].duration_seconds, 2700, "45m of coding, not 2h");
+    assert_eq!(r.fields[0].ratio, Some(1.0));
+}
+
+#[test]
+fn bare_stats_leaves_out_a_field_with_nothing_in_the_window() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    seed_three_shapes(&db);
+
+    // A window that opens after the last coffee and the work block.
+    let args = StatsArgs {
+        since: Some("2026-06-15T10:30:00Z".to_string()),
+        ..StatsArgs::default()
+    };
+    let r = compute_all_fields(&args, &db).unwrap();
+    let names: Vec<&str> = r.fields.iter().map(|f| f.field.as_str()).collect();
+    assert_eq!(names, ["activity"], "a field with no time is not a row");
+}
+
+#[test]
+fn bare_stats_on_an_empty_database_is_an_empty_table() {
+    let db = fresh_db();
+    let r = compute_all_fields(&StatsArgs::default(), &db).unwrap();
+    assert!(r.fields.is_empty());
+    assert_eq!(r.total_count, 0);
+    assert_eq!(r.tracked_duration_seconds, 0);
+}
+
+#[test]
+fn bare_stats_runs_through_cli_dispatch() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    seed_three_shapes(&db);
+    // The form that used to be an error: no selector at all.
+    run_cli(&["stats"], &db).unwrap();
+    run_cli(&["stats", "--json"], &db).unwrap();
+    run_cli(&["stats", "--today"], &db).unwrap();
 }

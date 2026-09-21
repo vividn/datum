@@ -1,14 +1,20 @@
-// The stats widget draft at /stats (dashboard D3, da-n7r0).
+// The stats widget at /stats (da-n7r0, revamped by da-ptuwr).
 //
-// The widget is a picker and a frame: every number on it is `datum stats`'s.
-// So each assertion holds what is on screen to what the CLI prints for the
-// same argv against the same database — run through the same seam in the
-// same test — never to "some numbers appeared".
+// The widget is a frame: every number on it is `datum stats`'s. So each
+// assertion holds what is on screen to what the CLI prints for the same
+// argv against the same database — run through the same seam in the same
+// test — never to "some numbers appeared".
+//
+// What da-ptuwr changed: there is no field selector. Opened fresh the
+// widget runs a BARE `stats`, which is the whole database — every field,
+// ranked by tracked time — and the only thing that narrows it is the
+// field pill another widget mints. The narrowing is driven by the real
+// gesture in `fieldpill.test.mjs`; this file is the widget itself.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp as withAnyApp, workerClock } from './support/app.mjs';
-import { chooseRoot, unlockRoot } from './support/layout.mjs';
+import { chooseRoot, draft, unlockRoot, widgetPane } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -29,12 +35,14 @@ const withApp = (fn, { prepare, ...options } = {}) =>
 /** Terminal text as a reader sees it: no colour codes, runs of space as one. */
 const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+/g, ' ').trim();
 
-/** Log a small history: two coffees and a mood. */
+/** Log a small history: two coffees, a mood, and a block of work. */
 async function seed({ run }) {
 	for (const argv of [
 		['occur', 'coffee', '-t', '-30'],
 		['occur', 'coffee', '-t', '-10'],
-		['switch', 'mood', 'happy', '-t', '-20']
+		['switch', 'mood', 'happy', '-t', '-20'],
+		['start', 'work', '-t', '-90'],
+		['end', 'work', '-t', '-40']
 	]) {
 		const r = await run(argv);
 		assert.equal(r.code, 0, `${argv.join(' ')}: ${r.stderr}`);
@@ -46,8 +54,6 @@ async function openStats(app) {
 	await app.goto('/stats');
 	await app.page.locator('section.pane[data-title="stats"]').waitFor();
 }
-
-const field = (page, name) => page.locator('.stats button.field', { hasText: name });
 
 /**
  * Wait until the widget shows `argv` and the CLI's own text for it.
@@ -67,19 +73,22 @@ async function expectStats({ page, run }, argv) {
 			want
 		)
 		.catch(async () => {
-			const shown = await page.locator('.stats section').innerText();
+			const shown = await page.locator('.stats').innerText();
 			assert.fail(`wanted ${JSON.stringify(want)}, the widget shows:\n${shown}`);
 		});
 }
 
 describe('/stats', () => {
-	test('no field chosen: the field list and a hint, all time selected', async () => {
+	test('opened fresh it is every field, and there is no field selector left', async () => {
 		await withApp(async (app) => {
 			await seed(app);
 			await openStats(app);
-			await field(app.page, 'coffee').waitFor();
-			assert.deepEqual(await app.page.locator('.stats button.field').allInnerTexts(), ['coffee', 'mood']);
-			assert.equal(await app.page.locator('.stats section .quiet').innerText(), 'pick a field');
+			await expectStats(app, ['stats']);
+			assert.equal(
+				await app.page.locator('.stats button.field, .stats button.state').count(),
+				0,
+				'a field picker is still in the widget'
+			);
 			assert.equal(
 				await app.page.locator('.stats .range button[aria-pressed="true"]').innerText(),
 				'all time'
@@ -88,19 +97,41 @@ describe('/stats', () => {
 		});
 	});
 
-	test("a field shows the CLI's stats; a state narrows it to field:state", async () => {
+	test('the share bar is the ratio column: one slice per field, in the CLI’s own colours', async () => {
 		await withApp(async (app) => {
 			await seed(app);
 			await openStats(app);
+			await expectStats(app, ['stats']);
 
-			await field(app.page, 'coffee').click();
-			await expectStats(app, ['stats', 'coffee']);
-			assert.equal(await app.page.locator('.stats .tile.entries dd').innerText(), '2');
+			const json = await app.run(['stats', '--json']);
+			assert.equal(json.code, 0, json.stderr);
+			const { fields } = JSON.parse(json.stdout);
+			// A field with no share of the time — coffee, two instants — is
+			// not a slice; the table under the bar still counts it.
+			const want = fields.filter((f) => f.ratio > 0);
+			assert.ok(want.length >= 2, `the seed gave ${want.length} fields with time`);
 
-			await field(app.page, 'mood').click();
-			await expectStats(app, ['stats', 'mood']);
-			await app.page.locator('.stats button.state', { hasText: 'happy' }).click();
-			await expectStats(app, ['stats', 'mood:happy']);
+			const slices = await app.page.$$eval('.stats .share .slice', (els) =>
+				els.map((el) => ({
+					text: el.textContent,
+					color: getComputedStyle(el).backgroundColor,
+					grow: getComputedStyle(el).flexGrow
+				}))
+			);
+			assert.deepEqual(
+				slices.map((s) => s.text),
+				want.map((f) => f.field),
+				'the slices are not the ranked fields'
+			);
+			for (const [i, f] of want.entries()) {
+				const [r, g, b] = [1, 3, 5].map((at) => parseInt(f.color.slice(at, at + 2), 16));
+				assert.equal(slices[i].color, `rgb(${r}, ${g}, ${b})`, `${f.field} is painted wrong`);
+				assert.ok(
+					Math.abs(Number(slices[i].grow) - f.ratio) < 1e-6,
+					`${f.field} takes ${slices[i].grow} of the bar, not its ${f.ratio}`
+				);
+			}
+			assert.deepEqual(app.errors, []);
 		});
 	});
 
@@ -108,19 +139,17 @@ describe('/stats', () => {
 		await withApp(async (app) => {
 			await seed(app);
 			await openStats(app);
-			await field(app.page, 'coffee').click();
 
 			await app.page.locator('.stats .range button', { hasText: 'today' }).click();
-			await expectStats(app, ['stats', 'coffee', '--today']);
+			await expectStats(app, ['stats', '--today']);
 
 			await app.page.locator('.stats .range button', { hasText: 'custom' }).click();
-			await expectStats(app, ['stats', 'coffee']);
+			await expectStats(app, ['stats']);
 			await app.page.locator('.stats .custom input').nth(0).fill('2026-01-01T00:00');
-			await expectStats(app, ['stats', 'coffee', '--since', '2026-01-01T00:00']);
+			await expectStats(app, ['stats', '--since', '2026-01-01T00:00']);
 			await app.page.locator('.stats .custom input').nth(1).fill('2099-01-01T00:00');
 			await expectStats(app, [
 				'stats',
-				'coffee',
 				'--since',
 				'2026-01-01T00:00',
 				'--until',
@@ -133,40 +162,34 @@ describe('/stats', () => {
 		await withApp(async (app) => {
 			await seed(app);
 			await openStats(app);
-			await field(app.page, 'coffee').click();
-			await expectStats(app, ['stats', 'coffee']);
-			const count = app.page.locator('.stats .tile.entries dd');
-			assert.equal(await count.innerText(), '2');
+			await expectStats(app, ['stats']);
+			const before = await app.page.locator('.stats .body').innerText();
 
 			// The day frame, in a second tab on the same database.
 			const other = await app.page.context().newPage();
 			await other.goto(new URL('/', app.page.url()).href);
 			await other.waitForFunction(() => typeof window.datum?.run === 'function');
-			// The loud door (da-6918): a real tab logging an entry, echoed and
-			// receipted there as a hand at its console would see it. What this
-			// test is about is the FIRST tab, which hears it over the change
-			// channel either way.
 			const r = await other.evaluate(() => window.datum.run(['occur', 'coffee', '-t', '-1']));
 			assert.equal(r.code, 0, r.stderr);
 
 			await app.page.waitForFunction(
-				() => document.querySelector('.stats .tile.entries dd')?.textContent === '3'
+				(was) => document.querySelector('.stats .body')?.innerText !== was,
+				before
 			);
-			await expectStats(app, ['stats', 'coffee']);
+			await expectStats(app, ['stats']);
 		});
 	});
 
-	// da-vhwq: the pickers move a setting of the widget's OWN, so what they
-	// pick is THIS SESSION'S — it changes what this tab shows and the layout
-	// does not hear of it. A reload therefore starts back at what the layout
-	// says, and «Save options with layout» is what hands the selection over.
-	test('a reload goes back to what the layout says; the save is what keeps the selection', async () => {
+	// da-vhwq: the range chips move a setting of the widget's OWN, so what
+	// they pick is THIS SESSION'S — it changes what this tab shows and the
+	// layout does not hear of it. A reload therefore starts back at what the
+	// layout says, and «Save options with layout» is what hands the window
+	// over. Since da-ptuwr the window is the whole of what there is to hand.
+	test('a reload goes back to what the layout says; the save is what keeps the window', async () => {
 		await withApp(async (app) => {
 			const pick = async () => {
-				await field(app.page, 'mood').click();
-				await app.page.locator('.stats button.state', { hasText: 'happy' }).click();
 				await app.page.locator('.stats .range button', { hasText: 'week' }).click();
-				await expectStats(app, ['stats', 'mood:happy', '--week']);
+				await expectStats(app, ['stats', '--week']);
 			};
 			const reloaded = async () => {
 				await app.page.reload();
@@ -179,11 +202,8 @@ describe('/stats', () => {
 			await pick();
 
 			await reloaded();
-			// Back at what the LAYOUT says, which is no field at all: the
-			// widget shows the hint, and `statsArgv` gives it nothing to run,
-			// so the line it would have printed the argv on is not there.
-			await app.page.locator('.stats section .quiet', { hasText: 'pick a field' }).waitFor();
-			assert.equal(await app.page.locator('.stats .argv').count(), 0, 'a session setting survived a reload');
+			// Back at what the LAYOUT says, which is all time over every field.
+			await expectStats(app, ['stats']);
 
 			// `/stats` is one widget, so the acts are on the ROOT tab's menu
 			// (da-ze1x) — and a layout that shipped opens locked, which is the
@@ -192,20 +212,46 @@ describe('/stats', () => {
 			await unlockRoot(app.page);
 			await chooseRoot(app.page, 'Save options with layout');
 			await reloaded();
-			await expectStats(app, ['stats', 'mood:happy', '--week']);
+			await expectStats(app, ['stats', '--week']);
 		});
 	});
 
-	test('blocked storage: the default selection, and no error', async () => {
+	test('a field saved by an older layout is not a selection the widget comes back to', async () => {
+		await withApp(
+			async (app) => {
+				await seed(app);
+				await app.goto('/');
+				await app.page.locator('section.pane[data-title="stats"]').waitFor();
+				// The tree still carries `field`, and the widget is every field
+				// all the same: da-ptuwr took it out of the settings, so there
+				// is nothing left for a stale layout to select.
+				await expectStats(app, ['stats']);
+				assert.deepEqual(app.errors, []);
+			},
+			{
+				prepare: (context) =>
+					context.addInitScript(
+						draft,
+						JSON.stringify({
+							version: 1,
+							name: 'default',
+							root: widgetPane('stats', 'stats', { field: 'mood', state: 'happy', range: 'all' })
+						})
+					)
+			}
+		);
+	});
+
+	test('blocked storage: the default range, and no error', async () => {
 		await withApp(
 			async (app) => {
 				await seed(app);
 				await openStats(app);
-				await field(app.page, 'coffee').waitFor();
-				assert.equal(await app.page.locator('.stats section .quiet').innerText(), 'pick a field');
-
-				await field(app.page, 'coffee').click();
-				await expectStats(app, ['stats', 'coffee']);
+				await expectStats(app, ['stats']);
+				assert.equal(
+					await app.page.locator('.stats .range button[aria-pressed="true"]').innerText(),
+					'all time'
+				);
 				assert.deepEqual(app.errors, [], 'the page threw with storage blocked');
 			},
 			{
@@ -222,30 +268,50 @@ describe('/stats', () => {
 		);
 	});
 
-	test('at 360px the field list stacks above the body, and nothing scrolls sideways', async () => {
+	// da-ptuwr: «A widget that is showing everything must not be unreadable
+	// on a phone… If every field cannot fit there, the answer is what it
+	// shows FIRST and how it scrolls — not a smaller font.»
+	//
+	// So: enough fields that the table CANNOT fit the pane — measured, not
+	// assumed — and then the claim is about what is in view at the top and
+	// about the box being a scroller. Nothing is cut sideways either: the
+	// chips wrap and the share bar is as wide as the box and no wider.
+	test('crowded on a phone: the bar and the head of the table are in view, the rest scrolls', async () => {
 		await withApp(
 			async (app) => {
-				await seed(app);
+				for (let i = 0; i < 12; i++) {
+					const r = await app.run(['start', `f${i}`, '-t', `-${(i + 1) * 7}`]);
+					assert.equal(r.code, 0, r.stderr);
+				}
 				await openStats(app);
-				await field(app.page, 'coffee').click();
-				await expectStats(app, ['stats', 'coffee']);
+				await expectStats(app, ['stats']);
 
 				const fit = await app.page.evaluate(() => {
-					// The widget's own box, not the pane's: the frame around it is
-					// named `.stats` too (PaneFrame.svelte's host class).
 					const widget = document.querySelector('section.pane .stats');
-					const aside = widget.querySelector('aside').getBoundingClientRect();
-					const section = widget.querySelector('section').getBoundingClientRect();
-					const main = document.querySelector('main');
+					const box = widget.closest('.content');
+					const r = (el) => el.getBoundingClientRect();
+					const share = r(widget.querySelector('.share'));
+					const body = r(widget.querySelector('.body'));
+					const view = r(box);
+					const line = parseFloat(getComputedStyle(widget.querySelector('.body')).lineHeight) || 16;
 					return {
-						stacked: aside.bottom <= section.top,
-						sideways: main.scrollWidth - main.clientWidth
+						crowded: box.scrollHeight - box.clientHeight,
+						sideways: box.scrollWidth - box.clientWidth,
+						scrolls: ['auto', 'scroll'].includes(getComputedStyle(box).overflowY),
+						shareIn: share.top >= view.top - 1 && share.bottom <= view.bottom + 1,
+						shareWidth: share.width - view.width,
+						linesOfTable: Math.floor((view.bottom - body.top) / line)
 					};
 				});
-				assert.ok(fit.stacked, 'the field list is not above the body');
-				assert.equal(fit.sideways, 0, 'the page scrolls sideways');
+				assert.ok(fit.crowded > 0, 'the table fit the pane: this proves nothing');
+				assert.ok(fit.scrolls, 'the crowded pane does not scroll');
+				assert.equal(fit.sideways, 0, 'the widget is cut sideways');
+				assert.ok(fit.shareIn, 'the share bar is not in view at the top');
+				assert.ok(fit.shareWidth <= 1, `the share bar is ${fit.shareWidth}px wider than the pane`);
+				assert.ok(fit.linesOfTable >= 3, `only ${fit.linesOfTable} lines of the table are in view`);
+				assert.deepEqual(app.errors, []);
 			},
-			{ viewport: { width: 360, height: 640 } }
+			{ viewport: { width: 390, height: 300 } }
 		);
 	});
 });

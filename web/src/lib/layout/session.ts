@@ -13,10 +13,11 @@
 //
 // So this store is now the ONE place a widget setting changes: the menu's
 // option rows write here, and so does a widget moving a setting of its own
-// (nowview's − / +, the day strip's handle, the stats pickers). The tree is
-// written by `saveOptions` alone, and the lock hides that act — which is
-// what makes «when locked, nothing modifies the layout» true by
-// CONSTRUCTION rather than by a guard every writer has to remember.
+// (nowview's − / +, the day strip's handle, the stats widget's range
+// chips). The tree is written by `saveOptions` alone, and the lock hides
+// that act — which is what makes «when locked, nothing modifies the
+// layout» true by CONSTRUCTION rather than by a guard every writer has to
+// remember.
 //
 // Nothing here knows what any option MEANS. What is held against a tab is
 // only the DIFFERENCE from what the layout says (`overlay` below), so a

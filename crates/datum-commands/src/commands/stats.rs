@@ -1,5 +1,7 @@
 //! `datum stats` — count / total-duration / per-state-ratio rollup for a
-//! field (or a single `field:state`) over a flexible time-slice.
+//! field (or a single `field:state`) over a flexible time-slice — and with
+//! no field at all, the same table one level out: every field, ranked by
+//! the time it was tracked (da-ptuwr).
 //!
 //! The core life-review statistic: `count` answers "how often", `stats`
 //! answers "how much time, and split how". Durations are reconstructed from
@@ -36,6 +38,7 @@ use crate::args::{ShowFlag, StatsArgs, StatsPeriod};
 use crate::commands::field_visuals::state_label;
 use crate::commands::time_bounds::{parse_since, parse_until};
 use crate::config::resolve_week_start;
+use crate::render::colors::{field_hex, paint, parse_hex, Rgb};
 use datum_parse::time::{format_human_duration, DurationPrecision};
 
 /// Per-state slice of a field's rollup.
@@ -67,6 +70,87 @@ pub struct StatsResult {
     pub states: Vec<StateStat>,
 }
 
+/// One field's line in the all-fields rollup (da-ptuwr).
+///
+/// `duration_seconds` is the field's TRACKED duration — the time it spent
+/// in a state that counts, which is [`StatsResult::tracked_duration_seconds`]
+/// for that field. Not its total: a block field's total is nearly the whole
+/// window, because the gaps between its blocks are the `false` state, and a
+/// table ranked on that would rank every field the same (da-icba's reason,
+/// one level up).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldStat {
+    pub field: String,
+    /// The field's RESOLVED colour (`#rrggbb`) — spec override, else
+    /// `md5(field)`, exactly as `datum fields --json` gives it (da-yiyj).
+    /// The table paints the name with it, so a reader picks a field out of
+    /// the list by the colour it wears everywhere else.
+    pub color: String,
+    pub count: usize,
+    pub duration_seconds: i64,
+    /// Share of [`AllFieldsStats::tracked_duration_seconds`], or `None`
+    /// when nothing at all was tracked in the window.
+    pub ratio: Option<f64>,
+}
+
+/// Structured result of a bare `stats` — every field, ranked.
+///
+/// The same table one level out: where [`StatsResult`] ranks the STATES
+/// within a field, this ranks the FIELDS within the database. Fields run in
+/// parallel, so the total is a sum of per-field tracked time and not a span
+/// of wall-clock — it is what the ratio column is a share of.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AllFieldsStats {
+    /// Longest-tracked first; ties broken by field name.
+    pub fields: Vec<FieldStat>,
+    pub total_count: usize,
+    pub tracked_duration_seconds: i64,
+}
+
+/// Every field the database has logged, ranked by tracked duration.
+///
+/// A field with nothing in the window is left out rather than carried as a
+/// zero row: the table answers "where did the time go", and a name with no
+/// time did not take any. Ignored fields stay in — ignoring a field takes
+/// it off the widget bar, not out of the record, and `stats <ignored>`
+/// answers for one today.
+pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
+    let (start, end) = resolve_window(args, db)?;
+    let registry = db.load_registry()?;
+    let mut fields: Vec<FieldStat> = Vec::new();
+    for field in db.distinct_fields()? {
+        let r = field_stats(&field, None, args, db, start, end)?;
+        if r.total_count == 0 && r.tracked_duration_seconds == 0 {
+            continue;
+        }
+        fields.push(FieldStat {
+            color: field_hex(&r.field, registry.fields.get(&r.field)),
+            field: r.field,
+            count: r.total_count,
+            duration_seconds: r.tracked_duration_seconds,
+            ratio: None,
+        });
+    }
+
+    let tracked_duration_seconds: i64 = fields.iter().map(|f| f.duration_seconds).sum();
+    let total_count: usize = fields.iter().map(|f| f.count).sum();
+    for f in &mut fields {
+        f.ratio = (tracked_duration_seconds > 0)
+            .then(|| f.duration_seconds as f64 / tracked_duration_seconds as f64);
+    }
+    fields.sort_by(|a, b| {
+        b.duration_seconds
+            .cmp(&a.duration_seconds)
+            .then_with(|| a.field.cmp(&b.field))
+    });
+
+    Ok(AllFieldsStats {
+        fields,
+        total_count,
+        tracked_duration_seconds,
+    })
+}
+
 pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
     let selector = args.selector.as_deref().ok_or_else(|| {
         anyhow::anyhow!(
@@ -79,6 +163,20 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
     };
 
     let (start, end) = resolve_window(args, db)?;
+    field_stats(&field, selected_state, args, db, start, end)
+}
+
+/// One field's rollup over an already-resolved window — the core both the
+/// per-field command and the all-fields table are made of.
+fn field_stats(
+    field: &str,
+    selected_state: Option<String>,
+    args: &StatsArgs,
+    db: &Db,
+    start: Option<DateTime<Utc>>,
+    end: DateTime<Utc>,
+) -> Result<StatsResult> {
+    let field = field.to_string();
     let now = DatumTime::now().utc;
 
     // Oldest→newest, time-bearing state rows only. `TimeMetric::Occur` drops
@@ -274,6 +372,18 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
 }
 
 pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
+    // No selector: every field, ranked (da-ptuwr). Bare `stats` was an
+    // error until now, which is what the web widget's own default settings
+    // already called the model (`DEFAULT_STATS`, web/src/lib/stats.ts).
+    if args.selector.is_none() {
+        let all = compute_all_fields(&args, db)?;
+        match args.show {
+            ShowFlag::None => {}
+            ShowFlag::Json => print!("{}", render_all_json(&all)),
+            _ => print!("{}", render_all_text(&all)),
+        }
+        return Ok(());
+    }
     let result = compute_stats(&args, db)?;
     match args.show {
         ShowFlag::None => {}
@@ -635,6 +745,74 @@ fn render_text(r: &StatsResult) -> String {
         ));
     }
     out
+}
+
+/// The all-fields table: the same shape as a field's own body, with the
+/// FIELD where the state goes. One reader learns one table.
+fn render_all_text(r: &AllFieldsStats) -> String {
+    if r.fields.is_empty() {
+        return "No entries yet.\n".to_string();
+    }
+    let dur_w = r
+        .fields
+        .iter()
+        .map(|f| format_dur(f.duration_seconds).len())
+        .max()
+        .unwrap_or(0);
+    let cnt_w = r
+        .fields
+        .iter()
+        .map(|f| f.count.to_string().len())
+        .max()
+        .unwrap_or(0);
+
+    // "tracked", not a bare total: fields run in parallel, so this is a sum
+    // of their tracked time and not a span of clock.
+    let mut out = format!(
+        "all fields  ·  {} tracked over {} entries\n\n",
+        format_dur(r.tracked_duration_seconds),
+        r.total_count,
+    );
+    for f in &r.fields {
+        out.push_str(&format!(
+            "  {:>dur_w$}  {:>6}  {:>cnt_w$}×  {}\n",
+            format_dur(f.duration_seconds),
+            percent(f.ratio),
+            f.count,
+            paint(&ink(&f.color), &f.field),
+        ));
+    }
+    out
+}
+
+/// The escape a `#rrggbb` paints a name with, or nothing when it does not
+/// parse — [`paint`] leaves the body alone for an empty code.
+fn ink(hex: &str) -> String {
+    parse_hex(hex).map(Rgb::fg).unwrap_or_default()
+}
+
+fn render_all_json(r: &AllFieldsStats) -> String {
+    let fields: Vec<serde_json::Value> = r
+        .fields
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "field": f.field,
+                "color": f.color,
+                "count": f.count,
+                "duration_seconds": f.duration_seconds,
+                "ratio": f.ratio,
+            })
+        })
+        .collect();
+    format!(
+        "{}\n",
+        serde_json::json!({
+            "fields": fields,
+            "total_count": r.total_count,
+            "tracked_duration_seconds": r.tracked_duration_seconds,
+        })
+    )
 }
 
 /// The ratio column. A state outside the denominator has no meaningful

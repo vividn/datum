@@ -111,7 +111,7 @@ describe('Reset widget', () => {
 
 	// A second kind, whose settings are a whole object rather than one
 	// number: the same one act, reading the same one registry.
-	test('stats: a chosen field goes back to bare stats', async () => {
+	test('stats: a chosen range goes back to bare stats', async () => {
 		await withApp(async ({ page, run }) => {
 			for (const argv of [['occur', 'coffee', '-t', '-30'], ['switch', 'mood', 'happy', '-t', '-20']]) {
 				const r = await run(argv);
@@ -124,16 +124,16 @@ describe('Reset widget', () => {
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
-			await page.locator('.stats button.field', { hasText: 'coffee' }).click();
-			await page.waitForFunction(() => document.querySelector('.stats .argv')?.textContent === 'stats coffee');
+			await page.locator('.stats .range button', { hasText: 'week' }).click();
+			await page.waitForFunction(() => document.querySelector('.stats .argv')?.textContent === 'stats --week');
 
 			const lines = await linesOf(page, 'tail');
 			assert.equal(lines[1], RESET, `the stats menu reads ${lines.join(' | ')}`);
 
 			await choose(page, 'tail', RESET);
-			// DEFAULT_STATS is all time and no field: bare `stats`, which the
-			// widget draws as its hint.
-			await page.waitForFunction(() => document.querySelector('.stats section .quiet')?.textContent === 'pick a field');
+			// DEFAULT_STATS is all time over every field: a bare `stats`,
+			// which is the argv the widget shows it is running (da-ptuwr).
+			await page.waitForFunction(() => document.querySelector('.stats .argv')?.textContent === 'stats');
 			assert.equal(await page.locator('.stats .range button[aria-pressed="true"]').innerText(), 'all time');
 		}, DESKTOP);
 	});

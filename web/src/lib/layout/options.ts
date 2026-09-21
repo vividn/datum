@@ -45,7 +45,7 @@ type Settings = Record<string, unknown>;
  * options, and for a kind that does when nothing is held and the layout is
  * locked. The SAVE is not gated on the declarations: a widget that moves a
  * setting of its own without declaring it an option — the day strip's
- * height, the stats pickers — still has something to save.
+ * height, the stats widget's range chips — still has something to save.
  */
 export function widgetOptions(tab: Tab | undefined, held: Settings, key: string, locked: boolean): Item[] {
 	if (!tab || !isWidget(tab.content)) return [];

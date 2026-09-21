@@ -242,27 +242,30 @@ describe('what narrows to it', () => {
 		});
 	});
 
-	test('the stats widget shows that field, and gives the picked one back when the pill clears', async () => {
+	test('the stats widget narrows to that field, and widens back when the pill clears', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await ready(app);
 			const stats = pane(page, 'stats');
-			await stats.locator('button.field', { hasText: 'mood' }).click();
-			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats mood');
+			// Every field until something narrows it (da-ptuwr): a bare `stats`.
+			await stats.locator('code.argv').waitFor();
+			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats');
 
 			await hold(page, 'coffee');
 			await page.waitForFunction(
 				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
 			);
-			// The chips say so too, so the widget does not read as showing mood.
-			assert.equal(
-				await stats.locator('button.field[aria-pressed="true"]').innerText(),
-				'coffee'
+			// And the body is that field's own, not the table of all of them.
+			await page.waitForFunction(
+				() => document.querySelector('.stats .body')?.textContent?.startsWith('coffee')
 			);
 
-			// A filter, not a write: the layout keeps what was picked.
+			// A filter, not a write: it widens back to every field.
 			await fieldPill(page).locator('button.remove').click();
-			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats mood');
+			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats');
+			await page.waitForFunction(
+				() => document.querySelector('.stats .body')?.textContent?.includes('all fields')
+			);
 			assert.deepEqual(app.errors, []);
 		});
 	});

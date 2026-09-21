@@ -378,8 +378,8 @@
 				     handed one set of settings and cannot tell which is which. -->
 				{@const settings = withSession(widget.settings, $session[key])}
 				<!-- A widget that changes a setting of its own (nowview's − / +,
-				     the strip's handle, the stats pickers) says so with `change`,
-				     and it lands in THIS SESSION, exactly where the menu's option
+				     the strip's handle, the stats widget's range chips) says so
+				     with `change`, and it lands in THIS SESSION, exactly where the menu's option
 				     rows land — through the kind's `onChange`, which knows what
 				     the event's detail is. The layout hears of it only when the
 				     reader asks («Save options with layout»), which is what makes

@@ -372,17 +372,19 @@ describe('on a phone-sized screen', () => {
 	});
 
 	// The stats widget (da-n7r0) as a root tab (da-0a5o): reached by its
-	// URL, its tab on the root bar, and its pickers on the screen it opens on.
-	test('/stats and its pickers are on screen', async (t) => {
+	// URL, its tab on the root bar, and what it shows on the screen it
+	// opens on — the range picker and the argv it is running. There is no
+	// field picker any more (da-ptuwr): a bare `stats` is every field.
+	test('/stats and its range picker are on screen', async (t) => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await track(app, FIELDS);
 			await app.goto('/stats');
 			await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'stats' }).waitFor();
-			await page.locator('.stats button.field').nth(FIELDS.length - 1).waitFor();
+			await page.waitForFunction(() => document.querySelector('.stats .argv')?.textContent === 'stats');
 			await atEachScreen(t, page, SCREENS, async () => {
 				await assertOnScreen(page, '.root-bar [role="tab"][aria-selected="true"]', 'the stats tab');
-				await assertOnScreen(page, '.stats button.field', "the first field's chip");
+				await assertOnScreen(page, '.stats .argv', 'the argv it is running');
 				await assertOnScreen(page, '.stats .range button', 'the range picker');
 				// And the bottom bar's prompt, whatever tab is in front.
 				await assertOnScreen(page, '.prompt-bar input', "the bottom bar's prompt");

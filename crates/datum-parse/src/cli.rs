@@ -917,7 +917,8 @@ impl StatsPeriod {
 /// rollup over a time slice.
 ///
 /// The selector is a whole field (`activity` → every state) or a single
-/// `field:state` (`activity:coding`). SLICE is a shorthand whole-period
+/// `field:state` (`activity:coding`); left out, the rollup is of every
+/// field, ranked by the time it was tracked (da-ptuwr). SLICE is a shorthand whole-period
 /// positional — a year (`2026`), a month (`2026-06`), or a day
 /// (`2026-06-15`); it is exactly equivalent to the matching
 /// `--since`/`--until` pair. Block durations are reconstructed from
@@ -926,7 +927,8 @@ impl StatsPeriod {
 /// gap-to-next.
 #[derive(Debug, Default)]
 pub struct StatsArgs {
-    /// `field` or `field:state`. Required — `stats` needs a field.
+    /// `field` or `field:state`. None is the whole database: every field,
+    /// ranked by tracked time (da-ptuwr).
     pub selector: Option<String>,
     /// Shorthand whole-period slice: `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`.
     pub slice: Option<String>,

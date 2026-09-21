@@ -1,25 +1,30 @@
-// The stats widget's logic, kept pure and away from the markup: what a
-// selection is, and the exact argv it runs (dashboard D3, da-n7r0).
+// The stats widget's logic, kept pure and away from the markup: what its
+// settings are, and the exact argv it runs (da-n7r0, da-ptuwr).
 //
-// Nothing here computes a statistic. The widget is a picker and a frame:
-// the numbers are `datum stats`'s, as text and as `--json`.
-
-import { shapeFor, type FieldListing } from './fields.js';
+// Nothing here computes a statistic. The widget is a frame: the numbers
+// are `datum stats`'s, as text and as `--json`.
+//
+// There is no field in the settings any more (da-ptuwr, vividn: "Remove the
+// field selector in there, and just show general stats across all fields
+// until a field filter is applied via another widget"). A bare `stats` is
+// the whole database — every field, ranked by the time it was tracked —
+// and the FIELD PILL another widget mints ($lib/bar.ts) is the only thing
+// that narrows it. So the argv takes the field as an argument rather than
+// reading it out of the settings: what the widget shows is the reader's
+// filter, not a selection of its own, and there is nothing left to save.
 
 /** A named window, or an explicit one (`--since` / `--until`, either may be blank). */
 export type StatsRange = 'all' | 'today' | 'week' | 'month' | { since: string; until: string };
 
-/** The widget's settings — what the engine saves with the layout. */
+/** The widget's settings: the window, and nothing else (da-ptuwr). */
 export interface StatsSettings {
-	field?: string;
-	state?: string;
 	range: StatsRange;
 }
 
-/** All time, no field: bare `stats` is the model (vividn, 2026-09-10). */
+/** All time, every field: bare `stats` is the model (vividn, 2026-09-10). */
 export const DEFAULT_STATS: StatsSettings = { range: 'all' };
 
-/** `stats --json` for a whole field. */
+/** `stats --json` for a whole field — what a field pill narrows the widget to. */
 export interface FieldStats {
 	field: string;
 	total_count: number;
@@ -28,14 +33,27 @@ export interface FieldStats {
 	states: { state: string; count: number; duration_seconds: number; ratio: number | null }[];
 }
 
-/** `stats --json` for one `field:state`. */
-export interface StateStats {
+/** One field's row of a bare `stats --json`. */
+export interface FieldRow {
 	field: string;
-	state: string;
+	/** The field's resolved `#rrggbb`, the colour it wears everywhere else. */
+	color: string;
 	count: number;
 	duration_seconds: number;
+	/** Its share of `tracked_duration_seconds`, or null when nothing was tracked. */
 	ratio: number | null;
 }
+
+/** Bare `stats --json`: every field, ranked. */
+export interface AllFieldsStats {
+	fields: FieldRow[];
+	total_count: number;
+	tracked_duration_seconds: number;
+}
+
+/** Which of the two a `stats --json` is: the all-fields table has `fields`. */
+export const isAllFields = (s: FieldStats | AllFieldsStats | null): s is AllFieldsStats =>
+	!!s && Array.isArray((s as AllFieldsStats).fields);
 
 const PERIOD_FLAG: Record<string, string> = { today: '--today', week: '--week', month: '--month' };
 
@@ -48,14 +66,10 @@ export function rangeArgs(range: StatsRange): string[] {
 	];
 }
 
-/** The argv a selection runs, or null when no field is picked. */
-export function statsArgv({ field, state, range }: StatsSettings): string[] | null {
-	if (!field) return null;
-	return ['stats', state ? `${field}:${state}` : field, ...rangeArgs(range)];
-}
-
-/** The states a field can be narrowed to — the ones the widget bar offers. */
-export function statesOf(listing: FieldListing | undefined): string[] {
-	const shape = shapeFor(listing?.spec ?? undefined, listing?.states);
-	return shape.kind === 'states' ? shape.states : [];
+/**
+ * The argv the widget runs: `stats` over every field, or over the one a
+ * field pill has narrowed the page to.
+ */
+export function statsArgv({ range }: StatsSettings, field?: string | null): string[] {
+	return ['stats', ...(field ? [field] : []), ...rangeArgs(range)];
 }

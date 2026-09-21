@@ -1,35 +1,44 @@
 <!--
-	The stats widget — a DRAFT to shape from (dashboard D3, da-n7r0).
+	The stats widget (da-n7r0, revamped by da-ptuwr).
 
-	Pick a field (and a state, if it has them) and a range; the body is what
-	`datum stats` prints for that selection, through CliOutput. The header
-	above it is the same selection's `--json`, laid out as tiles — a glimpse
-	of what a designed view could be, and still the CLI's numbers: nothing
-	here computes a statistic.
+	It shows EVERY FIELD until another widget narrows it. vividn, 2026-09-21:
+	"Remove the field selector in there, and just show general stats across
+	all fields until a field filter is applied via another widget". So there
+	is no picker here at all: the body is what `datum stats` prints — the
+	ranked table of fields with no selector, one field's own states with
+	one — and the only thing that chooses between them is the FIELD PILL
+	the fields widget mints (`da-8810n`, $lib/bar.ts).
 
-	`settings` is the widget's state and `change` hands a new one out, so the
-	dashboard engine can save it with the layout.
+	What the range chips choose is the WINDOW, which is the widget's whole
+	settings now (`StatsSettings`). `change` hands a new one out and it
+	lands in THIS SESSION (da-vhwq, `layout/session.ts`): it changes what
+	this tab is showing and the layout does not hear of it, so a reload
+	starts back at what the layout says and «Save options with layout» is
+	the one thing that hands a window over.
 
-	A FIELD PILL on the bar overrides the field in it (da-8810n, vividn: "So
-	stats widget would filter to this field"). Overrides, and does not
-	write: the pill is a filter a reader holds for a moment and the settings
-	are what the layout keeps, so a picked field is still picked when the
-	pill clears. Its state goes with it — the pilled field has states of its
-	own, and the one picked for another field is not among them.
+	Above the table is the same numbers as a picture: the ratio column as
+	one stacked bar in the fields' own colours (`color` on `stats --json`,
+	resolved by the CLI exactly as it paints them elsewhere). It is the
+	answer the 240×140 pane shows FIRST — a whole database in ten pixels —
+	and the table under it is what the reader scrolls. Narrowed to one
+	field the subject is that field, so the tiles take the bar's place:
+	its entries, its time, how many states it has been in.
+
+	Nothing here computes a statistic.
 -->
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { browser } from '$app/environment';
 	import { fieldPill } from './bar.js';
+	import { inkOver } from './fields.js';
 	import CliOutput from './CliOutput.svelte';
 	import { run, type RunResult } from './run.js';
-	import type { FieldListing } from './fields.js';
 	import {
 		DEFAULT_STATS,
-		statesOf,
+		isAllFields,
 		statsArgv,
+		type AllFieldsStats,
 		type FieldStats,
-		type StateStats,
 		type StatsRange,
 		type StatsSettings
 	} from './stats.js';
@@ -50,42 +59,19 @@
 	/** The custom range's two inputs, by the flag each one fills. */
 	const EDGES = ['since', 'until'] as const;
 
-	let fields: FieldListing[] = [];
 	let result: RunResult | null = null;
-	let summary: FieldStats | StateStats | null = null;
+	let summary: FieldStats | AllFieldsStats | null = null;
 	/** How many runs have been started, and the newest one on screen. */
 	let started = 0;
 	let shown = -1;
 
-	/**
-	 * What the widget SHOWS: its settings, narrowed by a field pill.
-	 *
-	 * Not `shown`, which is this file's newest-run-on-screen counter.
-	 */
-	$: view = $fieldPill ? { ...settings, field: $fieldPill, state: undefined } : settings;
-	$: argv = statsArgv(view);
+	$: argv = statsArgv(settings, $fieldPill);
 	$: custom = typeof settings.range === 'object' ? settings.range : null;
-	$: states = statesOf(fields.find((f) => f.field === view.field));
-	$: tiles = summary ? tilesOf(summary) : [];
+	$: all = isAllFields(summary) ? summary : null;
+	$: tiles = summary && !all ? tilesOf(summary as FieldStats) : [];
 
 	// Not on mount: there is no `run` outside the browser.
-	$: if (browser) void list(epoch);
 	$: if (browser) void refresh(argv, epoch);
-
-	/** Listings started and the newest one on screen — `list`'s own pair. */
-	let listStarted = 0;
-	let listShown = -1;
-
-	async function list(_epoch: number): Promise<void> {
-		// Last started wins here too: two epoch bumps in quick succession put
-		// two listings in flight, and the older answer must not paint over
-		// the newer one (review thread on #165).
-		const at = ++listStarted;
-		const listed = await run(['fields', '--json']);
-		if (at < listShown) return;
-		listShown = at;
-		if (listed.code === 0) fields = parsed(listed.stdout) ?? fields;
-	}
 
 	/**
 	 * The CLI's JSON, or null when it is not JSON. A process killed
@@ -100,14 +86,14 @@
 		}
 	}
 
-	async function refresh(argv: string[] | null, _epoch: number): Promise<void> {
+	async function refresh(argv: string[], _epoch: number): Promise<void> {
 		const at = ++started;
-		const [text, json] = argv ? await Promise.all([run(argv), run([...argv, '--json'])]) : [null, null];
+		const [text, json] = await Promise.all([run(argv), run([...argv, '--json'])]);
 		// Last started wins, not last to return (see CliPane.svelte).
 		if (at < shown) return;
 		shown = at;
 		result = text;
-		summary = json?.code === 0 ? parsed(json.stdout) : null;
+		summary = json.code === 0 ? parsed(json.stdout) : null;
 	}
 
 	function set(next: Partial<StatsSettings>): void {
@@ -115,13 +101,7 @@
 		dispatch('change', settings);
 	}
 
-	function tilesOf(s: FieldStats | StateStats): [string, string][] {
-		if ('state' in s)
-			return [
-				['entries', String(s.count)],
-				['time', duration(s.duration_seconds)],
-				['share', s.ratio === null ? '—' : `${(s.ratio * 100).toFixed(1)}%`]
-			];
+	function tilesOf(s: FieldStats): [string, string][] {
 		return [
 			['entries', String(s.total_count)],
 			['time', duration(s.total_duration_seconds)],
@@ -134,110 +114,91 @@
 		const m = Math.floor((secs % 3600) / 60);
 		return h ? `${h}h ${m}m` : m ? `${m}m` : `${secs}s`;
 	}
+
+	/**
+	 * The share bar's segments: the fields that have a share at all. A
+	 * field with none — a point field, whose entries take no time — is not
+	 * drawn rather than drawn as nothing; the table below it still counts
+	 * it.
+	 */
+	$: shares = (all?.fields ?? []).filter((f) => (f.ratio ?? 0) > 0);
 </script>
 
 <div class="stats">
-	<aside>
-		<div class="chips" role="group" aria-label="fields">
-			{#each fields as { field } (field)}
-				<button
-					class="field"
-					class:on={view.field === field}
-					aria-pressed={view.field === field}
-					on:click={() => set({ field, state: undefined })}>{field}</button
-				>
-			{:else}
-				<p class="quiet">nothing tracked yet</p>
-			{/each}
-		</div>
-		{#if states.length}
-			<div class="chips" role="group" aria-label="states of {view.field}">
-				{#each states as state (state)}
-					<button
-						class="state"
-						class:on={view.state === state}
-						aria-pressed={view.state === state}
-						on:click={() => set({ state: view.state === state ? undefined : state })}
-						>{state}</button
-					>
-				{/each}
-			</div>
-		{/if}
-	</aside>
-
-	<section>
-		<div class="chips range" role="group" aria-label="time range">
-			{#each PERIODS as { range, label } (range)}
-				<button
-					class:on={settings.range === range}
-					aria-pressed={settings.range === range}
-					on:click={() => set({ range })}>{label}</button
-				>
-			{/each}
+	<div class="chips range" role="group" aria-label="time range">
+		{#each PERIODS as { range, label } (range)}
 			<button
-				class:on={!!custom}
-				aria-pressed={!!custom}
-				on:click={() => set({ range: { since: '', until: '' } })}>custom</button
+				class:on={settings.range === range}
+				aria-pressed={settings.range === range}
+				on:click={() => set({ range })}>{label}</button
 			>
+		{/each}
+		<button
+			class:on={!!custom}
+			aria-pressed={!!custom}
+			on:click={() => set({ range: { since: '', until: '' } })}>custom</button
+		>
+	</div>
+	{#if custom}
+		<div class="custom">
+			{#each EDGES as edge (edge)}
+				<label
+					>{edge}
+					<input
+						type="datetime-local"
+						value={custom[edge]}
+						on:change={(e) => set({ range: { ...custom, [edge]: e.currentTarget.value } })}
+					/></label
+				>
+			{/each}
 		</div>
-		{#if custom}
-			<div class="custom">
-				{#each EDGES as edge (edge)}
-					<label
-						>{edge}
-						<input
-							type="datetime-local"
-							value={custom[edge]}
-							on:change={(e) => set({ range: { ...custom, [edge]: e.currentTarget.value } })}
-						/></label
-					>
-				{/each}
-			</div>
-		{/if}
+	{/if}
 
-		{#if !argv}
-			<p class="quiet">pick a field</p>
-		{:else}
-			<code class="argv">{argv.join(' ')}</code>
-			{#if tiles.length}
-				<dl class="tiles">
-					{#each tiles as [label, value] (label)}
-						<div class="tile {label}"><dt>{label}</dt><dd>{value}</dd></div>
-					{/each}
-				</dl>
-			{/if}
-			<div class="body">
-				{#if result?.stdout}
-					<CliOutput text={result.stdout} />
-				{:else if result?.stderr}
-					<CliOutput text={result.stderr} stream="stderr" error={result.code !== 0} />
-				{/if}
-			</div>
+	{#if shares.length}
+		<div class="share" role="img" aria-label="share of tracked time by field">
+			{#each shares as f (f.field)}
+				<span
+					class="slice"
+					style:flex-grow={f.ratio}
+					style:background={f.color}
+					style:color={inkOver(f.color)}
+					title="{f.field} — {((f.ratio ?? 0) * 100).toFixed(1)}%">{f.field}</span
+				>
+			{/each}
+		</div>
+	{/if}
+	{#if tiles.length}
+		<dl class="tiles">
+			{#each tiles as [label, value] (label)}
+				<div class="tile {label}"><dt>{label}</dt><dd>{value}</dd></div>
+			{/each}
+		</dl>
+	{/if}
+
+	<code class="argv">{argv.join(' ')}</code>
+	<div class="body">
+		{#if result?.stdout}
+			<CliOutput text={result.stdout} />
+		{:else if result?.stderr}
+			<CliOutput text={result.stderr} stream="stderr" error={result.code !== 0} />
 		{/if}
-	</section>
+	</div>
 </div>
 
 <style>
 	.stats {
-		display: grid;
-		grid-template-columns: minmax(8rem, 14rem) minmax(0, 1fr);
-		gap: 1rem;
-		font-family: monospace;
-	}
-
-	/* The phone breakpoint the day frame uses: the fields stack above. */
-	@media (max-width: 720px) {
-		.stats {
-			grid-template-columns: minmax(0, 1fr);
-		}
-	}
-
-	aside,
-	section {
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
 		min-width: 0;
+		font-family: monospace;
+		/* The pane's title lies OVER its content on the bar's edge
+		   (da-13bc), and the frame says how far in `--under-top` — "for a
+		   widget whose own controls sit in that corner to keep clear of
+		   it" (PaneFrame.svelte). The range chips are that corner's
+		   controls, so they keep clear; a widget with no bar above it has
+		   no such edge and the variable is not set. */
+		padding-top: var(--under-top, 0px);
 	}
 
 	.chips {
@@ -263,10 +224,6 @@
 		color: var(--ink-bright);
 	}
 
-	button.state {
-		font-size: 0.8rem;
-	}
-
 	.custom {
 		display: flex;
 		flex-wrap: wrap;
@@ -282,6 +239,27 @@
 		color: var(--ink-bright);
 		font: inherit;
 		color-scheme: dark;
+	}
+
+	/* One row, the fields' shares side by side. The name rides inside its
+	   own slice and is clipped by it, so a thin slice is a colour and a
+	   wide one is a colour with a word in it — never a label that pushes
+	   the bar wider than the pane. */
+	.share {
+		display: flex;
+		border-radius: 3px;
+		overflow: hidden;
+		min-height: 1.1rem;
+	}
+
+	.slice {
+		flex-basis: 0;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-align: center;
+		font-size: 0.7rem;
+		line-height: 1.1rem;
 	}
 
 	.argv {
@@ -315,11 +293,5 @@
 
 	.body {
 		overflow-x: auto;
-	}
-
-	.quiet {
-		margin: 0;
-		color: var(--quiet);
-		font-style: italic;
 	}
 </style>
