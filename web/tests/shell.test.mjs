@@ -593,15 +593,17 @@ describe('the acts', () => {
 			// And the way out is still one press away, where it now lives.
 			assert.equal(await pressed(), 'true');
 			assert.match(await lockButton(page).getAttribute('aria-label'), /^unlock the day layout/);
-			// «by the gear icon»: at the bar's far end, with nothing but the
-			// bar's own gap between the two (da-bzhq).
+			// «by the gear icon» (da-bzhq), on the gear's OTHER side since
+			// da-fphjw — vividn: «Move the lock button to the other side of the
+			// gear» — so the GEAR is the bar's last thing and the lock is the
+			// one before it, with nothing but the bar's own gap between.
 			const beside = await page.evaluate(() => {
 				const box = (s) => document.querySelector(s).getBoundingClientRect();
 				const [lock, gear, bar] = ['.root-bar button.lock', '.root-bar button.gear', '.root-bar'].map(box);
-				return { after: lock.left - gear.right, end: bar.right - lock.right };
+				return { before: gear.left - lock.right, end: bar.right - gear.right };
 			});
-			assert.ok(beside.after >= 0 && beside.after <= 8, `the lock is ${beside.after}px from the gear`);
-			assert.ok(beside.end <= 12, `the lock is ${beside.end}px from the bar's end`);
+			assert.ok(beside.before >= 0 && beside.before <= 8, `the lock is ${beside.before}px from the gear`);
+			assert.ok(beside.end <= 12, `the gear is ${beside.end}px from the bar's end`);
 			assert.deepEqual(await dotted(page), [], 'the lock alone showed the modified dot');
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), '1');
 
@@ -630,6 +632,99 @@ describe('the acts', () => {
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), null);
 			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'true');
 		}, { ...DESKTOP, home: null });
+	});
+
+	// vividn, 2026-09-21 (da-fphjw): «highlight when it is unlocked rather
+	// than locked», and «make the unlocked icon more distinctive. It is
+	// hard to see that the lock is unlocked with the current icon».
+	//
+	// Two requests, and doing one leaves him where he started: the
+	// HIGHLIGHT says something is true, the ICON says which thing. So both
+	// are read here, and the icon is read as a SILHOUETTE — where the
+	// shackle actually lands on the screen — rather than as a `d`
+	// attribute, because what he could not see was the drawn mark and the
+	// two states used to differ by about a pixel of one shackle's end.
+	test('the lock is LOUD when unlocked, and the two states are different shapes', async () => {
+		await withApp(async ({ page }) => {
+			/**
+			 * The button's colour, and where the shackle is DRAWN, in the
+			 * button's own box.
+			 *
+			 * Read through `getPointAtLength` and `getScreenCTM`, not off the
+			 * `<svg>`: the mark carries a transform, and an element's rect is
+			 * its border box — it never says where transformed or overflowed
+			 * ink actually lands (canary-kimi-k3 and canary-deepseek-v4-pro on
+			 * PR 67, on a first draft of this test that measured the svg and
+			 * so could not have caught anything).
+			 *
+			 * `along` is five points, enough to say the two states are
+			 * different; `dense` is 33, enough to bound the whole mark.
+			 */
+			const mark = () =>
+				page.evaluate(() => {
+					const button = document.querySelector('.root-bar button.lock');
+					const path = button.querySelector('svg .shackle');
+					const at = button.getBoundingClientRect();
+					const m = path.getScreenCTM();
+					const total = path.getTotalLength();
+					const points = (n) =>
+						Array.from({ length: n }, (_, i) => {
+							const p = path.getPointAtLength((total * i) / (n - 1)).matrixTransform(m);
+							return [p.x - at.left, p.y - at.top];
+						});
+					return {
+						color: getComputedStyle(button).color,
+						border: getComputedStyle(button).borderTopColor,
+						box: { width: at.width, height: at.height },
+						along: points(5),
+						dense: points(33)
+					};
+				});
+
+			/** `--warn`, the orange this app paints a thing worth noticing. */
+			const WARN = 'rgb(255, 209, 102)';
+
+			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'false');
+			const open = await mark();
+			assert.equal(open.color, WARN, 'an UNLOCKED layout is not the loud state');
+			assert.equal(open.border, WARN, 'the unlocked outline is not loud either');
+
+			await toggleRootLock(page);
+			await until(() => lockButton(page).getAttribute('aria-pressed'), (p) => p === 'true');
+			const shut = await mark();
+			assert.notEqual(shut.color, WARN, 'a LOCKED layout took the loud colour');
+			assert.notEqual(shut.color, open.color, 'the two states are painted the same');
+
+			// And the shape: every sampled point of the shackle has moved,
+			// and the furthest by more than a shackle's stroke — the two
+			// states are not one mark with a different end.
+			const moved = open.along.map(([x, y], i) => Math.hypot(x - shut.along[i][0], y - shut.along[i][1]));
+			assert.ok(Math.max(...moved) >= 3, `the shackle moved at most ${Math.max(...moved).toFixed(2)}px between the two states`);
+			assert.ok(moved.filter((d) => d >= 1.5).length >= 3, `only ${moved.filter((d) => d >= 1.5).length} of 5 points moved`);
+
+			// Whatever it is drawn as, the INK stays inside its button —
+			// nothing of the swung shackle hangs out over the gear or the ⓘ.
+			// The mark is 16px centred in a 24px badge, so it has 4px of room
+			// on every side; the swung shackle spends a fraction of that and
+			// nothing like all of it. Read as points and widened by the
+			// stroke's half-width, because the stroke is drawn either side of
+			// the line `getPointAtLength` walks.
+			const HALF = 0.7; // half of the 1.4px the mark is stroked with
+			for (const [state, m] of [
+				['unlocked', open],
+				['locked', shut]
+			])
+				for (const [x, y] of m.dense) {
+					assert.ok(
+						x - HALF >= 0 && x + HALF <= m.box.width,
+						`${state}: the shackle reaches x=${x.toFixed(2)} in a ${m.box.width}px button`
+					);
+					assert.ok(
+						y - HALF >= 0 && y + HALF <= m.box.height,
+						`${state}: the shackle reaches y=${y.toFixed(2)} in a ${m.box.height}px button`
+					);
+				}
+		}, DESKTOP);
 	});
 
 	test('an unmodified restore lists the versions, and one of them can be picked', async () => {

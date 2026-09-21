@@ -959,21 +959,36 @@
 		pointer-events: auto;
 	}
 
+	/* «let's push the maximize button into the corner more» (vividn,
+	   2026-09-21, da-fphjw). The row is held 0.5rem off the rounded
+	   corners; the maximize alone gives 6px of that back, so it sits 2px
+	   from the corner the bar STARTS at while the `+` and the `▾` keep
+	   their clearance at the other end. Logical, so it is the same corner
+	   whichever edge the bar is on and on the left-hand bar's half turn
+	   too — the corner alignment calls `start`. A holder's row has no
+	   inset to give back, so the rule is the pane's alone. */
+	.pane > .titlebar > .along > .maximize {
+		margin-inline-start: -0.375rem;
+	}
+
 	/* A flat mono-colour mark in `currentColor` (da-tnv3's rule for the
 	   lock): strokes, so the two states are the same weight, and `block`
 	   so a rotated bar does not give the box a baseline's slack.
 
 	   The box is INSIDE the button, not the 16px the viewBox is: a badge is
 	   `--badge` square with a 1px outline, so a 16px glyph on a 16px badge
-	   hung a pixel out of each side (da-jlgp). Three pixels in from the
-	   border box at either badge size, and square, so which way the bar
-	   runs makes no difference to it. The stroke does not scale with the
-	   box — a hairline at 10px and a slab at 18px are the same mark drawn
+	   hung a pixel out of each side (da-jlgp). FOUR pixels in from the
+	   border box at either badge size — three until «it can be a bit
+	   smaller as well» (vividn, 2026-09-21, da-fphjw) — and square, so which
+	   way the bar runs makes no difference to it. The BUTTON is not
+	   touched: the mark shrinks and the hit area stays the 16px/24px floor
+	   `reachable.test.mjs` holds it to. The stroke does not scale with the
+	   box — a hairline at 8px and a slab at 16px are the same mark drawn
 	   twice — so it stays the 1.25px it was drawn as. */
 	.maximize svg {
 		display: block;
-		inline-size: calc(var(--badge) - 6px);
-		block-size: calc(var(--badge) - 6px);
+		inline-size: calc(var(--badge) - 8px);
+		block-size: calc(var(--badge) - 8px);
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 1.25;

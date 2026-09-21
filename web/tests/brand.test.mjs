@@ -504,7 +504,13 @@ describe('the base colour follows the database', () => {
 describe('the beta mark', () => {
 	const PHONE = { width: 412, height: 563 };
 
-	test('is in the root bar beside the gear, its ⓘ a fingertip’s 24px, and not on the bottom bar', async () => {
+	// The bar's right end reads ⓘ · lock · gear (da-fphjw): the lock came
+	// across the gear — vividn, "move the lock button to the other side of
+	// the gear" — so the ⓘ is no longer the gear's immediate neighbour.
+	// What it must still be is the LAST thing before that pair and hard up
+	// against it, which is what "near the gear logo" (da-y992) asked for,
+	// so the chain is asserted as a chain rather than as one gap.
+	test('is in the root bar, last before the lock and the gear, its ⓘ a fingertip’s 24px, and not on the bottom bar', async () => {
 		for (const viewport of [{ width: 1280, height: 900 }, PHONE, { width: 320, height: 664 }]) {
 			await withApp(
 				async ({ page }) => {
@@ -513,6 +519,7 @@ describe('the beta mark', () => {
 						return {
 							tag: box('.root-bar .tag'),
 							hint: box('.root-bar .hint-button'),
+							lock: box('.root-bar button.lock'),
 							gear: box('.root-bar .gear'),
 							screen: document.documentElement.clientWidth,
 							below: !!document.querySelector('.prompt-bar .tag, .prompt-bar .hint-button')
@@ -520,12 +527,17 @@ describe('the beta mark', () => {
 					});
 					const size = `${viewport.width}x${viewport.height}`;
 					assert.ok(at.tag && at.hint && at.gear, `${size}: the beta pair is not in the root bar`);
+					assert.ok(at.lock, `${size}: the lock is not in the root bar`);
 					assert.equal(at.below, false, `${size}: the beta pair is still on the bottom bar`);
-					// Beside the gear: to its left, with nothing wider than the bar's gap between.
-					assert.ok(at.hint.right <= at.gear.left + 0.5, `${size}: the ⓘ is not left of the gear`);
-					assert.ok(at.gear.left - at.hint.right <= 8, `${size}: the ⓘ is not beside the gear`);
+					// ⓘ then lock then gear, each hard up against the next with
+					// nothing wider than the bar's own gap between them.
+					assert.ok(at.hint.right <= at.lock.left + 0.5, `${size}: the ⓘ is not left of the lock`);
+					assert.ok(at.lock.right <= at.gear.left + 0.5, `${size}: the lock is not left of the gear`);
+					assert.ok(at.lock.left - at.hint.right <= 8, `${size}: the ⓘ is not beside the lock`);
+					assert.ok(at.gear.left - at.lock.right <= 8, `${size}: the lock is not beside the gear`);
 					assert.ok(at.hint.width >= 24 && at.hint.height >= 24, `${size}: the ⓘ is ${at.hint.width}x${at.hint.height}`);
-					// And the gear is still on the screen at the narrowest.
+					// And the gear, now the bar's last thing, is still on the
+					// screen at the narrowest.
 					assert.ok(at.gear.right <= at.screen, `${size}: the gear is off the screen`);
 				},
 				{ viewport }

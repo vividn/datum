@@ -46,13 +46,15 @@
 
 	THE LOCK IS NOT AMONG THEM any more (da-bzhq). vividn, 2026-09-21: "Let's
 	move the lock button outside of the layout menu and put it by the gear
-	icon to be more discoverable." So it is a padlock BUTTON at the bar's
-	far end, on the gear's OTHER side — the place to the gear's left is the
-	beta pair's ⓘ (da-y992), which brand.test.mjs holds beside the gear, so
-	the lock takes the end. Pressed rather than chosen, `aria-pressed` for
-	which way it is. It is this device's (shell.ts), not the layout's,
-	which is why its title says so in words — and which layouts open locked
-	is untouched (da-gshh). A PANE's menu keeps `Lock layout` / `Unlock
+	icon to be more discoverable." So it is a padlock BUTTON beside the
+	gear — on the gear's LEFT, between it and the beta pair's ⓘ, since
+	"move the lock button to the other side of the gear" (da-fphjw) gave
+	the bar's far end back to the gear. Pressed rather than chosen,
+	`aria-pressed` for which way it is; HIGHLIGHTED when it is UNLOCKED,
+	that being the state with consequences (da-fphjw, see `.lock.open`).
+	It is this device's (shell.ts), not the layout's, which is why its
+	title says so in words — and which layouts open locked is untouched
+	(da-gshh). A PANE's menu keeps `Lock layout` / `Unlock
 	layout`, there being no gear beside a pane and a locked layout tab
 	needing a way out (da-crp5).
 
@@ -93,13 +95,13 @@
 	Keeping it saves the tree under its name and the italics go; closing it
 	writes nothing at all.
 
-	Just before the gear, the `beta` mark and its ⓘ (Beta.svelte): vividn on
+	Just before the lock, the `beta` mark and its ⓘ (Beta.svelte): vividn on
 	PR #25, "move the beta marker up to the top bar near the gear logo"
 	(da-y992). They were under the logo on the bottom bar until then. So
-	the bar's right end reads ⓘ · gear · lock.
+	the bar's right end reads ⓘ · lock · gear (da-fphjw).
 
 	On a phone the tabs scroll sideways rather than wrapping — one row,
-	always — while the `+`, the `▾`, the beta pair, the gear and the lock
+	always — while the `+`, the `▾`, the beta pair, the lock and the gear
 	stay where they are.
 -->
 <script lang="ts">
@@ -375,6 +377,41 @@
 	{/if}
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
 	<span class="end"><Beta /></span>
+	<!-- The lock, ON THE GEAR'S OTHER SIDE — vividn, 2026-09-21 (da-fphjw):
+	     "Move the lock button to the other side of the gear". It was at
+	     the bar's far end past the gear (da-bzhq); now the gear takes the
+	     end and the lock is between it and the beta pair's ⓘ. It stays
+	     BESIDE the gear either way, which is the whole of why it was put
+	     here — "by the gear icon to be more discoverable" — and the ⓘ is
+	     still the thing before it (da-y992, brand.test.mjs).
+
+	     Its title says whose the lock is: THIS DEVICE'S (shell.ts), so a
+	     control in the page's own corner is not read as a property of the
+	     layout everyone shares. -->
+	{#if acts}
+		<button
+			type="button"
+			class="control badge lock"
+			class:open={!locked}
+			aria-pressed={locked}
+			aria-label="{locked ? 'unlock' : 'lock'} the {name} layout on this device"
+			title="{locked ? 'unlock' : 'lock'} this layout on this device"
+			on:click={doToggleLock}
+		>
+			<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+				<!-- The body is the same box either way; the SHACKLE is the
+				     same arch either way too, and what says which state this
+				     is, is that OPEN it has been swung off the body about its
+				     right foot (da-fphjw). vividn: "It is hard to see that the
+				     lock is unlocked with the current icon" — which drew the
+				     two states a shackle's end apart, a difference of about a
+				     pixel at the size this is drawn. A half-turned mark is a
+				     different silhouette at any size. -->
+				<path class="shackle" d="M5 7V5a3 3 0 0 1 6 0v2" transform={locked ? null : 'rotate(34 11 7)'} />
+				<rect class="body" x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+			</svg>
+		</button>
+	{/if}
 	<PaneMenu
 		items={settings}
 		look="badge"
@@ -387,34 +424,6 @@
 			<circle class="ring" r="6.2" />
 		</svg></PaneMenu
 	>
-	<!-- The lock, ON THE GEAR'S OTHER SIDE (da-bzhq) — "by the gear icon to
-	     be more discoverable", and at the bar's far end, because the ⓘ of
-	     the beta pair has the place on the gear's left (da-y992,
-	     brand.test.mjs holds the two of them together). Its title says
-	     whose the lock is: THIS DEVICE'S (shell.ts), so a control in the
-	     page's own corner is not read as a property of the layout everyone
-	     shares. -->
-	{#if acts}
-		<button
-			type="button"
-			class="control badge lock"
-			aria-pressed={locked}
-			aria-label="{locked ? 'unlock' : 'lock'} the {name} layout on this device"
-			title="{locked ? 'unlock' : 'lock'} this layout on this device"
-			on:click={doToggleLock}
-		>
-			<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-				<!-- The shackle stands up when the lock is closed and leans
-				     open when it is not; the body is the same box either way. -->
-				{#if locked}
-					<path class="shackle" d="M5 7V5a3 3 0 0 1 6 0v2" />
-				{:else}
-					<path class="shackle" d="M5 7V5a3 3 0 0 1 6 0" />
-				{/if}
-				<rect class="body" x="3.5" y="7" width="9" height="6.5" rx="1.5" />
-			</svg>
-		</button>
-	{/if}
 	{#if trail && !dirty}
 		<ul class="versions">
 			{#if trail.length}
@@ -492,10 +501,9 @@
 		flex: none;
 	}
 
-	/* The lock (da-bzhq), the bar's last thing, right beside the gear and
-	   the same 24px badge as the `+`. A flat mono-colour mark in
-	   `currentColor`, like the maximize's; CLOSED it takes the accent,
-	   because being locked is a state and is drawn as one. */
+	/* The lock (da-bzhq), right beside the gear and the same 24px badge as
+	   the `+`. A flat mono-colour mark in `currentColor`, like the
+	   maximize's. */
 	.lock {
 		flex: none;
 	}
@@ -507,11 +515,31 @@
 		stroke-width: 1.4;
 		stroke-linecap: round;
 		stroke-linejoin: round;
+		/* The SWUNG shackle's stroke grazes the top of its own viewBox.
+		   A turn moves WHICH point of the arch is the highest, so it is not
+		   the standing apex (8,2) that decides this — that one lands at
+		   y=1.18, comfortably inside. Swept, the top of the SWUNG arch is
+		   the point 56° along the arc, (6.32, 2.51), which the 34° turn
+		   about (11,7) puts at y=0.664, and the 0.7px half-stroke takes to
+		   -0.04. A viewBox is a clip, so without this the mark would be cut
+		   there — by a hundredth of a pixel today, and by however much the
+		   angle is ever changed by. Nothing can reach the gear or the ⓘ
+		   either way: this is a 16px mark centred in a 24px badge, so it has
+		   four pixels of room on every side, which shell.test.mjs measures
+		   over the drawn shackle rather than over this box. */
+		overflow: visible;
 	}
 
-	.lock[aria-pressed='true'] {
-		color: var(--accent);
-		border-color: var(--accent);
+	/* THE LOUD STATE IS THE UNLOCKED ONE (da-fphjw). vividn: "highlight when
+	   it is unlocked rather than locked". Being locked is the state where
+	   nothing can go wrong; being UNLOCKED is the one with consequences,
+	   since the layout can be moved under you — so the highlight marks the
+	   state that can surprise someone, not the state that cannot. It is
+	   `--warn` rather than the accent for the same reason: the accent is
+	   what this app paints a thing that is simply in force. */
+	.lock.open {
+		color: var(--warn);
+		border-color: var(--warn);
 	}
 
 	.dot {
@@ -530,8 +558,9 @@
 
 	/* The gear: at the bar's right end at every width, and a badge like the
 	   `+` — so it is on its 24px floor under a fingertip too
-	   (reachable.test.mjs). It rides at the end because `.end`, just
-	   before it, carries the `auto`.
+	   (reachable.test.mjs). It rides at the end because `.end`, two places
+	   before it, carries the `auto`; the lock rides along between them
+	   (da-fphjw).
 
 	   A BIGGER badge than the rest of the bar's, and a drawn cog rather
 	   than the `⚙` character (da-jbcv). vividn: "Make the gear icon much
@@ -540,8 +569,9 @@
 	   the em it fills is the reader's font's business and not ours. A
 	   path fills the box it is given, on every device, and the box is
 	   this one. */
-	/* The bar's right end: the beta pair, then the gear. `auto` on the pair
-	   rather than on the tabs, which scroll.
+	/* The bar's right end: the beta pair, then the LOCK, then the gear
+	   (da-fphjw). `auto` on the pair rather than on the tabs, which scroll,
+	   so everything after it is carried to the end together.
 
 	   NOT positioned, on purpose, and nothing between it and the bar may
 	   be: the beta note (Beta.svelte) is placed against the ROOT BAR, the

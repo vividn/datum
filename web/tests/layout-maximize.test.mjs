@@ -320,6 +320,65 @@ describe('the maximize badge, drawn and placed', () => {
 		return { max: lead(max), title: lead(title), add: lead(add) };
 	}
 
+	// vividn, 2026-09-21 (da-fphjw), on the chrome da-bzhq had just landed:
+	// «let's push the maximize button into the corner more, and it can be
+	// a bit smaller as well».
+	//
+	// Two measurements, and the FIRST of them is a floor rather than a
+	// preference: «a bit smaller» is about the MARK, and a fingertip is a
+	// fixed size, so the glyph shrinks inside a button that does not. The
+	// button is left on the 16px/24px floor `reachable.test.mjs` holds
+	// every badge to, and the corner is read on a rotated bar as well as a
+	// top one, `start` being the same corner to the alignment either way.
+	for (const edge of ['top', 'left']) {
+		test(`on a ${edge} bar it sits in the corner the bar starts at, and its glyph is smaller than its button by 4px a side`, async () => {
+			await withApp(async ({ page }) => {
+				if (edge !== 'top') {
+					await chooseBar(page, 'repl', edge);
+					await settled(page);
+				}
+				const flip = edge === 'left';
+
+				// INTO THE CORNER: the row is held 0.5rem off the rounded
+				// corners and the maximize gives 6px of that back, so it
+				// starts within a couple of pixels of the pane's own corner.
+				const start = await along(page, 'repl', flip);
+				assert.ok(start.max <= 3, `the badge starts ${start.max.toFixed(1)}px from the corner`);
+				assert.ok(start.max >= -0.5, `the badge starts ${start.max.toFixed(1)}px OUTSIDE the corner`);
+				// And only it: the title, which used to lead the row, keeps the
+				// clearance the maximize gave up.
+				assert.ok(start.title - start.max >= 6, 'the whole row moved, not the badge');
+
+				// A BIT SMALLER, and the BUTTON is not what shrank: the glyph
+				// is four pixels in from the border box on every side, and the
+				// button is still on its floor.
+				const { box, svg } = await drawn(page, 'repl');
+				for (const side of ['width', 'height'])
+					assert.ok(
+						Math.abs(box[side] - svg[side] - 8) <= 0.5,
+						`the glyph is ${svg[side].toFixed(1)} in a ${box[side].toFixed(1)}px button`
+					);
+				assert.ok(box.width >= 16 && box.height >= 16, `the hit area shrank to ${box.width}x${box.height}`);
+			}, DESKTOP);
+		});
+	}
+
+	// The other end of the row is untouched: at `align: end` the last badge
+	// keeps the 0.5rem that holds it off the rounded corner there.
+	test('the badges at the row\'s other end keep their clearance', async () => {
+		await withApp(async ({ page }) => {
+			await chooseBar(page, 'repl', 'end');
+			await settled(page);
+			const trail = await page.evaluate(() => {
+				const row = document.querySelector('section[data-pane="repl"] > .titlebar > .along');
+				const last = row.lastElementChild.getBoundingClientRect();
+				const at = row.getBoundingClientRect();
+				return at.right - last.right;
+			});
+			assert.ok(trail >= 6, `the last badge is ${trail.toFixed(1)}px from the row's end`);
+		}, DESKTOP);
+	});
+
 	// vividn, 2026-09-21 (da-bzhq): «move the maximize button to be before
 	// the tab names, rather than on the opposite side of the bar». So it is
 	// the FIRST thing along the bar at either alignment and on a rotated
