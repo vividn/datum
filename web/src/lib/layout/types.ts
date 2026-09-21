@@ -127,8 +127,16 @@ export interface WidgetKindMeta {
 	options?: WidgetOption[];
 }
 
-/** One setting the options modal draws: a switch, or one of a few named values. */
-export type WidgetOption = { key: string; label: string } & (
+/**
+ * One setting the options modal draws: a switch, or one of a few named
+ * values.
+ *
+ * `session` says the option is THIS session's and not the layout's
+ * (da-xhio, `session.ts`): it is held in memory against the tab, it never
+ * dirties the draft, and a reload starts it back at its default. Every
+ * option still declares that default in `defaultSettings`, session or not.
+ */
+export type WidgetOption = { key: string; label: string; session?: true } & (
 	| { type: 'boolean' }
 	| { type: 'choice'; choices: { value: string; label: string }[] }
 );

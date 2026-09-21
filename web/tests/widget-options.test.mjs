@@ -11,6 +11,11 @@
 // Restore, Save) and a change made behind it shows in it; and the first
 // customer, the REPL's `reversed`, flips the order of entries and pins the
 // view to the top.
+//
+// And ONE option is not the layout's at all: an option declared `session`
+// (da-xhio) is this tab's for as long as the page lives, so it leaves no dot
+// and no draft and a reload starts it back at its default. The fields
+// widget's «show ignored fields» is the first of them, at the bottom here.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -287,6 +292,89 @@ describe('widget options', () => {
 			assert.equal(await pane(page, 'tail').locator('button.title').count(), 0, 'a kind with no options kept a menu');
 			await setReversed(page, true);
 			assert.equal(await page.evaluate(() => JSON.stringify(window.datum.layout.current()).includes('"reversed":true')), true);
+		}, DESKTOP);
+	});
+
+	// da-xhio. vividn, 2026-09-21: «IGNORED isn't displayed anyway, though there
+	// should probably be a toggle for it, let's put it in the options menu for
+	// now», and of how long it lasts: «I guess it should just live per session?»
+	//
+	// So this option is the first of a KIND — declared `session`, it is this
+	// tab's for as long as the page lives and the layout never hears of it.
+	// What is held to here is that whole contract, not just the filter: the
+	// button comes back, it is visibly still ignored, Track + still offers it,
+	// the layout is not dirtied, «defaults» puts it back, and a reload starts
+	// it off again. da-vhwq moves the row out of this modal; none of the above
+	// should change when it does.
+	test('fields: «show ignored fields» is this session’s — marked, composing, and never the layout’s', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const button = page.locator('.bar button[data-field="run"]');
+			// Two fields, one of them ignored: the mark below says something
+			// only because the field beside it does not wear it.
+			await app.submit('track walk --verb occur');
+			await app.submit('track run --verb occur');
+			// Drawn before it is taken away, as track.test.mjs is careful to do:
+			// a bar that has not got round to drawing `run` satisfies "no run
+			// button" too.
+			await button.waitFor();
+			await app.submit('ignore run');
+			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"]'));
+
+			await openOptions(page, 'bar');
+			const row = modal(page).locator('[data-option="showIgnored"]');
+			assert.equal(await row.locator('small').innerText(), 'this session', 'the row claims a default it does not keep');
+			await row.locator('input').setChecked(true);
+			await closeModal(page);
+
+			// Back in the bar, and saying what it is: the word in the title, the
+			// dashes and the fade in the drawing.
+			await button.waitFor();
+			assert.equal(await button.getAttribute('title'), 'ignored · press to log · hold for when / how long');
+			assert.equal(await button.getAttribute('data-ignored'), '');
+			const drawn = await button.evaluate((b) => {
+				const s = getComputedStyle(b);
+				return { opacity: parseFloat(s.opacity), border: s.borderTopStyle };
+			});
+			assert.ok(drawn.opacity < 1, `an ignored field drawn at opacity ${drawn.opacity}`);
+			assert.equal(drawn.border, 'dashed', 'an ignored field drawn with a tracked field’s outline');
+			const tracked = page.locator('.bar button[data-field="walk"]');
+			assert.equal(await tracked.getAttribute('data-ignored'), null);
+			assert.equal(await tracked.evaluate((b) => getComputedStyle(b).borderTopStyle), 'solid');
+			assert.equal(await tracked.evaluate((b) => parseFloat(getComputedStyle(b).opacity)), 1);
+
+			// It is a SECOND way to see them, not a replacement for the one that
+			// exists: Track + still offers `run` back.
+			await page.locator('.bar button.track').click();
+			await page.locator('dialog.track [data-ignored="run"]').waitFor();
+			await page.keyboard.press('Escape');
+			await page.locator('dialog.track').waitFor({ state: 'detached' });
+
+			// The layout never hears of it: no dot, and the key is nowhere in
+			// the tree the draft is written from.
+			assert.equal(await dotted(page, 'day'), false, 'a session option dirtied the layout');
+			assert.equal(
+				await page.evaluate(() => JSON.stringify(window.datum.layout.current()).includes('showIgnored')),
+				false,
+				'a session option reached the tree'
+			);
+
+			// «defaults» means the widget as it starts, session and all.
+			await openOptions(page, 'bar');
+			await modal(page).getByRole('button', { name: 'defaults' }).click();
+			assert.equal(await modal(page).locator('[data-option="showIgnored"] input').isChecked(), false);
+			await closeModal(page);
+			await button.waitFor({ state: 'detached' });
+
+			// And a reload starts it off, however the draft was left.
+			await openOptions(page, 'bar');
+			await modal(page).locator('[data-option="showIgnored"] input').setChecked(true);
+			await closeModal(page);
+			await button.waitFor();
+			await app.reload();
+			await page.locator('.bar button.track').waitFor();
+			assert.equal(await button.count(), 0, 'the toggle survived a reload');
+			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
 

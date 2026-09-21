@@ -107,6 +107,7 @@ import {
 import { EMPTY_KIND, allIds, closeTab, findTab, newId, newWidget, normalize, setActive, setLocked, setWidget, shedLayout } from './tree.js';
 import { unmaximize } from './maximize.js';
 import { defaultsOfKind } from './registry.js';
+import { clearSession } from './session.js';
 
 export { versions };
 
@@ -876,13 +877,21 @@ export async function resetDefaults(): Promise<void> {
  * takes (Layout.svelte): the layout holding the tab shows its dot, and Save
  * is what writes it — and for a one-widget layout that is the layout the
  * tab names, so its dot lights and `Restore layout` is the way back.
+ *
+ * Whatever this SESSION set on the tab goes with it (da-xhio): «defaults»
+ * means the widget as it starts, and a session option left standing over
+ * the settings just written would be exactly the thing it did not go back
+ * to.
  */
 export function resetWidget(tab: Tab | undefined): (() => void) | undefined {
 	if (!tab || isSplit(tab.content)) return undefined;
 	const widget = tab.content;
 	const settings = defaultsOfKind(widget.kind);
 	if (!settings) return undefined;
-	return () => apply((l) => setWidget(l, tab.id, { ...widget, settings }));
+	return () => {
+		clearSession(tab.id);
+		apply((l) => setWidget(l, tab.id, { ...widget, settings }));
+	};
 }
 
 /**

@@ -16,7 +16,11 @@
 	three or more (da-ltux) — while its panels, which hang upward out of
 	it, are hung against the screen so that scroller cannot clip them.
 	Ignored fields get no button: the Track modal lists them, and a press
-	runs `track <field>`.
+	runs `track <field>`. `showIgnored` (da-xhio) is the way to SEE them
+	without going through Track + — a session option in the pane's
+	`Options…`, off by default. It adds them to the list; it does not
+	change what they are, so each is drawn faint and dashed and says
+	«ignored» when a pointer rests on it.
 
 	A PENDING VERB (`verb`, da-ltux) is the commands widget talking to this
 	one through the command line they share: the list becomes the fields
@@ -115,6 +119,18 @@
 	 * clicked empty space still finds every field, in its usual order.
 	 */
 	export let rank: Map<string, number> | null = null;
+	/**
+	 * Whether the IGNORED fields get a button too (da-xhio).
+	 *
+	 * Off is today's bar: a field whose latest status is IGNORED is not
+	 * drawn, and `Track +` is where it is offered back. On adds it to the
+	 * list, drawn as an ignored field and not as a tracked one — a second
+	 * way to see it, never a way to stop it being ignored.
+	 *
+	 * This session's, not the layout's: the option is declared `session`
+	 * in the registry and held in $lib/layout/session.ts.
+	 */
+	export let showIgnored = false;
 
 	const dispatch = createEventDispatcher<{ run: string[]; line: string }>();
 
@@ -184,7 +200,7 @@
 	$: buttons = promoted(
 		fieldsUnder(
 			fieldsWithDuration(
-				fields.filter((w) => !w.ignored),
+				fields.filter((w) => showIgnored || !w.ignored),
 				duration
 			),
 			verb
@@ -551,11 +567,13 @@
 					<!-- Not a button: nothing runs. The line goes to the bar's prompt. -->
 					<button
 						class="record"
+						class:ignored={button.ignored}
 						role="link"
 						data-field={button.field}
+						data-ignored={button.ignored ? '' : undefined}
 						style={vars(look)}
 						{disabled}
-						title="add {button.field} … — fills the prompt"
+						title="{button.ignored ? 'ignored · ' : ''}add {button.field} … — fills the prompt"
 						on:click={() => press(button)}>{button.field}</button
 					>
 				{:else}
@@ -563,11 +581,13 @@
 						class="widget {button.shape.kind}"
 						class:on={look.fill !== null}
 						class:active={open === button.field}
+						class:ignored={button.ignored}
 						style={vars(look)}
 						{disabled}
 						data-field={button.field}
+						data-ignored={button.ignored ? '' : undefined}
 						aria-expanded={open === button.field}
-						title="press to log · hold for when / how long"
+						title="{button.ignored ? 'ignored · ' : ''}press to log · hold for when / how long"
 						on:pointerdown={() => down(button)}
 						on:pointerup={clearHold}
 						on:pointerleave={clearHold}
@@ -744,6 +764,24 @@
 
 	.widget.active {
 		box-shadow: 0 0 0 2px var(--ink-bright);
+	}
+
+	/* An IGNORED field, drawn because `showIgnored` asked for it (da-xhio).
+	   It keeps its colour and its shape — it is still that field — and is
+	   faded and dashed, which is how the widget already says «not kept»
+	   (`.track-this`). A tracked field is never either, so the two cannot
+	   be read for one another. */
+	.widget.ignored,
+	.record.ignored {
+		opacity: 0.45;
+	}
+
+	.widget.ignored {
+		border-style: dashed;
+	}
+
+	.record.ignored {
+		text-decoration-style: dashed;
 	}
 
 	.widget:disabled,

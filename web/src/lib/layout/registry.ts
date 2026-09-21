@@ -199,9 +199,12 @@ export const KINDS: Record<string, WidgetKind> = {
 	// The fields widget (da-c7u8), titled `fields`. The id `widgetbar` is the
 	// saved-layout key — every stored layout and draft names it, so it stays;
 	// the widget is called `fields` everywhere else (da-850j). How a switch in
-	// a state is labelled is its one setting (`SwitchLabel` in fields.ts).
+	// a state is labelled is one setting (`SwitchLabel` in fields.ts);
+	// `showIgnored` (da-xhio) is the other, and it is the SESSION's — a way
+	// to see the ignored fields the bar leaves out, alongside Track + and
+	// not in place of it, that a reload starts back at off.
 	widgetbar: {
-		meta: meta('widgetbar', 'fields', { switchLabel: 'field' }, [
+		meta: meta('widgetbar', 'fields', { switchLabel: 'field', showIgnored: false }, [
 			{
 				key: 'switchLabel',
 				label: 'a switch is labelled with its',
@@ -210,10 +213,14 @@ export const KINDS: Record<string, WidgetKind> = {
 					{ value: 'field', label: 'field' },
 					{ value: 'state', label: 'state' }
 				]
-			}
+			},
+			{ key: 'showIgnored', label: 'show ignored fields', type: 'boolean', session: true }
 		]),
 		component: FieldsPane,
-		props: ({ switchLabel }) => ({ switchLabel: switchLabel === 'state' ? 'state' : 'field' }),
+		props: ({ switchLabel, showIgnored }) => ({
+			switchLabel: switchLabel === 'state' ? 'state' : 'field',
+			showIgnored: showIgnored === true
+		}),
 		legible: { width: 160, height: 49 }
 	},
 	// The aliases widget (da-x6yj): every alias, listed.

@@ -59,6 +59,7 @@
 	import { maximized, maximizedIn } from './maximize.js';
 	import { KINDS, legibleOfKind, snapsOfKind } from './registry.js';
 	import { resizing } from './resizing.js';
+	import { session, withSession } from './session.js';
 
 	export let pane: PaneNode;
 	export let epoch = 0;
@@ -341,13 +342,18 @@
 				{@const widget = content}
 				{@const kind = KINDS[content.kind]}
 				{@const fold = kind.onChange}
+				<!-- What the widget is DRAWN from: the tree's settings with this
+				     session's over them (da-xhio, session.ts). A session option
+				     never reaches the tree, so a widget asks for neither — it is
+				     handed one set of settings and cannot tell which is which. -->
+				{@const settings = withSession(widget.settings, $session[tab.id])}
 				<!-- A widget that changes its own settings (the strip's day height,
 				     the stats widget's pickers) says so with `change`, and the tree
 				     keeps them — through the kind's `onChange`, which knows what
 				     the event's detail is. -->
 				<svelte:component
 					this={kind.component}
-					{...kind.props ? kind.props(widget.settings) : { settings: widget.settings }}
+					{...kind.props ? kind.props(settings) : { settings }}
 					{epoch}
 					on:change={(e) =>
 						fold && apply((l) => setWidget(l, tab.id, { ...widget, settings: fold(widget.settings, e.detail) }))}

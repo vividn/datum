@@ -22,6 +22,11 @@
 	and the lanes a press on a picture landed in bring those fields to the
 	front. Both arrive here as stores and go in as plain props, so the
 	widget itself asks nothing of the page.
+
+	`showIgnored` (da-xhio) arrives as a prop too, though its value is the
+	SESSION's rather than the layout's: the renderer merges the two before
+	it draws (Layout.svelte, $lib/layout/session.ts), so neither this pane
+	nor the widget below it knows the difference.
 -->
 <script lang="ts">
 	import FieldsWidget from '$lib/FieldsWidget.svelte';
@@ -32,6 +37,12 @@
 	import { fields, pressWithPills, ready } from './engine.js';
 
 	export let switchLabel: SwitchLabel = 'field';
+	/**
+	 * Whether the ignored fields get a button too (da-xhio) — this
+	 * session's option, merged over the tree's settings by the renderer,
+	 * so from here it is an ordinary prop like any other.
+	 */
+	export let showIgnored = false;
 
 	function run(argv: string[]) {
 		clearPending();
@@ -47,6 +58,7 @@
 		duration={hasDuration($pills)}
 		rank={$lanes}
 		{switchLabel}
+		{showIgnored}
 		on:run={(e) => run(e.detail)}
 		on:line={(e) => prefill.set({ line: e.detail, keyboard: true })}
 	/>

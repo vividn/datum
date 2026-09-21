@@ -11,6 +11,13 @@
 	kind does not declare — written by a newer app — is never drawn and is
 	kept, since a change folds into the settings rather than replacing them.
 
+	An option the kind declares `session` takes the OTHER path (da-xhio):
+	`setSession` rather than `setWidget`, so it is this tab's for as long as
+	the page lives and the layout never hears of it — no draft, no dot,
+	nothing to save. The row says «this session» where the others say what
+	their default is. da-vhwq makes that the rule rather than the exception,
+	and moves these rows out of this modal and under the widget's name.
+
 	The `<dialog>` of Ask.svelte and Confirm.svelte: Escape or ✕ closes it
 	and the browser hands focus back to what opened it — the menu's button,
 	which the menu focuses before it runs the item. «defaults» is `Reset
@@ -20,9 +27,10 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { apply, layout } from './current.js';
 	import { KINDS, labelOf, optionsOfKind } from './registry.js';
+	import { session, setSession } from './session.js';
 	import { resetWidget } from './shell.js';
 	import { findTab, setWidget } from './tree.js';
-	import { isWidget } from './types.js';
+	import { isWidget, type WidgetOption } from './types.js';
 
 	export let tabId: string;
 
@@ -38,10 +46,15 @@
 	// The widget went (closed from another tab of this layout): nothing left to set.
 	$: if (dialog && !widget) dialog.close();
 
-	$: valueOf = (key: string) => widget?.settings[key] ?? defaults[key];
+	$: held = $session[tabId] ?? {};
 
-	function set(key: string, value: unknown) {
-		if (widget) apply((l) => setWidget(l, tabId, { ...widget, settings: { ...widget.settings, [key]: value } }));
+	$: valueOf = (option: WidgetOption) =>
+		(option.session ? held : (widget?.settings ?? {}))[option.key] ?? defaults[option.key];
+
+	function set(option: WidgetOption, value: unknown) {
+		if (option.session) return setSession(tabId, option.key, value);
+		if (widget)
+			apply((l) => setWidget(l, tabId, { ...widget, settings: { ...widget.settings, [option.key]: value } }));
 	}
 </script>
 
@@ -51,17 +64,13 @@
 		<button type="button" class="x" aria-label="close" on:click={() => dialog.close()}>✕</button>
 	</header>
 	{#each options as option (option.key)}
-		<label class="row" data-option={option.key}>
+		<label class="row" data-option={option.key} data-session={option.session ? '' : undefined}>
 			<span>{option.label}</span>
 			{#if option.type === 'boolean'}
-				<input
-					type="checkbox"
-					checked={valueOf(option.key) === true}
-					on:change={(e) => set(option.key, e.currentTarget.checked)}
-				/>
-				<small>default {defaults[option.key] ? 'on' : 'off'}</small>
+				<input type="checkbox" checked={valueOf(option) === true} on:change={(e) => set(option, e.currentTarget.checked)} />
+				<small>{option.session ? 'this session' : `default ${defaults[option.key] ? 'on' : 'off'}`}</small>
 			{:else}
-				<select value={valueOf(option.key)} on:change={(e) => set(option.key, e.currentTarget.value)}>
+				<select value={valueOf(option)} on:change={(e) => set(option, e.currentTarget.value)}>
 					{#each option.choices as choice (choice.value)}
 						<option value={choice.value}>{choice.label}{choice.value === defaults[option.key] ? ' · default' : ''}</option>
 					{/each}
