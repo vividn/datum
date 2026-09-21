@@ -10,7 +10,7 @@
 
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { registerHooks } from 'node:module';
+import { resolveLibAsSource } from './support/libhook.mjs';
 import {
 	COMMANDS,
 	VERBS,
@@ -180,15 +180,7 @@ describe('the scroll rule', () => {
 // kind has (da-y2f6's rule, held generally by `tree.test.mjs`). `command`
 // is the id da-zqop freed by renaming the old one-line widget to `custom`.
 describe('the `command` kind', () => {
-	registerHooks({
-		resolve(specifier, context, next) {
-			if (specifier.endsWith('.svelte')) return { url: 'data:text/javascript,export default {}', shortCircuit: true };
-			if (!/^(\.|\$lib\/)/.test(specifier)) return next(specifier, context);
-			const lib = new URL('../src/lib/', import.meta.url);
-			const url = new URL(specifier.replace(/^\$lib\//, lib.href), context.parentURL);
-			return next(url.href.replace(/\.js$/, '.ts'), context);
-		}
-	});
+	resolveLibAsSource(import.meta.url);
 
 	test('exists, is pickable, and has a built-in layout of its own', async () => {
 		const { KINDS, PICKABLE, titleOf } = await import('../src/lib/layout/registry.ts');

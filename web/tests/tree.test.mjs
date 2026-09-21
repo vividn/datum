@@ -8,7 +8,7 @@
 
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { registerHooks } from 'node:module';
+import { resolveLibAsSource } from './support/libhook.mjs';
 import {
 	EMPTY_KIND,
 	addEdge,
@@ -703,15 +703,7 @@ describe('floorOf', () => {
 // components node cannot load, so each `.svelte` import is an empty stub
 // and `$lib/x.js` is the source's `x.ts`.
 describe('snapsOfKind', () => {
-	const lib = new URL('../src/lib/', import.meta.url);
-	registerHooks({
-		resolve(specifier, context, next) {
-			if (specifier.endsWith('.svelte')) return { url: 'data:text/javascript,export default {}', shortCircuit: true };
-			if (!/^(\.|\$lib\/)/.test(specifier)) return next(specifier, context);
-			const url = new URL(specifier.replace(/^\$lib\//, lib.href), context.parentURL);
-			return next(url.href.replace(/\.js$/, '.ts'), context);
-		}
-	});
+	resolveLibAsSource(import.meta.url);
 	const todayBox = (dayHeight) => dayHeight + 15; // panes.ts: the day, and the ruler row the strip draws under it
 
 	test('is one day at the strip\'s day height, plus 16px of padding, and nothing for the others', async () => {

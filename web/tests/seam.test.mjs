@@ -377,7 +377,7 @@ describe('the visual views', () => {
 			// day window and nowview's 30-minute one whatever the hour.
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-5'])).code, OK);
 
-			const drawn = await run(['nowview', '-o', '-']);
+			const drawn = await run(['nowview', '--context', '30m', '-o', '-']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 			assert.ok(
 				drawn.stdout.includes(colorOf('happy')),
@@ -400,7 +400,7 @@ describe('the visual views', () => {
 		await withApp(async ({ run, reload, paneSvg }) => {
 			assert.equal((await run(['switch', 'focus', 'deep', '-t', '-5'])).code, OK);
 
-			const drawn = await run(['nowview', '-o', '-']);
+			const drawn = await run(['nowview', '--context', '30m', '-o', '-']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 			// The viewer's own clock — the one thing about the picture the
 			// browser knows and the layout crate cannot.
@@ -430,7 +430,7 @@ describe('the visual views', () => {
 			assert.equal((await run(['switch', 'mood', 'sad', '-t', '-5'])).code, OK);
 			assert.equal((await run(['occur', 'coffee', '-t', '-8'])).code, OK);
 
-			const svg = (await run(['nowview', '-o', '-'])).stdout;
+			const svg = (await run(['nowview', '--context', '30m', '-o', '-'])).stdout;
 
 			for (const cls of [...svg.matchAll(/<text class="([^"]*)"/g)].map((m) => m[1])) {
 				assert.ok(
@@ -460,9 +460,30 @@ describe('the visual views', () => {
 		});
 	});
 
+	// da-7q8r: the bare argv is the SNAPSHOT — each field's state as blocks,
+	// no time band — and it carries no labels. The webview asks for no
+	// `--labels`, so this is the picture every pane of it draws.
+	test('a bare nowview is the snapshot: blocks, no band, no labels', async () => {
+		await onSeam(async ({ run }) => {
+			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-5'])).code, OK);
+
+			const svg = (await run(['nowview', '-o', '-'])).stdout;
+			// The state, as one chunk in its colour, and nothing of a band.
+			assert.equal(nowChunks(svg).mood, colorOf('happy'), svg);
+			for (const absent of ['class="axis"', 'class="tick"', 'tick-label', 'gridline', 'current-time-line']) {
+				assert.ok(!svg.includes(absent), `the snapshot carries ${absent}: ${svg}`);
+			}
+			assert.ok(!svg.includes('state-label'), `the snapshot carries a label: ${svg}`);
+			// `--context 0` is the same ask, spelled out.
+			const zero = (await run(['nowview', '--context', '0', '-o', '-'])).stdout;
+			assert.equal(nowChunks(zero).mood, colorOf('happy'), zero);
+			assert.ok(!zero.includes('gridline'), zero);
+		});
+	});
+
 	test('an empty database still draws both views', async () => {
 		await onSeam(async ({ run }) => {
-			for (const argv of [['dayview'], ['nowview', '-o', '-']]) {
+			for (const argv of [['dayview'], ['nowview', '-o', '-'], ['nowview', '--context', '30m', '-o', '-']]) {
 				const drawn = await run(argv);
 				assert.equal(drawn.code, OK, `${argv[0]} → ${drawn.stderr}`);
 				assert.match(drawn.stdout, /^<svg[\s>]/, `${argv[0]} drew nothing`);
@@ -481,7 +502,7 @@ describe('the visual views', () => {
 			// A switch to `false` terminates a state without opening one.
 			assert.equal((await run(['switch', 'sleep', 'false', '-t', '-5'])).code, OK);
 
-			const drawn = await run(['nowview', '-o', '-']);
+			const drawn = await run(['nowview', '--context', '30m', '-o', '-']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 
 			// A band: a filled rect in the state's own colour.
@@ -516,7 +537,7 @@ describe('the visual views', () => {
 			assert.equal((await run(['stop', 'work', '-t', '-5'])).code, OK);
 			assert.equal((await run(['start', 'read', '-t', '-5', '15m'])).code, OK);
 
-			const drawn = await run(['nowview', '-o', '-']);
+			const drawn = await run(['nowview', '--context', '30m', '-o', '-']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 			const svg = drawn.stdout;
 

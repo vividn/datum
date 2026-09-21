@@ -9,22 +9,28 @@ use datum_core::entry::Verb;
 use datum_core::test_util::{entry_builder, fresh_db};
 
 #[test]
-fn nowview_default_history_renders_envelope() {
+fn nowview_context_window_renders_envelope() {
     // da-6jy: nowview shares dayview's render path scoped to the last
-    // `history_minutes` (default 30m); there's no separate "now panel"
-    // anymore. With empty data the envelope still renders.
+    // `history_minutes`; there's no separate "now panel" anymore. With
+    // empty data the envelope still renders.
     let db = fresh_db();
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
 
-    run_cli(&["nowview", "--output-file", &path], &db).expect("nowview dispatch");
+    run_cli(
+        &["nowview", "--context", "30m", "--output-file", &path],
+        &db,
+    )
+    .expect("nowview dispatch");
 
     let svg = std::fs::read_to_string(&path).expect("read svg");
     assert!(svg.starts_with("<?xml"));
     assert!(svg.contains("<svg "));
     assert!(svg.ends_with("</svg>"));
-    // da-nk84: default width = default_width_for_history(30m) = 400 px;
-    // the now strip is carved out of it, not added to it.
+    // da-nk84: the width a 30m window defaults to,
+    // default_width_for_history(30m) = 400 px; the now strip is carved out
+    // of it, not added to it. (Not the width of a bare `nowview`, which
+    // since da-7q8r is the snapshot's 100.)
     assert!(svg.contains(r#"width="400""#));
     assert!(svg.contains(r#"height="300""#));
     assert!(svg.contains(r#"fill="black""#));
@@ -175,8 +181,9 @@ fn nowview_rejects_unknown_extension() {
 
 #[test]
 fn nowview_block_entry_renders_in_history_window() {
-    // A closed block entirely within the history window should render
-    // a rect inside the history panel.
+    // A closed block entirely within the window `--history` asks for below
+    // should render a rect inside it. The window is asked for, not assumed:
+    // bare `nowview` is the snapshot and has no band (da-7q8r).
     let db = fresh_db();
     let now = Utc::now();
     entry_builder("workout")
@@ -317,7 +324,18 @@ fn nowview_json_emits_current_state_panel() {
 
     let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
-    run_cli(&["nowview", "--json", "--output-file", &path], &db).expect("nowview --json dispatch");
+    run_cli(
+        &[
+            "nowview",
+            "--json",
+            "--context",
+            "30m",
+            "--output-file",
+            &path,
+        ],
+        &db,
+    )
+    .expect("nowview --json dispatch");
 
     let v: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&path).expect("read json"))
@@ -560,8 +578,9 @@ fn nowview_history_zero_is_the_snapshot() {
         .insert(&db);
 
     let svg = nowview_out(&db, &["--history", "0"], ".svg");
-    // The state, labelled and in its colour, and the snapshot's own width.
-    assert!(svg.contains(">mood: focused</text>"), "no label in: {svg}");
+    // The state in its colour, and the snapshot's own width. da-7q8r: no
+    // label — `0` is now also the default, and the default picture is bare.
+    assert!(!svg.contains("state-label"), "unasked-for label in: {svg}");
     assert_eq!(field_rects(&svg, "mood", "now-chunk").len(), 1, "{svg}");
     assert!(svg.contains(r#"width="100""#), "{svg}");
     // No time band: no axis, no ticks, no gridlines, no now-line.
@@ -724,12 +743,18 @@ fn nowview_centred_window_draws_no_yellow_for_its_instant() {
         "now-line at {x}: {svg}"
     );
 
-    // No flag: the line is now, at the right edge of the band.
-    let svg = at_clock("2026-09-10T14:10:00Z", || nowview_out(&db, &[], ".svg"));
+    // No time flag: the line is now, at the right edge of the band.
+    let svg = at_clock("2026-09-10T14:10:00Z", || {
+        nowview_out(&db, &["--context", "30m"], ".svg")
+    });
     assert_eq!(lines(&svg), 1, "{svg}");
 
     // A window with nothing in it is a picture, not an error.
-    let empty = nowview_out(&db, &["-d", "2000-01-01", "-t", "00:00"], ".svg");
+    let empty = nowview_out(
+        &db,
+        &["--context", "30m", "-d", "2000-01-01", "-t", "00:00"],
+        ".svg",
+    );
     assert!(field_rects(&empty, "mood", "block").is_empty(), "{empty}");
     assert_eq!(lines(&empty), 0, "{empty}");
 }
@@ -748,7 +773,8 @@ fn nowview_snapshot_at_an_instant_shows_the_state_then() {
         "13:55",
     ];
 
-    let svg = nowview_out(&db, &args, ".svg");
+    // Named with `--labels`, which is the only thing that draws one (da-7q8r).
+    let svg = nowview_out(&db, &[&args[..], &["--labels"]].concat(), ".svg");
     assert!(svg.contains(">mood: before</text>"), "{svg}");
     assert!(!svg.contains("mood: after"), "{svg}");
 
@@ -756,4 +782,168 @@ fn nowview_snapshot_at_an_instant_shows_the_state_then() {
         nowview_json(&db, &args)["panel"][0]["state_label"],
         "before"
     );
+}
+
+// ---------------------------------------------------------------------
+// da-7q8r: the SVG's default is the snapshot again, the labels are behind
+// `--labels` and sit off to the right, and `--context` is the name of the
+// window `--history` used to be the only name for.
+// ---------------------------------------------------------------------
+
+/// vividn, 2026-09-21: «Before without --history, it would just output the
+/// current state, rendered as blocks. That's what this should be.» The
+/// default rode to 30m in da-6jy while the history portion moved onto
+/// dayview's renderer; it is `0` again, and `0` still spells it.
+#[test]
+fn nowview_svg_default_is_the_snapshot() {
+    let db = two_switch_db();
+    // A held clock, so the three renders below are comparable byte for
+    // byte: the day's `data-from`/`data-to` are the instant itself.
+    let at = |args: &'static [&'static str]| {
+        at_clock("2026-09-10T14:20:00Z", || nowview_out(&db, args, ".svg"))
+    };
+    let bare = at(&[]);
+    // The snapshot's width, its one chunk, and no time band at all.
+    assert!(bare.contains(r#"width="100""#), "{bare}");
+    assert_eq!(field_rects(&bare, "mood", "now-chunk").len(), 1, "{bare}");
+    for absent in [
+        r#"class="axis""#,
+        r#"class="tick""#,
+        "tick-label",
+        "gridline",
+        "current-time-line",
+    ] {
+        assert!(
+            !bare.contains(absent),
+            "the default carries {absent}: {bare}"
+        );
+    }
+    // And it is bare: the labels da-pcis drew are behind `--labels` now.
+    assert!(!bare.contains("state-label"), "{bare}");
+    assert!(!bare.contains("nowview-labels"), "{bare}");
+
+    // `--history 0` is the same picture, not a no-op and not an error.
+    assert_eq!(at(&["--history", "0"]), bare);
+    assert_eq!(at(&["--context", "0"]), bare);
+    // The panel the web and the watchface read says so too.
+    assert_eq!(
+        nowview_json(&db, &[])["history_minutes"].as_f64(),
+        Some(0.0)
+    );
+}
+
+/// `--labels` names each field's state in a gutter PAST the picture's
+/// right edge — vividn, «there can be a --labels flag, which then puts
+/// labels (but off to the right)». Before the bead they were drawn over
+/// the colour they named, which is what sent them behind a flag.
+#[test]
+fn nowview_labels_sit_in_a_gutter_off_to_the_right() {
+    let db = fresh_db();
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .state(serde_json::json!("focused"))
+        .time_start_utc(Utc::now() - Duration::minutes(10))
+        .insert(&db);
+
+    let svg = nowview_out(&db, &["--labels"], ".svg");
+    assert!(svg.contains(">mood: focused</text>"), "no label in: {svg}");
+
+    // The label starts past the right edge of every band, and the canvas
+    // grew by the gutter rather than the label lying over the colour.
+    let chunk = field_rects(&svg, "mood", "now-chunk")
+        .into_iter()
+        .next()
+        .expect("a now-chunk");
+    let label_x = attr_f64(&svg, r#"<text class="state-label" x=""#);
+    assert!(
+        label_x >= chunk.x + chunk.w,
+        "label at {label_x} is over a band ending at {}: {svg}",
+        chunk.x + chunk.w
+    );
+    let width = attr_f64(
+        &svg,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width=""#,
+    );
+    assert!(
+        width > label_x,
+        "the label runs off a {width}px canvas: {svg}"
+    );
+    assert!(
+        width > 100.0,
+        "the canvas did not grow for the gutter: {svg}"
+    );
+
+    // `--labels` means the same thing on the window a time flag centres —
+    // the other SVG path — rather than being silently ignored there.
+    let at = nowview_out(&db, &["--context", "30m", "-t", "-5", "--labels"], ".svg");
+    assert!(at.contains(">mood: focused</text>"), "{at}");
+    assert!(
+        !nowview_out(&db, &["--context", "30m", "-t", "-5"], ".svg").contains("state-label"),
+        "unasked-for label on the centred window"
+    );
+}
+
+/// `--context` is the primary name and `--history` is the same flag, so
+/// the two render the same picture. vividn's reason: the window is read
+/// against whatever instant `-t`/`-d` names, and "history" only reads as
+/// the past.
+#[test]
+fn nowview_context_and_history_are_one_flag() {
+    let db = two_switch_db();
+    let args = |flag: &'static str, spelling: String| -> Vec<String> {
+        vec![
+            flag.to_string(),
+            spelling,
+            "-z".into(),
+            "UTC".into(),
+            "-d".into(),
+            "2026-09-10".into(),
+            "-t".into(),
+            "14:00".into(),
+        ]
+    };
+    let run = |a: Vec<String>| {
+        let refs: Vec<&str> = a.iter().map(String::as_str).collect();
+        nowview_out(&db, &refs, ".svg")
+    };
+    let context = run(args("--context", "30m".into()));
+    assert_eq!(run(args("--history", "30m".into())), context);
+    // Attached spelling too.
+    assert_eq!(
+        run(vec!["--context=30m".into()]
+            .into_iter()
+            .chain(args("--history", "30m".into()).into_iter().skip(2))
+            .collect()),
+        context
+    );
+    // And it is a real window, not the snapshot.
+    assert_eq!(field_rects(&context, "mood", "block").len(), 2, "{context}");
+}
+
+/// The terminal band reads the same flag (da-7q8r), so `--context` means
+/// one thing on both render paths: a window is the Flow layout, none is
+/// the Snapshot. `--window` is the older spelling and still wins.
+#[test]
+fn nowview_terminal_reads_the_context_window() {
+    let db = two_switch_db();
+    for argv in [
+        &["nowview", "--context", "30m"][..],
+        &["nowview", "--history", "30m"],
+        &["nowview", "--context", "0"],
+        &["nowview", "--context", "30m", "--window", "15m"],
+    ] {
+        run_cli(argv, &db).unwrap_or_else(|e| panic!("{argv:?}: {e:#}"));
+    }
+    // An explicit `--window 0m` is still refused; `--context 0` is not.
+    assert!(run_cli(&["nowview", "--window", "0m"], &db).is_err());
+}
+
+/// The first `name` attribute in `svg`, as a number.
+fn attr_f64(svg: &str, key: &str) -> f64 {
+    let a = svg
+        .find(key)
+        .map(|i| i + key.len())
+        .unwrap_or_else(|| panic!("no {key} in {svg}"));
+    let b = svg[a..].find('"').expect("attribute close") + a;
+    svg[a..b].parse().expect("number")
 }

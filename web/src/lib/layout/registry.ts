@@ -56,6 +56,7 @@ import {
 	TAIL,
 	todayBox
 } from '$lib/panes.js';
+import { REACH_PX } from '$lib/lanes.js';
 import { DEFAULT_STATS } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
 import FieldsPane from './FieldsPane.svelte';
@@ -83,13 +84,40 @@ export interface WidgetKind {
 }
 
 /**
- * How narrow nowview's snapshot (`history: '0'`) stays legible: its chips
- * carry no time axis, and at a 92px body each still reads about eleven
- * characters — «mood: happ», a field and the head of its state (measured
- * on the built app, 2026-09-17, da-shzs). A 160px floor held a phone's
- * tail | snapshot row, and so the root, at 372px: wider than a 360px phone.
+ * The outer margin `datum nowview` insets its bands by, each side — the
+ * CLI's own `--margin` default, and what a pane's `--width` loses to the
+ * canvas before any band is drawn.
  */
-const SNAPSHOT_WIDTH = 90;
+const SVG_MARGIN_PX = 2;
+
+/**
+ * How narrow nowview's snapshot (`history: '0'`) stays usable.
+ *
+ * It was 90, for reading: «at a 92px body each chip still reads about
+ * eleven characters — mood: happ, a field and the head of its state»
+ * (da-shzs). da-7q8r took the chips away — they are the CLI's `--labels`
+ * now, which nothing here passes — so there is nothing left to READ. The
+ * snapshot is one full-width block per field, and along a block nothing
+ * varies: a press at its left end means what a press at its right end
+ * means. The floor is therefore what a labelless block needs to be SEEN
+ * and AIMED AT, not read.
+ *
+ * Aiming is the larger of the two, and `$lib/lanes.ts` already has its
+ * number: `REACH_PX` is «a fingertip's half-width», and `NOW_PX` in
+ * $lib/nowpoint.ts is the same 24 for the same reason. A block one whole
+ * fingertip across is a target a finger can land on; narrower and the
+ * press is aimed at something smaller than the thing pressing it. The
+ * pane hands its content box to the CLI as `--width` (`wantsBox`,
+ * $lib/panes.ts) and the CLI insets by `SVG_MARGIN_PX` each side, so the
+ * box must carry the fingertip plus both margins.
+ *
+ * Which is 52 — well under the 84–99px the shipped `mobile` row gives a
+ * phone. Deliberately not derived from that ratio: at 360×640 it measured
+ * 84 against the old floor of 90, so the row was already missing the
+ * floor it declared. A number that shipped is not thereby a number that
+ * worked.
+ */
+const SNAPSHOT_WIDTH = 2 * REACH_PX + 2 * SVG_MARGIN_PX;
 
 /** The strip body's padding, top and bottom, as its snap counts it. */
 const STRIP_PADDING = 16;

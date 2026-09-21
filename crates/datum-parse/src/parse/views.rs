@@ -185,13 +185,20 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
         }
         let tok = tail[i];
         match split_flag(tok) {
-            FlagSplit::Long("history") => {
-                let (v, ni) = take_value(tail, i, None, "--history")?;
+            // da-7q8r: `--context` is the name, because a time flag can
+            // put the window anywhere and "history" only reads as the
+            // past. `--history` is the same flag and keeps working.
+            FlagSplit::Long("context" | "history") => {
+                let (v, ni) = take_value(tail, i, None, "--context")?;
                 out.history = Some(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("history", v) => {
+            FlagSplit::LongAttached("context" | "history", v) => {
                 out.history = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("labels") => {
+                out.labels = true;
                 i += 1;
             }
             FlagSplit::Long("width") => {

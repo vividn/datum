@@ -75,20 +75,6 @@ async function beside(page, pane) {
 	});
 }
 
-/**
- * The chips of the nowview in `pane` that something lies over: at each
- * state label's middle, the element there must be the label.
- */
-const coveredChips = (page, pane) =>
-	page.locator(pane).evaluate((p) =>
-		[...p.querySelectorAll('svg.svg .state-label')]
-			.filter((chip) => {
-				const b = chip.getBoundingClientRect();
-				return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2) !== chip;
-			})
-			.map((chip) => chip.textContent)
-	);
-
 describe('the nowview widget', () => {
 	test('sit just right of the far axis label, − then +, with no label', async () => {
 		await withApp(async ({ page }) => {
@@ -392,9 +378,13 @@ describe('the nowview widget zooms', () => {
 // vividn, 2026-09-17: the corner + / − lay over the tiny snapshot's first
 // chip — «music: true» read «sic: true». The steps now sit beside the far
 // axis label, and the snapshot, having no axis, has none.
+//
+// da-7q8r retired the chips from the webview altogether — they are the
+// CLI's `--labels`, which nothing here passes — so the snapshot is its
+// bands and nothing else, and there is nothing left for a step to cover.
 
 describe('the nowview steps stay off the picture', () => {
-	test('390×664 in `mobile`: the snapshot has no steps and every chip is clear; the full window has them beside its far label', async () => {
+	test('390×664 in `mobile`: the snapshot is bands with no chips and no steps; the full window has them beside its far label', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -402,11 +392,13 @@ describe('the nowview steps stay off the picture', () => {
 				await app.runLine('switch mood happy');
 				await page.evaluate(() => window.datum.run(['occur', 'coffee']));
 				const now = pane(page, 'now');
-				await now.locator('svg.svg .state-label').nth(1).waitFor();
+				await now.locator('svg.svg .now-chunk').nth(1).waitFor();
 				const width = (await now.boundingBox()).width;
 				assert.ok(width < 130, `the snapshot's pane is ${width}px wide`);
 				assert.equal(await now.locator('.nowview-steps, button[aria-label$="window"]').count(), 0);
-				assert.deepEqual(await coveredChips(page, `section[data-pane="now"]`), []);
+				// Nothing is left for a step to lie over: da-7q8r put the
+				// chips behind the CLI's `--labels`, which nothing here passes.
+				assert.equal(await now.locator('svg.svg .state-label').count(), 0, 'the webview asks for no labels');
 
 				await pane(page, 'fields').locator('[role="tab"]', { hasText: 'nowview' }).click();
 				const where = await beside(page, `section[data-pane="fields"]`);

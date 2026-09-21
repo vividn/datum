@@ -35,6 +35,7 @@ pub fn render_nowview_svg(
     layout: &DayviewLayout,
     current_time_label: &str,
     current_states: &[NowviewCurrentState],
+    labels: bool,
 ) -> String {
     let fills = now_strip_fills(current_states);
     // The clock sits in the now strip; it only steals room from the tick
@@ -43,14 +44,15 @@ pub fn render_nowview_svg(
         axis_end_reserved: clock_reserved_px(layout, current_time_label),
         right_panel_fills: &fills,
     };
+    let (gutter, label_group) = label_gutter(layout, current_states, labels);
+    let widened = widen_for(layout, gutter);
+    let layout = widened.as_ref().unwrap_or(layout);
     let mut svg = render_dayview_svg_with(layout, opts);
     if !current_time_label.is_empty() {
         let overlay = build_current_time_overlay(layout, current_time_label);
         inject_inside_plot_group(&mut svg, &overlay);
     }
-    if layout.time_axis_extent <= 0.0 {
-        inject_inside_plot_group(&mut svg, &snapshot_labels(layout, current_states));
-    }
+    inject_inside_plot_group(&mut svg, &label_group);
     svg
 }
 
@@ -58,20 +60,65 @@ pub fn render_nowview_svg(
 /// picture with no now strip, and the instant's `HH:MM` as the axis label
 /// under the middle — making room like any other tick's. Its now-line is
 /// dayview's own, at now if now is in the window (da-5flt).
-pub fn render_nowview_at_svg(layout: &DayviewLayout, at_label: &str) -> String {
+pub fn render_nowview_at_svg(
+    layout: &DayviewLayout,
+    at_label: &str,
+    current_states: &[NowviewCurrentState],
+    labels: bool,
+) -> String {
     let mut layout = layout.clone();
     if let Some(tick) = layout.axis_ticks.iter_mut().find(|t| t.label.is_empty()) {
         tick.label = at_label.to_string();
     }
-    render_dayview_svg(&layout)
+    // `--labels` means one thing on every nowview picture (da-7q8r): the
+    // states at the instant, in a gutter past the right edge.
+    let (gutter, label_group) = label_gutter(&layout, current_states, labels);
+    let widened = widen_for(&layout, gutter);
+    let mut svg = render_dayview_svg(widened.as_ref().unwrap_or(&layout));
+    inject_inside_plot_group(&mut svg, &label_group);
+    svg
 }
 
-/// The snapshot (a zero history, da-pcis) is all now strip, so with no
-/// time band to read a state off, each chunk carries its field and state.
-fn snapshot_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) -> String {
+/// da-7q8r: the labels are off unless `--labels` asks for them, and when it
+/// does they sit in a gutter to the RIGHT of the picture — never over the
+/// colour they name, which is what sent them behind a flag.
+fn label_gutter(
+    layout: &DayviewLayout,
+    current_states: &[NowviewCurrentState],
+    labels: bool,
+) -> (f64, String) {
+    if labels {
+        state_labels(layout, current_states)
+    } else {
+        (0.0, String::new())
+    }
+}
+
+/// `layout` with room for a `gutter`-wide strip past its right edge, or
+/// `None` when there is no gutter to make room for. Only the canvas grows:
+/// every band's geometry is already resolved.
+fn widen_for(layout: &DayviewLayout, gutter: f64) -> Option<DayviewLayout> {
+    (gutter > 0.0).then(|| DayviewLayout {
+        width: layout.width + gutter,
+        ..layout.clone()
+    })
+}
+
+/// `--labels` (da-7q8r): each field's state named beside its lane, in a
+/// gutter past the picture's right edge. Returns how much width that
+/// gutter needs and the `<g>` to inject — the caller widens the canvas by
+/// the first and injects the second, so no label ever lies over a band.
+///
+/// A gutter of `0.0` means there was nothing to label.
+fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) -> (f64, String) {
     let Some(day) = layout.days.first() else {
-        return String::new();
+        return (0.0, String::new());
     };
+    // Past the data area AND the now strip: the right edge of everything
+    // the dayview renderer drew.
+    let x =
+        layout.label_width + layout.time_axis_extent + layout.right_panel_width + AXIS_LABEL_GAP;
+    let mut widest: f64 = 0.0;
     let mut out = String::from(r#"<g class="nowview-labels">"#);
     for state in current_states {
         let Some(label) = &state.state_label else {
@@ -80,18 +127,23 @@ fn snapshot_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState
         let Some(f) = day.fields.iter().find(|f| f.field == state.field) else {
             continue;
         };
+        let font_size = (f.cross_extent * 0.7).min(12.0);
+        let text = format!("{}: {label}", state.field);
+        widest = widest.max(text_width(&text, font_size));
         let _ = write!(
             &mut out,
             r#"<text class="state-label" x="{x}" y="{y}" dy="0.35em" fill="{c}" stroke="black" stroke-width="2" paint-order="stroke" font-size="{fs}">{t}</text>"#,
-            x = layout.label_width + 3.0,
             y = day.day_offset + f.cross_offset + f.cross_extent / 2.0,
             c = TEXT_COLOR,
-            fs = (f.cross_extent * 0.7).min(12.0),
-            t = escape_xml(&format!("{}: {label}", state.field)),
+            fs = font_size,
+            t = escape_xml(&text),
         );
     }
     out.push_str("</g>");
-    out
+    if widest <= 0.0 {
+        return (0.0, String::new());
+    }
+    (AXIS_LABEL_GAP + widest, out)
 }
 
 /// Turn the resolved current states into the per-field strip fills the
@@ -392,7 +444,7 @@ mod tests {
     #[test]
     fn renders_dayview_envelope_with_current_time() {
         let layout = nowview_layout();
-        let svg = render_nowview_svg(&layout, "15:30", &[]);
+        let svg = render_nowview_svg(&layout, "15:30", &[], false);
         // Dayview envelope intact.
         assert!(svg.starts_with("<svg "));
         assert!(svg.ends_with("</svg>"));
@@ -412,7 +464,7 @@ mod tests {
     #[test]
     fn no_current_time_label_means_no_overlay() {
         let layout = nowview_layout();
-        let svg = render_nowview_svg(&layout, "", &[]);
+        let svg = render_nowview_svg(&layout, "", &[], false);
         assert!(!svg.contains("current-time-text"));
         assert!(!svg.contains("nowview-overlay"));
     }
@@ -493,7 +545,7 @@ mod tests {
                 colors: vec!["#ff0000".into()],
             },
         ];
-        let svg = render_nowview_svg(&layout, "12:00", &entries);
+        let svg = render_nowview_svg(&layout, "12:00", &entries, false);
         // The strip carries one chunk for the field that is in a state,
         // spanning the whole reserved panel at that field's band.
         let mood = field_group(&svg, "mood");
@@ -513,6 +565,87 @@ mod tests {
         // No label text anywhere but the axis: the panel is gone.
         assert!(!svg.contains("mood: focused"));
         assert!(!svg.contains(">coffee<"));
+    }
+
+    /// da-7q8r: the labels are `--labels`'s alone, and they sit in a
+    /// gutter PAST every band — the picture grows to hold them rather
+    /// than them lying over the colour they name.
+    #[test]
+    fn labels_are_asked_for_and_land_off_to_the_right() {
+        let now_ms = 1_700_000_000_000_i64;
+        let day = DayviewDayInput {
+            date: None,
+            label_lines: vec![],
+            start_ms: now_ms - 60_000,
+            end_ms: now_ms,
+            has_error: false,
+            fields: vec![DayviewFieldInput {
+                field: "mood".into(),
+                y_frac: 0.1,
+                height_frac: 0.2,
+                z_index: 0.1,
+                blocks: vec![DayviewBlock {
+                    start_ms: now_ms - 60_000,
+                    end_ms: now_ms,
+                    fill: BlockFill::Single("#abcdef".into()),
+                    state_label: Some("focused".into()),
+                    title: None,
+                }],
+                points: vec![],
+            }],
+        };
+        let cfg = DayviewConfig {
+            days: vec![day],
+            now_ms,
+            width: 100.0,
+            height: Some(300.0),
+            day_height: 250.0,
+            time_axis_height: 0.0,
+            margin: 2.0,
+            label_width: Some(0.0),
+            orientation: Orientation::Horizontal,
+            axis_ticks_override: Some(Vec::new()),
+            right_panel_width: 96.0,
+            ..Default::default()
+        };
+        let layout = compute_dayview(&cfg);
+        let entries = vec![NowviewCurrentState {
+            field: "mood".into(),
+            state_label: Some("focused".into()),
+            colors: vec!["#abcdef".into()],
+        }];
+
+        // Unasked for, no label and no gutter: the canvas is the layout's.
+        let bare = render_nowview_svg(&layout, "", &entries, false);
+        assert!(!bare.contains("state-label"), "{bare}");
+        assert!(bare.contains(r#"width="100""#), "{bare}");
+
+        // Asked for, the text starts past the band and the canvas grew.
+        let svg = render_nowview_svg(&layout, "", &entries, true);
+        assert!(svg.contains(">mood: focused</text>"), "{svg}");
+        let band_end = layout.label_width + layout.time_axis_extent + layout.right_panel_width;
+        let key = r#"<text class="state-label" x=""#;
+        let a = svg.find(key).map(|i| i + key.len()).expect("a label");
+        let b = svg[a..].find('"').expect("x close") + a;
+        let label_x: f64 = svg[a..b].parse().expect("number");
+        assert!(
+            label_x >= band_end,
+            "label at {label_x}, band ends at {band_end}"
+        );
+        assert!(
+            !svg.contains(r#"width="100""#),
+            "the canvas did not grow: {svg}"
+        );
+
+        // Nothing in a state is nothing to label — and no gutter for it.
+        let none = vec![NowviewCurrentState {
+            field: "mood".into(),
+            state_label: None,
+            colors: vec![],
+        }];
+        let empty = render_nowview_svg(&layout, "", &none, true);
+        assert!(!empty.contains("nowview-labels"), "{empty}");
+        assert!(empty.contains(r#"width="100""#), "{empty}");
     }
 
     #[test]
@@ -560,7 +693,7 @@ mod tests {
             state_label: Some("nope".into()),
             colors: vec!["#888888".into()],
         }];
-        let svg = render_nowview_svg(&layout, "", &entries);
+        let svg = render_nowview_svg(&layout, "", &entries, false);
         assert!(!svg.contains(r#"data-field="ghost""#));
     }
 
@@ -627,7 +760,7 @@ mod tests {
             state_label: Some("vertical,sit".into()),
             colors: vec!["#aa3333".into(), "#33aa33".into()],
         }];
-        let svg = render_nowview_svg(&layout, "12:00", &entries);
+        let svg = render_nowview_svg(&layout, "12:00", &entries, false);
         // The chunk is striped the way dayview stripes a parallel-state
         // block, sharing that machinery rather than inventing a swatch.
         assert!(
@@ -686,7 +819,7 @@ mod tests {
             state_label: Some("focused".into()),
             colors: vec!["#abcdef".into()],
         }];
-        let svg = render_nowview_svg(&layout, "12:00", &entries);
+        let svg = render_nowview_svg(&layout, "12:00", &entries, false);
         assert!(
             field_group(&svg, "mood").contains(r##"<rect class="now-chunk" x="##),
             "single-state chunk must be a solid rect: {svg}"

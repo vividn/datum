@@ -284,7 +284,7 @@ fn nowview_at(width: f64, history_minutes: f64) -> String {
             colors: vec!["#cc7722".into()],
         },
     ];
-    render_nowview_svg(&layout, "23:05", &panel)
+    render_nowview_svg(&layout, "23:05", &panel, false)
 }
 
 #[test]

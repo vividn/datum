@@ -175,7 +175,9 @@ fn nowview_marks_read_as_the_tail_rows_they_came_from() {
     env.run(&["switch", "mood", "happy", "-t", "-20"]);
     env.run(&["occur", "coffee", "-t", "-10"]);
     env.run(&["start", "run", "5m", "-t", "-3"]);
-    let svg = env.run(&["nowview", "-o", "-"]);
+    // da-7q8r: the marks live in the time band, and bare `nowview` is the
+    // snapshot — which has no band. The context window is what asks for one.
+    let svg = env.run(&["nowview", "--context", "30m", "-o", "-"]);
     let titles = assert_marks_are_the_tail_rows(&svg, &env.tail_rows());
     assert_eq!(titles.len(), 3, "{titles:?}");
     assert_eq!(titles[0], "coffee");

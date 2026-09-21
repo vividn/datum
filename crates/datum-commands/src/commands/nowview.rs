@@ -1,5 +1,5 @@
 //! `datum nowview` — render an SVG/PNG/HTML showing each tracked field's
-//! recent state over the last 30 minutes (configurable via `--history`).
+//! state now, and the context before it that `--context` asks for.
 //!
 //! Per bead da-6jy nowview's history strip is rendered by the dayview
 //! pipeline ([`datum_layout::dayview::compute_dayview`] +
@@ -30,7 +30,6 @@ use datum_core::time::Zone;
 use datum_layout::dayview::{compute_dayview, DayviewBlock, DayviewFieldInput};
 use datum_layout::nowview::{
     nowview_config, NowviewBlock, NowviewCurrentState, NowviewField, NowviewGeometry, NowviewPoint,
-    DEFAULT_HISTORY_MINUTES,
 };
 use datum_layout::nowview_svg::{
     render_nowview_at_svg, render_nowview_svg, with_xml_declaration, wrap_svg_in_html,
@@ -62,9 +61,9 @@ pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
     }
 
     // Per da-57dj: no `--output-file` → render a pure visual band stack to
-    // the terminal. With `--window` we emit the horizontal Flow layout,
-    // otherwise the vertical Snapshot of each tracked field's current
-    // state. SVG/PNG/HTML remain the file-output formats.
+    // the terminal. With a context window we emit the horizontal Flow
+    // layout, otherwise the vertical Snapshot of each tracked field's
+    // current state. SVG/PNG/HTML remain the file-output formats.
     if args.output_file.is_none() {
         if args.watch {
             let periodic = nowview_terminal_periodic_refresh(stdout_is_tty());
@@ -100,7 +99,14 @@ fn nowview_terminal_periodic_refresh(stdout_is_tty: bool) -> Option<std::time::D
 }
 
 /// Render the pure-visual terminal nowview once: vertical Snapshot by
-/// default, horizontal Flow when `--window <duration>` was passed.
+/// default, horizontal Flow when a context window was asked for.
+///
+/// da-7q8r: `--context`/`--history` names that window here too, so the one
+/// flag means the same thing on both render paths — a zero (or no flag) is
+/// the Snapshot, as it is in the SVG. `--window` is the older spelling and
+/// still wins when both are given; unlike `--context 0` it refuses a
+/// zero, since asking for a window of no time is a mistake, not a
+/// snapshot.
 fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
 
@@ -112,7 +118,17 @@ fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
             }
             (RenderMode::Flow, m)
         }
-        None => (RenderMode::Snapshot, 0.0),
+        None => match args.history.as_deref() {
+            Some(s) => {
+                let m = duration_minutes(s).with_context(|| format!("invalid --context: '{s}'"))?;
+                if m > 0.0 {
+                    (RenderMode::Flow, m)
+                } else {
+                    (RenderMode::Snapshot, 0.0)
+                }
+            }
+            None => (RenderMode::Snapshot, 0.0),
+        },
     };
 
     // da-5flt: a time flag centres the Flow window on its instant (the
@@ -201,9 +217,14 @@ struct NowComputed {
 }
 
 fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
+    // da-7q8r: no `--context`/`--history` is the SNAPSHOT — each field's
+    // state now, drawn as blocks, no time band. That was the default until
+    // da-6jy flipped it to 30m in passing while moving the history portion
+    // onto dayview's renderer; the terminal path never followed, so this
+    // also puts the two render paths back in agreement.
     let history_minutes = match &args.history {
-        Some(s) => duration_minutes(s).with_context(|| format!("invalid --history: '{s}'"))?,
-        None => DEFAULT_HISTORY_MINUTES,
+        Some(s) => duration_minutes(s).with_context(|| format!("invalid --context: '{s}'"))?,
+        None => 0.0,
     };
     // da-5flt: the shared time flags name the instant, resolved against
     // the clock at every render so `--watch` and `-q` move with it.
@@ -267,9 +288,9 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     let c = compute_now(args, db)?;
     let clock = format_local_hh_mm(c.anchor);
     let svg = if c.at.is_some() && c.history_minutes > 0.0 {
-        render_nowview_at_svg(&c.layout, &clock)
+        render_nowview_at_svg(&c.layout, &clock, &c.current_states, args.labels)
     } else {
-        render_nowview_svg(&c.layout, &clock, &c.current_states)
+        render_nowview_svg(&c.layout, &clock, &c.current_states, args.labels)
     };
 
     match target {

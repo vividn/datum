@@ -834,7 +834,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
         state_label: Some("focused".into()),
         colors: vec!["#4488cc".into()],
     }];
-    let svg = render_nowview_svg(&layout, "14:30", &current_states);
+    let svg = render_nowview_svg(&layout, "14:30", &current_states, false);
     DayviewLayoutResult { svg }
 }
 
@@ -899,7 +899,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
         state_label: Some("focused".into()),
         colors: vec!["#4488cc".into()],
     }];
-    let svg = render_nowview_svg(&layout, "14:30", &current_states);
+    let svg = render_nowview_svg(&layout, "14:30", &current_states, false);
     DayviewLayoutResult { svg }
 }
 

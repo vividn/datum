@@ -1108,13 +1108,18 @@ impl Default for DayviewArgs {
 }
 
 /// `datum nowview` arguments. Per bead da-6jy nowview shares dayview's
-/// render path scoped to the last `history` minutes (default 30m); there
-/// is no separate "now panel" anymore so `--now-width` was dropped.
+/// render path scoped to the last `context` minutes; there is no separate
+/// "now panel" anymore so `--now-width` was dropped.
 #[derive(Debug)]
 pub struct NowviewArgs {
-    /// History duration string ("15m", "1h", "2h"). None → 30m default.
-    /// `0` is the snapshot: each field's state, no time band (da-pcis).
+    /// Context duration string ("15m", "1h", "2h") — `--context`, and
+    /// `--history` for the same thing. None is the snapshot (da-7q8r):
+    /// each field's state, no time band, as `0` spells explicitly.
     pub history: Option<String>,
+    /// `--labels` — name each field's state beside its lane, in a gutter
+    /// to the right of the picture (da-7q8r). Off by default, and the SVG
+    /// path's alone: the terminal band never carries labels.
+    pub labels: bool,
     /// `-t/-d/-q/-y`, the shared time flags, centre the window on the instant
     /// they name instead of ending it at now; `-z` only reframes them
     /// (da-5flt). Resolved at each render, so `--watch` follows the clock.
@@ -1160,6 +1165,7 @@ impl Default for NowviewArgs {
     fn default() -> Self {
         Self {
             history: None,
+            labels: false,
             time: TimeArgs::default(),
             width: None,
             height: 300.0,

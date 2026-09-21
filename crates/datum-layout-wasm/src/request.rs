@@ -273,7 +273,9 @@ fn render(request: Request) -> Response {
             let config = nowview_config(fields, now_ms, &geometry);
             let layout = compute_dayview(&config);
             let current = build_current_states(&layout, &now_states, &styles);
-            Response::ok(render_nowview_svg(&layout, &clock, &current))
+            Response::ok(render_nowview_svg(
+                &layout, &clock, &current, /* labels = */ false,
+            ))
         }
     }
 }
