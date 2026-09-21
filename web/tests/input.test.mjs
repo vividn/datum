@@ -15,7 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { choose, chooser, exactly, toggleOption } from './support/layout.mjs';
+import { choose, chooser, exactly, manage, toggleOption } from './support/layout.mjs';
 import { openPanel } from './support/fields.mjs';
 
 before(startApp);
@@ -265,7 +265,7 @@ describe('reversed', () => {
 	test('from the menu: the prompt row on top, and typing, a pill and Enter work as before', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await choose(page, 'custom', 'Change Widget');
+			await manage(page, 'custom', 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('input') }).click();
 			await chooser(page).waitFor({ state: 'detached' });

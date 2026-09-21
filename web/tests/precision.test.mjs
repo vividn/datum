@@ -59,7 +59,21 @@ describe('the time an entry is rendered with', () => {
 			// listing's shared UTC offset rides in the header (da-lkji).
 			// Each field's TRACK document (da-c8mh) reads a millisecond above
 			// its entry; the entries are the rows that are not declarations.
-			assert.deepEqual(rowTexts(tail.stdout).filter((r) => !/^_\d+ TRACK/.test(r)).slice(1), [
+			//
+			// A declaration is told by its STATE cell — `TRACKED`, which no
+			// entry wears — and NEVER by a column's position. The filter this
+			// replaces looked for TRACK right after the ordinal, which is
+			// where the ACTION column used to put it; da-ftg8p took that
+			// column away and the pattern silently stopped matching anything
+			// (da-vug0d). So the drop is ASSERTED and not assumed: a filter
+			// matching nothing reads exactly like a filter with nothing to
+			// drop, and that indistinguishability IS the defect. Had the
+			// action column changed its contents instead of going, this test
+			// would have passed on the wrong rows.
+			const rows = rowTexts(tail.stdout).slice(1);
+			const declared = rows.filter((r) => / TRACKED /.test(r));
+			assert.equal(declared.length, 3, `no TRACK declaration was dropped from: ${rows.join(' | ')}`);
+			assert.deepEqual(rows.filter((r) => !/ TRACKED /.test(r)), [
 				`_5 ${yesterday} coffee ∅● <hid>`,
 				'_3 09:15:00 tea ∅● <hid>',
 				'_1 10:00:00±5m water ∅● <hid>'

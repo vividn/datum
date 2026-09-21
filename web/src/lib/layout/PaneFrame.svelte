@@ -60,21 +60,38 @@
 	what says where it begins and ends. The ROOT pane is the exception at
 	the other end: it draws no bar of its own at all, however many tabs
 	it has, and no box, because the shell draws the root's tabs as the
-	page's top bar (da-0a5o). And a LOCKED frame
+	page's top bar (da-0a5o). And a frame UNDER A LOCK
 	draws no `+` and no `▾` — nothing under a lock can be split, tabbed or
 	resized, and those two are how it would be (vividn, da-bzhq: "Locking
 	hides both the + and this down arrow icon menu") — and the tabs still
-	switch. What the title still opens is the tab's own acts, which is
-	where `Unlock layout` is.
+	switch. What the title still opens is the widget's own option rows
+	(da-vhwq): they are the SESSION's and reach no tree, and a lock stops
+	the tree from moving, not a widget's own settings. What it loses is
+	«Save options with layout», the one of them that writes.
+
+	UNDER A LOCK means a lock from ABOVE, and not the active tab's own
+	(da-z8klv). A tab that holds a LAYOUT is two things at once: the
+	layout INSIDE it, whose lock says stop rearranging what is in here;
+	and the pane that HOLDS it, which is a pane of the PARENT layout — its
+	strip, its split, its position, which widget sits in it. vividn: "This
+	layout pane in many ways belongs to the super layout, and not the sub
+	layout." So this frame's own chrome follows `locked` alone, and the
+	tab's own lock reaches only the subtree, where Layout.svelte passes it
+	down. A pane holding a LOCKED layout, inside an UNLOCKED parent, draws
+	its `+` and its `▾` and opens the whole pane menu; inside that layout
+	nothing may be split, tabbed or resized, as before. What is WRITTEN
+	into the tab's own tree is the other fact and keeps the other lock
+	(`lockedWithin`): «Save options with layout» on a tab holding a locked
+	one-widget layout would write that locked layout's tree, so it stays
+	hidden there.
 
 	A layout tab's frame is also where that layout's identity is worked
 	(da-crp5): the acts the root bar draws for a root tab — save, restore,
 	save as, lock, and `Reset layout` where the layout is one that SHIPPED
 	with datum (da-luwe) — are in this menu when the tab holds a layout,
 	whatever its depth, and the orange modified dot follows the title or
-	the tab. The one exception to the lock above: a layout tab that is
-	itself locked keeps a menu holding those acts alone, so `Unlock
-	layout` can be reached.
+	the tab. `Unlock layout` is among them, which is why a locked layout
+	is never a trap.
 
 	Swiping across the content moves between tabs along the bar's axis:
 	left/right under a horizontal bar, up/down under a vertical one. Touch
@@ -136,11 +153,14 @@
 	/** The layout's root: the one pane whose content box is the scroller. */
 	export let root = false;
 	/**
-	 * Whether a tab ABOVE this pane is locked. The active tab's own lock is
-	 * added to it below: under either there is no `+` and none of the pane
-	 * items, and the tab strip still switches — but a layout tab that is
-	 * itself locked keeps the menu holding its `Unlock layout` (da-crp5),
-	 * or a lock would be a thing nobody could undo.
+	 * Whether a tab ABOVE this pane is locked — the WHOLE of what this
+	 * frame's chrome follows (da-z8klv). Under it there is no `+`, no `▾`
+	 * and none of the pane items, and the tab strip still switches.
+	 *
+	 * The active tab's OWN lock is not added to it: that lock is the
+	 * layout inside the tab saying stop rearranging what is in here, and
+	 * this frame is a pane of the layout ABOVE. It reaches the subtree
+	 * instead, where Layout.svelte hands it down as this prop.
 	 */
 	export let locked = false;
 	/**
@@ -224,8 +244,21 @@
 	/** Whether this pane has a group to leave: everything but the root's own pane. */
 	$: canBreak = canBreakOut($layout, pane.id);
 
-	/** This pane's own lock: one above it, or its active tab's own. */
-	$: lockedHere = locked || !!active.locked;
+	/**
+	 * The lock on what this tab CONTAINS: one from above, or the tab's own
+	 * (da-z8klv). Not the same fact as `locked`, which is this FRAME's
+	 * chrome and follows only the lock from above — what may be WRITTEN
+	 * into the tab's own tree follows this one.
+	 *
+	 * On a tab holding a ONE-widget layout, `inline` lifts the widget into
+	 * the tab (shell.ts, da-ze1x), so the tab IS that widget AND names the
+	 * layout: a write to its content is a write to the locked layout's own
+	 * tree. Both such writes read this — «Save options with layout»
+	 * (`widgetOptions`) and `Reset widget` (`resetWidget`), which go down
+	 * the same `setWidget` and are gated nowhere else. A third one added
+	 * here belongs on this list.
+	 */
+	$: lockedWithin = locked || !!active.locked;
 
 	/**
 	 * What this session has set on the tab in front (da-vhwq): the option
@@ -241,7 +274,7 @@
 	 * rows and loses that one act, which is the whole of why nothing under
 	 * a lock can reach the tree any more.
 	 */
-	$: options = widgetOptions(active, held, sessionOf, lockedHere);
+	$: options = widgetOptions(active, held, sessionOf, lockedWithin);
 
 	/**
 	 * Whether this pane is the one filling the root (da-00am) — which is
@@ -309,14 +342,22 @@
 
 	/**
 	 * The menu, from the one builder the root bar uses too (`menu.ts`). A
-	 * locked pane keeps only the acts, so `Unlock layout` is reachable.
+	 * pane under a lock from above keeps the widget's own option rows
+	 * alone — they are the session's and reach no tree — and a layout tab
+	 * under such a lock has no acts either (`acts`, which the same lock
+	 * withholds).
 	 */
-	$: items = lockedHere
+	$: items = locked
 		? [...options, ...(acts ? layoutActs(acts) : [])]
 		: menuItems({
 				choose: () => void fillTab(active.id),
-				// Beside Change Widget, and about the same thing: the widget in front.
-				reset: resetWidget(active),
+				// About the widget in front — and a WRITE to the tab's own
+				// tree (`setWidget`, which has no lock of its own), so it
+				// follows `lockedWithin` exactly as the options' save does.
+				// On a tab holding a locked ONE-widget layout the settings it
+				// would rewrite are that locked layout's (canary kimi-k3 on
+				// #70, which caught this branch offering it).
+				reset: lockedWithin ? undefined : resetWidget(active),
 				options,
 				// A PANE IS RENAMEABLE TOO (da-s7sdm), not just a tab of a
 				// strip: with one tab the tab IS the pane, and the name on the
@@ -345,10 +386,9 @@
 	 * The two slices of that one list (da-bzhq, `menu.ts`): the TITLE — or
 	 * the tab in front — opens what this pane shows and what it is saved
 	 * as; the `▾` beside the `+` opens what is done to the pane and its
-	 * tabs. Under a lock `items` is the acts alone, none of them a
-	 * management act, so `manage` is empty and the `▾` is not drawn — the
-	 * same answer the `{#if !lockedHere}` round the pair gives, by the
-	 * other road.
+	 * tabs. Under a lock `items` is `Options…` alone, not a management
+	 * act, so `manage` is empty and the `▾` is not drawn — the same answer
+	 * the `{#if !locked}` round the pair gives, by the other road.
 	 */
 	$: own = named(items);
 	$: manage = managed(items);
@@ -696,9 +736,10 @@
 			     Both go under the lock together. vividn: "Locking hides both
 			     the + and this down arrow icon menu" — nothing under a lock
 			     can be split, tabbed or resized, and these two are how it
-			     would be. The title's own menu stays, which is where
-			     `Unlock layout` is (da-crp5). -->
-			{#if !lockedHere}
+			     would be. The lock meant is the one from ABOVE (da-z8klv):
+			     a pane holding a locked layout keeps both, they being the
+			     PARENT's to work. -->
+			{#if !locked}
 				<button
 					type="button"
 					class="control badge add"

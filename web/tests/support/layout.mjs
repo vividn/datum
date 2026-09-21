@@ -140,6 +140,11 @@ export const settled = (page) =>
 /**
  * What opens a pane's menu (da-9vtw): its title, or — with several tabs —
  * the tab in front. The `…` badge is gone; the `+` beside it adds a tab.
+ *
+ * ⚠ A pane may have NO such button (da-z8klv): the NAME's slice is wholly
+ * conditional, so a pane holding a widget whose kind declares neither
+ * defaults nor options — `custom`, `command`, `aliases`, `notice` — and no
+ * layout draws none. Everything done TO such a pane is under `manageButton`.
  */
 export const menuButton = (page, id) =>
 	pane(page, id).locator('.titlebar button.title, .titlebar [role="tab"][aria-selected="true"]').first();
@@ -149,8 +154,9 @@ export const addButton = (page, id) => pane(page, id).locator('.titlebar button.
 
 /**
  * A pane's `▾` (da-bzhq): the badge beside the `+`, which opens what is
- * DONE to the pane and its tabs — Rename…, Split, Break out, Bar, Close.
- * The NAME opens the other slice (`menuButton`).
+ * DONE to the pane and its tabs — Change Widget (da-z8klv), Rename…,
+ * Split, Break out, Bar, Close. The NAME opens the other slice
+ * (`menuButton`).
  */
 export const manageButton = (page, id) => pane(page, id).locator('.titlebar button.manage').first();
 
@@ -193,7 +199,7 @@ export async function chooseRoot(page, label) {
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
-/** Open a pane's NAME menu and choose an item by its name — `Change Widget`, `Save layout`. */
+/** Open a pane's NAME menu and choose an item by its name — `Save layout`, `Options…`. */
 export async function choose(page, id, label) {
 	await menuButton(page, id).click();
 	await page.getByRole('menuitem', { name: label, exact: true }).click();
@@ -257,14 +263,14 @@ export async function choiceLines(page, id, label) {
 	return lines;
 }
 
-/** Open a pane's `▾` and choose an item — `break out: this widget below`, `Close pane`. */
+/** Open a pane's `▾` and choose an item — `Change Widget`, `break out: this widget below`, `Close pane`. */
 export async function manage(page, id, label) {
 	await manageButton(page, id).click();
 	await page.getByRole('menuitem', { name: label, exact: true }).click();
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
-/** Open the root bar's `▾` and choose an item — `split: a new pane to the left`, `Close tab`. */
+/** Open the root bar's `▾` and choose an item — `Change Widget`, `split: a new pane to the left`, `Close tab`. */
 export async function manageRoot(page, label) {
 	await rootManageButton(page).click();
 	await page.getByRole('menuitem', { name: label, exact: true }).click();

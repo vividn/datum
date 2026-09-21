@@ -18,12 +18,14 @@
 	the ratio as its value, and the arrows along the split's axis move it
 	by 2%.
 
-	Locked (da-2a5y): a tab's `locked` covers its whole subtree — the
+	Locked (da-2a5y): a tab's `locked` covers its whole SUBTREE — the
 	flag is threaded down as a prop, and under it every border is `static`
-	(no handle, no keyboard) and every frame draws no `…`. The frame is
-	told the lock from ABOVE it and adds its own tab's, so it can tell the
-	two apart: a layout tab that is itself locked still shows the menu its
-	`Unlock layout` is in (da-crp5).
+	(no handle, no keyboard) and every frame draws no `+` and no `▾`. The
+	subtree is the whole of its reach (da-z8klv): the frame holding the
+	locked tab is a pane of the layout ABOVE, so it is told only the lock
+	from above and keeps its own chrome — which is how a sibling tab can
+	still be added beside a locked sublayout, and how the menu holding
+	`Unlock layout` stays open (da-crp5).
 
 	Floors: a child's cell is never narrower or shorter than its frame
 	(`floorOf` over `chromeOf`: a widget pane's outline and the inside
@@ -66,7 +68,7 @@
 	export let epoch = 0;
 	/** The root pane's id: the one pane whose last tab cannot be closed. */
 	export let rootId: NodeId;
-	/** Whether a tab above this pane is locked; its own active tab may add to it. */
+	/** Whether a tab ABOVE this pane is locked; its own active tab's lock is added on the way DOWN. */
 	export let locked = false;
 
 	/**

@@ -249,7 +249,7 @@ describe('holders', () => {
 				await menuButton(page, 'tabbed').click();
 				// The NAME's slice: the split it holds is nobody's layout
 				// until Save as layout… is asked.
-				assert.deepEqual(await menuLines(page), ['Change Widget', 'Save as layout…']);
+				assert.deepEqual(await menuLines(page), ['Save as layout…']);
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				// The `▾`'s: in a strip, Split splits the tab in front, one
@@ -257,6 +257,7 @@ describe('holders', () => {
 				// strip.
 				await manageButton(page, 'tabbed').click();
 				assert.deepEqual(await menuLines(page), [
+					'Change Widget',
 					'Rename tab…',
 					'Split ← ↓ ↑ →',
 					'Break out ← ↓ ↑ →',

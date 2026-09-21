@@ -25,7 +25,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { dragBar, timedDrag } from './support/bar.mjs';
-import { choose } from './support/layout.mjs';
+import { manage } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -223,7 +223,7 @@ describe('the DEBUG database', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const offered = async () => {
-				await choose(page, 'tail', 'Change Widget');
+				await manage(page, 'tail', 'Change Widget');
 				await page.locator('dialog.chooser').waitFor();
 				const kinds = await page
 					.locator('dialog.chooser [role="group"][aria-label="Widgets"] button')

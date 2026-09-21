@@ -216,11 +216,16 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
 - The page is a LAYOUT TREE, not a grid (da-jdop, `web/src/lib/layout/`):
   panes hold widgets or splits of panes, each pane has tabs and draggable
   borders, and its bar reads maximize · title-or-tabs · `+` · `▾`
-  (da-bzhq): the NAME opens what the pane shows and what it is saved as
-  (Change Widget, Reset widget, the widget's OWN OPTIONS one item each,
-  the layout's acts), the `▾` beside the `+` what is DONE to it (Split,
-  Break out, Bar, Rename tab…, Close), and a lock hides that pair. One
-  builder, `menu.ts`, one order, two filters — `named` and `managed`.
+  (da-bzhq): the NAME opens what the pane IS and what it is saved as
+  (Reset widget, the widget's OWN OPTIONS one item each, the layout's
+  acts), the `▾` beside the `+` what is DONE to it (Change Widget,
+  Rename tab…, Split, Break out, Bar, Close), and a lock hides that pair.
+  One builder, `menu.ts`, one order, two filters — `named` and `managed`.
+  The lock that hides the pair is the one from ABOVE (da-z8klv): a pane
+  HOLDING a sublayout belongs to the layout above it, so its `+` and its
+  `▾` follow the parent's lock and not the sublayout's own, which reaches
+  only the subtree. The root's `+` is never hidden by any lock — a locked
+  layout must not be able to stop you opening another beside it.
   A WIDGET OPTION IS SESSION STATE (da-vhwq, `session.ts` + `options.ts`):
   the kind declares it in the registry, the menu draws it inline — a
   switch is a `menuitemcheckbox` that turns over without closing the menu,
@@ -231,6 +236,9 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   side is «Save options with layout», which only an UNLOCKED menu carries
   and which only appears when something is held — so «when locked, nothing
   modifies the layout» is true by construction rather than by a guard. The
+  lock it reads is the SUBTREE's (da-z8klv, `lockedWithin`), not the
+  frame's: on a tab holding a locked one-widget layout the tree it would
+  write is that locked layout's own. The
   overlay is the DIFFERENCE from the tree, keyed by layout + tab + widget,
   pruned when a tab closes or its widget is changed, and gone on a reload;
   `Reset widget` drops it along with writing the kind's defaults.

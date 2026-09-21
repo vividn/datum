@@ -100,12 +100,12 @@ describe('a root tab whose layout is one widget', () => {
 
 			await toggleRootLock(page);
 			const lines = await rootLines(page);
-			assert.deepEqual(lines, ['Change Widget', RESET_WIDGET, NEWEST, ...ACTS, 'export backup…']);
-			assert.deepEqual(await rootManageLines(page), ['Split ← ↓ ↑ →', '× Close tab']);
+			assert.deepEqual(lines, [RESET_WIDGET, NEWEST, ...ACTS, 'export backup…']);
+			assert.deepEqual(await rootManageLines(page), ['Change Widget', 'Split ← ↓ ↑ →', '× Close tab']);
 			// The two ways back are told apart by their words and by where
-			// they sit: `Reset widget` is up with Change Widget and the
-			// options, about the widget in front; `Reset layout` is down in the
-			// layout's own block, between Restore and Save as.
+			// they sit: `Reset widget` is at the head of the NAME's slice,
+			// with the options, about the widget in front; `Reset layout` is
+			// down in the layout's own block, between Restore and Save as.
 			assert.ok(lines.indexOf(RESET_WIDGET) < lines.indexOf('Save layout'));
 			assert.ok(lines.indexOf(RESET_LAYOUT) > lines.indexOf('Restore layout'));
 			assert.deepEqual(app.errors, []);
@@ -187,8 +187,10 @@ describe('a root tab whose layout is one widget', () => {
 			const lines = await rootLines(page);
 			// `custom` declares neither defaults nor options, so unlocked its
 			// menu is the whole list less both widget items. (`tail` was the
-			// example until da-hkjp gave it a `type`.)
-			assert.deepEqual(lines, ['Change Widget', ...ACTS, 'export backup…'], `custom reads ${lines.join(' | ')}`);
+			// example until da-hkjp gave it a `type`.) A ROOT tab always
+			// holds a layout, so it keeps its acts and its menu — unlike a
+			// PANE of such a kind, which since da-z8klv has none at all.
+			assert.deepEqual(lines, [...ACTS, 'export backup…'], `custom reads ${lines.join(' | ')}`);
 			assert.ok(!lines.includes(RESET_WIDGET), `custom reads ${lines.join(' | ')}`);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
@@ -202,9 +204,9 @@ describe('a root tab whose layout is one widget', () => {
 			const lines = await rootLines(page);
 			assert.ok(!lines.includes(NEWEST), `day reads ${lines.join(' | ')}`);
 			assert.ok(!lines.includes(RESET_WIDGET), `day reads ${lines.join(' | ')}`);
-			assert.equal(lines[0], 'Change Widget');
+			assert.equal(lines[0], 'Save layout');
 			assert.equal(lines.at(-1), 'export backup…');
-			assert.deepEqual(await rootManageLines(page), ['Split ← ↓ ↑ →', '× Close tab']);
+			assert.deepEqual(await rootManageLines(page), ['Change Widget', 'Split ← ↓ ↑ →', '× Close tab']);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});

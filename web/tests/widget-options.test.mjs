@@ -37,6 +37,7 @@ import {
 	chooseRoot,
 	chooser,
 	exactly,
+	manage,
 	menuButton,
 	menuLines,
 	optionChecked,
@@ -103,33 +104,37 @@ describe('widget options', () => {
 	});
 
 	// The rows are IN the menu now, not behind an `Options…` that opens a
-	// modal: a kind with options reads them under Change Widget and Reset
-	// widget, and a kind without reads what it always did.
+	// modal: a kind with options reads them under `Reset widget`, and a
+	// kind with neither has no name menu at all — `Change Widget`, which
+	// used to carry that menu on its own, is the `▾`'s since da-z8klv.
 	//
 	// `tail` gained an option in da-hkjp (its `type`), so the kind standing
 	// here for «declares none» is `custom`. The contrast is the point, not
 	// which kind makes it.
 	test('the options are items of the name’s menu; a kind with none has none', async () => {
 		await withApp(async ({ page }) => {
-			assert.deepEqual(await linesOf(page, 'repl'), ['Change Widget', 'Reset widget', NEWEST]);
-			assert.deepEqual(await linesOf(page, 'nowview'), ['Change Widget', 'Reset widget', 'history']);
+			assert.deepEqual(await linesOf(page, 'repl'), ['Reset widget', NEWEST]);
+			assert.deepEqual(await linesOf(page, 'nowview'), ['Reset widget', 'history']);
 			assert.deepEqual(await linesOf(page, 'bar'), [
-				'Change Widget',
 				'Reset widget',
 				'a switch is labelled with its',
 				'show ignored fields'
 			]);
-			assert.deepEqual(await linesOf(page, 'strip'), ['Change Widget', 'Reset widget', 'today frozen at the bottom']);
-			assert.deepEqual(await linesOf(page, 'tail'), ['Change Widget', 'Reset widget', 'type']);
-			assert.deepEqual(await linesOf(page, 'custom'), ['Change Widget']);
+			assert.deepEqual(await linesOf(page, 'strip'), ['Reset widget', 'today frozen at the bottom']);
+			assert.deepEqual(await linesOf(page, 'tail'), ['Reset widget', 'type']);
+			assert.equal(await menuButton(page, 'custom').count(), 0, 'a kind that declares nothing has a name menu');
 			// No modal is left anywhere in the app.
 			assert.equal(await page.locator('dialog.options').count(), 0);
 
-			await choose(page, 'custom', 'Change Widget');
+			await manage(page, 'custom', 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('command') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
-			assert.deepEqual(await linesOf(page, 'custom'), ['Change Widget']);
+			// `command` declares neither options nor defaults, holds nothing
+			// in this session and holds no layout, so the NAME's slice is
+			// empty and no menu is drawn at all (da-z8klv, which moved
+			// Change Widget to the `▾`).
+			assert.equal(await menuButton(page, 'custom').count(), 0, 'command has a name menu');
 		}, DESKTOP);
 	});
 
@@ -211,7 +216,7 @@ describe('widget options', () => {
 			await page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
 			assert.ok((await tree(page)).includes('"reversed":true'), 'the save did not reach the tree');
 			// And the session let go of it, so the menu no longer offers a save.
-			assert.deepEqual(await linesOf(page, 'repl'), ['Change Widget', 'Reset widget', NEWEST]);
+			assert.deepEqual(await linesOf(page, 'repl'), ['Reset widget', NEWEST]);
 			assert.equal(await optionChecked(page, 'repl', NEWEST), true);
 
 			await chooseRoot(page, 'Save layout');
@@ -346,8 +351,9 @@ describe('widget options', () => {
 			const before = await tree(page);
 
 			// The locked menu of a PANE that holds no layout of its own is the
-			// options alone — no Change Widget, no Reset widget, no save, and
-			// no acts, which belong to the tab that HOLDS a layout (da-crp5).
+			// options alone — no Reset widget, no save, and no acts, which
+			// belong to the tab that HOLDS a layout (da-crp5). Change Widget
+			// is not there either: it is the `▾`'s, and the `▾` is hidden.
 			const lines = await linesOf(page, 'repl');
 			assert.deepEqual(lines, [NEWEST]);
 			// A kind that declares NO options has no menu left at all under a

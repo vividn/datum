@@ -287,13 +287,13 @@ describe('the shell', () => {
 			// (da-luwe); no lock, which is the button beside the gear.
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
-				['Change Widget', 'Save layout', 'Restore layout', 'Reset layout', 'Save layout as…', 'export backup…']
+				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as…', 'export backup…']
 			);
 			// The `▾`'s: what is DONE to the page, Close last and wearing
 			// its × (da-ygc9). The arrows read in vim order (da-bzhq).
 			assert.deepEqual(
 				(await rootManageItems(page)).map((i) => i.label),
-				['Split ← ↓ ↑ →', '× Close tab']
+				['Change Widget', 'Split ← ↓ ↑ →', '× Close tab']
 			);
 			assert.deepEqual(errors, []);
 		});
@@ -475,7 +475,11 @@ describe('the acts', () => {
 		await shared.room('act-split', async (app, room) => {
 			const { page } = app;
 			assert.deepEqual(await dotted(page), []);
-			const quiet = (await rootItem(page, 'Save layout')).color;
+			// `Restore layout` and not `Save layout`, which leads the menu
+			// since da-z8klv: a menu opens on its first item, and once the
+			// keyboard has been used the browser paints that focus, so the
+			// first item's colour is not the same fact read twice.
+			const quiet = (await rootItem(page, 'Restore layout')).color;
 
 			await manage(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
@@ -490,7 +494,7 @@ describe('the acts', () => {
 			await until(() => dotted(page), (d) => d.length === 0);
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
 			assert.deepEqual((await rootItems(page)).filter((i) => i.marked), []);
-			assert.equal((await rootItem(page, 'Save layout')).color, quiet);
+			assert.equal((await rootItem(page, 'Restore layout')).color, quiet);
 
 			await manage(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'nowview');

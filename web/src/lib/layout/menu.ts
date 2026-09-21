@@ -44,10 +44,12 @@
 // THE LIST IS DRAWN IN TWO SLICES (da-bzhq). Everything above is about
 // which items a caller HAS; where they are DRAWN is `named` and
 // `managed`, at the bottom of this file. The name of the thing — a pane's
-// title, a tab, the root tab — opens what it shows and what it is saved
-// as; a `▾` beside the `+` opens what is done to the pane and its tabs.
-// One builder, one order, two filters: an item moves between the two
-// menus by gaining or losing `manage`, and can be in neither list twice.
+// title, a tab, the root tab — opens what it IS: the layout it holds and
+// what that is saved as, and the settings of the widget in front; a `▾`
+// beside the `+` opens what is DONE to the pane — which widget sits in it
+// among them (da-z8klv). One builder, one order, two filters: an item
+// moves between the two menus by gaining or losing `manage`, and can be
+// in neither list twice.
 
 import type { Toward } from './tree.js';
 
@@ -177,6 +179,11 @@ export const CLOSE = '\u00d7';
  * ⚑ The dialog also offers LAYOUTS (its `Layouts` group), so this name is
  * narrower than what it opens. Shipped as asked and flagged rather than
  * renamed to a third thing.
+ *
+ * It is a `manage` item, so it is under the `▾` (da-z8klv). vividn,
+ * 2026-09-21: "change widget belongs in the triangle menu even for
+ * sublayouts". WHICH widget sits in a pane is a thing done to the pane,
+ * beside Split and Close, and not part of what the pane is called.
  */
 export const CHANGE = 'Change Widget';
 
@@ -193,7 +200,8 @@ export function menuItems(spec: {
 	 * no one widget (a split, and so a layout of more than one) or its kind
 	 * declares no defaults, which is `resetWidget` in `shell.ts` asking the
 	 * registry.
-	 * Beside `Change Widget`, because like it it is about the widget in front.
+	 * The first of the NAME's slice: `Change Widget` swaps the widget out
+	 * and is the `▾`'s (da-z8klv), this one is about the widget in front.
 	 */
 	reset?: () => void;
 	/**
@@ -226,7 +234,7 @@ export function menuItems(spec: {
 	extra?: Item[];
 }): Item[] {
 	return [
-		{ label: CHANGE, run: spec.choose },
+		{ label: CHANGE, run: spec.choose, manage: true as const },
 		...(spec.reset ? [{ label: 'Reset widget', run: spec.reset }] : []),
 		...(spec.options ?? []),
 		...(spec.rename ? [{ label: spec.rename.label, run: spec.rename.run, manage: true as const }] : []),
@@ -243,15 +251,18 @@ export function menuItems(spec: {
 }
 
 /**
- * The slice the thing's NAME opens: what it SHOWS and what it is SAVED as
- * — Change Widget, Reset widget, the widget's own options, the layout's
- * own acts, the root's `export backup…`.
+ * The slice the thing's NAME opens: what it IS and what it is SAVED as —
+ * `Reset widget`, the widget's own options, the layout's own acts, the
+ * root's `export backup…`. A pane whose widget declares neither defaults
+ * nor options, holds nothing in this session and holds no layout, has
+ * none of them and wears no title menu at all (da-z8klv).
  */
 export const named = (items: Item[]): Item[] => items.filter((item) => !item.manage);
 
 /**
  * The slice the `▾` beside the `+` opens (da-bzhq): what is done to the
- * PANE and its TABS — Rename…, Split, Break out, Bar, Close.
+ * PANE and its TABS — Change Widget (da-z8klv), Rename…, Split, Break
+ * out, Bar, Close.
  *
  * vividn, 2026-09-21: "next to the + tab button, lets put a little down
  * arrow button, and put all the widget/pane management options there

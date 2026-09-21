@@ -21,7 +21,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, addTab, chooseRoot, chooser, choose, exactly, menuButton, menuLines, pane } from './support/layout.mjs';
+import { DESKTOP, addTab, chooseRoot, chooser, choose, exactly, manage, menuButton, menuLines, pane } from './support/layout.mjs';
 
 /** «Save options with layout» (da-vhwq): what makes a widget's own move the layout's. */
 const SAVE = 'Save options with layout';
@@ -93,10 +93,11 @@ describe('Reset widget', () => {
 			await chooseRoot(page, 'Save layout');
 			await page.waitForFunction(() => !document.querySelector('.root-bar [role="tab"].modified'));
 
-			// Second in the menu, beside Change Widget and before the widget's
-			// own options (da-vhwq). Split and the rest are the `▾`'s (da-bzhq).
+			// First in the NAME's menu, before the widget's own options
+			// (da-vhwq). Split and the rest are the `▾`'s (da-bzhq), and so
+			// is Change Widget (da-z8klv).
 			const lines = await linesOf(page, 'strip');
-			assert.deepEqual(lines, ['Change Widget', RESET, 'today frozen at the bottom']);
+			assert.deepEqual(lines, [RESET, 'today frozen at the bottom']);
 
 			await choose(page, 'strip', RESET);
 			await dayHeightIs(page, fallback);
@@ -120,7 +121,7 @@ describe('Reset widget', () => {
 
 			// The tail pane becomes the stats widget, which is a pane tab
 			// holding a widget — what the act is for.
-			await choose(page, 'tail', 'Change Widget');
+			await manage(page, 'tail', 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
@@ -128,7 +129,7 @@ describe('Reset widget', () => {
 			await page.waitForFunction(() => document.querySelector('.stats .argv')?.textContent === 'stats --week');
 
 			const lines = await linesOf(page, 'tail');
-			assert.equal(lines[1], RESET, `the stats menu reads ${lines.join(' | ')}`);
+			assert.equal(lines[0], RESET, `the stats menu reads ${lines.join(' | ')}`);
 
 			await choose(page, 'tail', RESET);
 			// DEFAULT_STATS is all time over every field: a bare `stats`,
@@ -142,12 +143,14 @@ describe('Reset widget', () => {
 		await withApp(async ({ page }) => {
 			// The contrast is the whole assertion, so the kind that HAS the
 			// item is read in the same app as the kinds that have not.
-			assert.equal((await linesOf(page, 'strip'))[1], RESET, 'the strip has no Reset widget');
+			assert.equal((await linesOf(page, 'strip'))[0], RESET, 'the strip has no Reset widget');
 
 			// `custom` declares no settings, so there is nothing to put back.
 			// It is the example since da-hkjp gave `tail` a declared `type`,
-			// which puts both items in that kind's NAME menu.
-			assert.deepEqual(await linesOf(page, 'custom'), ['Change Widget']);
+			// which puts both items in that kind's NAME menu. Neither item
+			// and no layout leaves it with NO name menu at all, Change
+			// Widget having moved to the `▾` (da-z8klv).
+			assert.equal(await menuButton(page, 'custom').count(), 0);
 
 			// The root tab holds the `day` layout, so the root menu has none
 			// either — the same rule, not a second one.

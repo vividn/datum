@@ -24,6 +24,7 @@ import {
 	exactly,
 	manage,
 	manageButton,
+	manageRoot,
 	maximizeButton,
 	menuButton,
 	menuLines,
@@ -35,7 +36,6 @@ import {
 	rootManageButton,
 	rootMenuButton,
 	settled,
-	titledMenuButton,
 	titledPane,
 	titles,
 	toggleRootLock
@@ -54,17 +54,21 @@ describe('the menu the title opens', () => {
 	 * since da-hkjp gave the tail kind a declared `type`: both are the
 	 * registry's arithmetic over what a kind declares, so a kind that
 	 * declares something has them. The kind with neither is `custom`, which
-	 * the tests below that need one now use. The `▾` slice is untouched by
-	 * da-hkjp — it is about the PANE, not the widget in it — and `Rename
-	 * pane…` is at the head of it since da-s7sdm, which is the same
-	 * distinction from the other side: renaming is done TO the pane.
+	 * the tests below that need one now use — and which since da-z8klv has
+	 * NO name menu at all, nothing being left in that slice. The `▾` slice
+	 * is untouched by da-hkjp — it is about the PANE, not the widget in it
+	 * — and `Rename pane…` is second in it since da-s7sdm, which is the
+	 * same distinction from the other side: renaming is done TO the pane.
+	 * `Change Widget` leads it since da-z8klv: WHICH widget sits in the
+	 * pane is done to the pane too (vividn: "change widget belongs in the
+	 * triangle menu").
 	 *
 	 * The option is the ITEM `type` rather than an `Options…` that opens a
 	 * modal (da-vhwq): a choice is a submenu of its values, opened from the
 	 * row that names the setting.
 	 */
-	const TAIL_MENU = ['Change Widget', 'Reset widget', 'type'];
-	const TAIL_MANAGE = ['Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane'];
+	const TAIL_MENU = ['Reset widget', 'type'];
+	const TAIL_MANAGE = ['Change Widget', 'Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane'];
 
 	test('the title is the button, the `▾` beside the `+` holds the acts on the pane', async () => {
 		await withApp(async ({ page }) => {
@@ -76,14 +80,14 @@ describe('the menu the title opens', () => {
 			// The `▾` (da-bzhq) is named, and its menu is the other slice.
 			const badge = manageButton(page, 'tail');
 			assert.equal(await badge.getAttribute('aria-label'), 'manage the tail pane');
-			await badge.click();
-			assert.deepEqual(await menuLines(page), TAIL_MANAGE);
-			assert.equal(await page.locator('[role="menu"]').getAttribute('aria-label'), 'manage the tail pane');
+			await title.click();
+			assert.deepEqual(await menuLines(page), TAIL_MENU);
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 
-			await title.click();
-			assert.deepEqual(await menuLines(page), TAIL_MENU);
+			await badge.click();
+			assert.deepEqual(await menuLines(page), TAIL_MANAGE);
+			assert.equal(await page.locator('[role="menu"]').getAttribute('aria-label'), 'manage the tail pane');
 			// Change Widget fills this tab from the one modal (da-uyx1): the
 			// pane becomes what was picked, and nothing is added beside it.
 			await page.getByRole('menuitem', { name: 'Change Widget', exact: true }).click();
@@ -282,9 +286,9 @@ describe('the menu the title opens', () => {
 			assert.deepEqual((await stored()).filter((k) => !storedBefore.includes(k)), ['datum.layout.draft.v1.day']);
 			assert.equal(await rootMenuButton(page).locator('.dot').count(), 1, 'the edit is not the enclosing layout’s');
 
-			// The empty half filled: the name follows.
-			await titledMenuButton(page, 'empty').click();
-			await page.getByRole('menuitem', { name: 'Change Widget', exact: true }).click();
+			// The empty half filled — from its own button, an empty pane
+			// having no name menu — and the name follows.
+			await openChooser(page);
 			await chooser(page).locator('button').filter({ hasText: exactly('aliases') }).click();
 			await until(labels, (l) => l[0] === 'tail | aliases');
 
@@ -427,12 +431,16 @@ describe('the menu the title opens', () => {
 		await withApp(async ({ page }) => {
 			await addTab(page, 'tail', 'aliases');
 			const tabs = pane(page, 'tail').locator('[role="tab"]');
-			// The tab in front carries the menu, and its name is still its words.
-			assert.equal(await tabs.nth(1).getAttribute('aria-haspopup'), 'menu');
-			assert.equal(await tabs.nth(1).getAttribute('aria-label'), null);
+			// `aliases` declares neither defaults nor options and holds no
+			// layout, so its slice is empty and the tab in front carries no
+			// menu at all — Change Widget having moved to the `▾` (da-z8klv).
+			assert.equal(await tabs.nth(1).getAttribute('aria-haspopup'), null);
 			await tabs.nth(0).click();
 			assert.equal(await page.locator('[role="menu"]').count(), 0, 'switching opened the menu');
 			assert.equal(await activeTab(page, 'tail'), 'tail');
+			// The tab in front carries the menu, and its name is still its words.
+			assert.equal(await tabs.nth(0).getAttribute('aria-haspopup'), 'menu');
+			assert.equal(await tabs.nth(0).getAttribute('aria-label'), null);
 			// Now the tail is the tab in front: the same click opens the menu,
 			// and it is the TAIL's — the tab in front is what the name slice
 			// is about, so the tail's declared `type` (da-hkjp) puts its two
@@ -446,7 +454,7 @@ describe('the menu the title opens', () => {
 			// With tabs it is the TAB that closes, and Break out gives the
 			// tab in front a pane of its own — both under the `▾` (da-bzhq).
 			await manageButton(page, 'tail').click();
-			assert.deepEqual(await menuLines(page), ['Rename tab…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close tab']);
+			assert.deepEqual(await menuLines(page), ['Change Widget', 'Rename tab…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close tab']);
 			await page.getByRole('menuitem', { name: 'break out: this widget below', exact: true }).click();
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			// The tab that left is a pane of its own, under the pane it left;
@@ -533,7 +541,7 @@ describe("the root bar's menu", () => {
 		return lines;
 	}
 
-	test('the active layout name is the button, and Change Widget is the first item', async () => {
+	test('the active layout name is the button, and Save layout is the first item', async () => {
 		await withApp(async ({ page }) => {
 			const name = rootMenuButton(page);
 			assert.equal(await name.innerText(), 'day');
@@ -542,7 +550,9 @@ describe("the root bar's menu", () => {
 			assert.equal(await page.locator('.root-bar button.more').count(), 0, 'the … badge is still there');
 			await name.click();
 			assert.equal(await page.locator('[role="menu"]').getAttribute('aria-label'), 'menu of the day layout');
-			assert.equal((await menuLines(page))[0], 'Change Widget');
+			// Change Widget is the `▾`'s first item now (da-z8klv), so the
+			// name's slice opens on the acts.
+			assert.equal((await menuLines(page))[0], 'Save layout');
 			await page.keyboard.press('Escape');
 		}, DESKTOP);
 	});
@@ -583,7 +593,6 @@ describe("the root bar's menu", () => {
 			// The NAME's slice: what the tab shows and what it is saved as.
 			const paneLines = await linesOf(page, () => menuButton(page, 'tail').click());
 			assert.deepEqual(paneLines, [
-				'Change Widget',
 				'Save layout',
 				'Restore layout',
 				// This tab holds `day`, which ships with datum (da-luwe).
@@ -594,7 +603,7 @@ describe("the root bar's menu", () => {
 			// And the `▾`'s: what is done to the pane and its tabs (da-bzhq),
 			// Close last and wearing its × (da-ygc9).
 			const paneManage = await linesOf(page, () => manageButton(page, 'tail').click());
-			assert.deepEqual(paneManage, ['Split ← ↓ ↑ →', NO_BREAK, NO_BAR, CLOSE]);
+			assert.deepEqual(paneManage, ['Change Widget', 'Split ← ↓ ↑ →', NO_BREAK, NO_BAR, CLOSE]);
 
 			// The same arithmetic on both slices.
 			//
@@ -619,7 +628,7 @@ describe("the root bar's menu", () => {
 	test('Change Widget replaces the root tab with what the chooser came back with', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await chooseRoot(page, 'Change Widget');
+			await manageRoot(page, 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
@@ -672,7 +681,7 @@ describe('the Bar submenu', () => {
 		await withApp(async ({ page }) => {
 			await manageButton(page, 'tail').click();
 			const items = page.locator('[role="menu"] button');
-			assert.deepEqual(await menuLines(page), ['Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane']);
+			assert.deepEqual(await menuLines(page), ['Change Widget', 'Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane']);
 			assert.equal(await items.filter({ hasText: /Bar:|Align:/ }).count(), 0);
 			await items.filter({ hasText: exactly('Bar') }).click();
 			const cells = await row(page);
@@ -851,10 +860,13 @@ describe('the pane menu by pointer', () => {
 			const focused = () =>
 				page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim());
 			// The `▾` beside the `+` is where Split is now (da-bzhq). The
-			// menu opens on its first item, which is `Rename pane…`
-			// (da-s7sdm); the Split row is the next one down.
+			// menu opens on its first item, which is `Change Widget`
+			// (da-z8klv), then `Rename pane…` (da-s7sdm); the Split row is
+			// the next one down.
 			await manageButton(page, 'tail').focus();
 			await page.keyboard.press('Enter');
+			assert.equal(await focused(), 'Change Widget');
+			await page.keyboard.press('ArrowDown');
 			assert.equal(await focused(), 'Rename pane…');
 			await page.keyboard.press('ArrowDown');
 			assert.equal(await focused(), 'split: a new pane to the left');
