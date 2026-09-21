@@ -859,6 +859,64 @@ describe('folded, a command still answers', () => {
 		}, { ...held(AT), viewport: { width: 360, height: 640 } });
 	});
 
+	// THE LETTERS ARE NOT CUT OFF ALONG THE BOTTOM. vividn, 2026-09-21, of the
+	// deployed build: "the ACTION verb is slightly clipped under the first
+	// repl input history line." The strip's floor IS the input section's
+	// floor — the test above pins them within a pixel of each other — so a
+	// glyph that hangs below its line box hangs past the strip, and the
+	// strip's `overflow` took it away.
+	//
+	// Two things put it there, and both are asserted, because either alone
+	// would leave it cut on a machine whose monospace differs from this one:
+	// the line box must HOLD the font's own box (`line-height: 1` is the
+	// font SIZE, and a font's ascent and descent are taller than that), and
+	// what clipping the strip does must be SIDEWAYS ONLY.
+	//
+	// Measured through a Range, which is the only box here that is the
+	// font's: `.action` is a flex item, so it is blockified and its own rect
+	// is the line box — the very thing whose being too short is the defect.
+	test('the ACTION words are not clipped along the bottom of the strip', async () => {
+		const AT = todayAt(12, 0);
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.clock.runFor(200);
+			await app.idle();
+			// FOLDED is the state it appears in, and the only one: the strip
+			// is drawn `{#if !$output}`, so an open bar has no words to clip.
+			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0, 'the phone did not start folded');
+
+			await app.submit('occur coffee');
+			await marks(page).waitFor();
+
+			const ink = await page.evaluate(() => {
+				const strip = document.querySelector('.prompt-bar .marks');
+				const word = strip.querySelector('.action');
+				const range = document.createRange();
+				range.selectNodeContents(word);
+				const glyphs = range.getBoundingClientRect();
+				const box = strip.getBoundingClientRect();
+				const style = getComputedStyle(strip);
+				return {
+					text: word.textContent,
+					below: glyphs.bottom - box.bottom,
+					overflowX: style.overflowX,
+					overflowY: style.overflowY
+				};
+			});
+
+			assert.ok(ink.text.trim().length > 0, 'there was no word to measure');
+			assert.ok(
+				ink.below <= 0,
+				`${JSON.stringify(ink.text)} hangs ${ink.below.toFixed(2)}px below the strip it is clipped by`
+			);
+			// And if some other font ever does hang over anyway, it is seen
+			// hanging over rather than cut: the strip clips one axis.
+			assert.equal(ink.overflowY, 'visible', 'the strip clips the letters\u2019 own axis');
+			assert.notEqual(ink.overflowX, 'visible', 'the words may push the row wider');
+			assert.deepEqual(app.errors, []);
+		}, held(AT));
+	});
+
 	test('a failure says ERROR, in red, for longer — and a tap opens the output on what went wrong', async () => {
 		const AT = todayAt(12, 0);
 		await withApp(async (app) => {

@@ -686,10 +686,33 @@
 		gap: 0.4rem;
 		max-width: 100%;
 		height: var(--marks-strip);
-		overflow: hidden;
+		/* SIDEWAYS ONLY. The words may not push the row wider than the block
+		   they begin at, so the strip clips — but it sits with its bottom ON
+		   the seam, and clipping the OTHER axis there is clipping letters
+		   (da-qdm7, vividn: "the ACTION verb is slightly clipped under the
+		   first repl input history line"). `overflow: hidden` takes both
+		   axes and cannot be asked for one; `clip` can, and `visible` beside
+		   it stays visible rather than becoming a scrollport the way it
+		   would beside `hidden`. */
+		overflow-x: clip;
+		overflow-y: visible;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.7rem;
-		line-height: 1;
+		/* AND THE LINE BOX HOLDS THE LETTERS. At `1` it is the font's size
+		   and the font's own box is taller than that — 13px of ascent and
+		   descent inside an 11.2px line — so `flex-end`, which puts the LINE
+		   box on the strip's bottom edge, hung the last of every glyph PAST
+		   it, where the clip took it.
+
+		   Measured at 390x664, `TRACK●`: the ink reached 664.78 against a
+		   strip floor of 663.98, so it hung over by 0.80px; at 1.2 it reaches
+		   663.55 and clears by 0.44. THAT IS THE WHOLE MARGIN — less than half
+		   a pixel, and it is a font metric, not a chosen number. There is no
+		   room here to spend. The `overflow-y: visible` above is the second
+		   guarantee for exactly that reason: a box whose monospace resolves
+		   differently may overhang anyway, and it must be seen overhanging
+		   rather than cut. */
+		line-height: 1.2;
 		animation: mark-fade var(--fade) ease-out forwards;
 	}
 

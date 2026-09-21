@@ -148,7 +148,18 @@
 	     new command at position 0, and a key by index rebuilt the whole
 	     scrollback on each one (review on #33). -->
 	{#each entries as entry, i (entry)}
-		{#if i > 0}
+		<!-- A rule stands on a SEAM — between this row and one above it —
+		     and `i > 0` asked a narrower question: "is this my first row".
+		     Those were the same question while the repl was the whole list.
+		     They stopped being it when the bar's output section became row
+		     one and this view began at `skip` (da-qdm7, vividn: "there is a
+		     missing line between the first entry in the repl and the
+		     second"): the seam above the log's first row is the one edge
+		     neither renderer owns, and it went undrawn. `skip` is what says
+		     there IS a row above that this view does not draw — and it is 0
+		     in a pane, where the first row is the first row and a rule over
+		     it would be a rule against the pane's own body. -->
+		{#if i > 0 || skip}
 			<hr class="rule" />
 		{/if}
 		<!-- The row itself is `ReplEntry.svelte`, which the bar's output

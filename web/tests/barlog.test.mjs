@@ -741,3 +741,65 @@ describe('down there it is still the bar', () => {
 		}, DESKTOP);
 	});
 });
+
+// ONE LIST, TWO RENDERERS, AND A HAIRLINE PER SEAM BETWEEN ITS ROWS.
+//
+// vividn, 2026-09-21, of the deployed build: "there is a missing line between
+// the first entry in the repl and the second." `Repl.svelte` drew its rule
+// before every row but its own first, which was right while the repl was
+// one pane and wrong the moment the bar's output section became row one of
+// the same list: the log's `i === 0` is the SECOND row overall, and the one
+// seam neither renderer owns went undrawn.
+//
+// So this counts rules against rows ACROSS BOTH SURFACES, which is the
+// count no earlier assertion made — every one of them counted rows. n rows
+// have n-1 seams between them, wherever the two renderers divide them.
+describe('the seam between the bar’s row and the log', () => {
+	/** Rows and rules, over the output section and the log together. */
+	const drawn = (page) =>
+		page.evaluate(() => ({
+			barRows: document.querySelectorAll('.prompt-bar .section.output .head').length,
+			logRows: document.querySelectorAll('.log .head').length,
+			logRules: document.querySelectorAll('.log hr.rule').length
+		}));
+
+	test('every seam between two rows has a hairline, the bar’s own included', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of ['occur coffee', 'occur water', 'occur tea']) await app.submit(line);
+			await app.idle();
+
+			await dragBy(page, BAR, -900);
+			await settled(page);
+
+			const { barRows, logRows, logRules } = await drawn(page);
+			assert.equal(barRows, 1, 'the bar drew no row of its own');
+			assert.equal(logRows, 2, `the log drew ${logRows} rows of three entries`);
+			// n rows, n-1 seams: the log owns every one of them, because the
+			// row above its first is the bar's.
+			assert.equal(
+				logRules,
+				barRows + logRows - 1,
+				`${barRows + logRows} rows drew ${logRules} hairlines`
+			);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	// AND NOT IN A PANE. A repl WIDGET is the same component with `skip` 0,
+	// and there the first row is the first row: a hairline above it would be
+	// a rule against the top of the pane's own body.
+	test('a repl widget still draws no rule above its first row', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of ['occur coffee', 'occur water']) await app.submit(line);
+			await app.idle();
+
+			const pane = page.locator('.pane.repl, [data-title="repl"]').first();
+			await pane.waitFor();
+			assert.equal(await pane.locator('.head').count(), 2, 'the widget drew the wrong rows');
+			assert.equal(await pane.locator('hr.rule').count(), 1, 'the widget ruled its first row');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+});
