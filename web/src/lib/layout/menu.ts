@@ -193,8 +193,16 @@ export function menuItems(spec: {
 	 * (`widgetOptions` in `options.ts`).
 	 */
 	options?: () => void;
-	/** `Rename tab…` (da-6ji5): a tab of a strip that holds no layout — a layout tab wears its layout's name. */
-	rename?: () => void;
+	/**
+	 * `Rename…` (da-6ji5, da-s7sdm): the name the thing wears, typed. Only
+	 * where the tab holds no layout — a layout tab wears its layout's name.
+	 *
+	 * The caller names it, the way it names `close`, because the same act
+	 * is called after the same thing: `Rename tab…` in a strip, `Rename
+	 * pane…` where the pane's one tab IS the pane and its name is the one
+	 * on the frame.
+	 */
+	rename?: { label: string; run: () => void };
 	split?: Aimed;
 	breakOut?: Aimed;
 	close: { label: string; disabled?: boolean; run: () => void };
@@ -209,7 +217,7 @@ export function menuItems(spec: {
 		{ label: CHANGE, run: spec.choose },
 		...(spec.reset ? [{ label: 'Reset widget', run: spec.reset }] : []),
 		...optionsItem(spec.options),
-		...(spec.rename ? [{ label: 'Rename tab…', run: spec.rename, manage: true as const }] : []),
+		...(spec.rename ? [{ label: spec.rename.label, run: spec.rename.run, manage: true as const }] : []),
 		...(spec.split ? [{ label: 'Split', row: aimed(spec.split.what, spec.split.run), manage: true as const }] : []),
 		...(spec.breakOut
 			? [{ label: 'Break out', row: aimed(spec.breakOut.what, spec.breakOut.run), manage: true as const }]
@@ -231,7 +239,7 @@ export const named = (items: Item[]): Item[] => items.filter((item) => !item.man
 
 /**
  * The slice the `▾` beside the `+` opens (da-bzhq): what is done to the
- * PANE and its TABS — Split, Break out, Bar, Rename tab…, Close.
+ * PANE and its TABS — Rename…, Split, Break out, Bar, Close.
  *
  * vividn, 2026-09-21: "next to the + tab button, lets put a little down
  * arrow button, and put all the widget/pane management options there

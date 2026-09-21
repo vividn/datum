@@ -51,7 +51,7 @@ describe('the menu the title opens', () => {
 	 * NAME opens, and what the `▾` beside the `+` opens.
 	 */
 	const TAIL_MENU = ['Change Widget'];
-	const TAIL_MANAGE = ['Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane'];
+	const TAIL_MANAGE = ['Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane'];
 
 	test('the title is the button, the `▾` beside the `+` holds the acts on the pane', async () => {
 		await withApp(async ({ page }) => {
@@ -301,6 +301,64 @@ describe('the menu the title opens', () => {
 			await until(labels, (l) => l[0] === 'mine');
 			assert.deepEqual(await names(), [...namesBefore, 'mine'].sort());
 		}, PHONE);
+	});
+
+	// da-s7sdm (vividn, 2026-09-21): «Yes, let's add a rename option. I
+	// suppose it should go in the (lockable) layout menu». A PANE is
+	// renameable, not only a tab of a strip: with one tab the tab IS the
+	// pane, so the name on the frame is that tab's `title` — which
+	// `nameOf` already preferred over the kind's name. The act is in the
+	// `▾`, with the rest of what is DONE to a pane, so a lock hides it.
+	test('Rename pane… names a lone pane everywhere; emptied, the key goes with the name', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const tabOf = () =>
+				page.evaluate(() => {
+					const walk = (p) => p.tabs.flatMap((t) => (t.id === 'tail-tab' ? [t] : (t.content.children ?? []).flatMap(walk)));
+					return walk(window.datum.layout.current().root)[0];
+				});
+			const dots = () => rootMenuButton(page).locator('.dot').count();
+			assert.equal(await dots(), 0, 'the layout started modified');
+			assert.equal((await tabOf()).title, undefined, 'the tab is named before anyone named it');
+
+			// The field starts at the name it wears now — the kind's.
+			await manageButton(page, 'tail').click();
+			await page.getByRole('menuitem', { name: 'Rename pane…', exact: true }).click();
+			const field = page.locator('dialog.ask input');
+			assert.equal(await field.inputValue(), 'tail');
+			await field.fill('sleep tail');
+			await page.locator('dialog.ask').getByRole('button', { name: 'rename' }).click();
+
+			// Worn everywhere `labelOf` is read: the frame's title, the
+			// button that opens its menu, and the `▾`'s own name.
+			await titledPane(page, 'sleep tail').waitFor();
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'sleep tail', 'custom', 'fields']);
+			assert.equal(await pane(page, 'tail').locator('h2').innerText(), 'sleep tail');
+			assert.equal(await menuButton(page, 'tail').getAttribute('aria-label'), 'menu of the sleep tail pane');
+			assert.equal(await manageButton(page, 'tail').getAttribute('aria-label'), 'manage the sleep tail pane');
+			// It EDITS the tree, so it dirties the layout like any other edit.
+			assert.equal(await dots(), 1, 'a rename did not dirty the layout');
+			assert.equal((await tabOf()).title, 'sleep tail');
+
+			// The draft is the device's, so the name comes back with it.
+			await app.reload();
+			await titledPane(page, 'sleep tail').waitFor();
+
+			// Emptied, the title goes and the KEY goes with it (`setTitle`,
+			// the pattern `setLocked` uses): a pane never named and one
+			// named and cleared are the same pane.
+			await manageButton(page, 'tail').click();
+			await page.getByRole('menuitem', { name: 'Rename pane…', exact: true }).click();
+			await page.locator('dialog.ask input').fill('');
+			await page.locator('dialog.ask').getByRole('button', { name: 'rename' }).click();
+			await titledPane(page, 'tail').waitFor();
+			assert.equal(Object.hasOwn(await tabOf(), 'title'), false, 'the emptied title left its key behind');
+
+			// A locked layout cannot be renamed: the `▾` holding the act is
+			// not drawn, which is the lock this bead asked for, for free.
+			await toggleRootLock(page);
+			await until(() => manageButton(page, 'tail').count(), (n) => n === 0);
+		}, DESKTOP);
 	});
 
 	// da-cesj: the strip of a tab stack is a row of its own, and the panes
@@ -587,7 +645,7 @@ describe('the Bar submenu', () => {
 		await withApp(async ({ page }) => {
 			await manageButton(page, 'tail').click();
 			const items = page.locator('[role="menu"] button');
-			assert.deepEqual(await menuLines(page), ['Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane']);
+			assert.deepEqual(await menuLines(page), ['Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane']);
 			assert.equal(await items.filter({ hasText: /Bar:|Align:/ }).count(), 0);
 			await items.filter({ hasText: exactly('Bar') }).click();
 			const cells = await row(page);
@@ -765,10 +823,13 @@ describe('the pane menu by pointer', () => {
 		await withApp(async ({ page }) => {
 			const focused = () =>
 				page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim());
-			// The `▾` beside the `+` is where Split is now (da-bzhq), and
-			// the row it opens on is the first item of that menu.
+			// The `▾` beside the `+` is where Split is now (da-bzhq). The
+			// menu opens on its first item, which is `Rename pane…`
+			// (da-s7sdm); the Split row is the next one down.
 			await manageButton(page, 'tail').focus();
 			await page.keyboard.press('Enter');
+			assert.equal(await focused(), 'Rename pane…');
+			await page.keyboard.press('ArrowDown');
 			assert.equal(await focused(), 'split: a new pane to the left');
 			// Vim order, and the walk follows the eye: ← ↓ ↑ →.
 			const walk = [];

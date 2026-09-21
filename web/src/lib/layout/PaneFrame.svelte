@@ -207,6 +207,8 @@
 	/** A frame round a LAYOUT's panes: they are inset from it, so the two outlines read as two. */
 	$: nested = isSplit(active.content) && !holder;
 	$: many = pane.tabs.length > 1;
+	/** What this frame's menu calls the thing it acts on: with one tab, the tab is the pane. */
+	$: thing = many ? 'tab' : 'pane';
 	$: vertical = pane.bar.edge === 'left' || pane.bar.edge === 'right';
 	/**
 	 * `labelOf` (registry.ts), the one rule — except at the root, which
@@ -299,7 +301,11 @@
 				// Beside Change Widget, and about the same thing: the widget in front.
 				reset: resetWidget(active),
 				options: widgetOptions(active),
-				rename: many && active.layout === undefined ? rename(active) : undefined,
+				// A PANE IS RENAMEABLE TOO (da-s7sdm), not just a tab of a
+				// strip: with one tab the tab IS the pane, and the name on the
+				// frame is that tab's. Named after whichever it is, as `close`
+				// is. A tab holding a LAYOUT is still named by that layout.
+				rename: active.layout === undefined ? { label: `Rename ${thing}…`, run: rename(active) } : undefined,
 				// In a strip, Split splits the TAB in front (da-6ji5). A lone
 				// holder's children split themselves; its own split is a tab's.
 				split: many
@@ -331,12 +337,17 @@
 	$: manage = managed(items);
 
 	/**
-	 * `Rename tab…` (da-6ji5): the answer is the tab's `title`. The field
-	 * starts at the name it wears now; emptied, the title goes and the tab
-	 * wears the name it is given again (`nameOf`).
+	 * `Rename tab…` / `Rename pane…` (da-6ji5, da-s7sdm): the answer is the
+	 * tab's `title`. The field starts at the name it wears now; emptied,
+	 * the title goes — the key with it, as `setLocked` drops `locked` — and
+	 * the thing wears the name it is given again (`nameOf`). A user title
+	 * OVERRIDES the default name and never replaces it as the source of one.
+	 *
+	 * It edits the tree, so it dirties the layout like any other edit
+	 * (`isModified`, draft.ts, which compares everything but the lock).
 	 */
 	const rename = (tab: Tab) => () =>
-		void ask('Rename this tab (empty: its own name again):', 'rename', labelOf(tab), true).then((to) => {
+		void ask(`Rename this ${thing} (empty: its own name again):`, 'rename', labelOf(tab), true).then((to) => {
 			if (to !== null && to !== labelOf(tab)) apply((l) => setTitle(l, tab.id, to || undefined));
 		});
 

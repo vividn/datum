@@ -149,8 +149,8 @@ export const addButton = (page, id) => pane(page, id).locator('.titlebar button.
 
 /**
  * A pane's `▾` (da-bzhq): the badge beside the `+`, which opens what is
- * DONE to the pane and its tabs — Split, Break out, Bar, Rename tab…,
- * Close. The NAME opens the other slice (`menuButton`).
+ * DONE to the pane and its tabs — Rename…, Split, Break out, Bar, Close.
+ * The NAME opens the other slice (`menuButton`).
  */
 export const manageButton = (page, id) => pane(page, id).locator('.titlebar button.manage').first();
 
