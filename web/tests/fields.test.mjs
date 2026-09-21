@@ -54,13 +54,38 @@ describe('the logic', () => {
 				{ field: 'b', spec: spec('b', { verb: 'start' }), states: [], color: '#222222', state_colors: {}, ignored: true },
 				{ field: 'c', spec: spec('c', { verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' }, ignored: false }
 			],
-			[{ field: 'b', state: true }, { field: 'c', state: 'x' }, { field: 'a', state: false }]
+			// `now --json`'s active rows, which are only ever the truthy ones:
+			// a field it does not name — `a` — is off.
+			[{ field: 'b', state: true }, { field: 'c', state: 'x' }]
 		);
 		assert.deepEqual(widgets.map((w) => [w.field, w.shape.kind, w.ignored, w.current]), [
 			['a', 'state', false, undefined],
 			['b', 'state', true, true],
 			['c', 'states', false, 'x']
 		]);
+	});
+
+	test('`active` is whether `now` named the field — not whether the state has a colour', () => {
+		// Which is a different question from `current`: datum counts an
+		// empty string a state, and so active (`is_truthy`,
+		// datum-core/src/db/now.rs), but it paints no button. The press
+		// ranking asks `active` (da-q5jq); `lookOf` asks `current`.
+		const listing = ['a', 'b'].map((field) => ({
+			field,
+			spec: null,
+			states: [],
+			color: '#111111',
+			state_colors: {},
+			ignored: false
+		}));
+		const widgets = buttonsFor(listing, [{ field: 'a', state: '' }]);
+		assert.deepEqual(
+			widgets.map((w) => [w.field, w.active, w.current]),
+			[
+				['a', true, undefined],
+				['b', false, undefined]
+			]
+		);
 	});
 
 	test("the ink is the CLI's YIQ rule", () => {

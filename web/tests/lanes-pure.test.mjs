@@ -5,6 +5,12 @@
 // fields menu.» `nearest` is that sentence as a ranking, over boxes and
 // instants a picture drew; `promoted` is what the widget does with it.
 //
+// And on 2026-09-21, from his phone: «it seems occur dots aren't well
+// filtered when clicking at a certain y in the now view. Let's filter. The
+// fields with the closest y should appear first in the fields list.» So a
+// dot is reached by HEIGHT the way a block is, and the coarse rank is only
+// the first key — the distances order within it (da-q5jq).
+//
 // Nothing here is removed: every case below checks that the rule ORDERS.
 // The same rules as a reader meets them are `fieldsorder.test.mjs`.
 
@@ -20,8 +26,7 @@ registerHooks({
 	}
 });
 
-const { REACH_PX, ROW_PX, nearest } = await import('../src/lib/lanes.ts');
-const { promoted } = await import('../src/lib/commands.ts');
+const { REACH_PX, ROW_PX, closer, nearest, promoted } = await import('../src/lib/lanes.ts');
 
 const MINUTE = 60_000;
 const T = Date.UTC(2026, 8, 17, 14, 0);
@@ -44,10 +49,10 @@ const dot = (field, x, y) => ({
 /** The press: on the band at (x, y), having selected `t` minutes past T. */
 const at = (x, y, t = null) => ({ x, y, t: t === null ? null : T + t * MINUTE });
 
-/** `nearest` as a plain list, best rank first — what the bar's front becomes. */
+/** `nearest` as a plain list, nearest first — what the bar's front becomes. */
 const front = (drawn, press) => {
 	const rank = nearest(drawn, press);
-	return rank === null ? null : [...rank].sort((a, b) => a[1] - b[1]).map(([f]) => f);
+	return rank === null ? null : [...rank].sort((a, b) => closer(a[1], b[1])).map(([f]) => f);
 };
 
 describe('a press ranks the fields the picture drew under it', () => {
@@ -59,8 +64,8 @@ describe('a press ranks the fields the picture drew under it', () => {
 	test('a block over the height AND the time beats a block over the height alone', () => {
 		// 20 minutes past T is inside sleep's span and past the end of work's.
 		const rank = nearest([...PICTURE, block('work', 10, 30, -60, 0)], at(200, 20, 20));
-		assert.equal(rank.get('sleep'), 0, 'sleep spans both the height and the time');
-		assert.equal(rank.get('work'), 1, 'work spans the height but the time is past its end');
+		assert.equal(rank.get('sleep').rank, 0, 'sleep spans both the height and the time');
+		assert.equal(rank.get('work').rank, 1, 'work spans the height but the time is past its end');
 		assert.deepEqual(front([...PICTURE, block('work', 10, 30, -60, 0)], at(200, 20, 20)), ['sleep', 'work']);
 	});
 
@@ -69,16 +74,42 @@ describe('a press ranks the fields the picture drew under it', () => {
 		// running on in whatever state it is in (vividn, 17:01).
 		const chip = { field: 'mood', box: { top: 31, bottom: 50, left: 380, right: 400 } };
 		assert.deepEqual(front([...PICTURE, chip], at(390, 45)), ['work', 'mood']);
-		assert.equal(nearest([chip], at(390, 45)).get('mood'), 1);
+		assert.equal(nearest([chip], at(390, 45)).get('mood').rank, 1);
 	});
 
-	test('a dot within a finger of the press is reached; one further off is not', () => {
+	test('a dot is reached by HEIGHT, the way a block is — however far off in time it fell', () => {
+		// vividn, 2026-09-21 13:37, on his phone: «it seems occur dots aren't
+		// well filtered when clicking at a certain y in the now view. Let's
+		// filter.» A block spans every x and so is reached by height alone.
+		// A dot was reached by a RADIUS, so the same press 25px along its
+		// own row reached it no more than one in another lane.
 		assert.deepEqual(front(PICTURE, at(200 + REACH_PX - 1, 80)), ['coffee']);
-		assert.equal(nearest(PICTURE, at(200, 80)).get('coffee'), 2, 'a dot ranks after every block');
-		// Beside it in TIME is no more on it than beside it in height: the
-		// distance is the finger's, in both directions at once.
-		assert.equal(front(PICTURE, at(200 + REACH_PX + 2, 80)), null);
-		assert.equal(front(PICTURE, at(200, 80 + REACH_PX + 2)), null);
+		assert.deepEqual(front(PICTURE, at(200 + REACH_PX + 2, 80)), ['coffee'], 'and 26px away in TIME');
+		assert.deepEqual(front(PICTURE, at(0, 80)), ['coffee'], 'and clear across the picture');
+		assert.equal(nearest(PICTURE, at(200, 80)).get('coffee').rank, 2, 'a dot still ranks after a block');
+
+		// Height still gates it, and the distance is from the mark's own
+		// box — the two px a dot is drawn across (`dot` above).
+		assert.deepEqual(front(PICTURE, at(200, 80 + 2 + REACH_PX)), ['coffee'], 'a finger clear of its edge');
+		assert.equal(front(PICTURE, at(200, 80 + 3 + REACH_PX)), null, 'and a pixel further is another lane');
+	});
+
+	test('the closest y comes first, and time only separates what height cannot', () => {
+		// «The fields with the closest y should appear first in the fields
+		// list.» Two dots in reach, 1px and 18px off the press's height.
+		const stacked = [dot('far', 200, 98), dot('near', 200, 81)];
+		assert.deepEqual(front(stacked, at(200, 80)), ['near', 'far']);
+		const rank = nearest(stacked, at(200, 80));
+		assert.ok(rank.get('near').dy < rank.get('far').dy, 'and it is the height that separates them');
+
+		// The same height: then the one nearer in TIME leads, rather than
+		// the two being equal or the far one absent.
+		const sameRow = [dot('later', 380, 80), dot('here', 204, 80)];
+		assert.deepEqual(front(sameRow, at(200, 80)), ['here', 'later']);
+		assert.deepEqual([...nearest(sameRow, at(200, 80))].map(([f, n]) => [f, n.dy]), [
+			['later', 0],
+			['here', 0]
+		]);
 	});
 
 	test('a row hit squarely is that row alone, though its neighbour abuts it', () => {
@@ -95,8 +126,12 @@ describe('a press ranks the fields the picture drew under it', () => {
 		const tiny = [block('a', 0, 3, -60, 60), block('b', 6, 9, -60, 60), block('c', 30, 33, -60, 60)];
 		const rank = nearest(tiny, at(200, 4.5, 0));
 		assert.deepEqual([...rank.keys()].sort(), ['a', 'b'], `${ROW_PX}px reaches either row from the gap`);
-		assert.deepEqual([...new Set(rank.values())], [0], 'and they tie rather than being ranked');
+		assert.equal(closer(rank.get('a'), rank.get('b')), 0, 'equidistant from either, so they tie');
 		assert.ok(!rank.has('c'), 'a lane 25px away is not under the finger');
+
+		// And a press that is not in the middle of the gap is nearer one.
+		assert.deepEqual(front(tiny, at(200, 3.5, 0)), ['a', 'b']);
+		assert.deepEqual(front(tiny, at(200, 5.5, 0)), ['b', 'a']);
 	});
 
 	test('no height at all changes nothing: a typed -t, a tail row', () => {
@@ -106,28 +141,76 @@ describe('a press ranks the fields the picture drew under it', () => {
 });
 
 describe('the ranking orders the bar without hiding anything', () => {
-	const fields = ['coffee', 'mood', 'run', 'sleep'].map((field) => ({ field, shape: { kind: 'point' } }));
+	/** The four buttons the bar draws, alphabetical — the CLI's one ordering rule. */
+	const bar = (active = []) =>
+		['coffee', 'mood', 'run', 'sleep'].map((field) => ({
+			field,
+			shape: { kind: 'point' },
+			active: active.includes(field)
+		}));
+	const fields = bar();
 	const names = (list) => list.map((b) => b.field);
+	/** One mark, as `nearest` reports it. */
+	const near = (rank, dy = 0, dx = 0) => ({ rank, dy, dx });
 
 	test('the ranked fields come first, in rank order, and the rest keep theirs', () => {
 		const rank = new Map([
-			['sleep', 0],
-			['coffee', 2]
+			['sleep', near(0)],
+			['coffee', near(2)]
 		]);
-		assert.deepEqual(names(promoted(fields, rank)), ['sleep', 'coffee', 'mood', 'run']);
+		assert.deepEqual(names(promoted(bar(['sleep']), rank)), ['sleep', 'coffee', 'mood', 'run']);
 	});
 
 	test('a tie keeps the usual order — a tie is not a ranking', () => {
 		const rank = new Map([
-			['run', 1],
-			['mood', 1]
+			['run', near(1)],
+			['mood', near(1)]
 		]);
-		assert.deepEqual(names(promoted(fields, rank)), ['mood', 'run', 'coffee', 'sleep']);
+		assert.deepEqual(names(promoted(bar(['run', 'mood']), rank)), ['mood', 'run', 'coffee', 'sleep']);
+	});
+
+	test('inside one rank the nearer in HEIGHT leads, then the nearer in time', () => {
+		// «The fields with the closest y should appear first in the fields
+		// list» (vividn, 2026-09-21) — and `run` is drawn 18px off the press,
+		// so alphabetical order is not what comes back.
+		const byHeight = new Map([
+			['run', near(2, 18)],
+			['sleep', near(2, 1)]
+		]);
+		assert.deepEqual(names(promoted(fields, byHeight)), ['sleep', 'run', 'coffee', 'mood']);
+
+		// Two at the same height: then how far off in TIME separates them,
+		// rather than leaving them equal.
+		const byTime = new Map([
+			['coffee', near(2, 0, 300)],
+			['run', near(2, 0, 4)]
+		]);
+		assert.deepEqual(names(promoted(fields, byTime)), ['run', 'coffee', 'mood', 'sleep']);
+	});
+
+	test('a block outranks a dot while its field is ON, and falls in among them when it is OFF', () => {
+		// vividn, 2026-09-21 13:46: «a block can outrank an occur, particularly
+		// if it is in an active state. If the block is false, then I would
+		// rank by order to center.» `run` is a block the press is nearly on;
+		// `coffee` a dot it is nearer still.
+		const rank = new Map([
+			['run', near(1, 6)],
+			['coffee', near(2, 1)]
+		]);
+		assert.deepEqual(names(promoted(bar(['run']), rank)), ['run', 'coffee', 'mood', 'sleep'], 'on: the block leads');
+		assert.deepEqual(names(promoted(bar(), rank)), ['coffee', 'run', 'mood', 'sleep'], 'off: the nearer mark leads');
+		// It is a DEMOTION to the dots' rank, never a removal: the same
+		// inactive block still leads a dot further off than it.
+		const further = new Map([
+			['run', near(1, 6)],
+			['coffee', near(2, 20)]
+		]);
+		assert.deepEqual(names(promoted(bar(), further)), ['run', 'coffee', 'mood', 'sleep']);
 	});
 
 	test('no ranking is the list itself, unmoved and whole', () => {
 		assert.deepEqual(names(promoted(fields, null)), names(fields));
 		assert.deepEqual(names(promoted(fields, new Map())), names(fields));
-		assert.equal(promoted(fields, new Map([['sleep', 0]])).length, fields.length, 'nothing is removed');
+		assert.equal(promoted(fields, new Map([['sleep', near(0)]])).length, fields.length, 'nothing is removed');
 	});
 });

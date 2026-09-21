@@ -163,24 +163,6 @@ export function fieldsWithDuration(buttons: FieldButton[], duration: boolean): F
 }
 
 /**
- * `buttons` with the fields a press landed on or near brought to the
- * FRONT, best rank first (`nearest` in $lib/lanes.ts) and everything else
- * in its usual order.
- *
- * Nothing is removed — the press prioritises, it does not hide. A stable
- * sort, so a tie (several rows a few px tall under one finger) keeps the
- * order it had, which is the CLI's alphabetical one: a tie is not a
- * ranking and must not be invented into one.
- */
-export function promoted(buttons: FieldButton[], rank: Map<string, number> | null): FieldButton[] {
-	if (!rank?.size) return buttons;
-	return buttons
-		.map((button, i) => ({ button, i, at: rank.get(button.field) ?? Infinity }))
-		.sort((a, b) => a.at - b.at || a.i - b.i)
-		.map((e) => e.button);
-}
-
-/**
  * What a tap on `button` runs while `verb` is pending — `<verb> <field>`,
  * at once (C1).
  *

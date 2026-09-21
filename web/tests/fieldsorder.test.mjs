@@ -16,7 +16,12 @@
 // pill is read off the bar's store, and the bar is asserted as an ordered
 // list of names — never as "something moved".
 //
-// The ranking itself is `lanes-pure.test.mjs`, in node.
+// The ranking itself is `lanes-pure.test.mjs`, in node — which is where
+// the ORDER within a rank lives too (da-q5jq: «The fields with the closest
+// y should appear first in the fields list», and a block outranking a dot
+// only while its field is on). No press on this seed's picture can put a
+// dot nearer the finger than a row it also reached — the lanes are 6px
+// tall and 19px apart — so those cases are made of boxes, not of clicks.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -174,7 +179,7 @@ describe('a click on the picture puts the fields drawn there first', () => {
 		);
 	});
 
-	test('a dot is reached by DISTANCE: on it coffee is promoted, along its row it is not', async () => {
+	test('a dot is reached by its HEIGHT, wherever along the row the press fell', async () => {
 		await withFields(async ({ page }) => {
 			const dot = await markOf(page, 'coffee', '[data-at]');
 			await clickAt(page, dot);
@@ -184,16 +189,31 @@ describe('a click on the picture puts the fields drawn there first', () => {
 			);
 			assert.deepEqual(await shownFields(page), USUAL, 'a dot outranks nothing here, and hides nothing');
 
-			// The same ROW, well off the dot in time. A dot is a few px
-			// across and a finger is not, so the reach is a distance in both
-			// directions at once — beside it in time is no more on it than
-			// beside it in height. `coffee` draws nothing else at that height.
-			await clickAt(page, { x: dot.x - 80, y: dot.y });
+			// The SAME row, at another mark's x entirely — minutes away in
+			// TIME. vividn, 2026-09-21, on his phone: «it seems occur dots
+			// aren't well filtered when clicking at a certain y in the now
+			// view. Let's filter.» A block spans every x and so is reached by
+			// height alone; a dot was reached by a RADIUS round its centre,
+			// so this press — the dot's exact height, and `run`'s block's
+			// x — found nothing at all. It is the dot's HEIGHT that decides.
+			const run = await markOf(page, 'run');
+			assert.ok(Math.abs(run.x - dot.x) > 24, `the two marks are ${Math.abs(run.x - dot.x)}px apart in time`);
+			await clickAt(page, { x: run.x, y: dot.y });
 			await until(
 				() => marked(page),
-				(seen) => seen.promoted.length === 0
+				(seen) => seen.promoted.join() === 'coffee'
 			);
-			assert.deepEqual(await shownFields(page), USUAL);
+			assert.deepEqual(await shownFields(page), ['coffee', ...USUAL.filter((f) => f !== 'coffee')]);
+
+			// Height still gates it, so the dot is not dragged into every
+			// press: `mood`'s own block is a lane and a half below it, and
+			// the press that lands squarely there does not reach it.
+			await clickAt(page, await markOf(page, 'mood'));
+			await until(
+				() => marked(page),
+				(seen) => seen.promoted.length > 0 && !seen.promoted.includes('coffee')
+			);
+			assert.ok((await shownFields(page)).includes('coffee'), 'and it is still there to press');
 		});
 	});
 });

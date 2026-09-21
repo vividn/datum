@@ -47,6 +47,19 @@ export interface FieldButton {
 	 * block, the state's name for a switch; absent when it is off.
 	 */
 	current?: true | string;
+	/**
+	 * Whether the field is in an ACTIVE state right now — `datum now
+	 * --json` named it, and the rows it names are exactly the truthy ones
+	 * (`is_truthy` over `is_inactive_state`, datum-core/src/db/now.rs:
+	 * null, `false`, IGNORED, TRACKED and an all-falsy array are inactive;
+	 * an empty string is a state and so active). The rule is the CLI's and
+	 * is not restated here.
+	 *
+	 * Not the same question as `current`, which is the field's state as a
+	 * COLOUR and so is absent for a field whose active state paints
+	 * nothing. A press ranks by this one (`promoted` in $lib/lanes.ts).
+	 */
+	active: boolean;
 }
 
 /** The `-t` and `dur` tweaks a long press can attach before committing. */
@@ -123,6 +136,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 			ignored,
 			color,
 			stateColors: state_colors,
+			active: now.has(field),
 			current: state === true || (typeof state === 'string' && state !== '') ? state : undefined
 		};
 	});

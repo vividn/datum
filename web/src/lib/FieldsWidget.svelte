@@ -78,12 +78,12 @@
 		type FieldButton,
 		type FieldShape
 	} from './fields.js';
+	import { promoted, type Near } from './lanes.js';
 	import { openTrack } from './trackModal.js';
 	import {
 		declaredVerb,
 		fieldsUnder,
 		fieldsWithDuration,
-		promoted,
 		scrollsSideways,
 		verbPress,
 		watchRows,
@@ -118,7 +118,7 @@
 	 * Those fields come FIRST. Nothing is hidden by it: a person who
 	 * clicked empty space still finds every field, in its usual order.
 	 */
-	export let rank: Map<string, number> | null = null;
+	export let rank: Map<string, Near> | null = null;
 	/**
 	 * Whether the IGNORED fields get a button too (da-xhio).
 	 *
@@ -194,7 +194,7 @@
 	 * up the moment the pointer leaves, which is what this statement
 	 * re-running on `over` is for.
 	 */
-	let shown: Map<string, number> | null = null;
+	let shown: Map<string, Near> | null = null;
 	$: if (!over) shown = rank;
 
 	$: buttons = promoted(
