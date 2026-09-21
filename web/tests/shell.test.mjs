@@ -46,7 +46,20 @@ import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright';
 import { inWorker, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { chooseRoot, chooser, fill, offers, openChooser, rootMenuButton, settled, titledMenuButton, titledPane } from './support/layout.mjs';
+import {
+	chooseRoot,
+	chooser,
+	fill,
+	lockButton,
+	offers,
+	openChooser,
+	rootManageButton,
+	rootMenuButton,
+	settled,
+	titledMenuButton,
+	titledPane,
+	toggleRootLock
+} from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -135,6 +148,17 @@ async function choose(page, title, label) {
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
+/**
+ * The same, for the `▾` beside a titled pane's `+` (da-bzhq): Split,
+ * Break out, Bar, Rename tab…, Close. By TITLE, like `choose` above,
+ * because a room's pane ids are re-minted and its titles are not.
+ */
+async function manage(page, title, label) {
+	await titledPane(page, title).locator('> .titlebar button.manage').first().click();
+	await page.getByRole('menuitem', { name: label, exact: true }).click();
+	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+}
+
 /** Add a tab to a titled pane: the `+`, then `name` in the chooser it opens. */
 async function addTab(page, title, name) {
 	await titledPane(page, title).locator('> .titlebar button.add').first().click();
@@ -149,15 +173,23 @@ async function front(page, label) {
 	await until(() => activeRootTab(page), (t) => t === label);
 }
 
-/** The four acts, as the root menu names them (da-wjob). */
-const ACT = { save: 'Save layout', restore: 'Restore layout', 'save-as': 'Save layout as…', lock: 'Lock layout', unlock: 'Unlock layout' };
+/**
+ * The acts, as the root menu names them (da-wjob). The LOCK is not among
+ * them: it is a button beside the gear now (da-bzhq, `toggleRootLock`).
+ */
+const ACT = { save: 'Save layout', restore: 'Restore layout', 'save-as': 'Save layout as…' };
 
 /** Run one of the layout's acts from the root menu. */
 const act = (page, name) => chooseRoot(page, ACT[name]);
 
 /** The root menu's items, open: label, whether it is marked, and its colour. */
-async function rootItems(page) {
-	await rootMenuButton(page).click();
+const rootItems = (page) => openItems(page, () => rootMenuButton(page).click());
+
+/** The `▾` beside the root's `+` (da-bzhq): what is DONE to the page. */
+const rootManageItems = (page) => openItems(page, () => rootManageButton(page).click());
+
+async function openItems(page, open) {
+	await open();
 	const seen = await page.locator('[role="menu"]').evaluate((menu) =>
 		// One entry a LINE, as `menuLines` reads it: a row of arrows is its
 		// label and its glyphs, not four items.
@@ -250,21 +282,18 @@ describe('the shell', () => {
 			assert.deepEqual(gear.map((i) => i.disabled), [false, true]);
 			// The acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
+			// The NAME's slice (da-bzhq): what the tab shows and what it is
+			// saved as. `day` is a built-in, so `Reset layout` is there
+			// (da-luwe); no lock, which is the button beside the gear.
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
-				// Close last, after `export backup…` (da-ygc9), wearing its ×.
-				// `day` is a built-in, so it has the fifth act (da-luwe).
-				[
-					'Choose…',
-					'Split ← → ↑ ↓',
-					'Save layout',
-					'Restore layout',
-					'Reset layout',
-					'Save layout as…',
-					'Lock layout',
-					'export backup…',
-					'× Close tab'
-				]
+				['Change Widget', 'Save layout', 'Restore layout', 'Reset layout', 'Save layout as…', 'export backup…']
+			);
+			// The `▾`'s: what is DONE to the page, Close last and wearing
+			// its × (da-ygc9). The arrows read in vim order (da-bzhq).
+			assert.deepEqual(
+				(await rootManageItems(page)).map((i) => i.label),
+				['Split ← ↓ ↑ →', '× Close tab']
 			);
 			assert.deepEqual(errors, []);
 		});
@@ -448,7 +477,7 @@ describe('the acts', () => {
 			assert.deepEqual(await dotted(page), []);
 			const quiet = (await rootItem(page, 'Save layout')).color;
 
-			await choose(page, 'tail', 'split: a new pane to the right');
+			await manage(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
 			assert.deepEqual(await dotted(page), [room]);
 			// The dot's meaning, in the menu beside it: exactly the two acts
@@ -463,7 +492,7 @@ describe('the acts', () => {
 			assert.deepEqual((await rootItems(page)).filter((i) => i.marked), []);
 			assert.equal((await rootItem(page, 'Save layout')).color, quiet);
 
-			await choose(page, 'tail', 'split: a new pane to the right');
+			await manage(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'nowview');
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
 			await act(page, 'save');
@@ -487,7 +516,7 @@ describe('the acts', () => {
 	test('a saved day is what another device opens', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await choose(page, 'custom', 'Close pane');
+			await manage(page, 'custom', 'Close pane');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
 			await act(page, 'save');
 			await until(() => dotted(page), (d) => d.length === 0);
@@ -509,7 +538,7 @@ describe('the acts', () => {
 		// copy to the new name, and the layout it was a copy of keeps its own.
 		await shared.room('act-as', async (app) => {
 			const { page } = app;
-			await choose(page, 'tail', 'split: a new pane to the right');
+			await manage(page, 'tail', 'split: a new pane to the right');
 			page.once('dialog', (dialog) => dialog.accept('mine'));
 			await act(page, 'save-as');
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
@@ -542,21 +571,43 @@ describe('the acts', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const locked = () => page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked);
+			/** What the button beside the gear says it is (da-bzhq). */
+			const pressed = () => lockButton(page).getAttribute('aria-pressed');
 			assert.equal(await locked(), false);
-			await act(page, 'lock');
+			assert.equal(await pressed(), 'false');
+			// The lock is not IN the menu any more: it is the button.
+			assert.deepEqual(
+				(await rootItems(page)).filter((i) => /lock/i.test(i.label)),
+				[],
+				'the lock is still an item of the layout menu'
+			);
+			await toggleRootLock(page);
 			await until(locked, (l) => l === true);
 			// Under the lock the menu is the acts alone (the pane rule,
-			// da-crp5): nothing to split or close, but Unlock is reachable.
+			// da-crp5): nothing to split or close, so no `▾` at all.
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
-				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as…', 'Unlock layout']
+				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as…']
 			);
+			assert.equal(await rootManageButton(page).count(), 0, 'a locked layout still offers the ▾');
+			// And the way out is still one press away, where it now lives.
+			assert.equal(await pressed(), 'true');
+			assert.match(await lockButton(page).getAttribute('aria-label'), /^unlock the day layout/);
+			// «by the gear icon»: at the bar's far end, with nothing but the
+			// bar's own gap between the two (da-bzhq).
+			const beside = await page.evaluate(() => {
+				const box = (s) => document.querySelector(s).getBoundingClientRect();
+				const [lock, gear, bar] = ['.root-bar button.lock', '.root-bar button.gear', '.root-bar'].map(box);
+				return { after: lock.left - gear.right, end: bar.right - lock.right };
+			});
+			assert.ok(beside.after >= 0 && beside.after <= 8, `the lock is ${beside.after}px from the gear`);
+			assert.ok(beside.end <= 12, `the lock is ${beside.end}px from the bar's end`);
 			assert.deepEqual(await dotted(page), [], 'the lock alone showed the modified dot');
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), '1');
 
 			await app.reload();
 			assert.equal(await locked(), true);
-			assert.ok((await rootItems(page)).some((i) => i.label === 'Unlock layout'));
+			await until(pressed, (p) => p === 'true');
 
 			// Saved while locked: the entry carries no lock.
 			await act(page, 'save');
@@ -565,9 +616,9 @@ describe('the acts', () => {
 			assert.doesNotMatch(JSON.stringify(saved), /"locked"/, 'the lock went into the entry');
 			assert.deepEqual(await dotted(page), []);
 
-			await act(page, 'unlock');
+			await toggleRootLock(page);
 			await until(locked, (l) => l === false);
-			assert.ok((await rootItems(page)).some((i) => i.label === 'Lock layout'));
+			assert.equal(await pressed(), 'false');
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), '0');
 		}, DESKTOP);
 
@@ -577,17 +628,17 @@ describe('the acts', () => {
 		await withApp(async ({ page }) => {
 			assert.equal(await page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked), true);
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.day')), null);
-			assert.ok((await rootItems(page)).some((i) => i.label === 'Unlock layout'));
+			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'true');
 		}, { ...DESKTOP, home: null });
 	});
 
 	test('an unmodified restore lists the versions, and one of them can be picked', async () => {
 		await shared.room('act-trail', async (app) => {
 			const { page } = app;
-			await choose(page, 'custom', 'Close pane');
+			await manage(page, 'custom', 'Close pane');
 			await act(page, 'save');
 			await until(() => dotted(page), (d) => d.length === 0);
-			await choose(page, 'nowview', 'Close pane');
+			await manage(page, 'nowview', 'Close pane');
 			await act(page, 'save');
 			await until(() => dotted(page), (d) => d.length === 0);
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
@@ -613,12 +664,12 @@ describe('the acts', () => {
 	test('an edit in tab A survives a save from tab B, dot and all', async () => {
 		await withApp(async (a) => {
 			const b = await a.newTab();
-			await choose(a.page, 'tail', 'split: a new pane to the right');
+			await manage(a.page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await dotted(a.page), ['day']);
 			assert.deepEqual(await dotted(b.page), []);
 
 			const heard = await a.spyOnRunner();
-			await choose(b.page, 'custom', 'Close pane');
+			await manage(b.page, 'custom', 'Close pane');
 			await act(b.page, 'save');
 			await until(() => dotted(b.page), (d) => d.length === 0);
 			// A hears the save — it reads the saved layout back from
@@ -895,7 +946,7 @@ describe('the cycle guard', () => {
 			const { page } = app;
 			// mine: the nowview alone, then embedded in day's tail.
 			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
-			await choose(page, 'tail', 'split: a new pane to the right');
+			await manage(page, 'tail', 'split: a new pane to the right');
 			await openChooser(page);
 			assert.deepEqual(await chooser(page).locator('button.layout').allInnerTexts(), ['mine'], 'day, open above, must not be offered');
 			await chooser(page).locator('button', { hasText: exactly('mine') }).click();
@@ -917,7 +968,7 @@ describe('the one chooser', () => {
 			const fromRoot = await offered(page);
 			assert.deepEqual(fromRoot, ['day', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'input']);
 
-			await choose(page, 'tail', 'split: a new pane to the right');
+			await manage(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
 			await openChooser(page);
 			// The same list, in the same order — less `day`, which is open
@@ -936,7 +987,7 @@ describe('the one chooser', () => {
 			// it, and changes nothing: the pane is still empty.
 			await page.keyboard.press('Escape');
 			await chooser(page).waitFor({ state: 'detached' });
-			assert.equal(await focused(), 'Choose Widget/Layout');
+			assert.equal(await focused(), 'Change Widget');
 			await settled(page);
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
 			assert.deepEqual(app.errors, []);

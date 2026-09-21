@@ -10,7 +10,12 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, chooseRoot, rootMenuButton } from './support/layout.mjs';
+import {
+	DESKTOP,
+	chooseRoot,
+	rootMenuButton,
+	toggleRootLock
+} from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -51,7 +56,7 @@ describe('a layout that shipped', () => {
 				const { page } = app;
 				await lockedClean(page, name);
 
-				await chooseRoot(page, 'Unlock layout');
+				await toggleRootLock(page);
 				await until(() => locked(page), (l) => l === false);
 				const border = page.locator('[role="separator"]').first();
 				const before = await border.getAttribute('aria-valuenow');
@@ -96,7 +101,7 @@ describe('a layout that shipped', () => {
 	test('Reset default layouts locks it again', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await chooseRoot(page, 'Unlock layout');
+			await toggleRootLock(page);
 			await until(() => locked(page), (l) => l === false);
 			await page.locator('.root-bar button.gear').click();
 			await page.getByRole('menuitem', { name: 'Reset default layouts…', exact: true }).click();
@@ -129,7 +134,7 @@ describe('a layout a person made', () => {
 	test('a save of their own over `day` is theirs: with nothing said, it opens unlocked', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await chooseRoot(page, 'Unlock layout');
+			await toggleRootLock(page);
 			await until(() => locked(page), (l) => l === false);
 			await chooseRoot(page, 'Save layout');
 			await until(() => page.evaluate(() => window.datum.shell.versions('day').catch(() => [])), (v) => v.length === 1);

@@ -17,7 +17,16 @@ import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
 import { inWorker, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { chooseRoot, chooser, menuLines, offers, rootMenuButton, titles } from './support/layout.mjs';
+import {
+	chooseRoot,
+	chooser,
+	lockButton,
+	manageRoot,
+	menuLines,
+	offers,
+	rootMenuButton,
+	titles
+} from './support/layout.mjs';
 
 /** A tree with every part of the contract in it, nested once. */
 const tree = (name, kind) => ({
@@ -429,7 +438,7 @@ describe('Reset layout', () => {
 
 			// Modified and SAVED: the save now shadows `defaults.ts`, which is
 			// the state a reset exists to undo.
-			await chooseRoot(page, 'split: a new pane to the left');
+			await manageRoot(page, 'split: a new pane to the left');
 			await until(() => paneCount(page), (n) => n === panes + 1);
 			const edited = await treeOf(app);
 			assert.notDeepEqual(edited.root, builtin.root);
@@ -475,7 +484,7 @@ describe('Reset layout', () => {
 			await controlsReady(app);
 			const panes = await paneCount(page);
 
-			await chooseRoot(page, 'split: a new pane to the left');
+			await manageRoot(page, 'split: a new pane to the left');
 			await until(() => paneCount(page), (n) => n === panes + 1);
 			await until(() => draft(app), (d) => d !== null);
 
@@ -507,9 +516,14 @@ describe('Reset layout', () => {
 			await rootMenuButton(page).click();
 			const lines = await menuLines(page);
 			assert.ok(!lines.includes('Reset layout'), lines.join(' | '));
-			for (const act of ['Save layout', 'Restore layout', 'Save layout as…', 'Lock layout'])
+			for (const act of ['Save layout', 'Restore layout', 'Save layout as…'])
 				assert.ok(lines.includes(act), `${act} is missing: ${lines.join(' | ')}`);
+			// The lock is the button beside the gear now (da-bzhq), and a
+			// layout the reader saved opens unlocked (da-gshh).
+			assert.ok(!lines.some((l) => /lock/i.test(l)), lines.join(' | '));
 			await page.keyboard.press('Escape');
+			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'false');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -521,7 +535,7 @@ describe('Reset layout', () => {
 			const builtin = await treeOf(app);
 			const panes = await paneCount(page);
 
-			await chooseRoot(page, 'split: a new pane to the left');
+			await manageRoot(page, 'split: a new pane to the left');
 			await until(() => paneCount(page), (n) => n === panes + 1);
 
 			await reset(app, panes);

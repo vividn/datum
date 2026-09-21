@@ -24,10 +24,10 @@ import {
 	bar,
 	boxOf,
 	chooseBar,
-	choose,
-	chooseRoot,
 	draft,
 	fill,
+	manage,
+	manageButton,
 	menuButton,
 	menuLines,
 	overStrip,
@@ -35,6 +35,7 @@ import {
 	settled,
 	swipe,
 	titles,
+	toggleRootLock,
 	widgetPane
 } from './support/layout.mjs';
 
@@ -83,7 +84,7 @@ describe('the draft', () => {
 	test('is back after a reload, and a layout with no draft is the default', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await choose(page, 'tail', 'split: a new pane to the right');
+			await manage(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'nowview');
 			await chooseBar(page, 'strip', 'left');
 			const arranged = await titles(page);
@@ -102,7 +103,7 @@ describe('the draft', () => {
 				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
 				// Nothing remembers an unlock here, so `day` opens locked as a
 				// first open does (da-gshh) — and unlocks for the visit.
-				await chooseRoot(app.page, 'Unlock layout');
+				await toggleRootLock(app.page);
 				await addTab(app.page, 'tail', 'aliases');
 				assert.equal(await activeTab(app.page, 'tail'), 'aliases');
 				assert.deepEqual(app.errors, []);
@@ -246,16 +247,20 @@ describe('holders', () => {
 				// Its children's titles hang into room kept under the strip (da-cesj).
 				assert.deepEqual(await overStrip(page, 'tabbed'), { titles: 2, overlaps: [] });
 				await menuButton(page, 'tabbed').click();
-				// In a strip, Split splits the tab in front, one level deeper
-				// (da-6ji5); Break out takes it out of the strip; and the split
-				// it holds is nobody's layout until Save as layout… is asked.
+				// The NAME's slice: the split it holds is nobody's layout
+				// until Save as layout… is asked.
+				assert.deepEqual(await menuLines(page), ['Change Widget', 'Save as layout…']);
+				await page.keyboard.press('Escape');
+				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+				// The `▾`'s: in a strip, Split splits the tab in front, one
+				// level deeper (da-6ji5), and Break out takes it out of the
+				// strip.
+				await manageButton(page, 'tabbed').click();
 				assert.deepEqual(await menuLines(page), [
-					'Choose…',
 					'Rename tab…',
-					'Split ← → ↑ ↓',
-					'Break out ← → ↑ ↓',
+					'Split ← ↓ ↑ →',
+					'Break out ← ↓ ↑ →',
 					'Bar',
-					'Save as layout…',
 					'× Close tab'
 				]);
 				await page.keyboard.press('Escape');
@@ -328,7 +333,7 @@ describe('a tab that holds a layout', () => {
 
 	/** Put `name` in a pane split off the tail, and wait for its frame. */
 	async function put(app, name) {
-		await choose(app.page, 'tail', 'split: a new pane to the right');
+		await manage(app.page, 'tail', 'split: a new pane to the right');
 		await fill(app.page, name);
 		await app.page.locator(`section.pane[data-title="${name}"]`).waitFor();
 		await settled(app.page);
@@ -410,7 +415,7 @@ describe('a tab that holds a layout', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await save(app, TWO);
-			await choose(page, 'repl', 'split: a new pane below');
+			await manage(page, 'repl', 'split: a new pane below');
 			await fill(page, 'mine');
 			await page.locator('section.pane[data-title="mine"]').waitFor();
 			await settled(page);

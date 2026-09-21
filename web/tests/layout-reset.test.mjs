@@ -81,9 +81,10 @@ describe('Reset widget', () => {
 			await chooseRoot(page, 'Save layout');
 			await page.waitForFunction(() => !document.querySelector('.root-bar [role="tab"].modified'));
 
-			// Second in the menu, beside Choose… and before Options… and Split.
+			// Second in the menu, beside Change Widget and before Options….
+			// Split and the rest are the `▾`'s now (da-bzhq).
 			const lines = await linesOf(page, 'strip');
-			assert.deepEqual(lines, ['Choose…', RESET, 'Options…', 'Split ← → ↑ ↓', 'Break out ← → ↑ ↓', 'Bar', '× Close pane']);
+			assert.deepEqual(lines, ['Change Widget', RESET, 'Options…']);
 
 			await choose(page, 'strip', RESET);
 			await dayHeightIs(page, fallback);
@@ -107,7 +108,7 @@ describe('Reset widget', () => {
 
 			// The tail pane becomes the stats widget, which is a pane tab
 			// holding a widget — what the act is for.
-			await choose(page, 'tail', 'Choose…');
+			await choose(page, 'tail', 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
@@ -132,13 +133,7 @@ describe('Reset widget', () => {
 			assert.equal((await linesOf(page, 'strip'))[1], RESET, 'the strip has no Reset widget');
 
 			// `tail` declares no settings, so there is nothing to put back.
-			assert.deepEqual(await linesOf(page, 'tail'), [
-				'Choose…',
-				'Split ← → ↑ ↓',
-				'Break out ← → ↑ ↓',
-				'Bar',
-				'× Close pane'
-			]);
+			assert.deepEqual(await linesOf(page, 'tail'), ['Change Widget']);
 
 			// The root tab holds the `day` layout, so the root menu has none
 			// either — the same rule, not a second one.

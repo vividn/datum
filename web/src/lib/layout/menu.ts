@@ -33,12 +33,20 @@
 //   `Keep tab` (da-xamd), which rides in beside it: only a root tab can be
 //   a PREVIEW, and only a preview has a keeping left to do.
 //
-// Close is the LAST item of either menu, whatever else the caller hands
-// in, and wears an `×` (da-ygc9): the one destructive act, at the far end
-// of the list from `Choose…` and marked as itself.
+// Close is the LAST item of the list, whatever else the caller hands in,
+// and wears an `×` (da-ygc9): the one destructive act, at the far end of
+// the list from `Change Widget` and marked as itself.
 //
 // `layout-menu.test.mjs` asserts exactly that arithmetic, so any OTHER
 // divergence between the two fails.
+//
+// THE LIST IS DRAWN IN TWO SLICES (da-bzhq). Everything above is about
+// which items a caller HAS; where they are DRAWN is `named` and
+// `managed`, at the bottom of this file. The name of the thing — a pane's
+// title, a tab, the root tab — opens what it shows and what it is saved
+// as; a `▾` beside the `+` opens what is done to the pane and its tabs.
+// One builder, one order, two filters: an item moves between the two
+// menus by gaining or losing `manage`, and can be in neither list twice.
 
 import type { Toward } from './tree.js';
 
@@ -59,6 +67,12 @@ export type Item = {
 	disabled?: boolean;
 	marked?: boolean;
 	/**
+	 * A WIDGET/PANE MANAGEMENT act, and so an item of the `▾` beside the
+	 * `+` rather than of the menu the thing's NAME opens (da-bzhq). See
+	 * `named` and `managed` below: one list, one order, two slices.
+	 */
+	manage?: true;
+	/**
 	 * One of a set the menu is CHOOSING BETWEEN, and whether this is the
 	 * one — the logo's databases (da-y992). Present makes the item a
 	 * `menuitemradio` carrying its own `aria-checked`, which is what the
@@ -69,15 +83,20 @@ export type Item = {
 };
 
 /**
- * The four arrows, in the one order, and where each one puts a pane on the
- * screen — a rotated bar does not turn them, since the menu is drawn on
- * `document.body` and reads the screen's way (PaneMenu.svelte).
+ * The four arrows, in the one order — h j k l, LEFT DOWN UP RIGHT (vividn,
+ * 2026-09-21: "split and breakout arrows should be in vim key order left
+ * down up right") — and where each one puts a pane on the screen. This
+ * list is the DOM's order as well as the eye's, so the ArrowLeft /
+ * ArrowRight walk along a row reads the same way round as the glyphs do.
+ *
+ * A rotated bar does not turn them: the menu is drawn on `document.body`
+ * and reads the screen's way (PaneMenu.svelte).
  */
 export const ARROWS: { toward: Toward; text: string; where: string }[] = [
 	{ toward: 'left', text: '←', where: 'to the left' },
-	{ toward: 'right', text: '→', where: 'to the right' },
+	{ toward: 'down', text: '↓', where: 'below' },
 	{ toward: 'up', text: '↑', where: 'above' },
-	{ toward: 'down', text: '↓', where: 'below' }
+	{ toward: 'right', text: '→', where: 'to the right' }
 ];
 
 /** One menu item's row: the same operation aimed four ways, each named in full. */
@@ -97,7 +116,14 @@ export type Acts = {
 	/** Back to the tree that SHIPPED under this name — only a layout that HAS one (da-luwe). */
 	reset?: () => void;
 	saveAs: () => void;
-	toggleLock: () => void;
+	/**
+	 * Undefined where the lock is drawn ELSEWHERE, which is the root bar:
+	 * vividn, 2026-09-21, "move the lock button outside of the layout menu
+	 * and put it by the gear icon to be more discoverable" (da-bzhq). A
+	 * PANE's menu keeps it — there is no gear beside a pane, and a layout
+	 * tab that is itself locked has to keep a way to unlock (da-crp5).
+	 */
+	toggleLock?: () => void;
 };
 
 /**
@@ -119,7 +145,7 @@ export const layoutActs = (a: Acts): Item[] => [
 	{ label: 'Restore layout', marked: a.dirty, run: a.restore },
 	...(a.reset ? [{ label: 'Reset layout', run: a.reset }] : []),
 	{ label: 'Save layout as…', run: a.saveAs },
-	{ label: a.locked ? 'Unlock layout' : 'Lock layout', run: a.toggleLock }
+	...(a.toggleLock ? [{ label: a.locked ? 'Unlock layout' : 'Lock layout', run: a.toggleLock }] : [])
 ];
 
 /**
@@ -134,6 +160,18 @@ export const optionsItem = (run?: () => void): Item[] => (run ? [{ label: 'Optio
 export const CLOSE = '\u00d7';
 
 /**
+ * What the item that opens the one chooser is CALLED (da-bzhq). vividn,
+ * 2026-09-21: «Let's change Choose... to "Change Widget"». The same words
+ * on the chooser's own heading and on an empty pane's button, so the
+ * press and what it opens agree (Chooser.svelte, Layout.svelte).
+ *
+ * ⚑ The dialog also offers LAYOUTS (its `Layouts` group), so this name is
+ * narrower than what it opens. Shipped as asked and flagged rather than
+ * renamed to a third thing.
+ */
+export const CHANGE = 'Change Widget';
+
+/**
  * The menu, in the one order — Close last (da-ygc9). Every optional part
  * is left out when the thing it belongs to has no such part — never
  * reordered, never renamed.
@@ -146,7 +184,7 @@ export function menuItems(spec: {
 	 * no one widget (a split, and so a layout of more than one) or its kind
 	 * declares no defaults, which is `resetWidget` in `shell.ts` asking the
 	 * registry.
-	 * Beside `Choose…`, because like it it is about the widget in front.
+	 * Beside `Change Widget`, because like it it is about the widget in front.
 	 */
 	reset?: () => void;
 	/**
@@ -168,16 +206,37 @@ export function menuItems(spec: {
 	extra?: Item[];
 }): Item[] {
 	return [
-		{ label: 'Choose…', run: spec.choose },
+		{ label: CHANGE, run: spec.choose },
 		...(spec.reset ? [{ label: 'Reset widget', run: spec.reset }] : []),
 		...optionsItem(spec.options),
-		...(spec.rename ? [{ label: 'Rename tab…', run: spec.rename }] : []),
-		...(spec.split ? [{ label: 'Split', row: aimed(spec.split.what, spec.split.run) }] : []),
-		...(spec.breakOut ? [{ label: 'Break out', row: aimed(spec.breakOut.what, spec.breakOut.run) }] : []),
-		...(spec.bar ? [spec.bar] : []),
+		...(spec.rename ? [{ label: 'Rename tab…', run: spec.rename, manage: true as const }] : []),
+		...(spec.split ? [{ label: 'Split', row: aimed(spec.split.what, spec.split.run), manage: true as const }] : []),
+		...(spec.breakOut
+			? [{ label: 'Break out', row: aimed(spec.breakOut.what, spec.breakOut.run), manage: true as const }]
+			: []),
+		...(spec.bar ? [{ ...spec.bar, manage: true as const }] : []),
 		...(spec.acts ? layoutActs(spec.acts) : []),
 		...(spec.saveAs ? [{ label: 'Save as layout…', run: spec.saveAs }] : []),
 		...(spec.extra ?? []),
-		{ label: spec.close.label, glyph: CLOSE, disabled: spec.close.disabled, run: spec.close.run }
+		{ label: spec.close.label, glyph: CLOSE, disabled: spec.close.disabled, run: spec.close.run, manage: true as const }
 	];
 }
+
+/**
+ * The slice the thing's NAME opens: what it SHOWS and what it is SAVED as
+ * — Change Widget, Reset widget, Options…, the layout's own acts, the
+ * root's `export backup…`.
+ */
+export const named = (items: Item[]): Item[] => items.filter((item) => !item.manage);
+
+/**
+ * The slice the `▾` beside the `+` opens (da-bzhq): what is done to the
+ * PANE and its TABS — Split, Break out, Bar, Rename tab…, Close.
+ *
+ * vividn, 2026-09-21: "next to the + tab button, lets put a little down
+ * arrow button, and put all the widget/pane management options there
+ * (Split, Breakout, etc)." The `+` adds a tab; the `▾` beside it is the
+ * rest of what can be done to the strip and the pane, which is why the
+ * two hide together under a lock.
+ */
+export const managed = (items: Item[]): Item[] => items.filter((item) => item.manage);

@@ -24,7 +24,16 @@ import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-import { cellExtents, chooseRoot, grab, layoutStorage, settled, takeRoom, titles } from './support/layout.mjs';
+import {
+	cellExtents,
+	chooseRoot,
+	grab,
+	layoutStorage,
+	manageRoot,
+	settled,
+	takeRoom,
+	titles
+} from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -235,10 +244,10 @@ describe('a preview tab', () => {
 		await a.room('t-5');
 		assert.deepEqual(await rootTabs(page), ['day', 't-5']);
 		// An edit first, so what is thrown away is a tree somebody changed.
-		await chooseRoot(page, 'split: a new pane to the right');
+		await manageRoot(page, 'split: a new pane to the right');
 		await until(() => titles(page), (t) => t.includes('empty'));
 
-		await chooseRoot(page, 'Close tab');
+		await manageRoot(page, 'Close tab');
 		await until(() => rootTabs(page), (t) => !t.includes('t-5'));
 		assert.deepEqual(await layoutStorage(page), before, 'closing a preview wrote to this device');
 		assert.deepEqual(
@@ -275,12 +284,12 @@ describe('Keep tab', () => {
 		await a.solo();
 	});
 
-	test('is offered to a preview and to nobody else', async () => {
+	test('is offered to a preview and to nobody else, last in the name menu, with Close under the ▾', async () => {
 		const a = await app();
 		await a.solo();
 		const { page } = a;
-		const items = async () => {
-			await page.locator('.root-bar [role="tab"][aria-selected="true"]').click();
+		const from = async (open) => {
+			await open();
 			const seen = await page
 				.locator('[role="menu"]')
 				.evaluate((menu) => [...menu.children].map((el) => el.textContent.trim()));
@@ -288,14 +297,22 @@ describe('Keep tab', () => {
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			return seen;
 		};
+		const items = () => from(() => page.locator('.root-bar [role="tab"][aria-selected="true"]').click());
+		const manage = () => from(() => page.locator('.root-bar button.manage').click());
 		assert.ok(!(await items()).includes('Keep tab'), 'day is offered Keep tab');
 
 		await a.room('t-7');
 		const menu = await items();
 		assert.ok(menu.includes('Keep tab'), `the preview is not offered Keep tab: ${menu}`);
-		// Beside the Close that is the other answer to a preview (da-xamd).
-		assert.equal(menu.indexOf('Keep tab'), menu.length - 2);
-		assert.match(menu.at(-1), /Close tab$/);
+		// `Keep tab` WRITES the tab down, so it stayed with the other acts
+		// that write — last in the name's menu, after `export backup…`. The
+		// Close that is a preview's other answer (da-xamd) is a management
+		// act, so the slicing (da-bzhq) put it under the `▾`, last there.
+		// The two answers are one press apart either way; what they are no
+		// longer is adjacent.
+		assert.equal(menu.indexOf('Keep tab'), menu.length - 1, `Keep tab is not last: ${menu}`);
+		assert.equal(menu.at(-2), 'export backup…');
+		assert.match((await manage()).at(-1), /Close tab$/);
 		await a.solo();
 	});
 });

@@ -8,7 +8,11 @@
 	`+` is a badge right after it, on the same line (vividn, 17:56 — "just
 	overlay the title on the frame, with the nice ... button visible next
 	to it", da-jgrn). With more tabs the tab strip sits there instead and
-	the badge follows the LAST tab. The line is the edge the pane's `bar`
+	the badges follow the LAST tab. The row reads maximize, title or tabs,
+	`+`, `▾` (da-bzhq): the maximize BEFORE the names, and after them the
+	pair that adds a tab and manages the pane.
+
+	The line is the edge the pane's `bar`
 	names — top or bottom running across, left or right running DOWN with
 	the words rotated (`writing-mode: vertical-rl`), and on the left turned
 	round so it reads bottom-to-top like a book's spine (vividn, 15:39) —
@@ -57,8 +61,11 @@
 	the other end: it draws no bar of its own at all, however many tabs
 	it has, and no box, because the shell draws the root's tabs as the
 	page's top bar (da-0a5o). And a LOCKED frame
-	draws no menu — nothing under a lock can be split, tabbed or resized,
-	and the tabs still switch — nor a `+`, and its title is not a button.
+	draws no `+` and no `▾` — nothing under a lock can be split, tabbed or
+	resized, and those two are how it would be (vividn, da-bzhq: "Locking
+	hides both the + and this down arrow icon menu") — and the tabs still
+	switch. What the title still opens is the tab's own acts, which is
+	where `Unlock layout` is.
 
 	A layout tab's frame is also where that layout's identity is worked
 	(da-crp5): the acts the root bar draws for a root tab — save, restore,
@@ -118,7 +125,7 @@
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, setTitle, splitPane, splitTab } from './tree.js';
 	import { inForce, toggleMaximize } from './maximize.js';
 	import { labelOf, titleOf } from './registry.js';
-	import { layoutActs, menuItems, optionsItem } from './menu.js';
+	import { layoutActs, managed, menuItems, named, optionsItem } from './menu.js';
 	import { widgetOptions } from './options.js';
 	import PaneMenu from './PaneMenu.svelte';
 
@@ -289,7 +296,7 @@
 		? [...optionsItem(widgetOptions(active)), ...(acts ? layoutActs(acts) : [])]
 		: menuItems({
 				choose: () => void fillTab(active.id),
-				// Beside Choose…, and about the same thing: the widget in front.
+				// Beside Change Widget, and about the same thing: the widget in front.
 				reset: resetWidget(active),
 				options: widgetOptions(active),
 				rename: many && active.layout === undefined ? rename(active) : undefined,
@@ -310,6 +317,18 @@
 				acts,
 				saveAs: holder && !root ? saveAsLayout(active.id) : undefined
 			});
+
+	/**
+	 * The two slices of that one list (da-bzhq, `menu.ts`): the TITLE — or
+	 * the tab in front — opens what this pane shows and what it is saved
+	 * as; the `▾` beside the `+` opens what is done to the pane and its
+	 * tabs. Under a lock `items` is the acts alone, none of them a
+	 * management act, so `manage` is empty and the `▾` is not drawn — the
+	 * same answer the `{#if !lockedHere}` round the pair gives, by the
+	 * other road.
+	 */
+	$: own = named(items);
+	$: manage = managed(items);
 
 	/**
 	 * `Rename tab…` (da-6ji5): the answer is the tab's `title`. The field
@@ -553,6 +572,35 @@
 	{#if !bare}
 	<div class="titlebar">
 		<div class="along align-{pane.bar.align}">
+			<!-- Maximize (da-00am) FIRST, before the tab names (da-bzhq).
+			     vividn, 2026-09-21: «move the maximize button to be before the
+			     tab names, rather than on the opposite side of the bar» —
+			     which retires the far-corner placement da-jlgp asked for, so
+			     the CSS that dealt it out to a corner is gone and the DOM
+			     order is the drawn order again. Not under the lock, since a
+			     lock keeps the LAYOUT from changing and this changes nothing
+			     saved. -->
+			<button
+				type="button"
+				class="control badge maximize"
+				aria-label="{big ? 'restore' : 'maximize'} the {title} pane"
+				title={big ? 'restore' : 'maximize'}
+				aria-pressed={big}
+				on:click={() => toggleMaximize(pane.id)}
+			>
+				<!-- No `width`/`height` of its own: the CSS insets it inside
+				     the button, which a fixed 16px could not be. -->
+				<svg viewBox="0 0 16 16" aria-hidden="true">
+					{#if big}
+						<!-- Two offset boxes: this one comes back among the others. -->
+						<path d="M5.5 5.5h7v7h-7z" />
+						<path d="M3.5 10.5v-7h7" />
+					{:else}
+						<!-- Four corner ticks: the box opens out to the page's. -->
+						<path d="M2.5 6v-3.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />
+					{/if}
+				</svg>
+			</button>
 			{#if many}
 				<div
 					class="tabs"
@@ -561,10 +609,10 @@
 					bind:this={strip}
 				>
 					{#each pane.tabs as tab, i (tab.id)}
-						{#if i === pane.active && items.length > 0}
+						{#if i === pane.active && own.length > 0}
 							<!-- The tab in front is the menu's button; the others switch. -->
 							<PaneMenu
-								{items}
+								items={own}
 								look="tab"
 								label="menu of the {labelOf(tab)} tab"
 								title={labelOf(tab)}
@@ -606,18 +654,22 @@
 				     the words may be clipped to their box and the button not. -->
 				<div class="titlebox">
 					<h2 bind:this={h2}>{#if !$hosted}{title}{#if $modified.has(active.id)}<span class="dot" title="modified">•</span>{/if}{/if}</h2>
-					{#if items.length > 0}
-						<PaneMenu {items} look="title" label="menu of the {title} pane" />
+					{#if own.length > 0}
+						<PaneMenu items={own} look="title" label="menu of the {title} pane" />
 					{/if}
 				</div>
 			{/if}
 			<!-- Inside `.along`, after the title or the last tab: the `+`
-			     goes where the alignment puts them, and right beside them.
-			     The maximize is the one that leaves — the CSS sends it to
-			     the bar's far CORNER, away from the tabs, at either
-			     alignment (da-jlgp). The DOM order stays title/tabs, `+`,
-			     maximize, which is the keyboard's, so it is asserted rather
-			     than assumed. -->
+			     and, beside it, the `▾` that holds what is done to this pane
+			     and its tabs (da-bzhq). The DOM order is the drawn order and
+			     the keyboard's both — maximize, title/tabs, `+`, `▾` — so it
+			     is asserted rather than assumed (layout-maximize.test.mjs).
+
+			     Both go under the lock together. vividn: "Locking hides both
+			     the + and this down arrow icon menu" — nothing under a lock
+			     can be split, tabbed or resized, and these two are how it
+			     would be. The title's own menu stays, which is where
+			     `Unlock layout` is (da-crp5). -->
 			{#if !lockedHere}
 				<button
 					type="button"
@@ -626,30 +678,17 @@
 					title="add a tab"
 					on:click={() => void addChosen()}>+</button
 				>
+				{#if manage.length > 0}
+					<PaneMenu
+						items={manage}
+						look="badge"
+						label="manage the {title} pane"
+						title="manage this pane"
+						class="manage"
+						aria-label="manage the {title} pane">▾</PaneMenu
+					>
+				{/if}
 			{/if}
-			<!-- Maximize (da-00am): not under the lock, since a lock keeps the
-			     LAYOUT from changing and this changes nothing saved. -->
-			<button
-				type="button"
-				class="control badge maximize"
-				aria-label="{big ? 'restore' : 'maximize'} the {title} pane"
-				title={big ? 'restore' : 'maximize'}
-				aria-pressed={big}
-				on:click={() => toggleMaximize(pane.id)}
-			>
-				<!-- No `width`/`height` of its own: the CSS insets it inside
-				     the button, which a fixed 16px could not be. -->
-				<svg viewBox="0 0 16 16" aria-hidden="true">
-					{#if big}
-						<!-- Two offset boxes: this one comes back among the others. -->
-						<path d="M5.5 5.5h7v7h-7z" />
-						<path d="M3.5 10.5v-7h7" />
-					{:else}
-						<!-- Four corner ticks: the box opens out to the page's. -->
-						<path d="M2.5 6v-3.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />
-					{/if}
-				</svg>
-			</button>
 		</div>
 	</div>
 	{/if}
@@ -890,30 +929,23 @@
 		border-color: var(--accent);
 	}
 
-	/* The badges do not stretch, and take the pointer where the line they
-	   sit on does not. */
+	/* The three badges do not stretch, and take the pointer where the line
+	   they sit on does not — and nothing here MOVES one. The maximize was
+	   dealt out to the bar's far corner from da-jlgp until vividn,
+	   2026-09-21: «move the maximize button to be before the tab names,
+	   rather than on the opposite side of the bar» (da-bzhq). So the
+	   `order` and the auto margins that did it are gone, and the row is
+	   drawn in the order it is written, at every alignment and on a
+	   rotated bar too — which is the order the Tab walk reads.
+
+	   The `▾` needs nothing else of its own: it is the same
+	   `.control.badge` (app.css) as the `+`, one character centred in a
+	   square, and its name is its `aria-label` as the `+`'s is. */
 	.add,
-	.maximize {
+	.maximize,
+	.along :global(button.manage) {
 		flex: none;
 		pointer-events: auto;
-	}
-
-	/* The maximize goes to the bar's far CORNER, away from the tabs (vividn,
-	   18:16 — «move this button to the other side of the tabs, ideally it
-	   would be in the corner»): on a bar aligned `start` it is the last
-	   thing along the bar, on one aligned `end` the first. The auto margin
-	   eats the free space the alignment would otherwise leave beside the
-	   title, and `order` moves the button on screen without moving it in
-	   the DOM — so the Tab walk still reaches it after the `+`. Logical,
-	   so it is the bar's own direction on a vertical bar too. A CENTRED
-	   bar keeps the badge beside the `+`: a row in the middle is at no
-	   corner, and dealing it out to one would not be the same row. */
-	.align-start > .maximize {
-		margin-inline-start: auto;
-	}
-	.align-end > .maximize {
-		order: -1;
-		margin-inline-end: auto;
 	}
 
 	/* A flat mono-colour mark in `currentColor` (da-tnv3's rule for the

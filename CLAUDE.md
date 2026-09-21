@@ -214,11 +214,16 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   again (da-d1l9).
 - Background Sync API queues sync when offline
 - The page is a LAYOUT TREE, not a grid (da-jdop, `web/src/lib/layout/`):
-  panes hold widgets or splits of panes, each pane has tabs, a `…` menu
-  (add tab, split, close, bar edge/align) and draggable borders. The
-  contract is `types.ts`; the pure operations and the canon (no
-  single-child split, no empty pane, ratios sum to 1) are `tree.ts`
-  (`tests/tree.test.mjs`, node); the widget kinds and their components,
+  panes hold widgets or splits of panes, each pane has tabs and draggable
+  borders, and its bar reads maximize · title-or-tabs · `+` · `▾`
+  (da-bzhq): the NAME opens what the pane shows and what it is saved as
+  (Change Widget, Reset widget, Options…, the layout's acts), the `▾`
+  beside the `+` what is DONE to it (Split, Break out, Bar, Rename tab…,
+  Close), and a lock hides that pair. One builder, `menu.ts`, one order,
+  two filters — `named` and `managed`. The contract is `types.ts`; the
+  pure operations and the canon (no single-child split, no empty pane,
+  ratios sum to 1) are `tree.ts` (`tests/tree.test.mjs`, node); the
+  widget kinds and their components,
   floors and settings are `registry.ts`; today's page as data is
   `defaults.ts` (a desktop and a phone tree); the one live store is
   `current.ts` (`layout` + `apply`), which the header's save/restore

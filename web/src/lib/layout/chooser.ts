@@ -87,7 +87,7 @@ export async function put(tabId: NodeId, picked: Choice): Promise<void> {
 
 /**
  * Fill a tab from the chooser: the empty pane's one button and the pane
- * menu's `Choose…` (da-9vtw), which replaces what the tab holds. The
+ * menu's `Change Widget` (da-9vtw), which replaces what the tab holds. The
  * names open above the tab are the ones it may not hold; a dismissed
  * chooser changes nothing.
  */

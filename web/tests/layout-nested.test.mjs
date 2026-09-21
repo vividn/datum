@@ -30,6 +30,8 @@ import {
 	chooser,
 	exactly,
 	fill,
+	lockButton,
+	manage,
 	menuLines,
 	pane,
 	rootMenuButton,
@@ -104,7 +106,7 @@ async function act(page, label, holder = copy(page)) {
 async function embed(app) {
 	const { page } = app;
 	await layouts(app, 'saveLayout', MINE);
-	await choose(page, 'tail', 'split: a new pane to the right');
+	await manage(page, 'tail', 'split: a new pane to the right');
 	await fill(page, 'mine');
 	await page.locator('section.pane[data-title="mine"]').first().waitFor();
 	await settled(page);
@@ -118,7 +120,7 @@ describe('an edit inside an embedded layout', () => {
 			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields']);
 
 			// An edit INSIDE `mine`: a pane split off its nowview.
-			await choose(page, 'm-a', 'split: a new pane to the right');
+			await manage(page, 'm-a', 'split: a new pane to the right');
 			assert.deepEqual(await inside(copy(page)), ['nowview', 'empty', 'fields']);
 
 			// It is kept the way a root tab's is — in `mine`'s own draft, by
@@ -133,7 +135,7 @@ describe('an edit inside an embedded layout', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await embed(app);
-			await choose(page, 'm-a', 'split: a new pane to the right');
+			await manage(page, 'm-a', 'split: a new pane to the right');
 
 			// Save `day` with the edit inside `mine` standing.
 			await chooseRoot(page, 'Save layout');
@@ -169,7 +171,7 @@ describe('the dot and the acts on a nested layout', () => {
 			await until(() => rootDotted(page, 'day'), (dot) => dot === false);
 			assert.equal(await dotted(copy(page)), false);
 
-			await choose(page, 'm-a', 'split: a new pane to the right');
+			await manage(page, 'm-a', 'split: a new pane to the right');
 			assert.equal(await dotted(copy(page)), true, 'the edit inside mine did not dot mine');
 			assert.equal(await rootDotted(page, 'day'), false, "the edit inside mine dotted day, which holds it by reference");
 
@@ -215,7 +217,7 @@ describe('two copies of one layout', () => {
 	async function embedTwice(app) {
 		const { page } = app;
 		await embed(app);
-		await choose(page, 'repl', 'split: a new pane below');
+		await manage(page, 'repl', 'split: a new pane below');
 		await fill(page, 'mine');
 		await until(() => page.locator('section.pane[data-title="mine"]').count(), (n) => n === 2);
 		await settled(page);
@@ -232,7 +234,7 @@ describe('two copies of one layout', () => {
 			assert.deepEqual([await dotted(one), await dotted(two)], [false, false]);
 
 			// Edit the first copy: it differs from the save, the second does not.
-			await choose(page, 'm-a', 'split: a new pane to the right');
+			await manage(page, 'm-a', 'split: a new pane to the right');
 			assert.deepEqual([await dotted(one), await dotted(two)], [true, false]);
 
 			// Saving the first makes ITS tree the save — so the second, which
@@ -335,8 +337,8 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			await settled(page);
 			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields']);
 
-			// That tab's own menu: Choose… → the tail widget.
-			await choose(page, 'tail', 'Choose…');
+			// That tab’s own menu: Change Widget → the tail widget.
+			await choose(page, 'tail', 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('tail') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
@@ -362,7 +364,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 
 	// At the ROOT the shed would cost the tab its name, and a root tab's
 	// name is the whole of what this device writes down (`shell.ts`'s
-	// `settle`): «day → Choose… → tail», a reload, and the tail tab is
+	// `settle`): «day → Change Widget → tail», a reload, and the tail tab is
 	// gone. So at the root the widget is its BUILT-IN one-widget layout
 	// instead (da-y2f6) — the tab IS the widget and is called `tail`, with
 	// the four acts a named tab has and a line in the open list.
@@ -386,7 +388,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 				['mine']
 			);
 
-			await chooseRoot(page, 'Choose…');
+			await chooseRoot(page, 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('tail') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
@@ -403,13 +405,15 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			assert.equal(await page.locator('.root-bar [role="tab"] .dot').count(), 0, 'the built-in came up modified');
 			assert.equal(await page.locator('section.pane[data-title="mine"]').count(), 0);
 
-			// A named tab keeps the four acts — a built-in's lock among them as
-			// `Unlock layout`, since what shipped opens locked (da-gshh).
+			// A named tab keeps the acts, and the lock beside the gear reads
+			// CLOSED, since what shipped opens locked (da-gshh, da-bzhq).
 			await rootMenuButton(page).click();
 			const lines = await menuLines(page);
-			for (const act of ['Save layout', 'Restore layout', 'Save layout as…', 'Unlock layout'])
+			for (const act of ['Save layout', 'Restore layout', 'Save layout as…'])
 				assert.ok(lines.includes(act), `${act} is missing: ${lines.join(' | ')}`);
 			await page.keyboard.press('Escape');
+			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'true');
 
 			// The name is what the device writes down, so the tab comes back.
 			await app.reload();

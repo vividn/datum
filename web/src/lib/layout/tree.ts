@@ -17,7 +17,7 @@
 
 import type { Bar, BarEdge, Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
 
-/** The kind an empty tab holds: one Choose Widget/Layout button, until something is chosen. */
+/** The kind an empty tab holds: one «Change Widget» button, until something is chosen. */
 export const EMPTY_KIND = 'empty';
 
 const isSplit = (content: Widget | Split): content is Split => 'children' in content;

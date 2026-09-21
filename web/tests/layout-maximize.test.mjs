@@ -27,17 +27,18 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
+	addTab,
 	bar,
-	choose,
 	chooseBar,
-	chooseRoot,
 	chooser,
 	exactly,
 	fill,
+	manage,
 	maximizeButton,
 	pane,
 	settled,
 	titles,
+	toggleRootLock,
 	widgetPane
 } from './support/layout.mjs';
 
@@ -148,7 +149,7 @@ describe('the maximize badge', () => {
 	test('heals when the maximized pane is closed', async () => {
 		await withApp(async ({ page, errors }) => {
 			await press(page, 'repl');
-			await choose(page, 'repl', 'Close pane');
+			await manage(page, 'repl', 'Close pane');
 			await settled(page);
 			assert.deepEqual(
 				await titles(page),
@@ -166,7 +167,7 @@ describe('the maximize badge', () => {
 			const { page } = app;
 			const whole = await boxOf(page.locator('[data-split="main"]'));
 			await page.evaluate((mine) => window.datum.layouts.saveLayout(mine), MINE);
-			await choose(page, 'tail', 'split: a new pane to the right');
+			await manage(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'mine');
 			await pane(page, 'm-a').waitFor();
 			await settled(page);
@@ -183,11 +184,14 @@ describe('the maximize badge', () => {
 
 	// A lock keeps the LAYOUT from changing; maximizing changes nothing
 	// saved, so it is the one badge that stays.
-	test('a locked layout keeps the badge and loses the `+`', async () => {
+	test('a locked layout keeps the badge and loses the `+` and the `▾`', async () => {
 		await withApp(async ({ page }) => {
-			await chooseRoot(page, 'Lock layout');
+			await toggleRootLock(page);
 			await settled(page);
 			assert.equal(await page.locator('section.pane button.add').count(), 0, 'a locked layout kept its `+`');
+			// Both go together (da-bzhq): "Locking hides both the + and this
+			// down arrow icon menu."
+			assert.equal(await page.locator('section.pane button.manage').count(), 0, 'a locked layout kept its `▾`');
 
 			await press(page, 'repl');
 			assert.deepEqual(await titles(page), ['repl']);
@@ -211,26 +215,36 @@ describe('the maximize badge', () => {
 		}, DESKTOP);
 	});
 
-	// The DOM order is the KEYBOARD's, and the CSS moves the badge on
-	// screen without moving it here — so it is worth asserting rather than
-	// reading off the source: title/tabs, then `+`, then maximize.
-	test('the badges come after the title, the `+` first', async () => {
+	// The DOM order is the KEYBOARD's and, since da-bzhq, the drawn order
+	// too — no `order` and no auto margin deal a badge out to a corner any
+	// more. vividn: «move the maximize button to be before the tab names,
+	// rather than on the opposite side of the bar», so: maximize, then the
+	// title or the tabs, then `+`, then `▾`.
+	test('the maximize comes first, before the title, and the `+` and `▾` after it', async () => {
 		await withApp(async ({ page }) => {
-			const along = await pane(page, 'repl')
-				.locator('> .titlebar > .along')
-				.evaluate((el) =>
-					[...el.children].map(
-						(c) => ['titlebox', 'tabs', 'add', 'maximize'].find((name) => c.classList.contains(name)) ?? c.className
-					)
-				);
-			assert.deepEqual(along, ['titlebox', 'add', 'maximize']);
+			const names = (id) =>
+				pane(page, id)
+					.locator('> .titlebar > .along')
+					.evaluate((el) =>
+						[...el.children].map(
+							(c) =>
+								['titlebox', 'tabs', 'add', 'maximize', 'manage'].find((name) => c.classList.contains(name)) ??
+								c.className
+						)
+					);
+			assert.deepEqual(await names('repl'), ['maximize', 'titlebox', 'add', 'manage']);
+			// And with a strip in place of the title, the same order.
+			await addTab(page, 'repl', 'aliases');
+			assert.deepEqual(await names('repl'), ['maximize', 'tabs', 'add', 'manage']);
 		}, DESKTOP);
 	});
 });
 
 // vividn, on the deployed build (da-jlgp): «make the maximize icon smaller so
 // it fits in its button, also let's move this button to the other side of
-// the tabs, ideally it would be in the corner».
+// the tabs, ideally it would be in the corner». The size is still that; the
+// PLACE was overruled on 2026-09-21 (da-bzhq) — «move the maximize button
+// to be before the tab names» — so the corner cases below read the new rule.
 describe('the maximize badge, drawn and placed', () => {
 	/** The button's box, its `<svg>`'s, and the box the strokes actually cover. */
 	async function drawn(page, id) {
@@ -286,32 +300,32 @@ describe('the maximize badge, drawn and placed', () => {
 	});
 
 	/**
-	 * How far each badge is from the two ENDS of its bar, reading the way
-	 * the bar reads: `lead` from the end the alignment calls `start`,
-	 * `trail` from the other. Measured in screen coordinates and turned
-	 * round on a left-hand bar, which is drawn upside down so that it
-	 * reads bottom-to-top (PaneFrame.svelte, `rotate(180deg)`).
+	 * Where each of the bar's items sits ALONG the bar, reading the way the
+	 * bar reads: the distance from the end the alignment calls `start`.
+	 * Measured in screen coordinates and turned round on a left-hand bar,
+	 * which is drawn upside down so that it reads bottom-to-top
+	 * (PaneFrame.svelte, `rotate(180deg)`).
 	 */
-	async function corner(page, id, flip) {
-		const [along, add, max] = await Promise.all([
+	async function along(page, id, flip) {
+		const [row, max, title, add] = await Promise.all([
 			boxOf(pane(page, id).locator('> .titlebar > .along')),
-			boxOf(pane(page, id).locator('> .titlebar button.add')),
-			boxOf(maximizeButton(page, id))
+			boxOf(maximizeButton(page, id)),
+			boxOf(pane(page, id).locator('> .titlebar .titlebox')),
+			boxOf(pane(page, id).locator('> .titlebar button.add'))
 		]);
 		// The bar runs along its longer side, whichever edge it is on.
-		const axis = along.width >= along.height ? 'x' : 'y';
+		const axis = row.width >= row.height ? 'x' : 'y';
 		const size = axis === 'x' ? 'width' : 'height';
-		const lead = (b) => (flip ? along[axis] + along[size] - (b[axis] + b[size]) : b[axis] - along[axis]);
-		const trail = (b) => along[size] - lead(b) - b[size];
-		return { lead: { add: lead(add), max: lead(max) }, trail: { add: trail(add), max: trail(max) } };
+		const lead = (b) => (flip ? row[axis] + row[size] - (b[axis] + b[size]) : b[axis] - row[axis]);
+		return { max: lead(max), title: lead(title), add: lead(add) };
 	}
 
-	// `padding-inline: 0.5rem` keeps the badges off the frame's rounded
-	// corners, so "in the corner" is 8px in from the bar's end.
-	const CORNER = 8 + 1;
-
+	// vividn, 2026-09-21 (da-bzhq): «move the maximize button to be before
+	// the tab names, rather than on the opposite side of the bar». So it is
+	// the FIRST thing along the bar at either alignment and on a rotated
+	// bar too — which is the old far-corner rule (da-jlgp) withdrawn.
 	for (const edge of ['top', 'left']) {
-		test(`on a ${edge} bar the badge is at the far corner, away from the tabs`, async () => {
+		test(`on a ${edge} bar the badge is before the tab names, at either alignment`, async () => {
 			await withApp(async ({ page }) => {
 				if (edge !== 'top') {
 					await chooseBar(page, 'repl', edge);
@@ -320,25 +334,15 @@ describe('the maximize badge, drawn and placed', () => {
 
 				const flip = edge === 'left';
 
-				// `start`: the title is at the leading end, so the corner away
-				// from it is the trailing one — the badge is the last thing there.
-				const start = await corner(page, 'repl', flip);
-				assert.ok(start.trail.max <= CORNER, `align start: the badge is ${start.trail.max.toFixed(1)}px from the far end`);
-				assert.ok(
-					start.lead.max > start.lead.add + 16,
-					`align start: the badge is still beside the \`+\` (${start.lead.add.toFixed(1)} → ${start.lead.max.toFixed(1)})`
-				);
+				const start = await along(page, 'repl', flip);
+				assert.ok(start.max < start.title, `align start: the badge (${start.max.toFixed(1)}) is not before the title (${start.title.toFixed(1)})`);
+				assert.ok(start.title < start.add, 'align start: the `+` did not stay after the title');
 
-				// `end`: the title has gone to the trailing end, so the badge
-				// takes the leading one — the first thing along the bar.
 				await chooseBar(page, 'repl', 'end');
 				await settled(page);
-				const done = await corner(page, 'repl', flip);
-				assert.ok(done.lead.max <= CORNER, `align end: the badge is ${done.lead.max.toFixed(1)}px from the near end`);
-				assert.ok(
-					done.lead.add > done.lead.max + 16,
-					`align end: the \`+\` did not stay with the tabs (${done.lead.add.toFixed(1)} vs ${done.lead.max.toFixed(1)})`
-				);
+				const done = await along(page, 'repl', flip);
+				assert.ok(done.max < done.title, `align end: the badge (${done.max.toFixed(1)}) is not before the title (${done.title.toFixed(1)})`);
+				assert.ok(done.title < done.add, 'align end: the `+` did not stay after the title');
 
 				// Pressing it there still maximizes: the place is all that moved.
 				await press(page, 'repl');

@@ -20,7 +20,18 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, choose, chooseRoot, chooser, exactly, menuButton, menuLines, pane, titledMenuButton } from './support/layout.mjs';
+import {
+	DESKTOP,
+	choose,
+	chooseRoot,
+	chooser,
+	exactly,
+	menuButton,
+	menuLines,
+	pane,
+	titledMenuButton,
+	toggleRootLock
+} from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -88,7 +99,7 @@ describe('widget options', () => {
 			}
 			assert.ok(!(await linesOf(page, 'tail')).includes(OPTIONS));
 
-			await choose(page, 'custom', 'Choose…');
+			await choose(page, 'custom', 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('command') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
@@ -292,7 +303,7 @@ describe('widget options', () => {
 
 	test('under a lock the menu keeps Options…, as the widget keeps its own controls', async () => {
 		await withApp(async ({ page }) => {
-			await chooseRoot(page, 'Lock layout');
+			await toggleRootLock(page);
 			assert.deepEqual(await linesOf(page, 'repl'), [OPTIONS]);
 			assert.equal(await pane(page, 'tail').locator('button.title').count(), 0, 'a kind with no options kept a menu');
 			await setReversed(page, true);

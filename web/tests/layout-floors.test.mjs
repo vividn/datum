@@ -222,22 +222,17 @@ describe('resizing', () => {
 			const middle = more.y + more.height / 2;
 			assert.ok(Math.abs(middle - (tailBefore.y + 0.5)) <= 1, `the badge's middle (${middle}) is not on the outline (${tailBefore.y})`);
 			assert.ok(Math.abs(more.y - (gap.y + gap.height - 8)) <= 1, `the badge's top (${more.y}) is not 8px above the gap's end (${gap.y + gap.height})`);
-			// The gap the border is grabbed by is the one past the badges
-			// beside the TABS — the `+`, and whatever a later bead puts next
-			// to it. The maximize is not among them any more: it sits at the
-			// bar's far corner (da-jlgp), so the free run between the two is
-			// where the border is bare. Read the badges, take the far edge of
-			// the run that starts at the title, and check the point is clear
-			// of every badge before pressing it.
+			// The gap the border is grabbed by is the one past ALL the bar's
+			// badges — the maximize before the title (da-bzhq), then the `+`
+			// and the `▾` after it. Read them, take the far edge of the run,
+			// and check the point is clear of every one before pressing it.
 			const [past, clear] = await pane(page, 'tail').evaluate((section) => {
 				const badges = [...section.querySelectorAll(':scope > .titlebar .along button.badge')];
-				const beside = Math.max(
-					...badges.filter((b) => !b.classList.contains('maximize')).map((b) => b.getBoundingClientRect().right)
-				);
+				const beside = Math.max(...badges.map((b) => b.getBoundingClientRect().right));
 				const on = (at) => badges.some((b) => b.getBoundingClientRect().left <= at && at <= b.getBoundingClientRect().right);
 				return [beside, !on(beside + 6)];
 			});
-			assert.ok(clear, `the point past the tabs' badges (${past + 6}) is on a badge`);
+			assert.ok(clear, `the point past the bar's badges (${past + 6}) is on a badge`);
 			const x = past + 6;
 			const y = gap.y + gap.height / 2;
 			await page.mouse.move(x, y);

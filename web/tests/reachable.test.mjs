@@ -472,7 +472,7 @@ describe('the layout engine, by keyboard', () => {
 			const controls = await page.evaluate(() =>
 				[
 					...document.querySelectorAll(
-						'button.title, button.add, button.maximize, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear, .root-bar .hint-button, .prompt-bar .brand'
+						'button.title, button.add, button.manage, button.maximize, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear, .root-bar button.lock, .root-bar .hint-button, .prompt-bar .brand'
 					)
 				]
 					.filter((el) => el.getClientRects().length > 0)
@@ -482,24 +482,30 @@ describe('the layout engine, by keyboard', () => {
 							? `menu of ${el.closest('section')?.dataset.title}`
 							: el.matches('.root-bar button.gear')
 								? 'the gear'
-								: el.matches('.root-bar [role="tab"]')
-									? 'menu of the root bar'
-									: el.matches('button.add')
-										? `the + of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
-										: el.matches('button.maximize')
-											? `the maximize of ${el.closest('section')?.dataset.title}`
-											: el.matches('.nowview-steps button')
-											? el.getAttribute('aria-label')
-											: el.matches('.hint-button')
-												? 'the beta hint'
-												: el.matches('.brand')
-													? 'the logo’s database menu'
-													: 'border'
+								: el.matches('.root-bar button.lock')
+									? 'the lock'
+									: el.matches('.root-bar [role="tab"]')
+										? 'menu of the root bar'
+										: el.matches('button.add')
+											? `the + of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
+											: el.matches('button.manage')
+												? `the ▾ of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
+												: el.matches('button.maximize')
+													? `the maximize of ${el.closest('section')?.dataset.title}`
+													: el.matches('.nowview-steps button')
+													? el.getAttribute('aria-label')
+													: el.matches('.hint-button')
+														? 'the beta hint'
+														: el.matches('.brand')
+															? 'the logo’s database menu'
+															: 'border'
 					}))
 			);
 			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');
 			assert.equal(controls.filter((c) => c.what === 'menu of the root bar').length, 1, 'the root bar has no menu button');
 			assert.equal(controls.filter((c) => c.what === 'the gear').length, 1, 'the root bar has no gear (da-pp1a)');
+			assert.equal(controls.filter((c) => c.what === 'the lock').length, 1, 'the root bar has no lock (da-bzhq)');
+			assert.equal(controls.filter((c) => c.what === 'the ▾ of the root bar').length, 1, 'the root bar has no ▾ (da-bzhq)');
 			assert.equal(await page.locator('button.faint').count(), 0, 'the margin handles are back (da-wjob)');
 			assert.ok(controls.some((c) => c.what === 'border'), 'the default layout has no draggable border');
 			for (const control of controls) {
@@ -510,8 +516,11 @@ describe('the layout engine, by keyboard', () => {
 
 	test('every menu item is on screen and reachable by the arrows', async () => {
 		await withApp(async ({ page }) => {
-			// A pane's title, and the root bar's active tab (da-wjob).
-			const openers = page.locator('button.title:visible, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear');
+			// A pane's title, the `▾` beside each `+` (da-bzhq), and the root
+			// bar's active tab (da-wjob) and gear.
+			const openers = page.locator(
+				'button.title:visible, button.manage:visible, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear'
+			);
 			const menus = await openers.count();
 			/** Every label the arrows reached, across all the menus. */
 			const seen = new Set();
@@ -592,8 +601,10 @@ describe('the layout engine, by keyboard', () => {
 						return {
 							coarse: matchMedia('(pointer: coarse)').matches,
 							borders: shown('[role="separator"]').map((el) => Math.min(...box(el))),
-							panes: shown('section button.title, section button.add, section button.maximize').map(box),
-							root: shown('.root-bar button.add, .root-bar button.gear, .root-bar [role="tab"]').map(box)
+							panes: shown('section button.title, section button.add, section button.manage, section button.maximize').map(box),
+							root: shown(
+								'.root-bar button.add, .root-bar button.manage, .root-bar button.lock, .root-bar button.gear, .root-bar [role="tab"]'
+							).map(box)
 						};
 					});
 					assert.equal(sizes.coarse, name.endsWith('finger'));
@@ -615,8 +626,8 @@ describe('the layout engine, by keyboard', () => {
 			const icons = page.locator('[role="menu"][aria-label="Bar"] button');
 			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 844 }], async () => {
 				for (const edge of ['top', 'left']) {
-					// A pane's own menu, not the root bar's `+` or `…` (da-0a5o), which have no Bar.
-					await page.locator('section.pane button.title').first().click();
+					// A pane's own `▾` (da-bzhq), not the root bar's, which has no Bar.
+					await page.locator('section.pane button.manage').first().click();
 					await page.locator('[role="menu"] button', { hasText: /^\s*Bar\s*$/ }).click();
 					const seen = await icons.evaluateAll((all) =>
 						all.map((el) => {
@@ -650,24 +661,29 @@ describe('the layout engine, by keyboard', () => {
 	});
 
 	// Locked (da-2a5y), a layout has FEWER targets, not unreachable ones:
-	// no `+` and no border is in the DOM at all, a menu only where a widget
-	// has options (da-gvdc: it reads `Options…` alone), and what is left
-	// — the tabs — is still walked to. The lock is this device's, on the `day`
-	// tab (da-0a5o); the root bar above the layout keeps its own menu, which
-	// is where `Unlock layout` is (da-crp5).
-	test('a locked layout has no `+` and no border, a menu only for options, and its tabs are still in the Tab order', async () => {
+	// no `+`, no `▾` (da-bzhq) and no border is in the DOM at all, a menu
+	// only where a widget has options (da-gvdc: it reads `Options…` alone),
+	// and what is left — the tabs — is still walked to. The lock is this
+	// device's, on the `day` tab (da-0a5o); the way out is the lock button
+	// beside the gear, which the walk above reaches.
+	test('a locked layout has no `+`, no `▾` and no border, a menu only for options, and its tabs are still in the Tab order', async () => {
 		await withApp(
 			async ({ page }) => {
 				const reached = await tabWalk(page);
 				const controls = await page.evaluate(() => ({
 					hidden: document.querySelectorAll(
-						'section.root button.add, section.root [role="separator"]'
+						'section.root button.add, section.root button.manage, section.root [role="separator"]'
 					).length,
 					// A menu is left only where a widget has options (da-gvdc): the repl's.
 					titles: [...document.querySelectorAll('section.root button.title')].map((b) => b.closest('section.pane')?.dataset.title),
 					tabs: [...document.querySelectorAll('section.root [role="tab"]')].map((el) => el.dataset.walk ?? null)
 				}));
-				assert.equal(controls.hidden, 0, 'a locked layout still offers a `+` or a border');
+				assert.equal(controls.hidden, 0, 'a locked layout still offers a `+`, a `▾` or a border');
+				assert.equal(
+					await page.locator('.root-bar button.lock[aria-pressed="true"]').count(),
+					1,
+					'the way out of the lock is not on the bar'
+				);
 				assert.deepEqual(controls.titles, ['repl'], 'a locked layout offers a menu beyond a widget’s options');
 				assert.equal(controls.tabs.length, 2);
 				// The active tab is the strip's one stop; the arrows walk the rest.

@@ -171,7 +171,8 @@ describe('the aliases widget', () => {
 			// a name like `orange` would fall through to `md5(field)` (da-yiyj).
 			await ok(run, ['spec', 'set', 'coffee', '--verb', 'occur', '--color', '#ffa500']);
 			await ok(run, ['alias', 'set', 'cof', 'occur coffee cups=1']);
-			await page.locator('section[data-pane="tail"] .titlebar button.title').first().click();
+			// Split is under the `▾` beside the `+` now (da-bzhq).
+			await page.locator('section[data-pane="tail"] .titlebar button.manage').first().click();
 			await page.getByRole('menuitem', { name: 'split: a new pane to the right', exact: true }).click();
 			await fill(page, 'aliases');
 			await page.locator('section.pane[data-title="aliases"] li').nth(1).waitFor();

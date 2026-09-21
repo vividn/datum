@@ -16,7 +16,14 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { chooseRoot, fill, menuLines, rootMenuButton } from './support/layout.mjs';
+import {
+	fill,
+	lockButton,
+	manageRoot,
+	menuLines,
+	rootManageButton,
+	rootMenuButton
+} from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -30,7 +37,7 @@ const SCREENS = [
 const WHERE = { top: 'above', bottom: 'below', left: 'to the left', right: 'to the right' };
 
 /** Split toward `edge` from the root menu. */
-const extend = (page, edge) => chooseRoot(page, `split: a new pane ${WHERE[edge]}`);
+const extend = (page, edge) => manageRoot(page, `split: a new pane ${WHERE[edge]}`);
 
 /** The root split's box, and the box of the empty pane the split just added. */
 const boxes = (page) =>
@@ -65,10 +72,11 @@ describe('extending the dashboard from its edges', () => {
 				0,
 				'an edge handle is still drawn'
 			);
-			await rootMenuButton(page).click();
+			// The act is under the `▾` beside the root's `+` (da-bzhq).
+			await rootManageButton(page).click();
 			const lines = await menuLines(page);
-			assert.ok(lines.includes('Split ← → ↑ ↓'), 'the root menu has no Split row');
-			assert.ok(!lines.includes('Break out ← → ↑ ↓'), 'the root menu still offers Break out');
+			assert.ok(lines.includes('Split ← ↓ ↑ →'), 'the root ▾ has no Split row');
+			assert.ok(!lines.includes('Break out ← ↓ ↑ →'), 'the root ▾ still offers Break out');
 			await page.keyboard.press('Escape');
 		}, { viewport: SCREENS[0] });
 	});
@@ -126,18 +134,21 @@ describe('extending the dashboard from its edges', () => {
 		});
 	}
 
-	test('under the lock, the root menu offers no Split — the acts alone', async () => {
+	test('under the lock there is no ▾ at all, and the root menu is the acts alone', async () => {
 		await withApp(
 			async ({ page }) => {
 				await page.locator('section.root').waitFor();
+				// Nothing to split, so the `▾` that would hold Split is not
+				// drawn (da-bzhq); the way out is the lock beside the gear.
+				assert.equal(await rootManageButton(page).count(), 0, 'a locked layout still offers the ▾');
+				assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'true');
 				await rootMenuButton(page).click();
 				assert.deepEqual(await menuLines(page), [
 					'Save layout',
 					'Restore layout',
 					// `day` ships with datum, so it can be reset (da-luwe).
 					'Reset layout',
-					'Save layout as…',
-					'Unlock layout'
+					'Save layout as…'
 				]);
 				await page.keyboard.press('Escape');
 			},

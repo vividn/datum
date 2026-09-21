@@ -9,7 +9,17 @@
 	the same builder (`menu.ts`); an inactive tab still just switches, and
 	the arrow keys walk them. After them a `+` that opens the one chooser
 	(da-uyx1) — the layouts, then the widget kinds, where a layout opens as
-	a root tab and a widget opens that kind's built-in one-widget layout.
+	a root tab and a widget opens that kind's built-in one-widget layout —
+	and beside the `+` a `▾` holding what is DONE to the page: `Split` and
+	`Close tab` (da-bzhq). That is the same slicing a pane's bar makes of
+	the same list (`named` and `managed`, menu.ts): the NAME opens what the
+	tab shows and what it is saved as, the `▾` what is done to it.
+
+	Unlike a pane's, this `+` does NOT go under the lock: it opens ANOTHER
+	layout beside the locked one and never touches its tree, and it is how
+	a reader leaves a page they have locked. The `▾` goes anyway, because a
+	locked tab's list is its acts alone and none of them is a management
+	act — the same answer, by the rule rather than by a second condition.
 
 	What the root's menu is missing, and why, is `menu.ts`'s comment: no
 	`Break out` (a tab breaks out of its STRIP, and the root has no strip
@@ -20,22 +30,31 @@
 	(da-a642). What it has that a pane's has not is `export backup…`:
 	there is one database.
 
-	The layout's own acts — save, restore, save as…, lock — are in the
-	menu too, where the orange dot is (vividn: "Inside the menu there
-	could be a lock, save, and save as options. That seems more
-	consistent. Maybe highlight Restore and Save so that it is obvious
-	that that is what the orange dot is referring to"). They were a row of
-	icons at the right end of this bar until da-wjob; the row is gone, no
-	shortcut kept. While the tab is modified Save and Restore are marked
-	in the menu and the tab keeps its dot, so the dot's meaning is one
-	press from the dot. Restore goes back to the last save; with nothing
-	to discard it opens the save's versions under the bar instead, and
-	`→ forward` undoes the last restore. A tab holding a layout that
-	SHIPPED with datum has a fifth, `Reset layout` (da-luwe), beside
-	Restore: the other way back, to `defaults.ts` rather than to the save.
-	The lock is this device's (shell.ts), and a LOCKED root tab follows
-	the pane rule — the menu holds those acts alone, so `Unlock layout`
-	stays reachable.
+	The layout's own acts — save, restore, save as… — are in the menu too,
+	where the orange dot is (vividn: "Inside the menu there could be a lock,
+	save, and save as options. That seems more consistent. Maybe highlight
+	Restore and Save so that it is obvious that that is what the orange dot
+	is referring to"). They were a row of icons at the right end of this
+	bar until da-wjob; the row is gone, no shortcut kept. While the tab is
+	modified Save and Restore are marked in the menu and the tab keeps its
+	dot, so the dot's meaning is one press from the dot. Restore goes back
+	to the last save; with nothing to discard it opens the save's versions
+	under the bar instead, and `→ forward` undoes the last restore. A tab
+	holding a layout that SHIPPED with datum has another, `Reset layout`
+	(da-luwe), beside Restore: the other way back, to `defaults.ts` rather
+	than to the save.
+
+	THE LOCK IS NOT AMONG THEM any more (da-bzhq). vividn, 2026-09-21: "Let's
+	move the lock button outside of the layout menu and put it by the gear
+	icon to be more discoverable." So it is a padlock BUTTON at the bar's
+	far end, on the gear's OTHER side — the place to the gear's left is the
+	beta pair's ⓘ (da-y992), which brand.test.mjs holds beside the gear, so
+	the lock takes the end. Pressed rather than chosen, `aria-pressed` for
+	which way it is. It is this device's (shell.ts), not the layout's,
+	which is why its title says so in words — and which layouts open locked
+	is untouched (da-gshh). A PANE's menu keeps `Lock layout` / `Unlock
+	layout`, there being no gear beside a pane and a locked layout tab
+	needing a way out (da-crp5).
 
 	A root tab is one COPY of its layout and has no privilege over a copy
 	nested in a pane (da-crp5): the same acts are in that pane's menu
@@ -76,10 +95,12 @@
 
 	Just before the gear, the `beta` mark and its ⓘ (Beta.svelte): vividn on
 	PR #25, "move the beta marker up to the top bar near the gear logo"
-	(da-y992). They were under the logo on the bottom bar until then.
+	(da-y992). They were under the logo on the bottom bar until then. So
+	the bar's right end reads ⓘ · gear · lock.
 
 	On a phone the tabs scroll sideways rather than wrapping — one row,
-	always — while the `+`, the beta pair and the gear stay where they are.
+	always — while the `+`, the `▾`, the beta pair, the gear and the lock
+	stay where they are.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -88,7 +109,7 @@
 	import { confirm } from '$lib/confirm.js';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, layout, loaded } from './current.js';
-	import { layoutActs, menuItems, optionsItem } from './menu.js';
+	import { layoutActs, managed, menuItems, named, optionsItem } from './menu.js';
 	import { widgetOptions } from './options.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
@@ -191,11 +212,25 @@
 					// one, so a layout the reader saved themselves has no act
 					// here at all (da-luwe).
 					reset: shippedTree(name) ? doReset : undefined,
-					saveAs: doSaveAs,
-					toggleLock: () => id !== undefined && toggleLock(id)
+					saveAs: doSaveAs
+					// No `toggleLock`: the lock is a BUTTON beside the gear now
+					// (da-bzhq), not an item of this menu. See `doToggleLock`.
 				};
 
-	$: items = locked
+	/**
+	 * The lock, beside the gear (da-bzhq). vividn, 2026-09-21: "Let's move
+	 * the lock button outside of the layout menu and put it by the gear
+	 * icon to be more discoverable."
+	 *
+	 * It is THIS DEVICE'S (shell.ts), not the layout's — which is what the
+	 * button's title says in so many words, so that a control sitting in
+	 * the page's own corner is not read as a property of the layout
+	 * everyone shares. What it locks is unchanged, and so is which layouts
+	 * open locked (da-gshh): only where the press is.
+	 */
+	const doToggleLock = () => id !== undefined && toggleLock(id);
+
+	$: all = locked
 		? [...optionsItem(widgetOptions(active)), ...(acts ? layoutActs(acts) : [])]
 		: menuItems({
 				choose: () => id !== undefined && void fillTab(id),
@@ -220,6 +255,20 @@
 					...(preview ? [{ label: 'Keep tab', run: () => void act(async () => id !== undefined && keepTab(id)) }] : [])
 				]
 			});
+
+	/**
+	 * The two slices (da-bzhq, `menu.ts`): the layout's NAME opens what
+	 * this tab shows and what it is saved as; the `▾` beside the `+` opens
+	 * what is done to the page — its `Split`, which is `addEdge`, and
+	 * `Close tab`. A LOCKED root tab's list is the acts alone, none of
+	 * them a management act, so the `▾` is not drawn at all.
+	 *
+	 * The `+` is NOT hidden under a lock, unlike a pane's (PaneFrame): it
+	 * opens ANOTHER layout beside this one and never touches the locked
+	 * tree, and it is how a reader leaves a page they have locked.
+	 */
+	$: items = named(all);
+	$: manage = managed(all);
 
 	/**
 	 * «Reset default layouts» (da-jbcv), behind a confirm: it writes, and
@@ -310,6 +359,20 @@
 		{/each}
 	</div>
 	<button type="button" class="control badge add" aria-label="open a layout" title="open a layout" on:click={add}>+</button>
+	<!-- The `▾` beside the `+` (da-bzhq): what is done to the page —
+	     `Split`, which at the root is a side of the whole layout, and
+	     `Close tab`. Drawn only when it has something in it, which is what
+	     takes it away under a lock. -->
+	{#if manage.length > 0}
+		<PaneMenu
+			items={manage}
+			look="badge"
+			label="manage the layout"
+			title="manage this layout"
+			class="manage"
+			aria-label="manage the layout">▾</PaneMenu
+		>
+	{/if}
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
 	<span class="end"><Beta /></span>
 	<PaneMenu
@@ -324,6 +387,34 @@
 			<circle class="ring" r="6.2" />
 		</svg></PaneMenu
 	>
+	<!-- The lock, ON THE GEAR'S OTHER SIDE (da-bzhq) — "by the gear icon to
+	     be more discoverable", and at the bar's far end, because the ⓘ of
+	     the beta pair has the place on the gear's left (da-y992,
+	     brand.test.mjs holds the two of them together). Its title says
+	     whose the lock is: THIS DEVICE'S (shell.ts), so a control in the
+	     page's own corner is not read as a property of the layout everyone
+	     shares. -->
+	{#if acts}
+		<button
+			type="button"
+			class="control badge lock"
+			aria-pressed={locked}
+			aria-label="{locked ? 'unlock' : 'lock'} the {name} layout on this device"
+			title="{locked ? 'unlock' : 'lock'} this layout on this device"
+			on:click={doToggleLock}
+		>
+			<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+				<!-- The shackle stands up when the lock is closed and leans
+				     open when it is not; the body is the same box either way. -->
+				{#if locked}
+					<path class="shackle" d="M5 7V5a3 3 0 0 1 6 0v2" />
+				{:else}
+					<path class="shackle" d="M5 7V5a3 3 0 0 1 6 0" />
+				{/if}
+				<rect class="body" x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+			</svg>
+		</button>
+	{/if}
 	{#if trail && !dirty}
 		<ul class="versions">
 			{#if trail.length}
@@ -394,9 +485,33 @@
 		color: var(--accent-bright);
 	}
 
-	/* The `+` is a badge, and does not stretch. */
-	.add {
+	/* The `+` is a badge, and does not stretch. Nor is the `▾` beside it
+	   (da-bzhq), which is the same badge with another character in it. */
+	.add,
+	.root-bar :global(button.manage) {
 		flex: none;
+	}
+
+	/* The lock (da-bzhq), the bar's last thing, right beside the gear and
+	   the same 24px badge as the `+`. A flat mono-colour mark in
+	   `currentColor`, like the maximize's; CLOSED it takes the accent,
+	   because being locked is a state and is drawn as one. */
+	.lock {
+		flex: none;
+	}
+
+	.lock svg {
+		display: block;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.4;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.lock[aria-pressed='true'] {
+		color: var(--accent);
+		border-color: var(--accent);
 	}
 
 	.dot {

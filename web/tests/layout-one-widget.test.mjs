@@ -29,7 +29,14 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, chooseRoot, menuLines, rootMenuButton } from './support/layout.mjs';
+import {
+	DESKTOP,
+	chooseRoot,
+	menuLines,
+	rootManageButton,
+	rootMenuButton,
+	toggleRootLock
+} from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -44,8 +51,13 @@ const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true,
 const ACTS = ['Save layout', 'Restore layout', RESET_LAYOUT, 'Save layout as…'];
 
 /** Open the root menu, read its lines, close it again. */
-async function rootLines(page) {
-	await rootMenuButton(page).click();
+const rootLines = (page) => linesFrom(page, () => rootMenuButton(page).click());
+
+/** The same, for the `▾` beside the root's `+` (da-bzhq). */
+const rootManageLines = (page) => linesFrom(page, () => rootManageButton(page).click());
+
+async function linesFrom(page, open) {
+	await open();
 	const lines = await menuLines(page);
 	await page.keyboard.press('Escape');
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
@@ -76,24 +88,19 @@ describe('a root tab whose layout is one widget', () => {
 			const { page } = app;
 			await openPage(app, 'repl');
 
-			assert.deepEqual(await rootLines(page), [OPTIONS, ...ACTS, 'Unlock layout'], 'the locked root menu');
+			// The lock is a button beside the gear (da-bzhq), so the locked
+			// menu is the settings door and the acts, and no lock item.
+			assert.deepEqual(await rootLines(page), [OPTIONS, ...ACTS], 'the locked root menu');
+			assert.equal(await rootManageButton(page).count(), 0, 'a locked root still offers the ▾');
 
-			await chooseRoot(page, 'Unlock layout');
+			await toggleRootLock(page);
 			const lines = await rootLines(page);
-			assert.deepEqual(lines, [
-				'Choose…',
-				RESET_WIDGET,
-				OPTIONS,
-				'Split ← → ↑ ↓',
-				...ACTS,
-				'Lock layout',
-				'export backup…',
-				'× Close tab'
-			]);
+			assert.deepEqual(lines, ['Change Widget', RESET_WIDGET, OPTIONS, ...ACTS, 'export backup…']);
+			assert.deepEqual(await rootManageLines(page), ['Split ← ↓ ↑ →', '× Close tab']);
 			// The two ways back are told apart by their words and by where
-			// they sit: `Reset widget` is up with Choose… and Options…, about
-			// the widget in front; `Reset layout` is down in the layout's own
-			// block, between Restore and Save as.
+			// they sit: `Reset widget` is up with Change Widget and Options…,
+			// about the widget in front; `Reset layout` is down in the
+			// layout's own block, between Restore and Save as.
 			assert.ok(lines.indexOf(RESET_WIDGET) < lines.indexOf('Save layout'));
 			assert.ok(lines.indexOf(RESET_LAYOUT) > lines.indexOf('Restore layout'));
 			assert.deepEqual(app.errors, []);
@@ -132,7 +139,7 @@ describe('a root tab whose layout is one widget', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await openPage(app, 'nowview');
-			await chooseRoot(page, 'Unlock layout');
+			await toggleRootLock(page);
 
 			await chooseRoot(page, OPTIONS);
 			const modal = page.locator('dialog.options');
@@ -155,7 +162,7 @@ describe('a root tab whose layout is one widget', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await openPage(app, 'tail');
-			await chooseRoot(page, 'Unlock layout');
+			await toggleRootLock(page);
 			const lines = await rootLines(page);
 			assert.ok(!lines.includes(OPTIONS), `tail reads ${lines.join(' | ')}`);
 			assert.ok(!lines.includes(RESET_WIDGET), `tail reads ${lines.join(' | ')}`);
@@ -171,8 +178,9 @@ describe('a root tab whose layout is one widget', () => {
 			const lines = await rootLines(page);
 			assert.ok(!lines.includes(OPTIONS), `day reads ${lines.join(' | ')}`);
 			assert.ok(!lines.includes(RESET_WIDGET), `day reads ${lines.join(' | ')}`);
-			assert.equal(lines[0], 'Choose…');
-			assert.deepEqual(lines.slice(-2), ['export backup…', '× Close tab']);
+			assert.equal(lines[0], 'Change Widget');
+			assert.equal(lines.at(-1), 'export backup…');
+			assert.deepEqual(await rootManageLines(page), ['Split ← ↓ ↑ →', '× Close tab']);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -183,7 +191,7 @@ describe('a root tab whose layout is one widget', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await openPage(app, 'repl');
-			await chooseRoot(page, 'Unlock layout');
+			await toggleRootLock(page);
 			page.once('dialog', (dialog) => dialog.accept('mine'));
 			await chooseRoot(page, 'Save layout as…');
 			await rootMenuButton(page).filter({ hasText: 'mine' }).waitFor();

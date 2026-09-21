@@ -82,23 +82,29 @@ export const boxOf = (locator) => locator.boundingBox();
 /**
  * Where a tabbed holder's strip lies over the panes under it (da-cesj),
  * from the boxes on the SCREEN: every inner title the strip's box meets,
- * and every inner control its `+` meets. `titles` counts the inner titles
- * looked at, so an empty holder cannot pass for a clear one.
+ * and every inner control its BADGES meet — the `+` and, since da-bzhq,
+ * the `▾` beside it. `titles` counts the inner titles looked at, so an
+ * empty holder cannot pass for a clear one.
  */
 export const overStrip = (page, id) =>
 	pane(page, id).evaluate((holder) => {
 		const box = (el) => el.getBoundingClientRect();
 		const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 		const strip = holder.querySelector(':scope > .titlebar');
-		const add = box(strip.querySelector('button.add'));
+		const badges = [...strip.querySelectorAll('button.add, button.manage')].map((el) => [
+			el.classList.contains('add') ? '+' : '▾',
+			box(el)
+		]);
 		const inner = [...holder.querySelectorAll(':scope > .content section.pane')];
 		const overlaps = inner.flatMap((p) => [
 			...[...p.querySelectorAll(':scope > .titlebar :is(.titlebox, .tabs)')]
 				.filter((t) => meet(box(strip), box(t)))
 				.map(() => `the strip lies over ${p.dataset.title}'s title`),
-			...[...p.querySelectorAll(':scope > .titlebar button')]
-				.filter((b) => meet(add, box(b)))
-				.map((b) => `the strip's + lies over ${p.dataset.title}'s ${b.className}`)
+			...badges.flatMap(([mark, at]) =>
+				[...p.querySelectorAll(':scope > .titlebar button')]
+					.filter((b) => meet(at, box(b)))
+					.map((b) => `the strip's ${mark} lies over ${p.dataset.title}'s ${b.className}`)
+			)
 		]);
 		return { titles: inner.length, overlaps };
 	});
@@ -141,7 +147,30 @@ export const menuButton = (page, id) =>
 /** A pane's `+`: the badge where the `…` was. */
 export const addButton = (page, id) => pane(page, id).locator('.titlebar button.add').first();
 
-/** A pane's maximize badge (da-00am): at the bar's far corner, away from the tabs (da-jlgp). Its own, not a child's. */
+/**
+ * A pane's `▾` (da-bzhq): the badge beside the `+`, which opens what is
+ * DONE to the pane and its tabs — Split, Break out, Bar, Rename tab…,
+ * Close. The NAME opens the other slice (`menuButton`).
+ */
+export const manageButton = (page, id) => pane(page, id).locator('.titlebar button.manage').first();
+
+/** The root bar's `▾`, beside its `+`. */
+export const rootManageButton = (page) => page.locator('.root-bar button.manage');
+
+/**
+ * The lock, beside the gear (da-bzhq): a BUTTON on the root bar now, not
+ * an item of the layout menu. It acts on the root tab in front.
+ */
+export const lockButton = (page) => page.locator('.root-bar button.lock');
+
+/** Press the lock and wait until the bar agrees it went the other way. */
+export async function toggleRootLock(page) {
+	const was = await lockButton(page).getAttribute('aria-pressed');
+	await lockButton(page).click();
+	await page.locator(`.root-bar button.lock[aria-pressed="${was === 'true' ? 'false' : 'true'}"]`).waitFor();
+}
+
+/** A pane's maximize badge (da-00am): before the tab names (da-bzhq). Its own, not a child's. */
 export const maximizeButton = (page, id) => pane(page, id).locator('> .titlebar button.maximize');
 
 /**
@@ -159,9 +188,23 @@ export async function chooseRoot(page, label) {
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
-/** Open a pane's menu and choose an item by its name — `Choose…`, `break out: this widget below`. */
+/** Open a pane's NAME menu and choose an item by its name — `Change Widget`, `Save layout`. */
 export async function choose(page, id, label) {
 	await menuButton(page, id).click();
+	await page.getByRole('menuitem', { name: label, exact: true }).click();
+	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+}
+
+/** Open a pane's `▾` and choose an item — `break out: this widget below`, `Close pane`. */
+export async function manage(page, id, label) {
+	await manageButton(page, id).click();
+	await page.getByRole('menuitem', { name: label, exact: true }).click();
+	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+}
+
+/** Open the root bar's `▾` and choose an item — `split: a new pane to the left`, `Close tab`. */
+export async function manageRoot(page, label) {
+	await rootManageButton(page).click();
 	await page.getByRole('menuitem', { name: label, exact: true }).click();
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
@@ -294,6 +337,9 @@ export const barMenu = (page) => page.locator('[role="menu"][aria-label="Bar"]')
 /**
  * Open a pane's menu, then its `Bar ▸`.
  *
+ * `Bar` is a management act, so it is under the `▾` beside the `+`
+ * (da-bzhq), not under the pane's name.
+ *
  * By click: a title on the page's outer edge hangs half into the page's
  * margin, and the margin is empty furniture-wise since the four `…` edge
  * handles went (da-wjob), so the pointer reaches it. It did not while
@@ -301,7 +347,7 @@ export const barMenu = (page) => page.locator('[role="menu"][aria-label="Bar"]')
  * past them; the pointer's own path is tested again now.
  */
 export async function openBar(page, id) {
-	await menuButton(page, id).click();
+	await manageButton(page, id).click();
 	await page.locator('[role="menu"] button').filter({ hasText: exactly('Bar') }).click();
 	await barMenu(page).waitFor();
 }

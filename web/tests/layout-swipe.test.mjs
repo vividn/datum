@@ -30,7 +30,7 @@ import {
 	bar,
 	draft,
 	fill,
-	choose,
+	manage,
 	pane,
 	scrollX,
 	settled,
@@ -284,7 +284,7 @@ describe('the frame always swipes', () => {
 					}
 				});
 				await app.submit(`occur ${'x'.repeat(60)}`);
-				await choose(page, 'repl', 'split: a new pane below');
+				await manage(page, 'repl', 'split: a new pane below');
 				await fill(page, 'mine');
 				const frame = page.locator('section.pane[data-title="mine"]');
 				await frame.waitFor();

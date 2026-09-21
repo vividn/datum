@@ -52,6 +52,7 @@
 	import PaneFrame, { ROW } from './PaneFrame.svelte';
 	import TabBody from './TabBody.svelte';
 	import { fillTab } from './chooser.js';
+	import { CHANGE } from './menu.js';
 	import type { NodeId, Pane as PaneNode, Split } from './types.js';
 	import { isSplit } from './types.js';
 	import { apply } from './current.js';
@@ -334,7 +335,7 @@
 				<Pane title="empty">
 					<div class="choose">
 						<button type="button" class="control" on:click={() => void fillTab(tabId)}
-							>Choose Widget/Layout</button
+							>{CHANGE}</button
 						>
 					</div>
 				</Pane>

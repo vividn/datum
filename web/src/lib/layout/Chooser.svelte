@@ -1,9 +1,15 @@
 <!--
 	The one modal that fills a tab (da-uyx1): the layouts a tab could hold,
-	then the widget kinds. An empty pane's «Choose Widget/Layout» button
-	opens it, and so does the root bar's `+` — one component, one ordering,
-	wherever it is opened. Its caller is `chooser.ts`, which is what the
-	pane menu and the root menu call.
+	then the widget kinds. An empty pane's «Change Widget» button opens it,
+	and so does the root bar's `+` — one component, one ordering, wherever
+	it is opened. Its caller is `chooser.ts`, which is what the pane menu
+	and the root menu call.
+
+	«Change Widget» is vividn's word for it (da-bzhq), and it is the same
+	word on the menu item, on the empty pane's button and on the heading
+	here — `CHANGE` in `menu.ts`, so there is one string. ⚑ It is NARROWER
+	than this dialog, which offers the Layouts group below as well; said
+	rather than silently widened.
 
 	The order: the layouts `chooser.ts` handed it (`day`, then the rest by
 	device, less what is open above the tab), and then every `PICKABLE`
@@ -21,6 +27,7 @@
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
+	import { CHANGE } from './menu.js';
 	import { PICKABLE, titleOf } from './registry.js';
 	import type { Choice, Offer } from './chooser.js';
 
@@ -46,12 +53,12 @@
 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-noninteractive-element-interactions -->
 <dialog
 	class="chooser"
-	aria-label="choose a widget or a layout"
+	aria-label={CHANGE}
 	bind:this={dialog}
 	on:close={() => dispatch('close', chosen)}
 	on:click={(e) => e.target === dialog && dialog.close()}
 >
-	<h2>Choose Widget/Layout</h2>
+	<h2>{CHANGE}</h2>
 	<!-- Nothing to offer, nothing to head: inside `day`, with nothing else
 	     saved, the layouts section is empty and is not drawn. -->
 	{#if layouts.length}

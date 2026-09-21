@@ -264,7 +264,7 @@ describe('reversed', () => {
 	test('from Options…: the prompt row on top, and typing, a pill and Enter work as before', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await choose(page, 'custom', 'Choose…');
+			await choose(page, 'custom', 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('input') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
