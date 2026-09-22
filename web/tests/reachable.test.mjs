@@ -36,7 +36,6 @@ import assert from 'node:assert/strict';
 import { atEachScreen, seedLines, startApp, stopApp, withApp } from './support/app.mjs';
 import { dragBar } from './support/bar.mjs';
 import { chooser } from './support/layout.mjs';
-import { openPanel } from './support/fields.mjs';
 
 before(startApp);
 after(stopApp);
@@ -341,21 +340,12 @@ describe('on a phone-sized screen', () => {
 		}, { viewport: PHONE });
 	});
 
-	// A PLAIN press fills the bar with the field's states in place (da-g635)
-	// — nothing floats, so there is no panel to be off the screen. The panel
-	// the HOLD gesture opens, twice over since da-8810n (once for the field
-	// pill, once for the bubbles), is still one — bubbles and states
-	// together — and it is the one this asserts.
-	test("a field's state bubbles are on screen", async () => {
-		await withApp(async ({ page, submit }) => {
-			await submit('spec set mood --verb switch --state happy');
-			const chip = page.locator('.bar button.widget', { hasText: 'mood' });
-			await chip.waitFor();
-			await openPanel(page, chip);
-			await assertOnScreen(page, '.bar .panel', "mood's state panel");
-		}, { viewport: PHONE });
-	});
-
+	// The fields widget has NO floating surface left: the hold panel was the
+	// only one and da-e78x6 removed it, taking this file's "a field's state
+	// bubbles are on screen" with it. A PLAIN press fills the bar with the
+	// field's states IN PLACE (da-g635), inside the same scroller under the
+	// same height rules, so the list itself is what has to be on screen —
+	// which is the test below, and now the only one there is to write.
 	test("the states a press fills the bar with are on screen", async () => {
 		await withApp(async (app) => {
 			const { page, submit } = app;

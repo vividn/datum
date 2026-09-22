@@ -14,7 +14,6 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, activeTab, addTab, pane, swipeOver } from './support/layout.mjs';
-import { openPanel } from './support/fields.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -146,23 +145,24 @@ describe('a tab behind takes no focus and no key', () => {
 		}, { ...DESKTOP, clock: todayAt(15) });
 	});
 
-	// A prefill (the fields widget's `note`) puts the caret in the newest
-	// input widget: one mounted in a tab behind cannot take it, so it goes
-	// to the widget line in front, and with none there to the bar's.
+	// A prefill (the fields widget's `add <field> `, a record's press) puts
+	// the caret in the newest input widget: one mounted in a tab behind
+	// cannot take it, so it goes to the widget line in front, and with none
+	// there to the bar's. It was the hold panel's `note` until da-e78x6
+	// removed that panel; both are the same `prefill` store.
 	test('a prefill skips an input widget behind: to the widget in front, else the bar', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			await app.submit('spec set coffee --verb occur');
+			await app.submit('spec set coffee --verb add');
 			await addTab(page, 'custom', 'input');
 			await addTab(page, 'tail', 'input');
 			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'tail' }).click();
 			await page.locator('.bar [data-field="coffee"]').waitFor();
 
-			/** Press `note` on coffee, clear the line, and say where the caret went. */
+			/** Press coffee, clear the line, and say where the caret went. */
 			const note = async () => {
-				await openPanel(page, 'coffee');
-				await page.locator('.bar .panel button.note').click();
-				await page.waitForFunction(() => document.activeElement?.value === 'note coffee ');
+				await page.locator('.bar [data-field="coffee"]').click();
+				await page.waitForFunction(() => document.activeElement?.value === 'add coffee ');
 				const where = await page.evaluate(() =>
 					document.activeElement.closest('.prompt-bar') ? 'bar' : document.activeElement.closest('section[data-pane]')?.dataset.pane
 				);

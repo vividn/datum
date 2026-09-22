@@ -68,8 +68,13 @@ describe('the commands, in order', () => {
 		assert.equal(COMMANDS[1].label, 'Redo');
 	});
 
-	// vividn, 2026-09-15 19:08: `note` is not a button here — it lives in a
+	// vividn, 2026-09-15 19:08: `note` is not a button here — it lived in a
 	// field's long-press menu (da-py5w), beside the field it annotates.
+	// da-e78x6 removed that menu and did NOT move `note` here: a `fill`
+	// press puts `note ` on the line, and a field pill stops fitting the
+	// field slot the moment the comment's words are typed after it
+	// (`fieldSlotOpen`, $lib/selection.ts), so the button would compose
+	// `note too strong` and log a field called `too`. `note` is typed.
 	test('no note', () => {
 		assert.equal(
 			COMMANDS.find((c) => c.name === 'note'),

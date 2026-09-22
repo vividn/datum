@@ -1,11 +1,12 @@
 // A state field's states, drawn in the fields widget in place of the
 // fields (da-g635).
 //
-// The six: `fields` (the pure logic, and the widget as it is drawn),
+// The five: `fields` (the pure logic, and the widget as it is drawn),
 // `fields-press` (what a press runs), `fields-fit` (at a screen's size,
-// and its ink), `fields-box` (the pane's own box), `fields-states` (a
-// state field's states) and `fields-bubbles` (the long-press panel's
-// bubbles against that list). What more than one of them needs is
+// and its ink), `fields-box` (the pane's own box) and `fields-states` (a
+// state field's states). There was a sixth, `fields-bubbles`, over the
+// hold panel's `-t` / `dur` bubbles; da-e78x6 removed the panel and the
+// file with it. What more than one of them needs is
 // `./support/fields.mjs`; a helper one file uses stays in that file.
 //
 // Budget (da-lt0k): node's `--test-timeout` is per TEST and a FILE is a
@@ -13,10 +14,10 @@
 // Chromium it launches, and every test in it. One file held all of this,
 // reached 32 tests, and `test timed out after 120000ms` took main's Web
 // job red on four of five pushes; a cancelled file hides every other
-// file's failures behind it. Measured node 22, the six at concurrency 3 on
-// the 24-core build box under a load average of 95: fields 47s, press 60s,
-// fit 63s, states 53s, bubbles 35s, box 36s — the one file was 215s
-// serial. A group that costs a minute wants a file of its own, not another
+// file's failures behind it. Measured node 22, at concurrency 3 on the
+// 24-core build box under a load average of 95: fields 47s, press 60s,
+// fit 63s, states 53s, box 36s (and bubbles, now gone, 35s) — the one
+// file was 215s serial. A group that costs a minute wants a file of its own, not another
 // `describe` in one of these.
 
 import test, { before, after, describe } from 'node:test';
@@ -55,7 +56,8 @@ describe('a state field fills the widget with its states', () => {
 			await page.locator('.bar [data-state="happy"]').click();
 			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
 			// The argv the menu sent before this bead — `pressArgv`'s, so the
-			// bar's pills and the long press's bubbles still reach it.
+			// bar's pills still reach it. (The hold panel's bubbles reached it
+			// too until da-e78x6 removed them; the pills are what is left.)
 			assert.equal((await app.echoes()).at(-1), 'switch mood happy');
 			await page.locator('.bar [data-field="mood"]').waitFor();
 			assert.deepEqual(await bar(page), ['Track +', 'mood:']);

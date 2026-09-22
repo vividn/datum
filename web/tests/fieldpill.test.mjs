@@ -83,6 +83,38 @@ async function hold(page, field) {
 	await chip(page, field).click({ button: 'right' });
 }
 
+/**
+ * Hold a field down for `HOLD_MS` and let go — the long press itself, over
+ * real milliseconds, because the widget's hold is a TIMER and a synthesised
+ * event pair would be a test of the test.
+ *
+ * `finger` goes through CDP's `Input.dispatchTouchEvent`: Playwright's
+ * touchscreen only TAPS, and `page.mouse` on a touch-capable context is
+ * still a mouse — so a coarse arm driven by the mouse would be the fine arm
+ * again under another name, and would prove nothing about a finger.
+ */
+async function longPress(page, field, { finger = false } = {}) {
+	const at = chip(page, field);
+	await at.scrollIntoViewIfNeeded();
+	const box = await at.boundingBox();
+	const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+	if (!finger) {
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		await page.waitForTimeout(700);
+		await page.mouse.up();
+		return;
+	}
+	const cdp = await page.context().newCDPSession(page);
+	try {
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+		await page.waitForTimeout(700);
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	} finally {
+		await cdp.detach();
+	}
+}
+
 /** The commands the commands widget is drawing, in its order. */
 const commands = (page) =>
 	pane(page, 'cmd').evaluate((el) =>
@@ -108,8 +140,7 @@ describe('the gesture, and the pill it mints', () => {
 				await fieldPill(page).evaluate((el) => getComputedStyle(el).backgroundColor),
 				ORANGE
 			);
-			// And the button says where the pill came from, so a second hold
-			// on it has somewhere to be aimed.
+			// And the button says where the pill came from.
 			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
 
 			// ONE field at a time, as the time cursor holds one instant.
@@ -127,27 +158,74 @@ describe('the gesture, and the pill it mints', () => {
 		});
 	});
 
-	// vividn named four gestures and the panel had every one of them, so the
-	// panel is a step BEHIND the pill rather than beside it: hold again on a
-	// field already pilled and the `-t` / `dur` / `note` bubbles open, which
-	// is what keeps them reachable by finger as well as by mouse.
-	test('shift+click mints it too, and the same gesture again opens the panel', async () => {
+	// vividn named four gestures and the `-t` / `dur` / `note` panel had every
+	// one of them, so da-8810n made the panel a step BEHIND the pill: hold
+	// again and the bubbles opened. vividn then decided the other way — «mint
+	// the pill, let's remove that -t/dur panel» — so the gesture has ONE
+	// meaning at every count (da-e78x6). Held twice, the field is simply
+	// pilled twice.
+	test('shift+click mints it too, and the same gesture again still only mints', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await ready(app);
 
 			await chip(page, 'coffee').click({ modifiers: ['Shift'] });
 			await fieldPill(page).waitFor();
-			assert.equal(await page.locator('.bar .panel').count(), 0, 'the panel opened instead');
 			// And nothing was logged: shift+click is the hold, not a press.
 			assert.equal((await app.echoes()).at(-1), 'switch mood happy');
 
 			await chip(page, 'coffee').click({ modifiers: ['Shift'] });
-			await page.locator('.bar .panel .bubbles').first().waitFor();
-			assert.equal(await fieldPill(page).count(), 1, 'the panel took the pill away');
+			// The gesture that used to open the panel: a beat to let one
+			// appear, and then the claim that none did. Any floating surface,
+			// not `.panel` alone — the bead removed the thing, so the assertion
+			// must not be aimed at the one class name it went by.
+			await page.waitForTimeout(200);
+			assert.equal(
+				await page.locator('.bar .panel, .bar .bubbles, .bar [aria-expanded="true"]').count(),
+				0,
+				'the hold opened something'
+			);
+			assert.equal(await fieldPill(page).count(), 1, 'the pill did not survive a second hold');
+			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
+			assert.equal((await app.echoes()).at(-1), 'switch mood happy', 'the second hold ran a command');
 			assert.deepEqual(app.errors, []);
 		});
 	});
+
+	// The long press is the other half of the same gesture, and the bead
+	// names both pointers: «minting a pill by hold, on a coarse pointer and
+	// a fine one». One body, run on each. 450 ms is `HOLD_MS`; 700 clears it
+	// without racing it.
+	for (const [pointer, options] of [
+		['a fine pointer', {}],
+		['a finger', { device: { isMobile: true, hasTouch: true }, viewport: { width: 390, height: 844 } }]
+	]) {
+		const finger = pointer === 'a finger';
+		test(`a long press with ${pointer} mints, and mints again on an already-pilled field`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await ready(app);
+
+				await longPress(page, 'coffee', { finger });
+				// The mint itself, which is the positive arm: without it the
+				// «nothing opened» below would be true of a gesture that never
+				// landed on the chip at all.
+				await fieldPill(page).waitFor();
+				assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
+
+				await longPress(page, 'coffee', { finger });
+				await page.waitForTimeout(200);
+				assert.equal(
+					await page.locator('.bar .panel, .bar .bubbles, .bar [aria-expanded="true"]').count(),
+					0,
+					'the second long press opened something'
+				);
+				assert.equal(await fieldPill(page).count(), 1);
+				assert.equal((await app.echoes()).at(-1), 'switch mood happy', 'a long press logged');
+				assert.deepEqual(app.errors, []);
+			}, options);
+		});
+	}
 
 	// The bead: «a field pill must be mintable and removable without a
 	// pointer». The menu key raises `contextmenu`, which is the same door

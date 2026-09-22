@@ -16,7 +16,6 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { choose, chooser, exactly, manage, toggleOption } from './support/layout.mjs';
-import { openPanel } from './support/fields.mjs';
 
 before(startApp);
 after(stopApp);
@@ -198,32 +197,36 @@ describe('the widget and the bar are two views of one command line', () => {
 });
 
 describe('a focus nobody clicked', () => {
-	/** Press a tracked field's `note`, which prefills the command line and runs nothing. */
-	async function pressNote(page) {
-		await openPanel(page, 'coffee');
-		const note = page.locator('.bar .panel button.note');
-		await note.waitFor();
-		await note.click();
+	/**
+	 * Press a RECORD field, which prefills `add <field> ` and runs nothing.
+	 *
+	 * The prefill this measures used to come from the hold panel's `note`;
+	 * da-e78x6 removed that panel, and a record's press is the same door on
+	 * the same `prefill` store — `line` in FieldsWidget.svelte — so what is
+	 * asserted below is unchanged.
+	 */
+	async function prefill(page) {
+		await page.locator('.bar [data-field="coffee"]').click();
 	}
 
 	test('lands in the input widget when one is on screen', async () => {
 		await withApp(async (app) => {
 			const { page, submit } = app;
-			await submit('spec set coffee --verb occur');
+			await submit('spec set coffee --verb add');
 			await open(app, 'both', ['widgetbar', 'input']);
 			await page.locator('.bar [data-field="coffee"]').waitFor();
 
-			await pressNote(page);
+			await prefill(page);
 			await page.waitForFunction(
 				(w) => {
 					const box = document.querySelector(w);
-					return box.value === 'note coffee ' && document.activeElement === box;
+					return box.value === 'add coffee ' && document.activeElement === box;
 				},
 				WIDGET
 			);
 			// One buffer still: the bar has the line too, it just does not
 			// have the caret.
-			assert.equal(await valueOf(page, BAR), 'note coffee ');
+			assert.equal(await valueOf(page, BAR), 'add coffee ');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -231,15 +234,15 @@ describe('a focus nobody clicked', () => {
 	test('lands in the bar when there is none', async () => {
 		await withApp(async (app) => {
 			const { page, submit } = app;
-			await submit('spec set coffee --verb occur');
+			await submit('spec set coffee --verb add');
 			await page.locator('.bar [data-field="coffee"]').waitFor();
 			assert.equal(await page.locator('.input-widget').count(), 0, 'the day page has an input widget');
 
-			await pressNote(page);
+			await prefill(page);
 			await page.waitForFunction(
 				(bar) => {
 					const box = document.querySelector(bar);
-					return box.value === 'note coffee ' && document.activeElement === box;
+					return box.value === 'add coffee ' && document.activeElement === box;
 				},
 				BAR
 			);

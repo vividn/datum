@@ -56,9 +56,15 @@ const TAPPED = ['retime', 'delete', 'get', 'history'];
  * it, da-s6no), vividn's five verbs, then the rest by how often a hand
  * reaches for them.
  *
- * `note` is NOT here (vividn, 2026-09-15 19:08): it lives in a field's
- * hold panel (da-py5w, reached through its field pill since da-8810n),
- * where the field it annotates already is.
+ * `note` is NOT here (vividn, 2026-09-15 19:08): it lived in a field's hold
+ * panel (da-py5w), where the field it annotates already was. da-e78x6
+ * removed that panel, so `note` is now TYPED — `note <field> <words>` —
+ * and it stays off this list for a reason of its own: a `fill` press
+ * would put `note ` on the line beside a field pill, and the moment the
+ * comment's words are typed after it the pill no longer fits the field
+ * slot (`fieldSlotOpen`, $lib/selection.ts) and is refused, so Enter
+ * would run `note too strong` and log a field called `too`. A button
+ * that composes the wrong command is worse than no button.
  */
 export const COMMANDS: CommandButton[] = [
 	{ name: 'undo', label: 'Undo', press: 'run' },

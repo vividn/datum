@@ -1,11 +1,12 @@
 // What a press on a fields-widget chip does (da-c7u8): the argv it runs,
 // or the line it leaves in the prompt for a person to finish.
 //
-// The six: `fields` (the pure logic, and the widget as it is drawn),
+// The five: `fields` (the pure logic, and the widget as it is drawn),
 // `fields-press` (what a press runs), `fields-fit` (at a screen's size,
-// and its ink), `fields-box` (the pane's own box), `fields-states` (a
-// state field's states) and `fields-bubbles` (the long-press panel's
-// bubbles against that list). What more than one of them needs is
+// and its ink), `fields-box` (the pane's own box) and `fields-states` (a
+// state field's states). There was a sixth, `fields-bubbles`, over the
+// hold panel's `-t` / `dur` bubbles; da-e78x6 removed the panel and the
+// file with it. What more than one of them needs is
 // `./support/fields.mjs`; a helper one file uses stays in that file.
 //
 // Budget (da-lt0k): node's `--test-timeout` is per TEST and a FILE is a
@@ -13,16 +14,16 @@
 // Chromium it launches, and every test in it. One file held all of this,
 // reached 32 tests, and `test timed out after 120000ms` took main's Web
 // job red on four of five pushes; a cancelled file hides every other
-// file's failures behind it. Measured node 22, the six at concurrency 3 on
-// the 24-core build box under a load average of 95: fields 47s, press 60s,
-// fit 63s, states 53s, bubbles 35s, box 36s — the one file was 215s
-// serial. A group that costs a minute wants a file of its own, not another
+// file's failures behind it. Measured node 22, at concurrency 3 on the
+// 24-core build box under a load average of 95: fields 47s, press 60s,
+// fit 63s, states 53s, box 36s (and bubbles, now gone, 35s) — the one
+// file was 215s serial. A group that costs a minute wants a file of its own, not another
 // `describe` in one of these.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { BLUE, CLEAR, FIXTURE, openPanel, type, untilFieldStyle } from './support/fields.mjs';
+import { BLUE, CLEAR, FIXTURE, type, untilFieldStyle } from './support/fields.mjs';
 
 describe('a press', () => {
 	before(startApp);
@@ -119,6 +120,52 @@ describe('a press', () => {
 		});
 	});
 
+	// ⛔ THE ROUTE THAT REPLACES THE HOLD PANEL (da-e78x6). The panel's `-t`
+	// and `dur` bubbles were one way to put a time and a length on a press;
+	// removing it leaves the bar's own pills, which the time cursor mints
+	// from a click or a drag on any drawn picture ($lib/cursor.ts) and which
+	// a person can also type. The test above shows a TIME reaching a press;
+	// this shows a LENGTH, and the two together, on the field pill's own
+	// field — because "you can still set it, just elsewhere" is a claim
+	// about a path that has to be walked, not asserted.
+	test('a `dur=` pill, and a time with it, ride into the press the widget composes', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			for (const line of FIXTURE) await type(page, line);
+			await untilFieldStyle(page, 'work', 'backgroundColor', CLEAR);
+
+			const seen = await app.spyOnRunner();
+			// What a drag in the nowview leaves on the bar (nowpoint.test.mjs):
+			// an instant and the span that ENDS at it (da-zwct).
+			await page.evaluate(() =>
+				window.datum.bar.setPills([
+					{ id: 'when', text: '-t 09:00', kind: 'time' },
+					{ id: 'span', text: 'dur=30m', kind: 'dur' }
+				])
+			);
+			// A duration leaves the fields a length can be spent on (da-qu16),
+			// and `work` is a block, so it is still there to press.
+			await page.locator('.bar [data-field="work"]').click();
+			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'start'));
+			assert.deepEqual((await seen()).find((a) => a[0] === 'start'), [
+				'start',
+				'work',
+				'-t',
+				'09:00',
+				'dur=30m',
+				'--show',
+				'json'
+			]);
+
+			// And it LANDED as that block: 09:00 is the end, the half hour
+			// before it is the span (da-zwct).
+			await app.idle();
+			const stored = (await app.entries()).find((e) => e.field === 'work');
+			assert.match(stored.occur_time.utc, /T09:00/, JSON.stringify(stored.occur_time));
+			assert.equal(stored.dur, 'PT30M', JSON.stringify(stored.dur));
+		});
+	});
+
 	test('a record fills the prompt with its line, focused, and runs nothing', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
@@ -133,37 +180,27 @@ describe('a press', () => {
 		});
 	});
 
-	// da-py5w: the comment is prose — only the person can type it — so the
-	// panel's `note` fills the bar and runs nothing, exactly as a record's
-	// button does. What makes it worth a press is the CLI end of the same
-	// bead: `note` routes the bare words that follow into the comment, so
-	// what the person types after the prefill needs no quotes and no `-C`.
-	test('the panel’s `note` prefills `note <field> ` and the words typed after it are the comment', async () => {
+	// da-py5w: the comment is prose — only the person can type it. A button
+	// in the hold panel used to put `note coffee ` in the bar to save the
+	// first two words; da-e78x6 removed the panel, and NOTHING REPLACED
+	// THAT BUTTON — `note` is typed whole now, and deliberately stayed off
+	// the commands widget (see `COMMANDS` in $lib/commands.ts: a `note `
+	// prefill beside a field pill composes the wrong command once the
+	// comment's words are typed after it). So this is the route that
+	// remains, and it is the half that was always the point: `note` routes
+	// the bare words that follow into the comment, no quotes and no `-C`.
+	test('`note <field> <words>` typed in the bar puts the words in the comment', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
-
-			await openPanel(page, 'coffee');
-			const note = page.locator('.bar .panel button.note');
-			await note.waitFor();
-
 			const echoes = (await app.echoes()).length;
-			await note.click();
-			await page.waitForFunction(() => {
-				const input = document.querySelector('.prompt-bar input');
-				return (
-					input.value === 'note coffee ' &&
-					document.activeElement === input &&
-					input.selectionStart === input.value.length
-				);
-			});
-			assert.equal((await app.echoes()).length, echoes, 'the press ran a command');
-			await page.locator('.bar .panel').waitFor({ state: 'detached' });
 
-			// Typed on, as a person does — no quotes around the words.
+			// No field button is pressed at all: there is no press that gets
+			// here any more, which is the claim as much as the comment is.
+			assert.equal(await page.locator('.bar .panel').count(), 0);
+
 			const input = page.locator('.prompt-bar input');
-			await input.press('End');
-			await input.type('too strong');
+			await input.fill('note coffee too strong');
 			await input.press('Enter');
 			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
 

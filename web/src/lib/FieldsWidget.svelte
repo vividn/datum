@@ -13,8 +13,9 @@
 	anything. The pane keeps the height its layout gives it and the BAR is
 	the scroller (da-mbz2) — one row reached left and right while the pane
 	is one or two button-rows high, wrapped and reached up and down at
-	three or more (da-ltux) — while its panels, which hang upward out of
-	it, are hung against the screen so that scroller cannot clip them.
+	three or more (da-ltux). NOTHING HANGS OUT OF IT: the widget's only
+	floating surface was the `-t` / `dur` / `note` panel, and da-e78x6
+	removed it.
 	Ignored fields get no button: the Track modal lists them, and a press
 	runs `track <field>`. `showIgnored` (da-xhio) is the way to SEE them
 	without going through Track + — a switch in the menu the pane's NAME
@@ -51,25 +52,30 @@
 	pictures outline that field's own marks. The pill is minted in the
 	field's own colour and cleared like any other pill, by its ×.
 
-	THE SAME GESTURE AGAIN, on a field already pilled, opens the `-t` /
-	`dur` bubbles it opened before da-8810n — and `note`, which fills the
-	bar with `note <field> ` and runs nothing (da-py5w): the CLI routes the
-	bare words that follow into the comment, so the person just types. vividn
-	asked for the pill on «long press … on desktop right click or shift
-	click or also long click», which is every gesture the panel had, so the
-	panel is a step behind the pill rather than beside it: nothing is lost
-	and the new thing is first.
+	HOLD HAS EXACTLY THAT ONE MEANING (vividn, 2026-09-22: «mint the pill,
+	let's remove that -t/dur panel»). It had two for a day — da-8810n put
+	the pill first and left the older `-t` / `dur` / `note` panel a second
+	hold away — and da-e78x6 took the panel out rather than keep a gesture
+	that means two things. So a hold on a field already pilled mints it
+	again and opens nothing, and the panel's jobs are reached elsewhere: a
+	TIME or a DURATION comes from the time cursor as a `-t` / `dur=` pill
+	(a click or a drag on any drawn picture, $lib/cursor.ts) or is typed,
+	and both ride after the field pill into the very argv a press composes
+	(`withPills` in $lib/selection.ts); a multi-state field's states are
+	the list a PLAIN press already fills the bar with (da-g635); and `note`
+	is typed — `note <field> <words>`, the CLI routing the bare words into
+	the comment (da-py5w).
 
 	A multi-state field asks WHICH, so its button reads `name:` and a press
 	fills the bar with that field's states in place of the fields — `< Back`
 	first, `+` last (da-g635). Nothing floats: the list is the widget's own
 	content, in the same scroller and under the same height rules, and the
 	pane is scrolled back to where it stood when Back returns the fields. A
-	press on a state runs `switch <field> <state>` — plainly, with no `-t`,
-	because the list carries no bubbles — and comes back; `+` is an input,
-	and Enter on it runs the same command with a state the field has never
-	been in, which is how one is learned. The gesture still pills the field,
-	and twice still opens the panel, states and all.
+	press on a state runs `switch <field> <state>` — plainly, the bar's own
+	pills being the only thing that adds to it — and comes back; `+` is an
+	input, and Enter on it runs the same command with a state the field has
+	never been in, which is how one is learned. The gesture still pills the
+	field.
 
 	The widget never runs anything itself: it composes an argv and
 	dispatches it, and the page runs it through `run()` and echoes the
@@ -83,7 +89,6 @@
 		lookOf,
 		pressArgv,
 		stateLook,
-		type Adjust,
 		type Look,
 		type SwitchLabel,
 		type FieldButton,
@@ -149,11 +154,6 @@
 	/** How long a press has to last before it counts as a long press. */
 	const HOLD_MS = 450;
 
-	/** The `-t` bubbles: minutes back from now. */
-	const WHEN = [0, 5, 15, 30, 60];
-	/** The `dur` bubbles, as typed. The empty string is "no duration". */
-	const FOR = ['', '5m', '15m', '30m', '1h'];
-
 	let bar: HTMLElement;
 	/** The measuring stick the scroll rule counts rows with (da-ltux). */
 	let probe: HTMLElement;
@@ -162,15 +162,6 @@
 	onMount(() => watchRows(bar, probe, (n) => (rows = n)));
 
 	$: sideways = scrollsSideways(rows);
-	/**
-	 * The field whose PANEL is open, by name — never the button
-	 * object, for the same reason `picked` is not (da-0n3k): `buttons` is
-	 * rebuilt from the fields store on every beat, so an `open === button`
-	 * identity check goes false the next time anything runs, and the panel
-	 * a reader is still setting bubbles in vanishes under them.
-	 */
-	let open: string | null = null;
-	let adjust: Adjust = {};
 
 	/**
 	 * The field whose STATES have taken the bar over, by name (da-g635).
@@ -234,50 +225,30 @@
 	}
 
 	/**
-	 * The panel: the `-t` / `dur` bubbles, and for a multi-state field the
-	 * states to spend them on. A plain press never opens it — that fills the
-	 * bar with the states instead (`pick`) — so the bubbles are the whole
-	 * reason it exists and are always in it.
-	 */
-	function panel(button: FieldButton) {
-		adjust = {};
-		open = button.field;
-	}
-
-	function close() {
-		open = null;
-	}
-
-	/**
 	 * What the HOLD gesture does — the long press, the right click, the
 	 * shift+click and the menu key, which are the four vividn named
 	 * (da-8810n).
 	 *
-	 * The field goes on the bar as a pill, in its own colour, and the page
-	 * narrows to it. On a field ALREADY pilled it opens the panel instead:
-	 * the gesture vividn gave the pill is the one the panel had, so the two
-	 * are a step apart rather than fighting over it, and the panel is still
-	 * reachable by finger, mouse and keyboard alike.
+	 * ONE meaning: the field goes on the bar as a pill, in its own colour,
+	 * and the page narrows to it. A field already pilled is pilled again —
+	 * there is no second step to disambiguate against, because the `-t` /
+	 * `dur` / `note` panel that used to be it is gone (da-e78x6).
 	 */
 	function hold(button: FieldButton) {
-		if ($fieldPill === button.field) return panel(button);
-		close();
 		setFieldPill(button.field, button.color);
 	}
 
 	/**
-	 * What a button says it does, which is the one place the two gestures
-	 * are named: the press, then the hold — and, once the field is pilled,
-	 * what a second hold reaches.
+	 * What a button says it does, which is the one place both gestures are
+	 * named: the press, then the hold.
 	 */
-	function titleOf(button: FieldButton, pilled: boolean): string {
+	function titleOf(button: FieldButton): string {
 		const press =
 			button.shape.kind === 'record' ? `add ${button.field} … — fills the prompt` : 'press to log';
 		return [
 			...(button.ignored ? ['ignored'] : []),
 			press,
-			'hold to filter the page to it',
-			...(pilled ? ['hold again for when / how long'] : [])
+			'hold to filter the page to it'
 		].join(' · ');
 	}
 
@@ -304,24 +275,12 @@
 	}
 
 	function emit(argv: string[]) {
-		close();
 		back();
 		dispatch('run', argv);
 	}
 
-	/**
-	 * `note` in the panel: the bar gets `note <field> `, focused, and
-	 * nothing runs (da-py5w). The comment is prose — only the person can
-	 * type it — and the CLI's `note` joins the bare words that follow into
-	 * `extra_data.comment` on its own, so no flag goes in the line.
-	 */
-	function note(button: FieldButton) {
-		line(`note ${button.field} `);
-	}
-
 	/** Put a line in the command line, unrun, and leave the lists as they were. */
 	function line(text: string) {
-		close();
 		back();
 		dispatch('line', text);
 	}
@@ -336,7 +295,6 @@
 	 * answers null and nothing runs.
 	 */
 	async function startTracking() {
-		close();
 		const argv = await openTrack({ ignored: ignored.map((w) => w.field) });
 		if (argv) emit(argv);
 	}
@@ -349,13 +307,6 @@
 	 * states are reached by the same scroll the fields are.
 	 */
 	function pick(button: FieldButton) {
-		close();
-		// The in-place list shows no bubbles, so it must carry none: a `-t`
-		// set in the panel and then dismissed would otherwise still be on
-		// the next plain press, and the state would be logged fifteen
-		// minutes ago with nothing on screen saying so (da-vlc0). `panel()`
-		// resets it for its own opening; this is the other door in.
-		adjust = {};
 		scrolled = scrollerOf();
 		scrolledTo = { left: scrolled?.scrollLeft ?? 0, top: scrolled?.scrollTop ?? 0 };
 		picked = button.field;
@@ -392,7 +343,6 @@
 	 * it declares the block it would have ended (`declaredVerb`).
 	 */
 	async function trackUnder(pending: Verb) {
-		close();
 		const argv = await openTrack({
 			verb: declaredVerb(pending),
 			ignored: ignored.map((w) => w.field)
@@ -412,7 +362,7 @@
 			newState = '';
 			return;
 		}
-		emit(pressArgv(button, adjust, state));
+		emit(pressArgv(button, state));
 	}
 
 	function clearHold() {
@@ -443,60 +393,22 @@
 		// Shift+click is the desktop hold (da-8810n) — the one of vividn's
 		// three that is not already an event of its own.
 		if (event.shiftKey) return hold(button);
-		if (open === button.field) close();
-		else press(button);
-	}
-
-	function onWindowPointerDown(event: PointerEvent) {
-		if (bar && !bar.contains(event.target as Node)) close();
+		press(button);
 	}
 
 	function onWindowKeyDown(event: KeyboardEvent) {
 		if (event.key !== 'Escape') return;
-		// Innermost first: the panel a long press opened, then the input the
-		// `+` became, then the state list itself — Escape is its Back. The
-		// modal has its own Escape, and the dialog swallows it.
-		if (open) close();
-		else if (addingState) {
+		// Innermost first: the input the `+` became, then the state list
+		// itself — Escape is its Back. The modal has its own Escape, and
+		// the dialog swallows it.
+		if (addingState) {
 			addingState = false;
 			newState = '';
 		} else back();
 	}
-
-	/**
-	 * Hang an open panel above the slot it belongs to, against the screen.
-	 *
-	 * The bar scrolls inside its pane (da-mbz2), and a scroller clips
-	 * whatever its children hang outside it — so a panel is `fixed` and
-	 * placed from its slot's box rather than laid out against it. It still
-	 * opens upward (da-hkpd: below the bar is off the bottom of the
-	 * screen), and never past the top edge: a panel taller than the room
-	 * above its slot scrolls inside itself.
-	 */
-	function hang(node: HTMLElement) {
-		const slot = node.parentElement;
-		const place = () => {
-			if (!slot) return;
-			const box = slot.getBoundingClientRect();
-			node.style.setProperty('--left', `${box.left}px`);
-			node.style.setProperty('--above', `${box.top}px`);
-			node.style.setProperty('--screen', `${document.documentElement.clientHeight}px`);
-		};
-		place();
-		// Capturing: the scroll that moves the slot is the PANE's, not the
-		// window's, and a scroll event does not bubble.
-		window.addEventListener('scroll', place, true);
-		window.addEventListener('resize', place);
-		return {
-			destroy() {
-				window.removeEventListener('scroll', place, true);
-				window.removeEventListener('resize', place);
-			}
-		};
-	}
 </script>
 
-<svelte:window on:pointerdown={onWindowPointerDown} on:keydown={onWindowKeyDown} />
+<svelte:window on:keydown={onWindowKeyDown} />
 
 <!-- The measuring stick for the scroll rule: a button of the ordinary
      kind, laid out and invisible, so the row height is the buttons' own.
@@ -534,8 +446,8 @@
 					style={vars(look)}
 					{disabled}
 					data-state={state}
-					title={pressArgv(chosen, adjust, state).join(' ')}
-					on:click={() => emit(pressArgv(chosen, adjust, state))}
+					title={pressArgv(chosen, state).join(' ')}
+					on:click={() => emit(pressArgv(chosen, state))}
 				>
 					{state}
 				</button>
@@ -625,7 +537,7 @@
 						data-pilled={$fieldPill === button.field ? '' : undefined}
 						style={vars(look)}
 						{disabled}
-						title={titleOf(button, $fieldPill === button.field)}
+						title={titleOf(button)}
 						on:pointerdown={() => down(button)}
 						on:pointerup={clearHold}
 						on:pointerleave={clearHold}
@@ -637,7 +549,6 @@
 					<button
 						class="widget {button.shape.kind}"
 						class:on={look.fill !== null}
-						class:active={open === button.field}
 						class:ignored={button.ignored}
 						class:pilled={$fieldPill === button.field}
 						style={vars(look)}
@@ -645,8 +556,7 @@
 						data-field={button.field}
 						data-ignored={button.ignored ? '' : undefined}
 						data-pilled={$fieldPill === button.field ? '' : undefined}
-						aria-expanded={open === button.field}
-						title={titleOf(button, $fieldPill === button.field)}
+						title={titleOf(button)}
 						on:pointerdown={() => down(button)}
 						on:pointerup={clearHold}
 						on:pointerleave={clearHold}
@@ -654,64 +564,6 @@
 						on:contextmenu|preventDefault={() => hold(button)}
 						on:click={(event) => click(button, event)}
 					>{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
-				{/if}
-
-				{#if open === button.field}
-					<div class="panel" use:hang>
-						<div class="bubbles">
-							<span class="bubble-label">when</span>
-							{#each WHEN as minutes (minutes)}
-								<button
-									class:on={(adjust.minutesAgo ?? 0) === minutes}
-									on:click={() => (adjust = { ...adjust, minutesAgo: minutes })}
-								>
-									{minutes === 0 ? 'now' : `-${minutes}m`}
-								</button>
-							{/each}
-						</div>
-						<div class="bubbles">
-							<span class="bubble-label">for</span>
-							{#each FOR as value (value)}
-								<button
-									class:on={(adjust.dur ?? '') === value}
-									on:click={() => (adjust = { ...adjust, dur: value || undefined })}
-								>
-									{value || '—'}
-								</button>
-							{/each}
-						</div>
-
-						<button class="note" on:click={() => note(button)}>note</button>
-
-						{#if button.shape.kind === 'states'}
-							{#if statesOf(button.shape).length === 0}
-								<p class="hint">
-									no states yet — <code>switch {button.field} &lt;state&gt;</code> in the REPL
-								</p>
-							{:else}
-								<div class="states">
-									{#each statesOf(button.shape) as state (state)}
-										<button
-											title={pressArgv(button, adjust, state).join(' ')}
-											on:click={() => emit(pressArgv(button, adjust, state))}
-										>
-											{state}
-										</button>
-									{/each}
-								</div>
-							{/if}
-						{:else}
-							<button class="commit" on:click={() => emit(pressArgv(button, adjust))}>log</button>
-						{/if}
-
-						<code class="preview"
-							>{pressArgv(
-								button,
-								adjust,
-								button.shape.kind === 'states' ? '<state>' : undefined
-							).join(' ')}</code
-						>
-					</div>
 				{/if}
 			</div>
 		{/each}
@@ -723,8 +575,8 @@
 	 * The bar is the SCROLLER, and the scroll rule decides its axis
 	 * (da-ltux, vividn): one or two button-rows high and it is one row
 	 * reached left and right; three or more and it wraps and is reached up
-	 * and down. Its panels hang against the screen (`hang` above), so
-	 * taking the overflow here cannot clip them.
+	 * and down. Nothing hangs out of it any more (da-e78x6), so taking the
+	 * overflow here clips nothing.
 	 */
 	.bar {
 		flex: 1;
@@ -821,18 +673,11 @@
 		filter: brightness(1.2);
 	}
 
-	.widget.active {
-		box-shadow: 0 0 0 2px var(--ink-bright);
-	}
-
 	/* The field whose PILL is on the bar (da-8810n): a ring in the app's
-	   ink, so a reader can see where the pill came from and hold again on
-	   the same button for the bubbles. The same ring `.active` draws, dimmer
-	   — the panel being open is the louder of the two states and stays so —
-	   and in the ink rather than in the field's colour, because the button
-	   is already drawn in that and a ring of it would read as part of the
-	   shape. */
-	.widget.pilled:not(.active),
+	   ink, so a reader can see where the pill came from. In the ink rather
+	   than in the field's colour, because the button is already drawn in
+	   that and a ring of it would read as part of the shape. */
+	.widget.pilled,
 	.record.pilled {
 		box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink-bright) 55%, transparent);
 	}
@@ -941,76 +786,6 @@
 		border-color: var(--accent);
 	}
 
-	.panel {
-		/* Fixed, and placed by `hang` above: the bar's own pane scrolls,
-		   and a panel laid out against its slot would be clipped by that
-		   scroller. Upward, because the bar is the bottom-most row of the
-		   frame at every width, so a panel hung below it opens off the
-		   bottom of the screen — reachable only by a scroll the reader has
-		   no reason to guess at (da-hkpd). */
-		position: fixed;
-		z-index: 10;
-		left: var(--left);
-		bottom: calc(var(--screen) - var(--above) + 0.3rem);
-		max-height: calc(var(--above) - 0.6rem);
-		overflow: auto;
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		min-width: max-content;
-		/* Not `--ground`: a panel floats ABOVE the bar, and a step up from
-		   the ground it covers is how it says so. */
-		background: #12122a;
-		border: 1px solid var(--rule);
-		border-radius: 6px;
-		padding: 0.5rem;
-		/* A shadow is black at an opacity, not a colour from the palette. */
-		box-shadow: 0 4px 16px #00000080;
-	}
-
-	.bubbles,
-	.states {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.25rem;
-	}
-
-	.bubble-label {
-		width: 2.6rem;
-		color: var(--muted);
-		font-size: 0.7rem;
-		letter-spacing: 0.06em;
-	}
-
-	.panel button {
-		background: var(--ground);
-		border: 1px solid var(--rule);
-		border-radius: 999px;
-		padding: 0.2rem 0.55rem;
-		color: var(--ink);
-		font: inherit;
-		font-size: 0.8rem;
-		cursor: pointer;
-	}
-
-	.panel button:hover,
-	.panel button.on {
-		border-color: var(--accent);
-		color: var(--ink-bright);
-	}
-
-	.commit,
-	.panel button.note {
-		align-self: flex-start;
-	}
-
-	.preview {
-		color: var(--muted);
-		font-size: 0.75rem;
-		white-space: pre;
-	}
-
 	.new-state {
 		background: var(--ground);
 		border: 1px solid var(--rule);
@@ -1026,11 +801,6 @@
 		color: var(--quiet);
 		font-size: 0.8rem;
 		font-style: italic;
-	}
-
-	.hint code {
-		font-style: normal;
-		color: var(--accent);
 	}
 
 	/* One line beside Track +, cut rather than wrapped. */

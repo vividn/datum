@@ -7,11 +7,12 @@
 // a person types — and asserted as computed colours, radii and roles,
 // never as "different from before".
 //
-// The six: `fields` (the pure logic, and the widget as it is drawn),
+// The five: `fields` (the pure logic, and the widget as it is drawn),
 // `fields-press` (what a press runs), `fields-fit` (at a screen's size,
-// and its ink), `fields-box` (the pane's own box), `fields-states` (a
-// state field's states) and `fields-bubbles` (the long-press panel's
-// bubbles against that list). What more than one of them needs is
+// and its ink), `fields-box` (the pane's own box) and `fields-states` (a
+// state field's states). There was a sixth, `fields-bubbles`, over the
+// hold panel's `-t` / `dur` bubbles; da-e78x6 removed the panel and the
+// file with it. What more than one of them needs is
 // `./support/fields.mjs`; a helper one file uses stays in that file.
 //
 // Budget (da-lt0k): node's `--test-timeout` is per TEST and a FILE is a
@@ -19,10 +20,10 @@
 // Chromium it launches, and every test in it. One file held all of this,
 // reached 32 tests, and `test timed out after 120000ms` took main's Web
 // job red on four of five pushes; a cancelled file hides every other
-// file's failures behind it. Measured node 22, the six at concurrency 3 on
-// the 24-core build box under a load average of 95: fields 47s, press 60s,
-// fit 63s, states 53s, bubbles 35s, box 36s — the one file was 215s
-// serial. A group that costs a minute wants a file of its own, not another
+// file's failures behind it. Measured node 22, at concurrency 3 on the
+// 24-core build box under a load average of 95: fields 47s, press 60s,
+// fit 63s, states 53s, box 36s (and bubbles, now gone, 35s) — the one
+// file was 215s serial. A group that costs a minute wants a file of its own, not another
 // `describe` in one of these.
 
 import test, { before, after, describe } from 'node:test';
@@ -122,8 +123,12 @@ describe('the logic', () => {
 	test('a block that is on ends; a record is `add`', () => {
 		const w = (shape, current) => ({ field: 'f', shape, tracked: true, stateColors: {}, current });
 		assert.deepEqual(pressArgv(w({ kind: 'state' })), ['start', 'f']);
-		assert.deepEqual(pressArgv(w({ kind: 'state' }, true), { minutesAgo: 5 }), ['end', 'f', '-t', '-5']);
+		assert.deepEqual(pressArgv(w({ kind: 'state' }, true)), ['end', 'f']);
 		assert.deepEqual(pressArgv(w({ kind: 'record' })), ['add', 'f']);
+		// The COMMAND and nothing else (da-e78x6): the second argument is the
+		// state, not the `-t` / `dur=` an `Adjust` used to carry. A press that
+		// appended a flag of its own would say so here.
+		assert.deepEqual(pressArgv(w({ kind: 'states', states: ['ok'] }), 'ok'), ['switch', 'f', 'ok']);
 	});
 
 	test('an occur spec presses `occur`, even once it has been logged with a boolean state (da-u8n7)', () => {

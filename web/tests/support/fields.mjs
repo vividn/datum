@@ -55,20 +55,3 @@ export async function seed(app, lines, field) {
 	await app.page.locator(`.bar [data-field="${field}"]`).waitFor();
 }
 
-
-/**
- * Open a field's `-t` / `dur` / `note` panel: the HOLD gesture TWICE
- * (da-8810n).
- *
- * The gesture vividn gave the field pill — long press, right click,
- * shift+click, the menu key — is the one the panel had, so the two are a
- * step apart: the first mints the pill, and the same gesture on a field
- * already pilled opens the panel. `chip` is a field name or a locator.
- */
-export async function openPanel(page, chip) {
-	const at = typeof chip === 'string' ? page.locator(`.bar [data-field="${chip}"]`) : chip;
-	await at.click({ button: 'right' });
-	await at.locator('xpath=self::*[@data-pilled]').waitFor();
-	await at.click({ button: 'right' });
-	await page.locator('.bar .panel').waitFor();
-}

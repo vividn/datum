@@ -62,14 +62,6 @@ export interface FieldButton {
 	active: boolean;
 }
 
-/** The `-t` and `dur` tweaks a long press can attach before committing. */
-export interface Adjust {
-	/** Minutes back from now. 0 / undefined leaves the time alone. */
-	minutesAgo?: number;
-	/** A duration argument as typed (`30m`), not yet normalized. */
-	dur?: string;
-}
-
 /**
  * Decide a field's shape.
  *
@@ -213,28 +205,23 @@ export function lookOf(button: FieldButton, variant: SwitchLabel = 'field'): Loo
  * Compose the argv one press runs.
  *
  * `state` is required for a multi-state button and ignored otherwise. A
- * block that is on ends; one that is off starts. The adjustments append in
- * the order a person would type them: the time flag, then the duration as
- * a `dur=` token (CLAUDE.md — there is no `--dur` flag, and the keyed form
- * is unambiguous next to a state value in a way the trailing positional
- * isn't).
+ * block that is on ends; one that is off starts.
+ *
+ * The COMMAND and nothing else. It used to take an `Adjust` as well — a
+ * `-t` and a `dur=` the hold panel's bubbles set — and da-e78x6 removed
+ * that panel, leaving the bar's own pills as the one way anything is
+ * added to a press (`withPills` in $lib/selection.ts). A press composes
+ * what it means; the line composes what it carries.
  */
-export function pressArgv(button: FieldButton, adjust: Adjust = {}, state?: string): string[] {
+export function pressArgv(button: FieldButton, state?: string): string[] {
 	const { kind } = button.shape;
-	const argv =
-		kind === 'point'
-			? ['occur', button.field]
-			: kind === 'state'
-				? [button.current ? 'end' : 'start', button.field]
-				: kind === 'record'
-					? ['add', button.field]
-					: ['switch', button.field, state ?? ''];
-
-	// `-t -15` is fifteen minutes ago; the sign is what makes it an offset
-	// rather than a clock time.
-	if (adjust.minutesAgo) argv.push('-t', `-${adjust.minutesAgo}`);
-	if (adjust.dur) argv.push(`dur=${adjust.dur}`);
-	return argv;
+	return kind === 'point'
+		? ['occur', button.field]
+		: kind === 'state'
+			? [button.current ? 'end' : 'start', button.field]
+			: kind === 'record'
+				? ['add', button.field]
+				: ['switch', button.field, state ?? ''];
 }
 
 /**

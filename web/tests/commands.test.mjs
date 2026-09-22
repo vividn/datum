@@ -124,7 +124,7 @@ describe('the bar of commands', () => {
 				'switch',
 				'add'
 			]);
-			assert.equal(buttons.includes('note'), false, 'note lives in a field’s menu (da-py5w)');
+			assert.equal(buttons.includes('note'), false, 'note is typed, not pressed (da-py5w, da-e78x6)');
 			assert.ok(buttons.includes('sync'), 'the tail of the list is drawn too');
 		});
 	});
