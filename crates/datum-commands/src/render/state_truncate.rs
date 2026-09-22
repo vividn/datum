@@ -15,7 +15,9 @@
 use datum_core::{entry::Entry, field_spec::FieldSpec, shape::has_state_badge};
 use serde_json::Value as JsonValue;
 
-use super::action::{compute_occur_dot_colors, render_lead_slot, render_slot, RenderContext};
+use super::action::{
+    compute_occur_dot_colors, render_lead_slot, render_slot, RenderContext, StateTransition,
+};
 use super::characters::{DOT, IGNORED_STATE, NON_OCCUR, NULL_SET};
 use super::colors::{
     field_rgb, paint, paint_bg, paint_bg_fg, state_rgb, state_value_rgb, structured_state_rgb,
@@ -68,12 +70,20 @@ pub(crate) fn truncate_state_cell(
     }
     // State-bearing verbs render `[LEAD][body][TRAIL]`. LEAD and TRAIL
     // are 1 visible char each — reserve them, give the rest to the body.
+    // The three are the row's transition (da-fknn8), read from the one
+    // place `tail --json` reads it from.
+    let t = StateTransition::of(ctx, entry);
     let body_budget = max_w.saturating_sub(2);
-    let body = truncate_state_body(entry.state.as_ref(), &entry.field, spec, body_budget);
+    let body = truncate_state_body(t.current.as_ref(), &entry.field, spec, body_budget);
     let mut out = String::new();
-    out.push_str(&render_lead_slot(ctx, &entry.field, spec));
+    out.push_str(&render_lead_slot(
+        t.previous.as_ref(),
+        ctx.is_state_repeat,
+        &entry.field,
+        spec,
+    ));
     out.push_str(&body);
-    out.push_str(&render_slot(ctx.trail_state.as_ref(), &entry.field, spec));
+    out.push_str(&render_slot(t.following.as_ref(), &entry.field, spec));
     out
 }
 

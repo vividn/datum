@@ -66,7 +66,17 @@ to the renderer must keep this doc and the fixture tests
 
 The LEAD, state-badge, and TRAIL form ONE visual group after the field badge. **Per da-25l the three segments are flush against each other** — no whitespace, colored or otherwise, between LEAD/cell/TRAIL.
 
-**Rendering update (post-da-25l):** LEAD and TRAIL are rendered as **single bg-coloured cells** (a single space painted with the relevant state's bg color), **not as glyph characters**. The original draft of this spec described `∅` / `→` / `←` glyphs in those positions; the renderer chose colored cells instead because they're more compact and compose with the state-badge body without a visible seam. The implementation lives in `crates/datum-commands/src/render/action.rs::render_slot` (LEAD/TRAIL) and `::render_state_cell` (state-badge body).
+**Rendering update (post-da-25l):** LEAD and TRAIL are rendered as **single bg-coloured cells** (a single space painted with the relevant state's bg color), **not as glyph characters**. The original draft of this spec described `∅` / `→` / `←` glyphs in those positions; the renderer chose colored cells instead because they're more compact and compose with the state-badge body without a visible seam. The implementation lives in `crates/datum-commands/src/render/action.rs::render_slot` (LEAD/TRAIL) and `::render_switch_badge` (state-badge body).
+
+**Data update (da-fknn8):** the trio LEAD/body/TRAIL stands for is a row's
+STATE TRANSITION — the state before it, its own, and the one that continues
+forward — and that is now a value, `render::action::StateTransition`, built
+once per row and composed from by both the terminal's group and `tail
+--json`'s `previous_state` / `state` / `following_state`. The terminal's
+bytes are unchanged. A consumer with a layout of its own
+(`web/src/lib/StateCell.svelte`) draws the two edges as WORDS instead, around
+`format_state_body` — this cell without its slots — because on a character
+grid a coloured space is a compact encoding and in a browser it is padding.
 
 The `∅` glyph is still rendered for `occur`'s LEAD (a tracked-but-never-seen field gets a grey-`∅` rather than a grey-cell, because occur has no state-badge and the glyph is the entire trio). For switch / start / stop / block, LEAD/TRAIL are colored cells.
 

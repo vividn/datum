@@ -95,6 +95,11 @@ describe('logging verbs', () => {
 			// (da-ftg8p), and da-gvcen leaves no TRACK row to name, so the
 			// shim only has to survive both being absent.
 			const withoutAction = (line) => line.replace(/^(_\S* +)?(action|TRACK.) +/, '$1');
+			// The pane shows the CLI's listing, EVERY column of it. da-fknn8
+			// splits the state cell into the CLI's own three painted parts
+			// so the edges can carry a hover and be selected — and those
+			// parts concatenate to the printed cell, so this comparison is
+			// as whole as it ever was. vividn: "really mirror the CLI here."
 			assert.deepEqual(
 				rowTexts([table.headers, ...table.rows].map((cells) => cells.join(' ')).join('\n')),
 				[rows[0], ...rows.slice(-table.rows.length)].map(withoutAction),
@@ -767,11 +772,17 @@ describe('the tail is the CLI\'s tail', () => {
 			// The pane's newest page, against the listing's last N cells.
 			const shown = await painted('field');
 			assert.deepEqual(shown, cells('field').slice(-shown.length).map(backgrounds));
-			// The state chip too — a different colour from the field's. The
-			// CLI's state cell is `[LEAD][state][TRAIL]` and each slot paints
-			// its own block, so the whole cell is compared, not one chip.
+			// The state cell too — a different colour from the field's. The
+			// CLI's state cell is `[LEAD][state][TRAIL]` and each slot
+			// paints its own block, so the whole cell is compared, not one
+			// chip. da-fknn8 splits it into those three parts so the edges
+			// can carry a hover, and the page draws the CLI's own paint for
+			// each — so the backgrounds are unchanged (vividn: "really mirror
+			// the CLI here").
 			assert.deepEqual((await painted('state')).at(-1), backgrounds(cells('state').at(-1)));
 			assert.notDeepEqual(backgrounds(cells('state').at(-1)), backgrounds(cells('field').at(-1)));
+			// …and the slot's colour is on the row too, for the hover.
+			assert.match(rows.at(-1).previous_state_color, /^#[0-9a-f]{6}$/);
 		});
 	});
 });

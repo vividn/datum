@@ -101,6 +101,29 @@ writing it down.
    the flag, and `tests/echo.test.mjs` holds the list to what the CLI actually does. A stdout
    with no document in it falls back to the lines the CLI printed.
 
+6b. **Where the page composes a cell, it composes the CLI's own parts — never its own**
+   (da-fknn8, `$lib/StateCell.svelte`). The tail's STATE cell is the one cell not taken whole
+   from `tail --json`'s `columns`: a state transition is three values in the row —
+   `previous_state`, `state`, `following_state` — and on a terminal the two edges are ONE
+   PAINTED SPACE each, which is a compact encoding on a character grid and padding in a browser.
+   So the page draws the edges as WORDS, in the CLI's own hexes, around `state_body` — the
+   painted chip WITHOUT those slots, so nothing is drawn twice — and it decides only the
+   GEOMETRY: whether an edge is worth its width, and how many characters of it the column can
+   hold. Every judgement about what a cell SAYS stays in Rust, including whether the state moved
+   at all (`state_repeat`, which is set-aware and which a value comparison here would get wrong).
+
+   ⚑ **And the strong form of the rule, from vividn on da-fknn8**: *"Really mirror the CLI here.
+   The rerendering in the web is just for some niceities and being able to select."* So the page
+   adds NO glyph of its own — an earlier take put a `›` between the edges and the body, arguing
+   that adjacency is the separator on a character grid and a browser has neither the grid nor the
+   flush adjacency. That argument was good and the ruling was better: draw what the CLI draws, and
+   let the additions be things a terminal CANNOT do — a hover carrying a value, a selectable box.
+   Where the two could differ, the CLI's shape wins. ⛔ That is also why the tail's state cell asks
+   for the CLI's painted SLOTS (`previous_state_cell` / `following_state_cell`) rather than a hex
+   and a rule: every shape the terminal has — a parallel set's two-colour `▞`, an ended field's
+   unpainted space, the `∅`, the repeated-state `!` — arrives already resolved, so no browser
+   re-derives one and none of them can drift.
+
 ## Panes that render at their own size
 
 7. A pane that asks the CLI for a picture at its own width **measures its box through

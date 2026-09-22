@@ -168,6 +168,7 @@ fn rows_and_columns(body: &str) -> Result<JsonValue, String> {
         &listing.entries,
         Some(&listing.contexts),
         TimeMetricCol::Hybrid,
+        Some(&listing.registry),
     );
     let rows: Vec<JsonValue> = rows
         .iter()

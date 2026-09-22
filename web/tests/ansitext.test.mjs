@@ -30,7 +30,11 @@ const tailSpans = (page) =>
 	page.evaluate(() => {
 		const read = (el) => ({
 			text: el.textContent,
-			spans: [...el.querySelectorAll('span')].map((s) => {
+			// LEAF spans only. The state cell's two edges are `.edge`
+			// wrappers around AnsiText spans (da-fknn8), so a plain
+			// descendant walk would read their text twice — once for the
+			// wrapper, once for the run inside it.
+			spans: [...el.querySelectorAll('span')].filter((s) => !s.querySelector('span')).map((s) => {
 				const style = getComputedStyle(s);
 				return {
 					text: s.textContent,
@@ -82,7 +86,9 @@ const painted = (spans) => spans.map((s) => s.background).filter((c) => c !== 'r
  * tail's header copy of the loop had already lost. It is also `mood happy`
  * a second time, a state repeat, whose lead slot is the bold `!` marker
  * (da-qfv0) — the only bold the CLI writes. Nothing datum prints is italic
- * or SGR-dim, so those two live in the component unexercised.
+ * or SGR-dim, so those two live in the component unexercised. (The tail
+ * PANE draws that lead slot from the CLI's own painted bytes — da-fknn8 —
+ * so the bold escape is exercised on both surfaces exactly as before.)
  */
 /**
  * Mid-afternoon: 07:00 and 08:00 are behind the app's clock and only the
@@ -139,6 +145,15 @@ describe('the spans one component paints', () => {
 			);
 			// The pane shows the rows its box holds — the newest page of the
 			// listing — so the cells it is held to are the listing's last N.
+			//
+			// EVERY column, `state` included. da-fknn8 splits the state
+			// cell into the CLI's own three painted parts —
+			// `previous_state_cell`, `state_body`, `following_state_cell` —
+			// so the page can hang a hover on the edges and let them be
+			// selected. Those parts CONCATENATE to the cell the CLI printed
+			// (asserted in `render::tail_rows::tests`), so the claim here is
+			// unchanged and unweakened: the text a cell carries is datum's
+			// own, whitespace and all. vividn: "really mirror the CLI here".
 			const offset = cli.rows.length - tail.rows.length;
 			for (const [i, row] of tail.rows.entries()) {
 				assert.deepEqual(

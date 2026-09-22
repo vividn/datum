@@ -6,7 +6,7 @@
 //!   - `commands/dayview.rs` (`is_switching_verb`, `is_unrendered_switch_value`,
 //!     and the big `match canonical_verb(entry)` dispatch)
 //!   - `commands/nowview.rs` (same helpers, same dispatch)
-//!   - `render/action.rs` (`format_state_group`, `render_state_cell`,
+//!   - `render/action.rs` (`format_state_group`, `render_switch_badge`,
 //!     `entry_self_trail_state` — all match on verb)
 //!   - the SVG path consumes the dayview output, so its decision is
 //!     transitively the dayview decision

@@ -111,6 +111,11 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
 /// `rows` so later additions (a count, the resolved window) stay additive
 /// rather than breaking the readers this flag exists to protect.
 ///
+/// It REPLACES the table rather than accompanying it — nothing of the
+/// human listing is printed on this path, and the table's own cells ride
+/// in the document's `columns` for a caller that wants them
+/// (canary-hermes-3-405b, #74).
+///
 /// With `--watch` the document repeats as JSON Lines — compact, one per
 /// line, only when the frame actually changed. A streaming consumer gets
 /// an event feed instead of the table path's clear-screen escapes.
@@ -130,7 +135,7 @@ fn tail_json(args: &TailArgs, metric: TimeMetricCol, columns: Vec<String>, db: &
         let ctxs = build_table_contexts(entries, db);
         let now = DatumTime::now();
         let payload = TailDocument {
-            rows: tail_rows(entries, Some(&ctxs), metric),
+            rows: tail_rows(entries, Some(&ctxs), metric, registry.as_ref()),
             columns: table_columns_with(entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl),
         };
         if watching {

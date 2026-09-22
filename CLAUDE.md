@@ -125,7 +125,8 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   wasm32-wasip1, one WASI process per command in `web/src/lib/db.worker.ts`
   (`cli.ts`, `wasiFs.ts`), its SQLite file in OPFS. There is no SQL, parser
   or renderer in TypeScript — every pane, the widget bar (`fields --json`),
-  the tail table (`tail --json`'s `columns`), /now (`now --bare`) and the
+  the tail table (`tail --json`'s `columns` and, for its state cell alone,
+  that row's three state values — da-fknn8), /now (`now --bare`) and the
   export button (`db backup -`) are CLI commands through `run(argv)`.
   A command a reader runs also carries `--show json` (da-xfa4, `echoArgv`
   in `web/src/lib/echo.ts`), so the bottom bar and the REPL PLACE the
@@ -271,6 +272,25 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   CLI's inclusive bound, deduped by hid, capped at 300 rows) with the
   reader's row anchored, and a write while scrolled up keeps the place
   and shows `↓ new`. `web/tests/tailwatch.test.mjs` holds it to that.
+  Its STATE cell is the one cell not taken whole from `columns` (da-fknn8,
+  `web/src/lib/StateCell.svelte`), and the reason is NOT that the page
+  renders it differently — it renders it the SAME. A state transition is
+  THREE values in the row — `previous_state`, `state`, `following_state` —
+  which on a terminal are the `[LEAD][body][TRAIL]` trio, and the row now
+  carries all three PAINTED: `previous_state_cell`, `state_body`,
+  `following_state_cell`, which concatenate to the `columns` cell byte for
+  byte. The page draws those three in order and adds only what a terminal
+  cannot — the state's name on HOVER, and a box it can select. vividn:
+  "The previous and following states should just have the colors, not the
+  full text — just like the CLI. Really mirror the CLI here. The
+  rerendering in the web is just for some niceities and being able to
+  select." An earlier take drew the edges as WORDS and cost the column its
+  alignment (a transitioning row's chip sat 70px right of one that did
+  not); a colour block is ONE CHARACTER WIDE whatever it stands for, so the
+  raggedness has nowhere to come from. ⛔ `white-space: pre` on the edge is
+  load-bearing: the CLI's slot is a painted SPACE, and a lone space in a
+  `<td>` collapses to zero width with its background set and nothing drawn.
+  `web/tests/statecell.test.mjs`.
 - The dayview strip is a stack of days, not one band (da-cgyh): today is
   pinned at the bottom and the days before it are stacked above, as many
   as the strip's box SHOWS (da-zb0d: the height comes from the container,

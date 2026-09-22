@@ -24,10 +24,41 @@ export interface TailColumn {
 export interface TailRow {
 	hid: string;
 	field: string;
+	/** `point` | `switch` | `block` | `block-switch` | `point-switch`. */
+	verb: string;
 	/** The stamp the `time` column shows, RFC 3339; `null` for a timeless row. */
 	time: string | null;
 	state_label: string | null;
 	quick_id: string | null;
+	/*
+	 * The row's state as the three values a transition is made of
+	 * (da-fknn8). On a terminal the previous and following states are the
+	 * one-character LEAD and TRAIL slots that bracket the chip; here they
+	 * are words, and `state_body` is the CLI's own painted chip WITHOUT
+	 * them — so `StateCell.svelte` draws the trio without drawing any part
+	 * of it twice.
+	 */
+	/**
+	 * The field's state just before this row; `"IGNORED"` where it was not
+	 * tracked, and `null` on a row that names no transition at all (a
+	 * timeless row sits at no instant, so it has no before).
+	 */
+	previous_state: unknown;
+	previous_state_label: string | null;
+	/** The hex the terminal's LEAD slot paints; `null` only for "field ended". */
+	previous_state_color: string | null;
+	/** The terminal's LEAD slot itself, painted — one character, all shapes resolved. */
+	previous_state_cell: string;
+	/** The state that continues forward past this row. */
+	following_state: unknown;
+	following_state_label: string | null;
+	following_state_color: string | null;
+	/** The terminal's TRAIL slot itself, painted; empty where there is none. */
+	following_state_cell: string;
+	/** The painted state chip (or occur dot) alone, without the two slots. */
+	state_body: string;
+	/** This row's state is the one it was already in — the CLI's `!` (da-qfv0). */
+	state_repeat: boolean;
 	[key: string]: unknown;
 }
 

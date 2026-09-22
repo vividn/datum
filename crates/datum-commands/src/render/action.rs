@@ -201,13 +201,15 @@ impl RenderContext {
         // verbs read that off `lead_state` in their LEAD slot; the bare dot
         // reads the ambient state, so it takes the same predicate from there.
         let prior = if has_state_badge(entry.verb, entry.dur.as_ref()) {
-            lead_state.as_ref()
+            lead_state.clone()
         } else {
-            ongoing_state.as_ref()
+            ongoing_state.clone()
         };
-        let prior_state_ignored = prior.is_none_or(|v| {
-            datum_core::state::normalize_state(v) == datum_core::state::StateValue::Ignored
-        });
+        let prior_state_ignored = StateTransition {
+            previous: prior,
+            ..StateTransition::default()
+        }
+        .previous_is_ignored();
         let is_state_repeat = compute_is_state_repeat(lead_state.as_ref(), entry);
         RenderContext {
             lead_state,
@@ -218,6 +220,112 @@ impl RenderContext {
             quick_ordinal: None,
             has_supersedees: false,
         }
+    }
+}
+
+/// Whether this row draws a state badge rather than a bare dot —
+/// [`datum_core::shape::has_state_badge`] for a caller that holds the whole
+/// entry.
+///
+/// It exists so the three places da-fknn8 added read the dispatch from ONE
+/// of them: [`StateTransition::of`], [`format_state_body`], and
+/// `tail_rows`' timeless gate are all there to MIRROR
+/// [`format_state_group`], and a row the painter draws as a dot while the
+/// JSON reports it as a badge is precisely the drift this bead removes. One
+/// call, so the mirror cannot be half-adjusted.
+///
+/// ⚠ da-gvcen (#68, landed as `f81a101c`) made this predicate
+/// `has_state_badge(verb, dur)`, because a MOMENT is a point whatever else
+/// it carries — a first-log `occur newfield` is a `PointSwitch` that must
+/// still draw the dot. **The `dur` is not optional here**: passing `None`
+/// compiles and silently puts exactly those rows back on the badge branch,
+/// which is the whole of what da-gvcen changed.
+pub fn draws_state_badge(entry: &Entry) -> bool {
+    has_state_badge(entry.verb, entry.dur.as_ref())
+}
+
+/// A row's state transition as three values — what the field was in just
+/// before this row, what this row itself says, and what continues forward
+/// from it (da-fknn8).
+///
+/// This trio is what the `[LEAD][body][TRAIL]` group has always drawn. Naming
+/// it makes it DATA: `tail --json` carries the same three values the painter
+/// composes from, so a consumer reads a transition instead of recovering it
+/// from background colours. The painter and the JSON row therefore cannot
+/// disagree — both call [`StateTransition::of`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StateTransition {
+    /// The field's state immediately before this row's leading edge.
+    /// `None` where the field had no tracked state there, which reads as
+    /// IGNORED (see [`StateTransition::previous_is_ignored`]).
+    pub previous: Option<JsonValue>,
+    /// The row's own state — `Entry::state`, unchanged.
+    pub current: Option<JsonValue>,
+    /// The state that continues forward past this row. For a block, what
+    /// resumes when it closes; for a point-shaped switch, the row's own
+    /// emitted state.
+    pub following: Option<JsonValue>,
+}
+
+impl StateTransition {
+    /// The trio for one row, read off the context the renderer already
+    /// builds. The LEAD/TRAIL probes exist only on the state-badge verbs;
+    /// the bare dot has no slots of its own, so the field's ambient state
+    /// at the row's time is both what came before and what continues.
+    pub fn of(ctx: &RenderContext, entry: &Entry) -> StateTransition {
+        if draws_state_badge(entry) {
+            StateTransition {
+                previous: ctx.lead_state.clone(),
+                current: entry.state.clone(),
+                following: ctx.trail_state.clone(),
+            }
+        } else {
+            StateTransition {
+                previous: ctx.ongoing_state.clone(),
+                current: entry.state.clone(),
+                following: ctx.ongoing_state.clone(),
+            }
+        }
+    }
+
+    /// The trio as the ROW reports it — [`Self::of`], with the one
+    /// correction the terminal does not make (da-fknn8, opal on #74).
+    ///
+    /// A `block-switch` / `point-switch` carries the state it switches TO
+    /// in its own `following_state` column, and that IS what continues
+    /// forward past it. The painter's TRAIL slot does not use it:
+    /// `trail_state` probes the field's history at the block's far edge
+    /// EXCLUDING this row, so for these verbs it answers with the state
+    /// the block INTERRUPTED. Measured — `switch activity writing` then
+    /// `switch activity end 14m , switch activity researching` stores
+    /// `following_state = "researching"` and the slot paints `writing`.
+    ///
+    /// The row reports the stored answer, because a reader asking what
+    /// follows is owed the truth and the row is holding it. The terminal
+    /// keeps its bytes: this bead's acceptance is that the table does not
+    /// change at all, so the slot is left exactly as it is and the
+    /// disagreement is filed (da-qxmqe) rather than fixed here.
+    ///
+    /// Written as a projection of [`Self::of`] rather than as a second
+    /// walk, so there is still one derivation and the correction is the
+    /// only thing that can differ.
+    pub fn reported(ctx: &RenderContext, entry: &Entry) -> StateTransition {
+        StateTransition {
+            following: entry
+                .following_state
+                .clone()
+                .or_else(|| Self::of(ctx, entry).following),
+            ..Self::of(ctx, entry)
+        }
+    }
+
+    /// The `∅` rule as a predicate on the data: the state before this row
+    /// is absent or IGNORED. [`RenderContext::prior_state_ignored`] is this
+    /// value, computed once where the context is built.
+    pub fn previous_is_ignored(&self) -> bool {
+        self.previous.as_ref().is_none_or(|v| {
+            datum_core::state::normalize_state(v) == datum_core::state::StateValue::Ignored
+        })
     }
 }
 
@@ -329,9 +437,17 @@ fn render_occur(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) ->
     let mut out = String::new();
     // Occur: `∅` when the field's prior state is absent or IGNORED —
     // the LEAD slot's rule, applied to the dot; otherwise no left-char.
+    // It is the PREVIOUS state speaking, not this row's (da-fknn8), which
+    // is why it is not part of the body below.
     if ctx.prior_state_ignored {
         out.push_str(&paint(GRAY_FG, NULL_SET));
     }
+    out.push_str(&render_occur_body(entry, spec, ctx));
+    out
+}
+
+fn render_occur_body(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
+    let mut out = String::new();
     // Dot: field/state color as fg; bg encodes the field's ambient
     // state at the row's time (ongoing block / IGNORED tracking / none).
     let (fg, bg) = compute_occur_dot_colors(entry, spec, ctx.ongoing_state.as_ref());
@@ -347,6 +463,88 @@ fn render_occur(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) ->
     }
     // Occur is a point — no right-char.
     out
+}
+
+/// The state cell's BODY alone — the state chip, or the occur dot — with
+/// neither the LEAD/TRAIL slots nor the `∅` the dot borrows from its prior
+/// state. [`format_state_group`] is this plus those.
+///
+/// For a caller that lays a row out itself (datum.day's tail cell,
+/// da-fknn8): the slots ARE the row's transition, and a browser draws them
+/// from [`StateTransition`] — where the previous and following states are
+/// words it can show — rather than from a one-character coloured space
+/// that reads as padding.
+pub fn format_state_body(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
+    if entry.occur_time.is_none() && !draws_state_badge(entry) {
+        return render_timeless(entry, spec);
+    }
+    if draws_state_badge(entry) {
+        render_switch_badge(entry.state.as_ref(), &entry.field, spec)
+    } else {
+        render_occur_body(entry, spec, ctx)
+    }
+}
+
+/// The painted LEAD slot alone — everything [`format_state_group`] draws
+/// BEFORE the body, and nothing else.
+///
+/// For a state-bearing verb that is the one-character slot the previous
+/// state paints, including the repeated-state `!` (da-qfv0). For the bare
+/// dot it is the grey `∅` when the field was not tracked before this row,
+/// and empty otherwise. For a timeless row it is empty.
+///
+/// ⚑ vividn, on da-fknn8: *"The previous and following states should just
+/// have the colors, not the full text — just like the CLI. Really mirror
+/// the CLI here. The rerendering in the web is just for some niceties and
+/// being able to select."* So a browser does not compose its own version
+/// of this out of a hex and a rule; it draws THIS, and adds only what a
+/// terminal cannot — a hover carrying the value, and a selectable box.
+/// `lead + `[`format_state_body`]` + trail` is `format_state_group`,
+/// byte for byte, for every verb.
+pub fn format_lead_cell(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
+    if entry.occur_time.is_none() && !draws_state_badge(entry) {
+        return String::new();
+    }
+    if draws_state_badge(entry) {
+        let t = StateTransition::of(ctx, entry);
+        return render_lead_slot(t.previous.as_ref(), ctx.is_state_repeat, &entry.field, spec);
+    }
+    // The bare dot borrows the LEAD's rule and nothing else.
+    if ctx.prior_state_ignored {
+        return paint(GRAY_FG, NULL_SET);
+    }
+    String::new()
+}
+
+/// The painted TRAIL slot alone — everything [`format_state_group`] draws
+/// AFTER the body. Empty for the bare dot and for a timeless row, which
+/// have no trailing slot at all. See [`format_lead_cell`].
+pub fn format_trail_cell(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
+    if !draws_state_badge(entry) {
+        return String::new();
+    }
+    let t = StateTransition::of(ctx, entry);
+    render_slot(t.following.as_ref(), &entry.field, spec)
+}
+
+/// The colour a LEAD or TRAIL slot paints for `state`, as hex — the same
+/// resolution [`render_slot`] paints with, for a caller rendering to
+/// something other than a terminal (da-fknn8).
+///
+/// `None` ONLY for the explicit "field has ended" sentinel, which paints
+/// nothing at all. An untracked, null or IGNORED state is grey: on this
+/// surface "nothing was tracked" is a state, not an absence. A parallel
+/// set reports its first member's colour, which is the slot's background.
+pub fn slot_hex(
+    state: Option<&JsonValue>,
+    field: &str,
+    spec: Option<&FieldSpec>,
+) -> Option<String> {
+    match resolve_slot(state, field, spec) {
+        SlotKind::State(rgb) | SlotKind::Parallel(rgb, _) => Some(rgb.hex()),
+        SlotKind::Ignored => Some(Rgb::IGNORED.hex()),
+        SlotKind::FieldEnded => None,
+    }
 }
 
 /// Render a moment-state's state name as fg-coloured text trailing the
@@ -442,10 +640,19 @@ fn render_state_transition_group(
     spec: Option<&FieldSpec>,
     ctx: &RenderContext,
 ) -> String {
+    // da-fknn8: the trio the group draws IS the row's transition — the
+    // same three values `tail --json` carries. Read them from one place so
+    // the painted cell and the reported row cannot drift apart.
+    let t = StateTransition::of(ctx, entry);
     let mut out = String::new();
-    out.push_str(&render_lead_slot(ctx, &entry.field, spec));
-    out.push_str(&render_state_cell(entry, spec));
-    out.push_str(&render_slot(ctx.trail_state.as_ref(), &entry.field, spec));
+    out.push_str(&render_lead_slot(
+        t.previous.as_ref(),
+        ctx.is_state_repeat,
+        &entry.field,
+        spec,
+    ));
+    out.push_str(&render_switch_badge(t.current.as_ref(), &entry.field, spec));
+    out.push_str(&render_slot(t.following.as_ref(), &entry.field, spec));
     out
 }
 
@@ -455,19 +662,18 @@ fn render_state_transition_group(
 /// `FieldEnded` slots have no "prior block" to paint the glyph over, so
 /// they fall through to the default slot rendering.
 pub(crate) fn render_lead_slot(
-    ctx: &RenderContext,
+    previous: Option<&JsonValue>,
+    is_state_repeat: bool,
     field: &str,
     spec: Option<&FieldSpec>,
 ) -> String {
-    if !ctx.is_state_repeat {
-        return render_slot(ctx.lead_state.as_ref(), field, spec);
+    if !is_state_repeat {
+        return render_slot(previous, field, spec);
     }
-    match resolve_slot(ctx.lead_state.as_ref(), field, spec) {
+    match resolve_slot(previous, field, spec) {
         SlotKind::State(rgb) => paint_warning(rgb, WARNING_GLYPH),
         SlotKind::Parallel(bg, _) => paint_warning(bg, WARNING_GLYPH),
-        SlotKind::Ignored | SlotKind::FieldEnded => {
-            render_slot(ctx.lead_state.as_ref(), field, spec)
-        }
+        SlotKind::Ignored | SlotKind::FieldEnded => render_slot(previous, field, spec),
     }
 }
 
@@ -480,26 +686,6 @@ fn paint_warning(bg: Rgb, body: &str) -> String {
     }
     let fg = warning_fg(bg);
     format!("{}{}{}{}{}", BOLD, bg.bg(), fg.fg(), body, RESET)
-}
-
-/// Render the central state cell — a bg-coloured badge whose body is the
-/// state label itself, with no inline whitespace padding. The LEAD/TRAIL
-/// slots provide the visual separation around it.
-fn render_state_cell(entry: &Entry, spec: Option<&FieldSpec>) -> String {
-    // da-8y2q.2: legacy `Start`/`Stop` collapsed into `Switch` (with
-    // canonicalized `state=true`/`state=false`). `render_switch_badge`
-    // already maps `Bool(true)` → painted "start" and `Bool(false)` →
-    // "end", so the visual treatment is preserved without an explicit
-    // intent arm.
-    //
-    // Verbs without a state badge (`Verb::Point`) never reach this
-    // function — `format_state_group` short-circuits them to the dot
-    // renderer.
-    if has_state_badge(entry.verb, entry.dur.as_ref()) {
-        render_switch_badge(entry.state.as_ref(), &entry.field, spec)
-    } else {
-        String::new()
-    }
 }
 
 /// Render a LEAD or TRAIL slot — a single bg-coloured space. Per da-25l

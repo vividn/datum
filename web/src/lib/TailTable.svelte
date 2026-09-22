@@ -61,6 +61,7 @@
 	import { onDestroy, tick } from 'svelte';
 	import { ansiSpans } from './ansi.js';
 	import AnsiText from './AnsiText.svelte';
+	import StateCell from './StateCell.svelte';
 	import { fieldPill, select, selected } from './bar.js';
 	import { isSelected } from './selection.js';
 	import { tapped } from './tap.js';
@@ -79,11 +80,13 @@
 	/** Most rows the table holds. Past it, older rows replace newer ones. */
 	const CAP = 300;
 
-	/** One row as laid out: the CLI's cells by column key. */
+	/** One row as laid out: the CLI's cells by column key, and the row itself. */
 	interface Shown {
 		hid: string;
 		time: string | null;
 		cells: Record<string, string>;
+		/** What `tail --json` said: the `state` cell is drawn from it (da-fknn8). */
+		row: TailRow;
 	}
 
 	/** The CLI's column order, for a table merged from more than one listing. */
@@ -289,7 +292,8 @@
 		return table.rows.map((row, i) => ({
 			hid: row.hid,
 			time: row.time,
-			cells: Object.fromEntries(table.columns.map((column) => [column.key, column.cells[i] ?? '']))
+			cells: Object.fromEntries(table.columns.map((column) => [column.key, column.cells[i] ?? ''])),
+			row
 		}));
 	}
 
@@ -528,7 +532,11 @@
 	{#each rows as row (row.hid)}
 		<div class="tr">
 			{#each keys as key (key)}
-				<div class="cell {key}"><AnsiText spans={ansiSpans(row.cells[key] ?? '')} /></div>
+				<div class="cell {key}">
+					{#if key === 'state'}<StateCell row={row.row} painted={row.cells.state ?? ''} />{:else}<AnsiText
+							spans={ansiSpans(row.cells[key] ?? '')}
+						/>{/if}
+				</div>
 			{/each}
 		</div>
 	{/each}
@@ -564,7 +572,10 @@
 				>
 					{#each cols as key (key)}
 						<td class={key} data-key={key}
-							><AnsiText spans={ansiSpans(row.cells[key] ?? '')} /></td
+							>{#if key === 'state'}<StateCell
+									row={row.row}
+									painted={row.cells.state ?? ''}
+								/>{:else}<AnsiText spans={ansiSpans(row.cells[key] ?? '')} />{/if}</td
 						>
 					{/each}
 				</tr>
