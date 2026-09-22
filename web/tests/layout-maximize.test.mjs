@@ -320,18 +320,48 @@ describe('the maximize badge, drawn and placed', () => {
 		return { max: lead(max), title: lead(title), add: lead(add) };
 	}
 
-	// vividn, 2026-09-21 (da-fphjw), on the chrome da-bzhq had just landed:
-	// «let's push the maximize button into the corner more, and it can be
-	// a bit smaller as well».
+	/**
+	 * How far the button's centre is from the NEAREST corner point of the
+	 * pane's outline, on each axis — the outline being the rectangle
+	 * through the middle of the 1px border, so half a pixel inside the
+	 * border box on every side.
+	 *
+	 * Read as a distance from the nearest corner rather than from a named
+	 * one, because «fully in the corner» is the same claim whichever edge
+	 * the bar is on and whichever way it is turned, and a rule written
+	 * that way cannot be satisfied by a badge that found some OTHER
+	 * corner: the tests below pin which corner separately, by the order
+	 * along the row.
+	 */
+	async function offCorner(page, id) {
+		const [pane_, button] = await Promise.all([boxOf(pane(page, id)), boxOf(maximizeButton(page, id))]);
+		const at = { x: button.x + button.width / 2, y: button.y + button.height / 2 };
+		const xs = [pane_.x + 0.5, pane_.x + pane_.width - 0.5];
+		const ys = [pane_.y + 0.5, pane_.y + pane_.height - 0.5];
+		return {
+			x: Math.min(...xs.map((x) => Math.abs(at.x - x))),
+			y: Math.min(...ys.map((y) => Math.abs(at.y - y)))
+		};
+	}
+
+	// vividn, 2026-09-22 (da-lihui), on what da-fphjw shipped: «yes it is
+	// already aligned to this border, but I want it to be fully in the
+	// corner so it is aligned with both the horizontal and vertical
+	// borders», and «the maximize button didn't actually seem to get
+	// smaller […] it can still be a bit smaller than it is (reduce padding
+	// some)».
 	//
-	// Two measurements, and the FIRST of them is a floor rather than a
-	// preference: «a bit smaller» is about the MARK, and a fingertip is a
-	// fixed size, so the glyph shrinks inside a button that does not. The
-	// button is left on the 16px/24px floor `reachable.test.mjs` holds
-	// every badge to, and the corner is read on a rotated bar as well as a
-	// top one, `start` being the same corner to the alignment either way.
+	// So there are two measurements here, and BOTH of them were got wrong
+	// once. The badge straddles the border it runs along and now the other
+	// one too, which puts its centre on the corner point — as much of it
+	// outside the pane as in, on either axis. And what got smaller is the
+	// box you can SEE: the hit area is a fingertip, a fixed size, so the
+	// drawn box comes off `--badge` while the button stays on the 16px/24px
+	// floor `reachable.test.mjs` holds every badge to. Read on a rotated
+	// bar as well as a top one, `start` being the same corner to the
+	// alignment either way.
 	for (const edge of ['top', 'left']) {
-		test(`on a ${edge} bar it sits in the corner the bar starts at, and its glyph is smaller than its button by 4px a side`, async () => {
+		test(`on a ${edge} bar its centre is on the pane's corner, and the box it draws is smaller than the box it offers a finger`, async () => {
 			await withApp(async ({ page }) => {
 				if (edge !== 'top') {
 					await chooseBar(page, 'repl', edge);
@@ -339,29 +369,90 @@ describe('the maximize badge, drawn and placed', () => {
 				}
 				const flip = edge === 'left';
 
-				// INTO THE CORNER: the row is held 0.5rem off the rounded
-				// corners and the maximize gives 6px of that back, so it
-				// starts within a couple of pixels of the pane's own corner.
+				// FULLY IN THE CORNER, on both axes at once.
+				const off = await offCorner(page, 'repl');
+				assert.ok(off.x <= 1, `the badge's centre is ${off.x.toFixed(1)}px off the corner across the pane`);
+				assert.ok(off.y <= 1, `the badge's centre is ${off.y.toFixed(1)}px off the corner down the pane`);
+
+				// And only it moved: the title keeps the clearance that holds
+				// the rest of the row off the rounded corner.
 				const start = await along(page, 'repl', flip);
-				assert.ok(start.max <= 3, `the badge starts ${start.max.toFixed(1)}px from the corner`);
-				assert.ok(start.max >= -0.5, `the badge starts ${start.max.toFixed(1)}px OUTSIDE the corner`);
-				// And only it: the title, which used to lead the row, keeps the
-				// clearance the maximize gave up.
 				assert.ok(start.title - start.max >= 6, 'the whole row moved, not the badge');
 
-				// A BIT SMALLER, and the BUTTON is not what shrank: the glyph
-				// is four pixels in from the border box on every side, and the
-				// button is still on its floor.
+				// A BIT SMALLER, and the HIT AREA is not what shrank. The
+				// button paints nothing itself; the box on the screen is the
+				// `::before` inside it, four pixels off `--badge` — so the
+				// glyph, unchanged at eight pixels off it, has two pixels of
+				// padding a side where it had four.
 				const { box, svg } = await drawn(page, 'repl');
-				for (const side of ['width', 'height'])
+				const seen = await maximizeButton(page, 'repl').evaluate((el) => {
+					const own = getComputedStyle(el);
+					const drawn_ = getComputedStyle(el, '::before');
+					return {
+						badge: parseFloat(own.getPropertyValue('--badge')),
+						width: parseFloat(drawn_.width),
+						height: parseFloat(drawn_.height),
+						ground: own.backgroundColor,
+						ownEdge: own.borderTopColor
+					};
+				});
+				for (const side of ['width', 'height']) {
 					assert.ok(
 						Math.abs(box[side] - svg[side] - 8) <= 0.5,
 						`the glyph is ${svg[side].toFixed(1)} in a ${box[side].toFixed(1)}px button`
 					);
+					assert.ok(
+						Math.abs(seen[side] - (seen.badge - 4)) <= 0.5,
+						`the drawn box is ${seen[side]}, not ${seen.badge - 4}`
+					);
+					assert.ok(seen[side] < box[side], `the drawn box is ${seen[side]} in a ${box[side]}px button`);
+					assert.ok(seen[side] > svg[side], `the drawn box (${seen[side]}) does not clear the glyph (${svg[side]})`);
+				}
+				// Nothing is drawn by the button itself, or there would be two
+				// boxes on the screen and the smaller one would not be it.
+				for (const [what, colour] of [['ground', seen.ground], ['outline', seen.ownEdge]])
+					assert.match(colour, /^rgba\(.*,\s*0\)$/, `the button draws its own ${what} (${colour})`);
 				assert.ok(box.width >= 16 && box.height >= 16, `the hit area shrank to ${box.width}x${box.height}`);
 			}, DESKTOP);
 		});
 	}
+
+	// Pointed at, the badge still draws ONE box. `.control.badge`'s hover
+	// rule (app.css) colours the BUTTON's border, and the button's border
+	// is the one that must never appear — a hover that brought it back
+	// would put a second, larger outline round the smaller one, at exactly
+	// the moment a reader is looking straight at it. What wins is Svelte's
+	// scope class, repeated to outrank a global rule; that is a property of
+	// the compiler rather than of this file, so it is asserted here.
+	test('pointing at it moves the drawn edge, and does not give the button one', async () => {
+		await withApp(async ({ page }) => {
+			const badge = maximizeButton(page, 'repl');
+			const look = () =>
+				badge.evaluate((el) => {
+					const own = getComputedStyle(el);
+					return {
+						hovered: el.matches(':hover'),
+						ground: own.backgroundColor,
+						ownEdge: own.borderTopColor,
+						drawnEdge: getComputedStyle(el, '::before').borderTopColor
+					};
+				});
+
+			const rest = await look();
+			await badge.hover();
+			await page.waitForFunction(
+				() => document.querySelector('section[data-pane="repl"] > .titlebar button.maximize').matches(':hover')
+			);
+			const on = await look();
+
+			assert.ok(on.hovered && !rest.hovered, 'the hover never landed');
+			assert.notEqual(on.drawnEdge, rest.drawnEdge, 'the drawn edge did not answer the pointer');
+			for (const [when, seen] of [['at rest', rest], ['pointed at', on]]) {
+				assert.match(seen.ground, /^rgba\(.*,\s*0\)$/, `${when}: the button draws its own ground (${seen.ground})`);
+				assert.match(seen.ownEdge, /^rgba\(.*,\s*0\)$/, `${when}: the button draws its own outline (${seen.ownEdge})`);
+			}
+		}, DESKTOP);
+	});
 
 	// The other end of the row is untouched: at `align: end` the last badge
 	// keeps the 0.5rem that holds it off the rounded corner there.

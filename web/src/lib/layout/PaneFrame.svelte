@@ -29,6 +29,12 @@
 	still reach over. The bar itself takes no pointer, so the border
 	between two panes is still grabbed right beside it.
 
+	The MAXIMIZE is the one item that straddles BOTH borders: its centre
+	is on the corner point itself, as much of it outside the pane as in on
+	either axis (da-lihui). And it is the one whose drawn box is smaller
+	than the box a finger lands on — Beta.svelte's pattern, so that «a bit
+	smaller» could be answered without taking the fingertip down with it.
+
 	A widget with title controls of its OWN — the custom pane's ✎ and the
 	editor it opens, which is the only place its command can be written —
 	draws them here: `Pane.svelte` moves them into the h2. With tabs there
@@ -943,7 +949,12 @@
 		box-sizing: border-box;
 		margin: 0;
 		padding-block: 0;
-		padding-inline: 0.4rem;
+		/* «too much padding on these widget titles» (vividn, 2026-09-22,
+		   da-lihui) — 0.4rem until then. The font-size below is right and
+		   does not move: what was too much was the room around the words,
+		   not the words. The box does not GROW by this; it is the one
+		   thing on the bar that can still give room back. */
+		padding-inline: 0.25rem;
 		/* The row's height, and a finger's where the pointer is coarse — the
 		   title is a button now (da-9vtw), and a button is on the floor
 		   `reachable.test.mjs` holds the badges to. */
@@ -1017,16 +1028,64 @@
 		pointer-events: auto;
 	}
 
-	/* «let's push the maximize button into the corner more» (vividn,
-	   2026-09-21, da-fphjw). The row is held 0.5rem off the rounded
-	   corners; the maximize alone gives 6px of that back, so it sits 2px
-	   from the corner the bar STARTS at while the `+` and the `▾` keep
-	   their clearance at the other end. Logical, so it is the same corner
-	   whichever edge the bar is on and on the left-hand bar's half turn
-	   too — the corner alignment calls `start`. A holder's row has no
-	   inset to give back, so the rule is the pane's alone. */
+	/* «I want it to be fully in the corner so it is aligned with both the
+	   horizontal and vertical borders» (vividn, 2026-09-22, da-lihui,
+	   overruling da-fphjw's «push it into the corner more», which left it
+	   2px short). Everything on this bar straddles the line the bar IS,
+	   so the maximize already straddles the border it runs along. To
+	   straddle the other one too its CENTRE must land on the corner
+	   POINT — where the two straight edges would meet if the 6px radius
+	   did not round them off, which is not a point on the arc.
+
+	   The row's box starts at the pane's padding box, half a pixel inside
+	   that point, and `.along` holds it 0.5rem further in. So the badge
+	   gives back the 8px, that 0.5px, and half its own width. It alone:
+	   `.along`'s padding still holds the `+` and the `▾` off the curve at
+	   the other end, and they still want that. Logical, so it is the same
+	   corner whichever edge the bar is on and on the left-hand bar's half
+	   turn too — the corner the alignment calls `start`. A holder's row
+	   is not laid on an outline at all, so the rule is the pane's alone. */
 	.pane > .titlebar > .along > .maximize {
-		margin-inline-start: -0.375rem;
+		margin-inline-start: calc(-8.5px - var(--badge) / 2);
+	}
+
+	/* THE BUTTON READS SMALLER; THE HIT AREA DOES NOT. vividn, 2026-09-22
+	   (da-lihui): «maximize button didn't actually seem to get smaller
+	   […] it can still be a bit smaller than it is (reduce padding
+	   some)». da-fphjw shrank the GLYPH and he saw no change, because the
+	   box drawn around it never moved — so the box is what moves now.
+
+	   The way Beta.svelte already does it: the drawn thing is small, the
+	   thing a finger lands on is not. The BUTTON keeps `--badge` square —
+	   the 16px/24px floor `reachable.test.mjs` holds every badge to — and
+	   draws nothing of its own; the ground, the outline and the radius go
+	   on a `::before` four pixels smaller, in the same grid cell as the
+	   glyph, so the two are centred together and the mark paints over the
+	   ground. Two pixels of padding a side where there were four, and the
+	   glyph is untouched: `--badge` sizes the hit area and the mark, and
+	   only the visible box is off it now.
+
+	   `.control.badge`'s hover colours the BUTTON's border, which is not
+	   the one on the screen any more, so the drawn edge follows a
+	   property that all three states set. */
+	.maximize {
+		--edge: var(--rule);
+		background: none;
+		border-color: transparent;
+	}
+	.maximize::before {
+		content: '';
+		grid-area: 1 / 1;
+		inline-size: calc(var(--badge) - 4px);
+		block-size: calc(var(--badge) - 4px);
+		background: var(--ground);
+		border: 1px solid var(--edge);
+		border-radius: 5px;
+	}
+	.maximize:hover:not(:disabled),
+	.maximize:focus-visible,
+	.maximize[aria-pressed='true'] {
+		--edge: var(--accent);
 	}
 
 	/* A flat mono-colour mark in `currentColor` (da-tnv3's rule for the
@@ -1038,13 +1097,18 @@
 	   hung a pixel out of each side (da-jlgp). FOUR pixels in from the
 	   border box at either badge size — three until «it can be a bit
 	   smaller as well» (vividn, 2026-09-21, da-fphjw) — and square, so which
-	   way the bar runs makes no difference to it. The BUTTON is not
-	   touched: the mark shrinks and the hit area stays the 16px/24px floor
+	   way the bar runs makes no difference to it. The HIT AREA is not
+	   touched: the mark shrinks and it stays the 16px/24px floor
 	   `reachable.test.mjs` holds it to. The stroke does not scale with the
 	   box — a hairline at 8px and a slab at 16px are the same mark drawn
-	   twice — so it stays the 1.25px it was drawn as. */
+	   twice — so it stays the 1.25px it was drawn as.
+
+	   Its grid cell is named because the `::before` above names one: an
+	   auto-placed item is put in the next FREE cell, so an unnamed glyph
+	   would fall into a second row and neither would be centred. */
 	.maximize svg {
 		display: block;
+		grid-area: 1 / 1;
 		inline-size: calc(var(--badge) - 8px);
 		block-size: calc(var(--badge) - 8px);
 		fill: none;
@@ -1057,10 +1121,10 @@
 		vector-effect: non-scaling-stroke;
 	}
 
-	/* Filling the page is a state, so it is drawn as one. */
+	/* Filling the page is a state, so it is drawn as one — the ink here,
+	   and the drawn edge in the `--edge` rule above. */
 	.maximize[aria-pressed='true'] {
 		color: var(--accent);
-		border-color: var(--accent);
 	}
 
 	.tabs {
