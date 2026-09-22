@@ -219,10 +219,15 @@ writing it down.
     number, never in a wait's cap: `ghost.test.mjs` is the worked example — it stamps the clock
     before the keystroke, waits with no cap at all, and asserts the ELAPSED 400 ms, so a loaded
     box fails on a sentence instead of a bare `TimeoutError`.
-    So: **a cap is ≥ 30 s, OR the awaited event is OPTIONAL and its `TimeoutError` is caught and
-    discarded** — a bounded observation window rather than a hang-stop
-    (`layout-floors.test.mjs`'s `waitForRedraw`, whose redraw the assertion below it says may
-    never come). Those two shapes are the whole rule, and `tests/wait-caps.test.mjs` holds the
+    So: **a cap is ≥ 30 s, OR the awaited event is OPTIONAL and the wait's rejection is caught and
+    discarded** — a bounded observation window rather than a hang-stop. It is the DISCARD that
+    makes it one, never the error's class: `layout-floors.test.mjs`'s `waitForRedraw` catches a
+    playwright `TimeoutError` and rethrows anything else, while `fieldsorder.test.mjs` waits on
+    the hand-rolled poller — which throws a plain `Error` and so can never name a `TimeoutError`
+    — for something it asserts does NOT happen, and empties the rejection into `.then`'s second
+    argument. Both are the second shape, and that includes `until`'s cap, which is POSITIONAL
+    (`until(read, ok, ms)`) and so has no `timeout:` to read.
+    Those two shapes are the whole rule, and `tests/wait-caps.test.mjs` holds the
     suite's source to them. Naming the second one is what makes the rule checkable: as it stood
     it forbade every `timeout:` including the correct one, so it could not be mechanised and was
     not enforced — and a bare 5 s cap rode into `daystrip.test.mjs` three days after the cleanup
