@@ -1,20 +1,60 @@
 # web/ conventions — how datum.day is built
 
 What the code already does, written down so the next pane, widget or test keeps it.
-Every claim here was read off `web/src` on 2026-09-12; where a convention is decided but
-not yet everywhere, it says so and names the bead. If you change one of these, change this
-file in the same commit — a convention nobody can read is a convention nobody keeps.
+Every claim here was read off `web/src` on 2026-09-12, and §1, §2, §4 and §9 were driven
+against it again on 2026-09-22 (da-hm8p1); the rest still carry the older date. Where a
+convention is decided but not yet everywhere, it says so and names the bead. If you change one
+of these, change this file in the same commit — a convention nobody can read is a convention
+nobody keeps.
+
+**State a rule as a PREDICATE, never as a closed list of files** (da-hm8p1). The predicate is
+usually already written, with its mechanism and its bead, in the module it governs — so cite
+that module and let the names below be examples. A list has to be remembered to be obeyed, and
+what is remembered drifts: §1, §2 and §9 were each rewritten from a roster into their rule
+after their rosters went wrong, §9's in both directions at once. §4 is the counter-example and
+the reason to believe this: *“the argv that runs is the argv that is echoed”* is one reactive
+binding in `TrackModal.svelte` read by both the submit and the preview, so no second array
+exists for the doc to be out of date about. Where a rule can be made structural, that beats
+writing it down.
 
 ## The seam: the CLI is the app
 
 1. **Every read and every write is a datum command.** `run(argv, stdin?)` (`$lib/run.ts`) is the
    one door; behind it `db.ts` → `db.worker.ts` → `cli.ts` runs the real CLI as one WASI process
-   per command against the SQLite file on OPFS. **No TypeScript touches the database** — only
-   `cli.ts` opens OPFS (with `storageState.ts` asking the browser whether it may keep it).
+   per command against the SQLite file on OPFS.
+   **No TypeScript reads or writes a database's CONTENTS.** The CLI is the only thing that does;
+   the TypeScript around it only hands it the files — `cli.ts` takes a sync access handle on every
+   file SQLite will touch and `wasiFs.ts` maps those handles onto the preopened directory the
+   process runs against, with `storageState.ts` asking the browser whether it may keep them.
+   The MECHANISM is the lock, and it is what makes this a predicate rather than a roster: a running
+   command holds those handles, so contending with them is the failure (da-dvzx). Whatever takes no
+   lock is fine. `databases.ts` is the worked example — it lists the pool from the PAGE and by NAME
+   only, and its own header says why: *“a directory listing takes no lock, where reading a file's
+   contents would contend with the sync access handle a running command is holding. Nothing here
+   opens, creates or writes anything.”*
+   ⚠ *This line read “only `cli.ts` opens OPFS” until 2026-09-22, which is a closed list and made
+   `databases.ts` — correct code, with its reason written in it — look like a violation. Ask the
+   predicate, not the list.*
    If a pane needs something the CLI cannot say yet, the change belongs in the CLI.
-2. **`localStorage` is for what belongs to this device and this device only**: the layout draft
-   (`layout/draft.ts`), which layouts are open (`layout/current.ts`), the custom pane's line,
-   the REPL scrollback, the device id, the widget picker's last choice. Never entries.
+2. **`localStorage` is for what belongs to this device and this device only, and never
+   entries.** That is the whole rule, and a new key earns its place by being able to say that
+   sentence about itself — not by joining the list below, which will go stale. Two modules
+   already say it in their own words: `log.ts` and `tuning.ts` each annotate their key *“never
+   synced: it is a screen's”*, which is the predicate, written twice, in the code.
+   The keys, as examples (driven 2026-09-22 — nine files mention `localStorage`, six really call
+   it): the layout draft, this device's open root tabs and its per-layout locks
+   (`layout/draft.ts`, da-wpgy, da-0a5o, da-gshh); the custom pane's command line
+   (`CustomPane.svelte`); the REPL scrollback (`replStore.ts`); the device id (`deviceId.ts`);
+   how far the output bar is open (`OUTPUT_KEY`, `log.ts`); and the bar's feel — TAU and DETENT,
+   which only a real thumb on a real phone can judge (`TUNING_KEY`, `tuning.ts`, da-o2wm8).
+   `layout/current.ts`, `layout/shell.ts` and `layout/registry.ts` name it in prose only.
+   `+layout.svelte` keeps one flag in `sessionStorage` — the same rule one scope tighter: a
+   tab's, not a device's.
+   ⚠ *A closed list rots at BOTH ends, and this one had done both by the time it was read again.
+   `log.ts` and `tuning.ts` were missing, and they are the rule's best statements of itself. And
+   “the widget picker's last choice” was never real: no key for it exists today, and none existed
+   at `4719c3a4` — the commit that wrote this line — either. An omission reads as a violation and
+   an invention reads as a rule; neither end announces itself.*
 3. **One beat.** After any command, `engine.ran()` bumps `epoch` and rebuilds the fields widget;
    every pane takes `export let epoch` and re-reads. A write in another tab arrives through
    `changes.ts` and joins the same beat — COALESCED (da-s3pt): while one such refresh is
@@ -78,9 +118,34 @@ file in the same commit — a convention nobody can read is a convention nobody 
    module's purpose sentence usually sits inside its `<script>` as a `/* */`, not as an `<!-- -->`
    before it. A first pass looking only for `<!--` reported a file short and named `AnsiText.svelte`,
    which in fact opens with eleven lines of exactly this.*
-9. **Pure logic lives beside its markup, in a `.ts` a test can call without a browser**:
-   `fields.ts`, `commands.ts`, `stats.ts`, `tail.ts`, `panes.ts`, `bar.ts`, `cursor.ts`,
-   `fileargv.ts`, `dbio.ts`. The `.svelte` file holds the markup and the wiring.
+9. **Pure logic lives beside its markup, in a `.ts` a test can call without a browser.** The
+   `.svelte` file holds the markup and the wiring. What decides whether a module qualifies is
+   not its name on a list but whether the function a test wants reaches the DOM or the seam:
+   `fileargv.ts` states the predicate about itself — *“Pure and import-free, so node tests it as
+   it is”* — and it is the sentence to write at the top of the next one.
+   Sixteen modules are imported into node by the suite today (2026-09-22): `commands.ts`,
+   `detent.ts`, `echo.ts`, `fields.ts`, `fileargv.ts`, `inspect.ts`, `lanes.ts`, `nowpoint.ts`,
+   `scrollback.ts`, `selection.ts`, `track.ts`, `wasiFs.ts` and `layout/`'s `defaults.ts`,
+   `draft.ts`, `registry.ts`, `tree.ts`. A module reaching a `.svelte` import is no obstacle:
+   `tests/support/libhook.mjs` stubs those out and rewrites `$lib/x.js` to the source's `x.ts`,
+   which is how `registry.ts` is node-testable at all.
+   ⚠ *Being named here and being callable are two different claims, and this line was wrong in
+   both directions. Of its nine names only three — `fields.ts`, `commands.ts`, `fileargv.ts` —
+   are node-tested; thirteen that are do not appear. `stats.ts` and `panes.ts` import cleanly
+   but no node test calls them. And `tail.ts`, `bar.ts`, `cursor.ts` and `dbio.ts` cannot be
+   imported into node at all as the suite stands: each reaches `$app/environment` through
+   `run.ts` / `database.ts` / `changes.ts`, which node cannot resolve and `libhook.mjs` does not
+   stub. Stubbing `$app` would let the first three in — that, and an inventory test that simply
+   RUNS this predicate instead of listing its members, is da-mgxdt.*
+   `dbio.ts` is the one a stub would not save, and that is the module doing its job rather than
+   breaking the rule: *“the browser's file dialog IS the command's stdin and a download IS its
+   stdout”*. The dependence is isolated to `pick()`, a NON-exported helper that builds an
+   `<input type="file">` — with `$app` stubbed, `fileCommand(['tail'])` returns `null` with no DOM
+   at all, while `fileCommand(['db','restore','-'])` throws `document is not defined`. So the
+   pure half already lives where this rule says it should, in `fileargv.ts`, and
+   `tests/dbio.test.mjs` imports THAT from node while driving `dbio.ts` only through chromium and
+   webkit, awaiting a real `filechooser`. Extracting the callable part and leaving the browser
+   part where it belongs is the convention kept, not broken.
 10. **One widget kind, one name.** A kind's id in `registry.ts` is a saved-layout key and cannot
    change without a migration; the title, the file names and the tests all read as the thing the
    reader sees. (`fields` is `FieldsWidget.svelte`, `layout/FieldsPane.svelte`, `fields.ts` and
