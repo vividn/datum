@@ -53,37 +53,45 @@ Any S3-compatible object storage. Scaleway Object Storage is the intended one.
 - Create a bucket, e.g. `datum-day`, in a region near the users (`fr-par`).
 - Enable **static website hosting**; index document `index.html`.
 - Set the **error document to `index.html` as well** — SvelteKit is a single-page app, so a
-  deep link like `/now` must serve the app rather than a 404.
+  deep link like `/nowview` must serve the app rather than a 404.
 
   **This one is load-bearing, and it was verified rather than assumed.** The build emits exactly
-  one HTML file (`build/index.html`); there is no `now.html`. Served without a fallback, `/now`
-  is a hard 404:
+  one HTML file (`build/index.html`); there is no `nowview.html`. Served without a fallback,
+  `/nowview` is a hard 404:
 
   ```
   $ python3 -m http.server        # a naive static server, no fallback
-  /      -> 200 OK
-  /now   -> 404 File not found
+  /          -> 200 OK
+  /nowview   -> 404 File not found
   ```
 
   So verify it on the deployed site, not in the dashboard — **and verify it by CONTENT, not by
   status code.** S3 website hosting serves the error document *with the error status*, so a correctly
-  configured bucket answers `/now` with **404 carrying the whole app**, and the browser routes
+  configured bucket answers `/nowview` with **404 carrying the whole app**, and the browser routes
   client-side. Asserting 200 there failed against a bucket that was already right, for an hour on
   2026-09-08, and sent someone to re-check a setting that needed no change (`justfile`'s `verify`
   recipe carries the same warning, and is what you should actually run):
 
   ```sh
-  just verify        # / is 200, and /now's body is compared against /'s
+  just verify        # / is 200, and /nowview's body is compared against /'s
 
   # by hand, if you want to see it:
   curl -sS -o /tmp/root.html https://datum.day/
-  curl -sS -o /tmp/deep.html https://datum.day/now
+  curl -sS -o /tmp/deep.html https://datum.day/nowview
   cmp /tmp/root.html /tmp/deep.html && echo "the deep link serves the app"
   ```
 
   A deep link is BROKEN when the body is the bucket's own XML or an error page — not when the status
   says 404. Note this differs from local `npm run preview`, which redirects and falls back on its
   own, so a route can behave differently there than in the bucket.
+
+  What this `cmp` proves is the FALLBACK, not `/nowview` in particular: every path is served by the
+  same `index.html` (`web/src/routes/[name]/+page.svelte` is one catch-all route, and the build emits
+  no file per name), so `/banana` would compare equal too. The path is `/nowview` because that is the
+  CANONICAL built-in layout name (`web/src/lib/layout/defaults.ts`); it was `/now`, which still works
+  but is a legacy alias in that file's `ALIASES`, and a deploy check should not be the last place a
+  retired spelling lives. That the NAME resolves is the browser's job, tested in
+  `web/tests/shell.test.mjs`; that the BUCKET serves the app for it is this check's job.
 - Generate an API key scoped to this bucket only.
 
 ## Step 2: DNS and CDN
@@ -105,8 +113,8 @@ Any S3-compatible object storage. Scaleway Object Storage is the intended one.
            status 301, preserve query string
   ```
 
-  Verify on the deployed site: `curl -sI https://www.datum.day/now | head -3` must show a
-  redirect with `location: https://datum.day/now`. Live since 2026-09-09 15:0x as a **302**;
+  Verify on the deployed site: `curl -sI https://www.datum.day/nowview | head -3` must show a
+  redirect with `location: https://datum.day/nowview`. Live since 2026-09-09 15:0x as a **302**;
   a **301** is the better setting for a permanent www → apex move (browsers cache it, and
   search engines treat the apex as canonical) — flip it when convenient, nothing depends on it.
 

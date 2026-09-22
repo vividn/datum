@@ -1,8 +1,9 @@
-//! README bash-snippet anti-drift test.
+//! Markdown bash-snippet anti-drift test.
 //!
 //! Extracts every ```` ```bash ```` fenced block from the workspace `README.md`
-//! and runs each command against the built `datum` binary, so the quickstart
-//! cannot drift from the actual CLI grammar.
+//! and from `docs/grammar-tokens.md`, and runs each command against the built
+//! `datum` binary, so the quickstart and the token reference cannot drift from
+//! the actual CLI grammar.
 //!
 //! ## Annotation conventions
 //!
@@ -32,13 +33,18 @@ use std::process::Command;
 const AUTOGEN_BEGIN: &str = "<!-- BEGIN AUTOGEN: COMMANDS -->";
 const AUTOGEN_END: &str = "<!-- END AUTOGEN: COMMANDS -->";
 
-fn workspace_readme() -> PathBuf {
+fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())
         .expect("workspace root")
-        .join("README.md")
+        .to_path_buf()
 }
+
+/// The Markdown files whose `bash` blocks must run. `docs/grammar-tokens.md`
+/// (da-yc4n8) documents the punctuation of the grammar, and every example on
+/// it is a transcript of a real run — this is what keeps it that way.
+const SNIPPET_DOCS: &[&str] = &["README.md", "docs/grammar-tokens.md"];
 
 #[derive(Debug)]
 struct Block {
@@ -238,15 +244,21 @@ fn run_command(args: &[String], env: &TestEnv) -> std::process::Output {
 }
 
 #[test]
-fn readme_bash_snippets_run_against_datum_binary() {
-    let readme_path = workspace_readme();
-    let readme = std::fs::read_to_string(&readme_path)
-        .unwrap_or_else(|e| panic!("reading {}: {e}", readme_path.display()));
-    let blocks = extract_bash_blocks(&readme);
+fn markdown_bash_snippets_run_against_datum_binary() {
+    for rel in SNIPPET_DOCS {
+        run_snippets_in(rel);
+    }
+}
+
+fn run_snippets_in(rel: &str) {
+    let doc_path = workspace_root().join(rel);
+    let doc = std::fs::read_to_string(&doc_path)
+        .unwrap_or_else(|e| panic!("reading {}: {e}", doc_path.display()));
+    let blocks = extract_bash_blocks(&doc);
     assert!(
         !blocks.is_empty(),
         "expected at least one ```bash``` block in {}",
-        readme_path.display(),
+        doc_path.display(),
     );
 
     let mut ran_blocks = 0usize;
@@ -266,13 +278,13 @@ fn readme_bash_snippets_run_against_datum_binary() {
             assert!(
                 !argv.is_empty(),
                 "tokenize produced empty argv from non-empty line {cmd:?} \
-                 (block at README.md line {})",
+                 (block at {rel} line {})",
                 block.line_no,
             );
             assert_eq!(
                 argv[0], "datum",
-                "README bash snippet must invoke `datum` (got `{}` at \
-                 README.md line ~{}). Mark non-datum examples with \
+                "bash snippet must invoke `datum` (got `{}` at \
+                 {rel} line ~{}). Mark non-datum examples with \
                  ```bash,no_run.",
                 argv[0], block.line_no,
             );
@@ -286,8 +298,8 @@ fn readme_bash_snippets_run_against_datum_binary() {
             };
             if actual != expected {
                 panic!(
-                    "README bash snippet failed.\n\
-                     block opens at README.md line ~{}\n\
+                    "bash snippet failed.\n\
+                     block opens at {rel} line ~{}\n\
                      expected exit {expected}, got {actual}\n\
                      $ datum {}\n\
                      --- stdout ---\n{}\n\
@@ -304,7 +316,7 @@ fn readme_bash_snippets_run_against_datum_binary() {
 
     assert!(
         ran_commands > 0,
-        "README has bash blocks but none ran ({ran_blocks} blocks, {skipped} skipped)"
+        "{rel} has bash blocks but none ran ({ran_blocks} blocks, {skipped} skipped)"
     );
 }
 

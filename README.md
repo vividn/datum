@@ -32,8 +32,7 @@ Or run the equivalent helper, which is also the one-command upgrade:
 scripts/install.sh
 ```
 
-This produces a `datum` binary on your `PATH`. CLI startup is a hard
-constraint: under 5 ms cold, on the order of microseconds warm.
+This produces a `datum` binary on your `PATH`.
 
 The `--force` flag is required: `datum` is pre-release and not on
 crates.io, so the workspace version stays fixed across builds. Without
@@ -65,6 +64,8 @@ datum now             # current state of all tracked fields
 
 Every flag and every verb is documented in `datum --help`,
 `datum <command> --help`, and the man pages (see [Man pages](#man-pages)).
+The punctuation — `,` `,,` `(` `)` `--` `±` `%…%` and the rest — is
+[`docs/grammar-tokens.md`](docs/grammar-tokens.md).
 
 ## Concepts
 
@@ -304,6 +305,9 @@ single-entry write resets `_LAST` to that one row.
 
 For the condensed in-app reference, run `datum alias --help`; the full
 behavioural contract is in [`docs/alias-system-design.md`](docs/alias-system-design.md).
+The tokens `,,`, `(`, `)` and `\(` that alias expansion emits — and the
+rest of the grammar's punctuation — are in
+[`docs/grammar-tokens.md`](docs/grammar-tokens.md).
 
 ## Sync
 

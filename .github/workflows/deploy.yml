@@ -118,14 +118,15 @@ jobs:
       # here: it already prints what each code means, and one copy cannot drift
       # from the other.
       #
-      # This step is RED TODAY, and should be: /now returned 404 on 2026-09-08
-      # because the bucket's error document is not index.html yet (web/DEPLOY.md
-      # step 1), so every deep link into the app is broken. That is a real
-      # defect in what users get, so it fails the job rather than being
-      # tolerated — the fix is one bucket setting, not a change to this file.
+      # This step is RED TODAY, and should be: on 2026-09-08 a deep link came
+      # back as a bucket 404 rather than the app, because the bucket's error
+      # document is not index.html yet (web/DEPLOY.md step 1), so every deep
+      # link into the app is broken. That is a real defect in what users get,
+      # so it fails the job rather than being tolerated — the fix is one
+      # bucket setting, not a change to this file.
       - name: Verify the live site
         run: |
           just verify || {
-            echo "::error::datum.day is not serving 200 on both / and /now — the codes are printed above. 404 on /now only: the bucket error document is not index.html (web/DEPLOY.md step 1). 403: the objects are not publicly readable. 000: nothing answered at all."
+            echo "::error::datum.day is not serving 200 on both / and /nowview — the codes are printed above. 404 on /nowview only: the bucket error document is not index.html (web/DEPLOY.md step 1). 403: the objects are not publicly readable. 000: nothing answered at all."
             exit 1
           }
