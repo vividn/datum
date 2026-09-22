@@ -50,10 +50,16 @@ async function seed({ run }) {
 }
 
 /** Go to /stats the way a reader does: by its URL, which opens the stats tab (da-0a5o). */
-async function openStats(app) {
-	await app.goto('/stats');
+async function openStats(app, query = '') {
+	await app.goto('/stats' + query);
 	await app.page.locator('section.pane[data-title="stats"]').waitFor();
 }
+
+/** The tiles over the table, in order: `[label, value]` as a reader reads them. */
+const tiles = (page) =>
+	page.$$eval('.stats .tile', (els) =>
+		els.map((el) => [el.querySelector('dt').textContent, el.querySelector('dd').textContent])
+	);
 
 /**
  * Wait until the widget shows `argv` and the CLI's own text for it.
@@ -93,6 +99,101 @@ describe('/stats', () => {
 				await app.page.locator('.stats .range button[aria-pressed="true"]').innerText(),
 				'all time'
 			);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-vpuxg. vividn: "when nothing is selected, maybe can show total
+	// tracked fields, time spent tracking […] let's just get some nice top
+	// level statistics there". Before this the un-narrowed widget was a bar
+	// and a table with no headline at all, so the claim is that the three
+	// tiles ARE there and hold the CLI's own numbers — it fails when the
+	// empty state is empty.
+	test('nothing selected: the headline is the database — entries, tracked, fields', async () => {
+		await withApp(async (app) => {
+			await seed(app);
+			await openStats(app);
+			await expectStats(app, ['stats']);
+
+			const json = await app.run(['stats', '--json']);
+			assert.equal(json.code, 0, json.stderr);
+			const { fields, total_count, tracked_duration_seconds } = JSON.parse(json.stdout);
+			assert.ok(tracked_duration_seconds > 0, 'the seed tracked no time: this proves nothing');
+			assert.ok(fields.length > 1, `the seed gave ${fields.length} fields`);
+
+			// The duration's SPELLING is the CLI's too, read off the header
+			// line of the very text the tile sits over — not off a formatter
+			// written down a second time here.
+			const header = plain((await app.run(['stats'])).stdout).match(
+				/^all fields · (\S+) tracked over (\d+) entries/
+			);
+			assert.ok(header, 'the CLI stopped printing an all-fields header');
+			assert.equal(header[2], String(total_count));
+
+			assert.deepEqual(await tiles(app.page), [
+				['entries', String(total_count)],
+				['tracked', header[1]],
+				['fields', String(fields.length)]
+			]);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// A figure whose scope the reader has to guess at is worse than no
+	// figure, and `fields` is the one that invites the guess: a window
+	// leaves out a field with nothing in it. So the widget says which
+	// database and which window, and both are read rather than printed.
+	test('the tiles say what they cover: this database, this window', async () => {
+		await withApp(async (app) => {
+			await seed(app);
+			await openStats(app);
+			await expectStats(app, ['stats']);
+			assert.equal(await app.page.locator('.stats .scope').innerText(), 'datum · all time');
+
+			await app.page.locator('.stats .range button', { hasText: 'week' }).click();
+			await expectStats(app, ['stats', '--week']);
+			assert.equal(await app.page.locator('.stats .scope').innerText(), 'datum · this week');
+
+			// And the numbers moved with the window rather than staying all
+			// time's — so the line is about these tiles and not decoration.
+			const json = await app.run(['stats', '--week', '--json']);
+			assert.equal(json.code, 0, json.stderr);
+			const { fields, total_count } = JSON.parse(json.stdout);
+			const shown = await tiles(app.page);
+			assert.deepEqual(
+				[shown[0], shown[2]],
+				[
+					['entries', String(total_count)],
+					['fields', String(fields.length)]
+				]
+			);
+		});
+	});
+
+	// The name is the page's own database (da-vk1x), not the word `datum`.
+	test('on another database the scope line names that one', async () => {
+		await withApp(async (app) => {
+			await openStats(app, '?db=notes');
+			const r = await app.run(['occur', 'coffee', '-t', '-10']);
+			assert.equal(r.code, 0, r.stderr);
+			await app.page.waitForFunction(
+				() => document.querySelector('.stats .scope')?.textContent === 'notes · all time'
+			);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// A database with nothing in it is the widget WORKING, not an error and
+	// not a pane still loading. It says so in zeroes.
+	test('an empty database is three zeroes, not a blank pane', async () => {
+		await withApp(async (app) => {
+			await openStats(app);
+			await expectStats(app, ['stats']);
+			assert.deepEqual(await tiles(app.page), [
+				['entries', '0'],
+				['tracked', '0s'],
+				['fields', '0']
+			]);
 			assert.deepEqual(app.errors, []);
 		});
 	});

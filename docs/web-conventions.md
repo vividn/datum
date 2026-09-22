@@ -123,17 +123,19 @@ writing it down.
    not its name on a list but whether the function a test wants reaches the DOM or the seam:
    `fileargv.ts` states the predicate about itself — *“Pure and import-free, so node tests it as
    it is”* — and it is the sentence to write at the top of the next one.
-   Sixteen modules are imported into node by the suite today (2026-09-22): `commands.ts`,
+   Seventeen modules are imported into node by the suite today (2026-09-22): `commands.ts`,
    `detent.ts`, `echo.ts`, `fields.ts`, `fileargv.ts`, `inspect.ts`, `lanes.ts`, `nowpoint.ts`,
-   `scrollback.ts`, `selection.ts`, `track.ts`, `wasiFs.ts` and `layout/`'s `defaults.ts`,
-   `draft.ts`, `registry.ts`, `tree.ts`. A module reaching a `.svelte` import is no obstacle:
+   `scrollback.ts`, `selection.ts`, `stats.ts`, `track.ts`, `wasiFs.ts` and `layout/`'s
+   `defaults.ts`, `draft.ts`, `registry.ts`, `tree.ts`. A module reaching a `.svelte` import is
+   no obstacle:
    `tests/support/libhook.mjs` stubs those out and rewrites `$lib/x.js` to the source's `x.ts`,
    which is how `registry.ts` is node-testable at all.
    ⚠ *Being named here and being callable are two different claims, and this line was wrong in
    both directions. Of its nine names only three — `fields.ts`, `commands.ts`, `fileargv.ts` —
-   are node-tested; thirteen that are do not appear. `stats.ts` and `panes.ts` import cleanly
-   but no node test calls them. And `tail.ts`, `bar.ts`, `cursor.ts` and `dbio.ts` cannot be
-   imported into node at all as the suite stands: each reaches `$app/environment` through
+   are node-tested; thirteen that are do not appear. `panes.ts` imports cleanly but no node
+   test calls it — `stats.ts` was the same until `tests/stats-pure.test.mjs` (da-vpuxg). And
+   `tail.ts`, `bar.ts`, `cursor.ts` and `dbio.ts` cannot be imported into node at all as the
+   suite stands: each reaches `$app/environment` through
    `run.ts` / `database.ts` / `changes.ts`, which node cannot resolve and `libhook.mjs` does not
    stub. Stubbing `$app` would let the first three in — that, and an inventory test that simply
    RUNS this predicate instead of listing its members, is da-mgxdt.*

@@ -21,10 +21,31 @@
 	resolved by the CLI exactly as it paints them elsewhere). It is the
 	answer the 240×140 pane shows FIRST — a whole database in ten pixels —
 	and the table under it is what the reader scrolls. Narrowed to one
-	field the subject is that field, so the tiles take the bar's place:
-	its entries, its time, how many states it has been in.
+	field the subject is that field, so the bar goes: a field has no
+	fields to divide.
 
-	Nothing here computes a statistic.
+	OVER it, THE HEAD, which both states have (da-vpuxg). Whatever the
+	subject is, the figures are how much of it there is: entries, time,
+	and how many parts — the states a field has been in, the fields a
+	database has logged. Un-narrowed that is the answer to "nothing is
+	selected", which before this was a bar and a table and no headline at
+	all:
+
+	    entries 128 · tracked 42h30m · fields 9      datum · all time · stats
+
+	and the quiet half of the line is there because a figure whose scope
+	the reader has to guess at is worse than no figure — these are ONE
+	database's, over the window the chips are holding, and a window leaves
+	out a field with nothing in it.
+
+	The head is ONE LINE, and it holds the argv that used to have a line
+	of its own, because the widget's height belongs to the table: at the
+	240×140 pane — and at the 390×300 one da-ptuwr measured — a headline
+	with a line to itself is two or three fewer fields in view. Where even
+	one line will not hold both, the source wraps under the figures.
+
+	Nothing here computes a statistic: every number is `stats --json`'s
+	own, from the one command the widget already runs.
 -->
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
@@ -33,10 +54,14 @@
 	import { inkOver } from './fields.js';
 	import CliOutput from './CliOutput.svelte';
 	import { run, type RunResult } from './run.js';
+	import { currentDb } from './database.js';
 	import {
 		DEFAULT_STATS,
+		fieldTiles,
 		isAllFields,
 		statsArgv,
+		summaryTiles,
+		windowLabel,
 		type AllFieldsStats,
 		type FieldStats,
 		type StatsRange,
@@ -68,7 +93,7 @@
 	$: argv = statsArgv(settings, $fieldPill);
 	$: custom = typeof settings.range === 'object' ? settings.range : null;
 	$: all = isAllFields(summary) ? summary : null;
-	$: tiles = summary && !all ? tilesOf(summary as FieldStats) : [];
+	$: tiles = all ? summaryTiles(all) : summary ? fieldTiles(summary as FieldStats) : [];
 
 	// Not on mount: there is no `run` outside the browser.
 	$: if (browser) void refresh(argv, epoch);
@@ -99,20 +124,6 @@
 	function set(next: Partial<StatsSettings>): void {
 		settings = { ...settings, ...next };
 		dispatch('change', settings);
-	}
-
-	function tilesOf(s: FieldStats): [string, string][] {
-		return [
-			['entries', String(s.total_count)],
-			['time', duration(s.total_duration_seconds)],
-			['states', String(s.states.length)]
-		];
-	}
-
-	function duration(secs: number): string {
-		const h = Math.floor(secs / 3600);
-		const m = Math.floor((secs % 3600) / 60);
-		return h ? `${h}h ${m}m` : m ? `${m}m` : `${secs}s`;
 	}
 
 	/**
@@ -154,6 +165,20 @@
 		</div>
 	{/if}
 
+	<div class="head">
+		{#if tiles.length}
+			<dl class="tiles">
+				{#each tiles as [label, value] (label)}
+					<div class="tile {label}"><dt>{label}</dt><dd>{value}</dd></div>
+				{/each}
+			</dl>
+		{/if}
+		<span class="source">
+			{#if all}<span class="scope">{currentDb()} · {windowLabel(settings.range)}</span>{/if}
+			<code class="argv">{argv.join(' ')}</code>
+		</span>
+	</div>
+
 	{#if shares.length}
 		<div class="share" role="img" aria-label="share of tracked time by field">
 			{#each shares as f (f.field)}
@@ -167,15 +192,7 @@
 			{/each}
 		</div>
 	{/if}
-	{#if tiles.length}
-		<dl class="tiles">
-			{#each tiles as [label, value] (label)}
-				<div class="tile {label}"><dt>{label}</dt><dd>{value}</dd></div>
-			{/each}
-		</dl>
-	{/if}
 
-	<code class="argv">{argv.join(' ')}</code>
 	<div class="body">
 		{#if result?.stdout}
 			<CliOutput text={result.stdout} />
@@ -189,7 +206,8 @@
 	.stats {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		/* Every row here is one the table below it does not get. */
+		gap: 0.5rem;
 		min-width: 0;
 		font-family: monospace;
 		/* The pane's title lies OVER its content on the bar's edge
@@ -262,33 +280,65 @@
 		line-height: 1.1rem;
 	}
 
-	.argv {
-		color: var(--muted);
-		font-size: 0.75rem;
+	/* The figures and where they come from, on ONE line: the widget's
+	   whole height belongs to the table under it, and a headline that
+	   takes a line of its own takes it from there. On a pane too narrow
+	   for both the source wraps under the figures, which costs the line
+	   back but only where the line was never going to fit anyway. */
+	.head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0 0.8rem;
 	}
 
 	.tiles {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.5rem;
+		align-items: baseline;
+		gap: 0 0.8rem;
 		margin: 0;
 	}
 
 	.tile {
-		border: 1px solid var(--rule);
-		border-radius: 6px;
-		padding: 0.4rem 0.8rem;
+		display: flex;
+		align-items: baseline;
+		gap: 0.3rem;
+	}
+
+	/* A dot between the figures, drawn rather than written: the tiles are
+	   a list, and a separator is not one of its words. */
+	.tile + .tile::before {
+		content: '·';
+		color: var(--rule);
 	}
 
 	dt {
 		color: var(--muted);
-		font-size: 0.7rem;
+		font-size: 0.75rem;
 	}
 
 	dd {
 		margin: 0;
 		color: var(--ink-bright);
-		font-size: 1.2rem;
+		font-size: 0.95rem;
+	}
+
+	/* Which database, over which window, by which command — said rather
+	   than assumed, and quieter than the numbers it qualifies. The dot
+	   before the argv is drawn and not written, for the same reason the
+	   ones between the figures are: `.argv` is the argv, exactly. */
+	.source {
+		display: flex;
+		gap: 0.4rem;
+		color: var(--muted);
+		font-size: 0.75rem;
+	}
+
+	.scope + .argv::before {
+		content: '· ';
+		color: var(--rule);
 	}
 
 	.body {
