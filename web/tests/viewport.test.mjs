@@ -43,8 +43,7 @@ const edges = (page) =>
 async function fitsTo(page, height) {
 	await until(
 		() => edges(page),
-		(e) => e.visible === height && e.shell === height && e.bar === height,
-		5000
+		(e) => e.visible === height && e.shell === height && e.bar === height
 	);
 }
 
@@ -125,8 +124,7 @@ for (const engine of [chromium, webkit]) {
 				async ({ page }) => {
 					await until(
 						() => edges(page),
-						(e) => e.shell === TRUE && e.bar === TRUE,
-						5000
+						(e) => e.shell === TRUE && e.bar === TRUE
 					);
 					// And it really was the wrong number that was read first:
 					// a test whose fake never lied would pass for nothing.

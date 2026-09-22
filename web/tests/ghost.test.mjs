@@ -198,11 +198,21 @@ describe('the ghost', () => {
 
 			// A key that types nothing, so what clears the ghost is the
 			// keystroke itself and not the box turning non-empty. Gone well
-			// inside the second it had left, so the key is what took it.
+			// inside the second it had left, so the key is what took it:
+			// 500 above + 400 here is still short of the animation's ~1000ms,
+			// and only a ghost that goes inside that window proves the KEY
+			// took it rather than its own life running out.
+			//
+			// The 400 is an ASSERTION on the elapsed time and not a wait's
+			// cap (§16). It cannot be a cap: raised to the suite's 30s tier
+			// it would stop checking anything, and left at 400 a loaded box
+			// reports a bare TimeoutError that names neither the number nor
+			// what it was for. Asserted, it says both.
+			const pressed = Date.now();
 			await input.press('ArrowLeft');
-			await page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'), null, {
-				timeout: 400
-			});
+			await page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
+			const took = Date.now() - pressed;
+			assert.ok(took < 400, `the ghost took ${took}ms to go, long enough that it could have simply expired`);
 			assert.equal(await input.inputValue(), '');
 		}, DESKTOP);
 	});

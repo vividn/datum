@@ -1091,7 +1091,7 @@ describe('the day strip', () => {
 					.querySelector('.band[data-days-ago="0"]')
 					.getBoundingClientRect();
 				return today.top >= stack.bottom - 1;
-			}, undefined, { timeout: 5000 });
+			});
 
 			// Back on, and today is pinned again.
 			await toggle.click();

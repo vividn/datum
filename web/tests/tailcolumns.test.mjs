@@ -79,8 +79,7 @@ const drawsKeys = (page, keys) =>
 			([sel, keys]) =>
 				window.__datumInflight === 0 &&
 				JSON.stringify([...document.querySelectorAll(`${sel} thead th`)].map((th) => th.dataset.key)) === JSON.stringify(keys),
-			[TAIL, keys],
-			{ timeout: 10_000 }
+			[TAIL, keys]
 		)
 		.catch(async (e) => {
 			throw new Error(`not ${keys}: ${JSON.stringify(await table(page))}`, { cause: e });
@@ -224,11 +223,11 @@ describe('a narrow tail gives up hid, then _n', () => {
 
 				await paneWidth(page, narrow);
 				await drawsKeys(page, THREE);
-				await until(y, kept, 5000);
+				await until(y, kept);
 
 				await paneWidth(page, wide);
 				await drawsKeys(page, ALL);
-				await until(y, kept, 5000);
+				await until(y, kept);
 			},
 			{ viewport: { width: 600, height: 400 }, prepare: ONLY_TAIL }
 		);

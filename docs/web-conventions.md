@@ -214,7 +214,17 @@ writing it down.
     seconds left: nine sites at 2 s and 5 s were the whole of the suite's flake surface under load
     — seven failures across four runs, every one a short wait expiring, not one assertion (da-5t8q,
     da-eznx). If a test really does mean "and quickly", it says so in an assertion that names the
-    number, never in a wait's cap.
+    number, never in a wait's cap: `ghost.test.mjs` is the worked example — it stamps the clock
+    before the keystroke, waits with no cap at all, and asserts the ELAPSED 400 ms, so a loaded
+    box fails on a sentence instead of a bare `TimeoutError`.
+    So: **a cap is ≥ 30 s, OR the awaited event is OPTIONAL and its `TimeoutError` is caught and
+    discarded** — a bounded observation window rather than a hang-stop
+    (`layout-floors.test.mjs`'s `waitForRedraw`, whose redraw the assertion below it says may
+    never come). Those two shapes are the whole rule, and `tests/wait-caps.test.mjs` holds the
+    suite's source to them. Naming the second one is what makes the rule checkable: as it stood
+    it forbade every `timeout:` including the correct one, so it could not be mechanised and was
+    not enforced — and a bare 5 s cap rode into `daystrip.test.mjs` three days after the cleanup
+    that removed nine of them, and sat there for a week (da-q0se9).
 17. **A test that seeds a time must say which day it means.** A bare `-t 0930` is "today at
     09:30" against whatever clock the app is holding, so before 10:00 local the same seed
     lands in the *future*: `datum now` answers that nothing is current and every pane that

@@ -395,8 +395,7 @@ export async function scrollX(locator, end) {
 export const atRest = (locator) =>
 	until(
 		() => locator.evaluate((el) => getComputedStyle(el).transform),
-		(transform) => transform === 'none',
-		5000
+		(transform) => transform === 'none'
 	);
 
 /** The `Bar ▸` submenu, open. */
