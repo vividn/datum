@@ -51,3 +51,31 @@ fn call_site_time_flags_compose_with_alias_bound_time() {
         assert_eq!(last_offset_minutes(&db), want, "{call:?}");
     }
 }
+
+/// An absolute `-t` on one side of the alias boundary and a relative one on
+/// the other: the clock is the absolute, the offset still lands on it
+/// (da-y4xv4). It was 10:00 — the offset shifted "now" and the clock then
+/// overwrote it.
+#[test]
+fn absolute_time_keeps_the_relative_offset_either_way_round() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("t.db");
+    run(&db, &["alias", "set", "rel", "occur caffeine -t +5"]);
+    run(&db, &["alias", "set", "abs", "occur tea -t 10:00"]);
+    for call in [&["rel", "-t", "10:00"], &["abs", "-t", "+5"]] {
+        run(&db, call);
+        let occur: String = Connection::open(&db)
+            .unwrap()
+            .query_row(
+                "SELECT occur_time FROM entries ORDER BY rowid DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let local = occur
+            .parse::<DateTime<Utc>>()
+            .unwrap()
+            .with_timezone(&chrono::Local);
+        assert_eq!(local.format("%H:%M").to_string(), "10:05", "{call:?}");
+    }
+}

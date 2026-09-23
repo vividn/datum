@@ -310,7 +310,6 @@ impl TimeBuilder {
 
         utc -= chrono::Duration::minutes(self.minutes_back);
         utc -= chrono::Duration::days(self.days_back);
-        utc += self.time_offset; // signed `-t ±N` shift (future positive)
 
         if let Some(date) = self.date_override {
             let time = self
@@ -333,6 +332,11 @@ impl TimeBuilder {
             }
             utc = zone.resolve(local_dt).for_boundary();
         }
+
+        // Signed `-t ±N` shift (future positive), after the clock override
+        // so an alias-bound `-t +5` lands on a call-site `-t 10:00` as
+        // 10:05 instead of being overwritten by it (da-y4xv4).
+        utc += self.time_offset;
 
         DatumTime {
             utc,
