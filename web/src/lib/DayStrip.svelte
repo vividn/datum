@@ -137,6 +137,14 @@
 	`hourFrom`/`hourTo` — is a prop in and a `change` out; the dashboard
 	keeps them in the widget's settings, and the strip itself writes
 	nothing down.
+
+	THE DAY HEIGHT IS THE ONE THAT MAY BE ABSENT (da-r0ydu). No day height
+	means ONE DAY FILLS THE WIDGET — `dayFilling(height)`, re-derived every
+	time the pane is resized — and a number means the reader's own, which
+	the box no longer moves. The handle sends `undefined` when it is
+	dragged back onto the derived value, so the follow re-arms; there is no
+	third state and no flag, because the owner keeps only the difference
+	from what the layout says and an absence is what «following» IS.
 -->
 <script lang="ts">
 	import { createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
@@ -165,6 +173,7 @@
 		bandArgv,
 		bandBox,
 		clampWindow,
+		dayFilling,
 		dayPitch,
 		geometryArgv,
 		pictureWidth,
@@ -178,8 +187,18 @@
 	/** Any change re-runs every band. The frame bumps it after each run. */
 	export let epoch = 0;
 
-	/** How tall one day is drawn, in pixels — datum's `--day-height`. */
-	export let dayHeight: number = DEFAULT_DAY_HEIGHT;
+	/**
+	 * How tall one day is drawn, in pixels — datum's `--day-height` — or
+	 * UNDEFINED, which is the strip following its own box (da-r0ydu).
+	 *
+	 * The absence IS the derivation: `day` below is `dayFilling(height)`
+	 * while nothing is here, so one day fills the widget at any size and
+	 * follows it when the pane is resized. A number here is the reader's
+	 * own, held against the box; the handle sends `undefined` back when it
+	 * is dragged onto the derived value, and the follow re-arms. Nothing
+	 * flags which of the two is in force — the absence is the flag.
+	 */
+	export let dayHeight: number | undefined = undefined;
 	/** How wide the strip's own date-stamp column is, in pixels. */
 	export let labelWidth: number = DEFAULT_LABEL_WIDTH;
 	/** Is today pinned under the scroller, or the last band inside it? */
@@ -188,9 +207,13 @@
 	export let hourFrom: number = HOUR_FROM;
 	export let hourTo: number = HOUR_TO;
 
-	/** What the reader moved, folded into the widget's settings by the owner. */
+	/**
+	 * What the reader moved, folded into the widget's settings by the
+	 * owner. `dayHeight: undefined` is a move like any other — the reader
+	 * asking for the derived height back (see `setSizes`).
+	 */
 	type Setting = {
-		dayHeight?: number;
+		dayHeight?: number | undefined;
 		labelWidth?: number;
 		freezeToday?: boolean;
 		hourFrom?: number;
@@ -207,9 +230,34 @@
 
 	const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
-	// Whatever the owner hands in — a saved setting from an older layout
-	// included — is drawn at a size the strip can draw legibly.
-	$: dayHeight = clamp(Math.round(dayHeight) || DEFAULT_DAY_HEIGHT, MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
+	/**
+	 * The height the READER holds, made drawable — or null, which is the
+	 * strip following its box.
+	 *
+	 * Whatever the owner hands in, a saved setting from an older layout
+	 * included, is drawn at a size the strip can draw legibly. A number
+	 * OUTSIDE that range is clamped into it — a held 0 from a hand-edited
+	 * or ancient tree is the floor, not the old default, because
+	 * `DEFAULT_DAY_HEIGHT` no longer means «a height to fall back on»: it
+	 * is only the stand-in below, before the box is measured. A value that
+	 * is no number at all (NaN) holds nothing, and the strip follows —
+	 * which is what an unusable setting should leave a reader with.
+	 */
+	$: heldDay =
+		typeof dayHeight === 'number' && Number.isFinite(dayHeight)
+			? clamp(Math.round(dayHeight), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT)
+			: null;
+	/**
+	 * The day height the strip DRAWS at: the reader's, or the one that
+	 * makes one day fill the box it was just measured at.
+	 *
+	 * Before the box is measured there is no box to derive from, and the
+	 * default stands in — nothing is drawn at it, since every ask is gated
+	 * on a width the same measurement supplies.
+	 */
+	$: derived = height > 0 ? dayFilling(height) : DEFAULT_DAY_HEIGHT;
+	/** The day DRAWN: the reader's held height when there is one, else the box's. */
+	$: day = heldDay ?? derived;
 	$: labelWidth = clamp(
 		Math.round(labelWidth) || DEFAULT_LABEL_WIDTH,
 		MIN_LABEL_WIDTH,
@@ -277,9 +325,9 @@
 	 */
 	$: room = Math.max(
 		0,
-		height - AXIS_HEIGHT - DIVIDER - (freezeToday ? bandBox(dayHeight) : 0)
+		height - AXIS_HEIGHT - DIVIDER - (freezeToday ? bandBox(day) : 0)
 	);
-	$: slots = room > 0 ? Math.ceil((room - bandBox(dayHeight)) / dayPitch(dayHeight)) + 1 : 0;
+	$: slots = room > 0 ? Math.ceil((room - bandBox(day)) / dayPitch(day)) + 1 : 0;
 	/** Of those slots, the ones the PAST gets: unfrozen, today is in the scroller too. */
 	$: fits = Math.max(0, freezeToday ? slots : slots - 1);
 	/**
@@ -298,13 +346,13 @@
 	$: ends = [0, ...rows.filter((end) => end !== 0)];
 
 	/** The sizes a drag is previewing, or the committed ones at rest. */
-	$: shownDayHeight = sizing ? sizing.height : dayHeight;
+	$: shownDayHeight = sizing ? sizing.height : day;
 	$: shownLabelWidth = sizing ? sizing.width : labelWidth;
 	/**
 	 * How far the drawn bands are stretched to stand in for the size being
 	 * previewed. One at rest, which is the picture at its own size.
 	 */
-	$: scaleY = shownDayHeight / dayHeight;
+	$: scaleY = shownDayHeight / day;
 	$: scaleX = bandWidth > 0 ? Math.max(0, width - shownLabelWidth) / bandWidth : 1;
 
 	/**
@@ -432,7 +480,7 @@
 	// database (or `run`) outside the browser.
 	// The pictures are asked for at the WINDOW's width, not the band's:
 	// the band is what they are shown through (`pictureBox`).
-	$: request = { width: pictureBox, dayHeight, epoch, midnights };
+	$: request = { width: pictureBox, dayHeight: day, epoch, midnights };
 	$: if (browser && request.width > 0) draw(request, ends);
 
 	// The minute turned (da-r61i, `$lib/clock.ts`): today's band is the one
@@ -658,8 +706,33 @@
 
 	// ── the handle: the day height and the label width together ────────
 
+	/**
+	 * FOLLOW UNTIL TOUCHED, THEN HOLD — and back onto the derived value
+	 * RE-ARMS the follow (da-r0ydu).
+	 *
+	 * What leaves here is `undefined` when the reader has landed on the
+	 * height the box would have chosen anyway, and the number otherwise.
+	 * There is no flag for «following», because the owner already keeps
+	 * only the DIFFERENCE from what the layout says (`overlay`,
+	 * layout/session.ts) — so a value dragged and dragged back leaves
+	 * nothing held, exactly as every other setting does, and «is it
+	 * following?» is a property of the data.
+	 *
+	 * ⚑ ONLY A MOVE ALONG THE HEIGHT AXIS DECIDES IT. The handle carries
+	 * BOTH sizes on every drop and every arrow key, so a purely SIDEWAYS
+	 * drag arrives here with the height it already had — and on a box that
+	 * happens to derive exactly the held value that would read as «dragged
+	 * back onto the derived value» and quietly re-arm the follow, losing a
+	 * height the reader set without touching that axis. Nothing would look
+	 * wrong at the time (the pixels are identical by construction); it
+	 * would surface later, as a pane resize moving a day they had chosen.
+	 * The same goes for an arrow key at a clamp, which is a no-op that
+	 * must not mean anything either. So an unmoved height leaves the hold
+	 * exactly as it found it.
+	 */
 	function setSizes(px: number, wide: number): void {
-		dayHeight = clamp(Math.round(px), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
+		const next = clamp(Math.round(px), MIN_DAY_HEIGHT, MAX_DAY_HEIGHT);
+		if (next !== day) dayHeight = next === derived ? undefined : next;
 		labelWidth = clamp(Math.round(wide), MIN_LABEL_WIDTH, MAX_LABEL_WIDTH);
 		dispatch('change', { dayHeight, labelWidth });
 	}
@@ -684,8 +757,8 @@
 		const handle = event.currentTarget as HTMLElement;
 		handle.setPointerCapture(event.pointerId);
 		handle.focus();
-		from0 = { height: dayHeight, width: labelWidth };
-		sizing = { x: event.clientX, y: event.clientY, height: dayHeight, width: labelWidth };
+		from0 = { height: day, width: labelWidth };
+		sizing = { x: event.clientX, y: event.clientY, height: day, width: labelWidth };
 	}
 	function sizeTo(event: PointerEvent): void {
 		if (!sizing) return;
@@ -716,7 +789,7 @@
 		const right = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
 		if (!up && !right) return;
 		event.preventDefault();
-		setSizes(dayHeight + up * STEP, labelWidth + right * STEP);
+		setSizes(day + up * STEP, labelWidth + right * STEP);
 	}
 
 	function toggleFreeze(): void {

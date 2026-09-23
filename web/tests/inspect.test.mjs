@@ -466,10 +466,21 @@ describe('the same gestures on a band of the day strip', () => {
 				.locator(`${TODAY} svg.svg`)
 				.evaluate((svg) => svg.getBoundingClientRect().width);
 
+			// GROUND: over no mark, and far enough into the band to be a
+			// press the strip takes at all.
+			//
+			// ⚑ NOT the top hairline any more (da-r0ydu). A day is as tall
+			// as the widget that draws it now, so today's band is flush
+			// with the top of the strip — and the topmost few pixels there
+			// are the divider's own row, where a double tap neither
+			// inspects nor gives the day back. Measured on the merge of
+			// this file with da-r0ydu: `top + 1` and `top + 5` did nothing,
+			// the band's middle gave the whole day back. The middle is
+			// still GROUND — the assertion below is what says so, and it
+			// fails loudly if a lane ever grows under it.
 			const ground = await page.locator(TODAY).evaluate((el) => {
 				const box = el.getBoundingClientRect();
-				// The top hairline of a band: inside it, over no mark.
-				return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + 1) };
+				return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) };
 			});
 			assert.equal(
 				await page.evaluate(

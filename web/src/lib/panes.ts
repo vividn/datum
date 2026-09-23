@@ -334,6 +334,27 @@ export const dayPitch = (dayHeight: number) => dayHeight + DIVIDER;
 export const todayBox = (dayHeight: number) => dayHeight + AXIS_HEIGHT;
 
 /**
+ * The day height at which ONE DAY exactly fills a strip box `height` tall
+ * — `todayBox` read backwards (da-r0ydu).
+ *
+ * vividn, 2026-09-21: «let's make the dayview widget internal options
+ * default to a day height that is equal to the height of the widget». It
+ * dissolves a problem rather than tuning it: a day was a FIXED height
+ * inside a pane that is a PROPORTION, so the strip showed the same number
+ * of days at every screen size and «exactly one day» was a ~3px window a
+ * ratio had to hold across a 1.59x spread of phone heights (da-hkjp's
+ * `STRIP_WEIGHT`, now gone). Derived, one day fits at every size by
+ * construction and there is no number to measure at one of them.
+ *
+ * Clamped as the strip clamps anything it draws: below the floor the box
+ * is shorter than the shortest legible day and today is clipped from the
+ * top (the strip's own notch); above the ceiling the past comes back into
+ * the scroller, which is what a very tall strip is for.
+ */
+export const dayFilling = (height: number): number =>
+	Math.min(MAX_DAY_HEIGHT, Math.max(MIN_DAY_HEIGHT, Math.round(height - AXIS_HEIGHT)));
+
+/**
  * One picture of the day strip, as argv: the single day `end` days back.
  *
  * One `dayview` per DAY (da-iu9i), and each one bands only — no date

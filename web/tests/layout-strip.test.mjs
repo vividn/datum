@@ -60,6 +60,33 @@ const shownDays = (page) =>
 			return n;
 		});
 
+/**
+ * Hold the strip's day height at `px`, as a saved layout would.
+ *
+ * ⚑ THE BOX ONLY SAYS HOW MUCH PAST A STRIP HOLDS ONCE THE DAY IS HELD
+ * (da-r0ydu). Untouched, the day FOLLOWS the widget — one day fills it at
+ * any height — so a border dragged taller draws a taller DAY and never
+ * more days, and a strip at rest has no past above today at all. The
+ * tests below are about the box: what a drag shows as it goes, and what
+ * the notch lands on. So they enter the second state first, the way a
+ * reader does with the `+` handle. The drafts further down set
+ * `dayHeight` in the tree for the same reason.
+ */
+const holdDay = (page, px) =>
+	page.evaluate((px) => {
+		window.datum.layout.apply((tree) => {
+			const copy = structuredClone(tree);
+			const walk = (pane) => {
+				for (const tab of pane.tabs)
+					if ('children' in tab.content) tab.content.children.forEach(walk);
+					else if (tab.content.kind === 'daystrip')
+						tab.content.settings = { ...tab.content.settings, dayHeight: px };
+			};
+			walk(copy.root);
+			return copy;
+		});
+	}, px);
+
 describe('resizing', () => {
 	// At 1000px tall, not 900: the row under the strip sits near its floor
 	// (three panes stacked in the side column), so a drag can only take the
@@ -69,6 +96,11 @@ describe('resizing', () => {
 	test('the strip, dragged taller over a second, shows further back as it goes and re-draws nothing it holds', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			// 60, which is short enough to leave room above today at this
+			// height: the drag has to have somewhere further back to GO,
+			// and a strip showing exactly one day has nowhere.
+			await holdDay(page, 60);
+			await pane(page, 'strip').locator('.stack .band').first().waitFor();
 			const seen = await app.spyOnRunner();
 			const held = await pastDays(page);
 			const before = await shownDays(page);
@@ -119,12 +151,26 @@ describe('the title on the line', () => {
 				assert.ok(Math.abs(left - 2) <= 0.5, `the left-bar strip stopped at ${left}px, its outline is 2px`);
 				assert.ok(Math.abs(top - CHROME.height) <= 0.5, `the top-bar strip stopped at ${top}px, its frame is ${CHROME.height}px`);
 			},
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(twoStrips(85))) }
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(twoStrips(HELD))) }
 		);
 	});
 });
 
-/** A root column of [a left-bar strip / a top-bar strip / the REPL] at `dayHeight`. */
+/** A held day height that is not the retired literal — see below. */
+const HELD = 100;
+
+/**
+ * A root column of [a left-bar strip / a top-bar strip / the REPL] at
+ * `dayHeight`.
+ *
+ * ⚑ NEVER AT 85 (da-r0ydu). These trees go in as a DRAFT, so they are read
+ * through `inline` — and `RETIRED_SETTINGS` (shell.ts) drops a saved
+ * `dayHeight: 85` there, because that is the literal `defaults.ts` wrote
+ * into every tree before the day began following its widget. A fixture at
+ * 85 would therefore arrive FOLLOWING its box, with no height snap at all,
+ * and these tests are about what a strip does when its day height is
+ * HELD. Any other number says that; 85 says «saved before da-r0ydu».
+ */
 const twoStrips = (dayHeight) => ({
 	version: 1,
 	name: 'default',
@@ -156,10 +202,10 @@ const twoStrips = (dayHeight) => ({
 // within 8px of it lands the border ON it, 12px beyond goes past, and the
 // drop keeps what the drag showed. Measured on the PREVIEW, button down.
 describe("the strip's notch", () => {
-	test('with 85px days the border above the strip lands on one day within ±8px, and passes 12px beyond', async () => {
+	test('with a HELD day height the border above the strip lands on one day within ±8px, and passes 12px beyond', async () => {
 		await withApp(
 			async ({ page }) => {
-				const snap = todayBox(85) + PADDING + CHROME.height;
+				const snap = todayBox(HELD) + PADDING + CHROME.height;
 				const [, strip] = await cellExtents(page, 'column');
 				const at = await grab(page, page.locator('.split.column > [role="separator"]'));
 				// Moving the border down by d shrinks the strip below it by d.
@@ -181,20 +227,20 @@ describe("the strip's notch", () => {
 				const dropped = (await cellExtents(page, 'column'))[1];
 				assert.ok(Math.abs(dropped - snap) <= 0.5, `the drop kept ${dropped}px, not the ${snap}px the drag showed`);
 			},
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('strip', 'daystrip', { dayHeight: 85 })))) }
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('strip', 'daystrip', { dayHeight: HELD })))) }
 		);
 	});
 
-	test('two strips in one column each snap to their own day height, 85px and 120px', async () => {
+	test('two strips in one column each snap to their own day height, 100px and 120px', async () => {
 		await withApp(
 			async ({ page }) => {
 				const [top] = await cellExtents(page, 'column');
 				// The border between the two strips; the REPL below them is what makes the app ready.
 				const at = await grab(page, page.locator('.split.column > [role="separator"]').first());
-				const snapA = todayBox(85) + PADDING + CHROME.height;
+				const snapA = todayBox(HELD) + PADDING + CHROME.height;
 				await page.mouse.move(at.x, at.y - (top - snapA) + 6);
 				const [a] = await cellExtents(page, 'column');
-				assert.ok(Math.abs(a - snapA) <= 0.5, `the 85px strip showed ${a}px, not ${snapA}`);
+				assert.ok(Math.abs(a - snapA) <= 0.5, `the ${HELD}px strip showed ${a}px, not ${snapA}`);
 				const snapB = todayBox(120) + PADDING + CHROME.height;
 				const [, bottom] = await cellExtents(page, 'column');
 				// The pointer now: at the notch A snapped to, and B is what is left.
@@ -206,7 +252,7 @@ describe("the strip's notch", () => {
 			{
 				...DESKTOP,
 				prepare: (context) =>
-					context.addInitScript(draft, JSON.stringify(along('column', widgetPane('a', 'daystrip', { dayHeight: 85 }), widgetPane('b', 'daystrip', { dayHeight: 120 }), widgetPane('repl', 'repl'))))
+					context.addInitScript(draft, JSON.stringify(along('column', widgetPane('a', 'daystrip', { dayHeight: HELD }), widgetPane('b', 'daystrip', { dayHeight: 120 }), widgetPane('repl', 'repl'))))
 			}
 		);
 	});

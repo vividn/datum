@@ -51,10 +51,42 @@ async function withStrip(fn, options = {}) {
 		assert.equal((await app.run(['occur', 'coffee', '-t', '08:00'])).code, 0);
 		await app.reload();
 		await app.page.locator(`${TODAY} svg.svg`).waitFor();
+		await stackOfDays(app.page);
 		await app.idle();
 		await fn(app);
 	}, { clock: NOW, ...DESKTOP, ...options });
 }
+
+/**
+ * A day height HELD, short enough that YESTERDAY's whole band is on screen
+ * — at the desktop size these tests use and at `PHONE` alike.
+ *
+ * ⚑ SINCE da-r0ydu A DAY FOLLOWS THE WIDGET until the reader sets one, so
+ * a strip nobody has touched draws exactly ONE day and there is no band
+ * but today's — and half this file points into YESTERDAY's. Nothing here
+ * is about how tall a day is: this is how a reader gets a stack (the `+`
+ * handle, whose value then holds), and 40 is `MIN_DAY_HEIGHT`, the most
+ * past a strip's own box can show. Only the SETTING is touched, never a
+ * pane's size: a strip given a bigger cell is a different layout, and two
+ * of the tests below are about what a swipe does to the layout.
+ */
+const stackOfDays = async (page) => {
+	// DRAGGED, not written into the tree. A setting the reader moves lands
+	// in THIS SESSION (da-vhwq) and the layout never hears of it; writing
+	// the tree instead lights the layout's modified dot, and two of the
+	// tests below read the root tab's name. Down is shorter (da-hsba), and
+	// 300px of it clamps at `MIN_DAY_HEIGHT`.
+	const box = await page.locator('button.day-grip').boundingBox();
+	const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+	await page.mouse.move(x, y);
+	await page.mouse.down();
+	await page.mouse.move(x, y + 300, { steps: 8 });
+	await page.mouse.up();
+	await page.waitForFunction(
+		() => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === 40
+	);
+	await page.locator('.band[data-days-ago="1"] svg.svg').waitFor();
+};
 
 /**
  * A band's own geometry: the day it covers, and where that day's axis
@@ -347,9 +379,9 @@ describe('a range on a day that is not today', () => {
 			const { page } = app;
 			const yesterday = await geom(page, 1);
 			const today = await geom(page, 0);
-			// Mostly SIDEWAYS: a band is 85px tall and the day is a
-			// thousand wide, so a drag that drifts one band down has
-			// travelled ten times as far along as across. A mostly
+			// Mostly SIDEWAYS: a band is a few dozen pixels tall and the
+			// day is a thousand wide, so a drag that drifts one band down
+			// has travelled far further along than across. A mostly
 			// VERTICAL finger is the stack's scroll and never a range —
 			// which is the test below.
 			const [a, b] = [

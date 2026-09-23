@@ -163,16 +163,67 @@ const grown = (m, by) => ({
 });
 
 /**
- * Give the strip's box `px` of height, as its pane does.
+ * Give the strip's box `px` of height, as its pane does — holding the day
+ * height first, if the strip is still following its box (da-r0ydu).
  *
  * The box is the pane's cell in the layout tree (da-jdop): a flex item
  * whose size is its share of the split, so a height alone is ignored
  * and the basis is what has to be set.
+ *
+ * ⚑ THE PIN IS NOT SCAFFOLDING, IT IS THE OTHER HALF OF THE RULE. A strip
+ * nobody has touched draws ONE DAY at whatever height its widget is, so a
+ * taller box there is a taller DAY and never more days. Everything below
+ * is about the second state — the reader has set a height, it HOLDS, and
+ * the box then says how much past fits above it — so these tests enter it
+ * the way a reader does. Pinning at the height the strip is already
+ * drawing moves no pixel; it only stops the box from moving it. That the
+ * two states are these two, and that the second is reached and left by
+ * the handle alone, is asserted in «follows its widget until touched».
  */
-const setBox = ({ page }, px) =>
+async function setBox(app, px) {
+	// NOTHING HEARD IS THE STRIP STILL FOLLOWING (da-r0ydu): the day height
+	// is absent from the owner's settings exactly while it is derived, so
+	// `undefined` here is the question «is this strip still following its
+	// box?» asked of the one place that can answer it.
+	if ((await heard(app)) === undefined) await say(app, { dayHeight: await valueOf(app) });
+	await boxTo(app, px);
+}
+
+/** The box alone, with nothing held: what «follows its widget» is driven by. */
+const boxTo = ({ page }, px) =>
 	page.evaluate((h) => {
 		document.querySelector('.cell.dayview').style.flex = `0 0 ${h}px`;
 	}, px);
+
+/**
+ * The day height the box would choose for itself — `dayFilling`, read off
+ * the element the strip styles rather than restated (`metrics`).
+ *
+ * ⚑ CLAMPED, because `dayFilling` is: without this the helper and the
+ * strip agree only while the derived height is inside
+ * [`MIN_DAY_HEIGHT`, `MAX_DAY_HEIGHT`], and past the ceiling `settledAt`
+ * would wait on an `aria-valuenow` the strip will never print — a hang
+ * rather than a failure.
+ */
+const following = async (app) => {
+	const m = await metrics(app);
+	return Math.min(MAX_DAY, Math.max(MIN_DAY, Math.round(m.strip - m.axis)));
+};
+
+/** The strip's own floor and ceiling (`panes.ts`), which `dayFilling` clamps to. */
+const MIN_DAY = 40;
+const MAX_DAY = 240;
+
+/** Wait until the handle says `want` — the strip has heard its new box. */
+const settledAt = ({ page }, want) =>
+	page.waitForFunction(
+		(want) => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === want,
+		want
+	);
+
+/** The box the cell has now, which a follow test moves from. */
+const boxOf = ({ page }) =>
+	page.locator('.cell.dayview').evaluate((el) => Math.round(el.getBoundingClientRect().height));
 
 /**
  * How many days before today the box SHOWS at arithmetic `m`: the room
@@ -726,6 +777,25 @@ describe('the day strip', () => {
 		// layout gives the strip, which is the box vividn could not scroll.
 		await withApp(
 			async (app) => {
+				// A day SHORT enough that the phone's strip holds a past at
+				// all (da-r0ydu): the day follows the widget until the reader
+				// shrinks it, so a strip nobody has touched shows exactly one
+				// day and has nothing above today to scroll to. Reaching that
+				// state is the handle's own test; what this one is about is
+				// the finger, so the height is set the way a saved layout
+				// would set it.
+				await say(app, { dayHeight: 40 });
+				await settledAt(app, 40);
+				// And ANCHORED before the scroll is read: a fresh day height
+				// re-draws every band and `anchor` puts the newest back
+				// against the divider a beat later, so a `scrollTop` read
+				// before that is 0 — and `<= 0 - 200` is a wait that cannot
+				// end.
+				await app.page.waitForFunction(() => {
+					const s = document.querySelector('.stack');
+					return s && s.scrollTop + s.clientHeight >= s.scrollHeight - 1 && s.scrollTop > 0;
+				});
+				await app.idle();
 				const rest = await stackScroll(app);
 				assert.ok(
 					rest.total - rest.client >= 200,
@@ -870,13 +940,214 @@ describe('the day strip', () => {
 		}, { clock: todayAt(12) });
 	});
 
+	// ⛔ FOLLOW UNTIL TOUCHED, THEN HOLD — and back onto the derived value
+	// RE-ARMS the follow (da-r0ydu). vividn, 2026-09-21: «make the dayview
+	// widget internal options default to a day height that is equal to the
+	// height of the widget … I don't know if it should stay locked to that,
+	// my gut says no, so that if the user pulls down the dayview it
+	// expands.»
+	//
+	// The two states are one property of the DATA and not a flag beside
+	// it: the layout says nothing about the day height, so the strip
+	// derives one from its box; the handle puts a number where the
+	// layout's silence was, so the box stops moving it; and the handle put
+	// back onto what the box would have chosen leaves nothing held again
+	// (`overlay`, layout/session.ts). So every leg below asserts the PIXELS
+	// and what the OWNER holds — a day that happened to land at the right
+	// height with a number still held is the bug this rule prevents.
+	test('follows its widget until touched, holds after, and follows again when let go', async () => {
+		await withApp(async (app) => {
+			const box = await boxOf(app);
+			assert.equal(await heard(app), undefined, 'a fresh strip holds a day height');
+			assert.equal(await valueOf(app), await following(app), 'one day does not fill the widget');
+
+			// FOLLOWS: a taller pane is a taller DAY, and still nothing held.
+			// The box is the element's the moment the cell is styled; the
+			// strip hears of it a settle later (layout/resizing.ts), so the
+			// wait is for the handle to arrive at what the box already says.
+			await boxTo(app, box + 60);
+			await settledAt(app, await following(app));
+			assert.equal(await valueOf(app), (await following(app)), 'the day did not follow the widget');
+			assert.equal(await heard(app), undefined, 'following the box left something held');
+
+			// TOUCHED: the handle's value is the reader's, and the owner
+			// hears it — up is taller (da-hsba).
+			const grow = 30;
+			const mine = (await valueOf(app)) + grow;
+			await dragBy(app, 'button.day-grip', 0, -grow);
+			assert.equal(await valueOf(app), mine);
+			await heardIs(app, mine);
+
+			// HOLDS: the pane is resized again and the day does not move —
+			// which is the whole of «then it stays». Waited out rather than
+			// waited for: the claim is that nothing happens, so the settle
+			// has to have come and gone before it is worth making.
+			await boxTo(app, box + 120);
+			const wouldBe = await following(app);
+			assert.notEqual(wouldBe, mine, 'the resize asked for the height already held');
+			await app.page.waitForTimeout(3 * 150);
+			await app.idle();
+			assert.equal(await valueOf(app), mine, 'a resize moved a day height the reader had set');
+			assert.equal(await heard(app), mine);
+
+			// RE-ARMS: dragged onto the height the box would have chosen,
+			// nothing is held — the same absence a fresh strip has.
+			await dragBy(app, 'button.day-grip', 0, -(wouldBe - mine));
+			assert.equal(await valueOf(app), wouldBe);
+			await heardIs(app, undefined);
+
+			// And it follows again, which is the assertion that the absence
+			// MEANS something rather than merely being tidy.
+			//
+			// ⚑ +150 and not +180: at the default viewport +180 leaves the
+			// strip exactly 255px of content, which derives exactly
+			// `MAX_DAY_HEIGHT`. Asserting there asks nothing — the CLAMP
+			// would hold the number up even if the follow were broken — and
+			// it sits on the boundary besides. +150 derives 210, inside the
+			// range, so the number can only come from the box.
+			await boxTo(app, box + 150);
+			const free = await following(app);
+			assert.ok(free > MIN_DAY && free < MAX_DAY, `the last leg derives ${free}, which is clamped`);
+			await settledAt(app, free);
+			assert.equal(await valueOf(app), free);
+			// And the PICTURES were drawn at it — datum's own `height`, not
+			// two readers on this side agreeing with each other. If
+			// `following` were wrong the bands would not come back at this
+			// size (canary minimax-m27 on PR #73).
+			await waitForHeights(app, free);
+			assert.equal(await heard(app), undefined);
+		});
+	});
+
+	// ⛔ ONLY THE HEIGHT AXIS DECIDES THE HOLD (da-r0ydu, canary kimi-k3 on
+	// PR #73). The handle carries BOTH sizes on every drop and every arrow
+	// key, so a purely SIDEWAYS drag reaches `setSizes` with the height it
+	// already had. On a box that derives exactly the held value that used
+	// to read as «dragged back onto the derived value» and re-armed the
+	// follow — losing a height the reader set, on an axis they never
+	// touched, invisibly until the next pane resize moved their day.
+	//
+	// The set-up is the whole point: the strip is HELD at exactly what its
+	// box would derive, which is the one state where the two are
+	// indistinguishable by value and only the MOVE tells them apart.
+	test('a sideways drag keeps a held day height, even when it equals the derived one', async () => {
+		await withApp(async (app) => {
+			// Held at the derived value: `say` writes the tree, so the day
+			// is the reader's — and it is the number the box would pick.
+			//
+			// ⚑ `say` is `layout.apply`, which is `layout.update` and NOT
+			// `inline` — so `RETIRED_SETTINGS` does not run over it, and this
+			// set-up holds even on the day a box derives exactly the retired
+			// 85. A reader who later routes this through `inline` has to
+			// make the number here something else.
+			const derived = await following(app);
+			await say(app, { dayHeight: derived });
+			await settledAt(app, derived);
+			assert.equal(await heard(app), derived, 'the set-up did not hold a day height');
+
+			// SIDEWAYS ONLY: the label column widens, the height is not touched.
+			const wide = await widthOf(app);
+			await dragBy(app, 'button.day-grip', 40, 0);
+			assert.ok((await widthOf(app)) > wide, 'the sideways drag moved nothing');
+
+			// The height is still the reader's, and the box still says so.
+			assert.equal(await valueOf(app), derived);
+			assert.equal(await heard(app), derived, 'a sideways drag re-armed the follow');
+
+			// And it really is HELD: a resize leaves it where it was, which
+			// is the thing the lost hold would have cost.
+			await boxTo(app, (await boxOf(app)) + 60);
+			await app.page.waitForTimeout(3 * 150);
+			await app.idle();
+			assert.equal(await valueOf(app), derived, 'the box moved a day the reader had set');
+			assert.equal(await heard(app), derived);
+		});
+	});
+
+	// ⛔ THE FLOOR CAN BE HELD, even in a box that derives it (canary
+	// minimax-m27 on PR #73, who read the code right and drew the wrong
+	// conclusion from it).
+	//
+	// Their observation is correct: in a pane already deriving 40, a drag
+	// onto 40 re-arms the follow, because held-at-X and following-at-X are
+	// the SAME DATA — the absence is the state (da-r0ydu), which is what
+	// the bead asked for instead of a flag. What does not follow is that
+	// the state is unreachable. A height is held by the MOVE that sets it,
+	// and it SURVIVES the box afterwards — so the floor is held from a box
+	// that derives something else, and it stays held when the box shrinks
+	// onto it. That is the whole of «then it stays», and this is the leg
+	// of it that the edge case appeared to deny.
+	test('the floor, held from a taller box, stays held when the box shrinks onto it', async () => {
+		await withApp(async (app) => {
+			const box = await boxOf(app);
+
+			// A box that derives something well clear of the floor, so the
+			// drag onto the floor is unambiguously a MOVE.
+			await boxTo(app, box + 120);
+			const tall = await following(app);
+			assert.ok(tall > 40 + 20, `the tall box derives ${tall}, too near the floor to prove anything`);
+			await settledAt(app, tall);
+
+			// Dragged to the floor: down is shorter, and far enough to clamp.
+			await dragBy(app, 'button.day-grip', 0, 400);
+			assert.equal(await valueOf(app), 40, 'the drag did not reach the floor');
+			await heardIs(app, 40);
+
+			// Now shrink the box until it derives the floor itself — the
+			// state the finding says cannot be held.
+			await boxTo(app, 68);
+			await app.page.waitForTimeout(3 * 150);
+			await app.idle();
+			assert.equal(await following(app), 40, 'the small box does not derive the floor');
+			assert.equal(await valueOf(app), 40);
+			assert.equal(await heard(app), 40, 'the box deriving the floor un-held it');
+
+			// And it is HELD, not merely equal: the box grows and the day
+			// does not go with it.
+			await boxTo(app, box + 120);
+			await app.page.waitForTimeout(3 * 150);
+			await app.idle();
+			assert.equal(await valueOf(app), 40, 'a taller box moved a floor the reader had set');
+			assert.equal(await heard(app), 40);
+		});
+	});
+
+	// A held height the strip cannot draw (canary deepseek-v4-pro on PR #73).
+	// `DEFAULT_DAY_HEIGHT` is no longer «a height to fall back on» — since
+	// da-r0ydu it is only the stand-in before the box is measured — so an
+	// unusable setting must not resolve to it. A number outside the range
+	// is CLAMPED into the range; something that is no number at all holds
+	// nothing, and the strip follows, which is the state an unusable
+	// setting should leave a reader in.
+	test('a held day height the strip cannot draw is clamped, and a non-number follows', async () => {
+		await withApp(async (app) => {
+			const floor = 40;
+			await say(app, { dayHeight: 0 });
+			await settledAt(app, floor);
+			assert.equal(await valueOf(app), floor, 'a held 0 did not land on the floor');
+
+			await say(app, { dayHeight: 4000 });
+			await settledAt(app, 240);
+			assert.equal(await valueOf(app), 240, 'a held 4000 did not land on the ceiling');
+
+			// Not a number at all: nothing is held, so the box decides again.
+			await say(app, { dayHeight: null });
+			await settledAt(app, await following(app));
+			assert.equal(await valueOf(app), await following(app), 'a held null did not go back to following');
+		});
+	});
+
 	test('the day height comes in as a prop and goes out as a change', async () => {
 		// What the default is is the strip's business, not this file's, so
-		// it is read off an ordinary app rather than restated here.
+		// it is read off an ordinary app rather than restated here. Nothing
+		// is HELD on a fresh strip (da-r0ydu): the day follows its widget
+		// until the handle is touched, so the owner's settings are silent
+		// about it and the handle still says a number.
 		let fallback;
 		await withApp(async (app) => {
 			fallback = await valueOf(app);
-			assert.equal(await heard(app), fallback);
+			assert.ok(fallback > 0, `the handle says ${fallback}`);
+			assert.equal(await heard(app), undefined);
 		});
 
 		await withApp(async (app) => {
@@ -907,6 +1178,13 @@ describe('the day strip', () => {
 
 	test('the handle re-draws every day at the new height, and the days stay on one x-axis', async () => {
 		await withApp(async (app) => {
+			// A day height set first, and not the derived one: this test
+			// drags 40px each way from it TWICE, and the shortest day the
+			// strip may draw is 40 (da-r0ydu — a day that follows its widget
+			// is whatever the pane happens to be, which on a 1280x720 screen
+			// is within one drag of that floor).
+			await say(app, { dayHeight: 120 });
+			await settledAt(app, 120);
 			// Three, so that two are still there once the days are taller:
 			// the box does not grow with them, so fewer fit.
 			await sizeFor(app, 3);
@@ -1434,6 +1712,13 @@ describe('the day strip zooms onto an hour range', () => {
 	test('a pinch windows every band at once, and the stamps stay where they are', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
+			// More than one band to move TOGETHER, which is the whole claim:
+			// a day follows its widget until the reader shrinks it
+			// (da-r0ydu), so a phone's strip shows exactly one day until one
+			// is set. The assertion below counts them, and would pass
+			// vacuously on a stack of one.
+			await say(app, { dayHeight: 40 });
+			await settledAt(app, 40);
 			await app.idle();
 			const box = await bandBox(app);
 			const stamps = await stampXs(app);

@@ -1106,6 +1106,160 @@ describe('the one chooser', () => {
 // more; one that was migrated in the fortnight between was rewritten to
 // `repl` by `extract` on its next save and stays a REPL, which is what it
 // says it is.
+// ⛔ A SETTING NOBODY CHOSE DOES NOT SURVIVE A SAVE (da-r0ydu, canary
+// qwen-3-8-2-4t on PR #73). `defaults.ts` used to write
+// `dayHeight: DEFAULT_DAY_HEIGHT` into every shipped tree, and a number in
+// the strip's settings is what HOLDS its day against its box for good. So
+// every layout saved before the day began following its widget carries an
+// 85 the reader never picked, and without an arm in `migrated` that reader
+// is the one the feature never reaches. `LAYOUT_VERSION` is still 1 and
+// nothing else migrates trees, so this is the seam.
+describe('a layout saved with the day height the defaults used to write', () => {
+	const ROOT_BAR = { edge: 'top', align: 'start' };
+	const stripLayout = (settings) => ({
+		version: 1,
+		name: 'old',
+		root: {
+			id: 'o',
+			active: 0,
+			bar: ROOT_BAR,
+			tabs: [{ id: 'o-tab', content: { id: 'o-w', kind: 'daystrip', settings } }]
+		}
+	});
+	/** What the strip's handle says — the height actually drawn. */
+	const drawn = (page) =>
+		page.locator('.dayview button.day-grip').getAttribute('aria-valuenow').then(Number);
+
+	test('the OLD DEFAULT is dropped, so the day follows the widget again', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await layouts(app, 'saveLayout', stripLayout({ dayHeight: 85, freezeToday: true }));
+			await pick(page, 'old');
+			await until(() => rootTabs(page), (t) => t.includes('old'));
+			await page.locator('.dayview button.day-grip').waitFor();
+
+			// One widget filling the root: the box is far taller than 85, so
+			// a day that followed it cannot be mistaken for the saved number.
+			await until(() => drawn(page), (n) => n !== 85);
+			// And it is `dayFilling` of that box — the box less its ruler,
+			// clamped as the strip clamps it (panes.ts). At a whole page the
+			// derivation lands past the ceiling, so the clamp is the answer.
+			const box = await page.locator('section.pane[data-title="dayview"] .strip').evaluate((el) => el.clientHeight);
+			assert.equal(await drawn(page), Math.min(240, Math.max(40, box - 15)), 'the day is not what the box derives');
+
+			// And the tab is not dirty: dropping a setting nobody chose is a
+			// READ of the layout, not an edit of it.
+			assert.deepEqual(await dotted(page), []);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// ⛔ AND THE DROP RUNS BOTH WAYS (da-r0ydu, canary qwen-3-8-2-4t on PR
+	// #73, round 6). The handle steps by 5 and both clamps are multiples of
+	// 5, so a reader whose box derives something else CAN land the day on
+	// the retired literal and press «Save options with layout», which is
+	// the one writer to the tree. If only `inline` dropped it, the two
+	// sides of `modified` would disagree from that instant — the tab's own
+	// `extract` keeping the key, the baseline made by `baselineOf` dropping
+	// it — and the dot would stay lit THROUGH a save, offering «Restore
+	// layout» for a difference no reload would keep. `extract` drops it
+	// too, so the tree says what the save says, and the trade stays the one
+	// the note states: a chosen 85 cannot be held across a reload either.
+	test('a day height dragged onto the retired literal is not saved, and does not light the dot', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			// A layout that says NOTHING about the height, so the day follows
+			// and the baseline has no key for the comparison to hold onto.
+			// It DOES say the label width the widget defaults to (54,
+			// `DEFAULT_LABEL_WIDTH`): the handle carries both sizes on every
+			// press and the session keeps whatever DIFFERS from the layout,
+			// so without this the save would also be writing a label width
+			// and the dot below would be reporting that instead.
+			await layouts(app, 'saveLayout', stripLayout({ freezeToday: true, labelWidth: 54 }));
+			await pick(page, 'old');
+			await until(() => rootTabs(page), (t) => t.includes('old'));
+			const grip = page.locator('.dayview button.day-grip');
+			await grip.waitFor();
+			const box = await page.locator('section.pane[data-title="dayview"] .strip').evaluate((el) => el.clientHeight);
+			const follows = Math.min(240, Math.max(40, box - 15));
+			await until(() => drawn(page), (n) => n === follows);
+			// The box must derive something ELSE, or the handle would hand
+			// its owner `undefined` and this would test the other rule.
+			assert.notEqual(follows, 85, 'the box derives 85, so nothing here is held');
+
+			// Down onto 85 by the handle's own step, which is how a reader
+			// gets there: 5 a press, and both clamps are multiples of 5.
+			// The DERIVED height has to be reachable in those steps too, and
+			// it is only because the box is far past the ceiling and lands on
+			// 240 (da-r0ydu, canary kimi-k3 on #73). Said out loud, because
+			// if chrome ever grew enough to derive 237 the loop would stop at
+			// 82 and the wait below would burn its 30s timeout instead of
+			// telling anyone what was wrong.
+			assert.equal((follows - 85) % 5, 0, `the handle's 5px step cannot reach 85 from ${follows}`);
+			await grip.focus();
+			for (let i = 0; i < Math.ceil((follows - 85) / 5); i += 1) await page.keyboard.press('ArrowDown');
+			await until(() => drawn(page), (n) => n === 85);
+			assert.deepEqual(await dotted(page), [], 'the session alone dirtied the layout');
+
+			// «Save options with layout» is the one writer to the tree.
+			await chooseRoot(page, 'Save options with layout');
+			await until(() => drawn(page), (n) => n === 85);
+
+			// The key is sitting in the tree — and the tree still reads as
+			// the save does, because `extract` drops it the way `inline`
+			// does. Without the outbound arm the dot lights here and stays
+			// lit THROUGH a save, offering «Restore layout» over a
+			// difference no reload would keep.
+			assert.deepEqual(await dotted(page), [], 'the tab is dirty over a key no save would keep');
+
+			// Now move the OTHER size, which the layout DOES have a value
+			// for. That gives the save something observable to carry and a
+			// dot that genuinely lit — so the two assertions below are a
+			// save landing and a dot CLEARING, not a pair that would read
+			// the same if nothing had happened at all.
+			await grip.focus();
+			await page.keyboard.press('ArrowRight');
+			await chooseRoot(page, 'Save options with layout');
+			await until(() => dotted(page), (d) => d.length === 1);
+
+			// And the save carries the label width and no day height —
+			// which is the whole bug in one line: without the outbound drop
+			// the save writes an 85 the baseline will not have, so the dot
+			// never goes out again.
+			await chooseRoot(page, 'Save layout');
+			const stored = await until(
+				() => layouts(app, 'loadLayout', 'old').then((l) => l.root.tabs[0].content.settings),
+				(s) => s.labelWidth === 59
+			);
+			assert.equal(stored.dayHeight, undefined, 'the save wrote a day height no reload can read back');
+			await until(() => dotted(page), (d) => d.length === 0);
+
+			// So a reload has the day following its widget again — which is
+			// the note's «a chosen 85 cannot be saved as held», seen.
+			await page.reload();
+			await page.waitForFunction(() => typeof window.datum?.run === 'function');
+			await grip.waitFor();
+			await until(() => drawn(page), (n) => n === follows);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('a day height the reader actually chose is kept', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await layouts(app, 'saveLayout', stripLayout({ dayHeight: 120, freezeToday: true }));
+			await pick(page, 'old');
+			await until(() => rootTabs(page), (t) => t.includes('old'));
+			await page.locator('.dayview button.day-grip').waitFor();
+			await until(() => drawn(page), (n) => n === 120);
+			// Held, not derived: the box is nothing like 120 + its ruler.
+			const box = await page.locator('section.pane[data-title="dayview"] .strip').evaluate((el) => el.clientHeight);
+			assert.notEqual(box - 15, 120, 'the box happens to derive 120, so this proves nothing');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+});
+
 describe('a layout naming the widget that went and came back', () => {
 	const ROOT_BAR = { edge: 'top', align: 'start' };
 

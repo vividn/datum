@@ -49,7 +49,6 @@ import DebugPane from '$lib/DebugPane.svelte';
 import DayStrip from '$lib/DayStrip.svelte';
 import Stats from '$lib/Stats.svelte';
 import {
-	DEFAULT_DAY_HEIGHT,
 	DEFAULT_LABEL_WIDTH,
 	HOUR_FROM,
 	HOUR_TO,
@@ -160,9 +159,17 @@ const tailScale = ({ type }: Record<string, unknown>): number =>
  * One whole day at the height the strip's days are DRAWN — today's band
  * with its axis, the setting clamped as the strip clamps it — plus the
  * body's padding.
+ *
+ * NO day height is the strip FOLLOWING ITS BOX (da-r0ydu), and then the
+ * shortest day it may draw is the honest floor: whatever box it is given
+ * above that holds exactly one day, because the day is derived from the
+ * box. Reading `DEFAULT_DAY_HEIGHT` here instead would claim 116px for a
+ * widget that stays legible at 71 — and `legibly` in defaults.ts turns
+ * that claim straight into the share of the column the strip takes, which
+ * is what the number has to be true about.
  */
 const oneDay = ({ dayHeight }: Record<string, unknown>): number => {
-	const asked = typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT;
+	const asked = typeof dayHeight === 'number' ? dayHeight : MIN_DAY_HEIGHT;
 	return todayBox(Math.min(MAX_DAY_HEIGHT, Math.max(MIN_DAY_HEIGHT, asked))) + STRIP_PADDING;
 };
 
@@ -189,8 +196,11 @@ export const KINDS: Record<string, WidgetKind> = {
 	// a saved layout keeps a zoomed strip zoomed, and `Reset widget` is
 	// the way back to the whole day (da-ukcf).
 	daystrip: {
+		// No `dayHeight` among the defaults: its default is DERIVED from the
+		// pane's height (da-r0ydu), and a declared one would be what a
+		// layout falls back to and what `Reset widget` restores — both of
+		// which must be the follow.
 		meta: meta('daystrip', 'dayview', {
-			dayHeight: DEFAULT_DAY_HEIGHT,
 			labelWidth: DEFAULT_LABEL_WIDTH,
 			freezeToday: true,
 			hourFrom: HOUR_FROM,
@@ -198,7 +208,10 @@ export const KINDS: Record<string, WidgetKind> = {
 		}, [{ key: 'freezeToday', label: 'today frozen at the bottom', type: 'boolean' }]),
 		component: DayStrip,
 		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo }) => ({
-			dayHeight: typeof dayHeight === 'number' ? dayHeight : DEFAULT_DAY_HEIGHT,
+			// Undefined on purpose: the strip derives its day from its own
+			// box while nothing is set (da-r0ydu), and a default here would
+			// be a number nobody chose standing in the way of that.
+			dayHeight: typeof dayHeight === 'number' ? dayHeight : undefined,
 			labelWidth: typeof labelWidth === 'number' ? labelWidth : DEFAULT_LABEL_WIDTH,
 			freezeToday: typeof freezeToday === 'boolean' ? freezeToday : true,
 			hourFrom: typeof hourFrom === 'number' ? hourFrom : HOUR_FROM,
@@ -208,8 +221,11 @@ export const KINDS: Record<string, WidgetKind> = {
 		// moves two at once — so the fold is the same one for all of them.
 		onChange: (settings, moved) => ({ ...settings, ...(moved as Record<string, unknown>) }),
 		// A notch, not a wall: shorter, the strip clips today's band from
-		// the top and keeps its axis.
-		snap: (settings) => ({ height: [oneDay(settings)] }),
+		// the top and keeps its axis. Only while the reader HOLDS a day
+		// height — following its box (da-r0ydu) every height is one whole
+		// day, so there is no one height to be drawn to.
+		snap: (settings) =>
+			typeof settings.dayHeight === 'number' ? { height: [oneDay(settings)] } : {},
 		legible: (settings) => ({ width: 240, height: oneDay(settings) })
 	},
 	// `reversed` (da-gvdc): the newest entry first, and the view pinned to the top.

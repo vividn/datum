@@ -19,7 +19,7 @@
 
 import type { Layout, Pane, Split, Tab } from './types.js';
 import { LAYOUT_VERSION } from './types.js';
-import { DEFAULT_DAY_HEIGHT, DEFAULT_LABEL_WIDTH, HOUR_FROM, HOUR_TO } from '$lib/panes.js';
+import { DEFAULT_LABEL_WIDTH, HOUR_FROM, HOUR_TO } from '$lib/panes.js';
 
 const bar = { edge: 'top', align: 'start' } as const;
 
@@ -30,9 +30,23 @@ const widgetPane = (id: string, kind: string, settings: Record<string, unknown> 
 	bar
 });
 
-/** The strip's settings, written down rather than implied. */
+/**
+ * The strip's settings, written down rather than implied — all but the
+ * DAY HEIGHT, which is written down nowhere (da-r0ydu).
+ *
+ * Its absence is the setting: no day height means one day fills the
+ * widget, at whatever height the layout gives the pane, and follows it
+ * when the pane is resized. A number here would be a height chosen at one
+ * screen size for every screen size, which is the thing this replaced.
+ *
+ * ⚑ What used to be here was `dayHeight: DEFAULT_DAY_HEIGHT`, so every
+ * tree saved before da-r0ydu carries an 85 nobody chose. `RETIRED_SETTINGS`
+ * in layout/shell.ts drops it BOTH WAYS — `inline` on the way in and
+ * `extract` on the way out — so an 85 cannot be read back as held and
+ * cannot be saved as held either. That is where the literal lives, and why
+ * it is a literal.
+ */
 const STRIP = {
-	dayHeight: DEFAULT_DAY_HEIGHT,
 	labelWidth: DEFAULT_LABEL_WIDTH,
 	freezeToday: true,
 	hourFrom: HOUR_FROM,
@@ -68,26 +82,17 @@ const legibly = (heights: number[]): number[] =>
 	heights.map((h) => h / heights.reduce((a, b) => a + b, 0));
 
 /**
- * What the day strip weighs in the phone's column (da-hkjp).
- *
- * The numbers `legibly` takes are PIXELS — each pane's legible box plus
- * its 14px frame — and it turns them into ratios. The strip's own is
- * 130px, and this is 59 in its place: the one number in `MOBILE_LAYOUT`
- * that is not a pane's legible height. See the note there for why, and
- * for what it was measured against. Here, apart from the tree, so it
- * cannot be read as one of the floors beside it.
- */
-const STRIP_WEIGHT = 59;
-
-/**
  * The desktop: strip / [REPL | nowview / tail / custom] / fields.
  *
- * The strip (one day, 130), the middle row (the side column's nowview,
- * tail and custom at 122, 116 and 116, and their two borders: 370) and
- * the fields pane (63) share the column in that proportion — 0.231 /
- * 0.657 / 0.112, which at a laptop's height is today's band with a
- * little of yesterday above it (a taller strip is more past, da-zb0d)
- * and two rows of buttons. The row is the wireframe's 2fr/1fr.
+ * The strip (one SHORTEST day, 85 — da-r0ydu: the day follows the box, so
+ * the strip's floor is `todayBox(MIN_DAY_HEIGHT) + 16`, plus its frame,
+ * and not one day at a height written down), the middle row (the side
+ * column's nowview, tail and custom at 122, 116 and 116, and their two
+ * borders: 370) and the fields pane (63) share the column in that
+ * proportion — 0.164 / 0.714 / 0.122. At a laptop's height that is one
+ * day drawn tall rather than today with a little of yesterday above it:
+ * the past is a drag of the day-height handle away, and that drag HOLDS.
+ * The row is the wireframe's 2fr/1fr.
  */
 export const DEFAULT_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -95,7 +100,7 @@ export const DEFAULT_LAYOUT: Layout = {
 	designedFor: 'desktop',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([130, 370, 63]), [
+		split('main', 'column', legibly([85, 370, 63]), [
 			strip(),
 			holder(
 				'middle',
@@ -128,8 +133,8 @@ const tabbed = (id: string, kinds: string[]): Pane => ({
 /**
  * A phone: strip / REPL / [tail, nowview, custom] as tabs / fields,
  * one column — the strip, the REPL, the tabs and the fields pane at
- * their legible 130, 85, 122 (nowview's, the tallest of the three) and
- * 63: 0.327 / 0.214 / 0.307 / 0.158.
+ * their legible 85 (da-r0ydu), 85, 122 (nowview's, the tallest of the
+ * three) and 63: 0.240 / 0.240 / 0.344 / 0.178.
  */
 export const DEFAULT_LAYOUT_MOBILE: Layout = {
 	version: LAYOUT_VERSION,
@@ -137,7 +142,7 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([130, 85, 122, 63]), [
+		split('main', 'column', legibly([85, 85, 122, 63]), [
 			strip(),
 			widgetPane('repl', 'repl'),
 			tabbed('side', ['tail', 'nowview', 'custom']),
@@ -179,31 +184,38 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
  * share has moved. Their widths fit too: 160 + 160 + a border = 328,
  * inside a 360px phone.
  *
- * ⚑ THE STRIP'S SHARE IS NOT `legibly`'s, AND THAT IS DELIBERATE. `legibly`
- * gives every pane its legible box at the root's minimum and grows them
- * all alike above it — so the strip shows the SAME number of days at every
- * size, and at a phone's height that number is two or three, never one. It
- * cannot be one: the four screens' column heights differ by 1.59× (734px
- * at 390×844 against 453px at 412×563) while a day is a FIXED height, and
- * «exactly one day» is the ~3px window between today's band showing whole
- * (`todayBox`) and yesterday's beginning to show (`todayBox + 1`). No
- * ratio holds a 3px window across a 1.59× spread. So the strip is weighted
- * at 59 rather than its legible 130 — the largest weight that still shows
- * ONE day at 390×844, measured, not derived — and the other three rows
- * keep their legible proportions to each other: the row max(tail 103,
- * nowview 122), row 3 max(fields 63, nowview 122), commands 63. Only the
- * strip's number has left the floors; the rest is still the house rule.
+ * ⚑ EVERY SHARE HERE IS `legibly`'s AGAIN (da-r0ydu). It was not: da-hkjp
+ * weighted the strip at a measured 59 instead of its legible 130, because
+ * a day was a FIXED height inside a pane that is a PROPORTION — so the
+ * strip showed the same NUMBER of days at every size, «exactly one day»
+ * was the ~3px window between today's band showing whole (`todayBox`) and
+ * yesterday's beginning to show, and the four screens' column heights
+ * differ by 1.59× (734px at 390×844 against 453px at 412×563). No ratio
+ * holds a 3px window across a 1.59× spread, so the number had to be
+ * measured at one of them.
  *
- * ⚑ WHAT THAT COSTS, MEASURED, SO IT IS A DECISION AND NOT A SURPRISE: the
- * strip's inner box is 102 / 73 / 69 / 57 px at the four sizes against a
- * 100px band, so today shows whole at 390×844 and is CLIPPED FROM THE TOP
- * at the three shorter ones — the strip's own notch (registry.ts: "a
- * notch, not a wall"). The other side of that wall is worse: holding
- * today whole at 412×563 forces the strip back to ~162px of inner box at
- * 390×844 — today plus two thirds of yesterday, which is where it already
- * was. The commands pane is the thing this must not cost, and it does not:
- * 122 / 91 / 87 / 74 px against the 63 it needs, where the tabbed tree
- * measured 102 / 76 / 73 / 62.
+ * The DAY follows the WIDGET now (`dayFilling`, panes.ts), so one day
+ * fits at every size by construction and there is nothing left to tune.
+ * The strip's floor moved with it — the shortest day it may draw, 85 with
+ * its frame, where 130 was one day at 85px — and that floor is the weight
+ * here, exactly as the other three are: the row max(tail 103, nowview
+ * 122), row 3 max(fields 63, nowview 122), commands 63.
+ *
+ * ⚑ MEASURED AFTER THE CHANGE, AT THE FOUR SIZES, so it is a decision and
+ * not a surprise. The strip's inner box is 141 / 102 / 97 / 80 px and the
+ * day drawn in it 126 / 87 / 82 / 65 — today's band WHOLE at all four,
+ * where da-hkjp's weight clipped it from the top at the three shorter
+ * ones, and nothing of yesterday showing at any of them. The commands
+ * pane is the thing this must not cost, and it does not: 114 / 85 / 81 /
+ * 69 px against the 63 it needs, where da-hkjp measured 122 / 91 / 87 /
+ * 74. It went DOWN and still clears, because the strip's floor fell 45px
+ * (130 to 85) while its share of the column rose.
+ *
+ * ⚑ WHAT IT COSTS is the SCROLL BACK: a strip whose box is exactly one day
+ * has no room above today, so at rest it holds no past at all — on a desk
+ * as much as on a phone. The past is reached by shrinking the day at the
+ * `+` handle, which then HOLDS, and the pane may be resized afterwards
+ * without taking it away.
  */
 export const MOBILE_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -211,7 +223,7 @@ export const MOBILE_LAYOUT: Layout = {
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([STRIP_WEIGHT, 122, 122, 63]), [
+		split('main', 'column', legibly([85, 122, 122, 63]), [
 			strip(),
 			holder(
 				'row',

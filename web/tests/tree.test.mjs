@@ -715,6 +715,10 @@ describe('snapsOfKind', () => {
 		const { snapsOfKind } = await import('../src/lib/layout/registry.ts');
 		assert.deepEqual(snapsOfKind('daystrip', { dayHeight: 120 }), { width: [], height: [todayBox(120) + 16] });
 		assert.deepEqual(snapsOfKind('daystrip', { dayHeight: 1000 }).height, [todayBox(240) + 16], 'clamped as the strip draws it');
+		// And none at all while the day FOLLOWS the box (da-r0ydu): the day
+		// is derived from the height, so every height is already one whole
+		// day and there is no one of them to be drawn to.
+		assert.deepEqual(snapsOfKind('daystrip', {}), { width: [], height: [] }, 'a following strip snapped');
 		for (const kind of ['repl', 'tail', 'nowview', 'custom', 'stats', 'widgetbar', 'nope']) {
 			assert.deepEqual(snapsOfKind(kind), { width: [], height: [] }, kind);
 		}
@@ -726,17 +730,25 @@ describe('snapsOfKind', () => {
 	test("legibleOfKind is the strip's one day and the measured boxes of the others", async () => {
 		const { legibleOfKind } = await import('../src/lib/layout/registry.ts');
 		assert.deepEqual(legibleOfKind('daystrip', { dayHeight: 120 }), { width: 240, height: todayBox(120) + 16 });
+		// Following its box, the floor is the SHORTEST day it may draw
+		// (da-r0ydu) — above that every box holds one whole day, because
+		// the day is derived from the box.
+		assert.deepEqual(legibleOfKind('daystrip', {}), { width: 240, height: todayBox(40) + 16 });
 		assert.deepEqual(legibleOfKind('repl'), { width: 200, height: 71 });
 		assert.deepEqual(legibleOfKind('nope'), { width: 0, height: 0 });
 	});
 
 	test("the defaults' ratios share the root's minimum as their panes' legible boxes", async () => {
 		const { legibleOfKind, KINDS } = await import('../src/lib/layout/registry.ts');
-		const { DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE } = await import('../src/lib/layout/defaults.ts');
+		// `MOBILE_LAYOUT` is in the sweep since da-r0ydu: its strip weighed a
+		// number measured at one screen (`STRIP_WEIGHT`) until the day began
+		// following the widget, and every share of its column is `legibly`'s
+		// again — which is the claim this test is.
+		const { DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE, MOBILE_LAYOUT } = await import('../src/lib/layout/defaults.ts');
 		const chrome = (pane) => ('children' in pane.tabs[pane.active].content ? { width: 0, height: 0 } : { width: 2, height: 14 });
 		const columns = (pane) =>
 			pane.tabs.flatMap(({ content }) => ('children' in content ? [content, ...content.children.flatMap(columns)] : []));
-		for (const layout of [DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE]) {
+		for (const layout of [DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE, MOBILE_LAYOUT]) {
 			for (const split of columns(layout.root).filter((s) => s.direction === 'column')) {
 				const shared = split.children.filter((c) => !KINDS[c.tabs[c.active].content.kind]?.fit);
 				const want = shared.map(

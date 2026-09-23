@@ -10,11 +10,18 @@
 //
 // vividn, 2026-09-21, changed three things about it (da-hkjp): the strip
 // shows ONE day, the tail's type is smaller, and row 3 is a SPLIT of the
-// fields widget and a nowview rather than two tabs. The first and the
-// third are geometry that was MEASURED rather than reasoned about — see
-// the note over `MOBILE_LAYOUT` — so the sweep below asserts them at the
-// four sizes the measurement was taken at, the fourth (412×563) added
-// here because it is where a column split of row 3 cut the commands pane.
+// fields widget and a nowview rather than two tabs. The third is geometry
+// that was MEASURED rather than reasoned about — see the note over
+// `MOBILE_LAYOUT` — so the sweep below asserts it at the four sizes the
+// measurement was taken at, the fourth (412×563) added here because it is
+// where a column split of row 3 cut the commands pane.
+//
+// The FIRST is no longer geometry at all (da-r0ydu). It was a weight
+// measured at one of the four screens, because a day was a fixed height
+// inside a pane that is a proportion; the day follows the WIDGET now, so
+// one day fits at every size by construction. What the sweep asserts is
+// therefore stronger than it was: today's band WHOLE at all four, not
+// whole at the tallest and clipped at the other three.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -123,7 +130,16 @@ const bands = (page) =>
 				seen: Math.round(Math.max(0, Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top)))
 			};
 		};
-		return { inner: Math.round(box.height), today: seen(0), yesterday: seen(1) };
+		// FLOORED, to match what the widget derived from (da-r0ydu, canary
+		// kimi-k3 on #73). The strip fills the pane body and DayStrip takes
+		// `Math.floor(contentRect.height)` of it, so the band it draws is
+		// `dayFilling(floor(h))`. Rounding here instead would disagree with
+		// that by 1 the first time a ratio put the box on a fractional part
+		// of .5 or more — 102.6 floors to 102 and draws 87, rounds to 103 —
+		// and the band-fills-the-box assertion below would fail 102 !== 103
+		// reading like a real regression. Flooring both sides keeps that
+		// assertion EXACT rather than buying it off with a tolerance.
+		return { inner: Math.floor(box.height), today: seen(0), yesterday: seen(1) };
 	});
 
 /** A pane's body type size, in px — what the tail's `type` option sets. */
@@ -187,38 +203,46 @@ describe('a fresh phone', () => {
 		}, phone());
 	});
 
-	// vividn: «decrease dayview height to be just 1 day». One day is today's
-	// band whole with none of yesterday under the strip's box — and it is
-	// asserted at all four sizes because the strip's share is the one ratio
-	// in this tree that is NOT `legibly`'s, and a drift in any pane's
-	// legible box moves it.
-	test('the strip shows one day, and only today is clipped where it must be', async () => {
+	// vividn: «decrease dayview height to be just 1 day», and (da-r0ydu) «a
+	// day height that is equal to the height of the widget». One day is
+	// today's band WHOLE, none of yesterday under the strip's box, and the
+	// band exactly filling the box less the ruler — at every size, because
+	// the day is derived from the box and not weighed against it.
+	//
+	// The third claim is the one that says the day FOLLOWED rather than
+	// happening to fit: a band the size of its box cannot be a number
+	// written down anywhere, since the four boxes differ.
+	test('the strip shows one whole day at every size, the band filling its box', async () => {
+		const drawn = [];
 		for (const [width, height] of SIZES)
 			await withApp(async ({ page }) => {
 				const b = await bands(page);
 				const yesterday = b.yesterday?.seen ?? 0;
-				// The margin is thin on purpose — one day is the ~3px window
-				// between today's band whole and yesterday's showing — so
-				// this is the assertion a change elsewhere in the column
-				// trips first. `STRIP_WEIGHT` in defaults.ts is the number to
-				// move, and the note over `MOBILE_LAYOUT` says what against.
 				assert.equal(
 					yesterday,
 					0,
 					`${width}×${height}: ${yesterday}px of yesterday shows — the strip is ${b.inner}px inside, and one day is ${b.today.of} of band plus ${AXIS} of axis`
 				);
-				assert.ok(b.today.seen > 0, `${width}×${height}: today does not show at all`);
-				// What one day costs at the sizes too short for it: the strip
-				// clips today from the top and keeps the axis (its own notch).
-				// Measured, so a change to it is a decision — see defaults.ts.
-				if (width === 390 && height === 844)
-					assert.equal(b.today.seen, b.today.of, `390×844: today is clipped to ${b.today.seen} of ${b.today.of}`);
-				else
-					assert.ok(
-						b.today.seen >= b.today.of / 2 - 1,
-						`${width}×${height}: today shows ${b.today.seen} of ${b.today.of} — less than half`
-					);
+				// Whole, at all four: da-hkjp's weight clipped today from the
+				// top at the three shorter sizes, which was the cost of
+				// holding one day with a ratio.
+				assert.equal(
+					b.today.seen,
+					b.today.of,
+					`${width}×${height}: today is clipped to ${b.today.seen} of ${b.today.of}`
+				);
+				// And the band IS the box, less the ruler the strip draws
+				// under it: `dayFilling` read back off the screen.
+				assert.equal(
+					b.today.of + AXIS,
+					b.inner,
+					`${width}×${height}: a ${b.today.of}px band and a ${AXIS}px ruler in a ${b.inner}px box`
+				);
+				drawn.push(b.today.of);
 			}, phone(width, height));
+		// Four boxes, four different days: a constant would have drawn one
+		// number four times, and this is what says no constant is left.
+		assert.equal(new Set(drawn).size, drawn.length, `the four sizes drew ${drawn.join(' / ')}`);
 	});
 
 	for (const [width, height] of SIZES) {

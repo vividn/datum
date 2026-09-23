@@ -234,11 +234,64 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
  */
 const RETIRED_KINDS: Record<string, string> = {};
 
-/** A tab whose widget is a retired kind, as the kind it became. */
+/**
+ * A setting a saved layout may carry that no reader ever chose, dropped so
+ * the widget goes back to deriving it (da-r0ydu).
+ *
+ * The day strip's height is the one entry. `defaults.ts` used to write
+ * `dayHeight: DEFAULT_DAY_HEIGHT` into every shipped tree, so every layout
+ * saved before the day began following its widget carries that 85 — and a
+ * number in the settings is what HOLDS the day against its box, for good,
+ * at every screen size. That is exactly the state registry.ts says must
+ * not exist: «a default here would be a number nobody chose standing in
+ * the way of that». Left alone, the reader who saved a layout last week
+ * would be the one reader the feature never reaches.
+ *
+ * ⚑ It drops the OLD DEFAULT and nothing else. A day height the reader
+ * actually dragged to is some other number and is kept; 85 is
+ * indistinguishable from a deliberate 85, and that is the trade — it was
+ * the shipped default in every tree, so it is un-chosen far more often
+ * than chosen, and one drag of the `+` handle puts it back.
+ *
+ * ⚑ SO A CHOSEN 85 CANNOT BE SAVED AS HELD. A reader whose box derives
+ * some other height may drag the day onto 85 and «Save options with
+ * layout»; the number lives in the tree for this session, and the save —
+ * which goes through `extract`, dropping it the same way — does not carry
+ * it, so a reload has the day following again. That is the same trade
+ * read from the other end, and it is why `extract` drops it too: the
+ * alternative is a tab that lights its modified dot the instant the save
+ * lands, over a key no reload would keep.
+ *
+ * ⚑ THE NUMBER IS A LITERAL, NOT `DEFAULT_DAY_HEIGHT`. A migration key is
+ * a fact about HISTORY — «what trees written before da-r0ydu carry» — and
+ * that constant has stopped meaning it: it is now only the strip's
+ * stand-in before its box is measured (`derived` in DayStrip.svelte). The
+ * two coincide at 85 today and are free to part tomorrow, and the day they
+ * part this arm would quietly stop matching, every layout saved before
+ * da-r0ydu would go back to holding a height nobody chose, and no test
+ * would say so — the tests pin the same history, as they should.
+ */
+const RETIRED_SETTINGS: Record<string, Record<string, unknown>> = {
+	// 85 was the ONLY value that constant ever had: `DEFAULT_DAY_HEIGHT`
+	// arrived at 85 with the strip's two handles (da-07ij, 2026-09-09) and
+	// was never moved — `git log -S"DEFAULT_DAY_HEIGHT =" -- web/src/lib/`
+	// finds that one introduction and nothing else. So there is no older
+	// tree carrying a different default for this arm to miss.
+	daystrip: { dayHeight: 85 }
+};
+
+/** A tab whose widget is a retired kind, as the kind it became — and without a retired setting. */
 const migrated = (tab: Tab): Tab => {
 	if (isSplit(tab.content)) return tab;
 	const kind = RETIRED_KINDS[tab.content.kind];
-	return kind === undefined ? tab : { ...tab, content: { ...tab.content, kind } };
+	const content = kind === undefined ? tab.content : { ...tab.content, kind };
+	const retired = RETIRED_SETTINGS[content.kind];
+	if (!retired) return kind === undefined ? tab : { ...tab, content };
+	const drop = Object.keys(retired).filter((key) => content.settings?.[key] === retired[key]);
+	if (drop.length === 0) return kind === undefined ? tab : { ...tab, content };
+	const settings = { ...content.settings };
+	for (const key of drop) delete settings[key];
+	return { ...tab, content: { ...content, settings } };
 };
 
 /**
@@ -291,7 +344,17 @@ export function extract(tab: Tab): Layout {
 					bar: BAR
 				};
 	const clean = mapTabs(mapIds(root, unmint), (t) => {
-		const bare = without(t, 'locked');
+		// BOTH WAYS. `inline` drops a retired setting on the way in; this
+		// drops one that arrived AFTER — «Save options with layout» writes
+		// whatever the session holds into the tree, and the reader is free
+		// to drag the day height onto the retired literal. Without this the
+		// two sides of `modified` would disagree the instant a save landed
+		// (the tab's own `extract` keeping the key, its fresh `baselineOf`
+		// dropping it) and the tab would light its dot and offer «Restore
+		// layout» for a difference that survives no reload. A retired kind
+		// needs no arm here: `inline` has already rewritten it and nothing
+		// can put one back.
+		const bare = migrated(without(t, 'locked'));
 		// A nested layout is kept by REFERENCE: its name and the id its tab
 		// takes, and nothing else — not its content and not its title, which
 		// are its own save's and would otherwise report this layout as
