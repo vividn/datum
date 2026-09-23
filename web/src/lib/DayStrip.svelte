@@ -50,9 +50,10 @@
 
 	The strip also ZOOMS onto an hour range (da-ukcf): two fingers pinching
 	over it, or ctrl+wheel on a desktop, narrow the window; a two-finger
-	drag or shift+wheel pans it; a double-tap — or the pane menu's `Reset
-	widget` — gives the whole day back. Every band at once, because they
-	share the x-axis. `dayview` has no window flag, so a window is a
+	drag or shift+wheel pans it; the `⊖` in the bottom corner of the date
+	column — or the pane menu's `Reset widget` — gives the whole day back
+	(da-8rqb9; it was a double tap until that bead). Every band at once,
+	because they share the x-axis. `dayview` has no window flag, so a window is a
 	picture drawn for the whole day at the window's SCALE and shown through
 	the band: one offset-and-scale (`windowMap` in $lib/panes.ts) puts the
 	hours in it, and the strip's own gridlines and ruler are drawn from the
@@ -89,8 +90,9 @@
 	         ├─ down 400 ms, THEN sideways ► a RANGE, as it always was
 	         ├─ down 400 ms, then LIFTING ─► INSPECT: the entry behind the mark
 	         │                               under the finger (da-pzzoz)
-	         ├─ double tap on a MARK ──────► the same inspect; on the picture's
-	         │                               GROUND, still the whole day back
+	         ├─ double tap ────────────────► the same inspect, wherever it lands
+	         │                               (da-8rqb9: no position test, because
+	         │                               a dense day has no ground)
 	         ├─ zoomed in, sideways ───────► PAN: the hour window follows the
 	         │                               finger, as shift+wheel does
 	         └─ up, still still ───────────► the CLICK the `picture` action has
@@ -105,9 +107,9 @@
 	the `picture` action with the double tap, because every drawn picture
 	has that action on it and only these two views have a recogniser.
 
-	A press that starts on the `+` handle, the freeze toggle or the jagged
-	line is THEIRS, and one that starts off a band — the date column, the
-	ruler, the room around them — is the pane's, so a swipe there still
+	A press that starts on the `+` handle, the freeze toggle, the `⊖` or
+	the jagged line is THEIRS, and one that starts off a band — the date
+	column, the ruler, the room around them — is the pane's, so a swipe there still
 	changes tabs. The bands say so themselves with `data-pans="x"`.
 
 	A range made here is the page's one selection ($lib/cursor.ts), marked
@@ -723,7 +725,24 @@
 		void anchor();
 	}
 
-	// ── the zoom: two fingers, ctrl+wheel, and a double-tap back ───────
+	// ── the zoom: two fingers, ctrl+wheel, and a button back ───────────
+
+	/**
+	 * The whole day back — the `⊖` in the strip's corner (da-8rqb9).
+	 *
+	 * A BUTTON and not a double tap. The double tap was the gesture from
+	 * da-ukcf, and da-pzzoz gave the same two taps to the inspect and told
+	 * them apart by POSITION: on a mark, inspect; on the picture's ground,
+	 * the whole day. That split cannot hold, and vividn's own sentence is
+	 * why — «when you have enough data, like me, everywhere has data under
+	 * it». On a full day there is no ground left to land on, so the zoom
+	 * reset went missing for exactly the readers with the most data. vividn,
+	 * 2026-09-22: «double tap shouldn't be zoom reset, let's just have a
+	 * small maginifying button with a zero in it in the corner».
+	 */
+	function resetZoom(): void {
+		setWindow([HOUR_FROM, HOUR_TO]);
+	}
 
 	/** Ask the owner for `next`, and show it meanwhile. */
 	function setWindow(next: [number, number]): void {
@@ -781,10 +800,9 @@
 
 	function onPointerDown(event: PointerEvent): void {
 		// The strip's own controls are not the picture: the `+` handle, the
-		// freeze toggle and the jagged line have the pointer when it is on
-		// them, and a press on one is not the start of a gesture.
+		// freeze toggle, the `⊖` and the jagged line have the pointer when
+		// it is on them, and a press on one is not the start of a gesture.
 		if ((event.target as HTMLElement).closest('button')) return;
-		tapped(event);
 		if (event.pointerType === 'mouse') {
 			// The mouse has no finger to register, but its drag still needs
 			// the window's listeners: it may leave the strip mid-gesture.
@@ -1082,30 +1100,6 @@
 	}
 
 	/**
-	 * Two presses in the same place, in quick succession: the whole day
-	 * back. A tap anywhere on the picture, as a pinch is; the same gesture
-	 * a map gives back its whole world for.
-	 */
-	const DOUBLE_TAP = 350;
-	let tap = { at: -Infinity, x: 0, y: 0 };
-	function tapped(event: PointerEvent): void {
-		// A double tap ON A MARK is the INSPECT (da-pzzoz, $lib/hover.ts's
-		// `picture` action, which every band's picture carries): vividn asked
-		// for «double clicking or tapping in dayview or nowview selects an
-		// existing piece of data». The whole day back is what a double tap
-		// on the picture's GROUND still means — the gesture a map gives its
-		// world back for, and `Reset widget` says it in words either way.
-		if (markOf(event.target)) return void (tap = { at: -Infinity, x: 0, y: 0 });
-		const near = Math.abs(event.clientX - tap.x) < 30 && Math.abs(event.clientY - tap.y) < 30;
-		if (near && event.timeStamp - tap.at < DOUBLE_TAP) {
-			tap = { at: -Infinity, x: 0, y: 0 };
-			setWindow([HOUR_FROM, HOUR_TO]);
-			return;
-		}
-		tap = { at: event.timeStamp, x: event.clientX, y: event.clientY };
-	}
-
-	/**
 	 * A notch of the wheel is half a doubling, so one lands a window at a
 	 * round fraction of the one before it. A trackpad pinch arrives here
 	 * too, as a shower of small deltas: they accumulate into one gesture,
@@ -1244,6 +1238,43 @@
 				<line x1="0.5" x2="12.5" y1="6.5" y2="6.5" />
 			</svg>
 		</button>
+
+		{#if zoomed}
+			<!--
+				The way back from a window, now that the double tap is the
+				inspect's alone (da-8rqb9): a magnifier with a zero in it, at
+				the bottom of the DATE COLUMN — the one column of the strip no
+				picture is ever drawn in (`.gridlines` and every band begin at
+				`--label`). What is under it is the blank gutter beside the
+				ruler and the tail of the bottom band's date stamp; no mark,
+				at any density, which is the whole point of the change.
+
+				Shown only while there IS a window: at rest it would be a
+				control that does nothing, and the strip's own `.jagged` sets
+				the precedent — a way back appears when there is somewhere to
+				come back from.
+			-->
+			<button
+				class="unzoom"
+				type="button"
+				title="the whole day back"
+				aria-label="reset the zoom to the whole day"
+				on:click={resetZoom}
+			>
+				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+					<circle class="lens" cx="6.5" cy="6.5" r="5" />
+					<line x1="10.3" y1="10.3" x2="14.5" y2="14.5" />
+					<text
+						class="nought"
+						x="6.5"
+						y="6.5"
+						text-anchor="middle"
+						dominant-baseline="central"
+						font-size="7">0</text
+					>
+				</svg>
+			</button>
+		{/if}
 
 		{#if jagged}
 			<!--
@@ -1593,6 +1624,50 @@
 		stroke: currentColor;
 		stroke-width: 1.5;
 		stroke-linecap: round;
+	}
+
+	/* The zoom reset, in the bottom corner of the date column (da-8rqb9).
+	   Right-aligned inside that column so it stands clear of the freeze
+	   toggle, which is at its left edge and drops to this same seam when
+	   today is not frozen; at a column narrower than the button the two
+	   converge, and the button wins the press because it is later in the
+	   DOM and carries the higher z-index.
+
+	   A fingertip's 26px, the freeze's and the grip's own, over a 16px
+	   glyph: §12's box is not the drawing (Beta.svelte's pattern). */
+	.unzoom {
+		position: absolute;
+		bottom: 0;
+		left: max(0px, calc(var(--label) - 26px));
+		width: 26px;
+		height: 26px;
+		padding: 0;
+		border: 0;
+		background: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--quiet);
+		cursor: pointer;
+		z-index: 4;
+	}
+	.unzoom:hover,
+	.unzoom:focus-visible {
+		color: var(--accent);
+	}
+	.unzoom:focus-visible {
+		outline: 1px solid var(--accent);
+	}
+	.unzoom .lens,
+	.unzoom line {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.4;
+		stroke-linecap: round;
+	}
+	.unzoom .nought {
+		fill: currentColor;
+		stroke: none;
 	}
 
 	/* Over the divider, clear of the `+`: the tear, and the way back. */

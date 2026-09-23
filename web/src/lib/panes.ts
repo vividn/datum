@@ -227,7 +227,7 @@ export const AXIS_HEIGHT = 15;
 // width, whatever the zoom — and it is a CLI follow-up, not a reason to
 // keep the strip at 24 hours meanwhile.)
 
-/** The whole day: the window at rest, and what a double-tap returns to. */
+/** The whole day: the window at rest, and what the strip's `⊖` returns to. */
 export const HOUR_FROM = 0;
 export const HOUR_TO = 24;
 const DAY_HOURS = 24;

@@ -51,10 +51,11 @@ describe('two taps on the same mark are one gesture', () => {
 		assert.equal(doubled(NO_TAP, at(0, 0, 0), null), false);
 	});
 
-	// The day strip has read a double tap as «the whole day back» with
-	// these two numbers since da-ukcf. Two recognisers over one band
-	// disagreeing by 50ms would be two gestures a finger cannot tell apart.
-	test('the numbers are the strip’s own', () => {
+	// The numbers the day strip read «the whole day back» with from
+	// da-ukcf until da-8rqb9 gave that meaning to a button. They are a
+	// finger's numbers, not that gesture's, so they outlived it: the
+	// nowview has always recognised its own double tap with them.
+	test('the numbers are a finger’s, and unchanged', () => {
 		assert.equal(DOUBLE_MS, 350);
 		assert.equal(DOUBLE_PX, 30);
 	});

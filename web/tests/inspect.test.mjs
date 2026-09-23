@@ -435,7 +435,14 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 // ── the day strip ──────────────────────────────────────────────────────
 
 describe('the same gestures on a band of the day strip', () => {
-	test('a double tap on a MARK inspects; on the picture’s GROUND it still gives the whole day back', async () => {
+	// This test was the POSITION SPLIT until da-8rqb9: a double tap on a
+	// mark inspected, one on the picture's ground gave the whole day back.
+	// The split is gone — a dense day has no ground, so the reset it
+	// reached went missing for the readers with the most data, and it is a
+	// button in the strip's corner now (`daystrip.test.mjs`). What is left
+	// for this file to hold is the half that stayed: the double tap is the
+	// inspect's, with no position test, and it does nothing to the window.
+	test('a double tap inspects a mark, and leaves the window alone over ground', async () => {
 		await withMarks(async (app) => {
 			const { page } = app;
 			const mark = await aMark(page, TODAY);
@@ -445,10 +452,7 @@ describe('the same gestures on a band of the day strip', () => {
 			await saysPills(page, [`hid:${mark.id}`]);
 			assert.deepEqual(await litUp(page, TODAY), [mark.id]);
 
-			// And the strip's own double tap — «the whole day back», the
-			// gesture a map gives its world for — is untouched over ground
-			// that names no entry. Zoom in first, so there is a window to
-			// give back.
+			// Zoom in, so there is a window a stray gesture could throw away.
 			const band = await page.locator(TODAY).boundingBox();
 			await page.mouse.move(band.x + band.width / 2, band.y + band.height / 2);
 			await page.keyboard.down('Control');
@@ -458,6 +462,9 @@ describe('the same gestures on a band of the day strip', () => {
 				() => page.locator(`${TODAY} svg.svg`).evaluate((svg) => svg.getBoundingClientRect().width),
 				(w) => w > band.width * 1.5
 			);
+			const zoomed = await page
+				.locator(`${TODAY} svg.svg`)
+				.evaluate((svg) => svg.getBoundingClientRect().width);
 
 			const ground = await page.locator(TODAY).evaluate((el) => {
 				const box = el.getBoundingClientRect();
@@ -473,9 +480,13 @@ describe('the same gestures on a band of the day strip', () => {
 				'the point chosen for “ground” is a mark'
 			);
 			await page.mouse.dblclick(ground.x, ground.y);
-			await until(
-				() => page.locator(`${TODAY} svg.svg`).evaluate((svg) => svg.getBoundingClientRect().width),
-				(w) => w <= band.width * 1.1
+			await new Promise((r) => setTimeout(r, 250));
+			assert.equal(
+				await page
+					.locator(`${TODAY} svg.svg`)
+					.evaluate((svg) => svg.getBoundingClientRect().width),
+				zoomed,
+				'a double tap on the ground still gives the whole day back'
 			);
 		});
 	});

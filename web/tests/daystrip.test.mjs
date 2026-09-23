@@ -1306,7 +1306,8 @@ describe('the day strip', () => {
 // ── the hour window (da-ukcf) ────────────────────────────────────────
 //
 // Two fingers over the strip, or ctrl+wheel on a desk, zoom it onto an
-// hour range; a double-tap gives the whole day back. What makes it a
+// hour range; the `⊖` in the strip's corner gives the whole day back
+// (da-8rqb9 — it was a double tap until then). What makes it a
 // STRIP's zoom rather than a picture's is that every band moves together
 // — they share the x-axis, and a stack whose days were windowed one at a
 // time would not be a stack — so the assertion on every gesture is that
@@ -1400,7 +1401,14 @@ async function pinch(page, box, from, to, midway) {
 	}
 }
 
-/** Two taps in the same place, quickly — the gesture for the whole day back. */
+/**
+ * Two taps in the same place, quickly.
+ *
+ * It was the gesture for the whole day back until da-8rqb9, and is kept
+ * here to assert that it no longer is: the strip's reset had to leave the
+ * double tap because da-pzzoz had given the same two taps to the inspect
+ * and told them apart by POSITION, which a dense day has no ground for.
+ */
 async function doubleTap(page, box) {
 	const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 	const cdp = await page.context().newCDPSession(page);
@@ -1415,6 +1423,12 @@ async function doubleTap(page, box) {
 }
 
 const PHONE = { device: devices['Pixel 5'], viewport: { width: 390, height: 640 } };
+
+/** The zoom reset in the strip's corner (da-8rqb9). */
+const UNZOOM = '.strip button.unzoom';
+
+/** Today's band — the one at the bottom, whose picture is the day so far. */
+const TODAY = '.band[data-days-ago="0"]';
 
 describe('the day strip zooms onto an hour range', () => {
 	test('a pinch windows every band at once, and the stamps stay where they are', async () => {
@@ -1468,23 +1482,192 @@ describe('the day strip zooms onto an hour range', () => {
 		}, { ...PHONE, clock: todayAt(12) });
 	});
 
-	test('a double-tap gives the whole day back', async () => {
+	test('the ⊖ gives the whole day back, and a double tap no longer does', async () => {
 		await withApp(async (app) => {
 			await app.idle();
 			const box = await bandBox(app);
+
+			// At rest there is nothing to come back from, so there is no
+			// button either — the `.jagged` line's rule.
+			assert.equal(await app.page.locator(UNZOOM).count(), 0, 'the ⊖ is there at rest');
+
 			await pinch(app.page, box, 100, 300);
 			await untilWindow(app, 'w[1] - w[0] < 24');
 			await app.idle();
+			const windowed = await windowHeard(app);
 
+			// The gesture that used to mean this (da-ukcf) means nothing to
+			// the window now: it is the inspect's, everywhere (da-8rqb9).
 			await doubleTap(app.page, box);
+			await app.idle();
+			assert.deepEqual(await windowHeard(app), windowed, 'a double tap still resets the zoom');
+
+			await app.page.locator(UNZOOM).click();
 			await untilWindow(app, 'w[0] === 0 && w[1] === 24');
 			await app.idle();
 			assert.equal(await hoursShown(app), 25);
+			assert.equal(await app.page.locator(UNZOOM).count(), 0, 'the ⊖ outlived the window');
 			assert.deepEqual(app.errors, []);
 		}, PHONE);
 	});
 
-	test('ctrl+wheel zooms, shift+wheel pans, and a double-click is the way back', async () => {
+	// ⛑ THE REASON FOR THE BUTTON, asserted on the shape that produced it.
+	//
+	// da-pzzoz told the inspect's double tap from the zoom reset's by
+	// POSITION: on a mark, inspect; on the picture's ground, the whole day
+	// back. vividn's own sentence is what breaks it — «when you have enough
+	// data, like me, everywhere has data under it». So the reader with the
+	// most data is the one whose reset goes missing, and a test on an
+	// EMPTY strip would never see it: there, every tap is on ground.
+	//
+	// The day here is a day with data ALL ALONG IT — measured, not
+	// assumed: four fields switching through the day, and every point
+	// sampled on a field's own lane is on a mark, for the whole width. On
+	// such a day a double tap aimed at the picture lands on data and
+	// INSPECTS, which is asserted below; the way back has to be somewhere
+	// a picture is not, and the `⊖` is in the date column, which no
+	// picture is ever drawn in.
+	test('on a day whose lanes are full, a double tap inspects — and the ⊖ still gives the day back', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seedLines(
+				app,
+				['mood', 'work', 'place', 'posture'].flatMap((field, lane) =>
+					[0, 6, 12, 18].map(
+						(hour) => `switch ${field} s${lane}${hour} -t ${String(hour).padStart(2, '0')}:00`
+					)
+				)
+			);
+			await app.reload();
+			await page.locator(`${TODAY} svg.svg`).waitFor();
+			await app.idle();
+
+			// Every row of the band that has a mark on it at all has one at
+			// every hour of the day: that is «everywhere has data under it»
+			// in the direction a finger travels.
+			const lanes = await page.locator(TODAY).evaluate((band) => {
+				const box = band.getBoundingClientRect();
+				const on = (x, y) => !!document.elementFromPoint(x, y)?.closest('[data-id]');
+				const rows = [];
+				for (let j = 1; j < 30; j++) {
+					const y = box.top + (box.height * j) / 30;
+					const xs = [...Array(19).keys()].map((i) => box.left + (box.width * (i + 1)) / 20);
+					const marks = xs.filter((x) => on(x, y)).length;
+					if (marks) rows.push({ y: Math.round(y - box.top), marks, of: xs.length });
+				}
+				return rows;
+			});
+			assert.ok(lanes.length >= 4, `only ${lanes.length} rows of the band carry data`);
+			assert.deepEqual(
+				lanes.filter((row) => row.marks !== row.of),
+				[],
+				'a lane has a gap in it: this is not the dense case'
+			);
+
+			const box = await bandBox(app);
+			await pinch(page, box, 100, 300);
+			await untilWindow(app, 'w[1] - w[0] < 24');
+			await app.idle();
+			const windowed = await windowHeard(app);
+
+			// So the double tap the reset used to share is spoken for: aimed
+			// at the picture it finds a mark and inspects it. The entry is
+			// read at the point the tap will land, on the ZOOMED picture,
+			// rather than assumed from the one before it.
+			const mark = await page.locator(TODAY).evaluate((band) => {
+				const b = band.getBoundingClientRect();
+				const at = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+				return at?.closest('[data-id]')?.getAttribute('data-id') ?? null;
+			});
+			assert.ok(mark, 'the middle of a full day is still ground');
+
+			await doubleTap(page, box);
+			await page.waitForFunction(
+				`window.datum.bar.pills().some((p) => p.text === ${JSON.stringify(mark)})`
+			);
+			assert.deepEqual(await windowHeard(app), windowed, 'the double tap threw the window away');
+
+			// And the way back is reachable from exactly there — asked the
+			// way a finger asks. Every point of the button's box hit-tests
+			// to the button, and none of them to a mark: not the middle
+			// alone, because a fingertip is the whole 26px and the picture
+			// beside it is three bands wide while zoomed.
+			//
+			// HIT-TESTING and not the marks' boxes: a zoomed picture hangs
+			// off both ends of the band that clips it, and a clipped mark's
+			// `getBoundingClientRect` still reports the whole of it — so
+			// «no mark overlaps the button» is false by that measure and
+			// true to the finger (the band's `overflow` is what decides).
+			const missed = await page.locator(UNZOOM).evaluate((el) => {
+				const r = el.getBoundingClientRect();
+				const away = [];
+				for (let i = 0; i <= 4; i++)
+					for (let j = 0; j <= 4; j++) {
+						const x = r.left + 1 + ((r.width - 2) * i) / 4;
+						const y = r.top + 1 + ((r.height - 2) * j) / 4;
+						const at = document.elementFromPoint(x, y);
+						if (!el.contains(at))
+							away.push(`${Math.round(x - r.left)},${Math.round(y - r.top)}: ${at?.tagName}${at?.closest('[data-id]') ? ' (a mark)' : ''}`);
+					}
+				return away;
+			});
+			assert.deepEqual(missed, [], 'the ⊖ does not have its own hit area');
+
+			await page.locator(UNZOOM).click();
+			await untilWindow(app, 'w[0] === 0 && w[1] === 24');
+			await app.idle();
+			assert.equal(await hoursShown(app), 25);
+			assert.deepEqual(app.errors, []);
+		}, { ...PHONE, clock: todayAt(23) });
+	});
+
+	test('the ⊖ is a fingertip, in the one column no picture is drawn in', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.idle();
+			const box = await bandBox(app);
+			await pinch(page, box, 100, 300);
+			await untilWindow(app, 'w[1] - w[0] < 24');
+			await app.idle();
+
+			const seen = await page.locator(UNZOOM).evaluate((el) => {
+				const r = el.getBoundingClientRect();
+				const strip = el.closest('.strip').getBoundingClientRect();
+				const spine = el.closest('.strip').querySelector('.spine').getBoundingClientRect();
+				return {
+					width: r.width,
+					height: r.height,
+					// In the strip's bottom corner, and inside its box.
+					fromBottom: Math.round(strip.bottom - r.bottom),
+					inside: r.left >= strip.left - 0.5 && r.right <= strip.right + 0.5,
+					// The spine is the picture's left edge: every band and the
+					// gridlines begin there, so a button left of it is over no
+					// picture at any density.
+					clearOfThePictures: r.right <= spine.left + 0.5,
+					glyph: el.querySelector('svg').getBoundingClientRect().width
+				};
+			});
+			// §12: the box a finger lands on is 24px, whatever the drawing
+			// inside it is (Beta.svelte's pattern).
+			assert.ok(seen.width >= 24 && seen.height >= 24, `the ⊖ is ${seen.width}×${seen.height}`);
+			assert.ok(seen.glyph < seen.width, 'the glyph is not smaller than its hit area');
+			assert.equal(seen.fromBottom, 0, 'the ⊖ is not in the strip’s bottom corner');
+			assert.ok(seen.inside, 'the ⊖ hangs off the strip');
+			assert.ok(seen.clearOfThePictures, 'the ⊖ is over a picture');
+
+			// And clear of the control that shares that column: the freeze
+			// toggle, which drops to this same seam when today is not frozen.
+			const boxOf = (sel) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().toJSON());
+			const [reset, freeze] = [await boxOf(UNZOOM), await boxOf('.strip button.freeze')];
+			assert.ok(
+				reset.left >= freeze.right - 0.5 || reset.top >= freeze.bottom - 0.5,
+				`the ⊖ (${reset.left}–${reset.right}) sits on the freeze toggle (${freeze.left}–${freeze.right})`
+			);
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
+	});
+
+	test('ctrl+wheel zooms, shift+wheel pans, and the ⊖ is the way back', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -1544,8 +1727,8 @@ describe('the day strip zooms onto an hour range', () => {
 				const after = await bandTransforms(app);
 				assert.deepEqual(after, after.map(() => after[0]), 'the bands moved apart');
 
-				// Two clicks in the same place: the whole day.
-				await page.mouse.dblclick(middle.x, middle.y);
+				// The button in the corner: the whole day.
+				await page.locator(UNZOOM).click();
 				await untilWindow(app, 'w[0] === 0 && w[1] === 24');
 				await app.idle();
 				assert.equal(await hoursShown(app), 25);

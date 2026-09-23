@@ -24,9 +24,11 @@
  * How long after a tap a second one is still the same gesture, and how
  * far from it.
  *
- * The day strip has read a double tap as «the whole day back» since
- * da-ukcf with exactly these two numbers; a second recogniser beside it
- * disagreeing by 50ms would be two gestures a finger cannot tell apart.
+ * The numbers the day strip read «the whole day back» with from da-ukcf
+ * until da-8rqb9, when that gesture became the `⊖` in the strip's corner
+ * and the double tap became the inspect's alone. They stay as they are:
+ * they were picked for a finger, not for that meaning, and the nowview
+ * has always recognised its own double tap with them.
  */
 export const DOUBLE_MS = 350;
 export const DOUBLE_PX = 30;

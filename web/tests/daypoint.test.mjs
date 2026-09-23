@@ -672,21 +672,21 @@ describe('what the bands take, and what they leave', () => {
 		);
 	});
 
-	test('the pinch, the double-tap and the controls are untouched', async () => {
+	test('the pinch, the zoom reset and the controls are untouched', async () => {
 		await withStrip(async (app) => {
 			const { page } = app;
-			// ctrl+wheel still zooms and a double-click still gives the day
-			// back: the one-pointer gesture is a new tenant of the strip,
-			// not a new landlord.
+			// ctrl+wheel still zooms and the `⊖` in the corner still gives
+			// the day back (da-8rqb9, which took that from the double tap):
+			// the one-pointer gesture is a new tenant of the strip, not a
+			// new landlord.
 			await zoomIn(app, await geom(page));
-			const g = await geom(page);
-			await page.mouse.dblclick(g.left + g.width / 2, g.y);
+			await page.locator('.strip button.unzoom').click();
 			await untilWindow(app, 'w[0] === 0 && w[1] === 24');
 
 			// A press that begins on the `+` handle is the handle's: it sizes
-			// the day and selects nothing. (The double-click above left the
-			// cursor it has always left — a click on a day points the page
-			// at it, da-wnt2 — so the slate is wiped first.)
+			// the day and selects nothing. (Whatever the gestures above left
+			// on the page — a click on a day points it at that time, da-wnt2
+			// — the slate is wiped first.)
 			await page.evaluate(() => window.datum.cursor.set(null));
 			await saysPills(page, []);
 			const grip = await page.locator('button.day-grip').boundingBox();
