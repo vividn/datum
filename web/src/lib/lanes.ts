@@ -192,8 +192,8 @@ export function nearest(drawn: Drawn[], at: At): Map<string, Near> | null {
  *
  * A stable sort, so marks the rule cannot separate (several rows a few px
  * tall equally under one finger) keep the order they had, which is the
- * CLI's alphabetical one: a tie is not a ranking and must not be invented
- * into one.
+ * bar's usual one (`buttonsFor`): a tie is not a ranking and must not be
+ * invented into one.
  */
 export function promoted(buttons: FieldButton[], rank: Map<string, Near> | null): FieldButton[] {
 	if (!rank?.size) return buttons;

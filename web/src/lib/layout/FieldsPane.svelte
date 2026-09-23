@@ -5,8 +5,8 @@
 	else: the BAR is the scroller (FieldsWidget.svelte), so the pane keeps
 	whatever height its split ratios give it and a bar with more buttons
 	than fit is reached by scrolling rather than by the pane growing
-	(da-mbz2) — sideways at one or two rows high, up and down at three or
-	more (da-ltux). The widget's panels hang UPWARD out of the bar and a
+	(da-mbz2) — sideways, on as many rows as fit up to three (da-vu7pi,
+	`ButtonRows.svelte`). The widget's panels hang UPWARD out of the bar and a
 	scroller would clip them, so they are hung against the screen instead
 	(`hang` in FieldsWidget.svelte). A press goes, with the bottom bar's
 	pills after it, to the engine's `press`, which routes it through

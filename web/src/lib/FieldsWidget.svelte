@@ -4,16 +4,17 @@
 
 	Track + comes first: the way into the whole app, so it is there on an
 	empty database too. Then every field that is not ignored (`ignored` in
-	`datum fields --json`, da-d08c), spec or no spec, in the CLI's
-	alphabetical order, each shaped by its kind and painted by what it is
+	`datum fields --json`, da-d08c), spec or no spec — the ones on now
+	first, then as high up the pictures as they are drawn (`buttonsFor`,
+	da-vu7pi) — each shaped by its kind and painted by what it is
 	now (`lookOf` in fields.ts): a point is a filled pill; a block is a
 	rectangle, filled while it is on; a switch is a rectangle filled with
 	its current state's colour; a keyed record is its name, underlined, and
 	a click prefills `add <field> ` in the bottom bar rather than running
 	anything. The pane keeps the height its layout gives it and the BAR is
-	the scroller (da-mbz2) — one row reached left and right while the pane
-	is one or two button-rows high, wrapped and reached up and down at
-	three or more (da-ltux). NOTHING HANGS OUT OF IT: the widget's only
+	the scroller (da-mbz2) — `ButtonRows`, every button bar's layout: as
+	many rows as fit, up to three, each packed on its own and all of them
+	scrolled left and right (da-vu7pi). NOTHING HANGS OUT OF IT: the widget's only
 	floating surface was the `-t` / `dur` / `note` panel, and da-e78x6
 	removed it.
 	Ignored fields get no button: the Track modal lists them, and a press
@@ -85,6 +86,7 @@
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount, tick } from 'svelte';
+	import ButtonRows from './ButtonRows.svelte';
 	import {
 		lookOf,
 		pressArgv,
@@ -102,9 +104,7 @@
 		declaredVerb,
 		fieldsUnder,
 		fieldsWithDuration,
-		scrollsSideways,
 		verbPress,
-		watchRows,
 		type Verb
 	} from './commands.js';
 
@@ -152,14 +152,10 @@
 
 	const dispatch = createEventDispatcher<{ run: string[]; line: string }>();
 
-	let bar: HTMLElement;
-	/** The measuring stick the scroll rule counts rows with (da-ltux). */
-	let probe: HTMLElement;
-	let rows = 3;
-
-	onMount(() => watchRows(bar, probe, (n) => (rows = n)));
-
-	$: sideways = scrollsSideways(rows);
+	let bar: HTMLElement | undefined;
+	// The hold's action ($lib/hold.ts) on the bar ButtonRows draws — an
+	// action cannot be handed through a component, so it is attached here.
+	onMount(() => holds(bar!, { within: 'button[data-field]', run: holdField }).destroy);
 
 	/**
 	 * The field whose STATES have taken the bar over, by name (da-g635).
@@ -209,6 +205,32 @@
 	$: lead = buttons.filter((b) => shown?.has(b.field)).length;
 	$: ignored = fields.filter((w) => w.ignored);
 	$: picking = picked === null ? null : (buttons.find((b) => b.field === picked) ?? null);
+
+	/**
+	 * What the bar draws, in order. A picked field's states (da-g635):
+	 * `< Back` first — it logs nothing — then one per state in the CLI's
+	 * order, and `+` last, which is how a state never logged gets into the
+	 * list at all. Otherwise the fields, with Track + leading them — the way
+	 * into the app on an empty database — or, under a pending verb, the `+`
+	 * at the END (vividn: «There should be a + field at the end of this
+	 * filtered fields view for adding new fields»).
+	 */
+	type Entry =
+		| { kind: 'track' | 'hint' | 'back' | 'add-state' }
+		| { kind: 'state'; state: string }
+		| { kind: 'field'; button: FieldButton; i: number };
+	$: entries = ((): Entry[] => {
+		if (picking)
+			return [
+				{ kind: 'back' },
+				...statesOf(picking.shape).map((state): Entry => ({ kind: 'state', state })),
+				{ kind: 'add-state' }
+			];
+		const hint: Entry[] = buttons.length === 0 ? [{ kind: 'hint' }] : [];
+		const listed = buttons.map((button, i): Entry => ({ kind: 'field', button, i }));
+		return verb === null ? [{ kind: 'track' }, ...hint, ...listed] : [...hint, ...listed, { kind: 'track' }];
+	})();
+	const keyOf = (e: Entry) => (e.kind === 'field' ? `f:${e.button.field}` : e.kind === 'state' ? `s:${e.state}` : e.kind);
 
 	/** A look as the custom properties every button below is painted from. */
 	function vars(look: Look) {
@@ -309,7 +331,7 @@
 
 	/** What scrolls, either way: the bar itself, or an ancestor that took the overflow. */
 	function scrollerOf(): HTMLElement | null {
-		for (let node: HTMLElement | null = bar; node; node = node.parentElement) {
+		for (let node: HTMLElement | null = bar ?? null; node; node = node.parentElement) {
 			if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth) return node;
 		}
 		return null;
@@ -387,51 +409,40 @@
 
 <svelte:window on:keydown={onWindowKeyDown} />
 
-<!-- The measuring stick for the scroll rule: a button of the ordinary
-     kind, laid out and invisible, so the row height is the buttons' own.
-     Outside the bar and out of flow, so nothing that reads the bar's
-     buttons finds it. -->
-<span class="probe" aria-hidden="true"><button class="widget" bind:this={probe} tabindex="-1">probe</button></span>
-
-<div
-	class="bar"
-	class:sideways
-	bind:this={bar}
-	data-rows={rows}
-	style:--rows={rows}
-	use:holds={{ within: 'button[data-field]', run: holdField }}
+<ButtonRows
+	items={entries}
+	key={keyOf}
+	bind:bar
+	let:item
 	on:pointerenter={() => (over = true)}
 	on:pointerleave={() => (over = false)}
 >
-	{#if picking}
-		{@const chosen = picking}
-		<!-- The states, in place of the fields (da-g635): `< Back` first —
-		     it logs nothing — then one button per state in the CLI's order,
-		     each painted as that state is, and `+` last, which is how a
-		     state that has never been logged gets into the list at all. -->
+	<!-- Given a line colour, or `var(--line)` voids its border and the rows
+	     are counted two pixels short of the buttons they hold. -->
+	<button slot="probe" class="widget" style="--line: transparent" tabindex="-1">probe</button>
+	{#if item.kind === 'back'}
 		<div class="slot">
 			<button class="nav back" data-back {disabled} title="back to the fields" on:click={back}>
 				&lt; Back
 			</button>
 		</div>
-
-		{#each statesOf(chosen.shape) as state (state)}
-			{@const look = stateLook(chosen, state)}
-			<div class="slot">
-				<button
-					class="widget states"
-					class:on={look.fill !== null}
-					style={vars(look)}
-					{disabled}
-					data-state={state}
-					title={pressArgv(chosen, state).join(' ')}
-					on:click={() => emit(pressArgv(chosen, state))}
-				>
-					{state}
-				</button>
-			</div>
-		{/each}
-
+	{:else if item.kind === 'state' && picking}
+		{@const look = stateLook(picking, item.state)}
+		<div class="slot">
+			<button
+				class="widget states"
+				class:on={look.fill !== null}
+				style={vars(look)}
+				{disabled}
+				data-state={item.state}
+				title={pressArgv(picking, item.state).join(' ')}
+				on:click={() => picking && emit(pressArgv(picking, item.state))}
+			>
+				{item.state}
+			</button>
+		</div>
+	{:else if item.kind === 'add-state' && picking}
+		{@const chosen = picking}
 		<div class="slot">
 			{#if addingState}
 				<form on:submit|preventDefault={() => addState(chosen)}>
@@ -457,13 +468,8 @@
 				</button>
 			{/if}
 		</div>
-	{:else}
-		<!-- Track + leads the whole list — the way into the app on an empty
-		     database. Under a pending verb it is the `+` at the END instead
-		     (vividn: «There should be a + field at the end of this filtered
-		     fields view for adding new fields»), so the filtered list is the
-		     fields that verb can be spent on and then the way to one more. -->
-		<div class="slot" class:last={verb !== null}>
+	{:else if item.kind === 'track'}
+		<div class="slot">
 			{#if verb === null}
 				<button
 					class="track add-button"
@@ -474,115 +480,69 @@
 					Track +
 				</button>
 			{:else}
+				{@const pending = verb}
 				<button
 					class="nav add-field"
 					data-add-field
 					{disabled}
-					title="track a new {verb} field"
-					on:click={() => void trackUnder(verb)}
+					title="track a new {pending} field"
+					on:click={() => void trackUnder(pending)}
 				>
 					+
 				</button>
 			{/if}
 		</div>
-
-		{#if buttons.length === 0}
-			<!-- No direction word here on purpose: this hint said "below" while the
-			     bar was at the top of the page (da-nz29), and da-1x72 moved the
-			     bar to the bottom without the copy following. Name the thing, not
-			     where it is. -->
-			<p class="hint empty">nothing tracked yet — or type a command to log something</p>
-		{/if}
-
-		{#each buttons as button, i (button.field)}
-			{@const look = lookOf(button, switchLabel)}
-			<div
-				class="slot"
-				class:edge={i + 1 === lead && lead < buttons.length}
-				data-promoted={i < lead ? '' : undefined}
-			>
-				{#if button.shape.kind === 'record'}
-					<!-- A PRESS runs nothing: the line goes to the bar's prompt. The
-					     HOLD is every field's (da-8810n) — a record is a field like
-					     any other, and only what a press MEANS is its own. -->
-					<button
-						class="record"
-						class:ignored={button.ignored}
-						class:pilled={$fieldPill === button.field}
-						role="link"
-						data-field={button.field}
-						data-ignored={button.ignored ? '' : undefined}
-						data-pilled={$fieldPill === button.field ? '' : undefined}
-						style={vars(look)}
-						{disabled}
-						title={titleOf(button)}
-						on:click={() => press(button)}>{button.field}</button
-					>
-				{:else}
-					<button
-						class="widget {button.shape.kind}"
-						class:on={look.fill !== null}
-						class:ignored={button.ignored}
-						class:pilled={$fieldPill === button.field}
-						style={vars(look)}
-						{disabled}
-						data-field={button.field}
-						data-ignored={button.ignored ? '' : undefined}
-						data-pilled={$fieldPill === button.field ? '' : undefined}
-						title={titleOf(button)}
-						on:click={() => press(button)}
-					>{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
-				{/if}
-			</div>
-		{/each}
+	{:else if item.kind === 'hint'}
+		<!-- No direction word here on purpose: this hint said "below" while the
+		     bar was at the top of the page (da-nz29), and da-1x72 moved the
+		     bar to the bottom without the copy following. Name the thing, not
+		     where it is. -->
+		<p class="hint empty">nothing tracked yet — or type a command to log something</p>
+	{:else if item.kind === 'field'}
+		{@const button = item.button}
+		{@const look = lookOf(button, switchLabel)}
+		<div
+			class="slot"
+			class:edge={item.i + 1 === lead && lead < buttons.length}
+			data-promoted={item.i < lead ? '' : undefined}
+		>
+			{#if button.shape.kind === 'record'}
+				<!-- A PRESS runs nothing: the line goes to the bar's prompt. The
+				     HOLD is every field's (da-8810n) — a record is a field like
+				     any other, and only what a press MEANS is its own. -->
+				<button
+					class="record"
+					class:ignored={button.ignored}
+					class:pilled={$fieldPill === button.field}
+					role="link"
+					data-field={button.field}
+					data-ignored={button.ignored ? '' : undefined}
+					data-pilled={$fieldPill === button.field ? '' : undefined}
+					style={vars(look)}
+					{disabled}
+					title={titleOf(button)}
+					on:click={() => press(button)}>{button.field}</button
+				>
+			{:else}
+				<button
+					class="widget {button.shape.kind}"
+					class:on={look.fill !== null}
+					class:ignored={button.ignored}
+					class:pilled={$fieldPill === button.field}
+					style={vars(look)}
+					{disabled}
+					data-field={button.field}
+					data-ignored={button.ignored ? '' : undefined}
+					data-pilled={$fieldPill === button.field ? '' : undefined}
+					title={titleOf(button)}
+					on:click={() => press(button)}
+				>{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
+			{/if}
+		</div>
 	{/if}
-</div>
+</ButtonRows>
 
 <style>
-	/*
-	 * The bar is the SCROLLER, and the scroll rule decides its axis
-	 * (da-ltux, vividn): one or two button-rows high and it is one row
-	 * reached left and right; three or more and it wraps and is reached up
-	 * and down. Nothing hangs out of it any more (da-e78x6), so taking the
-	 * overflow here clips nothing.
-	 */
-	.bar {
-		flex: 1;
-		min-height: 0;
-		/* A flex item will not shrink under its content unless told to, and
-		   a row of buttons that cannot shrink spills out of the pane instead
-		   of scrolling inside it. */
-		min-width: 0;
-		display: flex;
-		flex-wrap: wrap;
-		align-content: flex-start;
-		align-items: center;
-		gap: 0.4rem;
-		overflow-x: hidden;
-		overflow-y: auto;
-	}
-
-	/* Sideways: as many rows as fit, flowing by column, reached left and
-	   right — the commands bar's rule and its grid, for its reasons
-	   (CommandsWidget.svelte, da-hs6c). The rows share the box equally
-	   rather than sizing to their content, so `Track +`, taller than the
-	   chip the rows were counted with, cannot push the second row out of
-	   the box. `order` (`.slot.last`) is honoured by the grid as by flex. */
-	.bar.sideways {
-		display: grid;
-		grid-auto-flow: column;
-		grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
-		grid-auto-columns: max-content;
-		justify-content: start;
-		justify-items: start;
-		overflow-x: auto;
-		overflow-y: hidden;
-	}
-
-	.slot {
-		flex: none;
-	}
-
 	/* The press's own quiet mark (da-qu16): a hairline after the fields a
 	   click promoted, so the reader can SEE why the bar changed. It says
 	   where the promotion ends and nothing else — no fill, no animation,
@@ -592,19 +552,6 @@
 	.slot.edge {
 		padding-right: 0.4rem;
 		border-right: 1px solid var(--rule);
-	}
-
-	/* Under a pending verb the Track slot is the `+` at the END of the
-	   filtered list. `order` rather than a second block of markup: the
-	   button it holds is the same door on the same modal. */
-	.slot.last {
-		order: 1;
-	}
-
-	.probe {
-		position: absolute;
-		visibility: hidden;
-		pointer-events: none;
 	}
 
 	.widget,
@@ -769,14 +716,6 @@
 		color: var(--quiet);
 		font-size: 0.8rem;
 		font-style: italic;
-	}
-
-	/* One line beside Track +, cut rather than wrapped. */
-	.empty {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 </style>

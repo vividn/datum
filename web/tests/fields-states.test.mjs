@@ -179,8 +179,11 @@ describe('a state field fills the widget with its states', () => {
 			});
 			assert.ok(at.left > 0 || at.top > 0, 'the bar fits its pane — there is nothing this test can prove');
 
-			await page.locator('.bar [data-field="mood"]').click();
-			await page.locator('.bar [data-back]').click();
+			// Pressed where it is, unscrolled to: mood is on, so it stands at
+			// the start of the bar (da-vu7pi), and a click that scrolled to it
+			// would move the bar to where Back is meant to leave it anyway.
+			await page.locator('.bar [data-field="mood"]').dispatchEvent('click');
+			await page.locator('.bar [data-back]').dispatchEvent('click');
 			await page.locator('.bar [data-field="mood"]').waitFor();
 			await page.waitForFunction(
 				(was) => {

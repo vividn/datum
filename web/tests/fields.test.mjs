@@ -31,6 +31,7 @@ import assert from 'node:assert/strict';
 import { inkOver, lookOf, pressArgv, shapeFor, buttonsFor } from '../src/lib/fields.ts';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
+import { listed } from './support/rows.mjs';
 
 const spec = (field, rest = {}) => ({ field, ...rest });
 
@@ -48,22 +49,35 @@ describe('the logic', () => {
 		assert.deepEqual(shapeFor(undefined, ['b', 'a']), { kind: 'states', states: ['a', 'b'] });
 	});
 
-	test('every field in the CLI order, a spec or not; `ignored` is the CLI\'s; `now` says what is on', () => {
+	test('every field, a spec or not; `ignored` is the CLI\'s; `now` says what is on', () => {
 		const widgets = buttonsFor(
 			[
-				{ field: 'a', spec: null, states: [true], color: '#111111', state_colors: {}, ignored: false },
-				{ field: 'b', spec: spec('b', { verb: 'start' }), states: [], color: '#222222', state_colors: {}, ignored: true },
-				{ field: 'c', spec: spec('c', { verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' }, ignored: false }
+				{ field: 'a', spec: null, states: [true], color: '#111111', state_colors: {}, ignored: false, y: 0 },
+				{ field: 'b', spec: spec('b', { verb: 'start' }), states: [], color: '#222222', state_colors: {}, ignored: true, y: 0 },
+				{ field: 'c', spec: spec('c', { verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' }, ignored: false, y: 0 }
 			],
 			// `now --json`'s active rows, which are only ever the truthy ones:
 			// a field it does not name — `a` — is off.
 			[{ field: 'b', state: true }, { field: 'c', state: 'x' }]
 		);
 		assert.deepEqual(widgets.map((w) => [w.field, w.shape.kind, w.ignored, w.current]), [
-			['a', 'state', false, undefined],
 			['b', 'state', true, true],
-			['c', 'states', false, 'x']
+			['c', 'states', false, 'x'],
+			['a', 'state', false, undefined]
 		]);
+	});
+
+	test('the fields on now first, then each as high up the pictures as it is drawn (da-vu7pi)', () => {
+		// vividn: «sorted by their spec y, so those that appear higher on the
+		// nowview are also higher in the list … Active start/switch fields
+		// should appear on the far left». `y` is `fields --json`'s, 0 at
+		// the top; equals keep the CLI's alphabetical order.
+		const row = (field, y) => ({ field, spec: null, states: [], color: '#111111', state_colors: {}, ignored: false, y });
+		const widgets = buttonsFor(
+			[row('a', 0.9), row('b', 0.1), row('c', 0.5), row('d', 0.7), row('e', 0.1), row('f', 0.3)],
+			[{ field: 'd', state: true }, { field: 'f', state: 'x' }]
+		);
+		assert.deepEqual(widgets.map((w) => w.field), ['f', 'd', 'b', 'e', 'c', 'a']);
 	});
 
 	test('`active` is whether `now` named the field — not whether the state has a colour', () => {
@@ -77,7 +91,8 @@ describe('the logic', () => {
 			states: [],
 			color: '#111111',
 			state_colors: {},
-			ignored: false
+			ignored: false,
+			y: 0
 		}));
 		const widgets = buttonsFor(listing, [{ field: 'a', state: '' }]);
 		assert.deepEqual(
@@ -169,17 +184,21 @@ describe('in the app', () => {
 	before(startApp);
 	after(stopApp);
 
-	test('Track + first and largest, then every field alphabetically, each drawn by its kind', async () => {
-		await withApp(async ({ page }) => {
+	test('Track + first and largest, then every field as high up the pictures as the CLI draws it, each drawn by its kind', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
 			await page.locator('.bar [data-field="untracked"]').waitFor();
 
-			const order = await page.locator('.bar').evaluate((bar) =>
-				[...bar.querySelectorAll('button.track, [data-field]')].map((el) => el.dataset.field ?? 'Track +')
-			);
-			// The bar is the CLI's own order — alphabetical, no tracked/untracked
-			// partition and so no dim group after it (da-d08c).
-			assert.deepEqual(order, ['Track +', 'coffee', 'mood', 'note', 'untracked', 'work']);
+			const order = (await listed(page.locator('.bar'), 'button.track, [data-field]')).map((el) => el.field ?? 'Track +');
+			// Nothing is on, so the bar is the pictures' order top to bottom —
+			// the `y` `fields --json` resolves (da-vu7pi) — with no
+			// tracked/untracked partition and so no dim group after it (da-d08c).
+			const byY = JSON.parse((await app.run(['fields', '--json'])).stdout)
+				.sort((a, b) => a.y - b.y)
+				.map((f) => f.field);
+			assert.notDeepEqual(byY, [...byY].sort(), 'this seed is alphabetical by y too: the order proves nothing');
+			assert.deepEqual(order, ['Track +', ...byY]);
 			const track = await page.locator('.bar button.track').evaluate((el) => ({
 				height: el.getBoundingClientRect().height,
 				bg: getComputedStyle(el).backgroundColor,
@@ -229,7 +248,8 @@ describe('in the app', () => {
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			await type(page, 'ignore run');
 			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"]'));
-			const drawn = () => page.locator('.bar [data-field]').evaluateAll((all) => all.map((el) => `${el.tagName}:${el.dataset.field}`));
+			// Which fields are buttons: the order is the test above's.
+			const drawn = async () => (await listed(page.locator('.bar'), '[data-field]')).map((el) => `${el.tag}:${el.field}`).sort();
 			assert.deepEqual(await drawn(), ['BUTTON:tea', 'BUTTON:walk']);
 
 			await page.locator('.bar button.track').click();

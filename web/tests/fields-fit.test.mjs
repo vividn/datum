@@ -101,7 +101,7 @@ describe('the widget fits its screen, legibly', () => {
 
 			const on = await contrasts(page);
 			assert.deepEqual(
-				on.map((r) => r.label),
+				on.map((r) => r.label).sort(),
 				['Track +', 'energy', 'mood', 'pushups', 'untracked', 'work'],
 				'all four kinds have to be in the measurement'
 			);
@@ -130,19 +130,19 @@ describe('the widget fits its screen, legibly', () => {
 				for (const line of [...FIXTURE, 'occur tea', 'occur water', 'occur run']) await type(page, line);
 				await page.locator('.bar [data-field="run"]').waitFor();
 				// The rule is the pane's BOX, not the bar's content (da-ltux,
-				// vividn): one or two button-rows of room and the bar is a single
-				// row reached left and right; three or more and it wraps and is
-				// reached up and down. The bar says which it is in `data-rows`,
+				// da-vu7pi, vividn): as many rows as there is room for, up to
+				// three, always reached left and right. The bar says how many
+				// in `data-rows`,
 				// and the row a button is drawn on is the MIDDLE of its box —
 				// the bar centres what it lays out, and a record's underlined
 				// name is shorter than a chip.
 				const bar = await page.locator('.bar').evaluate((el) => {
 					const style = getComputedStyle(el);
-					const slots = [...el.children].filter((c) => !c.classList.contains('probe'));
-					const gap = parseFloat(style.columnGap) || 0;
+					const slots = [...el.querySelectorAll('.lane > *')];
+					const gap = parseFloat(style.rowGap) || 0;
 					return {
 						rows: Number(el.dataset.rows),
-						wrap: style.flexWrap,
+						slots: slots.length,
 						display: style.display,
 						x: style.overflowX,
 						y: style.overflowY,
@@ -168,28 +168,16 @@ describe('the widget fits its screen, legibly', () => {
 				// anything to scroll to is about how many buttons there happen
 				// to be, and is asserted only where they overflow (`crowded`).
 				assert.ok(bar.fits, 'the bar is wider than the pane it is in');
-				if (bar.rows <= 2) {
-					assert.deepEqual(
-						[bar.display, bar.x, bar.y],
-						['grid', 'auto', 'hidden'],
-						`${bar.rows} rows of room: as many rows as fit, reached sideways`
-					);
-					// A column-flow grid fills every row it has (da-hs6c).
-					assert.equal(bar.drawn, bar.rows, `${bar.rows} rows of room, but the bar drew ${bar.drawn}`);
-					if (bar.rows === 1 && bar.crowded) assert.ok(bar.scrolls, 'the buttons overflow but the bar does not scroll');
-				} else {
-					assert.deepEqual(
-						[bar.wrap, bar.x, bar.y],
-						['wrap', 'hidden', 'auto'],
-						`${bar.rows} rows of room: wrapped, reached downward`
-					);
-					assert.equal(bar.scrolls, false, 'a wrapped bar must not also scroll sideways');
-					assert.equal(
-						bar.drawn > 1,
-						bar.crowded,
-						`the bar drew ${bar.drawn} row(s) with the buttons ${bar.crowded ? 'over' : 'in'}flowing`
-					);
-				}
+				assert.deepEqual(
+					[bar.display, bar.x, bar.y],
+					['flex', 'auto', 'hidden'],
+					`${bar.rows} rows of room: as many rows as fit, reached sideways`
+				);
+				// Every row the box has room for is drawn, unless there are
+				// fewer buttons than rows (da-vu7pi deals them by index).
+				const want = Math.min(bar.rows, bar.slots);
+				assert.equal(bar.drawn, want, `${bar.rows} rows of room, but the bar drew ${bar.drawn}`);
+				if (bar.rows === 1 && bar.crowded) assert.ok(bar.scrolls, 'the buttons overflow but the bar does not scroll');
 				for (const h of bar.heights) assert.ok(h >= 24, `a button is ${h}px tall`);
 
 				const first = await page.locator('.bar').evaluate((el) => {

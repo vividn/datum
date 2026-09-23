@@ -17,8 +17,8 @@ import {
 	fieldsUnder,
 	pendingVerb,
 	declaredVerb,
+	lanesOf,
 	rowsIn,
-	scrollsSideways,
 	verbPress
 } from '../src/lib/commands.ts';
 
@@ -176,8 +176,22 @@ describe('the scroll rule', () => {
 		assert.equal(rowsIn(400, 0), 1);
 	});
 
-	test('one or two rows scroll sideways; three or more wrap', () => {
-		assert.deepEqual([1, 2, 3, 4].map(scrollsSideways), [true, true, false, false]);
+	// da-vu7pi: item `i` to row `i % rows`, so each row packs on its own
+	// and the first few items still start the rows.
+	test('the items are dealt into the rows by index, and no row is left empty', () => {
+		const items = ['Undo', 'Redo', 'occur', 'start', 'end', 'switch', 'add'];
+		assert.deepEqual(lanesOf(items, 1), [items]);
+		assert.deepEqual(lanesOf(items, 2), [
+			['Undo', 'occur', 'end', 'add'],
+			['Redo', 'start', 'switch']
+		]);
+		assert.deepEqual(lanesOf(items, 3), [
+			['Undo', 'start', 'add'],
+			['Redo', 'end'],
+			['occur', 'switch']
+		]);
+		assert.deepEqual(lanesOf(['Track +', 'coffee'], 3), [['Track +'], ['coffee']]);
+		assert.deepEqual(lanesOf([], 2), []);
 	});
 });
 

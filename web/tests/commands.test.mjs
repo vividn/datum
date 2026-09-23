@@ -14,7 +14,8 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp as withAnyApp, seedLines, workerClock } from './support/app.mjs';
 import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
-import { atRows, axes, boxes, lastReached } from './support/rows.mjs';
+import { until } from './support/until.mjs';
+import { atRows, axes, boxes, gaps, lastReached, listed, packed } from './support/rows.mjs';
 
 before(startApp);
 after(stopApp);
@@ -60,16 +61,13 @@ const commands = (page) => page.locator('.bar.commands');
 const fieldsBar = (page) => page.locator('section[data-pane="bar"] .bar');
 
 /** The commands widget's buttons, in the order it draws them. */
-const drawn = (page) =>
-	commands(page).evaluate((bar) =>
-		[...bar.querySelectorAll('button[data-command]')].map((b) => b.textContent.trim())
-	);
+const drawn = async (page) => (await listed(commands(page), 'button[data-command]')).map((b) => b.text);
 
-/** The fields the fields widget is showing, in the CLI's own order. */
-const showing = (page) =>
-	fieldsBar(page).evaluate((bar) =>
-		[...bar.querySelectorAll('[data-field]')].map((b) => b.dataset.field)
-	);
+/**
+ * The fields the fields widget is showing, by name: WHICH fields a verb
+ * leaves is the claim here — the order they come in is `fields.test.mjs`'s.
+ */
+const showing = async (page) => (await listed(fieldsBar(page), '[data-field]')).map((b) => b.field).sort();
 
 /**
  * Where a button sits in the bar's reading order: the line it is on and
@@ -243,52 +241,66 @@ describe('a verb fills the line and filters the fields', () => {
 });
 
 describe('the scroll rule', () => {
-	test('one row high draws one row and two draw two, both reached sideways; three wraps and is reached down', async () => {
+	// vividn, 2026-09-22 (da-vu7pi): «we should always maintain horizontal
+	// scrolling in the commands widget, so when it is tall enough, do three
+	// rows that scroll horizontally» — and each row packs on its own.
+	test('one, two and three rows high draw that many rows, each packed, all reached sideways; taller stays three', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 
-			for (const want of [1, 2]) {
+			for (const want of [1, 2, 3]) {
 				await atRows(page, 'cmd', want);
 				assert.deepEqual(await axes(commands(page)), {
 					x: 'auto',
 					y: 'hidden',
-					display: 'grid',
+					display: 'flex',
 					rows: want,
 					fits: true
 				});
 				const drawn = await boxes(commands(page), 'button[data-command]');
 				assert.deepEqual(drawn.filter((b) => !b.inside).map((b) => b.name), [], `${want} rows: clipped`);
+				packed(await gaps(commands(page), 'button[data-command]'), `${want} rows`);
 				if (want === 2) {
-					// Column-major: Undo over Redo, then occur over start.
-					const [undo, redo, occur, start] = drawn;
+					// Dealt by index: Undo and Redo start the two rows, occur
+					// follows Undo and start follows Redo.
+					const at = Object.fromEntries(drawn.map((b) => [b.name, b]));
 					assert.deepEqual(
-						[undo.left === redo.left, undo.line < redo.line, occur.left === start.left, occur.line < start.line],
+						[
+							at.undo.left === at.redo.left,
+							at.undo.line < at.redo.line,
+							at.occur.line === at.undo.line && at.occur.left > at.undo.left,
+							at.start.line === at.redo.line && at.start.left > at.redo.left
+						],
 						[true, true, true, true],
-						'the first two columns are not Undo/Redo and occur/start'
+						'the rows are not Undo occur … over Redo start …'
 					);
-					assert.ok(occur.left > undo.left, 'occur is not right of Undo');
 				}
-				// And the rest really is reached by scrolling, not by spilling.
-				assert.ok(
-					await commands(page).evaluate((bar) => bar.scrollWidth > bar.clientWidth + 1),
-					'every command already fits: nothing is being scrolled to'
-				);
+				// And the rest really is reached by scrolling, not by spilling —
+				// one row is always crowded; at three, this width fits them all.
+				if (want === 1)
+					assert.ok(
+						await commands(page).evaluate((bar) => bar.scrollWidth > bar.clientWidth + 1),
+						'every command already fits: nothing is being scrolled to'
+					);
 				assert.ok(await lastReached(commands(page), 'button[data-command]'), `${want} rows: the last command is not reached`);
 
-				// The fields widget alike — the same rule, the same box.
+				// The fields widget alike — the same component, the same rule.
 				const short = await axes(fieldsBar(page));
-				assert.deepEqual([short.x, short.y, short.display, short.fits], ['auto', 'hidden', 'grid', true]);
+				assert.deepEqual([short.x, short.y, short.display, short.fits], ['auto', 'hidden', 'flex', true]);
 			}
 
-			// Narrow enough that the commands need three lines to wrap onto.
-			await page.setViewportSize({ width: 390, height: page.viewportSize().height });
-			await atRows(page, 'cmd', 3);
-			const tall = await axes(commands(page));
-			assert.deepEqual([tall.x, tall.y, tall.display, tall.fits], ['hidden', 'auto', 'flex', true]);
-			assert.ok(tall.rows >= 3, `the commands drew ${tall.rows} rows`);
-			const fields = await axes(fieldsBar(page));
-			assert.deepEqual([fields.x, fields.y, fields.display, fields.fits], ['hidden', 'auto', 'flex', true]);
+			// Room for far more than three: still three, still sideways.
+			const { width, height } = page.viewportSize();
+			await page.setViewportSize({ width, height: height + 400 });
+			const tall = await until(
+				async () => ({
+					...(await axes(commands(page))),
+					room: await commands(page).evaluate((bar) => bar.clientHeight / bar.parentElement.querySelector('.probe button').offsetHeight)
+				}),
+				(t) => t.room > 4.5 && t.rows === 3
+			);
+			assert.deepEqual([tall.x, tall.y, tall.display, tall.fits], ['auto', 'hidden', 'flex', true]);
 		});
 	});
 });

@@ -28,6 +28,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
 import { until } from './support/until.mjs';
+import { listed } from './support/rows.mjs';
 
 before(startApp);
 after(stopApp);
@@ -38,9 +39,6 @@ const NOW = Date.UTC(2026, 8, 10, 15, 0, 0);
 /**
  * One field of each shape, all four drawn inside that window: an open
  * block, an open switch, a CLOSED block and a dot.
- *
- * Alphabetically — the CLI's one ordering rule, and so the bar's usual
- * order — they are coffee, mood, run, sleep.
  */
 const SEED = [
 	['start', 'sleep', '-t', '14:10'],
@@ -51,8 +49,12 @@ const SEED = [
 	['occur', 'coffee', '-t', '14:50']
 ];
 
-/** The usual order: alphabetical, and what the bar returns to. */
-const USUAL = ['coffee', 'mood', 'run', 'sleep'];
+/**
+ * The usual order, and what the bar returns to (da-vu7pi): the fields on
+ * now — sleep and mood — first, then the rest, each as high up the
+ * pictures as the CLI draws it (the `y` of `fields --json`).
+ */
+const USUAL = ['sleep', 'mood', 'coffee', 'run'];
 
 const BAR = 'section.pane[data-title="fields"] .bar';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
@@ -82,8 +84,7 @@ async function withFields(fn, options = {}) {
 }
 
 /** Every field button the bar draws, in the order it draws them. */
-const shownFields = (page) =>
-	page.$$eval(`${BAR} [data-field]`, (els) => els.map((el) => el.dataset.field));
+const shownFields = async (page) => (await listed(page.locator(BAR), '[data-field]')).map((el) => el.field);
 
 /** Wait until the bar reads exactly `want`, and say what it read if it never does. */
 const saysFields = (page, want) =>
@@ -152,8 +153,8 @@ describe('a click on the picture puts the fields drawn there first', () => {
 				assert.deepEqual(seen.promoted, ['run'], 'the promoted field says so');
 				assert.deepEqual(seen.rule, ['run'], 'and the hairline falls after it');
 
-				// The scroll rule flows a bar of one or two rows column by
-				// column (da-hs6c), so a promoted field is at the LEFT edge.
+				// The bar deals its buttons into its rows by index (da-vu7pi),
+				// so the first — a promoted field — starts the top row.
 				const rows = await page.$eval(BAR, (bar) => Number(bar.dataset.rows));
 				assert.equal(rows, 2, 'this screen was chosen for a two-row bar');
 				const boxes = await page.$$eval(`${BAR} [data-field]`, (els) =>
@@ -187,7 +188,7 @@ describe('a click on the picture puts the fields drawn there first', () => {
 				() => marked(page),
 				(seen) => seen.promoted.join() === 'coffee'
 			);
-			assert.deepEqual(await shownFields(page), USUAL, 'a dot outranks nothing here, and hides nothing');
+			assert.deepEqual(await shownFields(page), ['coffee', ...USUAL.filter((f) => f !== 'coffee')], 'a dot hides nothing');
 
 			// The SAME row, at another mark's x entirely — minutes away in
 			// TIME. vividn, 2026-09-21, on his phone: «it seems occur dots
@@ -226,7 +227,7 @@ describe('a duration on the bar leaves the fields it can be spent on', () => {
 			await dragARange(page);
 			// The blocks — a `start` field and a `switch`. `coffee`, a point,
 			// has no length to be given.
-			await saysFields(page, ['mood', 'run', 'sleep']);
+			await saysFields(page, ['sleep', 'mood', 'run']);
 
 			await page.locator('.prompt-bar .pill.dur button.remove').last().click();
 			await saysFields(page, USUAL);

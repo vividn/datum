@@ -141,7 +141,7 @@ describe('a press ranks the fields the picture drew under it', () => {
 });
 
 describe('the ranking orders the bar without hiding anything', () => {
-	/** The four buttons the bar draws, alphabetical — the CLI's one ordering rule. */
+	/** The four buttons the bar draws, in the order it had before a press. */
 	const bar = (active = []) =>
 		['coffee', 'mood', 'run', 'sleep'].map((field) => ({
 			field,

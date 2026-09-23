@@ -105,6 +105,8 @@ export interface FieldListing {
 	state_colors: Record<string, string>;
 	/** The latest track/ignore status is IGNORED (da-d08c). */
 	ignored: boolean;
+	/** Where the field's band sits in the dayview and nowview, 0 at the top (da-vu7pi). */
+	y: number;
 }
 
 /** One row of `datum now --json`'s `active`. */
@@ -114,13 +116,20 @@ export interface NowActive {
 }
 
 /**
- * The widget's entries: every field `datum fields` lists, in the CLI's
- * order — alphabetical, the one ordering rule, so a press never moves a
- * button. `active` is `datum now --json`'s — a field it does not name is off.
+ * The widget's entries: every field `datum fields` lists, in the order the
+ * pictures draw them (vividn, 2026-09-22: «sorted by their spec y, so those
+ * that appear higher on the nowview are also higher in the list … Active
+ * start/switch fields should appear on the far left») — the ACTIVE fields
+ * first, then the rest, each by the `y` the CLI resolved (da-vu7pi), and
+ * the CLI's alphabetical order among equals. `active` is `datum now
+ * --json`'s — a field it does not name is off.
  */
 export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): FieldButton[] {
 	const now = new Map(active.map((a) => [a.field, a.state]));
-	return listing.map(({ field, spec, states, color, state_colors, ignored }) => {
+	const ordered = [...listing].sort(
+		(a, b) => Number(now.has(b.field)) - Number(now.has(a.field)) || a.y - b.y
+	);
+	return ordered.map(({ field, spec, states, color, state_colors, ignored }) => {
 		const state = now.get(field);
 		return {
 			field,

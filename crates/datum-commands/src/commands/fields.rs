@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
 use datum_core::db::Db;
+use datum_core::field_spec::PresentationSpec;
 use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use serde_json::{json, Value as JsonValue};
 
@@ -82,6 +83,10 @@ pub fn format_listing(listing: &JsonValue, include_ignored: bool) -> String {
 /// every `allowed_states` entry, since a not-yet-logged allowed state still
 /// gets a button. `ignored` is the field's latest track/ignore status
 /// ([`is_ignored_state`], da-d08c) — whether a spec exists has no say in it.
+/// `y` is where the field's band sits across the dayview and nowview, 0 at
+/// the top — resolved as they resolve it (spec `y`, else the name's hash),
+/// so the web orders its buttons by the pictures without re-deriving it
+/// (da-vu7pi).
 pub fn compute_fields(db: &Db) -> Result<JsonValue> {
     let mut by_field: BTreeMap<String, Vec<JsonValue>> = db
         .distinct_fields()?
@@ -126,6 +131,12 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
                     "color": color,
                     "state_colors": state_colors,
                     "ignored": ignored,
+                    "y": spec
+                        .map_or_else(
+                            || PresentationSpec::default().resolve_position(field),
+                            |s| s.presentation.resolve_position(field),
+                        )
+                        .y,
                 })
             })
             .collect(),
@@ -219,6 +230,24 @@ mod tests {
         assert_eq!(listing[1]["states"], json!(["happy", "sad"]));
         assert_eq!(listing[2]["spec"]["verb"], "start");
         assert_eq!(listing[2]["states"], json!([]));
+    }
+
+    /// da-vu7pi: `y` is the band's position as the pictures resolve it —
+    /// the spec's where it sets one, the name's hash where it does not.
+    #[test]
+    fn y_is_the_pictures_own() {
+        let db = fresh_db();
+        entry_builder("coffee").insert(&db);
+        let mut spec = FieldSpec::new("mood", Action::Switch);
+        spec.presentation.y = Some(0.25);
+        db.save_field_spec(&spec).unwrap();
+
+        let listing = compute_fields(&db).unwrap();
+        assert_eq!(
+            listing[0]["y"],
+            json!(PresentationSpec::default().resolve_position("coffee").y)
+        );
+        assert_eq!(listing[1]["y"], json!(0.25));
     }
 
     #[test]

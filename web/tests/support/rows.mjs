@@ -4,7 +4,10 @@
 
 import assert from 'node:assert/strict';
 
-const GAP = 6.4;
+export const GAP = 6.4;
+
+/** The most rows a bar draws (`MAX_ROWS` in $lib/commands.ts). */
+const MAX_ROWS = 3;
 
 /**
  * Resize the page until the bar in pane `id` reports `want` rows.
@@ -19,7 +22,7 @@ export async function atRows(page, id, want) {
 	/** The bar's rows, the rows its box holds, one row's height, and the box. */
 	const read = () =>
 		page.evaluate(
-			({ id, gap }) => {
+			({ id, gap, max }) => {
 				const pane = document.querySelector(`section[data-pane="${id}"]`);
 				const box = pane.querySelector('.bar').clientHeight;
 				const row = pane.querySelector('.probe button').offsetHeight;
@@ -41,10 +44,10 @@ export async function atRows(page, id, want) {
 					row,
 					box,
 					tall,
-					counted: rows === Math.max(1, Math.floor((box + gap) / (row + gap)))
+					counted: rows === Math.min(max, Math.max(1, Math.floor((box + gap) / (row + gap))))
 				};
 			},
-			{ id, gap: GAP }
+			{ id, gap: GAP, max: MAX_ROWS }
 		);
 	let last = null;
 	for (let i = 0; i < 14; i += 1) {
@@ -126,6 +129,58 @@ export const lastReached = (locator, selector) =>
 			const reached = last.left >= outer.left - 0.5 && last.right <= outer.right + 0.5;
 			bar.scrollLeft = 0;
 			return reached;
+		},
+		selector
+	);
+
+/**
+ * The room between every two buttons side by side on one drawn line
+ * (da-vu7pi). Each row packs on its own, so every one of these is the
+ * bar's gap — a button padded out to the widest in its column, as the
+ * column grid drew them, leaves more.
+ */
+export const gaps = (locator, selector) =>
+	locator.evaluate(
+		(bar, selector) => {
+			const lines = new Map();
+			for (const b of bar.querySelectorAll(selector)) {
+				const box = b.getBoundingClientRect();
+				const line = Math.round(box.top + box.height / 2);
+				lines.set(line, [...(lines.get(line) ?? []), box]);
+			}
+			return [...lines.values()].flatMap((row) =>
+				row
+					.sort((a, b) => a.left - b.left)
+					.slice(1)
+					.map((box, i) => Math.round((box.left - row[i].right) * 10) / 10)
+			);
+		},
+		selector
+	);
+
+/** Every gap `gaps` read is the bar's own, give or take a rounding. */
+export function packed(read, what) {
+	assert.ok(read.length > 0, `${what}: no two buttons share a line`);
+	assert.deepEqual(read.filter((g) => Math.abs(g - GAP) > 0.6), [], `${what}: a row is not packed`);
+}
+
+/**
+ * The `selector` elements of a button bar in the order the WIDGET listed
+ * them (da-vu7pi). `ButtonRows` deals item `i` into row `i % rows`, so the
+ * DOM reads a row at a time; this deals the items back — the first of
+ * every row, then the second of every row — and reads each match as its
+ * `data-*` names, its text and its tag.
+ */
+export const listed = (locator, selector) =>
+	locator.evaluate(
+		(bar, selector) => {
+			const lanes = [...bar.querySelectorAll('.lane')].map((lane) => [...lane.children]);
+			const items = [];
+			for (let k = 0; lanes.some((lane) => k < lane.length); k += 1)
+				for (const lane of lanes) if (k < lane.length) items.push(lane[k]);
+			return items
+				.flatMap((item) => (item.matches(selector) ? [item] : [...item.querySelectorAll(selector)]))
+				.map((el) => ({ ...el.dataset, text: el.textContent.trim(), tag: el.tagName }));
 		},
 		selector
 	);

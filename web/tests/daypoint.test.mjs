@@ -23,6 +23,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
 import { PHONE, settled, swipe, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
+import { listed } from './support/rows.mjs';
 
 before(startApp);
 after(stopApp);
@@ -153,8 +154,7 @@ const rangePills = (from, to, day = hhmm) => [
 ];
 
 /** Every field button the bar draws, in the order it draws them. */
-const shownFields = (page) =>
-	page.$$eval(`${BAR} [data-field]`, (els) => els.map((el) => el.dataset.field));
+const shownFields = async (page) => (await listed(page.locator(BAR), '[data-field]')).map((el) => el.field);
 
 /** Wait until the bar reads exactly `want`, and say what it read if it never does. */
 const saysFields = (page, want) =>
@@ -596,7 +596,9 @@ describe('a strip range is a DURATION to the fields widget (da-qu16)', () => {
 				await app.reload();
 				await page.locator(`${BAR} [data-field="sleep"]`).waitFor();
 				await app.idle();
-				await saysFields(page, ['coffee', 'mood', 'sleep']);
+				// The fields on now first — sleep and mood, as high up as each
+				// is drawn — then coffee (da-vu7pi).
+				await saysFields(page, ['sleep', 'mood', 'coffee']);
 
 				const g = await geom(page);
 				await drag(page, spot(g, msAt(g, 11)), spot(g, msAt(g, 12, 30)));
@@ -608,10 +610,10 @@ describe('a strip range is a DURATION to the fields widget (da-qu16)', () => {
 				// `hasDuration` asks the pill's KIND, and the strip's
 				// `start_time=` wears the same one the nowview's `dur=` does
 				// — so the rule da-qu16 wrote needs no second clause for it.
-				await saysFields(page, ['mood', 'sleep']);
+				await saysFields(page, ['sleep', 'mood']);
 
 				await page.locator('.prompt-bar .pill.dur button.remove').last().click();
-				await saysFields(page, ['coffee', 'mood', 'sleep']);
+				await saysFields(page, ['sleep', 'mood', 'coffee']);
 			},
 			{ clock: NOW, ...DESKTOP }
 		);

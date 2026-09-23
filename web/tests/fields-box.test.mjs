@@ -60,10 +60,10 @@ describe("the fields pane's box", () => {
 	// overflows it — the shape da-d08c makes ordinary.
 	//
 	// The scroller is the BAR (da-ltux), and which way it goes is the
-	// scroll rule's: a pane one or two button-rows high is one row reached
-	// sideways, a taller one wraps and is reached downward. The claim here
-	// is the same either way — the last button is reachable, not clipped
-	// away — so it is made along whichever axis the bar chose.
+	// scroll rule's — sideways today, down once a pivot asks for it
+	// (da-vu7pi's `axis`). The claim is the same either way — the last
+	// button is reachable, not clipped away — so it is made along whichever
+	// axis the bar chose.
 	test('a button past the end of the bar is scrolled to and pressed', async () => {
 		await withApp(async ({ page }) => {
 			for (const field of TEN) await type(page, `spec set ${field} --verb occur`);

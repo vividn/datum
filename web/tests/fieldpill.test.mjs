@@ -21,6 +21,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
 import { DESKTOP, along, draft, pane, widgetPane } from './support/layout.mjs';
+import { listed } from './support/rows.mjs';
 
 before(startApp);
 after(stopApp);
@@ -147,10 +148,7 @@ async function longPress(page, field, { finger = false } = {}) {
 }
 
 /** The commands the commands widget is drawing, in its order. */
-const commands = (page) =>
-	pane(page, 'cmd').evaluate((el) =>
-		[...el.querySelectorAll('button[data-command]')].map((b) => b.dataset.command)
-	);
+const commands = async (page) => (await listed(pane(page, 'cmd').locator('.bar'), 'button[data-command]')).map((b) => b.command);
 
 describe('the gesture, and the pill it mints', () => {
 	test('a hold mints the field pill, in the field’s own colour', async () => {

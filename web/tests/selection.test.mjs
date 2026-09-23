@@ -8,6 +8,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp as withAnyApp, seedLines } from './support/app.mjs';
 import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
+import { listed } from './support/rows.mjs';
 
 before(startApp);
 after(stopApp);
@@ -39,8 +40,7 @@ const sections = (page) => hidPill(page).locator('button.remove .label').allInne
 const button = (page, name) => page.locator(`.bar.commands button[data-command="${name}"]`);
 
 /** The command buttons drawn, in order. */
-const drawn = (page) =>
-	page.locator('.bar.commands button[data-command]').evaluateAll((all) => all.map((b) => b.dataset.command));
+const drawn = async (page) => (await listed(page.locator('.bar.commands'), 'button[data-command]')).map((b) => b.command);
 
 /** Press a filling command, then Enter in the bar, and wait for the run to settle. */
 async function run(app, name) {

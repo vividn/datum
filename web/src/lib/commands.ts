@@ -314,16 +314,22 @@ export function commandsUnder(grammar: Grammar | null, pills: Pill[]): CommandBu
 	});
 }
 
-// ---- the scroll rule (both widgets) ------------------------------------
+// ---- the scroll rule (every button bar) --------------------------------
 //
-// vividn: «When the bar is one or 2 rows high, scroll left and right; when
-// it is 3 or more high, then scroll up and down. Same with the fields
-// widget.» So the rows are counted from the BOX the pane's layout gave
-// the bar and the height of one button — never from what the bar is
-// drawing, which is the answer and would make the question circular.
+// vividn: «we should always maintain horizontal scrolling in the commands
+// widget, so when it is tall enough, do three rows that scroll
+// horizontally» — and the fields widget the same (da-vu7pi). So a bar is
+// always reached along ONE axis, and a taller box buys it more rows, up
+// to `MAX_ROWS`, never a wrap onto the other axis. The rows are counted
+// from the BOX the pane's layout gave the bar and the size of one button
+// — never from what the bar is drawing, which is the answer and would
+// make the question circular.
 
 /** The gap between two buttons, and so between two rows (0.4rem). */
 export const ROW_GAP = 6.4;
+
+/** The most rows a bar draws, however much room it has. */
+export const MAX_ROWS = 3;
 
 /** Rows of `rowHeight` buttons that fit in a box `height` tall, at least one. */
 export function rowsIn(height: number, rowHeight: number): number {
@@ -331,24 +337,54 @@ export function rowsIn(height: number, rowHeight: number): number {
 	return Math.max(1, Math.floor((height + ROW_GAP) / (rowHeight + ROW_GAP)));
 }
 
-/** At one or two rows the bar is a single row that scrolls sideways. */
-export const scrollsSideways = (rows: number): boolean => rows <= 2;
+/**
+ * `items` dealt into `rows` lines by index — item `i` to line `i % rows`
+ * (vividn, 2026-09-21: «each row gets independent spacing but buttons
+ * automatically flow into the left most space»). Each line packs its own
+ * buttons at their own widths, so no button is padded out to a
+ * neighbour's column, while the first `rows` items still stand at the
+ * start of the lines — the order is the caller's and survives the split.
+ * No line is left empty: fewer items than rows draw fewer lines, and no
+ * items draw none.
+ */
+export function lanesOf<T>(items: T[], rows: number): T[][] {
+	const lanes: T[][] = Array.from({ length: Math.min(Math.max(1, rows), items.length) }, () => []);
+	items.forEach((item, i) => lanes[i % lanes.length].push(item));
+	return lanes;
+}
 
 /**
- * Tell `onRows` how many rows fit, now and whenever the box changes.
+ * The axis a bar is reached along: `x`, rows reached left and right, is
+ * every bar today; `y`, columns reached up and down, is what a pivoted
+ * dayview/nowview will want of the fields widget (da-a6guc).
+ */
+export type Axis = 'x' | 'y';
+
+/**
+ * Tell `onRows` how many lines fit, now and whenever the box changes.
  *
  * `bar` is the box the LAYOUT gave the widget — a flex child with no
- * height of its own — and `probe` one of the widget's own buttons, drawn
- * and hidden, so the row height is the height the buttons really have
- * rather than a number written down twice. The bar's own height is never
- * asked: it is the answer, and asking it would make the question circular.
+ * size of its own across `axis` — and `probe` one of the widget's own
+ * buttons, drawn and hidden, so the line's size is the size the buttons
+ * really have rather than a number written down twice. The bar's own
+ * content is never asked: it is the answer, and asking it would make the
+ * question circular.
  */
 export function watchRows(
 	bar: HTMLElement,
 	probe: HTMLElement,
-	onRows: (rows: number) => void
+	onRows: (rows: number) => void,
+	axis: Axis = 'x'
 ): () => void {
-	const measure = () => onRows(rowsIn(bar.clientHeight, probe.offsetHeight));
+	const measure = () =>
+		onRows(
+			Math.min(
+				MAX_ROWS,
+				axis === 'x'
+					? rowsIn(bar.clientHeight, probe.offsetHeight)
+					: rowsIn(bar.clientWidth, probe.offsetWidth)
+			)
+		);
 	const observer = new ResizeObserver(measure);
 	observer.observe(bar);
 	observer.observe(probe);

@@ -1,14 +1,14 @@
-// The fields bar at one, two and three button-rows high (da-hs6c): at one
-// or two it draws as many rows as fit and is reached sideways, at three it
-// wraps and is reached down — with eight tracked fields, and with a
-// field's states filling the same bar. The commands bar's half of this is
+// The fields bar at one, two and three button-rows high (da-hs6c,
+// da-vu7pi): it draws as many rows as fit, each packed on its own, and is
+// always reached sideways — with eight tracked fields, and with a field's
+// states filling the same bar. The commands bar's half of this is
 // `commands.test.mjs`; the helpers both use are `./support/rows.mjs`.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
-import { atRows, axes, boxes, lastReached } from './support/rows.mjs';
+import { atRows, axes, boxes, gaps, lastReached, packed } from './support/rows.mjs';
 
 before(startApp);
 after(stopApp);
@@ -25,31 +25,23 @@ const SEED = [
 const bar = (page) => page.locator('section[data-pane="bar"] .bar');
 const BUTTONS = 'button:not([tabindex="-1"])';
 
-/** The bar at `want` rows: its shape, nothing clipped, and every button reached. */
+/** The bar at `want` rows: its shape, nothing clipped, every row packed, every button reached. */
 async function holds(page, want, first) {
 	await atRows(page, 'bar', want);
 	const shape = await axes(bar(page));
 	const drawn = await boxes(bar(page), BUTTONS);
-	if (want <= 2) {
-		assert.deepEqual(
-			[shape.x, shape.y, shape.display, shape.rows, shape.fits],
-			['auto', 'hidden', 'grid', want, true],
-			`${want} rows of room`
-		);
-		assert.deepEqual(drawn.filter((b) => !b.inside).map((b) => b.name), [], `${want} rows: clipped`);
-		assert.ok(await lastReached(bar(page), BUTTONS), `${want} rows: the last button is not reached`);
-		if (want === 2) {
-			// Column-major: the first two in DOM order are one column.
-			assert.deepEqual(
-				[drawn[0].name, drawn[0].left === drawn[1].left, drawn[0].line < drawn[1].line],
-				[first, true, true],
-				'the first column is not the first two buttons, top over bottom'
-			);
-		}
-	} else {
-		assert.deepEqual([shape.x, shape.y, shape.display, shape.fits], ['hidden', 'auto', 'flex', true]);
-		assert.ok(shape.rows >= 3, `${want} rows of room, but the bar drew ${shape.rows}`);
-	}
+	assert.deepEqual(
+		[shape.x, shape.y, shape.display, shape.rows, shape.fits],
+		['auto', 'hidden', 'flex', want, true],
+		`${want} rows of room`
+	);
+	assert.deepEqual(drawn.filter((b) => !b.inside).map((b) => b.name), [], `${want} rows: clipped`);
+	packed(await gaps(bar(page), BUTTONS), `${want} rows`);
+	assert.ok(await lastReached(bar(page), BUTTONS), `${want} rows: the last button is not reached`);
+	// Dealt by index: the first `want` start the rows, top to bottom.
+	const starts = drawn.filter((b) => b.left === drawn[0].left).sort((a, b) => a.line - b.line);
+	assert.equal(starts[0].name, first, 'the first row does not start with the first button');
+	assert.equal(starts.length, want, `${want} rows, but ${starts.length} start at the left edge`);
 }
 
 describe('the fields bar and the scroll rule', () => {
