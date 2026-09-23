@@ -15,7 +15,8 @@
 // bar, like a press in the fields widget, is what was typed followed by
 // the pills' text (`pressWithPills` in layout/engine.ts: the CLI takes no
 // flag before its verb). `setPills` and `removePill` are the whole of the
-// contract.
+// contract. A LOCKED pill outlives a press, and (da-1py00) a reload too —
+// see the section on `PILLS_KEY` below.
 //
 // `prefill` puts a line into the command line without running it — the
 // fields widget's `add <field> ` (da-c7u8), or a command button's `occur `;
@@ -96,7 +97,124 @@ export interface PillSection {
 /** The sections a pill is drawn as — a pill without them is one section. */
 export const sectionsOf = (pill: Pill): PillSection[] => pill.sections ?? [{ text: pill.text }];
 
-export const pills = writable<Pill[]>([]);
+// ---- A LOCKED PILL IS THIS DEVICE'S, AND COMES BACK (da-1py00) --------
+//
+// vividn, 2026-09-22: «this is a question if the pills should persist across
+// reload essentially. Maybe if they are locked? Yeah, let's try that.»
+//
+// The lock already means «this one stays across presses» (`clearUnlockedPills`
+// below). This is that same sentence one scope wider — it stays across
+// RELOADS too — and an unlocked pill is still gone with the ghost.
+//
+// In `localStorage`, because a locked pill is what belongs to this device
+// and this device only (§2, the rule `log.ts` and `tuning.ts` each say in
+// their own words), and never an entry. NOT the layout: a widget option
+// reaches the layout only on ask (da-vhwq), and nothing here asks, so a
+// locked pill riding into a saved layout would be a second, quieter way
+// for session state to become layout state.
+//
+// ⚑ It is THE PILLS that come back and not a filter beside them. Every
+// reader — the stats widget, the tail table, the pictures — derives from
+// this one store, so a restored pill narrows exactly as a freshly minted
+// one does by construction, and there is no second path for it to be
+// right-looking and wrong in.
+
+/** Where the locked pills are kept (never synced: they are a screen's). */
+export const PILLS_KEY = 'datum.bar.pills.v1';
+
+/** What is written: the lock is implied — only locked pills are stored. */
+type KeptPill = Pick<Pill, 'id' | 'kind' | 'text' | 'color'>;
+
+/** What this device already holds, exactly as it was written; none, or unreadable, is null. */
+function storedPills(): string | null {
+	try {
+		return localStorage.getItem(PILLS_KEY);
+	} catch {
+		// Blocked, or absent (the prerender).
+		return null;
+	}
+}
+
+/**
+ * The locked pills `raw` holds — anything else it holds is dropped.
+ *
+ * `id`, `kind` and `text` are REQUIRED and `color` is not, because that is
+ * the `Pill` contract above: the three are what a pill IS (an id to press,
+ * a kind to colour it by, and the word that goes on the command line),
+ * while a colour is what a `field` pill alone carries and every other kind
+ * takes from its CSS. So a pill missing one of the three is not a pill and
+ * goes; one missing a colour is the ordinary case.
+ *
+ * `sections` are never stored, because nothing that draws them keeps its
+ * state in them: the `hid` pill's are redrawn from its text by the
+ * subscriber below, and the cursor's pills are the CURSOR's — `$lib/cursor
+ * .ts` reconciles them against it on this same load, which is what drops a
+ * `time` pill whose cursor did not come back. So bar.ts needs no list of
+ * which kinds may be restored; each owner still answers for its own.
+ */
+function keptPills(raw: string | null): Pill[] {
+	if (!raw) return [];
+	try {
+		const held: unknown = JSON.parse(raw);
+		if (!Array.isArray(held)) return [];
+		return (held as KeptPill[]).flatMap((p) =>
+			p && typeof p.id === 'string' && typeof p.kind === 'string' && typeof p.text === 'string'
+				? [
+						{
+							id: p.id,
+							kind: p.kind,
+							text: p.text,
+							locked: true,
+							...(typeof p.color === 'string' ? { color: p.color } : {})
+						}
+					]
+				: []
+		);
+	} catch {
+		// Half-written: none, which is what every load had before this.
+		return [];
+	}
+}
+
+const stored = storedPills();
+
+export const pills = writable<Pill[]>(keptPills(stored));
+
+/**
+ * Remember them, whenever the LOCKED ones change.
+ *
+ * Whenever they change and not on every change to `pills`: the time cursor
+ * rewrites its pills on every press on a picture, and none of that is a
+ * storage write. So the serialized locked set is compared with what was
+ * last written and an identical one costs nothing — the press → feedback
+ * chain is measured (da-a39xn), and this sits in it.
+ *
+ * `written` starts as what the device ALREADY HOLDS, so an ordinary load —
+ * where what is stored is what this same code wrote last time — costs no
+ * storage write at all, not even the subscriber's first call (canary
+ * minimax-m3-preview on PR #86). What is stored and what would be written
+ * differ only when storage holds something this build did not write: a
+ * half-written or stale-shaped entry that `keptPills` dropped. Then they
+ * are unequal, and the first call normalizes the device — which is the
+ * behaviour that mattered, and it is kept. Nothing stored reads as `''`
+ * rather than null, because an empty locked set is what `''` means below.
+ */
+let written: string = stored ?? '';
+
+pills.subscribe((all) => {
+	const locked: KeptPill[] = all
+		.filter((p) => p.locked)
+		.map(({ id, kind, text, color }) => ({ id, kind, text, ...(color ? { color } : {}) }));
+	const json = locked.length ? JSON.stringify(locked) : '';
+	if (json === written) return;
+	written = json;
+	try {
+		if (json) localStorage.setItem(PILLS_KEY, json);
+		else localStorage.removeItem(PILLS_KEY);
+	} catch {
+		// Unremembered is not unusable: they last the visit.
+	}
+});
 
 export const setPills = (next: Pill[]): void => pills.set(next);
 

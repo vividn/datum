@@ -41,12 +41,14 @@ writing it down.
    sentence about itself — not by joining the list below, which will go stale. Two modules
    already say it in their own words: `log.ts` and `tuning.ts` each annotate their key *“never
    synced: it is a screen's”*, which is the predicate, written twice, in the code.
-   The keys, as examples (driven 2026-09-22 — nine files mention `localStorage`, six really call
+   The keys, as examples (driven 2026-09-22 — ten files mention `localStorage`, seven really call
    it): the layout draft, this device's open root tabs and its per-layout locks
    (`layout/draft.ts`, da-wpgy, da-0a5o, da-gshh); the custom pane's command line
    (`CustomPane.svelte`); the REPL scrollback (`replStore.ts`); the device id (`deviceId.ts`);
-   how far the output bar is open (`OUTPUT_KEY`, `log.ts`); and the bar's feel — TAU and DETENT,
-   which only a real thumb on a real phone can judge (`TUNING_KEY`, `tuning.ts`, da-o2wm8).
+   how far the output bar is open (`OUTPUT_KEY`, `log.ts`); the bar's feel — TAU and DETENT,
+   which only a real thumb on a real phone can judge (`TUNING_KEY`, `tuning.ts`, da-o2wm8); and
+   the bar's LOCKED pills (`PILLS_KEY`, `bar.ts`, da-1py00), which say the sentence too — a lock
+   is a thing a person does to THIS screen, and the pill it holds is an argument, never an entry.
    `layout/current.ts`, `layout/shell.ts` and `layout/registry.ts` name it in prose only.
    `+layout.svelte` keeps one flag in `sessionStorage` — the same rule one scope tighter: a
    tab's, not a device's.
@@ -86,6 +88,14 @@ writing it down.
    its verb, so a time cursor lands on a chip press exactly as on a typed line. They are drawn
    as pills BESIDE the ghost rather than as words in it, and a press spends its unlocked ones —
    out of the live set at once, fading on screen with the ghost (`bar.spent`, da-xfa4).
+   **A LOCKED pill survives a reload** and an unlocked one does not (da-1py00, `PILLS_KEY` in
+   `bar.ts`): the lock already meant "this one stays across presses", and this is that one scope
+   wider. It is §2's `localStorage` and NOT the layout — a widget option reaches the layout only
+   on ask (da-vhwq). Restoring the PILL is the whole mechanism: every reader that narrows —
+   stats, tail, the pictures' halo — derives from the one `pills` store, so a restored pill
+   filters exactly as a minted one by construction. Pills another module OWNS are still that
+   module's: `cursor.ts` reconciles its `time` and `dur` pills against the cursor on the same
+   load, so bar.ts needs no list of which kinds may come back.
 6. **The web asks every command it runs for its echo as data** — `--show json` appended the way
    `fitArgv` appends `--width` (`echoArgv` in `$lib/echo.ts`, at `Repl.runArgv` and
    `engine.alone`). The bottom bar and the REPL then PLACE the CLI's own strings — action, hid,

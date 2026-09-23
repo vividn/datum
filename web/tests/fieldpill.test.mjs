@@ -78,6 +78,37 @@ const fieldsBar = (page) => pane(page, 'bar').locator('.bar');
 const chip = (page, field) => fieldsBar(page).locator(`[data-field="${field}"]`);
 const fieldPill = (page) => page.locator('.prompt-bar .pill.field');
 
+/**
+ * The same page, with every write to the pills key counted (da-1py00).
+ *
+ * `Storage.prototype` is patched in an init script, so the count is re-made
+ * on each load and holds only what that load did — which is the whole
+ * point: the claim is about what a LOAD costs.
+ */
+const withSpyingApp = (fn) =>
+	withAnyApp(fn, {
+		...DESKTOP,
+		prepare: async (context) => {
+			await context.addInitScript(draft, PAGE);
+			await context.addInitScript(() => {
+				window.__pillWrites = [];
+				const proto = Storage.prototype;
+				const { setItem, removeItem } = proto;
+				proto.setItem = function (key, value) {
+					if (key === 'datum.bar.pills.v1') window.__pillWrites.push(['set', value]);
+					return setItem.call(this, key, value);
+				};
+				proto.removeItem = function (key) {
+					if (key === 'datum.bar.pills.v1') window.__pillWrites.push(['remove']);
+					return removeItem.call(this, key);
+				};
+			});
+		}
+	});
+
+/** What this load has written to the pills key, in order. */
+const writes = (page) => page.evaluate(() => window.__pillWrites);
+
 /** Hold a field: the gesture that mints the pill (right click is one of four). */
 async function hold(page, field) {
 	await chip(page, field).click({ button: 'right' });
@@ -418,6 +449,153 @@ describe('what narrows to it', () => {
 				['none'],
 				'the halo outlived the pill'
 			);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+});
+
+// ---- A LOCKED PILL SURVIVES A RELOAD (da-1py00) -------------------------
+//
+// vividn, 2026-09-22, on whether a stats selection should outlive a reload:
+// «Maybe if they are locked? Yeah, let's try that.» The two are one thing —
+// the stats widget's selection IS the field pill (da-ptuwr removed its own
+// selector) — so this is where the question is answered.
+//
+// ⚑ The claim is the FILTER and not the pill. A restoration that produced a
+// pill which reads `coffee`, wears the field's colour and narrows nothing
+// would pass every assertion about the pill itself, so each test here reads
+// the stats widget's argv AND its body back.
+describe('what survives a reload', () => {
+	test('a LOCKED field pill comes back, and narrows stats exactly as a fresh one does', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await ready(app);
+			await hold(page, 'coffee');
+			await fieldPill(page).waitFor();
+			await page.waitForFunction(
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
+			);
+
+			await fieldPill(page).locator('button.lock').click();
+			await page.waitForFunction(
+				() => document.querySelector('.prompt-bar .pill.field .lock')?.ariaPressed === 'true'
+			);
+
+			await app.reload();
+
+			await fieldPill(page).waitFor();
+			assert.equal(await fieldPill(page).locator('.label').innerText(), 'coffee');
+			// Still locked, so the next press does not spend it either.
+			assert.equal(await fieldPill(page).locator('button.lock').getAttribute('aria-pressed'), 'true');
+			// The field's own colour came back with it, not the kind's accent.
+			assert.equal(
+				await fieldPill(page).evaluate((el) => getComputedStyle(el).backgroundColor),
+				ORANGE
+			);
+			// THE POINT: it filters. The argv the widget runs, and the body
+			// that came back from it.
+			await page.waitForFunction(
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
+			);
+			await page.waitForFunction(
+				() => document.querySelector('.stats .body')?.textContent?.startsWith('coffee')
+			);
+			// And the widget that minted it knows it is pilled again, so a
+			// second hold has somewhere to be aimed.
+			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('an unlocked one does not, and stats is every field again', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await ready(app);
+			await hold(page, 'coffee');
+			await fieldPill(page).waitFor();
+			await page.waitForFunction(
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
+			);
+
+			await app.reload();
+
+			await page.waitForFunction(
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats'
+			);
+			assert.equal(await fieldPill(page).count(), 0, 'an unlocked pill came back');
+			await page.waitForFunction(
+				() => document.querySelector('.stats .body')?.textContent?.includes('all fields')
+			);
+			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), null);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// The comment on `written` in bar.ts CLAIMS that an ordinary load — one
+	// where storage already holds what this same code wrote — costs no
+	// storage write at all, the subscriber's first call included (canary
+	// minimax-m3-preview on PR #86). A claim in a comment that nothing
+	// checks is a claim that rots, so this counts the writes.
+	test('an ordinary load does not write to storage, and still restores the pill', async () => {
+		await withSpyingApp(async (app) => {
+			const { page } = app;
+			await ready(app);
+			await hold(page, 'coffee');
+			await fieldPill(page).waitFor();
+			await fieldPill(page).locator('button.lock').click();
+			await page.waitForFunction(
+				() => document.querySelector('.prompt-bar .pill.field .lock')?.ariaPressed === 'true'
+			);
+			// The lock itself IS a change, so it writes: the counter works,
+			// and what it wrote is the pill. Read back PARSED rather than as
+			// the exact string (canary minimax-m3-preview on PR #86): a
+			// refactor that reorders the `KeptPill` map in both places keeps
+			// the behaviour and would fail a string compare. Nothing is lost
+			// by it — what pins the round-trip is the count after the reload
+			// below, which can only be zero if the string re-derived at load
+			// is byte-identical to the one written here, in whatever order.
+			const written = await writes(page);
+			assert.equal(written.length, 1, 'the lock did not write exactly once');
+			assert.equal(written[0][0], 'set');
+			assert.deepEqual(JSON.parse(written[0][1]), [
+				{ id: 'field', kind: 'field', text: 'coffee', color: '#ffa500' }
+			]);
+
+			await app.reload();
+
+			// The pill came back and narrows, exactly as the test above says.
+			await fieldPill(page).waitFor();
+			await page.waitForFunction(
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
+			);
+			// And this load wrote nothing: the counter is re-made by the init
+			// script on every load, so it holds only what THIS load did.
+			assert.deepEqual(await writes(page), [], 'the load rewrote what it had just read');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// Locking is not the only way out: a locked pill taken away stays away,
+	// which is the half a store that only ever WROTE would get wrong.
+	test('a locked pill removed before the reload does not come back', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await ready(app);
+			await hold(page, 'coffee');
+			await fieldPill(page).waitFor();
+			await fieldPill(page).locator('button.lock').click();
+			await page.waitForFunction(
+				() => document.querySelector('.prompt-bar .pill.field .lock')?.ariaPressed === 'true'
+			);
+			await fieldPill(page).locator('button.remove').click();
+			await fieldPill(page).waitFor({ state: 'detached' });
+
+			await app.reload();
+
+			await page.waitForFunction(
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats'
+			);
+			assert.equal(await fieldPill(page).count(), 0, 'a removed pill came back');
 			assert.deepEqual(app.errors, []);
 		});
 	});
