@@ -314,3 +314,42 @@ fn plain_occur_renders_bare_dot_without_state_name() {
 
     let _ = std::fs::remove_file(&db);
 }
+
+// ─── Compound switch — the TRAIL is the state it switches TO ─────────────────
+
+/// `switch activity end 14m , switch activity researching` is ONE
+/// block-switch row carrying `following_state = "researching"`. Its TRAIL
+/// paints `researching` — what continues past it — and not `writing`, the
+/// state the block interrupted, which it painted before da-qxmqe. Pinned on
+/// the action echo and on `tail`, flush against the `end` body.
+#[test]
+fn compound_switch_trail_is_the_state_it_switches_to() {
+    let db = tmp_db();
+    let _ = std::fs::remove_file(&db);
+
+    run_color(&db, &["switch", "activity", "writing", "-t", "-60"]);
+    let echo = info_line(&run_color(
+        &db,
+        &[
+            "switch",
+            "activity",
+            "end",
+            "14m",
+            ",",
+            "switch",
+            "activity",
+            "researching",
+        ],
+    ));
+    let tail = run_color(&db, &["tail", "activity"]);
+    let tail = tail.lines().last().unwrap_or_default();
+
+    for (what, line) in [("echo", echo.as_str()), ("tail", tail)] {
+        assert!(
+            line.contains(&format!("end{}", bg_escape("researching"))),
+            "{what}: TRAIL must paint researching, not the interrupted writing:\n{line:?}"
+        );
+    }
+
+    let _ = std::fs::remove_file(&db);
+}

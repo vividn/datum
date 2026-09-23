@@ -180,11 +180,8 @@ pub fn tail_rows(
             let ctx = contexts.and_then(|c| c.get(i)).unwrap_or(&default_ctx);
             // The same trio the terminal's `[LEAD][body][TRAIL]` group
             // composes from (da-fknn8), so a reader of these rows and a
-            // reader of the table are looking at the same transition —
-            // `reported` being that trio with the one correction the
-            // terminal does not make (a compound switch carries the state
-            // it switches TO; see `StateTransition::reported`).
-            let t = StateTransition::reported(ctx, e);
+            // reader of the table are looking at the same transition.
+            let t = StateTransition::of(ctx, e);
             // A TIMELESS row sits at no instant, so there is no state
             // before it and none after: the terminal gives it the `¢`
             // glyph and no slots at all (`format_state_group`), and the
@@ -280,6 +277,7 @@ mod tests {
     use chrono::{DateTime, Utc};
     use datum_core::dur::Dur;
     use datum_core::entry::Verb;
+    use datum_core::state::FieldStateEvents;
     use datum_core::time::DatumTime;
     use serde_json::json;
 
@@ -609,49 +607,86 @@ mod tests {
     }
 
     /// A compound switch carries the state it switches TO, and THAT is
-    /// what continues forward past it — so the row reports it, not the
-    /// slot probe (opal, on #74).
+    /// what continues forward past it — in the row AND in the painter's
+    /// TRAIL slot (opal, on #74; da-qxmqe).
     ///
-    /// Measured before this existed: `switch activity writing` then
-    /// `switch activity end 14m , switch activity researching` stores
-    /// `following_state = "researching"`, and the row said `writing` —
-    /// the state the block INTERRUPTED — because `trail_state` probes the
+    /// Measured before da-qxmqe: `switch activity writing` then `switch
+    /// activity end 14m , switch activity researching` stores
+    /// `following_state = "researching"`, and the TRAIL painted `writing` —
+    /// the state the block INTERRUPTED — because the slot probed the
     /// field's history at the block's far edge EXCLUDING the row itself.
-    /// The old `following_state` key, which was the column verbatim, had
-    /// the right answer; taking it from the painter would have lost it.
+    /// The context is built from that history, not by hand, so the probe
+    /// is the one the terminal runs.
     #[test]
     fn a_compound_switch_reports_the_state_it_switches_to() {
-        let e = compound(
-            Some(json!(false)),
-            json!("researching"),
-            Dur::of(chrono::Duration::minutes(14)),
-        );
-        // The slot probe answers with what the block interrupted, which is
-        // what the terminal's TRAIL paints and what this row must NOT say.
-        let ctx = RenderContext {
-            lead_state: Some(json!("writing")),
-            trail_state: Some(json!("writing")),
-            ..RenderContext::default()
-        };
+        use crate::render::action::StateTransition;
+        let mut writing = entry(Verb::Switch, Some(json!("writing")), None);
+        writing.occur_time = Some(t_at("2024-03-16T14:15:00Z"));
+        for e in [
+            compound(
+                Some(json!(false)),
+                json!("researching"),
+                Dur::of(chrono::Duration::minutes(14)),
+            ),
+            // A zero span is a point, so the TRAIL is not the block
+            // probe's but the row's own — the point-switch half of the bug.
+            Entry {
+                verb: Verb::PointSwitch,
+                ..compound(
+                    Some(json!(false)),
+                    json!("researching"),
+                    Dur::of(chrono::Duration::zero()),
+                )
+            },
+        ] {
+            let events = FieldStateEvents::from_entries([&writing, &e]);
+            let ctx = RenderContext::from_events(Some(&events), &e);
+            let what = format!("{} with {:?}", e.verb, e.dur);
+            assert_eq!(
+                StateTransition::of(&ctx, &e).following,
+                Some(json!("researching")),
+                "the painter's trail: {what}"
+            );
+            let rows = tail_rows(
+                std::slice::from_ref(&e),
+                Some(std::slice::from_ref(&ctx)),
+                TimeMetricCol::Hybrid,
+                None,
+            );
+            assert_eq!(rows[0].previous_state, json!("writing"), "{what}");
+            assert_eq!(rows[0].following_state, json!("researching"), "{what}");
+            assert_eq!(
+                rows[0].following_state_label.as_deref(),
+                Some("researching"),
+                "{what}"
+            );
+        }
+    }
+
+    /// A first log's dot declares its field in its own `following_state`
+    /// (da-gvcen): the ROW says `TRACKED` past it, though the dot has no
+    /// slot to paint it in and the ambient state around it is untracked.
+    #[test]
+    fn a_first_log_dot_reports_the_field_it_declares() {
+        use crate::render::action::format_state_group;
+        let _g = datum_test_util::no_color_scope();
+        let e = compound(None, json!("TRACKED"), Dur::moment());
+        let ctx = RenderContext::from_events(None, &e);
         let rows = tail_rows(
             std::slice::from_ref(&e),
             Some(std::slice::from_ref(&ctx)),
             TimeMetricCol::Hybrid,
             None,
         );
-        assert_eq!(rows[0].previous_state, json!("writing"));
-        assert_eq!(rows[0].following_state, json!("researching"));
+        assert_eq!(rows[0].previous_state, json!("IGNORED"));
+        assert_eq!(rows[0].following_state, json!("TRACKED"));
         assert_eq!(
-            rows[0].following_state_label.as_deref(),
-            Some("researching")
-        );
-        // The terminal is NOT changed to match: the painter still composes
-        // from `StateTransition::of`, whose trail is the probe's answer.
-        // That disagreement is da-qxmqe, not this bead.
-        use crate::render::action::StateTransition;
-        assert_eq!(
-            StateTransition::of(&ctx, &e).following,
-            Some(json!("writing"))
+            format!(
+                "{}{}{}",
+                rows[0].previous_state_cell, rows[0].state_body, rows[0].following_state_cell
+            ),
+            format_state_group(&e, None, &ctx).unwrap(),
+            "the dot still has no slots to paint it in"
         );
     }
 
@@ -670,9 +705,10 @@ mod tests {
     /// `entry.dur.as_ref()` and these three `None` — which compiles — a
     /// `PointSwitch` carrying `MOMENT` parts company here.
     ///
-    /// The one place the two are ALLOWED to differ is a row carrying its
-    /// own `following_state`, which is why none of these rows does; that
-    /// difference has a test of its own above.
+    /// A row carrying its own `following_state` is not swept here: its
+    /// trail comes from the row rather than from the context, which a
+    /// hand-built context cannot show — it has a test of its own above,
+    /// built from the field's history (da-qxmqe).
     #[test]
     fn the_painter_and_the_row_agree_for_every_verb_and_duration() {
         use crate::render::action::{draws_state_badge, format_state_group};

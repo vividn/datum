@@ -24,7 +24,7 @@ use datum_core::state::FieldStateEvents;
 use datum_core::{
     entry::{Entry, EntryShape},
     field_spec::{FieldSpec, SpecRegistry},
-    shape::has_state_badge,
+    shape::{hands_field_back, has_state_badge},
     time::{DatumTime, Zone},
 };
 use datum_parse::time::{format_human_duration, DurationPrecision};
@@ -262,8 +262,9 @@ pub struct StateTransition {
     /// The row's own state — `Entry::state`, unchanged.
     pub current: Option<JsonValue>,
     /// The state that continues forward past this row. For a block, what
-    /// resumes when it closes; for a point-shaped switch, the row's own
-    /// emitted state.
+    /// resumes when it closes; for a block-switch / point-switch, the
+    /// state it switches TO (its own `following_state`); for a
+    /// point-shaped switch, the row's own emitted state.
     pub following: Option<JsonValue>,
 }
 
@@ -271,7 +272,8 @@ impl StateTransition {
     /// The trio for one row, read off the context the renderer already
     /// builds. The LEAD/TRAIL probes exist only on the state-badge verbs;
     /// the bare dot has no slots of its own, so the field's ambient state
-    /// at the row's time is both what came before and what continues.
+    /// at the row's time is both what came before and what continues —
+    /// unless the dot itself switches the field ([`switched_to`]).
     pub fn of(ctx: &RenderContext, entry: &Entry) -> StateTransition {
         if draws_state_badge(entry) {
             StateTransition {
@@ -283,39 +285,9 @@ impl StateTransition {
             StateTransition {
                 previous: ctx.ongoing_state.clone(),
                 current: entry.state.clone(),
-                following: ctx.ongoing_state.clone(),
+                // A first log's dot declares its field past it (da-gvcen).
+                following: switched_to(entry).or_else(|| ctx.ongoing_state.clone()),
             }
-        }
-    }
-
-    /// The trio as the ROW reports it — [`Self::of`], with the one
-    /// correction the terminal does not make (da-fknn8, opal on #74).
-    ///
-    /// A `block-switch` / `point-switch` carries the state it switches TO
-    /// in its own `following_state` column, and that IS what continues
-    /// forward past it. The painter's TRAIL slot does not use it:
-    /// `trail_state` probes the field's history at the block's far edge
-    /// EXCLUDING this row, so for these verbs it answers with the state
-    /// the block INTERRUPTED. Measured — `switch activity writing` then
-    /// `switch activity end 14m , switch activity researching` stores
-    /// `following_state = "researching"` and the slot paints `writing`.
-    ///
-    /// The row reports the stored answer, because a reader asking what
-    /// follows is owed the truth and the row is holding it. The terminal
-    /// keeps its bytes: this bead's acceptance is that the table does not
-    /// change at all, so the slot is left exactly as it is and the
-    /// disagreement is filed (da-qxmqe) rather than fixed here.
-    ///
-    /// Written as a projection of [`Self::of`] rather than as a second
-    /// walk, so there is still one derivation and the correction is the
-    /// only thing that can differ.
-    pub fn reported(ctx: &RenderContext, entry: &Entry) -> StateTransition {
-        StateTransition {
-            following: entry
-                .following_state
-                .clone()
-                .or_else(|| Self::of(ctx, entry).following),
-            ..Self::of(ctx, entry)
         }
     }
 
@@ -369,6 +341,9 @@ fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Opti
     if !has_state_badge(entry.verb, entry.dur.as_ref()) {
         return None;
     }
+    if let Some(to) = switched_to(entry) {
+        return Some(to);
+    }
     if matches!(entry.shape(), EntryShape::Block) {
         // da-zwct: the block's END is the stored `occur_time` itself —
         // the duration ran up to it — so the trail probe needs no
@@ -377,6 +352,18 @@ fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Opti
         return events?.at(end, Some(&entry.hid));
     }
     entry_self_trail_state(entry)
+}
+
+/// The state a row SWITCHES TO past itself, when it names one (da-qxmqe):
+/// a block-switch / point-switch carries it in its own `following_state`,
+/// and that is what continues forward — not what it interrupted, and not
+/// the ambient state around a dot. `None` for a row that hands the field
+/// back ([`hands_field_back`]) or names nothing.
+fn switched_to(entry: &Entry) -> Option<JsonValue> {
+    entry
+        .following_state
+        .clone()
+        .filter(|_| !hands_field_back(entry.verb))
 }
 
 fn compute_ongoing_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {

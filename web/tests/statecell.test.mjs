@@ -321,17 +321,16 @@ describe('a state transition is three values, and the page draws them', () => {
 		);
 	});
 
-	test('a compound switch draws the state it switches TO, which the slot probe does not know', async () => {
+	test('a compound switch draws the state it switches TO, and the row says the same', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
 				// `switch f end <dur> , switch f <state>` is ONE row carrying
 				// its own `following_state` — the state it switches to. The
-				// terminal's TRAIL slot paints the state the block
-				// INTERRUPTED, because `trail_state` probes the field's
-				// history at the block's far edge excluding the row itself
-				// (da-qxmqe). The ROW reports the stored answer, so this is
-				// the one place the page and the terminal differ on purpose.
+				// terminal's TRAIL slot paints THAT, not the state the block
+				// INTERRUPTED (da-qxmqe: it used to, because the slot probed
+				// the field's history at the block's far edge excluding the
+				// row itself).
 				// NB no trailing `-t` on the second line: a flag after the `,`
 				// rides into the second side and the comma becomes a
 				// parallel-state comma instead of a side separator — the
@@ -354,39 +353,27 @@ describe('a state transition is three values, and the page draws them', () => {
 					`it came from writing and goes to researching: ${JSON.stringify(compound)}`
 				);
 
-				// ⚠ AND THE COLOUR THAT TOOLTIP SITS ON, which is the one
-				// coordinate this row was always going to be special at, and
-				// which nothing asserted until vremya asked (#74).
-				//
-				// The two DISAGREE, and the disagreement is real: the row's
-				// `following_state` is corrected (`StateTransition::reported`
-				// — the compound switch carries the state it switches TO),
-				// while `following_state_cell` is the CLI's own painted slot
-				// (`StateTransition::of`), which paints what the block
-				// INTERRUPTED. So the hover says `researching` over a block
-				// painted in `writing`'s colour.
-				//
-				// ⛔ THIS ASSERTION PINS AN OPEN QUESTION, not a decision.
-				// Which of the two the page should show is vividn's call — the
-				// terminal's own slot is wrong here and that is da-qxmqe.
-				// When he rules, this fails and says exactly what changed,
-				// which is the whole reason it is written down.
+				// ⚑ AND THE COLOUR THAT TOOLTIP SITS ON, beside what the ROW
+				// says. The JSON and the paint AGREEING is the whole of
+				// da-qxmqe: the row's `following_state` and the painted
+				// `following_state_cell` both come from `StateTransition::of`,
+				// and asserting only one would leave them free to drift apart.
 				const trail = compound.edges.find((e) => e.where === 'to');
 				const out = await app.run(['tail', 'activity', '--json']);
 				const row = JSON.parse(out.stdout).rows.find((r) => r.verb === 'block-switch');
+				assert.equal(row.previous_state, 'writing', `the row: ${JSON.stringify(row)}`);
+				assert.equal(row.following_state, 'researching', `the row: ${JSON.stringify(row)}`);
 				const asRgb = (hex) =>
 					`rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
-				// ⚑ Against the ROW's own following_state_color, not against the
-				// lead's — `trail === lead` would still pass if a change moved
+				// Against the ROW's own following_state_color, not against the
+				// lead's — `trail !== lead` would still pass if a change moved
 				// BOTH edges, and this cannot pass for the wrong reason
 				// (vremya, #74).
-				assert.notEqual(
+				assert.equal(
 					trail.background,
 					asRgb(row.following_state_color),
-					`the trail now paints the state the row switches TO — ` +
-						`if this is da-qxmqe landing, this test is the scheduled failure ` +
-						`and the fix is to assert equality here and delete ` +
-						`StateTransition::reported: ${JSON.stringify([trail, row.following_state_color])}`
+					`the trail must paint researching, the state the row switches TO: ` +
+						JSON.stringify([trail, row.following_state_color])
 				);
 				assert.deepEqual(app.errors, []);
 			},

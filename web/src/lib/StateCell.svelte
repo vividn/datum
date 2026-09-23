@@ -64,20 +64,10 @@
 	 * "Hover over previous state could show the value." An untracked state
 	 * has no word, so it gets the null sign the CLI would have drawn.
 	 *
-	 * ⚠ TRUE OF THE LEAD, AND OF THE TRAIL ON EVERY ROW BUT ONE. A compound
-	 * switch (`switch f end <dur> , switch f <state>`) carries the state it
-	 * switches TO, so the ROW's `following_state` is corrected to it
-	 * (`StateTransition::reported`) while `following_state_cell` is the
-	 * CLI's own slot, which paints what the block INTERRUPTED. On that row
-	 * this tooltip names a state the colour under it does not.
-	 *
-	 * ⛔ Left as it is ON PURPOSE, pending vividn: the fix is either to paint
-	 * the corrected state (which parts the page from the terminal and from
-	 * the byte-for-byte reassembly this design rests on) or to name the
-	 * painted one (which repeats the terminal's own error into the hover).
-	 * They are not equivalent and the choice is his. The terminal's slot is
-	 * da-qxmqe; `tests/statecell.test.mjs` pins the current behaviour so
-	 * a ruling cannot land silently. (vremya, #74.)
+	 * The word and the colour under it come from the same trio
+	 * (`StateTransition::of`), so they agree on every row — a compound
+	 * switch's TRAIL included, which paints the state it switches TO
+	 * (da-qxmqe) and names it.
 	 */
 	function hover(state: unknown, text: string | null | undefined): string | undefined {
 		if (state === null || state === undefined) return undefined;
