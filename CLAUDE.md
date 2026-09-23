@@ -335,18 +335,20 @@ All 22 Phase 1 tests must pass. Add tests for new behaviors.
 
 ## Pre-submit
 
-Before opening a PR, run the local mirror of the CI battery:
+Before opening a PR, run the gate:
 
 ```bash
-bash scripts/check.sh
+bash scripts/mq-check.sh
 ```
 
-It runs `cargo fmt --check`, `cargo clippy -D warnings`, the workspace build,
-the test suite (nextest when installed, else `cargo test`), and the doc tests —
-the same set CI gates on. For fast iteration on a small change,
-`scripts/check-changed.sh` runs the same battery scoped to the crates the diff
-touches (falling back to the full battery on workspace-root config changes or
-when the dependent closure is large).
+It runs only what the diff can break (da-kf28): for Rust,
+`scripts/check-changed.sh` — `cargo fmt --check`, then clippy, build, tests
+and doc tests scoped to the crates you touched plus their workspace
+dependents, falling back to the full `scripts/check.sh` on a workspace-root
+config change or when the closure is most of the workspace; for `web/`, the
+web suite; for docs alone, nothing. Do not run `cargo test --workspace` or
+`scripts/check.sh` for a localized change: CI runs the full workspace on
+every PR, and that is the safety net for what a scoped run cannot reach.
 
 ## Building
 

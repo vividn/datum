@@ -381,32 +381,28 @@ The roff is generated from the same `CommandSpec` table that drives
 
 ## Pre-submit check
 
-Before opening a PR, run the local mirror of the CI battery:
+Before opening a PR, run the gate:
 
 ```bash,no_run
-./scripts/check.sh
+bash scripts/mq-check.sh
 ```
 
-This runs `cargo fmt --check`, `cargo clippy -D warnings`,
-`cargo build --workspace --all-targets`, the test suite (via
-`cargo-nextest` when installed, otherwise `cargo test`), and the doc
-tests — the same set the GitHub Actions workflow gates on. Run it
-locally first because the repo is private (no remote branch
-protection); a green script run is the contract that CI will be green.
-
-For fast iteration on small, localised changes there is also
-`scripts/check-changed.sh`: the same battery, but scoped to the
-workspace crates the diff touches plus their transitive workspace
-dependents (so a one-line change in `datum-cli` does not rebuild and
-retest `datum-sync-*`). The script falls back to the full battery
-above when a workspace-root config file changes, when nothing
-crate-shaped is touched, or when the dependent closure already covers
-≥75% of the workspace. Use `check-changed.sh` for fast local iteration;
-CI always runs the full `check.sh` battery as the safety net.
+It runs only what the diff can break. A Rust change runs
+`scripts/check-changed.sh`: `cargo fmt --check`, then clippy, build, the
+test suite (via `cargo-nextest` when installed, otherwise `cargo test`)
+and the doc tests, scoped to the workspace crates the diff touches plus
+their transitive workspace dependents (so a one-line change in
+`datum-cli` does not rebuild and retest `datum-sync-*`). It falls back to
+the full `scripts/check.sh` battery when a workspace-root config file
+changes, when nothing crate-shaped is touched, or when the dependent
+closure already covers ≥75% of the workspace. A `web/` change runs the
+web suite; a docs-only change runs nothing. CI runs the full workspace
+battery on every PR as the safety net; `./scripts/check.sh` is its local
+mirror when you want it.
 
 ### `cargo xtask check`
 
-The same battery is reachable from the task runner, which additionally
+The full battery is reachable from the task runner, which additionally
 runs the four repo-hygiene gates:
 
 ```bash,no_run

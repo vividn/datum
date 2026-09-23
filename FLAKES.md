@@ -8,7 +8,7 @@
 
 This file catalogues tests in the daydumb workspace that are known to fail
 without indicating a real regression. Polecats and contributors consult it
-during the pre-merge gate (`scripts/check.sh`) so a known-noise failure
+during the pre-merge gate (`scripts/mq-check.sh`) so a known-noise failure
 does not derail an otherwise-good submission.
 
 ## Categories
@@ -27,7 +27,7 @@ does not derail an otherwise-good submission.
 
 ## Read protocol
 
-Before submitting to the merge queue, run `./scripts/check.sh`. If
+Before submitting to the merge queue, run `bash scripts/mq-check.sh`. If
 anything fails, look up the failing test name below.
 
 - If the entry's recommended action is **retry**, retry once or twice.

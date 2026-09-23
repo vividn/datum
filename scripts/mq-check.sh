@@ -9,9 +9,15 @@
 # only after the merge. vividn, 18:15: "make those improvements".
 #
 # So: the Rust battery runs when Rust changed; the web suite runs when web/
-# changed; a docs-only landing runs nothing. `scripts/check.sh` is the
-# battery the cans run, so the queue and the can cannot disagree about
-# what "green" means.
+# changed; a docs-only landing runs nothing.
+#
+# And the Rust battery is scoped to the crates the diff touches plus their
+# workspace dependents (`scripts/check-changed.sh`, which falls back to the
+# full `scripts/check.sh` on a root-config change or a closure of >=75% of
+# the crates). This is the gate every can runs before `ct done`, and the
+# full battery made a one-crate change pay ~25 minutes of workspace build
+# for 4 seconds of signal (da-kf28). The full workspace still runs where
+# the merge is decided: CI on the PR (`.github/workflows/ci.yml`).
 #
 # The queue's environment may not have node on PATH (it is nvm's, loaded by
 # an interactive shell's rc file), so the web half puts it there itself.
@@ -23,12 +29,12 @@ base="${MQ_BASE:-origin/main}"
 merge_base="$(git merge-base "$base" HEAD)"
 changed="$(git diff --name-only "$merge_base" HEAD)"
 
-rust="$(printf '%s\n' "$changed" | grep -E '^(crates/|Cargo\.(toml|lock)$|rust-toolchain|scripts/check\.sh$)' || true)"
+rust="$(printf '%s\n' "$changed" | grep -E '^(crates/|xtask/|Cargo\.(toml|lock)$|rust-toolchain|scripts/check(-changed)?\.sh$)' || true)"
 web="$(printf '%s\n' "$changed" | grep -E '^web/' || true)"
 
 if [ -n "$rust" ]; then
-  echo "mq-check: Rust changed — running scripts/check.sh"
-  bash scripts/check.sh
+  echo "mq-check: Rust changed — running scripts/check-changed.sh --base $merge_base"
+  bash scripts/check-changed.sh --base "$merge_base"
 fi
 
 if [ -n "$web" ]; then
