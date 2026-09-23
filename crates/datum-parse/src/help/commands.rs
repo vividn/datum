@@ -842,7 +842,7 @@ const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG[,ID_OR_SLUG]...>
 
 const WHY_BODY: &str = "USAGE:\n  datum why <ID_OR_SLUG[,ID_OR_SLUG]...> [--full]\n\nA comma list answers for each entry in turn, each under its own `hid:` line.\n";
 
-const EDIT_BODY: &str = "USAGE:\n  datum edit <ID_OR_SLUG>\n\nThe editor is $DATUM_EDITOR, else $EDITOR, else `vi` (commands/edit.rs).\nIt is spawned directly, never through a shell, so a value carrying\nflags — `code --wait`, `emacsclient -nw` — still works.\n";
+const EDIT_BODY: &str = "USAGE:\n  datum edit <ID_OR_SLUG>\n\nThe editor is $DATUM_EDITOR, else the `editor` key in datumrc.toml, else\n$VISUAL, else $EDITOR, else `vi` — what `datum config show` reports.\nIt is spawned directly, never through a shell, so a value carrying\nflags — `code --wait`, `emacsclient -nw` — still works.\n";
 
 const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG[,SLUG]...] [SHIFT]\n  datum retime [SLUG[,SLUG]...] [-r] [-t T] [-y]... [-q]... [-d D]\n  datum retime [SLUG[,SLUG]...] --offset DUR [--field F] [--after BND] [--before BND]\n\nDEFAULTS:\n  SLUG omitted        → `_LAST` (matches update/delete/undo)\n  No time-args        → set to now\n  SHIFT (bare int)    → minutes-offset shorthand; `retime <id> -5` shifts -5 min\n  -r/--relative       → interpret time-args as a delta from now, applied to the\n                        entry's current occur_time (rather than absolute target).\n                        Same flag is `--reverse` on tail; namespaces don't collide.\n  --offset DUR        → explicit ISO duration shift (legacy form)\n\nBULK FILTERS (--field/--after/--before select rows instead of _LAST):\n  BND                 → a duration ago (1d, 30m, 1:30), a date (2026-06-01,\n                        apr29, today, yesterday), or any -t time. Both bounds\n                        are inclusive, and a bare date names that day's\n                        opening midnight — so --before 2026-06-01 excludes\n                        June 1.\n";
 
@@ -1099,7 +1099,7 @@ pub const ENV_VARS: &[EnvVarSpec] = &[
     },
     EnvVarSpec {
         name: "DATUM_EDITOR",
-        summary: "Editor for `datum edit`. Read FIRST, before `$EDITOR`.",
+        summary: "Editor for `datum edit`. Read FIRST, before toml `editor`, `$VISUAL`, `$EDITOR`.",
     },
     EnvVarSpec {
         name: "DATUM_ID_DELIMITER",
@@ -1405,7 +1405,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "edit",
         aliases: &[],
         category: Category::Mutate,
-        summary: "open an entry in $DATUM_EDITOR (or $EDITOR)",
+        summary: "open an entry in the configured editor",
         long_description: None,
         usage: &["datum edit <ID_OR_SLUG>"],
         args: NO_ARGS,

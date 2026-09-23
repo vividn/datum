@@ -155,12 +155,12 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
         .context("failed to create tempfile for editor")?;
     std::fs::write(tmp.path(), &original_json).context("failed to write entry to tempfile")?;
 
-    let editor = std::env::var("DATUM_EDITOR")
-        .or_else(|_| std::env::var("EDITOR"))
-        .unwrap_or_else(|_| "vi".to_string());
+    // da-tkkz3: the precedence order is config.rs's, so `config show` cannot
+    // name an editor this command does not run.
+    let editor = crate::config::editor()?;
 
     // da-sdg6: spawn the editor's argv directly rather than through `sh -c`,
-    // so a value in $DATUM_EDITOR/$EDITOR can never be interpreted as a shell
+    // so the configured editor can never be interpreted as a shell
     // command. We still shell-split it so an editor carrying flags —
     // `EDITOR="code --wait"`, `"emacsclient -nw"` — keeps working; the
     // tempfile is appended as the final argument.
@@ -224,7 +224,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
 
 /// Split the configured editor string into `(program, leading_args)` with
 /// datum's shell splitter. Spawning this argv directly (no `sh -c`) is what
-/// keeps a value in `$DATUM_EDITOR`/`$EDITOR` from injecting shell commands,
+/// keeps the configured editor from injecting shell commands,
 /// while still supporting an editor that legitimately carries flags
 /// (`code --wait`). The caller appends the tempfile path as the final
 /// argument. Errors only when the editor string is empty after splitting —
@@ -233,7 +233,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
 fn split_editor(editor: &str) -> Result<(String, Vec<String>)> {
     let mut parts = datum_parse::shell_split(editor);
     if parts.is_empty() {
-        anyhow::bail!("no editor configured (DATUM_EDITOR/EDITOR is empty)");
+        anyhow::bail!("no editor configured (the editor is empty)");
     }
     let program = parts.remove(0);
     Ok((program, parts))
@@ -260,6 +260,9 @@ mod tests {
     fn with_datum_editor_result<T, F: FnOnce() -> T>(cmd: &str, f: F) -> T {
         let _guard = env_lock();
         let _editor = ScopedEnv::set("DATUM_EDITOR", cmd);
+        // The editor is resolved through config.rs, which reads datumrc.toml;
+        // keep the developer's own out of it.
+        let _config = ScopedEnv::set("DATUM_CONFIG", "/nonexistent/datumrc.toml");
         f()
     }
 
@@ -428,6 +431,38 @@ mod tests {
         assert_eq!(after.content_hash, before.content_hash);
         assert_eq!(after.modify_time, before.modify_time);
         assert_eq!(after.state, before.state);
+    }
+
+    #[test]
+    fn edit_runs_the_toml_editor_that_config_show_reports() {
+        // da-tkkz3: with DATUM_EDITOR unset, the toml `editor` key outranks
+        // $VISUAL/$EDITOR — as `config show` says. $EDITOR fails and the toml
+        // editor succeeds, so the exit status names which one ran.
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(&db, "coffee", Verb::Point, Some(serde_json::json!(1)), None);
+        let toml = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(toml.path(), "editor = \"true\"\n").unwrap();
+
+        // Config::load resolves db_path and device_id through data_dir(),
+        // which creates it and writes a device_id file: keep it in a tempdir.
+        let home = tempfile::tempdir().unwrap();
+
+        let _guard = env_lock();
+        let _home = ScopedEnv::set("DATUM_HOME", home.path());
+        let _config = ScopedEnv::set("DATUM_CONFIG", toml.path());
+        let _datum_editor = ScopedEnv::remove("DATUM_EDITOR");
+        let _visual = ScopedEnv::set("VISUAL", "false");
+        let _editor = ScopedEnv::set("EDITOR", "false");
+        let cfg = crate::config::Config::load(None).unwrap();
+        assert_eq!(cfg.editor.value, "true");
+        edit(
+            EditArgs {
+                id_or_slug: e.slug.to_string(),
+                output: Default::default(),
+            },
+            &db,
+        )
+        .unwrap();
     }
 
     #[test]

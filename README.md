@@ -172,7 +172,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 ## MUTATE
 
-- `edit` — Open an entry in $DATUM_EDITOR (or $EDITOR)
+- `edit` — Open an entry in the configured editor
 - `update` — Replace keys on an existing entry
 - `merge` — Deep-merge new values into an entry
 - `rekey` — Copy an entry to a new id (old row stays)
@@ -338,7 +338,7 @@ from the table the binary itself carries:
 | `DATUM_CONFIG_HOME`   | Override the directory `datumrc.toml` lives in.                                   |
 | `DATUM_DEFAULT_FIELD` | Field used when one is omitted from the argv.                                     |
 | `DATUM_DEVICE_ID`     | Override the per-device id stamped on entries.                                    |
-| `DATUM_EDITOR`        | Editor for `datum edit`. Read FIRST, before `$EDITOR`.                            |
+| `DATUM_EDITOR`        | Editor for `datum edit`. Read FIRST, before toml `editor`, `$VISUAL`, `$EDITOR`.  |
 | `DATUM_ID_DELIMITER`  | Delimiter that collapses empty `%key%` segments in a slug template (default `:`). |
 | `DATUM_WEEK_START`    | Weekday a week opens on (`monday`…`sunday`, or `1`-`7`; default Monday).          |
 | `DATUM_COLOR`         | `0` disables colour; otherwise auto-detect from the TTY.                          |

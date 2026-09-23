@@ -308,11 +308,8 @@ fn run_log_with_alias(args: LogArgs, db: &Db, inner: fn(LogArgs, &Db) -> Result<
 
 // ─── Edit ────────────────────────────────────────────────────────────────────
 
-// Open an entry in `$EDITOR` as pretty JSON; on save, re-parse and persist.
-//
-// Testing hook: `DATUM_EDITOR` takes precedence over `EDITOR`. Both are
-// invoked as `sh -c "$editor \"$1\"" -- <tmpfile>`, so tests can set
-// `DATUM_EDITOR="cp /path/to/prepared.json"` to simulate a scripted edit.
+// Open an entry in the configured editor (`config::editor`) as pretty JSON;
+// on save, re-parse and persist.
 //
 // `cmd_edit` was moved to `crate::commands::edit::edit` in da-4lov to
 // route the editor flow through `UserEditableEntry`, which makes

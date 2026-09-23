@@ -30,7 +30,7 @@ LOGGING:
   flag     Mark a field for review (lightweight 'come back to this')
 
 MUTATE:
-  edit     Open an entry in $DATUM_EDITOR (or $EDITOR)
+  edit     Open an entry in the configured editor
   update   Replace keys on an existing entry
   merge    Deep-merge new values into an entry
   rekey    Copy an entry to a new id (old row stays)

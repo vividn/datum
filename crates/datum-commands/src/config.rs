@@ -582,10 +582,26 @@ fn read_env(var: &str) -> Option<String> {
     }
 }
 
-fn editor_default() -> String {
-    read_env("VISUAL")
-        .or_else(|| read_env("EDITOR"))
-        .unwrap_or_else(|| "vi".to_string())
+/// The editor `datum edit` runs: DATUM_EDITOR, then the toml `editor` key,
+/// then $VISUAL, then $EDITOR, then `vi`. The one precedence order, shared by
+/// `Config::load` (and so `config show`) and `datum edit` (da-tkkz3).
+fn resolve_editor(toml: Option<String>) -> SourcedValue<String> {
+    if let Some(v) = read_env("DATUM_EDITOR") {
+        SourcedValue::new(v, Source::Env)
+    } else if let Some(v) = toml {
+        SourcedValue::new(v, Source::Toml)
+    } else {
+        let v = read_env("VISUAL")
+            .or_else(|| read_env("EDITOR"))
+            .unwrap_or_else(|| "vi".to_string());
+        SourcedValue::new(v, Source::Default)
+    }
+}
+
+/// [`resolve_editor`] without the rest of [`Config::load`], which would also
+/// resolve the database and write a `device_id` file.
+pub fn editor() -> Result<String> {
+    Ok(resolve_editor(load_raw_config_or_default()?.editor).value)
 }
 
 /// Built-in default delimiter for slug-template interpolation. Used when
@@ -634,13 +650,7 @@ impl Config {
             SourcedValue::new(None, Source::Default)
         };
 
-        let editor = if let Some(v) = read_env("DATUM_EDITOR") {
-            SourcedValue::new(v, Source::Env)
-        } else if let Some(v) = raw.editor.clone() {
-            SourcedValue::new(v, Source::Toml)
-        } else {
-            SourcedValue::new(editor_default(), Source::Default)
-        };
+        let editor = resolve_editor(raw.editor.clone());
 
         let id_delimiter = if let Some(v) = read_env("DATUM_ID_DELIMITER") {
             SourcedValue::new(v, Source::Env)
