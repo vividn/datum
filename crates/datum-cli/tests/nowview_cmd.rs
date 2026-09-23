@@ -947,3 +947,142 @@ fn attr_f64(svg: &str, key: &str) -> f64 {
     let b = svg[a..].find('"').expect("attribute close") + a;
     svg[a..b].parse().expect("number")
 }
+
+// ---------------------------------------------------------------------
+// da-78evn: `--orientation vertical` turns the picture on its side.
+// ---------------------------------------------------------------------
+
+/// The attribute strings of every tag in `svg` that opens with `open`.
+fn tags<'a>(svg: &'a str, open: &str) -> Vec<&'a str> {
+    svg.match_indices(open)
+        .map(|(i, _)| {
+            // From the space before the first attribute, so `num` finds it.
+            let s = i + open.len() - 1;
+            &svg[s..svg[s..].find('>').expect("tag close") + s]
+        })
+        .collect()
+}
+
+/// Attribute `name` of one tag's attribute string, as a number.
+fn num(attrs: &str, name: &str) -> f64 {
+    attr_f64(attrs, &format!(r#" {name}=""#))
+}
+
+#[test]
+fn nowview_vertical_turns_the_picture_on_its_side() {
+    let db = fresh_db();
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .state(serde_json::json!("focused"))
+        .time_start_utc(Utc::now() - Duration::minutes(20))
+        .insert(&db);
+    let size = |svg: &str| (num(svg, "width"), num(svg, "height"));
+
+    // The canvas swaps, defaults included: 400×300 becomes 300×400, and
+    // the snapshot's 100×300 becomes 300×100. `--vertical` is the same ask.
+    let h = nowview_out(&db, &["--context", "30m"], ".svg");
+    let v = nowview_out(
+        &db,
+        &["--context", "30m", "--orientation", "vertical"],
+        ".svg",
+    );
+    assert_eq!(size(&h), (400.0, 300.0));
+    assert_eq!(size(&v), (300.0, 400.0), "{v}");
+    let short = nowview_out(&db, &["--context", "30m", "--vertical"], ".svg");
+    assert_eq!(size(&short), size(&v));
+    let snap = nowview_out(&db, &["--vertical"], ".svg");
+    assert_eq!(size(&snap), (300.0, 100.0), "{snap}");
+    // `--width`/`--height` stay the SVG's own in either orientation.
+    let asked = nowview_out(
+        &db,
+        &[
+            "--context",
+            "30m",
+            "--vertical",
+            "--width",
+            "390",
+            "--height",
+            "520",
+        ],
+        ".svg",
+    );
+    assert_eq!(size(&asked), (390.0, 520.0));
+
+    // Time runs DOWN: the now-line crosses the picture, and the lane's
+    // state runs on below it to the bottom edge.
+    let line = tags(&v, r#"<line class="current-time-line" "#)[0];
+    let now_y = num(line, "y1");
+    assert_eq!(now_y, num(line, "y2"), "now-line is horizontal: {line}");
+    // It crosses the axis strip on the left, as the horizontal one crosses
+    // the strip below, and stops at the right edge (plot-local: the canvas
+    // less its 2px margin each side).
+    assert_eq!(
+        (num(line, "x1"), num(line, "x2")),
+        (0.0, 300.0 - 4.0),
+        "{line}"
+    );
+    let chunk = tags(&v, r#"<rect class="now-chunk" "#)[0];
+    assert!(
+        (num(chunk, "y") - now_y).abs() < 1e-6,
+        "chunk starts at now: {chunk}"
+    );
+    let bottom = num(chunk, "y") + num(chunk, "height");
+    assert!(
+        bottom <= 400.0 - 2.0 * 2.0 + 1e-6,
+        "chunk runs off the canvas: {chunk}"
+    );
+
+    // The axis labels stack down one column, each inside the canvas: the
+    // strip is as wide as its text (translate(2,2) is the margin).
+    let labels = tags(&v, r#"<text class="tick-label" "#);
+    assert!(labels.len() >= 3, "{v}");
+    let x = num(labels[0], "x");
+    for (i, l) in labels.iter().enumerate() {
+        assert_eq!(num(l, "x"), x, "one column: {l}");
+        if i > 0 {
+            assert!(num(l, "y") > num(labels[i - 1], "y"), "time runs down: {v}");
+        }
+    }
+    let widest = v
+        .split(r#"<text class="tick-label" "#)
+        .skip(1)
+        .map(|t| {
+            t[t.find('>').unwrap() + 1..t.find("</text>").unwrap()]
+                .chars()
+                .count()
+        })
+        .max()
+        .unwrap();
+    let font = num(labels[0], "font-size");
+    assert!(
+        x - widest as f64 * font * 0.6 >= 0.0,
+        "a {widest}-char label at x={x} runs off the left edge: {v}"
+    );
+}
+
+#[test]
+fn nowview_vertical_labels_sit_below_the_picture() {
+    let db = fresh_db();
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .state(serde_json::json!("focused"))
+        .time_start_utc(Utc::now() - Duration::minutes(20))
+        .insert(&db);
+    let v = nowview_out(&db, &["--context", "30m", "--vertical", "--labels"], ".svg");
+    let chunk = tags(&v, r#"<rect class="now-chunk" "#)[0];
+    let label = tags(&v, r#"<text class="state-label" "#)[0];
+    // Past the far end of time — below the now strip — written down the
+    // lane it names, and the canvas taller by what it needs.
+    assert!(
+        num(label, "y") > num(chunk, "y") + num(chunk, "height"),
+        "{v}"
+    );
+    let lane_mid = num(chunk, "x") + num(chunk, "width") / 2.0;
+    assert!(
+        (num(label, "x") - lane_mid).abs() < 1e-6,
+        "{label} vs {chunk}"
+    );
+    assert!(label.contains("rotate(90 "), "{label}");
+    assert_eq!(num(&v, "width"), 300.0);
+    assert!(num(&v, "height") > 400.0, "{v}");
+}

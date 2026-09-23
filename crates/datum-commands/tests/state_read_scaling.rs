@@ -110,7 +110,7 @@ fn the_cost_of_a_normal_read_does_not_grow_with_the_history() {
             ..Default::default()
         },
         width: Some(400.0),
-        height: 300.0,
+        height: Some(300.0),
         output_file: Some(svg.clone()),
         ..Default::default()
     };

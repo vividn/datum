@@ -212,11 +212,11 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
             }
             FlagSplit::Long("height") => {
                 let (v, ni) = take_value(tail, i, None, "--height")?;
-                out.height = parse_f64(v, "--height")?;
+                out.height = Some(parse_f64(v, "--height")?);
                 i = ni;
             }
             FlagSplit::LongAttached("height", v) => {
-                out.height = parse_f64(v, "--height")?;
+                out.height = Some(parse_f64(v, "--height")?);
                 i += 1;
             }
             FlagSplit::Long("margin") => {
@@ -235,6 +235,23 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
             }
             FlagSplit::LongAttached("time-axis-height", v) => {
                 out.time_axis_height = parse_f64(v, "--time-axis-height")?;
+                i += 1;
+            }
+            FlagSplit::Long("orientation") => {
+                let (v, ni) = take_value(tail, i, None, "--orientation")?;
+                out.orientation = parse_orientation(v)?;
+                i = ni;
+            }
+            FlagSplit::LongAttached("orientation", v) => {
+                out.orientation = parse_orientation(v)?;
+                i += 1;
+            }
+            FlagSplit::Long("horizontal") => {
+                out.orientation = DayviewOrientation::Horizontal;
+                i += 1;
+            }
+            FlagSplit::Long("vertical") => {
+                out.orientation = DayviewOrientation::Vertical;
                 i += 1;
             }
             FlagSplit::Long("output-file") => {

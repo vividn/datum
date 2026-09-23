@@ -728,3 +728,11 @@ fn json_nowview_takes_the_time_flags() {
         .collect();
     assert_eq!(shorts, ["t", "d", "q", "y", "z"]);
 }
+
+/// da-78evn: nowview's pivot is documented where its flags are.
+#[test]
+fn nowview_help_documents_the_orientation() {
+    let help = command_help("nowview");
+    assert!(help.contains("--orientation <O>"), "{help}");
+    assert!(help.contains("--vertical"), "{help}");
+}

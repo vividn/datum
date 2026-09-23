@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::dayview::{
     DayviewAxisTick, DayviewConfig, DayviewDayInput, DayviewFieldInput, Orientation,
 };
+use crate::dayview_svg::{text_width, VERTICAL_AXIS_LABEL_INSET, VERTICAL_AXIS_LABEL_MAX};
 
 /// One block (closed or ongoing) inside a field row. Consumed by the
 /// terminal renderer in [`crate::nowview_terminal`].
@@ -330,9 +331,11 @@ pub const NOW_WIDTH_MINUTES: f64 = 5.0;
 pub struct NowviewGeometry {
     /// How far back the window reaches from "now".
     pub history_minutes: f64,
-    /// Total SVG width. `None` → history-sized default plus the panel bump.
+    /// Total SVG width. `None` → history-sized default plus the panel bump
+    /// horizontally; vertically, [`DEFAULT_DAY_HEIGHT`] as the band.
     pub width: Option<f64>,
-    /// Requested total height. `<= 0` → [`DEFAULT_DAY_HEIGHT`] as the band.
+    /// Requested total height. `<= 0` → [`DEFAULT_DAY_HEIGHT`] as the band
+    /// horizontally; vertically, the history-sized default.
     pub height: f64,
     pub margin: f64,
     pub time_axis_height: f64,
@@ -341,6 +344,12 @@ pub struct NowviewGeometry {
     /// now strip, since the half after the line is drawn from the record.
     #[serde(default)]
     pub centred: bool,
+    /// Which way time runs (da-78evn): dayview's own enum, so the two
+    /// pictures cannot disagree about what vertical means. `width` and
+    /// `height` stay the SVG's; the time axis takes whichever it runs
+    /// along, and the defaults turn with it.
+    #[serde(default)]
+    pub orientation: Orientation,
 }
 
 impl Default for NowviewGeometry {
@@ -352,6 +361,7 @@ impl Default for NowviewGeometry {
             margin: 2.0,
             time_axis_height: 22.0,
             centred: false,
+            orientation: Orientation::Horizontal,
         }
     }
 }
@@ -372,9 +382,18 @@ pub fn nowview_config(
     geom: &NowviewGeometry,
 ) -> DayviewConfig {
     let history_minutes = geom.history_minutes.max(0.0);
-    let width = geom
-        .width
-        .unwrap_or_else(|| default_width_for_history(history_minutes));
+    let vertical = geom.orientation == Orientation::Vertical;
+    // The canvas along the time axis and across it: the SVG's width and
+    // height, turned on its side when time runs down the page.
+    let (along, across) = if vertical {
+        (
+            Some(geom.height).filter(|h| *h > 0.0),
+            geom.width.unwrap_or(0.0),
+        )
+    } else {
+        (geom.width, geom.height)
+    };
+    let along = along.unwrap_or_else(|| default_width_for_history(history_minutes));
     let snapshot = history_minutes <= 0.0;
     let after = if geom.centred {
         history_minutes / 2.0
@@ -398,30 +417,32 @@ pub fn nowview_config(
     // The now strip is `NOW_WIDTH_MINUTES` of the same scale the history
     // is drawn at, so the now-line falls where the original datum puts it
     // and the strip stays proportionate at any width.
-    let plot_width = (width - 2.0 * geom.margin).max(0.0);
+    let plot_width = (along - 2.0 * geom.margin).max(0.0);
     let now_width = if geom.centred && !snapshot {
         0.0
     } else {
         plot_width * NOW_WIDTH_MINUTES / (history_minutes + NOW_WIDTH_MINUTES)
     };
-    let time_axis_height = if snapshot { 0.0 } else { geom.time_axis_height };
-
     // Pre-compute the time-axis extent so the relative-minute tick override
     // resolves to the same pixel space dayview will use. Mirrors the math in
     // `dayview::compute_dayview`. Date label is suppressed (label_width = 0)
     // so the time axis only loses the now-strip reservation.
     let time_axis_extent_for_ticks = (plot_width - now_width).max(0.0);
-    let axis_ticks_override = Some(nowview_axis_ticks_around(
-        time_axis_extent_for_ticks,
-        before,
-        after,
-    ));
+    let ticks = nowview_axis_ticks_around(time_axis_extent_for_ticks, before, after);
+    let time_axis_height = if snapshot {
+        0.0
+    } else if vertical {
+        vertical_axis_strip(&ticks, geom.time_axis_height)
+    } else {
+        geom.time_axis_height
+    };
+    let axis_ticks_override = Some(ticks);
 
-    let day_height = if geom.height > 0.0 {
-        // Use the requested height as the per-day band, leaving room for
+    let day_height = if across > 0.0 {
+        // Use the requested extent as the per-day band, leaving room for
         // axis + margins. Floor at a sensible minimum so labels stay
         // readable.
-        (geom.height - 2.0 * geom.margin - time_axis_height).max(50.0)
+        (across - 2.0 * geom.margin - time_axis_height).max(50.0)
     } else {
         DEFAULT_DAY_HEIGHT
     };
@@ -429,8 +450,8 @@ pub fn nowview_config(
     DayviewConfig {
         days: vec![day],
         now_ms,
-        width,
-        height: None,
+        width: if vertical { across } else { along },
+        height: vertical.then_some(along),
         day_height,
         interday_margin: 0.0,
         time_axis_height,
@@ -438,10 +459,29 @@ pub fn nowview_config(
         // Date label suppressed — give all of the cross-perpendicular budget
         // to the data area (and the panel reservation).
         label_width: Some(0.0),
-        orientation: Orientation::Horizontal,
+        orientation: geom.orientation,
         axis_ticks_override,
         right_panel_width: now_width,
     }
+}
+
+/// How wide a vertical time-axis strip must be (da-78evn): at least what
+/// was asked for, and enough to hold its widest label — a tick's, or the
+/// `HH:MM` clock the overlay sets beside the now-line — beside the
+/// baseline. Horizontally a strip's height is one line of text whatever
+/// it says; vertically its width is the text's own.
+///
+/// Sized at [`VERTICAL_AXIS_LABEL_MAX`], which is what the renderer draws
+/// in any strip that holds five characters of it.
+fn vertical_axis_strip(ticks: &[DayviewAxisTick], asked: f64) -> f64 {
+    let size = VERTICAL_AXIS_LABEL_MAX;
+    let widest = ticks
+        .iter()
+        .map(|t| t.label.as_str())
+        .chain(["00:00"])
+        .map(|l| text_width(l, size))
+        .fold(0.0, f64::max);
+    asked.max(widest + VERTICAL_AXIS_LABEL_INSET)
 }
 
 #[cfg(test)]

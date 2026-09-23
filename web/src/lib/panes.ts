@@ -453,10 +453,20 @@ export function zoomHistory(history: string, scale: number): string {
 	return NOWVIEW_STEPS[best];
 }
 
-/** NOWVIEW at a window of `history`, centred on `at` when there is one (da-pcis). */
-export const nowviewSpec = (history: string, at?: string): PaneSpec => ({
+/**
+ * NOWVIEW at a window of `history`, centred on `at` when there is one
+ * (da-pcis), and drawn with time running down the page when `vertical`
+ * (da-78evn).
+ */
+export const nowviewSpec = (history: string, at?: string, vertical = false): PaneSpec => ({
 	...NOWVIEW,
-	argv: [...NOWVIEW.argv, '--history', history, ...(at ? ['-t', at] : [])]
+	argv: [
+		...NOWVIEW.argv,
+		'--history',
+		history,
+		...(at ? ['-t', at] : []),
+		...(vertical ? ['--orientation', 'vertical'] : [])
+	]
 });
 
 export const TAIL: PaneSpec = {

@@ -27,13 +27,14 @@ use datum_core::shape::{
     is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
 };
 use datum_core::time::Zone;
-use datum_layout::dayview::{compute_dayview, DayviewBlock, DayviewFieldInput};
+use datum_layout::dayview::{compute_dayview, DayviewBlock, DayviewFieldInput, Orientation};
 use datum_layout::nowview::{
     nowview_config, NowviewBlock, NowviewCurrentState, NowviewField, NowviewGeometry, NowviewPoint,
 };
 use datum_layout::nowview_svg::{
     render_nowview_at_svg, render_nowview_svg, with_xml_declaration, wrap_svg_in_html,
 };
+use datum_parse::cli::DayviewOrientation;
 use datum_parse::time::dur::parse_duration;
 use datum_parse::time::DatumTime;
 use serde_json::Value as JsonValue;
@@ -46,6 +47,10 @@ use crate::commands::field_visuals::{
 };
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
 use crate::render::term_layout;
+
+/// The SVG's height when `--height` is not given: the band's cross extent,
+/// which is its width when time runs down the page (da-78evn).
+const DEFAULT_HEIGHT: f64 = 300.0;
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
@@ -237,13 +242,27 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     let anchor = at.unwrap_or(now);
     // Geometry lives in `datum_layout::nowview` so the PWA reaches the same
     // config from its own store (da-6h6p) instead of re-deriving it.
+    // da-78evn: `--width`/`--height` are the SVG's either way; the default
+    // canvas turns on its side with the picture.
+    let orientation = match args.orientation {
+        DayviewOrientation::Horizontal => Orientation::Horizontal,
+        DayviewOrientation::Vertical => Orientation::Vertical,
+    };
+    let (width, height) = match orientation {
+        Orientation::Horizontal => (args.width, args.height.unwrap_or(DEFAULT_HEIGHT)),
+        Orientation::Vertical => (
+            Some(args.width.unwrap_or(DEFAULT_HEIGHT)),
+            args.height.unwrap_or(0.0),
+        ),
+    };
     let geometry = NowviewGeometry {
         history_minutes,
-        width: args.width,
-        height: args.height,
+        width,
+        height,
         margin: args.margin,
         time_axis_height: args.time_axis_height,
         centred: at.is_some(),
+        orientation,
     };
     // A centred window reaches half the history past the instant.
     let window_end = if geometry.centred {

@@ -227,7 +227,7 @@ describe('the dot and the acts on a nested layout', () => {
 			// some, da-gvdc), which are its ITEMS since da-vhwq, and the
 			// border between them is static.
 			await inner.locator('section.pane button.title').first().click();
-			assert.deepEqual(await menuLines(page), ['history']);
+			assert.deepEqual(await menuLines(page), ['history', 'orientation']);
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			assert.equal(await inner.locator('.border.static').count(), 1);

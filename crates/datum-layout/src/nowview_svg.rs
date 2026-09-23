@@ -14,8 +14,8 @@ use std::fmt::Write;
 
 use crate::dayview::{BlockFill, DayviewLayout, Orientation};
 use crate::dayview_svg::{
-    render_dayview_svg, render_dayview_svg_with, text_width, DayviewSvgOpts, RightPanelFill,
-    AXIS_LABEL_GAP,
+    axis_label_size, render_dayview_svg, render_dayview_svg_with, text_width, DayviewSvgOpts,
+    RightPanelFill, AXIS_LABEL_GAP,
 };
 use crate::nowview::NowviewCurrentState;
 
@@ -94,18 +94,26 @@ fn label_gutter(
     }
 }
 
-/// `layout` with room for a `gutter`-wide strip past its right edge, or
-/// `None` when there is no gutter to make room for. Only the canvas grows:
-/// every band's geometry is already resolved.
+/// `layout` with room for a `gutter`-wide strip past the far end of its
+/// time axis — right of it, or below it when time runs down (da-78evn) —
+/// or `None` when there is no gutter to make room for. Only the canvas
+/// grows: every band's geometry is already resolved.
 fn widen_for(layout: &DayviewLayout, gutter: f64) -> Option<DayviewLayout> {
-    (gutter > 0.0).then(|| DayviewLayout {
-        width: layout.width + gutter,
-        ..layout.clone()
+    (gutter > 0.0).then(|| match layout.orientation {
+        Orientation::Horizontal => DayviewLayout {
+            width: layout.width + gutter,
+            ..layout.clone()
+        },
+        Orientation::Vertical => DayviewLayout {
+            height: layout.height + gutter,
+            ..layout.clone()
+        },
     })
 }
 
 /// `--labels` (da-7q8r): each field's state named beside its lane, in a
-/// gutter past the picture's right edge. Returns how much width that
+/// gutter past the picture's far edge — right of it, or below it and
+/// written downwards when time runs down (da-78evn). Returns how much room that
 /// gutter needs and the `<g>` to inject — the caller widens the canvas by
 /// the first and injects the second, so no label ever lies over a band.
 ///
@@ -114,9 +122,9 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
     let Some(day) = layout.days.first() else {
         return (0.0, String::new());
     };
-    // Past the data area AND the now strip: the right edge of everything
-    // the dayview renderer drew.
-    let x =
+    // Past the data area AND the now strip: the far edge of everything
+    // the dayview renderer drew, along the time axis.
+    let far =
         layout.label_width + layout.time_axis_extent + layout.right_panel_width + AXIS_LABEL_GAP;
     let mut widest: f64 = 0.0;
     let mut out = String::from(r#"<g class="nowview-labels">"#);
@@ -130,10 +138,17 @@ fn state_labels(layout: &DayviewLayout, current_states: &[NowviewCurrentState]) 
         let font_size = (f.cross_extent * 0.7).min(12.0);
         let text = format!("{}: {label}", state.field);
         widest = widest.max(text_width(&text, font_size));
+        let lane = day.day_offset + f.cross_offset + f.cross_extent / 2.0;
+        let (x, y, turn) = match layout.orientation {
+            Orientation::Horizontal => (far, lane, String::new()),
+            Orientation::Vertical => {
+                let x = layout.time_axis_height + lane;
+                (x, far, format!(r#" transform="rotate(90 {x} {far})""#))
+            }
+        };
         let _ = write!(
             &mut out,
-            r#"<text class="state-label" x="{x}" y="{y}" dy="0.35em" fill="{c}" stroke="black" stroke-width="2" paint-order="stroke" font-size="{fs}">{t}</text>"#,
-            y = day.day_offset + f.cross_offset + f.cross_extent / 2.0,
+            r#"<text class="state-label" x="{x}" y="{y}"{turn} dy="0.35em" fill="{c}" stroke="black" stroke-width="2" paint-order="stroke" font-size="{fs}">{t}</text>"#,
             c = TEXT_COLOR,
             fs = font_size,
             t = escape_xml(&text),
@@ -172,10 +187,21 @@ fn now_strip_fills(current_states: &[NowviewCurrentState]) -> Vec<RightPanelFill
 /// stays readable when the strip is suppressed (callers may pass
 /// `time_axis_height = 0`).
 fn clock_font_size(layout: &DayviewLayout) -> f64 {
-    if layout.time_axis_height > 0.0 {
-        (layout.time_axis_height + 2.0).min(layout.time_axis_height * 1.2)
-    } else {
-        12.0
+    if layout.time_axis_height <= 0.0 {
+        return 12.0;
+    }
+    match layout.orientation {
+        Orientation::Horizontal => {
+            (layout.time_axis_height + 2.0).min(layout.time_axis_height * 1.2)
+        }
+        // A vertical strip's width is room for the text, not its size: the
+        // clock is its tick labels' size (da-78evn).
+        Orientation::Vertical => {
+            match axis_label_size(Orientation::Vertical, layout.time_axis_height) {
+                s if s > 0.0 => s,
+                _ => 12.0,
+            }
+        }
     }
 }
 

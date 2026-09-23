@@ -103,6 +103,12 @@
 	export let history = NOWVIEW_HISTORY;
 	/** The instant the window is centred on (`-t`); none is now. */
 	export let at: string | undefined = undefined;
+	/**
+	 * Time runs down the page (da-78evn). Every gesture below is measured
+	 * ALONG the time axis, which the picture itself says (`axis.y`); this
+	 * asks for the picture, and turns the chrome around it.
+	 */
+	export let vertical = false;
 	export let epoch = 0;
 
 	const dispatch = createEventDispatcher<{ change: string }>();
@@ -131,7 +137,9 @@
 	$: up = NOWVIEW_STEPS[i + 1];
 	$: down = NOWVIEW_STEPS[i - 1];
 	$: instant = centre?.arg;
-	$: spec = nowviewSpec(history, instant);
+	$: spec = nowviewSpec(history, instant, vertical);
+	/** The axis a drag along the band travels, for the pane's tab swipe. */
+	$: pans = vertical ? 'y' : 'x';
 	/** Whether the window has left now — and so whether a tap makes an absolute pill. */
 	$: offNow = !!instant;
 
@@ -324,7 +332,11 @@
 	function step(x: number, y: number): void {
 		if (!press || !axis) return;
 		const was = mode;
-		mode = advance(mode, press, x, y, long);
+		// The machine reads «sideways» as «along time»: hand it the axes
+		// turned when time runs down.
+		mode = axis.y
+			? advance(mode, { ...press, x: press.y, y: press.x }, y, x, long)
+			: advance(mode, press, x, y, long);
 		// The wait's mark belongs to a press that is still undecided; a
 		// gesture that has committed draws its own thing.
 		if (mode !== 'press' && mode !== 'hold') waiting = null;
@@ -410,9 +422,10 @@
 	function anchorX(svg: Element): number {
 		const box = svg.getBoundingClientRect();
 		const line = svg.querySelector('.current-time-line');
-		if (instant || !line) return instant ? box.width / 2 : box.width;
+		const length = axis?.y ? box.height : box.width;
+		if (instant || !line) return instant ? length / 2 : length;
 		const marker = line.getBoundingClientRect();
-		return marker.x + marker.width / 2 - box.x;
+		return axis?.y ? marker.y + marker.height / 2 - box.y : marker.x + marker.width / 2 - box.x;
 	}
 
 	/** Begin a gesture over the picture, if there is one to scale. */
@@ -540,6 +553,8 @@
 
 	/** The steps' row: 2px gap, then two 22px targets. See the style. */
 	const STEPS_WIDTH = 2 + 22 + 22;
+	/** And its height, which is what it takes from a vertical axis. */
+	const STEPS_HEIGHT = 24;
 
 	/**
 	 * Below this width the margin strip, its pills and `now →` do not fit,
@@ -612,13 +627,22 @@
 		const labels = [...(svg?.querySelectorAll<SVGElement>('.tick-label') ?? [])];
 		if (!labels.length) return void (far = null);
 		const box = (l: SVGElement) => l.getBoundingClientRect();
-		const label = box(labels.reduce((a, b) => (box(b).x < box(a).x ? b : a)));
+		// The far label is the first along time: leftmost, or topmost when
+		// time runs down — and then the steps go UNDER it, in the axis
+		// strip, since beside it is the picture.
+		const y = !!axis?.y;
+		const first = (a: SVGElement, b: SVGElement) => (y ? box(b).y < box(a).y : box(b).x < box(a).x);
+		const label = box(labels.reduce((a, b) => (first(a, b) ? b : a)));
 		for (const l of labels) {
 			const b = box(l);
-			const under = b.x > label.x && b.left < label.right + STEPS_WIDTH;
+			const under = y
+				? b.y > label.y && b.top < label.bottom + STEPS_HEIGHT
+				: b.x > label.x && b.left < label.right + STEPS_WIDTH;
 			l.style.visibility = under ? 'hidden' : '';
 		}
-		far = { x: label.right - home.x, y: label.y + label.height / 2 - home.y };
+		far = y
+			? { x: 0, y: label.bottom + STEPS_HEIGHT / 2 - home.y }
+			: { x: label.right - home.x, y: label.y + label.height / 2 - home.y };
 	}
 
 	/** The pills the selection made: the ones the margin draws beside their instants. */
@@ -711,11 +735,13 @@
 	});
 </script>
 
-<div class="nowview" bind:this={el}>
+<div class="nowview" class:vertical bind:this={el}>
 	<!-- The margin: the pills the selection made, each over the mark it
 	     names, and ✕-able here as in the bar. NOT `data-pans`, so a swipe
-	     that starts in it still changes the pane's tab (da-um7y). -->
-	{#if roomy}
+	     that starts in it still changes the pane's tab (da-um7y). A strip
+	     OVER the band lies along a horizontal axis only; a vertical one
+	     leaves the pills to the bar (da-78evn). -->
+	{#if roomy && !vertical}
 		<div class="nowview-margin" aria-label="selection">
 			{#each marginPills as pill (pill.id)}
 				{@const x = pill.id === SPAN_ID ? spots.dur : spots.time}
@@ -732,7 +758,7 @@
 		style:--zoom={zoom?.scale ?? 1}
 		style:--zoom-x="{zoom?.origin ?? 0}px"
 		style:--pan="{panned}px"
-		data-pans="x"
+		data-pans={pans}
 		data-points="own"
 		data-mode={mode}
 		on:pointerdown={onPointerDown}
@@ -761,7 +787,7 @@
 	{/if}
 
 	{#if far && !zoom}
-		<div class="nowview-steps" data-pans="x" style:left="{far.x}px" style:top="{far.y}px">
+		<div class="nowview-steps" data-pans={pans} style:left="{far.x}px" style:top="{far.y}px">
 			<button
 				type="button"
 				class="step"
@@ -790,18 +816,19 @@
 		<button
 			type="button"
 			class="nowview-jump right"
-			data-pans="x"
+			data-pans={pans}
 			title="back to now, and the time pills away"
-			on:click={toNow}>now →</button
+			on:click={toNow}>{vertical ? 'now ↓' : 'now →'}</button
 		>
 	{/if}
 	{#if roomy && away && !zoom}
 		<button
 			type="button"
 			class="nowview-jump {away} selection"
-			data-pans="x"
+			data-pans={pans}
 			title="the window onto the selection"
-			on:click={toSelection}>{away === 'left' ? '← sel' : 'sel →'}</button
+			on:click={toSelection}
+			>{vertical ? (away === 'left' ? '↑ sel' : 'sel ↓') : away === 'left' ? '← sel' : 'sel →'}</button
 		>
 	{/if}
 
@@ -857,6 +884,41 @@
 	.nowview-band.busy :global(svg.svg) {
 		transform: translateX(var(--pan)) scaleX(var(--zoom));
 		transform-origin: var(--zoom-x) center;
+	}
+
+	/* TIME RUNS DOWN (da-78evn): the same widget turned on its side. The
+	   band takes the vertical drag, the page keeps the sideways one, and
+	   the preview, the wait's stem and the buttons follow the axis. */
+	.nowview.vertical {
+		touch-action: pan-x;
+	}
+	.vertical .nowview-band.busy :global(svg.svg) {
+		transform: translateY(var(--pan)) scaleY(var(--zoom));
+		transform-origin: center var(--zoom-x);
+	}
+	.vertical .hold-mark.held .stem {
+		left: -50vw;
+		top: -0.75px;
+		width: 100vw;
+		height: 1.5px;
+		background: repeating-linear-gradient(to right, #ffffff 0 3px, transparent 3px 6px);
+	}
+	.vertical .nowview-jump {
+		top: auto;
+		left: 50%;
+		transform: translateX(-50%);
+	}
+	.vertical .nowview-jump.right {
+		right: auto;
+		bottom: 4px;
+	}
+	.vertical .nowview-jump.left {
+		left: 50%;
+		top: 4px;
+	}
+	.vertical .nowview-jump.selection.right {
+		right: auto;
+		bottom: 30px;
 	}
 
 	/* A strip above the band: one pill tall, plus the half-row the frame's

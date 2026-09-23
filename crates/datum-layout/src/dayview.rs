@@ -288,8 +288,9 @@ pub struct RenderedDay {
     /// only on the day whose window contains `now_ms`.
     pub now_time_pos: Option<f64>,
     /// Far end of the now-line along the day-stack/cross axis, relative to
-    /// the data-area origin. For the last day this extends through the
-    /// time-axis tick strip; otherwise stops at the day's far edge.
+    /// the data-area origin. For the last day of a horizontal layout this
+    /// extends through the time-axis tick strip; otherwise stops at the
+    /// day's far edge.
     pub now_extent_far: f64,
     /// The day's window in UTC ms — what the time axis spans, from
     /// [`DayviewDayInput`].
@@ -472,7 +473,8 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                 .height
                 .unwrap_or(DEFAULT_VERTICAL_TIME_EXTENT + label_width + 2.0 * config.margin);
             let plot_height = (total_height_resolved - 2.0 * config.margin).max(0.0);
-            let time_axis_extent = (plot_height - label_width).max(0.0);
+            let time_axis_extent =
+                (plot_height - label_width - config.right_panel_width.max(0.0)).max(0.0);
             // Recompute total width from the day-stack data plus axis strip.
             let resolved_plot_width = config.time_axis_height + data_rows_extent;
             let width = resolved_plot_width + 2.0 * config.margin;
@@ -621,9 +623,11 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             None
         };
         // Last day extends now-line through the axis; otherwise stops at
-        // day's far edge along the cross/day-stack axis.
+        // day's far edge along the cross/day-stack axis. Only horizontally:
+        // a vertical axis strip is BEFORE the first day, not past the last
+        // (da-78evn), and the renderer reaches back into it instead.
         let is_last_day = i + 1 == config.days.len();
-        let now_extent_far = if is_last_day {
+        let now_extent_far = if is_last_day && config.orientation == Orientation::Horizontal {
             day_offset + config.day_height + config.time_axis_height
         } else {
             day_offset + config.day_height

@@ -137,6 +137,18 @@ const SVG_MARGIN_PX = 2;
  */
 const SNAPSHOT_WIDTH = 2 * REACH_PX + 2 * SVG_MARGIN_PX;
 
+/**
+ * The pivot (da-a6guc, da-78evn): time down the page, as a calendar draws
+ * it. ONE option for both drawn views, so the dayview and the nowview
+ * cannot come to disagree about what it is called or what it offers.
+ */
+const ORIENTATION: WidgetOption = {
+	key: 'orientation',
+	label: 'orientation',
+	type: 'choice',
+	choices: ['horizontal', 'vertical'].map((value) => ({ value, label: value }))
+};
+
 /** The strip body's padding, top and bottom, as its snap counts it. */
 const STRIP_PADDING = 16;
 
@@ -208,13 +220,8 @@ export const KINDS: Record<string, WidgetKind> = {
 			orientation: 'horizontal'
 		}, [
 			{ key: 'freezeToday', label: 'today frozen at the bottom', type: 'boolean' },
-			// The pivot (da-a6guc): time down a week of columns, as a calendar draws it.
-			{
-				key: 'orientation',
-				label: 'orientation',
-				type: 'choice',
-				choices: ['horizontal', 'vertical'].map((value) => ({ value, label: value }))
-			}
+			// A vertical dayview is a week of columns.
+			ORIENTATION
 		]),
 		component: DayviewWidget,
 		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo, orientation }) => ({
@@ -248,23 +255,31 @@ export const KINDS: Record<string, WidgetKind> = {
 	},
 	// How far back nowview reaches is its setting, which its − / + step
 	// (da-pcis); `at` centres it on an instant, which the time cursor
-	// overrides while it is set (NowviewWidget.svelte).
+	// overrides while it is set (NowviewWidget.svelte). `orientation` is
+	// the dayview's pivot (da-78evn).
 	nowview: {
-		meta: meta('nowview', 'nowview', { history: NOWVIEW_HISTORY }, [
+		meta: meta('nowview', 'nowview', { history: NOWVIEW_HISTORY, orientation: 'horizontal' }, [
 			{
 				key: 'history',
 				label: 'history',
 				type: 'choice',
 				choices: NOWVIEW_STEPS.map((value) => ({ value, label: value === '0' ? 'now' : value }))
-			}
+			},
+			ORIENTATION
 		]),
 		component: NowviewWidget,
-		props: ({ history, at }) => ({
+		props: ({ history, at, orientation }) => ({
 			history: typeof history === 'string' ? history : NOWVIEW_HISTORY,
-			at: typeof at === 'string' ? at : undefined
+			at: typeof at === 'string' ? at : undefined,
+			vertical: orientation === 'vertical'
 		}),
 		onChange: (settings, history) => ({ ...settings, history }),
-		legible: ({ history }) => ({ width: history === '0' ? SNAPSHOT_WIDTH : 160, height: 108 })
+		// Turned on its side with the picture: the time axis wants the 160,
+		// the lanes across it the 108.
+		legible: ({ history, orientation }) => {
+			const along = history === '0' ? SNAPSHOT_WIDTH : 160;
+			return orientation === 'vertical' ? { width: 108, height: along } : { width: along, height: 108 };
+		}
 	},
 	// Its type size is a declared option (da-hkjp): `small` is 0.85 of the
 	// pane body's 0.85rem. The legible box follows it, as the strip's and

@@ -115,7 +115,7 @@ describe('widget options', () => {
 	test('the options are items of the name’s menu; a kind with none has none', async () => {
 		await withApp(async ({ page }) => {
 			assert.deepEqual(await linesOf(page, 'repl'), ['Reset widget', NEWEST]);
-			assert.deepEqual(await linesOf(page, 'nowview'), ['Reset widget', 'history']);
+			assert.deepEqual(await linesOf(page, 'nowview'), ['Reset widget', 'history', 'orientation']);
 			assert.deepEqual(await linesOf(page, 'bar'), [
 				'Reset widget',
 				'a switch is labelled with its',

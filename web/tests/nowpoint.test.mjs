@@ -21,7 +21,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
-import { PHONE, activeTab, pane, settled, swipe } from './support/layout.mjs';
+import { PHONE, activeTab, maximizeButton, pane, pickOption, settled, swipe } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -955,5 +955,132 @@ describe('on a phone', () => {
 				}
 			}
 		);
+	});
+});
+
+// ── turned on its side (da-78evn) ──────────────────────────────────────
+//
+// vividn, 2026-09-22: «I think others will want to visualize it vertically
+// (most calendars are already vertically oriented for example)». The same
+// gestures, measured along the axis the picture says it runs: DOWN.
+
+/**
+ * The nowview turned vertical, maximized, drawn, and settled.
+ *
+ * Maximized because a vertical window's minutes are the pane's HEIGHT,
+ * and the desktop pane is short: at ~2px a minute every gesture below is
+ * inside the 12px a press snaps by. The tall box is what a vertical
+ * picture is for, and each test still checks the room it needs.
+ */
+async function turn(app) {
+	const { page } = app;
+	await pickOption(page, 'nowview', 'orientation', 'vertical');
+	await maximizeButton(page, 'nowview').click();
+	await page.waitForFunction(
+		(sel) => {
+			const svg = document.querySelector(sel);
+			return svg?.querySelector('g.day-data[data-axis="y"]') && svg.viewBox.baseVal.height > 400;
+		},
+		`${NOWVIEW} svg.svg`
+	);
+	await showBand(app);
+}
+
+/** `geometry` with time running down: `lo`/`hi` and each mark are screen y. */
+const vgeometry = (page) =>
+	page.locator(`${NOWVIEW} svg.svg`).evaluate((svg) => {
+		const day = svg.querySelector('[data-lo]');
+		const num = (n) => Number(day.getAttribute(n));
+		const [from, to] = [Date.parse(day.getAttribute('data-from')), Date.parse(day.getAttribute('data-to'))];
+		const box = svg.getBoundingClientRect();
+		const view = svg.viewBox.baseVal;
+		const px = (u) => box.top + ((u - view.y) * box.height) / view.height;
+		const [lo, hi] = [px(num('data-lo')), px(num('data-hi'))];
+		const mid = (el) => {
+			const r = el.getBoundingClientRect();
+			return r.top + r.height / 2;
+		};
+		const line = svg.querySelector('.current-time-line');
+		return {
+			axis: day.getAttribute('data-axis'),
+			from,
+			to,
+			lo,
+			hi,
+			x: box.left + box.width * 0.75,
+			nowLine: line ? mid(line) : null,
+			marks: [...svg.querySelectorAll('.gridline')].map((l) => ({
+				y: mid(l),
+				back: Math.round((to - (from + ((mid(l) - lo) / (hi - lo)) * (to - from))) / 60000)
+			}))
+		};
+	});
+
+/** A point on the vertical band `back` minutes before the window's end. */
+const vat = (g, back) => ({ x: g.x, y: g.hi - back * perMinute(g) });
+
+describe('turned on its side, the band is pointed into along its own axis', () => {
+	test('a tap on the −10m gridline says -qq; a long press dragged UP is a range', async () => {
+		await withBand(async (app) => {
+			const { page } = app;
+			await app.spyOnRunner();
+			await turn(app);
+			const argv = (await windows(page)).at(-1);
+			assert.deepEqual(argv.slice(argv.indexOf('--orientation'), argv.indexOf('--orientation') + 2), [
+				'--orientation',
+				'vertical'
+			]);
+			const g = await vgeometry(page);
+			assert.equal(g.axis, 'y');
+			assert.ok(g.hi > g.lo, 'time runs down the page');
+
+			const mark = g.marks.find((m) => m.back === 10);
+			assert.ok(mark, `no gridline at −10m among ${JSON.stringify(g.marks.map((m) => m.back))}`);
+			await page.mouse.click(g.x, mark.y);
+			await saysPills(page, ['time:-qq']);
+
+			// From −10m: well clear of the 24px the now region reaches back.
+			assert.ok(10 * perMinute(g) > 24 + 6, `ten minutes is ${10 * perMinute(g)}px`);
+			await drag(page, vat(g, 10), vat(g, 30), { hold: 600 });
+			await saysPills(page, ['time:-qq', 'dur:dur=20m']);
+		});
+	});
+
+	test('from the now strip, a drag UP is a duration ending now', async () => {
+		await withBand(async (app) => {
+			const { page } = app;
+			await turn(app);
+			const g = await vgeometry(page);
+			assert.ok(12 * perMinute(g) > 24 + 12, `twelve minutes is ${12 * perMinute(g)}px`);
+			await drag(page, { x: g.x, y: g.nowLine + 2 }, { x: g.x, y: g.nowLine - 12 * perMinute(g) });
+			await saysPills(page, ['dur:dur=12m']);
+		});
+	});
+
+	test('a drag DOWN pans the window earlier, and `now ↓` brings it home', async () => {
+		await withBand(async (app) => {
+			const { page } = app;
+			await turn(app);
+			await app.spyOnRunner();
+			const g = await vgeometry(page);
+			const middle = { x: g.x, y: (g.lo + g.hi) / 2 };
+			await drag(page, middle, { x: g.x, y: middle.y + 10 * perMinute(g) });
+			await until(
+				() => asked(page),
+				(t) => t !== null
+			);
+			const centred = Date.parse(await asked(page));
+			assert.ok(
+				Math.abs(centred - ((g.from + g.to) / 2 - 10 * MINUTE)) <= 90_000,
+				`centred on ${new Date(centred).toISOString()}, not ~14:35`
+			);
+			const home = page.locator(`${NOWVIEW} .nowview-jump.right`);
+			assert.equal(await home.innerText(), 'now ↓');
+			await home.click();
+			await until(
+				() => asked(page),
+				(t) => t === null
+			);
+		});
 	});
 });

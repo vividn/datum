@@ -42,6 +42,30 @@ pub fn text_width(label: &str, font_size: f64) -> f64 {
     label.chars().count() as f64 * font_size * CHAR_ADVANCE_RATIO
 }
 
+/// The largest a vertical time axis's labels grow (da-78evn). A vertical
+/// strip's `time_axis_height` is its WIDTH, which has to hold the text
+/// rather than set its size, so past this the strip only gains room. It is
+/// the size nowview's default 22px horizontal strip draws at.
+pub const VERTICAL_AXIS_LABEL_MAX: f64 = 16.0;
+
+/// The time axis's label font size: the strip less a little air, and in a
+/// vertical strip no larger than [`VERTICAL_AXIS_LABEL_MAX`]. `0` — a
+/// strip too thin for text — draws no labels.
+pub fn axis_label_size(orientation: Orientation, time_axis_height: f64) -> f64 {
+    if time_axis_height <= 6.0 {
+        return 0.0;
+    }
+    let size = (time_axis_height - 6.0).max(6.0);
+    match orientation {
+        Orientation::Horizontal => size,
+        Orientation::Vertical => size.min(VERTICAL_AXIS_LABEL_MAX),
+    }
+}
+
+/// How far a vertical axis's labels sit left of its baseline: their
+/// right-hand end, which is what a strip wide enough for them must clear.
+pub const VERTICAL_AXIS_LABEL_INSET: f64 = 6.0;
+
 /// Minimum blank space (px) between two adjacent axis labels, and between
 /// a label and whatever an overlay reserves at the end of the axis.
 pub(crate) const AXIS_LABEL_GAP: f64 = 4.0;
@@ -379,9 +403,16 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     )
                 }
                 Orientation::Vertical => {
+                    // The axis strip is left of the first day, so that
+                    // day's line crosses it (da-78evn).
                     let y = geom.data_y + nt;
+                    let near = if day.day_offset <= 1e-9 {
+                        layout.time_axis_height
+                    } else {
+                        0.0
+                    };
                     (
-                        geom.data_x + day.day_offset,
+                        geom.data_x + day.day_offset - near,
                         y,
                         geom.data_x + day.now_extent_far,
                         y,
@@ -397,8 +428,15 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
             // The white axis baseline stops at the now-line, so the strip
             // beyond it gets the now marker instead — the original datum's
             // horizontal `current-time-line` (da-nk84). Only the day the
-            // axis strip sits under carries it.
-            let is_axis_day = day.day_offset + layout.day_height >= geom.cross_total - 1e-9;
+            // axis strip sits against carries it: the last one horizontally,
+            // where the strip is below, the first vertically, where it is
+            // to the left (da-78evn).
+            let is_axis_day = match layout.orientation {
+                Orientation::Horizontal => {
+                    day.day_offset + layout.day_height >= geom.cross_total - 1e-9
+                }
+                Orientation::Vertical => day.day_offset <= 1e-9,
+            };
             if layout.right_panel_width > 0.0 && is_axis_day && layout.time_axis_height > 0.0 {
                 let far = layout.time_axis_extent + layout.right_panel_width;
                 let (hx1, hy1, hx2, hy2) = match layout.orientation {
@@ -407,7 +445,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         (geom.data_x + nt, y, geom.data_x + far, y)
                     }
                     Orientation::Vertical => {
-                        let x = geom.data_x + geom.cross_total;
+                        let x = geom.data_x;
                         (x, geom.data_y + nt, x, geom.data_y + far)
                     }
                 };
@@ -622,11 +660,7 @@ fn emit_time_axis(
     geom: &PlotGeom,
     opts: DayviewSvgOpts<'_>,
 ) {
-    let label_size = if layout.time_axis_height > 6.0 {
-        (layout.time_axis_height - 6.0).max(6.0)
-    } else {
-        0.0
-    };
+    let label_size = axis_label_size(layout.orientation, layout.time_axis_height);
     let n = layout.axis_ticks.len();
     // The trailing tick is the day boundary / the now-line's own position;
     // its label is never drawn. A strip too thin for text carries no ticks
@@ -727,7 +761,7 @@ fn emit_time_axis(
                 let _ = write!(
                     out,
                     r#"<text class="tick-label" x="{x}" y="{y}" text-anchor="end" fill="{c}" font-size="{fs}" dy="0.35em">{label}</text>"#,
-                    x = axis_x - 6.0,
+                    x = axis_x - VERTICAL_AXIS_LABEL_INSET,
                     y = label_y,
                     c = TEXT_COLOR,
                     fs = label_size,

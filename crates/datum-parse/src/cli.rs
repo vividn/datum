@@ -1027,7 +1027,8 @@ pub struct CheckArgs {
 /// dispatcher (which-categories-to-run) read from the same source.
 pub const KNOWN_CHECKERS: &[&str] = &["verbs", "aliases", "slugs", "integrity", "flags", "tz"];
 
-/// Render orientation for `datum dayview`, named by time-axis direction.
+/// Render orientation for `datum dayview` and `datum nowview`, named by
+/// time-axis direction.
 /// Mirrors [`datum_layout::dayview::Orientation`] so callers don't need a
 /// layout dep just to construct args.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1128,12 +1129,16 @@ pub struct NowviewArgs {
     pub time: TimeArgs,
     /// SVG width in pixels. None → scale from `history` (datum behavior).
     pub width: Option<f64>,
-    /// SVG height in pixels. Default 300.
-    pub height: f64,
+    /// SVG height in pixels. None → 300 horizontal, and the history-scaled
+    /// default `width` takes vertical, where time runs down the page.
+    pub height: Option<f64>,
     /// Margin around the plot. Default 2.
     pub margin: f64,
     /// Pixel height of the time-axis strip. Default 15.
     pub time_axis_height: f64,
+    /// `--orientation horizontal|vertical` (or `--horizontal` /
+    /// `--vertical`), as dayview's (da-78evn). The SVG path's alone.
+    pub orientation: DayviewOrientation,
     /// Output file. Extension picks format: .svg / .png / .html. None →
     /// terminal output (per da-57dj), routed through the
     /// `nowview_terminal` visual band-stack renderer.
@@ -1170,8 +1175,9 @@ impl Default for NowviewArgs {
             labels: false,
             time: TimeArgs::default(),
             width: None,
-            height: 300.0,
+            height: None,
             margin: 2.0,
+            orientation: DayviewOrientation::default(),
             // da-34w: bumped from 15 → 22 so the time-axis label font
             // (`time_axis_height - 6`, capped) lands at ~16pt instead of
             // ~9pt. The previous default rendered too small to read.
