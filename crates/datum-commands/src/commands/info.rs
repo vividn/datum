@@ -57,8 +57,11 @@ fn print_info_for_path(name: Option<&str>, path: &std::path::Path) -> Result<()>
         println!("  schema:   ✗ (missing)");
         return Ok(());
     }
+    // Unmigrated: a report must not rewrite what it reports on, and the
+    // version it prints is only worth reading from the untouched file
+    // (da-3n9t1). Any other command run with `--db` on it migrates it.
     let path_str = path.to_string_lossy();
-    let db = match datum_core::db::Db::open(&path_str) {
+    let db = match datum_core::db::Db::open_unmigrated(&path_str) {
         Ok(db) => db,
         Err(e) => {
             println!("{}  {}", name.unwrap_or(""), config::display_path(path));

@@ -153,11 +153,11 @@ impl Db {
         Ok(db)
     }
 
-    /// Open the database without running migrations. Use only for
-    /// destructive recovery paths (`datum db purge`) that will rebuild the
-    /// schema from scratch — auto-migrate on a half-state DB can fail
-    /// before the recovery code has a chance to run, leaving the user with
-    /// no escape hatch.
+    /// Open the database without running migrations. Used by destructive
+    /// recovery paths (`datum db purge`) that will rebuild the schema from
+    /// scratch — auto-migrate on a half-state DB can fail before the
+    /// recovery code has a chance to run — and by read-only reporters such
+    /// as `datum info`, which must not rewrite what they report on.
     pub fn open_unmigrated(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
         Self::configure_connection(&conn)?;

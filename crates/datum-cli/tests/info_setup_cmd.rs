@@ -101,3 +101,53 @@ fn apply_migrations_walks_registered_steps() {
     .unwrap();
     assert!(applied.is_empty());
 }
+
+/// da-3n9t1: `info` reports on a database without migrating it. One
+/// older and one newer than this binary sit in the data directory; `info
+/// --all` must leave both files byte for byte and read each version as it
+/// is stored — which is the only way either warning row can ever print.
+#[test]
+fn info_all_reports_without_migrating() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let stamp = |name: &str, version: u32| {
+        let path = home.join(name);
+        let db = datum_core::db::Db::open(path.to_str().unwrap()).unwrap();
+        set_schema_version(db.conn(), version).unwrap();
+        drop(db);
+        (path.clone(), std::fs::read(&path).unwrap())
+    };
+    let (old_path, old_bytes) = stamp("old.db", CURRENT_SCHEMA_VERSION - 1);
+    let (new_path, new_bytes) = stamp("new.db", CURRENT_SCHEMA_VERSION + 1);
+
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+        .env_remove("DATUM_DB")
+        .env("DATUM_HOME", &home)
+        .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
+        .env("DATUM_COLOR", "0")
+        .args(["info", "--all"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{out:?}");
+
+    assert!(
+        std::fs::read(&old_path).unwrap() == old_bytes,
+        "old.db rewritten"
+    );
+    assert!(
+        std::fs::read(&new_path).unwrap() == new_bytes,
+        "new.db rewritten"
+    );
+    let old_row = format!(
+        "v{} ⚠ (older than current v{CURRENT_SCHEMA_VERSION})",
+        CURRENT_SCHEMA_VERSION - 1
+    );
+    let new_row = format!(
+        "v{} ✗ (newer than binary (v{CURRENT_SCHEMA_VERSION}))",
+        CURRENT_SCHEMA_VERSION + 1
+    );
+    assert!(stdout.contains(&old_row), "no {old_row:?} in:\n{stdout}");
+    assert!(stdout.contains(&new_row), "no {new_row:?} in:\n{stdout}");
+}
