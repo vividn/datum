@@ -186,6 +186,32 @@ fn dayview_vertical_orientation_explicit_flag() {
     assert_eq!(json["orientation"], "vertical");
 }
 
+/// The pivot really re-draws (da-a6guc): over the same db, horizontal is a
+/// band wider than tall and vertical a column taller than wide. Reads the
+/// SVG's own viewBox, so it fails if `--orientation` stops reaching the
+/// renderer, not merely if it stops reaching the layout JSON.
+#[test]
+fn dayview_orientation_swaps_the_viewbox_shape() {
+    let db = fresh_db();
+    let view_box = |orientation: &str| {
+        let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        run_cli(&["dayview", "--orientation", orientation, "-o", &path], &db)
+            .expect("dayview dispatch");
+        let svg = std::fs::read_to_string(&path).unwrap();
+        let vb = svg.split("viewBox=\"").nth(1).expect("a viewBox");
+        let dims: Vec<f64> = vb[..vb.find('"').unwrap()]
+            .split_whitespace()
+            .map(|n| n.parse().unwrap())
+            .collect();
+        (dims[2], dims[3])
+    };
+    let (hw, hh) = view_box("horizontal");
+    let (vw, vh) = view_box("vertical");
+    assert!(hw > hh, "horizontal is {hw}x{hh}, not a wide band");
+    assert!(vh > vw, "vertical is {vw}x{vh}, not a tall column");
+}
+
 #[test]
 fn dayview_skips_empty_fields() {
     // No data at all → no fields anywhere in the layout.

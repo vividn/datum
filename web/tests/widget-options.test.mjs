@@ -42,6 +42,7 @@ import {
 	menuLines,
 	optionChecked,
 	pane,
+	PHONE,
 	pickOption,
 	switchItem,
 	titledMenuButton,
@@ -120,7 +121,7 @@ describe('widget options', () => {
 				'a switch is labelled with its',
 				'show ignored fields'
 			]);
-			assert.deepEqual(await linesOf(page, 'strip'), ['Reset widget', 'today frozen at the bottom']);
+			assert.deepEqual(await linesOf(page, 'strip'), ['Reset widget', 'today frozen at the bottom', 'orientation']);
 			assert.deepEqual(await linesOf(page, 'tail'), ['Reset widget', 'type']);
 			assert.equal(await menuButton(page, 'custom').count(), 0, 'a kind that declares nothing has a name menu');
 			// No modal is left anywhere in the app.
@@ -167,6 +168,37 @@ describe('widget options', () => {
 			assert.ok(windows.includes('✓ 30m · default'), windows.join(' | '));
 		}, DESKTOP);
 	});
+
+	// The pivot (da-a6guc): `vertical` swaps the strip for datum's own
+	// `dayview --orientation vertical`, a week asked for at the pane's size.
+	// Which way time runs is read off the renderer's own `data-axis` on each
+	// day — `y` is time down a column — and not off the picture's shape,
+	// which is the pane's: the default strip pane is short, so the week
+	// comes back wider than tall. Back to `horizontal` is the strip again.
+	for (const [name, options] of [['desktop', DESKTOP], ['phone', PHONE]]) {
+		test(`orientation pivots the dayview to columns, and back (${name})`, async () => {
+			await withApp(async ({ page }) => {
+				const days = (axis) => pane(page, 'strip').locator(`svg.svg g.day-data[data-axis="${axis}"]`);
+				await days('x').first().waitFor({ state: 'attached' });
+				assert.equal(await days('y').count(), 0, 'the strip drew time down a column');
+
+				await pickOption(page, 'strip', 'orientation', 'vertical');
+				await page.waitForFunction(
+					() => document.querySelectorAll('section[data-pane="strip"] svg.svg g.day-data[data-axis="y"]').length === 7
+				);
+				assert.equal(await days('x').count(), 0, 'a band is left beside the columns');
+				const [drawn, box] = await Promise.all(
+					[pane(page, 'strip').locator('svg.svg'), pane(page, 'strip')].map((l) => l.evaluate((e) => e.getBoundingClientRect().width))
+				);
+				assert.ok(drawn <= box, `the week overflows the pane: ${drawn} > ${box}`);
+				assert.equal(await dotted(page, 'day'), false, 'the pivot dirtied the layout');
+
+				await pickOption(page, 'strip', 'orientation', 'horizontal');
+				await days('x').first().waitFor({ state: 'attached' });
+				assert.equal(await days('y').count(), 0, 'the columns outlived the pivot back');
+			}, options);
+		});
+	}
 
 	test('repl reversed: newest first, this session’s, saved only when asked, undone by Reset widget', async () => {
 		await withApp(async (app) => {

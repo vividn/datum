@@ -46,7 +46,6 @@ import CliPane from '$lib/CliPane.svelte';
 import CommandPane from './CommandPane.svelte';
 import CustomPane from '$lib/CustomPane.svelte';
 import DebugPane from '$lib/DebugPane.svelte';
-import DayStrip from '$lib/DayStrip.svelte';
 import Stats from '$lib/Stats.svelte';
 import {
 	DEFAULT_LABEL_WIDTH,
@@ -63,6 +62,7 @@ import { REACH_PX } from '$lib/lanes.js';
 import { DEBUG_DB } from './defaults.js';
 import { DEFAULT_STATS, type StatsRange } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
+import DayviewWidget from './DayviewWidget.svelte';
 import FieldsPane from './FieldsPane.svelte';
 import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
@@ -204,10 +204,21 @@ export const KINDS: Record<string, WidgetKind> = {
 			labelWidth: DEFAULT_LABEL_WIDTH,
 			freezeToday: true,
 			hourFrom: HOUR_FROM,
-			hourTo: HOUR_TO
-		}, [{ key: 'freezeToday', label: 'today frozen at the bottom', type: 'boolean' }]),
-		component: DayStrip,
-		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo }) => ({
+			hourTo: HOUR_TO,
+			orientation: 'horizontal'
+		}, [
+			{ key: 'freezeToday', label: 'today frozen at the bottom', type: 'boolean' },
+			// The pivot (da-a6guc): time down a week of columns, as a calendar draws it.
+			{
+				key: 'orientation',
+				label: 'orientation',
+				type: 'choice',
+				choices: ['horizontal', 'vertical'].map((value) => ({ value, label: value }))
+			}
+		]),
+		component: DayviewWidget,
+		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo, orientation }) => ({
+			orientation: orientation === 'vertical' ? 'vertical' : 'horizontal',
 			// Undefined on purpose: the strip derives its day from its own
 			// box while nothing is set (da-r0ydu), and a default here would
 			// be a number nobody chose standing in the way of that.
