@@ -8,11 +8,13 @@
 // box and wrong for seven sharing it, so the load the box already carries is
 // read too (da-x38v).
 //
-// The budget is in files, not cores: the box is willing to be committed to
-// `cores - 1` files, and a file under test is about two cores' worth (a
-// Chromium and the node driving it), so each unit of load average already on
-// the box costs half a file. An idle 24-core box still gets six, an idle
-// 4-core CI runner still gets three, and a box at load 88 on 24 cores gets one.
+// The budget is in files, not cores: a file under test is about two cores'
+// worth (a Chromium and the node driving it), so the box gets at most
+// `cores / 2` files, and each unit of load average already on the box costs
+// half a file off `cores - 1`. An idle 24-core box still gets six (the cap),
+// an idle 4-core CI runner gets two, not three — three was six cores of work
+// on four, the cores term charging one core a file while the load term
+// charged two (da-j2okg) — and a box at load 88 on 24 cores gets one.
 //
 // The «two cores a file» coefficient is one observation from that box, not a
 // measurement (vremya, da-x38v): the inputs are printed on the run's first
@@ -20,5 +22,5 @@
 // doubt first if a small runner gets SLOWER under the load term.
 export function filesAtOnce(cores, load, cap = 6, override) {
 	if (Number.isFinite(override) && override > 0) return Math.max(1, Math.floor(override));
-	return Math.max(1, Math.min(cap, Math.floor(cores - 1 - Math.max(0, load) / 2)));
+	return Math.max(1, Math.min(cap, Math.floor(cores / 2), Math.floor(cores - 1 - Math.max(0, load) / 2)));
 }

@@ -12,8 +12,24 @@ import { parseShard, shardFiles } from '../scripts/shard.mjs';
 describe('filesAtOnce', () => {
 	test('an idle box gets the cap, or its cores if it has fewer', () => {
 		assert.equal(filesAtOnce(24, 0, 6), 6);
-		assert.equal(filesAtOnce(4, 0, 6), 3); // an idle CI runner is unchanged
+		assert.equal(filesAtOnce(4, 0, 6), 2); // an idle CI runner
 		assert.equal(filesAtOnce(2, 0, 6), 1);
+	});
+
+	// The defect lived only between the cap (24 cores) and the load term (a
+	// loaded 3-core box): one core charged a file where the load term charges
+	// two, so an idle 6-core box got five files — ten cores of work (da-j2okg).
+	test('an idle box is committed to no more cores of work than it has', () => {
+		const coresPerFile = 2; // a Chromium and the node driving it
+		for (const [cores, files] of [
+			[4, 2],
+			[6, 3],
+			[8, 4]
+		]) {
+			const got = filesAtOnce(cores, 0, 6);
+			assert.equal(got, files, `${cores} cores`);
+			assert.ok(got * coresPerFile <= cores, `${got} files is ${got * coresPerFile} cores of work on ${cores}`);
+		}
 	});
 
 	test('the load shrinks it, and never below one', () => {
