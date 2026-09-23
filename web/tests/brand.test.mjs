@@ -410,6 +410,19 @@ describe('the logo', () => {
 		});
 	});
 
+	// The focus can leave an open menu without closing it — a focused item
+	// the list re-renders away drops it on the body — and the menu's own
+	// keys hear nothing then. Escape must still close it (da-8zpep: a CI
+	// run where the menu stayed open through an Escape for 30s).
+	test('Escape closes the menu when the focus has left it', async () => {
+		await withApp(async ({ page }) => {
+			await openMenu(page);
+			await page.evaluate(() => document.activeElement.blur());
+			await page.keyboard.press('Escape');
+			await page.locator(MENU).waitFor({ state: 'detached' });
+		});
+	});
+
 	test('it is a fingertip’s 24px on a phone', async () => {
 		await withApp(
 			async ({ page }) => {

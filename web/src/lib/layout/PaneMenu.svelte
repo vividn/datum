@@ -297,9 +297,21 @@
 		const inside = [button, menu, subMenu].some((el) => el?.contains(target));
 		if (open && !inside) close(false);
 	}
+
+	// Escape from wherever the focus is. The menus' own keys hear it only
+	// while the focus is inside them, and the focus can leave an open menu
+	// without closing it — a focused item the list re-renders away drops
+	// it on the body — which left a menu no Escape could close (da-8zpep).
+	// In the CAPTURE phase, before the menus' own handlers: a submenu's
+	// Escape closes the submenu, and by the time the key bubbled here it
+	// would be gone from the page and read as a key from outside.
+	function onWindowKey(event: KeyboardEvent) {
+		const inside = [menu, subMenu].some((el) => el?.contains(event.target as Node));
+		if (open && event.key === 'Escape' && !inside) close();
+	}
 </script>
 
-<svelte:window on:pointerdown={onWindowPointerDown} />
+<svelte:window on:pointerdown={onWindowPointerDown} on:keydown|capture={onWindowKey} />
 
 <button
 	{...$$restProps}
