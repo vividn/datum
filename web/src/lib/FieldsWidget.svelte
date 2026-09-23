@@ -94,6 +94,7 @@
 		type FieldButton,
 		type FieldShape
 	} from './fields.js';
+	import { holds } from './hold.js';
 	import { fieldPill, setFieldPill } from './bar.js';
 	import { promoted, type Near } from './lanes.js';
 	import { openTrack } from './trackModal.js';
@@ -151,9 +152,6 @@
 
 	const dispatch = createEventDispatcher<{ run: string[]; line: string }>();
 
-	/** How long a press has to last before it counts as a long press. */
-	const HOLD_MS = 450;
-
 	let bar: HTMLElement;
 	/** The measuring stick the scroll rule counts rows with (da-ltux). */
 	let probe: HTMLElement;
@@ -183,9 +181,6 @@
 	 * pane is scrolled sideways.
 	 */
 	let scrolledTo = { left: 0, top: 0 };
-
-	let holdTimer: ReturnType<typeof setTimeout> | null = null;
-	let held = false;
 
 	/** Whether a pointer — a mouse, a finger — is over the bar right now. */
 	let over = false;
@@ -365,36 +360,18 @@
 		emit(pressArgv(button, state));
 	}
 
-	function clearHold() {
-		if (holdTimer !== null) clearTimeout(holdTimer);
-		holdTimer = null;
-	}
-
-	// Pointer events rather than touch/mouse pairs: one code path reaches
-	// a finger, a stylus and a held mouse button alike.
-	function down(button: FieldButton) {
-		held = false;
-		clearHold();
-		holdTimer = setTimeout(() => {
-			holdTimer = null;
-			held = true;
-			hold(button);
-		}, HOLD_MS);
-	}
-
-	// The click still fires after a long press (and after the keyboard's
-	// Enter/Space, which never sends a pointerdown at all) — swallow the one
-	// that follows a hold, and treat everything else as a short press.
-	function click(button: FieldButton, event: MouseEvent) {
-		if (held) {
-			held = false;
-			return;
-		}
-		// Shift+click is the desktop hold (da-8810n) — the one of vividn's
-		// three that is not already an event of its own.
-		if (event.shiftKey) return hold(button);
-		press(button);
-	}
+	/**
+	 * The hold, from the app's ONE implementation of it ($lib/hold.ts): the
+	 * timer, the right click, the menu key and shift+click are all in the
+	 * action, on the BAR rather than on each button, and `data-field` is
+	 * what says which of its children can be held. A press that turns out
+	 * to be a hold never reaches the buttons' own `on:click` at all, so
+	 * there is nothing left here to swallow it with.
+	 */
+	const holdField = (el: HTMLElement) => {
+		const button = buttons.find((b) => b.field === el.dataset.field);
+		if (button) hold(button);
+	};
 
 	function onWindowKeyDown(event: KeyboardEvent) {
 		if (event.key !== 'Escape') return;
@@ -422,6 +399,7 @@
 	bind:this={bar}
 	data-rows={rows}
 	style:--rows={rows}
+	use:holds={{ within: 'button[data-field]', run: holdField }}
 	on:pointerenter={() => (over = true)}
 	on:pointerleave={() => (over = false)}
 >
@@ -538,12 +516,7 @@
 						style={vars(look)}
 						{disabled}
 						title={titleOf(button)}
-						on:pointerdown={() => down(button)}
-						on:pointerup={clearHold}
-						on:pointerleave={clearHold}
-						on:pointercancel={clearHold}
-						on:contextmenu|preventDefault={() => hold(button)}
-						on:click={(event) => click(button, event)}>{button.field}</button
+						on:click={() => press(button)}>{button.field}</button
 					>
 				{:else}
 					<button
@@ -557,12 +530,7 @@
 						data-ignored={button.ignored ? '' : undefined}
 						data-pilled={$fieldPill === button.field ? '' : undefined}
 						title={titleOf(button)}
-						on:pointerdown={() => down(button)}
-						on:pointerup={clearHold}
-						on:pointerleave={clearHold}
-						on:pointercancel={clearHold}
-						on:contextmenu|preventDefault={() => hold(button)}
-						on:click={(event) => click(button, event)}
+						on:click={() => press(button)}
 					>{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
 				{/if}
 			</div>

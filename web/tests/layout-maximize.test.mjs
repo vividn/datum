@@ -193,6 +193,8 @@ describe('the maximize badge', () => {
 			// Both go together (da-bzhq): "Locking hides both the + and this
 			// down arrow icon menu."
 			assert.equal(await page.locator('section.pane button.manage').count(), 0, 'a locked layout kept its `▾`');
+			// And the `×` goes with them (da-efr4i): «in unlocked mode».
+			assert.equal(await page.locator('section.pane button.close').count(), 0, 'a locked layout kept its `×`');
 
 			await press(page, 'repl');
 			assert.deepEqual(await titles(page), ['repl']);
@@ -220,8 +222,9 @@ describe('the maximize badge', () => {
 	// too — no `order` and no auto margin deal a badge out to a corner any
 	// more. vividn: «move the maximize button to be before the tab names,
 	// rather than on the opposite side of the bar», so: maximize, then the
-	// title or the tabs, then `+`, then `▾`.
-	test('the maximize comes first, before the title, and the `+` and `▾` after it', async () => {
+	// title or the tabs, then `+`, then `▾` — and since da-efr4i the `×`
+	// after those, the one destructive badge at the far end from the `+`.
+	test('the maximize comes first, before the title, and the `+`, `▾` and `×` after it', async () => {
 		await withApp(async ({ page }) => {
 			const names = (id) =>
 				pane(page, id)
@@ -229,14 +232,14 @@ describe('the maximize badge', () => {
 					.evaluate((el) =>
 						[...el.children].map(
 							(c) =>
-								['titlebox', 'tabs', 'add', 'maximize', 'manage'].find((name) => c.classList.contains(name)) ??
+								['titlebox', 'tabs', 'add', 'maximize', 'manage', 'close'].find((name) => c.classList.contains(name)) ??
 								c.className
 						)
 					);
-			assert.deepEqual(await names('repl'), ['maximize', 'titlebox', 'add', 'manage']);
+			assert.deepEqual(await names('repl'), ['maximize', 'titlebox', 'add', 'manage', 'close']);
 			// And with a strip in place of the title, the same order.
 			await addTab(page, 'repl', 'aliases');
-			assert.deepEqual(await names('repl'), ['maximize', 'tabs', 'add', 'manage']);
+			assert.deepEqual(await names('repl'), ['maximize', 'tabs', 'add', 'manage', 'close']);
 		}, DESKTOP);
 	});
 });
@@ -439,6 +442,64 @@ describe('the maximize badge, drawn and placed', () => {
 	// down in two runs. A cursor's reading is the one that was already
 	// right, so a regression that moved BOTH pointers together — which is
 	// exactly what the single token did — still fails here.
+	// THE SAME CLAIM FOR THE ROW'S OWN THREE (da-wyofs, da-efr4i): the `+`,
+	// the `▾` and the `×` draw a `::before` inside a button that is the
+	// finger's box. One drawn size under either pointer, and no badge
+	// drawing on the button itself — the four are one mechanism, so a new
+	// badge that misses it is caught here rather than by eye on a phone.
+	test('every badge on the row draws one box, at one size under either pointer', async () => {
+		const read = async (where) => {
+			let out;
+			await withApp(async ({ page }) => {
+				out = await page.evaluate(() => {
+					const row = document.querySelector('section[data-pane="repl"] > .titlebar > .along');
+					const seen = {};
+					for (const [name, sel] of [['+', 'button.add'], ['▾', 'button.manage'], ['×', 'button.close']]) {
+						const el = row.querySelector(sel);
+						if (!el) { seen[name] = null; continue; }
+						const own = getComputedStyle(el);
+						const before = getComputedStyle(el, '::before');
+						seen[name] = {
+							button: Math.round(el.getBoundingClientRect().width),
+							// The drawn box is the `::before`'s border box: its
+							// computed `width` is the content box, and it is
+							// `box-sizing: border-box` with a 1px outline.
+							drawn: parseFloat(before.width) + 2,
+							ownEdge: own.borderTopColor,
+							ownGround: own.backgroundColor
+						};
+					}
+					return { coarse: matchMedia('(pointer: coarse)').matches, seen };
+				});
+			}, where);
+			return out;
+		};
+		const [fine, coarse] = [await read(DESKTOP), await read(PHONE)];
+		assert.equal(fine.coarse, false);
+		assert.equal(coarse.coarse, true);
+		for (const name of ['+', '▾', '×']) {
+			const [a, b] = [fine.seen[name], coarse.seen[name]];
+			assert.ok(a && b, `the ${name} was not on the row`);
+			// The hit area is the one thing that differs, which is what says
+			// the two arms really were two pointers.
+			assert.equal(a.button, 16, `the ${name}'s cursor hit area is ${a.button}`);
+			assert.equal(b.button, 24, `the ${name}'s finger hit area is ${b.button}`);
+			assert.equal(
+				b.drawn,
+				a.drawn,
+				`the ${name} draws ${a.drawn} under a cursor and ${b.drawn} under a finger`
+			);
+			for (const [when, seen] of [['under a cursor', a], ['under a finger', b]]) {
+				assert.match(seen.ownEdge, /^rgba\(.*,\s*0\)$/, `${when} the ${name} draws on its button (edge ${seen.ownEdge})`);
+				assert.match(seen.ownGround, /^rgba\(.*,\s*0\)$/, `${when} the ${name} grounds its button (${seen.ownGround})`);
+			}
+		}
+		// And all three draw the SAME box as each other, which is what
+		// «one mechanism» means and what the eye actually reads on the row.
+		const sizes = ['+', '▾', '×'].map((n) => fine.seen[n].drawn);
+		assert.equal(new Set(sizes).size, 1, `the row's badges draw ${sizes.join(', ')}`);
+	});
+
 	test('the drawing is the same under a cursor and under a finger; the target is not', async () => {
 		const read = async (where) => {
 			let out;
@@ -478,10 +539,17 @@ describe('the maximize badge, drawn and placed', () => {
 	// `.manage` to make up the difference. That is arithmetic about the
 	// compiler and about a file this one does not own, so it is asserted
 	// rather than trusted.
+	// The `×` (da-efr4i) is the fourth. It arrived on the row while
+	// da-wyofs was in flight and the two rebased past each other cleanly,
+	// which is exactly how a badge comes to draw on its BUTTON while its
+	// neighbours draw inside theirs — invisible under a cursor, where the
+	// two boxes are the same 16px, and a 24px drawn box beside two 16px
+	// ones under a finger. Measured before it was fixed.
 	for (const [what, selector] of [
 		['maximize', 'button.maximize'],
 		['+', 'button.add'],
-		['▾', 'button.manage']
+		['▾', 'button.manage'],
+		['×', 'button.close']
 	])
 		test(`pointing at the ${what} moves the drawn edge, and does not give the button one`, async () => {
 			await withApp(async ({ page }) => {

@@ -82,17 +82,18 @@ export const boxOf = (locator) => locator.boundingBox();
 /**
  * Where a tabbed holder's strip lies over the panes under it (da-cesj),
  * from the boxes on the SCREEN: every inner title the strip's box meets,
- * and every inner control its BADGES meet — the `+` and, since da-bzhq,
- * the `▾` beside it. `titles` counts the inner titles looked at, so an
- * empty holder cannot pass for a clear one.
+ * and every inner control its BADGES meet — the `+`, since da-bzhq the
+ * `▾` beside it, and since da-efr4i the `×` after that. `titles` counts
+ * the inner titles looked at, so an empty holder cannot pass for a clear
+ * one.
  */
 export const overStrip = (page, id) =>
 	pane(page, id).evaluate((holder) => {
 		const box = (el) => el.getBoundingClientRect();
 		const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 		const strip = holder.querySelector(':scope > .titlebar');
-		const badges = [...strip.querySelectorAll('button.add, button.manage')].map((el) => [
-			el.classList.contains('add') ? '+' : '▾',
+		const badges = [...strip.querySelectorAll('button.add, button.manage, button.close')].map((el) => [
+			el.classList.contains('add') ? '+' : el.classList.contains('manage') ? '▾' : '×',
 			box(el)
 		]);
 		const inner = [...holder.querySelectorAll(':scope > .content section.pane')];

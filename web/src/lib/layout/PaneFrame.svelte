@@ -9,8 +9,21 @@
 	overlay the title on the frame, with the nice ... button visible next
 	to it", da-jgrn). With more tabs the tab strip sits there instead and
 	the badges follow the LAST tab. The row reads maximize, title or tabs,
-	`+`, `▾` (da-bzhq): the maximize BEFORE the names, and after them the
-	pair that adds a tab and manages the pane.
+	`+`, `▾`, `×` (da-bzhq, da-efr4i): the maximize BEFORE the names, and
+	after them the badges that add a tab, manage the pane, and close what
+	the title names — the destructive one last, at the far end from the
+	`+`, the way `Close` is the far end of the menu.
+
+	AND THE NAME ITSELF IS TWO DOORS (da-efr4i). A press on the title — or
+	on the tab in front — opens what the pane IS (`named`, menu.ts); a
+	HOLD on it opens `Change Widget`, which keeps its home in the `▾` and
+	gains a second way in from the name of the widget it would replace.
+	vividn, 2026-09-22: «Long pressing or right clicking on a widget title
+	opens the change widget menu.» It is the app's ONE hold ($lib/hold.ts,
+	the fields widget's own), and the `contextmenu` it swallows is the
+	title's alone: a reader right-clicking a pane's CONTENT still gets the
+	browser's menu, which is where text is selected and copied. Both
+	doors close under a lock, `Change Widget` being a `manage` item.
 
 	The line is the edge the pane's `bar`
 	names — top or bottom running across, left or right running DOWN with
@@ -67,11 +80,12 @@
 	the other end: it draws no bar of its own at all, however many tabs
 	it has, and no box, because the shell draws the root's tabs as the
 	page's top bar (da-0a5o). And a frame UNDER A LOCK
-	draws no `+` and no `▾` — nothing under a lock can be split, tabbed or
-	resized, and those two are how it would be (vividn, da-bzhq: "Locking
-	hides both the + and this down arrow icon menu") — and the tabs still
-	switch. What the title still opens is the widget's own option rows
-	(da-vhwq): they are the SESSION's and reach no tree, and a lock stops
+	draws no `+`, no `▾` and no `×` — nothing under a lock can be split,
+	tabbed, resized or closed, and those three are how it would be (vividn,
+	da-bzhq: "Locking hides both the + and this down arrow icon menu"; and
+	da-efr4i puts the `×` there "in unlocked mode") — the hold on the title
+	goes with them, and the tabs still switch. What the title still opens
+	is the widget's own option rows (da-vhwq): they are the SESSION's and reach no tree, and a lock stops
 	the tree from moving, not a widget's own settings. What it loses is
 	«Save options with layout», the one of them that writes.
 
@@ -139,6 +153,7 @@
 <script lang="ts">
 	import { setContext, tick } from 'svelte';
 	import { ask } from '$lib/confirm.js';
+	import { holds } from '$lib/hold.js';
 	import { writable } from 'svelte/store';
 	import type { BarAlign, BarEdge, Pane, Tab } from './types.js';
 	import { isSplit } from './types.js';
@@ -148,7 +163,7 @@
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, setTitle, splitPane, splitTab } from './tree.js';
 	import { inForce, toggleMaximize } from './maximize.js';
 	import { labelOf, titleOf } from './registry.js';
-	import { layoutActs, managed, menuItems, named } from './menu.js';
+	import { CLOSE, layoutActs, managed, menuItems, named } from './menu.js';
 	import { widgetOptions } from './options.js';
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
@@ -387,6 +402,23 @@
 				acts,
 				saveAs: holder && !root ? saveAsLayout(active.id) : undefined
 			});
+
+	/**
+	 * THE SECOND DOOR ON `Change Widget` (da-efr4i). vividn, 2026-09-22:
+	 * «Long pressing or right clicking on a widget title opens the change
+	 * widget menu.» The act keeps its home in the `▾` (da-z8klv) and gains
+	 * a way in from the name of the widget it would replace — a hold on
+	 * the title with one tab, on the tab in front with more.
+	 *
+	 * Undefined under a lock, which turns the gesture off entirely
+	 * ($lib/hold.ts): `Change Widget` is a `manage` item and a lock takes
+	 * the whole of that slice away, so a second door to it must close with
+	 * the first. The gesture is the app's ONE hold — the same 450ms, the
+	 * same right click, the same menu key — and it is `preventDefault`ed
+	 * only here: a reader right-clicking a pane's CONTENT still gets the
+	 * browser's own menu, which is where text is selected and copied.
+	 */
+	$: changeWidget = locked ? undefined : () => void fillTab(active.id);
 
 	/**
 	 * The two slices of that one list (da-bzhq, `menu.ts`): the TITLE — or
@@ -681,6 +713,7 @@
 					role="tablist"
 					aria-orientation={vertical ? 'vertical' : 'horizontal'}
 					bind:this={strip}
+					use:holds={{ within: '[role="tab"][aria-selected="true"]', run: changeWidget }}
 				>
 					{#each pane.tabs as tab, i (tab.id)}
 						{#if i === pane.active && own.length > 0}
@@ -726,7 +759,7 @@
 				<!-- The title's own box, and the menu's button laid over the
 				     whole of it — beside the h2 rather than inside it, so that
 				     the words may be clipped to their box and the button not. -->
-				<div class="titlebox">
+				<div class="titlebox" use:holds={{ run: changeWidget }}>
 					<h2 bind:this={h2}>{#if !$hosted}{title}{#if $modified.has(active.id)}<span class="dot" title="modified">•</span>{/if}{/if}</h2>
 					{#if own.length > 0}
 						<PaneMenu items={own} look="title" label="menu of the {title} pane" />
@@ -763,6 +796,28 @@
 						aria-label="manage the {title} pane">▾</PaneMenu
 					>
 				{/if}
+				<!-- And the × that closes what the title names (da-efr4i).
+				     vividn, 2026-09-22: «in unlocked mode, add an x to the
+				     widget titles that let's you close it.» The same act as
+				     the menu's Close, wearing the same `×` (da-ygc9) — so a
+				     frequently-wanted act has two routes, as `Change Widget`
+				     now does — greyed exactly where that item is greyed, on
+				     the root's own last tab, which is the layout itself.
+				     LAST on the row: the one destructive badge, at the far
+				     end from the `+`, the way Close is the far end of the
+				     list. What a mis-tap costs is what `Close` costs and no
+				     more: the DRAFT is what it writes, the save is untouched
+				     and `Restore layout` is the way back, and the last pane
+				     of a layout closes to an EMPTY pane whose one button is
+				     `Change Widget` — never to nothing. -->
+				<button
+					type="button"
+					class="control badge close"
+					disabled={!canClose}
+					aria-label="close the {title} {thing}"
+					title="close this {thing}"
+					on:click={() => apply((l) => closeTab(l, pane.id, pane.active))}>{CLOSE}</button
+				>
 			{/if}
 		</div>
 	</div>
@@ -1046,10 +1101,23 @@
 	   `.control.badge` (app.css) as the `+`, one character centred in a
 	   square, and its name is its `aria-label` as the `+`'s is. */
 	.add,
+	.close,
 	.maximize,
 	.along :global(button.manage) {
 		flex: none;
 		pointer-events: auto;
+	}
+
+	/* The title and the tabs are HELD, not read (da-efr4i): a long press on
+	   one must not also select its words or raise the platform's text
+	   callout. The fields widget says the same of its buttons, for the same
+	   gesture. The pane's CONTENT is untouched — selecting and copying what
+	   a pane shows is the whole reason the web re-renders at all. */
+	.titlebox,
+	.tabs {
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 
 	/* «I want it to be fully in the corner so it is aligned with both the
@@ -1098,8 +1166,9 @@
 	   badge drawn twice, at two sizes, and only the first of them ever
 	   measured. It comes off `--mark` now, so it is 12px for everyone.
 
-	   THE OTHER TWO BADGES ARE THE SAME CLAIM, so they are the same rule
-	   (da-wyofs). The `+` and the `▾` drew their ground and outline on the
+	   THE OTHER THREE BADGES ARE THE SAME CLAIM, so they are the same rule
+	   (da-wyofs; the `×` joined them in da-efr4i). The `+`, the `▾` and the
+	   `×` drew their ground and outline on the
 	   BUTTON, which is `--badge` square: on a phone that put a 24px box on
 	   a bar whose panes are eight pixels apart, and the badge of the pane
 	   below lay 3.5px over the pane above — half of vividn's «overlap with
@@ -1121,9 +1190,19 @@
 	   short. Without the second `.manage` the `▾` would grow the button's
 	   accent border back under the pointer, which is a second and larger
 	   outline round the drawn one, at exactly the moment a reader is
-	   looking straight at it. Asserted in layout-maximize.test.mjs. */
+	   looking straight at it. Asserted in layout-maximize.test.mjs.
+
+	   ⚑ THE `×` WAS IN FLIGHT WHILE THIS LANDED and the two rebased past
+	   each other with no conflict, which is how a badge comes to be on the
+	   row and off this mechanism: it went on drawing on its BUTTON. Under
+	   a cursor that is invisible, `--badge` and `--mark` being the same
+	   16px there; under a finger it was a 24px drawn box between two 16px
+	   ones, and one more of the bleeds da-wyofs removed. The tests read
+	   all FOUR badges now, and read both pointers, which is what makes the
+	   next one arrive noisily instead of quietly. */
 	.maximize,
 	.add,
+	.close,
 	.along :global(button.manage.manage) {
 		--edge: var(--rule);
 		background: none;
@@ -1139,11 +1218,13 @@
 		border-radius: 5px;
 	}
 	.add,
+	.close,
 	.along :global(button.manage) {
 		position: relative;
 		isolation: isolate;
 	}
 	.add::before,
+	.close::before,
 	.along :global(button.manage)::before {
 		content: '';
 		position: absolute;
@@ -1159,6 +1240,8 @@
 	.maximize[aria-pressed='true'],
 	.add:hover:not(:disabled),
 	.add:focus-visible,
+	.close:hover:not(:disabled),
+	.close:focus-visible,
 	.along :global(button.manage:hover:not(:disabled)),
 	.along :global(button.manage:focus-visible) {
 		--edge: var(--accent);

@@ -216,16 +216,23 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
 - Background Sync API queues sync when offline
 - The page is a LAYOUT TREE, not a grid (da-jdop, `web/src/lib/layout/`):
   panes hold widgets or splits of panes, each pane has tabs and draggable
-  borders, and its bar reads maximize · title-or-tabs · `+` · `▾`
-  (da-bzhq): the NAME opens what the pane IS and what it is saved as
-  (Reset widget, the widget's OWN OPTIONS one item each, the layout's
-  acts), the `▾` beside the `+` what is DONE to it (Change Widget,
-  Rename tab…, Split, Break out, Bar, Close), and a lock hides that pair.
-  One builder, `menu.ts`, one order, two filters — `named` and `managed`.
-  The lock that hides the pair is the one from ABOVE (da-z8klv): a pane
-  HOLDING a sublayout belongs to the layout above it, so its `+` and its
-  `▾` follow the parent's lock and not the sublayout's own, which reaches
-  only the subtree. The root's `+` is never hidden by any lock — a locked
+  borders, and its bar reads maximize · title-or-tabs · `+` · `▾` · `×`
+  (da-bzhq, da-efr4i): the NAME opens what the pane IS and what it is
+  saved as (Reset widget, the widget's OWN OPTIONS one item each, the
+  layout's acts), the `▾` beside the `+` what is DONE to it (Change
+  Widget, Rename tab…, Split, Break out, Bar, Close), the `×` after them
+  closes what the title names — the menu's own Close, promoted to the row
+  — and a lock hides all three. One builder, `menu.ts`, one order, two
+  filters — `named` and `managed`. A HOLD on the title — the app's one
+  hold, `web/src/lib/hold.ts`: a 450ms long press, a right click, the
+  menu key, shift+click — is a SECOND door on Change Widget (da-efr4i),
+  which keeps its home in the `▾`; the `contextmenu` is eaten on the
+  title alone, so a reader still gets the browser's menu over a pane's
+  content, where text is selected and copied.
+  The lock that hides the three is the one from ABOVE (da-z8klv): a pane
+  HOLDING a sublayout belongs to the layout above it, so its `+`, its `▾`
+  and its `×` follow the parent's lock and not the sublayout's own, which
+  reaches only the subtree. The root's `+` is never hidden by any lock — a locked
   layout must not be able to stop you opening another beside it.
   A WIDGET OPTION IS SESSION STATE (da-vhwq, `session.ts` + `options.ts`):
   the kind declares it in the registry, the menu draws it inline — a

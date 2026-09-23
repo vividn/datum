@@ -217,7 +217,8 @@ writing it down.
     and `ansi.ts`'s sixteen, which are a terminal's slots and not this app's looks.
 12. **A control a finger can hit is 24px** (`reachable.test.mjs` holds every button that opens a
     menu — a pane's title and the root bar's active tab (da-9vtw, da-wjob) — every badge beside
-    one, every submenu icon and every root-bar button to it). `.control` in `app.css` is the rule set that
+    one (the `+`, the maximize, and the `×` that closes what the title names — da-efr4i),
+    every submenu icon and every root-bar button to it). `.control` in `app.css` is the rule set that
     makes one — the box, the 6px radius, the pane ground, the 1px rule, the muted ink — and
     `.control.badge` the square of them, sized by `--badge` (a pane's title row, a fingertip's
     24px under a coarse pointer, which is what the box round a pane's title is sized by too).

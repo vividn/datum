@@ -564,8 +564,9 @@ describe('the layout engine, by keyboard', () => {
 
 	// The floors a pointer needs, after the margins came down (da-jgrn) and
 	// the title row with them (da-om9v): a border is at least 8px across;
-	// what opens a pane's menu — its title (da-9vtw) — and the two badges
-	// beside it, the `+` and the maximize (da-00am), are the row's height
+	// what opens a pane's menu — its title (da-9vtw) — and the badges
+	// beside it, the `+`, the maximize (da-00am) and the `×` that closes
+	// what the title names (da-efr4i), are the row's height
 	// (16px) where the pointer is fine and a fingertip's 24px where it is
 	// coarse; the root bar's are 24px under either.
 	// Two screens share one app; the coarse pointer cannot — `hasTouch` is a
@@ -595,7 +596,9 @@ describe('the layout engine, by keyboard', () => {
 						return {
 							coarse: matchMedia('(pointer: coarse)').matches,
 							borders: shown('[role="separator"]').map((el) => Math.min(...box(el))),
-							panes: shown('section button.title, section button.add, section button.manage, section button.maximize').map(box),
+							panes: shown(
+								'section button.title, section button.add, section button.manage, section button.maximize, section button.close'
+							).map(box),
 							root: shown(
 								'.root-bar button.add, .root-bar button.manage, .root-bar button.lock, .root-bar button.gear, .root-bar [role="tab"]'
 							).map(box)
