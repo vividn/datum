@@ -113,10 +113,19 @@ jobs:
       - name: cargo xtask check lint (the honesty gates, da-8y2q.7)
         run: cargo run -q -p xtask -- check lint
 
+      # The web steps below carry `if:` so a red cargo step does not SKIP the
+      # web suite (da-vnebg): skipped reads as judged, and the web result at
+      # that commit would not exist. Each web step runs unless the run was
+      # cancelled or the web step before it failed — so a broken install is
+      # still one red, not a pile of red after it. The fixture and wasm
+      # comparisons between them keep the default: they read cargo's output.
+      #
       # node 22 for the two capture scripts and the web suite. GitHub's job
       # uses setup-node's pnpm cache; there is no cache service here, so no
       # `cache:` — a cache that fails must not fail the gate.
       - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        id: node
+        if: ${{ !cancelled() }}
         with:
           node-version: 22
 
@@ -159,16 +168,22 @@ jobs:
       # package_json_file is repo-root-relative because an action's inputs
       # ignore working-directory.
       - uses: https://github.com/pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        id: pnpm
+        if: ${{ !cancelled() && steps.node.outcome == 'success' }}
         with:
           package_json_file: web/package.json
 
       - name: pnpm install
+        id: install
+        if: ${{ !cancelled() && steps.pnpm.outcome == 'success' }}
         working-directory: web
         run: pnpm install --frozen-lockfile
 
       # apt inside the job container; the image runs as root, so --with-deps
       # works (it did in task 184).
       - name: Install the headless browser
+        id: browser
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         working-directory: web
         run: pnpm exec playwright install --with-deps --only-shell chromium
 
@@ -180,6 +195,7 @@ jobs:
       # suite. GitHub's runner turned out to be 2 cores and runs 1 for the
       # same reason (da-buqa, #224).
       - name: pnpm test
+        if: ${{ !cancelled() && steps.browser.outcome == 'success' }}
         working-directory: web
         run: /usr/bin/time -v pnpm test
         env:
