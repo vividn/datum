@@ -247,7 +247,9 @@
 			     into. A different class for a different thing, so a reader of
 			     `.pill` — a test included — is never handed one. -->
 			{#each $spent as pill (pill.id)}
-				<span class="spent {pill.kind}" style:--pill={pill.color}>{pill.text}</span>
+				<span class="spent {pill.kind}" style:--pill={pill.color} style:animation-delay="-{pill.age}ms"
+					>{pill.text}</span
+				>
 			{/each}
 		</span>
 		</span>
@@ -340,7 +342,7 @@
 		pointer-events: none;
 		color: var(--ink);
 		font-size: var(--input-font);
-		animation: ghost-fade 1s ease-out forwards;
+		animation: ghost-fade 1s forwards;
 	}
 
 	/* Measured, never seen: the same face, size and spacing as the box, so
@@ -400,25 +402,36 @@
 		padding: 0.25rem 0.55rem;
 		pointer-events: none;
 		opacity: 0.6;
-		animation: spent-fade 1s ease-out forwards;
+		animation: spent-fade 1s forwards;
 	}
 
+	/* HELD, then gone (da-jrozq). vividn: "stay fully opaque for 250-500 ms,
+	   and then quickly fade rather than starting to fade immediately". So
+	   400ms at full strength and an ease-in over the rest, which keeps it
+	   near full and drops it at the end. The SHAPE only: the whole is still
+	   GHOST_MS ($lib/bar.ts), which the timers taking it away keep to. */
 	@keyframes ghost-fade {
-		from {
+		0%,
+		40% {
 			opacity: 1;
+			animation-timing-function: ease-in;
 		}
-		to {
+		100% {
 			opacity: 0;
 		}
 	}
 
 	/* From the spent pill's own opacity, not from 1: it is a receipt
-	   fading, and it never brightens on its way out. */
+	   fading, and it never brightens on its way out. The ghost's shape, so
+	   the two go together — and a pill spent after the press joins the
+	   ghost part-way through, by a negative delay of its `age`. */
 	@keyframes spent-fade {
-		from {
+		0%,
+		40% {
 			opacity: 0.6;
+			animation-timing-function: ease-in;
 		}
-		to {
+		100% {
 			opacity: 0;
 		}
 	}

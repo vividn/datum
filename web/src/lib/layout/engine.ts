@@ -140,12 +140,19 @@ export async function press(
 	typed = false,
 	echo?: string
 ): Promise<RunResult> {
-	const result = await (repl ? repl.runArgv(argv, line, stdin) : alone(argv, line, stdin));
 	// The argv the CALLER asked for, never the one the runner received: the
 	// web appends flags of its own on the way through (`--show json`,
 	// `--width`), and those are the web's, not a command anyone should be
 	// taught to type (da-xfa4).
+	//
+	// At the PRESS, not when the command lands (da-jrozq): the ghost is the
+	// feedback that something was pressed, and it waited out the whole
+	// round trip — 1.5s on the deployed app. Its second runs from here, so
+	// a slow command's ghost is gone before its result is; vividn chose that:
+	// «the output section shows the command that was run again, so it is
+	// okay for it to fade before then».
 	if (!typed) showGhost(echo ?? line ?? argv.join(' '));
+	const result = await (repl ? repl.runArgv(argv, line, stdin) : alone(argv, line, stdin));
 	return (await answerVerb(argv, result)) ?? result;
 }
 
@@ -200,6 +207,7 @@ async function alone(argv: string[], line?: string, stdin?: string): Promise<Run
  */
 export const pressWithPills = async (argv: string[], line?: string): Promise<RunResult> => {
 	const { argv: full, used } = withPills(get(grammar), argv, get(pills));
+	const pressed = Date.now();
 	const result = await press(
 		full,
 		line === undefined ? undefined : echoed(line, used),
@@ -208,7 +216,9 @@ export const pressWithPills = async (argv: string[], line?: string): Promise<Run
 		line ?? argv.join(' ')
 	);
 	if (result.code === 0) {
-		clearUnlockedPills(used);
+		// A press nobody typed ghosted when it was pressed, and its pills
+		// fade on that ghost's clock; a typed line has no ghost to keep time.
+		clearUnlockedPills(used, line === undefined ? pressed : Date.now());
 		dropHids((parseEcho(result.stdout) ?? []).filter((d) => d.action === 'DELETE').map((d) => d.hid));
 	}
 	return result;

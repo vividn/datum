@@ -157,6 +157,41 @@ describe('the ghost', () => {
 		}, DESKTOP);
 	});
 
+	test('the ghost is up at the press, before the command lands, and holds before it fades', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await slowRunner(page, 700);
+			const echoes = await page.locator('.repl .echo').count();
+
+			// vividn: "~1.5 s later, finally the ghost text of the command
+			// *finally* appears" (da-jrozq). Found while the command is still
+			// in flight — no echo yet — in the same evaluation, so a command
+			// landing between two reads cannot make it pass.
+			await page.evaluate(() => void window.datum.run(['occur', 'slowly']));
+			const seen = await page
+				.waitForFunction((n) => {
+					const ghost = document.querySelector('.prompt-bar .ghost');
+					if (!ghost) return null;
+					return { ghost: ghost.textContent, landed: document.querySelectorAll('.repl .echo').length > n };
+				}, echoes)
+				.then((h) => h.jsonValue());
+			assert.deepEqual(seen, { ghost: 'occur slowly', landed: false });
+
+			// The shape of the fade, read off the animation held at two
+			// instants: fully opaque at 350ms ("stay fully opaque for 250-500
+			// ms"), and going by 700ms, and all of it inside GHOST_MS.
+			const opacity = await page.locator('.prompt-bar .ghost').evaluate((el) => {
+				const [fade] = el.getAnimations();
+				fade.pause();
+				const at = (ms) => ((fade.currentTime = ms), Number(getComputedStyle(el).opacity));
+				return { held: at(350), going: at(700), total: fade.effect.getComputedTiming().endTime };
+			});
+			assert.equal(opacity.held, 1, 'the ghost was already fading 350ms in');
+			assert.ok(opacity.going < 1 && opacity.going > 0, `the ghost read ${opacity.going} at 700ms`);
+			assert.equal(opacity.total, 1000, 'the fade is no longer GHOST_MS long');
+		}, DESKTOP);
+	});
+
 	test('a second press replaces the first and restarts the fade — never two at once', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

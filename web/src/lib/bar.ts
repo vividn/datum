@@ -283,22 +283,28 @@ export const setFieldPill = (field: string | null, color?: string): void =>
  * command it went into. Keeping it out of `pills` is what lets both of
  * those readers stay exactly as they were.
  */
-export const spent = writable<Pill[]>([]);
+export const spent = writable<(Pill & { age: number })[]>([]);
 
 /**
  * After a press SUCCEEDS: unlocked pills clear, locked ones stay for the
  * next line.
  *
- * The cleared ones move to `spent` for the length of a ghost — vividn: "The
- * pills should be used with the ghost text, so they can be part of it and
- * fade with it" — and are gone after it.
+ * The cleared ones move to `spent` for what is left of a ghost that
+ * started at `since` — vividn: "The pills should be used with the ghost
+ * text, so they can be part of it and fade with it" — and are gone with
+ * it. The ghost starts at the press and the pills can only be spent once
+ * the press has succeeded (da-jrozq), so they join it `age` ms into its
+ * fade, and a command slower than the ghost leaves none to fade.
  */
-export const clearUnlockedPills = (used: Pill[] = get(pills)): void => {
+export const clearUnlockedPills = (used: Pill[] = get(pills), since = Date.now()): void => {
 	const doomed = used.filter((p) => !p.locked);
 	if (!doomed.length) return;
 	pills.update((all) => all.filter((p) => !doomed.includes(p)));
-	spent.set(doomed);
-	setTimeout(() => spent.update((all) => (all === doomed ? [] : all)), GHOST_MS);
+	const age = Date.now() - since;
+	if (age >= GHOST_MS) return;
+	const fading = doomed.map((p) => ({ ...p, age }));
+	spent.set(fading);
+	setTimeout(() => spent.update((all) => (all === fading ? [] : all)), GHOST_MS - age);
 };
 
 /**
@@ -483,7 +489,7 @@ export const ghost = writable<Ghost | null>(null);
 
 let haunting: ReturnType<typeof setTimeout> | undefined;
 
-/** `press` says a command ran that nobody typed. */
+/** `press` says a command nobody typed was pressed — at the press, before it runs (da-jrozq). */
 export const showGhost = (line: string): void => {
 	const next: Ghost = { line };
 	ghost.set(next);

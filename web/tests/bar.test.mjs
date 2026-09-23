@@ -1115,6 +1115,35 @@ describe('the pills ride with the text', () => {
 		}, DAY);
 	});
 
+	test('a spent pill fades in step with the ghost it went into, though it is spent later', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await withCoffee(app);
+			await setPill(page, { text: '-t 14:30' });
+			await page.locator(`${BAR} .pill`).waitFor();
+
+			// The ghost starts at the press and the pill is spent only when
+			// the command lands (da-jrozq), so a pill that started a fade of
+			// its own would lag the ghost by the whole command. Both clocks
+			// read in one evaluation, the moment the spent pill is there.
+			await app.pressWidget('coffee');
+			const clocks = await page
+				.waitForFunction(() => {
+					const pill = document.querySelector('.prompt-bar .spent');
+					const ghost = document.querySelector('.prompt-bar .ghost');
+					if (!pill || !ghost) return null;
+					// How far through, in ms: the pill's own clock starts at 0
+					// and its delay is what says where in the fade it joined.
+					const t = (el) => el.getAnimations()[0].effect.getComputedTiming().progress * 1000;
+					return { pill: t(pill), ghost: t(ghost) };
+				})
+				.then((h) => h.jsonValue());
+			assert.ok(Math.abs(clocks.pill - clocks.ghost) < 50, `pill at ${clocks.pill}ms, ghost at ${clocks.ghost}ms`);
+			await page.waitForFunction(() => !document.querySelector('.prompt-bar .spent'));
+			assert.deepEqual(app.errors, []);
+		}, DAY);
+	});
+
 	test('an unlocked pill leaves the live set at once and fades as a spent one', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

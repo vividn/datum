@@ -83,11 +83,14 @@ writing it down.
    command to teach (da-xfa4).
    It is shown BESIDE the prompt and never as the input's value (`bar.ghost`, da-jprg): a box
    that fills itself reads as text the reader typed and may edit. A line the reader really did
-   type is cleared on Enter and does not come back at all.
+   type is cleared on Enter and does not come back at all. It appears AT THE PRESS, not when the
+   command lands (da-jrozq): it is the feedback that a press happened, so a slow command's ghost
+   may be gone before its answer is — the output section says what ran.
 5. **The bar's pills go after the verb** (`engine.pressWithPills`): the CLI takes no flag before
    its verb, so a time cursor lands on a chip press exactly as on a typed line. They are drawn
    as pills BESIDE the ghost rather than as words in it, and a press spends its unlocked ones —
-   out of the live set at once, fading on screen with the ghost (`bar.spent`, da-xfa4).
+   out of the live set at once, fading on screen with the ghost (`bar.spent`, da-xfa4) — on the
+   ghost's own clock, joining it part-way through, since only a success spends them.
    **A LOCKED pill survives a reload** and an unlocked one does not (da-1py00, `PILLS_KEY` in
    `bar.ts`): the lock already meant "this one stays across presses", and this is that one scope
    wider. It is §2's `localStorage` and NOT the layout — a widget option reaches the layout only
