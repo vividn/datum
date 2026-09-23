@@ -700,10 +700,18 @@ function app(page, errors, query) {
 		 * The QUERY is kept, because `?db=<name>` is the page's whole state
 		 * (da-vk1x) and a navigation that drops it is a navigation into
 		 * another database.
+		 *
+		 * And no menu left open over it (da-b7sfp): a pointerdown on the
+		 * page's own body is a reader tapping nothing, which closes every
+		 * menu (PaneMenu's window listener) and hover card (`away` in
+		 * hover.ts) wherever the focus is — a test that ends with the Bar
+		 * submenu open handed the next one a menu it never opened.
 		 */
 		async home() {
 			const url = new URL(page.url());
 			if (url.pathname !== '/') await self.goto('/' + url.search);
+			await page.evaluate(() => document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
+			await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
 			return self;
 		},
 

@@ -6,7 +6,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
 	ONE_PANE,
@@ -45,6 +45,17 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
+// ONE APP per screen for most of this file (da-b7sfp, sharedApp in
+// support/app.mjs): a context is 2.5 s of boot, and nothing here reads a
+// ROW, so what a test leaves behind is layout alone, which `solo` puts back
+// to `day` before the next one. What still opens an app of its own leaves
+// the root WITHOUT `day` (Save layout as…, Change Widget at the root), locks
+// it (`solo` drops the stored lock, not the tab's), starts from another
+// device (a fresh phone, a `ONE_PANE` draft), all of which `solo` cannot
+// undo.
+const shared = sharedApp(DESKTOP);
+const phone = sharedApp(PHONE);
+
 describe('the menu the title opens', () => {
 	/**
 	 * The default layout's tail pane, in two slices (da-bzhq): what its
@@ -71,7 +82,7 @@ describe('the menu the title opens', () => {
 	const TAIL_MANAGE = ['Change Widget', 'Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane'];
 
 	test('the title is the button, the `▾` beside the `+` holds the acts on the pane', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const title = menuButton(page, 'tail');
 			assert.match(await title.getAttribute('class'), /\btitle\b/);
 			assert.equal(await title.getAttribute('aria-label'), 'menu of the tail pane');
@@ -95,7 +106,7 @@ describe('the menu the title opens', () => {
 			await chooser(page).locator('button').filter({ hasText: exactly('aliases') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'aliases', 'custom', 'fields']);
-		}, DESKTOP);
+		});
 	});
 
 	// vividn (da-ygc9): "let's add an icon on Close pane, and move close pane
@@ -104,7 +115,7 @@ describe('the menu the title opens', () => {
 	// builder makes them (`menu.ts`). The × is decoration, so the item's
 	// name is still its label alone and the keyboard still finds it there.
 	test('Close is the last item of either ▾, and wears an ×', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await manageButton(page, 'tail').click();
 			const lines = await menuLines(page);
 			assert.equal(lines.at(-1), '× Close pane');
@@ -124,7 +135,7 @@ describe('the menu the title opens', () => {
 			await rootManageButton(page).click();
 			assert.equal((await menuLines(page)).at(-1), '× Close tab');
 			await page.keyboard.press('Escape');
-		}, DESKTOP);
+		});
 	});
 
 	// da-ywp1: a pane's bar is a LINE on the pane's outline, so its title
@@ -136,7 +147,7 @@ describe('the menu the title opens', () => {
 	// unclickable there; the handles went with the root menu (da-wjob),
 	// and this holds the margin clear for the half-row the bars hang into.
 	test("a title hanging into the page's margin still takes the pointer", async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await chooseBar(page, 'tail', 'right');
 			await settled(page);
 			const [title, inner] = await Promise.all([
@@ -156,11 +167,11 @@ describe('the menu the title opens', () => {
 			await page.mouse.click(x, y);
 			assert.deepEqual(await menuLines(page), TAIL_MENU);
 			await page.keyboard.press('Escape');
-		}, DESKTOP);
+		});
 	});
 
 	test('each Split arrow puts the new pane on its own side', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await manage(page, 'tail', 'split: a new pane below');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
 			const empty = page.locator('section.pane[data-title="empty"]');
@@ -189,11 +200,11 @@ describe('the menu the title opens', () => {
 			// under the tail, at its own box's size.
 			await page.locator('section.pane[data-title="nowview"]').nth(1).locator('svg.svg').waitFor();
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'nowview', 'custom', 'fields']);
-		}, DESKTOP);
+		});
 	});
 
 	test('← puts it on the other side of the same pane', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await manage(page, 'tail', 'split: a new pane to the left');
 			const [tail, made] = await Promise.all([
 				boxOf(pane(page, 'tail')),
@@ -201,13 +212,13 @@ describe('the menu the title opens', () => {
 			]);
 			assert.ok(made.x + made.width <= tail.x + 1, 'the new pane is not left of the tail');
 			assert.equal(Math.round(made.y), Math.round(tail.y));
-		}, DESKTOP);
+		});
 	});
 
 	// The arrows are the SCREEN's, not the bar's: the menu is drawn on
 	// `document.body` and reads the screen's way whatever the bar does.
 	test('a rotated bar does not turn the arrows', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await chooseBar(page, 'tail', 'left');
 			await manage(page, 'tail', 'split: a new pane to the right');
 			const [tail, made] = await Promise.all([
@@ -216,11 +227,11 @@ describe('the menu the title opens', () => {
 			]);
 			assert.ok(made.x >= tail.x + tail.width - 1, 'the new pane is not right of the tail');
 			assert.equal(Math.round(made.y), Math.round(tail.y));
-		}, DESKTOP);
+		});
 	});
 
 	test('Break out takes the widget out of its grouping, and again out of the next', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			// The tail sits in the side column, beside nowview; ← takes it out
 			// of that column and lays it down the page beside the whole thing.
 			await manage(page, 'tail', 'break out: this widget to the left');
@@ -232,14 +243,14 @@ describe('the menu the title opens', () => {
 			const [again, strip] = await Promise.all([boxOf(pane(page, 'tail')), boxOf(pane(page, 'strip'))]);
 			assert.ok(again.x < strip.x, 'the tail is not left of the day strip');
 			assert.ok(again.height > tail.height, `the tail is ${again.height}px tall, was ${tail.height}`);
-		}, DESKTOP);
+		});
 	});
 
 	// da-n632 (vividn, 2026-09-17): a tab breaking out of a stack lands beside
 	// the STACK, in its own box — as Split would put a new pane there —
 	// not beside the whole column it sits in.
 	test('Break out of a tab stack lands the tab beside the stack, inside its row of the column', async () => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await manage(page, 'side', 'break out: this widget to the right');
 			const tail = titledPane(page, 'tail');
 			await tail.waitFor();
@@ -256,14 +267,14 @@ describe('the menu the title opens', () => {
 				Math.abs(stack.x - strip.x) < 2 && Math.abs(moved.x + moved.width - (strip.x + strip.width)) < 2,
 				`the pair does not fill the column’s width: ${JSON.stringify({ stack, moved, strip })}`
 			);
-		}, PHONE);
+		});
 	});
 
 	// da-6ji5 (vividn, 2026-09-17): «Split should split the current tab so
 	// that it then has two widgets» — named from them until renamed, and
 	// saved as a layout only when asked.
 	test('Split in a tab stack splits the tab in front: named from its widgets, renamed, saved only when asked', async () => {
-		await withApp(async (app) => {
+		await phone.solo(async (app) => {
 			const { page } = app;
 			const strip = () => pane(page, 'side').locator('> .titlebar [role="tab"]');
 			const labels = () => strip().allInnerTexts();
@@ -317,7 +328,7 @@ describe('the menu the title opens', () => {
 			await page.locator('dialog.ask').getByRole('button', { name: 'save' }).click();
 			await until(labels, (l) => l[0] === 'mine');
 			assert.deepEqual(await names(), [...namesBefore, 'mine'].sort());
-		}, PHONE);
+		});
 	});
 
 	// da-s7sdm (vividn, 2026-09-21): «Yes, let's add a rename option. I
@@ -411,7 +422,7 @@ describe('the menu the title opens', () => {
 	}
 
 	test('the + adds a tab holding what the chooser came back with; dismissed, it adds nothing', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await addButton(page, 'tail').click();
 			await chooser(page).waitFor();
 			await page.keyboard.press('Escape');
@@ -424,11 +435,11 @@ describe('the menu the title opens', () => {
 			assert.equal(await activeTab(page, 'tail'), 'aliases');
 			assert.equal(await pane(page, 'tail').locator('h2').count(), 0, 'a tabbed pane has no h2');
 			assert.equal(await pane(page, 'tail').getAttribute('data-title'), 'aliases', 'the tab is not what was chosen');
-		}, DESKTOP);
+		});
 	});
 
 	test('the tab in front opens the menu; an inactive tab just switches', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await addTab(page, 'tail', 'aliases');
 			const tabs = pane(page, 'tail').locator('[role="tab"]');
 			// `aliases` declares neither defaults nor options and holds no
@@ -466,7 +477,7 @@ describe('the menu the title opens', () => {
 				boxOf(page.locator('section.pane[data-title="tail"]'))
 			]);
 			assert.ok(gone.y > stayed.y, 'the tab that broke out is not below the pane it left');
-		}, DESKTOP);
+		});
 	});
 
 	// The last pane cannot be closed — `tree.test.mjs` holds `closeTab` to
@@ -504,7 +515,7 @@ describe('the menu the title opens', () => {
 	});
 
 	test('closing panes unnests their split', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await manage(page, 'custom', 'Close pane');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
 			await manage(page, 'nowview', 'Close pane');
@@ -513,7 +524,7 @@ describe('the menu the title opens', () => {
 			// itself now, as the row's second child.
 			assert.equal(await page.locator('section.pane[data-pane="side"]').getAttribute('data-title'), 'tail');
 			assert.equal(await page.locator('section.holder[data-pane="side"]').count(), 0);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -542,7 +553,7 @@ describe("the root bar's menu", () => {
 	}
 
 	test('the active layout name is the button, and Save layout is the first item', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const name = rootMenuButton(page);
 			assert.equal(await name.innerText(), 'day');
 			assert.equal(await name.getAttribute('aria-haspopup'), 'menu');
@@ -554,11 +565,11 @@ describe("the root bar's menu", () => {
 			// name's slice opens on the acts.
 			assert.equal((await menuLines(page))[0], 'Save layout');
 			await page.keyboard.press('Escape');
-		}, DESKTOP);
+		});
 	});
 
 	test('an inactive root tab just switches; the one it switches to opens the menu', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const tabs = page.locator('.root-bar [role="tab"]');
 			await page.locator('.root-bar button[aria-label="open a layout"]').click();
 			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
@@ -573,7 +584,7 @@ describe("the root bar's menu", () => {
 			await tabs.nth(0).click();
 			await page.locator('[role="menu"]').waitFor();
 			await page.keyboard.press('Escape');
-		}, DESKTOP);
+		});
 	});
 
 	test('the root menus are the pane menus, less Break out, Bar and the lock, plus export backup…', async () => {
@@ -678,7 +689,7 @@ describe('the Bar submenu', () => {
 	const checked = (cells) => cells.filter((c) => c !== '|' && c.checked).map((c) => c.label);
 
 	test('one Bar item for the seven; it opens four placements | three alignments, the checked ones in the accent', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await manageButton(page, 'tail').click();
 			const items = page.locator('[role="menu"] button');
 			assert.deepEqual(await menuLines(page), ['Change Widget', 'Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane']);
@@ -696,11 +707,11 @@ describe('the Bar submenu', () => {
 				cells.slice(0, 4).map((c) => c.title),
 				['bar on the top', 'bar on the bottom', 'bar on the left', 'bar on the right']
 			);
-		}, DESKTOP);
+		});
 	});
 
 	test('right moves the frame\'s bar there and turns the alignment icons; the align stays', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await openBar(page, 'tail');
 			const before = (await row(page)).slice(5);
 			assert.deepEqual(before.map((c) => c.title), [
@@ -726,7 +737,7 @@ describe('the Bar submenu', () => {
 			assert.ok(after[0].bar.y < after[2].bar.y, 'start is drawn above end');
 			await page.keyboard.press('Escape');
 			await page.keyboard.press('Escape');
-		}, DESKTOP);
+		});
 	});
 
 	// The left-hand bar is turned round (it reads up), so its start is at
@@ -737,7 +748,7 @@ describe('the Bar submenu', () => {
 	// the bottom is that order, plus the title reaching into the bottom
 	// half of the pane.
 	test('on a left bar the start icon and the title are both at the bottom', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await chooseBar(page, 'tail', 'left');
 			const [frame, h2, max] = await Promise.all([
 				boxOf(pane(page, 'tail')),
@@ -750,11 +761,11 @@ describe('the Bar submenu', () => {
 			const start = (await row(page))[5];
 			assert.equal(start.title, 'align to the start (bottom)');
 			assert.ok(start.bar.y >= 8, `the start mark is at y=${start.bar.y}, not at the bottom`);
-		}, DESKTOP);
+		});
 	});
 
 	test('by keyboard: in with ArrowRight, across, Enter chooses; back out with ArrowLeft, Escape, Tab', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			// `Bar` is under the `▾` beside the `+` (da-bzhq).
 			const more = manageButton(page, 'tail');
 			const focused = () =>
@@ -795,7 +806,7 @@ describe('the Bar submenu', () => {
 			await page.keyboard.press('ArrowRight');
 			await page.keyboard.press('Tab');
 			assert.equal(await page.locator('[role="menu"]').count(), 0, 'Tab left a menu open');
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -805,7 +816,7 @@ describe('the pane menu by pointer', () => {
 	const barItem = (page) => page.getByRole('menuitem', { name: /^Bar/ });
 
 	test('Bar ▸ opens on the pointer with no click, stays open on the way to it, and closes on another item', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await manageButton(page, 'tail').click();
 			await barItem(page).hover();
 			await barMenu(page).waitFor();
@@ -824,14 +835,14 @@ describe('the pane menu by pointer', () => {
 			await page.mouse.down();
 			await page.mouse.up();
 			assert.match(await pane(page, 'tail').getAttribute('class'), /\bedge-bottom\b/);
-		}, DESKTOP);
+		});
 	});
 
 	// A finger landing on `Bar` enters it too — Chromium fires a touch
 	// `pointerenter` at the touch's start — and that must not open the
 	// submenu; the tap does (Copilot on #176). A real touch, through CDP.
 	test('a touch entering Bar ▸ does not open it; the tap does', async () => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await manageButton(page, 'repl').tap();
 			const item = barItem(page);
 			await item.evaluate((el) => {
@@ -851,12 +862,12 @@ describe('the pane menu by pointer', () => {
 			await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 			await cdp.detach();
 			await barMenu(page).waitFor();
-		}, PHONE);
+		});
 	});
 
 	// Copilot on #176: the row's own arrows, to both of its ends.
 	test('ArrowRight and ArrowLeft walk the Split row and stop at its ends', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const focused = () =>
 				page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim());
 			// The `▾` beside the `+` is where Split is now (da-bzhq). The
@@ -895,14 +906,14 @@ describe('the pane menu by pointer', () => {
 			assert.equal(await focused(), 'Bar');
 			await page.keyboard.press('ArrowDown');
 			assert.equal(await focused(), '× Close pane');
-		}, DESKTOP);
+		});
 	});
 
 	// «split and breakout arrows should be in vim key order left down up
 	// right» (vividn, da-bzhq): h j k l, and the DOM order is that order, so
 	// the button the eye calls the last is the one ArrowRight ends on.
 	test('Split is one line of four arrows in vim order, and ↓ splits below', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await manageButton(page, 'tail').click();
 			const buttons = page.getByRole('group', { name: 'Split' }).getByRole('menuitem');
 			assert.deepEqual(await buttons.evaluateAll((all) => all.map((b) => `${b.textContent.trim()} ${b.getAttribute('aria-label')}`)), [
@@ -924,6 +935,6 @@ describe('the pane menu by pointer', () => {
 			assert.equal(Math.round(empty.x), Math.round(tail.x));
 			assert.equal(Math.round(empty.width), Math.round(tail.width));
 			assert.ok(empty.y > tail.y + tail.height, 'the new pane is not under the tail');
-		}, DESKTOP);
+		});
 	});
 });

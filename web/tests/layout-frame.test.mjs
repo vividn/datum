@@ -6,7 +6,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { atEachScreen, inWorker, startApp, stopApp, withApp } from './support/app.mjs';
+import { atEachScreen, inWorker, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
 	PHONE,
@@ -20,6 +20,12 @@ import {
 before(startApp);
 after(stopApp);
 
+// ONE desktop app for the tests that stay at its size (da-b7sfp): nothing
+// here reads a row, and `solo` puts the layout back to `day` between them.
+// What resizes (`atEachScreen`), needs the other pointer, or starts from a
+// worker of its own opens its own app, as before.
+const shared = sharedApp(DESKTOP);
+
 // The bar, after vividn's first look (da-jgrn): with one tab no tab strip at
 // all — the title sits on the frame's outline and the `+` is a badge right
 // after it; with more, the strip, and the badge right after the last tab.
@@ -28,7 +34,7 @@ describe('the title on the frame', () => {
 	const straddlesTop = (inner, outer) => inner.y < outer.y && inner.y + inner.height > outer.y;
 
 	test('one tab: no tab strip, the title on the outline, the + right after it, on the keyboard', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const tail = pane(page, 'tail');
 			assert.equal(await tail.locator('[role="tablist"]').count(), 0);
 			const [frame, h2, add] = await Promise.all([boxOf(tail), boxOf(tail.locator('h2')), boxOf(tail.locator('button.add'))]);
@@ -44,11 +50,11 @@ describe('the title on the frame', () => {
 			await page.keyboard.press('Enter');
 			await page.locator('[role="menu"]').waitFor();
 			await page.keyboard.press('Escape');
-		}, DESKTOP);
+		});
 	});
 
 	test('two tabs: the strip, and the + right after the last tab', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await addTab(page, 'tail', 'aliases');
 			const tail = pane(page, 'tail');
 			const tabs = tail.locator('[role="tablist"] [role="tab"]');
@@ -64,7 +70,7 @@ describe('the title on the frame', () => {
 				[...el.querySelectorAll('.hosted-title')].filter((s) => getComputedStyle(s).display !== 'none').length
 			);
 			assert.equal(shown, 0, "the tail's title shows in its content");
-		}, DESKTOP);
+		});
 	});
 
 	// A widget's OWN title controls — the custom pane's ✎ and the editor it
@@ -74,7 +80,7 @@ describe('the title on the frame', () => {
 	// with nowhere it could be written. The bar keeps a box for them after
 	// the strip.
 	test('two tabs: the active widget’s own controls are on the bar, and work there', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await addTab(page, 'custom', 'aliases');
 			const custom = pane(page, 'custom');
 			await custom.locator('[role="tab"]', { hasText: 'custom' }).click();
@@ -93,22 +99,22 @@ describe('the title on the frame', () => {
 			assert.equal(await activeTab(page, 'custom'), 'custom');
 			const tabs = custom.locator('> .titlebar [role="tab"]');
 			assert.deepEqual(await tabs.allInnerTexts(), ['custom', 'aliases']);
-		}, DESKTOP);
+		});
 	});
 
 	// A widget with no controls of its own is named by the FRAME: the name
 	// it was passing through (`CliPane`'s `spec.title`) was the same word,
 	// and it silenced the frame's own — the modified dot among it.
 	test('one tab: a widget with no controls of its own leaves the frame to name it', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const tail = pane(page, 'tail');
 			assert.equal(await tail.locator('> .titlebar h2').innerText(), 'tail');
 			assert.equal(await tail.locator('.hosted-title').count(), 0, 'the tail pane hosts a title');
-		}, DESKTOP);
+		});
 	});
 
 	test('on a vertical bar the badge follows the title along it', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const tail = pane(page, 'tail');
 			await chooseBar(page, 'tail', 'right');
 			let [h2, more] = await Promise.all([boxOf(tail.locator('h2')), boxOf(tail.locator('button.add'))]);
@@ -118,7 +124,7 @@ describe('the title on the frame', () => {
 			[h2, more] = await Promise.all([boxOf(tail.locator('h2')), boxOf(tail.locator('button.add'))]);
 			apart = h2.y - (more.y + more.height);
 			assert.ok(apart >= 0 && apart <= 8, `left bar, reading up: the badge is ${apart}px above the title`);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -262,7 +268,7 @@ describe('the title row, as tall as its words', () => {
 	});
 
 	test('the title is its words and a 1px outline in the frame’s colour; its cross padding is nothing on a left bar', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const tail = pane(page, 'tail');
 			const seen = () =>
 				tail.evaluate((p) => {
@@ -290,11 +296,11 @@ describe('the title row, as tall as its words', () => {
 			const left = await seen();
 			assert.ok(left.box[0] <= 18, `the left bar's title is ${left.box[0]}px across`);
 			for (const side of ['left', 'right']) assert.ok(parseFloat(left.padding[side]) <= 1, `padding-${side} ${left.padding[side]}`);
-		}, DESKTOP);
+		});
 	});
 
 	test('the custom pane’s ✎ and its editor fit inside the row, uncut', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const custom = page.locator('section.pane[data-title="custom"]');
 			const fits = () =>
 				custom.evaluate((p) => {
@@ -309,7 +315,7 @@ describe('the title row, as tall as its words', () => {
 				assert.ok(seen.box <= 18, `${what}: the title is ${seen.box}px tall`);
 				assert.ok(seen.needs <= seen.inner, `${what}: the title needs ${seen.needs}px and has ${seen.inner}`);
 			}
-		}, DESKTOP);
+		});
 	});
 
 	test('alarmed, the title’s outline turns orange with the frame', async () => {
@@ -394,7 +400,7 @@ describe('the title on the line', () => {
 	// One app for the four edges: `chooseBar` walks the tail pane's bar
 	// round the frame, which is what a reader does to it (da-x6ea).
 	test('the content has no padding and the title is centred on the outline, on every edge', async (t) => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			for (const edge of ['top', 'bottom', 'left', 'right']) {
 				await t.test(`bar on the ${edge}`, async () => {
 					if (edge !== 'top') await chooseBar(page, 'tail', edge);
@@ -415,11 +421,11 @@ describe('the title on the line', () => {
 					assert.ok(Math.abs(at - seen.line[edge]) <= 1, `the title's middle is at ${at}, the ${edge} line at ${seen.line[edge]}`);
 				});
 			}
-		}, DESKTOP);
+		});
 	});
 
 	test("a title on the page's top edge is whole, and the panes start where the page's margin ends", async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const seen = await page.evaluate(() => {
 				// The page's air is `.frame`'s, not `main`'s (da-ckw3): a padded
 				// box cannot be shorter than its padding, and `main` has to be
@@ -442,7 +448,7 @@ describe('the title on the line', () => {
 			assert.ok(seen.title >= seen.clip, `the title starts at ${seen.title}, the scroller cuts at ${seen.clip}`);
 			assert.ok(seen.hit, 'the top of the title is covered');
 			assert.equal(seen.pane, seen.margin);
-		}, DESKTOP);
+		});
 	});
 
 });
