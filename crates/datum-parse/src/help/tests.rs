@@ -30,11 +30,11 @@ LOGGING:
   flag     Mark a field for review (lightweight 'come back to this')
 
 MUTATE:
-  edit     Open an entry in $EDITOR
+  edit     Open an entry in $DATUM_EDITOR (or $EDITOR)
   update   Replace keys on an existing entry
   merge    Deep-merge new values into an entry
   rekey    Copy an entry to a new id (old row stays)
-  retime   Shift time_start/time_end on entries (alias: rt)
+  retime   Move an entry's occur_time (alias: rt)
   delete   Delete an entry (alias: del)
   undo     Undo the last change to an entry (revert via history)
   redo     Redo the last undone change (the inverse of undo)
@@ -48,9 +48,9 @@ READ:
   why      Explain the intent behind an entry
 
 RENDER:
-  dayview  Render a dayview SVG (or dump layout JSON)
-  nowview  Render a nowview SVG (drop -o to write to stdout)
-  now      Show current state of tracked fields + terminal nowview band
+  dayview  Render a multi-day timeline as SVG/PNG/HTML
+  nowview  Paint each field's state now as a terminal band (-o writes a file)
+  now      Show the current state of tracked fields + terminal nowview band
 
 ADMIN:
   spec     Manage field specs (schemas)
@@ -61,7 +61,7 @@ ADMIN:
   config   Show or manage user configuration
   meta     Attach or list protocol-change notes on a field
   kit      Install / export / list field-spec kits (TOML bundles)
-  reparse  Replay an entry's stored raw_input through the current parser; --fix rewrites drifted columns
+  reparse  Replay an entry's stored raw_input through the current parser
 
 VIEWS / SYNC:
   count      Count entries (optionally filtered/grouped/since-bounded)
@@ -143,34 +143,9 @@ USAGE:
   datum add <FIELD> --id <VALUE>
 
 OPTIONS:
-  -y                    Go back 1 day (stackable: -yy=2 days, ...)
-  -q                    Go back 5 min (stackable: -qq=10 min, ...)
-  -d, --date <VAL>      Date override (offset, YYYY-MM-DD, sunday, apr29)
-  -t, --time <VAL>      Time override (offset, HH:MM, 9:15am, or a date)
-  -z, --timezone <TZ>   Timezone (IANA or UTC offset)
-  -D, --full-day        Date-only entry (no clock time)
-  -u, --undo            Undo: delete most recent matching entry
-  -k, --key <KEY_SPEC>  Data-only id-key (forms: K req, K= opt, K=val default)
-  -K, --slug-key <S>    Slug-contributing id-key (same K / K= / K=val forms)
-  -c, --comment <T>     Comment
-  -R, --remainder <KEY> Route un-keyed positionals to data key <KEY>
-  -S, --string-remainder  Join remainder positionals into one string (not array)
-  -C, --comment-remainder  Remainder positionals → extra_data.comment string
-  -I, --string-state    Join remainder positionals into the state as one string
-      --id <TEMPLATE>   Slug template (e.g. %field%:%uid%)
-      --id-delimiter <S>  Delimiter to collapse empty segments
-  -L, --last-state[=<V>]  Assert prior state (bare: close-most-recent on stop)
-  -m, --moment          Point-in-time state change
-      --conflict <S>    update|merge|rekey|ignore
-      --update          Shorthand for --conflict update
-      --merge           Shorthand for --conflict merge
-  -M, --no-metadata     Zero created_at/modified_at, clear device_id
-  -T, --no-timestamp    Timeless note-data (create_time id, no occurrence)
-      --alias <NAME>    On success, save current invocation as alias <NAME>
-      --alias-overwrite Allow --alias to replace an existing alias
-      --dry-run         Preview the would-be entry without writing
-  -A, --show-all        Show full entry detail after writing
-  -o, --format-string <FMT>  Render written entry via format string
+  -K, --slug-key <S>    Required: derive the id from this key (K / K= / K=val)
+      --id <TEMPLATE>   ...or set the id directly (e.g. %field%:%uid%)
+  common logging options: `datum help logging`
 
 OUTPUT:
       --show <MODE>     default|none|minimal|standard|format|all|json
@@ -190,22 +165,30 @@ fn snapshot_add_help() {
 // distinct header/usage. The header reflects the auto-create_time-id contract.
 #[test]
 fn snapshot_note_help() {
-    let actual = command_help("note");
-    let expected = EXPECTED_ADD
-        .replace(
-            "datum add — register a keyed timeless record (needs an id)",
-            "datum note — jot a timeless entry (auto create_time id)",
-        )
-        .replace(
-            "  datum add <FIELD> -K <KEY> [KEY=VALUE]...\n  datum add <FIELD> --id <VALUE>\n",
-            "  datum note <FIELD> [WORD | KEY=VALUE]...\n      the WORDs join into extra_data.comment \u{2014} no quotes, no -C\n",
-        )
-        // da-py5w: `-C` is implicit on `note`, so its OPTIONS drop the row.
-        .replace(
-            "  -C, --comment-remainder  Remainder positionals \u{2192} extra_data.comment string\n",
-            "",
-        );
-    assert_eq!(actual, expected, "datum note --help drifted from snapshot");
+    // da-r17h: `note` is the timeless sibling of `add` — same LOG_FLAGS
+    // table, distinct header/usage. da-ce7n3 folded the shared wall onto
+    // `datum help logging`, so what is left on the page IS the difference:
+    // `add` keeps the two flags that give it an id, `note` keeps none and
+    // says in its USAGE where the bare words go.
+    let expected = "\
+datum note — jot a timeless entry (auto create_time id)
+
+USAGE:
+  datum note <FIELD> [WORD | KEY=VALUE]...
+      the WORDs join into extra_data.comment \u{2014} no quotes, no -C
+
+OPTIONS:
+  common logging options: `datum help logging`
+
+OUTPUT:
+      --show <MODE>     default|none|minimal|standard|format|all|json
+      --json            Shorthand for --show json
+";
+    assert_eq!(
+        command_help("note"),
+        expected,
+        "datum note --help drifted from snapshot"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -298,28 +281,30 @@ fn log_help_matches_parser_registry() {
 
 #[test]
 fn snapshot_end_alias_substitutes_verb() {
-    // `datum end --help` (alias of `stop`) should render with `end` in
-    // both the header and the USAGE line, matching the legacy behaviour
-    // of `log_help("end")`.
-    let s = command_help("end");
-    // `end` is an alias of `stop`, whose summary is the bare "log an entry"
-    // — so the header drops `add`'s keyed-record summary, and its single
-    // USAGE line replaces `add`'s two-line `-K`/`--id` form (da-r17h).
-    let expected = EXPECTED_ADD
-        .replace(
-            "datum add — register a keyed timeless record (needs an id)",
-            "datum end — log an entry",
-        )
-        .replace(
-            "  datum add <FIELD> -K <KEY> [KEY=VALUE]...\n  datum add <FIELD> --id <VALUE>\n",
-            // `stop`'s USAGE carries the second line da-azqq added: with
-            // `--dur` gone, the trailing duration is the only spelling on
-            // this verb and the help has to say which side of `-t` it falls.
-            // da-zwct settled that side: `-t` is the block's END and the
-            // duration is the span that preceded it (da-vq0z fixed the words).
-            "  datum end <FIELD> [VALUE | KEY=VALUE]... [DUR]\n    DUR (or dur=DUR) runs BACK from the entry's time:\n    `datum end work 12m -t 14:12` is a break from 14:00 to 14:12\n",
-        );
-    assert_eq!(s, expected);
+    // `datum end --help` (alias of `stop`) renders with `end` in both the
+    // header and the USAGE line, matching the legacy `log_help("end")`.
+    //
+    // The USAGE carries the second line da-azqq added: with `--dur` gone,
+    // the trailing duration is the only spelling on this verb and the help
+    // has to say which side of `-t` it falls. da-zwct settled that side:
+    // `-t` is the block's END and the duration is the span that preceded
+    // it (da-vq0z fixed the words).
+    let expected = "\
+datum end — end a duration-tracked activity (alias: end)
+
+USAGE:
+  datum end <FIELD> [VALUE | KEY=VALUE]... [DUR]
+    DUR (or dur=DUR) runs BACK from the entry's time:
+    `datum end work 12m -t 14:12` is a break from 14:00 to 14:12
+
+OPTIONS:
+  common logging options: `datum help logging`
+
+OUTPUT:
+      --show <MODE>     default|none|minimal|standard|format|all|json
+      --json            Shorthand for --show json
+";
+    assert_eq!(command_help("end"), expected);
 }
 
 #[test]
@@ -338,7 +323,7 @@ fn snapshot_sync_help_starts_with_header() {
 fn alias_end_renders_with_input_name() {
     let s = command_help("end");
     assert!(
-        s.starts_with("datum end — log an entry\n"),
+        s.starts_with("datum end — end a duration-tracked activity (alias: end)\n"),
         "expected `datum end — …` header, got: {}",
         &s[..s.find('\n').unwrap_or(s.len())]
     );
@@ -359,7 +344,7 @@ fn alias_del_renders_with_canonical_name() {
 #[test]
 fn alias_rt_renders_with_canonical_name() {
     let s = command_help("rt");
-    assert!(s.starts_with("datum retime — shift time_start/time_end on entries (alias: rt)\n"));
+    assert!(s.starts_with("datum retime — move an entry's occur_time (alias: rt)\n"));
 }
 
 // ---------------------------------------------------------------------------
@@ -430,16 +415,104 @@ fn alias_help_documents_last_after_multi() {
 
 #[test]
 fn log_flag_summaries_document_k_trichotomy() {
-    // Surfaces the three -k forms in any logging verb's --help table.
-    let s = command_help("add");
+    // The three -k / -K forms are on `datum help logging` now, which is
+    // where every logging verb's page sends the reader (da-ce7n3).
+    let s = command_help("logging");
     assert!(
         s.contains("K req, K= opt, K=val default"),
-        "log verb --help should expose the -k trichotomy in the flag summary"
+        "the logging topic should expose the -k trichotomy in the flag summary"
     );
     assert!(
         s.contains("Slug-contributing id-key (same K / K= / K=val forms)"),
-        "log verb --help should expose the -K trichotomy in the flag summary"
+        "the logging topic should expose the -K trichotomy in the flag summary"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The shared logging wall, written out once (da-ce7n3).
+//
+// The six logging verbs were 38-40 lines each, of which about thirty were
+// byte-identical — so the lines that told them apart were buried in the
+// middle of the wall. `man git` points at its shared option sets instead
+// of reprinting them; these tests hold the six to that shape.
+// ---------------------------------------------------------------------------
+
+/// Every logging verb's page is short, carries the pointer, and does NOT
+/// reprint the wall. `-R/--remainder` stands in for the wall here: it is a
+/// shared flag no verb makes particular, so a page that shows it has
+/// un-folded.
+#[test]
+fn logging_pages_point_at_the_topic_instead_of_reprinting_the_wall() {
+    for verb in ["add", "note", "occur", "start", "stop", "switch"] {
+        let page = command_help(verb);
+        assert!(
+            page.contains("  common logging options: `datum help logging`\n"),
+            "`datum help {verb}` should send the reader to the topic page:\n{page}"
+        );
+        assert!(
+            !page.contains("--remainder <KEY>"),
+            "`datum help {verb}` still reprints the shared wall:\n{page}"
+        );
+        let lines = page.lines().count();
+        assert!(
+            lines <= 16,
+            "`datum help {verb}` is {lines} lines; the wall is meant to be gone"
+        );
+    }
+}
+
+/// The wall itself is on the topic page, whole — every flag of LOG_FLAGS,
+/// and the one exception a shared set always has.
+#[test]
+fn the_logging_topic_carries_the_whole_wall() {
+    let page = command_help("logging");
+    assert!(page.starts_with("datum help logging — "));
+    let occur = super::commands::find_command("occur").unwrap().0;
+    for flag in occur.flags {
+        assert!(
+            page.contains(flag.summary),
+            "`datum help logging` is missing `{}`:\n{page}",
+            flag.summary
+        );
+    }
+    assert!(
+        page.contains("`note` is the exception"),
+        "the topic has to name the one verb the shared set is not true for:\n{page}"
+    );
+}
+
+/// The fold is a RENDERING choice: the machine readers still get the whole
+/// flag set, so the web's command bar does not lose `-t` on `occur`.
+#[test]
+fn folding_the_wall_does_not_shrink_the_grammar() {
+    let table: serde_json::Value = serde_json::from_str(&render_json()).unwrap();
+    let occur = table
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "occur")
+        .unwrap();
+    let longs: Vec<&str> = occur["flags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f["long"].as_str())
+        .collect();
+    for expected in ["remainder", "comment-remainder", "time", "conflict"] {
+        assert!(
+            longs.contains(&expected),
+            "`datum help --json` lost `--{expected}` from occur when the page folded"
+        );
+    }
+}
+
+/// A word that is neither a command nor a topic still falls back to the
+/// top-level page — the topic table is a new arm, not a new failure mode.
+#[test]
+fn a_topic_name_is_not_a_command_name() {
+    assert!(super::commands::find_command("logging").is_none());
+    assert!(super::commands::find_topic("logging").is_some());
+    assert!(super::commands::find_topic("occur").is_none());
 }
 
 #[test]
@@ -553,7 +626,7 @@ fn snapshot_head_help() {
 }
 
 const EXPECTED_UPDATE: &str = "\
-datum update — mutate an existing entry
+datum update — replace keys on an existing entry
 
 USAGE:
   datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]...
@@ -595,7 +668,7 @@ fn merge_and_rekey_share_update_options() {
 }
 
 const EXPECTED_COUNT: &str = "\
-datum count — count entries (filtered/grouped/since-bounded)
+datum count — count entries (optionally filtered/grouped/since-bounded)
 
 USAGE:
   datum count [FIELD] [--group-by KEY] [--since TIME]
@@ -615,7 +688,7 @@ fn snapshot_count_help() {
 }
 
 const EXPECTED_IDS: &str = "\
-datum ids — list entry ids (newest-first)
+datum ids — list entry ids (newest-first by default)
 
 USAGE:
   datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug]

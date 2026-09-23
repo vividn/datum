@@ -53,12 +53,15 @@ pub struct CommandSpec {
     pub aliases: &'static [&'static str],
     /// Category used to group commands in top-level help.
     pub category: Category,
-    /// Per-command tagline ("show recent entries"). Used in the
-    /// `datum NAME — SUMMARY` header. Conventionally lowercase.
+    /// The one sentence that describes this command, in both seats: the
+    /// `datum NAME — SUMMARY` page header verbatim, and the top-level
+    /// listing line with its first letter capitalized. Conventionally
+    /// lowercase, and SPECIFIC — the listing is where a reader chooses a
+    /// command and the page is where they land, so the same words have to
+    /// meet them (da-ce7n3). There is deliberately no second field: the
+    /// listing line and the page title drifted apart the whole time there
+    /// were two.
     pub summary: &'static str,
-    /// Optional override for the top-level help line. When `None` the
-    /// renderer falls back to capitalizing the first letter of [`Self::summary`].
-    pub top_summary: Option<&'static str>,
     /// Optional long-form prose for Markdown / man output.
     pub long_description: Option<&'static str>,
     /// Usage lines, rendered under the `USAGE:` heading. Each entry becomes
@@ -67,8 +70,18 @@ pub struct CommandSpec {
     /// Positional arguments. Optional metadata for Markdown/man output;
     /// the bare `--help` text relies on `usage` strings.
     pub args: &'static [ArgSpec],
-    /// Flag table.
+    /// Flag table. Always the command's WHOLE accepted set — the machine
+    /// readers (`datum help --json`, the web's command bar) ask this, and
+    /// [`Self::shared_flags`] only changes how much of it `--help` prints.
     pub flags: &'static [FlagSpec],
+    /// When set, the plain-text `OPTIONS:` block prints only
+    /// [`SharedFlags::own`] and then one line pointing at `datum help
+    /// <TOPIC>`, where the wall the commands share is written out once
+    /// (da-ce7n3). Markdown and roff still print the whole of
+    /// [`Self::flags`]: those are standalone reference documents, and a
+    /// man page that hid its options behind a topic no reader can `man`
+    /// would be a worse trade than the one `--help` makes.
+    pub shared_flags: Option<&'static SharedFlags>,
     /// Worked examples for Markdown/man output.
     pub examples: &'static [ExampleSpec],
     /// Column at which flag summaries should align in the `--help` table
@@ -123,4 +136,51 @@ pub struct ArgSpec {
 pub struct ExampleSpec {
     pub command: &'static str,
     pub description: &'static str,
+}
+
+/// A command's share of an option wall documented once, on its own
+/// `datum help <topic>` page.
+///
+/// `man git` does this with its shared option sets rather than reprinting
+/// them on every page; the six logging verbs were 38-40 lines each, of
+/// which about thirty were byte-identical, so the lines that actually
+/// distinguished them were buried (da-ce7n3).
+pub struct SharedFlags {
+    /// The [`TopicSpec::name`] that documents the wall — `datum help logging`.
+    pub topic: &'static str,
+    /// The flags PARTICULAR to this command, printed on its own page
+    /// above the pointer. Their wording may be narrower than the shared
+    /// table's (`add`'s `-K` is required; nobody else's is).
+    pub own: &'static [FlagSpec],
+}
+
+/// A `datum help <NAME>` page that is not a command: the one place an
+/// option wall shared by several commands is written out.
+pub struct TopicSpec {
+    /// The word `datum help <NAME>` answers to.
+    pub name: &'static str,
+    /// Page header, rendered as `datum help NAME — SUMMARY`.
+    pub summary: &'static str,
+    /// Prose between the header and the option table. Rendered verbatim;
+    /// supply the trailing newline.
+    pub intro: &'static str,
+    /// The shared wall itself.
+    pub flags: &'static [FlagSpec],
+    /// Column at which the flag summaries align, as [`CommandSpec::summary_col`].
+    pub summary_col: usize,
+    /// Prose after the option table, for the exceptions a shared set
+    /// always has. Rendered verbatim; empty for none.
+    pub outro: &'static str,
+}
+
+/// One environment variable `datum` reads.
+///
+/// The README used to keep this table by hand, which is how
+/// `DATUM_ID_DELIMITER` went undocumented and `DATUM_EDITOR` was
+/// described as `EDITOR` (da-ce7n3). The README's table is generated from
+/// here now, and `env_table_covers_what_the_config_layer_reads` in
+/// `datum-cli` fails if the config layer grows a variable it does not name.
+pub struct EnvVarSpec {
+    pub name: &'static str,
+    pub summary: &'static str,
 }

@@ -8,9 +8,10 @@
 //!   roff section of this module for the formatting conventions.
 
 use super::commands::{
-    find_command, COMMANDS, GLOBAL_FLAGS, GLOBAL_FLAGS_COL, TOP_LEVEL_FOOTER, TOP_LEVEL_USAGE,
+    find_command, find_topic, COMMANDS, GLOBAL_FLAGS, GLOBAL_FLAGS_COL, TOP_LEVEL_FOOTER,
+    TOP_LEVEL_USAGE,
 };
-use super::spec::{Category, CommandSpec, FlagSpec};
+use super::spec::{Category, CommandSpec, FlagSpec, TopicSpec};
 use crate::input::output_args::{shows_for, Show};
 
 /// The output family as `--help` lists it for one command: `(left, summary)`.
@@ -46,9 +47,25 @@ pub fn render_help_text(cmd: Option<&str>) -> String {
         None => render_top_level(),
         Some(name) => match find_command(name) {
             Some((spec, was_alias)) => render_command(spec, name, was_alias),
-            None => render_top_level(),
+            // `datum help logging` is not a command but is a page; only
+            // a word that is neither falls back to the top level.
+            None => match find_topic(name) {
+                Some(topic) => render_topic(topic),
+                None => render_top_level(),
+            },
         },
     }
+}
+
+/// Render a `datum help <TOPIC>` page — the one place an option wall
+/// shared by several commands is written out (da-ce7n3).
+fn render_topic(topic: &TopicSpec) -> String {
+    let mut s = format!("datum help {} — {}\n\n", topic.name, topic.summary);
+    s.push_str(topic.intro);
+    s.push('\n');
+    s.push_str(&render_options_block(topic.flags, topic.summary_col));
+    s.push_str(topic.outro);
+    s
 }
 
 /// The command table as JSON — `datum help --json` (da-r13j).
@@ -105,10 +122,7 @@ fn render_top_level() -> String {
         let name_width = name_width.max(9);
 
         for spec in &in_section {
-            let summary = spec
-                .top_summary
-                .map(String::from)
-                .unwrap_or_else(|| capitalize_first(spec.summary));
+            let summary = capitalize_first(spec.summary);
             s.push_str("  ");
             s.push_str(spec.name);
             for _ in 0..(name_width - spec.name.len()) {
@@ -192,7 +206,22 @@ fn render_command_body_structured(spec: &CommandSpec, displayed_name: &str) -> S
             s.push_str(&format!("{left}{}{}\n", " ".repeat(pad), a.summary));
         }
     }
-    let options = render_options_block(spec.flags, spec.summary_col);
+    let options = match spec.shared_flags {
+        // The wall lives on `datum help <topic>`; print only what is
+        // particular to this command, then the pointer.
+        Some(shared) => {
+            let mut block = render_options_block(shared.own, spec.summary_col);
+            if block.is_empty() {
+                block.push_str("OPTIONS:\n");
+            }
+            block.push_str(&format!(
+                "  common {} options: `datum help {}`\n",
+                shared.topic, shared.topic
+            ));
+            block
+        }
+        None => render_options_block(spec.flags, spec.summary_col),
+    };
     if !options.is_empty() {
         s.push('\n');
         s.push_str(&options);
@@ -306,10 +335,7 @@ fn render_markdown_top_level() -> String {
         }
         s.push_str(&format!("\n## {}\n\n", cat.label()));
         for spec in &in_section {
-            let summary = spec
-                .top_summary
-                .map(String::from)
-                .unwrap_or_else(|| capitalize_first(spec.summary));
+            let summary = capitalize_first(spec.summary);
             s.push_str(&format!("- `{}` — {}\n", spec.name, summary));
         }
     }
@@ -418,10 +444,7 @@ fn render_roff_top_level() -> String {
         }
         s.push_str(&format!(".SS {}\n", roff_escape(cat.label())));
         for spec in &in_section {
-            let summary = spec
-                .top_summary
-                .map(String::from)
-                .unwrap_or_else(|| capitalize_first(spec.summary));
+            let summary = capitalize_first(spec.summary);
             s.push_str(".TP\n");
             s.push_str(&format!(".B {}\n", roff_escape(spec.name)));
             s.push_str(&format!("{}\n", roff_escape(&summary)));

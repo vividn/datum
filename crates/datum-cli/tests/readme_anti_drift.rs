@@ -1,16 +1,16 @@
-//! Anti-drift guard for the auto-generated Commands section in the
-//! top-level `README.md`.
+//! Anti-drift guard for the auto-generated regions of the top-level
+//! `README.md`.
 //!
-//! The README contains a region bracketed by:
-//!     <!-- BEGIN AUTOGEN: COMMANDS -->
-//!     <!-- END AUTOGEN: COMMANDS -->
-//! whose body is produced by `datum_parse::help::render_markdown(None)`
-//! (with the title/tagline stripped). Manual edits inside that region
-//! will fail this test. To regenerate the section, run
-//! `cargo xtask readme`.
-
-const README_BEGIN: &str = "<!-- BEGIN AUTOGEN: COMMANDS -->";
-const README_END: &str = "<!-- END AUTOGEN: COMMANDS -->";
+//! Each region is bracketed by:
+//!     <!-- BEGIN AUTOGEN: NAME -->
+//!     <!-- END AUTOGEN: NAME -->
+//! and its body is produced by `xtask::autogen_section(NAME)` — the very
+//! function `cargo xtask readme` writes with, called here rather than
+//! reimplemented, because a test that reimplements the generator only
+//! proves the two reimplementations agree (da-ce7n3).
+//!
+//! Manual edits inside a region fail this test. To regenerate them all,
+//! run `cargo xtask readme`.
 
 fn workspace_readme() -> std::path::PathBuf {
     // CARGO_MANIFEST_DIR resolves to crates/datum-cli; the workspace
@@ -22,40 +22,58 @@ fn workspace_readme() -> std::path::PathBuf {
         .join("README.md")
 }
 
-fn extract_section(readme: &str) -> &str {
+fn extract_section<'a>(readme: &'a str, block: &str) -> &'a str {
+    let begin_marker = format!("<!-- BEGIN AUTOGEN: {block} -->");
+    let end_marker = format!("<!-- END AUTOGEN: {block} -->");
     let begin = readme
-        .find(README_BEGIN)
-        .expect("README is missing the BEGIN AUTOGEN marker");
+        .find(&begin_marker)
+        .unwrap_or_else(|| panic!("README is missing `{begin_marker}`"));
     let end = readme
-        .find(README_END)
-        .expect("README is missing the END AUTOGEN marker");
-    let after_begin = begin + README_BEGIN.len();
-    assert!(end >= after_begin, "AUTOGEN markers are out of order");
+        .find(&end_marker)
+        .unwrap_or_else(|| panic!("README is missing `{end_marker}`"));
+    let after_begin = begin + begin_marker.len();
+    assert!(
+        end >= after_begin,
+        "`{block}` AUTOGEN markers are out of order"
+    );
     &readme[after_begin..end]
 }
 
-fn expected_body() -> String {
-    // `render_markdown(None)` is a self-contained document; for embedding
-    // we want only the structural body, starting at `## Usage`.
-    let full = datum_parse::help::render_markdown(None);
-    let idx = full
-        .find("## Usage")
-        .expect("render_markdown lacks `## Usage`");
-    full[idx..].to_string()
+/// Every generated region of the README still says what the generator
+/// says. `COMMANDS` was the only one guarded for a long time, and the
+/// regions outside it drifted exactly as you would expect: an 80-line
+/// hand copy of `datum help alias` that reached the same false claim
+/// from the other direction, and an env-var table that never learned
+/// about `DATUM_ID_DELIMITER`.
+#[test]
+fn readme_autogen_sections_in_sync() {
+    let readme = std::fs::read_to_string(workspace_readme()).expect("reading workspace README.md");
+    for block in xtask::README_BLOCKS {
+        let actual = extract_section(&readme, block).trim_matches('\n');
+        let expected = xtask::autogen_section(block).expect("generator for a listed block");
+        let expected = expected.trim_matches('\n');
+        assert_eq!(
+            actual, expected,
+            "README.md `<!-- BEGIN AUTOGEN: {block} --> … <!-- END AUTOGEN: {block} -->` \
+             drifted from `xtask::autogen_section(\"{block}\")`. \
+             Run `cargo xtask readme` to regenerate."
+        );
+    }
 }
 
+/// Every block the generator knows about is actually spliced into the
+/// README. Without this, adding a generator and forgetting the markers
+/// would leave the section hand-written and silently unguarded — the
+/// exact failure this bead removed.
 #[test]
-fn readme_commands_section_in_sync() {
+fn every_generated_block_has_markers_in_the_readme() {
     let readme = std::fs::read_to_string(workspace_readme()).expect("reading workspace README.md");
-    let actual = extract_section(&readme).trim_matches('\n');
-    let expected = expected_body();
-    let expected = expected.trim_matches('\n');
-    assert_eq!(
-        actual, expected,
-        "README.md `<!-- BEGIN AUTOGEN: COMMANDS --> ... <!-- END AUTOGEN: COMMANDS -->` \
-         section drifted from `datum_parse::help::render_markdown(None)`. \
-         Run `cargo xtask readme` to regenerate."
-    );
+    for block in xtask::README_BLOCKS {
+        assert!(
+            readme.contains(&format!("<!-- BEGIN AUTOGEN: {block} -->")),
+            "`{block}` has a generator but no region in README.md"
+        );
+    }
 }
 
 /// Round-trip sanity: every command in the table renders both Markdown

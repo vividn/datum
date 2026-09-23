@@ -195,6 +195,20 @@ fn help_documents_the_rule_and_drops_the_flag() {
         help.contains("comment"),
         "`datum help note` must say where the words go:\n{help}",
     );
-    // The sibling verbs keep the flag.
-    assert!(env.ok(&["help", "occur"]).contains("--comment-remainder"));
+    // The sibling verbs keep the flag. da-ce7n3 folded the shared logging
+    // wall onto `datum help logging`, so that is where a sibling's `-C` is
+    // now written down — and the topic page has to name `note` as the one
+    // verb it is not true for, or folding the wall would have hidden the
+    // difference this bead exists to state.
+    let topic = env.ok(&["help", "logging"]);
+    assert!(
+        topic.contains("--comment-remainder"),
+        "`datum help logging` documents the shared flag:\n{topic}",
+    );
+    assert!(
+        topic.contains("`note` is the exception"),
+        "`datum help logging` must say `note` has no -C:\n{topic}",
+    );
+    // And the parser still accepts it on a sibling, folded page or not.
+    assert!(env.ok(&["help", "occur"]).contains("datum help logging"));
 }

@@ -9,12 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
-use datum_parse::help::{render_markdown, render_roff, COMMANDS};
-
-/// Marker bracketing the auto-generated command list inside `README.md`.
-/// Kept in sync with `crates/datum-cli/tests/readme_anti_drift.rs`.
-const README_BEGIN: &str = "<!-- BEGIN AUTOGEN: COMMANDS -->";
-const README_END: &str = "<!-- END AUTOGEN: COMMANDS -->";
+use datum_parse::help::{render_roff, COMMANDS};
+use xtask::{autogen_section, splice_autogen, README_BLOCKS};
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -58,8 +54,10 @@ fn readme() -> Result<()> {
     let readme_path = root.join("README.md");
     let original = fs::read_to_string(&readme_path)
         .with_context(|| format!("reading {}", readme_path.display()))?;
-    let body = autogen_commands_section();
-    let updated = splice_autogen(&original, &body)?;
+    let mut updated = original.clone();
+    for block in README_BLOCKS {
+        updated = splice_autogen(&updated, block, &autogen_section(block)?)?;
+    }
     if updated == original {
         eprintln!("README.md already in sync");
         return Ok(());
@@ -68,44 +66,6 @@ fn readme() -> Result<()> {
         .with_context(|| format!("writing {}", readme_path.display()))?;
     eprintln!("wrote {}", readme_path.display());
     Ok(())
-}
-
-/// The Markdown chunk that lives between the autogen markers in README.md.
-///
-/// `render_markdown(None)` emits a self-contained document beginning
-/// `# datum\n\nPersonal data tracker.\n\n## Usage…` — for the README we
-/// strip the title/tagline so the embedded section starts at `## Usage`.
-pub fn autogen_commands_section() -> String {
-    let full = render_markdown(None);
-    let needle = "## Usage";
-    match full.find(needle) {
-        Some(idx) => full[idx..].to_string(),
-        None => full,
-    }
-}
-
-/// Replace the body between `README_BEGIN` and `README_END` with `body`.
-/// Errors if either marker is missing or out of order.
-pub fn splice_autogen(readme: &str, body: &str) -> Result<String> {
-    let begin = readme
-        .find(README_BEGIN)
-        .with_context(|| format!("README missing marker `{README_BEGIN}`"))?;
-    let end = readme
-        .find(README_END)
-        .with_context(|| format!("README missing marker `{README_END}`"))?;
-    if end < begin {
-        bail!("README autogen markers are out of order");
-    }
-    let after_begin = begin + README_BEGIN.len();
-    let mut out = String::with_capacity(readme.len() + body.len());
-    out.push_str(&readme[..after_begin]);
-    out.push('\n');
-    out.push_str(body);
-    if !body.ends_with('\n') {
-        out.push('\n');
-    }
-    out.push_str(&readme[end..]);
-    Ok(out)
 }
 
 fn manpages(args: Vec<String>) -> Result<()> {

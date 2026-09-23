@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
+[lib]
+name = "xtask"
+path = "src/lib.rs"
+
 [[bin]]
 name = "xtask"
 path = "src/main.rs"

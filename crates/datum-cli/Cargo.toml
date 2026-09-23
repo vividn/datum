@@ -45,6 +45,8 @@ datum-sync-client = { path = "../datum-sync-client" }
 datum-sync-protocol = { path = "../datum-sync-protocol" }
 datum-sync-server = { path = "../datum-sync-server" }
 datum-test-util = { path = "../datum-test-util" }
+# The README anti-drift test calls the generator itself, never a copy of it.
+xtask = { path = "../../xtask" }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 rusqlite = { workspace = true }

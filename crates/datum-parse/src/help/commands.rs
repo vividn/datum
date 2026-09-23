@@ -31,8 +31,27 @@
 //!   deferred until the table is worth porting wholesale.
 //! - **One-off parser, no FlagSpec** (`retime`): its body is a `DEFAULTS`
 //!   narrative, not an OPTIONS table.
+//!
+//! # One summary, both seats
+//!
+//! [`CommandSpec::summary`] is the ONLY sentence a command gets. The
+//! top-level listing capitalizes it; the page is titled with it verbatim.
+//! There used to be a second field for the listing line, and every one of
+//! them drifted: four verbs were titled "log an entry" while the listing
+//! gave each a distinguishing sentence, `rekey` described two different
+//! operations in the two places, and `nowview`'s listing line was
+//! backwards (da-ce7n3). Write the specific sentence once.
+//!
+//! # Shared option walls
+//!
+//! A set of flags several commands share is written out ONCE, on a
+//! [`TopicSpec`] page that `datum help <topic>` answers to, and each
+//! command points at it through [`CommandSpec::shared_flags`] while
+//! keeping whatever is particular to it. See `LOG_SHARED_FLAGS` below.
 
-use super::spec::{ArgSpec, Category, CommandSpec, ExampleSpec, FlagSpec};
+use super::spec::{
+    ArgSpec, Category, CommandSpec, EnvVarSpec, ExampleSpec, FlagSpec, SharedFlags, TopicSpec,
+};
 
 const NO_ARGS: &[ArgSpec] = &[];
 
@@ -823,15 +842,15 @@ const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG[,ID_OR_SLUG]...>
 
 const WHY_BODY: &str = "USAGE:\n  datum why <ID_OR_SLUG[,ID_OR_SLUG]...> [--full]\n\nA comma list answers for each entry in turn, each under its own `hid:` line.\n";
 
-const EDIT_BODY: &str = "USAGE:\n  datum edit <ID_OR_SLUG>\n";
+const EDIT_BODY: &str = "USAGE:\n  datum edit <ID_OR_SLUG>\n\nThe editor is $DATUM_EDITOR, else $EDITOR, else `vi` (commands/edit.rs).\nIt is spawned directly, never through a shell, so a value carrying\nflags — `code --wait`, `emacsclient -nw` — still works.\n";
 
 const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG[,SLUG]...] [SHIFT]\n  datum retime [SLUG[,SLUG]...] [-r] [-t T] [-y]... [-q]... [-d D]\n  datum retime [SLUG[,SLUG]...] --offset DUR [--field F] [--after BND] [--before BND]\n\nDEFAULTS:\n  SLUG omitted        → `_LAST` (matches update/delete/undo)\n  No time-args        → set to now\n  SHIFT (bare int)    → minutes-offset shorthand; `retime <id> -5` shifts -5 min\n  -r/--relative       → interpret time-args as a delta from now, applied to the\n                        entry's current occur_time (rather than absolute target).\n                        Same flag is `--reverse` on tail; namespaces don't collide.\n  --offset DUR        → explicit ISO duration shift (legacy form)\n\nBULK FILTERS (--field/--after/--before select rows instead of _LAST):\n  BND                 → a duration ago (1d, 30m, 1:30), a date (2026-06-01,\n                        apr29, today, yesterday), or any -t time. Both bounds\n                        are inclusive, and a bare date names that day's\n                        opening midnight — so --before 2026-06-01 excludes\n                        June 1.\n";
 
 const SPEC_BODY: &str = "USAGE:\n  datum spec show <FIELD> [--text]\n  datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]\n  datum spec set <FIELD> [--from-json JSON] [--verb V] [--state S]... [--tag T]... ...\n  datum spec list [--tag T]\n  datum spec remove <FIELD>\n\n`add-state` merges one state into a field spec without dropping the others\n(unlike `set --state`, which replaces the whole list). Use `-` in the COLOR\nslot to set only a description: `datum spec add-state mood meh - \"so-so\"`.\n";
 
-const ALIAS_LONG_DESCRIPTION: &str = "Aliases expand argv before the parser sees it, so an alias can stand in for any prefix of a `datum` invocation — verb, field, flags, or all three.\n\nA standalone, whitespace-bounded `,` token splits one invocation into N sides that write atomically with the same occur_time. The trigger works at the top-level CLI, inside alias bodies, and through chains of alias-of-alias (multi-of-multi flattens to N flat sides). The comma must be its own token: `vertical , sit` triggers a multi, while `vertical,sit`, `vertical ,sit`, and `vertical, sit` do not. Values with embedded commas (`key=a,b`) pass through unchanged.\n\nKey slot forms (`-k` and `-K` accept the same three shapes): `-k key` is required and errors at call time if unfilled, `-k key=` is optional with no default (silently skipped), `-k key=val` defaults to `val` when no value is supplied. A `-k` or `-K` name declared on multiple sides becomes a shared slot — one call-site value propagates to every declaring side. The `.` token skips a slot on its side; for a shared slot it skips on all sides.\n\n`--` semantics in multi-entry contexts: inside an alias body, flags before `--` scope to their side and flags after `--` apply to all sides. `--` is implicit at the end of every alias body, so call-site flags apply to all sides by default. A `--` inside an alias body does not propagate past the alias boundary. Call-site time flags compose with alias-bound times rather than overriding them.\n\nAfter a multi-entry write, `_LAST` refers to every entry written by the most recent invocation, so `rekey _LAST oldkey=newkey` affects every row of the atomic group. A subsequent single-entry write resets `_LAST` to that one row.";
+const ALIAS_LONG_DESCRIPTION: &str = "Aliases expand argv before the parser sees it, so an alias can stand in for any prefix of a `datum` invocation — verb, field, flags, or all three.\n\nA standalone, whitespace-bounded `,` token splits one invocation into N sides that write atomically with the same occur_time. The trigger works at the top-level CLI, inside alias bodies, and through chains of alias-of-alias (multi-of-multi flattens to N flat sides). The comma must be its own token: `vertical , sit` triggers a multi, while `vertical,sit`, `vertical ,sit`, and `vertical, sit` do not. Values with embedded commas (`key=a,b`) pass through unchanged.\n\nKey slot forms (`-k` and `-K` accept the same three shapes): `-k key` is required and errors at call time if unfilled, `-k key=` is optional with no default (silently skipped), `-k key=val` defaults to `val` when no value is supplied. A `-k` or `-K` name declared on multiple sides becomes a shared slot — one call-site value propagates to every declaring side. The `.` token skips a slot on its side; for a shared slot it skips on all sides.\n\n`--` semantics in multi-entry contexts: inside an alias body, flags before `--` scope to their side and flags after `--` apply to all sides. `--` is implicit at the end of every alias body, so call-site flags apply to all sides by default. A `--` inside an alias body does not propagate past the alias boundary.\n\nTime flags at the call site: the stackable offsets (`-y`, `-q`, `-d`) shift whatever time the alias bound, but a call-site `-t` currently REPLACES an alias-bound `-t` rather than adding to it — on an alias bound to `-t +5`, `-t +10` writes at +10, not +15. That last part is a known divergence from the alias spec's Rule 15 and is under review (da-snlq1), so do not read it as settled. In a multi-entry alias every side writes at ONE occur_time, taken from the first side, so a later side's `-t` is dropped.\n\nAfter a multi-entry write, `_LAST` refers to every entry written by the most recent invocation, so `rekey _LAST oldkey=newkey` affects every row of the atomic group. A subsequent single-entry write resets `_LAST` to that one row.";
 
-const ALIAS_BODY: &str = "USAGE:\n  datum alias show <NAME>\n  datum alias set <NAME> <EXPANSION>\n  datum alias list\n  datum alias remove <NAME>\n\nATOMIC MULTI-ENTRY ALIASES:\n  A standalone, whitespace-bounded `,` token splits one invocation\n  into N sides that all write atomically with the same occur_time.\n  Works at the top-level CLI, inside alias bodies, and through chains\n  of alias-of-alias (multi-of-multi flattens to N flat sides).\n\n  The comma must be its own token. `vertical , sit` triggers a multi;\n  `vertical,sit`, `vertical ,sit`, and `vertical, sit` do not. Values\n  with embedded commas (`key=a,b`) pass through unchanged.\n\n  Examples:\n    datum switch body vertical , switch body sit\n        Two same-field switches at one occur_time merge into one\n        body row with state=Parallel([vertical, sit]).\n    datum alias set oov \\\n        \"switch environment outside , switch body vertical\"\n        Define a multi-entry alias. `datum oov` writes both rows.\n    datum alias set vvcaf \\\n        \"switch body vertical , occur caffeine -t +5\"\n    datum vvcaf -t +10\n        Call-site time flags compose with alias-bound times (not\n        override): vertical at +10min, caffeine at +15min.\n\nKEY SLOT FORMS (-k / -K):\n  -k key       required (errors at call site if unfilled)\n  -k key=      optional, no default (silently skipped if unfilled)\n  -k key=val   defaulted (auto-filled with `val` when unfilled)\n\n  A `-k` (or `-K`) name declared on multiple sides becomes a shared\n  slot — one call-site value propagates to every declaring side. `.`\n  skips a slot on its side; `.` for a shared slot skips on all sides.\n\nFIELD SLOT FORMS (-F):\n  Same three shapes as `-k`/`-K`, but the resolved value becomes the\n  entry's field rather than a data key.\n    -F field       required (errors if unfilled)\n    -F field=      optional, no default (no field bound when unfilled)\n    -F field=val   defaulted (entry field is `val` when unfilled)\n\n  Shared across sides by name like `-k`: one call-site value\n  propagates to every declaring side.\n\n`--` SEMANTICS IN MULTI-ENTRY CONTEXTS:\n  Inside an alias body, flags before `--` scope to their side; flags\n  after `--` apply to all sides. `--` is implicit at the end of every\n  alias body, so call-site flags apply to all sides by default. A `--`\n  inside an alias body does not propagate past the alias boundary.\n\n`_LAST` AFTER A MULTI-WRITE:\n  `_LAST` refers to every entry written by the most recent invocation,\n  so `rekey _LAST oldkey=newkey` affects every row of an atomic group.\n  A subsequent single-entry write resets `_LAST` to that one row.\n";
+const ALIAS_BODY: &str = "USAGE:\n  datum alias show <NAME>\n  datum alias set <NAME> <EXPANSION>\n  datum alias list\n  datum alias remove <NAME>\n\nATOMIC MULTI-ENTRY ALIASES:\n  A standalone, whitespace-bounded `,` token splits one invocation\n  into N sides that all write atomically with the same occur_time.\n  Works at the top-level CLI, inside alias bodies, and through chains\n  of alias-of-alias (multi-of-multi flattens to N flat sides).\n\n  The comma must be its own token. `vertical , sit` triggers a multi;\n  `vertical,sit`, `vertical ,sit`, and `vertical, sit` do not. Values\n  with embedded commas (`key=a,b`) pass through unchanged.\n\n  Examples:\n    datum switch body vertical , switch body sit\n        Two same-field switches at one occur_time merge into one\n        body row with state=Parallel([vertical, sit]).\n    datum alias set oov \\\n        \"switch environment outside , switch body vertical\"\n        Define a multi-entry alias. `datum oov` writes both rows.\n    datum alias set caf5 \"occur caffeine -t +5\"\n        A one-sided alias binding a time.\n\nCALL-SITE TIME FLAGS:\n  -y / -q / -d shift whatever time the alias bound. A call-site -t\n  currently REPLACES an alias-bound -t instead of adding to it —\n  a known divergence from Rule 15, under review (da-snlq1).\n\n    datum caf5            caffeine at now + 5 min (the bound time)\n    datum caf5 -t +10     now + 10 — NOT now + 15\n    datum caf5 -q         now + 5 then 5 back, so now\n    datum caf5 -y         yesterday, + 5 min\n\n  Every side of a multi writes at ONE occur_time, taken from the\n  FIRST side, so a later side's -t is dropped.\n\nKEY SLOT FORMS (-k / -K):\n  -k key       required (errors at call site if unfilled)\n  -k key=      optional, no default (silently skipped if unfilled)\n  -k key=val   defaulted (auto-filled with `val` when unfilled)\n\n  A `-k` (or `-K`) name declared on multiple sides becomes a shared\n  slot — one call-site value propagates to every declaring side. `.`\n  skips a slot on its side; `.` for a shared slot skips on all sides.\n\nFIELD SLOT FORMS (-F):\n  Same three shapes as `-k`/`-K`, but the resolved value becomes the\n  entry's field rather than a data key.\n    -F field       required (errors if unfilled)\n    -F field=      optional, no default (no field bound when unfilled)\n    -F field=val   defaulted (entry field is `val` when unfilled)\n\n  Shared across sides by name like `-k`: one call-site value\n  propagates to every declaring side.\n\n`--` SEMANTICS IN MULTI-ENTRY CONTEXTS:\n  Inside an alias body, flags before `--` scope to their side; flags\n  after `--` apply to all sides. `--` is implicit at the end of every\n  alias body, so call-site flags apply to all sides by default. A `--`\n  inside an alias body does not propagate past the alias boundary.\n\n`_LAST` AFTER A MULTI-WRITE:\n  `_LAST` refers to every entry written by the most recent invocation,\n  so `rekey _LAST oldkey=newkey` affects every row of an atomic group.\n  A subsequent single-entry write resets `_LAST` to that one row.\n";
 
 const TRACK_BODY: &str = "USAGE:\n  datum track <FIELD> [--verb V] [--color C] [--state S|S=C]... [--tag T]...\n\nOPTIONS:\n  --verb <V>   What a bare press of the field means: occur|start|switch|add.\n               Required for a field with neither a spec nor a log; with a\n               log, the log answers once and the answer is written down.\n  --color <C>  The colour FIELD is drawn in — its chip in `now`, its band\n               in the nowview, its marks in the dayview. `#RRGGBB`, or a\n               legacy ANSI-256 number. Anything else is stored as typed\n               and falls back to the hash of the field's name.\n  --state <S>  A state the field may be switched to. `S=COLOR` paints one\n               instead; the `=` is what tells the two apart.\n  --tag <T>    Repeatable, and each flag ADDS its tag to the field's set.\n               `datum spec set --tag` is the one that REPLACES the set.\n\nTracking is not what puts a field in `datum now` — every field that has\never been logged is already there (`datum now -A` shows the whole set).\nWhat `track` does is DECLARE one: it writes the field's SPEC — the verb,\nthe colour, the states, the tags — and one switch row into the log\nsaying the declaration happened.\n\nThe spec is what gives a field its own words. `track mood --verb switch\n--state good` makes `datum mood` mean `switch mood` and `datum good`\nmean `switch mood good`; `datum alias list` prints them. That spec is\nTHIS DEVICE'S: sync carries entries, not specs, so a second device that\npulls the same history gets the rows without the words.\n\nThe row is written at now and carries an OFF state — `false` for a\nstart/switch field, the TRACKED sentinel for occur/add — and a field's\nstate is whatever its newest row says. So tracking a field that is\nRUNNING ends it, and `now` shows it off from that moment on: `track`\ndeclares a field, it does not inspect one. That row also un-ignores an\nignored field, as any later log does — see `datum help ignore`.\n";
 
@@ -981,6 +1000,151 @@ const fn drop_short(src: &[FlagSpec], short: char) -> [FlagSpec; LOG_FLAGS.len()
     out
 }
 
+// ---------------------------------------------------------------------------
+// The shared logging wall, and what each verb keeps on its own page (da-ce7n3).
+//
+// `add`, `note`, `occur`, `start`, `stop` and `switch` all take LOG_FLAGS,
+// so their `--help` pages were 38-40 lines of which about thirty were
+// byte-identical — and the lines that told them apart were buried in the
+// middle of that. The wall is written out once, on `datum help logging`;
+// each verb's page keeps what is PARTICULAR to it and points there.
+// ---------------------------------------------------------------------------
+
+/// Nothing particular: the verb is told apart by its USAGE lines.
+const LOG_SHARED_FLAGS: SharedFlags = SharedFlags {
+    topic: "logging",
+    own: &[],
+};
+
+/// `add` is the one verb that REQUIRES an id, so the two flags that give it
+/// one stay on its page, worded for `add` rather than for the shared table.
+const ADD_SHARED_FLAGS: SharedFlags = SharedFlags {
+    topic: "logging",
+    own: &[
+        FlagSpec {
+            short: Some('K'),
+            long: "slug-key",
+            takes_value: true,
+            value_hint: Some("S"),
+            value_optional: false,
+            summary: "Required: derive the id from this key (K / K= / K=val)",
+            long_description: None,
+            left_override: None,
+        },
+        FlagSpec {
+            short: None,
+            long: "id",
+            takes_value: true,
+            value_hint: Some("TEMPLATE"),
+            value_optional: false,
+            summary: "...or set the id directly (e.g. %field%:%uid%)",
+            long_description: None,
+            left_override: None,
+        },
+    ],
+};
+
+/// `datum help <NAME>` pages that are not commands.
+pub const TOPICS: &[TopicSpec] = &[TopicSpec {
+    name: "logging",
+    summary: "the options every logging verb takes",
+    intro: "These are read by `add`, `note`, `occur`, `start`, `stop` and `switch`.\n\
+            Each verb's own page lists only what is particular to it.\n",
+    flags: LOG_FLAGS,
+    summary_col: 24,
+    outro: "\n`note` is the exception: it has no -C/--comment-remainder, because it\n\
+            always behaves as if -C had been given — every un-keyed word after\n\
+            the field joins extra_data.comment.\n",
+}];
+
+/// Look up a [`TopicSpec`] by name.
+pub fn find_topic(query: &str) -> Option<&'static TopicSpec> {
+    TOPICS.iter().find(|t| t.name == query)
+}
+
+// ---------------------------------------------------------------------------
+// Environment variables (da-ce7n3).
+//
+// The README kept this table by hand, which is how `DATUM_ID_DELIMITER`
+// went undocumented and `DATUM_EDITOR` was described as `EDITOR`. The
+// README's table is generated from here by `cargo xtask readme`, and
+// `env_table_covers_what_the_config_layer_reads` (datum-cli) fails when
+// the config layer reads a variable this table does not name.
+// ---------------------------------------------------------------------------
+
+pub const ENV_VARS: &[EnvVarSpec] = &[
+    EnvVarSpec {
+        name: "DATUM_DB",
+        summary: "Path or registry name of the active database (`--db` wins).",
+    },
+    EnvVarSpec {
+        name: "DATUM_HOME",
+        summary: "Override the data directory (default: the OS data dir).",
+    },
+    EnvVarSpec {
+        name: "DATUM_CONFIG",
+        summary: "Path to a specific `datumrc.toml`.",
+    },
+    EnvVarSpec {
+        name: "DATUM_CONFIG_HOME",
+        summary: "Override the directory `datumrc.toml` lives in.",
+    },
+    EnvVarSpec {
+        name: "DATUM_DEFAULT_FIELD",
+        summary: "Field used when one is omitted from the argv.",
+    },
+    EnvVarSpec {
+        name: "DATUM_DEVICE_ID",
+        summary: "Override the per-device id stamped on entries.",
+    },
+    EnvVarSpec {
+        name: "DATUM_EDITOR",
+        summary: "Editor for `datum edit`. Read FIRST, before `$EDITOR`.",
+    },
+    EnvVarSpec {
+        name: "DATUM_ID_DELIMITER",
+        summary:
+            "Delimiter that collapses empty `%key%` segments in a slug template (default `:`).",
+    },
+    EnvVarSpec {
+        name: "DATUM_WEEK_START",
+        summary: "Weekday a week opens on (`monday`…`sunday`, or `1`-`7`; default Monday).",
+    },
+    EnvVarSpec {
+        name: "DATUM_COLOR",
+        summary: "`0` disables colour; otherwise auto-detect from the TTY.",
+    },
+];
+
+/// Worked alias examples, each one run against the binary before it was
+/// written down (da-ce7n3) — which is how the time-flag one came to say
+/// what it says. The README and this table had both claimed call-site
+/// time flags COMPOSE with alias-bound ones. They do not: `TimeFlags::
+/// compose` (alias/scope.rs) implements Rule 15 and is unit-tested, but
+/// `args.rs` hands each side's argv straight to `parse_argv`, whose
+/// `TimeArgs` is last-wins on `-t`, so the composed number never reaches
+/// the entry (da-snlq1). The text below therefore reports the behaviour
+/// AND names it as unsettled, rather than promoting a gap to a contract. They render into the man page AND into the
+/// README's generated alias reference, so there is no hand copy to drift.
+const ALIAS_EXAMPLES: &[ExampleSpec] = &[
+    ExampleSpec {
+        command: "datum alias set vbp \"note word srcLang=pt pos=verb\"\ndatum vbp correr \"to run\"",
+        description: "An alias stands in for any PREFIX of an invocation — verb, field, flags, data keys. The call above writes a `word` note with `srcLang=pt`, `pos=verb` and `comment=\"correr to run\"`.",
+    },
+    ExampleSpec {
+        command: "datum switch body vertical , switch body sit",
+        description: "A whitespace-bounded `,` splits one invocation into two sides that write atomically at one `occur_time`. Same field, same instant, so the two merge into ONE `body` row with `state = [vertical, sit]` rather than overwriting each other.",
+    },
+    ExampleSpec {
+        command: "datum alias set oov \"switch environment outside , switch body vertical\"\ndatum oov",
+        description: "The same trigger inside an alias body: `datum oov` writes both rows atomically.",
+    },
+    ExampleSpec {
+        command: "datum alias set caf5 \"occur caffeine -t +5\"\ndatum caf5        # now + 5\ndatum caf5 -t +10 # now + 10, NOT now + 15\ndatum caf5 -q     # now + 5, then 5 back: now",
+        description: "`-y` / `-q` / `-d` shift whatever time the alias bound. A call-site `-t` currently REPLACES an alias-bound `-t` instead of adding to it — a known divergence from the alias spec's Rule 15, under review (da-snlq1), not a settled contract.",
+    },
+];
+
 pub const COMMANDS: &[CommandSpec] = &[
     // ----- LOGGING -----
     CommandSpec {
@@ -988,13 +1152,13 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "register a keyed timeless record (needs an id)",
-        top_summary: Some("Register a keyed timeless record (needs an id)"),
         long_description: Some(
             "Timeless record identified by *what* it is. `add` requires an explicit id: derive one from a key (-K name) or set it directly (--id <value>); see --id %templates% and id= below. Sibling of `note`, which auto-ids on its create_time instead.",
         ),
         usage: &["datum add <FIELD> -K <KEY> [KEY=VALUE]...", "datum add <FIELD> --id <VALUE>"],
         args: NO_ARGS,
         flags: LOG_FLAGS,
+        shared_flags: Some(&ADD_SHARED_FLAGS),
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,
@@ -1005,7 +1169,6 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "jot a timeless entry (auto create_time id)",
-        top_summary: Some("Jot a timeless entry (auto create_time id)"),
         long_description: Some(
             "Timeless jot identified by *when* — auto-ids on its create_time (slug field:c<create_time>), so many notes per field coexist. \"Record this moment, won't look it up.\" Sibling of `add`, which instead requires an explicit id for a keyed record.\n\nBare words are the note: every un-keyed word after the field joins `extra_data.comment`, in order and single-spaced, so `datum note coffee too strong today` needs no quotes and no `-C` (`note` always behaves as if `-C` were given). `KEY=VALUE` anywhere in the line is still data, a leading `-` is still a flag, and an explicit `-R <bucket>` still names where the words go instead.",
         ),
@@ -1015,6 +1178,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NOTE_FLAGS,
+        shared_flags: Some(&LOG_SHARED_FLAGS),
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,
@@ -1024,12 +1188,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "occur",
         aliases: &[],
         category: Category::Logging,
-        summary: "log an entry",
-        top_summary: Some("Record a point-in-time event"),
+        summary: "record a point-in-time event",
         long_description: None,
         usage: &["datum occur <FIELD> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
         flags: LOG_FLAGS,
+        shared_flags: Some(&LOG_SHARED_FLAGS),
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,
@@ -1039,8 +1203,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "start",
         aliases: &[],
         category: Category::Logging,
-        summary: "log an entry",
-        top_summary: Some("Begin a duration-tracked activity"),
+        summary: "begin a duration-tracked activity",
         long_description: Some(
             "A trailing duration (`datum start work 25m`, or `dur=25m`) closes the \
              block: it ENDS at the entry's time — now, or wherever `-t`/`-d` put \
@@ -1053,6 +1216,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: LOG_FLAGS,
+        shared_flags: Some(&LOG_SHARED_FLAGS),
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,
@@ -1062,8 +1226,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "stop",
         aliases: &["end"],
         category: Category::Logging,
-        summary: "log an entry",
-        top_summary: Some("End a duration-tracked activity (alias: end)"),
+        summary: "end a duration-tracked activity (alias: end)",
         long_description: Some(
             "A trailing duration (`datum end work 12m`, or `dur=12m`) is how long the \
              break ran: `-t` is when it ENDED, and the span runs BACK from \
@@ -1076,6 +1239,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: LOG_FLAGS,
+        shared_flags: Some(&LOG_SHARED_FLAGS),
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,
@@ -1089,12 +1253,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "switch",
         aliases: &[],
         category: Category::Logging,
-        summary: "log an entry",
-        top_summary: Some("Transition a field to a new state"),
+        summary: "transition a field to a new state",
         long_description: None,
         usage: &["datum switch <FIELD> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
         flags: LOG_FLAGS,
+        shared_flags: Some(&LOG_SHARED_FLAGS),
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,
@@ -1106,7 +1270,6 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "show recent entries",
-        top_summary: None,
         long_description: Some(
             "Structured-state entries show their id only on the chip line \
              (`{id}`); use `datum get` for the full structure.\n\n\
@@ -1116,6 +1279,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         usage: &["datum tail [FIELD]"],
         args: NO_ARGS,
         flags: TAIL_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 24,
         // Tail is structurally rendered (no body_override); see
@@ -1128,11 +1292,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "show oldest entries",
-        top_summary: None,
         long_description: None,
         usage: &["datum head [FIELD]"],
         args: NO_ARGS,
         flags: HEAD_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 20,
         body_override: None,
@@ -1143,11 +1307,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "print entries by id or slug",
-        top_summary: Some("Print entries by id or slug"),
         long_description: None,
         usage: &["datum get <ID_OR_SLUG[,ID_OR_SLUG]...> [--pretty]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(GET_BODY),
@@ -1158,11 +1322,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "regex search over entry JSON content",
-        top_summary: None,
         long_description: None,
         usage: &["datum grep <PATTERN>... [-f FIELD]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(GREP_BODY),
@@ -1172,12 +1336,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "dayview",
         aliases: &[],
         category: Category::Render,
-        summary: "render a multi-day timeline SVG/PNG/HTML",
-        top_summary: Some("Render a dayview SVG (or dump layout JSON)"),
+        summary: "render a multi-day timeline as SVG/PNG/HTML",
         long_description: None,
         usage: &["datum dayview [OPTIONS]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 27,
         body_override: Some(DAYVIEW_BODY),
@@ -1187,12 +1351,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "nowview",
         aliases: &[],
         category: Category::Render,
-        summary: "render each field's state now, and the context before it",
-        top_summary: Some("Render a nowview SVG (drop -o to write to stdout)"),
+        summary: "paint each field's state now as a terminal band (-o writes a file)",
         long_description: None,
         usage: &["datum nowview [OPTIONS]"],
         args: NO_ARGS,
         flags: NOWVIEW_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 27,
         body_override: Some(NOWVIEW_BODY),
@@ -1202,12 +1366,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "now",
         aliases: &[],
         category: Category::Render,
-        summary: "current state of tracked fields + terminal nowview band",
-        top_summary: Some("Show current state of tracked fields + terminal nowview band"),
+        summary: "show the current state of tracked fields + terminal nowview band",
         long_description: None,
         usage: &["datum now [-A] [--bare]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(NOW_BODY),
@@ -1217,12 +1381,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "history",
         aliases: &[],
         category: Category::Read,
-        summary: "modification trail for an entry",
-        top_summary: Some("Show the full modification trail for an entry"),
+        summary: "show the full modification trail for an entry",
         long_description: None,
         usage: &["datum history <ID_OR_SLUG[,ID_OR_SLUG]...> [--version N | --diff A B]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(HISTORY_BODY),
@@ -1233,11 +1397,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "explain the intent behind an entry",
-        top_summary: None,
         long_description: None,
         usage: &["datum why <ID_OR_SLUG[,ID_OR_SLUG]...> [--full]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(WHY_BODY),
@@ -1248,12 +1412,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "edit",
         aliases: &[],
         category: Category::Mutate,
-        summary: "open an entry in $EDITOR",
-        top_summary: None,
+        summary: "open an entry in $DATUM_EDITOR (or $EDITOR)",
         long_description: None,
         usage: &["datum edit <ID_OR_SLUG>"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(EDIT_BODY),
@@ -1263,12 +1427,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "update",
         aliases: &[],
         category: Category::Mutate,
-        summary: "mutate an existing entry",
-        top_summary: Some("Replace keys on an existing entry"),
+        summary: "replace keys on an existing entry",
         long_description: None,
         usage: &["datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
         args: UPDATE_ARGS,
         flags: UPDATE_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 26,
         body_override: None,
@@ -1278,12 +1442,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "merge",
         aliases: &[],
         category: Category::Mutate,
-        summary: "mutate an existing entry",
-        top_summary: Some("Deep-merge new values into an entry"),
+        summary: "deep-merge new values into an entry",
         long_description: None,
         usage: &["datum merge <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
         flags: UPDATE_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 26,
         body_override: None,
@@ -1293,12 +1457,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "rekey",
         aliases: &[],
         category: Category::Mutate,
-        summary: "mutate an existing entry",
-        top_summary: Some("Copy an entry to a new id (old row stays)"),
+        summary: "copy an entry to a new id (old row stays)",
         long_description: None,
         usage: &["datum rekey <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
         flags: UPDATE_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 26,
         body_override: None,
@@ -1308,8 +1472,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "retime",
         aliases: &["rt"],
         category: Category::Mutate,
-        summary: "shift time_start/time_end on entries (alias: rt)",
-        top_summary: None,
+        summary: "move an entry's occur_time (alias: rt)",
         long_description: None,
         usage: &[
             "datum retime [SLUG[,SLUG]...] [SHIFT]",
@@ -1318,6 +1481,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(RETIME_BODY),
@@ -1328,11 +1492,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &["del"],
         category: Category::Mutate,
         summary: "delete an entry (alias: del)",
-        top_summary: None,
         long_description: None,
         usage: &["datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--force] [--dry-run] [--strict]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(DELETE_BODY),
@@ -1343,7 +1507,6 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Mutate,
         summary: "undo the last change to an entry (revert via history)",
-        top_summary: Some("Undo the last change to an entry (revert via history)"),
         long_description: Some(
             "Reverts an entry to a prior version using its entry_history trail. \
              By default, undo restores the immediately-previous version; pass \
@@ -1355,6 +1518,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         usage: &["datum undo [ID_OR_SLUG[,ID_OR_SLUG]...] [--to-version N]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(UNDO_BODY),
@@ -1365,7 +1529,6 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Mutate,
         summary: "redo the last undone change (the inverse of undo)",
-        top_summary: Some("Redo the last undone change (the inverse of undo)"),
         long_description: Some(
             "Re-applies the version that the last undo on that entry stepped \
              back from. Redo of an undone create re-creates it under the same \
@@ -1375,6 +1538,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         usage: &["datum redo [ID_OR_SLUG[,ID_OR_SLUG]...]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(REDO_BODY),
@@ -1385,8 +1549,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "spec",
         aliases: &[],
         category: Category::Admin,
-        summary: "manage field specs",
-        top_summary: Some("Manage field specs (schemas)"),
+        summary: "manage field specs (schemas)",
         long_description: None,
         usage: &[
             "datum spec show <FIELD> [--text]",
@@ -1397,6 +1560,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(SPEC_BODY),
@@ -1407,7 +1571,6 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "manage aliases",
-        top_summary: None,
         long_description: Some(ALIAS_LONG_DESCRIPTION),
         usage: &[
             "datum alias show <NAME>",
@@ -1417,7 +1580,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
-        examples: NO_EXAMPLES,
+        shared_flags: None,
+        examples: ALIAS_EXAMPLES,
         summary_col: 0,
         body_override: Some(ALIAS_BODY),
         display_input_name: false,
@@ -1427,11 +1591,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "track a field in the now view",
-        top_summary: None,
         long_description: None,
         usage: &["datum track <FIELD> [--verb V] [--color C] [--state S|S=C]... [--tag T]..."],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(TRACK_BODY),
@@ -1442,11 +1606,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "ignore a field in the now view",
-        top_summary: None,
         long_description: None,
         usage: &["datum ignore <FIELD>"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(IGNORE_BODY),
@@ -1456,12 +1620,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "check",
         aliases: &[],
         category: Category::Admin,
-        summary: "run DB consistency checks",
-        top_summary: Some("Run database consistency checks"),
+        summary: "run database consistency checks",
         long_description: None,
         usage: &["datum check [CHECKER]... [--fix]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(CHECK_BODY),
@@ -1471,8 +1635,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "db",
         aliases: &[],
         category: Category::Admin,
-        summary: "DB-lifecycle subcommands",
-        top_summary: Some("DB-lifecycle (setup, purge, backup, restore, migrate, v2import)"),
+        summary: "DB-lifecycle (setup, purge, backup, restore, migrate, v2import)",
         long_description: None,
         usage: &[
             "datum db setup",
@@ -1484,6 +1647,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(DB_BODY),
@@ -1493,12 +1657,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "info",
         aliases: &[],
         category: Category::Admin,
-        summary: "DB health/metadata",
-        top_summary: Some("Show health/metadata for DB(s)"),
+        summary: "show health/metadata for DB(s)",
         long_description: None,
         usage: &["datum info [TARGET] [--all]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(INFO_BODY),
@@ -1509,11 +1673,11 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "show or manage user configuration",
-        top_summary: None,
         long_description: None,
         usage: &["datum config show"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(CONFIG_BODY),
@@ -1524,12 +1688,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "count",
         aliases: &[],
         category: Category::ViewsSync,
-        summary: "count entries (filtered/grouped/since-bounded)",
-        top_summary: Some("Count entries (optionally filtered/grouped/since-bounded)"),
+        summary: "count entries (optionally filtered/grouped/since-bounded)",
         long_description: None,
         usage: &["datum count [FIELD] [--group-by KEY] [--since TIME]"],
         args: NO_ARGS,
         flags: COUNT_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,
@@ -1539,8 +1703,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "stats",
         aliases: &[],
         category: Category::ViewsSync,
-        summary: "count / duration / state-ratio rollup",
-        top_summary: Some("Count, total duration, and per-state ratio over a time slice"),
+        summary: "count, total duration, and per-state ratio over a time slice",
         long_description: None,
         usage: &[
             "datum stats  (no FIELD: every field, ranked by tracked time)",
@@ -1551,6 +1714,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: STATS_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,
@@ -1560,12 +1724,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "ids",
         aliases: &[],
         category: Category::ViewsSync,
-        summary: "list entry ids (newest-first)",
-        top_summary: Some("List entry ids (newest-first by default)"),
+        summary: "list entry ids (newest-first by default)",
         long_description: None,
         usage: &["datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug]"],
         args: NO_ARGS,
         flags: IDS_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 22,
         body_override: None,
@@ -1575,12 +1739,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "fields",
         aliases: &[],
         category: Category::ViewsSync,
-        summary: "list fields with their spec and logged states",
-        top_summary: Some("List every field: its spec and the states it was logged with"),
+        summary: "list every field: its spec and the states it was logged with",
         long_description: None,
         usage: &["datum fields [--include-ignored | -A]"],
         args: NO_ARGS,
         flags: FIELDS_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 25,
         body_override: None,
@@ -1591,7 +1755,6 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::ViewsSync,
         summary: "push/pull changesets, manage auth & keys",
-        top_summary: None,
         long_description: None,
         usage: &[
             "datum sync [--push | --pull] [--dry-run] [--server URL]",
@@ -1606,6 +1769,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(SYNC_BODY),
@@ -1616,7 +1780,6 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::ViewsSync,
         summary: "triage sync conflicts (see `datum check` for integrity findings)",
-        top_summary: None,
         long_description: None,
         usage: &[
             "datum conflicts [list] [--all]",
@@ -1624,6 +1787,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(CONFLICTS_BODY),
@@ -1633,12 +1797,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "flag",
         aliases: &[],
         category: Category::Logging,
-        summary: "mark a field for later review",
-        top_summary: Some("Mark a field for review (lightweight 'come back to this')"),
+        summary: "mark a field for review (lightweight 'come back to this')",
         long_description: None,
         usage: &["datum flag <FIELD> [COMMENT...]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(FLAG_BODY),
@@ -1648,8 +1812,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "meta",
         aliases: &[],
         category: Category::Admin,
-        summary: "manage protocol-change notes on a field",
-        top_summary: Some("Attach or list protocol-change notes on a field"),
+        summary: "attach or list protocol-change notes on a field",
         long_description: None,
         usage: &[
             "datum meta <FIELD> <TEXT>...",
@@ -1657,6 +1820,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(META_BODY),
@@ -1666,8 +1830,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "kit",
         aliases: &[],
         category: Category::Admin,
-        summary: "install / export / list field-spec kits",
-        top_summary: Some("Install / export / list field-spec kits (TOML bundles)"),
+        summary: "install / export / list field-spec kits (TOML bundles)",
         long_description: None,
         usage: &[
             "datum kit install <PATH|-> [--force] [--yes] [--dry-run]",
@@ -1678,6 +1841,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(KIT_BODY),
@@ -1693,8 +1857,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "view",
         aliases: &[],
         category: Category::ViewsSync,
-        summary: "execute a named SELECT installed via a kit (or via spec)",
-        top_summary: Some("Execute a named SELECT view and render the rows"),
+        summary: "execute a named SELECT view and render the rows",
         long_description: None,
         usage: &[
             "datum view <NAME> [--format pretty|tsv|csv|json] [--watch]",
@@ -1702,6 +1865,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(VIEW_BODY),
@@ -1711,12 +1875,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "reparse",
         aliases: &[],
         category: Category::Admin,
-        summary: "replay stored raw_input against the current parser",
-        top_summary: Some("Replay an entry's stored raw_input through the current parser; --fix rewrites drifted columns"),
+        summary: "replay an entry's stored raw_input through the current parser",
         long_description: None,
         usage: &["datum reparse <HID[,HID]...>... [--fix]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
+        shared_flags: None,
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(REPARSE_BODY),
