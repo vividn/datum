@@ -386,6 +386,16 @@ job re-runs `build:cli-wasm` and fails on any byte of difference, and
 test:fixtures`. Both comparisons are byte-for-byte, which the build earns by
 remapping the absolute paths rustc and clang bake into the bytes.
 
+A conflict in `datum-cli.wasm` is a real one (da-r7fd0). It fires when main
+and your branch both rebuilt it, so the merged source needs a binary nobody
+has built yet, and neither side's copy is right. The forge reports it as
+`405 {"message":"Please try again later"}` on merge, which is permanent, not
+transient. The fix: rebase onto `origin/main`, run `pnpm run build:cli-wasm`,
+and commit what it writes. Never take `--ours`/`--theirs` for the binary, and
+never add a `merge=ours` driver for it: the forge has no such driver and
+conflicts regardless, and in a rebase `ours` is main, so it silently throws
+away the wasm you just rebuilt.
+
 (The `datum-parse-wasm`, `datum-layout-wasm` and `datum-render-wasm` crates
 built the three modules the browser ran before the swap; nothing in `web/`
 loads them any more.)
