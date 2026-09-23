@@ -201,7 +201,7 @@ fn relative_delta(time: &datum_parse::input::TimeArgs) -> Result<chrono::Duratio
     if time.quick > 0 {
         delta -= chrono::Duration::minutes(time.quick as i64 * 5);
     }
-    if let Some(t) = &time.time {
+    for t in time.time_values() {
         let ta = parse_time(t, TimeCtx::now())?;
         if let Some(off) = ta.offset {
             delta += off;
@@ -237,7 +237,7 @@ fn build_absolute(args: &RetimeArgs) -> Result<DatumTime> {
     if let Some(d) = &args.time.date {
         builder = builder.with_date_arg(parse_date(d, TimeCtx::now())?);
     }
-    if let Some(t) = &args.time.time {
+    for t in args.time.time_values() {
         builder = builder.with_time_arg(parse_time(t, TimeCtx::now())?);
     }
     if let Some(tz) = &args.time.timezone {

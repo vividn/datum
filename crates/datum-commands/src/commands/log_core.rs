@@ -1843,7 +1843,7 @@ fn build_time_from_flags(time: &TimeArgs, now: chrono::DateTime<chrono::Utc>) ->
         let da = parse_date(d, TimeCtx::now())?;
         builder = builder.with_date_arg(da);
     }
-    if let Some(t) = &time.time {
+    for t in time.time_values() {
         let ta = parse_time(t, TimeCtx::now())?;
         builder = builder.with_time_arg(ta);
     }

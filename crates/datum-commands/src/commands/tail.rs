@@ -474,7 +474,7 @@ fn build_window(args: &TailArgs) -> Result<TailWindow> {
     if let Some(d) = &args.time.date {
         builder = builder.with_date_arg(parse_date(d, TimeCtx::now())?);
     }
-    if let Some(t) = &args.time.time {
+    for t in args.time.time_values() {
         builder = builder.with_time_arg(parse_time(t, TimeCtx::now())?);
     }
     let point = builder.build();

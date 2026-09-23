@@ -41,7 +41,7 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
     if let Some(d) = time.date.as_deref() {
         builder = builder.with_date_arg(parse_date(d, TimeCtx::now())?);
     }
-    if let Some(t) = time.time.as_deref() {
+    for t in time.time_values() {
         builder = builder.with_time_arg(parse_time(t, TimeCtx::now())?);
     }
     let occur_time = builder.build();

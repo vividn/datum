@@ -255,7 +255,7 @@ Key slot forms (`-k` and `-K` accept the same three shapes): `-k key` is require
 
 `--` semantics in multi-entry contexts: inside an alias body, flags before `--` scope to their side and flags after `--` apply to all sides. `--` is implicit at the end of every alias body, so call-site flags apply to all sides by default. A `--` inside an alias body does not propagate past the alias boundary.
 
-Time flags at the call site: the stackable offsets (`-y`, `-q`, `-d`) shift whatever time the alias bound, but a call-site `-t` currently REPLACES an alias-bound `-t` rather than adding to it — on an alias bound to `-t +5`, `-t +10` writes at +10, not +15. That last part is a known divergence from the alias spec's Rule 15 and is under review (da-snlq1), so do not read it as settled. In a multi-entry alias every side writes at ONE occur_time, taken from the first side, so a later side's `-t` is dropped.
+Time flags at the call site compose with the ones the alias bound: `-y`, `-q` and `-d` shift whatever time the alias bound, and a relative `-t` adds to it — on an alias bound to `-t +5`, `-t +10` writes at +15. In a multi-entry alias every side writes at ONE occur_time, taken from the first side, so a later side's `-t` is dropped.
 
 After a multi-entry write, `_LAST` refers to every entry written by the most recent invocation, so `rekey _LAST oldkey=newkey` affects every row of the atomic group. A subsequent single-entry write resets `_LAST` to that one row.
 
@@ -298,11 +298,11 @@ The same trigger inside an alias body: `datum oov` writes both rows atomically.
 ```
 datum alias set caf5 "occur caffeine -t +5"
 datum caf5        # now + 5
-datum caf5 -t +10 # now + 10, NOT now + 15
+datum caf5 -t +10 # now + 15
 datum caf5 -q     # now + 5, then 5 back: now
 ```
 
-`-y` / `-q` / `-d` shift whatever time the alias bound. A call-site `-t` currently REPLACES an alias-bound `-t` instead of adding to it — a known divergence from the alias spec's Rule 15, under review (da-snlq1), not a settled contract.
+Call-site time flags compose with the alias-bound ones: `-y` / `-q` / `-d` shift whatever time the alias bound, and a relative `-t` adds to it.
 
 <!-- END AUTOGEN: ALIASES -->
 

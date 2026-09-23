@@ -38,6 +38,11 @@ pub struct TimeArgs {
     pub yesterday: u32,
     /// `-t` / `--time`: HHMM / HH:MM / am-pm / `+N` / `-N`.
     pub time: Option<String>,
+    /// Further relative `-t` values (`+N` / `-N`), applied after `time`.
+    /// A relative `-t` stacks the way `-q` does, and an absolute one
+    /// replaces only the absolute, so an alias-bound `-t +5` composes
+    /// with a call-site `-t +10` to `+15` (Rule 15, da-snlq1).
+    pub time_offsets: Vec<String>,
     /// `-q` / `--quick`: 5-min-back counter. Stackable (`-qqq` → 15 min).
     pub quick: u32,
     /// `-z` / `--timezone`: IANA name (`America/Chicago`) or numeric UTC
@@ -66,6 +71,11 @@ pub struct TimeFromArgs {
 }
 
 impl TimeArgs {
+    /// Every `-t` value, in the order it applies: `time`, then the offsets.
+    pub fn time_values(&self) -> impl Iterator<Item = &String> {
+        self.time.iter().chain(&self.time_offsets)
+    }
+
     /// Build a `TimeFromArgs` relative to `reference` — the caller-
     /// supplied "now". The reference carries the effective timezone:
     /// if [`TimeArgs::timezone`] overrides it, we re-anchor to that
@@ -103,7 +113,7 @@ impl TimeArgs {
         let mut cur = reference.clone();
         let mut uncertainty: Option<Uncertainty> = None;
 
-        if let Some(ref s) = self.time {
+        for s in self.time_values() {
             cur = apply_time_arg(cur, s, &mut uncertainty, tz_name.as_deref())?;
             unmodified = false;
         }
@@ -179,7 +189,18 @@ pub static FLAG_SPECS: &[FlagSpec<TimeArgs>] = &[
         short: Some('t'),
         long: Some("time"),
         action: FlagAction::Value(|a, v| {
-            a.time = Some(v.to_string());
+            let relative = |s: &str| s.starts_with(['+', '-']);
+            match a.time.take() {
+                Some(prev) if relative(v) => {
+                    a.time = Some(prev);
+                    a.time_offsets.push(v.to_string());
+                }
+                Some(prev) if relative(&prev) => {
+                    a.time_offsets.insert(0, prev);
+                    a.time = Some(v.to_string());
+                }
+                _ => a.time = Some(v.to_string()),
+            }
             Ok(())
         }),
     },
