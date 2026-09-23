@@ -323,6 +323,7 @@
 					class="split {split.direction}"
 					bind:this={splitEls[split.id]}
 					data-split={split.id}
+					style:--border="{BORDER}px"
 					style:min-width={least && `${least.width}px`}
 					style:min-height={least && `${least.height}px`}
 				>
@@ -435,8 +436,9 @@
 	.column > .cell {
 		min-height: var(--floor);
 	}
+	/* `BORDER`, the one number the floors are worked out from. */
 	.border {
-		flex: 0 0 8px;
+		flex: 0 0 var(--border);
 		touch-action: none;
 		position: relative;
 	}
