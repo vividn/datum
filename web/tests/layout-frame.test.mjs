@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { atEachScreen, inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
+	PHONE,
 	activeTab,
 	addTab,
 	boxOf,
@@ -129,20 +130,46 @@ describe('the title on the frame', () => {
 // turned round.
 describe('the title row, as tall as its words', () => {
 	/** What sits on a pane's bar, or over its corner, that could reach a neighbour. */
-	const ON_BAR = ':scope > .titlebar :is(h2, [role="tab"], button.add), [role="slider"], .nowview-steps button';
+	const ON_BAR =
+		':scope > .titlebar :is(h2, .own, [role="tab"], button.maximize, button.add, button.manage), [role="slider"], .nowview-steps button';
 
-	/** Every piece of `ON_BAR` inside another pane's border box. */
+	/** Every piece of `ON_BAR` whose DRAWING is inside another pane's border box.
+	 *
+	 * The drawing, not the element's box (da-wyofs): a badge offers a
+	 * finger `--badge` — 24px where the pointer is coarse — and draws
+	 * `--mark` inside it. The 4px a finger's box has over the mark on
+	 * either side is not on the screen, so it cannot lie over anything;
+	 * what a reader sees lying over a neighbour is the mark. So each
+	 * element is measured as the box it PAINTS: its own, unless it paints
+	 * with a `::before` inside itself, in which case that one, centred.
+	 */
 	const bleeds = (page) =>
 		page.evaluate((selector) => {
 			const panes = [...document.querySelectorAll('section.pane')];
 			const rect = (el) => el.getBoundingClientRect();
-			const into = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+			const drawn = (el) => {
+				const r = rect(el);
+				const mark = getComputedStyle(el, '::before');
+				// No `::before`, or one that paints no outline: the element
+				// is its own drawing, as it was before da-wyofs.
+				if (mark.content === 'none' || !(parseFloat(mark.borderTopWidth) > 0)) return r;
+				const box = (size, ...edges) => parseFloat(mark[size]) + edges.reduce((n, e) => n + parseFloat(mark[e]), 0);
+				const ix = (r.width - box('width', 'borderLeftWidth', 'borderRightWidth')) / 2;
+				const iy = (r.height - box('height', 'borderTopWidth', 'borderBottomWidth')) / 2;
+				return { left: r.left + ix, right: r.right - ix, top: r.top + iy, bottom: r.bottom - iy };
+			};
+			// A hair of slack for the arithmetic above: a title that STRADDLES
+			// its own outline stops exactly on the neighbour's, and half the
+			// numbers here are computed rather than measured.
+			const E = 0.25;
+			const into = (a, b) =>
+				a.left < b.right - E && b.left + E < a.right && a.top < b.bottom - E && b.top + E < a.bottom;
 			return panes.flatMap((p) =>
 				[...p.querySelectorAll(selector)]
 					.filter((el) => el.getClientRects().length > 0)
 					.flatMap((el) =>
 						panes
-							.filter((q) => q !== p && !q.contains(el) && into(rect(el), rect(q)))
+							.filter((q) => q !== p && !q.contains(el) && into(drawn(el), rect(q)))
 							.map((q) => `${p.dataset.title}'s ${el.tagName.toLowerCase()} "${el.textContent.trim()}" in ${q.dataset.title}`)
 					)
 			);
@@ -151,35 +178,87 @@ describe('the title row, as tall as its words', () => {
 	// Eight cases, two apps: an edge is `layout.apply`, which the page
 	// answers in a frame, and the screen is a resize. Eight boots for them
 	// was seven seconds of `dayview` (da-x6ea).
-	test('no title, tab or … lies over a neighbour, whatever edge every bar is on', async (t) => {
-		await withApp(async ({ page }) => {
-			const screens = [{ width: 1280, height: 800 }, { width: 390, height: 844 }];
-			await atEachScreen(t, page, screens, async () => {
-				assert.ok((await page.locator('section.pane').count()) >= 3, 'fewer than three panes');
-				for (const edge of ['top', 'bottom', 'left', 'right']) {
-					// Every pane's bar at once (the menu's own path is tested above).
-					await page.evaluate((edge) =>
-						window.datum.layout.apply((tree) => {
-							const copy = structuredClone(tree);
-							const walk = (pane) => {
-								pane.bar = { ...pane.bar, edge };
-								for (const tab of pane.tabs) if ('children' in tab.content) tab.content.children.forEach(walk);
-							};
-							walk(copy.root);
-							return copy;
-						}),
-						edge
-					);
-					await page.locator(`section.pane.edge-${edge}`).first().waitFor();
-					const astray = await page.locator('section.pane').evaluateAll(
-						(all, edge) => all.filter((p) => !p.classList.contains(`edge-${edge}`)).map((p) => p.dataset.title),
-						edge
-					);
-					assert.deepEqual(astray, [], `not on the ${edge}`);
-					assert.deepEqual(await bleeds(page), [], `on the ${edge}`);
-				}
-			});
-		}, { viewport: { width: 1280, height: 800 } });
+	//
+	// AND UNDER BOTH POINTERS (da-wyofs). This test already ran at 390x844
+	// — and stayed green while a phone drew every pane's title and badges
+	// 3.5px over the pane above, which is vividn's «overlap with other
+	// panes». `pointer: coarse` is a property of the browser CONTEXT, not
+	// of the viewport, so resizing a desktop app to a phone's screen
+	// resizes everything except the one media query that was wrong. A
+	// coarse app is a second app; `PHONE` is it.
+	for (const [pointer, where] of [['a cursor', { viewport: { width: 1280, height: 800 } }], ['a finger', PHONE]])
+		test(`under ${pointer}, no title, tab or … lies over a neighbour, whatever edge every bar is on`, async (t) => {
+			await withApp(async ({ page }) => {
+				const screens = pointer === 'a finger' ? [page.viewportSize()] : [{ width: 1280, height: 800 }, { width: 390, height: 844 }];
+				await atEachScreen(t, page, screens, async () => {
+					assert.ok((await page.locator('section.pane').count()) >= 3, 'fewer than three panes');
+					for (const edge of ['top', 'bottom', 'left', 'right']) {
+						// Every pane's bar at once (the menu's own path is tested above).
+						await page.evaluate((edge) =>
+							window.datum.layout.apply((tree) => {
+								const copy = structuredClone(tree);
+								const walk = (pane) => {
+									pane.bar = { ...pane.bar, edge };
+									for (const tab of pane.tabs) if ('children' in tab.content) tab.content.children.forEach(walk);
+								};
+								walk(copy.root);
+								return copy;
+							}),
+							edge
+						);
+						await page.locator(`section.pane.edge-${edge}`).first().waitFor();
+						const astray = await page.locator('section.pane').evaluateAll(
+							(all, edge) => all.filter((p) => !p.classList.contains(`edge-${edge}`)).map((p) => p.dataset.title),
+							edge
+						);
+						assert.deepEqual(astray, [], `not on the ${edge}`);
+						assert.deepEqual(await bleeds(page), [], `on the ${edge}`);
+					}
+				});
+			}, where);
+		});
+
+	// vividn, 2026-09-22: «I like how the pane titles are compact on desktop —
+	// they are too padded and wide on mobile and overlap with other panes.»
+	// The title's box was `--badge`, so a phone got a 24px title with the
+	// same 12px words in it and the eight pixels landed as padding above
+	// and below them. It is `--mark` now — one value under either pointer —
+	// and the finger's box that the menu's button needs is the `.titlebox`
+	// around it (da-wyofs). Both halves, because either alone is a
+	// regression: the words back to compact but the button off the touch
+	// floor, or the floor kept by growing the title again.
+	test('the title draws the same height under a cursor and under a finger, and its button keeps the touch floor', async () => {
+		const read = async (where) => {
+			let out;
+			await withApp(async ({ page }) => {
+				// `repl`, which both trees carry with a title of its own:
+				// the phone's `day` drops `nowview` and `custom` and tabs
+				// `tail` into a pane whose heading is the tab in front.
+				out = await pane(page, 'repl').evaluate((p) => {
+					const h2 = p.querySelector(':scope > .titlebar h2');
+					const button = p.querySelector(':scope > .titlebar button.title');
+					const s = getComputedStyle(h2);
+					return {
+						coarse: matchMedia('(pointer: coarse)').matches,
+						drawn: h2.getBoundingClientRect().height,
+						font: s.fontSize,
+						padding: [s.paddingTop, s.paddingBottom],
+						button: button.getBoundingClientRect().height
+					};
+				});
+			}, where);
+			return out;
+		};
+		const [fine, coarse] = [await read(DESKTOP), await read(PHONE)];
+		assert.equal(fine.coarse, false);
+		assert.equal(coarse.coarse, true);
+		assert.equal(coarse.drawn, fine.drawn, `the title is ${fine.drawn}px under a cursor and ${coarse.drawn}px under a finger`);
+		assert.equal(coarse.font, fine.font, `the words are ${fine.font} under a cursor and ${coarse.font} under a finger`);
+		// The padding was always nothing; what grew was the box round it.
+		for (const [what, seen] of [['a cursor', fine], ['a finger', coarse]])
+			assert.deepEqual(seen.padding, ['0px', '0px'], `under ${what} the title is padded ${seen.padding}`);
+		assert.equal(fine.button, 16, `the cursor's title button is ${fine.button}px tall`);
+		assert.equal(coarse.button, 24, `the finger's title button is ${coarse.button}px tall`);
 	});
 
 	test('the title is its words and a 1px outline in the frame’s colour; its cross padding is nothing on a left bar', async () => {

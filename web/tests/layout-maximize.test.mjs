@@ -27,6 +27,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
+	PHONE,
 	addTab,
 	bar,
 	chooseBar,
@@ -356,66 +357,109 @@ describe('the maximize badge, drawn and placed', () => {
 	// one too, which puts its centre on the corner point — as much of it
 	// outside the pane as in, on either axis. And what got smaller is the
 	// box you can SEE: the hit area is a fingertip, a fixed size, so the
-	// drawn box comes off `--badge` while the button stays on the 16px/24px
+	// drawn box comes off `--mark` while the button stays on the 16px/24px
 	// floor `reachable.test.mjs` holds every badge to. Read on a rotated
 	// bar as well as a top one, `start` being the same corner to the
 	// alignment either way.
-	for (const edge of ['top', 'left']) {
-		test(`on a ${edge} bar its centre is on the pane's corner, and the box it draws is smaller than the box it offers a finger`, async () => {
+	//
+	// UNDER BOTH POINTERS since da-wyofs, and that is the point of it.
+	// Both measurements below came off `--badge` — which is 16 under a
+	// cursor and 24 under a finger — and both have only ever run on
+	// `DESKTOP`, so they pinned the drawing at the one size where it
+	// already looked right. Under a finger the drawn box had reached 20px
+	// and the glyph SIXTEEN, twice what a cursor saw, with this file
+	// green throughout. They read `--mark` now: the size of the DRAWING,
+	// one value whatever the pointer is.
+	for (const [pointer, where, floor] of [['a cursor', DESKTOP, 16], ['a finger', PHONE, 24]])
+		for (const edge of ['top', 'left']) {
+			test(`under ${pointer}, on a ${edge} bar its centre is on the pane's corner, and the box it draws is smaller than the box it offers a finger`, async () => {
+				await withApp(async ({ page }) => {
+					if (edge !== 'top') {
+						await chooseBar(page, 'repl', edge);
+						await settled(page);
+					}
+					const flip = edge === 'left';
+
+					// FULLY IN THE CORNER, on both axes at once.
+					const off = await offCorner(page, 'repl');
+					assert.ok(off.x <= 1, `the badge's centre is ${off.x.toFixed(1)}px off the corner across the pane`);
+					assert.ok(off.y <= 1, `the badge's centre is ${off.y.toFixed(1)}px off the corner down the pane`);
+
+					// And only it moved: the title keeps the clearance that holds
+					// the rest of the row off the rounded corner.
+					const start = await along(page, 'repl', flip);
+					assert.ok(start.title - start.max >= 6, 'the whole row moved, not the badge');
+
+					// A BIT SMALLER, and the HIT AREA is not what shrank. The
+					// button paints nothing itself; the box on the screen is the
+					// `::before` inside it, four pixels off `--mark` — so the
+					// glyph, eight pixels off the same mark, has two pixels of
+					// padding a side where it had four.
+					const { box, svg } = await drawn(page, 'repl');
+					const seen = await maximizeButton(page, 'repl').evaluate((el) => {
+						const own = getComputedStyle(el);
+						const drawn_ = getComputedStyle(el, '::before');
+						return {
+							badge: parseFloat(own.getPropertyValue('--badge')),
+							mark: parseFloat(own.getPropertyValue('--mark')),
+							width: parseFloat(drawn_.width),
+							height: parseFloat(drawn_.height),
+							ground: own.backgroundColor,
+							ownEdge: own.borderTopColor
+						};
+					});
+					assert.equal(seen.badge, floor, `--badge is ${seen.badge} under ${pointer}`);
+					for (const side of ['width', 'height']) {
+						assert.ok(
+							Math.abs(seen.mark - svg[side] - 8) <= 0.5,
+							`the glyph is ${svg[side].toFixed(1)} on a ${seen.mark}px mark`
+						);
+						assert.ok(
+							Math.abs(seen[side] - (seen.mark - 4)) <= 0.5,
+							`the drawn box is ${seen[side]}, not ${seen.mark - 4}`
+						);
+						assert.ok(seen[side] < box[side], `the drawn box is ${seen[side]} in a ${box[side]}px button`);
+						assert.ok(seen[side] > svg[side], `the drawn box (${seen[side]}) does not clear the glyph (${svg[side]})`);
+					}
+					// Nothing is drawn by the button itself, or there would be two
+					// boxes on the screen and the smaller one would not be it.
+					for (const [what, colour] of [['ground', seen.ground], ['outline', seen.ownEdge]])
+						assert.match(colour, /^rgba\(.*,\s*0\)$/, `the button draws its own ${what} (${colour})`);
+					assert.ok(
+						box.width >= floor && box.height >= floor,
+						`the hit area is ${box.width}x${box.height} under ${pointer}, not ${floor}`
+					);
+				}, where);
+			});
+		}
+
+	// Acceptance, read straight (da-wyofs): the SAME app under the two
+	// pointers, so that «the drawing is one size and the target is two» is
+	// asserted as the comparison it is, and not as two numbers written
+	// down in two runs. A cursor's reading is the one that was already
+	// right, so a regression that moved BOTH pointers together — which is
+	// exactly what the single token did — still fails here.
+	test('the drawing is the same under a cursor and under a finger; the target is not', async () => {
+		const read = async (where) => {
+			let out;
 			await withApp(async ({ page }) => {
-				if (edge !== 'top') {
-					await chooseBar(page, 'repl', edge);
-					await settled(page);
-				}
-				const flip = edge === 'left';
-
-				// FULLY IN THE CORNER, on both axes at once.
-				const off = await offCorner(page, 'repl');
-				assert.ok(off.x <= 1, `the badge's centre is ${off.x.toFixed(1)}px off the corner across the pane`);
-				assert.ok(off.y <= 1, `the badge's centre is ${off.y.toFixed(1)}px off the corner down the pane`);
-
-				// And only it moved: the title keeps the clearance that holds
-				// the rest of the row off the rounded corner.
-				const start = await along(page, 'repl', flip);
-				assert.ok(start.title - start.max >= 6, 'the whole row moved, not the badge');
-
-				// A BIT SMALLER, and the HIT AREA is not what shrank. The
-				// button paints nothing itself; the box on the screen is the
-				// `::before` inside it, four pixels off `--badge` — so the
-				// glyph, unchanged at eight pixels off it, has two pixels of
-				// padding a side where it had four.
 				const { box, svg } = await drawn(page, 'repl');
 				const seen = await maximizeButton(page, 'repl').evaluate((el) => {
-					const own = getComputedStyle(el);
-					const drawn_ = getComputedStyle(el, '::before');
-					return {
-						badge: parseFloat(own.getPropertyValue('--badge')),
-						width: parseFloat(drawn_.width),
-						height: parseFloat(drawn_.height),
-						ground: own.backgroundColor,
-						ownEdge: own.borderTopColor
-					};
+					const d = getComputedStyle(el, '::before');
+					return { coarse: matchMedia('(pointer: coarse)').matches, drawn: parseFloat(d.width) };
 				});
-				for (const side of ['width', 'height']) {
-					assert.ok(
-						Math.abs(box[side] - svg[side] - 8) <= 0.5,
-						`the glyph is ${svg[side].toFixed(1)} in a ${box[side].toFixed(1)}px button`
-					);
-					assert.ok(
-						Math.abs(seen[side] - (seen.badge - 4)) <= 0.5,
-						`the drawn box is ${seen[side]}, not ${seen.badge - 4}`
-					);
-					assert.ok(seen[side] < box[side], `the drawn box is ${seen[side]} in a ${box[side]}px button`);
-					assert.ok(seen[side] > svg[side], `the drawn box (${seen[side]}) does not clear the glyph (${svg[side]})`);
-				}
-				// Nothing is drawn by the button itself, or there would be two
-				// boxes on the screen and the smaller one would not be it.
-				for (const [what, colour] of [['ground', seen.ground], ['outline', seen.ownEdge]])
-					assert.match(colour, /^rgba\(.*,\s*0\)$/, `the button draws its own ${what} (${colour})`);
-				assert.ok(box.width >= 16 && box.height >= 16, `the hit area shrank to ${box.width}x${box.height}`);
-			}, DESKTOP);
-		});
-	}
+				out = { ...seen, button: box.width, glyph: svg.width };
+			}, where);
+			return out;
+		};
+		const [fine, coarse] = [await read(DESKTOP), await read(PHONE)];
+		assert.equal(fine.coarse, false);
+		assert.equal(coarse.coarse, true);
+		assert.equal(coarse.drawn, fine.drawn, `the drawn box is ${fine.drawn} under a cursor and ${coarse.drawn} under a finger`);
+		assert.equal(coarse.glyph, fine.glyph, `the glyph is ${fine.glyph} under a cursor and ${coarse.glyph} under a finger`);
+		assert.equal(fine.button, 16, `the cursor's hit area is ${fine.button}`);
+		assert.equal(coarse.button, 24, `the finger's hit area is ${coarse.button}`);
+	});
 
 	// Pointed at, the badge still draws ONE box. `.control.badge`'s hover
 	// rule (app.css) colours the BUTTON's border, and the button's border
@@ -424,35 +468,51 @@ describe('the maximize badge, drawn and placed', () => {
 	// the moment a reader is looking straight at it. What wins is Svelte's
 	// scope class, repeated to outrank a global rule; that is a property of
 	// the compiler rather than of this file, so it is asserted here.
-	test('pointing at it moves the drawn edge, and does not give the button one', async () => {
-		await withApp(async ({ page }) => {
-			const badge = maximizeButton(page, 'repl');
-			const look = () =>
-				badge.evaluate((el) => {
-					const own = getComputedStyle(el);
-					return {
-						hovered: el.matches(':hover'),
-						ground: own.backgroundColor,
-						ownEdge: own.borderTopColor,
-						drawnEdge: getComputedStyle(el, '::before').borderTopColor
-					};
-				});
+	// ALL THREE BADGES, since da-wyofs put the `+` and the `▾` on the same
+	// mechanism: what `.control.badge:hover` (app.css) colours is the
+	// BUTTON's border, and the button's border is the one that must never
+	// appear. A scoped selector wins that argument only by carrying more
+	// weight than a global one, and svelte repeats its hash for a bare
+	// class but not for the compound a `:global()` is in — so the `▾`,
+	// which can only be reached through `:global`, carries a doubled
+	// `.manage` to make up the difference. That is arithmetic about the
+	// compiler and about a file this one does not own, so it is asserted
+	// rather than trusted.
+	for (const [what, selector] of [
+		['maximize', 'button.maximize'],
+		['+', 'button.add'],
+		['▾', 'button.manage']
+	])
+		test(`pointing at the ${what} moves the drawn edge, and does not give the button one`, async () => {
+			await withApp(async ({ page }) => {
+				const badge = pane(page, 'repl').locator(`> .titlebar ${selector}`);
+				const look = () =>
+					badge.evaluate((el) => {
+						const own = getComputedStyle(el);
+						return {
+							hovered: el.matches(':hover'),
+							ground: own.backgroundColor,
+							ownEdge: own.borderTopColor,
+							drawnEdge: getComputedStyle(el, '::before').borderTopColor
+						};
+					});
 
-			const rest = await look();
-			await badge.hover();
-			await page.waitForFunction(
-				() => document.querySelector('section[data-pane="repl"] > .titlebar button.maximize').matches(':hover')
-			);
-			const on = await look();
+				const rest = await look();
+				await badge.hover();
+				await page.waitForFunction(
+					(selector) => document.querySelector(`section[data-pane="repl"] > .titlebar ${selector}`).matches(':hover'),
+					selector
+				);
+				const on = await look();
 
-			assert.ok(on.hovered && !rest.hovered, 'the hover never landed');
-			assert.notEqual(on.drawnEdge, rest.drawnEdge, 'the drawn edge did not answer the pointer');
-			for (const [when, seen] of [['at rest', rest], ['pointed at', on]]) {
-				assert.match(seen.ground, /^rgba\(.*,\s*0\)$/, `${when}: the button draws its own ground (${seen.ground})`);
-				assert.match(seen.ownEdge, /^rgba\(.*,\s*0\)$/, `${when}: the button draws its own outline (${seen.ownEdge})`);
-			}
-		}, DESKTOP);
-	});
+				assert.ok(on.hovered && !rest.hovered, 'the hover never landed');
+				assert.notEqual(on.drawnEdge, rest.drawnEdge, 'the drawn edge did not answer the pointer');
+				for (const [when, seen] of [['at rest', rest], ['pointed at', on]]) {
+					assert.match(seen.ground, /^rgba\(.*,\s*0\)$/, `${when}: the button draws its own ground (${seen.ground})`);
+					assert.match(seen.ownEdge, /^rgba\(.*,\s*0\)$/, `${when}: the button draws its own outline (${seen.ownEdge})`);
+				}
+			}, DESKTOP);
+		});
 
 	// The other end of the row is untouched: at `align: end` the last badge
 	// keeps the 0.5rem that holds it off the rounded corner there.

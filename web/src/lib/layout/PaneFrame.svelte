@@ -798,11 +798,25 @@
 		flex: 1;
 		min-width: 0;
 		min-height: 0;
-		/* The title, the tabs and the badge are all `--row` tall (`ROW`, set
-		   on the element) and hang half of it outside the outline and half
-		   over the content (Layout.svelte's chrome). The badge alone keeps a
-		   finger's 24px where the pointer is one (reachable.test.mjs). */
+		/* TWO tokens, because a badge is two boxes (da-wyofs).
+
+		   `--badge` is the box a POINTER lands on, and only that: the row's
+		   height where the pointer is fine, a finger's 24px where it is
+		   coarse (reachable.test.mjs). Nobody sees it.
+
+		   `--mark` is the box that is DRAWN — the title's ground and
+		   outline, the maximize's box and glyph, the `+` and the `▾`. One
+		   value under either pointer, because a reader looking at a phone
+		   and a reader looking at a screen are looking at the same app.
+		   It is the row, so everything on the bar hangs half a row outside
+		   its outline and the half-row gap between panes (Layout.svelte's
+		   `BORDER`) is exactly enough to hold it clear of the neighbour.
+
+		   They were ONE token until da-wyofs, so every ask that tuned the
+		   drawing moved the hit area, and every ask that tuned the hit area
+		   moved the drawing on the pointer nobody was looking at. */
 		--badge: var(--row);
+		--mark: var(--row);
 	}
 	@media (pointer: coarse) {
 		section {
@@ -935,6 +949,12 @@
 	.titlebox {
 		position: relative;
 		display: flex;
+		/* The BOX A FINGER LANDS ON (da-wyofs). The button over it is
+		   `inset: 0` of this, so the touch floor `reachable.test.mjs`
+		   holds every pane control to lives here — and the h2 inside is
+		   the smaller thing that is drawn, centred on the same line. */
+		align-items: center;
+		block-size: var(--badge);
 		flex: 0 1 auto;
 		min-inline-size: 0;
 		min-block-size: 0;
@@ -955,11 +975,15 @@
 		   not the words. The box does not GROW by this; it is the one
 		   thing on the bar that can still give room back. */
 		padding-inline: 0.25rem;
-		/* The row's height, and a finger's where the pointer is coarse — the
-		   title is a button now (da-9vtw), and a button is on the floor
-		   `reachable.test.mjs` holds the badges to. */
-		block-size: var(--badge);
-		line-height: calc(var(--badge) - 2px);
+		/* The DRAWN height, one value under either pointer (da-wyofs).
+		   It was `--badge` — the touch floor — until then, so a phone got
+		   a 24px title with the same 12px words in it and the extra eight
+		   pixels landed as padding: «too padded and wide on mobile and
+		   overlap with other panes» (vividn, 2026-09-22). The title is still
+		   a button (da-9vtw) and still on that floor; the floor is
+		   `.titlebox` above, which this is centred in. */
+		block-size: var(--mark);
+		line-height: calc(var(--mark) - 2px);
 		min-inline-size: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -1067,8 +1091,40 @@
 
 	   `.control.badge`'s hover colours the BUTTON's border, which is not
 	   the one on the screen any more, so the drawn edge follows a
-	   property that all three states set. */
-	.maximize {
+	   property that all three states set.
+
+	   The size of that drawn box came off `--badge` until da-wyofs, which
+	   meant it was 12px under a cursor and 20px under a finger — the same
+	   badge drawn twice, at two sizes, and only the first of them ever
+	   measured. It comes off `--mark` now, so it is 12px for everyone.
+
+	   THE OTHER TWO BADGES ARE THE SAME CLAIM, so they are the same rule
+	   (da-wyofs). The `+` and the `▾` drew their ground and outline on the
+	   BUTTON, which is `--badge` square: on a phone that put a 24px box on
+	   a bar whose panes are eight pixels apart, and the badge of the pane
+	   below lay 3.5px over the pane above — half of vividn's «overlap with
+	   other panes», the title being the other half. They keep the finger's
+	   box and draw inside it, like the maximize. Their box is `--mark`
+	   whole rather than four pixels in from it: that is the size they have
+	   always drawn at under a cursor, and nothing about a cursor changes
+	   here. Absolutely placed instead of `grid-area`, because their glyph
+	   is a character and an anonymous grid item cannot be sent to a named
+	   cell; `isolation` makes the button the stacking context the `z-index`
+	   is measured in, so the box lands under the glyph and over nothing
+	   else.
+
+	   `.manage` is written TWICE on the rule that takes the button's own
+	   outline away. Svelte repeats its scope class four times over a bare
+	   class — which is what lets `.maximize` outweigh
+	   `.control.badge:hover:not(:disabled)` in `app.css` — but adds it only
+	   once to the compound a `:global()` sits in, and once is one class
+	   short. Without the second `.manage` the `▾` would grow the button's
+	   accent border back under the pointer, which is a second and larger
+	   outline round the drawn one, at exactly the moment a reader is
+	   looking straight at it. Asserted in layout-maximize.test.mjs. */
+	.maximize,
+	.add,
+	.along :global(button.manage.manage) {
 		--edge: var(--rule);
 		background: none;
 		border-color: transparent;
@@ -1076,15 +1132,35 @@
 	.maximize::before {
 		content: '';
 		grid-area: 1 / 1;
-		inline-size: calc(var(--badge) - 4px);
-		block-size: calc(var(--badge) - 4px);
+		inline-size: calc(var(--mark) - 4px);
+		block-size: calc(var(--mark) - 4px);
 		background: var(--ground);
 		border: 1px solid var(--edge);
 		border-radius: 5px;
 	}
+	.add,
+	.along :global(button.manage) {
+		position: relative;
+		isolation: isolate;
+	}
+	.add::before,
+	.along :global(button.manage)::before {
+		content: '';
+		position: absolute;
+		z-index: -1;
+		box-sizing: border-box;
+		inset: calc((var(--badge) - var(--mark)) / 2);
+		background: var(--ground);
+		border: 1px solid var(--edge);
+		border-radius: 6px;
+	}
 	.maximize:hover:not(:disabled),
 	.maximize:focus-visible,
-	.maximize[aria-pressed='true'] {
+	.maximize[aria-pressed='true'],
+	.add:hover:not(:disabled),
+	.add:focus-visible,
+	.along :global(button.manage:hover:not(:disabled)),
+	.along :global(button.manage:focus-visible) {
 		--edge: var(--accent);
 	}
 
@@ -1092,13 +1168,15 @@
 	   lock): strokes, so the two states are the same weight, and `block`
 	   so a rotated bar does not give the box a baseline's slack.
 
-	   The box is INSIDE the button, not the 16px the viewBox is: a badge is
-	   `--badge` square with a 1px outline, so a 16px glyph on a 16px badge
-	   hung a pixel out of each side (da-jlgp). FOUR pixels in from the
-	   border box at either badge size — three until «it can be a bit
-	   smaller as well» (vividn, 2026-09-21, da-fphjw) — and square, so which
-	   way the bar runs makes no difference to it. The HIT AREA is not
-	   touched: the mark shrinks and it stays the 16px/24px floor
+	   The box is INSIDE the drawing, not the 16px the viewBox is: a mark is
+	   `--mark` square with a 1px outline, so a 16px glyph on a 16px mark
+	   hung a pixel out of each side (da-jlgp). FOUR pixels in from it —
+	   three until «it can be a bit smaller as well» (vividn, 2026-09-21,
+	   da-fphjw) — and square, so which way the bar runs makes no
+	   difference to it. Off `--mark` and not `--badge` since da-wyofs: a
+	   glyph a cursor saw at 8px was drawn at SIXTEEN under a finger, which
+	   is the literal doubling vividn saw. The HIT AREA is not touched: the
+	   mark is one size and the button stays the 16px/24px floor
 	   `reachable.test.mjs` holds it to. The stroke does not scale with the
 	   box — a hairline at 8px and a slab at 16px are the same mark drawn
 	   twice — so it stays the 1.25px it was drawn as.
@@ -1109,8 +1187,8 @@
 	.maximize svg {
 		display: block;
 		grid-area: 1 / 1;
-		inline-size: calc(var(--badge) - 8px);
-		block-size: calc(var(--badge) - 8px);
+		inline-size: calc(var(--mark) - 8px);
+		block-size: calc(var(--mark) - 8px);
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 1.25;
@@ -1150,7 +1228,7 @@
 	   further: the tab in front is drawn by PaneMenu, being the button
 	   that opens the menu (da-9vtw), and carries no scope of this file's. */
 	.tabs :global(.tab) {
-		block-size: var(--row);
+		block-size: var(--mark);
 		padding-block: 0;
 		padding-inline: 0.5rem;
 		border-radius: 4px;
@@ -1261,7 +1339,18 @@
 	   their titles — and their badges — half a row above their outlines:
 	   the content keeps that half clear on the strip's edge, or the strip
 	   lies over them (da-cesj). Only a holder with a strip; one without
-	   draws none and moves nothing. `chromeOf` counts this. */
+	   draws none and moves nothing. `chromeOf` counts this.
+
+	   `--badge` AND NOT `--mark` (da-wyofs, which nearly got this wrong).
+	   Everywhere else on the bar the two panes are only neighbours and
+	   what matters is what is drawn — a finger's four pixels of slack
+	   either side of the mark are not on the screen, so they cannot lie
+	   over anything. A strip is not a neighbour: it is an opaque row that
+	   paints AND TAKES THE POINTER above what is under it (`z-index: 3`,
+	   over the panes' 2). What slides beneath it is not merely hidden, it
+	   is untappable — so what this has to keep clear is the box a finger
+	   lands on. `layout-menu.test.mjs`'s two Split-in-a-tab-stack cases
+	   are that claim, and they are read under a coarse pointer. */
 	.holder.edge-top:not(.bare) > .content {
 		padding-top: calc(max(var(--row), var(--badge)) / 2);
 	}
@@ -1279,7 +1368,10 @@
 	   their panes — their badges half theirs — and the scroller would cut
 	   that half off: it reaches out over the page's margin by that much
 	   and pads it back, so the panes stay where they were and their titles
-	   are whole. */
+	   are whole. The badge again, not the mark: a cut here takes the
+	   OUTERMOST pixels of a badge, which under a finger are the hit area's
+	   and not the drawing's, and a control at the page's edge is the one
+	   that can least afford to lose them. */
 	.holder.root.bare > .content {
 		margin: calc(max(var(--row), var(--badge)) / -2);
 		padding: calc(max(var(--row), var(--badge)) / 2);

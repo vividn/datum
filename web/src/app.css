@@ -153,7 +153,10 @@ body {
 
 	`--badge` is the box, which a pane sets to its title row's height and
 	raises to a fingertip's 24px under a coarse pointer (PaneFrame.svelte,
-	reachable.test.mjs); 24px is what everyone else gets.
+	reachable.test.mjs); 24px is what everyone else gets. It is the box a
+	POINTER lands on: inside a pane's frame the ground and the outline below
+	are painted over, and the badge draws them on a `::before` of its own at
+	`--mark`, which is one size under either pointer (da-wyofs).
 */
 .control {
 	box-sizing: border-box;

@@ -210,7 +210,17 @@ writing it down.
     one, every submenu icon and every root-bar button to it). `.control` in `app.css` is the rule set that
     makes one — the box, the 6px radius, the pane ground, the 1px rule, the muted ink — and
     `.control.badge` the square of them, sized by `--badge` (a pane's title row, a fingertip's
-    24px under a coarse pointer, which is what the title's own box is sized by too). A component keeps only what is its own. It is global because
+    24px under a coarse pointer, which is what the box round a pane's title is sized by too).
+    THE BOX AND
+    THE DRAWING ARE TWO TOKENS (da-wyofs): `--badge` is the box a pointer lands on and nothing
+    else, and a pane frame's `--mark` is what is DRAWN inside it — one value under either
+    pointer, because the app should not look like two apps. They were one token, so every ask
+    that tuned the drawing moved the hit area, and every ask that tuned the hit area moved the
+    drawing on the pointer nobody was looking at: a phone came to draw the maximize's glyph at
+    double a cursor's, and a title 8px taller than its own words that lay over the pane above.
+    A test about a drawn size reads `--mark` and RUNS UNDER BOTH POINTERS — `pointer: coarse` is
+    a property of the browser context, not of the viewport, so resizing a desktop app to a
+    phone's screen leaves the media query untouched. A component keeps only what is its own. It is global because
     svelte scopes a component's CSS, and for the same reason a hover stays LOCAL wherever
     another local rule has to lose to it: a scoped selector carries svelte's hash twice, so
     `.tab[aria-selected]` outweighs anything `app.css` can say.
