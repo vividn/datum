@@ -339,7 +339,18 @@ async function openApp({
  *
  * The DATABASE is one too — one app is one OPFS (da-vk1x) — so `solo` and
  * `room` EMPTY it whenever the test before wrote (`empty`, da-6b3dj), and
- * a test may count rows as it would in a context of its own. What they do
+ * a test may count rows as it would in a context of its own.
+ *
+ * So a test in a shared app starts with, whichever door it came in by:
+ * - the page at `/`, the screen it opened on, the pointer at the corner, no
+ *   menu or modal open, the bar's line and pills and the time cursor empty,
+ *   no errors yet, and no command in flight (`home`, `settled`);
+ * - no layout of the reader's own and none of their history (`wipe`), the
+ *   locks the page opened with (`relock`), and `day` as it ships (`restoreDay`)
+ *   — or as `draft` has it (`redraft`), or a room in front of it (`room`);
+ * - an empty database (`empty`), and `spyOnRunner` free to be called again.
+ *
+ * What they do
  * NOT put back is the rest of the page: the REPL's scrollback, a widget
  * option THIS SESSION set on `day`'s own widgets (a room's are new ids, so
  * a test that sets one wants a room), a runner a test installed, and

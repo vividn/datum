@@ -124,8 +124,8 @@ describe('in the app', () => {
 
 	// ONE APP for the tests on the default screen (da-6b3dj, sharedApp in
 	// support/app.mjs): `solo` empties the database between them and each
-	// reads its own echo from the end. The pictograms (`?repl`), the phone
-	// screen and a test that leaves the modal open open their own.
+	// reads its own echo from the end, and `home` closes a modal a test left
+	// open. The pictograms (`?repl`) and the phone screen open their own.
 	const shared = sharedApp();
 
 	// The claim this file exists for. One field per verb, declared through
@@ -147,7 +147,7 @@ describe('in the app', () => {
 	});
 
 	test('Track + opens the modal: four pictograms, Done shut until a name and a verb', async () => {
-		await withApp(async (app) => { // leaves the modal open, which `solo` does not close
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
 			const glyphs = await page.locator(`${MODAL} .verb .glyph`).allInnerTexts();
@@ -439,7 +439,7 @@ describe('in the app', () => {
 	// at all (da-hkpd). A modal has none of those problems and the form has
 	// no second life.
 	test('the form that used to hang off the bar is gone from the DOM', async () => {
-		await shared.solo(async ({ page }) => { // leaves the modal open: last of the shared
+		await shared.solo(async ({ page }) => {
 			await page.locator('.bar button.track').click();
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator('.bar form.add, .bar .panel.add').count(), 0);
