@@ -92,7 +92,7 @@ describe('the widget fits its screen, legibly', () => {
 	];
 
 	test('every field chip clears 4.5:1 against what is behind it, the uncoloured switch included', async () => {
-		await withApp(async ({ page }) => {
+		await withApp(async ({ page, clock }) => {
 			for (const line of PLAIN) await type(page, line);
 			await page.locator('.bar [data-field="untracked"]').waitFor();
 			// No spec colour on `work`: resolved server-side to md5("work"),
@@ -111,6 +111,9 @@ describe('the widget fits its screen, legibly', () => {
 
 			// And outlined: a block that is off is the one chip whose fill is
 			// on nothing, so its label is measured against the pane.
+			// A second on: the clock is held, and a block that ends where it
+			// began is no block.
+			await clock.forward(1000);
 			await type(page, 'end work');
 			await untilFieldStyle(page, 'work', 'backgroundColor', CLEAR);
 			const off = await contrasts(page);

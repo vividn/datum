@@ -25,7 +25,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
+import { startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { listed } from './support/rows.mjs';
@@ -61,7 +61,6 @@ const NOWVIEW = 'section.pane[data-title="nowview"]';
 
 /** The app with that seed, its clock pinned on the page and in the worker. */
 async function withFields(fn, options = {}) {
-	const clock = workerClock(NOW);
 	await withApp(
 		async (app) => {
 			for (const argv of SEED) {
@@ -74,11 +73,7 @@ async function withFields(fn, options = {}) {
 		},
 		{
 			...options,
-			prepare: async (context) => {
-				await context.clock.setFixedTime(new Date(NOW));
-				await clock.prepare(context);
-				await options.prepare?.(context);
-			}
+			clock: NOW
 		}
 	);
 }

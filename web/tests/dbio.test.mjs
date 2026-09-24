@@ -197,7 +197,12 @@ for (const engine of [chromium, webkit]) {
 					// rows: a field's first log writes the TRACK document
 					// that declares it too (da-c8mh).
 					await app.declare('coffee');
-					for (let i = 0; i < 3; i++) await app.submit('occur coffee');
+					// A second apart: the clock is held, and one instant
+					// holds one coffee.
+					for (let i = 0; i < 3; i++) {
+						await app.submit('occur coffee');
+						await app.clock.forward(1000);
+					}
 					await tailShows(page, 4);
 
 					// The backup is a download; the transcript has the header, not the rows.

@@ -803,7 +803,9 @@ describe('the bottom bar', () => {
 
 			// A widget-bar press: the bar's field GHOSTS the command — beside
 			// the prompt, never as the box's value (da-jprg) — and the
-			// receipt is the press's.
+			// receipt is the press's. A second on: the clock is held, and a
+			// second coffee at the first one's instant is the first again.
+			await app.clock.forward(1000);
 			await page.locator('.bar button.widget', { hasText: 'coffee' }).click();
 			await page.waitForFunction(
 				() => document.querySelector('.prompt-bar .ghost')?.textContent === 'occur coffee'

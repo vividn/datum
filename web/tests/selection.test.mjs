@@ -31,6 +31,20 @@ const PHONE = { viewport: { width: 390, height: 664 }, device: { isMobile: true,
 /** Four entries of one field, after the row that tracks it. */
 const SEED = ['track a --verb occur', 'occur a', 'occur a', 'occur a', 'occur a'];
 
+/**
+ * `seedLines(SEED)`, a second apart: the clock is held (da-ydao), and one
+ * instant holds one `a`. `log` is the door each line goes through, the
+ * seam's quiet one and the bar for the last unless a test says otherwise.
+ */
+async function seedApart(app, log) {
+	for (const [i, line] of SEED.entries()) {
+		if (log) await log(line);
+		else if (i < SEED.length - 1) await app.runLine(line);
+		else await seedLines(app, [line]);
+		await app.clock.forward(1000);
+	}
+}
+
 /** The last `n` tail rows: the four occurrences, newest last. */
 const last = async (page, n) => {
 	const count = await rows(page).count();
@@ -67,7 +81,7 @@ describe('a tap on a tail row', () => {
 	test('loads its hid as a pill; only the id commands are drawn; get runs on it', async () => {
 		await solo(async (app) => {
 			const { page } = app;
-			await seedLines(app, SEED);
+			await seedApart(app);
 			const whole = await drawn(page);
 			assert.ok(whole.includes('occur'), 'no pill: every command');
 
@@ -101,7 +115,7 @@ describe('a tap on a tail row', () => {
 	test('delete fills with nothing selected; a selected row arms it and the tap deletes; update never arms', async () => {
 		await solo(async (app) => {
 			const { page } = app;
-			await seedLines(app, SEED);
+			await seedApart(app);
 			const armed = (name) => button(page, name).evaluate((b) => b.classList.contains('act'));
 			const input = page.locator('.prompt-bar input');
 			// The shared app empties the pills between tests, not the line.
@@ -143,7 +157,7 @@ describe('a tap on a tail row', () => {
 	test('which commands take an id is what the CLI’s own `help --json` says', async () => {
 		await solo(async (app) => {
 			const { page } = app;
-			await seedLines(app, SEED);
+			await seedApart(app);
 			const help = await page.evaluate(() => window.datum.runQuiet(['help', '--json']));
 			// da-5flt: nowview takes `-t`, so a time pill leaves it drawn.
 			const nowview = JSON.parse(help.stdout).find((c) => c.name === 'nowview');
@@ -169,7 +183,7 @@ describe('a line the grammar does not know', () => {
 	test('never gets the hid: `a occur` logs a stateless entry, and the pill stays', async () => {
 		await solo(async (app) => {
 			const { page } = app;
-			await seedLines(app, SEED);
+			await seedApart(app);
 			const [row] = await last(page, 1);
 			const hid = await row.getAttribute('data-hid');
 			await row.click();
@@ -193,7 +207,7 @@ describe('selecting several', () => {
 	test('ctrl-click two rows: one pill, two sections; update gets them as ONE comma word; delete takes both; one Undo brings both back', async () => {
 		await solo(async (app) => {
 			const { page } = app;
-			await seedLines(app, SEED);
+			await seedApart(app);
 			const [first, , third] = await last(page, 4);
 			const hids = [await first.getAttribute('data-hid'), await third.getAttribute('data-hid')];
 			const before = await rowCount(page);
@@ -237,7 +251,7 @@ describe('selecting several', () => {
 	test('two selected: get is offered, and runs on both — one document each', async () => {
 		await solo(async (app) => {
 			const { page } = app;
-			await seedLines(app, SEED);
+			await seedApart(app);
 			const [first, , third] = await last(page, 4);
 			const hids = [await first.getAttribute('data-hid'), await third.getAttribute('data-hid')];
 			await first.click({ modifiers: ['ControlOrMeta'] });
@@ -260,7 +274,7 @@ describe('selecting several', () => {
 	test('shift-click takes the range of four, and it is drawn in tail and on the REPL’s document', async () => {
 		await solo(async (app) => {
 			const { page } = app;
-			await seedLines(app, SEED);
+			await seedApart(app);
 			const four = await last(page, 4);
 			await four[0].click();
 			await four[3].click({ modifiers: ['Shift'] });
@@ -282,7 +296,7 @@ describe('selecting several', () => {
 	test('the hid button keeps its own tap: it swaps to the full id and selects nothing', async () => {
 		await solo(async (app) => {
 			const { page } = app;
-			await seedLines(app, SEED);
+			await seedApart(app);
 			await page.locator('.repl .doc .hid').last().click();
 			await page.locator('.repl .doc .hid[aria-expanded="true"]').waitFor();
 			assert.equal(await hidPill(page).count(), 0);
@@ -310,7 +324,7 @@ describe('on a phone', () => {
 		await withAnyApp(async (app) => {
 			const { page } = app;
 			// No REPL on `mobile` for `seedLines` to wait on: through the loud door, then idle.
-			for (const line of SEED) await page.evaluate((l) => window.datum.runLine(l), line);
+			await seedApart(app, (line) => page.evaluate((l) => window.datum.runLine(l), line));
 			await app.idle();
 			await rows(page).nth(0).waitFor();
 			const count = await rows(page).count();

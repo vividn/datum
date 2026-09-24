@@ -26,7 +26,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { HELD_AT, startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -99,7 +99,8 @@ describe("the REPL's prompt, the bottom bar's", () => {
 				const moved = apart(first, second);
 				assert.ok(moved >= 1 && moved <= 3, `the clock did not tick: ${first} then ${second}`);
 			},
-			{ locale: 'en-US' }
+			// The wall clock: this is a clock counting up (da-ydao).
+			{ locale: 'en-US', clock: null }
 		);
 	});
 });
@@ -143,7 +144,7 @@ describe('a command in the scrollback', () => {
 		// The clock cannot be wound forward mid-session, so the day is moved
 		// under the app instead: a scrollback written yesterday, restored
 		// today. That is also the only way this is ever seen in real use.
-		const yesterday = Date.now() - 26 * 3600 * 1000;
+		const yesterday = HELD_AT - 26 * 3600 * 1000;
 		await withApp(
 			async ({ page }) => {
 				const [stamp] = await stamps(page);

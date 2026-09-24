@@ -144,15 +144,11 @@ describe('time and duration land on the entry', () => {
 	});
 
 	test('-t -N backdates by N minutes', async () => {
-		await onSeam(async ({ run, entries }) => {
-			const before = Date.now();
+		await onSeam(async ({ run, entries, clock }) => {
 			assert.equal((await run(['occur', 'coffee', '-t', '-30'])).code, OK);
 			const [stored] = await entries();
-			const minutesAgo = (before - Date.parse(stored.occur_time.utc)) / 60000;
-			assert.ok(
-				minutesAgo > 29 && minutesAgo < 31,
-				`expected ~30 minutes ago, got ${minutesAgo}`
-			);
+			// Exactly: the clock is held, so NOW is a number (da-ydao).
+			assert.equal(Date.parse(stored.occur_time.utc), clock.at() - 30 * 60000);
 		});
 	});
 

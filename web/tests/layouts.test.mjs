@@ -231,11 +231,11 @@ describe('the internal database', () => {
 	// The fallback covers both files or neither: half the data durable is
 	// worse than all of it in memory, because nobody can see which half.
 	test('with storage refused, both fall to memory together and both come back', async () => {
-		/** A sync access handle refused until `until` (epoch ms), then real. */
+		/** Refused until `until` (epoch ms, on the wall clock — `Date` is held), then real. */
 		const notBefore = (until) => `
 			const real = FileSystemFileHandle.prototype.createSyncAccessHandle;
 			FileSystemFileHandle.prototype.createSyncAccessHandle = function (...args) {
-				if (Date.now() < ${until}) return Promise.reject(new DOMException('not yet', 'InvalidStateError'));
+				if (performance.timeOrigin + performance.now() < ${until}) return Promise.reject(new DOMException('not yet', 'InvalidStateError'));
 				return real.apply(this, args);
 			};
 		`;

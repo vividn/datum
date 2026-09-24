@@ -12,7 +12,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines, workerClock } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines } from './support/app.mjs';
 import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { atRows, axes, boxes, gaps, lastReached, listed, packed } from './support/rows.mjs';
@@ -22,7 +22,6 @@ after(stopApp);
 
 /** Ten past nine, so `-t -60` and `-t -30` land on the same day. */
 const AT = Date.UTC(2026, 8, 10, 9, 10);
-const clock = workerClock(AT);
 
 const PAGE = JSON.stringify(
 	along('column', widgetPane('repl', 'repl'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'))
@@ -31,20 +30,18 @@ const PAGE = JSON.stringify(
 const withApp = (fn, options = {}) =>
 	withAnyApp(fn, {
 		...DESKTOP,
+		clock: AT,
 		...options,
-		prepare: async (context) => {
-			await clock.prepare(context);
-			await context.addInitScript(draft, PAGE);
-		}
+		prepare: (context) => context.addInitScript(draft, PAGE)
 	});
 
 // ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs), the
-// worker's clock held at `AT` throughout and `main` opened from `PAGE` for
-// each test. The bar's line is the shell's and not the layout's, so `solo`
-// leaves what the test before typed in it: it is put back as a fresh page
-// has it — empty, unfocused, no input mode. What navigates (`/command`) or
-// moves the clock (Undo) keeps an app of its own.
-const shared = sharedApp({ ...DESKTOP, prepare: (context) => clock.prepare(context) });
+// clock held at `AT` throughout and `main` opened from `PAGE` for each test.
+// The bar's line is the shell's and not the layout's, so `solo` leaves what
+// the test before typed in it: it is put back as a fresh page has it —
+// empty, unfocused, no input mode. What navigates (`/command`) or moves the
+// clock (Undo) keeps an app of its own.
+const shared = sharedApp({ ...DESKTOP, clock: AT });
 
 const onPage = (fn) =>
 	shared.solo(async (app) => {
@@ -348,7 +345,7 @@ describe('Undo', () => {
 
 			// Eleven minutes on: it still reverts, and the CLI's warning is shown.
 			await app.submit('occur coffee');
-			await clock.set(page, AT + 11 * 60_000);
+			await app.clock.set(AT + 11 * 60_000);
 			await commands(page).locator('button[data-command="undo"]').click();
 			await page.waitForFunction(() => window.__datumInflight === 0);
 			assert.equal((await app.entries(1)).length, 0, 'the older change was refused');

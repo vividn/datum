@@ -231,7 +231,9 @@ describe('a drawn view', () => {
 		const floor = KINDS.nowview.legible({ history: '0' }).width;
 
 		await shared.solo(async (app) => {
-			assert.equal((await app.run(['switch', 'mood', 'happy'])).code, 0);
+			// A minute back: the clock is held, and a switch made AT now is
+			// a block of no width yet.
+			assert.equal((await app.run(['switch', 'mood', 'happy', '-t', '-1'])).code, 0);
 			const drawn = await app.run(['nowview', '-o', '-', '--width', String(floor)]);
 			assert.equal(drawn.code, 0, drawn.stderr);
 			const band = /<rect class="now-chunk"[^>]*\swidth="([\d.]+)"/.exec(drawn.stdout);

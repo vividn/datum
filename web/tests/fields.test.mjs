@@ -272,6 +272,9 @@ describe('in the app', () => {
 			const drawn = async () => (await listed(page.locator('.bar'), '[data-field]')).map((el) => `${el.tag}:${el.field}`).sort();
 			assert.deepEqual(await drawn(), ['BUTTON:tea', 'BUTTON:walk']);
 
+			// A second on: the clock is held, and a re-track at the instant
+			// of the ignore would share its slug.
+			await app.clock.forward(1000);
 			await page.locator('.bar button.track').click();
 			await page.locator('dialog.spec [data-ignored="run"]').click();
 			await page.locator('.bar button[data-field="run"]').waitFor();
@@ -310,10 +313,13 @@ describe('in the app', () => {
 	});
 
 	test('a block fills while it is on, a switch takes its state colour inside the field outline', async () => {
-		await shared.solo(async ({ page }) => {
+		await shared.solo(async ({ page, clock }) => {
 			for (const line of FIXTURE) await type(page, line);
 			await type(page, 'start work');
 			await untilFieldStyle(page, 'work', 'backgroundColor', BLUE);
+			// A second on: the clock is held, and a block that ends where it
+			// began is no block.
+			await clock.forward(1000);
 			await type(page, 'end work');
 			await untilFieldStyle(page, 'work', 'backgroundColor', CLEAR);
 			assert.equal((await look(page, 'work')).border, BLUE);

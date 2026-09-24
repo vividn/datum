@@ -10,7 +10,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
-import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
+import { startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -25,7 +25,6 @@ const TIP = `${BAND} .tip`;
 const LABELS = { coffee: '14:05 coffee', work: '14:00 work: start 14:00–14:30' };
 
 async function withDay(fn, options = {}) {
-	const clock = workerClock(NOW);
 	await withApp(
 		async (app) => {
 			for (const argv of [
@@ -41,10 +40,7 @@ async function withDay(fn, options = {}) {
 		},
 		{
 			...options,
-			prepare: async (context) => {
-				await context.clock.setFixedTime(new Date(NOW));
-				await clock.prepare(context);
-			}
+			clock: NOW
 		}
 	);
 }

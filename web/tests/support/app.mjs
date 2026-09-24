@@ -42,9 +42,10 @@ export const TIMEZONE = 'UTC';
  * afternoon and failed every night, and the failure was twice charged to
  * innocent branches (da-ldct).
  *
- * So: seed a dated instant, or pin the clock here and seed against it.
- * Today rather than a fixed calendar date, because the seeds and the
- * clock then move together and there is no date in the file to go stale.
+ * So every app is held — at `HELD_AT` unless a test names another instant
+ * here — and seeds against it (da-ydao). Today rather than a fixed calendar
+ * date, because the seeds and the clock then move together and there is no
+ * date in the file to go stale.
  */
 export function todayAt(hour, minute = 0) {
 	const today = new Date();
@@ -118,12 +119,21 @@ let browser;
 export function inWorker(prelude) {
 	return (context) =>
 		context.addInitScript((prelude) => {
+			// One wrapper, however many preludes: a wrapper around a wrapper
+			// buffers each message twice and hands the app both copies. Each
+			// prelude is a block of its own, so two may name the same thing.
+			const preludes = (window.__datumWorkerPreludes ??= []);
+			preludes.push(`{${prelude}}`);
+			if (preludes.length > 1) return;
 			const Real = Worker;
 			window.Worker = class extends Real {
 				constructor(url, options) {
 					const target = new URL(url, location.href).href;
+					// What the page knows that a worker cannot read for itself.
+					const fromPage = { heldAt: window.__datumHeldAt };
 					const source = `
-						${prelude}
+						const fromPage = ${JSON.stringify(fromPage)};
+						${preludes.join('\n')}
 						const queued = [];
 						const buffer = (event) => queued.push(event.data);
 						self.addEventListener('message', buffer);
@@ -139,26 +149,88 @@ export function inWorker(prelude) {
 }
 
 /**
- * Pin the database worker's clock to `ms`, and return a setter that moves it.
- *
- * Playwright's `context.clock` fakes the page and not its workers, and the
- * CLI runs in a worker: a test that fakes the day has to fake it there too,
- * or datum draws the real one. The setter goes over a BroadcastChannel,
- * which the worker hears before the next command it is sent.
+ * The instant every app is held at unless its test names another (da-ydao):
+ * today at 15:00, so a `-t 0700` seed is in the past whatever hour the
+ * suite happens to run at.
  */
-export function workerClock(ms) {
-	return {
-		prepare: inWorker(`
-			let fixed = ${ms};
+export const HELD_AT = todayAt(15);
+
+/**
+ * Hold `Date` at `at` on the page and in every worker it starts.
+ *
+ * Only `Date`. Timers, animation frames and `performance.now()` stay the
+ * browser's own, because Playwright's fake clock replaces
+ * `requestAnimationFrame` with a timer and every test that waits on frames
+ * would silently wait on something else (measured on PR 27: 14 of 80
+ * wheel reads unmoved). And the minute tick ($lib/clock.ts) compares
+ * minutes, so a `Date` that never moves never ticks — no redraw can land
+ * inside a test's window by the wall clock turning.
+ *
+ * The CLI runs in the database worker, so the worker is held too, and a
+ * move goes to both over a BroadcastChannel, which the worker hears
+ * before the next command it is sent. A move is also written down
+ * (`localStorage`), because a reload runs these scripts again: the page
+ * reads where the clock stands, and hands it to the workers it starts
+ * (`fromPage`, `inWorker`), so a reload does not wind time back.
+ *
+ * `pin: false` leaves the page's `Date` alone, for `holdTimers`, where it
+ * is Playwright's.
+ */
+function holdDate(context, at, pin = true) {
+	return Promise.all([
+		inWorker(`
+			let fixed = fromPage.heldAt;
 			new BroadcastChannel('datum-test-clock').onmessage = (e) => { fixed = e.data; };
-			const Real = Date;
-			self.Date = class extends Real {
-				constructor(...args) { args.length ? super(...args) : super(fixed); }
-				static now() { return fixed; }
-			};
-		`),
-		set: (page, to) =>
-			page.evaluate((to) => new BroadcastChannel('datum-test-clock').postMessage(to), to)
+			${heldDate}
+		`)(context),
+		context.addInitScript(`{
+			let fixed = ${at};
+			try { fixed = Number(localStorage.getItem('datum-test-clock') ?? fixed); } catch {}
+			window.__datumHeldAt = fixed;
+			new BroadcastChannel('datum-test-clock').onmessage = (e) => { fixed = window.__datumHeldAt = e.data; };
+			${pin ? heldDate : ''}
+		}`)
+	]);
+}
+
+/** `Date`, held at the `fixed` in scope: every other use of it is the real one. */
+const heldDate = `
+	const Real = Date;
+	self.Date = class extends Real {
+		constructor(...args) { args.length ? super(...args) : super(fixed); }
+		static now() { return fixed; }
+	};
+`;
+
+/**
+ * The one way a test moves time (`app.clock`), on both sides of the seam.
+ *
+ * `set(ms)` puts the clock at an instant, `forward(ms)` moves it on — and,
+ * under `holdTimers`, fires what came due, so a minute forward is a minute
+ * tick. The CLI's clock is moved first, so the run a tick starts sees the
+ * new minute. `at()` is where it stands, and `reset()` puts it back where
+ * the app opened, for a shared app's next test (`empty`).
+ */
+function clockOf(page, at, holdTimers) {
+	let now = at;
+	const move = (to) =>
+		page.evaluate((to) => {
+			try { localStorage.setItem('datum-test-clock', String(to)); } catch {}
+			new BroadcastChannel('datum-test-clock').postMessage(to);
+		}, (now = to));
+	return {
+		at: () => now,
+		async set(to) {
+			await move(to);
+			if (holdTimers) await page.clock.setSystemTime(new Date(to));
+		},
+		async forward(ms) {
+			await move(now + ms);
+			if (holdTimers) await page.clock.fastForward(ms);
+		},
+		async reset() {
+			if (now !== at) await this.set(at);
+		}
 	};
 }
 
@@ -252,9 +324,17 @@ function baseUrl() {
  * `desk: null` is the shipped default (da-ncsyn).
  *
  * `clock` is the instant the app is held at — the page's and, because
- * the CLI runs there, the worker's. Any test that seeds a bare `HH:MM`
- * or reads what is current NOW wants one, with `todayAt` above; a test
- * that also has to move the clock builds its own with `workerClock`.
+ * the CLI runs there, the worker's. EVERY app is held (da-ydao): at
+ * `HELD_AT` unless a test names another instant, with `todayAt` above.
+ * `clock: null` is the wall clock, for a test about real time passing.
+ * `app.clock` moves it (`clockOf`).
+ *
+ * `holdTimers` hands the page's clock to Playwright, which holds its
+ * timers too: nothing the page schedules runs until `app.clock.forward`
+ * or `page.clock.runFor` says so. For a test that DRIVES time — a minute
+ * tick, a fade — and only that, since it also turns animation frames into
+ * timers. It holds the boot as well: `page.clock.runFor(200)` and
+ * `app.idle()` before asserting, since a pane's box arrives on a timer.
  */
 export async function withApp(fn, options) {
 	const { app, close } = await openApp(options);
@@ -268,7 +348,8 @@ export async function withApp(fn, options) {
 /** `withApp`'s own body: the app, and the one call that takes it down again. */
 async function openApp({
 	prepare,
-	clock,
+	clock = HELD_AT,
+	holdTimers = false,
 	locale,
 	viewport,
 	device,
@@ -295,9 +376,9 @@ async function openApp({
 		if (profile) await rm(profile, { recursive: true, force: true });
 	};
 	try {
-		if (clock !== undefined) {
-			await context.clock.setFixedTime(new Date(clock));
-			await workerClock(clock).prepare(context);
+		if (clock !== null) {
+			await holdDate(context, clock, !holdTimers);
+			if (holdTimers) await context.clock.install({ time: new Date(clock) });
 		}
 		if (desk) await context.addInitScript((tree) => (window.__datumDesktopLayout = tree), desk);
 		if (home)
@@ -313,7 +394,9 @@ async function openApp({
 			}, home);
 		await prepare?.(context);
 		const page = await context.newPage();
-		return { app: await open(page, query), close };
+		const app = await open(page, query);
+		if (clock !== null) app.clock = clockOf(page, clock, holdTimers);
+		return { app, close };
 	} catch (e) {
 		await close();
 		throw e;
@@ -348,7 +431,8 @@ async function openApp({
  * - no layout of the reader's own and none of their history (`wipe`), the
  *   locks the page opened with (`relock`), and `main` as it ships (`restoreMain`)
  *   — or as `draft` has it (`redraft`), or a room in front of it (`room`);
- * - an empty database (`empty`), and `spyOnRunner` free to be called again.
+ * - an empty database and the clock where the app opened (`empty`), and
+ *   `spyOnRunner` free to be called again.
  *
  * What they do
  * NOT put back is the rest of the page: the REPL's scrollback, a widget
@@ -555,10 +639,15 @@ function app(page, errors, query, clean, locks, internal) {
 		 * say the field already exists.
 		 */
 		declare: async (field, verb = 'occur') => {
+			// A minute before NOW: the clock is held (da-ydao), and a log that
+			// follows at the same instant would share the declaration's slug.
+			const at = self.clock?.at();
+			if (at !== undefined) await self.clock.set(at - 60_000);
 			const done = await page.evaluate(
 				([f, v]) => window.datum.runQuiet(['track', f, '--verb', v]),
 				[field, verb]
 			);
+			if (at !== undefined) await self.clock.set(at);
 			if (done.code !== 0) throw new Error(`track ${field} --verb ${verb}: ${done.stderr}`);
 		},
 
@@ -867,11 +956,13 @@ function app(page, errors, query, clean, locks, internal) {
 		 * same witness `cli.ts` announces changes by, so a counter that has
 		 * not moved is a database that is still empty and costs nothing.
 		 * `_internal` stays: its layouts are `wipe`'s. The bar's pills and
-		 * the time cursor go too; the REPL's scrollback does NOT, so a test
-		 * reads its own commands from the end.
+		 * the time cursor go too, and the clock goes back to where the app
+		 * opened (da-ydao); the REPL's scrollback does NOT, so a test reads
+		 * its own commands from the end.
 		 */
 		async empty() {
 			await self.idle();
+			await self.clock?.reset();
 			await page.evaluate(() => {
 				window.datum.bar.setPills([]);
 				window.datum.cursor.set(null);

@@ -6,7 +6,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
+import { startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -19,7 +19,6 @@ const NOWVIEW = 'section.pane[data-title="nowview"]';
 const PILL = '.prompt-bar .pill.time';
 
 async function withDay(fn, query = '') {
-	const clock = workerClock(NOW);
 	await withApp(
 		async (app) => {
 			const logged = await app.run(['start', 'work', '-t', '10:00']);
@@ -31,10 +30,7 @@ async function withDay(fn, query = '') {
 		},
 		{
 			query,
-			prepare: async (context) => {
-				await context.clock.setFixedTime(new Date(NOW));
-				await clock.prepare(context);
-			}
+			clock: NOW
 		}
 	);
 }

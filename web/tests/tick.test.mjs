@@ -13,7 +13,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, todayAt, withApp, workerClock } from './support/app.mjs';
+import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -32,34 +32,17 @@ const NOWVIEW = 'section.pane[data-title="nowview"]';
 const TODAY = '.band[data-days-ago="0"] svg.svg';
 
 /**
- * The two clocks the app reads, moved together.
+ * The app held at `AT`, its timers with it (`holdTimers`): the tick is a
+ * timer, and the clock is the test's to move — nothing the page schedules
+ * runs until `app.clock.forward` (or `runFor`) says so.
  *
  * The web decides WHEN to ask again; the CLI decides what now IS, from
- * the machine clock inside the wasm process — which runs in the database
- * worker, where playwright's clock does not reach (`workerClock`). A test
- * that moved only the page's would tick and be handed the same picture
- * back; one that moved only the worker's would never tick at all.
+ * the machine clock inside the wasm process in the database worker. A
+ * test that moved only the page's would tick and be handed the same
+ * picture back; one that moved only the worker's would never tick at all
+ * — which is why `app.clock` moves both.
  */
-function clocks(from) {
-	const worker = workerClock(from);
-	let at = from;
-	return {
-		prepare: async (context) => {
-			// Installed rather than fixed: the tick is a timer, and the
-			// clock is the test's to move — nothing the page schedules runs
-			// until `fastForward` (or `runFor`) says so.
-			await context.clock.install({ time: new Date(from) });
-			await worker.prepare(context);
-		},
-		/** The CLI's clock first, so the run the tick starts sees the new minute. */
-		async forward(page, ms = MINUTE) {
-			at += ms;
-			await worker.set(page, at);
-			await page.clock.fastForward(ms);
-			return at;
-		}
-	};
-}
+const HELD = { clock: AT, holdTimers: true };
 
 /**
  * Take the document's visibility over, and hand back the switch.
@@ -96,7 +79,6 @@ const ranOf = async (seen, name) => (await seen()).filter((argv) => argv[0] === 
 // hand on to the next test already moved.
 describe('the minute tick', () => {
 	test("nowview's open block grows by a minute, with nothing written", async () => {
-		const clock = clocks(AT);
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -117,7 +99,7 @@ describe('the minute tick', () => {
 				const seen = await app.spyOnRunner();
 				const [from, to] = await span0(block);
 				assert.equal(Date.parse(to), AT, 'the block does not reach to now');
-				await clock.forward(page);
+				await app.clock.forward(MINUTE);
 
 				const [grown, later] = await until(
 					() => span0(block),
@@ -136,12 +118,11 @@ describe('the minute tick', () => {
 				);
 				assert.deepEqual(app.errors, []);
 			},
-			{ prepare: clock.prepare }
+			HELD
 		);
 	});
 
 	test("dayview's now-line moves on by one minute of the day", async () => {
-		const clock = clocks(AT);
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -152,7 +133,7 @@ describe('the minute tick', () => {
 				const x = () => line.evaluate((l) => Number(l.getAttribute('x1')));
 
 				const before = await x();
-				await clock.forward(page);
+				await app.clock.forward(MINUTE);
 				const after = await until(x, (seen) => seen !== before);
 
 				// One minute of the band's own axis: `data-lo` to `data-hi`
@@ -168,19 +149,18 @@ describe('the minute tick', () => {
 				);
 				assert.deepEqual(app.errors, []);
 			},
-			{ prepare: clock.prepare }
+			HELD
 		);
 	});
 
 	test('a tick runs the views of now and nothing else', async () => {
-		const clock = clocks(AT);
 		await withApp(
 			async (app) => {
 				const { page } = app;
 				const seen = await app.spyOnRunner();
 				await app.idle();
 
-				await clock.forward(page);
+				await app.clock.forward(MINUTE);
 				await until(() => ranOf(seen, 'nowview'), (ran) => ran.length > 0);
 				await app.idle();
 
@@ -198,12 +178,11 @@ describe('the minute tick', () => {
 				assert.equal((await ranOf(seen, 'fields')).length, 0, 'the widget bar was rebuilt by the clock');
 				assert.deepEqual(app.errors, []);
 			},
-			{ prepare: clock.prepare }
+			HELD
 		);
 	});
 
 	test('a hidden document runs nothing, however many minutes pass, and one run on return', async () => {
-		const clock = clocks(AT);
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -212,8 +191,8 @@ describe('the minute tick', () => {
 				await app.idle();
 
 				await show(true);
-				await clock.forward(page);
-				await clock.forward(page);
+				await app.clock.forward(MINUTE);
+				await app.clock.forward(MINUTE);
 				await app.idle();
 				assert.equal(
 					(await ranOf(seen, 'nowview')).length,
@@ -231,12 +210,11 @@ describe('the minute tick', () => {
 				);
 				assert.deepEqual(app.errors, []);
 			},
-			{ prepare: clock.prepare }
+			HELD
 		);
 	});
 
 	test('a nowview pinned to the time cursor does not tick', async () => {
-		const clock = clocks(AT);
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -252,7 +230,7 @@ describe('the minute tick', () => {
 				await app.idle();
 				const seen = await app.spyOnRunner();
 
-				await clock.forward(page);
+				await app.clock.forward(MINUTE);
 				// The strip is not pinned, so its band is how we know the
 				// minute really turned.
 				await until(() => ranOf(seen, 'dayview'), (ran) => ran.length > 0);
@@ -264,12 +242,11 @@ describe('the minute tick', () => {
 				);
 				assert.deepEqual(app.errors, []);
 			},
-			{ prepare: clock.prepare }
+			HELD
 		);
 	});
 
 	test('a tick while a write is still refreshing costs the pane one more run, not one each', async () => {
-		const clock = clocks(AT);
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -283,7 +260,7 @@ describe('the minute tick', () => {
 				// a run each per pane per event, which is what a tick
 				// bumping the frame's epoch would have cost.
 				const written = app.submit('occur coffee');
-				await clock.forward(page);
+				await app.clock.forward(MINUTE);
 				await written;
 				await app.idle();
 
@@ -298,7 +275,7 @@ describe('the minute tick', () => {
 				assert.equal(Date.parse(to), AT + MINUTE, 'the picture on screen is a minute behind');
 				assert.deepEqual(app.errors, []);
 			},
-			{ prepare: clock.prepare }
+			HELD
 		);
 	});
 });

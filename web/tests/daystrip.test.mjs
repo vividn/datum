@@ -47,7 +47,6 @@ import {
 	startApp,
 	stopApp,
 	withApp,
-	workerClock,
 	seedLines,
 	todayAt
 } from './support/app.mjs';
@@ -1539,8 +1538,6 @@ describe('the day strip', () => {
 		// 10:00 UTC, so the fast-forward below lands after midnight and
 		// inside the next day rather than on its boundary.
 		const noon = Date.UTC(2026, 8, 9, 10, 0, 0);
-		// The CLI draws the pictures, in the database worker: its clock too.
-		const clock = workerClock(noon);
 		/** The days `from` back to 0 before `ms`, oldest first, as stamps. */
 		const marks = (ms, from) => Array.from({ length: from + 1 }, (_, i) => labelFor(ms, from - i));
 		await withApp( // own app: it moves the clock
@@ -1554,8 +1551,7 @@ describe('the day strip', () => {
 				// which is the same beat today's band has always refreshed
 				// on — so a command is what makes it look at the clock again.
 				const after = noon + 16 * 60 * 60 * 1000;
-				await app.page.clock.setFixedTime(new Date(after));
-				await clock.set(app.page, after);
+				await app.clock.set(after);
 				await app.submit('occur coffee');
 				await app.idle();
 
@@ -1570,12 +1566,7 @@ describe('the day strip', () => {
 				await app.page.locator('.stack').evaluate((el) => (el.scrollTop = 0));
 				await app.page.locator('button.jagged').waitFor();
 			},
-			{
-				prepare: async (context) => {
-					await context.clock.setFixedTime(new Date(noon));
-					await clock.prepare(context);
-				}
-			}
+			{ clock: noon }
 		);
 	});
 

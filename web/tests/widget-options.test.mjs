@@ -486,6 +486,9 @@ describe('widget options', () => {
 			await app.submit('track run --verb occur');
 			// Drawn before it is taken away, as track.test.mjs is careful to do.
 			await button.waitFor();
+			// A second on: the clock is held, and the ignore needs an instant
+			// of its own beside the track.
+			await app.clock.forward(1000);
 			await app.submit('ignore run');
 			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"]'));
 

@@ -13,7 +13,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, withApp as withAnyApp, workerClock } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
 import { chooseRoot, unlockRoot, widgetPane } from './support/layout.mjs';
 
 before(startApp);
@@ -22,15 +22,8 @@ after(stopApp);
 // `stats` measures up to now, so two runs a second apart can print two
 // different durations. Every command here sees one fixed clock, which is
 // what lets the widget's run and the test's run of the same argv agree.
-const clock = workerClock(Date.UTC(2026, 8, 10, 15, 0));
-const withApp = (fn, { prepare, ...options } = {}) =>
-	withAnyApp(fn, {
-		...options,
-		prepare: async (context) => {
-			await clock.prepare(context);
-			await prepare?.(context);
-		}
-	});
+const AT = Date.UTC(2026, 8, 10, 15, 0);
+const withApp = (fn, options = {}) => withAnyApp(fn, { clock: AT, ...options });
 
 // ONE APP for the tests on this clock (da-6b3dj, sharedApp in
 // support/app.mjs), each on `main` alone with an empty database — or on
@@ -39,7 +32,7 @@ const withApp = (fn, { prepare, ...options } = {}) =>
 // still opens an app of its own goes to another database (a shared app
 // keeps its query), opens a second page, reloads, or starts from blocked
 // storage or a screen of its own.
-const shared = sharedApp({ prepare: clock.prepare });
+const shared = sharedApp({ clock: AT });
 
 /** Terminal text as a reader sees it: no colour codes, runs of space as one. */
 const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+/g, ' ').trim();

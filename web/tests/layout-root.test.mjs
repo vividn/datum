@@ -77,7 +77,9 @@ describe('the default layout', () => {
 
 	test('a command through the REPL still reaches tail and nowview', async () => {
 		await shared.solo(async (app) => {
-			await app.submit('switch mood happy');
+			// A minute back: the clock is held, and nowview draws up to NOW,
+			// not a switch made AT it.
+			await app.submit('switch mood happy -t -1');
 			await app.page.waitForFunction(
 				() =>
 					document.querySelector('section[data-pane="tail"] .body:not(.behind .body)')?.textContent.includes('mood') &&

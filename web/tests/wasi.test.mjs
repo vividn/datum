@@ -9,15 +9,14 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { sharedApp, startApp, stopApp, withApp, workerClock } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
 
 // ONE APP for the tests in the reader's default zone (da-6b3dj, sharedApp
 // in support/app.mjs): `solo` empties the database between them. The
-// Berlin ones open their own — a zone, and a worker clock set before the
-// first page.
+// Berlin ones open their own — a zone, and a clock of their own.
 const shared = sharedApp();
 
 const plain = (text) => text.replace(/\x1b\[[0-9;]*m/g, '');
@@ -114,7 +113,6 @@ describe('the wasi CLI', () => {
 		['January', Date.UTC(2026, 0, 15, 12), 60]
 	]) {
 		test(`an entry the CLI stamps itself carries its zone's offset, in ${when}`, async () => {
-			const clock = workerClock(ms);
 			await withApp(
 				async (app) => {
 					assert.equal((await app.run(['track', 'x', '--verb', 'occur'])).code, 0);
@@ -131,7 +129,7 @@ describe('the wasi CLI', () => {
 						['x', 'y'].map((field) => [field, ms, offset, 'Europe/Berlin'])
 					);
 				},
-				{ prepare: clock.prepare, timezone: 'Europe/Berlin' }
+				{ clock: ms, timezone: 'Europe/Berlin' }
 			);
 		});
 	}
@@ -152,14 +150,13 @@ describe('the wasi CLI', () => {
 	});
 
 	test("the dayview's today is the zone's date", async () => {
-		const clock = workerClock(Date.parse('2026-09-12T00:30:00+02:00'));
 		await withApp(
 			async (app) => {
 				const view = await app.run(['dayview', '--n-days', '1']);
 				assert.equal(view.code, 0, view.stderr);
 				assert.match(view.stdout, /data-from="2026-09-11T22:00:00\.000Z"/);
 			},
-			{ prepare: clock.prepare, timezone: 'Europe/Berlin' }
+			{ clock: Date.parse('2026-09-12T00:30:00+02:00'), timezone: 'Europe/Berlin' }
 		);
 	});
 });

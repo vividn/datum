@@ -285,10 +285,19 @@ writing it down.
 17. **A test that seeds a time must say which day it means.** A bare `-t 0930` is "today at
     09:30" against whatever clock the app is holding, so before 10:00 local the same seed
     lands in the *future*: `datum now` answers that nothing is current and every pane that
-    draws a current state draws none. Give the seed a date, or pin the app's clock with
-    `withApp(fn, { clock: todayAt(15) })` — one instant for the page and for the worker the
-    CLI runs in — and seed against it. Tests that skipped this passed every afternoon and
+    draws a current state draws none. Tests that skipped this passed every afternoon and
     failed every night, and the failure was twice charged to innocent branches (da-ldct).
+    So **every app is held** (da-ydao): `withApp` holds `Date` — the page's and the worker's
+    the CLI runs in — at `HELD_AT`, today at 15:00, unless the test names another instant
+    (`clock: todayAt(9)`); `clock: null` is the wall clock. ONLY `Date`: frames, timers and
+    `performance.now()` stay the browser's, because Playwright's fake clock turns
+    `requestAnimationFrame` into a timer (PR 27: 14 of 80 wheel reads unmoved), and a held
+    `Date` never turns a minute, so no tick can land inside a test. `app.clock` is the one way
+    to move time — `set(ms)`, `forward(ms)`, `at()`, both sides of the seam — and
+    `holdTimers: true` hands the page's timers to Playwright for a test that DRIVES time (the
+    minute tick, a fade), where frames are timers too and a test waits on the thing. A real
+    duration under a held `Date` is `performance.now()`; a wall-clock instant is
+    `performance.timeOrigin + performance.now()`.
 18. **A defect that only shows across a MOUNT needs a test that remounts — and asserts
     twice.** Some state is per-mount while the thing it describes is persisted, so a
     single-session test cannot see the bug at all. `CustomPane`'s write guard is *learned,

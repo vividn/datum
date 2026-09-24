@@ -345,8 +345,12 @@ describe('in the app', () => {
 			// drawing `run` yet satisfies "no run button" too, and the modal
 			// would then open on an ignored list the widget had not seen.
 			await page.locator('.bar button[data-field="run"]').waitFor();
+			// A second between the three: the clock is held (da-ydao), and
+			// each declaration of `run` needs an instant of its own.
+			await app.clock.forward(1000);
 			await app.submit('ignore run');
 			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"]'));
+			await app.clock.forward(1000);
 			await openIt(page);
 			await page.locator(`${MODAL} [data-ignored="run"]`).click();
 			await page.locator('.bar button[data-field="run"]').waitFor();

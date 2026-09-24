@@ -28,7 +28,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { atEachScreen, sharedApp, startApp, stopApp, todayAt, withApp, workerClock } from './support/app.mjs';
+import { atEachScreen, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { fold as foldBar, unfold as openBar } from './support/bar.mjs';
 
 before(startApp);
@@ -724,13 +724,7 @@ describe('folded, a command still answers', () => {
 	// the ERROR is prominent enough".
 
 	/** The app with a clock the test holds, page and CLI together. */
-	const held = (at) => ({
-		...PHONE,
-		prepare: async (context) => {
-			await context.clock.install({ time: new Date(at) });
-			await workerClock(at).prepare(context);
-		}
-	});
+	const held = (at) => ({ ...PHONE, clock: at, holdTimers: true });
 
 	const marks = (page) => page.locator(`${BAR} .marks`);
 
@@ -828,7 +822,7 @@ describe('folded, a command still answers', () => {
 			);
 
 			// Driven, not slept: fifteen seconds is not a wait a suite takes.
-			await page.clock.fastForward(16_000);
+			await app.clock.forward(16_000);
 			await marks(page).waitFor({ state: 'detached' });
 
 			// A `tail` echoes no document, so there is nothing to say for it.
@@ -980,7 +974,7 @@ describe('folded, a command still answers', () => {
 			);
 
 			// Past the moment a CREATE would have gone, and still there.
-			await page.clock.fastForward(16_000);
+			await app.clock.forward(16_000);
 			assert.equal(await failed.count(), 1, 'the ERROR went with the ACTION words');
 			// It does NOT open by itself: vividn chose the word over an unfold.
 			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0);
@@ -1161,7 +1155,10 @@ describe('the pills ride with the text', () => {
 			assert.ok(Math.abs(clocks.pill - clocks.ghost) < 50, `pill at ${clocks.pill}ms, ghost at ${clocks.ghost}ms`);
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .spent'));
 			assert.deepEqual(app.errors, []);
-		}, DAY);
+			// The wall clock: how far into its fade the pill joins is the
+			// time the command took, on `Date` ($lib/bar.ts), which a held
+			// clock says was none.
+		}, { ...DAY, clock: null });
 	});
 
 	test('an unlocked pill leaves the live set at once and fades as a spent one', async () => {

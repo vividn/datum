@@ -20,7 +20,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
+import { startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE, activeTab, maximizeButton, pane, pickOption, settled, swipe } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
@@ -40,12 +40,11 @@ const TODAY = '.band[data-days-ago="0"]';
  * window has a lane to draw and a block to close.
  *
  * The clock is pinned on both sides — the page's and the worker's, where
- * the CLI reads it — with `setFixedTime` rather than `install`: every
- * gesture here is a real press over real milliseconds, and the long press
- * is a TIMER ($lib/nowpoint.ts), which an installed clock would freeze.
+ * the CLI reads it — without `holdTimers`: every gesture here is a real
+ * press over real milliseconds, and the long press is a TIMER
+ * ($lib/nowpoint.ts), which held timers would freeze.
  */
 async function withBand(fn, { ready, ...options } = {}) {
-	const clock = workerClock(NOW);
 	await withApp(
 		async (app) => {
 			const logged = await app.run(['start', 'work', '-t', '14:00']);
@@ -60,11 +59,7 @@ async function withBand(fn, { ready, ...options } = {}) {
 		},
 		{
 			...options,
-			prepare: async (context) => {
-				await context.clock.setFixedTime(new Date(NOW));
-				await clock.prepare(context);
-				await options.prepare?.(context);
-			}
+			clock: NOW
 		}
 	);
 }
@@ -282,8 +277,6 @@ describe('the keyboard can still select in the band', () => {
 
 describe('a relative selection is measured from NOW, not from the press', () => {
 	test('two minutes on: the nowview’s line has not moved, the dayview’s has, and a line logs at now − 7', async () => {
-		const worker = workerClock(NOW);
-		let now = NOW;
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -307,11 +300,7 @@ describe('a relative selection is measured from NOW, not from the press', () => 
 
 				// Two minutes of clock, on both sides of the seam: the CLI's
 				// first, so the run the tick starts sees the new minute.
-				for (let i = 0; i < 2; i++) {
-					now += MINUTE;
-					await worker.set(page, now);
-					await page.clock.fastForward(MINUTE);
-				}
+				for (let i = 0; i < 2; i++) await app.clock.forward(MINUTE);
 				await app.idle();
 				// Seven minutes back from a clock two minutes on is two
 				// minutes LATER in absolute time, so on the dayview's
@@ -336,18 +325,13 @@ describe('a relative selection is measured from NOW, not from the press', () => 
 				const [coffee] = (await app.entries()).filter((e) => e.field === 'coffee');
 				assert.equal(
 					new Date(Date.parse(coffee.occur_time.utc)).toISOString(),
-					new Date(now - 7 * MINUTE).toISOString()
+					new Date(app.clock.at() - 7 * MINUTE).toISOString()
 				);
 			},
-			{
-				prepare: async (context) => {
-					// Installed rather than fixed: the tick is a timer, and
-					// this test moves the clock. Only a TAP is made here, and
-					// a tap needs no timer of its own.
-					await context.clock.install({ time: new Date(NOW) });
-					await worker.prepare(context);
-				}
-			}
+			// Held timers: the tick is a timer, and this test moves the
+			// clock. Only a TAP is made here, and a tap needs no timer of
+			// its own.
+			{ clock: NOW, holdTimers: true }
 		);
 	});
 });
@@ -453,8 +437,6 @@ describe('a drag along the band pans the window', () => {
 	// store calls its subscribers for every value, so the window followed
 	// the selection again on each tick.
 	test('a pan survives the MINUTE, when the window was pointed by the dayview first', async () => {
-		const worker = workerClock(NOW);
-		let now = NOW;
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -483,9 +465,7 @@ describe('a drag along the band pans the window', () => {
 
 				// A minute of clock on both sides of the seam, and a beat for
 				// anything the tick sets off.
-				now += MINUTE;
-				await worker.set(page, now);
-				await page.clock.fastForward(MINUTE);
+				await app.clock.forward(MINUTE);
 				await app.idle();
 				await page.waitForTimeout(250);
 				await app.idle();
@@ -497,12 +477,7 @@ describe('a drag along the band pans the window', () => {
 					'`now →` is the only way home, so it is still there'
 				);
 			},
-			{
-				prepare: async (context) => {
-					await context.clock.install({ time: new Date(NOW) });
-					await worker.prepare(context);
-				}
-			}
+			{ clock: NOW, holdTimers: true }
 		);
 	});
 

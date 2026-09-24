@@ -21,7 +21,8 @@ import { until } from './support/until.mjs';
 const NEVER = `FileSystemFileHandle.prototype.createSyncAccessHandle = () => new Promise(() => {});`;
 
 /**
- * A sync access handle refused until `until` (epoch ms), then real.
+ * A sync access handle refused until `until` (epoch ms, on the wall clock:
+ * the worker's `Date` is held), then real.
  *
  * An absolute instant rather than a delay, because the prelude runs afresh
  * on every load of the page and a delay would restart the outage under a
@@ -30,7 +31,7 @@ const NEVER = `FileSystemFileHandle.prototype.createSyncAccessHandle = () => new
 const notBefore = (until) => `
 	const real = FileSystemFileHandle.prototype.createSyncAccessHandle;
 	FileSystemFileHandle.prototype.createSyncAccessHandle = function (...args) {
-		if (Date.now() < ${until}) return Promise.reject(new DOMException('not yet', 'InvalidStateError'));
+		if (performance.timeOrigin + performance.now() < ${until}) return Promise.reject(new DOMException('not yet', 'InvalidStateError'));
 		return real.apply(this, args);
 	};
 `;
@@ -422,11 +423,12 @@ const since = (a, b) => ({ opens: b.opens - a.opens, acquired: b.acquired - a.ac
 
 /**
  * Every `argvs` fired at once, so the queue behind the first is never empty.
- * Returns each outcome — with what it paid to acquire — and the span of all.
+ * Returns each outcome — with what it paid to acquire — and the span of all,
+ * on the wall clock: the page's `Date` is held (da-ydao).
  */
 const fireAtOnce = (page, argvs) =>
 	page.evaluate(async (argvs) => {
-		const started = Date.now();
+		const started = performance.timeOrigin + performance.now();
 		const runs = await Promise.all(
 			argvs.map((argv) =>
 				window.datum.runQuiet(argv).then((r) => ({
@@ -434,11 +436,11 @@ const fireAtOnce = (page, argvs) =>
 					stderr: r.stderr,
 					tries: r.ms.tries,
 					acquire: r.ms.acquire,
-					at: Date.now()
+					at: performance.timeOrigin + performance.now()
 				}))
 			)
 		);
-		return { runs, spanMs: Date.now() - started, startedAt: started };
+		return { runs, spanMs: (performance.timeOrigin + performance.now()) - started, startedAt: started };
 	}, argvs);
 
 /** Ten writes, each its own minute; ten `--version`s, which touch no rows. */
@@ -522,14 +524,14 @@ describe('the files, held across a burst', () => {
 			// Not awaited: the other tab has to ask while this one is holding
 			// the files, and this one's queue is never empty while it runs.
 			await first.page.evaluate(() => {
-				window.__started = Date.now();
+				window.__started = performance.timeOrigin + performance.now();
 				window.__done = [];
 				window.__burst = Promise.all(
 					Array.from({ length: 20 }, (_, i) =>
 						window.datum
 							.runQuiet(['occur', 'a', '-t', `07${String(i).padStart(2, '0')}`])
 							.then((r) => {
-								const done = { code: r.code, stderr: r.stderr, at: Date.now() };
+								const done = { code: r.code, stderr: r.stderr, at: performance.timeOrigin + performance.now() };
 								window.__done.push(done);
 								return done;
 							})
@@ -543,10 +545,10 @@ describe('the files, held across a burst', () => {
 			// it, which is what a wall clock here would mostly be measuring.
 			const other = await second.page.evaluate(async () => {
 				const r = await window.datum.runQuiet(['occur', 'b', '-t', '0900']);
-				return { code: r.code, stderr: r.stderr, acquire: r.ms.acquire, at: Date.now() };
+				return { code: r.code, stderr: r.stderr, acquire: r.ms.acquire, at: performance.timeOrigin + performance.now() };
 			});
 			const burst = await first.page.evaluate(() => window.__burst);
-			const span = (await first.page.evaluate(() => Date.now() - window.__started)) || 1;
+			const span = (await first.page.evaluate(() => (performance.timeOrigin + performance.now()) - window.__started)) || 1;
 			burst.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
 			assert.equal(other.code, 0, other.stderr);
 

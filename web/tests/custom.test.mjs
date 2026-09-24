@@ -79,6 +79,9 @@ describe('the custom pane', () => {
 			await app.page.locator('section.pane td', { hasText: 'coffee' }).first().waitFor();
 			assert.equal(await count(app, 'tea'), 1, 'the pane ran `occur tea` again on an epoch');
 
+			// A second on: the clock is held, and a second `tea` at the same
+			// instant would be the first one again.
+			await app.clock.forward(1000);
 			await app.page.locator(`${PANE} button.play`).click();
 			await app.page.waitForFunction(
 				async () => (await window.datum.entries(500)).filter((e) => e.field === 'tea').length === 2

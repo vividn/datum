@@ -419,8 +419,10 @@ describe('the nowview steps stay off the picture', () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				await app.runLine('switch music true');
-				await app.runLine('switch mood happy');
+				// A minute back: the clock is held, and a switch made AT now
+				// is a band of no width yet.
+				await app.runLine('switch music true -t -1');
+				await app.runLine('switch mood happy -t -1');
 				await page.evaluate(() => window.datum.run(['occur', 'coffee']));
 				const now = pane(page, 'now');
 				await now.locator('svg.svg .now-chunk').nth(1).waitFor();

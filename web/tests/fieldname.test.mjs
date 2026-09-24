@@ -80,6 +80,9 @@ async function typeIntoTheForm(page, field) {
 async function trackIt(app, field) {
 	await app.page.locator('dialog.spec button.commit').click();
 	await chipIndex(app, field);
+	// A second on: the clock is held, and a log at the instant the field
+	// was declared would share the declaration's slug.
+	await app.clock.forward(1000);
 }
 
 /**

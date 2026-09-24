@@ -87,6 +87,9 @@ describe('a press', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
+			// A second between the steps: the clock is held (da-ydao), and
+			// the newest row is only the newest at an instant of its own.
+			await app.clock.forward(1000);
 			await page.locator('.bar [data-field="coffee"]').click();
 			// Ghosted beside the prompt, not typed into it (da-jprg).
 			await page.waitForFunction(
@@ -100,6 +103,7 @@ describe('a press', () => {
 
 			await type(page, 'start work');
 			await untilFieldStyle(page, 'work', 'backgroundColor', BLUE);
+			await app.clock.forward(1000);
 			await page.locator('.bar [data-field="work"]').click();
 			await untilFieldStyle(page, 'work', 'backgroundColor', CLEAR);
 			assert.equal((await app.echoes()).at(-1), 'end work');

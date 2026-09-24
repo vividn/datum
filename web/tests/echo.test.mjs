@@ -267,6 +267,9 @@ describe('the list says what the CLI does', () => {
 					parseEcho(result.stdout),
 					`${argv.join(' ')} → ${result.code} ${result.stdout || result.stderr}`
 				);
+				// A second on: the clock is held, and `stop work` at the
+				// instant `start work` began would close a block of nothing.
+				await app.clock.forward(1000);
 			}
 		});
 	});

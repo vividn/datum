@@ -83,6 +83,9 @@ const BLUE = 'rgb(0, 0, 255)';
  */
 async function ready(app) {
 	await seedLines(app, SEED);
+	// A second on, as a real clock would be: `stats` counts up to NOW and
+	// not an entry AT it, and the clock is held (da-ydao).
+	await app.clock.forward(1000);
 	await fieldsBar(app.page).locator('[data-field="coffee"]').waitFor();
 	await fieldsBar(app.page).locator('[data-field="mood"]').waitFor();
 }
